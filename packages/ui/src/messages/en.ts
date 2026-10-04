@@ -405,6 +405,13 @@ export const EXPORT_WORD_LAYOUT_NOTE = messageKey('dialog.export-word.layout-not
 export const EXPORT_WORD_TEXT = messageKey('dialog.export-word.text');
 export const EXPORT_WORD_TEXT_NOTE = messageKey('dialog.export-word.text-note');
 export const EXPORT_WORD_APPLY = messageKey('dialog.export-word.apply');
+export const EXPORT_WORD_PAGES_NOTE = messageKey('dialog.export-word.pages-note');
+export const EXPORT_POWERPOINT_TITLE = messageKey('dialog.export-powerpoint.title');
+export const EXPORT_POWERPOINT_PAGES_NOTE = messageKey('dialog.export-powerpoint.pages-note');
+export const EXPORT_TEXT_TITLE = messageKey('dialog.export-text.title');
+export const EXPORT_LAYOUT_TEXT_TITLE = messageKey('dialog.export-layout-text.title');
+export const EXPORT_TEXT_PAGES_NOTE = messageKey('dialog.export-text.pages-note');
+export const EXPORT_PAGES_APPLY = messageKey('dialog.export-pages.apply');
 export const EXPORT_PDFA_COMMAND_TITLE = messageKey('command.export-pdfa.title');
 export const PDFA_REMOVALS_TITLE = messageKey('dialog.pdfa-removals.title');
 export const OPTIMIZE_COMMAND_TITLE = messageKey('command.optimize.title');
@@ -440,6 +447,7 @@ export const RENDER_QUALITY_DOUBLE = messageKey('setting.rendering-quality.doubl
 export const TILE_THRESHOLD_TITLE = messageKey('setting.rendering-tile-threshold.title');
 export const TILE_THRESHOLD_DESCRIPTION = messageKey('setting.rendering-tile-threshold.description');
 export const PRINT_APPLY = messageKey('dialog.print.apply');
+export const PRINT_PAGES_NOTE = messageKey('dialog.print.pages-note');
 export const GROUP_COMPARE = messageKey('surface.ribbon.group.compare');
 export const GROUP_COMMENT_FILES = messageKey('surface.ribbon.group.comment-files');
 export const ACCESSIBILITY_COMMAND_TITLE = messageKey('command.accessibility-check.title');
@@ -512,6 +520,7 @@ export const PLACE_BARCODE_APPLY = messageKey('dialog.place-barcode.apply');
 export const EXPORT_EXCEL_COMMAND_TITLE = messageKey('command.export-excel.title');
 export const EXPORT_EXCEL_TITLE = messageKey('dialog.export-excel.title');
 export const EXPORT_EXCEL_LAYOUT = messageKey('dialog.export-excel.layout');
+export const EXPORT_EXCEL_PAGES_NOTE = messageKey('dialog.export-excel.pages-note');
 export const EXPORT_EXCEL_ENGINE = messageKey('dialog.export-excel.engine');
 export const EXPORT_EXCEL_ENGINE_AUTOMATIC = messageKey('dialog.export-excel.engine.automatic');
 export const EXPORT_EXCEL_ENGINE_AZURE = messageKey('dialog.export-excel.engine.azure');
@@ -532,7 +541,6 @@ export const EXPORT_EXCEL_CELL = messageKey('dialog.export-excel.cell');
 export const EXPORT_EXCEL_CLIPPED = messageKey('dialog.export-excel.clipped');
 export const EXPORT_EXCEL_TRUNCATED = messageKey('dialog.export-excel.truncated');
 export const EXPORT_PAGE_IMAGES_PAGES_NOTE = messageKey('dialog.export-page-images.pages-note');
-export const EXPORT_PAGE_IMAGES_EMPTY = messageKey('dialog.export-page-images.empty');
 export const EXPORT_PAGE_IMAGES_FORMAT = messageKey('dialog.export-page-images.format');
 export const EXPORT_PAGE_IMAGES_FORMAT_NOTE = messageKey('dialog.export-page-images.format-note');
 export const EXPORT_PAGE_IMAGES_PNG = messageKey('dialog.export-page-images.png');
@@ -828,6 +836,9 @@ export const PAGE_RANGE_EVERY = messageKey('dialog.page-range.every');
 export const PAGE_RANGE_SELECT = messageKey('dialog.page-range.select');
 export const PAGE_RANGE_NUMBERS = messageKey('dialog.page-range.numbers');
 export const PAGE_RANGE_NUMBERS_NOTE = messageKey('dialog.page-range.numbers-note');
+/** *Select pages* with nothing typed, in every dialog that exports pages — one sentence, not one per export. */
+export const PAGE_RANGE_EXPORT_EMPTY = messageKey('dialog.page-range.export-empty');
+export const PAGE_RANGE_PRINT_EMPTY = messageKey('dialog.page-range.print-empty');
 export const OCR_START = messageKey('dialog.ocr.start');
 export const OCR_HANDWRITING = messageKey('dialog.ocr.handwriting');
 export const OCR_KEYS_HELP = messageKey('dialog.ocr.keys-help');
@@ -3004,6 +3015,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PAGE_RANGE_SELECT]: 'Select pages',
   [PAGE_RANGE_NUMBERS]: 'Page numbers',
   [PAGE_RANGE_NUMBERS_NOTE]: 'Pages and ranges, separated by commas.',
+  [PAGE_RANGE_EXPORT_EMPTY]: 'Type the pages to export, for example 1-3, 5.',
+  [PAGE_RANGE_PRINT_EMPTY]: 'Type the pages to print, for example 1-3, 5.',
   [OCR_START]: 'Recognise',
   // THE ONE LINE THE OWNER SPECIFIED (2026-09-18): handwriting is read by a
   // service since ADR-0085, and a key is what makes its tool appear.
@@ -4483,6 +4496,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_WORD_TEXT]: 'Words only',
   [EXPORT_WORD_TEXT_NOTE]: 'Just the words, with no pictures and no layout.',
   [EXPORT_WORD_APPLY]: 'Choose where to save…',
+  [EXPORT_WORD_PAGES_NOTE]: 'The Word file holds these pages, in order.',
+  [EXPORT_POWERPOINT_TITLE]: 'Export to PowerPoint',
+  [EXPORT_POWERPOINT_PAGES_NOTE]: 'Each page becomes one slide.',
+  [EXPORT_TEXT_TITLE]: 'Export text',
+  [EXPORT_LAYOUT_TEXT_TITLE]: 'Export text with layout',
+  [EXPORT_TEXT_PAGES_NOTE]: 'The text file holds these pages, in order.',
+  [EXPORT_PAGES_APPLY]: 'Choose where to save…',
   [EXPORT_PDFA_COMMAND_TITLE]: 'Export as PDF/A…',
   [PDFA_REMOVALS_TITLE]: 'Saved as PDF/A',
   [OPTIMIZE_COMMAND_TITLE]: 'Save a smaller copy…',
@@ -4521,6 +4541,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TILE_THRESHOLD_DESCRIPTION]:
     'Zoomed in past this, a page is drawn only where you are looking, which keeps memory low on large pages. Lower uses less memory.',
   [PRINT_APPLY]: 'Choose a printer…',
+  [PRINT_PAGES_NOTE]: 'The printer dialog opens on these pages.',
   [GROUP_COMPARE]: 'Compare',
   [GROUP_COMMENT_FILES]: 'Comment files',
   [ACCESSIBILITY_COMMAND_TITLE]: 'Accessibility check',
@@ -4600,6 +4621,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_EXCEL_COMMAND_TITLE]: 'Export tables to Excel…',
   [EXPORT_EXCEL_TITLE]: 'Export tables to Excel',
   [EXPORT_EXCEL_LAYOUT]: 'Where the tables go',
+  [EXPORT_EXCEL_PAGES_NOTE]: 'Tables are written from these pages only.',
   [EXPORT_EXCEL_ENGINE]: 'Read the tables with',
   [EXPORT_EXCEL_ENGINE_AUTOMATIC]: 'This PDF’s own text',
   [EXPORT_EXCEL_ENGINE_AZURE]: 'Azure Document Intelligence',
@@ -4607,9 +4629,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // SAID BEFORE ANYTHING IS SENT (ADR-0086 Decision 4): what leaves this computer, and where to.
   // No cost is stated, which is the row's rule for every service string.
   [EXPORT_EXCEL_SENDS_AZURE]:
-    '{count, plural, one {This document’s page} other {All # pages of this document}} will be sent to Azure Document Intelligence to find its tables. Each copy is deleted from Azure after it is read.',
+    '{every, select, yes {{count, plural, one {This document’s page} other {All # pages of this document}}} other {{count, plural, one {One page of this document} other {# pages of this document}}}} will be sent to Azure Document Intelligence to find its tables. Each copy is deleted from Azure after it is read.',
   [EXPORT_EXCEL_SENDS_CLAUDE]:
-    '{count, plural, one {This document’s page} other {All # pages of this document}} will be sent to Anthropic’s Claude to find its tables.',
+    '{every, select, yes {{count, plural, one {This document’s page} other {All # pages of this document}}} other {{count, plural, one {One page of this document} other {# pages of this document}}}} will be sent to Anthropic’s Claude to find its tables.',
   [EXCEL_SERVICE_REFUSED]: 'Page {page} could not be read, so nothing was written. {detail}',
   [SERVICE_REFUSED_TITLE]: 'The tables were not read',
   [EXPORT_EXCEL_SHEET_PER_PAGE]: 'A sheet for each page that has tables',
@@ -4624,7 +4646,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_EXCEL_CLIPPED]: 'This cell is too long to show whole, so it cannot be changed here.',
   [EXPORT_EXCEL_TRUNCATED]: 'This page has more cells than can be shown. The ones not shown are exported as found.',
   [EXPORT_PAGE_IMAGES_PAGES_NOTE]: 'Each page becomes one picture file.',
-  [EXPORT_PAGE_IMAGES_EMPTY]: 'Type the pages to export, for example 1-3, 5.',
   [EXPORT_PAGE_IMAGES_FORMAT]: 'Format',
   [EXPORT_PAGE_IMAGES_FORMAT_NOTE]: 'PNG keeps every detail. JPEG and WebP make smaller files and lose a little.',
   [EXPORT_PAGE_IMAGES_PNG]: 'PNG',

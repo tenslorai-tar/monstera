@@ -766,12 +766,34 @@ describe('pages past 4,096 cross as one page set (JOURNAL, No document-size refu
   });
 });
 
+describe('every export to another format, and Print, REQUIRE their pages (ADR-0161)', () => {
+  const docId = asDocId('doc-1');
+  const requests = {
+    'document.exportText': { docId, mode: 'plain', pages: [[0, 2]] },
+    'document.exportWord': { docId, mode: 'rich', pages: [[0, 2]] },
+    'document.exportPowerPoint': { docId, pages: [[0, 2]] },
+    'document.exportExcel': { docId, layout: 'one-sheet', engine: 'automatic', version: asDocVersion(3), pages: [[0, 2]], edits: [] },
+    'document.print': { docId, dpi: 300, pages: [[0, 2]] },
+  } as const;
+
+  it('accepts each with its pages, and refuses each without them — a caller that forgot would convert everything', () => {
+    for (const [id, request] of Object.entries(requests)) {
+      const { params } = channels[id as keyof typeof requests];
+      // CONTROL FIRST: the request is otherwise valid, so the refusal below is the missing field's.
+      expect(params.safeParse(request).success, id).toBe(true);
+      const { pages: _dropped, ...without } = request;
+      expect(params.safeParse(without).success, id).toBe(false);
+    }
+  });
+});
+
 describe('document.exportExcel — which engine reads the tables (ADR-0086)', () => {
   const params = channels['document.exportExcel'].params;
   const edited = {
     docId: asDocId('doc-1'),
     layout: 'sheet-per-page',
     version: asDocVersion(3),
+    pages: [[0, 2]],
     edits: [{ page: 0, table: 0, row: 0, column: 0, text: 'A' }],
   };
 

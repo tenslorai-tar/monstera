@@ -2245,6 +2245,8 @@ export const engineChannels = {
         session: sessionSchema,
         mode: z.enum(WORD_MODES),
         into: outputNameSchema,
+        // THE PAGES THE PERSON CHOSE (ADR-0161), as the set, expanded where the page count is known.
+        pages: pageSetSchema,
       })
       .strict(),
     // A COUNT, for `engine/serialise`'s reason; and how many pictures it carries, which is what the export exists to

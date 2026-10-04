@@ -910,7 +910,7 @@ describe('remoteMupdfLifecycle', () => {
     const destination = join(await mkdtemp(join(tmpdir(), 'monstera-lifecycle-')), 'words.docx');
     mintedRoots.push(join(destination, '..'));
 
-    const staged = await lifecycle.word(session, 'layout');
+    const staged = await lifecycle.word(session, 'layout', [0]);
     // CONTROL: the package is IN the output directory until placed, so the emptiness below is the move's doing.
     expect(await readdir(output)).toHaveLength(1);
     await placeStaged(staged, destination);

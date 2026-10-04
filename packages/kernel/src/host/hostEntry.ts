@@ -193,11 +193,11 @@ const engineHandlers = createEngineHandlers({
   pageImage: rasterisePageImage,
   // AND THE WORD EXPORT, which draws the page's pictures (ADR-0072's amendment of 2026-10-01). LOADED ON FIRST USE,
   // pdf-lib's reason above: the composer and its zip library are a cost only a Word export should pay.
-  word: (session, mode) => {
+  word: (session, mode, pages) => {
     let pictures = (): number => 0;
     async function* chunks(): AsyncIterable<Uint8Array> {
       const { composeWordDocument } = await import('../wordPictures.js');
-      const composed = composeWordDocument(session, mode);
+      const composed = composeWordDocument(session, mode, pages);
       pictures = composed.pictures;
       yield* composed.chunks;
     }

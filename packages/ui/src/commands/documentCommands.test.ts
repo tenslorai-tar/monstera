@@ -161,6 +161,14 @@ const NOTHING_RECOGNISED = (): Promise<undefined> => Promise.resolve(undefined);
  */
 const NOTHING_MARKED = (): Promise<boolean> => Promise.resolve(true);
 
+/**
+ * The pages an export's dialog answers in these cases (ADR-0161): not every page and not a run from the first, so a
+ * command that sent every page, or a literal, in place of the answer fails — and `CHOSEN_SET` is them as runs, which is
+ * how every command sends a page list.
+ */
+const CHOSEN = [2, 4, 5, 6];
+const CHOSEN_SET = [2, [4, 6]];
+
 const CONTEXT: CommandContext = {
   selectedPages: [],
   docId: DOC,
@@ -2862,7 +2870,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     ]);
   });
 
-  it('export text dispatches the document and opens no dialog of its own', async () => {
+  it('export text asks which pages, then dispatches EXACTLY those pages (ADR-0161)', async () => {
     const { client, sent } = recording({ 'document.exportText': { kind: 'copied', bytes: 12, written: WRITTEN } });
     const asked: unknown[] = [];
 
@@ -2876,13 +2884,41 @@ describe('delete pages — the mutation-dialog gate', () => {
       onApplied: () => undefined,
       ask: (id, props) => {
         asked.push({ id, props });
-        return Promise.resolve(undefined);
+        return Promise.resolve(id === 'dialog.export-text' ? { pages: CHOSEN } : undefined);
       },
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'plain' } }]);
-    // NOTHING WAS ASKED: the save dialog is main's, and a success is a toast, never a dialog.
-    expect(asked).toStrictEqual([]);
+    expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'plain', pages: CHOSEN_SET } }]);
+    // ONLY THE PAGES ARE ASKED: the save dialog is main's, and a success is a toast, never a dialog.
+    expect(asked).toStrictEqual([{ id: 'dialog.export-text', props: { pageCount: 10, becomes: 'text' } }]);
+  });
+
+  it('CONTROL: a DISMISSED pages dialog exports nothing, for PowerPoint and both text exports', async () => {
+    for (const command of [exportTextCommand, exportLayoutTextCommand]) {
+      const { client, sent } = recording();
+      await command({
+        settleMarks: NOTHING_MARKED,
+        recogniseFirst: NOTHING_RECOGNISED,
+        client,
+        toast: () => undefined,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: () => Promise.resolve(undefined),
+      }).run(CONTEXT);
+      expect(sent).toStrictEqual([]);
+    }
+    const { client, sent } = recording();
+    await exportPowerPointCommand({
+      settleMarks: NOTHING_MARKED,
+      client,
+      toast: () => undefined,
+      stamp,
+      signatures,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+    expect(sent).toStrictEqual([]);
   });
 
   it('export to Word asks the mode, then dispatches EXACTLY that mode', async () => {
@@ -2902,16 +2938,16 @@ describe('delete pages — the mutation-dialog gate', () => {
         onApplied: () => undefined,
         ask: (id, props) => {
           asked.push({ id, props });
-          return Promise.resolve({ mode });
+          return Promise.resolve({ mode, pages: CHOSEN });
         },
       }).run(CONTEXT);
 
-      expect(asked).toStrictEqual([{ id: 'dialog.export-word', props: {} }]);
-      expect(sent).toStrictEqual([{ id: 'document.exportWord', params: { docId: DOC, mode } }]);
+      expect(asked).toStrictEqual([{ id: 'dialog.export-word', props: { pageCount: 10 } }]);
+      expect(sent).toStrictEqual([{ id: 'document.exportWord', params: { docId: DOC, mode, pages: CHOSEN_SET } }]);
     }
   });
 
-  it('export to PowerPoint dispatches the document and opens no dialog of its own', async () => {
+  it('export to PowerPoint asks which pages, then dispatches EXACTLY those pages (ADR-0161)', async () => {
     const { client, sent } = recording({ 'document.exportPowerPoint': { kind: 'copied', bytes: 9, written: WRITTEN } });
     const asked: unknown[] = [];
 
@@ -2924,12 +2960,12 @@ describe('delete pages — the mutation-dialog gate', () => {
       onApplied: () => undefined,
       ask: (id, props) => {
         asked.push({ id, props });
-        return Promise.resolve(undefined);
+        return Promise.resolve(id === 'dialog.export-powerpoint' ? { pages: CHOSEN } : undefined);
       },
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([{ id: 'document.exportPowerPoint', params: { docId: DOC } }]);
-    expect(asked).toStrictEqual([]);
+    expect(sent).toStrictEqual([{ id: 'document.exportPowerPoint', params: { docId: DOC, pages: CHOSEN_SET } }]);
+    expect(asked).toStrictEqual([{ id: 'dialog.export-powerpoint', props: { pageCount: 10, becomes: 'slides' } }]);
   });
 
   describe('export as PDF/A (ADR-0075)', () => {
@@ -3228,13 +3264,14 @@ describe('delete pages — the mutation-dialog gate', () => {
           onApplied: () => undefined,
           ask: (id, props) => {
             asked.push({ id, props });
-            return Promise.resolve({ dpi });
+            return Promise.resolve({ dpi, pages: CHOSEN });
           },
         }).run(CONTEXT);
 
         // THE DIALOG STARTS ON STANDARD, the setting's default.
-        expect(asked).toStrictEqual([{ id: 'dialog.print', props: { dpi: 300 } }]);
-        expect(sent).toStrictEqual([{ id: 'document.print', params: { docId: DOC, dpi } }]);
+        expect(asked).toStrictEqual([{ id: 'dialog.print', props: { dpi: 300, pageCount: 10 } }]);
+        // AND THE PAGES CHOSEN THERE are where the system dialog starts (ADR-0161).
+        expect(sent).toStrictEqual([{ id: 'document.print', params: { docId: DOC, dpi, pages: CHOSEN_SET } }]);
       }
     });
 
@@ -3259,7 +3296,7 @@ describe('delete pages — the mutation-dialog gate', () => {
             return Promise.resolve(undefined);
           },
         }).run(CONTEXT);
-        expect(asked).toStrictEqual([{ id: 'dialog.print', props: { dpi } }]);
+        expect(asked).toStrictEqual([{ id: 'dialog.print', props: { dpi, pageCount: 10 } }]);
       }
     });
 
@@ -3284,7 +3321,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       for (const [answered, spokenLast] of [
         [{ kind: 'unavailable' }, { id: 'dialog.save-problem', props: { outcome: 'print-unavailable' } }],
         [{ kind: 'failed' }, { id: 'dialog.save-problem', props: { outcome: 'print-failed' } }],
-        [{ kind: 'cancelled' }, { id: 'dialog.print', props: { dpi: 300 } }],
+        [{ kind: 'cancelled' }, { id: 'dialog.print', props: { dpi: 300, pageCount: 10 } }],
       ] as const) {
         const { client } = recording({ 'document.print': answered });
         const spoken: unknown[] = [];
@@ -3299,7 +3336,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           onApplied: () => undefined,
           ask: (id, props) => {
             spoken.push({ id, props });
-            return Promise.resolve(id === 'dialog.print' ? { dpi: 300 } : undefined);
+            return Promise.resolve(id === 'dialog.print' ? { dpi: 300, pages: CHOSEN } : undefined);
           },
         }).run(CONTEXT);
 
@@ -3321,7 +3358,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           signatures,
           settings: printSettings(),
           onApplied: () => undefined,
-          ask: () => Promise.resolve({ dpi: 300 }),
+          ask: () => Promise.resolve({ dpi: 300, pages: CHOSEN }),
         }).run(CONTEXT);
         expect(said).toStrictEqual(expected);
       }
@@ -3354,9 +3391,24 @@ describe('delete pages — the mutation-dialog gate', () => {
     it('opens on the page ON SHOW, moves when asked, and sends every page’s edits with the version read', async () => {
       const { client, sent } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN });
       const asked: { id: string; props: unknown }[] = [];
+      // THE PAGE ROW AS LEFT on page 4 rides the move, and the export's pages are the ones it parsed to (ADR-0161).
+      const left = { every: false, text: '3, 5-7' };
       const answers = [
-        { kind: 'page', to: 4, layout: 'one-sheet', engine: 'automatic', edits: [{ table: 0, row: 0, column: 0, text: 'A' }] },
-        { kind: 'export', layout: 'one-sheet', engine: 'automatic', edits: [{ table: 0, row: 0, column: 0, text: 'B' }] },
+        {
+          kind: 'page',
+          to: 4,
+          layout: 'one-sheet',
+          engine: 'automatic',
+          edits: [{ table: 0, row: 0, column: 0, text: 'A' }],
+          range: left,
+        },
+        {
+          kind: 'export',
+          layout: 'one-sheet',
+          engine: 'automatic',
+          edits: [{ table: 0, row: 0, column: 0, text: 'B' }],
+          pages: CHOSEN,
+        },
       ];
 
       await exportExcelCommand({
@@ -3386,6 +3438,7 @@ describe('delete pages — the mutation-dialog gate', () => {
             engines: ['automatic'],
             engine: 'automatic',
             edits: [],
+            range: { every: true, text: '' },
           },
         },
         {
@@ -3400,6 +3453,7 @@ describe('delete pages — the mutation-dialog gate', () => {
             engines: ['automatic'],
             engine: 'automatic',
             edits: [],
+            range: left,
           },
         },
       ]);
@@ -3413,6 +3467,7 @@ describe('delete pages — the mutation-dialog gate', () => {
             layout: 'one-sheet',
             engine: 'automatic',
             version: asDocVersion(5),
+            pages: CHOSEN_SET,
             edits: [
               { page: 3, table: 0, row: 0, column: 0, text: 'A' },
               { page: 4, table: 0, row: 0, column: 0, text: 'B' },
@@ -3426,10 +3481,11 @@ describe('delete pages — the mutation-dialog gate', () => {
       const { client } = reviewing({ kind: 'copied', bytes: 9, written: WRITTEN });
       const opened: unknown[] = [];
       const typed = [{ table: 0, row: 0, column: 0, text: 'A' }];
+      const every = { every: true, text: '' };
       const answers = [
-        { kind: 'page', to: 4, layout: 'sheet-per-page', engine: 'automatic', edits: typed },
-        { kind: 'page', to: 3, layout: 'sheet-per-page', engine: 'automatic', edits: [] },
-        { kind: 'export', layout: 'sheet-per-page', engine: 'automatic', edits: typed },
+        { kind: 'page', to: 4, layout: 'sheet-per-page', engine: 'automatic', edits: typed, range: every },
+        { kind: 'page', to: 3, layout: 'sheet-per-page', engine: 'automatic', edits: [], range: every },
+        { kind: 'export', layout: 'sheet-per-page', engine: 'automatic', edits: typed, pages: CHOSEN },
       ];
 
       await exportExcelCommand({
@@ -3465,7 +3521,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           spoken.push({ id, props });
           return Promise.resolve(
             id === 'dialog.export-excel'
-              ? { kind: 'page', to: 4, layout: 'sheet-per-page', engine: 'automatic', edits: [] }
+              ? { kind: 'page', to: 4, layout: 'sheet-per-page', engine: 'automatic', edits: [], range: { every: true, text: '' } }
               : undefined,
           );
         },
@@ -3513,7 +3569,7 @@ describe('delete pages — the mutation-dialog gate', () => {
             spoken.push({ id, props });
             return Promise.resolve(
               id === 'dialog.export-excel'
-                ? { kind: 'export', layout: 'one-sheet', engine: 'automatic', edits: [] }
+                ? { kind: 'export', layout: 'one-sheet', engine: 'automatic', edits: [], pages: CHOSEN }
                 : undefined,
             );
           },
@@ -3547,7 +3603,13 @@ describe('delete pages — the mutation-dialog gate', () => {
           spoken.push({ id, props });
           return Promise.resolve(
             id === 'dialog.export-excel'
-              ? { kind: 'export', layout: 'sheet-per-page', engine: 'claude', edits: [{ table: 0, row: 0, column: 0, text: 'Z' }] }
+              ? {
+                  kind: 'export',
+                  layout: 'sheet-per-page',
+                  engine: 'claude',
+                  edits: [{ table: 0, row: 0, column: 0, text: 'Z' }],
+                  pages: CHOSEN,
+                }
               : undefined,
           );
         },
@@ -3556,7 +3618,14 @@ describe('delete pages — the mutation-dialog gate', () => {
       expect((spoken[0]?.props as { engines: unknown }).engines).toStrictEqual(['automatic', 'claude']);
       expect(sent.at(-1)).toStrictEqual({
         id: 'document.exportExcel',
-        params: { docId: DOC, layout: 'sheet-per-page', engine: 'claude', version: asDocVersion(5), edits: [] },
+        params: {
+          docId: DOC,
+          layout: 'sheet-per-page',
+          engine: 'claude',
+          version: asDocVersion(5),
+          pages: CHOSEN_SET,
+          edits: [],
+        },
       });
       // PAGE 6 ZERO-BASED IS THE SEVENTH a person reads.
       expect(spoken.at(-1)).toStrictEqual({
@@ -3588,6 +3657,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // exactly this field, so a layout command that sent `plain` — or omitted the
     // mode — would pass every other case in this file and read MuPDF's text.
     const { client, sent } = recording({ 'document.exportText': { kind: 'copied', bytes: 12, written: WRITTEN } });
+    const asked: unknown[] = [];
 
     await exportLayoutTextCommand({
       settleMarks: NOTHING_MARKED,
@@ -3597,10 +3667,15 @@ describe('delete pages — the mutation-dialog gate', () => {
       stamp,
       signatures,
       onApplied: () => undefined,
-      ask: () => Promise.resolve(undefined),
+      ask: (id, props) => {
+        asked.push({ id, props });
+        return Promise.resolve(id === 'dialog.export-layout-text' ? { pages: CHOSEN } : undefined);
+      },
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'layout' } }]);
+    // ITS OWN DIALOG, titled for the layout export, over the same body as plain text's.
+    expect(asked).toStrictEqual([{ id: 'dialog.export-layout-text', props: { pageCount: 10, becomes: 'text' } }]);
+    expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'layout', pages: CHOSEN_SET } }]);
   });
 
   it('a layout export with NO CONVERTER, and one that FAILED, each say so through the save problem dialog', async () => {
@@ -3621,11 +3696,14 @@ describe('delete pages — the mutation-dialog gate', () => {
         onApplied: () => undefined,
         ask: (id, props) => {
           spoken.push({ id, props });
-          return Promise.resolve(undefined);
+          return Promise.resolve(id === 'dialog.export-layout-text' ? { pages: CHOSEN } : undefined);
         },
       }).run(CONTEXT);
 
-      expect(spoken).toStrictEqual([{ id: 'dialog.save-problem', props: { outcome } }]);
+      expect(spoken).toStrictEqual([
+        { id: 'dialog.export-layout-text', props: { pageCount: 10, becomes: 'text' } },
+        { id: 'dialog.save-problem', props: { outcome } },
+      ]);
     }
   });
 
@@ -3643,11 +3721,11 @@ describe('delete pages — the mutation-dialog gate', () => {
       onApplied: () => undefined,
       ask: (id, props) => {
         spoken.push({ id, props });
-        return Promise.resolve(undefined);
+        return Promise.resolve(id === 'dialog.export-text' ? { pages: CHOSEN } : undefined);
       },
     }).run(CONTEXT);
 
-    expect(spoken).toStrictEqual([{ id: 'dialog.save-problem', props: { outcome: 'contested' } }]);
+    expect(spoken.at(-1)).toStrictEqual({ id: 'dialog.save-problem', props: { outcome: 'contested' } });
   });
 
   describe('recognising the scanned pages first, where the person turned it on (ADR-0118)', () => {
@@ -3673,7 +3751,10 @@ describe('delete pages — the mutation-dialog gate', () => {
           settleMarks: NOTHING_MARKED,
           ask: (id) => {
             events.push(`dialog ${id}`);
-            return Promise.resolve(id === 'dialog.export-word' ? { mode: 'rich' } : undefined);
+            if (id === 'dialog.export-word') return Promise.resolve({ mode: 'rich', pages: CHOSEN });
+            return Promise.resolve(
+              id === 'dialog.export-text' || id === 'dialog.export-layout-text' ? { pages: CHOSEN } : undefined,
+            );
           },
           recogniseFirst: (docId, pageCount) => {
             walks.push({ docId, pageCount });
@@ -3687,17 +3768,24 @@ describe('delete pages — the mutation-dialog gate', () => {
     }
 
     it.each([
-      ['text', exportTextCommand, 'document.exportText'],
-      ['layout text', exportLayoutTextCommand, 'document.exportText'],
-      ['PDF/A', exportPdfaCommand, 'document.exportPdfa'],
-    ] as const)('%s: the walk runs FIRST, over the whole document, and what it recognised is said before the export’s own report', async (_name, build, channel) => {
+      ['text', exportTextCommand, 'document.exportText', ['dialog dialog.export-text']],
+      ['layout text', exportLayoutTextCommand, 'document.exportText', ['dialog dialog.export-layout-text']],
+      ['PDF/A', exportPdfaCommand, 'document.exportPdfa', []],
+    ] as const)('%s: the walk runs after the export’s own question, over the whole document, and what it recognised is said before the export’s own report', async (_name, build, channel, asked) => {
       const { deps, events, walks } = timeline({ recognised: 2, skipped: 1, stopped: false });
 
       await build(deps).run(CONTEXT);
 
       // THE DOCUMENT AND ITS PAGE COUNT, not the page on show: the setting recognises the document the export writes.
       expect(walks).toStrictEqual([{ docId: DOC, pageCount: 10 }]);
-      expect(events).toStrictEqual(['walk', `channel ${channel}`, 'dialog dialog.ocr-outcome']);
+      // AFTER THE PAGES DIALOG where there is one (ADR-0161), so a dismissed one recognises nothing.
+      expect(events).toStrictEqual([...asked, 'walk', `channel ${channel}`, 'dialog dialog.ocr-outcome']);
+    });
+
+    it('text: a DISMISSED pages dialog recognises nothing', async () => {
+      const dismissed = timeline({ recognised: 1, skipped: 0, stopped: false });
+      await exportTextCommand({ ...dismissed.deps, ask: () => Promise.resolve(undefined) }).run(CONTEXT);
+      expect(dismissed.walks).toStrictEqual([]);
     });
 
     it('Word: AFTER the mode is chosen, so a dismissed mode dialog recognises nothing', async () => {
@@ -3718,17 +3806,17 @@ describe('delete pages — the mutation-dialog gate', () => {
     it('a walk the person STOPPED writes no file, and says what it did', async () => {
       const { deps, events } = timeline({ recognised: 1, skipped: 0, stopped: true });
       await exportTextCommand(deps).run(CONTEXT);
-      expect(events).toStrictEqual(['walk', 'dialog dialog.ocr-outcome']);
+      expect(events).toStrictEqual(['dialog dialog.export-text', 'walk', 'dialog dialog.ocr-outcome']);
     });
 
     it('CONTROL: a walk that recognised nothing says nothing, and where none ran the export is as before', async () => {
       const nothing = timeline({ recognised: 0, skipped: 3, stopped: false });
       await exportTextCommand(nothing.deps).run(CONTEXT);
-      expect(nothing.events).toStrictEqual(['walk', 'channel document.exportText']);
+      expect(nothing.events).toStrictEqual(['dialog dialog.export-text', 'walk', 'channel document.exportText']);
 
       const off = timeline(undefined);
       await exportTextCommand(off.deps).run(CONTEXT);
-      expect(off.events).toStrictEqual(['walk', 'channel document.exportText']);
+      expect(off.events).toStrictEqual(['dialog dialog.export-text', 'walk', 'channel document.exportText']);
     });
   });
 
@@ -5500,28 +5588,28 @@ describe('every file write confirms, and its Show in folder reveals the file the
       name: 'text',
       message: TOAST_TEXT_SAVED,
       answers: { 'document.exportText': COPIED },
-      dialogs: [],
+      dialogs: [{ pages: [0] }],
       run: (deps) => exportTextCommand(deps).run(CONTEXT),
     },
     {
       name: 'text with layout',
       message: TOAST_TEXT_SAVED,
       answers: { 'document.exportText': COPIED },
-      dialogs: [],
+      dialogs: [{ pages: [0] }],
       run: (deps) => exportLayoutTextCommand(deps).run(CONTEXT),
     },
     {
       name: 'Word',
       message: TOAST_WORD_SAVED,
       answers: { 'document.exportWord': COPIED },
-      dialogs: [{ mode: 'text' }],
+      dialogs: [{ mode: 'text', pages: [0] }],
       run: (deps) => exportWordCommand(deps).run(CONTEXT),
     },
     {
       name: 'PowerPoint',
       message: TOAST_POWERPOINT_SAVED,
       answers: { 'document.exportPowerPoint': COPIED },
-      dialogs: [],
+      dialogs: [{ pages: [0] }],
       run: (deps) => exportPowerPointCommand(deps).run(CONTEXT),
     },
     {
@@ -5531,7 +5619,7 @@ describe('every file write confirms, and its Show in folder reveals the file the
         'document.pageTables': { version: asDocVersion(5), pageCount: 10, tables: [], truncated: false },
         'document.exportExcel': COPIED,
       },
-      dialogs: [{ kind: 'export', layout: 'one-sheet', engine: 'automatic', edits: [] }],
+      dialogs: [{ kind: 'export', layout: 'one-sheet', engine: 'automatic', edits: [], pages: [0] }],
       run: (deps) => exportExcelCommand(deps).run(CONTEXT),
     },
     {

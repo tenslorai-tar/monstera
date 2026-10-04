@@ -85,6 +85,13 @@ import { PRINT_DIALOG_ID, type PrintAnswer } from '../dialogs/print.js';
 import { PRINT_QUALITY_DPI, PRINT_QUALITY_SETTING } from '../settings/rendering.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { EXPORT_WORD_DIALOG_ID, type ExportWordAnswer } from '../dialogs/exportWord.js';
+import {
+  EXPORT_LAYOUT_TEXT_DIALOG_ID,
+  EXPORT_POWERPOINT_DIALOG_ID,
+  EXPORT_TEXT_DIALOG_ID,
+  type ExportPagesAnswer,
+} from '../dialogs/exportPages.js';
+import type { PageRangeStart } from '../dialogs/PageRangeChoice.js';
 import { REPLACE_PAGE_RESULT } from '../dialogs/replacePageResult.js';
 import { type SourceCommandDeps, askAboutSource } from './sourceDocuments.js';
 import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
@@ -2746,10 +2753,8 @@ export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile & S
 }
 
 /**
- * Writes the document's text to a plain-text file the user picks.
- *
- * **No dialog of its own**: there is nothing to choose before the save dialog,
- * which main runs. `saveCopyCommand`'s outcomes, because it is the same
+ * Writes the chosen pages' text to a plain-text file the user picks: the pages dialog (ADR-0161), then the save
+ * dialog, which main runs. `saveCopyCommand`'s outcomes, because it is the same
  * single-file destination path — `copied` confirms, `cancelled` says nothing,
  * and the two failures reach the save problem dialog.
  */
@@ -2817,16 +2822,22 @@ export function exportWordCommand(
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
+      if (context.docId === undefined || context.pageCount === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
-      const chosen = (await deps.ask(EXPORT_WORD_DIALOG_ID, {})) as ExportWordAnswer | undefined;
+      const chosen = (await deps.ask(EXPORT_WORD_DIALOG_ID, { pageCount: context.pageCount })) as
+        | ExportWordAnswer
+        | undefined;
       if (chosen === undefined) return;
 
       // AFTER THE MODE, so a dismissed mode dialog recognises nothing (ADR-0118).
       const walked = await recognisedBeforeExport(deps, context);
       if (walked === false) return;
-      const answer = await deps.client['document.exportWord']({ docId: context.docId, mode: chosen.mode });
+      const answer = await deps.client['document.exportWord']({
+        docId: context.docId,
+        mode: chosen.mode,
+        pages: pageSetOf(chosen.pages),
+      });
       await reportRecognisedBeforeExport(deps, walked);
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -2845,10 +2856,8 @@ export function exportWordCommand(
 }
 
 /**
- * Writes the document as a PowerPoint deck, a slide per page (ADR-0072).
- *
- * **No dialog of its own**, `exportTextCommand`'s reason: there is nothing to
- * choose before the save dialog, which main runs.
+ * Writes the chosen pages as a PowerPoint deck, a slide per page (ADR-0072): the pages dialog (ADR-0161), then main's
+ * save dialog and write. A dismissed pages dialog dispatches nothing.
  */
 export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
   return {
@@ -2866,10 +2875,19 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile 
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
+      if (context.docId === undefined || context.pageCount === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
-      const answer = await deps.client['document.exportPowerPoint']({ docId: context.docId });
+      const chosen = (await deps.ask(EXPORT_POWERPOINT_DIALOG_ID, {
+        pageCount: context.pageCount,
+        becomes: 'slides',
+      })) as ExportPagesAnswer | undefined;
+      if (chosen === undefined) return;
+
+      const answer = await deps.client['document.exportPowerPoint']({
+        docId: context.docId,
+        pages: pageSetOf(chosen.pages),
+      });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -2935,6 +2953,9 @@ export function exportExcelCommand(
       let index = context.page ?? 0;
       let layout: ExportExcelAnswer['layout'] = 'sheet-per-page';
       let engine: ExportExcelAnswer['engine'] = 'automatic';
+      let range: PageRangeStart = { every: true, text: '' };
+      // ASSIGNED ONLY BY THE EXPORT ANSWER, the one way out of the loop that reaches the request.
+      let pages: readonly number[];
       const engines = deps.tableEngines();
       let reviewed: DocVersion | undefined;
       for (;;) {
@@ -2959,13 +2980,18 @@ export function exportExcelCommand(
           engines,
           engine,
           edits: edits.get(index) ?? [],
+          range,
         })) as ExportExcelAnswer | undefined;
         if (chosen === undefined) return;
 
         edits.set(index, chosen.edits);
         layout = chosen.layout;
         engine = chosen.engine;
-        if (chosen.kind === 'export') break;
+        if (chosen.kind === 'export') {
+          pages = chosen.pages;
+          break;
+        }
+        range = chosen.range;
         index = chosen.to;
       }
 
@@ -2974,6 +3000,7 @@ export function exportExcelCommand(
         layout,
         engine,
         version: reviewed,
+        pages: pageSetOf(pages),
         // THE GRID'S EDITS ARE MUPDF'S TABLES', and only the automatic engine writes them.
         edits:
           engine === 'automatic'
@@ -3019,7 +3046,8 @@ export function exportExcelCommand(
  * Writes the document as PDF/A-2b (ADR-0075): main's save dialog and conversion, then —
  * when something was removed to conform — the removals notice, in the converter's words.
  *
- * **No dialog of its own before the save dialog**, `exportPowerPointCommand`'s reason.
+ * **No dialog of its own before the save dialog**: PDF/A is the whole document in an archival form, so there is
+ * nothing to choose before the file.
  */
 export function exportPdfaCommand(
   deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
@@ -3201,14 +3229,21 @@ export function printCommand(
     shortcut: 'Ctrl+P',
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
+      if (context.docId === undefined || context.pageCount === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'print'))) return;
 
       const quality = PRINT_QUALITY_SETTING.schema.parse(deps.settings.get(PRINT_QUALITY_SETTING.id));
-      const chosen = (await deps.ask(PRINT_DIALOG_ID, { dpi: PRINT_QUALITY_DPI[quality] })) as PrintAnswer | undefined;
+      const chosen = (await deps.ask(PRINT_DIALOG_ID, {
+        dpi: PRINT_QUALITY_DPI[quality],
+        pageCount: context.pageCount,
+      })) as PrintAnswer | undefined;
       if (chosen === undefined) return;
 
-      const answer = await deps.client['document.print']({ docId: context.docId, dpi: chosen.dpi });
+      const answer = await deps.client['document.print']({
+        docId: context.docId,
+        dpi: chosen.dpi,
+        pages: pageSetOf(chosen.pages),
+      });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -3269,12 +3304,19 @@ async function runTextExport(
   context: CommandContext,
   mode: 'plain' | 'layout',
 ): Promise<void> {
-  if (context.docId === undefined) return;
+  if (context.docId === undefined || context.pageCount === undefined) return;
   if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
+  const chosen = (await deps.ask(mode === 'plain' ? EXPORT_TEXT_DIALOG_ID : EXPORT_LAYOUT_TEXT_DIALOG_ID, {
+    pageCount: context.pageCount,
+    becomes: 'text',
+  })) as ExportPagesAnswer | undefined;
+  if (chosen === undefined) return;
+
+  // AFTER THE PAGES, so a dismissed pages dialog recognises nothing (ADR-0118).
   const walked = await recognisedBeforeExport(deps, context);
   if (walked === false) return;
-  const answer = await deps.client['document.exportText']({ docId: context.docId, mode });
+  const answer = await deps.client['document.exportText']({ docId: context.docId, mode, pages: pageSetOf(chosen.pages) });
   await reportRecognisedBeforeExport(deps, walked);
   if (!answer.ok) {
     reportProblem(deps, answer.error);

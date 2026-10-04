@@ -4,6 +4,8 @@ import sharp from 'sharp';
 import { deflateSync } from 'node:zlib';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import type { PageSet } from '@monstera/contract/host';
+
 import type { MupdfSession } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { composeWordDocument, drawPagePictures } from './wordPictures.js';
@@ -87,12 +89,16 @@ async function picturedPage(): Promise<Uint8Array> {
   return await document.save();
 }
 
-async function composed(session: MupdfSession, mode: 'text' | 'layout' | 'rich'): Promise<{
+async function composed(
+  session: MupdfSession,
+  mode: 'text' | 'layout' | 'rich',
+  pages: PageSet = [0],
+): Promise<{
   readonly files: Record<string, Uint8Array>;
   readonly xml: string;
   readonly pictures: number;
 }> {
-  const { chunks, pictures } = composeWordDocument(session, mode);
+  const { chunks, pictures } = composeWordDocument(session, mode, pages);
   const parts: Uint8Array[] = [];
   for await (const part of chunks) parts.push(part);
   const files = unzipSync(Buffer.concat(parts));
@@ -166,6 +172,26 @@ describe('composeWordDocument — pictures, on the native engine', () => {
     expect(xml).toContain(ABOVE);
     expect(pictures).toBe(0);
     expect(Object.keys(files).some((name) => name.startsWith('word/media/'))).toBe(false);
+  });
+
+  it('writes ONLY the chosen pages, in the set’s order, and refuses a page past the document (ADR-0161)', async () => {
+    const document = await PDFDocument.create();
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    for (const word of ['PAGEONE', 'PAGETWO', 'PAGETHREE']) {
+      document.addPage([612, 792]).drawText(word, { x: 72, y: 700, size: 14, font });
+    }
+    const three = await mupdfWriter.open(await document.save());
+
+    const { xml } = await composed(three, 'text', [2, 0]);
+    expect(xml).toContain('PAGETHREE');
+    expect(xml).toContain('PAGEONE');
+    expect(xml.indexOf('PAGETHREE')).toBeLessThan(xml.indexOf('PAGEONE'));
+    // THE PAGE NOT CHOSEN is not in the package.
+    expect(xml).not.toContain('PAGETWO');
+    // CONTROL: the same document with every page carries the one left out above.
+    expect((await composed(three, 'text', [[0, 2]])).xml).toContain('PAGETWO');
+
+    await expect(composed(three, 'text', [3])).rejects.toThrow();
   });
 
   it('a place the picture read cannot find is REFUSED, never drawn as something else', async () => {

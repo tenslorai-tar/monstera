@@ -273,6 +273,7 @@ export type HostPageImage = (
 export type HostWordExport = (
   session: MupdfSession,
   mode: WordMode,
+  pages: PageSet,
 ) => { readonly chunks: AsyncIterable<Uint8Array>; readonly pictures: () => number };
 
 /**
@@ -1083,13 +1084,13 @@ export function createEngineHandlers({
       }
     },
 
-    'engine/word': async ({ session, mode, into }) => {
+    'engine/word': async ({ session, mode, into, pages }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       try {
         // STREAMED INTO THE GRANTED DIRECTORY, a page at a time, and main moves the file: the package is never
         // whole in this process and never read by main.
-        const composed = word(held.session, mode);
+        const composed = word(held.session, mode, pages);
         const written = await files.writeOutputStream(held.outputDirectory, into, composed.chunks);
         return { ok: true, value: { bytes: written, pictures: composed.pictures() } };
       } catch (error) {

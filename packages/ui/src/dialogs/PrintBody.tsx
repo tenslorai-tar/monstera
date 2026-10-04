@@ -10,10 +10,13 @@ import {
   PRINT_DPI_300_NOTE,
   PRINT_DPI_600,
   PRINT_DPI_600_NOTE,
+  PRINT_PAGES_NOTE,
+  PAGE_RANGE_PRINT_EMPTY,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { DialogChoices, DialogFooter, type DialogChoice } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
+import { PageRangeChoice, usePageRange } from './PageRangeChoice.js';
 import type { PrintAnswer } from './print.js';
 
 type Dpi = PrintAnswer['dpi'];
@@ -35,17 +38,26 @@ const RESOLUTIONS = [
 type Quality = (typeof RESOLUTIONS)[number]['value'];
 
 /**
- * The print dialog's body: the resolution pages are drawn at.
+ * The print dialog's body: the pages, and the resolution they are drawn at.
+ *
+ * **The pages are where the operating system's dialog starts**, not a second choice beside it (ADR-0161): main fills
+ * that dialog's own *Pages* with these, and what the person leaves there is what prints.
  *
  * **It starts on the quality Settings › Rendering chose**, Standard (300) unless a person chose otherwise: sharp text
  * on an ordinary printer, and a quarter of 600's pixels a page, which is what a person waits for. The button names
  * the next step, the operating system's print dialog, as the exports' buttons name theirs.
  */
-export default function PrintBody({ dpi: starting, resolve }: { readonly dpi: Dpi } & DialogAnswering<PrintAnswer>): ReactElement {
+export default function PrintBody({
+  dpi: starting,
+  pageCount,
+  resolve,
+}: { readonly dpi: Dpi; readonly pageCount: number } & DialogAnswering<PrintAnswer>): ReactElement {
+  const range = usePageRange(pageCount);
   const [dpi, setDpi] = useState<Dpi>(starting);
 
   return (
     <div className="m-print">
+      <PageRangeChoice empty={PAGE_RANGE_PRINT_EMPTY} note={PRINT_PAGES_NOTE} range={range} />
       <DialogChoices<Quality>
         label={PRINT_DPI}
         options={RESOLUTIONS}
@@ -59,7 +71,9 @@ export default function PrintBody({ dpi: starting, resolve }: { readonly dpi: Dp
           label={PRINT_APPLY}
           variant="primary"
           onClick={() => {
-            resolve({ dpi });
+            const pages = range.proceed();
+            if (pages === undefined) return;
+            resolve({ dpi, pages: [...pages] });
           }}
         />
       </DialogFooter>

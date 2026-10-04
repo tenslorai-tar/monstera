@@ -11,13 +11,14 @@ Export to Word turns the document's text and pictures into a Word (.docx) file y
 ## Steps
 
 1. In the rail, choose **Home**, then **Export** in the **Export** group, and **Export to Word…**.
-2. In **What to keep**, choose one:
+2. In **Pages**, keep **Every page**, or choose **Select pages** and type them, for example 1-3, 5.
+3. In **What to keep**, choose one:
    - **Editable text**: text and its fonts, flowing like a normal document
    - **Page layout**: each line where it sits on the page
    - **Words only**: just the words, with no pictures and no layout
-3. Choose **Choose where to save…** and save the file. **Cancel** closes the window and saves nothing.
+4. Choose **Choose where to save…** and save the file. **Cancel** closes the window and saves nothing.
 
-![The Export to Word window with the three What to keep choices](screenshot:export-to-word-1)
+![The Export to Word window with Pages and the three What to keep choices](screenshot:export-to-word-1)
 
 ## Good to know
 

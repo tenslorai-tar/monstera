@@ -50,3 +50,17 @@ choice of its own, and the application's pages print exactly.
 - **A page range only in Settings.** A choice made per export, not a preference.
 - **Splitting the PDF to the chosen pages before layout text.** A second writer of a document image for a read, where
   `pdftotext` already takes a first and last page.
+
+## Correction, 2026-10-04, as built
+
+Two sentences above say something other than what was built, and both are corrected here rather than edited.
+
+- **Layout text is ONE `pdftotext` run, not one per run of pages.** It runs from the first chosen page to the last,
+  `-f` to `-l`, and keeps the chosen pages by counting the form feeds that end each page (`keptPages` in
+  `layoutText.ts`). One run starts one contained converter rather than one per run of pages, and the pages between
+  two runs are read and dropped, which costs the converter their text and nothing else. *Every page* passes no
+  `-f` or `-l` and is the converter's output unchanged.
+- **PowerPoint and both text exports share one dialog BODY, under three declarations.** *Text's one dialog serves both
+  of its commands* was the plan; each export has its own dialog title, which a person reads to know which export
+  they started, so `exportPages.ts` declares `dialog.export-powerpoint`, `dialog.export-text` and
+  `dialog.export-layout-text` over one `ExportPagesBody`, whose only difference is what a page becomes.

@@ -1073,7 +1073,12 @@ export type DocumentStage = (docId: DocId, sessions: DocumentSessions) => Promis
  * read into `main` ([ADR-0072](../../../docs/DECISIONS/0072-office-open-xml-exports-are-written-by-this-build-over-fflate.md)'s
  * amendment of 2026-10-01). {@link DocumentStage}'s shape with a mode.
  */
-export type DocumentWordExport = (docId: DocId, sessions: DocumentSessions, mode: WordMode) => Promise<StagedImage>;
+export type DocumentWordExport = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  mode: WordMode,
+  pages: PageSet,
+) => Promise<StagedImage>;
 
 /**
  * The query itself could not be compiled.
@@ -1420,6 +1425,8 @@ export type PrintOutcome =
 export interface ExcelReview {
   readonly version: DocVersion;
   readonly edits: readonly (TableEdit & { readonly page: number })[];
+  /** The pages whose tables are written (ADR-0161); the review itself may have looked at any. */
+  readonly pages: PageSet;
 }
 
 /**
@@ -4474,7 +4481,7 @@ export class DocumentCommands {
    * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
    *   reason.
    */
-  async exportText(docId: DocId, mode: 'plain' | 'layout'): Promise<ExportTextOutcome | undefined> {
+  async exportText(docId: DocId, mode: 'plain' | 'layout', pages: PageSet): Promise<ExportTextOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export text');
 
@@ -4493,16 +4500,20 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
+      // THE CHOSEN PAGES (ADR-0161), listed against this version before any file is written.
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      const chosen = pagesOf(pages, pageCount);
+
       // `open` is called only once the destination is known to be free, so a
       // contested file reads no page and runs no converter.
       const open =
         mode === 'plain' || layoutText === null
-          ? (): Promise<AsyncIterable<Uint8Array>> => Promise.resolve(this.#textChunks(docId, sessions))
+          ? (): Promise<AsyncIterable<Uint8Array>> => Promise.resolve(this.#textChunks(docId, sessions, chosen))
           : // THE SAVE'S OWN FLUSH, `saveCopy`'s reason: the converter reads what
             // this document currently is, and a copy, a save and a layout export
             // cannot disagree about that (B3a).
             async (): Promise<AsyncIterable<Uint8Array>> =>
-              await layoutText(await this.#save.flush(docId, sessions));
+              await layoutText(await this.#save.flush(docId, sessions), chosen);
 
       try {
         return await writeStreamedDocument(this.#save.deps, this.#copy.checkTarget, open, destination);
@@ -4683,7 +4694,7 @@ export class DocumentCommands {
    *
    * It does NOT touch the document: no command, no log entry, no version bump.
    */
-  async exportWord(docId: DocId, mode: WordMode): Promise<CopyOutcome | undefined> {
+  async exportWord(docId: DocId, mode: WordMode, pages: PageSet): Promise<CopyOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to Word');
 
@@ -4697,11 +4708,16 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
+      // LISTED AGAINST THIS VERSION, `exportPageImages`' rule: a page past the document is refused before any file
+      // is written. The host walks the same set (ADR-0161).
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      pagesOf(pages, pageCount);
+
       return await writeDocumentCopy(
         this.#save.deps,
         this.#copy.checkTarget,
         // Called only once the destination is free, so a contested file composes nothing.
-        () => this.#word(docId, sessions, mode),
+        () => this.#word(docId, sessions, mode, pages),
         destination,
       );
     });
@@ -4717,7 +4733,7 @@ export class DocumentCommands {
    * image export already makes, one page at a time as the zip pulls it, so `main`
    * holds one page's picture. It does NOT touch the document.
    */
-  async exportPowerPoint(docId: DocId): Promise<CopyOutcome | undefined> {
+  async exportPowerPoint(docId: DocId, pages: PageSet): Promise<CopyOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to PowerPoint');
 
@@ -4735,10 +4751,15 @@ export class DocumentCommands {
         this.#save.deps,
         this.#copy.checkTarget,
         async () => {
+          // THE CHOSEN PAGES (ADR-0161), listed against this version; the deck takes the first chosen page's size.
           const { pageCount } = await this.#geometry(docId, sessions, []);
+          const chosen = pagesOf(pages, pageCount);
+          const [lead] = chosen;
           const first =
-            pageCount === 0 ? { width: 612, height: 792 } : ((await this.#geometry(docId, sessions, [0])).sizes[0] ?? { width: 612, height: 792 });
-          return ooxmlPackage(presentationParts(this.#slidePages(docId, sessions, pageCount), first, pageCount));
+            lead === undefined
+              ? { width: 612, height: 792 }
+              : ((await this.#geometry(docId, sessions, [lead])).sizes[0] ?? { width: 612, height: 792 });
+          return ooxmlPackage(presentationParts(this.#slidePages(docId, sessions, chosen), first, chosen.length));
         },
         destination,
       );
@@ -4779,7 +4800,9 @@ export class DocumentCommands {
   ): Promise<ExcelOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to Excel');
-    if (engine !== 'automatic') return this.#exportExcelThroughService(docId, suggest, layout, review.version, engine);
+    if (engine !== 'automatic') {
+      return this.#exportExcelThroughService(docId, suggest, layout, review.version, engine, review.pages);
+    }
 
     const byPage = new Map<number, TableEdit[]>();
     for (const { page, ...edit } of review.edits) byPage.set(page, [...(byPage.get(page) ?? []), edit]);
@@ -4798,7 +4821,8 @@ export class DocumentCommands {
         if (!editsFit(tables, edits, MAX_TABLE_CELL_TEXT)) return { kind: 'changed' as const };
       }
       let picturePages = 0;
-      for (let page = 0; page < pageCount; page += 1) {
+      // THE CHOSEN PAGES only (ADR-0161): a table on a page not chosen is not one this export writes.
+      for (const page of pagesOf(review.pages, pageCount)) {
         const tables = await this.#pageTables(docId, sessions, page);
         if (tables.tables.length > 0) return { kind: 'found' as const };
         // A PICTURE AND NO TEXT, not merely no text: a blank page is not one that
@@ -4823,7 +4847,7 @@ export class DocumentCommands {
       return await writeStreamedDocument(
         this.#save.deps,
         this.#copy.checkTarget,
-        () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#tablePages(docId, sessions, byPage), layout))),
+        () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#tablePages(docId, sessions, byPage, review.pages), layout))),
         destination,
       );
     });
@@ -4854,6 +4878,7 @@ export class DocumentCommands {
     layout: SheetLayout,
     version: DocVersion,
     engine: NetworkTableEngine,
+    pages: PageSet,
   ): Promise<ExcelOutcome | undefined> {
     const current = await this.#documents.run(docId, (context) => Promise.resolve(context.version));
     if (current.value !== version) return { kind: 'changed' };
@@ -4872,7 +4897,7 @@ export class DocumentCommands {
         return await writeStreamedDocument(
           this.#save.deps,
           this.#copy.checkTarget,
-          () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#servicePages(docId, sessions, engine), layout))),
+          () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#servicePages(docId, sessions, engine, pages), layout))),
           destination,
         );
       } catch (thrown) {
@@ -4889,9 +4914,10 @@ export class DocumentCommands {
     docId: DocId,
     sessions: DocumentSessions,
     engine: NetworkTableEngine,
+    pages: PageSet,
   ): AsyncIterable<SpreadsheetPage> {
     const { pageCount } = await this.#geometry(docId, sessions, []);
-    for (let page = 0; page < pageCount; page += 1) {
+    for (const page of pagesOf(pages, pageCount)) {
       let tables: readonly RecognisedTable[];
       try {
         tables = await this.#networkTables(docId, sessions, page, engine);
@@ -4907,9 +4933,10 @@ export class DocumentCommands {
     docId: DocId,
     sessions: DocumentSessions,
     edits: ReadonlyMap<number, readonly TableEdit[]>,
+    pages: PageSet,
   ): AsyncIterable<SpreadsheetPage> {
     const { pageCount } = await this.#geometry(docId, sessions, []);
-    for (let page = 0; page < pageCount; page += 1) {
+    for (const page of pagesOf(pages, pageCount)) {
       yield { page, tables: (await this.#pageTables(docId, sessions, page)).tables, edits: edits.get(page) ?? [] };
     }
   }
@@ -4999,20 +5026,22 @@ export class DocumentCommands {
    *
    * It does NOT touch the document.
    */
-  async print(docId: DocId, dpi: PrintDpi): Promise<PrintOutcome | undefined> {
+  async print(docId: DocId, dpi: PrintDpi, pages: PageSet): Promise<PrintOutcome | undefined> {
     const name = this.#documents.nameOf(docId);
     if (name === undefined) throw new DocumentNotOpenError(docId, 'print');
     if (this.#print === null) return { kind: 'unavailable' };
 
-    const { value: pageCount } = await this.#documents.run(docId, async () => {
+    const { value: listed } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return (await this.#geometry(docId, sessions, [])).pageCount;
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      // THE ROW'S PAGES, listed against this version: where the system dialog's own *Pages* starts (ADR-0161).
+      return { pageCount, start: pagesOf(pages, pageCount) };
     });
 
-    const choice = this.#print.choose(pageCount);
+    const choice = this.#print.choose(listed.pageCount, listed.start);
     if (choice === null) return undefined;
     try {
       const { value } = await this.#documents.run(docId, async (): Promise<PrintOutcome> => {
@@ -5055,9 +5084,9 @@ export class DocumentCommands {
     }
   }
 
-  /** Each page as a slide picture, rendered as the zip pulls it. */
-  async *#slidePages(docId: DocId, sessions: DocumentSessions, pageCount: number): AsyncIterable<PresentationPage> {
-    for (let page = 0; page < pageCount; page += 1) {
+  /** Each chosen page as a slide picture, rendered as the zip pulls it. */
+  async *#slidePages(docId: DocId, sessions: DocumentSessions, chosen: readonly number[]): AsyncIterable<PresentationPage> {
+    for (const page of chosen) {
       const [size] = (await this.#geometry(docId, sessions, [page])).sizes;
       if (size === undefined) throw new Error(`the geometry read named no size for page ${String(page)}`);
       const png = await this.#pageImage(docId, sessions, {
@@ -5078,16 +5107,15 @@ export class DocumentCommands {
    * needs none, and one is a stray character at the head of the file for every
    * tool that reads it as text.
    *
-   * The page count comes from the geometry read with NO pages named, which
-   * answers the count and loads nothing — so an empty document writes an empty
-   * file rather than asking for a page 0 it does not have.
+   * The pages are the caller's, listed against the document's count by `pagesOf`, so a page past the document is
+   * refused before any is read.
    */
-  async *#textChunks(docId: DocId, sessions: DocumentSessions): AsyncIterable<Uint8Array> {
-    const { pageCount } = await this.#geometry(docId, sessions, []);
+  async *#textChunks(docId: DocId, sessions: DocumentSessions, chosen: readonly number[]): AsyncIterable<Uint8Array> {
     const encoder = new TextEncoder();
-    for (let page = 0; page < pageCount; page += 1) {
+    // THE CHOSEN PAGES (ADR-0161), a form feed between each and the next, so the file's pages are the ones chosen.
+    for (const [at, page] of chosen.entries()) {
       const text = plainTextOf(await this.#pageText(docId, sessions, page));
-      yield encoder.encode(page === 0 ? text : `\f${text}`);
+      yield encoder.encode(at === 0 ? text : `\f${text}`);
     }
   }
 

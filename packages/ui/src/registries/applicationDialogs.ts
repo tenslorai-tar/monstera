@@ -20,6 +20,7 @@ import { DUPLICATE_PAGES_DIALOG } from '../dialogs/duplicatePages.js';
 import { ENHANCE_OUTCOME_DIALOG } from '../dialogs/enhanceOutcome.js';
 import { EXPORT_EXCEL_DIALOG } from '../dialogs/exportExcel.js';
 import { EXPORT_PAGE_IMAGES_DIALOG } from '../dialogs/exportPageImages.js';
+import { EXPORT_LAYOUT_TEXT_DIALOG, EXPORT_POWERPOINT_DIALOG, EXPORT_TEXT_DIALOG } from '../dialogs/exportPages.js';
 import { EXPORT_WORD_DIALOG } from '../dialogs/exportWord.js';
 import { EXTERNAL_EDIT_PROBLEM_DIALOG } from '../dialogs/externalEditProblem.js';
 import { EXTRACT_PAGES_DIALOG } from '../dialogs/extractPages.js';
@@ -161,6 +162,9 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   SPLIT_DOCUMENT_DIALOG,
   EXPORT_PAGE_IMAGES_DIALOG,
   EXPORT_WORD_DIALOG,
+  EXPORT_POWERPOINT_DIALOG,
+  EXPORT_TEXT_DIALOG,
+  EXPORT_LAYOUT_TEXT_DIALOG,
   EXPORT_EXCEL_DIALOG,
   SERVICE_REFUSED_DIALOG,
   PRINT_DIALOG,

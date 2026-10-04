@@ -5,7 +5,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, EXPORT_PAGE_IMAGES_EMPTY } from '../messages/en.js';
+import { EN, PAGE_RANGE_EXPORT_EMPTY } from '../messages/en.js';
 import { PageRangeChoice, usePageRange } from './PageRangeChoice.js';
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
@@ -21,7 +21,7 @@ function Host({ pageCount, answers }: { readonly pageCount: number; readonly ans
   const range = usePageRange(pageCount);
   return (
     <>
-      <PageRangeChoice empty={EXPORT_PAGE_IMAGES_EMPTY} range={range} />
+      <PageRangeChoice empty={PAGE_RANGE_EXPORT_EMPTY} range={range} />
       <button
         onClick={() => {
           answers.push(range.proceed());

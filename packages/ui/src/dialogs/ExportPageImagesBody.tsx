@@ -12,7 +12,6 @@ import { useState } from 'react';
 import {
   EXPORT_PAGE_IMAGES_DPI,
   EXPORT_PAGE_IMAGES_DPI_NOTE,
-  EXPORT_PAGE_IMAGES_EMPTY,
   EXPORT_PAGE_IMAGES_FILES,
   EXPORT_PAGE_IMAGES_FORMAT,
   EXPORT_PAGE_IMAGES_FORMAT_NOTE,
@@ -24,6 +23,7 @@ import {
   EXPORT_PAGE_IMAGES_QUALITY_NOTE,
   EXPORT_PAGE_IMAGES_UNCHANGED,
   EXPORT_PAGE_IMAGES_WEBP,
+  PAGE_RANGE_EXPORT_EMPTY,
   SPLIT_DOCUMENT_APPLY,
 } from '../messages/en.js';
 import type { ExportPageImagesAnswer } from './exportPageImagesResult.js';
@@ -93,7 +93,7 @@ export default function ExportPageImagesBody({
 
   return (
     <div className="m-export-page-images">
-      <PageRangeChoice empty={EXPORT_PAGE_IMAGES_EMPTY} note={EXPORT_PAGE_IMAGES_PAGES_NOTE} range={range} />
+      <PageRangeChoice empty={PAGE_RANGE_EXPORT_EMPTY} note={EXPORT_PAGE_IMAGES_PAGES_NOTE} range={range} />
       <DialogRow label={EXPORT_PAGE_IMAGES_FORMAT} note={EXPORT_PAGE_IMAGES_FORMAT_NOTE}>
         <SegmentedControl<PageImageFormat>
           label={EXPORT_PAGE_IMAGES_FORMAT}

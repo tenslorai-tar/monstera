@@ -237,6 +237,7 @@ const EXCEL = {
   engines: ['automatic'],
   engine: 'automatic',
   edits: [],
+  range: { every: true, text: '' },
 };
 
 const RULES = [
@@ -828,9 +829,31 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       steps: [press('Select pages'), type('Page numbers', '20'), press('Choose a folder…')],
     },
   ],
-  'dialog.export-word': [{ state: 'opened', props: {} }],
+  'dialog.export-word': [
+    { state: 'opened', props: { pageCount: 12 } },
+    { state: 'select', props: { pageCount: 12 }, steps: [press('Select pages'), type('Page numbers', '1-3, 7')] },
+    {
+      state: 'refused',
+      props: { pageCount: 12 },
+      steps: [press('Select pages'), type('Page numbers', '20'), press('Choose where to save…')],
+    },
+  ],
+  'dialog.export-powerpoint': [
+    { state: 'opened', props: { pageCount: 12, becomes: 'slides' } },
+    { state: 'select', props: { pageCount: 12, becomes: 'slides' }, steps: [press('Select pages'), type('Page numbers', '1-3, 7')] },
+  ],
+  'dialog.export-text': [
+    { state: 'opened', props: { pageCount: 12, becomes: 'text' } },
+    {
+      state: 'refused',
+      props: { pageCount: 12, becomes: 'text' },
+      steps: [press('Select pages'), press('Choose where to save…')],
+    },
+  ],
+  'dialog.export-layout-text': [{ state: 'opened', props: { pageCount: 12, becomes: 'text' } }],
   'dialog.export-excel': [
     { state: 'opened', props: EXCEL },
+    { state: 'select', props: { ...EXCEL, range: { every: false, text: '1, 3-4' } } },
     // With a service key stored, the dialog offers the engines; a network engine replaces the preview.
     { state: 'engines', props: { ...EXCEL, engines: ['automatic', 'azure', 'claude'] } },
     { state: 'service', props: { ...EXCEL, engines: ['automatic', 'azure', 'claude'], engine: 'claude' } },
@@ -841,7 +864,10 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'opened', props: { page: 3, reason: 'refused', detail: 'The service did not read this page.' } },
     { state: 'long', props: { page: 3, reason: 'rejected', detail: prose(500).slice(0, 600) } },
   ],
-  'dialog.print': [{ state: 'opened', props: { dpi: 300 } }],
+  'dialog.print': [
+    { state: 'opened', props: { dpi: 300, pageCount: 12 } },
+    { state: 'select', props: { dpi: 300, pageCount: 12 }, steps: [press('Select pages'), type('Page numbers', '2-5')] },
+  ],
   'dialog.pdfa-removals': [
     {
       state: 'opened',

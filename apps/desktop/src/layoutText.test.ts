@@ -16,7 +16,7 @@ import type { JobHandle, ProcessHandle, ThreadHandle } from './engineHostFactory
 import type { ConverterSurface, ExitReading } from './externalConverter.js';
 import type { ContainerSid, UserSid } from './hostDacl.js';
 import type { ConverterPlatform } from './converterSession.js';
-import { LayoutTextFailedError, createLayoutTextSource } from './layoutText.js';
+import { LayoutTextFailedError, createLayoutTextSource, keptPages } from './layoutText.js';
 import type { DirectoryCreationSurface } from './sessionDirectories.js';
 import type { ShellFailure } from './shellFailure.js';
 
@@ -103,7 +103,8 @@ function platform(convert: (program: ContainedProgram) => ExitReading): {
           diagnostics: () => 'Syntax Error: the converter said so',
           discardDiagnostics: () => undefined,
           waitForExit: () => {
-            const input = config.program.commandArguments[3];
+            // BY NAME, not by position: page arguments come first when pages are chosen.
+            const input = config.program.commandArguments.find((argument) => argument.endsWith('in.pdf'));
             if (input !== undefined) inputsSeen.push(readFileSync(input));
             return Promise.resolve(convert(config.program));
           },
@@ -121,6 +122,33 @@ async function collect(chunks: AsyncIterable<Uint8Array>): Promise<string> {
 
 const PDF = Uint8Array.of(0x25, 0x50, 0x44, 0x46);
 
+describe('the chosen pages (ADR-0161)', () => {
+  it('runs ONE conversion from the first chosen page to the last, and keeps only the chosen ones', async () => {
+    const built = platform((program) => {
+      const output = program.commandArguments.find((argument) => argument.endsWith('out.txt'));
+      // PAGES 2 TO 4 as pdftotext writes them, each ended by a form feed.
+      if (output !== undefined) writeFileSync(output, 'two\fthree\ffour\f');
+      return { kind: 'exited', code: 0 };
+    });
+
+    const text = await collect(await createLayoutTextSource(built.platform, () => undefined)(PDF, [1, 3]));
+
+    expect(built.programs).toHaveLength(1);
+    expect(built.programs[0]?.commandArguments.slice(0, 4)).toEqual(['-f', '2', '-l', '4']);
+    expect(text).toBe('two\ffour\f');
+  });
+
+  it('counts pages across chunk boundaries, inside a page and right at a form feed', async () => {
+    const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
+    async function* chunks(): AsyncIterable<Uint8Array> {
+      for (const part of ['on', 'e\ftw', 'o', '\f', 'thr€e\f']) yield await Promise.resolve(encode(part));
+    }
+    expect(await collect(keptPages(chunks(), 0, new Set([0, 2])))).toBe('one\fthr€e\f');
+    // CONTROL: every page kept is the input exactly.
+    expect(await collect(keptPages(chunks(), 0, new Set([0, 1, 2])))).toBe('one\ftwo\fthr€e\f');
+  });
+});
+
 describe('createLayoutTextSource', () => {
   it('runs pdftotext -layout on FIXED NAMES in the granted pair, streams its output, and leaves no area', async () => {
     const built = platform((program) => {
@@ -129,7 +157,7 @@ describe('createLayoutTextSource', () => {
       return { kind: 'exited', code: 0 };
     });
 
-    const text = await collect(await createLayoutTextSource(built.platform, () => undefined)(PDF));
+    const text = await collect(await createLayoutTextSource(built.platform, () => undefined)(PDF, 'all'));
 
     expect(text).toBe('left column      right column\n\f');
     const [program] = built.programs;
@@ -150,7 +178,7 @@ describe('createLayoutTextSource', () => {
     const reported: ShellFailure[] = [];
 
     await expect(
-      createLayoutTextSource(built.platform, (failure) => reported.push(failure))(PDF),
+      createLayoutTextSource(built.platform, (failure) => reported.push(failure))(PDF, 'all'),
     ).rejects.toBeInstanceOf(LayoutTextFailedError);
 
     expect(reported).toHaveLength(1);
@@ -166,7 +194,7 @@ describe('createLayoutTextSource', () => {
       return { kind: 'exited', code: 0 };
     });
 
-    const chunks = await createLayoutTextSource(built.platform, () => undefined)(PDF);
+    const chunks = await createLayoutTextSource(built.platform, () => undefined)(PDF, 'all');
     for await (const chunk of chunks) {
       expect(chunk.length).toBeGreaterThan(0);
       break;

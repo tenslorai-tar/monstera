@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { EXPORT_EXCEL_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
+import { PAGE_RANGE_START } from './sourceDocuments.js';
 
 export const EXPORT_EXCEL_DIALOG_ID = 'dialog.export-excel';
 
@@ -44,6 +45,8 @@ export const EXPORT_EXCEL_RESULT = z.discriminatedUnion('kind', [
       layout: LAYOUT,
       engine: ENGINE,
       edits: z.array(EDIT).max(MAX_TABLE_CELLS).readonly(),
+      /** The page row AS LEFT, typed text and all: moving to a page is not a reason to parse, or to refuse, it. */
+      range: PAGE_RANGE_START,
     })
     .strict(),
   z
@@ -52,6 +55,8 @@ export const EXPORT_EXCEL_RESULT = z.discriminatedUnion('kind', [
       layout: LAYOUT,
       engine: ENGINE,
       edits: z.array(EDIT).max(MAX_TABLE_CELLS).readonly(),
+      /** The pages whose tables are written, parsed (ADR-0161). */
+      pages: z.array(z.number().int().nonnegative()).min(1),
     })
     .strict(),
 ]);
@@ -92,6 +97,8 @@ export const EXPORT_EXCEL_PROPS = z
     engine: ENGINE,
     /** This page's edits so far, so moving back to a page shows what was typed on it. */
     edits: z.array(EDIT).max(MAX_TABLE_CELLS).readonly(),
+    /** The page row as it was left on the page before, so moving between pages keeps what was chosen. */
+    range: PAGE_RANGE_START,
   })
   .strict();
 

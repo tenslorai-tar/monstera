@@ -48,7 +48,10 @@ const PROPS: ExportExcelProps = {
   engines: ['automatic'],
   engine: 'automatic',
   edits: [],
+  range: { every: true, text: '' },
 };
+
+const EVERY_PAGE = [0, 1, 2];
 
 function shown(props: Partial<ExportExcelProps> = {}): ReturnType<typeof vi.fn> {
   const resolve = vi.fn();
@@ -73,6 +76,7 @@ describe('ExportExcelBody', () => {
       layout: 'sheet-per-page',
       engine: 'automatic',
       edits: [{ table: 0, row: 1, column: 0, text: 'Hex bolt' }],
+      pages: EVERY_PAGE,
     });
   });
 
@@ -81,7 +85,13 @@ describe('ExportExcelBody', () => {
     fireEvent.change(cell(2, 1), { target: { value: 'Hex bolt' } });
     fireEvent.change(cell(2, 1), { target: { value: 'Bolt' } });
     fireEvent.click(screen.getByRole('button', { name: 'Choose where to save…' }));
-    expect(resolve).toHaveBeenCalledWith({ kind: 'export', layout: 'sheet-per-page', engine: 'automatic', edits: [] });
+    expect(resolve).toHaveBeenCalledWith({
+      kind: 'export',
+      layout: 'sheet-per-page',
+      engine: 'automatic',
+      edits: [],
+      pages: EVERY_PAGE,
+    });
   });
 
   it('makes a clipped cell read-only, since an edit would replace text nobody saw', () => {
@@ -101,7 +111,41 @@ describe('ExportExcelBody', () => {
       layout: 'one-sheet',
       engine: 'automatic',
       edits: [{ table: 0, row: 0, column: 1, text: 'Count' }],
+      range: { every: true, text: '' },
     });
+  });
+
+  it('ITS PAGES ARE THE EXPORTS’ SHARED ROW (ADR-0161): a move carries the row AS TYPED, and the export sends the pages', () => {
+    const resolve = shown();
+    fireEvent.click(screen.getByRole('button', { name: 'Select pages' }));
+    // HALF TYPED, and a move to another page is no reason to refuse or to parse it.
+    fireEvent.change(screen.getByRole('textbox', { name: 'Page numbers' }), { target: { value: '1-' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(resolve).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'page', range: { every: false, text: '1-' } }));
+    expect(screen.queryByRole('alert')).toBeNull();
+    cleanup();
+
+    // OPENED AGAIN where the person left it, as the command does on the next page.
+    const again = shown({ range: { every: false, text: '1-' } });
+    const field = screen.getByRole('textbox', { name: 'Page numbers' });
+    expect((field as HTMLInputElement).value).toBe('1-');
+    fireEvent.click(screen.getByRole('button', { name: 'Choose where to save…' }));
+    expect(again).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toBeTruthy();
+
+    fireEvent.change(field, { target: { value: '1, 3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Choose where to save…' }));
+    expect(again).toHaveBeenCalledWith(expect.objectContaining({ kind: 'export', pages: [0, 2] }));
+  });
+
+  it('a SERVICE says how many of the chosen pages leave the computer, and nothing while the row names none', () => {
+    shown({ engines: ['automatic', 'azure'], engine: 'azure', range: { every: false, text: '2-3' } });
+    expect(screen.getByText(/^2 pages of this document will be sent to Azure Document Intelligence/u)).toBeTruthy();
+    // CONTROL: "All" is for every page only.
+    expect(screen.queryByText(/All 3 pages/u)).toBeNull();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Page numbers' }), { target: { value: '' } });
+    expect(screen.queryByText(/will be sent to/u)).toBeNull();
   });
 
   it('CONTROL: with one engine there is no engine choice at all — and it SAYS how to get one (§10.5)', () => {
@@ -131,7 +175,13 @@ describe('ExportExcelBody', () => {
       'Choose where to save…',
     ]);
     fireEvent.click(screen.getByRole('button', { name: 'Choose where to save…' }));
-    expect(resolve).toHaveBeenCalledWith({ kind: 'export', layout: 'sheet-per-page', engine: 'azure', edits: [] });
+    expect(resolve).toHaveBeenCalledWith({
+      kind: 'export',
+      layout: 'sheet-per-page',
+      engine: 'azure',
+      edits: [],
+      pages: EVERY_PAGE,
+    });
   });
 
   it('says a ONE-page document’s page goes, not “all 1 page”', () => {
@@ -152,6 +202,7 @@ describe('ExportExcelBody', () => {
       layout: 'sheet-per-page',
       engine: 'automatic',
       edits: [{ table: 0, row: 1, column: 0, text: 'Hex bolt' }],
+      pages: EVERY_PAGE,
     });
   });
 

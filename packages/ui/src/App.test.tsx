@@ -1288,6 +1288,13 @@ describe('App', () => {
     });
 
     describe('RECOGNISE SCANNED PAGES WHEN EXPORTING, through the composition that wires it (ADR-0118)', () => {
+      /** Export text through its pages dialog (ADR-0161), as it opens: every page. */
+      async function exportTextOfEveryPage(): Promise<void> {
+        await pressCommand('Export text…');
+        const dialog = await screen.findByRole('dialog', { name: 'Export text' });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Choose where to save…' }));
+      }
+
       /** Two picture pages, the models `eng` and `deu`, and an export that lands. */
       const SCANNED = {
         ...OPEN_DOCUMENT_ANSWERS,
@@ -1310,7 +1317,7 @@ describe('App', () => {
         );
         await withDocumentOpen();
 
-        await pressCommand('Export text…');
+        await exportTextOfEveryPage();
         await vi.waitFor(() => {
           expect(sent.some((call) => call.id === 'document.exportText')).toBe(true);
         });
@@ -1330,7 +1337,7 @@ describe('App', () => {
         render(<App client={client} settings={freshSettings({ 'editing.ocr-language': ['deu'] })} />);
         await withDocumentOpen();
 
-        await pressCommand('Export text…');
+        await exportTextOfEveryPage();
         await vi.waitFor(() => {
           expect(sent.some((call) => call.id === 'document.exportText')).toBe(true);
         });
@@ -1345,7 +1352,7 @@ describe('App', () => {
         render(<App client={client} settings={freshSettings()} />);
         await withDocumentOpen();
 
-        await pressCommand('Export text…');
+        await exportTextOfEveryPage();
         const show = await screen.findByRole('button', { name: 'Show in folder' });
         expect(screen.getByText('Text file saved')).toBeTruthy();
         fireEvent.click(show);

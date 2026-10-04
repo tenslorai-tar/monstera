@@ -7,6 +7,7 @@ import {
   type PrintJob,
   PrintFailedError,
   chosenPages,
+  printStart,
   fittedOnPaper,
 } from './printing.js';
 
@@ -35,6 +36,8 @@ import {
 /** `PRINTDLGEX.Flags`: answer a device context; the driver does copies and collation; no selection or current page. */
 const PD_PAGENUMS = 0x2;
 const PD_NOSELECTION = 0x4;
+/** The dialog offers no page choice of its own: a choice past its ranges prints as the application made it. */
+const PD_NOPAGENUMS = 0x8;
 const PD_RETURNDC = 0x100;
 const PD_RETURNDEFAULT = 0x400;
 const PD_USEDEVMODECOPIESANDCOLLATE = 0x40000;
@@ -280,10 +283,21 @@ export function createWin32PrintSurface(
   returnDefault = false,
 ): PrintDestination {
   return {
-    choose: (pageCount: number): PrintChoice | null => {
+    choose: (pageCount: number, start: readonly number[]): PrintChoice | null => {
       const bindings = win32PrintBindings();
       // AN OPAQUE POINTER, typed as one: koffi declares `alloc` as answering `any`.
       const ranges: unknown = koffi.alloc('MONSTERA_PRINTPAGERANGE', MAX_PAGE_RANGES);
+      // WHERE THE DIALOG'S OWN *PAGES* STARTS (ADR-0161 Decision 3): the application's row, which the person may change
+      // there; what the dialog answers is what prints.
+      const begin = printStart(pageCount, start, MAX_PAGE_RANGES);
+      if (begin.kind === 'ranges') {
+        koffi.encode(
+          ranges,
+          'MONSTERA_PRINTPAGERANGE',
+          begin.ranges.map((range) => ({ nFromPage: range.from, nToPage: range.to })),
+          begin.ranges.length,
+        );
+      }
       const dialog: PrintDialog = {
         lStructSize: koffi.sizeof('MONSTERA_PRINTDLGEXW'),
         hwndOwner: owner(),
@@ -295,10 +309,12 @@ export function createWin32PrintSurface(
           PD_USEDEVMODECOPIESANDCOLLATE |
           PD_NOSELECTION |
           PD_NOCURRENTPAGE |
+          (begin.kind === 'ranges' ? PD_PAGENUMS : 0) |
+          (begin.kind === 'fixed' ? PD_NOPAGENUMS : 0) |
           (returnDefault ? PD_RETURNDEFAULT : 0),
         Flags2: 0,
         ExclusionFlags: 0,
-        nPageRanges: 0,
+        nPageRanges: begin.kind === 'ranges' ? begin.ranges.length : 0,
         nMaxPageRanges: MAX_PAGE_RANGES,
         lpPageRanges: ranges,
         nMinPage: 1,
@@ -335,7 +351,8 @@ export function createWin32PrintSurface(
             : null;
         const dc = dialog.hDC;
         return {
-          pages: chosenPages(pageCount, typed),
+          // THE DIALOG'S ANSWER, or the application's own choice where the dialog was given none to show.
+          pages: begin.kind === 'fixed' ? begin.pages : chosenPages(pageCount, typed),
           start: (name) => printJobOn(bindings, dc, name, decode),
           release,
         };

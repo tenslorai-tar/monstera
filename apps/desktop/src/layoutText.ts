@@ -16,7 +16,33 @@ import type { ShellFailureSink } from './shellFailure.js';
  * `writeStreamedDocument` pulls as it writes — so `main` holds one read buffer's worth
  * of text at a time, as the plain export holds one page's.
  */
-export type LayoutTextSource = (pdf: Uint8Array) => Promise<AsyncIterable<Uint8Array>>;
+export type LayoutTextSource = (pdf: Uint8Array, pages: readonly number[] | 'all') => Promise<AsyncIterable<Uint8Array>>;
+
+/** The form feed `pdftotext` writes at the end of every page, and the only boundary its output carries. */
+const PAGE_END = 0x0c;
+
+/**
+ * The chosen pages of `pdftotext`'s output, each still ended by its form feed (ADR-0161).
+ *
+ * One run reads from the first chosen page to the last, so this keeps the pages between that were not chosen out of
+ * the file. A page is counted at each form feed, which UTF-8 never carries inside a character, so a chunk boundary
+ * inside a page or a character cannot move the count.
+ *
+ * @param first the zero-based page the run began at
+ */
+export async function* keptPages(chunks: AsyncIterable<Uint8Array>, first: number, keep: ReadonlySet<number>): AsyncIterable<Uint8Array> {
+  let page = first;
+  for await (const chunk of chunks) {
+    let from = 0;
+    for (let at = 0; at < chunk.length; at += 1) {
+      if (chunk[at] !== PAGE_END) continue;
+      if (keep.has(page)) yield chunk.subarray(from, at + 1);
+      page += 1;
+      from = at + 1;
+    }
+    if (from < chunk.length && keep.has(page)) yield chunk.subarray(from);
+  }
+}
 
 /** A conversion that produced no text, with why — thrown, so the export reports it. */
 export class LayoutTextFailedError extends Error {
@@ -55,18 +81,29 @@ export function createLayoutTextSource(platform: ConverterPlatform, report: Shel
     report({ event: 'converter-failed', detail: error.message });
     return error;
   };
-  return async (pdf) =>
-    (
-      await convertDocument(
-        platform,
-        pdf,
-        {
-          kind: 'arguments',
-          input: 'in.pdf',
-          output: 'out.txt',
-          commandArguments: (input, output) => ['-layout', '-enc', 'UTF-8', input, output],
-        },
-        failed,
-      )
-    ).output;
+  return async (pdf, pages) => {
+    // ONE RUN FROM THE FIRST CHOSEN PAGE TO THE LAST (ADR-0161, as corrected): a process per run of pages would start
+    // thousands for a scattered choice. `pdftotext` counts pages from 1.
+    // A LOOP, never a spread into Math.min: a document of a million pages is a million arguments, past the stack.
+    const span =
+      pages === 'all' || pages.length === 0
+        ? null
+        : pages.reduce((range, page) => ({ first: Math.min(range.first, page), last: Math.max(range.last, page) }), {
+            first: Number.POSITIVE_INFINITY,
+            last: Number.NEGATIVE_INFINITY,
+          });
+    const range = span === null ? [] : ['-f', String(span.first + 1), '-l', String(span.last + 1)];
+    const { output } = await convertDocument(
+      platform,
+      pdf,
+      {
+        kind: 'arguments',
+        input: 'in.pdf',
+        output: 'out.txt',
+        commandArguments: (input, output) => [...range, '-layout', '-enc', 'UTF-8', input, output],
+      },
+      failed,
+    );
+    return span === null || pages === 'all' ? output : keptPages(output, span.first, new Set(pages));
+  };
 }

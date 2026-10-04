@@ -1944,9 +1944,10 @@ function exportTextHandler(commands: DocumentCommands, mint: MintWritten): Contr
   return async ({
     docId,
     mode,
+    pages,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportText']>>> => {
     try {
-      const outcome = await commands.exportText(docId, mode);
+      const outcome = await commands.exportText(docId, mode, pages);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       switch (outcome.kind) {
         case 'copied':
@@ -1976,9 +1977,10 @@ function exportWordHandler(commands: DocumentCommands, mint: MintWritten): Contr
   return async ({
     docId,
     mode,
+    pages,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportWord']>>> => {
     try {
-      const outcome = await commands.exportWord(docId, mode);
+      const outcome = await commands.exportWord(docId, mode, pages);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
@@ -1996,9 +1998,10 @@ function exportWordHandler(commands: DocumentCommands, mint: MintWritten): Contr
 function exportPowerPointHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.exportPowerPoint'] {
   return async ({
     docId,
+    pages,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPowerPoint']>>> => {
     try {
-      const outcome = await commands.exportPowerPoint(docId);
+      const outcome = await commands.exportPowerPoint(docId, pages);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
@@ -2099,9 +2102,9 @@ function emailHandler(commands: DocumentCommands): ContractHandlers['document.em
 
 /** The print's handler: the command's outcomes as they are, and a dismissed dialog as `cancelled`. */
 function printHandler(commands: DocumentCommands): ContractHandlers['document.print'] {
-  return async ({ docId, dpi }): Promise<Awaited<ReturnType<ContractHandlers['document.print']>>> => {
+  return async ({ docId, dpi, pages }): Promise<Awaited<ReturnType<ContractHandlers['document.print']>>> => {
     try {
-      const outcome = await commands.print(docId, dpi);
+      const outcome = await commands.print(docId, dpi, pages);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'printed') return ok({ kind: 'printed', pages: outcome.pages } as const);
       return ok({ kind: outcome.kind });
@@ -2122,9 +2125,10 @@ function exportExcelHandler(commands: DocumentCommands, mint: MintWritten): Cont
     engine,
     version,
     edits,
+    pages,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportExcel']>>> => {
     try {
-      const outcome = await commands.exportExcel(docId, layout, { version, edits }, engine);
+      const outcome = await commands.exportExcel(docId, layout, { version, edits, pages }, engine);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);

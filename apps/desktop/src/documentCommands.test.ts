@@ -550,13 +550,17 @@ const localPageImage: DocumentPageImageReader = (id, sessions, request) => {
  * The Word export composed the way the MuPDF host composes it — the real composer, run in this process — and staged
  * as bytes in hand, which is what `stagedBytes` is for a session held in `main`.
  */
-const localWord: DocumentWordExport = async (id, sessions, mode) => {
+const localWord: DocumentWordExport = async (id, sessions, mode, pages) => {
   const held = sessions.mupdf;
   if (held === undefined) throw new MissingSessionError(id, 'mupdf');
   const parts: Uint8Array[] = [];
-  for await (const chunk of composeWordDocument(held, mode).chunks) parts.push(chunk);
+  for await (const chunk of composeWordDocument(held, mode, pages).chunks) parts.push(chunk);
   return stagedBytes(Buffer.concat(parts));
 };
+
+/** Every page of the two-page text fixture and the three-page tables fixture, as a person's *Every page* sends it. */
+const TWO_PAGES: PageSet = [[0, 1]];
+const THREE_PAGES: PageSet = [[0, 2]];
 
 /**
  * The production composition of the duplicate report, the way `composition.ts`
@@ -3412,6 +3416,8 @@ describe('exportText — the document’s words, streamed one page at a time', (
       readonly print?: PrintDestination | null;
       readonly share?: ShareDestination | null;
       readonly images?: PageImageRequest[];
+      /** The page set each Word export handed the host (ADR-0161). */
+      readonly wordPages?: PageSet[];
       readonly pdfa?: PdfaSource | null;
       readonly optimizer?: OptimizeSource | null;
       /** Where the copy picker answers; absent, it refuses, for an export that uses its own. */
@@ -3445,9 +3451,10 @@ describe('exportText — the document’s words, streamed one page at a time', (
         reads.push(page);
         return await LOCAL_READS.pageText(id, sessions, page);
       },
-      word: async (id, sessions, mode) => {
+      word: async (id, sessions, mode, pages) => {
         words.push(mode);
-        return await LOCAL_READS.word(id, sessions, mode);
+        options.wordPages?.push(pages);
+        return await LOCAL_READS.word(id, sessions, mode, pages);
       },
       save: {
         provenance: ledger(),
@@ -3487,7 +3494,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     const destination = join(mkdtempSync(join(directory, 'text-')), 'words.txt');
     const { commands, reads } = exportingTo(destination);
 
-    const outcome = await commands.exportText(textDoc, 'plain');
+    const outcome = await commands.exportText(textDoc, 'plain', TWO_PAGES);
 
     const written = readFileSync(destination, 'utf8');
     expect(outcome).toEqual({ kind: 'copied', bytes: Buffer.byteLength(written, 'utf8'), destination });
@@ -3517,7 +3524,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     });
     reads = built.reads;
 
-    await built.commands.exportText(textDoc, 'plain');
+    await built.commands.exportText(textDoc, 'plain', TWO_PAGES);
 
     // Chunk 1 arrived after ONE read and chunk 2 after TWO. Reading everything
     // first answers [2, 2].
@@ -3527,7 +3534,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
   it('CONTROL: a dismissed picker returns nothing and reads no page', async () => {
     const { commands, reads } = exportingTo(null);
 
-    expect(await commands.exportText(textDoc, 'plain')).toBeUndefined();
+    expect(await commands.exportText(textDoc, 'plain', TWO_PAGES)).toBeUndefined();
     expect(reads).toEqual([]);
   });
 
@@ -3538,7 +3545,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         Promise.resolve({ kind: 'contested' as const, others: [asDocId('other')] }),
     });
 
-    expect((await commands.exportText(textDoc, 'plain'))?.kind).toBe('refused');
+    expect((await commands.exportText(textDoc, 'plain', TWO_PAGES))?.kind).toBe('refused');
     // THE DECISION, not the end state: no file either way, but a refusal that came
     // after extracting the document would still have read both pages.
     expect(reads).toEqual([]);
@@ -3550,7 +3557,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const destination = join(mkdtempSync(join(directory, 'word-')), 'words.docx');
       const { commands, reads, words } = exportingTo(destination);
 
-      const outcome = await commands.exportWord(textDoc, 'text');
+      const outcome = await commands.exportWord(textDoc, 'text', TWO_PAGES);
 
       expect(outcome?.kind).toBe('copied');
       const files = unzipSync(readFileSync(destination));
@@ -3570,7 +3577,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     it('CONTROL: a dismissed picker returns nothing and composes nothing', async () => {
       const { commands, reads, words } = exportingTo(null);
 
-      expect(await commands.exportWord(textDoc, 'layout')).toBeUndefined();
+      expect(await commands.exportWord(textDoc, 'layout', TWO_PAGES)).toBeUndefined();
       expect(reads).toEqual([]);
       expect(words).toEqual([]);
     });
@@ -3581,7 +3588,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         checkTarget: () => Promise.resolve({ kind: 'contested' as const, others: [asDocId('other')] }),
       });
 
-      expect((await commands.exportWord(textDoc, 'rich'))?.kind).toBe('refused');
+      expect((await commands.exportWord(textDoc, 'rich', TWO_PAGES))?.kind).toBe('refused');
       // The decision, not the end state: a refusal after composing leaves no file either.
       expect(words).toEqual([]);
       expect(existsSync(destination)).toBe(false);
@@ -3593,7 +3600,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const destination = join(mkdtempSync(join(directory, 'deck-')), 'deck.pptx');
       const { commands } = exportingTo(destination);
 
-      const outcome = await commands.exportPowerPoint(textDoc);
+      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES);
 
       expect(outcome?.kind).toBe('copied');
       const files = unzipSync(readFileSync(destination));
@@ -3605,6 +3612,69 @@ describe('exportText — the document’s words, streamed one page at a time', (
       expect(second?.subarray(1, 4)).toStrictEqual(Uint8Array.of(0x50, 0x4e, 0x47));
       expect(Buffer.from(first ?? []).equals(Buffer.from(second ?? []))).toBe(false);
       expect(files['ppt/media/image3.png']).toBeUndefined();
+    });
+  });
+
+  describe('the CHOSEN PAGES only (ADR-0161)', () => {
+    it('plain text reads and writes page 2 alone when page 2 alone is chosen', async () => {
+      const destination = join(mkdtempSync(join(directory, 'text-')), 'second.txt');
+      const { commands, reads } = exportingTo(destination);
+
+      expect((await commands.exportText(textDoc, 'plain', [1]))?.kind).toBe('copied');
+      expect(readFileSync(destination, 'utf8')).toBe('second page words');
+      // THE DECISION: page 1 was never read, so it was not merely trimmed after reading the document.
+      expect(reads).toEqual([1]);
+    });
+
+    it('Word hands the host the set, and the package holds page 2’s words and not page 1’s', async () => {
+      const destination = join(mkdtempSync(join(directory, 'word-')), 'second.docx');
+      const wordPages: PageSet[] = [];
+      const { commands } = exportingTo(destination, { wordPages });
+
+      expect((await commands.exportWord(textDoc, 'text', [1]))?.kind).toBe('copied');
+      expect(wordPages).toStrictEqual([[1]]);
+      const xml = strFromU8(unzipSync(readFileSync(destination))['word/document.xml'] ?? new Uint8Array());
+      expect(xml).toContain('second page words');
+      expect(xml).not.toContain('first page words');
+    });
+
+    it('PowerPoint writes one slide for one chosen page', async () => {
+      const destination = join(mkdtempSync(join(directory, 'deck-')), 'second.pptx');
+      const images: PageImageRequest[] = [];
+      const { commands } = exportingTo(destination, { images });
+
+      expect((await commands.exportPowerPoint(textDoc, [1]))?.kind).toBe('copied');
+      const files = unzipSync(readFileSync(destination));
+      expect(files['ppt/media/image1.png']).toBeDefined();
+      expect(files['ppt/media/image2.png']).toBeUndefined();
+      expect(images.map((request) => request.page)).toStrictEqual([1]);
+    });
+
+    it('layout text hands the converter the chosen pages', async () => {
+      const destination = join(mkdtempSync(join(directory, 'text-')), 'second-layout.txt');
+      const asked: (readonly number[] | 'all')[] = [];
+      const { commands } = exportingTo(destination, {
+        flush: () => Promise.resolve(Uint8Array.of(0x25, 0x50, 0x44, 0x46)),
+        layoutText: (_pdf, pages) => {
+          asked.push(pages);
+          return Promise.resolve(
+            (async function* () {
+              yield await Promise.resolve(new TextEncoder().encode('page two\f'));
+            })(),
+          );
+        },
+      });
+
+      expect((await commands.exportText(textDoc, 'layout', [1]))?.kind).toBe('copied');
+      expect(asked).toStrictEqual([[1]]);
+    });
+
+    it('a page PAST the document is refused before any file is written', async () => {
+      const destination = join(mkdtempSync(join(directory, 'text-')), 'past.txt');
+      const { commands } = exportingTo(destination);
+
+      await expect(commands.exportText(textDoc, 'plain', [5])).rejects.toThrow();
+      expect(existsSync(destination)).toBe(false);
     });
   });
 
@@ -3630,7 +3700,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         },
       });
 
-      const outcome = await commands.exportText(textDoc, 'layout');
+      const outcome = await commands.exportText(textDoc, 'layout', TWO_PAGES);
 
       expect(outcome).toEqual({ kind: 'copied', bytes: 22, destination });
       expect(readFileSync(destination, 'utf8')).toBe('col one      col two\n\f');
@@ -3644,7 +3714,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const picked: string[] = [];
       const { commands } = exportingTo('unused.txt', { layoutText: null, picked });
 
-      expect(await commands.exportText(textDoc, 'layout')).toEqual({ kind: 'unavailable' });
+      expect(await commands.exportText(textDoc, 'layout', TWO_PAGES)).toEqual({ kind: 'unavailable' });
       expect(picked).toEqual([]);
     });
 
@@ -3656,7 +3726,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
           Promise.reject(new LayoutTextFailedError({ stage: 'exit-code', code: 1, said: 'Syntax Error' })),
       });
 
-      const outcome = await commands.exportText(textDoc, 'layout');
+      const outcome = await commands.exportText(textDoc, 'layout', TWO_PAGES);
 
       expect(outcome?.kind).toBe('failed');
       expect(existsSync(destination)).toBe(false);
@@ -3674,7 +3744,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         },
       });
 
-      expect((await commands.exportText(textDoc, 'layout'))?.kind).toBe('refused');
+      expect((await commands.exportText(textDoc, 'layout', TWO_PAGES))?.kind).toBe('refused');
       expect(ran).toBe(0);
     });
   });
@@ -3861,15 +3931,24 @@ describe('exportText — the document’s words, streamed one page at a time', (
     function recordingPrinter(
       pages: readonly number[] | null,
       refuse: { readonly start?: boolean; readonly page?: boolean } = {},
-    ): { readonly destination: PrintDestination; readonly log: string[]; readonly drawn: Uint8Array[] } {
+    ): {
+      readonly destination: PrintDestination;
+      readonly log: string[];
+      readonly drawn: Uint8Array[];
+      /** The pages each dialog was told to start on (ADR-0161 Decision 3). */
+      readonly starts: (readonly number[])[];
+    } {
       const log: string[] = [];
       const drawn: Uint8Array[] = [];
+      const starts: (readonly number[])[] = [];
       return {
         log,
         drawn,
+        starts,
         destination: {
-          choose: (pageCount) => {
+          choose: (pageCount, start) => {
             log.push(`dialog for ${String(pageCount)} page(s)`);
+            starts.push(start);
             if (pages === null) return null;
             return {
               pages,
@@ -3893,12 +3972,23 @@ describe('exportText — the document’s words, streamed one page at a time', (
       };
     }
 
+    it('tells the system dialog to START on the row’s pages, and prints what the DIALOG answered (ADR-0161)', async () => {
+      // THE DIALOG ANSWERS PAGE 1 although the row chose page 2: the person changed it there, and theirs prints.
+      const printer = recordingPrinter([0]);
+      const images: PageImageRequest[] = [];
+      const { commands } = exportingTo(null, { print: printer.destination, images });
+
+      expect(await commands.print(textDoc, 150, [1])).toStrictEqual({ kind: 'printed', pages: 1 });
+      expect(printer.starts).toStrictEqual([[1]]);
+      expect(images.map((request) => request.page)).toStrictEqual([0]);
+    });
+
     it('rasterises EACH page the dialog chose, in its order, at the DPI asked, and finishes the document', async () => {
       const printer = recordingPrinter([1, 0]);
       const images: PageImageRequest[] = [];
       const { commands } = exportingTo(null, { print: printer.destination, images });
 
-      expect(await commands.print(textDoc, 150)).toStrictEqual({ kind: 'printed', pages: 2 });
+      expect(await commands.print(textDoc, 150, TWO_PAGES)).toStrictEqual({ kind: 'printed', pages: 2 });
 
       expect(printer.log).toStrictEqual(['dialog for 2 page(s)', 'start words.pdf', 'page', 'page', 'finish', 'release']);
       expect(images).toStrictEqual([
@@ -3915,7 +4005,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const images: PageImageRequest[] = [];
       const { commands } = exportingTo(null, { print: printer.destination, images });
 
-      expect(await commands.print(textDoc, 300)).toBeUndefined();
+      expect(await commands.print(textDoc, 300, TWO_PAGES)).toBeUndefined();
       expect(printer.log).toStrictEqual(['dialog for 2 page(s)']);
       expect(images).toStrictEqual([]);
     });
@@ -3924,7 +4014,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const printer = recordingPrinter([0, 1], { page: true });
       const { commands } = exportingTo(null, { print: printer.destination });
 
-      expect(await commands.print(textDoc, 300)).toStrictEqual({ kind: 'failed' });
+      expect(await commands.print(textDoc, 300, TWO_PAGES)).toStrictEqual({ kind: 'failed' });
       expect(printer.log).toStrictEqual(['dialog for 2 page(s)', 'start words.pdf', 'abort', 'release']);
     });
 
@@ -3932,7 +4022,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const printer = recordingPrinter([0], { start: true });
       const { commands } = exportingTo(null, { print: printer.destination });
 
-      expect(await commands.print(textDoc, 300)).toStrictEqual({ kind: 'failed' });
+      expect(await commands.print(textDoc, 300, TWO_PAGES)).toStrictEqual({ kind: 'failed' });
       expect(printer.log).toStrictEqual(['dialog for 2 page(s)', 'start words.pdf', 'release']);
     });
 
@@ -3940,7 +4030,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const images: PageImageRequest[] = [];
       const { commands } = exportingTo(null, { print: null, images });
 
-      expect(await commands.print(textDoc, 300)).toStrictEqual({ kind: 'unavailable' });
+      expect(await commands.print(textDoc, 300, TWO_PAGES)).toStrictEqual({ kind: 'unavailable' });
       expect(images).toStrictEqual([]);
     });
   });
@@ -4132,7 +4222,9 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
 
   /** No edits, at the version the review grid's first read answers — the export a person makes without correcting anything. */
   async function unreviewed(commands: DocumentCommands, doc: DocId): Promise<ExcelReview> {
-    return { version: (await commands.pageTables(doc, 0)).version, edits: [] };
+    const { version, pageCount } = await commands.pageTables(doc, 0);
+    // EVERY PAGE of THIS document, as *Every page* sends it.
+    return { version, edits: [], pages: [[0, pageCount - 1]] };
   }
 
   it('the review grid reads a page’s cells, and an EDIT replaces that cell’s text in the workbook', async () => {
@@ -4151,6 +4243,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
     const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page', {
       version: grid.version,
       edits: [{ page: 1, table: 0, row: 1, column: 0, text: 'Hex bolt' }],
+      pages: THREE_PAGES,
     });
 
     expect(outcome?.kind).toBe('copied');
@@ -4171,6 +4264,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       await commands.exportExcel(tablesDoc, 'sheet-per-page', {
         version,
         edits: [{ page: 1, table: 0, row: 1, column: 3, text: 'no such cell' }],
+        pages: THREE_PAGES,
       }),
     ).toStrictEqual({ kind: 'changed' });
     expect(picked).toStrictEqual([]);
@@ -4184,6 +4278,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       await commands.exportExcel(tablesDoc, 'sheet-per-page', {
         version: asDocVersion(Number(version) + 1),
         edits: [],
+        pages: THREE_PAGES,
       }),
     ).toStrictEqual({ kind: 'changed' });
     expect(picked).toStrictEqual([]);
@@ -4275,7 +4370,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       const { version } = await commands.pageTables(tablesDoc, 0);
 
       expect(
-        await commands.exportExcel(tablesDoc, 'sheet-per-page', { version: asDocVersion(Number(version) + 1), edits: [] }, 'azure'),
+        await commands.exportExcel(tablesDoc, 'sheet-per-page', { version: asDocVersion(Number(version) + 1), edits: [], pages: THREE_PAGES }, 'azure'),
       ).toStrictEqual({ kind: 'changed' });
       expect(picked).toStrictEqual([]);
       expect(asked).toStrictEqual([]);

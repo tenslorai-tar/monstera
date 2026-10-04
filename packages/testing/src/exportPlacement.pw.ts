@@ -54,6 +54,11 @@ test('Home › Export reads Image · Export · Share, its menu Word · Excel · 
   await expect(powerPoint.locator('svg.lucide-presentation')).toHaveCount(1);
   sent.length = 0;
   await powerPoint.click();
+  // ITS PAGES FIRST (ADR-0161): nothing is sent while the dialog is open.
+  const dialog = page.getByRole('dialog', { name: 'Export to PowerPoint' });
+  await expect(dialog.getByRole('group', { name: 'Pages' })).toBeVisible();
+  expect(sent.filter((channel) => channel.startsWith('document.export'))).toStrictEqual([]);
+  await dialog.getByRole('button', { name: 'Choose where to save…' }).click();
   await expect.poll(() => sent.includes('document.exportPowerPoint')).toBe(true);
   // CONTROL: Word, beside it in the menu, asks for its mode first, so the one export sent is PowerPoint's.
   expect(sent.filter((channel) => channel.startsWith('document.export'))).toStrictEqual(['document.exportPowerPoint']);

@@ -2724,7 +2724,9 @@ export const channels = {
    */
   'document.exportText': channel(
     'Writes the document’s text to a plain-text file the user picks.',
-    z.object({ docId: docIdSchema, mode: z.enum(['plain', 'layout']) }).strict(),
+    // THE PAGES, REQUIRED here and on every export to another format and on Print (ADR-0161): a caller that forgot
+    // them would convert the whole document with nothing to say it did. *Every page* is the whole set.
+    z.object({ docId: docIdSchema, mode: z.enum(['plain', 'layout']), pages: pageSetSchema }).strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
@@ -2747,7 +2749,7 @@ export const channels = {
    */
   'document.exportWord': channel(
     'Writes the document as a Word file the user picks.',
-    z.object({ docId: docIdSchema, mode: z.enum(WORD_MODES) }).strict(),
+    z.object({ docId: docIdSchema, mode: z.enum(WORD_MODES), pages: pageSetSchema }).strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
@@ -2764,7 +2766,7 @@ export const channels = {
    */
   'document.exportPowerPoint': channel(
     'Writes the document as a PowerPoint deck the user picks.',
-    z.object({ docId: docIdSchema }).strict(),
+    z.object({ docId: docIdSchema, pages: pageSetSchema }).strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
@@ -2805,6 +2807,8 @@ export const channels = {
          */
         engine: z.enum(TABLE_ENGINES),
         version: docVersionSchema,
+        /** The pages whose tables are written (ADR-0161). The review still shows any page. */
+        pages: pageSetSchema,
         edits: z
           .array(
             z
@@ -2953,7 +2957,14 @@ export const channels = {
    */
   'document.print': channel(
     'Prints the document through the system print dialog, each page rasterised by MuPDF.',
-    z.object({ docId: docIdSchema, dpi: z.union([z.literal(150), z.literal(300), z.literal(600)]) }).strict(),
+    z
+      .object({
+        docId: docIdSchema,
+        dpi: z.union([z.literal(150), z.literal(300), z.literal(600)]),
+        // WHERE THE SYSTEM DIALOG'S OWN *PAGES* STARTS (ADR-0161 Decision 3): its answer is what prints.
+        pages: pageSetSchema,
+      })
+      .strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('printed'), pages: z.number().int().nonnegative() }),
       z.object({ kind: z.literal('cancelled') }),

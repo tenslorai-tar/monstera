@@ -1,6 +1,29 @@
 import { describe, expect, it } from 'vitest';
 
-import { chosenPages, fittedOnPaper } from './printing.js';
+import { chosenPages, fittedOnPaper, printStart } from './printing.js';
+
+describe('printStart — where the system dialog’s own Pages starts (ADR-0161 Decision 3)', () => {
+  it('is ALL when every page is chosen, in any order or with repeats', () => {
+    expect(printStart(3, [2, 0, 1, 1], 64)).toStrictEqual({ kind: 'all' });
+  });
+
+  it('is the dialog’s one-based ranges, consecutive pages joined into one', () => {
+    expect(printStart(10, [0, 1, 2, 5, 7, 8], 64)).toStrictEqual({
+      kind: 'ranges',
+      ranges: [
+        { from: 1, to: 3 },
+        { from: 6, to: 6 },
+        { from: 8, to: 9 },
+      ],
+    });
+  });
+
+  it('is FIXED past the dialog’s limit, the pages printing as chosen', () => {
+    expect(printStart(10, [0, 2, 4], 2)).toStrictEqual({ kind: 'fixed', pages: [0, 2, 4] });
+    // CONTROL: at the limit exactly, the dialog shows them.
+    expect(printStart(10, [0, 2], 2).kind).toBe('ranges');
+  });
+});
 
 describe('chosenPages — the dialog’s ranges as zero-based pages', () => {
   it('is every page when no range was typed', () => {

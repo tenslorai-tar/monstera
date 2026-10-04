@@ -288,7 +288,7 @@ export interface RemoteMupdfLifecycle {
    * The document as a Word file, composed by the host and LEFT in its output directory until placed or discarded —
    * {@link stage}'s shape, so `main` moves the package and never reads it (ADR-0072's amendment of 2026-10-01).
    */
-  readonly word: (session: MupdfSession, mode: WordMode) => Promise<StagedImage>;
+  readonly word: (session: MupdfSession, mode: WordMode, pages: PageSet) => Promise<StagedImage>;
   /**
    * The bytes of a NEW document made of the named pages.
    *
@@ -392,10 +392,10 @@ export function remoteMupdfLifecycle(
     stage: (session) => stage(session),
 
     // `stage`'s dance with a different producer: the host composes the package into its output directory.
-    word: async (session, mode) => {
+    word: async (session, mode, pages) => {
       const area = sessions.areaFor(session);
       const into = areas.mintName();
-      const answer = await client['engine/word']({ session: sessions.handleFor(session), mode, into });
+      const answer = await client['engine/word']({ session: sessions.handleFor(session), mode, into, pages });
       if (!answer.ok) throw new EngineWordFailed(answer.error.code);
       const byteLength = answer.value.bytes;
       return {
