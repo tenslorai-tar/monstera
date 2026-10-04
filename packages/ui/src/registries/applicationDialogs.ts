@@ -87,6 +87,7 @@ import { URL_OPEN_PROBLEM_DIALOG } from '../dialogs/urlOpenProblem.js';
 import { OPEN_PROBLEM_DIALOG } from '../dialogs/openProblem.js';
 import { READ_ONLY_FILE_DIALOG } from '../dialogs/readOnlyFile.js';
 import { WATERMARK_PAGES_DIALOG } from '../dialogs/watermarkPages.js';
+import { PAGE_BACKGROUND_DIALOG } from '../dialogs/pageBackground.js';
 import { WORD_COUNT_DIALOG } from '../dialogs/wordCount.js';
 import { WORKBOOK_INCOMPLETE_DIALOG } from '../dialogs/workbookIncomplete.js';
 import type { RegisteredDialog } from './dialogs.js';
@@ -151,6 +152,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   TYPEWRITER_DIALOG,
   CROP_PAGES_DIALOG,
   WATERMARK_PAGES_DIALOG,
+  PAGE_BACKGROUND_DIALOG,
   HEADER_FOOTER_DIALOG,
   BATES_NUMBER_DIALOG,
   PAGE_TRANSITION_DIALOG,

@@ -65,8 +65,10 @@ import { colourSchema } from '../registries/settings.js';
  * ## Three shipped rows have been waiting for these BY NAME
  *
  * The headers-and-footers row owes *a font choice*, the watermark row owes
- * *colour*, and the page-background row says *a colour control, until Stage 3's
- * style controls own the picker*. Those three take the same values, which is why
+ * *colour*, and the page-background row said *a colour control, until Stage 3's
+ * style controls own the picker* — it has one since 2026-10-04, chosen in its own
+ * dialog rather than from these settings, because a page's tint is not a mark's
+ * colour. Those three take the same values, which is why
  * the bounds here are the contract's rather than numbers chosen locally: a
  * control that offers a size the payload refuses is a control that fails on
  * apply.

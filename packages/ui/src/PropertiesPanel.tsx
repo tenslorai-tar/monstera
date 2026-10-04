@@ -9,10 +9,10 @@ import {
   MIN_ANNOTATION_FONT,
   MIN_ANNOTATION_OPACITY,
 } from '@monstera/contract';
-import type { MessageKey } from '@monstera/shared';
 import { type ReactElement, useId, useState } from 'react';
 
 import { ANNOTATION_KIND_LABELS } from './AnnotationsPanel.js';
+import { ColourSwatches } from './ColourChoice.js';
 import { STARTING_STYLE_COLOUR, colourFromHex, hexFromColour } from './annotations/annotationStyle.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { LINE_WIDTH_PRESETS, STYLE_PRESETS } from './annotations/stylePresets.js';
@@ -323,79 +323,24 @@ function ColourRow({
 }): ReactElement {
   const { i18n } = useLingui();
   const labelId = useId();
-  const customId = useId();
-  const preset = STYLE_PRESETS.some((entry) => entry.hex === current);
   return (
     <div aria-labelledby={labelId} className="m-properties__row" role="group">
       <span className="m-properties__label" id={labelId}>
         {i18n._(PROPERTIES_COLOUR)}
       </span>
-      <div className="m-properties__swatches">
-        {offerAuto ? (
-          <Swatch
-            label={STYLE_COLOUR_AUTO}
-            pressed={auto}
-            onPress={() => {
-              onPick(undefined);
-            }}
-          />
-        ) : null}
-        {STYLE_PRESETS.map((entry) => (
-          <Swatch
-            hex={entry.hex}
-            key={entry.hex}
-            label={entry.title}
-            pressed={!auto && entry.hex === current}
-            onPress={() => {
-              onPick(entry.hex);
-            }}
-          />
-        ))}
-        <span
-          className="m-properties__custom"
-          data-pressed={!auto && current !== undefined && !preset ? 'true' : undefined}
-        >
-          <input
-            aria-label={i18n._(PROPERTIES_CUSTOM_COLOUR)}
-            className="m-properties__custom-input"
-            id={customId}
-            onChange={(event) => {
-              onPick(event.target.value);
-            }}
-            type="color"
-            // THE SHAPES' RED while nothing is chosen: a colour input cannot show *no colour*, and
-            // black is what it answers when given none.
-            value={current ?? STARTING_STYLE_COLOUR}
-          />
-        </span>
-      </div>
+      {/* THE APPLICATION'S ONE COLOUR CONTROL (`ColourChoice.tsx`), with a mark's colours (`stylePresets.ts`). */}
+      <ColourSwatches
+        presets={STYLE_PRESETS}
+        current={current}
+        auto={auto}
+        autoLabel={offerAuto ? STYLE_COLOUR_AUTO : undefined}
+        customLabel={PROPERTIES_CUSTOM_COLOUR}
+        // THE SHAPES' RED while nothing is chosen: a colour input cannot show *no colour*, and black is what it
+        // answers when given none.
+        fallback={STARTING_STYLE_COLOUR}
+        onPick={onPick}
+      />
     </div>
-  );
-}
-
-function Swatch({
-  hex,
-  label,
-  pressed,
-  onPress,
-}: {
-  readonly hex?: string;
-  readonly label: MessageKey;
-  readonly pressed: boolean;
-  readonly onPress: () => void;
-}): ReactElement {
-  const { i18n } = useLingui();
-  return (
-    <button
-      aria-label={i18n._(label)}
-      aria-pressed={pressed}
-      className={hex === undefined ? 'm-properties__swatch m-properties__swatch--auto' : 'm-properties__swatch'}
-      onClick={onPress}
-      // THE DOCUMENT COLOUR ITSELF, which is data rather than chrome (`stylePresets.ts`).
-      style={hex === undefined ? undefined : { backgroundColor: hex }}
-      title={i18n._(label)}
-      type="button"
-    />
   );
 }
 

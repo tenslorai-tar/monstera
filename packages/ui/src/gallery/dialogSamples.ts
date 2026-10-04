@@ -698,6 +698,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     },
     { state: 'refused', props: { pages: [0] }, steps: [type('Top (points)', '-10')] },
   ],
+  'dialog.page-background': [{ state: 'opened', props: { pages: [2] } }],
   'dialog.watermark-pages': [
     { state: 'opened', props: { pages: [0] } },
     { state: 'filled', props: { pages: [0] }, steps: [type('Text', 'CONFIDENTIAL')] },

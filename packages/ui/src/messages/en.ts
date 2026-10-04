@@ -258,6 +258,16 @@ export const PAGE_TRANSITION_APPLY = messageKey('dialog.page-transition.apply');
 export const PAGE_TRANSITION_NOT_A_NUMBER = messageKey('dialog.page-transition.not-a-number');
 export const PAGE_TRANSITION_COMMAND_TITLE = messageKey('command.page-transition.title');
 export const PAGE_BACKGROUND_COMMAND_TITLE = messageKey('command.page-background.title');
+export const PAGE_BACKGROUND_TITLE = messageKey('dialog.page-background.title');
+export const PAGE_BACKGROUND_EXPLAINS = messageKey('dialog.page-background.explains');
+export const PAGE_BACKGROUND_COLOUR = messageKey('dialog.page-background.colour');
+export const PAGE_BACKGROUND_APPLY = messageKey('dialog.page-background.apply');
+export const PAGE_TINT_CREAM = messageKey('dialog.page-background.tint-cream');
+export const PAGE_TINT_YELLOW = messageKey('dialog.page-background.tint-yellow');
+export const PAGE_TINT_GREEN = messageKey('dialog.page-background.tint-green');
+export const PAGE_TINT_BLUE = messageKey('dialog.page-background.tint-blue');
+export const PAGE_TINT_PINK = messageKey('dialog.page-background.tint-pink');
+export const PAGE_TINT_GREY = messageKey('dialog.page-background.tint-grey');
 export const RESIZE_PAGES_TITLE = messageKey('dialog.resize-pages.title');
 export const RESIZE_PAGES_A3 = messageKey('dialog.resize-pages.a3');
 export const RESIZE_PAGES_A4 = messageKey('dialog.resize-pages.a4');
@@ -4168,7 +4178,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PAGE_TRANSITION_COMMAND_TITLE]: 'Page transition…',
   // NO ELLIPSIS. The convention this file already follows is that a trailing
   // "…" promises a dialog, and this command applies immediately.
-  [PAGE_BACKGROUND_COMMAND_TITLE]: 'Add page background',
+  [PAGE_BACKGROUND_COMMAND_TITLE]: 'Add page background…',
+  [PAGE_BACKGROUND_TITLE]: 'Page background',
+  [PAGE_BACKGROUND_EXPLAINS]: 'The colour fills each page behind its text and pictures.',
+  [PAGE_BACKGROUND_COLOUR]: 'Colour',
+  [PAGE_BACKGROUND_APPLY]: 'Add background',
+  [PAGE_TINT_CREAM]: 'Cream',
+  [PAGE_TINT_YELLOW]: 'Pale yellow',
+  [PAGE_TINT_GREEN]: 'Pale green',
+  [PAGE_TINT_BLUE]: 'Pale blue',
+  [PAGE_TINT_PINK]: 'Pale pink',
+  [PAGE_TINT_GREY]: 'Light grey',
   [RESIZE_PAGES_TITLE]: 'Resize pages',
   [RESIZE_PAGES_A3]: 'A3',
   [RESIZE_PAGES_A4]: 'A4',

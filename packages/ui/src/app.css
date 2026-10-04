@@ -1421,17 +1421,34 @@ optgroup {
 /* ONE ROW AT THE PANEL'S DEFAULT WIDTH, spread across it: fixed tracks that `auto-fit` counts from the
    width, spaced out between, so ten swatches fill the row and a narrower panel wraps them onto aligned
    columns rather than a ragged second line. */
-.m-properties__swatches {
+.m-colour-swatches {
   display: grid;
   grid-template-columns: repeat(auto-fit, var(--icon-16));
   justify-content: space-between;
   gap: var(--space-8) var(--space-4);
 }
 
+/* IN A DIALOG ROW the swatches stay together in one row: spread across a wide row they read as unrelated dots. A row
+   and not the grid above, because a dialog row's control cell takes its width from its content, and an auto-fit grid
+   with no definite width to fill resolves to one column. */
+.m-colour-swatches--start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+/* A dialog has the room a panel does not, and a pale tint is told from its neighbour by its area. */
+.m-colour-swatches--start > .m-colour-swatch,
+.m-colour-swatches--start > .m-colour-custom {
+  inline-size: var(--icon-20);
+  block-size: var(--icon-20);
+}
+
 /* A swatch is its colour, so its ring is the only chrome: a border to separate it from the panel, and
    the accent around the one in force. */
-.m-properties__swatch,
-.m-properties__custom {
+.m-colour-swatch,
+.m-colour-custom {
   position: relative;
   inline-size: var(--icon-16);
   block-size: var(--icon-16);
@@ -1443,13 +1460,13 @@ optgroup {
 
 /* THE CHOSEN SWATCH as a ring drawn with a box-shadow, and FOCUS as the outline every control has: both an outline,
    the chosen one's hid the focus ring on the one swatch a keyboard user most often lands on (WCAG 2.4.7). */
-.m-properties__swatch[aria-pressed='true'],
-.m-properties__custom[data-pressed='true'] {
+.m-colour-swatch[aria-pressed='true'],
+.m-colour-custom[data-pressed='true'] {
   box-shadow: 0 0 0 1px var(--surface), 0 0 0 3px var(--accent);
 }
 
-.m-properties__swatch:focus-visible,
-.m-properties__custom:focus-visible,
+.m-colour-swatch:focus-visible,
+.m-colour-custom:focus-visible,
 .m-properties__segment:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 4px;
@@ -1457,18 +1474,18 @@ optgroup {
 
 /* EACH TOOL'S OWN is no colour, so it is drawn as the absence of one: the panel's own ground, struck
    through once. */
-.m-properties__swatch--auto {
+.m-colour-swatch--auto {
   background: linear-gradient(135deg, transparent 45%, var(--muted) 45%, var(--muted) 55%, transparent 55%), var(--surface);
 }
 
-.m-properties__custom {
+.m-colour-custom {
   overflow: hidden;
   background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
 }
 
 /* The native colour input fills the ring and is invisible, so the ring is what is seen and the input
    is what is pressed — its picker is the platform's, labelled by the input's own name. */
-.m-properties__custom-input {
+.m-colour-custom__input {
   position: absolute;
   inset: 0;
   inline-size: 100%;
@@ -1477,7 +1494,7 @@ optgroup {
   cursor: pointer;
 }
 
-.m-properties__custom:focus-within {
+.m-colour-custom:focus-within {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -5696,7 +5713,7 @@ optgroup {
   font-size: var(--font-chrome-12);
 }
 
-/* `.m-properties__swatch`'s rule: the choice as a box-shadow ring, so the focus ring is never the same mark. */
+/* `.m-colour-swatch`'s rule: the choice as a box-shadow ring, so the focus ring is never the same mark. */
 .m-accent-swatch[aria-pressed='true'] {
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text);
 }

@@ -9,6 +9,7 @@ import {
 import { type DocId, type DocVersion, type MessageKey, asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
+import { PAGE_BACKGROUND_DIALOG_ID } from '../dialogs/pageBackground.js';
 import {
   TOAST_ACTIVE_CONTENT_REMOVED,
   TOAST_FORM_FLATTENED,
@@ -1914,10 +1915,10 @@ describe('delete pages — the mutation-dialog gate', () => {
     ]);
   });
 
-  it('THE BACKGROUND DISPATCHES WITHOUT A DIALOG, and carries a named colour', async () => {
-    // It opens nothing, so the gate does not apply — and the case says so by
-    // asserting that no dialog was opened, rather than leaving the absence to
-    // be inferred from a command list nobody compares.
+  it('THE BACKGROUND ASKS FOR THE PAGE ON SHOW and dispatches the colour and pages the dialog answered', async () => {
+    // The dialog is told `targetPages`' answer, which is page 3 here because
+    // nothing is ticked, and the answer names page 3 and a colour no default
+    // carries — so a command that sent its own pages or its own colour fails.
     const { client, sent } = recording();
     const opened: unknown[] = [];
 
@@ -1928,26 +1929,39 @@ describe('delete pages — the mutation-dialog gate', () => {
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
-        return Promise.resolve(undefined);
+        return Promise.resolve({ pages: [3], red: 0.25, green: 0.5, blue: 0.75 });
       },
     }).run(CONTEXT);
 
-    expect(opened).toStrictEqual([]);
+    expect(opened).toStrictEqual([{ id: PAGE_BACKGROUND_DIALOG_ID, props: { pages: [3] } }]);
     expect(sent).toStrictEqual([
       {
         id: 'document.execute',
         params: {
           docId: DOC,
-          command: {
-            kind: 'setPageBackground',
-            pages: 'all',
-            red: 0.98,
-            green: 0.97,
-            blue: 0.94,
-          },
+          command: { kind: 'setPageBackground', pages: [3], red: 0.25, green: 0.5, blue: 0.75 },
         },
       },
     ]);
+  });
+
+  it('A DISMISSED BACKGROUND DIALOG SENDS NOTHING, the control for the case above', async () => {
+    const { client, sent } = recording();
+    let asked = 0;
+
+    await pageBackgroundCommand({
+      client,
+      stamp,
+      signatures,
+      onApplied: () => undefined,
+      ask: () => {
+        asked += 1;
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(asked).toBe(1);
+    expect(sent).toStrictEqual([]);
   });
 
   it('A RESIZE CARRIES THE CONTEXT’S PAGE INTO BOTH the dialog and the scope', async () => {

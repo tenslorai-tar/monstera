@@ -97,6 +97,7 @@ import { KEPT_BACKUPS_DIALOG_ID } from '../dialogs/keptBackups.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
 import { FLATTEN_FORM_DIALOG_ID, FLATTEN_FORM_RESULT } from '../dialogs/flattenForm.js';
+import { PAGE_BACKGROUND_DIALOG_ID, PAGE_BACKGROUND_RESULT } from '../dialogs/pageBackground.js';
 import { SIGNED_EDIT_DIALOG_ID, SIGNED_EDIT_RESULT } from '../dialogs/signedEdit.js';
 import type { OpenedDocument } from './importMarkdown.js';
 import type { PendingRedactionOccasion } from '../dialogs/pendingRedactions.js';
@@ -1805,8 +1806,7 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
  * one. `insertBlankPageCommand`'s *after the page being read* is the right rule
  * for a page a person is adding to what they are reading, and the wrong one
  * here: a table of contents in the middle of a document is not a placement
- * anybody chose. `pageBackgroundCommand` carries the same shape of decision —
- * a named default now, a control later.
+ * anybody chose.
  */
 export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
   return {
@@ -2088,13 +2088,11 @@ export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
 }
 
 /**
- * Fills pages with a background colour.
+ * Fills pages with a background colour the person chose.
  *
- * No dialog of its own yet: the colour is the one the style controls will own
- * (Stage 3), so this command carries the neutral page tint every application
- * offers as its default and the picker arrives with the shared surface. That is
- * the same reason `watermarkPages` carries no colour — one place decides what a
- * colour control looks like, rather than four dialogs each inventing one.
+ * The dialog offers paper tints through the application's one colour control (`ColourChoice.tsx`, the Properties
+ * tab's too) and the shared page scope. It starts on a cream strong enough to see on a white page, because a default
+ * nobody can see on screen reads as a command that did nothing. A dismissal sends nothing.
  */
 export function pageBackgroundCommand(deps: DocumentCommandDeps): UiCommand {
   return {
@@ -2108,27 +2106,22 @@ export function pageBackgroundCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
+      // THE PAGES ARE `targetPages`' (ADR-0104), for the scope's first choice: the ticked ones, else the page on show.
+      const pages = targetPages(context);
+      if (context.docId === undefined || pages.length === 0) return;
+      const answer = PAGE_BACKGROUND_RESULT.safeParse(await deps.ask(PAGE_BACKGROUND_DIALOG_ID, { pages: [...pages] }));
+      if (!answer.success) return;
+      const { pages: chosen, red, green, blue } = answer.data;
       await applyDocumentCommand(deps, context.docId, {
         kind: 'setPageBackground',
-        pages: 'all',
-        // THE VALUES ARE NAMED, not spelt at the call site, so the day the
-        // style controls supply a colour there is one thing to replace rather
-        // than three numbers to find.
-        ...DEFAULT_PAGE_BACKGROUND,
+        pages: chosen === 'all' ? 'all' : [...chosen],
+        red,
+        green,
+        blue,
       });
     },
   };
 }
-
-/**
- * The tint a background is filled with until Stage 3's style controls exist.
- *
- * A warm off-white, which is what every reader offers as its paper default —
- * and **not** a design token: §10.2's rule is about components, and this is
- * content written into a document another application will open.
- */
-const DEFAULT_PAGE_BACKGROUND = { red: 0.98, green: 0.97, blue: 0.94 } as const;
 
 export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {

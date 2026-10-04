@@ -50,7 +50,7 @@ is not available.
 - [ ] **Bates numbering…** — Marks · `document.bates-number` · Shows: on screen · Help: *Add Bates numbers*
 - [ ] **Headers and footers…** — Marks · `document.header-footer` · Shows: on screen · Help: *Add headers and footers*
 - [ ] **Watermark…** — Marks · `document.watermark-pages` · Shows: on screen · Help: *Add a watermark*
-- [ ] **Add page background** — Marks · `document.page-background` · Shows: on screen · Help: *Add a page background*
+- [ ] **Add page background…** — Marks · `document.page-background` · Shows: on screen · Help: *Add a page background*
 - [ ] **Table of contents** — Marks · `document.generate-toc` · Shows: on screen · Help: *Add a table of contents*
 - [ ] **Add a barcode** — Marks · `organize.barcode` · Shows: on screen · Help: *Add and read barcodes and QR codes*
 - [ ] **Read barcodes** — Marks · `document.read-barcodes` · Shows: a result dialog · Help: *Add and read barcodes and QR codes*
