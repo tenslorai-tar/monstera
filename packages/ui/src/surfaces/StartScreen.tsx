@@ -46,10 +46,11 @@ import { startScreenModel } from './projections.js';
  * ## The hero is the supplied artwork, and it is not a command
  *
  * ADR-0002: the owner's artwork is used as supplied. The derivative is
- * `assets/brand/logo-hero.png`, generated from the wordmark master and imported, so the
- * bundle carries 17 KB rather than the master's 1.6 MB. Beneath it, v5-01 sets the name
- * as a wordmark in Marcellus (ADR-0100, which amended §10.4's *no webfonts* for this one
- * piece of artwork); that text is the heading, so the picture is decorative. "PDF EDITOR"
+ * `assets/brand/logo-hero.png`, generated from the master and imported, so the bundle
+ * carries 17 KB rather than the master's 1.3 MB. Beneath it, v5-01 sets the name as a
+ * wordmark in Marcellus (ADR-0100, which amended §10.4's *no webfonts* for this one piece
+ * of artwork); that text is the heading and the only place the name is, so the picture is
+ * decorative (ADR-0002's note of 2026-10-04: the mark carries no word). "PDF EDITOR"
  * and the tagline stay beneath both.
  *
  * ## A GRID of what this build can do, not a grid of what it will

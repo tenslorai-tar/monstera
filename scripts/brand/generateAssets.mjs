@@ -1,23 +1,19 @@
 // @ts-check
 /**
- * Derives every logo size the project needs from the owner's three masters.
+ * Derives every logo size the project needs from the owner's one master, `monstera_logo.png`
+ * ({@link MASTER}): the mark alone, a green document with a folded corner and the leaf in a white
+ * circle, with no wordmark.
  *
- * Each output has exactly one master, named in {@link OUTPUTS} (B3): a size can never drift from
- * the artwork it represents, and adding a size is a line here rather than a new binary in the
- * repository. The masters are the owner's (ADR-0002, and its note of 2026-09-19): this script
- * resizes and converts them and never alters a mark.
+ * Every output comes from that master (B3): a size can never drift from the artwork it represents,
+ * and adding a size is a line in {@link OUTPUTS} rather than a new binary in the repository. The
+ * master is the owner's (ADR-0002): this script resizes and converts it and never alters a mark.
  *
- * - `monstera_new_logo.png` — the mark with its wordmark, for where the name is legible;
- * - `monstera_logo_no_text.png` — the mark alone, for sizes where a word cannot be read, and for
- *   the application icon.
- *
- * **There were three, and `monstera_logo_square.png` was retired on 2026-09-23** by the owner's
- * order: the mark alone is the icon, the taskbar button, the title bar, the Store tiles and the PDF
- * file-type icon. It fed nothing but `logo.ico`, so retiring it is one role and one master fewer
- * rather than a size to re-point.
- *
- * Which master feeds which output is this build's reading of those names, recorded in ADR-0002's
- * note so the owner can move a line rather than rediscover the choice.
+ * **ONE MASTER SINCE 2026-10-04**, by the owner's decision in ADR-0002's note of that day. There were
+ * three until 2026-09-23 and two until then — the mark with its wordmark for the start screen,
+ * About and the README, and the mark alone for the small sizes and the icon. The start screen and
+ * About already set the name as text, so the picture no longer carries it, and nothing is left to
+ * choose between: there is no master column here, because a column with one value is a choice the
+ * next reader has to rediscover is not one.
  *
  * Some outputs are committed rather than built on demand, and the reason is specific: GitHub
  * renders README.md with no build step, the renderer imports its two sizes, and packaging needs an
@@ -38,38 +34,32 @@ import pngToIco from 'png-to-ico';
 import sharp from 'sharp';
 
 import { formatError } from '../lib/reportError.mjs';
+import { MASTER, MASTER_FILE } from './brandMaster.mjs';
 import { shapeProblem } from './brandShape.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BRAND = join(REPO_ROOT, 'assets', 'brand');
 
-/** The owner's masters, by the role each plays. */
-const MASTERS = {
-  wordmark: 'monstera_new_logo.png',
-  mark: 'monstera_logo_no_text.png',
-};
-
 /**
- * Committed outputs, each from one master.
+ * Committed outputs, each a square of `size` from the master.
  *
  * `logo-256.png` is what README.md displays: 256 px keeps a 132 px render crisp on a 2x display
  * without shipping a megabyte to every reader of the front page. `logo-hero.png`,
  * `logo-hero@2x.png` and `logo-title.png` are what the RENDERER draws — the start screen's hero
  * at 142 px (`--logo-hero`), from the 1x file on a 1x display and the 2x file on a 2x one so each
  * draws real pixels without downscaling twice its size, and the mark at 18 px in the menu bar
- * (ADR-0107), at least twice that. The masters are square, so each is a square of `size`; the
- * menu bar takes the mark without its word, which at 18 px is a smudge rather than a name.
+ * (ADR-0107), at least twice that.
  *
- * @type {readonly {file: string, master: keyof typeof MASTERS, size: number}[]}
+ * @type {readonly {file: string, size: number}[]}
  */
 const OUTPUTS = [
-  { file: 'logo-256.png', master: 'wordmark', size: 256 },
-  { file: 'logo-hero.png', master: 'wordmark', size: 142 },
-  { file: 'logo-hero@2x.png', master: 'wordmark', size: 284 },
-  { file: 'logo-title.png', master: 'mark', size: 52 },
+  { file: 'logo-256.png', size: 256 },
+  { file: 'logo-hero.png', size: 142 },
+  { file: 'logo-hero@2x.png', size: 284 },
+  { file: 'logo-title.png', size: 52 },
 ];
 
-/** Square sizes packed into the Windows `.ico` the packaged application carries, from the mark. */
+/** Square sizes packed into the Windows `.ico` the packaged application carries. */
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
 
 /**
@@ -100,18 +90,12 @@ async function main() {
   /** @type {string[]} */
   const stale = [];
 
-  /** @type {Record<keyof typeof MASTERS, Buffer>} */
-  const masters = {
-    wordmark: await readFile(join(BRAND, MASTERS.wordmark)),
-    mark: await readFile(join(BRAND, MASTERS.mark)),
-  };
-  for (const [role, bytes] of Object.entries(masters)) {
-    const problem = await shapeProblem(bytes);
-    if (problem !== null) stale.push(`${MASTERS[/** @type {keyof typeof MASTERS} */ (role)]} (${problem})`);
-  }
+  const master = await readFile(MASTER);
+  const problem = await shapeProblem(master);
+  if (problem !== null) stale.push(`${MASTER_FILE} (${problem})`);
 
-  for (const { file, master, size } of OUTPUTS) {
-    const generated = await square(masters[master], size);
+  for (const { file, size } of OUTPUTS) {
+    const generated = await square(master, size);
     const path = join(BRAND, file);
     if (check) {
       const existing = await readFile(path).catch(() => null);
@@ -119,25 +103,25 @@ async function main() {
       continue;
     }
     await writeFile(path, generated);
-    process.stderr.write(`  wrote ${file} (${String(size)} px from ${MASTERS[master]}, ${String(generated.length)} bytes)\n`);
+    process.stderr.write(`  wrote ${file} (${String(size)} px from ${MASTER_FILE}, ${String(generated.length)} bytes)\n`);
   }
 
   const icoPath = join(BRAND, 'logo.ico');
-  const ico = await pngToIco(await Promise.all(ICO_SIZES.map((size) => square(masters.mark, size))));
+  const ico = await pngToIco(await Promise.all(ICO_SIZES.map((size) => square(master, size))));
   if (check) {
     const existing = await readFile(icoPath).catch(() => null);
     if (existing === null || digest(existing) !== digest(ico)) stale.push('logo.ico');
   } else {
     await writeFile(icoPath, ico);
-    process.stderr.write(`  wrote logo.ico (${ICO_SIZES.join(', ')} px from ${MASTERS.mark}, ${String(ico.length)} bytes)\n`);
+    process.stderr.write(`  wrote logo.ico (${ICO_SIZES.join(', ')} px from ${MASTER_FILE}, ${String(ico.length)} bytes)\n`);
   }
 
   if (stale.length > 0) {
     process.stderr.write(
       `\nBrand assets are not what their masters produce: ${stale.join(', ')}\n\n` +
         `  Run:  node scripts/brand/generateAssets.mjs\n\n` +
-        `A committed output that no longer matches its master is the drift one source per ` +
-        `output exists to prevent; a master of the wrong shape is the owner's to replace.\n`,
+        `A committed output that no longer matches the master is the drift one source ` +
+        `exists to prevent; a master of the wrong shape is the owner's to replace.\n`,
     );
     return 1;
   }

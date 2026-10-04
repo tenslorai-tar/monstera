@@ -4,7 +4,7 @@
  *
  * `brand:check` refuses a master with no alpha channel or an opaque corner (`brandShape.mjs`).
  * Its reassuring answer is *no problem*, which a check that could not see would also give — so
- * case 1 holds the owner's three masters to `null`, and cases 2 and 3 build the two refusals from
+ * case 1 holds the owner's master to `null`, and cases 2 and 3 build the two refusals from
  * images that are otherwise fine. Case 4 is the control on what the check keys on: an image whose
  * CENTRE is opaque and whose corners are clear must pass, or the rule has become *any opaque
  * pixel*, which every real mark would fail.
@@ -13,19 +13,15 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import sharp from 'sharp';
 
+// ONE SINCE 2026-10-04, by the owner's decision (ADR-0002's note of that day), and named where the
+// generator and the Store's images take it, so this case cannot hold a master nothing reads.
+import { MASTER, MASTER_FILE } from '../brand/brandMaster.mjs';
 import { shapeProblem } from '../brand/brandShape.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
-
-const BRAND = join(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..'), 'assets', 'brand');
-// TWO SINCE 2026-09-23: `monstera_logo_square.png` was retired by the owner's order, and the mark
-// alone is now the application icon as well as the small sizes.
-const MASTERS = ['monstera_new_logo.png', 'monstera_logo_no_text.png'];
 
 /** @type {string[]} */
 const failures = [];
@@ -60,12 +56,8 @@ async function built(paint, alpha = true) {
 }
 
 try {
-  const answers = await Promise.all(MASTERS.map(async (name) => shapeProblem(await readFile(join(BRAND, name)))));
-  check(
-    "the owner's three masters have the shape every output assumes",
-    answers.every((answer) => answer === null),
-    MASTERS.map((name, i) => `${name}: ${String(answers[i])}`).join('; '),
-  );
+  const answer = await shapeProblem(await readFile(MASTER));
+  check("the owner's master has the shape every output assumes", answer === null, `${MASTER_FILE}: ${String(answer)}`);
 
   const noAlpha = await shapeProblem(await built(() => true, false));
   check('an image with no alpha channel is refused, by name', noAlpha === 'it has no alpha channel', `got ${String(noAlpha)}`);

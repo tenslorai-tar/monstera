@@ -133,3 +133,31 @@ no alpha channel or an opaque corner — now over two files rather than three.
 here without being asked for one; the icon a packaged application actually shows is `logo.ico` as
 the packager embeds it, which no check in this repository observes. That verification travels with
 the packaging row rather than with this note.
+
+## Note, 2026-10-04 — one master, and it carries no wordmark
+
+The owner's decision of 4 October 2026: one final logo replaces both masters, and it has **no
+wordmark and no letter** — a green document with a folded corner and the leaf in a white circle,
+2048 × 2048 RGBA with four transparent corners, measured that day (its opaque box 1304 × 1760,
+centred: margins of 144 px top and bottom and 372 px left and right). It is
+`assets/brand/monstera_logo.png`, and every output comes from it: `logo-256.png`, `logo-hero.png`,
+`logo-hero@2x.png`, `logo-title.png`, `logo.ico` and the Store's 73 images.
+
+**This is a decision, not a reading.** The two notes above treat which master feeds which output as
+this build's reading of the file names; with one master there is nothing left to read, and
+`generateAssets.mjs`' table has no master column. The rule of this ADR is untouched: the mark is the
+owner's, and this build resizes and converts it.
+
+**The name moves entirely to text.** Decision 1 removed a text wordmark because the artwork carried
+the name; ADR-0100 then set the name in Marcellus beneath the artwork anyway, so the start screen
+showed it twice until this note — once in the picture, once as the heading — and the About window
+carried it once, in the picture under a dialog title that already names the application. Both now
+show it once, as text, and both pictures keep `alt=""` for that reason.
+
+`monstera_new_logo.png` and `monstera_logo_no_text.png` leave the tree and stay in the history, as
+`logo.png` and `monstera_logo_square.png` did. The masters' file name is now held once, in
+`scripts/brand/brandMaster.mjs`, for the generator, the Store's images and `proof:brandshape`;
+until this note each of the three spelt it itself.
+
+**Still not verified on an installed build**, for the reason in the note above: the owner sees this
+logo in 0.1.11.0.

@@ -1,7 +1,8 @@
 // @ts-check
 /**
  * The Microsoft Store package's images, derived from the owner's mark (the 26 September list, item 9: *"Store
- * submission assets from the two logo masters — monstera_logo_no_text.png for app and tiles"*).
+ * submission assets from the two logo masters — monstera_logo_no_text.png for app and tiles"*). Since 2026-10-04 there
+ * is one master, `brandMaster.mjs`' (ADR-0002's note of that day), and it is the mark alone as that one was.
  *
  * ## The list is Microsoft's, read from Microsoft
  *
@@ -39,11 +40,9 @@ import sharp from 'sharp';
 
 import { formatError } from '../lib/reportError.mjs';
 import { isMain } from '../lib/isMain.mjs';
+import { MASTER } from './brandMaster.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-
-/** The mark alone: the owner's master for the application and its tiles. */
-export const STORE_MASTER = join(REPO_ROOT, 'assets', 'brand', 'monstera_logo_no_text.png');
 
 /** Where a packaging step finds them. Inside a `dist/`, which `.gitignore` excludes. */
 export const STORE_ASSETS_DIRECTORY = join(REPO_ROOT, 'apps', 'desktop', 'dist', 'store-assets');
@@ -143,7 +142,7 @@ export async function storeImage(master, asset) {
  * @returns {Promise<number>} how many were written
  */
 export async function writeStoreAssets(directory) {
-  const master = await readFile(STORE_MASTER);
+  const master = await readFile(MASTER);
   await mkdir(directory, { recursive: true });
   for (const asset of STORE_ASSETS) {
     await writeFile(join(directory, asset.file), await storeImage(master, asset));

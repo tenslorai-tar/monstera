@@ -6,7 +6,8 @@
  * Every output pads with transparency, and every mark sits on whatever ground its surface has —
  * the title bar in three themes, the start screen, Explorer. A master with no alpha channel, or an
  * opaque corner, would draw a square behind the mark on every one of them. Measured 2026-09-19: the
- * owner's three masters are 2048 × 2048 RGBA with four transparent corners each.
+ * owner's three masters were 2048 × 2048 RGBA with four transparent corners each; measured
+ * 2026-10-04, so is the one master that replaced them (`brandMaster.mjs`).
  */
 
 import sharp from 'sharp';

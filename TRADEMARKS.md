@@ -46,15 +46,16 @@ different logo.
 
 **The name:** "Monstera PDF Editor".
 
-**The two logos**, kept in the project's repository under `assets/brand/`:
+**The logo**, kept in the project's repository under `assets/brand/`:
 
 | Logo | What it looks like | Master file | Files made from it |
 |---|---|---|---|
-| **Logo 1: the mark with the wordmark** | A green document shape with a folded top corner, holding a white circle with a green leaf sprig, and the word "Monstera" beneath the circle | `assets/brand/monstera_new_logo.png` | `assets/brand/logo-256.png`, `assets/brand/logo-hero.png` |
-| **Logo 2: the mark alone** | The same document shape, circle and leaf sprig, without the word | `assets/brand/monstera_logo_no_text.png` | `assets/brand/logo-title.png`, `assets/brand/logo.ico`, and the Microsoft Store's tiles and icons |
+| **The Monstera logo** | A green document shape with a folded top corner, holding a white circle with a green leaf sprig | `assets/brand/monstera_logo.png` | `assets/brand/logo-256.png`, `assets/brand/logo-hero.png`, `assets/brand/logo-hero@2x.png`, `assets/brand/logo-title.png`, `assets/brand/logo.ico`, and the Microsoft Store's tiles and icons |
 
-The policy also covers any version of these at a different size, in a different file format or
-in different colours, and anything designed to look confusingly like them.
+The policy also covers the earlier versions of the logo kept in the repository's history (among
+them the same shape with the word "Monstera" beneath the circle), any version of these at a
+different size, in a different file format or in different colours, and anything designed to look
+confusingly like them.
 
 We call these, together, **"the Marks"**.
 
@@ -112,9 +113,9 @@ able to. The one thing we ask is that people can tell your build from ours. So b
 distribute a modified version:
 
 1. **Give it a different name**, one that is not confusingly similar to "Monstera PDF Editor".
-2. **Take out both logos and every file made from them**: everything in `assets/brand/` listed
-   in section 1. In the application they appear as the application and file-type icon, the
-   menu bar's mark and the start screen's logo.
+2. **Take out the logo and every file made from it**: everything in `assets/brand/` listed
+   in section 1. In the application it appears as the application and file-type icon, the
+   menu bar's mark, the start screen's logo and the About window's.
 3. **Replace the name wherever the application shows it**: the window title, the word
    "Monstera" on the start screen, the About window, the app-store listing, and any download
    page.
