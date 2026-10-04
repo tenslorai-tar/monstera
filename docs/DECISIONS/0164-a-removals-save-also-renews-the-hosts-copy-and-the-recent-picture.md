@@ -62,7 +62,7 @@ no longer leaves a `.bak` of that file; the person chose to replace it, and the 
   document. That case stays as it is, and is said here so it is not read as covered: a copy made after the
   redaction is saved still leaves a `.bak` of the file it replaces.
 
-## Corrected, 2026-10-04 — the rebuild opens before it releases, and a protected document keeps its snapshot
+## Correction, 2026-10-04 — the rebuild opens before it releases, and a protected document keeps its snapshot
 
 Decisions 1 and 2 as first written were wrong, and the build found it before anything shipped. **Protecting a
 document is a removal** (ADR-0139), so its save is one of these, and the file it writes is encrypted. Decision 1's
