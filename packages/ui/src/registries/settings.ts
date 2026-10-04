@@ -176,6 +176,15 @@ export interface SettingDefinition<Schema extends z.ZodType = z.ZodType> {
    */
   readonly remembered?: boolean;
   /**
+   * The application writes this on its own, and no person's action does: the round of tips already shown, written as
+   * each is chosen ([ADR-0160](../../../../docs/DECISIONS/0160-a-setting-the-application-writes-for-itself-reports-no-failed-save.md)).
+   *
+   * A failed save of a change to it opens no *Preference not saved*: that dialog is for a person who changed something
+   * and would otherwise learn at a restart that it did not stick, and here nobody changed anything. Always also
+   * `remembered`, since a value no person sets is never a row; the registry refuses one that is not.
+   */
+  readonly background?: boolean;
+  /**
    * Whether this setting needs the OS credential store, without being a secret itself.
    *
    * *Save chat history* is the first: the conversations are encrypted with the keys' own cipher, so
@@ -318,6 +327,13 @@ export class SettingsRegistry {
         throw new Error(
           `Setting "${setting.id}" has an unset title and is not a colour setting built by ` +
             'colourSchema, so there is no no-choice state for it to name (ADR-0056).',
+        );
+      }
+      // A BACKGROUND SETTING IS REMEMBERED (ADR-0160): a value no person sets is never a row a person could set it in.
+      if (setting.background === true && setting.remembered !== true) {
+        throw new Error(
+          `Setting "${setting.id}" is written by the application in the background and is not remembered, so the ` +
+            'Settings dialog would draw a row for a value no person sets. Mark it remembered: true (ADR-0160).',
         );
       }
       // WHETHER A TEXT FIELD RUNS LONG IS DECIDED, never defaulted (ADR-0157): a text setting says it, a secret is a key

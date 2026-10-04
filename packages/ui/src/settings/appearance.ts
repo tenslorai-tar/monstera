@@ -130,6 +130,9 @@ export const TIPS_SHOWN_SETTING: SettingDefinition<z.ZodArray<z.ZodString>> = {
   fallback: [],
   category: 'appearance',
   remembered: true,
+  // WRITTEN AS EACH TIP IS CHOSEN, with no person's action behind it, so a failed save of it is not theirs to be told
+  // about (ADR-0160).
+  background: true,
 };
 
 /** How large the Pages panel draws its page pictures (v5-10's Appearance page). */

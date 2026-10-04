@@ -118,7 +118,10 @@ export function persistSettings(
     // CAPTURED BEFORE THE AWAIT. `store.get` would answer whatever the value is
     // when the write comes back, and a user who changed it twice would be told
     // about the wrong one.
-    const title = store.definition(id)?.title;
+    const definition = store.definition(id);
+    // A SETTING THE APPLICATION WRITES FOR ITSELF reports nothing (ADR-0160): no person changed it, so there is nobody
+    // whose change would quietly fail to stick. It is still SAVED, with the document, every time it changes.
+    const title = definition?.background === true ? undefined : definition?.title;
     void client['settings.save']({ values: store.exportable() }).then(
       (answer) => {
         if (answer.ok || title === undefined) return;

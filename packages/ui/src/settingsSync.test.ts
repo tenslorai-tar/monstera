@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { SETTINGS_PROBLEM_DIALOG_ID } from './dialogs/settingsProblem.js';
 import { SettingsRegistry } from './registries/settings.js';
-import { THEME_SETTING } from './settings/appearance.js';
+import { THEME_SETTING, TIPS_SHOWN_SETTING } from './settings/appearance.js';
 import { AZURE_DI_KEY_SETTING } from './settings/editing.js';
 import { SettingsStore } from './settingsStore.js';
 import { hydrateSettings, persistSettings } from './settingsSync.js';
@@ -218,6 +218,36 @@ describe('settings sync', () => {
     // pass for an implementation that also rolled the change back — leaving the
     // user with an error about something that then did not happen.
     expect(store.get(THEME_SETTING.id)).toBe('dark');
+  });
+
+  it('a BACKGROUND setting’s failed save opens nothing, is still sent, and a person’s change beside it still reports (ADR-0160)', async () => {
+    // THE TIPS' ROUND, written as each tip is chosen with no person's action: a storage failure under it named
+    // "Tips shown this round" to a person who never touched it, and blocked the window with a modal (CI, 9d16327e).
+    const shown: { id: string; props: unknown }[] = [];
+    const sent: unknown[] = [];
+    const client = createClient(channels, (id, params) => {
+      if (id !== 'settings.save') return Promise.resolve(ok({ stored: {} }));
+      sent.push(params);
+      return Promise.resolve(err({ code: INTERNAL_FAILURE, incident: 'incident-1' }));
+    });
+    const store = new SettingsStore(new SettingsRegistry([THEME_SETTING, TIPS_SHOWN_SETTING]));
+    persistSettings(client, store, (id, props) => {
+      shown.push({ id, props });
+      return Promise.resolve(undefined);
+    });
+
+    store.set(TIPS_SHOWN_SETTING.id, ['help']);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(shown).toStrictEqual([]);
+    // STILL SAVED: the decision is about the report, never about the write.
+    expect(sent).toHaveLength(1);
+
+    // CONTROL: the same failing store, a person's change, the dialog naming THEIR setting.
+    store.set(THEME_SETTING.id, 'dark');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(shown).toStrictEqual([{ id: SETTINGS_PROBLEM_DIALOG_ID, props: { setting: THEME_SETTING.title } }]);
   });
 
   it('CONTROL: a save that SUCCEEDS reports nothing', async () => {

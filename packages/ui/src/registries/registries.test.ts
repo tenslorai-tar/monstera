@@ -400,6 +400,21 @@ describe('SettingsRegistry', () => {
   /** A union with the colour kind's exact SHAPE, which `colourSchema` did not build. */
   const lookalike = (): z.ZodType => z.union([z.literal('auto'), z.string().regex(/^#[0-9a-f]{6}$/u)]);
 
+  it('refuses a BACKGROUND setting that is not remembered, and takes one that is (ADR-0160)', () => {
+    const round = {
+      id: 'appearance.round',
+      title: messageKey('setting.appearance-theme.title'),
+      schema: z.boolean(),
+      fallback: false,
+      category: 'appearance' as const,
+    };
+    expect(() => new SettingsRegistry([{ ...round, background: true }])).toThrow(
+      /"appearance\.round" is written by the application in the background and is not remembered/u,
+    );
+    // CONTROL: remembered, it is taken.
+    expect(new SettingsRegistry([{ ...round, background: true, remembered: true }]).get('appearance.round')).toBeDefined();
+  });
+
   it('refuses a colour setting with no unset title', () => {
     expect(
       () =>
