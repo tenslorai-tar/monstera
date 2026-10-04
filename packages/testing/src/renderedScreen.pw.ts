@@ -2509,13 +2509,38 @@ test('a CAPTION THAT GROWS after the fold measured it is measured again, so the 
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   const tools = page.locator('.m-ribbon__tools');
   await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
-  await expect.poll(() => ribbonOverflow(tools)).toBeLessThanOrEqual(1);
-  const shownBefore = await tools.locator('.m-tool-button[data-command]').count();
-  await page.evaluate(() => {
-    document.styleSheets[0]?.insertRule('.m-tool-button__label { font-size: 13px !important; }', 0);
+  // THE ROW SETTLED BEFORE THE GROWTH, which is what makes this a control. Growing the captions while the document is
+  // still arriving lets an ordinary re-render re-measure them, and the case then passed with no group observed at all
+  // (measured 2026-10-04: 19 tools folding to 17 with both group observations removed). After the page's first frame
+  // and a row that reads the same across frames, nothing else measures, so only the observer can answer the growth.
+  await pageShown(page);
+  const { count: shownBefore } = await settled(
+    page,
+    async () => ({ count: await tools.locator('.m-tool-button[data-command]').count(), overflow: await ribbonOverflow(tools) }),
+    (reading) => reading.overflow <= 1,
+    'the ribbon row',
+  );
+  // THE GROWTH IS DERIVED FROM THE ROOM THE ROW HAS, so it always needs a fold. A fixed 13 px did on Linux's fallback
+  // face and stopped doing on Windows' Segoe UI once Home's three Office buttons became one Export (cloud-4 item 9c):
+  // the narrower captions then grew into the room left at the row's end, nothing folded, and the case failed for
+  // its input rather than the fold. Letter spacing adds exactly its amount for each character a caption draws.
+  const { room, characters } = await tools.evaluate((row) => {
+    const style = getComputedStyle(row);
+    const inner = row.getBoundingClientRect().right - Number.parseFloat(style.paddingRight) - Number.parseFloat(style.borderRightWidth);
+    const groups = [...row.querySelectorAll(':scope > .m-ribbon__group, :scope > .m-ribbon__rest')];
+    const labels = [...row.querySelectorAll('.m-tool-button__label')];
+    return {
+      room: inner - Math.max(...groups.map((group) => group.getBoundingClientRect().right)),
+      characters: labels.reduce((sum, label) => sum + (label.textContent ?? '').length, 0),
+    };
   });
-  // THE GROWTH TOOK: the captions are drawn larger, so the row had something to answer.
-  await expect(tools.locator('.m-tool-button__label').first()).toHaveCSS('font-size', '13px');
+  expect(characters).toBeGreaterThan(0);
+  const spacing = Math.ceil((room + 24) / characters);
+  await page.evaluate((px) => {
+    document.styleSheets[0]?.insertRule(`.m-tool-button__label { letter-spacing: ${String(px)}px !important; }`, 0);
+  }, spacing);
+  // THE GROWTH TOOK: the captions are drawn wider, so the row had something to answer.
+  await expect(tools.locator('.m-tool-button__label').first()).toHaveCSS('letter-spacing', `${String(spacing)}px`);
   await expect.poll(() => ribbonOverflow(tools)).toBeLessThanOrEqual(1);
   // AND IT ANSWERED BY FOLDING, not by the browser hiding the excess: fewer tools on the row than before.
   expect(await tools.locator('.m-tool-button[data-command]').count()).toBeLessThan(shownBefore);
