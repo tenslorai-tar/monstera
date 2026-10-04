@@ -1,22 +1,27 @@
 import { z } from 'zod';
 
-/**
- * What the merge dialog answers with — **its own module for
- * `deletePagesResult.ts`'s forced reason**: the entry imports the body lazily
- * and the body needs this type, so declaring it beside the entry makes the two
- * circular.
- *
- * One field, because the dialog's only question is *which document*. Where the
- * pages land is not asked: a merge **appends**, which the row states and the
- * command's `at` carries as the target's page count. That is what separates
- * this row from *insert from PDF*, whose whole point is an index.
- *
- * `.min(1)` on the id mirrors `docIdSchema`. It is deliberately NOT branded
- * here: a dialog answer is renderer-side text until the command builds the
- * payload, and `mergeDocumentSchema` is what turns it into a `DocId` at the
- * boundary — one place performs that transform (B3a).
- */
-export const MERGE_DOCUMENT_RESULT = z.object({ source: z.string().min(1) }).strict();
+import { chooseFileAnswer } from './sourceDocuments.js';
 
-/** The document the reader chose to merge in. */
+/**
+ * What the merge dialog answers with — **its own module for `deletePagesResult.ts`'s forced reason**: the entry imports
+ * the body lazily and the body needs this type, so declaring it beside the entry makes the two circular.
+ *
+ * `at` is zero-based in the TARGET's frame, converted once in the body: *at the start* is 0, *at the end* is the page
+ * count, *after page p* is `p`.
+ */
+
+/** Where the merged pages go. */
+export const MERGE_PLACEMENTS = ['start', 'end', 'after'] as const;
+
+/** What the dialog reopens with after *Choose file…*: the place, and the page as typed. */
+export const MERGE_DOCUMENT_DRAFT = z
+  .object({ placement: z.enum(MERGE_PLACEMENTS), page: z.string().max(20) })
+  .strict();
+
+export const MERGE_DOCUMENT_RESULT = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('merge'), source: z.string().min(1), at: z.number().int().nonnegative() }).strict(),
+  chooseFileAnswer(MERGE_DOCUMENT_DRAFT),
+]);
+
+/** The document merged in and where its pages land — or a file to choose first. */
 export type MergeDocumentAnswer = z.infer<typeof MERGE_DOCUMENT_RESULT>;

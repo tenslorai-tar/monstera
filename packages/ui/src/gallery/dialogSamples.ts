@@ -826,8 +826,10 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
   'dialog.camera-capture': [{ state: 'opened', props: {} }],
   'dialog.generate-toc-problem': [{ state: 'opened', props: { reason: 'no-outline' } }],
   'dialog.merge-document': [
-    { state: 'opened', props: { choices: DOCUMENTS } },
-    { state: 'long', props: { choices: LONG_DOCUMENTS } },
+    { state: 'opened', props: { choices: SOURCES, pageCount: 12 } },
+    { state: 'after-page', props: { choices: SOURCES, pageCount: 12, draft: { placement: 'after', page: '4' } } },
+    { state: 'none-open', props: { choices: [], pageCount: 12 } },
+    { state: 'long', props: { choices: LONG_SOURCES, pageCount: 12 } },
   ],
   'dialog.merge-document-none': [{ state: 'opened', props: {} }],
   'dialog.insert-from-pdf': [

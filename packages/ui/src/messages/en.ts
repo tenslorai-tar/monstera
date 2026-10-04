@@ -286,6 +286,12 @@ export const DESKEW_PAGES_COMMAND_TITLE = messageKey('command.deskew-pages.title
 export const MERGE_DOCUMENT_COMMAND_TITLE = messageKey('command.merge-document.title');
 export const MERGE_DOCUMENT_TITLE = messageKey('dialog.merge-document.title');
 export const MERGE_DOCUMENT_LABEL = messageKey('dialog.merge-document.label');
+export const MERGE_DOCUMENT_PLACE = messageKey('dialog.merge-document.place');
+export const MERGE_DOCUMENT_AT_START = messageKey('dialog.merge-document.at-start');
+export const MERGE_DOCUMENT_AT_END = messageKey('dialog.merge-document.at-end');
+export const MERGE_DOCUMENT_AFTER_PAGE = messageKey('dialog.merge-document.after-page');
+export const MERGE_DOCUMENT_PAGE = messageKey('dialog.merge-document.page');
+export const MERGE_DOCUMENT_RANGE = messageKey('dialog.merge-document.range');
 export const MERGE_DOCUMENT_APPLY = messageKey('dialog.merge-document.apply');
 export const MERGE_DOCUMENT_NONE_TITLE = messageKey('dialog.merge-document-none.title');
 export const MERGE_DOCUMENT_NONE_BODY = messageKey('dialog.merge-document-none.body');
@@ -4221,7 +4227,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DESKEW_PAGES_COMMAND_TITLE]: 'Straighten crooked pages',
   [MERGE_DOCUMENT_COMMAND_TITLE]: 'Merge a document…',
   [MERGE_DOCUMENT_TITLE]: 'Merge a document',
-  [MERGE_DOCUMENT_LABEL]: 'Document to merge in',
+  [MERGE_DOCUMENT_LABEL]: 'Merge in',
+  [MERGE_DOCUMENT_PLACE]: 'Place',
+  [MERGE_DOCUMENT_AT_START]: 'At the start',
+  [MERGE_DOCUMENT_AT_END]: 'At the end',
+  [MERGE_DOCUMENT_AFTER_PAGE]: 'After page',
+  [MERGE_DOCUMENT_PAGE]: 'Page',
+  [MERGE_DOCUMENT_RANGE]: 'Choose a page of this document, from 1 to {last}.',
   [MERGE_DOCUMENT_APPLY]: 'Merge',
   [MERGE_DOCUMENT_NONE_TITLE]: 'Nothing to merge',
   // NAMES THE ACTION THAT FIXES IT, because ADR-0040 Decision 2 makes opening

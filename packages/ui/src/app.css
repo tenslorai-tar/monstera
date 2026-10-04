@@ -4110,12 +4110,12 @@ optgroup {
   white-space: nowrap;
 }
 
-/* INSERT'S PAGE NUMBER is a page number: as wide as one, beside the side it is on. */
-.m-insert-from-pdf__page {
+/* A PAGE NUMBER beside the side it is on (Insert from PDF, Merge): as wide as one. */
+.m-page-number-field {
   inline-size: 8ch;
 }
 
-.m-insert-from-pdf__page .m-input {
+.m-page-number-field .m-input {
   inline-size: 100%;
   box-sizing: border-box;
 }

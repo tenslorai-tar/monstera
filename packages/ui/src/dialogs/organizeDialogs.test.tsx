@@ -79,9 +79,10 @@ const BODIES: readonly {
   },
   {
     name: 'Merge',
-    body: (resolve) => <MergeDocumentBody choices={CHOICES} resolve={resolve} update={() => undefined} />,
+    body: (resolve) => <MergeDocumentBody choices={CHOICES} pageCount={5} resolve={resolve} update={() => undefined} />,
     action: 'Merge',
-    answer: { source: 'd-a' },
+    // AT THE END, as it opens: the target's page count.
+    answer: { kind: 'merge', source: 'd-a', at: 5 },
   },
   {
     name: 'Insert from PDF',

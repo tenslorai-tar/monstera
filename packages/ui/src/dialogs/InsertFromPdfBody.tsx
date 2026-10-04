@@ -100,7 +100,7 @@ export default function InsertFromPdfBody({
           onChange={setPlacement}
         />
         {/* NAMED *Page* for a screen reader and not on screen, where the segment beside it already ends in *page*. */}
-        <span className="m-insert-from-pdf__page">
+        <span className="m-page-number-field">
           <Input
             invalid={problem !== ''}
             label={INSERT_FROM_PDF_PAGE}

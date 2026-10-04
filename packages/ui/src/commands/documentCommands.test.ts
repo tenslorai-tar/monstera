@@ -180,6 +180,27 @@ const CONTEXT: CommandContext = {
   ],
 };
 
+/**
+ * A client for the second-document commands (`sourceDocuments.ts`): it answers each document's page count by its id —
+ * 4 for `doc-0`, 7 for `doc-2`, 5 for a picked `doc-9` — and records every execute. Distinct counts, so a count offered
+ * against the wrong document is a different list. `doc-gone` answers `document-not-open`, a source closed in between.
+ */
+function sourcesClient(): { readonly client: ContractClient; readonly executed: unknown[] } {
+  const counts: Readonly<Record<string, number>> = { 'doc-0': 4, 'doc-2': 7, 'doc-9': 5 };
+  const executed: unknown[] = [];
+  const client = createClient(channels, (id, params) => {
+    if (id === 'document.viewModel') {
+      const { docId } = params as { readonly docId: string };
+      const pageCount = counts[docId];
+      if (pageCount === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok({ version: asDocVersion(1), pageCount, rotations: [0] }));
+    }
+    executed.push(params);
+    return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+  });
+  return { client, executed };
+}
+
 /** The context with no document, for the `when` cases. */
 const NO_DOCUMENT: CommandContext = {
   selectedPages: [],
@@ -2324,8 +2345,8 @@ describe('delete pages — the mutation-dialog gate', () => {
    * with **the id the reader chose** — neither test can see the other's value,
    * which is the blind spot CLAUDE.md names, so the id is what both sides hold.
    */
-  it('dispatches mergeDocument with the CHOSEN id, appended at the target’s length', async () => {
-    const { client, sent } = recording();
+  it('dispatches mergeDocument with the CHOSEN id at the place the dialog answered', async () => {
+    const { client, executed } = sourcesClient();
     const opened: unknown[] = [];
 
     await mergeDocumentCommand({
@@ -2333,9 +2354,12 @@ describe('delete pages — the mutation-dialog gate', () => {
       stamp,
       signatures,
       onApplied: () => undefined,
+      openSource: () => Promise.resolve({ kind: 'none' }),
+      // AFTER PAGE 4, which is not the end the body opens on — a stub answering the default would let a command that
+      // ignored the answer and appended pass.
       ask: (id, props) => {
         opened.push({ id, props });
-        return Promise.resolve({ source: 'doc-2' });
+        return Promise.resolve({ kind: 'merge', source: 'doc-2', at: 4 });
       },
     }).run(CONTEXT);
 
@@ -2347,25 +2371,23 @@ describe('delete pages — the mutation-dialog gate', () => {
         id: 'dialog.merge-document',
         props: {
           choices: [
-            { docId: 'doc-0', name: 'Before' },
-            { docId: 'doc-2', name: 'After' },
+            { docId: 'doc-0', name: 'Before', pageCount: 4 },
+            { docId: 'doc-2', name: 'After', pageCount: 7 },
           ],
+          source: undefined,
+          // `CONTEXT.pageCount`, which *at the end* names.
+          pageCount: 10,
+          draft: undefined,
         },
       },
     ]);
-    // `at: 10` is `CONTEXT.pageCount`, which is what *append* means — and it is
-    // not `page + 1`, the shape every other insert command uses. A merge that
-    // reused that arithmetic would land the source's pages in the middle.
-    expect(sent).toStrictEqual([
-      {
-        id: 'document.execute',
-        params: { docId: DOC, command: { kind: 'mergeDocument', source: 'doc-2', sourcePages: 'all', at: 10 } },
-      },
+    expect(executed).toStrictEqual([
+      { docId: DOC, command: { kind: 'mergeDocument', source: 'doc-2', sourcePages: 'all', at: 4 } },
     ]);
   });
 
-  it('opens the nothing-to-merge dialog when no other document is open', async () => {
-    const { client, sent } = recording();
+  it('with NO OTHER DOCUMENT OPEN the merge dialog still opens, and Choose file is the way to a source', async () => {
+    const { client, executed } = sourcesClient();
     const opened: unknown[] = [];
 
     await mergeDocumentCommand({
@@ -2373,24 +2395,21 @@ describe('delete pages — the mutation-dialog gate', () => {
       stamp,
       signatures,
       onApplied: () => undefined,
+      openSource: () => Promise.resolve({ kind: 'none' }),
       ask: (id, props) => {
         opened.push({ id, props });
         return Promise.resolve(undefined);
       },
-      // ONLY THE TARGET IS OPEN, which is the state a reader is in when they
-      // first reach for merge. The command exists — `when` is `hasDocument` —
-      // so this is what teaches them ADR-0040 Decision 2's flow.
-      // ONLY THE TARGET IS OPEN, filtered from the fixture rather than
-      // rebuilt, so this list cannot drift from the one above.
+      // ONLY THE TARGET IS OPEN, filtered from the fixture rather than rebuilt, so this list cannot drift from the one
+      // above.
     }).run({
       ...CONTEXT,
       openDocuments: CONTEXT.openDocuments.filter((document) => document.docId === DOC),
     });
 
-    expect(opened).toStrictEqual([{ id: 'dialog.merge-document-none', props: {} }]);
-    // AND NOTHING WAS DISPATCHED. Without this the case passes for a command
-    // that opens the message and merges anyway.
-    expect(sent).toStrictEqual([]);
+    expect(opened).toMatchObject([{ id: 'dialog.merge-document', props: { choices: [] } }]);
+    // AND NOTHING WAS DISPATCHED for a dismissal.
+    expect(executed).toStrictEqual([]);
   });
 
   it('insert-from-PDF sends the SAME command with the chosen position', async () => {
@@ -2449,27 +2468,6 @@ describe('delete pages — the mutation-dialog gate', () => {
       },
     ]);
   });
-
-  /**
-   * A client answering each document's page count by its id — 4 for `doc-0`, 7 for `doc-2`, 5 for a picked `doc-9` —
-   * and recording every execute. Distinct counts, so a count offered against the wrong document is a different list.
-   * `doc-gone` answers `document-not-open`, a source closed in between.
-   */
-  function sourcesClient(): { readonly client: ContractClient; readonly executed: unknown[] } {
-    const counts: Readonly<Record<string, number>> = { 'doc-0': 4, 'doc-2': 7, 'doc-9': 5 };
-    const executed: unknown[] = [];
-    const client = createClient(channels, (id, params) => {
-      if (id === 'document.viewModel') {
-        const { docId } = params as { readonly docId: string };
-        const pageCount = counts[docId];
-        if (pageCount === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
-        return Promise.resolve(ok({ version: asDocVersion(1), pageCount, rotations: [0] }));
-      }
-      executed.push(params);
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
-    });
-    return { client, executed };
-  }
 
   /** The replace command with the deps every case shares, and what each case varies. */
   function replaceWith(
@@ -3776,17 +3774,18 @@ describe('delete pages — the mutation-dialog gate', () => {
   });
 
   it('CONTROL: a DISMISSED merge dialog dispatches nothing', async () => {
-    const { client, sent } = recording();
+    const { client, executed } = sourcesClient();
 
     await mergeDocumentCommand({
       client,
       stamp,
       signatures,
       onApplied: () => undefined,
+      openSource: () => Promise.resolve({ kind: 'none' }),
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([]);
+    expect(executed).toStrictEqual([]);
   });
 
   it('CONTROL: a DISMISSED resize dialog dispatches nothing', async () => {

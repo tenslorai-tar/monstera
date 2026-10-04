@@ -2781,7 +2781,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onOpened: opened,
           onActivate: activate,
         }),
-        mergeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        mergeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
         insertFromPdfCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
         replacePageCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
         importPageAsLayerCommand({ client, onApplied: applied, ask, stamp, signatures }),

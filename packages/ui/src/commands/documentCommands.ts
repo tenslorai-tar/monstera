@@ -69,7 +69,7 @@ import { INSERT_FROM_PDF_DIALOG_ID } from '../dialogs/insertFromPdf.js';
 import { INSERT_FROM_PDF_RESULT } from '../dialogs/insertFromPdfResult.js';
 import { MERGE_DOCUMENT_DIALOG_ID } from '../dialogs/mergeDocument.js';
 import { MERGE_DOCUMENT_NONE_DIALOG_ID } from '../dialogs/mergeDocumentNone.js';
-import type { MergeDocumentAnswer } from '../dialogs/mergeDocumentResult.js';
+import { MERGE_DOCUMENT_RESULT } from '../dialogs/mergeDocumentResult.js';
 import { REPLACE_PAGE_DIALOG_ID } from '../dialogs/replacePage.js';
 import { IMPORT_PAGE_AS_LAYER_DIALOG_ID } from '../dialogs/importPageAsLayer.js';
 import type { ImportPageAsLayerAnswer } from '../dialogs/importPageAsLayerResult.js';
@@ -1841,20 +1841,20 @@ export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
 }
 
 /**
- * Copies another open document's pages into this one.
+ * Copies every page of another document — open, or a file picked from the dialog — into this one, at the start, at
+ * the end, or after a page.
  *
- * ## It APPENDS, and that is what separates this row from *insert from PDF*
+ * ## Every page, and that is what separates this row from *insert from PDF*
  *
- * `at` is the target's page count, so the source's pages land after everything
- * the reader already has. Where they land is not a question this dialog asks —
- * *insert from PDF* is the row whose whole point is an index, and giving both
- * commands a position control would make them the same feature twice.
+ * *Combine these documents* takes each whole; *put these pages here* is the
+ * row that chooses pages. Both are `mergeDocument`. The position the owner asked
+ * for (item 13d) is the three places a whole document goes, *at the end* first.
  *
- * ## The choices come from the CONTEXT, filtered here
+ * ## The choices come from the CONTEXT, filtered by `askAboutSource`
  *
  * `context.openDocuments` is `App.tsx`'s `tabs`, the list the compare picker
  * already takes. It includes the focused document by design, so the filter is
- * this command's — the dialog receives a list that never contains the target,
+ * the command's — the dialog receives a list that never contains the target,
  * which is what makes *merge a document into itself* unrepresentable rather
  * than refused.
  *
@@ -1862,11 +1862,10 @@ export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
  *
  * `when` is `hasDocument` rather than *has a second document*. Hiding merge
  * whenever one document is open makes it undiscoverable in exactly the state a
- * reader is in when they want it, and ADR-0040 Decision 2 means they have to
- * learn that the other file is opened first. A control that is not there
- * teaches nothing.
+ * reader is in when they want it; the dialog opens and says so beside
+ * *Choose file…*.
  */
-export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
+export function mergeDocumentCommand(deps: SourceCommandDeps): UiCommand {
   return {
     id: 'document.merge',
     feedback: VISIBLE,
@@ -1878,37 +1877,33 @@ export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.pageCount === undefined) return;
+      const target = context.docId;
+      const { pageCount } = context;
+      if (target === undefined || pageCount === undefined) return;
 
-      const choices = context.openDocuments
-        .filter((document) => document.docId !== context.docId)
-        // NO CAST ON THE WAY OUT. `DocId` is a branded string, so it satisfies
-        // the dialog's `z.string()` props without one — the brand is only in
-        // the way coming back, where `mergeDocumentSchema` re-applies it.
-        .map((document) => ({ docId: document.docId, name: document.name }));
+      // NO CAST ON THE WAY OUT. `DocId` is a branded string, so it satisfies
+      // the dialog's `z.string()` props without one — the brand is only in
+      // the way coming back, where `mergeDocumentSchema` re-applies it.
+      const asked = await askAboutSource(
+        deps,
+        context,
+        target,
+        (choices, source, draft) => deps.ask(MERGE_DOCUMENT_DIALOG_ID, { choices, source, pageCount, draft }),
+        (answered) => MERGE_DOCUMENT_RESULT.safeParse(answered).data,
+      );
+      if (asked === undefined) return;
 
-      if (choices.length === 0) {
-        void deps.ask(MERGE_DOCUMENT_NONE_DIALOG_ID, {});
-        return;
-      }
-
-      const answer = (await deps.ask(MERGE_DOCUMENT_DIALOG_ID, { choices })) as
-        | MergeDocumentAnswer
-        | undefined;
-      if (answer === undefined) return;
-
-      await applyDocumentCommand(deps, context.docId, {
+      await applyDocumentCommand(deps, target, {
         kind: 'mergeDocument',
         // THE SCHEMA BRANDS IT. The dialog answers a plain string because a
         // dialog result is renderer-side text until a command builds a payload,
         // and `mergeDocumentSchema`'s `docIdSchema` is the one place that
         // transform happens (B3a).
-        source: answer.source as DocId,
+        source: asked.answer.source as DocId,
+        // EVERY PAGE: choosing some is Insert from PDF's question.
         sourcePages: 'all',
-        // APPENDS. See the note above — the position is the target's own
-        // length, read from the context rather than fetched, for the reason
-        // `pageCount` is in the context at all.
-        at: context.pageCount,
+        // ALREADY ZERO-BASED, converted once in the dialog.
+        at: asked.answer.at,
       });
     },
   };
