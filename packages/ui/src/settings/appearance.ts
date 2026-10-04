@@ -4,6 +4,7 @@ import {
   REDUCE_MOTION_DESCRIPTION,
   STATUS_TIPS_DESCRIPTION,
   STATUS_TIPS_TITLE,
+  TIPS_SHOWN_TITLE,
   REDUCE_MOTION_TITLE,
   THEME_DESCRIPTION,
   THEME_OPTION_TITLES,
@@ -122,7 +123,9 @@ export const STATUS_TIPS_SETTING: SettingDefinition<z.ZodBoolean> = {
  */
 export const TIPS_SHOWN_SETTING: SettingDefinition<z.ZodArray<z.ZodString>> = {
   id: 'appearance.tips-shown',
-  title: STATUS_TIPS_TITLE,
+  // ITS OWN NAME, never the switch's: two settings under one title are one name for two things wherever a setting is
+  // named, and the case that a remembered setting draws no row found the switch by it.
+  title: TIPS_SHOWN_TITLE,
   schema: z.array(z.string().max(200)).max(2000),
   fallback: [],
   category: 'appearance',

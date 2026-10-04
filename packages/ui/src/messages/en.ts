@@ -45,6 +45,7 @@ export const REDUCE_MOTION_TITLE = messageKey('setting.appearance-reduce-motion.
 export const REDUCE_MOTION_DESCRIPTION = messageKey('setting.appearance-reduce-motion.description');
 export const STATUS_TIPS_TITLE = messageKey('setting.appearance-status-tips.title');
 export const STATUS_TIPS_DESCRIPTION = messageKey('setting.appearance-status-tips.description');
+export const TIPS_SHOWN_TITLE = messageKey('setting.appearance-tips-shown.title');
 /**
  * The status bar's tips (ADR-0159). The two DERIVED forms take a command's own title, key and ribbon place; every
  * WRITTEN tip names its commands under placeholders, `{name}` for a title and `{nameKey}` for a key, so no tip spells a
@@ -2621,6 +2622,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Turns off the transitions and animations in the interface. Also on whenever Windows asks for reduced motion.',
   [STATUS_TIPS_TITLE]: 'Show tips in the status bar',
   [STATUS_TIPS_DESCRIPTION]: 'A short tip at the start of the status bar, a new one every so often.',
+  [TIPS_SHOWN_TITLE]: 'Tips shown this round',
   [TIP_KEY]: '{command}: press {key}.',
   [TIP_PLACE]: '{command} is in {section}, under {group}.',
   [TIP_HELP]: 'Need help using a tool? Choose the tool, then press {helpKey}.',
