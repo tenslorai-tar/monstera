@@ -154,7 +154,7 @@ async function threeRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 53 });
+const roster = createRoster(failures, { cases: 54 });
 
 /**
  * @param {string} name
@@ -306,6 +306,17 @@ async function main() {
     unwritable !== null && unwritable.includes('cannot carry the text'),
     unwritable ?? 'it was accepted, on FPDFText_SetText answering 1',
   );
+  // A NUL INSIDE THE REPLACEMENT (CR-NAT-18): FPDF_WIDESTRING is terminated, so PDFium sets the words before it and
+  // drops the rest. The read-back sees the drawn text end short of what was written and refuses, so nothing truncated
+  // is ever generated. The page-unchanged case below covers this refusal too.
+  const truncated = await refusal(() =>
+    replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: 'SECOND\u0000 the rest' }]),
+  );
+  record(
+    'a replacement carrying a NUL is refused by the read-back, never saved cut at the terminator',
+    truncated !== null && truncated.includes('cannot carry the text'),
+    truncated ?? 'it was accepted, and saved as far as the NUL',
+  );
   const named = await refusal(() => replaceTextObjects(session, 0, []));
   record(
     'a replacement naming no object is refused rather than regenerating for nothing',
@@ -340,7 +351,7 @@ async function main() {
   record(
     'a refused edit changed nothing',
     afterRefusals === before,
-    'the page reads exactly as it did before the refusals above, the unwritable replacement among them',
+    'the page reads exactly as it did before the refusals above, the unwritable and the NUL-bearing replacements among them',
   );
 
   // THE PRIOR, read before the edit that replaces it. This is what makes the
