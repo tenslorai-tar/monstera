@@ -154,7 +154,7 @@ async function threeRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 51 });
+const roster = createRoster(failures, { cases: 52 });
 
 /**
  * @param {string} name
@@ -295,6 +295,17 @@ async function main() {
     outOfRange !== null && outOfRange.includes('names none'),
     outOfRange ?? 'it was accepted',
   );
+  // A REPLACEMENT THE RUN'S FONT CANNOT DRAW (CR-NAT-10): FPDFText_SetText answers 1 for a string the font has no
+  // code for, and Replace All reported success over text drawn as nothing. The fixture's Helvetica is WinAnsi, which
+  // has no code for a Han character. CONTROL: the writable replacement below passes the same read-back.
+  const unwritable = await refusal(() =>
+    replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: 'SECOND 漢' }]),
+  );
+  record(
+    'a replacement its font cannot draw is refused by the read-back, before anything is generated',
+    unwritable !== null && unwritable.includes('cannot carry the text'),
+    unwritable ?? 'it was accepted, on FPDFText_SetText answering 1',
+  );
   const named = await refusal(() => replaceTextObjects(session, 0, []));
   record(
     'a replacement naming no object is refused rather than regenerating for nothing',
@@ -329,7 +340,7 @@ async function main() {
   record(
     'a refused edit changed nothing',
     afterRefusals === before,
-    'the page reads exactly as it did before the two refusals',
+    'the page reads exactly as it did before the refusals above, the unwritable replacement among them',
   );
 
   // THE PRIOR, read before the edit that replaces it. This is what makes the

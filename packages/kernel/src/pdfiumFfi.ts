@@ -1281,6 +1281,8 @@ function textObjectAt(bindings: Bound, handle: unknown, page: number, index: num
  * upstream that a silent success would hide.
  * @throws when an index is not a text object, rather than editing whatever is
  * there. `FPDFText_SetText` on a path object is undefined behaviour.
+ * @throws TextNotWritableError when a write reads back as something other than what was written: the run's font
+ * cannot draw it, and nothing is generated.
  */
 export function replaceTextObjects(
   session: PdfiumSession,
@@ -1311,6 +1313,20 @@ export function replaceTextObjects(
               `(FPDF_GetLastError ${String(bindings.lastError())}).`,
           );
         }
+      }
+      // EVERY WRITE IS READ BACK before anything is generated, by the block edit's rule (`editTextBlocks`): a 1 from
+      // FPDFText_SetText says the string was set, not that the run's font can draw it, and a subset font missing a
+      // character drew it as nothing while Replace All reported success (CR-NAT-10). A throw here leaves the document
+      // as it came, since nothing has been generated and the page is discarded.
+      const textPage: unknown = bindings.loadTextPage(handle);
+      if (textPage === null) throw new Error('PDFium could not load the page to read the replacement back.');
+      try {
+        const drawn = drawnTextOn(bindings, textPage, objects);
+        if (replacements.some((replacement, at) => drawn[at] !== asTextPageReads(replacement.text))) {
+          throw new TextNotWritableError();
+        }
+      } finally {
+        bindings.closeTextPage(textPage);
       }
       if (numberFrom(bindings.generateContent(handle), 'FPDFPage_GenerateContent') !== 1) {
         throw new Error(
