@@ -356,11 +356,19 @@ for (const size of [
       const popup = await open(name);
       await expect(popup).toBeVisible();
       // ARROWDOWN TO THE LAST ITEM the keyboard can reach — a disabled item is passed over — and no further.
+      const items = popup.locator('[role="menuitem"], [role="menuitemcheckbox"]');
       const last = popup.locator('[role="menuitem"]:not([data-disabled]), [role="menuitemcheckbox"]:not([data-disabled])').last();
-      const count = await popup.locator('[role="menuitem"], [role="menuitemcheckbox"]').count();
-      for (let press = 0; press <= count && (await last.getAttribute('data-highlighted')) === null; press += 1) {
-        await page.keyboard.press('ArrowDown');
-      }
+      const count = await items.count();
+      // A MENU THAT CLOSED UNDER THE KEYS fails here, naming itself, rather than as a read of its last item that waits
+      // out the case's whole budget. Measured once on Windows at 32c3faee and not reproduced in 200 rounds on the
+      // pinned Chromium here, throttled and not; this is what makes the next one say which menu and when.
+      await test.step(`ArrowDown through ${name}`, async () => {
+        for (let press = 0; press <= count; press += 1) {
+          await expect(items.first(), `the ${name} menu is still open after ${String(press)} ArrowDown`).toBeVisible();
+          if ((await last.getAttribute('data-highlighted')) !== null) break;
+          await page.keyboard.press('ArrowDown');
+        }
+      });
       await expect(last, name).toHaveAttribute('data-highlighted', '');
       // READ ONCE THE SCROLL HAS STOPPED: the highlight is set before the item is scrolled into view.
       const seen = await settled(page, () => popup.evaluate((menu) => {
