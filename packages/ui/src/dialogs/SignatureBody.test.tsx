@@ -11,6 +11,7 @@ import { asFileHandle } from '@monstera/shared';
 
 import type { HeldSignaturePicture } from './signature.js';
 import SignatureBody from './SignatureBody.js';
+import { facesRead, openStyleMenu } from './styleMenuInTest.js';
 import type { KeptSignature } from './signDocument.js';
 
 /**
@@ -54,9 +55,10 @@ describe('SignatureBody', () => {
     const { resolve } = opened();
     fireEvent.click(screen.getByRole('button', { name: 'Type' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Your name' }), { target: { value: '  Ada Lovelace  ' } });
-    fireEvent.click(await screen.findByRole('button', { name: 'Style: Dancing Script' }));
+    await facesRead();
+    await openStyleMenu('Dancing Script');
     // ALL FIFTEEN FACES, each its own radio item, named by the face.
-    expect(await screen.findAllByRole('menuitemradio')).toHaveLength(15);
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(15);
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'Courier Prime' }));
     fireEvent.click(USE());
     expect(resolve).toHaveBeenCalledWith({ mark: { kind: 'typed', text: 'Ada Lovelace', font: 'courier-prime' }, keep: true });
@@ -66,7 +68,8 @@ describe('SignatureBody', () => {
     const { resolve } = opened();
     fireEvent.click(screen.getByRole('button', { name: 'Type' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Your name' }), { target: { value: 'Ada' } });
-    await screen.findByRole('img', { name: 'Your signature, as it will be placed' });
+    await facesRead();
+    screen.getByRole('img', { name: 'Your signature, as it will be placed' });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Save for reuse' }));
     fireEvent.click(USE());
     expect(resolve).toHaveBeenCalledWith({ mark: { kind: 'typed', text: 'Ada', font: 'dancing-script' }, keep: false });
@@ -76,7 +79,8 @@ describe('SignatureBody', () => {
     opened();
     fireEvent.click(screen.getByRole('button', { name: 'Type' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Your name' }), { target: { value: 'Ada' } });
-    const preview = await screen.findByRole('img', { name: 'Your signature, as it will be placed' });
+    await facesRead();
+    const preview = screen.getByRole('img', { name: 'Your signature, as it will be placed' });
     expect(preview.tagName.toLowerCase()).toBe('svg');
     expect(preview.querySelector('path')?.getAttribute('d')).toMatch(/^M.*Q/u);
   });
@@ -86,12 +90,13 @@ describe('SignatureBody', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Type' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Your name' }), { target: { value: 'Ада' } });
     // DANCING SCRIPT'S FILES ARE LATIN, Latin Extended and Vietnamese: each Cyrillic letter is named once.
-    await screen.findByText('This style cannot write А д а. Choose another style, or draw or upload your signature.');
+    await facesRead();
+    screen.getByText('This style cannot write А д а. Choose another style, or draw or upload your signature.');
     fireEvent.click(USE());
     expect(resolve).not.toHaveBeenCalled();
     // AND THE STYLE MENU says it of each face that cannot, while a face that can — Source Sans 3 — says nothing.
-    fireEvent.click(screen.getByRole('button', { name: 'Style: Dancing Script' }));
-    const sans = await screen.findByRole('menuitemradio', { name: 'Source Sans 3' });
+    await openStyleMenu('Dancing Script');
+    const sans = screen.getByRole('menuitemradio', { name: 'Source Sans 3' });
     expect(sans.textContent).not.toMatch(/Cannot write/u);
     // THE NOTE IS PART OF THE ITEM'S NAME, so a screen reader hears it with the face.
     expect(screen.getByRole('menuitemradio', { name: /^Allura/u }).textContent).toMatch(/Cannot write А д а/u);

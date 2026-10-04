@@ -9,6 +9,7 @@ import { EN } from '../messages/en.js';
 import { MAX_SIGNATURE_FIELD } from '@monstera/contract';
 import type { KeptSignature, SignDocumentAnswer } from './signDocument.js';
 import SignDocumentBody from './SignDocumentBody.js';
+import { facesRead, openStyleMenu } from './styleMenuInTest.js';
 
 /**
  * The signing dialog's body, driven through the surface a person uses.
@@ -136,8 +137,9 @@ describe('SignDocumentBody', () => {
     expect(screen.getByRole('status').textContent).toBe('Type or draw the signature first.');
 
     fireEvent.change(screen.getByLabelText('Signature'), { target: { value: '  Grace Hopper ' } });
-    fireEvent.click(await screen.findByRole('button', { name: 'Style: Dancing Script' }));
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Courier Prime' }));
+    await facesRead();
+    await openStyleMenu('Dancing Script');
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Courier Prime' }));
     fireEvent.click(SIGN());
 
     expect(answers).toStrictEqual([
@@ -148,7 +150,8 @@ describe('SignDocumentBody', () => {
   it('PLACED and typed in a face that CANNOT WRITE it: says which characters, and Sign answers nothing', async () => {
     const { answers } = opened(true);
     fireEvent.change(screen.getByLabelText('Signature'), { target: { value: 'Grace 王' } });
-    await screen.findByText('This style cannot write 王. Choose another style, or draw or upload your signature.');
+    await facesRead();
+    screen.getByText('This style cannot write 王. Choose another style, or draw or upload your signature.');
     fireEvent.click(SIGN());
     expect(answers).toStrictEqual([]);
   });
@@ -244,7 +247,8 @@ describe('SignDocumentBody', () => {
     /** Waits for the typed name to be set in its face, which is when there is a mark to sign with. */
     const typedAndSet = async (text: string): Promise<void> => {
       fireEvent.change(screen.getByLabelText('Signature'), { target: { value: text } });
-      await screen.findByRole('img', { name: 'Your signature, as it will be placed' });
+      await facesRead();
+      screen.getByRole('img', { name: 'Your signature, as it will be placed' });
     };
 
     it('KEEP asks to keep a typed look once signed (the case after is its control)', async () => {
@@ -266,7 +270,8 @@ describe('SignDocumentBody', () => {
       const { answers } = opened(true, [TYPED, DRAWN]);
       expect(document.querySelector<HTMLSelectElement>('[data-sign-look]')?.value).toBe('saved');
       // A KEPT TYPED NAME IS DRAWN as the outline it will be placed as, named by its words.
-      expect(await screen.findByRole('img', { name: 'Grace Hopper' })).toBeTruthy();
+      await facesRead();
+      expect(screen.getByRole('img', { name: 'Grace Hopper' })).toBeTruthy();
       expect(screen.getByRole('img', { name: 'Drawn signature 2' })).toBeTruthy();
       const second = document.querySelector(`[data-sign-kept="${DRAWN.id}"] input`);
       if (second === null) throw new Error('no second kept signature');
