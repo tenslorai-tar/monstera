@@ -64,13 +64,14 @@ describe('composeCsv', () => {
     });
   });
 
-  it('refuses a table too wide for the page — CONTROL: a narrow one composes', async () => {
-    await expect(composeCsv(bytesOf(`${row(60)}\n${row(60)}\n`), LETTER)).rejects.toMatchObject({
-      reason: 'too-many-columns',
-      line: 1,
-    });
-    const [first] = await shownText(await composeCsv(bytesOf(`${row(5)}\n`), LETTER));
-    expect(first).toContain('4');
+  it('SETS a table wider than any page rather than refusing it, every field drawn (`composeTable.test.ts` has the layout)', async () => {
+    const pages = await shownText(await composeCsv(bytesOf(`${row(60)}\n${row(60)}\n`), LETTER));
+    const shown = pages.join('');
+    for (let at = 0; at < 60; at += 1) expect(shown).toContain(String(at));
+    // CONTROL: a narrow table is one page.
+    const narrow = await shownText(await composeCsv(bytesOf(`${row(5)}\n`), LETTER));
+    expect(narrow).toHaveLength(1);
+    expect(narrow[0]).toContain('4');
   });
 
   it('refuses a file whose every field is empty — CONTROL: one filled field is enough', async () => {

@@ -25,7 +25,8 @@ import type { ComposeRefusal } from '@monstera/contract';
  * writer, the same wrapping, the same refusal of a character the faces cannot draw
  * and the same table rows. A second copy of any of those would be two opinions about
  * what a composed page looks like and when a character is refused (B3a), and they
- * would agree on every input except the one that differs.
+ * would agree on every input except the one that differs. The table rows themselves
+ * are `composeTable.ts`', which sets them through this writer.
  *
  * ## It parses nothing
  *
@@ -98,30 +99,83 @@ export async function embedFaces(document: PDFDocument): Promise<Faces> {
   };
 }
 
+/** One cell of a table's physical line: where it starts past the line's indent, and its runs. */
+export interface PlacedRuns {
+  readonly offset: number;
+  readonly runs: readonly Run[];
+}
+
 /**
  * Places laid-out lines on pages, starting a new page where the next line would
- * cross the bottom margin.
+ * cross the bottom margin, or where the pages are now set at another size.
  */
 export class PageWriter {
   #page: PDFPage | null = null;
+  #pageSize: ComposePageSize | null = null;
   #top = 0;
+  #size: ComposePageSize;
   drewAnything = false;
 
   constructor(
     private readonly document: PDFDocument,
     private readonly faces: Faces,
-    private readonly size: ComposePageSize,
-  ) {}
+    /** The size the composer was asked for, which every page is set at unless a wide table turns it. */
+    readonly base: ComposePageSize,
+  ) {
+    this.#size = base;
+  }
 
-  /** The width a line may take at an indent. */
+  /** The asked-for size with its long side across, which is itself where it already is. */
+  get turned(): ComposePageSize {
+    return {
+      width: Math.max(this.base.width, this.base.height),
+      height: Math.min(this.base.width, this.base.height),
+    };
+  }
+
+  /**
+   * Sets the pages from here on at `size`. A page already begun at another size takes nothing more: the next line
+   * starts a page at this one, so a turned table never shares a page with the prose either side of it.
+   */
+  useSize(size: ComposePageSize): void {
+    this.#size = size;
+  }
+
+  /** The width a line may take at an indent, on the pages being set. */
   room(indent: number): number {
-    return this.size.width - 2 * MARGIN - indent;
+    return this.#size.width - 2 * MARGIN - indent;
+  }
+
+  /** The height between the margins of a page being set. */
+  get textHeight(): number {
+    return this.#size.height - 2 * MARGIN;
+  }
+
+  /** Whether `points` more of height fit on the page being written, without starting another. */
+  fits(points: number): boolean {
+    return this.#page !== null && this.#onSize() && this.#top - points >= MARGIN;
+  }
+
+  /** Ends the page being written: the next line starts a new one. */
+  breakPage(): void {
+    this.#page = null;
   }
 
   /** Draws one line at an indent, answering the page and the baseline it used. */
   line(line: Line, indent: number): { readonly page: PDFPage; readonly baseline: number } {
-    const page = this.#pageWithRoomFor(line.leading);
-    const baseline = this.#top - line.leading + (line.leading - maxSize(line)) / 2;
+    return this.row([{ offset: 0, runs: line.runs }], line.leading, indent);
+  }
+
+  /**
+   * Draws one physical line of cells, each from its own offset, sharing one baseline.
+   *
+   * The cells are placed by `Td`, which moves the text line's start by an exact amount whatever the glyphs before it
+   * advanced, so a column begins where it was measured to rather than at the next space past its edge.
+   */
+  row(cells: readonly PlacedRuns[], leading: number, indent: number): { readonly page: PDFPage; readonly baseline: number } {
+    const page = this.#pageWithRoomFor(leading);
+    const tallest = cells.reduce((most, cell) => Math.max(most, maxSize({ runs: cell.runs, leading })), 0);
+    const baseline = this.#top - leading + (leading - tallest) / 2;
     // ONE TEXT OBJECT PER LINE, with the face switched inside it, never one
     // `drawText` per run. `drawText` writes a whole text object per call, and the
     // cost of that was measured 2026-09-13 with scratch probes: drawing a word at a
@@ -134,21 +188,29 @@ export class PageWriter {
     const operators: PDFOperator[] = [beginText(), moveText(MARGIN + indent, baseline)];
     let face: PDFFont | null = null;
     let size = 0;
-    for (const run of line.runs) {
-      if (run.text === '') continue;
-      if (run.font !== face || run.size !== size) {
-        operators.push(setFontAndSize(this.#fontKey(page, run.font), run.size));
-        face = run.font;
-        size = run.size;
+    let at = 0;
+    for (const cell of cells) {
+      if (!cell.runs.some((run) => run.text !== '')) continue;
+      if (cell.offset !== at) {
+        operators.push(moveText(cell.offset - at, 0));
+        at = cell.offset;
       }
-      operators.push(showText(run.font.encodeText(run.text)));
+      for (const run of cell.runs) {
+        if (run.text === '') continue;
+        if (run.font !== face || run.size !== size) {
+          operators.push(setFontAndSize(this.#fontKey(page, run.font), run.size));
+          face = run.font;
+          size = run.size;
+        }
+        operators.push(showText(run.font.encodeText(run.text)));
+      }
     }
     operators.push(endText());
     if (face !== null) {
       page.pushOperators(...operators);
       this.drewAnything = true;
     }
-    this.#top -= line.leading;
+    this.#top -= leading;
     return { page, baseline };
   }
 
@@ -187,7 +249,7 @@ export class PageWriter {
     const middle = this.#top - BODY_LEADING / 2;
     page.drawLine({
       start: { x: MARGIN, y: middle },
-      end: { x: this.size.width - MARGIN, y: middle },
+      end: { x: this.#size.width - MARGIN, y: middle },
       thickness: 0.75,
       color: rgb(0.6, 0.6, 0.6),
     });
@@ -211,10 +273,15 @@ export class PageWriter {
     return this.faces.regular;
   }
 
+  #onSize(): boolean {
+    return this.#pageSize?.width === this.#size.width && this.#pageSize.height === this.#size.height;
+  }
+
   #pageWithRoomFor(leading: number): PDFPage {
-    if (this.#page === null || this.#top - leading < MARGIN) {
-      this.#page = this.document.addPage([this.size.width, this.size.height]);
-      this.#top = this.size.height - MARGIN;
+    if (this.#page === null || !this.#onSize() || this.#top - leading < MARGIN) {
+      this.#page = this.document.addPage([this.#size.width, this.#size.height]);
+      this.#pageSize = this.#size;
+      this.#top = this.#size.height - MARGIN;
     }
     return this.#page;
   }
@@ -328,103 +395,4 @@ export function breakByWidth(run: Run, room: number): Run[] {
   }
   if (piece !== '') pieces.push({ ...run, text: piece });
   return pieces;
-}
-
-/**
- * A run of spaces that advances approximately `points`, set in the regular face.
- *
- * Approximate by at most one space's width, which is the resolution a column start
- * needs — the next cell begins at the next space boundary past its edge.
- */
-function spacer(font: PDFFont, points: number): Run {
-  const space = font.widthOfTextAtSize(' ', BODY_SIZE);
-  const count = space <= 0 ? 0 : Math.ceil(points / space);
-  return { text: ' '.repeat(count), font, size: BODY_SIZE };
-}
-
-/** The inset between a cell's edge and its text, either side. */
-const CELL_PADDING = 4;
-
-/**
- * The most columns a table can have at an indent, from the face's own width.
- *
- * A cell narrower than three digits at body size holds almost nothing, and `wrap`
- * would break its text one character per line, which reads as a page of noise. So
- * the width of `000` in the body face, plus the padding either side, is the
- * narrowest cell this layout sets — derived from the font, never a column count
- * written down.
- */
-export function maxTableColumns(writer: PageWriter, faces: Faces, indent: number): number {
-  const narrowest = faces.regular.widthOfTextAtSize('000', BODY_SIZE) + 2 * CELL_PADDING;
-  return Math.max(1, Math.floor(writer.room(indent) / narrowest));
-}
-
-/** One table row: whether it is a header, and each cell's runs. */
-export interface TableRow {
-  readonly header: boolean;
-  readonly cells: readonly (readonly Run[])[];
-  /** The one-based source line the row came from, for a refusal inside it. */
-  readonly sourceLine: number | null;
-}
-
-/**
- * A table, as rows of equal-width cells whose text wraps within the cell.
- *
- * Equal widths rather than widths fitted to content: a fitted layout needs a
- * measuring pass over every cell first, and a column squeezed to its widest word is
- * still wrong for the next row. The composer decides which runs are bold; this sets
- * them.
- *
- * Nothing is drawn for a table with no columns.
- *
- * @throws ComposeRefused `too-many-columns`, naming the first row's line, for a table
- *   wider than {@link maxTableColumns} — refused by name rather than drawn one
- *   character per line, which is the rule every composed page follows.
- */
-export function drawTable(
-  rows: readonly TableRow[],
-  writer: PageWriter,
-  faces: Faces,
-  indent: number,
-): void {
-  const columns = rows.reduce((most, row) => Math.max(most, row.cells.length), 0);
-  if (columns === 0) return;
-  const limit = maxTableColumns(writer, faces, indent);
-  if (columns > limit) {
-    const line = rows[0]?.sourceLine ?? null;
-    throw new ComposeRefused(
-      'too-many-columns',
-      line,
-      `a table has ${String(columns)} columns, and a page has room for ${String(limit)}`,
-    );
-  }
-  const cellWidth = writer.room(indent) / columns;
-  const padding = CELL_PADDING;
-
-  for (const row of rows) {
-    const cellLines = row.cells.map((cell) =>
-      wrap(cell, cellWidth - 2 * padding, BODY_LEADING, row.sourceLine),
-    );
-    const height = cellLines.reduce((most, lines) => Math.max(most, lines.length), 1);
-    for (let at = 0; at < height; at += 1) {
-      // ONE PHYSICAL LINE ACROSS ALL CELLS, so a row's cells share baselines and
-      // the row breaks onto a new page as one unit of height at a time.
-      const runs: Run[] = [];
-      let used = 0;
-      cellLines.forEach((lines, column) => {
-        const target = column * cellWidth + padding;
-        if (target > used) {
-          runs.push({ text: '', font: faces.regular, size: BODY_SIZE });
-          runs.push(spacer(faces.regular, target - used));
-          used = target;
-        }
-        for (const run of lines[at]?.runs ?? []) {
-          runs.push(run);
-          used += run.font.widthOfTextAtSize(run.text, run.size);
-        }
-      });
-      writer.line({ runs, leading: BODY_LEADING }, indent);
-    }
-    writer.gap(2);
-  }
 }

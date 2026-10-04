@@ -10,13 +10,12 @@ import {
   MARGIN,
   PageWriter,
   type Run,
-  type TableRow,
   breakByWidth,
   checked,
-  drawTable,
   embedFaces,
   wrap,
 } from './composeLayout.js';
+import { type TableRow, drawTable } from './composeTable.js';
 
 /**
  * A Markdown source, set as a new PDF
@@ -285,7 +284,7 @@ class BlockWalker {
   }
 
   /**
-   * A table's rows, read out of the tokens and set by `composeLayout.ts`' `drawTable`.
+   * A table's rows, read out of the tokens and set by `composeTable.ts`' `drawTable`.
    *
    * Header cells are set bold. Every row carries the table's opening line, which is
    * the line `markdown-it` records for the table block.
