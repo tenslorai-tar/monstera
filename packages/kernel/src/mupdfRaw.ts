@@ -5124,7 +5124,10 @@ globalThis.$libmupdf_device = {
 		alpha: number
 	): void {
 		$libmupdf_device_table.get(id)?.fillShade?.(
-				new Shade(shade),
+				/* MONSTERA: KEPT, as every other callback here keeps what it wraps. MuPDF lends the shade for the call, and
+				 * upstream wrapped it bare, so the wrapper's drop released a reference MuPDF still counted: a device that
+				 * destroyed its shade freed the loaded shading under the store (CR-NAT-05). */
+				new Shade(libmupdf._wasm_keep_shade(shade)),
 				fromMatrix(ctm),
 				alpha
 			)

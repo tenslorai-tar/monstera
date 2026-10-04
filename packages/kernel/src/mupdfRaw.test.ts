@@ -145,6 +145,61 @@ describe('the native MuPDF binding', () => {
     expect(mupdf.isMupdfShimBound()).toBe(true);
   });
 
+  describe('a shade a device is handed is the device’s to release (CR-NAT-05)', () => {
+    /** One page painting one axial shading, `/Sh0 sh`, with nothing else on it. */
+    function pageWithOneShade(): mupdf.PDFDocument {
+      const document = new mupdf.PDFDocument();
+      const numbers = (values: readonly number[]): mupdf.PDFObject => {
+        const array = document.newArray();
+        for (const value of values) array.push(value);
+        return array;
+      };
+      const ramp = document.newDictionary();
+      ramp.put('FunctionType', 2);
+      ramp.put('Domain', numbers([0, 1]));
+      ramp.put('N', 1);
+      ramp.put('C0', numbers([1, 0, 0]));
+      ramp.put('C1', numbers([0, 0, 1]));
+      const shading = document.addObject(document.newDictionary());
+      shading.put('ShadingType', 2);
+      shading.put('ColorSpace', document.newName('DeviceRGB'));
+      shading.put('Coords', numbers([0, 0, 100, 0]));
+      shading.put('Function', ramp);
+      const shadings = document.newDictionary();
+      shadings.put('Sh0', shading);
+      const resources = document.newDictionary();
+      resources.put('Shading', shadings);
+      document.insertPage(-1, document.addPage([0, 0, 100, 100], 0, resources, '/Sh0 sh'));
+      return document;
+    }
+
+    it('a device that DESTROYS its shade leaves the document whole, run after run', () => {
+      // UPSTREAM WRAPPED THE LENT POINTER BARE, so the wrapper's drop released a reference MuPDF still counted, and
+      // the shading the store holds was freed under it. Before the fix this case takes its worker down.
+      const document = pageWithOneShade();
+      try {
+        for (let round = 0; round < 20; round += 1) {
+          const page = document.loadPage(0);
+          page.run(new mupdf.Device({ fillShade: (shade) => shade.destroy() }), [1, 0, 0, 1, 0, 0]);
+          page.toPixmap([1, 0, 0, 1, 0, 0], mupdf.ColorSpace.DeviceRGB).destroy();
+        }
+      } finally {
+        document.destroy();
+      }
+    });
+
+    it('CONTROL: the device is really handed the page’s shading, once a run', () => {
+      const document = pageWithOneShade();
+      try {
+        let handed = 0;
+        document.loadPage(0).run(new mupdf.Device({ fillShade: () => (handed += 1) }), [1, 0, 0, 1, 0, 0]);
+        expect(handed).toBe(1);
+      } finally {
+        document.destroy();
+      }
+    });
+  });
+
   describe('a callback that throws where MuPDF has no fz_try, or where MuPDF catches it', () => {
     /** One span of three glyphs, built through the engine. */
     function threeGlyphs(): mupdf.Text {
