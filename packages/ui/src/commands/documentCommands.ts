@@ -58,8 +58,7 @@ import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { FLAT_FIELDS_DIALOG_ID } from '../dialogs/flatFields.js';
 import type { FlatFieldsAnswer } from '../dialogs/flatFieldsResult.js';
-import { EDIT_PAGE_OBJECT_DIALOG_ID } from '../dialogs/editPageObject.js';
-import type { EditPageObjectAnswer } from '../dialogs/editPageObjectResult.js';
+import { type EditableObject, OBJECT_FILTERS, type ObjectFilter, type PageObjects } from '../objectEditing.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG_ID } from '../dialogs/importFormDataProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
@@ -138,7 +137,10 @@ import {
   MENU_GROUP_PANELS,
   MOVE_PAGE_EARLIER_TITLE,
   MOVE_PAGE_LATER_TITLE,
-  EDIT_PAGE_OBJECT_COMMAND_TITLE,
+  EDIT_OBJECTS_ALL_TITLE,
+  EDIT_OBJECTS_IMAGES_TITLE,
+  EDIT_OBJECTS_SHAPES_TITLE,
+  EDIT_OBJECTS_TEXT_TITLE,
   PROTECT_DOCUMENT_COMMAND_TITLE,
   APPLY_REDACTIONS_COMMAND_TITLE,
   REDACT_MATCHES_COMMAND_TITLE,
@@ -3891,103 +3893,91 @@ export async function commitTextBlock(
   return kept.code === 'text-not-writable' ? 'not-writable' : kept.code === 'breaks-signatures' ? 'held' : 'refused';
 }
 
+/** Edit object's mode in the tool slot (ADR-0153 Decision 1), Edit text's slot and its reason. */
+export const EDIT_OBJECTS_TOOL_ID = 'edit.objects';
+
+/** Each filter's title — one, since a ribbon menu draws its members by title, as the palette does. */
+const OBJECT_FILTER_TITLES: Readonly<Record<ObjectFilter, MessageKey>> = {
+  all: EDIT_OBJECTS_ALL_TITLE,
+  text: EDIT_OBJECTS_TEXT_TITLE,
+  images: EDIT_OBJECTS_IMAGES_TITLE,
+  shapes: EDIT_OBJECTS_SHAPES_TITLE,
+};
+
 /**
- * Moves, resizes, recolours or removes one of the page's objects.
+ * Edit object's four filters, one ribbon menu (ADR-0153 Decision 2; ADR-0101).
  *
- * ## ONE registered command dispatching one of THREE, which is not a second
- * wiring place
+ * Each turns the mode on with its filter, and off again when it is the one already on — Edit text's toggle, per
+ * filter. **The filter is a value beside the slot, not four slot ids**: the slot answers *what does a press on the
+ * page do*, which is the same for all four, and the filter answers *which objects are outlined*.
  *
- * The three kernel commands have three undo shapes and could not be one; the
- * question they share is *which object*, and asking it once is what stops a
- * person picking the same thing three times. So there is one entry in the
- * registry, one ribbon control, and a dialog whose answer is a discriminated
- * union the `switch` below reads once.
- *
- * Three ribbon buttons would be the alternative, and the registry would accept
- * them — this is a design call rather than a rule, and it is recorded because
- * the opposite call is defensible the day a surface can select an object by
- * clicking it, at which point *which object* is already answered and three
- * verbs on a context menu is the better shape.
- *
- * ## THE INDEX IS NEVER DERIVED HERE
- *
- * `commitTextBlock`'s rule and its reason unchanged: the channel answers the
- * index, the dialog offers it, the dialog returns it, and it is sent. `document.pageObjects` is one of the only two sources of a PDFium index
- * a renderer may use, and the page's structured text is not one of them.
- *
- * ## The VERSION is the READ's
- *
- * All three declare `targets: 'text-object'`, so `#refuseIfStale` asks *is this
- * the document the list described*. A command carrying the shell's current
- * version would answer that question with itself.
+ * The index is never derived in the renderer: `document.pageObjects` answers it, the mode offers it, and a command
+ * sends it at the version the read answered, so `#refuseIfStale` asks whether the document is still the one the
+ * outlines described.
  */
-export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
-  return {
-    id: 'document.edit-page-object',
+export function editObjectsCommands(deps: {
+  readonly activeTool: () => string | undefined;
+  readonly filter: () => ObjectFilter;
+  readonly onEnter: (filter: ObjectFilter | undefined) => void;
+}): readonly UiCommand[] {
+  const on = (filter: ObjectFilter): boolean => deps.activeTool() === EDIT_OBJECTS_TOOL_ID && deps.filter() === filter;
+  return OBJECT_FILTERS.map((filter, at) => ({
+    id: `edit.objects-${filter}`,
     feedback: VISIBLE,
     icon: 'SquarePen',
-    title: EDIT_PAGE_OBJECT_COMMAND_TITLE,
-    ribbonTitle: RIBBON_EDIT_OBJECT,
-    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 20 }],
+    title: OBJECT_FILTER_TITLES[filter],
+    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 20 + at, menu: RIBBON_EDIT_OBJECT }],
     when: hasDocument,
-    run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
-
-      const { docId, page: shown } = context;
-      // EVERY PART, read whole at one version (ADR-0130): a page drawn one glyph per object is thousands of objects,
-      // and the indices the dialog answers must all belong to one walk of the page.
-      const found = await readWholeList(
-        (from) => deps.client['document.pageObjects']({ docId, page: shown, from }),
-        (part) => part.objects,
-      );
-      if (!found.ok) {
-        reportProblem(deps, found.error);
-        return;
-      }
-
-      const chosen = (await deps.ask(EDIT_PAGE_OBJECT_DIALOG_ID, {
-        objects: found.value.items.map((object) => ({ ...object })),
-        truncated: found.value.last.truncated,
-      })) as EditPageObjectAnswer | undefined;
-      // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate.
-      if (chosen === undefined) return;
-
-      // THE PAGE IS `context.page` AND IS ALREADY ZERO-BASED. `pageNumbering.ts`
-      // is the only place that converts, and there is nothing to convert here.
-      const page = context.page;
-      const version = found.value.version;
-      const command =
-        chosen.action === 'place'
-          ? {
-              kind: 'placePageObject' as const,
-              page,
-              index: chosen.index,
-              moveBy: chosen.moveBy,
-              scaleBy: chosen.scaleBy,
-              version,
-            }
-          : chosen.action === 'recolor'
-            ? {
-                kind: 'recolorPageObjects' as const,
-                page,
-                // ONE ENTRY, because this chooser names one object. The command
-                // carries a list so a person recolouring several things is one
-                // regeneration and one undo; a surface naming one sends a list
-                // of one rather than a different command.
-                indices: [chosen.index],
-                colour: chosen.colour,
-                version,
-              }
-            : {
-                kind: 'deletePageObjects' as const,
-                page,
-                indices: [chosen.index],
-                version,
-              };
-
-      await applyDocumentCommand(deps, context.docId, command);
+    checked: () => on(filter),
+    run: (): void => {
+      // READ THROUGH THE FUNCTIONS at the press, `editTextCommand`'s rule.
+      deps.onEnter(on(filter) ? undefined : filter);
     },
-  };
+  }));
+}
+
+/**
+ * One page's objects for Edit object's mode: PDFium's walk of the page's content and the annotation walk's pictures on
+ * that page, at ONE version (ADR-0153 Decision 3). `undefined` when either read was refused, or when the two answered
+ * at different versions — a document that moved between them is read again at the next version, rather than outlined
+ * from two documents at once.
+ */
+export async function readPageObjects(
+  client: DocumentCommandDeps['client'],
+  docId: DocId,
+  page: number,
+): Promise<
+  | { readonly ok: true; readonly objects: PageObjects }
+  /** `refused` is the read's own failure, or `undefined` where the document only moved between the two reads. */
+  | { readonly ok: false; readonly refused: Parameters<typeof reportProblem>[1] | undefined }
+> {
+  // EVERY PART, read whole at one version (ADR-0130): a page drawn one glyph per object is thousands of objects.
+  const [content, marks] = await Promise.all([
+    readWholeList(
+      (from) => client['document.pageObjects']({ docId, page, from }),
+      (part) => part.objects,
+    ),
+    readWholeList(
+      (from) => client['document.annotations']({ docId, from }),
+      (part) => part.annotations,
+    ),
+  ]);
+  if (!content.ok) return { ok: false, refused: content.error };
+  if (!marks.ok) return { ok: false, refused: marks.error };
+  if (content.value.version !== marks.value.version) return { ok: false, refused: undefined };
+  const objects: EditableObject[] = content.value.items.map((object) => ({
+    source: 'content',
+    index: object.index,
+    kind: object.kind,
+    box: { x0: object.left, y0: object.bottom, x1: object.right, y1: object.top },
+    fill: object.fill,
+  }));
+  for (const mark of marks.value.items) {
+    // A PICTURE A PERSON PLACED, on this page and drawn in a region: what the content walk cannot see.
+    if (mark.page !== page || mark.pictured !== true || mark.rect === null) continue;
+    objects.push({ source: 'stamp', index: mark.index, kind: 'picture', box: mark.rect, fill: null });
+  }
+  return { ok: true, objects: { version: content.value.version, objects, truncated: content.value.last.truncated || marks.value.last.truncated } };
 }
 
 /**

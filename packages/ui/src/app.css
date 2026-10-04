@@ -319,6 +319,17 @@ optgroup {
   display: inline-flex;
 }
 
+/* A RIBBON MENU'S CHECKABLE ITEM (ADR-0153): the mark's column before the name, given through the shared item's two
+   properties for the same reason as the menu bar's. */
+.m-ribbon-menu__item {
+  --menu-item-columns: var(--icon-14) minmax(0, 1fr) auto;
+  --menu-item-gap: var(--space-8);
+}
+
+.m-ribbon-menu__mark {
+  display: inline-flex;
+}
+
 /* FILE › RECENT (ADR-0143): a file's name is a person's, and can be long. The submenu is held to a reading width and a
    name past it ends in an ellipsis — the item's accessible name is the whole name all the same. */
 .m-menu-bar__submenu {
@@ -1364,6 +1375,9 @@ optgroup {
  * at the foot of the tab.
  */
 .m-properties {
+  /* BORDER-BOX, so the full height INCLUDES the padding. Measured 2026-10-04: as a content-box the tab was its body's
+     height plus 32 px, and the foot's Reply and Delete sat below the panel's edge, cut off. */
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: var(--space-16);
@@ -5125,7 +5139,8 @@ optgroup {
   box-shadow: var(--shadow);
 }
 
-.m-text-edit__notes {
+/* WHAT A MODE SAYS OF A PAGE — nothing to edit, or more than it can outline — for Edit text and Edit object alike. */
+.m-page-mode__notes {
   position: absolute;
   inset-block-start: var(--space-8);
   inset-inline: var(--space-8);
@@ -5135,7 +5150,7 @@ optgroup {
   pointer-events: auto;
 }
 
-.m-text-edit__notes > p {
+.m-page-mode__notes > p {
   margin: 0;
   padding: var(--space-4) var(--space-8);
   border: 1px solid var(--border-control);
@@ -5153,6 +5168,65 @@ optgroup {
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/*
+ * EDIT OBJECT'S MODE (ADR-0153): every object of the chosen kind outlined where it is. Unlike Edit text's layer this
+ * one TAKES the pointer, because a press on blank paper means *select nothing*.
+ */
+.m-object-edit-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* Its notes say what a page holds and take no press: one over the page's top edge must not cover an outline there. */
+.m-object-edit-layer .m-page-mode__notes {
+  pointer-events: none;
+}
+
+.m-object {
+  position: absolute;
+  padding: 0;
+  margin: 0;
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-4);
+  background: transparent;
+  cursor: pointer;
+}
+
+.m-object:hover {
+  background: var(--accent-soft);
+}
+
+.m-object:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* THE SELECTED ONE, solid and draggable: the dashed outlines say *this can be picked*, the solid one *this is picked*. */
+.m-object--selected {
+  border-style: solid;
+  cursor: move;
+}
+
+/* A CORNER HANDLE, the selection layer's square (ADR-0133): sized by `CORNER_REACH` where it is drawn. */
+.m-object-handle {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--accent);
+  background: var(--page);
+}
+
+.m-object-handle--nw,
+.m-object-handle--se {
+  cursor: nwse-resize;
+}
+
+.m-object-handle--ne,
+.m-object-handle--sw {
+  cursor: nesw-resize;
 }
 
 .m-selection-layer {

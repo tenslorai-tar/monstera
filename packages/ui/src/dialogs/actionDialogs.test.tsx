@@ -11,7 +11,6 @@ import CloseUnsavedBody from './CloseUnsavedBody.js';
 import CloudViewOnlyBody from './CloudViewOnlyBody.js';
 import DocusignSendBody from './DocusignSendBody.js';
 import DonateBody from './DonateBody.js';
-import EditPageObjectBody from './EditPageObjectBody.js';
 import FormFieldListboxBody from './FormFieldListboxBody.js';
 import FormFieldTextBody from './FormFieldTextBody.js';
 import LinkAddressBody from './LinkAddressBody.js';
@@ -72,18 +71,6 @@ const GROUP_3: readonly { readonly name: string; readonly body: ReactNode; reado
   { name: 'Link to an address', body: <LinkAddressBody resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'Open from a URL', body: <OpenFromUrlBody resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'Send to DocuSign', body: <DocusignSendBody resolve={ignore} update={ignore} />, firstRow: 'Email subject' },
-  {
-    name: 'Edit a page object',
-    body: (
-      <EditPageObjectBody
-        objects={[{ index: 0, kind: 'path', left: 0, bottom: 0, right: 10, top: 10, fill: { red: 0, green: 0, blue: 0, alpha: 255 } }]}
-        truncated={false}
-        resolve={ignore}
-        update={ignore}
-      />
-    ),
-    firstRow: '',
-  },
   { name: 'Close with changes', body: <CloseUnsavedBody name="a.pdf" resolve={ignore} update={ignore} />, firstRow: null },
   { name: 'Re-import an edit', body: <ReimportExternalEditBody page={0} resolve={ignore} update={ignore} />, firstRow: null },
   { name: 'Signature will break', body: <SignatureBreakBody signatures={1} resolve={ignore} update={ignore} />, firstRow: null },

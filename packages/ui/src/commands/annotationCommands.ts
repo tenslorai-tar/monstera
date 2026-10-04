@@ -140,6 +140,7 @@ import {
   TYPEWRITER_TOOL_TITLE,
   UNDERLINE_TOOL_TITLE,
 } from '../messages/en.js';
+import type { ObjectPick } from '../objectEditing.js';
 import type { IconName } from '../primitives/icons.js';
 import { type CommandContext, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { SectionId } from '../registries/placement.js';
@@ -597,7 +598,7 @@ function alsoOnThePill(command: UiCommand, order: number): UiCommand {
  * selection does nothing because there is nothing registered, not because a
  * handler decided to return early.
  */
-export function deleteSelectionCommand(deps: SelectionCommandDeps): UiCommand {
+export function deleteSelectionCommand(deps: SelectionCommandDeps, objects: ObjectSelectionDeps): UiCommand {
   return {
     id: 'annotate.delete-selection',
     feedback: VISIBLE,
@@ -605,18 +606,35 @@ export function deleteSelectionCommand(deps: SelectionCommandDeps): UiCommand {
     // LAST IN THE ANNOTATION MENU, which is the owner's order for it (§7's row, 2026-09-19):
     // edit, reply, properties, copy, delete. The numbers between are what the owed items take.
     // AND AT THE PROPERTIES TAB'S FOOT, after Reply, which is v5-02's order (ADR-0102).
+    // AND LAST IN THE OBJECT MENU, after Properties (ADR-0153 Decision 5).
     placements: [
       { surface: 'context-menu', context: 'annotation', order: 50 },
+      { surface: 'context-menu', context: 'object', order: 50 },
       { surface: 'properties', order: 20 },
     ],
     shortcut: 'Delete',
-    when: () => deps.selection() !== undefined,
+    when: () => deps.selection() !== undefined || objects.picked() !== undefined,
     run: (): void => {
+      // ONE DELETE FOR EITHER SELECTION (ADR-0153 Decision 5): the tool slot holds one of the two at a time, so
+      // there is never both — and a second command claiming the key would be refused by the shortcut map.
+      const picked = objects.picked();
+      if (picked !== undefined) {
+        objects.onRemove(picked);
+        return;
+      }
       const selection = deps.selection();
       if (selection === undefined) return;
       deps.onDelete(selection);
     },
   };
+}
+
+/** What the commands that act on a selection read of Edit object's (ADR-0153 Decision 5). */
+export interface ObjectSelectionDeps {
+  /** The object selected on the page now, read through a function for {@link SelectionCommandDeps.selection}'s reason. */
+  readonly picked: () => ObjectPick | undefined;
+  /** Removes it, by the writer that holds it. */
+  readonly onRemove: (pick: ObjectPick) => void;
 }
 
 /**
@@ -883,15 +901,21 @@ export function selectAllMarksCommand(deps: {
  */
 export function selectionPropertiesCommand(
   deps: SelectionCommandDeps & { readonly settings: SettingsStore; readonly presence: PanelPresence },
+  objects: Pick<ObjectSelectionDeps, 'picked'>,
 ): UiCommand {
+  const anything = (): boolean => deps.selection() !== undefined || objects.picked() !== undefined;
   return {
     id: 'annotate.properties',
     feedback: VISIBLE,
     title: SELECTION_PROPERTIES_TITLE,
-    placements: [{ surface: 'context-menu', context: 'annotation', order: 30 }],
-    when: () => deps.selection() !== undefined,
+    // AND FIRST IN THE OBJECT MENU, where the object's colour is chosen (ADR-0153 Decision 5).
+    placements: [
+      { surface: 'context-menu', context: 'annotation', order: 30 },
+      { surface: 'context-menu', context: 'object', order: 10 },
+    ],
+    when: anything,
     run: (): void => {
-      if (deps.selection() === undefined) return;
+      if (!anything()) return;
       deps.settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'properties');
       // SHOWN, not only opened: in a narrow row the panel is a sheet, and a write of a setting already on draws nothing.
       deps.presence.show('end');

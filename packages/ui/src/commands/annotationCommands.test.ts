@@ -296,6 +296,9 @@ describe('rectangleToolCommand', () => {
   });
 });
 
+/** No object selected on the page, for the cases about the annotation selection (ADR-0153). */
+const NO_OBJECT = { picked: (): undefined => undefined, onRemove: (): undefined => undefined };
+
 describe('deleteSelectionCommand', () => {
   const SELECTION = {
     page: 2,
@@ -314,7 +317,7 @@ describe('deleteSelectionCommand', () => {
         deleted.push(selection);
       },
       onPlace: () => undefined,
-    });
+    }, NO_OBJECT);
     void command.run(WITH_DOCUMENT);
     // BOTH INDICES IN ONE CALL. A command that dispatched per item would be
     // five undo steps for one decision, and every handle after the first would
@@ -332,10 +335,30 @@ describe('deleteSelectionCommand', () => {
       onDelete: (): undefined => undefined,
       onPlace: (): undefined => undefined,
     };
-    expect(deleteSelectionCommand(deps).when?.(WITH_DOCUMENT)).toBe(false);
+    expect(deleteSelectionCommand(deps, NO_OBJECT).when?.(WITH_DOCUMENT)).toBe(false);
     expect(
-      deleteSelectionCommand({ ...deps, selection: () => SELECTION }).when?.(WITH_DOCUMENT),
+      deleteSelectionCommand({ ...deps, selection: () => SELECTION }, NO_OBJECT).when?.(WITH_DOCUMENT),
     ).toBe(true);
+  });
+
+  it('removes a selected OBJECT by its own route, and leaves the annotation route alone (ADR-0153 Decision 5)', () => {
+    // ONE COMMAND, ONE KEY, either selection. The control is the annotation route: with an object picked, a Delete
+    // that also removed the annotation selection would remove two things for one key.
+    const removed: unknown[] = [];
+    const deleted: unknown[] = [];
+    const pick = {
+      page: 2,
+      version: asDocVersion(7),
+      object: { source: 'content' as const, index: 3, kind: 'image' as const, box: { x0: 0, y0: 0, x1: 10, y1: 10 }, fill: null },
+    };
+    const command = deleteSelectionCommand(
+      { selection: () => undefined, onDelete: (selection) => deleted.push(selection), onPlace: () => undefined },
+      { picked: () => pick, onRemove: (picked) => removed.push(picked) },
+    );
+    expect(command.when?.(WITH_DOCUMENT)).toBe(true);
+    void command.run(WITH_DOCUMENT);
+    expect(removed).toStrictEqual([pick]);
+    expect(deleted).toStrictEqual([]);
   });
 
   it('reads the selection THROUGH the function, not from what it was built with', () => {
@@ -347,7 +370,7 @@ describe('deleteSelectionCommand', () => {
       selection: () => current,
       onDelete: () => undefined,
       onPlace: () => undefined,
-    });
+    }, NO_OBJECT);
     expect(command.when?.(WITH_DOCUMENT)).toBe(false);
     current = SELECTION;
     expect(command.when?.(WITH_DOCUMENT)).toBe(true);
@@ -363,13 +386,15 @@ describe('deleteSelectionCommand', () => {
       selection: () => SELECTION,
       onDelete: () => undefined,
       onPlace: () => undefined,
-    });
+    }, NO_OBJECT);
     expect(command.shortcut).toBe('Delete');
     // LAST in the owner's order for that menu — edit, reply, properties, copy, delete — which is
     // why this is 50 rather than 10, with the gaps held for the items still owed. And second at
-    // the Properties tab's foot, after Reply, which is v5-02's order (ADR-0102).
+    // the Properties tab's foot, after Reply, which is v5-02's order (ADR-0102). And last in the
+    // object menu, after Properties (ADR-0153).
     expect(command.placements).toStrictEqual([
       { surface: 'context-menu', context: 'annotation', order: 50 },
+      { surface: 'context-menu', context: 'object', order: 50 },
       { surface: 'properties', order: 20 },
     ]);
   });
@@ -611,13 +636,13 @@ describe('selectionPropertiesCommand', () => {
     built.settings.set(CONTEXT_PANEL_OPEN_SETTING.id, false);
     built.settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
 
-    void selectionPropertiesCommand(built).run(WITH_DOCUMENT);
+    void selectionPropertiesCommand(built, NO_OBJECT).run(WITH_DOCUMENT);
 
     expect(built.settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(true);
     expect(built.settings.get(CONTEXT_PANEL_TAB_SETTING.id)).toBe('properties');
 
     // AND RUNNING IT AGAIN LEAVES IT OPEN — the control a toggle would fail.
-    void selectionPropertiesCommand(built).run(WITH_DOCUMENT);
+    void selectionPropertiesCommand(built, NO_OBJECT).run(WITH_DOCUMENT);
     expect(built.settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(true);
   });
 
@@ -628,7 +653,7 @@ describe('selectionPropertiesCommand', () => {
     expect(built.settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(true);
     expect(built.presence.form('end')).toBe('handle');
 
-    void selectionPropertiesCommand(built).run(WITH_DOCUMENT);
+    void selectionPropertiesCommand(built, NO_OBJECT).run(WITH_DOCUMENT);
     expect(built.presence.form('end')).toBe('sheet');
     expect(built.settings.get(CONTEXT_PANEL_TAB_SETTING.id)).toBe('properties');
   });
@@ -637,15 +662,32 @@ describe('selectionPropertiesCommand', () => {
     const built = deps(undefined);
     built.settings.set(CONTEXT_PANEL_OPEN_SETTING.id, false);
 
-    expect(selectionPropertiesCommand(built).when?.(WITH_DOCUMENT)).toBe(false);
-    void selectionPropertiesCommand(built).run(WITH_DOCUMENT);
+    expect(selectionPropertiesCommand(built, NO_OBJECT).when?.(WITH_DOCUMENT)).toBe(false);
+    void selectionPropertiesCommand(built, NO_OBJECT).run(WITH_DOCUMENT);
     expect(built.settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(false);
   });
 
-  it('sits in the annotation menu between reply and copy, where the owner’s order puts it', () => {
-    expect(selectionPropertiesCommand(deps(SELECTION)).placements).toStrictEqual([
+  it('sits in the annotation menu between reply and copy, where the owner’s order puts it, and first in the object menu', () => {
+    expect(selectionPropertiesCommand(deps(SELECTION), NO_OBJECT).placements).toStrictEqual([
       { surface: 'context-menu', context: 'annotation', order: 30 },
+      { surface: 'context-menu', context: 'object', order: 10 },
     ]);
+  });
+
+  it('opens the tab for a selected OBJECT, where its colour is chosen (ADR-0153 Decision 5)', () => {
+    const built = deps(undefined);
+    built.settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
+    const pick = {
+      page: 0,
+      version: asDocVersion(1),
+      object: { source: 'content' as const, index: 0, kind: 'path' as const, box: { x0: 0, y0: 0, x1: 10, y1: 10 }, fill: null },
+    };
+    // CONTROL: the same deps with no object are hidden, so what shows it here is the pick.
+    expect(selectionPropertiesCommand(built, NO_OBJECT).when?.(WITH_DOCUMENT)).toBe(false);
+    const command = selectionPropertiesCommand(built, { picked: () => pick });
+    expect(command.when?.(WITH_DOCUMENT)).toBe(true);
+    void command.run(WITH_DOCUMENT);
+    expect(built.settings.get(CONTEXT_PANEL_TAB_SETTING.id)).toBe('properties');
   });
 });
 

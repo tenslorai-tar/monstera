@@ -272,13 +272,15 @@ export function TextEditLayer({
           />
         );
       })}
-      {notes.length > 0 ? <div className="m-text-edit__notes">{notes}</div> : null}
+      {notes.length > 0 ? <div className="m-page-mode__notes">{notes}</div> : null}
     </div>
   );
 }
 
 /** What the mode hands each page: where blocks come from and where an edit goes. */
 export interface TextEditing {
+  /** Which of the page list's two modes this is (ADR-0153 Decision 1). */
+  readonly mode: 'text';
   /** The document version on screen; a new one is a new read. */
   readonly version: DocVersion;
   /** Reads one page's blocks, or `undefined` where the read was refused. */

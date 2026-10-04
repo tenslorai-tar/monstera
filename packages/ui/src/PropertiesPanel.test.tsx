@@ -10,6 +10,7 @@ import type { AnnotationSelection } from './annotations/selectTool.js';
 import { STYLE_PRESETS } from './annotations/stylePresets.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { DELETE_SELECTION_TITLE, EN, REPLY_SELECTION_TITLE } from './messages/en.js';
+import type { ObjectPick } from './objectEditing.js';
 import { PropertiesPanel, type StyleChange } from './PropertiesPanel.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from './registries/commands.js';
 import { SettingsRegistry } from './registries/settings.js';
@@ -299,8 +300,8 @@ describe('PropertiesPanel with marks selected', () => {
     const { ran } = mounted(ONE, [placed('t.delete', DELETE_SELECTION_TITLE, 20), placed('t.reply', REPLY_SELECTION_TITLE, 10)]);
     const foot = screen.getByRole('group', { name: 'Selected annotation' });
     const names = Array.from(foot.querySelectorAll('button')).map((button) => button.textContent);
-    expect(names).toStrictEqual(['Reply…', 'Delete selected annotations']);
-    fireEvent.click(screen.getByRole('button', { name: 'Delete selected annotations' }));
+    expect(names).toStrictEqual(['Reply…', 'Delete selection']);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete selection' }));
     expect(ran).toStrictEqual(['t.delete']);
   });
 
@@ -348,5 +349,53 @@ describe('PropertiesPanel with nothing selected', () => {
     ]);
     expect(screen.queryByRole('textbox', { name: 'Comment' })).toBeNull();
     expect(screen.queryByRole('group', { name: 'Selected annotation' })).toBeNull();
+  });
+});
+
+describe('PropertiesPanel with an object selected on the page (ADR-0153 Decision 5)', () => {
+  const RULE: ObjectPick = {
+    page: 2,
+    version: asDocVersion(4),
+    object: { source: 'content', index: 1, kind: 'path', box: { x0: 0, y0: 0, x1: 10, y1: 1 }, fill: { red: 0, green: 0, blue: 0, alpha: 128 } },
+  };
+
+  function shown(pick: ObjectPick): string[] {
+    const colours: string[] = [];
+    render(
+      <Wrapped>
+        <PropertiesPanel
+          context={CONTEXT}
+          object={{ pick, onRecolour: (colour) => colours.push(JSON.stringify(colour)) }}
+          onAuthor={() => undefined}
+          onComment={() => undefined}
+          onRestyle={() => undefined}
+          registry={new CommandRegistry([])}
+          selection={undefined}
+          settings={new SettingsStore(new SettingsRegistry(ALL_SETTINGS))}
+        />
+      </Wrapped>,
+    );
+    return colours;
+  }
+
+  it('names the object and FILLS it with the swatch picked, its own transparency kept', () => {
+    const colours = shown(RULE);
+    expect(screen.getByRole('heading', { name: 'Object' })).toBeDefined();
+    expect(screen.getByText('Kind: Shape')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Yellow' }));
+    // #ffd400 in PDFium's 0–255, and the 128 the shape was drawn at rather than an opaque 255.
+    expect(colours).toStrictEqual([JSON.stringify({ red: 255, green: 212, blue: 0, alpha: 128 })]);
+  });
+
+  it('offers NO colour for a picture, which has no fill, and says why for a shape whose colour cannot be read', () => {
+    shown({ ...RULE, object: { ...RULE.object, kind: 'picture', source: 'stamp', fill: null } });
+    expect(screen.getByText('Kind: Image')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Yellow' })).toBeNull();
+    expect(screen.queryByText('Monstera cannot read a colour for this object, so it cannot change it.')).toBeNull();
+    cleanup();
+    // CONTROL: a shape with no readable fill is told, since it is the kind a person expects a colour on.
+    shown({ ...RULE, object: { ...RULE.object, fill: null } });
+    expect(screen.queryByRole('button', { name: 'Yellow' })).toBeNull();
+    expect(screen.getByText('Monstera cannot read a colour for this object, so it cannot change it.')).toBeDefined();
   });
 });

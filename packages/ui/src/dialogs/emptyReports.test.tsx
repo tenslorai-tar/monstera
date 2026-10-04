@@ -4,7 +4,6 @@ import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import DuplicatePagesBody from './DuplicatePagesBody.js';
-import EditPageObjectBody from './EditPageObjectBody.js';
 import FlatFieldsBody from './FlatFieldsBody.js';
 import { InDialog } from './inDialog.js';
 
@@ -35,10 +34,6 @@ const EMPTY: readonly { readonly dialog: string; readonly body: ReactElement }[]
   {
     dialog: 'Fields this page could have',
     body: <FlatFieldsBody candidates={[]} resolve={vi.fn()} truncated={false} update={vi.fn()} />,
-  },
-  {
-    dialog: 'Edit an object on this page',
-    body: <EditPageObjectBody objects={[]} resolve={vi.fn()} truncated={false} update={vi.fn()} />,
   },
 ];
 

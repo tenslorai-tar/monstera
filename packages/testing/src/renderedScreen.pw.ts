@@ -4651,3 +4651,85 @@ for (const look of LOOKS) {
     ).toEqual([]);
   });
 }
+
+// EDIT OBJECT ON THE PAGE (ADR-0153), in a real browser and every look: the filter outlines its kind, a press selects,
+// a drag sends the move, Delete removes, and the Properties tab shows the object with its foot inside the panel. The
+// component case drives the layer in happy-dom, which has no pointer capture and lays nothing out; this is the
+// browser's capture, the page's own layout and the tab's real height.
+for (const look of LOOKS) {
+  test(`EDIT OBJECT outlines, selects, moves and removes an object on the page — ${look.name}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000ec');
+    const sent: unknown[] = [];
+    await bridgeUnder(
+      page,
+      look,
+      {
+        opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'photos.pdf' }],
+        documentBytes: new Map([[docId, bytes]]),
+        settings: { 'appearance.ribbon-section': 'edit' },
+        pageObjects: [
+          { index: 0, kind: 'text', left: 72, bottom: 700, right: 400, top: 720, fill: { red: 0, green: 0, blue: 0, alpha: 255 } },
+          { index: 1, kind: 'path', left: 72, bottom: 680, right: 540, top: 682, fill: { red: 37, green: 99, blue: 235, alpha: 255 } },
+          // NOT THE FIRST, so a layer that offered a position in its own list would send the wrong index.
+          { index: 2, kind: 'image', left: 72, bottom: 420, right: 300, top: 640, fill: null },
+        ],
+      },
+      (channel, params) => {
+        if (channel === 'document.execute') sent.push(params);
+      },
+    );
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas.m-page').first()).toBeVisible({ timeout: 20_000 });
+
+    await page.getByRole('button', { name: 'Edit object' }).click();
+    await page.getByRole('menuitemcheckbox', { name: 'Edit images' }).click();
+    const layer = page.getByRole('group', { name: 'Objects on page 1' });
+    // ONLY THE IMAGE under Images: the text and the rule are not outlined.
+    await expect(layer.locator('.m-object')).toHaveCount(1);
+    const photo = layer.getByRole('button', { name: 'Image, 1 of 1' });
+    await photo.click();
+    await expect(photo).toHaveAttribute('aria-pressed', 'true');
+
+    // THE PROPERTIES TAB names it, and its foot is INSIDE the panel. CONTROL, measured 2026-10-04: a content-box tab
+    // of 100% height plus its padding was 654 px in a 622 px body, so Delete sat below the panel's edge, cut off.
+    const properties = page.locator('.m-properties').first();
+    await expect(properties.getByRole('heading', { name: 'Object' })).toBeVisible();
+    const fit = await properties.evaluate((section) => {
+      const body = section.parentElement?.getBoundingClientRect();
+      const foot = section.querySelector('.m-properties__foot')?.getBoundingClientRect();
+      return { foot: foot?.bottom ?? Number.POSITIVE_INFINITY, body: body?.bottom ?? 0 };
+    });
+    expect(fit.foot, JSON.stringify(fit)).toBeLessThanOrEqual(fit.body);
+
+    // A DRAG straight across, in the browser's own pointer capture: one move of the image, by its own index, with no
+    // vertical part.
+    const box = await photo.boundingBox();
+    if (box === null) throw new Error('the outline is not on screen');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await expect.poll(() => sent.length).toBe(1);
+    const moved = sent[0] as { command: { kind: string; index: number; moveBy: { x: number; y: number } } };
+    expect(moved.command.kind).toBe('placePageObject');
+    expect(moved.command.index).toBe(2);
+    expect(moved.command.moveBy.x).toBeGreaterThan(0);
+    expect(moved.command.moveBy.y).toBeCloseTo(0, 6);
+
+    // DELETE, by the one Delete command, removes it through PDFium's command.
+    await photo.focus();
+    await page.keyboard.press('Delete');
+    await expect.poll(() => sent.length).toBe(2);
+    expect((sent[1] as { command: unknown }).command).toMatchObject({ kind: 'deletePageObjects', indices: [2] });
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+  });
+}

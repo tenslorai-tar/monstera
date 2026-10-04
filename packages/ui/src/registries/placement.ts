@@ -48,8 +48,8 @@ export const SECTION_IDS = ['home', 'organize', 'edit', 'comment', 'forms', 'pro
  */
 export type StartScreenSlot = 'primary' | 'shortcut' | 'footer';
 
-/** Where a context menu was opened. §7's four contexts. */
-export type MenuContext = 'page' | 'annotation' | 'selection' | 'tab';
+/** Where a context menu was opened. §7's five contexts; `object` is Edit object's selected object (ADR-0153). */
+export type MenuContext = 'page' | 'annotation' | 'selection' | 'tab' | 'object';
 
 /**
  * One place a command appears.

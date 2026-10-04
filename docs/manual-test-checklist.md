@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 223 — and the checks only the installed window can answer.
+Every command the application registers — 226 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -78,7 +78,10 @@ is not available.
 - [ ] **Spell check** — Proofing · `document.spell-check` · Shows: on screen · Help: *Check spelling*
 - [ ] **Word count** — Proofing · `document.word-count` · Shows: a result dialog · Help: *Count words and characters*
 - [ ] **Edit text on the page** — Text · `text.edit` · Shows: on screen · Help: *Edit text on the page*
-- [ ] **Edit an object on page** — Text · `document.edit-page-object` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
+- [ ] **Edit all objects** — Text · `edit.objects-all` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
+- [ ] **Edit text objects** — Text · `edit.objects-text` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
+- [ ] **Edit images** — Text · `edit.objects-images` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
+- [ ] **Edit shapes** — Text · `edit.objects-shapes` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Copy** — Text · `edit.copy` · Shows: a toast · Help: *Select and copy text*
 
 ## Ribbon › Comment
@@ -209,7 +212,7 @@ is not available.
 - [ ] **Copy** · `annotate.copy-selection` · Shows: a toast · Help: *Select, move, resize and delete annotations*
 - [ ] **Strikethrough** · `text.strikeout` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Add comment** · `text.comment` · Shows: on screen · Help: *Add a note (sticky note)*
-- [ ] **Delete selected annotations** · `annotate.delete-selection` · Shows: on screen · Help: *Select, move, resize and delete annotations*
+- [ ] **Delete selection** · `annotate.delete-selection` · Shows: on screen · Help: *Select, move, resize and delete annotations*
 - [ ] **Mark for redaction** · `text.redact` · Shows: on screen · Help: *Redact (permanently remove) content*
 - [ ] **Search for this** · `text.search` · Shows: on screen · Help: *Find words in a document*
 - [ ] **Ask AI** · `ai.ask-selection` · Shows: on screen · Help: *Ask AI about selected text or a comment*

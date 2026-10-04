@@ -61,6 +61,7 @@ const { openPdfium, pdfiumWriter, pageObjects, pageText } = await import(
 );
 const { localPdfiumExecution } = await import('../../packages/kernel/dist/pdfiumSpecs.js');
 const { declaredCommands } = await import('../../packages/kernel/dist/commandDeclarations.js');
+const { KEEPS_THE_OBJECT_WALK } = await import('../../packages/contract/dist/index.js');
 
 const FIRST = 'FIRST RUN stays exactly where it is';
 const SECOND = 'SECOND RUN is the one that changes';
@@ -100,7 +101,7 @@ async function twoRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 19 });
+const roster = createRoster(failures, { cases: 22 });
 
 /**
  * @param {string} name
@@ -348,6 +349,29 @@ async function main() {
     'and the run it removed is the one that is gone, not a neighbour that slid down',
     !removedText.includes(FIRST) && removedText.includes(SECOND),
     `the page now reads ${JSON.stringify(removedText)}`,
+  );
+
+  // ── THE WALK A SELECTION RESTS ON (ADR-0153 Decision 4) ─────────────────────
+  // Edit object keeps an object selected across a move or a recolour by naming the SAME INDEX at the version the
+  // command produced, so the walk must come back the same: the same objects, in the same order. `KEEPS_THE_OBJECT_WALK`
+  // in the contract states it; this is where it is measured, on the real library, every run.
+  /** @param {readonly { index: number, kind: string }[]} objects */
+  const walkOf = (objects) => objects.map((object) => `${String(object.index)}:${object.kind}`).join(' ');
+  const placedObjects = await objectsOf(placed);
+  record(
+    'a placement and a recolour KEEP the walk: the same objects, in the same order, at the same indices',
+    walkOf(placedObjects) === walkOf(before) && walkOf(recolouredObjects) === walkOf(before),
+    `before ${walkOf(before)}; placed ${walkOf(placedObjects)}; recoloured ${walkOf(recolouredObjects)}`,
+  );
+  record(
+    'CONTROL: a removal does NOT keep it, so the comparison above can tell a kept walk from a changed one',
+    walkOf(removedObjects) !== walkOf(before),
+    `before ${walkOf(before)}; after the removal ${walkOf(removedObjects)}`,
+  );
+  record(
+    'the contract names exactly the two commands measured to keep it, and not the removal',
+    [...KEEPS_THE_OBJECT_WALK].sort().join(',') === 'placePageObject,recolorPageObjects',
+    [...KEEPS_THE_OBJECT_WALK].join(', '),
   );
 
   // WHAT A REMOVAL LEAVES BEHIND, and it is measured here because

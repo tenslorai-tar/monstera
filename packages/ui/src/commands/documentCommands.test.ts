@@ -10,6 +10,7 @@ import { type DocId, type DocVersion, type MessageKey, asDocId, asDocVersion, as
 import { describe, expect, it } from 'vitest';
 
 import { PAGE_BACKGROUND_DIALOG_ID } from '../dialogs/pageBackground.js';
+import type { ObjectFilter } from '../objectEditing.js';
 import {
   TOAST_ACTIVE_CONTENT_REMOVED,
   TOAST_FORM_FLATTENED,
@@ -68,7 +69,9 @@ import {
   commitTextBlock,
   editTextCommand,
   promoteTextOnPage,
-  editPageObjectCommand,
+  EDIT_OBJECTS_TOOL_ID,
+  editObjectsCommands,
+  readPageObjects,
   importFormDataFdfCommand,
   importFormDataJsonCommand,
   importFormDataXfdfCommand,
@@ -1649,123 +1652,34 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(asked).toStrictEqual(['dialog.signed-edit']);
   });
 
-  it('EDIT OBJECT DISPATCHES ONE OF THREE COMMANDS, by what the dialog answered', async () => {
-    // THE UI HALF OF THE WIRED PAIR for the three object commands. Its kernel
-    // half is `proof:pdfiumobject`, which drives the real library and cannot see
-    // which command a control sends; this sees the command and cannot see a
-    // document.
-    //
-    // ALL THREE IN ONE CASE, and that is the point rather than economy: one
-    // registered control dispatches one of three kinds, and a `run` that
-    // ignored `action` and always sent the same one would pass any case that
-    // exercised a single branch. The dialog's answer is varied and the command
-    // is asserted whole.
-    const answers = [
-      { action: 'place' as const, index: 9, moveBy: { x: 3, y: -4 }, scaleBy: { x: 2, y: 1 } },
-      {
-        action: 'recolor' as const,
-        index: 9,
-        colour: { red: 255, green: 0, blue: 0, alpha: 200 },
-      },
-      { action: 'delete' as const, index: 9 },
-    ];
-    const expected = [
-      {
-        kind: 'placePageObject',
-        // ZERO-BASED AND UNCONVERTED, `replaceTextObject`'s reason: `context.page`
-        // is already the kernel's, and applying `kernelPageOf` here would edit
-        // the page above the one on screen.
-        page: 3,
-        index: 9,
-        moveBy: { x: 3, y: -4 },
-        scaleBy: { x: 2, y: 1 },
-        // THE READ'S VERSION, not the context's. They differ here (7 against
-        // the context's 1) because `#refuseIfStale` asks *is this the document
-        // the list described*.
-        version: 7,
-      },
-      {
-        kind: 'recolorPageObjects',
-        page: 3,
-        // A LIST OF ONE. The command carries several so a person recolouring a
-        // group is one regeneration and one undo; a chooser naming one sends a
-        // list of one rather than a different command.
-        indices: [9],
-        colour: { red: 255, green: 0, blue: 0, alpha: 200 },
-        version: 7,
-      },
-      { kind: 'deletePageObjects', page: 3, indices: [9], version: 7 },
-    ];
-
-    for (const [at, answer] of answers.entries()) {
-      const sent: { id: string; params: unknown }[] = [];
-      const client = createClient(channels, (id, params) => {
-        sent.push({ id, params });
-        if (id === 'document.pageObjects') {
+  it('EDIT OBJECT’s read takes EVERY PART of a dense page, and the pictures placed on it (AAAAAAA-1, 14g)', async () => {
+    // TWO PARTS of content, the second starting at 512: a read that asked once would outline the first part as the
+    // page. And the annotation walk's pictures, of which only the one on THIS page that draws a picture is an object.
+    const object = (index: number) => ({ index, kind: 'text' as const, left: 0, bottom: 0, right: 1, top: 1, fill: null });
+    const mark = (page: number, index: number, pictured: boolean) => ({
+      page,
+      index,
+      rect: { x0: 10, y0: 20, x1: 110, y1: 90 },
+      inReplyTo: null,
+      kind: 'stamp' as const,
+      style: { colour: [], opacity: 1, borderWidth: null },
+      contents: '',
+      authored: true,
+      author: '',
+      created: null,
+      blend: 'normal' as const,
+      ...(pictured ? { pictured: true as const } : {}),
+    });
+    const asked: string[] = [];
+    const read = await readPageObjects(
+      createClient(channels, (id, params) => {
+        const from = (params as { from: number }).from;
+        asked.push(`${id}@${String(from)}`);
+        if (id === 'document.annotations') {
           return Promise.resolve(
-            ok({
-              version: asDocVersion(7),
-              // NON-CONTIGUOUS INDICES NOT STARTING AT ZERO, and the chosen one
-              // is the SECOND: a command that sent a position in its own list
-              // would agree with the engine only for a page whose objects
-              // happen to be numbered that way.
-              objects: [
-                {
-                  index: 4,
-                  kind: 'image' as const,
-                  left: 0,
-                  bottom: 0,
-                  right: 10,
-                  top: 10,
-                  fill: null,
-                },
-                {
-                  index: 9,
-                  kind: 'path' as const,
-                  left: 20,
-                  bottom: 20,
-                  right: 140,
-                  top: 60,
-                  fill: { red: 0, green: 0, blue: 0, alpha: 255 },
-                },
-              ],
-              next: null,
-              truncated: false,
-            }),
+            ok({ version: asDocVersion(4), annotations: [mark(3, 0, false), mark(3, 1, true), mark(5, 0, true)], next: null, truncated: false }),
           );
         }
-        return Promise.resolve(
-          ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }),
-        );
-      });
-
-      // SEQUENTIALLY, so each iteration's `sent` is only its own. The three
-      // answers are three separate dispatches and interleaving them would make
-      // the assertion about whichever finished first.
-      await editPageObjectCommand({
-        client,
-        stamp,
-        signatures,
-        onApplied: () => undefined,
-        ask: () => Promise.resolve(answer),
-      }).run(CONTEXT);
-
-      expect(sent, `answer ${String(at)}`).toStrictEqual([
-        { id: 'document.pageObjects', params: { docId: DOC, page: 3, from: 0 } },
-        { id: 'document.execute', params: { docId: DOC, command: expected[at] } },
-      ]);
-    }
-  });
-
-  it('EDIT OBJECT reads EVERY PART of a dense page before it offers the chooser (AAAAAAA-1)', async () => {
-    // TWO PARTS, the second starting at 512: a command that asked once would offer the first part as the page.
-    const object = (index: number) => ({ index, kind: 'text' as const, left: 0, bottom: 0, right: 1, top: 1, fill: null });
-    const asked: number[] = [];
-    let offered: unknown;
-    await editPageObjectCommand({
-      client: createClient(channels, (id, params) => {
-        const from = (params as { from: number }).from;
-        asked.push(from);
         return Promise.resolve(
           ok(
             from === 0
@@ -1774,60 +1688,66 @@ describe('delete pages — the mutation-dialog gate', () => {
           ),
         );
       }),
-      stamp,
-      signatures,
-      onApplied: () => undefined,
-      ask: (_id, props) => {
-        offered = props;
-        return Promise.resolve(undefined);
-      },
-    }).run(CONTEXT);
+      DOC,
+      3,
+    );
 
-    expect(asked).toStrictEqual([0, 512]);
-    expect((offered as { objects: unknown[] }).objects).toHaveLength(514);
+    expect(asked.sort()).toStrictEqual(['document.annotations@0', 'document.pageObjects@0', 'document.pageObjects@512']);
+    if (!read.ok) throw new Error('the read was refused');
+    expect(read.objects.objects).toHaveLength(515);
+    // THE ENGINE'S OWN INDICES and the walk's own: the stamp is index 1 of the annotation walk, never 514.
+    expect(read.objects.objects.at(-1)).toStrictEqual({
+      source: 'stamp',
+      index: 1,
+      kind: 'picture',
+      box: { x0: 10, y0: 20, x1: 110, y1: 90 },
+      fill: null,
+    });
   });
 
-  it('EDIT OBJECT SENDS NOTHING when the chooser is dismissed, or the engine is absent', async () => {
-    // The mutation-dialog gate and the engine-absent branch together, because
-    // the two share an observable — nothing dispatched — and differ in whether
-    // a problem was reported. Asserting only the first would pass on a build
-    // that dispatched nothing because it crashed.
-    const dismissed: string[] = [];
-    await editPageObjectCommand({
-      client: createClient(channels, (id) => {
-        dismissed.push(id);
-        return Promise.resolve(
-          ok({ version: asDocVersion(1), objects: [], next: null, truncated: false }),
-        );
-      }),
-      stamp,
-      signatures,
-      onApplied: () => undefined,
-      ask: () => Promise.resolve(undefined),
-    }).run(CONTEXT);
-    expect(dismissed).toStrictEqual(['document.pageObjects']);
+  it('EDIT OBJECT’s read REFUSES two walks at different versions, and a refused walk, rather than outlining either', async () => {
+    const answering = (objects: unknown, annotations: unknown) =>
+      createClient(channels, (id) => Promise.resolve(id === 'document.annotations' ? annotations : objects));
+    const content = ok({ version: asDocVersion(4), objects: [], next: null, truncated: false });
+    const marks = (version: number) => ok({ version: asDocVersion(version), annotations: [], next: null, truncated: false });
+    // CONTROL: the same two walks at one version are read.
+    expect((await readPageObjects(answering(content, marks(4)), DOC, 0)).ok).toBe(true);
+    expect((await readPageObjects(answering(content, marks(5)), DOC, 0)).ok).toBe(false);
+    expect((await readPageObjects(answering(err({ code: 'engine-unavailable' as const }), marks(4)), DOC, 0)).ok).toBe(false);
+  });
 
-    let asked = 0;
-    const absent: string[] = [];
-    await editPageObjectCommand({
-      client: createClient(channels, (id) => {
-        absent.push(id);
-        return Promise.resolve(err({ code: 'engine-unavailable' as const }));
-      }),
-      stamp,
-      signatures,
-      onApplied: () => undefined,
-      ask: (id) => {
-        asked += 1;
-        // THE PROBLEM DIALOG AND NOT THE CHOOSER, asserted by id: `reportProblem`
-        // opening is the difference between a refusal a person meets and a
-        // control that did nothing.
-        expect(id).toBe('dialog.command-problem');
-        return Promise.resolve(undefined);
+  it('EDIT OBJECT is ONE ribbon menu of four filters, each checked only while its own filter is on', () => {
+    let tool: string | undefined = undefined;
+    let filter: ObjectFilter = 'all';
+    const entered: (ObjectFilter | undefined)[] = [];
+    const commands = editObjectsCommands({
+      activeTool: () => tool,
+      filter: () => filter,
+      onEnter: (chosen) => {
+        entered.push(chosen);
       },
-    }).run(CONTEXT);
-    expect(absent).toStrictEqual(['document.pageObjects']);
-    expect(asked).toBe(1);
+    });
+    expect(commands.map((command) => command.id)).toStrictEqual([
+      'edit.objects-all',
+      'edit.objects-text',
+      'edit.objects-images',
+      'edit.objects-shapes',
+    ]);
+    // ONE MENU, so the ribbon draws one *Edit object* button opening the four.
+    expect(new Set(commands.map((command) => (command.placements[0] as { menu?: unknown }).menu)).size).toBe(1);
+
+    const [all, , images] = commands;
+    if (all === undefined || images === undefined) throw new Error('no commands');
+    // OFF: nothing checked, and a press enters with that filter.
+    expect(commands.map((command) => command.checked?.(CONTEXT))).toStrictEqual([false, false, false, false]);
+    void images.run(CONTEXT);
+    // ON WITH IMAGES: only Images is checked; pressing it again leaves, pressing All switches the filter.
+    tool = EDIT_OBJECTS_TOOL_ID;
+    filter = 'images';
+    expect(commands.map((command) => command.checked?.(CONTEXT))).toStrictEqual([false, false, true, false]);
+    void images.run(CONTEXT);
+    void all.run(CONTEXT);
+    expect(entered).toStrictEqual(['images', undefined, 'all']);
   });
 
   it('SENDS NOTHING when the review is dismissed, which is the mutation-dialog gate', async () => {

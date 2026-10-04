@@ -71,7 +71,9 @@ import {
   selectTextCommand,
   promoteTextOnPage,
   reportProblem,
-  editPageObjectCommand,
+  EDIT_OBJECTS_TOOL_ID,
+  editObjectsCommands,
+  readPageObjects,
   pageTransitionCommand,
   pageBackgroundCommand,
   resizePagesCommand,
@@ -248,6 +250,8 @@ import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID, selectionOfNewest, selectionOfPage } from './annotations/selectTool.js';
 import { SIGNATURE_TOOL_ID } from './annotations/signatureTool.js';
 import { chooseSignature, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
+import { type ObjectFilter, type ObjectPick, carryPick, recolourCommand, removeCommand } from './objectEditing.js';
+import type { ObjectFill, PageObjects } from './objectEditing.js';
 import type { SignatureLook } from './dialogs/signature.js';
 import { applyCarrying } from './commands/applyCarrying.js';
 import {
@@ -1694,6 +1698,22 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   const [toolId, setToolId] = useState<string | undefined>(undefined);
   const readTool = useCallback(() => toolId, [toolId]);
+  /**
+   * Edit object's filter (ADR-0153 Decision 2): a value BESIDE the tool slot, since the slot answers what a press on
+   * the page does — the same for all four filters — and this answers which objects are outlined.
+   */
+  const [objectFilter, setObjectFilter] = useState<ObjectFilter>('all');
+  const readObjectFilter = useCallback(() => objectFilter, [objectFilter]);
+  const enterObjects = useCallback((filter: ObjectFilter | undefined): void => {
+    if (filter === undefined) {
+      setToolId(undefined);
+      return;
+    }
+    setObjectFilter(filter);
+    setToolId(EDIT_OBJECTS_TOOL_ID);
+  }, []);
+  /** The object Edit object has selected, with the document it is in: a version alone is a number every tab has. */
+  const [objectPicked, setObjectPicked] = useState<{ readonly docId: DocId; readonly pick: ObjectPick } | undefined>();
   // THE CONTROL THE HELP CENTRE'S *SHOW ME* ASKED THE RIBBON TO RING (ADR-0112), stamped so asking twice rings twice.
   const [showing, setShowing] = useState<{ readonly id: string; readonly stamp: number } | undefined>(undefined);
   /**
@@ -1749,6 +1769,79 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [open?.version, picked, toolId],
   );
   const readSelection = useCallback(() => selection, [selection]);
+
+  /**
+   * Edit object's selected object as the page shows it (ADR-0153 Decision 4): in the document on show, at its version,
+   * while the mode is on. `selection`'s rule one walk along, and for its reasons — a pick read at another version names
+   * whatever is now at that index, and one left standing while somebody draws a rectangle is a selection nothing on
+   * screen belongs to, under a Delete key that is not tool-scoped.
+   */
+  const objectSelection = useMemo(
+    () =>
+      objectPicked !== undefined &&
+      objectPicked.docId === open?.docId &&
+      objectPicked.pick.version === open.version &&
+      toolId === EDIT_OBJECTS_TOOL_ID
+        ? objectPicked.pick
+        : undefined,
+    [objectPicked, open?.docId, open?.version, toolId],
+  );
+  const readObjectSelection = useCallback(() => objectSelection, [objectSelection]);
+
+  /**
+   * Sends a command built from the selected object, and carries the selection across it where it keeps the object's
+   * walk (`carryPick`): a move, a resize or a recolour leaves it selected at the version produced, and a removal drops
+   * it. A refused command leaves it as it was, since the document did not move.
+   */
+  const sendObject = useCallback(
+    async (docId: DocId, command: DispatchableCommand): Promise<void> => {
+      const held: { produced?: DocVersion } = {};
+      const moved = await applyDocumentCommand(
+        {
+          client,
+          onApplied: (answer) => {
+            held.produced = answer.version;
+            applied(answer);
+          },
+          ask,
+          stamp,
+          signatures,
+        },
+        docId,
+        command,
+      );
+      const { produced } = held;
+      if (!moved || produced === undefined) return;
+      setObjectPicked((current) => {
+        if (current?.docId !== docId) return current;
+        const pick = carryPick(current.pick, command, produced);
+        return pick === undefined ? undefined : { docId, pick };
+      });
+    },
+    [applied, ask, client, signatures, stamp],
+  );
+
+  /** What Delete and Properties read of the selected object, and how Delete removes it (ADR-0153 Decision 5). */
+  const objectDeps = useMemo(
+    () => ({
+      picked: readObjectSelection,
+      onRemove: (pick: ObjectPick): void => {
+        if (activeId === undefined) return;
+        void sendObject(activeId, removeCommand(pick));
+      },
+    }),
+    [activeId, readObjectSelection, sendObject],
+  );
+
+  /** Fills the selected object with `colour`, from the Properties tab. */
+  const recolourObject = useCallback(
+    (colour: ObjectFill): void => {
+      if (activeId === undefined || objectSelection === undefined) return;
+      const command = recolourCommand(objectSelection, colour);
+      if (command !== undefined) void sendObject(activeId, command);
+    },
+    [activeId, objectSelection, sendObject],
+  );
   /**
    * *Edit › Select all* on the page (ADR-0107): how many marks each page draws, from the layers' own read, so the item
    * is disabled on a page with none rather than a control that selects nothing — a THIRD reader of
@@ -2535,7 +2628,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     const textCopy = copySelectionCommand(textDeps);
     const marksCopyDeps = { ...selectionDeps, client, ask, onCopied: setCopiedCount, toast };
     const marksCopy = copyAnnotationsCommand(marksCopyDeps);
-    const marksDelete = deleteSelectionCommand(selectionDeps);
+    const marksDelete = deleteSelectionCommand(selectionDeps, objectDeps);
     const marksPaste = pasteAnnotationsCommand({ client, onApplied: applied, ask, stamp, signatures, hasCopied: readHasCopied });
     const marksSelectAll = selectAllMarksCommand({ marksOn, selectAll: selectAllOn });
     // RECOGNISING FIRST, for the exports whose output is the text (ADR-0118): the searchable export's walk, composed
@@ -2862,7 +2955,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         }),
         handToolCommand({ activeTool: readTool, onSelect: setToolId }),
         selectTextCommand({ onSelect: setToolId, activeTool: readTool }),
-        editPageObjectCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        // EDIT OBJECT, a MODE in the tool slot with four filters in one ribbon menu (ADR-0153).
+        ...editObjectsCommands({ activeTool: readTool, filter: readObjectFilter, onEnter: enterObjects }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.
@@ -2919,7 +3013,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         summariseCommentsCommand({ ask: askAssistant }),
         openAssistantCommand({ open: openAssistant }),
         marksCopy,
-        selectionPropertiesCommand({ ...selectionDeps, settings, presence }),
+        selectionPropertiesCommand({ ...selectionDeps, settings, presence }, objectDeps),
         ...nudgeSelectionCommands(selectionDeps),
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),
@@ -3009,6 +3103,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // entered in Settings is what the predicates above read next.
       refreshSecrets,
       selectionDeps,
+      // EDIT OBJECT'S: the filter its four commands check, the entry they share, and the pick Delete reads.
+      readObjectFilter,
+      enterObjects,
+      objectDeps,
       settings,
       // THE SIGNATURES QUESTION'S TWO INPUTS (ADR-0149), stable while the store and the opener are.
       signatures,
@@ -3099,6 +3197,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     const refusal = { reported: false };
     const deps = { client, onApplied: applied, ask, stamp, signatures };
     return {
+      mode: 'text',
       version: open.version,
       read: async (page) => {
         // EVERY PART, read whole at one version (ADR-0130): a dense page is thousands of blocks.
@@ -3127,6 +3226,56 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       },
     };
   }, [applied, ask, client, open, signatures, stamp, toolId]);
+
+  /**
+   * Edit object's read of one page, for the document on show (ADR-0153 Decision 3). Its own memo rather than part of
+   * the mode's value, so selecting an object does not hand every page a new reader and read them all again.
+   *
+   * A refused read says so ONCE and leaves the mode, Edit text's rule and its reason. Two walks that answered at
+   * different versions are not a refusal: the document moved between them, and the next version reads again.
+   */
+  const shownDocId = open?.docId;
+  const readObjects = useMemo(() => {
+    if (toolId !== EDIT_OBJECTS_TOOL_ID || shownDocId === undefined) return undefined;
+    const docId = shownDocId;
+    const refusal = { reported: false };
+    const deps = { client, onApplied: applied, ask, stamp, signatures };
+    return async (page: number): Promise<PageObjects | undefined> => {
+      const answer = await readPageObjects(client, docId, page);
+      if (answer.ok) return answer.objects;
+      if (answer.refused !== undefined && !refusal.reported) {
+        refusal.reported = true;
+        reportProblem(deps, answer.refused);
+        setToolId(undefined);
+      }
+      return undefined;
+    };
+  }, [applied, ask, client, shownDocId, signatures, stamp, toolId]);
+
+  /** Edit object's mode on the document on show, or `undefined` when it is off — the slot's second value. */
+  const objectEditing = useMemo<PageListProps['editing']>(() => {
+    if (readObjects === undefined || open === undefined) return undefined;
+    const { docId } = open;
+    return {
+      mode: 'objects',
+      version: open.version,
+      filter: objectFilter,
+      read: readObjects,
+      pick: objectSelection,
+      onPick: (pick) => {
+        setObjectPicked(pick === undefined ? undefined : { docId, pick });
+      },
+      onCommand: (command) => {
+        void sendObject(docId, command);
+      },
+      onLeave: () => {
+        setToolId(undefined);
+      },
+    };
+  }, [objectFilter, objectSelection, open, readObjects, sendObject]);
+
+  /** The one mode the page lists draw: the tool slot holds at most one of the two, so at most one is defined. */
+  const pageEditing = editing ?? objectEditing;
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
   // are false because there is nothing to select in and nothing to dirty — not
@@ -3219,11 +3368,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       const groups = menuGroups(registry, at, [
         ...(textSelection?.page === page ? (['selection'] as const) : []),
         ...(selection?.page === page ? (['annotation'] as const) : []),
+        // THE SELECTED OBJECT'S MENU first on its own page (ADR-0153 Decision 5), the annotation menu's rule.
+        ...(objectSelection?.page === page ? (['object'] as const) : []),
         'page',
       ]);
       return groups.length === 0 ? undefined : { context: at, groups };
     },
-    [context, registry, selection?.page, textSelection?.page],
+    [context, objectSelection?.page, registry, selection?.page, textSelection?.page],
   );
 
   /**
@@ -3420,7 +3571,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           unit={unit}
           split={split}
           drawing={drawing}
-          editing={editing}
+          editing={pageEditing}
           panning={toolId === HAND_TOOL_ID}
           search={search ?? undefined}
           secondRenderer={secondRenderer}
@@ -3486,6 +3637,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                 registry={registry}
                 selection={selection}
                 settings={settings}
+                object={objectSelection === undefined ? undefined : { pick: objectSelection, onRecolour: recolourObject }}
               />
             </ContextPanel>
           }

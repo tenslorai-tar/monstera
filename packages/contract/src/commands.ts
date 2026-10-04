@@ -2946,6 +2946,31 @@ export function keepsTheAnnotationWalk<C extends { readonly kind: string }>(
 }
 
 /**
+ * The page-object commands that leave a page's OBJECT walk as it was — the same objects, in the same order, the edited
+ * one at its own index — so an object selected on the page stays selected across them
+ * ([ADR-0153](../../../docs/DECISIONS/0153-edit-object-is-a-mode-on-the-page-and-a-placed-picture-is-one-of-its-objects.md)
+ * Decision 4). {@link KEEPS_THE_ANNOTATION_WALK}'s rule on PDFium's walk.
+ *
+ * **Measured 2026-10-04** with PDFium 155.0.8044.0, on a page of two text runs, a rule and two images: a move, a
+ * resize and a recolour each answered the same five kinds in the same order; a removal shifted every later index, which
+ * is why `deletePageObjects` is not here.
+ */
+export const KEEPS_THE_OBJECT_WALK: ReadonlySet<ObjectWalkKeepingKind> = new Set([
+  'placePageObject',
+  'recolorPageObjects',
+] as const);
+
+/** The kinds {@link KEEPS_THE_OBJECT_WALK} names. */
+export type ObjectWalkKeepingKind = 'placePageObject' | 'recolorPageObjects';
+
+/** Whether `command` is one of them — the set's one reader for a command in hand. */
+export function keepsTheObjectWalk<C extends { readonly kind: string }>(
+  command: C,
+): command is Extract<C, { readonly kind: ObjectWalkKeepingKind }> {
+  return (KEEPS_THE_OBJECT_WALK as ReadonlySet<string>).has(command.kind);
+}
+
+/**
  * How many form fields one deletion may name.
  *
  * {@link MAX_REMOVED_ANNOTATIONS}' argument on the other walk: this is *how

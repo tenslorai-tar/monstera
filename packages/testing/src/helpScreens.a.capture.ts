@@ -441,13 +441,23 @@ test('edit-page-objects-1', async ({ page }) => {
   await openApp(page, { ...openedAs(await logoPdf(), 'Annual report.pdf'), pageObjects: await logoPageObjects() });
   await openDocument(page);
   await openSection(page, 'Edit');
-  await runCommand(page, 'Edit an object on page');
-  const dialog = page.getByRole('dialog', { name: 'Edit an object on this page' });
-  await dialog.getByRole('radio', { name: /^Image/u }).check();
-  // THE DIALOG'S BODY SCROLLS at this window's height: brought to its foot, the picked image and every action on it
-  // are in view together.
-  await dialog.getByRole('button', { name: 'Remove from page' }).scrollIntoViewIfNeeded();
-  await shoot(page, 'edit-page-objects-1', dialog);
+  // THE MODE ON THE PAGE (ADR-0153): every object outlined where it is, and the logo selected with its handles.
+  await page.getByRole('button', { name: 'Edit object' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Edit all objects' }).click();
+  const layer = page.getByRole('group', { name: 'Objects on page 1' });
+  const logo = layer.locator('[data-object="content:23"]');
+  await logo.click();
+  await expect(logo).toHaveAttribute('aria-pressed', 'true');
+  // FRAMED ON WHAT THE ARTICLE NAMES: the outlined title, the selected logo with its handles, and the Properties tab
+  // saying what is selected — the whole page is taller than the window and says nothing more.
+  const named = page.locator('.m-properties__head').first();
+  await expect(named.getByRole('heading', { name: 'Object' })).toBeVisible();
+  await shootAround(page, 'edit-page-objects-1', [
+    layer.locator('[data-object="content:0"]'),
+    layer.locator('[data-object="content:5"]'),
+    logo,
+    named,
+  ]);
 });
 
 /** A ribbon group, by its caption. */

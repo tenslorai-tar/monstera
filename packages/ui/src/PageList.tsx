@@ -17,6 +17,10 @@ import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { type TextEditing, TextEditPage } from './TextEditLayer.js';
+import { type ObjectEditing, ObjectEditPage } from './ObjectEditLayer.js';
+
+/** What a press on the page edits, when a mode rather than a drawing tool holds the tool slot. */
+export type PageEditing = TextEditing | ObjectEditing;
 import { TextLayer, type TextLayerLine, readTextSelection } from './TextLayer.js';
 import { type DifferenceMark, DifferenceLayer } from './DifferenceLayer.js';
 
@@ -215,13 +219,16 @@ export interface PageListProps {
    * is worse than none.
    */
   /**
-   * Edit text's mode, or `undefined` when it is off (ADR-0096).
+   * Edit text's mode (ADR-0096) or Edit object's (ADR-0153), or `undefined` when neither is on.
    *
    * A sibling of {@link drawing} rather than a member of it, because the two
    * never hold at once — they share one slot in the application, the tool id —
-   * and a surface that is not a gesture has nothing to put in `tool`.
+   * and a surface that is not a gesture has nothing to put in `tool`. ONE prop for
+   * both modes, discriminated by `mode`, for the same reason: they share that slot
+   * too, so a type that could hold both at once would describe a state the
+   * application does not have.
    */
-  readonly editing?: TextEditing | undefined;
+  readonly editing?: PageEditing | undefined;
   /**
    * The HAND tool (§10.3's floating toolbar): a drag on the page area scrolls it, and the pages' own
    * layers stop taking the pointer so a drag never selects text on the way. Another value of the same
@@ -1408,7 +1415,7 @@ function PageSlot({
   /** Told that this page would not draw, with `onMeasured`'s need to be stable. */
   readonly onFailed: (page: number) => void;
   readonly drawing: PageListProps['drawing'];
-  readonly editing: TextEditing | undefined;
+  readonly editing: PageEditing | undefined;
   readonly text: readonly TextLayerLine[] | undefined;
   /** What the page is made of, or `undefined` before its text has arrived. */
   readonly kind: PageTextAnswer['kind'] | undefined;
@@ -1674,10 +1681,16 @@ function PageSlot({
           page={page}
         />
       )}
-      {/* OVER THE TEXT AND ITS MARKS, as the drawing overlay is: while Edit text is
-          on, a press on an outlined block is the mode's, and nothing else holds
-          the pointer — the two modes share one slot and never mount together. */}
-      {editing === undefined || size === undefined ? null : (
+      {/* OVER THE TEXT AND ITS MARKS, as the drawing overlay is: while Edit text or
+          Edit object is on, a press on an outline is the mode's, and nothing else
+          holds the pointer — the modes share one slot and never mount together. */}
+      {editing === undefined || size === undefined ? null : editing.mode === 'objects' ? (
+        <ObjectEditPage
+          editing={editing}
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          page={page}
+        />
+      ) : (
         <TextEditPage
           paperAt={paperAt}
           editing={editing}

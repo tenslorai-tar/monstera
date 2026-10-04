@@ -23,7 +23,6 @@ import { DOCUSIGN_NOTICE_DIALOG } from '../dialogs/docusignNotice.js';
 import { DOCUSIGN_SEND_DIALOG } from '../dialogs/docusignSend.js';
 import { DONATE_DIALOG } from '../dialogs/donate.js';
 import { DUPLICATE_PAGES_DIALOG } from '../dialogs/duplicatePages.js';
-import { EDIT_PAGE_OBJECT_DIALOG } from '../dialogs/editPageObject.js';
 import { ENHANCE_OUTCOME_DIALOG } from '../dialogs/enhanceOutcome.js';
 import { EXPORT_EXCEL_DIALOG } from '../dialogs/exportExcel.js';
 import { EXPORT_PAGE_IMAGES_DIALOG } from '../dialogs/exportPageImages.js';
@@ -158,7 +157,6 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   RESIZE_PAGES_DIALOG,
   FLAT_FIELDS_DIALOG,
   FLATTEN_FORM_DIALOG,
-  EDIT_PAGE_OBJECT_DIALOG,
   IMPORT_FORM_DATA_PROBLEM_DIALOG,
   IMPORT_ANNOTATIONS_PROBLEM_DIALOG,
   INSERT_IMAGE_PROBLEM_DIALOG,

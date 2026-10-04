@@ -752,36 +752,6 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       },
     },
   ],
-  'dialog.edit-page-object': [
-    {
-      state: 'opened',
-      props: {
-        objects: [
-          { index: 0, kind: 'text', left: 72, bottom: 700, right: 523, top: 740, fill: { red: 17, green: 24, blue: 39, alpha: 255 } },
-          { index: 1, kind: 'image', left: 72, bottom: 420, right: 300, top: 680, fill: null },
-          { index: 2, kind: 'path', left: 72, bottom: 400, right: 523, top: 402, fill: { red: 37, green: 99, blue: 235, alpha: 255 } },
-          { index: 3, kind: 'form', left: 320, bottom: 420, right: 523, top: 680, fill: null },
-        ],
-        truncated: false,
-      },
-    },
-    { state: 'empty', props: { objects: [], truncated: false } },
-    {
-      state: 'long',
-      props: {
-        objects: Array.from({ length: 40 }, (_unused, at) => ({
-          index: at,
-          kind: at % 2 === 0 ? 'text' : 'path',
-          left: 72,
-          bottom: 740 - at * 16,
-          right: 523,
-          top: 752 - at * 16,
-          fill: { red: 17, green: 24, blue: 39, alpha: 255 },
-        })),
-        truncated: true,
-      },
-    },
-  ],
   'dialog.import-form-data-problem': [{ state: 'opened', props: { reason: 'unreadable' } }],
   'dialog.import-annotations-problem': [{ state: 'opened', props: { reason: 'unreadable' } }],
   'dialog.insert-image-problem': [{ state: 'opened', props: { reason: 'too-large', limitBytes: 50 * 1024 * 1024 } }],

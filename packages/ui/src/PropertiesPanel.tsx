@@ -20,6 +20,9 @@ import { LINE_WIDTH_PRESETS, STYLE_PRESETS } from './annotations/stylePresets.js
 import {
   COMMENT_STYLES_NO_WIDTH,
   PROPERTIES_ACTIONS,
+  PROPERTIES_OBJECT_HEADING,
+  PROPERTIES_OBJECT_KIND,
+  PROPERTIES_OBJECT_NO_FILL,
   PROPERTIES_AS_DEFAULT,
   PROPERTIES_AUTHOR,
   PROPERTIES_BLEND,
@@ -43,6 +46,8 @@ import {
   MEASURE_UNIT_TITLE,
   UNIT_TITLES,
 } from './messages/en.js';
+import { kindWord } from './ObjectEditLayer.js';
+import { type ObjectFill, type ObjectPick, recolourable } from './objectEditing.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
 import { SegmentedControl, type SegmentedOption } from './primitives/SegmentedControl.js';
@@ -86,6 +91,12 @@ export interface PropertiesPanelProps {
    * (the owner's item 14a). Only then: they mean nothing to any other tool.
    */
   readonly measuring?: boolean | undefined;
+  /**
+   * The object Edit object has selected on the page, and how its fill is changed (ADR-0153 Decision 5), or `undefined`
+   * when none is. The tool slot holds Edit object or the select tool, never both, so this and {@link selection} are
+   * never both set.
+   */
+  readonly object?: { readonly pick: ObjectPick; readonly onRecolour: (colour: ObjectFill) => void } | undefined;
 }
 
 /**
@@ -130,6 +141,7 @@ export function PropertiesPanel({
   registry,
   context,
   measuring = false,
+  object,
 }: PropertiesPanelProps): ReactElement {
   const { i18n } = useLingui();
   const measureUnit = useSetting(settings, MEASURE_UNIT_SETTING);
@@ -143,6 +155,57 @@ export function PropertiesPanel({
   const widthSetting = useSetting(settings, ANNOTATION_LINE_WIDTH_SETTING);
   const fontSize = useSetting(settings, ANNOTATION_FONT_SIZE_SETTING);
   const fontSizeId = useId();
+
+  if (selection === undefined && object !== undefined) {
+    const { pick } = object;
+    const { fill } = pick.object;
+    const objectFoot = propertiesModel(registry, context);
+    return (
+      <section aria-label={i18n._(STYLE_PANEL_LABEL)} className="m-properties">
+        <header className="m-properties__head">
+          <h2 className="m-properties__title">{i18n._(PROPERTIES_OBJECT_HEADING)}</h2>
+          <p className="m-properties__meta" data-properties-object-kind={pick.object.kind}>
+            {i18n._(PROPERTIES_OBJECT_KIND)}: {i18n._(kindWord(pick.object.kind))}
+          </p>
+        </header>
+        {recolourable(pick) && fill !== null ? (
+          <ColourRow
+            auto={false}
+            current={hexFromColour([fill.red / 255, fill.green / 255, fill.blue / 255])}
+            offerAuto={false}
+            onPick={(picked) => {
+              const colour = picked === undefined ? undefined : colourFromHex(picked);
+              if (colour === undefined) return;
+              // THE OBJECT'S OWN ALPHA KEPT: a colour swatch says nothing about transparency.
+              object.onRecolour({
+                red: Math.round(colour[0] * 255),
+                green: Math.round(colour[1] * 255),
+                blue: Math.round(colour[2] * 255),
+                alpha: fill.alpha,
+              });
+            }}
+          />
+        ) : pick.object.source === 'content' && pick.object.kind !== 'image' ? (
+          // SAID RATHER THAN HIDDEN: a shape whose colour PDFium will not describe shows no colour row, and a person
+          // looking for one is told why rather than left to wonder.
+          <p className="m-properties__meta">{i18n._(PROPERTIES_OBJECT_NO_FILL)}</p>
+        ) : null}
+        {objectFoot.length === 0 ? null : (
+          <div aria-label={i18n._(PROPERTIES_ACTIONS)} className="m-properties__foot" role="group">
+            {objectFoot.map((entry) => (
+              <Button
+                key={entry.command.id}
+                label={entry.command.title}
+                onClick={() => {
+                  void entry.command.run(context);
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+    );
+  }
 
   if (selection === undefined) {
     return (

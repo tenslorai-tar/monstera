@@ -76,28 +76,55 @@ export function RibbonMore({
       <Menu.Portal>
         <Menu.Positioner align="start" side="bottom">
           <Menu.Popup className="m-context-menu">
-            {entries.map((entry) => (
-              <Menu.Item
-                key={entry.command.id}
-                className="m-context-menu-item"
-                data-command={entry.command.id}
-                label={i18n._(entry.command.title)}
-                // THE CHORD ANNOUNCED AS A SHORTCUT and kept out of the item's name, `MenuBar`'s rule.
-                aria-keyshortcuts={entry.command.shortcut}
-                onClick={() => {
-                  // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
-                  void entry.command.run(context);
-                  onChosen();
-                }}
-              >
-                <span>{i18n._(entry.command.title)}</span>
-                {entry.command.shortcut === undefined ? null : (
-                  <span className="m-context-menu-chord" aria-hidden="true">
-                    {entry.command.shortcut}
+            {entries.map((entry) => {
+              const checked = entry.command.checked?.(context);
+              const choose = (): void => {
+                // Not awaited, for `QuickToolbar`'s reason: nothing here reads the result.
+                void entry.command.run(context);
+                onChosen();
+              };
+              const face = (
+                <>
+                  <span>{i18n._(entry.command.title)}</span>
+                  {entry.command.shortcut === undefined ? null : (
+                    <span className="m-context-menu-chord" aria-hidden="true">
+                      {entry.command.shortcut}
+                    </span>
+                  )}
+                </>
+              );
+              // A COMMAND THAT SETS A STATE is a checkable item with its mark, the menu bar's rule — so Edit object's
+              // menu says which of its filters is on (ADR-0153), and a screen reader hears it.
+              return checked === undefined ? (
+                <Menu.Item
+                  key={entry.command.id}
+                  className="m-context-menu-item"
+                  data-command={entry.command.id}
+                  label={i18n._(entry.command.title)}
+                  // THE CHORD ANNOUNCED AS A SHORTCUT and kept out of the item's name, `MenuBar`'s rule.
+                  aria-keyshortcuts={entry.command.shortcut}
+                  onClick={choose}
+                >
+                  {face}
+                </Menu.Item>
+              ) : (
+                <Menu.CheckboxItem
+                  key={entry.command.id}
+                  className="m-context-menu-item m-ribbon-menu__item"
+                  data-command={entry.command.id}
+                  label={i18n._(entry.command.title)}
+                  aria-keyshortcuts={entry.command.shortcut}
+                  checked={checked}
+                  closeOnClick
+                  onCheckedChange={choose}
+                >
+                  <span className="m-ribbon-menu__mark" aria-hidden="true">
+                    {checked ? <Icon name="Check" size="dense" /> : null}
                   </span>
-                )}
-              </Menu.Item>
-            ))}
+                  {face}
+                </Menu.CheckboxItem>
+              );
+            })}
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
