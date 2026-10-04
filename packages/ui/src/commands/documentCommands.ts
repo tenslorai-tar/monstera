@@ -2428,6 +2428,7 @@ export function openSideBySideCommand(deps: {
     id: 'document.open-side-by-side',
     feedback: VISIBLE,
     title: OPEN_SIDE_BY_SIDE_TITLE,
+    icon: 'Columns2',
     placements: [{ surface: 'context-menu', context: 'tab', order: 30 }],
     when: (context) => context.docId !== undefined && context.docId !== deps.focused(),
     run: (context): void => {

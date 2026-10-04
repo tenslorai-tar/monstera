@@ -319,6 +319,17 @@ optgroup {
   display: inline-flex;
 }
 
+/* A RIGHT-CLICK MENU'S ITEMS (the owner's item 9b): the command's glyph, the title, the chord, given through the
+   shared item's two properties as the menu bar's are, so its glyph column is the menu bar's own width and gap. */
+.m-area-menu {
+  --menu-item-columns: var(--icon-14) minmax(0, 1fr) auto;
+  --menu-item-gap: var(--space-8);
+}
+
+.m-context-menu__icon {
+  display: inline-flex;
+}
+
 /* A RIBBON MENU'S CHECKABLE ITEM (ADR-0153): the mark's column before the name, given through the shared item's two
    properties for the same reason as the menu bar's. */
 .m-ribbon-menu__item {

@@ -109,17 +109,30 @@ describe('CommandRegistry', () => {
     expect(registry.size).toBe(1);
   });
 
-  it('CONTROL: a command only in a context menu or the palette may omit its icon', () => {
-    // The refusal is about surfaces that draw a glyph. A menu row and a palette
-    // entry are text, and demanding an icon there would be a rule broader than
-    // §10.4, which a reader would then learn to satisfy with any glyph at all.
-    const registry = new CommandRegistry([
-      command('edit.menu-only', {
-        placements: [{ surface: 'context-menu', context: 'annotation', order: 1 }],
-      }),
-      command('edit.palette-only'),
-    ]);
-    expect(registry.size).toBe(2);
+  it('CONTROL: a command only in the palette may omit its icon', () => {
+    // The refusal is about surfaces that draw a glyph. A palette entry is text, and demanding an icon there would be a
+    // rule broader than the surfaces, which a reader would then learn to satisfy with any glyph at all. A right-click
+    // menu USED to be listed here too; since the owner's item 9b it draws the glyph, and the case below refuses it.
+    const registry = new CommandRegistry([command('edit.palette-only')]);
+    expect(registry.size).toBe(1);
+  });
+
+  it('refuses a command a RIGHT-CLICK menu lists with no icon, as a menu-bar one (the owner\'s item 9b)', () => {
+    expect(
+      () =>
+        new CommandRegistry([
+          command('annotate.menu-only', { placements: [{ surface: 'context-menu', context: 'annotation', order: 1 }] }),
+        ]),
+    ).toThrow(/"annotate\.menu-only" is in a menu and names no icon/u);
+    // CONTROL: the same command with a glyph is accepted.
+    expect(
+      new CommandRegistry([
+        command('annotate.menu-only', {
+          icon: 'Pencil',
+          placements: [{ surface: 'context-menu', context: 'annotation', order: 1 }],
+        }),
+      ]).size,
+    ).toBe(1);
   });
 
   // THE MENU BAR DRAWS EVERY ITEM'S GLYPH (the owner's review of 0.1.8.0): a command a menu lists with no icon would be

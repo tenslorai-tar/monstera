@@ -2,6 +2,7 @@ import { ContextMenu } from '@base-ui/react/context-menu';
 import { useLingui } from '@lingui/react';
 import { useRef, useState, type ReactElement, type ReactNode } from 'react';
 
+import { Icon } from '../primitives/Icon.js';
 import type { CommandContext, CommandRegistry } from '../registries/commands.js';
 import type { MenuContext } from '../registries/placement.js';
 import { pageSlotAt } from '../useVisiblePages.js';
@@ -181,7 +182,7 @@ function MenuPopup({ menu }: { readonly menu: AreaMenu }): ReactElement {
     <ContextMenu.Portal>
       <ContextMenu.Positioner>
         <ContextMenu.Popup
-          className="m-context-menu"
+          className="m-context-menu m-area-menu"
           // A PRESS IN THE MENU LEAVES THE PAGE'S SELECTION ALONE. A mousedown's default action
           // moves the document's selection to where it lands, so clicking *Copy* emptied the very
           // selection the item was about to copy — measured 2026-09-19: the selection was `""`
@@ -207,6 +208,12 @@ function MenuPopup({ menu }: { readonly menu: AreaMenu }): ReactElement {
                   void entry.command.run(menu.context);
                 }}
               >
+                {/* THE COMMAND'S GLYPH in its own column, the menu row's rule (the owner's item 9b): every title starts
+                    at one edge. Decorative, the item's name being its title, and in the item's colour. The registry
+                    refuses a command placed here without one. */}
+                <span className="m-context-menu__icon" aria-hidden="true">
+                  {entry.command.icon === undefined ? null : <Icon name={entry.command.icon} size="dense" />}
+                </span>
                 <span>{i18n._(entry.command.title)}</span>
                 {entry.command.shortcut === undefined ? null : (
                   <span className="m-context-menu-chord" aria-hidden="true">

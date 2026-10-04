@@ -15,6 +15,7 @@ import {
   WRITE_NOTE_LABEL,
 } from '../messages/en.js';
 import type { Write } from '../pageWriting.js';
+import type { IconName } from '../primitives/icons.js';
 import { TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { TextSelection } from '../TextLayer.js';
 
@@ -73,18 +74,26 @@ export function copySelectionCommand(deps: TextSelectionDeps): UiCommand {
   };
 }
 
-const MARKUPS: readonly { readonly type: MarkupType; readonly id: string; readonly order: number; readonly title: typeof HIGHLIGHT_SELECTION_TITLE }[] = [
-  { type: 'highlight', id: 'text.highlight', order: 20, title: HIGHLIGHT_SELECTION_TITLE },
-  { type: 'underline', id: 'text.underline', order: 30, title: UNDERLINE_SELECTION_TITLE },
-  { type: 'strikeout', id: 'text.strikeout', order: 40, title: STRIKEOUT_SELECTION_TITLE },
+/** Each with the glyph its tool draws on the ribbon, so the menu and the ribbon show one picture for one effect. */
+const MARKUPS: readonly {
+  readonly type: MarkupType;
+  readonly id: string;
+  readonly order: number;
+  readonly title: typeof HIGHLIGHT_SELECTION_TITLE;
+  readonly icon: IconName;
+}[] = [
+  { type: 'highlight', id: 'text.highlight', order: 20, title: HIGHLIGHT_SELECTION_TITLE, icon: 'Highlighter' },
+  { type: 'underline', id: 'text.underline', order: 30, title: UNDERLINE_SELECTION_TITLE, icon: 'Underline' },
+  { type: 'strikeout', id: 'text.strikeout', order: 40, title: STRIKEOUT_SELECTION_TITLE, icon: 'Strikethrough' },
 ];
 
 /** Highlight, underline and strikethrough of the selected text, one command each. */
 export function markupSelectionCommands(deps: TextSelectionDeps): readonly UiCommand[] {
-  return MARKUPS.map(({ type, id, order, title }) => ({
+  return MARKUPS.map(({ type, id, order, title, icon }) => ({
     id,
     feedback: VISIBLE,
     title,
+    icon,
     placements: [{ surface: 'context-menu', context: 'selection', order }] as const,
     when: selected(deps),
     run: (context): void => {
@@ -130,6 +139,7 @@ export function commentSelectionCommand(deps: TextSelectionDeps & { readonly wri
     id: 'text.comment',
     feedback: VISIBLE,
     title: COMMENT_SELECTION_TITLE,
+    icon: 'MessageSquare',
     placements: [{ surface: 'context-menu', context: 'selection', order: 50 }],
     when: selected(deps),
     run: async (context): Promise<void> => {
@@ -176,6 +186,8 @@ export function redactSelectionCommand(deps: TextSelectionDeps): UiCommand {
     id: 'text.redact',
     feedback: VISIBLE,
     title: REDACT_SELECTION_TITLE,
+    // THE REDACTION MARK TOOLS' GLYPH, the bar a mark draws.
+    icon: 'RectangleHorizontal',
     placements: [{ surface: 'context-menu', context: 'selection', order: 60 }],
     when: selected(deps),
     run: (context): void => {
@@ -193,6 +205,7 @@ export function searchSelectionCommand(deps: TextSelectionDeps): UiCommand {
     id: 'text.search',
     feedback: VISIBLE,
     title: SEARCH_SELECTION_TITLE,
+    icon: 'Search',
     placements: [{ surface: 'context-menu', context: 'selection', order: 70 }],
     when: selected(deps),
     run: (): void => {

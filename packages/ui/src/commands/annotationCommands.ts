@@ -604,6 +604,7 @@ export function deleteSelectionCommand(deps: SelectionCommandDeps, objects: Obje
     id: 'annotate.delete-selection',
     feedback: VISIBLE,
     title: DELETE_SELECTION_TITLE,
+    icon: 'Trash2',
     // LAST IN THE ANNOTATION MENU, which is the owner's order for it (§7's row, 2026-09-19):
     // edit, reply, properties, copy, delete. The numbers between are what the owed items take.
     // AND AT THE PROPERTIES TAB'S FOOT, after Reply, which is v5-02's order (ADR-0102).
@@ -696,6 +697,7 @@ export function editSelectionCommand(
     id: 'annotate.edit-selection',
     feedback: VISIBLE,
     title: EDIT_SELECTION_TITLE,
+    icon: 'Pencil',
     // FIRST, which is the owner's order for this menu: edit, reply, properties,
     // copy, delete.
     placements: [{ surface: 'context-menu', context: 'annotation', order: 10 }],
@@ -764,6 +766,7 @@ export function replySelectionCommand(deps: SelectionCommandDeps & { readonly wr
     id: 'annotate.reply-selection',
     feedback: VISIBLE,
     title: REPLY_SELECTION_TITLE,
+    icon: 'CornerDownRight',
     // SECOND, which is the owner's order for this menu: edit, reply,
     // properties, copy, delete. And first at the Properties tab's foot (ADR-0102).
     placements: [
@@ -829,6 +832,7 @@ export function copyAnnotationsCommand(
     id: 'annotate.copy-selection',
     feedback: TOASTS,
     title: COPY_ANNOTATIONS_TITLE,
+    icon: 'Copy',
     // FOURTH, the owner's order for this menu: edit, reply, properties, copy, delete.
     placements: [{ surface: 'context-menu', context: 'annotation', order: 40 }],
     when: () => deps.selection() !== undefined,
@@ -926,6 +930,7 @@ export function selectionPropertiesCommand(
     id: 'annotate.properties',
     feedback: VISIBLE,
     title: SELECTION_PROPERTIES_TITLE,
+    icon: 'PaintBucket',
     // AND FIRST IN THE OBJECT MENU, where the object's colour is chosen (ADR-0153 Decision 5).
     placements: [
       { surface: 'context-menu', context: 'annotation', order: 30 },

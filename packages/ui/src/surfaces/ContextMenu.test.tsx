@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
+import type { IconName } from '../primitives/icons.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
@@ -48,20 +49,21 @@ const CONTEXT: CommandContext = {
 /** A registry of two page commands and one tab command, recording each run's context. */
 function recording(): { registry: CommandRegistry; runs: { id: string; page: number | undefined }[] } {
   const runs: { id: string; page: number | undefined }[] = [];
-  const command = (id: string, title: string, menu: 'page' | 'tab', order: number): UiCommand => ({
+  const command = (id: string, title: string, menu: 'page' | 'tab', order: number, icon: IconName): UiCommand => ({
     id,
     feedback: { kind: 'visible' },
     // Existing catalogue keys, so the rendered text is a real title rather than a raw key.
     title: messageKey(title),
+    icon,
     placements: [{ surface: 'context-menu', context: menu, order }],
     run: (context) => {
       runs.push({ id, page: context.page });
     },
   });
   const registry = new CommandRegistry([
-    command('t.rotate', 'command.rotate-page.title', 'page', 10),
-    command('t.delete', 'command.delete-page.title', 'page', 20),
-    command('t.close', 'command.close-tab.title', 'tab', 10),
+    command('t.rotate', 'command.rotate-page.title', 'page', 10, 'RotateCw'),
+    command('t.delete', 'command.delete-page.title', 'page', 20, 'Trash2'),
+    command('t.close', 'command.close-tab.title', 'tab', 10, 'LogOut'),
   ]);
   return { registry, runs };
 }
@@ -84,6 +86,36 @@ describe('ContextMenuArea', () => {
 
     const items = await screen.findAllByRole('menuitem');
     expect(items.map((item) => item.getAttribute('data-command'))).toStrictEqual(['t.rotate', 't.delete']);
+  });
+
+  it('draws each item\'s OWN glyph before its title, hidden from its name (the owner\'s item 9b)', async () => {
+    const { registry } = recording();
+    render(
+      <Wrapped>
+        <ContextMenuArea registry={registry} context={CONTEXT} menus={['page']}>
+          <div data-testid="region">page</div>
+        </ContextMenuArea>
+      </Wrapped>,
+    );
+    await act(async () => {
+      fireEvent.contextMenu(screen.getByTestId('region'), { clientX: 20, clientY: 20 });
+      await Promise.resolve();
+    });
+    const items = await screen.findAllByRole('menuitem');
+    // TOLD APART BY LUCIDE'S CLASS, so a glyph drawn for the wrong command, or one glyph for all, is red.
+    const glyphs = items.map((item) => {
+      const first = item.firstElementChild;
+      return {
+        hidden: first?.getAttribute('aria-hidden'),
+        glyph: [...(first?.querySelector('svg')?.classList ?? [])].find((name) => name.startsWith('lucide-')),
+      };
+    });
+    expect(glyphs).toStrictEqual([
+      { hidden: 'true', glyph: 'lucide-rotate-cw' },
+      { hidden: 'true', glyph: 'lucide-trash2' },
+    ]);
+    // OUT OF THE NAME: the item is still found by its title alone.
+    expect(screen.getByRole('menuitem', { name: EN[messageKey('command.rotate-page.title')] })).toBe(items[0]);
   });
 
   it('runs the chosen command against the context it was HANDED — the right-clicked page', async () => {
