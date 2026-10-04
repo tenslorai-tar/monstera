@@ -1428,6 +1428,7 @@ A feature is finished when it is **registered**, not when it is wired.
 | **Update providers** | detect, check, apply/redirect | About panel, update flow |
 | **Import/Export formats** | id, extensions, direction, handler command | dialogs, file associations |
 | **Cloud providers** | id, auth, list, fetch | cloud storage panel |
+| **Tips** (amended 2026-10-04, [ADR-0159](DECISIONS/0159-a-tip-is-registered-names-its-commands-and-is-shown-in-the-status-bar.md)) | id, words (i18n key), the commands it names by id | the status bar's tip; and a tip for each command's key and each command's ribbon place, derived from the command registry, so no tip can name what is not registered |
 
 **A dialog that collects arguments ANSWERS the command that opened it**
 ([ADR-0038](DECISIONS/0038-a-dialog-answers-the-command-that-opened-it.md)).
@@ -1581,6 +1582,15 @@ there is still one owner of each. The percentage is a readout, and a readout
 still has a position. Writing the buttons into the bar by hand would be the
 second wiring place above; `StatusBar.tsx` lives in `packages/ui/src/surfaces`,
 where `check:secondwiring` scans.
+
+**The bar's start also shows a TIP** (amended 2026-10-04,
+[ADR-0159](DECISIONS/0159-a-tip-is-registered-names-its-commands-and-is-shown-in-the-status-bar.md)),
+after what a tool waits for, which comes first. Tips are the tips registry's,
+naming commands by id, so their titles and keys are the command registry's; one
+is shown at a time, in a random order that does not repeat until every tip has
+been, remembered across sessions; a tip that does not fit is hidden rather than
+cut; and it is `aria-hidden`, because the bar is a live region and a sentence
+changing every so often there would be read aloud over a person's work.
 
 **The start screen projects commands into three slots** (amended 2026-09-15,
 [ADR-0068](DECISIONS/0068-the-start-screen-projects-into-three-slots.md)).
@@ -2935,6 +2945,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-04 | **A tip is registered, names its commands, and is shown in the status bar** (§7's registry table and its status bar clause). The owner's items 18a to 18c: well over a hundred tips, every one true of this build, names and keys derived from the command registry, a check that fails when a tip names what no longer exists, a random order that does not repeat and is remembered, and a switch. A tip is neither a command nor a value the bar holds, so nothing in §7 could register one. A tips registry names commands by id; a key tip and a place tip are derived from every command; one tip at a time at the bar's start, after a tool's hint, hidden whole when it does not fit, `aria-hidden` inside the live region. Rejected: sentences written into the bar, only written tips, naming a command in prose, an ellipsis, announcing each tip, an order held in memory only | §7's registry table; the status bar clause's start | [0159](DECISIONS/0159-a-tip-is-registered-names-its-commands-and-is-shown-in-the-status-bar.md) |
 | 2026-10-04 | **An opener may reply to a report with new props** (§7's dialog clause). The owner's item 17b: a Check button per provider key in Settings, answered in place with a tick, a reason or the provider's models. The check is main's (`ai.models`, the stored key, CR-SEC-02's address rule), and the answer had no way back into an open dialog: props were fixed while open, and *Import settings…* closes and reopens. `onUpdate` now receives `reply(props)`, validated by the dialog's props schema, delivered only to the dialog that reported, with the body's state kept. Rejected: close and reopen, a client in the body, the answer in a store the body reads, a promise or callback in props, checking with `ai.checkKey` | ADR-0094's one-way `update` | [0158](DECISIONS/0158-an-opener-may-reply-to-a-report-with-new-props.md) |
 | 2026-10-04 | **A field whose value runs long takes its row's width** (§7's settings registry). The owner's item 17a: every key and endpoint field measured 168 px, the browser's twenty characters, in rows of 488 to 672 px, so a key showed about a fifth of itself. The `Input` primitive takes `runsLong`, and such a field takes its own line and the row's whole width; a text setting must declare it, a secret implies it. The gallery reads every overflowing field against its row's control column, with a positive control. Rejected: every text field full width, deciding it by id or label, deriving it from `purpose`, a width in characters, keying on `type="password"` | §7's settings row, which listed no such field | [0157](DECISIONS/0157-a-field-whose-value-runs-long-takes-its-rows-width.md) |
 | 2026-10-04 | **Spelling is reviewed a word at a time, beside the page** (§10.3's right contextual panel). The owner's item 16a: spell check opened a modal list whose one action was adding a word to the dictionary, and a modal window makes the page inert. The panel gains a third tab; a review walks the pages, and comments and text fields as two settings say, and shows one occurrence at a time, marked on the page through the find highlight, with Ignore, Ignore all, Add to dictionary, Replace and Replace all, each edit through the route that already holds its rules. One occurrence of page text is named by its point on the page (`replaceTextAt`), because the two engines' readings of a page agree on 52.9% of lines. Written into this document after the ADR, which recorded it alone. Rejected: an occurrence index, `editTextBlock` splicing, a seventh document panel, a non-modal dialog | Spell check's modal list; the panel's two tabs | [0156](DECISIONS/0156-spelling-is-reviewed-a-word-at-a-time-beside-the-page.md) |
