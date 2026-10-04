@@ -185,7 +185,7 @@ is not available.
 - [ ] **Fit page** — Display · `view.fit-page` · Shows: on screen · Help: *Read the status bar*
 - [ ] **Show rulers** — Display · `view.toggle-rulers` · Shows: on screen · Help: *Show rulers and a grid*
 - [ ] **Show grid** — Display · `view.toggle-grid` · Shows: on screen · Help: *Show rulers and a grid*
-- [ ] **Dim Pages** — Display · `view.toggle-dark-page` · Shows: on screen · Help: *Read with dim pages*
+- [ ] **Dim pages** — Display · `view.toggle-dark-page` · Shows: on screen · Help: *Read with dim pages*
 - [ ] **Loupe** — Display · `view.toggle-loupe` · Shows: on screen · Help: *Magnify part of a page with the loupe*
 - [ ] **Split view** — Display · `view.toggle-split` · Shows: on screen · Help: *See two pages of a document at once*
 - [ ] **Make scanned pages searchable** — OCR · `document.ocr` · Shows: a result dialog · Help: *Make scanned pages searchable (OCR)*
