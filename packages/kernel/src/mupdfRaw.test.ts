@@ -180,7 +180,14 @@ describe('the native MuPDF binding', () => {
       try {
         for (let round = 0; round < 20; round += 1) {
           const page = document.loadPage(0);
-          page.run(new mupdf.Device({ fillShade: (shade) => shade.destroy() }), [1, 0, 0, 1, 0, 0]);
+          page.run(
+            new mupdf.Device({
+              fillShade: (shade) => {
+                shade.destroy();
+              },
+            }),
+            [1, 0, 0, 1, 0, 0],
+          );
           page.toPixmap([1, 0, 0, 1, 0, 0], mupdf.ColorSpace.DeviceRGB).destroy();
         }
       } finally {
