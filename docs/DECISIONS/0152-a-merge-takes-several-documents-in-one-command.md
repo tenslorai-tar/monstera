@@ -84,3 +84,27 @@ said it would widen is a second seam for a question the first already answers.
 never opened, which is ADR-0040's rejected *transient handle* by another route.
 
 **Replacing `'one'` with a count.** See Decision 1.
+
+---
+
+## Correction, 2026-10-04, before building — the bound is in the SHAPE, and the payload has two
+
+**Decision 3's *"their page sets together bounded by `MAX_PAGE_SET_ENTRIES`"* could not hold as written.** It was
+built as a refine over the parts' total, and `hostRoutes.test.ts` read `mergeDocument` as past the MuPDF host's frame
+at its worst: 32 parts each free to carry a paired set. That reading is correct, because `maxEncodedBytes` reads the
+schema's shape through zod's JSON Schema and a refine has no representation there. The check that owns a message's
+size is the authority on it (B3a), so the bound has to be a shape it can read, not a rule beside it.
+
+**Decided:** `documents` is a union of two shapes, which are the two intents the dialogs ask for:
+
+- **one document with the pages chosen of it** — a one-tuple carrying `sourcePagesSchema`, *Insert from PDF*'s part;
+- **one to `MAX_MERGE_DOCUMENTS` documents, each taken whole** — `sourcePages: 'all'`, *Merge*'s parts.
+
+Its worst is one paired set plus an id, the size the command had before this ADR. No dialog asks for several
+documents with pages chosen of each; that would be a widening of the union, made on purpose. A *later document that
+lacks a page* is therefore not a state the payload can express, and the case that refuses a later failure with
+nothing placed is now a later document whose session is closed.
+
+**Rejected:** a per-part set bounded at `MAX_PAGE_SET_ENTRIES / MAX_MERGE_DOCUMENTS` (256 entries), which would
+refuse an *Insert from PDF* that today takes 4,096; and routing MuPDF's apply through a file, a transport change for
+a bound the shape can state.
