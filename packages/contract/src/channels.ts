@@ -4589,6 +4589,13 @@ export const channels = {
              * stream rather than from the dictionary's `/BM` claim (ADR-0103).
              */
             blend: annotationBlendSchema,
+            /**
+             * Present and true on a STAMP WHOSE APPEARANCE DRAWS A PICTURE — what *Comment › Image* places. A picture
+             * a person put on a page is this, not page content, so `document.pageObjects` never lists it; Edit
+             * object's *Images* reads this to find it (the owner's item 14g). Absent on everything else, so a walk
+             * that predates it reads as it did.
+             */
+            pictured: z.literal(true).exactOptional(),
           }),
         )
         .max(ANNOTATIONS_PART)

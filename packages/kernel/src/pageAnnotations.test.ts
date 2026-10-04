@@ -3276,6 +3276,23 @@ describe('applyPlaceImage', () => {
     ]);
   });
 
+  it('the walk calls an image stamp PICTURED, and CONTROL: a built-in stamp, which draws words, is not (14g)', async () => {
+    // Edit object's *Images* finds a placed picture by this, since the page's object walk never sees an annotation.
+    // The control is the case the field could get wrong: the same subtype, an appearance with no picture in it.
+    const placed = await placedOn(await fixture());
+    const both = await drawnOn(
+      placed,
+      command({ annotation: { type: 'stamp', stamp: 'approved', rect: { x0: 20, y0: 200, x1: 260, y1: 260 }, colour: [0.8, 0.1, 0.1], opacity: 1 } }),
+    );
+    const listed = await onSession(both, (session) => readAnnotations(session));
+    expect(listed.annotations.map((entry) => [entry.kind, entry.pictured])).toStrictEqual([
+      ['stamp', true],
+      ['stamp', undefined],
+    ]);
+    // ABSENT, not false: the one spelling of *no* the schema accepts.
+    expect('pictured' in (listed.annotations[1] ?? {})).toBe(false);
+  });
+
   it('A RESIZED image stamp still draws its image: placeAnnotation’s setRect and update() keep the appearance', async () => {
     // THE PREMISE a moved or resized picture rests on, and nothing measured it until 2026-10-02: `applyPlaceImage`'s
     // reading of `update()` leaving the appearance intact was taken right after creation, and `placeAnnotation`

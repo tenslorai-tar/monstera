@@ -501,6 +501,12 @@ const engineAnnotationSchema = z
     created: annotationInstantSchema.nullable(),
     /** The blend the appearance is drawn in. */
     blend: annotationBlendSchema,
+    /**
+     * Present and true on a stamp that draws a picture. EXACTLY optional rather than nullable: the reader spreads it in
+     * only when true, so absent is the one spelling of *no*, on the wire and in the reader's type alike, and a key
+     * present with no value is refused rather than read as a third answer.
+     */
+    pictured: z.literal(true).exactOptional(),
   })
   .strict();
 

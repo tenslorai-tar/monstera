@@ -1294,6 +1294,40 @@ function blendOf(annotation: PDFAnnotation): AnnotationBlend {
 }
 
 /**
+ * Whether a stamp's appearance DRAWS A PICTURE — an image XObject in its normal appearance's resources, or in a form
+ * those resources name, a level down, which is how another producer's image stamp usually wraps one.
+ *
+ * A picture a person places is a `/Stamp` (`applyPlaceImage`), not page content, so the page's object walk never sees
+ * it: Edit object's *Images* listed none on a page holding two photos (the owner's item 14g). This is what lets that
+ * mode find them. Stamps only, because a stamp is the one annotation this build places a picture as; a widget's icon
+ * is a form field's, and is edited as one.
+ */
+function picturedStamp(annotation: PDFAnnotation): boolean {
+  if (kindOf(annotation) !== 'stamp') return false;
+  // EACH STEP CHECKED, `blendOf`'s reason: `get` on MuPDF's null object throws rather than answering null.
+  const appearances = annotation.getObject().get('AP');
+  if (!appearances.isDictionary()) return false;
+  const normal = appearances.get('N');
+  return normal.isStream() && drawsImage(normal, 2);
+}
+
+/** Whether a content stream's resources name an image, looking `depth` forms down. */
+function drawsImage(stream: PDFObject, depth: number): boolean {
+  const resources = stream.get('Resources');
+  if (!resources.isDictionary()) return false;
+  const objects = resources.get('XObject');
+  if (!objects.isDictionary()) return false;
+  let found = false;
+  objects.forEach((object) => {
+    if (found || !object.isStream()) return;
+    const subtype = object.get('Subtype');
+    if (subtype.isName() && subtype.asName() === 'Image') found = true;
+    else if (depth > 1 && subtype.isName() && subtype.asName() === 'Form') found = drawsImage(object, depth - 1);
+  });
+  return found;
+}
+
+/**
  * Writes `mode` into every appearance stream: on every ExtGState it already has, and on one it
  * prepends. Both, measured: a highlight's own `/H` state comes after anything prepended and would
  * override it, and a rectangle at opacity 1 has no ExtGState at all.
@@ -1861,6 +1895,8 @@ export interface ListedAnnotation {
   readonly created: string | null;
   /** The blend its appearance is drawn in — {@link blendOf}. */
   readonly blend: AnnotationBlend;
+  /** Present and true on a stamp whose appearance draws a picture — {@link picturedStamp}. */
+  readonly pictured?: true;
 }
 
 /** MuPDF's subtype back to the name a surface may use. */
@@ -2046,6 +2082,7 @@ export function readAnnotations(
           author: authorOf(annotation),
           created: createdOf(annotation),
           blend: blendOf(annotation),
+          ...(picturedStamp(annotation) ? { pictured: true as const } : {}),
         });
       }
     }

@@ -47,6 +47,29 @@ describe('the document-wide lists’ hostile-host bounds', () => {
     expect(ENGINE_ANNOTATIONS_MAX).toBe(derived(SMALLEST_ANNOTATION_BYTES));
   });
 
+  it('a PICTURED stamp crosses, and the flag has ONE spelling of no: absent, never false or a key with no value (14g)', () => {
+    const entry = {
+      page: 0,
+      index: 0,
+      rect: null,
+      style: { colour: [], opacity: 1, borderWidth: null },
+      kind: 'stamp',
+      contents: '',
+      authored: true,
+      inReplyTo: null,
+      author: '',
+      created: null,
+      blend: 'normal',
+    };
+    const parses = (annotation: object): boolean =>
+      engineChannels['engine/annotations'].result.safeParse({ annotations: [annotation], truncated: false }).success;
+    expect(parses({ ...entry, pictured: true })).toBe(true);
+    // CONTROL: the strict schema refuses what it does not name, so the acceptance above is the field's own.
+    expect(parses({ ...entry, picture: true })).toBe(false);
+    expect(parses({ ...entry, pictured: false })).toBe(false);
+    expect(parses({ ...entry, pictured: undefined })).toBe(false);
+  });
+
   it('form fields: the smallest field the schema accepts, and the bound it derives', () => {
     const smallest = {
       page: 0,
