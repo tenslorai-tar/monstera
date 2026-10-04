@@ -186,6 +186,24 @@ describe('CommandPalette', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('a COMPOSITION’S arrows and Enter choose a candidate: no highlight moves and nothing runs (CR-COR-07)', () => {
+    const save = vi.fn();
+    const find = vi.fn();
+    const registry = new CommandRegistry([command('a.one', SAVE_TITLE, { run: save }), command('a.two', FIND_TITLE, { run: find })]);
+    const { container, onClose } = open(registry);
+    const field = queryField(container);
+    const selected = (): string | null | undefined => container.querySelector('[aria-selected="true"]')?.textContent;
+    const first = selected();
+    fireEvent.keyDown(field, { key: 'ArrowDown', isComposing: true });
+    fireEvent.keyDown(field, { key: 'Enter', isComposing: true });
+    expect(selected()).toBe(first);
+    expect(save.mock.calls.length + find.mock.calls.length).toBe(0);
+    expect(onClose).not.toHaveBeenCalled();
+    // CONTROL: the same Enter with the composition closed runs the highlighted command.
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(save.mock.calls.length + find.mock.calls.length).toBe(1);
+  });
+
   it('the ARROWS move the highlight the field names, and Enter runs THAT one', () => {
     const save = vi.fn();
     const find = vi.fn();

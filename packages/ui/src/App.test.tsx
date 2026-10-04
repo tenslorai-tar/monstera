@@ -1177,6 +1177,10 @@ describe('App', () => {
       // THE LOAD-BEARING LINE: still Focus after the Escape the palette consumed.
       expect(settings.get('appearance.layout-mode')).toBe('focus');
 
+      // AN ESCAPE THAT CANCELS A COMPOSITION is the input method's, and leaves nothing (CR-COR-07).
+      await key({ key: 'Escape', isComposing: true });
+      expect(settings.get('appearance.layout-mode')).toBe('focus');
+
       await key({ key: 'Escape' });
       // RETURNED TO STUDIO, the mode left — not to the Ribbon default.
       expect(settings.get('appearance.layout-mode')).toBe('studio');

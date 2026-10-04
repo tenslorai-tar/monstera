@@ -18,6 +18,7 @@ import {
   TEXT_EDIT_TRUNCATED,
   TEXT_EDIT_UNADDRESSABLE,
 } from './messages/en.js';
+import { composing } from './surfaces/shortcuts.js';
 
 /**
  * Text edited where it is on the page — Edit text's mode, drawn over one page
@@ -452,7 +453,8 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
   }, [onClose, onCommit, text]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key !== 'Escape') return;
+    // A COMPOSITION'S ESCAPE cancels the candidate, and is not the editor's (`composing`).
+    if (event.key !== 'Escape' || composing(event)) return;
     event.preventDefault();
     event.stopPropagation();
     // AFTER A REFUSAL, Escape puts the text back rather than trying again: the

@@ -468,6 +468,23 @@ describe('the assistant tab', () => {
     });
     expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(true);
   });
+
+  it('the Enter that CONFIRMS A COMPOSITION does not send (CR-COR-07)', async () => {
+    const { sent } = await drawn();
+    const composer = screen.getByLabelText('Ask about this document');
+    type('にほんご');
+    fireEvent.keyDown(composer, { key: 'Enter', isComposing: true });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(false);
+    // CONTROL: the Enter after it, with the composition closed, sends.
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(true);
+  });
 });
 
 describe('the assistant about a document (ADR-0088)', () => {

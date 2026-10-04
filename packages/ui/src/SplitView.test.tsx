@@ -70,6 +70,16 @@ describe('split view — the owner’s design: a header bar over two halves, one
     expect(box('left').value).toBe('1');
   });
 
+  it('the Enter that CONFIRMS A COMPOSITION moves no half (CR-COR-07)', () => {
+    render(<Harness pageCount={5} onClose={() => undefined} />);
+    fireEvent.change(box('right'), { target: { value: '4' } });
+    fireEvent.keyDown(box('right'), { key: 'Enter', isComposing: true });
+    expect(shows()).toStrictEqual(['0', '1']);
+    // CONTROL: the Enter after it sends the page.
+    fireEvent.keyDown(box('right'), { key: 'Enter' });
+    expect(shows()).toStrictEqual(['0', '3']);
+  });
+
   it('CONTROL: a page outside the document is not sent, and the box names the page on show again', () => {
     render(<Harness pageCount={5} onClose={() => undefined} />);
     fireEvent.change(box('left'), { target: { value: '9' } });

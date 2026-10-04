@@ -203,6 +203,19 @@ describe('FormsPanel', () => {
     ]);
   });
 
+  it('Enter commits a text field, and the Enter that CONFIRMS A COMPOSITION does not (CR-COR-07)', async () => {
+    const { fills } = await panel([field({ name: 'first', values: ['Ada'] })]);
+    const input = screen.getByLabelText<HTMLInputElement>('first');
+    input.focus();
+    fireEvent.change(input, { target: { value: 'にほんご' } });
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(fills).toStrictEqual([]);
+    expect(document.activeElement).toBe(input);
+    // CONTROL: the Enter after it commits — the field gives up the focus, and the fill is sent.
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(fills).toMatchObject([{ value: { set: 'text', text: 'にほんご' } }]);
+  });
+
   it('SENDS NOTHING when a text field is left as it was', async () => {
     // A blur is not an edit. Without this the case above passes for a panel
     // that dispatches on every blur, which would be a command and a log entry

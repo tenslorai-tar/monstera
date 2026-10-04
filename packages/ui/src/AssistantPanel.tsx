@@ -159,6 +159,7 @@ import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
 import type { SettingsStore } from './settingsStore.js';
+import { composing } from './surfaces/shortcuts.js';
 import { useSetting } from './useSetting.js';
 
 /**
@@ -1291,8 +1292,8 @@ export function AssistantPanel({
           // content that moved by itself (WCAG 2.2.2) and needed a timer, a focus state and a reduced-motion test.
           placeholder={i18n._(ASSISTANT_PLACEHOLDER)}
           onKeyDown={(event) => {
-            // ENTER SENDS, SHIFT+ENTER STARTS A LINE — the owner's design.
-            if (event.key === 'Enter' && !event.shiftKey) {
+            // ENTER SENDS, SHIFT+ENTER STARTS A LINE — the owner's design. Not the Enter that confirms a composition.
+            if (event.key === 'Enter' && !event.shiftKey && !composing(event)) {
               event.preventDefault();
               send();
             }

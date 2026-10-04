@@ -174,6 +174,24 @@ describe('Edit text on the page (ADR-0096)', () => {
     ]);
   });
 
+  it('a COMPOSITION’S Escape cancels the candidate and writes nothing (CR-COR-07)', async () => {
+    const { view, commits } = mount();
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    const editor = editorIn(view.container);
+    typeInto(editor, 'にほんご');
+    await act(async () => {
+      fireEvent.keyDown(editor, { key: 'Escape', isComposing: true });
+      await Promise.resolve();
+    });
+    expect(commits).toHaveLength(0);
+    // CONTROL: with the composition closed, Escape writes.
+    await act(async () => {
+      fireEvent.keyDown(editor, { key: 'Escape' });
+      await Promise.resolve();
+    });
+    expect(commits).toHaveLength(1);
+  });
+
   it('ESCAPE WRITES what was typed, for the block that was open, at the version it was read at', async () => {
     const { view, commits } = mount();
     fireEvent.click(find(view.container, '[data-text-block="1"]'));

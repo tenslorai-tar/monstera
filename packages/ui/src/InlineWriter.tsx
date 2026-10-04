@@ -7,6 +7,7 @@ import type { OverlayPage } from './annotations/annotationSpace.js';
 import { hexFromColour } from './annotations/annotationStyle.js';
 import { overlayTransform } from './annotations/annotationSpace.js';
 import { type Draft, type WriteEnd, type WriteRequest, settle } from './pageWriting.js';
+import { composing } from './surfaces/shortcuts.js';
 
 /**
  * Words typed where they go (ADR-0154): a request drawn over its own page.
@@ -151,6 +152,8 @@ export function InlineWriter({ request, draft, geometry, onDone }: InlineWriterP
   const onKeyDown = (event: React.KeyboardEvent): void => {
     // THE PAGE'S KEYS STAY OUT: Delete, the arrows and the tool chords belong to what is being typed here.
     event.stopPropagation();
+    // A COMPOSITION'S ENTER AND ESCAPE are the input method's: confirming a candidate did not end the writing.
+    if (composing(event)) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       end('escape', words);

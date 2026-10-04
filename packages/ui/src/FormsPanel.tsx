@@ -29,6 +29,7 @@ import {
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { readWholeList } from './readWholeList.js';
+import { composing } from './surfaces/shortcuts.js';
 
 /**
  * Every AcroForm field in the document, with the control that fills it.
@@ -336,7 +337,7 @@ function FieldControl({
           }
         }}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') event.currentTarget.blur();
+          if (event.key === 'Enter' && !composing(event)) event.currentTarget.blur();
         }}
         type="text"
       />

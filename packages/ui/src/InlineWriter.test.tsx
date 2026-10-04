@@ -100,6 +100,19 @@ describe('InlineWriter', () => {
     expect(done).toStrictEqual(['see figure 3']);
   });
 
+  it('a COMPOSITION’S Escape and Ctrl+Enter are the input method’s, and finish nothing (CR-COR-07)', () => {
+    const { done } = mounted(BLOCK);
+    const field = screen.getByRole('textbox', { name: 'Text box' });
+    typeInto(field, 'にほんご');
+    // ESCAPE CANCELS THE CANDIDATE, and Ctrl+Enter is a key the composition is still taking.
+    fireEvent.keyDown(field, { key: 'Escape', isComposing: true });
+    fireEvent.keyDown(field, { key: 'Enter', ctrlKey: true, isComposing: true });
+    expect(done).toStrictEqual([]);
+    // CONTROL: with the composition closed, the same Escape finishes.
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(done).toStrictEqual(['にほんご']);
+  });
+
   it('answers ONCE: the blur that follows a finish is not a second answer', () => {
     const { done } = mounted(BLOCK);
     const field = screen.getByRole('textbox', { name: 'Text box' });

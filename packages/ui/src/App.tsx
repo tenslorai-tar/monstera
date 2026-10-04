@@ -372,7 +372,7 @@ import { ContextPanel } from './surfaces/ContextPanel.js';
 import { DocumentBody } from './surfaces/DocumentBody.js';
 import { PanelPresence } from './panelPresence.js';
 import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel.js';
-import { controlOwnsChord, dispatchChord, fieldOwnsChord, shortcutsFor } from './surfaces/shortcuts.js';
+import { composing, controlOwnsChord, dispatchChord, fieldOwnsChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { CrashReportOffer } from './CrashReportOffer.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
@@ -3967,6 +3967,8 @@ function useShortcuts(
       // list turned the page behind it, and the list could not capture a key without the old one running. Read from
       // the dialog host's own state — the command palette is not one of its dialogs, so its own Ctrl+K still closes it.
       if (dialogOpen) return;
+      // A KEY OF AN OPEN COMPOSITION is the input method's, Escape among them (`composing`).
+      if (composing(event)) return;
       // A KEY THE FOCUSED FIELD ANSWERS ITSELF is left to it — `fieldOwnsChord`
       // says which, once.
       if (fieldOwnsChord(event.target, event)) return;

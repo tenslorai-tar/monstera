@@ -10,6 +10,7 @@ import { CLOSE_LABEL, PALETTE_EMPTY, PALETTE_LABEL, PALETTE_PLACEHOLDER } from '
 import { Dialog } from './primitives/Dialog.js';
 import type { CommandContext, CommandRegistry } from './registries/commands.js';
 import { paletteModel } from './surfaces/projections.js';
+import { composing } from './surfaces/shortcuts.js';
 
 /**
  * Every command a reader can reach, by name.
@@ -119,7 +120,8 @@ export function CommandPalette({
           setHighlighted(0);
         }}
         onKeyDown={(event) => {
-          if (matches.length === 0) return;
+          // THE ARROWS AND ENTER OF AN OPEN COMPOSITION choose and confirm a candidate, not a command (`composing`).
+          if (matches.length === 0 || composing(event)) return;
           const last = matches.length - 1;
           const moves: Partial<Record<string, number>> = {
             ArrowDown: highlight >= last ? 0 : highlight + 1,
