@@ -515,7 +515,8 @@ async function denseTextCases() {
     page.drawText(line === LINES - 1 ? `${PER_LINE}END` : PER_LINE, { x: 4, y: 1996 - line * 4.9, size: 2, font });
   }
   const session = await pdfiumWriter.open(await document.save());
-  let read = '';
+  /** @type {string} */
+  let read;
   try {
     read = await pageText(session, 0);
   } catch (error) {
