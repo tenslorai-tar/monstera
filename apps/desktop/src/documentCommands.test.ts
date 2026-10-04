@@ -3671,9 +3671,12 @@ describe('exportText — the document’s words, streamed one page at a time', (
 
     it('a page PAST the document is refused before any file is written', async () => {
       const destination = join(mkdtempSync(join(directory, 'text-')), 'past.txt');
-      const { commands } = exportingTo(destination);
+      const { commands, reads } = exportingTo(destination);
 
-      await expect(commands.exportText(textDoc, 'plain', [5])).rejects.toThrow();
+      // THE DECISION, not only the end state (audit P-2): the page set is refused by its own rule, by name, and no page
+      // is read — a walk that reached page 5 and failed there would also leave no file behind.
+      await expect(commands.exportText(textDoc, 'plain', [5])).rejects.toThrow(/Page 5 is outside this document/u);
+      expect(reads).toStrictEqual([]);
       expect(existsSync(destination)).toBe(false);
     });
   });

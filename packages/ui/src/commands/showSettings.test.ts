@@ -366,7 +366,13 @@ describe('showSettingsCommand', () => {
     });
 
     it('counts each check, and NO KEY travels in a reply', async () => {
-      const { run, replies } = harness({ reports: [CHECK, CHECK], listed: FETCHED });
+      // A KEY IS IN THE INPUT (audit P-4): typed before the first check and reported WITH the second, so a reply that
+      // carried a report's secrets, or the stored ones, would carry it. Without one the absence below could not fail.
+      const typed = { values: {}, secrets: { 'ai.openai-key': 'example-key-typed' } };
+      const { run, replies } = harness({
+        reports: [typed, CHECK, { ...CHECK, secrets: { 'ai.openai-key': 'example-key-typed' } }],
+        listed: FETCHED,
+      });
       await run();
       expect(replied(replies).map((props) => props.checked)).toStrictEqual([{ openai: 1 }, { openai: 2 }]);
       expect(JSON.stringify(replies)).not.toContain('example-key');

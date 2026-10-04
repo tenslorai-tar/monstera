@@ -304,6 +304,16 @@ describe('starting a review', () => {
     expect(review.suggestions).toContain('document');
   });
 
+  it('PASSES a word in the personal dictionary, so a review shows the next one (the round trip the feature is for)', async () => {
+    // THE SAME PAGES as the case above, where `documnet` is the first word shown — that case is the control. Held
+    // here because only this case puts a personal word on the page (audit P-5): `buildChecker` honours the list, and
+    // this is what says the review hands it in.
+    const { deps, store, settings } = harness(script({ pages: [['the documnet'], ['page teh']] }));
+    settings.set(PERSONAL_DICTIONARY_SETTING.id, ['documnet']);
+    await startReview(deps, store, 2);
+    expect(currentWord(store)).toBe('teh');
+  });
+
   it('READS AGAIN FROM THE FIRST PAGE when the document moves under the walk, so its words describe one version', async () => {
     const doc = script({ pages: [['documnet'], ['page']] });
     let movedOnce = false;

@@ -12,7 +12,7 @@ Spell check goes through the document's text a word at a time. Each word it does
 
 1. In the rail, choose **Edit** (or **Review**), then **Spell check** in the **Proofing** group.
 2. The **Spelling** tab opens and checks every page. You can **Stop** it while it reads.
-3. For each word, the tab shows where it is and the sentence around it, and the page shows it marked.
+3. For each word, the tab shows where it is and the line it is on, and the page shows it marked.
 4. Choose a suggestion, or type the word you want in **Change to**.
 5. Choose **Replace** to change this word, or **Replace all** to change every place it is written exactly that way.
 6. Choose **Ignore** to leave it, **Ignore all** to leave it everywhere in this check, or **Add to dictionary** to stop it being flagged again.

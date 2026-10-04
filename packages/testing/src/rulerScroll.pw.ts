@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 
 import { bridge } from './pageBridge.js';
 import { samplePdf } from './helpScreensHarness.js';
-import { pageShown } from './settled.js';
+import { pageShown, settled } from './settled.js';
 
 /**
  * A SCROLL MOVES EACH PAGE'S RULER RUN AND REDRAWS NO MARK (cloud-4 item 9f).
@@ -35,7 +35,21 @@ test('a short scroll moves the vertical ruler’s runs and inserts or removes no
   await scroller.evaluate((element) => {
     element.scrollTop = 400;
   });
-  await page.waitForTimeout(300);
+  // SETTLED ON THE RULER ITSELF (audit P-7), not on a fixed wait: the list is at 400 and the labelled marks sit where
+  // they sat a frame before, so the baseline below is taken from a ruler that has caught up. Read by what a person
+  // sees — a label and where it is — so the settle reads any build of the ruler, the one without runs included.
+  await settled(
+    page,
+    () =>
+      page.evaluate(() => ({
+        top: document.querySelector<HTMLElement>('.m-page-list')?.scrollTop ?? -1,
+        marks: [...document.querySelectorAll<HTMLElement>('.m-ruler-v .m-tick-major')].map(
+          (mark) => `${mark.textContent}@${String(Math.round(mark.getBoundingClientRect().top))}`,
+        ),
+      })),
+    (reading) => reading.top === 400 && reading.marks.length > 0,
+    'the ruler at scroll 400',
+  );
 
   const reading = await page.evaluate(async () => {
     const strip = document.querySelector('.m-ruler-v');

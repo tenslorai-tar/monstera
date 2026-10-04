@@ -3318,10 +3318,12 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
 
     it('says so for a platform with no print dialog and for a printer that refused, and nothing for a dismissed one', async () => {
-      for (const [answered, spokenLast] of [
-        [{ kind: 'unavailable' }, { id: 'dialog.save-problem', props: { outcome: 'print-unavailable' } }],
-        [{ kind: 'failed' }, { id: 'dialog.save-problem', props: { outcome: 'print-failed' } }],
-        [{ kind: 'cancelled' }, { id: 'dialog.print', props: { dpi: 300, pageCount: 10 } }],
+      // THE WHOLE LIST (audit P-6): the print dialog, then the problem or nothing, and no dialog between them.
+      const asked = { id: 'dialog.print', props: { dpi: 300, pageCount: 10 } } as const;
+      for (const [answered, spokenAll] of [
+        [{ kind: 'unavailable' }, [asked, { id: 'dialog.save-problem', props: { outcome: 'print-unavailable' } }]],
+        [{ kind: 'failed' }, [asked, { id: 'dialog.save-problem', props: { outcome: 'print-failed' } }]],
+        [{ kind: 'cancelled' }, [asked]],
       ] as const) {
         const { client } = recording({ 'document.print': answered });
         const spoken: unknown[] = [];
@@ -3340,7 +3342,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           },
         }).run(CONTEXT);
 
-        expect(spoken.at(-1)).toStrictEqual(spokenLast);
+        expect(spoken).toStrictEqual(spokenAll);
       }
     });
 
@@ -3725,7 +3727,11 @@ describe('delete pages — the mutation-dialog gate', () => {
       },
     }).run(CONTEXT);
 
-    expect(spoken.at(-1)).toStrictEqual({ id: 'dialog.save-problem', props: { outcome: 'contested' } });
+    // THE WHOLE LIST (audit P-6), as the layout case above has it: the pages dialog, then the problem, and nothing else.
+    expect(spoken).toStrictEqual([
+      { id: 'dialog.export-text', props: { pageCount: 10, becomes: 'text' } },
+      { id: 'dialog.save-problem', props: { outcome: 'contested' } },
+    ]);
   });
 
   describe('recognising the scanned pages first, where the person turned it on (ADR-0118)', () => {

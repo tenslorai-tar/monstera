@@ -26,12 +26,17 @@ export function readLongFields(root: Element): {
   for (const field of root.querySelectorAll<HTMLInputElement>('input.m-input')) {
     if (field.value.length <= field.size) continue;
     seen += 1;
+    const name = field.labels?.[0]?.textContent ?? field.getAttribute('aria-label') ?? '(unnamed)';
     const row = field.closest('.m-dialog-row, .m-settings-row');
-    if (row === null) continue;
+    // A LONG FIELD IN NO ROW THIS KNOWS is reported, never counted and passed (audit P-8): `seen` is the control the
+    // callers assert, so every field it counts is one that was measured or named here.
+    if (row === null) {
+      short.push(`${name}: in no dialog or settings row, so its width could not be read`);
+      continue;
+    }
     const width = field.getBoundingClientRect().width;
     const rowWidth = row.clientWidth;
     if (width + 1 < rowWidth) {
-      const name = field.labels?.[0]?.textContent ?? field.getAttribute('aria-label') ?? '(unnamed)';
       short.push(`${name}: ${String(Math.round(width))} px in a row of ${String(Math.round(rowWidth))}`);
     }
   }

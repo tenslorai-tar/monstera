@@ -191,7 +191,9 @@ describe('composeWordDocument — pictures, on the native engine', () => {
     // CONTROL: the same document with every page carries the one left out above.
     expect((await composed(three, 'text', [[0, 2]])).xml).toContain('PAGETWO');
 
-    await expect(composed(three, 'text', [3])).rejects.toThrow();
+    // REFUSED BY NAME (audit P-3). The page read refuses with the same words, so this cannot say which check spoke;
+    // `pagesOf` returns the whole checked list before the walk's first read, which is what makes it first.
+    await expect(composed(three, 'text', [3])).rejects.toThrow(/Page 3 is outside this document, which has 3 page/u);
   });
 
   it('a place the picture read cannot find is REFUSED, never drawn as something else', async () => {

@@ -892,6 +892,164 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-04 — Stage audit of `33715f7c..8f322ba7` — findings PPPPPPP-1 to PPPPPPP-14
+
+35 commits, 198 files, all work/cloud-4: Groups 16a (ADR-0156), 17a to 17c (ADR-0157, ADR-0158), 18 (ADR-0159,
+ADR-0160), 19a, 19b and 9a to 9f (ADR-0161), then 11-MEDIUM's CR-COR-06 to CR-COR-11 and CR-COR-01. Owed because
+CR-COR-02's commit would take the range past one batch (204 files). Label P: O is the highest on main and on every
+branch, read from each branch's JOURNAL. The modified tests and proofs were read commit by commit through `git log -p`
+by three readers and by me, and each reader's finding was checked at its file before it was recorded. Each finding
+closed here was run red against its mutation, except PPPPPPP-7, which says why not.
+
+**PPPPPPP-1** (medium, closed in this commit): `8f322ba7`'s page frame was proven on one shape: `/Rotate 90` over a
+MediaBox at 36,36. The module's own header names a crop box inset and a box from -9,-9, and the watermark's comment
+says a slant of 0 cannot tell a frame that drops the page's turn from one that keeps it, while the case used 0.
+`pdfLibFrame.test.ts` now holds a half turn, the other quarter turn, a crop box inset, a box from -9,-9 and an inset on
+a turned page against the upright control, the background on the negative box, and a slanted watermark on a turned page
+by its first glyph's origin, since a box cannot say which way a line runs. The fallback fixture was Letter, which is
+the default too; it is 400 by 500 now. Two figures in comments without a source were reworded. Red 13 of 14 against
+the old five sites; the slant case alone red with the frame dropping the page's turn from a slant.
+
+**PPPPPPP-2** (medium, closed in this commit): `16ef13c4`'s *a page past the document is refused* in main's
+`documentCommands.test.ts` asserted any throw and no file, which a walk that failed at page 5 also produces. It now
+asserts the refusal's words and that no page was read; red on `reads` with the check removed. Its kernel twin in
+`wordPictures.test.ts` now names the refusal too, but the page read refuses in the same words, so that case cannot say
+which check spoke: *before any is read* holds because `pagesOf` returns the whole checked list before the walk starts,
+which is structural and stated as such.
+
+**PPPPPPP-3** (medium, closed in this commit): `58da1417`'s *no key travels in a reply* had no key anywhere in its
+input, so its absence could not fail. A key is typed and reported with the second check now; red with the reply
+carrying the report's secrets.
+
+**PPPPPPP-4** (medium, closed in this commit): `e1ade294` removed the personal dictionary's round trip with the old
+dialog, and no case after the rebuild put a personal word on a page. With `startReview` handing the checker an empty
+list, every case stayed green. A case now does; with that mutation it is the only one that goes red.
+
+**PPPPPPP-5** (low, closed in this commit): `16ef13c4` loosened two whole-list assertions on the dialogs asked to the
+last entry (print's outcomes and the contested text export), so a dialog between the two passed. Both assert the
+whole list again; red with an extra problem dialog.
+
+**PPPPPPP-6** (medium, closed in this commit): `rulerScroll.pw.ts` (`e4893d46`) settled with a fixed 300 ms wait. It
+settles on the labelled marks' places at scroll 400 now. The first version required the ruler's runs, which the old
+ruler does not have, so against the old build it failed for that reason rather than for the defect; reading what a
+person sees fixed that. Against a build of the old ruler it is red at the load-bearing line (712 inserted, 711
+removed); green now.
+
+**PPPPPPP-7** (low, closed in this commit, not run red): `longFields.ts` (`60f853ae`) counted a long field as seen before
+finding its row, so one outside both row kinds was counted and never measured, and `seen` is the control its callers
+assert. It reports such a field now. No screen has one, so there is no fixture to run red; the 13 layout review cases
+pass.
+
+**PPPPPPP-8** (low, closed in this commit): two help sentences. *Print* said the Windows window always shows the
+chosen pages, and past the ranges that window can list it offers none (`16ef13c4`). *Spell check* said the tab shows
+the sentence around a word, and it shows the line.
+
+**PPPPPPP-9** (medium, closed in `23076e18`): CI's *Prove the Word export carries the page's pictures* was red on both
+legs at `16ef13c4`, `e4893d46` and `56da2237`: 9d gave the composer a page set and the proof passed none. The scripts
+typecheck could not see it because the proof imported the built kernel under `@type {any}`. It takes the built
+declarations now, and TS2554 refuses the old call. Two such `any` imports remain in `scripts/`, both of the sanctioned
+adapter modules (`pdfiumFfi`, `mupdfRaw`), so the class is closed apart from its deliberate boundary.
+
+**PPPPPPP-10** (medium, open, proposed): an ADR corrected without its index row for the fourth range running; Guards
+was red for ADR-0161 at `16ef13c4`, closed in `f531af51`. OOOOOOO-2's proposal stands: the index row check joins the
+pre-commit set. It is the owner's, because it touches the hook.
+
+**PPPPPPP-11** (low, closed in their commits): three slips. `16ef13c4`'s lint error was committed because a piped
+`eslint | tail` dropped the exit code (`a8ca3cc0`). 9c was run against its own case only and broke two rendered cases
+(`bac9862a`). The growing caption case could pass with the fold removed, since an early render measured again
+(`08c60a72`).
+
+**PPPPPPP-12** (medium, open, the owner's): after `8f322ba7`, one page that displays no region makes a header and
+footer, Bates, watermark or background refuse the whole command, as `pageCrop.ts` and the annotation writer already do
+for their pages. The owner's rule is that a person is never refused because of their document. The alternative is to
+stamp every page that shows a region and say which did not; it is a decision about refusal, so it is not taken here.
+
+**PPPPPPP-13** (low, recorded): weak cases and gaps not closed here. From 16a: a refused page or list read has no case
+in `reviewRun`; nothing counts that a suggestion is asked for the one word shown; the review's progress is asserted
+nowhere; *merged and once* never exercises the dedupe; `SpellingPanel` has no case pressing Add to dictionary, Stop or
+the coverage options. From 17b: `SettingsBody.test.tsx`'s control comment describes navigation, not a changed setting;
+`settingsKeyCheck.pw.ts`' *asked of main by the provider and no key* reads the channel name only, and the shim answers
+a check whatever is stored. From 9b: `ContextMenu.test.tsx` derives the expected title through `i18n` as the component
+does, so a missing key passes on both sides. From 9f: no unit case says the ruler clips its marks at its end. From 18:
+one `tips.test.ts` case is satisfied by a defect another case catches; *a tip stays its time* reads the stored round
+once. From 9d: no main case chooses fewer pages for Excel or its service route; `exportPages.pw.ts` has no Excel case;
+the printing case past the limit uses pages already in order; layout text's pages come out in order with repeats
+removed while plain text and Word keep the set's order, and nothing says so. From captures and 9a: `spell-check-1` does
+not wait for the mark on the page, and the scroll bar scan reads straight after a resize.
+
+**PPPPPPP-14** (recorded, closes in the commit after this): CR-COR-02's unhandled-rejection listener was first written
+in `entry.ts` with `toStructuredError`, and the pre-push advisory check refused the push: INVARIANT-2 and ADR-0009 §9
+rest on no code under `apps/` building a diagnostic. It records through `IncidentLog`, the one place a thrown value
+becomes one, instead. The mechanism worked as designed, on a change made an hour after the rule's own reason was read.
+
+**Process, recorded.** CR-COR-07's App control was first read as passing against the old code, from a stash that did
+not hold what I believed; run again, it was red. Boards were read once each, at `56da2237` after its runs had
+finished. Guard denials, each with nothing run: a `node -p` typed by reflex while looking up a package path.
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism: the dialog host's latest-wins slot (`56da2237`), find answers keyed by document and not
+version (`19e2edc0`), an observer that cannot report a removed element (`d5535f29`), `getSize()` being an extent and
+not a frame (`8f322ba7`), the untyped import (`23076e18`). CR-COR-11 did not reproduce; its commit adds the two proofs it
+lacked and changes no code. No workaround-shaped change.
+
+### 2. Verified against the easy shape only?
+
+Once, by me, and closed: PPPPPPP-1. The Excel page row is held on the renderer side and not in main (PPPPPPP-13).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Towards, twice: the Word proof's import is typed (PPPPPPP-9), and the ruler case settles on a condition (PPPPPPP-6).
+Away, once and restored: the two whole-list assertions (PPPPPPP-5).
+
+### 3. Would CI have caught it?
+
+It did, from runs: PPPPPPP-9 on both legs at three shas, PPPPPPP-10 on Guards, the two rendered cases 9c broke on
+ubuntu's accessibility gate at `2485608e`. PPPPPPP-14 was caught before CI, by the pre-push hook. The cases that could
+not fail (PPPPPPP-2 to -4) are invisible to CI by their nature, and were found by reading.
+
+### 4. Are the proofs non-vacuous?
+
+The controls the range's commits name were recorded there as run red. Reading found PPPPPPP-2 to -7, each closed and
+run red as stated, and the cases in PPPPPPP-13, recorded.
+
+### 4a. Has every instrument passed a resolution test?
+
+`rulerScroll.pw.ts`' mutation count separates 0 from 712 against the old ruler. `dialogQueue.pw.ts`' wait for the
+refused save is a round trip behind the save's answer, and its control is a build of the old host failing at the line
+that reads Delete pages still showing. `pdfLibFrame.test.ts`' readings are held to an upright control on every shape.
+
+### 4b. Is the instrument a search, with a positive control?
+
+`longFields.ts` is one, and its control counted what it did not measure (PPPPPPP-7). `pdfLibFrame.test.ts`' first case
+asserts the fixture shows nothing before a command and is the size it should be, so its *no line* readings mean
+something.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+`longFields.ts`' `seen` is derived from the fields it walks, and the failure that shrinks it (a field it cannot place)
+now reports instead of shrinking it. No other count arrived.
+
+### 5. Executed, or asserted?
+
+Executed: every rendered case named here on Chromium 151, and the kernel's MuPDF reads. Asserted and not executed:
+whether Electron's main keeps Node's throw on an unhandled rejection (the binary is not installed in this container),
+Print with a page range on a printer, and the Windows high contrast themes over the new menus.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before, in each ADR's own commit: ADR-0156 to ADR-0161, with ADR-0161's correction in its own commit. The dialog queue
+(`56da2237`) changes how the one host behaves within its seam and adds no seam. The page frame (`8f322ba7`) is an
+adapter over two rules that already existed.
+
+### 7. Do the documents still match the code?
+
+The FEATURES rows the range touched were read against the code. Three documents did not match: the two help articles
+(PPPPPPP-8) and the ADR index (PPPPPPP-10). No document stated the dialog host's old latest-wins rule: swept with
+`sweep:prose` for *dismisses the first* and *second open*, with its control found.
+
+---
+
 ## 2026-10-04 — Stage audit of `cb62b976..33715f7c` — findings OOOOOOO-1 to OOOOOOO-12
 
 35 commits, 192 files, all work/cloud-4: the previous audit's corrections, ADR-0155 and the 12a follow-up, the marks on
