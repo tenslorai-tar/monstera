@@ -1,7 +1,7 @@
 import type { DocId, DocVersion } from '@monstera/shared';
 import { z } from 'zod';
 
-import { pageSetSchema } from './pageSet.js';
+import { MAX_PAGE_INDEX, pageSetSchema, pairedPageSetSchema } from './pageSet.js';
 import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   OCR_ENGINES,
@@ -803,6 +803,17 @@ export const generateTocSchema = z.object({
 }).strict();
 
 /**
+ * The pages of a SECOND document a command copies: `'all'`, or a page set in the source's own frame, in the order
+ * they are to land.
+ *
+ * **Required, with `'all'` spelt out**, so a payload says which pages it takes rather than leaving *every page* to an
+ * absent field. The renderer reads the source's page count through `document.viewModel` to bound the choice it
+ * offers; the kernel refuses an index the source does not have when it applies, since the source is a document the
+ * renderer's read may have outlived. **A paired set**, since a replace carries it beside its own pages.
+ */
+export const sourcePagesSchema = z.union([z.literal('all'), pairedPageSetSchema]);
+
+/**
  * Append another OPEN document's pages into this one.
  *
  * ## The source is a `DocId`, and it is a document the user has open
@@ -831,6 +842,8 @@ export const mergeDocumentSchema = z.object({
   kind: z.literal('mergeDocument'),
   /** The open document whose pages are copied in. Never modified. */
   source: docIdSchema,
+  /** Which of the source's pages are copied, in this order. See {@link sourcePagesSchema}. */
+  sourcePages: sourcePagesSchema,
   /**
    * Zero-based index the source's first page occupies afterwards.
    *
@@ -859,21 +872,27 @@ export const mergeDocumentSchema = z.object({
  * `mergeDocument`'s in one command. `CommandPrior` types it `never` and the bus
  * checkpoints the target.
  *
- * ## The WHOLE source replaces one page
+ * ## Target pages and source pages, and how they pair
  *
- * A source of three pages replacing page 4 leaves a document one page shorter
- * plus three, which is what *replace with this document* means. Choosing which
- * of the source's pages to use is the same capability *insert selected pages*
- * is owed, and blocked on the same missing page count.
+ * `pages` are the target's pages being replaced (the selection, else the page on show — `targetPages`), and
+ * `sourcePages` the source's pages that take their place. The kernel sorts and deduplicates `pages`, then:
+ *
+ * - **the same number of each**: each replaced page is swapped for the source page in the same position of the list,
+ *   in place, so pages 2 and 5 replaced by two source pages stay pages 2 and 5 and the count does not change;
+ * - **different numbers**: the replaced pages must be ONE RUN, and the run is swapped for the source pages as a block.
+ *   Replacing pages that are not next to each other with a different number of pages has no position everybody would
+ *   agree on, so it is refused rather than guessed.
  */
 export const replacePageSchema = z.object({
   kind: z.literal('replacePage'),
-  /** The open document whose pages take the replaced page's place. */
+  /** The open document whose pages take the replaced pages' place. */
   source: docIdSchema,
-  /** Zero-based index of the TARGET page being replaced. */
-  at: z.number().int().nonnegative(),
+  /** The TARGET's pages being replaced, zero-based, as a paired page set beside `sourcePages`. Each must exist. */
+  pages: pairedPageSetSchema,
+  /** The source's pages that take their place. See {@link sourcePagesSchema}. */
+  sourcePages: sourcePagesSchema,
   /**
-   * The version `at` was read at. A page index is a position in the page tree at a
+   * The version `pages` were read at. A page index is a position in the page tree at a
    * version, and a page inserted or moved since would make it name another page — the
    * one a replace then destroys. The bus refuses a stale one inside the lane
    * (ADR-0062's 2026-09-14 correction).
@@ -911,12 +930,11 @@ export const MAX_LAYER_NAME_LENGTH = 256;
  *
  * `mergeDocumentSchema`'s reason, ADR-0040 Decisions 1 and 2.
  *
- * ## Its FIRST page, because the renderer cannot bound another
+ * ## The source page is chosen
  *
- * An open-document entry carries an id, a version, a byte length and a name, and no page
- * count. A chosen source page could not be bounded here, which is the gap
- * `replacePageSchema`'s note records for *insert selected pages*; this command takes the
- * same default rather than an index the kernel would refuse blind.
+ * `sourcePage`, zero-based in the source. The renderer bounds it by the source's page
+ * count read through `document.viewModel` ({@link sourcePagesSchema}'s reason), and the
+ * kernel refuses a page the source no longer has.
  *
  * ## The NAME is the renderer's to send
  *
@@ -926,8 +944,10 @@ export const MAX_LAYER_NAME_LENGTH = 256;
  */
 export const importPageAsLayerSchema = z.object({
   kind: z.literal('importPageAsLayer'),
-  /** The open document whose first page is placed. Never modified. */
+  /** The open document whose page is placed. Never modified. */
   source: docIdSchema,
+  /** Zero-based index of the SOURCE page placed. It must exist in the source. */
+  sourcePage: z.number().int().min(0).max(MAX_PAGE_INDEX),
   /** The layer's name, as the Layers panel will show it. */
   name: z.string().min(1).max(MAX_LAYER_NAME_LENGTH),
   /** Zero-based index of the TARGET page the layer is placed on. It must exist. */

@@ -1067,7 +1067,13 @@ describe('the composition root, a command that names a SECOND document', () => {
 
     const replaced = await handlers['document.execute']({
       docId: target.value.docId,
-      command: { kind: 'replacePage', source: source.value.docId, at: 0, version: target.value.version },
+      command: {
+        kind: 'replacePage',
+        source: source.value.docId,
+        pages: [0],
+        sourcePages: 'all',
+        version: target.value.version,
+      },
     });
     expect(replaced.ok).toBe(true);
 

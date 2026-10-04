@@ -2001,7 +2001,7 @@ describe('CommandBus and the targets axis', () => {
           bus.execute(
             { mupdf: target },
             context,
-            { kind: 'replacePage', source: sourceId, at: 0, version: asDocVersion(9) },
+            { kind: 'replacePage', source: sourceId, pages: [0], sourcePages: 'all', version: asDocVersion(9) },
             { ...noByteImageExpected, sources: new Map([[sourceId, { mupdf: source }]]) },
           ),
         ).rejects.toThrow(StaleTargetError);
@@ -2026,7 +2026,7 @@ describe('CommandBus and the targets axis', () => {
         await bus.execute(
           { mupdf: target },
           context,
-          { kind: 'replacePage', source: sourceId, at: 0, version: asDocVersion(1) },
+          { kind: 'replacePage', source: sourceId, pages: [0], sourcePages: 'all', version: asDocVersion(1) },
           { ...showingInputs(target), sources: new Map([[sourceId, { mupdf: source }]]) },
         );
         expect(await pageCount(target)).toBe(4);

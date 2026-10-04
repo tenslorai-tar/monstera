@@ -1087,16 +1087,17 @@ const declarations = {
     // arrived. Neither has a serialisable form.
     invertible: false,
     undo: 'checkpoint',
-    // The same source into the same target at the same index produces the same
-    // tree. Nothing is read from a clock and nothing is minted.
+    // The same source pages onto the same target pages produce the same tree.
+    // Nothing is read from a clock and nothing is minted.
     reproducible: true,
     replay: 'reapply-intent',
     // ADR-0040's axis, second command to declare it.
     sources: 'one',
-    // ITS INDEX POINTS INTO THIS DOCUMENT'S PAGE TREE, read at a version. This read
+    // ITS PAGES POINT INTO THIS DOCUMENT'S PAGE TREE, read at a version. This read
     // `'none'` until 2026-09-14 on the ground that it named another document — true of
-    // `source` and false of `at`, and the index is the half a replace can destroy the
-    // wrong page through (ADR-0062's correction).
+    // `source` and false of the target index it carried then (`pages` since 2026-10-04),
+    // and the target pages are the half a replace can destroy the wrong page through
+    // (ADR-0062's correction).
     targets: 'page',
     // Nothing read through another engine.
     reads: 'none',

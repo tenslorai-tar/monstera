@@ -400,7 +400,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     try {
       await remote.apply({
         session: token,
-        command: { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), at: 1 },
+        command: { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), pages: [1], sourcePages: 'all' },
         source: sourceToken,
         reads: undefined,
       });

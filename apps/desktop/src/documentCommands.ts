@@ -4023,7 +4023,10 @@ export class DocumentCommands {
     const applied = await this.execute(docId, {
       kind: 'replacePage',
       source,
-      at: out.page,
+      // THE PAGE THAT WENT OUT, replaced by everything the other application saved: an edit that split it into two
+      // pages comes back as two.
+      pages: [out.page],
+      sourcePages: 'all',
       version: out.version,
     });
     out.watch.accept();

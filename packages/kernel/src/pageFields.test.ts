@@ -120,7 +120,7 @@ describe('a page that leaves takes its form fields with it (ADR-0151, item 12a)'
       const after = await afterSaving(await form(2, [1]), (session) =>
         applyReplacePage(
           session,
-          { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), at: 1 },
+          { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), pages: [1], sourcePages: 'all' },
           source,
         ),
       );

@@ -224,7 +224,7 @@ async function mergedWithMark(): Promise<Uint8Array> {
     // `source` is a `DocId` on the wire and the apply never reads it — the
     // session it names is the third argument. The assertion is confined here
     // rather than repeated at each call site.
-    await applyMergeDocument(into, { kind: 'mergeDocument', source: 'source' as never, at: 1 }, from);
+    await applyMergeDocument(into, { kind: 'mergeDocument', source: 'source' as never, sourcePages: 'all', at: 1 }, from);
     return await mupdfWriter.serialise(into);
   } finally {
     await mupdfWriter.close(from);
@@ -280,7 +280,7 @@ async function replacedWithMark(): Promise<Uint8Array> {
   const into = await mupdfWriter.open(await document(2));
   const from = await mupdfWriter.open(await marked());
   try {
-    await applyReplacePage(into, { kind: 'replacePage', source: 'source' as never, at: 1, version: 1 as never }, from);
+    await applyReplacePage(into, { kind: 'replacePage', source: 'source' as never, pages: [1], sourcePages: 'all', version: 1 as never }, from);
     return await mupdfWriter.serialise(into);
   } finally {
     await mupdfWriter.close(from);
@@ -368,7 +368,7 @@ async function layeredOnto(target: Uint8Array, source: Uint8Array): Promise<Uint
   try {
     await applyImportPageAsLayer(
       into,
-      { kind: 'importPageAsLayer', source: 'source' as never, name: 'Layer', at: 1, version: 1 as never },
+      { kind: 'importPageAsLayer', source: 'source' as never, sourcePage: 0, name: 'Layer', at: 1, version: 1 as never },
       from,
     );
     return await mupdfWriter.serialise(into);

@@ -5804,6 +5804,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     await t.commands.execute(t.target, {
       kind: 'importPageAsLayer',
       source: t.source,
+      sourcePage: 0,
       name: 'Letterhead',
       at: 1,
       version: t.version,
@@ -5836,6 +5837,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     await t.commands.execute(t.target, {
       kind: 'importPageAsLayer',
       source: t.source,
+      sourcePage: 0,
       name: 'First',
       at: 1,
       version: t.version,
@@ -5843,7 +5845,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     expect((await t.commands.save(t.target, { breakSignatures: true })).kind).toBe('saved');
 
     const { version } = await t.documents.run(t.target, () => Promise.resolve(null));
-    await t.commands.execute(t.target, { kind: 'importPageAsLayer', source: t.source, name: 'Second', at: 0, version });
+    await t.commands.execute(t.target, { kind: 'importPageAsLayer', source: t.source, sourcePage: 0, name: 'Second', at: 0, version });
     const second = await t.commands.save(t.target, { breakSignatures: true });
     expect(second.kind).toBe('saved');
 
@@ -5862,6 +5864,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     await t.commands.execute(t.target, {
       kind: 'importPageAsLayer',
       source: t.source,
+      sourcePage: 0,
       name: 'First',
       at: 1,
       version: t.version,
@@ -5874,7 +5877,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     renameSync(outside, t.targetPath);
 
     const { version } = await t.documents.run(t.target, () => Promise.resolve(null));
-    await t.commands.execute(t.target, { kind: 'importPageAsLayer', source: t.source, name: 'Second', at: 0, version });
+    await t.commands.execute(t.target, { kind: 'importPageAsLayer', source: t.source, sourcePage: 0, name: 'Second', at: 0, version });
     const refused = await t.commands.save(t.target, { breakSignatures: true });
     expect(refused).toMatchObject({ kind: 'refused', verdict: { kind: 'replaced' } });
   });
@@ -5884,6 +5887,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     await t.commands.execute(t.target, {
       kind: 'importPageAsLayer',
       source: t.source,
+      sourcePage: 0,
       name: 'Letterhead',
       at: 1,
       version: t.version,

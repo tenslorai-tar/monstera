@@ -1903,6 +1903,7 @@ export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
         // and `mergeDocumentSchema`'s `docIdSchema` is the one place that
         // transform happens (B3a).
         source: answer.source as DocId,
+        sourcePages: 'all',
         // APPENDS. See the note above — the position is the target's own
         // length, read from the context rather than fetched, for the reason
         // `pageCount` is in the context at all.
@@ -1962,6 +1963,7 @@ export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
       await applyDocumentCommand(deps, context.docId, {
         kind: 'mergeDocument',
         source: answer.source as DocId,
+        sourcePages: 'all',
         // ALREADY ZERO-BASED. The dialog performed the one conversion, which is
         // `pageNumbering.ts`' rule — a command that subtracted one here would be
         // the second place that arithmetic lives.
@@ -2023,7 +2025,8 @@ export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
       await applyDocumentCommand(deps, context.docId, {
         kind: 'replacePage',
         source: answer.source as DocId,
-        at: context.page,
+        pages: [context.page],
+        sourcePages: 'all',
         version: context.version,
       });
     },
@@ -2079,6 +2082,7 @@ export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
       await applyDocumentCommand(deps, context.docId, {
         kind: 'importPageAsLayer',
         source: chosen.docId,
+        sourcePage: 0,
         name: chosen.name,
         at: context.page,
         version: context.version,

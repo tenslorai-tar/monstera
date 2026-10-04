@@ -2358,7 +2358,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(sent).toStrictEqual([
       {
         id: 'document.execute',
-        params: { docId: DOC, command: { kind: 'mergeDocument', source: 'doc-2', at: 10 } },
+        params: { docId: DOC, command: { kind: 'mergeDocument', source: 'doc-2', sourcePages: 'all', at: 10 } },
       },
     ]);
   });
@@ -2412,7 +2412,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(sent).toStrictEqual([
       {
         id: 'document.execute',
-        params: { docId: DOC, command: { kind: 'mergeDocument', source: 'doc-0', at: 0 } },
+        params: { docId: DOC, command: { kind: 'mergeDocument', source: 'doc-0', sourcePages: 'all', at: 0 } },
       },
     ]);
   });
@@ -2482,7 +2482,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(sent).toStrictEqual([
       {
         id: 'document.execute',
-        params: { docId: DOC, command: { kind: 'replacePage', source: 'doc-2', at: 3, version: 1 } },
+        params: { docId: DOC, command: { kind: 'replacePage', source: 'doc-2', pages: [3], sourcePages: 'all', version: 1 } },
       },
     ]);
   });
@@ -2536,7 +2536,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         id: 'document.execute',
         params: {
           docId: DOC,
-          command: { kind: 'importPageAsLayer', source: 'doc-2', name: 'After', at: 3, version: 1 },
+          command: { kind: 'importPageAsLayer', source: 'doc-2', sourcePage: 0, name: 'After', at: 3, version: 1 },
         },
       },
     ]);
