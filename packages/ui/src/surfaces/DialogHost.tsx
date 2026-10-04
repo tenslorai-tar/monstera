@@ -4,7 +4,7 @@ import type { ReactElement } from 'react';
 
 import { ErrorBoundary } from '../ErrorBoundary.js';
 import { Dialog, DialogFooter } from '../primitives/Dialog.js';
-import type { DialogRegistry } from '../registries/dialogs.js';
+import type { DialogRegistry, DialogReports } from '../registries/dialogs.js';
 import { ViewProblem } from './ViewProblem.js';
 
 /**
@@ -74,7 +74,12 @@ interface OpenDialog {
    * closing. Absent for a dialog opened with none, and then a report is dropped rather than
    * queued — a surface that applies as it goes is opened by a command that said where to.
    */
-  readonly report: ((result: unknown) => void) | undefined;
+  readonly report: DialogReports | undefined;
+  /**
+   * Which open this is. A reply (ADR-0158) names it, so props meant for a dialog that has since closed or been
+   * replaced are never drawn into another: the object itself is no name, since a reply replaces it.
+   */
+  readonly token: symbol;
 }
 
 /**
@@ -99,7 +104,7 @@ export function useDialogHost(registry: DialogRegistry): {
    * beside it. Two ways to open a dialog is the second opinion B3a is about,
    * and the one somebody reaches for would be the one with no gate.
    */
-  readonly ask: (id: string, props: unknown, onUpdate?: (result: unknown) => void) => Promise<unknown>;
+  readonly ask: (id: string, props: unknown, onUpdate?: DialogReports) => Promise<unknown>;
   /** Dismisses whatever is open, settling its promise `undefined`. */
   readonly close: () => void;
   /** Takes a body's answer, validates it, settles and closes. */
@@ -110,7 +115,7 @@ export function useDialogHost(registry: DialogRegistry): {
   const [open, setOpen] = useState<OpenDialog | undefined>(undefined);
 
   const ask = useCallback(
-    (id: string, props: unknown, onUpdate?: (result: unknown) => void) => {
+    (id: string, props: unknown, onUpdate?: DialogReports) => {
       // Throws on an unregistered id or refused props, and the throw is the
       // point: it happens before any state changes, so a refused open leaves
       // whatever was showing exactly as it was rather than half-replacing it.
@@ -128,7 +133,7 @@ export function useDialogHost(registry: DialogRegistry): {
           // caller awaiting the one that went would now wait for ever, which is
           // a hang rather than a wrong answer.
           previous?.settle(undefined);
-          return { id, props: validated.props, settle, fail, report: onUpdate };
+          return { id, props: validated.props, settle, fail, report: onUpdate, token: Symbol(id) };
         });
       });
     },
@@ -184,7 +189,13 @@ export function useDialogHost(registry: DialogRegistry): {
         setOpen(undefined);
         return;
       }
-      open.report?.(reported);
+      // THE REPLY (ADR-0158): new props for THIS open, validated as an open's are — a refusal throws to the opener,
+      // where an open's goes — and drawn only while this open is still the one showing.
+      const { id, token } = open;
+      open.report?.(reported, (props) => {
+        const validated = registry.openWith(id, props);
+        setOpen((current) => (current?.token === token ? { ...current, props: validated.props } : current));
+      });
     },
     [open, registry],
   );

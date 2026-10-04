@@ -1,14 +1,14 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import { messageKey } from '@monstera/shared';
-import { act, render as renderBare, screen } from '@testing-library/react';
+import { act, fireEvent, render as renderBare, screen } from '@testing-library/react';
 import { lazy, useState, type ReactElement, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { activateCatalogue, i18n } from '../i18n.js';
 import { DIALOG_OK, DIALOG_PROBLEM_BODY, DIALOG_PROBLEM_TITLE } from '../messages/en.js';
-import { DialogRegistry, declareDialog } from '../registries/dialogs.js';
+import { DialogRegistry, type DialogReports, declareDialog } from '../registries/dialogs.js';
 import { DialogHost, useDialogHost } from './DialogHost.js';
 
 /**
@@ -65,6 +65,8 @@ const pickEntry = declareDialog({
       }) => (
         <>
           <p>{`picking under ${String(limit)}`}</p>
+          {/* WHAT A PERSON TYPED, held by the DOM alone: kept only while the body stays mounted (ADR-0158). */}
+          <input aria-label="Note" defaultValue="" />
           <button
             type="button"
             onClick={() => {
@@ -190,8 +192,8 @@ function Harness({
   props: unknown;
   /** What the dialog settled with, for the cases about the answer. */
   onAnswer?: (answer: unknown) => void;
-  /** What a body REPORTED without closing (ADR-0094), for the cases about updates. */
-  onUpdate?: (result: unknown) => void;
+  /** What a body REPORTED without closing (ADR-0094), with the reply (ADR-0158), for the cases about updates. */
+  onUpdate?: DialogReports;
 }): ReactElement {
   const { open, ask, close, resolve, report } = useDialogHost(registry);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -510,6 +512,68 @@ describe('DialogHost', () => {
       // NOTHING REACHED THE OPENER, and the refusal is reported where an answer's would be.
       expect(reports).toStrictEqual([]);
       expect(screen.getByText(/DialogResultRejected|refuses/u)).toBeDefined();
+    });
+  });
+
+  describe('an opener that REPLIES to a report with new props (ADR-0158)', () => {
+    async function openAndReport(onUpdate: DialogReports): Promise<void> {
+      screen.getByRole('button', { name: 'Open' }).click();
+      await screen.findByRole('dialog');
+      fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'typed before the reply' } });
+      await act(async () => {
+        screen.getByRole('button', { name: 'Report' }).click();
+        await Promise.resolve();
+      });
+      expect(onUpdate).toBeDefined();
+    }
+
+    it('draws the new props in the SAME open body, which keeps what was typed', async () => {
+      const onUpdate: DialogReports = (_result, reply) => {
+        reply({ limit: 3 });
+      };
+      render(<Harness id="dialog.pick" props={{ limit: 9 }} onUpdate={onUpdate} />);
+      await openAndReport(onUpdate);
+      expect(await screen.findByText('picking under 3')).toBeDefined();
+      // STILL OPEN AND STILL MOUNTED: the typed note is the DOM's own, which a remount would have emptied.
+      expect(screen.queryByRole('dialog')).not.toBeNull();
+      expect(screen.getByLabelText('Note')).toHaveProperty('value', 'typed before the reply');
+    });
+
+    it('REFUSES props the dialog’s schema rejects, to the opener, and leaves the dialog as it was', async () => {
+      const thrown: unknown[] = [];
+      const onUpdate: DialogReports = (_result, reply) => {
+        try {
+          reply({ limit: -1 });
+        } catch (error) {
+          thrown.push(error);
+        }
+      };
+      render(<Harness id="dialog.pick" props={{ limit: 9 }} onUpdate={onUpdate} />);
+      await openAndReport(onUpdate);
+      expect(thrown).toHaveLength(1);
+      expect(screen.getByText('picking under 9')).toBeDefined();
+    });
+
+    it('does NOTHING once the dialog that reported has closed, even to the same dialog opened again', async () => {
+      let late: ((props: unknown) => void) | undefined;
+      const onUpdate: DialogReports = (_result, reply) => {
+        late = reply;
+      };
+      render(<Harness id="dialog.pick" props={{ limit: 9 }} onUpdate={onUpdate} />);
+      await openAndReport(onUpdate);
+      await act(async () => {
+        screen.getByRole('button', { name: 'Close' }).click();
+        await Promise.resolve();
+      });
+      screen.getByRole('button', { name: 'Open' }).click();
+      await screen.findByText('picking under 9');
+      act(() => {
+        late?.({ limit: 3 });
+      });
+      // THE SAME ID, A DIFFERENT OPEN: the slow answer is not drawn into it.
+      expect(late).toBeDefined();
+      expect(screen.getByText('picking under 9')).toBeDefined();
+      expect(screen.queryByText('picking under 3')).toBeNull();
     });
   });
 });

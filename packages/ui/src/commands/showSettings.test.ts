@@ -1,8 +1,8 @@
-import { AI_PROVIDER_IDS, AZURE_KEY_SETTING_ID, channels, createClient } from '@monstera/contract';
+import { AI_PROVIDER_IDS, AZURE_KEY_SETTING_ID, type AiModelListAnswer, channels, createClient } from '@monstera/contract';
 import { type FileHandle, asFileHandle, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { SETTINGS_DIALOG_ID } from '../dialogs/settings.js';
+import { SETTINGS_DIALOG, SETTINGS_DIALOG_ID } from '../dialogs/settings.js';
 import { SETTINGS_PROBLEM_DIALOG_ID } from '../dialogs/settingsProblem.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
@@ -47,11 +47,15 @@ function harness(options: {
   readonly imported?: { kind: 'read'; values: Record<string, unknown> } | { kind: 'cancelled' } | { kind: 'unreadable' };
   /** What `settings.export` answers — a written file, a dismissed picker, or a write that failed. */
   readonly exported?: { kind: 'written'; settings: number; written: FileHandle } | { kind: 'cancelled' } | { kind: 'write-failed' };
+  /** What `ai.models` answers for a key check (ADR-0158), or `refuse` for a query that fails. */
+  readonly listed?: AiModelListAnswer | 'refuse';
 }): {
   readonly run: () => Promise<void>;
   readonly settings: SettingsStore;
   readonly sent: { id: string; params: unknown }[];
   readonly asked: { id: string; props: unknown }[];
+  /** The props each reply handed the open dialog (ADR-0158), in order. */
+  readonly replies: unknown[];
   readonly secretsChanged: () => number;
   readonly recentCleared: () => number;
   readonly toasts: string[];
@@ -64,6 +68,7 @@ function harness(options: {
   let opened = 0;
   const sent: { id: string; params: unknown }[] = [];
   const asked: { id: string; props: unknown }[] = [];
+  const replies: unknown[] = [];
   let changed = 0;
   let recentCleared = 0;
   const client = createClient(channels, (id, params) => {
@@ -76,11 +81,14 @@ function harness(options: {
       );
     }
     if (id === 'settings.saveSecret') {
-      return Promise.resolve(
-        options.saveRefuses === true
-          ? err({ code: 'secret-storage-unavailable' })
-          : ok({ stored: true }),
-      );
+      // SETTLED ON A LATER TURN, and its settling recorded, so a case can tell a request made after a save FINISHED
+      // from one made while it was still on its way — both follow the call.
+      return new Promise((settle) => {
+        setTimeout(() => {
+          sent.push({ id: 'settings.saveSecret:settled', params: undefined });
+          settle(options.saveRefuses === true ? err({ code: 'secret-storage-unavailable' }) : ok({ stored: true }));
+        }, 0);
+      });
     }
     // THE LISTS MAIN HOLDS: OpenAI's fetched, every other provider its fallback — two sources, so a case can see
     // that the one handed to the dialog is this answer and not something built beside it.
@@ -95,6 +103,10 @@ function harness(options: {
       );
     }
     // THE FOOTER'S TWO CHANNELS, answered so a case can see which of them an action reached.
+    if (id === 'ai.models') {
+      if (options.listed === undefined || options.listed === 'refuse') return Promise.resolve(err({ code: 'internal', incident: 'test' }));
+      return Promise.resolve(ok(options.listed));
+    }
     if (id === 'ai.history.clear') return Promise.resolve(ok({ cleared: 2 }));
     if (id === 'settings.export') return Promise.resolve(ok(options.exported ?? { kind: 'cancelled' as const }));
     if (id === 'file.reveal') return Promise.resolve(ok({ revealed: true }));
@@ -111,7 +123,10 @@ function harness(options: {
       if (id !== SETTINGS_DIALOG_ID) return Promise.resolve(undefined);
       opened += 1;
       if (opened > 1) return Promise.resolve(undefined);
-      for (const report of options.reports ?? []) onUpdate?.(report);
+      for (const report of options.reports ?? []) {
+        // EVERY REPLY VALIDATED as the host validates it (ADR-0158), so a case cannot pass on props the dialog refuses.
+        onUpdate?.(report, (props) => replies.push(SETTINGS_DIALOG.props.parse(props)));
+      }
       return Promise.resolve(options.answer);
     },
     onSecretsChanged: () => {
@@ -141,6 +156,7 @@ function harness(options: {
     settings,
     sent,
     asked,
+    replies,
     secretsChanged: () => changed,
     recentCleared: () => recentCleared,
     toasts,
@@ -302,6 +318,66 @@ describe('showSettingsCommand', () => {
 
     expect(asked[0]?.id).toBe(SETTINGS_DIALOG_ID);
     expect((asked[0]?.props as { models: unknown }).models).toStrictEqual({});
+  });
+
+  describe('a KEY CHECK (ADR-0158)', () => {
+    const CHECK = { values: {}, secrets: {}, check: 'openai' as const };
+    const FETCHED: AiModelListAnswer = {
+      source: 'fetched',
+      models: [{ id: 'gpt-checked', label: 'GPT checked', capabilities: { vision: null, streaming: null } }],
+    };
+    const replied = (replies: unknown[]): { models: Record<string, unknown>; checked?: Record<string, number> }[] =>
+      replies as { models: Record<string, unknown>; checked?: Record<string, number> }[];
+
+    it('ACCEPTED: asks ai.models for the provider and replies with its fetched list and one answered check', async () => {
+      const { run, sent, replies } = harness({ reports: [CHECK], listed: FETCHED });
+      await run();
+      expect(sent.filter((call) => call.id === 'ai.models').map((call) => call.params)).toStrictEqual([{ provider: 'openai' }]);
+      expect(replied(replies)).toHaveLength(1);
+      expect(replied(replies)[0]?.models['openai']).toStrictEqual(FETCHED);
+      expect(replied(replies)[0]?.checked).toStrictEqual({ openai: 1 });
+      // EVERY OTHER PROVIDER'S LIST is the one the dialog opened with: the check changes only its own.
+      expect(replied(replies)[0]?.models['anthropic']).toStrictEqual(HELD_FALLBACK);
+    });
+
+    it('REFUSED and OFFLINE: the provider’s answer with its problem is what the reply carries', async () => {
+      for (const problem of ['unauthorised', 'unreachable'] as const) {
+        const answer: AiModelListAnswer = { source: 'fallback', problem, models: [] };
+        const { run, replies } = harness({ reports: [CHECK], listed: answer });
+        await run();
+        expect(replied(replies)[0]?.models['openai']).toStrictEqual(answer);
+        expect(replied(replies)[0]?.checked).toStrictEqual({ openai: 1 });
+      }
+    });
+
+    it('a query that FAILED replies with NO list for the provider, never the one it opened with', async () => {
+      const { run, replies } = harness({ reports: [CHECK], listed: 'refuse' });
+      await run();
+      expect(replied(replies)[0]?.checked).toStrictEqual({ openai: 1 });
+      expect(Object.keys(replied(replies)[0]?.models ?? {})).not.toContain('openai');
+    });
+
+    it('waits for the key typed just before it to be SAVED, so the provider is asked with that key', async () => {
+      const typed = { values: {}, secrets: { 'ai.openai-key': 'example-key-typed' } };
+      const { run, sent } = harness({ reports: [typed, CHECK], listed: FETCHED });
+      await run();
+      const order = sent.map((call) => call.id).filter((id) => id.startsWith('settings.saveSecret') || id === 'ai.models');
+      expect(order).toStrictEqual(['settings.saveSecret', 'settings.saveSecret:settled', 'ai.models']);
+    });
+
+    it('counts each check, and NO KEY travels in a reply', async () => {
+      const { run, replies } = harness({ reports: [CHECK, CHECK], listed: FETCHED });
+      await run();
+      expect(replied(replies).map((props) => props.checked)).toStrictEqual([{ openai: 1 }, { openai: 2 }]);
+      expect(JSON.stringify(replies)).not.toContain('example-key');
+    });
+
+    it('CONTROL: a report without a check asks no provider and replies nothing', async () => {
+      const { run, sent, replies } = harness({ reports: [{ values: { [THEME_SETTING.id]: 'dark' }, secrets: {} }], listed: FETCHED });
+      await run();
+      expect(sent.map((call) => call.id)).not.toContain('ai.models');
+      expect(replies).toStrictEqual([]);
+    });
   });
 
   describe('IMPORT SETTINGS (BUILD-PROMPT.md:630)', () => {

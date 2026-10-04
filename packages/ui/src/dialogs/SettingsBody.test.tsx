@@ -8,8 +8,8 @@ import {
   AZURE_KEY_SETTING_ID,
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import type { ReactElement, ReactNode } from 'react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { STARTING_STYLE_COLOUR } from '../annotations/annotationStyle.js';
@@ -552,5 +552,133 @@ describe('SettingsBody', () => {
       // is the empty page the owner's design pass called out.
       expect((body?.childElementCount ?? 0) > 1, page.id).toBe(true);
     }
+  });
+});
+
+/**
+ * A provider key's Check (ADR-0158): the body reports which provider, and the command REPLIES with that provider's list
+ * and the count of checks answered. The harness holds the props as the dialog host does, so a reply is drawn into the
+ * same mounted body.
+ */
+describe('SettingsBody — a provider key’s Check (ADR-0158)', () => {
+  const FETCHED: AiModelListAnswer = {
+    source: 'fetched',
+    models: [{ id: 'claude-checked', label: 'Claude checked', capabilities: { vision: true, streaming: true } }],
+  };
+  interface Reply {
+    readonly models?: Partial<Record<AiProviderId, AiModelListAnswer>>;
+    readonly checked?: Partial<Record<AiProviderId, number>>;
+  }
+
+  function live(stored: boolean): { readonly reported: SettingsAnswer[]; readonly reply: (over: Reply) => void } {
+    const reported: SettingsAnswer[] = [];
+    const setters: ((over: Reply) => void)[] = [];
+    function Host({ expose }: { readonly expose: (set: (over: Reply) => void) => void }): ReactElement {
+      const [over, setOver] = useState<Reply>({});
+      useEffect(() => {
+        expose(setOver);
+      }, [expose]);
+      return (
+        <SettingsBody
+          checked={over.checked}
+          models={over.models ?? {}}
+          resolve={() => undefined}
+          secretsAvailable
+          storedSecrets={stored ? [ANTHROPIC_KEY_SETTING_ID] : []}
+          update={(answer) => {
+            reported.push(answer);
+          }}
+          values={DEFAULTS}
+        />
+      );
+    }
+    const expose = (set: (over: Reply) => void): void => {
+      setters.push(set);
+    };
+    render(
+      <Wrapped>
+        <Host expose={expose} />
+      </Wrapped>,
+    );
+    goTo('ai');
+    return {
+      reported,
+      reply: (over) => {
+        act(() => {
+          setters.at(-1)?.(over);
+        });
+      },
+    };
+  }
+  const check = (): HTMLElement => screen.getByRole('button', { name: 'Check' });
+  /** The check's own answer line: a status, as the page's other notes are too, so it is found by its mark. */
+  const line = (): HTMLElement => {
+    const found = document.querySelector<HTMLElement>('[role="status"][data-key-check]');
+    if (found === null) throw new Error('the key check draws its answer line');
+    return found;
+  };
+  const answer = (): string => line().textContent;
+
+  it('reports the PROVIDER and no key, says it is checking, then says Key works and lists the models it answered', () => {
+    const { reported, reply } = live(true);
+    fireEvent.click(check());
+    expect(reported).toStrictEqual([{ values: {}, secrets: {}, check: 'anthropic' }]);
+    expect(answer()).toBe('Checking the key with Anthropic…');
+    expect(check()).toHaveProperty('disabled', true);
+
+    reply({ models: { anthropic: FETCHED }, checked: { anthropic: 1 } });
+    expect(answer()).toBe('Key works');
+    expect(line().querySelector('svg')).not.toBeNull();
+    // THE MODEL LIST FILLED from the same answer: listed this session, not this build's own.
+    expect(screen.getByText('Listed by Anthropic this session.')).toBeDefined();
+    expect(screen.getByRole('option', { name: 'Claude checked' })).toBeDefined();
+  });
+
+  it('says WHY NOT in plain words for a wrong key, no connection and a provider that refused, and draws no tick', () => {
+    const cases = [
+      ['unauthorised', 'Anthropic did not accept this key. Check it was copied whole, or type a new one.'],
+      ['unreachable', 'Anthropic could not be reached. Check your connection and try again.'],
+      ['rejected', 'Anthropic refused the check. Your account may not have access to it yet.'],
+    ] as const;
+    for (const [problem, words] of cases) {
+      const { reply } = live(true);
+      fireEvent.click(check());
+      reply({ models: { anthropic: { source: 'fallback', problem, models: [] } }, checked: { anthropic: 1 } });
+      expect(answer()).toBe(words);
+      expect(line().querySelector('svg')).toBeNull();
+      // AND THE MODEL ROW does not say the provider was never asked: it was, and gave no list.
+      expect(screen.getByText('Anthropic was asked and gave no list, so this is this build’s own list.')).toBeDefined();
+      cleanup();
+    }
+  });
+
+  it('the tick STAYS while the key is unchanged, and EDITING the key takes it away', () => {
+    const { reply } = live(true);
+    fireEvent.click(check());
+    reply({ models: { anthropic: FETCHED }, checked: { anthropic: 1 } });
+    // CONTROL: a change to another setting is not a change to the key.
+    fireEvent.click(screen.getByRole('button', { name: english(SETTINGS_PAGES[0]?.title ?? THEME_SETTING.title) }));
+    goTo('ai');
+    expect(answer()).toBe('Key works');
+
+    fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: 'example-key-edited' } });
+    expect(answer()).toBe('');
+  });
+
+  it('an answer to an EARLIER check is not drawn as the answer to the one asked last', () => {
+    const { reply } = live(true);
+    fireEvent.click(check());
+    reply({ models: { anthropic: FETCHED }, checked: { anthropic: 1 } });
+    fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: 'example-key-second' } });
+    fireEvent.click(check());
+    // THE FIRST CHECK'S ANSWER is still in the props; the count says it is not this one's.
+    expect(answer()).toBe('Checking the key with Anthropic…');
+  });
+
+  it('there is NOTHING TO CHECK with no key stored or typed, and typing one offers it', () => {
+    live(false);
+    expect(check()).toHaveProperty('disabled', true);
+    fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: 'example-key-typed' } });
+    expect(check()).toHaveProperty('disabled', false);
   });
 });

@@ -1624,6 +1624,23 @@ export const SETTINGS_AI_MODELS_FETCHED = messageKey('dialog.settings.ai-models.
 export const SETTINGS_AI_MODELS_FALLBACK = messageKey('dialog.settings.ai-models.fallback');
 export const SETTINGS_AI_MODELS_NO_LIST = messageKey('dialog.settings.ai-models.no-list');
 export const SETTINGS_AI_MODELS_UNREAD = messageKey('dialog.settings.ai-models.unread');
+/** A fallback list that is one because the provider was ASKED and gave none — a key check's refusal (ADR-0158). */
+export const SETTINGS_AI_MODELS_NOT_LISTED = messageKey('dialog.settings.ai-models.not-listed');
+/**
+ * A provider key's Check in Settings (ADR-0158): the button, the wait, the tick's words, and one sentence for each
+ * answer that is not a tick. Settings' own, never the first-run setup's: there the key is not saved when refused, and
+ * here it is already stored as it was typed, so the setup's *"so it was not saved"* would be false.
+ */
+export const SETTINGS_KEY_CHECK = messageKey('dialog.settings.key-check.action');
+export const SETTINGS_KEY_CHECKING = messageKey('dialog.settings.key-check.checking');
+export const SETTINGS_KEY_WORKS = messageKey('dialog.settings.key-check.works');
+export const SETTINGS_KEY_UNCHECKED = messageKey('dialog.settings.key-check.unchecked');
+export const SETTINGS_KEY_NONE = messageKey('dialog.settings.key-check.none');
+export const SETTINGS_KEY_UNAUTHORISED = messageKey('dialog.settings.key-check.unauthorised');
+export const SETTINGS_KEY_UNREACHABLE = messageKey('dialog.settings.key-check.unreachable');
+export const SETTINGS_KEY_REJECTED = messageKey('dialog.settings.key-check.rejected');
+export const SETTINGS_KEY_UNREADABLE = messageKey('dialog.settings.key-check.unreadable');
+export const SETTINGS_KEY_NOT_THE_SERVICE = messageKey('dialog.settings.key-check.not-the-service');
 /**
  * The one choice of a model picker with nothing to offer — the Settings row's and the Assistant's — so the control is
  * not an empty box.
@@ -4045,6 +4062,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     '{provider} has not been asked this session, so this is this build’s own list. Choosing {provider} in the Assistant asks it.',
   [SETTINGS_AI_MODELS_NO_LIST]: '{provider} publishes no list of models to choose from.',
   [SETTINGS_AI_MODELS_UNREAD]: 'The list of models could not be read.',
+  [SETTINGS_AI_MODELS_NOT_LISTED]: '{provider} was asked and gave no list, so this is this build’s own list.',
+  [SETTINGS_KEY_CHECK]: 'Check',
+  [SETTINGS_KEY_CHECKING]: 'Checking the key with {provider}…',
+  [SETTINGS_KEY_WORKS]: 'Key works',
+  [SETTINGS_KEY_UNCHECKED]: '{provider} has no list to check a key against. The key is kept and tried when you ask.',
+  [SETTINGS_KEY_NONE]: 'No key is stored for {provider} yet. Type one above, then check it.',
+  [SETTINGS_KEY_UNAUTHORISED]: '{provider} did not accept this key. Check it was copied whole, or type a new one.',
+  [SETTINGS_KEY_UNREACHABLE]: '{provider} could not be reached. Check your connection and try again.',
+  [SETTINGS_KEY_REJECTED]: '{provider} refused the check. Your account may not have access to it yet.',
+  [SETTINGS_KEY_UNREADABLE]: '{provider} answered, but its answer could not be read. Try again later.',
+  [SETTINGS_KEY_NOT_THE_SERVICE]:
+    'That is not an Azure OpenAI address, so the key was not sent. It looks like https://your-resource.openai.azure.com.',
   [AI_MODELS_NONE]: 'No models to choose from',
   [AI_SAVE_HISTORY_DESCRIPTION]:
     'Off by default. Conversations are discarded when the document closes; saved ones are encrypted on this computer.',

@@ -6089,6 +6089,35 @@ optgroup {
   min-inline-size: 0;
 }
 
+/* A PROVIDER KEY'S CHECK, under the key: the button, then what the provider said. The answer wraps under the button
+   rather than pushing the row wider. */
+.m-key-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+}
+
+.m-key-check__answer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 1 1 24ch;
+  min-inline-size: 0;
+  color: var(--text);
+  font-size: var(--font-chrome-12);
+}
+
+/* THE TICK in the theme's text accent, as the application's other *done* signals are the accent; its words stay in the
+   text colour, so what the answer says never rests on a colour nothing here measures. */
+.m-key-check__answer[data-key-check='fetched'] {
+  font-weight: 600;
+}
+
+.m-key-check__answer[data-key-check='fetched'] svg {
+  color: var(--accent-text);
+}
+
 .m-settings-row__unset {
   display: flex;
   align-items: center;
