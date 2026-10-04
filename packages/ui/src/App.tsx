@@ -242,6 +242,7 @@ import { CLOSE_LABEL, SPLIT_SECOND_LABEL, TOAST_DISMISS } from './messages/en.js
 import { annotationTools } from './annotations/annotationTools.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
+import { MEASURE_TOOL_IDS } from './annotations/measureTools.js';
 import { stickyNoteCommand } from './annotations/pointTools.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID, selectionOfNewest, selectionOfPage } from './annotations/selectTool.js';
@@ -311,8 +312,9 @@ import {
   ANNOTATION_OPACITY_SETTING,
   TEXT_DIRECTION_SETTING,
   IMAGE_PAGES_SETTING,
-  MEASURE_SCALE_SETTING,
+  MEASURE_RATIO_SETTING,
   MEASURE_UNIT_SETTING,
+  measureScaleOf,
   AZURE_DI_ENDPOINT_SETTING,
   OCR_LANGUAGE_SETTING,
   RECOGNISE_ON_EXPORT_SETTING,
@@ -1942,7 +1944,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * and a tool reading the settings store itself would be the second reader of a
    * value this component already owns.
    */
-  const scalePerPoint = useSetting(settings, MEASURE_SCALE_SETTING);
+  const scaleRatio = useSetting(settings, MEASURE_RATIO_SETTING);
   const scaleUnit = useSetting(settings, MEASURE_UNIT_SETTING);
   const imagePages = useSetting(settings, IMAGE_PAGES_SETTING);
   // THE REGION TOOL'S LANGUAGES, read here because this is where settings are read
@@ -2014,10 +2016,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     };
   }, [client]);
   useEffect(() => refreshSecrets(), [refreshSecrets]);
-  const scale = useMemo<MeasureScale>(
-    () => ({ perPoint: scalePerPoint, unit: scaleUnit }),
-    [scalePerPoint, scaleUnit],
-  );
+  const scale = useMemo<MeasureScale>(() => measureScaleOf(scaleUnit, scaleRatio), [scaleRatio, scaleUnit]);
 
   /**
    * Where a dragged region goes.
@@ -3479,6 +3478,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               {/* THE SELECTED MARKS' STYLE, changed as each control is used, or with nothing
                   selected the authoring settings (ADR-0102). */}
               <PropertiesPanel
+                measuring={toolId !== undefined && MEASURE_TOOL_IDS.has(toolId)}
                 context={context}
                 onComment={commentSelection}
                 onAuthor={authorSelection}

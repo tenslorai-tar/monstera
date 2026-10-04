@@ -6,8 +6,10 @@ import {
   MAX_ANNOTATION_BORDER,
   MAX_ANNOTATION_FONT,
   MIN_ANNOTATION_FONT,
-  measurePerPointSchema,
+  type MeasureScale,
+  type MeasureUnit,
   measureUnitSchema,
+  POINTS_PER_UNIT,
   ocrLanguagesSchema,
   type TextDirection,
   textDirectionSchema,
@@ -39,7 +41,8 @@ import {
   EDITING_AZURE_ENDPOINT_TITLE,
   EDITING_AZURE_KEY_TITLE,
   EDITING_PERSONAL_DICTIONARY_TITLE,
-  MEASURE_SCALE_TITLE,
+  MEASURE_RATIO_DESCRIPTION,
+  MEASURE_RATIO_TITLE,
   MEASURE_UNIT_TITLE,
   IMAGE_PAGES_TITLES,
   OCR_LANGUAGE_NAMES,
@@ -136,8 +139,12 @@ export const ANNOTATION_LINE_WIDTH_SETTING: SettingDefinition<z.ZodNumber> = {
   category: 'editing',
 };
 
+/** The largest drawing scale a person may type: 1 : 1,000,000, a map's. */
+export const MAX_MEASURE_RATIO = 1_000_000;
+
 /**
- * How many units one PDF point represents on this drawing.
+ * The drawing's scale: how many of the measurement unit one of it on the page stands for — 100 for a plan drawn at
+ * 1 : 100, 1 to measure the page itself.
  *
  * `BUILD-PROMPT.md`:615's *measurement unit & scale*, and it is a **setting**
  * for the same reason its neighbours are: a person working through a set of
@@ -147,30 +154,44 @@ export const ANNOTATION_LINE_WIDTH_SETTING: SettingDefinition<z.ZodNumber> = {
  * file records it and a per-document store would have to invent somewhere to
  * keep it. Stated so the next reader meets the trade rather than the choice.
  *
- * **One by default, which means the reading is in the unit itself.** A point is
- * 1/72 inch, so an uncalibrated distance reads in points and is honest: nothing
- * has told this build what the drawing is.
+ * ## A RATIO, under its own id (the owner's item 14a)
+ *
+ * This was `editing.measure-scale`, *units per point*, and a person who chose centimetres without also typing
+ * 0.0353 read every point as a centimetre — *"424.0 pt"* for a line, or 424 cm for the same line in centimetres.
+ * The physical length is now the contract's `POINTS_PER_UNIT`, and the person states only what a drawing's own scale
+ * adds to it. The id is new because the number's meaning is: an old per-point value read as a ratio would be a
+ * silently wrong reading, so it is not read.
  */
-export const MEASURE_SCALE_SETTING: SettingDefinition<typeof measurePerPointSchema> = {
-  id: 'editing.measure-scale',
-  title: MEASURE_SCALE_TITLE,
-  // THE PAYLOAD'S OWN SCHEMA, for the reason the bounds above are imported: a
-  // control that accepts a number the command refuses fails on apply, and this
-  // field is one a person types into.
-  schema: measurePerPointSchema,
+export const MEASURE_RATIO_SETTING: SettingDefinition<z.ZodNumber> = {
+  id: 'editing.measure-ratio',
+  title: MEASURE_RATIO_TITLE,
+  description: MEASURE_RATIO_DESCRIPTION,
+  // BOUNDED so a typed ratio times the largest unit stays a number the payload's positive per-point accepts.
+  schema: z.number().positive().max(MAX_MEASURE_RATIO),
   fallback: 1,
   category: 'editing',
 };
 
-/** What unit a measurement is stated in. The contract's closed set. */
+/**
+ * What unit a measurement is stated in. The contract's closed set, and inches by default, as the rulers are: a reading
+ * in points was honest and nobody reads a page in points (the owner's item 14a).
+ */
 export const MEASURE_UNIT_SETTING: SettingDefinition<typeof measureUnitSchema> = {
   id: 'editing.measure-unit',
   title: MEASURE_UNIT_TITLE,
   schema: measureUnitSchema,
-  fallback: 'pt',
+  fallback: 'in',
   category: 'editing',
   optionTitles: UNIT_TITLES,
 };
+
+/**
+ * The scale a measurement's payload carries: how many of `unit` one PDF point is, for a drawing at `ratio` — the
+ * page's physical length (`POINTS_PER_UNIT`) times the drawing's own scale. The one place the two settings meet.
+ */
+export function measureScaleOf(unit: MeasureUnit, ratio: number): MeasureScale {
+  return { perPoint: ratio / POINTS_PER_UNIT[unit], unit };
+}
 
 /**
  * Which pages a placed image goes on — the stamps row's **multi-page apply**.
@@ -302,7 +323,7 @@ export const PERSONAL_DICTIONARY_SETTING: SettingDefinition<
 export const OCR_LANGUAGE_SETTING: SettingDefinition<typeof ocrLanguagesSchema> = {
   id: 'editing.ocr-language',
   title: EDITING_OCR_LANGUAGE_TITLE,
-  // THE CONTRACT'S OWN SCHEMA, for `MEASURE_SCALE_SETTING`'s reason: a stored value
+  // THE CONTRACT'S OWN SCHEMA: a stored value
   // the command would refuse is one that fails on apply, and ADR-0014's constraint 1
   // is that the language reaching the engine comes from a closed set.
   schema: ocrLanguagesSchema,

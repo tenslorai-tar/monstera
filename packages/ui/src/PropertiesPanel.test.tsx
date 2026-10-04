@@ -83,7 +83,11 @@ interface Mounted {
   readonly ran: string[];
 }
 
-function mounted(selection: AnnotationSelection | undefined, foot: readonly UiCommand[] = []): Mounted {
+function mounted(
+  selection: AnnotationSelection | undefined,
+  foot: readonly UiCommand[] = [],
+  measuring = false,
+): Mounted {
   const store = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
   const restyled: StyleChange[] = [];
   const commented: string[] = [];
@@ -108,11 +112,38 @@ function mounted(selection: AnnotationSelection | undefined, foot: readonly UiCo
         registry={new CommandRegistry(foot.map((command) => ({ ...command, run: () => void ran.push(command.id) })))}
         selection={selection}
         settings={store}
+        measuring={measuring}
       />
     </Wrapped>,
   );
   return { store, restyled, commented, authors, ran };
 }
+
+describe('PropertiesPanel while a measurement is drawn (the owner’s item 14a)', () => {
+  it('shows the unit, inches as the rulers are, and the drawing’s scale — and neither for any other tool', () => {
+    mounted(undefined, [], true);
+    expect((screen.getByRole('combobox', { name: 'Measurement unit' }) as HTMLSelectElement).value).toBe('in');
+    expect((screen.getByRole('spinbutton', { name: 'Drawing scale, 1 to' }) as HTMLInputElement).value).toBe('1');
+    cleanup();
+    // CONTROL: the same panel with no measurement tool has neither row.
+    mounted(undefined);
+    expect(screen.queryByRole('combobox', { name: 'Measurement unit' })).toBeNull();
+    expect(screen.queryByRole('spinbutton', { name: 'Drawing scale, 1 to' })).toBeNull();
+  });
+
+  it('writes the unit chosen and the scale typed, and leaves the scale while the field is empty', () => {
+    const { store } = mounted(undefined, [], true);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Measurement unit' }), { target: { value: 'cm' } });
+    expect(store.get('editing.measure-unit')).toBe('cm');
+    const scale = screen.getByRole('spinbutton', { name: 'Drawing scale, 1 to' });
+    fireEvent.change(scale, { target: { value: '' } });
+    // MID-TYPING: the field is empty and the scale is what it was.
+    expect((scale as HTMLInputElement).value).toBe('');
+    expect(store.get('editing.measure-ratio')).toBe(1);
+    fireEvent.change(scale, { target: { value: '100' } });
+    expect(store.get('editing.measure-ratio')).toBe(100);
+  });
+});
 
 describe('PropertiesPanel with marks selected', () => {
   it('names the kind and the page a person reads, 1-based', () => {

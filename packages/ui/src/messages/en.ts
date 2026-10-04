@@ -1338,7 +1338,8 @@ export const STAMP_TITLES = {
 export const MEASURE_DISTANCE_TOOL_TITLE = messageKey('command.annotate.measure-distance');
 export const MEASURE_AREA_TOOL_TITLE = messageKey('command.annotate.measure-area');
 export const MEASURE_PERIMETER_TOOL_TITLE = messageKey('command.annotate.measure-perimeter');
-export const MEASURE_SCALE_TITLE = messageKey('setting.editing.measure-scale');
+export const MEASURE_RATIO_TITLE = messageKey('setting.editing.measure-ratio');
+export const MEASURE_RATIO_DESCRIPTION = messageKey('setting.editing.measure-ratio.description');
 export const MEASURE_UNIT_TITLE = messageKey('setting.editing.measure-unit');
 export const TYPEWRITER_TOOL_TITLE = messageKey('command.annotate.typewriter');
 export const TYPEWRITER_DIALOG_TITLE = messageKey('dialog.typewriter.title');
@@ -3473,7 +3474,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MEASURE_DISTANCE_TOOL_TITLE]: 'Measure distance',
   [MEASURE_AREA_TOOL_TITLE]: 'Measure area',
   [MEASURE_PERIMETER_TOOL_TITLE]: 'Measure perimeter',
-  [MEASURE_SCALE_TITLE]: 'Measurement scale, per point',
+  [MEASURE_RATIO_TITLE]: 'Drawing scale, 1 to',
+  [MEASURE_RATIO_DESCRIPTION]: 'What one of the unit on the page stands for: 100 for a plan drawn at 1:100, 1 to measure the page itself.',
   [MEASURE_UNIT_TITLE]: 'Measurement unit',
   [TYPEWRITER_TOOL_TITLE]: 'Typewriter',
   [TYPEWRITER_DIALOG_TITLE]: 'Typewriter',

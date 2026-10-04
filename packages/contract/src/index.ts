@@ -330,6 +330,7 @@ export {
   insertImagePageSchema,
   mergeDocumentSchema,
   MAX_MERGE_DOCUMENTS,
+  POINTS_PER_UNIT,
   movePageSchema,
   type NamesAnAnnotation,
   type NamesAFormField,

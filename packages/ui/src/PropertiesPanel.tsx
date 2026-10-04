@@ -8,6 +8,7 @@ import {
   MAX_ANNOTATION_TEXT,
   MIN_ANNOTATION_FONT,
   MIN_ANNOTATION_OPACITY,
+  measureUnitSchema,
 } from '@monstera/contract';
 import { type ReactElement, useId, useState } from 'react';
 
@@ -38,6 +39,9 @@ import {
   PROPERTIES_WIDTH_VALUE,
   STYLE_COLOUR_AUTO,
   STYLE_PANEL_LABEL,
+  MEASURE_RATIO_TITLE,
+  MEASURE_UNIT_TITLE,
+  UNIT_TITLES,
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { Button } from './primitives/Button.js';
@@ -48,6 +52,9 @@ import {
   ANNOTATION_FONT_SIZE_SETTING,
   ANNOTATION_LINE_WIDTH_SETTING,
   ANNOTATION_OPACITY_SETTING,
+  MAX_MEASURE_RATIO,
+  MEASURE_RATIO_SETTING,
+  MEASURE_UNIT_SETTING,
   STYLE_AS_DEFAULT_SETTING,
 } from './settings/editing.js';
 import type { SettingsStore } from './settingsStore.js';
@@ -74,6 +81,11 @@ export interface PropertiesPanelProps {
   /** Where the foot's commands come from (`properties` placements), and what they run with. */
   readonly registry: CommandRegistry;
   readonly context: CommandContext;
+  /**
+   * Whether a measurement tool is in use, when the tab also shows the unit and the drawing's scale it measures in
+   * (the owner's item 14a). Only then: they mean nothing to any other tool.
+   */
+  readonly measuring?: boolean | undefined;
 }
 
 /**
@@ -117,8 +129,14 @@ export function PropertiesPanel({
   onAuthor,
   registry,
   context,
+  measuring = false,
 }: PropertiesPanelProps): ReactElement {
   const { i18n } = useLingui();
+  const measureUnit = useSetting(settings, MEASURE_UNIT_SETTING);
+  const measureRatio = useSetting(settings, MEASURE_RATIO_SETTING);
+  const unitId = useId();
+  const ratioId = useId();
+  const [ratioText, setRatioText] = useState<string | undefined>(undefined);
   const asDefault = useSetting(settings, STYLE_AS_DEFAULT_SETTING);
   const colourSetting = useSetting(settings, ANNOTATION_COLOUR_SETTING);
   const opacitySetting = useSetting(settings, ANNOTATION_OPACITY_SETTING);
@@ -170,6 +188,54 @@ export function PropertiesPanel({
             value={fontSize}
           />
         </div>
+        {measuring ? (
+          <>
+            <div className="m-properties__row m-properties__row--inline">
+              <label className="m-properties__label" htmlFor={unitId}>
+                {i18n._(MEASURE_UNIT_TITLE)}
+              </label>
+              <select
+                className="m-properties__number"
+                id={unitId}
+                value={measureUnit}
+                onChange={(event) => {
+                  const unit = measureUnitSchema.safeParse(event.target.value);
+                  if (unit.success) settings.set(MEASURE_UNIT_SETTING.id, unit.data);
+                }}
+              >
+                {measureUnitSchema.options.map((unit) => (
+                  <option key={unit} value={unit}>
+                    {i18n._(UNIT_TITLES[unit])}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="m-properties__row m-properties__row--inline">
+              <label className="m-properties__label" htmlFor={ratioId}>
+                {i18n._(MEASURE_RATIO_TITLE)}
+              </label>
+              <input
+                className="m-properties__number"
+                id={ratioId}
+                max={MAX_MEASURE_RATIO}
+                min={1}
+                onBlur={() => {
+                  setRatioText(undefined);
+                }}
+                onChange={(event) => {
+                  // THE TEXT AS TYPED, and the setting only once it is a scale it holds: an emptied or zero field is a
+                  // person mid-typing, and a field that snapped back to the last scale would fight them.
+                  setRatioText(event.target.value);
+                  const ratio = Number(event.target.value);
+                  if (ratio > 0 && ratio <= MAX_MEASURE_RATIO) settings.set(MEASURE_RATIO_SETTING.id, ratio);
+                }}
+                step="any"
+                type="number"
+                value={ratioText ?? String(measureRatio)}
+              />
+            </div>
+          </>
+        ) : null}
       </section>
     );
   }

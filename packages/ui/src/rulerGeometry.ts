@@ -1,3 +1,5 @@
+import { POINTS_PER_UNIT } from '@monstera/contract';
+
 /**
  * Where a ruler's marks go, as arithmetic with no DOM in it.
  *
@@ -37,12 +39,12 @@ export type RulerUnit = 'in' | 'cm' | 'pt';
  */
 const UNITS: Readonly<Record<RulerUnit, { readonly points: number; readonly divisions: number }>> =
   {
-    in: { points: 72, divisions: 8 },
-    // 1 inch is exactly 2.54 cm by definition, so a centimetre is 72 / 2.54
-    // points. Written as the division rather than as 28.3465 so the definition
-    // is visible and the value is not a rounded copy of it.
-    cm: { points: 72 / 2.54, divisions: 10 },
-    pt: { points: 72, divisions: 6 },
+    // THE CONTRACT'S TABLE, which the measurements read too, so a ruler and a measurement cannot disagree about how
+    // long a centimetre is (B3a).
+    in: { points: POINTS_PER_UNIT.in, divisions: 8 },
+    cm: { points: POINTS_PER_UNIT.cm, divisions: 10 },
+    // A POINT RULER IS MARKED EVERY INCH'S WORTH of points, labelled in points: a mark per point would be a grey band.
+    pt: { points: POINTS_PER_UNIT.in, divisions: 6 },
   };
 
 /**

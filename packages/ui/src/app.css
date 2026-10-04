@@ -1541,7 +1541,10 @@ optgroup {
 .m-properties__stroke[data-width='3'] { block-size: 3px; }
 .m-properties__stroke[data-width='5'] { block-size: 5px; }
 
+/* ONE BOX MODEL for the tab's small fields, a number or a drop-down: a select sizes its border box and an input its
+   content box, so at one width the unit's drop-down stood 10 px narrower than the font size above it. */
 .m-properties__number {
+  box-sizing: border-box;
   inline-size: 6em;
   padding: var(--space-4);
   background: var(--surface);

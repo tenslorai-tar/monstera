@@ -1455,6 +1455,21 @@ export const measureUnitSchema = z.enum(['pt', 'mm', 'cm', 'm', 'in', 'ft']);
 export type MeasureUnit = z.infer<typeof measureUnitSchema>;
 
 /**
+ * How many PDF points each unit is, on the page — the one table of physical lengths in this build, read by the
+ * measurements and the rulers alike (B3a). A point is 1/72 inch (PDF 32000 §8.3.2.3), and the rest follow from the
+ * inch: 2.54 cm and 25.4 mm exactly, twelve inches to the foot. Written as the divisions rather than as rounded
+ * decimals so each definition is visible in the value.
+ */
+export const POINTS_PER_UNIT: Readonly<Record<MeasureUnit, number>> = {
+  pt: 1,
+  in: 72,
+  ft: 72 * 12,
+  cm: 72 / 2.54,
+  mm: 72 / 25.4,
+  m: 72 / 0.0254,
+};
+
+/**
  * How a drawing's own units relate to the page's.
  *
  * ## The calibration is in the PAYLOAD, not in the kernel
