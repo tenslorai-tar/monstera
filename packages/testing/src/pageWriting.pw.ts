@@ -326,3 +326,49 @@ test('EDIT COMMENT from the mark’s menu is typed next to the mark, and Escape 
   await expect.poll(() => executed.length).toBe(1);
   expect(executed[0]?.command).toMatchObject({ kind: 'editAnnotationText', page: 0, index: 0, text: 'Confirm the rate' });
 });
+
+/** The status bar's tool line (ADR-0154 Decision 4). */
+function toolLine(page: Page): Locator {
+  return page.locator('.m-status-mode');
+}
+
+test('THE TOOL LINE says what the tool waits for, and Escape with nothing in flight STOPS the tool', async ({ page }) => {
+  const executed: Executed[] = [];
+  await opened(page, LOOKS[0], 1, executed);
+  await expect(toolLine(page)).toHaveCount(0);
+  await chooseTool(page, 'Note');
+  await expect(toolLine(page)).toHaveText('Click where the comment goes. Esc to stop.');
+
+  await page.keyboard.press('Escape');
+  await expect(toolLine(page)).toHaveCount(0);
+  // STOPPED, not hidden: no drawing surface is left, so a click on the page places nothing and asks for nothing.
+  await expect(surface(page)).toHaveCount(0);
+  const pane = await page.locator('[data-document-layer="active"] canvas.m-page').first().boundingBox();
+  if (pane === null) throw new Error('the page is not on screen');
+  await page.mouse.click(pane.x + 200, pane.y + 100);
+  await expect(page.getByRole('textbox', { name: 'Comment' })).toHaveCount(0);
+  expect(executed).toStrictEqual([]);
+});
+
+test('CONTROL: Escape in an open box FINISHES the words and leaves the tool on', async ({ page }) => {
+  const executed: Executed[] = [];
+  await opened(page, LOOKS[0], 1, executed);
+  await chooseTool(page, 'Text box');
+  await dragOn(page, [80, 60], [320, 140]);
+  await page.keyboard.type('kept');
+  await page.keyboard.press('Escape');
+  await expect.poll(() => executed.length).toBe(1);
+  await expect(toolLine(page)).toHaveText('Drag the box the words go in. Esc to stop.');
+  await expect(surface(page)).toBeVisible();
+});
+
+test('ESCAPE IS INNERMOST FIRST: marks selected are let go, then the select tool stops', async ({ page }) => {
+  const executed: Executed[] = [];
+  await selectedMark(page, executed);
+  const properties = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Escape');
+  await expect(properties.getByRole('heading', { name: 'Highlight' })).toHaveCount(0);
+  await expect(toolLine(page)).toHaveText('Click a mark to select it, or drag around several. Esc to stop.');
+  await page.keyboard.press('Escape');
+  await expect(toolLine(page)).toHaveCount(0);
+});

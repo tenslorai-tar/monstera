@@ -952,15 +952,19 @@ export function PageList({
       frame = requestAnimationFrame(step);
     };
     frame = requestAnimationFrame(step);
+    // IN THE CAPTURE PHASE, and the Escape is spent here: the scroll is the innermost thing running, so it stops first
+    // and the tool on (App's shortcut handler, ADR-0154 Decision 4) stops only at the next Escape.
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') stop();
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      stop();
     };
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
     box.addEventListener('pointerdown', stop);
     box.addEventListener('wheel', stop);
     return (): void => {
       cancelAnimationFrame(frame);
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onKey, true);
       box.removeEventListener('pointerdown', stop);
       box.removeEventListener('wheel', stop);
     };

@@ -8,6 +8,7 @@ import type {
 import type { PageTransform, ViewportPoint } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
+import { HINT_CLOSED_CORNERS, HINT_OPEN_CORNERS } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, lastPress, pointerPath } from '../registries/tools.js';
 import type { AnnotationStyle } from './annotationStyle.js';
@@ -205,7 +206,8 @@ export function vertexTool(
     },
   };
 
-  return { id, controller };
+  // THE HINT FOLLOWS `closes`, the flag that makes a press on the first corner finish the shape.
+  return { id, controller, hint: closes ? HINT_CLOSED_CORNERS : HINT_OPEN_CORNERS };
 }
 
 /** The ids, shared with the commands that select these tools. */

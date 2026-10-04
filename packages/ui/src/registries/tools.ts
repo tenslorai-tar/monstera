@@ -1,5 +1,5 @@
 import type { DispatchableCommand } from '@monstera/contract';
-import type { PageTransform, ViewportPoint } from '@monstera/shared';
+import type { MessageKey, PageTransform, ViewportPoint } from '@monstera/shared';
 
 import type { TextSelection } from '../TextLayer.js';
 
@@ -352,6 +352,12 @@ export interface UiTool {
    * puts it on the surface as `data-cursor` for the stylesheet.
    */
   readonly cursor?: 'arrow' | 'text';
+  /**
+   * What the tool waits for, said in the status bar's start region while the tool is on (ADR-0154 Decision 4): *Click
+   * where the comment goes*. REQUIRED, so a tool cannot arrive waiting for a press nobody is told about: every tool
+   * waits for one, a drag, a click, corners or a text selection. The status bar adds that Escape leaves the tool.
+   */
+  readonly hint: MessageKey;
   /**
    * The command for a TEXT SELECTION, for a tool whose gesture is selecting text rather than dragging a shape — a
    * highlighter, Acrobat's way: the words light up as they are selected and the mark lands on release.

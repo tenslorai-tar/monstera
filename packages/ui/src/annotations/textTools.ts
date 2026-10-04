@@ -7,7 +7,13 @@ import {
 import { type MessageKey, type PageTransform, type ViewportPoint, viewportPoint } from '@monstera/shared';
 import { z } from 'zod';
 
-import { WRITE_TEXT_BOX_LABEL, WRITE_TOO_LONG, WRITE_TYPEWRITER_LABEL } from '../messages/en.js';
+import {
+  HINT_TEXT_BOX,
+  HINT_TYPEWRITER,
+  WRITE_TEXT_BOX_LABEL,
+  WRITE_TOO_LONG,
+  WRITE_TYPEWRITER_LABEL,
+} from '../messages/en.js';
 import type { Write, WriteRequest } from '../pageWriting.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
@@ -194,7 +200,9 @@ function boxTextTool(
     preview: drawn,
   };
 
-  return { id, controller };
+  // THE HINT FOLLOWS THE FLAG that decides whether a click places a box, so what the bar says and what a click does
+  // are one decision.
+  return { id, controller, hint: placesOnClick ? HINT_TYPEWRITER : HINT_TEXT_BOX };
 }
 
 /** A box with a border, and the words in it. */

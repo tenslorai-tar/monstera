@@ -7,7 +7,7 @@ import {
   FORM_FIELD_RADIO_DIALOG_ID,
 } from '../dialogs/formField.js';
 import { FORM_FIELD_RESULT } from '../dialogs/formFieldResult.js';
-import { FORM_FIELD_NAME_LABEL } from '../messages/en.js';
+import { FORM_FIELD_NAME_LABEL, HINT_FORM_FIELD } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
@@ -194,7 +194,7 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
     preview: drawn,
   };
 
-  return { id: shape.id, controller };
+  return { id: shape.id, controller, hint: HINT_FORM_FIELD };
 }
 
 /** The five, for the composition root. */

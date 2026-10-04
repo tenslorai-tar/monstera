@@ -14,7 +14,7 @@ import {
   type UpdateStatus,
   type WindowEditAction,
 } from '@monstera/contract';
-import type { DocId, DocVersion, FileHandle } from '@monstera/shared';
+import type { DocId, DocVersion, FileHandle, MessageKey } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
 import {
   memo,
@@ -240,7 +240,14 @@ import {
   CLOSE_UNSAVED_RESULT,
 } from './dialogs/closeUnsaved.js';
 import { useDocumentView } from './useDocumentView.js';
-import { CLOSE_LABEL, SPLIT_SECOND_LABEL, TOAST_DISMISS } from './messages/en.js';
+import {
+  CLOSE_LABEL,
+  HINT_EDIT_OBJECTS,
+  HINT_EDIT_TEXT,
+  HINT_HAND,
+  SPLIT_SECOND_LABEL,
+  TOAST_DISMISS,
+} from './messages/en.js';
 import { annotationTools } from './annotations/annotationTools.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
@@ -502,6 +509,13 @@ const NO_PAGES: readonly number[] = [];
  * inch, which clears a note icon of either anchoring — its corner or its centre — inside the page.
  */
 const NOTE_MARGIN = 36;
+
+/** What the three modes that share the tool slot wait for, the drawing tools' `hint` for the status line. */
+const MODE_HINTS: ReadonlyMap<string, MessageKey> = new Map([
+  [HAND_TOOL_ID, HINT_HAND],
+  [EDIT_TEXT_TOOL_ID, HINT_EDIT_TEXT],
+  [EDIT_OBJECTS_TOOL_ID, HINT_EDIT_OBJECTS],
+]);
 
 export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onRegistries }: AppProps): ReactElement {
   /**
@@ -3179,6 +3193,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   }, [open, selection, send, toolId, tools]);
 
   /**
+   * What the tool that is on waits for, for the status bar's tool line (ADR-0154 Decision 4). A drawing tool's hint is
+   * its own; the three modes sharing the slot without being drawing tools say theirs in `MODE_HINTS`.
+   */
+  const toolHint = toolId === undefined ? undefined : (tools.get(toolId)?.hint ?? MODE_HINTS.get(toolId));
+
+  /**
    * Edit text's mode on the document on show, or `undefined` when it is off
    * (ADR-0096).
    *
@@ -3311,7 +3331,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [currentPage, open, pageCount, selectedPages, tabs, textSelection],
   );
 
-  useShortcuts(registry, context, openDialog !== undefined);
+  // ESCAPE STOPS the tool that is on (ADR-0154 Decision 4), innermost first, as Edit object's own layer does: marks or
+  // an object selected are let go before the tool is. A key pressed inside one of those layers, or in an open block's
+  // editor, is answered there and never reaches this.
+  const stopTool = useCallback((): boolean => {
+    if (toolId === undefined) return false;
+    if (selection !== undefined) {
+      setPicked(undefined);
+      return true;
+    }
+    if (objectSelection !== undefined) {
+      setObjectPicked(undefined);
+      return true;
+    }
+    setToolId(undefined);
+    return true;
+  }, [objectSelection, selection, toolId]);
+  useShortcuts(registry, context, openDialog !== undefined, stopTool);
   useTheme(settings);
 
   // THE FIRST-RUN AI SETUP (see `settingsLoaded` above), offered once per launch.
@@ -3757,8 +3793,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           task={task}
           saved={saved}
           byteLength={open.byteLength}
-          // THE TOOL THAT IS ON, by its own command's title, so the bar names nothing itself.
-          mode={toolId === undefined ? undefined : registry.get(toolId)?.title}
+          // WHAT THE TOOL THAT IS ON WAITS FOR, by its own hint, so the bar names nothing itself.
+          toolHint={toolHint}
         />
       )}
       {/* ALWAYS MOUNTED, unlike the status bar above and deliberately so: a live region
@@ -3819,8 +3855,20 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
  * Bound to the document rather than to the surface: a shortcut is an application
  * affordance, and one that only worked while a particular element had focus
  * would be a shortcut users report as intermittent.
+ *
+ * ## Escape stops the tool before any command takes the key
+ *
+ * The innermost state a person is in goes first, as a dialog's, the palette's and Edit text's Escape already do, each
+ * before this handler: so in Focus a first Escape stops the tool and a second leaves Focus. A gesture in flight is
+ * nearer still, and the drawing surface stops that Escape before it reaches the document. Not a command, because a
+ * chord names one command and `view.leave-focus` holds Escape; `stopTool` answers whether there was a tool to stop.
  */
-function useShortcuts(registry: CommandRegistry, context: CommandContext, dialogOpen: boolean): void {
+function useShortcuts(
+  registry: CommandRegistry,
+  context: CommandContext,
+  dialogOpen: boolean,
+  stopTool: () => boolean,
+): void {
   const map = useMemo(() => shortcutsFor(registry), [registry]);
 
   useEffect(() => {
@@ -3834,6 +3882,11 @@ function useShortcuts(registry: CommandRegistry, context: CommandContext, dialog
       if (fieldOwnsChord(event.target, event)) return;
       // AND ONE A FOCUSED CONTROL MOVES BY — a slider, a list, a menu.
       if (controlOwnsChord(event.target, event)) return;
+      const bare = !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey;
+      if (event.key === 'Escape' && bare && stopTool()) {
+        event.preventDefault();
+        return;
+      }
       if (dispatchChord(registry, map, event, context).kind === 'ran') {
         event.preventDefault();
       }
@@ -3842,7 +3895,7 @@ function useShortcuts(registry: CommandRegistry, context: CommandContext, dialog
     return (): void => {
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [context, dialogOpen, map, registry]);
+  }, [context, dialogOpen, map, registry, stopTool]);
 }
 
 /**

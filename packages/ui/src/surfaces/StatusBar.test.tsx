@@ -6,7 +6,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, STATUS_UNSAVED, WORD_COUNT_PROGRESS } from '../messages/en.js';
+import { EN, HINT_HAND, HINT_NOTE, STATUS_UNSAVED, WORD_COUNT_PROGRESS } from '../messages/en.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from '../registries/commands.js';
 import type { Placement } from '../registries/placement.js';
 import type { RunningTask } from '../runningTask.js';
@@ -64,7 +64,7 @@ function drawn(
     readonly commands?: readonly UiCommand[];
     readonly saved?: SavedState;
     readonly byteLength?: number;
-    readonly mode?: MessageKey;
+    readonly toolHint?: MessageKey;
   } = {},
 ): Drawn {
   const went = vi.fn();
@@ -81,7 +81,7 @@ function drawn(
         registry={new CommandRegistry(over.commands ?? [])}
         context={context}
         byteLength={over.byteLength ?? 2_516_582}
-        mode={over.mode}
+        toolHint={over.toolHint}
         task={over.task}
         // THE DEFAULT IS THE DIRTY ONE, deliberately: every case that does not care renders a
         // document with unsaved changes, so a bar that dropped the cell shows it in none of
@@ -146,15 +146,15 @@ describe('StatusBar', () => {
     expect(small).toContain('50 KB');
   });
 
-  it('names the TOOL THAT IS ON at the bar’s start, and nothing when none is', () => {
-    const on = drawn({ mode: messageKey('command.hand-tool.title') });
-    expect(on.container.querySelector('.m-status-mode')?.textContent).toBe('Hand — drag to move the pages');
+  it('says what the TOOL THAT IS ON waits for at the bar’s start, and that Escape stops it, and nothing when none is', () => {
+    const on = drawn({ toolHint: HINT_NOTE });
+    expect(on.container.querySelector('.m-status-mode')?.textContent).toBe('Click where the comment goes. Esc to stop.');
     // CONTROL: with no tool, no line at all rather than an empty one.
     expect(drawn().container.querySelector('.m-status-mode')).toBeNull();
   });
 
   it('is THREE REGIONS: the tool at the start, page navigation at the CENTRE, document and zoom at the end (item 5)', () => {
-    const { container } = drawn({ mode: messageKey('command.hand-tool.title') });
+    const { container } = drawn({ toolHint: HINT_HAND });
     const regions = [...(container.querySelector('.m-status-bar')?.children ?? [])]
       .filter((child) => !child.classList.contains('m-visually-hidden'))
       .map((child) => child.className);

@@ -2,7 +2,7 @@ import type { AnnotationColour, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
-import { WRITE_NOTE_LABEL } from '../messages/en.js';
+import { HINT_CARET, HINT_NOTE, WRITE_NOTE_LABEL } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationStyle } from './annotationStyle.js';
@@ -183,7 +183,7 @@ export function stickyNoteTool(deps: TextToolDeps & { readonly style: Annotation
   };
 
   // THE ARROW: a note is placed at a point by a click, the ribbon's *Comment* (the owner's review of 0.1.6.0).
-  return { id: STICKY_NOTE_TOOL_ID, controller, cursor: 'arrow' };
+  return { id: STICKY_NOTE_TOOL_ID, controller, cursor: 'arrow', hint: HINT_NOTE };
 }
 
 /**
@@ -198,6 +198,7 @@ export function stickyNoteTool(deps: TextToolDeps & { readonly style: Annotation
 export function caretTool(deps: { readonly style: AnnotationStyle }): UiTool {
   return {
     id: CARET_TOOL_ID,
+    hint: HINT_CARET,
     controller: {
       ...pointerPath,
       commit: (

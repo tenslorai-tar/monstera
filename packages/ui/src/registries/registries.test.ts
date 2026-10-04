@@ -528,6 +528,7 @@ describe('pointerPath — the gesture every pointer-driven tool spreads', () => 
 describe('ToolRegistry', () => {
   const tool = (id: string): UiTool => ({
     id,
+    hint: ANY_TITLE,
     // THE SHARED PATH, exactly as a real tool spreads it: a fixture writing its
     // own `begin` and `update` would be testing the registry against a
     // controller no tool resembles.

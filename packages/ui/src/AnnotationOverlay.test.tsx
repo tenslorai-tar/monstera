@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import type { DispatchableCommand } from '@monstera/contract';
+import { messageKey } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -287,6 +288,7 @@ describe('AnnotationOverlay', () => {
     // comes back.
     const other: UiTool = {
       id: 'annotate.other',
+      hint: messageKey('test.hint.other'),
       controller: {
         ...pointerPath,
         commit: (_gesture, page) => Promise.resolve({ kind: 'duplicatePage', pages: [page] }),

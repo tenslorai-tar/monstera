@@ -3,6 +3,7 @@ import type { PageTransform } from '@monstera/shared';
 
 import { STAMP_DIALOG_ID } from '../dialogs/stamp.js';
 import { STAMP_RESULT, type StampPicture } from '../dialogs/stampResult.js';
+import { HINT_STAMP } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
@@ -113,5 +114,5 @@ export function stampTool(deps: Pick<TextToolDeps, 'ask' | 'style'> & StampDeps)
     },
     preview: drawn,
   };
-  return { id: STAMP_TOOL_ID, controller };
+  return { id: STAMP_TOOL_ID, controller, hint: HINT_STAMP };
 }

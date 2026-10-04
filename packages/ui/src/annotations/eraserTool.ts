@@ -2,6 +2,7 @@ import type { AnnotationBlend, AnnotationKindName, DispatchableCommand } from '@
 import type { DocVersion, PageTransform } from '@monstera/shared';
 import { pdfPoint, toViewport } from '@monstera/shared';
 
+import { HINT_ERASER } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { pointerPath, startOf } from '../registries/tools.js';
 
@@ -190,5 +191,5 @@ export function eraserTool(deps: EraserDeps): UiTool {
     preview: (): ToolPreview | undefined => undefined,
   };
 
-  return { id: ERASER_TOOL_ID, controller };
+  return { id: ERASER_TOOL_ID, controller, hint: HINT_ERASER };
 }

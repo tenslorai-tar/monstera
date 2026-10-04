@@ -2,6 +2,7 @@ import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
 import type { DocVersion, PageTransform, ViewportPoint } from '@monstera/shared';
 import { pdfPoint, toPdf, toViewport, viewportPoint } from '@monstera/shared';
 
+import { HINT_SELECT } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationSnapshot, ErasableAnnotation } from './eraserTool.js';
@@ -464,5 +465,5 @@ export function selectTool(deps: SelectDeps): UiTool {
   };
 
   // THE ARROW: this tool picks what is there rather than drawing something new (the owner's review of 0.1.6.0).
-  return { id: SELECT_TOOL_ID, controller, cursor: 'arrow' };
+  return { id: SELECT_TOOL_ID, controller, cursor: 'arrow', hint: HINT_SELECT };
 }

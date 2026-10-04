@@ -2,6 +2,7 @@ import type { AnnotationColour, MeasureScale, DispatchableCommand } from '@monst
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
+import { HINT_MEASURE_DISTANCE } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationStyle } from './annotationStyle.js';
@@ -113,7 +114,7 @@ function distanceTool(deps: MeasureDeps): UiTool {
     preview: drawn,
   };
 
-  return { id: MEASURE_DISTANCE_TOOL_ID, controller };
+  return { id: MEASURE_DISTANCE_TOOL_ID, controller, hint: HINT_MEASURE_DISTANCE };
 }
 
 /** All three, in the order their controls appear. */

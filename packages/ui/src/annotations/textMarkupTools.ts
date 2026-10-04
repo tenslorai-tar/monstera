@@ -1,7 +1,8 @@
 import type { AnnotationColour, DispatchableCommand } from '@monstera/contract';
-import type { PageTransform } from '@monstera/shared';
+import type { MessageKey, PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
+import { HINT_HIGHLIGHT, HINT_REDACT_TEXT, HINT_STRIKEOUT, HINT_UNDERLINE } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationStyle } from './annotationStyle.js';
@@ -66,6 +67,13 @@ export const MARKUP_COLOURS = {
 } as const satisfies Record<'highlight' | 'underline' | 'strikeout', AnnotationColour>;
 
 export type MarkupType = keyof typeof MARKUP_COLOURS;
+
+/** What each markup's tool waits for, keyed as the colours are, so a markup arriving without a hint does not compile. */
+const MARKUP_HINTS: Record<MarkupType, MessageKey> = {
+  highlight: HINT_HIGHLIGHT,
+  underline: HINT_UNDERLINE,
+  strikeout: HINT_STRIKEOUT,
+};
 
 /**
  * The command that marks up the text between two points on a page — the ONE builder for it, taken
@@ -132,11 +140,11 @@ export const REDACT_TEXT_TOOL_ID = 'annotate.redact-text';
  * I-beam, the page's own selection, and on release exactly the run selected. *Redact area* is the box beside it.
  */
 export function redactTextTool(style: AnnotationStyle): UiTool {
-  return textRunTool(REDACT_TEXT_TOOL_ID, (page, from, to) => redactTextCommand(page, from, to, style));
+  return textRunTool(REDACT_TEXT_TOOL_ID, HINT_REDACT_TEXT, (page, from, to) => redactTextCommand(page, from, to, style));
 }
 
 function markupTool(id: string, type: MarkupType, style: AnnotationStyle): UiTool {
-  return textRunTool(id, (page, from, to) => markupCommand(type, page, from, to, style));
+  return textRunTool(id, MARKUP_HINTS[type], (page, from, to) => markupCommand(type, page, from, to, style));
 }
 
 /**
@@ -147,6 +155,7 @@ function markupTool(id: string, type: MarkupType, style: AnnotationStyle): UiToo
  */
 function textRunTool(
   id: string,
+  hint: MessageKey,
   command: (
     page: number,
     from: { readonly x: number; readonly y: number },
@@ -180,6 +189,7 @@ function textRunTool(
   return {
     id,
     controller,
+    hint,
     // THE TEXT IS THE GESTURE (the owner's review of 0.1.6.0): a line from where the drag started to where it ended
     // was ambiguous between two lines of text. Now the page's own selection shows exactly the words that will be
     // marked, under an I-beam, and the two ends of that selection are the two points the kernel resolves — the same

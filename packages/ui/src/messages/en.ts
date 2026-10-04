@@ -1191,6 +1191,37 @@ export const POLYLINE_TOOL_TITLE = messageKey('command.annotate.polyline');
 export const CLOUD_TOOL_TITLE = messageKey('command.annotate.cloud');
 export const ERASER_TOOL_TITLE = messageKey('command.annotate.eraser');
 export const SELECT_TOOL_TITLE = messageKey('command.annotate.select');
+// WHAT EACH TOOL WAITS FOR (ADR-0154 Decision 4), said in the status bar's tool line, one per gesture.
+export const HINT_DRAG_SHAPE = messageKey('tool.hint.drag-shape');
+export const HINT_DRAG_REDACT = messageKey('tool.hint.drag-redact');
+export const HINT_DRAG_LINE = messageKey('tool.hint.drag-line');
+export const HINT_INK = messageKey('tool.hint.ink');
+export const HINT_MEASURE_DISTANCE = messageKey('tool.hint.measure-distance');
+export const HINT_CLOSED_CORNERS = messageKey('tool.hint.closed-corners');
+export const HINT_OPEN_CORNERS = messageKey('tool.hint.open-corners');
+export const HINT_TEXT_BOX = messageKey('tool.hint.text-box');
+export const HINT_TYPEWRITER = messageKey('tool.hint.typewriter');
+export const HINT_NOTE = messageKey('tool.hint.note');
+export const HINT_CARET = messageKey('tool.hint.caret');
+export const HINT_HIGHLIGHT = messageKey('tool.hint.highlight');
+export const HINT_UNDERLINE = messageKey('tool.hint.underline');
+export const HINT_STRIKEOUT = messageKey('tool.hint.strikeout');
+export const HINT_REDACT_TEXT = messageKey('tool.hint.redact-text');
+export const HINT_CALLOUT = messageKey('tool.hint.callout');
+export const HINT_LINK = messageKey('tool.hint.link');
+export const HINT_STAMP = messageKey('tool.hint.stamp');
+export const HINT_ERASER = messageKey('tool.hint.eraser');
+export const HINT_SELECT = messageKey('tool.hint.select');
+export const HINT_SNAPSHOT = messageKey('tool.hint.snapshot');
+export const HINT_READ_REGION = messageKey('tool.hint.read-region');
+export const HINT_IMAGE = messageKey('tool.hint.image');
+export const HINT_SIGNATURE_FIELD = messageKey('tool.hint.signature-field');
+export const HINT_BARCODE = messageKey('tool.hint.barcode');
+export const HINT_SIGNATURE = messageKey('tool.hint.signature');
+export const HINT_FORM_FIELD = messageKey('tool.hint.form-field');
+export const HINT_HAND = messageKey('tool.hint.hand');
+export const HINT_EDIT_TEXT = messageKey('tool.hint.edit-text');
+export const HINT_EDIT_OBJECTS = messageKey('tool.hint.edit-objects');
 export const SNAPSHOT_TOOL_TITLE = messageKey('command.view.snapshot');
 export const PLACE_IMAGE_TOOL_TITLE = messageKey('command.annotate.image');
 export const OCR_REGION_TOOL_TITLE = messageKey('command.tools.ocr-region');
@@ -1343,6 +1374,7 @@ export const STATUS_PAGE_TOTAL = messageKey('surface.status.page-total');
 export const STATUS_NAVIGATION = messageKey('surface.status.navigation');
 export const STATUS_ZOOM_GROUP = messageKey('surface.status.zoom-group');
 export const STATUS_ZOOM_SLIDER = messageKey('surface.status.zoom-slider');
+export const STATUS_TOOL_LINE = messageKey('surface.status.tool-line');
 export const STATUS_CHROME_GROUP = messageKey('surface.status.chrome-group');
 /**
  * Where this document stands against its file — the owner's document export draws
@@ -3475,6 +3507,38 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // a bare *Select* in a palette beside the Edit ribbon would be the wrong one
   // for the reader who most needs the right one.
   [SELECT_TOOL_TITLE]: 'Select annotations',
+  // EACH A SENTENCE about the gesture the tool's controller takes, read from it (a click a drag tool ignores is not
+  // offered); the status line adds how to stop.
+  [HINT_DRAG_SHAPE]: 'Drag on the page to draw it.',
+  [HINT_DRAG_REDACT]: 'Drag over what should be removed.',
+  [HINT_DRAG_LINE]: 'Drag from where it starts to where it ends.',
+  [HINT_INK]: 'Hold the button down and draw.',
+  [HINT_MEASURE_DISTANCE]: 'Drag from one point to the other.',
+  [HINT_CLOSED_CORNERS]: 'Click each corner, then click the first one again or double-click to finish.',
+  [HINT_OPEN_CORNERS]: 'Click each point, then double-click or press Enter to finish.',
+  [HINT_TEXT_BOX]: 'Drag the box the words go in.',
+  [HINT_TYPEWRITER]: 'Click where the words start, or drag a box for them.',
+  [HINT_NOTE]: 'Click where the comment goes.',
+  [HINT_CARET]: 'Click where words are missing.',
+  [HINT_HIGHLIGHT]: 'Select the words to highlight.',
+  [HINT_UNDERLINE]: 'Select the words to underline.',
+  [HINT_STRIKEOUT]: 'Select the words to strike through.',
+  [HINT_REDACT_TEXT]: 'Select the words to remove.',
+  [HINT_CALLOUT]: 'Click what it points at, then click or drag where its words go.',
+  [HINT_LINK]: 'Drag over the area that should be the link.',
+  [HINT_STAMP]: 'Drag the box the stamp goes in.',
+  [HINT_ERASER]: 'Click a mark to remove it.',
+  [HINT_SELECT]: 'Click a mark to select it, or drag around several.',
+  [HINT_SNAPSHOT]: 'Drag over the area to save as a picture.',
+  [HINT_READ_REGION]: 'Drag over the area to read its text.',
+  [HINT_IMAGE]: 'Drag the box the picture goes in.',
+  [HINT_SIGNATURE_FIELD]: 'Drag the box the signature goes in.',
+  [HINT_BARCODE]: 'Drag the box the barcode goes in.',
+  [HINT_SIGNATURE]: 'Click where your signature goes.',
+  [HINT_FORM_FIELD]: 'Drag the box for the field.',
+  [HINT_HAND]: 'Drag to move around the page.',
+  [HINT_EDIT_TEXT]: 'Click a block of words to change them.',
+  [HINT_EDIT_OBJECTS]: 'Click an object to select it.',
   [SNAPSHOT_TOOL_TITLE]: 'Snapshot a region',
   [PLACE_IMAGE_TOOL_TITLE]: 'Place an image',
   // SAYS WHAT THE DRAG PRODUCES. "OCR region" is the row's name and means nothing
@@ -3593,6 +3657,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_COMMENTS_IMPORTED]: 'Comments imported.',
   [TOAST_SAVED_BACK]: 'Saved to cloud storage',
   [STATUS_ZOOM_SLIDER]: 'Zoom level',
+  // WHAT THE TOOL WAITS FOR, AND HOW TO STOP: each tool's hint is one sentence ending in a full stop.
+  [STATUS_TOOL_LINE]: '{hint} Esc to stop.',
   [THUMBNAILS_LABEL]: 'Page thumbnails',
   [PANEL_PAGES]: 'Pages',
   [PANEL_BOOKMARKS]: 'Bookmarks',

@@ -2,7 +2,7 @@ import type { AnnotationColour, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
-import { WRITE_CALLOUT_LABEL } from '../messages/en.js';
+import { HINT_CALLOUT, WRITE_CALLOUT_LABEL } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
@@ -162,5 +162,5 @@ export function calloutTool(deps: TextToolDeps): UiTool {
     },
   };
 
-  return { id: CALLOUT_TOOL_ID, controller };
+  return { id: CALLOUT_TOOL_ID, controller, hint: HINT_CALLOUT };
 }

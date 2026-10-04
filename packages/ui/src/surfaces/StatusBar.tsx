@@ -13,6 +13,7 @@ import {
   STATUS_PAGE_TOTAL,
   STATUS_ZOOM,
   STATUS_ZOOM_GROUP,
+  STATUS_TOOL_LINE,
   STATUS_ZOOM_SLIDER,
   TASK_CANCEL,
   TASK_PROGRESS,
@@ -99,7 +100,7 @@ export function StatusBar({
   task,
   saved,
   byteLength,
-  mode,
+  toolHint,
 }: {
   /** The document's name, as main stated it on `document.open`. */
   readonly name: string;
@@ -128,10 +129,12 @@ export function StatusBar({
   /** The document's size in bytes, as main stated it — v5-02 draws *"24 pages · 2.4 MB"*. */
   readonly byteLength: number;
   /**
-   * The name of the tool that is on, or `undefined` for none — v5-02 draws the active tool's line
-   * beside the page field, so a person who pressed something can see what a press on the page does.
+   * What the tool that is on waits for (ADR-0154 Decision 4), or `undefined` for none. v5-02 draws the active tool's
+   * line at the bar's start, so a person who pressed something can see what a press on the page does, and that Escape
+   * stops it. The hint and not the tool's title: a title is written for its tooltip (*Hand — drag to move the pages*),
+   * and the tool's own control already shows pressed.
    */
-  readonly mode: MessageKey | undefined;
+  readonly toolHint: MessageKey | undefined;
 }): ReactElement {
   const { i18n } = useLingui();
   // `null` until a person types: the field then shows what they typed, and otherwise the page.
@@ -230,8 +233,11 @@ export function StatusBar({
         {outside ? (
           <span className="m-status-problem">{i18n._(STATUS_GO_TO_OUTSIDE, { count: pageCount })}</span>
         ) : null}
-        {/* THE TOOL THAT IS ON, and nothing when none is. */}
-        {mode === undefined ? null : <span className="m-status-mode">{i18n._(mode)}</span>}
+        {/* WHAT THE TOOL THAT IS ON WAITS FOR, and nothing when none is. ONE sentence for the Escape, so the rule
+            that it stops the tool is written once rather than in every tool's hint. */}
+        {toolHint === undefined ? null : (
+          <span className="m-status-mode">{i18n._(STATUS_TOOL_LINE, { hint: i18n._(toolHint) })}</span>
+        )}
       </div>
       <div className="m-status-cluster m-status-centre" role="group" aria-label={i18n._(STATUS_NAVIGATION)}>
         {buttons(model.navigation.before)}

@@ -1,7 +1,7 @@
 import type { LinkTarget, DispatchableCommand } from '@monstera/contract';
 import type { MessageKey, PageTransform } from '@monstera/shared';
 
-import { LINK_ADDRESS_LABEL, LINK_PAGE_LABEL } from '../messages/en.js';
+import { HINT_LINK, LINK_ADDRESS_LABEL, LINK_PAGE_LABEL } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
@@ -103,7 +103,7 @@ function linkTool(
     },
   };
 
-  return { id, controller };
+  return { id, controller, hint: HINT_LINK };
 }
 
 /** Both link tools, in the order their controls appear. */
