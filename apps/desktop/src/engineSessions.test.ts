@@ -849,6 +849,9 @@ describe('the SERVICE releases the entry, because nothing else is told a documen
  * attempt and by two; only the call count separates them.
  */
 describe('onDocumentOpened', () => {
+  /** What the composition root's `HostConnectionLost` is to this module: a class the `hostEnded` predicate names. */
+  class ConnectionEnded extends Error {}
+
   /** Fails `attempts` times, then succeeds. Records every call. */
   function openSurfaces(
     service: DocumentService,
@@ -872,6 +875,7 @@ describe('onDocumentOpened', () => {
       documentUnreadable: (error) => error instanceof EngineOpenFailed,
       documentLocked: (error) =>
         error instanceof EngineDocumentLocked ? error.reason : undefined,
+      hostEnded: (error) => error instanceof ConnectionEnded,
       create: (docId) => {
         created.push(docId);
         if (created.length <= attempts) return Promise.reject(rejection());
@@ -1028,6 +1032,61 @@ describe('onDocumentOpened', () => {
         expect(sessioned !== poisoned).toBe(true);
       }
     }
+  });
+
+  it('leaves a death under its attempt to the ending: one death is one failure, and one session is made', async () => {
+    // THE HOST ENDS DURING THE OPEN-TIME ATTEMPT, as a host that issues a held handle is ended (CR-SEC-10) or one
+    // that crashes mid-open does. The ending raises the count of every document the supervisor holds, this one
+    // included, and queues its reopen behind this entry. Counting the attempt's failure as well spent the bound on
+    // ONE death: the document was poisoned, and the queued reopen made a session the supervisor then refused.
+    const engine = new EngineSessions();
+    const { service, docId } = await oneOpenDocument(engine);
+    const creations: DocId[] = [];
+    const reopened: DocId[] = [];
+    const ended: ShellFailure[] = [];
+    // THE ENDING RUNS OUTSIDE THE LANE, as the transport announces it (`hostTransport.ts`, detached from the async
+    // context of whoever ended the connection): its continuation is registered here, so it carries this context
+    // rather than the attempt's, and the reopen it queues is not refused as reentry.
+    let announce = (): void => undefined;
+    const announced = new Promise<void>((resolve) => {
+      announce = resolve;
+    });
+    const ending = announced.then(() =>
+      onEngineHostEnded(
+        engine,
+        { code: 'malformed-response', detail: 'a handle this registry already holds' },
+        {
+          documents: service,
+          failures: (failure) => ended.push(failure),
+          closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
+          rebuild: () => Promise.resolve(),
+          reopen: (reopening) => {
+            reopened.push(reopening);
+            return Promise.resolve(someSessions(`reopened-${reopening.slice(0, 4)}`));
+          },
+          replay: () => Promise.resolve(0),
+        },
+      ),
+    );
+    const s = openSurfaces(service, 0, {
+      create: (id) => {
+        creations.push(id);
+        announce();
+        return Promise.reject(new ConnectionEnded('the connection ended under the open'));
+      },
+    });
+
+    await onDocumentOpened(engine, docId, s);
+    await ending;
+
+    // ONE failure, so not poisoned, and sessioned by the reopen: the only session made after the death.
+    expect(engine.poisoned(docId)).toBeUndefined();
+    expect(engine.sessioned).toBe(1);
+    expect(reopened).toEqual([docId]);
+    // AND THE LOOP MADE NO SECOND ONE beside it, and reported nothing of its own: the death is the ending's alone.
+    expect(creations).toEqual([docId]);
+    expect(s.reported).toEqual([]);
+    expect(ended.map((failure) => failure.detail)).toEqual([expect.stringContaining('malformed-response')]);
   });
 
   it('is skipped for a document closed before the lane is entered, and reports nothing', async () => {

@@ -298,6 +298,14 @@ export interface DocumentOpenSurfaces {
    * second attempt, and locked spends no attempt at all and waits for a person.
    */
   readonly documentLocked: (error: unknown) => LockedReason | undefined;
+  /**
+   * Whether a lane entry failed because the HOST CONNECTION ENDED under it.
+   *
+   * Injected for `documentUnreadable`'s reason: `HostConnectionLost` is a kernel class. Asked so the loop leaves that
+   * failure to {@link onEngineHostEnded}, which owns a death: it raises the count of every document the supervisor
+   * holds, this one included since `begin`, and queues this document's reopen behind this entry.
+   */
+  readonly hostEnded: (error: unknown) => boolean;
   /** Creates one document's sessions. Runs **inside** that document's lane. */
   readonly create: (docId: DocId) => Promise<DocumentSessions>;
 }
@@ -370,6 +378,13 @@ export async function onDocumentOpened(
         return;
       } catch (error) {
         if (surfaces.closedMeanwhile(error)) return;
+
+        // THE DEATH IS THE ENDING'S, counted and rebuilt once. `onEngineHostEnded` raised this document's count when
+        // the connection ended and queued its reopen behind this entry, so counting here as well spent the bound on
+        // ONE death, poisoning the document, and a retry here made a second session beside the reopen's: the
+        // supervisor then refused the reopen's as offered for a poisoned document, a session made for nothing. On a
+        // deliberate close nothing is queued, and nothing should be: the application is quitting.
+        if (surfaces.hostEnded(error)) return;
 
         // THE PASSWORD EXIT, and it is ABOVE the deterministic one because it
         // is the stronger claim: the host parsed the file far enough to read

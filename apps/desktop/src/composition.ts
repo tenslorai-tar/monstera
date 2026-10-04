@@ -94,6 +94,7 @@ import {
   type SessionAssets,
   type SnapshotWrite,
   type WriterRegistry,
+  HostConnectionLost,
   classifyContainment,
   createRemoteSessions,
   engineChannels,
@@ -2691,6 +2692,7 @@ function engineSessionOpener(
       documentUnreadable: (error) => error instanceof EngineOpenFailed,
       documentLocked: (error) =>
         error instanceof EngineDocumentLocked ? error.reason : undefined,
+      hostEnded: (error) => error instanceof HostConnectionLost,
       create,
     });
 
