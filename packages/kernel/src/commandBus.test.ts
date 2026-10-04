@@ -2,7 +2,7 @@ import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString } from '@cantoo/pdf-lib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type Command, type CommandOfKind, NETWORK_OCR_ENGINES, type PageSet, outlineOpCodes } from '@monstera/contract';
@@ -1291,6 +1291,67 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       const images = context.images();
       expect(images).toHaveLength(2);
       expect(await pagesIn(images[0])).toBe(2);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  /**
+   * Undo restores every reference the delete cleared (ADR-0155 decision 4).
+   *
+   * The delete now takes out a bookmark, a link, a named destination and the open action that named its page. None of
+   * that is prior state an inverse could carry; it is in the checkpoint because the bus takes the checkpoint before the
+   * apply. So the case asserts both halves: the delete DID clear them (without that, a restore of an untouched file
+   * passes), and the restored bytes are the document before it, every reference resolving to page 2 again.
+   */
+  it('UNDOING A DELETE restores the bookmark, link, named destination and open action it cleared', async () => {
+    const source = await PDFDocument.create();
+    const pages = [0, 1, 2].map(() => source.addPage([400, 600]));
+    const ctx = source.context;
+    const second = pages[1]?.ref;
+    const first = pages[0];
+    if (second === undefined || first === undefined) throw new Error('the fixture has three pages');
+    const fit = (): PDFArray => ctx.obj([second, PDFName.of('Fit')]);
+    const outlines = ctx.nextRef();
+    const entry = ctx.register(ctx.obj({ Title: PDFString.of('Chapter two'), Parent: outlines, Dest: fit() }));
+    ctx.assign(outlines, ctx.obj({ Type: 'Outlines', First: entry, Last: entry, Count: 1 }));
+    source.catalog.set(PDFName.of('Outlines'), outlines);
+    first.node.set(PDFName.of('Annots'), ctx.obj([ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Link', Rect: [0, 0, 10, 10], Dest: fit() }))]));
+    source.catalog.set(PDFName.of('Names'), ctx.obj({ Dests: ctx.obj({ Names: [PDFString.of('two'), fit()] }) }));
+    source.catalog.set(PDFName.of('OpenAction'), fit());
+
+    const referencesTo = (document: PDFDocument): readonly string[] => {
+      const page = document.getPage(1).ref;
+      const names = document.catalog.lookupMaybe(PDFName.of('Names'), PDFDict)?.lookupMaybe(PDFName.of('Dests'), PDFDict);
+      const found: string[] = [];
+      const outline = document.catalog.lookupMaybe(PDFName.of('Outlines'), PDFDict)?.lookupMaybe(PDFName.of('First'), PDFDict);
+      if (outline?.lookupMaybe(PDFName.of('Dest'), PDFArray)?.get(0) === page) found.push('bookmark');
+      const link = document.getPage(0).node.lookupMaybe(PDFName.of('Annots'), PDFArray)?.lookupMaybe(0, PDFDict);
+      if (link?.lookupMaybe(PDFName.of('Dest'), PDFArray)?.get(0) === page) found.push('link');
+      if (names?.lookupMaybe(PDFName.of('Names'), PDFArray)?.lookupMaybe(1, PDFArray)?.get(0) === page) found.push('named destination');
+      if (document.catalog.lookupMaybe(PDFName.of('OpenAction'), PDFArray)?.get(0) === page) found.push('open action');
+      return found;
+    };
+    const ALL = ['bookmark', 'link', 'named destination', 'open action'];
+
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(await source.save({ useObjectStreams: false }));
+    const context = contextStub(true);
+    const supervisor = restoreStub();
+    try {
+      const before = await mupdfWriter.serialise(session);
+      expect(referencesTo(await PDFDocument.load(before))).toStrictEqual(ALL);
+
+      await bus.execute({ mupdf: session }, context, { kind: 'deletePages', pages: [1] }, showingInputs(session));
+      // THE DELETE CLEARED THEM: the page now at index 1 is the old page 3, and nothing names it.
+      expect(referencesTo(await PDFDocument.load(await mupdfWriter.serialise(session)))).toStrictEqual([]);
+
+      await bus.undo({ mupdf: session }, context, supervisor.restore, showingInputs(session));
+      const restored = context.written()[0]?.bytes;
+      if (restored === undefined) throw new Error('expected a restore');
+      const bytes = new Uint8Array(await readFile(restored.path));
+      expect(bytes).toStrictEqual(new Uint8Array(before));
+      expect(referencesTo(await PDFDocument.load(bytes))).toStrictEqual(ALL);
     } finally {
       await mupdfWriter.close(session);
     }

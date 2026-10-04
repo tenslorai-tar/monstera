@@ -484,6 +484,14 @@ export interface BrowserShimOptions {
   readonly destinations?: readonly ShimDestination[];
 
   /**
+   * The outline from a given version on, for a case about what a command did to it (a delete takes the entries that
+   * named its pages, ADR-0155): the highest version listed at or below the document's current one answers, and
+   * {@link destinations} answers below them all. The kernel decides what an outline holds after a command; this only
+   * says what main answered, so the case can ask whether the panel shows THAT rather than what it read before.
+   */
+  readonly destinationsFrom?: Readonly<Record<number, readonly ShimDestination[]>>;
+
+  /**
    * What `document.layers` answers, in order, across the whole shim.
    *
    * **Scripted, for `viewModels`' reason and not for a weaker one.** The
@@ -925,6 +933,14 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   const pageImages = options.pageImages ?? [];
   const pageLinks = options.pageLinks ?? [];
   const destinations = options.destinations ?? [];
+  /** The outline answered at `version`: the highest `destinationsFrom` entry at or below it, else `destinations`. */
+  const destinationsAt = (version: number): readonly ShimDestination[] => {
+    const from = Object.keys(options.destinationsFrom ?? {})
+      .map(Number)
+      .filter((listed) => listed <= version)
+      .sort((a, b) => b - a)[0];
+    return from === undefined ? destinations : (options.destinationsFrom?.[from] ?? destinations);
+  };
   // Copied and consumed, exactly like `viewModels`.
   const layerLists = [...(options.layers ?? [])];
   // The list the read in progress takes its parts from (`document.layers`).
@@ -2062,7 +2078,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // ONE PART, the LAST, for all three lists here: a seeded list is a handful of entries, and what a case about
       // reading in parts asserts is `readWholeList`'s, against a client that answers several.
       return Promise.resolve(
-        ok({ version: asDocVersion(current), destinations: destinations.slice(from), next: null, truncated: false }),
+        ok({ version: asDocVersion(current), destinations: destinationsAt(current).slice(from), next: null, truncated: false }),
       );
     },
 

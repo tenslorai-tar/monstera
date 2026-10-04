@@ -17,6 +17,7 @@ import { type PageScope, pagesOf } from './pageScope.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { removeFieldsOnPages } from './formFields.js';
+import { releasePagesOutsideTree } from './pageReferences.js';
 import { withDocument } from './mupdfWriter.js';
 
 /**
@@ -379,10 +380,8 @@ export const invertDuplicatePage: Invert<'mupdf', 'duplicatePage'> = (
   inverse: PriorPageCopy,
 ): Promise<void> =>
   withDocument(session, (document) => {
-    const count = document.countPages();
     // A DUPLICATE CARRIES ITS WIDGETS, so taking it away takes them too, as a delete does (ADR-0151).
-    removeFieldsOnPages(document, inverse.at);
-    rewriteKids(document, keptPermutation(count, inverse.at));
+    takePagesOut(document, inverse.at);
   });
 
 /**
@@ -494,8 +493,7 @@ export const invertInsertBlankPage: Invert<'mupdf', 'insertBlankPage'> = (
 ): Promise<void> =>
   withDocument(session, (document) => {
     // THE SAME RULE AS EVERY OTHER PAGE THAT LEAVES (ADR-0151): a field drawn on the inserted page since goes with it.
-    removeFieldsOnPages(document, [inverse.at]);
-    rewriteKids(document, keptPermutation(document.countPages(), [inverse.at]));
+    takePagesOut(document, [inverse.at]);
   });
 
 /**
@@ -591,12 +589,25 @@ export const applyDeletePages: Apply<'mupdf', 'deletePages'> = (
   command: CommandOfKind<'deletePages'>,
 ): Promise<void> =>
   withDocument(session, (document) => {
-    const gone = removableOrThrow(document, command.pages);
-    // THE FIELDS GO WITH THEIR PAGES, before the tree is rewritten (ADR-0151): otherwise `/AcroForm` keeps the
-    // widgets, their `/P` keeps the page, and the saved file still holds every answer.
-    removeFieldsOnPages(document, gone);
-    rewriteKids(document, keptPermutation(document.countPages(), gone));
+    takePagesOut(document, removableOrThrow(document, command.pages));
   });
+
+/**
+ * Takes pages out of the document, and everything that named them: the one way a page leaves through the tree rewrite.
+ *
+ * Three steps in this order. The fields go first, while the indices still name the pages (ADR-0151): otherwise
+ * `/AcroForm` keeps the widgets, their `/P` keeps the page, and the saved file still holds every answer. The tree is
+ * rewritten. Then every other reference to a page now outside the tree is cleared by its own structure
+ * ([ADR-0155](../../../docs/DECISIONS/0155-a-page-that-leaves-takes-every-reference-to-it.md)), since twenty-two kinds
+ * were each measured to keep a deleted page and its text in the saved file. A delete, and the undo of an insert or a
+ * duplicate, all take this; `pageMerge.ts`' replace removes through MuPDF's own `deletePage` and releases the same way.
+ */
+function takePagesOut(document: PDFDocument, pages: Iterable<number>): void {
+  const gone = [...pages];
+  removeFieldsOnPages(document, gone);
+  rewriteKids(document, keptPermutation(document.countPages(), gone));
+  releasePagesOutsideTree(document);
+}
 
 /**
  * Records where the page was, before it moves.

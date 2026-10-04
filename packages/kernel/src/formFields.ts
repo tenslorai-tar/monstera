@@ -750,6 +750,27 @@ export function pruneEmptyFields(document: PDFDocument): void {
     // one pass usually suffices; the loop is what makes that an observation
     // rather than an assumption about tree depth.
   }
+
+  // THE CALCULATION ORDER NAMES FIELDS TOO, and a field it still names is written with its answer however far it left
+  // the tree: measured 2026-10-04, a deleted page's field listed in `/CO` kept its value in the saved file
+  // (ADR-0155). So `/CO` keeps only the fields the tree still holds.
+  const order = acroForm.get('CO');
+  if (!order.isArray()) return;
+  const held = new Set<number>();
+  const hold = (array: PDFObject): void => {
+    for (let index = 0; index < array.length; index += 1) {
+      const field = array.get(index);
+      if (!field.isIndirect() || held.has(field.asIndirect())) continue;
+      held.add(field.asIndirect());
+      const kids = field.get('Kids');
+      if (kids.isArray()) hold(kids);
+    }
+  };
+  hold(fields);
+  for (let index = order.length - 1; index >= 0; index -= 1) {
+    const field = order.get(index);
+    if (field.isIndirect() && !held.has(field.asIndirect())) order.delete(index);
+  }
 }
 
 /**

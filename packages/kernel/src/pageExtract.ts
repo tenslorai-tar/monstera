@@ -6,6 +6,7 @@ import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { keepFieldsOnPages } from './formFields.js';
 import { bufferBytes, newDocument, withDocument } from './mupdfWriter.js';
 import { graftingWithoutPageTree } from './pageGraft.js';
+import { releasePagesOutsideTree } from './pageReferences.js';
 import { pagesOf } from './pageScope.js';
 
 /**
@@ -49,11 +50,12 @@ import { pagesOf } from './pageScope.js';
  * four-page form wrote the answer from page 4 and page 4 itself, pulled in by
  * that widget's `/P`; and a named destination naming a page left behind
  * brought that page in too. So after the graft, `keepFieldsOnPages` keeps only
- * the fields whose widgets sit on the new file's pages, `cutPagesLeftBehind`
- * nulls every reference to a page outside its tree, and the file is saved
- * collecting (ADR-0151). A bookmark or link to a page not taken stays and goes
- * nowhere, because its target is not in this file; retargeting it is the remap
- * contract's question and is not answered here.
+ * the fields whose widgets sit on the new file's pages,
+ * `releasePagesOutsideTree` clears every reference to a page outside its tree,
+ * and the file is saved collecting (ADR-0151). A bookmark to a page not taken
+ * goes, or stays as a heading over its children, and a link to one goes
+ * ([ADR-0155](../../../docs/DECISIONS/0155-a-page-that-leaves-takes-every-reference-to-it.md)):
+ * its target is not in this file, and one left drawn would go nowhere.
  */
 
 /**
@@ -133,7 +135,7 @@ export function extractPages(session: MupdfSession, set: PageSet): Promise<ByteI
     // catalog was grafted whole, so the form held every field and answer of the source, and a widget's `/P` or a
     // destination naming a page not taken grafted that page in as an object of its own, content and all.
     keepFieldsOnPages(out);
-    cutPagesLeftBehind(out);
+    releasePagesOutsideTree(out);
     // COLLECTED, as every full save is (ADR-0151): what the two steps above unlinked is not written.
     //
     // THE CALLER'S BYTES, never MuPDF's buffer, whose native memory this function
@@ -161,43 +163,6 @@ export function pushInheritablesDown(document: PDFDocument, page: number): PDFOb
     }
   }
   return leaf;
-}
-
-/**
- * Cuts every reference to a page that is not in this document's page tree.
- *
- * A graft follows a reference wherever it goes, so an outline entry, a named destination or a link on a kept page
- * that names a page the extract did not take arrived with a copy of that page, its content stream included —
- * measured 2026-10-03, a one-page extract of `pageExtract.test.ts`' fixture held three page objects. The reference is
- * replaced by null, so the bookmark or link stays and goes nowhere, because its target is not in this file; the copy is
- * then unreferenced and the collecting save drops it.
- *
- * **A walk of the whole object graph from the trailer**, because the class is *any reference*, not a list of the
- * keys known to hold one. Each indirect object is visited once.
- */
-function cutPagesLeftBehind(document: PDFDocument): void {
-  const kept = new Set<number>();
-  for (let page = 0; page < document.countPages(); page += 1) kept.add(document.findPage(page).asIndirect());
-  const leftBehind = (value: PDFObject): boolean =>
-    value.isIndirect() &&
-    !kept.has(value.asIndirect()) &&
-    value.isDictionary() &&
-    value.get('Type').isName() &&
-    value.get('Type').asName() === 'Page';
-  const seen = new Set<number>();
-  const visit = (object: PDFObject): void => {
-    if (object.isIndirect()) {
-      const number = object.asIndirect();
-      if (seen.has(number)) return;
-      seen.add(number);
-    }
-    if (!object.isDictionary() && !object.isArray()) return;
-    object.forEach((value, key) => {
-      if (leftBehind(value)) object.put(key, null);
-      else visit(value);
-    });
-  };
-  visit(document.getTrailer());
 }
 
 /**

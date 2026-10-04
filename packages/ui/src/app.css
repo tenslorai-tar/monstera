@@ -2274,6 +2274,16 @@ optgroup {
 }
 
 /*
+ * A heading over children: an entry with no page of its own, kept for the entries under it. It is the outline's
+ * structure rather than an entry that goes nowhere, so it reads in the text colour and carries no mark.
+ */
+.m-destination-heading {
+  display: block;
+  padding: var(--space-2) var(--space-4);
+  color: var(--text);
+}
+
+/*
  * A layer row. The whole row is the label, so the checkbox and the name are one
  * hit target and one focus stop — a name that is not part of the control is a
  * word the pointer and the screen reader both have to work around.
@@ -2296,6 +2306,7 @@ optgroup {
  * anywhere and shows three lines at most; the checkbox's label, and so its accessible name, keeps the whole text. */
 .m-layer-name,
 .m-destination-title,
+.m-destination-heading,
 .m-links-external {
   min-inline-size: 0;
   overflow-wrap: anywhere;

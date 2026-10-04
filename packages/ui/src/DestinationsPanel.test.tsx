@@ -121,6 +121,33 @@ describe('DestinationsPanel', () => {
     );
   });
 
+  it('draws an entry with no page and entries UNDER it as a heading, and only a leaf as going nowhere', async () => {
+    // A delete keeps a bookmark whose page went as a heading over the children that stay (ADR-0155). Marked as going
+    // nowhere it would read as the dead entry the delete removed.
+    const { client } = clientAnswering([
+      { title: 'Part three', page: null, depth: 0 },
+      { title: 'Section 3.1', page: 1, depth: 1 },
+      // CONTROL: no page and the entry after it is NOT under it, so it is a leaf that goes nowhere.
+      { title: 'Elsewhere', page: null, depth: 0 },
+      { title: 'Appendix', page: 2, depth: 0 },
+      // AND THE LAST ENTRY, which has nothing after it at all.
+      { title: 'Last', page: null, depth: 0 },
+    ]);
+    const { container } = render(
+      <Wrapped>
+        <DestinationsPanel client={client} docId={DOC} version={V1} onJump={vi.fn()} />
+      </Wrapped>,
+    );
+    await settle();
+
+    expect([...container.querySelectorAll('.m-destination-heading')].map((row) => row.textContent)).toStrictEqual(['Part three']);
+    expect([...container.querySelectorAll('.m-destination-unresolved')].map((row) => row.textContent)).toStrictEqual([
+      'Elsewhere (goes nowhere)',
+      'Last (goes nowhere)',
+    ]);
+    expect(container.querySelectorAll('button')).toHaveLength(2);
+  });
+
   it('says a REFUSAL differently from a document with no outline', async () => {
     const none = clientAnswering([]);
     const { container: empty } = render(
