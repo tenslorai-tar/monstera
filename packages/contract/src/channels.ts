@@ -1231,12 +1231,15 @@ const openedSchema = z.object({
 /** The file is not where it was named — gone between being chosen and being read. */
 const openAbsentSchema = z.object({ kind: z.literal('absent') });
 
-/** Opening it would take the documents held in memory past their ceiling. */
+/**
+ * There is no room on the disk for the document's image file. A document too large for memory is held in a file and
+ * opens (ADR-0165), so the room that ran out is the disk's.
+ */
 const openAtCapacitySchema = z.object({
   kind: z.literal('at-capacity'),
-  /** What the resident total would have become, in bytes. */
+  /** The bytes the image file needed. */
   wouldHold: z.number().int().nonnegative(),
-  /** The ceiling it would have crossed. */
+  /** The bytes the disk reported free, or 0 where it could not be asked. */
   ceiling: z.number().int().nonnegative(),
 });
 
@@ -2504,7 +2507,7 @@ export const channels = {
        * come back.
        */
       z.object({ kind: z.literal('open-elsewhere') }),
-      /** The edited file would not fit under main's ceiling. */
+      /** The edited file could not be opened: no room on the disk for its image file, as `openAtCapacitySchema`. */
       z.object({
         kind: z.literal('at-capacity'),
         wouldHold: z.number().int().nonnegative(),
@@ -3233,7 +3236,7 @@ export const channels = {
       }),
       z.object({ kind: z.literal('destination-contested'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
-      /** The composed file was written and could not be opened within main's ceiling. */
+      /** The composed file was written and could not be opened: no room on the disk, as `openAtCapacitySchema`. */
       z.object({
         kind: z.literal('at-capacity'),
         wouldHold: z.number().int().nonnegative(),

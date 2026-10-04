@@ -15,7 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 
-import { type DocId, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
+import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CapabilityRegistry } from './capabilityRegistry.js';
@@ -111,6 +111,9 @@ const COMMAND_WRITER_FOR_TEST = 'command-writer' as CommandWriter;
  * to exercise an integer.
  */
 const SAVE_WRITER_FOR_TEST = 'save-writer' as SaveWriter;
+
+/** The same relationship again, for {@link RangeReader}: these cases read ranges as the renderer's transport does. */
+const RANGE_READER_FOR_TEST = 'range-reader' as RangeReader;
 
 /**
  * What carries the weight here, as in the identity tests, is the set of cases
@@ -1206,22 +1209,35 @@ describe('the canonical image', () => {
     expect(service.residentDocumentBytes()).toBe(oneDocument + statSync(other()).size);
   });
 
-  it('refuses a document that would cross the ceiling, and says by how much', async () => {
+  it('OPENS a document past the ceiling, held in a file it serves ranges from, and holds nothing in memory (ADR-0165)', async () => {
     const registry = new CapabilityRegistry();
     const size = statSync(original()).size;
-    const service = newService(registry, { documentBytesCeiling: size - 1 });
+    // ITS OWN ROOT, so what is listed below is this case's alone.
+    const storage = join(root, 'held-in-a-file');
+    const service = newService(registry, { documentBytesCeiling: size - 1, checkpointDirectory: storage });
 
     const outcome = await service.open(registry.mint(original()));
+    if (outcome.kind !== 'opened') throw new Error(`expected opened, got ${outcome.kind}`);
 
-    expect(outcome.kind).toBe('at-capacity');
-    if (outcome.kind !== 'at-capacity') throw new Error('narrowing');
-    expect(outcome.wouldHold).toBe(size);
-    expect(outcome.ceiling).toBe(size - 1);
-    // Refused means refused: no record, no image, nothing to close.
+    expect(outcome.byteLength).toBe(size);
     expect(service.residentDocumentBytes()).toBe(0);
+    // THE BYTES ARE THE FILE'S, read through the transport's own call, so a record that held a file of the wrong
+    // length or no file at all fails here rather than at a page the renderer never reaches.
+    const range = service.readRange(RANGE_READER_FOR_TEST, outcome.docId, outcome.version, 1, size - 1);
+    if (range.kind !== 'bytes') throw new Error(`expected bytes, got ${range.kind}`);
+    expect(Buffer.from(range.bytes).equals(readFileSync(original()).subarray(1, size - 1))).toBe(true);
+    // THE COPY IS THE IMAGE, in a fresh directory under the root: the person's file can change while it is open, and
+    // the image must not.
+    const directories = readdirSync(storage);
+    expect(directories).toHaveLength(1);
+    expect(readdirSync(join(storage, directories[0] ?? ''))).toStrictEqual(['image-0.pdf']);
+
+    // AND CLOSE REMOVES IT with the directory, as it removes a document's checkpoints.
+    await service.close(outcome.docId);
+    expect(readdirSync(storage)).toStrictEqual([]);
   });
 
-  it('refuses an over-large document WITHOUT reading it', async () => {
+  it('copies a document past the ceiling WITHOUT reading it into memory', async () => {
     const registry = new CapabilityRegistry();
     let reads = 0;
     const service = newService(registry, {
@@ -1232,14 +1248,66 @@ describe('the canonical image', () => {
       },
     });
 
-    await service.open(registry.mint(original()));
+    const outcome = await service.open(registry.mint(original()));
 
-    // THE POINT OF THE STAT-FIRST CHECK. Reading in order to refuse would
-    // allocate the very image the refusal exists to prevent — a guard causing
-    // the condition it guards against. Counting the reads is the only way to
-    // tell a refusal-before-read from a refusal-after-read, because both return
-    // the same outcome.
+    // THE POINT OF THE STAT-FIRST DECISION. Reading in order to decide where the image goes would allocate the very
+    // image the decision exists to keep out of memory. Counting the reads is the only way to tell a decision made
+    // before the read from one made after it, because both open the document.
+    expect(outcome.kind).toBe('opened');
     expect(reads).toBe(0);
+  });
+
+  it('a file that GREW past the ceiling between its stat and its read is released and held in a file instead', async () => {
+    const registry = new CapabilityRegistry();
+    const size = statSync(original()).size;
+    const read: Uint8Array[] = [];
+    const service = newService(registry, {
+      documentBytesCeiling: size,
+      // THE READ IS THE FACT: one byte longer than the stat said, which only the second decision can see.
+      readBytes: () => {
+        read.push(new Uint8Array(size + 1));
+        return Promise.resolve(read[read.length - 1] ?? new Uint8Array(0));
+      },
+    });
+
+    const outcome = await service.open(registry.mint(original()));
+    if (outcome.kind !== 'opened') throw new Error(`expected opened, got ${outcome.kind}`);
+
+    expect(service.residentDocumentBytes()).toBe(0);
+    // RELEASED, not merely dropped: its backing store is detached, so it is not held until a collection.
+    expect(read.map((bytes) => bytes.buffer.byteLength)).toStrictEqual([0]);
+    // The image is the COPY, made after the read, so its length is the file's own.
+    expect(outcome.byteLength).toBe(size);
+  });
+
+  it('NO ROOM ON THE DISK for the image file is at-capacity, naming what it needed, with nothing left behind', async () => {
+    const registry = new CapabilityRegistry();
+    const size = statSync(original()).size;
+    const storage = join(root, 'no-room');
+    const failingWith = (code: string): DocumentService =>
+      newService(registry, {
+        documentBytesCeiling: 1,
+        checkpointDirectory: storage,
+        // A PARTIAL COPY first, as a disk that fills mid-copy leaves one, so the clean-up is what removes it.
+        copyImage: (_from, to) => {
+          writeFileSync(to, 'part of a document');
+          return Promise.reject(Object.assign(new Error(`${code}: no room, copyfile '${to}'`), { code }));
+        },
+      });
+
+    for (const code of ['ENOSPC', 'EDQUOT']) {
+      const outcome = await failingWith(code).open(registry.mint(original()));
+      expect(outcome.kind).toBe('at-capacity');
+      if (outcome.kind !== 'at-capacity') throw new Error('narrowing');
+      expect(outcome.wouldHold).toBe(size);
+      // THE PARTIAL COPY AND ITS DIRECTORY ARE GONE: the root the service made is all that is left.
+      expect(readdirSync(storage)).toStrictEqual([]);
+    }
+    // A REFUSED SOURCE is the file's answer, as a refused read is.
+    expect(await failingWith('EBUSY').open(registry.mint(original()))).toStrictEqual({ kind: 'busy' });
+    // CONTROL: any other failure is a FAULT, never dressed up as a full disk.
+    await expect(failingWith('EIO').open(registry.mint(original()))).rejects.toThrow(/EIO/u);
+    expect(readdirSync(storage)).toStrictEqual([]);
   });
 
   it('a file ANOTHER PROGRAM HOLDS is answered busy, and one this account may not read denied, with nothing held (7a)', async () => {
@@ -1376,10 +1444,10 @@ describe('the canonical image', () => {
 
     const outcome = await service.open(registry.mint(original()));
 
-    // CONTROL for the two refusals above. A ceiling check written with the
-    // comparison inverted, or one that refuses everything, produces
-    // `at-capacity` for this too — and "the guard works" and "nothing opens"
-    // would be the same observation.
+    // CONTROL for the file-held cases above. A ceiling check written with the
+    // comparison inverted, or one that sends everything to a file, holds this
+    // one in a file too — and "large documents go to a file" and "every
+    // document does" would be the same observation.
     expect(outcome.kind).toBe('opened');
     expect(service.residentDocumentBytes()).toBe(size);
   });
@@ -1783,7 +1851,6 @@ describe('checkpoint files', () => {
  * the one call made while the new image is being read into memory.
  */
 describe('replacing the image from a file', () => {
-  const RANGE_READER_FOR_TEST = 'range-reader' as RangeReader;
   const OLD = new TextEncoder().encode('the old image, as opened');
   const NEW = new TextEncoder().encode('the new image, longer than the old one was');
 
@@ -1878,6 +1945,47 @@ describe('replacing the image from a file', () => {
     );
     expect(path).not.toBe('');
     expect(existsSync(path)).toBe(false);
+    await service.close(docId);
+  });
+
+  it('KEEPS SERVING FROM THE FILE a new image past the ceiling, and reads one that fits into memory (ADR-0165)', async () => {
+    const registry = new CapabilityRegistry();
+    const size = statSync(original()).size;
+    const service = newService(registry, { documentBytesCeiling: size });
+    const docId = mustOpen(await service.open(registry.mint(original())));
+    expect(service.residentDocumentBytes()).toBe(size);
+
+    const replaceWith = async (bytes: Uint8Array): Promise<{ path: string; version: DocVersion }> => {
+      let path = '';
+      const { value: version } = await service.run(docId, async (context) => {
+        await context.replaceCanonicalImageFrom(COMMAND_WRITER_FOR_TEST, (destination) => {
+          path = destination;
+          return fillWith(bytes)(destination);
+        });
+        // The version the swap moved to, as a command's own bump reports it.
+        return context.bumpVersion(COMMAND_WRITER_FOR_TEST);
+      });
+      return { path, version };
+    };
+    const rangeAt = (version: DocVersion, byteLength: number): string => {
+      const answer = service.readRange(RANGE_READER_FOR_TEST, docId, version, 0, byteLength);
+      return answer.kind === 'bytes' ? new TextDecoder().decode(answer.bytes) : answer.kind;
+    };
+
+    // ONE BYTE PAST THE CEILING: the read that would follow the swap is not made, and the file stays the image.
+    const larger = new TextEncoder().encode('x'.repeat(size + 1));
+    const kept = await replaceWith(larger);
+    expect(service.residentDocumentBytes()).toBe(0);
+    expect(existsSync(kept.path)).toBe(true);
+    expect(rangeAt(kept.version, larger.byteLength)).toBe('x'.repeat(size + 1));
+
+    // CONTROL in the same document: an image that fits is read into memory and the file it came from is removed, so
+    // a rule that kept every replacement in a file fails here, and one that read every one fails above.
+    const smaller = new TextEncoder().encode('a small image');
+    const read = await replaceWith(smaller);
+    expect(service.residentDocumentBytes()).toBe(smaller.byteLength);
+    expect([existsSync(kept.path), existsSync(read.path)]).toStrictEqual([false, false]);
+    expect(rangeAt(read.version, smaller.byteLength)).toBe('a small image');
     await service.close(docId);
   });
 

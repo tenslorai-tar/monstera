@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { closeSync, openSync, readSync, readdirSync, rmSync } from 'node:fs';
-import { copyFile, mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, open, readFile, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import type { FileAccess, SaveWriteCause } from '@monstera/contract';
@@ -837,8 +837,10 @@ interface DocumentRecord {
 }
 
 /**
- * Where a document's canonical image is: a buffer this service solely owns, or the file it is being read from
- * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 2).
+ * Where a document's canonical image is: a buffer this service solely owns, or a file in the document's directory,
+ * either while it is being read into memory ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)
+ * Decision 2) or for good, when memory may not hold it beside the others
+ * ([ADR-0165](../../../docs/DECISIONS/0165-a-document-past-mains-memory-ceiling-is-held-in-a-file.md)).
  *
  * The file state holds an open descriptor, because a range read is synchronous and must not open a file per call.
  *
@@ -932,17 +934,18 @@ export type OpenOutcome =
   | { readonly kind: 'busy' }
   | { readonly kind: 'denied' }
   /**
-   * The canonical image would not fit under {@link DocumentServiceOptions.documentBytesCeiling}.
+   * There is no room for the canonical image: it is past what memory may hold beside the others, and the file it is
+   * held in instead could not be made because the disk is full
+   * ([ADR-0165](../../../docs/DECISIONS/0165-a-document-past-mains-memory-ceiling-is-held-in-a-file.md)). Until then a
+   * document past {@link DocumentServiceOptions.documentBytesCeiling} was refused for its size alone.
    *
-   * **An outcome, not a defect.** Opening a document larger than main may hold,
-   * or one more document than main may hold, is a thing a user can do and be
-   * told about — the same category as `absent`, and reported the same way.
+   * **An outcome, not a defect**: closing another document frees its file, which the words a person reads say.
    */
   | {
       readonly kind: 'at-capacity';
-      /** What the resident total would have become, in bytes. */
+      /** The bytes the image needs. */
       readonly wouldHold: number;
-      /** The ceiling it would have crossed. */
+      /** The bytes the volume reported free, or 0 where it could not be read. */
       readonly ceiling: number;
     };
 
@@ -1219,6 +1222,25 @@ export function readRefusalOf(error: unknown): 'busy' | 'denied' | null {
   return null;
 }
 
+/** Whether a write failed because the disk, or the account's share of it, is full: `ENOSPC` or `EDQUOT`. */
+function noSpaceIn(error: unknown): boolean {
+  const code = (error as { readonly code?: unknown } | null)?.code;
+  return code === 'ENOSPC' || code === 'EDQUOT';
+}
+
+/**
+ * The bytes the volume under `directory` reports free, for `at-capacity`'s figure. 0 where the volume cannot be asked:
+ * the figure describes a refusal already decided by the failed write, so reading it is never what decides.
+ */
+async function freeBytesUnder(directory: string): Promise<number> {
+  try {
+    const volume = await statfs(directory);
+    return volume.bavail * volume.bsize;
+  } catch {
+    return 0;
+  }
+}
+
 /**
  * How a canonical image reaches a destination this service was handed.
  *
@@ -1324,6 +1346,11 @@ export interface DocumentServiceOptions {
   readonly readIdentity?: IdentityReader;
   readonly readBytes?: BytesReader;
   readonly writeBytes?: BytesWriter;
+  /**
+   * How a document past the ceiling is copied to its image file (ADR-0165): `fs.copyFile` otherwise, which copies
+   * without the bytes passing through this process.
+   */
+  readonly copyImage?: (from: string, to: string) => Promise<void>;
   /** How {@link DocumentService.fileAccess} asks the filesystem; {@link FileAccessProbe}'s default otherwise. */
   readonly probeAccess?: FileAccessProbe;
 }
@@ -1337,6 +1364,7 @@ export class DocumentService {
   readonly #readIdentity: IdentityReader;
   readonly #readBytes: BytesReader;
   readonly #writeBytes: BytesWriter;
+  readonly #copyImage: (from: string, to: string) => Promise<void>;
   readonly #probeAccess: FileAccessProbe;
   readonly #documentBytesCeiling: number;
   readonly #checkpointRoot: string;
@@ -1401,6 +1429,7 @@ export class DocumentService {
     this.#readIdentity = options.readIdentity ?? readFileIdentity;
     this.#readBytes = options.readBytes ?? readFileBytes;
     this.#writeBytes = options.writeBytes ?? writeFileBytes;
+    this.#copyImage = options.copyImage ?? ((from, to) => copyFile(from, to));
     this.#probeAccess = options.probeAccess ?? probeFileAccess;
   }
 
@@ -1423,7 +1452,8 @@ export class DocumentService {
   residentDocumentBytes(): number {
     let total = 0;
     // A FILE-BACKED IMAGE HOLDS NOTHING HERE: between a replacement's swap and its read, the old buffer is gone and
-    // the new one not yet made (ADR-0121 Decision 2).
+    // the new one not yet made (ADR-0121 Decision 2), and a document past the ceiling is served from its file for as
+    // long as it is open (ADR-0165).
     for (const record of this.#records.values()) {
       if (record.image.kind === 'memory') total += record.image.bytes.byteLength;
     }
@@ -1626,14 +1656,56 @@ export class DocumentService {
   }
 
   /**
-   * The refusal, or `null` if `incoming` fits.
-   *
-   * @param incoming bytes the service would additionally hold
+   * Whether an image of `byteLength` bytes is held in memory: when it fits under the ceiling beside every image already
+   * resident, and otherwise in a file. The one rule, at open and at every replacement
+   * ([ADR-0165](../../../docs/DECISIONS/0165-a-document-past-mains-memory-ceiling-is-held-in-a-file.md)).
    */
-  #refuseIfOverCeiling(incoming: number): OpenOutcome | null {
-    const wouldHold = this.residentDocumentBytes() + incoming;
-    if (wouldHold <= this.#documentBytesCeiling) return null;
-    return { kind: 'at-capacity', wouldHold, ceiling: this.#documentBytesCeiling };
+  #heldInMemory(byteLength: number): boolean {
+    return this.residentDocumentBytes() + byteLength <= this.#documentBytesCeiling;
+  }
+
+  /**
+   * The person's file copied into a fresh document directory and held as the image, or why it could not be
+   * ([ADR-0165](../../../docs/DECISIONS/0165-a-document-past-mains-memory-ceiling-is-held-in-a-file.md)).
+   *
+   * **The filesystem copies**, so the bytes never pass through `main`'s memory, and the copy is the image: the person's
+   * own file can change while it is open, and a range answered from changed bytes is the two-document failure the
+   * one-version rule exists for.
+   */
+  async #imageFileOf(
+    path: string,
+    size: number,
+  ): Promise<{ readonly directory: string; readonly image: CanonicalImage } | OpenOutcome> {
+    const noRoom = async (): Promise<OpenOutcome> => ({
+      kind: 'at-capacity',
+      wouldHold: size,
+      ceiling: await freeBytesUnder(this.#checkpointRoot),
+    });
+    let directory: string;
+    try {
+      directory = await this.#newDirectory();
+    } catch (error) {
+      if (noSpaceIn(error)) return noRoom();
+      throw error;
+    }
+    // `image-0`, BELOW the serial every later file takes (it starts at 1), so nothing this directory holds reuses it.
+    const imagePath = join(directory, 'image-0.pdf');
+    try {
+      await this.#copyImage(path, imagePath);
+    } catch (error) {
+      await rm(directory, { recursive: true, force: true });
+      if (noSpaceIn(error)) return noRoom();
+      // A REFUSAL here is the person's file's: the destination is a directory this service made a moment ago, in
+      // storage no other program is granted, so busy or denied is the source being held or not readable.
+      const refused = readRefusalOf(error);
+      if (refused !== null) return { kind: refused };
+      throw error;
+    }
+    const byteLength = (await stat(imagePath)).size;
+    return {
+      directory,
+      image: { kind: 'file', path: imagePath, fd: openSync(imagePath, 'r'), byteLength, writes: 0, retired: false },
+    };
   }
 
   /**
@@ -1658,36 +1730,36 @@ export class DocumentService {
     const existing = (await this.#documentsAt(identity))[0];
     if (existing !== undefined) return { kind: 'already-open', docId: existing };
 
-    // CAPACITY IS CHECKED TWICE, and the first check is the one that matters for
-    // the failure everyone worries about.
+    // WHERE THE IMAGE IS HELD IS DECIDED TWICE, and the first decision is the one that matters (ADR-0165).
     //
-    // `identity.size` comes from the `stat` already performed, so a document
-    // larger than this service may hold is refused **without being read**.
-    // Checking only after the read would allocate the very image the refusal
-    // exists to prevent — a 2 GB file would have to be held in order to be told
-    // it is too big, which is the shape where a guard causes the condition it
-    // guards against.
-    const refusal = this.#refuseIfOverCeiling(identity.size);
-    if (refusal !== null) return refusal;
-
-    // A READ THE FILE REFUSED is an answer about the file — another program holding it, or no permission — and the
-    // person is told which. Any other failure is a fault and propagates.
-    let bytes: Uint8Array;
-    try {
-      bytes = await this.#readBytes(path);
-    } catch (error) {
-      const refused = readRefusalOf(error);
-      if (refused === null) throw error;
-      return { kind: refused };
+    // `identity.size` comes from the `stat` already performed, so a document past what memory may hold is copied to
+    // a file **without being read**. Reading first would allocate the very image the decision exists to keep out of
+    // memory: a 2 GB file would have to be held in order to be told where to go.
+    let image: CanonicalImage | null = null;
+    if (this.#heldInMemory(identity.size)) {
+      // A READ THE FILE REFUSED is an answer about the file — another program holding it, or no permission — and the
+      // person is told which. Any other failure is a fault and propagates.
+      let bytes: Uint8Array;
+      try {
+        bytes = await this.#readBytes(path);
+      } catch (error) {
+        const refused = readRefusalOf(error);
+        if (refused === null) throw error;
+        return { kind: refused };
+      }
+      requireSoleOwnership(bytes, path);
+      // The second decision is the CORRECT one, and it is not redundant. `stat` and the read are two observations of
+      // a file anything may write between them, so the size above is evidence and the length read is fact. A file
+      // that grew past what memory may hold is released and copied instead.
+      if (this.#heldInMemory(bytes.byteLength)) image = { kind: 'memory', bytes, writes: 0, retired: false };
+      else if (bytes.buffer instanceof ArrayBuffer) bytes.buffer.transfer(0);
     }
-    requireSoleOwnership(bytes, path);
-
-    // The second check is the CORRECT one, and it is not redundant. `stat` and
-    // the read are two observations of a file that anything may write between
-    // them, so the size used above is evidence and the length read is fact. The
-    // bytes are dropped by returning without storing them.
-    const overshoot = this.#refuseIfOverCeiling(bytes.byteLength);
-    if (overshoot !== null) return overshoot;
+    let directory: string | null = null;
+    if (image === null) {
+      const filed = await this.#imageFileOf(path, identity.size);
+      if (!('image' in filed)) return filed;
+      ({ image, directory } = filed);
+    }
 
     // Minted, never derived. A hash of the path is the path in a lossy coat and
     // changes when the file is renamed; a counter gets reused after close, so a
@@ -1701,7 +1773,7 @@ export class DocumentService {
       handle,
       path,
       openedIdentity: identity,
-      image: { kind: 'memory', bytes, writes: 0, retired: false },
+      image,
       version,
       // §5: seeded from the initial version, never from 0. A freshly opened
       // document is clean.
@@ -1713,14 +1785,15 @@ export class DocumentService {
       lane: Promise.resolve(),
       queued: 0,
       log: new CommandLog(),
-      checkpointDirectory: null,
+      // THE IMAGE FILE'S DIRECTORY when the image is a file, so its checkpoints share it and close removes both.
+      checkpointDirectory: directory,
       checkpointFiles: new Set(),
       fileSerial: 0,
     });
     // `basename`, and the ONE call site. Everything downstream of here holds a
     // name and no path, which is invariant L2 arriving as a value rather than
     // as a rule someone downstream has to remember.
-    return { kind: 'opened', docId, version, byteLength: bytes.byteLength, name: basename(path) };
+    return { kind: 'opened', docId, version, byteLength: lengthOf(image), name: basename(path) };
   }
 
   /**
@@ -1896,10 +1969,16 @@ export class DocumentService {
   /** `record`'s own directory under the root, made at the first file it needs. */
   async #documentDirectory(record: DocumentRecord): Promise<string> {
     if (record.checkpointDirectory !== null) return record.checkpointDirectory;
+    const directory = await this.#newDirectory();
+    record.checkpointDirectory = directory;
+    return directory;
+  }
+
+  /** A fresh document directory under the root. */
+  async #newDirectory(): Promise<string> {
     // FRESH HEX, never the DocId: a DocId is base64url, whose case matters, on a filesystem where it does not.
     const directory = join(this.#checkpointRoot, Buffer.from(this.#randomBytes(TOKEN_BYTES)).toString('hex'));
     await mkdir(directory, { recursive: true });
-    record.checkpointDirectory = directory;
     return directory;
   }
 
@@ -1945,6 +2024,8 @@ export class DocumentService {
     });
     imageMoved();
 
+    // AND IT STAYS A FILE where memory may not hold it beside the others, by the rule open takes (ADR-0165).
+    if (!this.#heldInMemory(byteLength)) return byteLength;
     const bytes = await this.#readBytes(path);
     requireSoleOwnership(bytes, path);
     if (bytes.byteLength !== byteLength) {
