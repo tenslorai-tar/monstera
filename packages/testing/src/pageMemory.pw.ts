@@ -120,16 +120,30 @@ test(`a read through ${String(PAGES)} image pages HOLDS ONLY the pages in reach,
   // CANVASES in the page are the margin's, and every one has a backing store: those outside it are gone.
   expect(after.canvases).toBeLessThanOrEqual(12);
 
+  // THE SIZE A PAGE IS DRAWN AT HERE, read off the canvas the read ended on: every page of the fixture is the same box at
+  // the same zoom, so page 1 drawn again is this size.
+  const drawnSize = await page
+    .locator('.m-page-list canvas.m-page')
+    .first()
+    .evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]);
+  // PORTRAIT, as the fixture's pages are, which the 300 × 150 of a canvas nobody has sized is not.
+  expect((drawnSize[1] ?? 0) > (drawnSize[0] ?? 0)).toBe(true);
+
   // AND BACK TO THE TOP: a released page is drawn again, whole, and nothing is left failed.
   await list.evaluate((element) => {
     element.scrollTop = 0;
   });
   const first = page.locator('.m-page-list canvas.m-page[data-page-canvas="0"]');
   await expect(first).toBeVisible({ timeout: 10_000 });
-  await expect.poll(() => first.evaluate((canvas: HTMLCanvasElement) => canvas.width), { timeout: 10_000 }).toBeGreaterThan(0);
+  // DRAWN AGAIN, which is the cost of the release: page 1's images decoded a second time — waited for as itself. A
+  // canvas's WIDTH is not this: page 1's canvas is a new element on the way back, and a canvas nobody has sized is
+  // 300 × 150 by the HTML standard, so "width above 0" held before the draw (measured 1 in 24 runs here, and on CI's
+  // ubuntu leg at b1d569ca). A page never released draws with the bitmap it kept, so the count does not rise for it.
+  await expect.poll(async () => (await heldNow(page)).drawn, { timeout: 10_000 }).toBeGreaterThan(after.drawn);
+  await expect
+    .poll(() => first.evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]), { timeout: 10_000 })
+    .toStrictEqual(drawnSize);
   await expect(page.locator('.m-page-list canvas[data-failed]')).toHaveCount(0);
   const back = await heldNow(page);
-  // DRAWN AGAIN, which is the cost of the release: page 1's images decoded a second time.
-  expect(back.drawn).toBeGreaterThan(after.drawn);
   expect(back.held).toBeLessThanOrEqual(12);
 });
