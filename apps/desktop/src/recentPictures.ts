@@ -69,8 +69,9 @@ export function createRecentPictures(deps: {
   /** Whether a path is on the recent list now. */
   readonly listed: (path: string) => boolean;
   /**
-   * Where a picture that was not kept is reported: the shell log. The detail is an error's NAME or a byte
-   * count — never a message, which may carry the path this module exists to keep off the page.
+   * Where a picture that was not kept is reported: the shell log. The detail is a system error's CODE, an
+   * error's NAME or a byte count — never a message, which may carry the path this module exists to keep off
+   * the page.
    */
   readonly notKept: (reason: 'too-large' | 'failed', detail: string) => void;
 }): RecentPictures {
@@ -87,7 +88,7 @@ export function createRecentPictures(deps: {
         // AN OUTCOME, not a fault this build can repair: a poisoned document, a host that died, a page that
         // draws nothing. The card shows the placeholder, which is what a failed picture means to a person,
         // and the log says which of those it was.
-        deps.notKept('failed', cause instanceof Error ? cause.name : typeof cause);
+        deps.notKept('failed', errorCode(cause));
         return;
       }
       if (jpeg.length > MAX_RECENT_PREVIEW_BYTES) {
@@ -97,7 +98,14 @@ export function createRecentPictures(deps: {
       // CHECKED AGAIN AFTER THE AWAIT: the entry may have been cleared, or the setting turned off, while the
       // page was drawing — and a picture written then is one nothing would ever delete.
       if (!deps.enabled() || !deps.listed(path)) return;
-      deps.files.write(pictureName(path), jpeg);
+      // A WRITE THAT FAILS IS REPORTED HERE TOO (CR-COR-02): a full disk or a locked folder, and the card shows the
+      // placeholder. The caller does not await a capture and is told it reports its own failure, so a throw from here
+      // was a rejection nothing handled.
+      try {
+        deps.files.write(pictureName(path), jpeg);
+      } catch (cause) {
+        deps.notKept('failed', errorCode(cause));
+      }
     },
     read: (path) => (deps.enabled() ? deps.files.read(pictureName(path)) : null),
     drop: (paths) => {
@@ -114,6 +122,13 @@ export function createRecentPictures(deps: {
  * root's position when `entry.ts` passed none, and a handler graph built for some OTHER channel — so it
  * neither draws a page nor needs a document service that can. Every card it answers for shows the placeholder.
  */
+/** What a failure is called in the log: a system error's code (`ENOSPC`), else its name. Never its message. */
+function errorCode(cause: unknown): string {
+  if (!(cause instanceof Error)) return typeof cause;
+  const { code } = cause as NodeJS.ErrnoException;
+  return typeof code === 'string' ? code : cause.name;
+}
+
 export const NO_RECENT_PICTURES: RecentPictures = {
   capture: () => Promise.resolve(),
   read: () => null,

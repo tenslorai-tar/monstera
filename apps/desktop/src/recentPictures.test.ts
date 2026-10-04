@@ -50,6 +50,26 @@ describe('recent pictures (ADR-0100)', () => {
     expect(store.read(PATH)).toStrictEqual(JPEG);
   });
 
+  it('a WRITE THAT FAILS is reported by the capture, which still resolves (CR-COR-02) — CONTROL: one that works reports nothing', async () => {
+    // THE CALLER DOES NOT AWAIT A CAPTURE, so a throw from the write was a rejection nothing handled.
+    const full = folder();
+    const failing = pictures({
+      files: {
+        ...full,
+        write: () => {
+          throw Object.assign(new Error(`ENOSPC: no space left on device, open '${PATH}'`), { code: 'ENOSPC' });
+        },
+      },
+    });
+    await expect(failing.store.capture(DOC, PATH)).resolves.toBeUndefined();
+    // THE CODE, never the message, which carries the path.
+    expect(failing.reported).toStrictEqual(['failed:ENOSPC']);
+
+    const working = pictures({});
+    await working.store.capture(DOC, PATH);
+    expect(working.reported).toStrictEqual([]);
+  });
+
   it('names the file by a DIGEST, so the folder says nothing about the files it pictures', () => {
     const name = pictureName(PATH);
     expect(name).toMatch(/^[0-9a-f]{64}\.jpg$/u);

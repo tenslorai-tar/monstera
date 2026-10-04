@@ -1,6 +1,7 @@
 import { open, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { IncidentLog } from '@monstera/contract';
 import { sweepCheckpointDirectories } from '@monstera/kernel';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
 
@@ -158,6 +159,17 @@ startShell(() => {
   const log = createShellLog(app.getPath('userData'), async (directory) => {
     const problem = await shell.openPath(directory);
     return problem === '';
+  });
+
+  // A REJECTION NOTHING HANDLED IS NAMED IN THE LOG (CR-COR-02). Each one is a defect in this build, and without a
+  // listener it is either a crash of `main` with every open document in it or a line on a stderr a packaged run does
+  // not have, depending on the runtime's default; neither says which promise it was. Registered as soon as there is
+  // a log to write to, so a rejection anywhere after this line lands there. RECORDED AS AN INCIDENT, through the one
+  // place a thrown value becomes a diagnostic (`IncidentLog`, ADR-0009 §9): the full value, its stack and its causes,
+  // in the log beside every other incident, and nothing in this package builds a diagnostic of its own.
+  const rejections = new IncidentLog(log.incidents);
+  process.on('unhandledRejection', (reason) => {
+    rejections.record('process:unhandledRejection', reason);
   });
 
   // NAMED, BECAUSE PDFIUM'S PLATFORM IS DERIVED FROM IT. `createPdfiumHostPlatform`

@@ -250,6 +250,7 @@ import { readSpellingDictionary } from './spellingDictionaries.js';
 import type { ShellDependencies, ShellWindow } from './main.js';
 import { openWebPage } from './webPages.js';
 import { createCloseGate } from './windowClose.js';
+import { removeWorkingFile } from './workingFile.js';
 
 /**
  * Everything creating a contained engine host needs that this file may not hold.
@@ -3331,7 +3332,9 @@ function composeHostBinding(
       const from = areas.mintName();
       const into = areas.mintName();
       const copyPath = join(area.outputDirectory, into);
-      const discard = (): Promise<void> => rm(copyPath, { force: true });
+      // NEVER REJECTS (`workingFile.ts`): it runs in a `finally` after the copy was streamed, where a failed removal
+      // turned a finished copy into an error.
+      const discard = (): Promise<void> => removeWorkingFile(copyPath, failures);
 
       await writeFile(join(area.snapshotDirectory, from), pdf);
       const answer = await built.client['engine/optimize']({
@@ -3461,7 +3464,9 @@ function composeHostBinding(
         const built = await ensure();
         const into = areas.mintName();
         const joinedPath = join(built.paths.output, into);
-        const discard = (): Promise<void> => rm(joinedPath, { force: true });
+        // NEVER REJECTS (`workingFile.ts`), so the `discard` handed out below, which nothing awaits, cannot leave a
+        // rejection nothing handles when the file is still held open.
+        const discard = (): Promise<void> => removeWorkingFile(joinedPath, failures);
         const answer = await built.client['engine/join-pdfs']({ session: built.session, from: [...names], into });
         if (!answer.ok) {
           await discard();
