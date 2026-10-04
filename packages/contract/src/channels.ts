@@ -4758,6 +4758,11 @@ export const channels = {
              * skips it rather than acting on an invented one.
              */
             rect: annotationRectSchema.nullable(),
+            /**
+             * Present and true where a value in `values` is a SLICE of a longer one. A fill writes its whole text over
+             * the field, so no surface may start an edit from a slice: it would save the slice over the rest.
+             */
+            cut: z.literal(true).exactOptional(),
           }),
         )
         .max(FORM_FIELDS_PART)

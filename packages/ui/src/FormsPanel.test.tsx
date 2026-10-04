@@ -352,6 +352,20 @@ describe('FormsPanel', () => {
     expect(fills).toStrictEqual([]);
   });
 
+  it('OPENS NO BOX ON A VALUE THE LISTING CUT, so a fill cannot save the slice over the rest', async () => {
+    const { fills } = await panel([
+      field({ name: 'long', values: ['a'.repeat(512)], cut: true }),
+      field({ name: 'short', values: ['a'.repeat(512)] }),
+    ]);
+    expect(screen.queryByLabelText('long')).toBeNull();
+    expect(screen.getByText('This field holds more text than can be changed here, so it is kept as it is.')).toBeTruthy();
+    // CONTROL, in the same panel: the same slice with no cut is a whole value, and its box opens and fills.
+    const input = screen.getByLabelText('short');
+    fireEvent.change(input, { target: { value: 'b' } });
+    fireEvent.blur(input);
+    expect(fills).toStrictEqual([{ page: 0, index: 0, version: asDocVersion(1), value: { set: 'text', text: 'b' } }]);
+  });
+
   it('SEPARATES read-only from not-fillable, which are different absences', async () => {
     // A locked field is one this document decided about; a signature is not a
     // field anybody types into. One message for both would tell a reader a Send

@@ -20,6 +20,7 @@ import {
   FORMS_KIND_TEXT,
   FORMS_LABEL,
   FORMS_MANY_VALUES,
+  FORMS_TOO_LONG,
   FORMS_NOT_FILLABLE,
   FORMS_READ_ONLY,
   FORMS_ROW,
@@ -315,6 +316,9 @@ function FieldControl({
   const { i18n } = useLingui();
 
   if (field.readOnly) return <span className="m-forms-locked">{i18n._(FORMS_READ_ONLY)}</span>;
+  // A SLICE IS NOT A STARTING POINT: a fill writes its whole text over the field, so a box opened on the listing's
+  // slice would save the slice over the rest of a long value. The value is kept and the row says why.
+  if (field.cut === true) return <span className="m-forms-locked">{i18n._(FORMS_TOO_LONG)}</span>;
 
   if (field.kind === 'text') {
     return (
@@ -494,6 +498,8 @@ interface PanelField {
   readonly on: boolean | null;
   readonly options: readonly string[];
   readonly readOnly: boolean;
+  /** The listing's mark for a value cut to fit it: the panel shows the field and starts no fill from the slice. */
+  readonly cut?: true | undefined;
 }
 
 /**

@@ -182,6 +182,16 @@ describe('readFormData', () => {
     ]);
   });
 
+  it('EXPORTS A LONG VALUE WHOLE, not cut to the panel listing’s 512 characters', async () => {
+    const document = await PDFDocument.create();
+    const page = document.addPage([400, 600]);
+    const value = 'x'.repeat(600);
+    const field = document.getForm().createTextField('notes');
+    field.setText(value);
+    field.addToPage(page, { x: 20, y: 500, width: 300, height: 40 });
+    expect(await exported(await document.save())).toStrictEqual([{ name: 'notes', values: [value], asName: false }]);
+  });
+
   it('WRITES /Off FOR A STATEFUL FIELD NOBODY SET, which the document does not say', async () => {
     // Measured 2026-09-08: an unset tick box answers no value at all, not
     // `Off`. So the off state is this build's to supply, and an encoder that

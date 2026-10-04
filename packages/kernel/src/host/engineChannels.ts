@@ -560,6 +560,8 @@ const engineFormFieldSchema = z
     readOnly: z.boolean(),
     /** PDF user space, or null for a page that displays no region. */
     rect: annotationRectSchema.nullable(),
+    /** Present and true where a value is a slice of a longer one, exactly optional for the annotation's `cut`. */
+    cut: z.literal(true).exactOptional(),
   })
   .strict();
 

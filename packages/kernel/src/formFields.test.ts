@@ -1118,3 +1118,64 @@ describe('applyFlattenFormFields', () => {
     );
   });
 });
+
+/** One text field holding `length` characters, each one telling where it is, so a cut shows in the value. */
+async function longField(length: number): Promise<{ readonly bytes: Uint8Array; readonly value: string }> {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 600]);
+  const value = Array.from({ length }, (_, at) => String.fromCharCode(97 + (at % 26))).join('');
+  const field = document.getForm().createTextField('notes');
+  field.setText(value);
+  field.addToPage(page, { x: 20, y: 500, width: 300, height: 40 });
+  return { bytes: await document.save(), value };
+}
+
+describe('a long text field (the listing cuts it, nothing else does)', () => {
+  it('LISTS A 600-CHARACTER VALUE CUT, and says so', async () => {
+    const { bytes, value } = await longField(600);
+    const [field] = (await onSession(bytes, (session) => readFormFields(session))).fields;
+    expect(field?.values).toStrictEqual([value.slice(0, 512)]);
+    expect(field?.cut).toBe(true);
+  });
+
+  it('CONTROL: a value of exactly 512 characters is whole, and carries no cut', async () => {
+    const { bytes, value } = await longField(512);
+    const [field] = (await onSession(bytes, (session) => readFormFields(session))).fields;
+    expect(field?.values).toStrictEqual([value]);
+    expect(field).not.toHaveProperty('cut');
+  });
+
+  it('AN UNDO OF A FILL PUTS BACK THE WHOLE VALUE, not the listing’s 512 characters', async () => {
+    const { bytes, value } = await longField(600);
+    const restored = await onSession(bytes, async (session) => {
+      const command = filling(0, 0, { set: 'text', text: 'Grace' });
+      const captured = await captureFillFormField(session, command);
+      if (!captured.captured) throw new Error(`the capture refused: ${captured.reason}`);
+      await applyFillFormField(session, command);
+      await invertFillFormField(session, captured.prior);
+      return mupdfWriter.serialise(session);
+    });
+    // THE OTHER LIBRARY reads it back, so the length is the document's and not this module's own reading.
+    expect((await byPdfLib(restored))['notes']).toBe(`(${value})`);
+  });
+
+  it('REFUSES TO CAPTURE a value longer than a fill can carry, so a checkpoint restores it instead', async () => {
+    const { bytes } = await longField(4097);
+    const captured = await onSession(bytes, (session) =>
+      captureFillFormField(session, filling(0, 0, { set: 'text', text: 'Grace' })),
+    );
+    expect(captured.captured).toBe(false);
+    expect(captured.captured ? '' : captured.reason).toMatch(/4097 characters/u);
+  });
+
+  it('CONTROL: a value of exactly 4,096 characters is captured whole', async () => {
+    const { bytes, value } = await longField(4096);
+    const captured = await onSession(bytes, (session) =>
+      captureFillFormField(session, filling(0, 0, { set: 'text', text: 'Grace' })),
+    );
+    expect(captured).toStrictEqual({
+      captured: true,
+      prior: { page: 0, index: 0, value: { set: 'text', text: value } },
+    });
+  });
+});

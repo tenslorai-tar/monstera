@@ -1086,6 +1086,7 @@ export const FORMS_READ_ONLY = messageKey('surface.forms.read-only');
 export const FORMS_NOT_FILLABLE = messageKey('surface.forms.not-fillable');
 export const FORMS_CHOICE_EMPTY = messageKey('surface.forms.choice-empty');
 export const FORMS_MANY_VALUES = messageKey('surface.forms.many-values');
+export const FORMS_TOO_LONG = messageKey('surface.forms.too-long');
 export const FLAT_FIELDS_COMMAND_TITLE = messageKey('command.flat-fields.title');
 export const FLAT_FIELDS_TITLE = messageKey('dialog.flat-fields.title');
 export const FLAT_FIELDS_GUESSED = messageKey('dialog.flat-fields.guessed');
@@ -3239,6 +3240,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // whose command discards the rest. It names the values so the reader can see
   // what is there rather than being told only that they cannot change it.
   [FORMS_MANY_VALUES]: 'This field holds several values ({values}), which cannot be changed here.',
+  [FORMS_TOO_LONG]: 'This field holds more text than can be changed here, so it is kept as it is.',
   // "COULD BE" AND NEVER "ARE", because the measurement says the detector
   // cannot tell a field from an empty table cell — that is a fact about pages
   // rather than about this build, and a title claiming otherwise would be a
