@@ -6,6 +6,7 @@ import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
+import { imageWithinPixelBound } from './pageSnapshot.js';
 import { otsu } from './pageSkew.js';
 
 /**
@@ -128,6 +129,9 @@ function level(object: PDFObject): boolean {
   try {
     const raw = object.readRawStream();
     const image = new mupdf.Image(raw);
+    // ASKED OF THE IMAGE'S OWN SIZE before it is decoded (CR-NAT-06): a leveled image is re-encoded at every pixel, so
+    // one past the host's bound is skipped and kept as it is, never decoded into an allocation that ends the host.
+    if (!imageWithinPixelBound(image)) return false;
     pixmap = image.toPixmap();
   } catch {
     return false;

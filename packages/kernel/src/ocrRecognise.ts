@@ -11,6 +11,7 @@ import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { pageInDocument } from './pageScope.js';
+import { scaleWithinPixelBound } from './pageSnapshot.js';
 
 /**
  * The Tesseract native boundary — a raster becomes characters and their boxes.
@@ -498,7 +499,6 @@ export async function recognisePage(
   // EVERY MODEL NAMED, each made available before the core is initialised with them all.
   for (const language of request.languages) ensureModel(loaded, request.modelDirectory, language);
 
-  const scale = OCR_DPI / 72;
   const raster = await withDocument(session, (document) => {
     const total = document.countPages();
     pageInDocument(request.page, total);
@@ -516,6 +516,10 @@ export async function recognisePage(
           'has no /MediaBox of four numbers, or its /CropBox and /MediaBox do not overlap',
       );
     }
+    // AT `OCR_DPI`, OR LESS FOR A PAGE SO LARGE THAT IT WOULD PASS THE HOST'S PIXEL BOUND (CR-NAT-06): such a page is
+    // recognised at a lower resolution rather than refused, and the matrices below carry whichever scale it was.
+    const [x0, y0, x1, y1] = page.getBounds();
+    const scale = scaleWithinPixelBound(x1 - x0, y1 - y0, OCR_DPI / 72);
     // USER SPACE TO THE RASTER, IN ONE MATRIX. `getTransform()` is what MuPDF
     // applies to the content itself — the flip, the crop origin and the page's
     // `/Rotate` — so composing the scale onto it is the same transform the

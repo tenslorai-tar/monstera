@@ -8,6 +8,7 @@ import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { imagesOf, roundTrippable, writeGreyJpeg } from './pageEnhance.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
+import { imageWithinPixelBound } from './pageSnapshot.js';
 import { otsu } from './pageSkew.js';
 
 /**
@@ -120,7 +121,7 @@ export interface Point {
 export type Quad = readonly [Point, Point, Point, Point];
 
 /** What straightening one page did, by name, so a caller can tell a decision from a no-op. */
-export type ScanOutcome = 'straightened' | 'no-sheet' | 'not-one-image' | 'unreadable';
+export type ScanOutcome = 'straightened' | 'no-sheet' | 'not-one-image' | 'unreadable' | 'too-large';
 
 export interface ScannedPage {
   readonly page: number;
@@ -374,7 +375,11 @@ function straighten(document: PDFDocument, page: number): ScanOutcome {
 
   let pixmap: mupdf.Pixmap;
   try {
-    pixmap = new mupdf.Image(only.object.readRawStream()).toPixmap();
+    const image = new mupdf.Image(only.object.readRawStream());
+    // `pageEnhance.ts`' question, asked first (CR-NAT-06): a straightened scan is re-encoded at every pixel, so one past
+    // the host's bound is left as it is and says so.
+    if (!imageWithinPixelBound(image)) return 'too-large';
+    pixmap = image.toPixmap();
   } catch (error) {
     // `pageEnhance.ts`' reading of the same throw: MuPDF refuses a stream that is not a
     // format it recognises on its own, which is a property of the document. The error is

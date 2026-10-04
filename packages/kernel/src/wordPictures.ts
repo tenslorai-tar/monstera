@@ -6,7 +6,7 @@ import { withDocument } from './mupdfWriter.js';
 import { ooxmlPackage } from './ooxmlPackage.js';
 import { readPageGeometry } from './pageGeometry.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
-import { MAX_SNAPSHOT_PIXELS } from './pageSnapshot.js';
+import { scaleWithinPixelBound } from './pageSnapshot.js';
 import { readPageTextJson } from './pageText.js';
 import { PICTURE_READ_OPTIONS, type PagePicture, type PrintedBox, parsePageLayout } from './textStructure.js';
 import { type WordMode, type WordPage, wordDocumentParts } from './wordDocument.js';
@@ -120,7 +120,7 @@ export function drawPagePictures(
  * came back black).
  *
  * **At the picture's own resolution**, the image's pixels over the area its
- * transform covers, and at most {@link MAX_SNAPSHOT_PIXELS} — the host's bound on
+ * transform covers, and at most `MAX_SNAPSHOT_PIXELS` (through `scaleWithinPixelBound`) — the host's bound on
  * one pixmap, which a larger picture is scaled down to rather than refused. The
  * same bound a snapshot and a page image take, not a figure of this export's own.
  *
@@ -132,7 +132,7 @@ function drawPicture(image: Image, bbox: Rect, transform: Matrix): Uint8Array {
   const height = Math.max(bbox[3] - bbox[1], 1e-3);
   const area = Math.abs(transform[0] * transform[3] - transform[1] * transform[2]);
   const own = area > 0 ? Math.sqrt((image.getWidth() * image.getHeight()) / area) : 1;
-  const bounded = Math.min(own, Math.sqrt(MAX_SNAPSHOT_PIXELS / (width * height)));
+  const bounded = scaleWithinPixelBound(width, height, own);
   const pixelsWide = Math.max(1, Math.round(width * bounded));
   const pixelsHigh = Math.max(1, Math.round(height * bounded));
 

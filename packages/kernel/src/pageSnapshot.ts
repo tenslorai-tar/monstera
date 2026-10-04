@@ -66,6 +66,38 @@ import { pageInDocument } from './pageScope.js';
  */
 export const MAX_SNAPSHOT_PIXELS = 32_000_000;
 
+/**
+ * The largest scale, up to `scale`, at which a `width` × `height` point area rasterises within
+ * {@link MAX_SNAPSHOT_PIXELS}: the one spelling of *scaled down to fit rather than refused*, for every raster the host
+ * makes at a scale of its own choosing (CR-NAT-06: OCR and deskew rasterised a page with no bound at all).
+ *
+ * **The pixels are counted ROUNDED UP**, as a page's are counted before it is exported, so no raster this admits is
+ * past the bound; the square root of the ratio alone, which two callers used, can admit one a row over it.
+ */
+export function scaleWithinPixelBound(width: number, height: number, scale: number): number {
+  const within = (at: number): boolean => Math.ceil(width * at) * Math.ceil(height * at) <= MAX_SNAPSHOT_PIXELS;
+  if (!(width > 0 && height > 0) || within(scale)) return scale;
+  // BISECTED, because the count only grows with the scale and its rounding makes it a staircase no formula inverts:
+  // `low` is always within and `high` never, and sixty halvings leave them a rounding error apart.
+  let low = 0;
+  let high = scale;
+  for (let step = 0; step < 60; step += 1) {
+    const middle = (low + high) / 2;
+    if (within(middle)) low = middle;
+    else high = middle;
+  }
+  return low;
+}
+
+/**
+ * Whether decoding an image whole stays within {@link MAX_SNAPSHOT_PIXELS}: asked of its own size before `toPixmap`,
+ * which allocates as it is called. For a re-encode that must keep every pixel, so a larger image is left as it is
+ * rather than decoded smaller (CR-NAT-06).
+ */
+export function imageWithinPixelBound(image: { getWidth(): number; getHeight(): number }): boolean {
+  return image.getWidth() * image.getHeight() <= MAX_SNAPSHOT_PIXELS;
+}
+
 // THE SCALE BOUNDS ARE THE CONTRACT'S, re-exported under the names this module
 // always had: the host enforces them below and main now chooses a scale inside
 // them too, so there is one definition (see `MIN_SNAPSHOT_SCALE`'s comment).

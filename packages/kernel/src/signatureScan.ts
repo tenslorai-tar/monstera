@@ -1,7 +1,7 @@
 import * as mupdf from './mupdfRaw.js';
 
 import { MAX_SCAN_SIDE } from './host/composeChannels.js';
-import { MAX_SNAPSHOT_PIXELS } from './pageSnapshot.js';
+import { scaleWithinPixelBound } from './pageSnapshot.js';
 
 /**
  * A signature a person scanned into a PDF, made into the picture the plain Signature places: the first page drawn,
@@ -404,8 +404,7 @@ export function transparentCut(raster: ScanRaster, cut: InkCut): Uint8ClampedArr
 function drawScale(width: number, height: number): number {
   const byDpi = SCAN_DPI / 72;
   const bySide = MAX_SCAN_SIDE / Math.max(width, height);
-  const byPixels = Math.sqrt(MAX_SNAPSHOT_PIXELS / (width * height));
-  return Math.min(byDpi, bySide, byPixels);
+  return scaleWithinPixelBound(width, height, Math.min(byDpi, bySide));
 }
 
 /**
