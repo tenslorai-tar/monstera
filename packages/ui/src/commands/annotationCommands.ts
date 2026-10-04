@@ -47,6 +47,7 @@ import { SNAPSHOT_TOOL_ID } from '../annotations/snapshotTool.js';
 import { STAMP_TOOL_ID } from '../annotations/stampTool.js';
 import {
   HIGHLIGHT_TOOL_ID,
+  REDACT_TEXT_TOOL_ID,
   STRIKEOUT_TOOL_ID,
   UNDERLINE_TOOL_ID,
 } from '../annotations/textMarkupTools.js';
@@ -89,6 +90,7 @@ import {
   RIBBON_SNAPSHOT,
   RIBBON_STRIKEOUT,
   RIBBON_REDACT_MARK,
+  RIBBON_REDACT_TEXT,
   RIBBON_LINK_ADDRESS,
   RIBBON_LINK_PAGE,
   RIBBON_PLACE_IMAGE,
@@ -122,6 +124,7 @@ import {
   POLYLINE_TOOL_TITLE,
   RECTANGLE_TOOL_TITLE,
   REDACT_TOOL_TITLE,
+  REDACT_TEXT_TOOL_TITLE,
   SELECT_ALL_MARKS_TITLE,
   SELECT_TOOL_TITLE,
   PLACE_IMAGE_TOOL_TITLE,
@@ -348,12 +351,28 @@ export function inkToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(INK_TOOL_ID, INK_TOOL_TITLE, 'Pencil', 44, deps);
 }
 
+/**
+ * The two redaction marks in the Comment tab (the owner's item 14e): **Redact text** first, which selects words the
+ * way Highlight does, and **Redact area** beside it, which sweeps a box — one tool for each thing a person means by
+ * *redact this*, named so neither is mistaken for the other. Both mark; *Apply redactions* removes.
+ */
+export function redactTextToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(
+    REDACT_TEXT_TOOL_ID,
+    { full: REDACT_TEXT_TOOL_TITLE, ribbon: RIBBON_REDACT_TEXT },
+    'TextSelect',
+    62,
+    deps,
+    REDACT_MARKS,
+  );
+}
+
 export function redactToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(
     REDACT_TOOL_ID,
     { full: REDACT_TOOL_TITLE, ribbon: RIBBON_REDACT_MARK },
     'RectangleHorizontal',
-    62,
+    63,
     deps,
     REDACT_MARKS,
   );
@@ -1214,6 +1233,7 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     lineToolCommand(deps),
     arrowToolCommand(deps),
     inkToolCommand(deps),
+    redactTextToolCommand(deps),
     redactToolCommand(deps),
     textBoxToolCommand(deps),
     stickyNoteToolCommand(deps),

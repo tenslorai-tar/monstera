@@ -6,8 +6,10 @@ import type { UiTool } from '../registries/tools.js';
 import { overlayTransform } from './annotationSpace.js';
 import {
   HIGHLIGHT_TOOL_ID,
+  REDACT_TEXT_TOOL_ID,
   STRIKEOUT_TOOL_ID,
   UNDERLINE_TOOL_ID,
+  redactTextCommand,
   textMarkupTools as buildMarkupTools,
 } from './textMarkupTools.js';
 import { PLAIN_STYLE } from './annotationStyle.js';
@@ -96,11 +98,22 @@ describe('textMarkupTools', () => {
     });
   });
 
-  it('registers three tools with three ids', () => {
+  it('registers the three markups and Redact text, with four ids', () => {
     expect(textMarkupTools.map((tool) => tool.id)).toStrictEqual([
       HIGHLIGHT_TOOL_ID,
       UNDERLINE_TOOL_ID,
       STRIKEOUT_TOOL_ID,
+      REDACT_TEXT_TOOL_ID,
     ]);
+  });
+
+  it('REDACT TEXT marks the selected run for redaction, by the selected-text menu’s own builder (14e)', () => {
+    // THE SAME WORDS A HIGHLIGHT WOULD NAME: an I-beam, the page's selection, and its two ends, never a box.
+    const redact = textMarkupTools.find((tool) => tool.id === REDACT_TEXT_TOOL_ID);
+    expect(redact?.cursor).toBe('text');
+    const selection = { page: 2, from: { x: 10, y: 700 }, to: { x: 220, y: 680 }, text: 'Revenue grew' };
+    const command = redact?.fromSelection?.(selection);
+    expect(command).toStrictEqual(redactTextCommand(2, selection.from, selection.to, PLAIN_STYLE));
+    expect(command).toMatchObject({ kind: 'addAnnotation', page: 2, annotation: { type: 'redact', over: 'text' } });
   });
 });

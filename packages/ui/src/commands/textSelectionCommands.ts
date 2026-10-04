@@ -1,8 +1,7 @@
 import type { DispatchableCommand } from '@monstera/contract';
 
 import { stickyNoteCommand } from '../annotations/pointTools.js';
-import { STROKE } from '../annotations/shapeTools.js';
-import { type MarkupType, markupCommand } from '../annotations/textMarkupTools.js';
+import { type MarkupType, markupCommand, redactTextCommand } from '../annotations/textMarkupTools.js';
 import type { AnnotationStyle } from '../annotations/annotationStyle.js';
 import { ANNOTATION_NOTE_DIALOG_ID } from '../dialogs/annotationNote.js';
 import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
@@ -176,22 +175,8 @@ export function redactSelectionCommand(deps: TextSelectionDeps): UiCommand {
     run: (context): void => {
       const selection = deps.selection();
       if (context.docId === undefined || selection === undefined) return;
-      const style = deps.style();
-      deps.place({
-        kind: 'addAnnotation',
-        page: selection.page,
-        annotation: {
-          type: 'redact',
-          over: 'text',
-          from: selection.from,
-          to: selection.to,
-          // THE DRAG TOOL'S OWN DEFAULT, resolved through the style exactly as `redactTool` does,
-          // so a mark made from the menu and one swept with the tool are the same colour. No border
-          // width: MuPDF refuses one on a Redact, and the draft has no field for it.
-          colour: style.colour(STROKE),
-          opacity: style.opacity,
-        },
-      });
+      // THE REDACT TEXT TOOL'S OWN BUILDER, so a mark made from the menu and one made with the tool are one command.
+      deps.place(redactTextCommand(selection.page, selection.from, selection.to, deps.style()));
     },
   };
 }

@@ -721,6 +721,7 @@ export const LINE_TOOL_TITLE = messageKey('command.annotate-line.title');
 export const ARROW_TOOL_TITLE = messageKey('command.annotate-arrow.title');
 export const INK_TOOL_TITLE = messageKey('command.annotate-ink.title');
 export const REDACT_TOOL_TITLE = messageKey('command.annotate-redact.title');
+export const REDACT_TEXT_TOOL_TITLE = messageKey('command.annotate-redact-text.title');
 export const ANNOTATION_SURFACE_LABEL = messageKey('surface.annotation.label');
 export const WORD_COUNT_COMMAND_TITLE = messageKey('command.word-count.title');
 export const WORD_COUNT_TITLE = messageKey('dialog.word-count.title');
@@ -2325,6 +2326,7 @@ export const RIBBON_OPTIMIZE = messageKey('ribbon.optimize');
 export const RIBBON_SNAPSHOT = messageKey('ribbon.snapshot');
 export const RIBBON_STRIKEOUT = messageKey('ribbon.strikeout');
 export const RIBBON_REDACT_MARK = messageKey('ribbon.redact-mark');
+export const RIBBON_REDACT_TEXT = messageKey('ribbon.redact-text');
 export const RIBBON_LINK_ADDRESS = messageKey('ribbon.link-address');
 export const RIBBON_LINK_PAGE = messageKey('ribbon.link-page');
 export const RIBBON_PLACE_IMAGE = messageKey('ribbon.place-image');
@@ -2790,7 +2792,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // a redaction in is a different command with a different save mode — and a
   // label reading "Redact" would promise the removal to the one person who
   // most needs to know it has not happened yet.
-  [REDACT_TOOL_TITLE]: 'Mark for redaction',
+  [REDACT_TOOL_TITLE]: 'Mark an area for redaction',
+  [REDACT_TEXT_TOOL_TITLE]: 'Mark text for redaction',
   // NAMES THE PAGE, because a scroller shows several and each carries its own
   // drawing surface. Two surfaces with the same accessible name are two a
   // screen-reader user cannot tell apart, which is `SPLIT_SECOND_LABEL`'s
@@ -5027,7 +5030,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_OPTIMIZE]: 'Compress',
   [RIBBON_SNAPSHOT]: 'Snapshot',
   [RIBBON_STRIKEOUT]: 'Strikethrough',
-  [RIBBON_REDACT_MARK]: 'Redact',
+  [RIBBON_REDACT_MARK]: 'Redact area',
+  [RIBBON_REDACT_TEXT]: 'Redact text',
   [RIBBON_LINK_ADDRESS]: 'Web link',
   [RIBBON_LINK_PAGE]: 'Page link',
   [RIBBON_PLACE_IMAGE]: 'Image',

@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 222 — and the checks only the installed window can answer.
+Every command the application registers — 223 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -101,7 +101,8 @@ is not available.
 - [ ] **Measure distance** — Measure · `annotate.measure-distance` · Shows: on screen · Help: *Measure distance, area and perimeter*
 - [ ] **Measure area** — Measure · `annotate.measure-area` · Shows: on screen · Help: *Measure distance, area and perimeter*
 - [ ] **Measure perimeter** — Measure · `annotate.measure-perimeter` · Shows: on screen · Help: *Measure distance, area and perimeter*
-- [ ] **Mark for redaction** — Redact · `annotate.redact` · Shows: on screen · Help: *Redact (permanently remove) content*
+- [ ] **Mark text for redaction** — Redact · `annotate.redact-text` · Shows: on screen · Help: *Redact (permanently remove) content*
+- [ ] **Mark an area for redaction** — Redact · `annotate.redact` · Shows: on screen · Help: *Redact (permanently remove) content*
 - [ ] **Rectangle** — Shapes · `annotate.rectangle` · Shows: on screen · Help: *Draw rectangles, ellipses, lines and arrows*
 - [ ] **Ellipse** — Shapes · `annotate.ellipse` · Shows: on screen · Help: *Draw rectangles, ellipses, lines and arrows*
 - [ ] **Line** — Shapes · `annotate.line` · Shows: on screen · Help: *Draw rectangles, ellipses, lines and arrows*

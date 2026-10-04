@@ -3,7 +3,7 @@ id: redact-content
 title: Redact (permanently remove) content
 summary: Mark text or areas for redaction, check the marks, then remove what is under them for good.
 keywords: [redact, redaction, black out, remove sensitive, censor, hide text permanently, privacy, burn in]
-commands: [annotate.redact, text.redact, document.apply-redactions]
+commands: [annotate.redact-text, annotate.redact, text.redact, document.apply-redactions]
 contexts: [dialog.apply-redactions, protect, comment]
 ---
 Redaction removes content from the document itself, not just covers it. It happens in two steps: first you mark what should go, then you apply the redactions.
@@ -11,7 +11,8 @@ Redaction removes content from the document itself, not just covers it. It happe
 ## Steps
 
 1. Mark what to remove:
-   - In the rail, choose **Comment**, then **Redact** in the **Redact** group (**Mark for redaction**), and drag a box over each area; or
+   - In the rail, choose **Comment**, then **Redact text** in the **Redact** group (**Mark text for redaction**), and drag across the words, as you would to highlight them; or
+   - In the rail, choose **Comment**, then **Redact area** in the **Redact** group (**Mark an area for redaction**), and drag a box over each area, such as a picture or a signature; or
    - select text with **Select text**, right-click, and choose **Mark for redaction**; or
    - mark every match of a word, see "Find and redact words".
 2. Check the marks. Each is shown hatched, with the label **Marked for redaction**, and the words under it still show between the lines. Delete any you did not mean with **Select annotations** or **Erase annotation**.
