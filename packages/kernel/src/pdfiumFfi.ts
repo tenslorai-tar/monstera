@@ -618,7 +618,7 @@ export function pageText(session: PdfiumSession, page: number): Promise<string> 
         // The count EXCLUDES the terminator, so slicing to `written - 1` is what
         // drops it. A caller comparing this against an expected string would
         // otherwise never match and would read as an encoding problem.
-        return String.fromCharCode(...buffer.subarray(0, Math.max(0, written - 1)));
+        return fromUtf16Units(buffer.subarray(0, Math.max(0, written - 1)));
       } finally {
         bindings.closeTextPage(textPage);
       }
@@ -728,7 +728,26 @@ function objectTextOn(bindings: Bound, object: unknown, textPage: unknown): stri
   );
   // `written` is bytes and includes the terminator, so the character count is
   // one short of half of it.
-  return String.fromCharCode(...buffer.subarray(0, Math.max(0, written / 2 - 1)));
+  return fromUtf16Units(buffer.subarray(0, Math.max(0, written / 2 - 1)));
+}
+
+/** How many UTF-16 units one `String.fromCharCode` call is handed: far under the limit, and few calls per page. */
+const UTF16_CHUNK = 8192;
+
+/**
+ * PDFium's UTF-16 units as a string, unit for unit (CR-NAT-14).
+ *
+ * IN CHUNKS, because a spread passes one argument per unit and V8 refuses past its limit: measured 2026-10-04 on Node
+ * 22.22, 125 000 units read and 150 000 threw `RangeError: Maximum call stack size exceeded`, so a dense page's text
+ * failed whole. NOT a `TextDecoder`, which replaces a lone surrogate with U+FFFD: PDFium answers what the page's
+ * encoding maps to, and a reader comparing that must get it unchanged.
+ */
+function fromUtf16Units(units: Uint16Array): string {
+  let text = '';
+  for (let at = 0; at < units.length; at += UTF16_CHUNK) {
+    text += String.fromCharCode(...units.subarray(at, at + UTF16_CHUNK));
+  }
+  return text;
 }
 
 /**

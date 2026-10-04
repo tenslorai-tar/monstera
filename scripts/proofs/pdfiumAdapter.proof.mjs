@@ -154,7 +154,7 @@ async function threeRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 52 });
+const roster = createRoster(failures, { cases: 53 });
 
 /**
  * @param {string} name
@@ -464,6 +464,7 @@ async function main() {
   );
 
   await fontNameCases();
+  await denseTextCases();
   await objectCases();
 
   process.stdout.write(
@@ -498,6 +499,37 @@ async function fontNameOfRun(baseFont) {
   } finally {
     await pdfiumWriter.close(session);
   }
+}
+
+/**
+ * CR-NAT-14: a page's text past V8's argument limit is read whole. A spread over its units threw `RangeError: Maximum
+ * call stack size exceeded` from about 150 000 units (measured on Node 22.22), so this page carries more than that.
+ */
+async function denseTextCases() {
+  const LINES = 400;
+  const PER_LINE = 'x'.repeat(400);
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const page = document.addPage([2000, 2000]);
+  for (let line = 0; line < LINES; line += 1) {
+    page.drawText(line === LINES - 1 ? `${PER_LINE}END` : PER_LINE, { x: 4, y: 1996 - line * 4.9, size: 2, font });
+  }
+  const session = await pdfiumWriter.open(await document.save());
+  let read = '';
+  try {
+    read = await pageText(session, 0);
+  } catch (error) {
+    read = `threw ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`;
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+  const inked = read.replace(/\s+/gu, '').length;
+  record(
+    'a page of 160 000 characters is read whole, past the argument limit a spread meets',
+    // THE LAST LINE'S MARKER, so a read that stopped part way cannot pass on its length alone.
+    inked >= LINES * PER_LINE.length && read.trimEnd().endsWith('END'),
+    read.startsWith('threw') ? read : `${String(inked)} characters read, ending ${JSON.stringify(read.trimEnd().slice(-6))}`,
+  );
 }
 
 /** CR-NAT-12: a base name read whole, in UTF-8, and cut to the wire's bound at a whole character. */
