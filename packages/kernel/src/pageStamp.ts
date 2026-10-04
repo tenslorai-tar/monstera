@@ -5,6 +5,7 @@ import { STAMP_TOKENS } from '@monstera/contract/host';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
+import { pageFrame, upright } from './pdfLibFrame.js';
 import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
@@ -160,10 +161,12 @@ export const applyHeaderFooterPages: Apply<'pdf-lib', 'headerFooterPages'> = asy
     // here because `noUncheckedIndexedAccess` is on and a cast would be the one
     // place this file stopped carrying the property.
     if (page === undefined) continue;
-    const { width, height } = page.getSize();
+    // THE PAGE AS THE READER SEES IT: its displayed size, and the way from a point on it to user space (CR-COR-01).
+    const frame = pageFrame(page, index);
+    const { width, height } = frame.viewport;
 
     for (const edge of EDGES) {
-      const y = verticalOrigin(edge, { height, margin: command.marginPoints });
+      const fromTop = verticalOrigin(edge, { height, margin: command.marginPoints });
       for (const slot of SLOTS) {
         const template = command[edge][slot];
         if (template.length === 0) continue;
@@ -172,12 +175,12 @@ export const applyHeaderFooterPages: Apply<'pdf-lib', 'headerFooterPages'> = asy
         // hoisted out of this loop stamps page 1's number onto every page — a
         // defect a single-page fixture cannot see.
         const text = resolveStampTokens(template, index + 1, total);
+        const x = horizontalOrigin(slot, font.widthOfTextAtSize(text, command.fontSize), {
+          width,
+          margin: command.marginPoints,
+        });
         page.drawText(text, {
-          x: horizontalOrigin(slot, font.widthOfTextAtSize(text, command.fontSize), {
-            width,
-            margin: command.marginPoints,
-          }),
-          y,
+          ...upright(frame, x, fromTop),
           size: command.fontSize,
           font,
           color: STAMP_BLACK,
@@ -219,19 +222,22 @@ export function horizontalOrigin(
 }
 
 /**
- * The baseline for an edge, from the page's height and the margin.
+ * The baseline for an edge, as its distance from the top of the displayed page.
  *
  * Shared with `batesNumberPages` for {@link horizontalOrigin}'s reason, and it
  * is the smaller half of the pair: one line, and worth a name only because the
  * two commands agreeing about which edge is which is a property rather than a
  * coincidence. A Bates stamp in the footer must land where a footer lands, or a
  * document carrying both has two different ideas of the bottom margin.
+ *
+ * Measured from the TOP because the frame a stamp is placed in is the page as
+ * the reader sees it (`pdfLibFrame.ts`), which runs down from there.
  */
 export function verticalOrigin(
   edge: 'header' | 'footer',
   page: { readonly height: number; readonly margin: number },
 ): number {
-  return edge === 'header' ? page.height - page.margin : page.margin;
+  return edge === 'header' ? page.margin : page.height - page.margin;
 }
 
 /**
@@ -307,17 +313,18 @@ export const applyBatesNumberPages: Apply<'pdf-lib', 'batesNumberPages'> = async
   for (const [position, index] of targets.entries()) {
     const page = pages[index];
     if (page === undefined) continue;
-    const { width, height } = page.getSize();
+    const frame = pageFrame(page, index);
+    const { width, height } = frame.viewport;
 
     // POSITION IN THE SCOPE, not `index`. The two agree for a whole-document
     // scope starting at page 0, which is every fixture somebody writes first.
     const text = batesIdentifier(command, command.start + position);
+    const x = horizontalOrigin(command.slot, font.widthOfTextAtSize(text, command.fontSize), {
+      width,
+      margin: command.marginPoints,
+    });
     page.drawText(text, {
-      x: horizontalOrigin(command.slot, font.widthOfTextAtSize(text, command.fontSize), {
-        width,
-        margin: command.marginPoints,
-      }),
-      y: verticalOrigin(command.edge, { height, margin: command.marginPoints }),
+      ...upright(frame, x, verticalOrigin(command.edge, { height, margin: command.marginPoints })),
       size: command.fontSize,
       font,
       color: STAMP_BLACK,

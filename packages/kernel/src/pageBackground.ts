@@ -5,6 +5,7 @@ import type { CaptureResult } from './commandLog.js';
 import { COORDINATE_DECIMALS, contentNumber } from './contentNumbers.js';
 import type { Apply, Invert } from './engineSeam.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
+import { pageFrame } from './pdfLibFrame.js';
 import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
@@ -88,16 +89,17 @@ export const applySetPageBackground: Apply<'pdf-lib', 'setPageBackground'> = asy
     // NOT REACHABLE — validated above against this same array.
     if (page === undefined) continue;
 
-    const { width, height } = page.getSize();
+    // THE REGION THE PAGE DISPLAYS, at its own origin (CR-COR-01). A box from `[-9 -9 621 801]` filled from 0,0 left a
+    // 9-point band unfilled on two edges. A fill covers the whole region at any turn, so only the box is read.
+    const { crop } = pageFrame(page, index);
     // `q … Q` BRACKETS THE FILL. See the module note: without the restore, the
     // background's colour is still current when the page's own stream starts.
     const operators =
       `q\n${fixed(command.red)} ${fixed(command.green)} ${fixed(command.blue)} rg\n` +
-      // EVERY NUMBER THROUGH `fixed`, including the origin. Writing `0 0`
-      // directly is shorter and correct, and it makes the no-exponential
-      // guarantee true of two of the four numbers rather than of the operator —
-      // which is the kind of partial property that reads as whole.
-      `${fixed(0)} ${fixed(0)} ${fixed(width)} ${fixed(height)} re\nf\nQ\n`;
+      // EVERY NUMBER THROUGH `fixed`, including the origin, so the
+      // no-exponential guarantee is true of the operator rather than of the
+      // numbers that happen to be large.
+      `${fixed(crop.x0)} ${fixed(crop.y0)} ${fixed(crop.x1 - crop.x0)} ${fixed(crop.y1 - crop.y0)} re\nf\nQ\n`;
 
     const stream = context.flateStream(operators);
     const reference = context.register(stream);

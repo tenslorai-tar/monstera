@@ -1,5 +1,4 @@
 import type { Box } from '@monstera/shared';
-import type { PDFObject } from './mupdfRaw.js';
 
 /**
  * What box a page **displays** — one answer, with callers (B3a).
@@ -55,6 +54,26 @@ import type { PDFObject } from './mupdfRaw.js';
  */
 
 /**
+ * What the rule reads of one value: whether it is absent, and an array's numbers.
+ *
+ * **The rule's own shape, not an engine's.** MuPDF's `PDFObject` has exactly these members and is one, so every MuPDF
+ * caller passes its object as it was; the pdf-lib writer adapts its page to the same shape (`pdfLibFrame.ts`). Two
+ * writers asking *which region does this page display* then get one answer, where a pdf-lib copy of this module would
+ * be the second opinion B3a is about.
+ */
+export interface BoxValue {
+  isNull(): boolean;
+  isArray(): boolean;
+  readonly length: number;
+  get(index: number): { isNumber(): boolean; asNumber(): number };
+}
+
+/** A page as the rule reads it: its inheritable boxes. */
+export interface BoxSource {
+  getInheritable(key: 'MediaBox' | 'CropBox'): BoxValue;
+}
+
+/**
  * The four numbers of a box object, or `null` if it is not one.
  *
  * A malformed box is `null` rather than a throw: what that means is the
@@ -62,7 +81,7 @@ import type { PDFObject } from './mupdfRaw.js';
  * *this document cannot have its prior state recorded* rather than *this
  * command is illegal*.
  */
-export function boxOf(object: PDFObject): readonly number[] | null {
+export function boxOf(object: BoxValue): readonly number[] | null {
   if (!object.isArray() || object.length !== 4) return null;
   const numbers: number[] = [];
   for (let index = 0; index < 4; index += 1) {
@@ -98,7 +117,7 @@ function ordered(box: readonly number[]): Box {
  * happens to declare. Own-state is the inverse's business (ADR-0009 §3) and is
  * read with `get` at the one place that needs it.
  */
-export function displayedBox(object: PDFObject): Box | null {
+export function displayedBox(object: BoxSource): Box | null {
   const media = boxOf(object.getInheritable('MediaBox'));
   if (media === null) return null;
   const mediaBox = ordered(media);
