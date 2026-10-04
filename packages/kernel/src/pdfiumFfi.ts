@@ -211,8 +211,12 @@ export function openPdfium(libraryPath: string): void {
     writeBlock,
     initialise: native(library.func('void FPDF_InitLibrary()')),
     lastError: native(library.func('unsigned long FPDF_GetLastError()')),
+    // THE 64-BIT LOAD, whose length is a `size_t` (CR-NAT-13). `FPDF_LoadMemDocument` takes an `int`, and koffi wraps
+    // a number past 2^31 - 1 into one rather than refusing it — measured 2026-10-04 against libc's `abs`: 3 GiB
+    // arrives as 1 GiB — so a document that large would be parsed from its first gigabyte as though that were all of
+    // it. A document past `main`'s memory ceiling opens since ADR-0165, which makes that length reachable.
     loadDocument: native(
-      library.func('void *FPDF_LoadMemDocument(const void *data, int size, const char *password)'),
+      library.func('void *FPDF_LoadMemDocument64(const void *data, size_t size, const char *password)'),
     ),
     closeDocument: native(library.func('void FPDF_CloseDocument(void *document)')),
     pageCount: native(library.func('int FPDF_GetPageCount(void *document)')),
@@ -448,9 +452,9 @@ export function pdfiumIsOpen(): boolean {
 /**
  * A live document, and **the bytes it is still reading**.
  *
- * ## `FPDF_LoadMemDocument` DOES NOT COPY, and that is the hazard
+ * ## `FPDF_LoadMemDocument64` DOES NOT COPY, and that is the hazard
  *
- * PDFium parses lazily: the buffer handed to `FPDF_LoadMemDocument` must stay
+ * PDFium parses lazily: the buffer handed to `FPDF_LoadMemDocument64` must stay
  * valid and unmoved for the whole life of the document, and the API says so.
  * Node's garbage collector is free to collect a `Buffer` nothing references, and
  * koffi does not retain one on the caller's behalf — so a session that kept only
@@ -2865,7 +2869,7 @@ export const pdfiumWriter: EngineWriter<PdfiumSession> = {
    * Parses `image` into a session.
    *
    * The bytes are **copied into a `Buffer` this session owns** rather than
-   * passed through. Two reasons and both are load-bearing: `FPDF_LoadMemDocument`
+   * passed through. Two reasons and both are load-bearing: `FPDF_LoadMemDocument64`
    * keeps reading the caller's memory for the document's whole life (see
    * {@link Live}), and a `ByteImage` is the kernel's canonical image, which
    * nothing below the seam may hold a live pointer into.
