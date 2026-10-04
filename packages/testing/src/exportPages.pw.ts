@@ -48,7 +48,14 @@ const CASES = [
     apply: 'Choose where to save…',
     channel: 'document.exportText',
   },
-  { command: 'Print…', dialog: 'Print', apply: 'Choose a printer…', channel: 'document.print' },
+  {
+    command: 'Print…',
+    dialog: 'Print',
+    apply: 'Choose a printer…',
+    channel: 'document.print',
+    // THE SHIM HAS NO PRINTER, so a print ends in the save problem dialog saying so — read and dismissed below.
+    outcome: 'The document was not saved',
+  },
 ] as const;
 
 for (const each of CASES) {
@@ -64,6 +71,15 @@ for (const each of CASES) {
     await expect.poll(() => sent.filter((one) => one.channel === each.channel).length).toBe(1);
     // ZERO-BASED, as runs: the second page a person reads is page 1.
     expect((sent.find((one) => one.channel === each.channel)?.params as { pages: unknown }).pages).toStrictEqual([1]);
+
+    // THE FIRST COMMAND'S OUTCOME IS READ BEFORE THE SECOND IS GIVEN. A dialog asked while another shows waits for it
+    // (CR-COR-08), so the second open would sit behind an unread message; until the queue, it dismissed that message.
+    if ('outcome' in each) {
+      const outcome = page.getByRole('dialog', { name: each.outcome });
+      await expect(outcome).toBeVisible();
+      await outcome.getByRole('button', { name: 'OK' }).click();
+    }
+    await expect(page.getByRole('dialog')).toHaveCount(0);
 
     // CONTROL: every page, as the row opens, is the whole document, so the case above is the row's doing.
     await runCommand(page, each.command);
