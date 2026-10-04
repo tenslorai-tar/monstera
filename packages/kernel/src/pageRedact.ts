@@ -118,7 +118,7 @@ function overlaps(a: mupdf.Rect, b: mupdf.Rect): boolean {
  * `applyRedactions` — while the control, a mark elsewhere, kept it. A second removal
  * would be a second opinion about what the burn-in already decides.
  */
-function removeCoveredObjects(document: mupdf.PDFDocument, page: mupdf.PDFPage): void {
+function removeCoveredObjects(document: mupdf.PDFDocument, page: mupdf.PDFPage, deleted: Set<number>): void {
   const annotations = page.getAnnotations();
   // A TEXT MARK IS ITS QUADS, as the burn-in reads it: its /Rect is their union, which on a mark over several lines
   // spans the unselected starts and ends of its first and last lines, and an annotation there is not under the mark.
@@ -130,15 +130,139 @@ function removeCoveredObjects(document: mupdf.PDFDocument, page: mupdf.PDFPage):
     });
   const covered = (box: mupdf.Rect): boolean => marks.some((mark) => overlaps(mark, box));
 
+  const remove = (annotation: mupdf.PDFAnnotation | mupdf.PDFWidget): void => {
+    const object = annotation.getObject();
+    if (object.isIndirect()) deleted.add(object.asIndirect());
+    page.deleteAnnotation(annotation);
+  };
   for (const annotation of annotations) {
-    if (annotation.getType() !== 'Redact' && covered(boxOf(annotation))) {
-      page.deleteAnnotation(annotation);
-    }
+    if (annotation.getType() !== 'Redact' && covered(boxOf(annotation))) remove(annotation);
   }
   for (const widget of page.getWidgets()) {
-    if (covered(boxOf(widget))) page.deleteAnnotation(widget);
+    if (covered(boxOf(widget))) remove(widget);
   }
   pruneEmptyFields(document);
+}
+
+/** The text a structure element or a marked-content property list carries beside the content it tags. */
+const TEXT_ALTERNATES = ['Alt', 'ActualText', 'E', 'T'] as const;
+
+/** Each value a number tree holds under `key`, read from `/Nums` and every `/Kids` below (ISO 32000-1 §7.9.7). */
+function numberTreeValues(tree: mupdf.PDFObject, key: number): mupdf.PDFObject[] {
+  const found: mupdf.PDFObject[] = [];
+  const seen = new Set<number>();
+  const pending = [tree];
+  for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
+    if (!node.isDictionary() || (node.isIndirect() && seen.has(node.asIndirect()))) continue;
+    if (node.isIndirect()) seen.add(node.asIndirect());
+    const nums = node.get('Nums');
+    for (let at = 0; at + 1 < nums.length; at += 2) {
+      if (nums.get(at).asNumber() === key) found.push(nums.get(at + 1));
+    }
+    node.get('Kids').forEach((kid) => pending.push(kid));
+  }
+  return found;
+}
+
+/**
+ * Takes every copy of a burned page's text that sits outside its content (ADR-0163).
+ *
+ * - **The structure tree's references to an annotation the burn-in deleted**, which kept it alive through the
+ *   collection with its `/Contents`; the element that held one counts as tagging the page.
+ * - **The text alternates of every element tagging a burned page, and of its ancestors**, found through the page's
+ *   `/StructParents` entry in the parent tree. MuPDF's filter edits these for the characters it removes, and writes
+ *   the edited `/ActualText` into `/Alt` (`pdf-op-filter.c` 1.28.0, line 872), so the original stays; which element
+ *   held which removed character it does not report, so the page is the unit.
+ * - **The alternates in the page's named property lists**, by the same reason, through a copy, so a list another
+ *   page shares keeps its own.
+ * - **`/PieceInfo`**, the page's and the catalogue's, and **the outline**, which no region maps to.
+ */
+function removeOtherCopies(document: mupdf.PDFDocument, burned: readonly number[], deleted: ReadonlySet<number>): void {
+  const root = document.getTrailer().get('Root');
+  const tagging: mupdf.PDFObject[] = [];
+  const structure = root.get('StructTreeRoot');
+  if (structure.isDictionary()) {
+    tagging.push(...withoutReferencesTo(structure, deleted));
+    for (const index of burned) {
+      const parents = document.loadPage(index).getObject().get('StructParents');
+      if (!parents.isNumber()) continue;
+      for (const value of numberTreeValues(structure.get('ParentTree'), parents.asNumber())) {
+        if (value.isArray()) value.forEach((element) => tagging.push(element));
+        else tagging.push(value);
+      }
+    }
+  }
+  const stripped = new Set<number>();
+  for (let element = tagging.pop(); element !== undefined; element = tagging.pop()) {
+    if (!element.isDictionary() || String(element.get('Type')) === '/StructTreeRoot') continue;
+    if (element.isIndirect()) {
+      if (stripped.has(element.asIndirect())) continue;
+      stripped.add(element.asIndirect());
+    }
+    for (const key of TEXT_ALTERNATES) element.delete(key);
+    tagging.push(element.get('P'));
+  }
+
+  for (const index of burned) {
+    const page = document.loadPage(index).getObject();
+    page.delete('PieceInfo');
+    const properties = page.get('Resources', 'Properties');
+    if (!properties.isDictionary()) continue;
+    const carrying: (readonly [number | string, mupdf.PDFObject])[] = [];
+    properties.forEach((list, name) => {
+      if (list.isDictionary() && TEXT_ALTERNATES.some((key) => !list.get(key).isNull())) carrying.push([name, list]);
+    });
+    for (const [name, list] of carrying) {
+      const copy = document.newDictionary();
+      list.forEach((value, key) => {
+        if (!(TEXT_ALTERNATES as readonly (number | string)[]).includes(key)) copy.put(key, value);
+      });
+      properties.put(name, copy);
+    }
+  }
+  root.delete('PieceInfo');
+  root.delete('Outlines');
+  if (String(root.get('PageMode')) === '/UseOutlines') root.delete('PageMode');
+}
+
+/**
+ * Removes every object reference (`/OBJR`) in the structure tree to one of `deleted`, and answers the elements that
+ * held one. An element left with no content loses its `/K`.
+ */
+function withoutReferencesTo(structure: mupdf.PDFObject, deleted: ReadonlySet<number>): mupdf.PDFObject[] {
+  const held: mupdf.PDFObject[] = [];
+  if (deleted.size === 0) return held;
+  const names = (kid: mupdf.PDFObject): boolean => {
+    const target = kid.get('Obj');
+    return String(kid.get('Type')) === '/OBJR' && target.isIndirect() && deleted.has(target.asIndirect());
+  };
+  const seen = new Set<number>();
+  const pending = [structure];
+  for (let element = pending.pop(); element !== undefined; element = pending.pop()) {
+    if (!element.isDictionary() || (element.isIndirect() && seen.has(element.asIndirect()))) continue;
+    if (element.isIndirect()) seen.add(element.asIndirect());
+    const kids = element.get('K');
+    if (kids.isArray()) {
+      let removed = false;
+      for (let at = kids.length - 1; at >= 0; at -= 1) {
+        const kid = kids.get(at);
+        if (kid.isDictionary() && names(kid)) {
+          kids.delete(at);
+          removed = true;
+        } else {
+          pending.push(kid);
+        }
+      }
+      if (removed) held.push(element);
+      if (kids.length === 0) element.delete('K');
+    } else if (kids.isDictionary() && names(kids)) {
+      element.delete('K');
+      held.push(element);
+    } else {
+      pending.push(kids);
+    }
+  }
+  return held;
 }
 
 /**
@@ -175,17 +299,21 @@ function rectOfQuad(quad: mupdf.Quad): mupdf.Rect {
  * a picture of the page as it was, and the document's XMP packet and Info
  * dictionary. The metadata cannot be matched to a region, so a burn-in removes it
  * whole — see the ADR for what that costs and the question left for the owner.
+ * [ADR-0163](../../../docs/DECISIONS/0163-a-burn-in-also-takes-the-outline-the-tags-text-and-private-data.md)
+ * measured four more, which {@link removeOtherCopies} takes, and one that only MuPDF can reach: an inline
+ * `/ActualText` in the content stream.
  */
 export const applyApplyRedactions: Apply<'mupdf', 'applyRedactions'> = (session, command) =>
   withDocumentRemoving(session, (document) => {
-    let burned = false;
+    const burnedPages: number[] = [];
+    const deleted = new Set<number>();
     for (const index of scopedPages(document, command.pages)) {
       const page = document.loadPage(index);
       // A PAGE WITH NO MARKS IS SKIPPED rather than redacted with nothing.
       // `applyRedactions` on a page with no `/Redact` rewrites its content
       // stream for no reason, which on a document-wide pass is every page.
       if (redactMarksOn(page) === 0) continue;
-      removeCoveredObjects(document, page);
+      removeCoveredObjects(document, page, deleted);
       page.applyRedactions(
         command.cover === 'solid',
         IMAGE_METHOD[command.images],
@@ -195,9 +323,10 @@ export const applyApplyRedactions: Apply<'mupdf', 'applyRedactions'> = (session,
       const pageObject = page.getObject();
       pageObject.delete('Thumb');
       pageObject.delete('Metadata');
-      burned = true;
+      burnedPages.push(index);
     }
-    if (burned) {
+    if (burnedPages.length > 0) {
+      removeOtherCopies(document, burnedPages, deleted);
       // READ BEFORE THE DELETE, and only when it is wanted: `/Title` has to come
       // out of the dictionary this is about to remove.
       const kept = command.keepTitle ? titleOf(document) : undefined;

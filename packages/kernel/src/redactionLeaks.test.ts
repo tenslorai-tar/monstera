@@ -4,6 +4,8 @@ import {
   PDFDocument,
   PDFHexString,
   PDFName,
+  PDFOperator,
+  PDFOperatorNames,
   PDFRawStream,
   PDFStream,
   PDFString,
@@ -247,8 +249,38 @@ const metadata = () =>
     document.catalog.set(PDFName.of('Metadata'), stream);
   });
 
+/**
+ * AN ANNOTATION UNDER THE MARK THAT THE STRUCTURE TREE NAMES (ADR-0163). Deleting it from the page was not removing
+ * it: the element's object reference kept it alive through the collection, `/Contents` and all.
+ */
+const taggedAnnotation = () =>
+  fixture((document) => {
+    const { context } = document;
+    const page = onPage(document);
+    const note = context.register(
+      context.obj({
+        Type: 'Annot',
+        Subtype: 'Square',
+        Rect: [SECRET_BOX.x, SECRET_BOX.y, SECRET_BOX.x + SECRET_BOX.width, SECRET_BOX.y + SECRET_BOX.height],
+        Contents: PDFString.of(SECRET),
+        StructParent: 0,
+      }),
+    );
+    page.node.addAnnot(note);
+    const structure = context.nextRef();
+    const element = context.register(
+      context.obj({ Type: 'StructElem', S: 'Annot', P: structure, Pg: page.ref, K: { Type: 'OBJR', Obj: note } }),
+    );
+    context.assign(
+      structure,
+      context.obj({ Type: 'StructTreeRoot', K: [element], ParentTree: context.obj({ Nums: [0, element] }) }),
+    );
+    document.catalog.set(PDFName.of('StructTreeRoot'), structure);
+  });
+
 describe('the redaction leak corpus', () => {
   const textCases = [
+    ['an annotation under the mark that the structure tree names', taggedAnnotation],
     ['the text layer', textLayer],
     ['an OCR layer in render mode 3', ocrLayer],
     ['a form field value under the mark', formValue],
@@ -503,5 +535,165 @@ describe('the redaction leak corpus: an image under a vector cover', () => {
 
   it('a mark over it leaves none of the covered pixels', async () => {
     expect(await patternPixels(await burnIn(await coveredImage(), IMAGE_BOX))).toBe(0);
+  });
+});
+
+/** `text` drawn on `page` inside a marked-content sequence tagged `tag` with the property list `properties`. */
+function markedText(
+  page: ReturnType<PDFDocument['getPage']>,
+  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
+  text: string,
+  tag: string,
+  properties: PDFDict | PDFName,
+): void {
+  // A DICTIONARY AS ITS OWN SERIALISED FORM: pdf-lib's operand type has no dictionary, though `BDC` takes one, and a
+  // string operand is written verbatim.
+  const operand = properties instanceof PDFDict ? properties.toString() : properties;
+  page.pushOperators(PDFOperator.of(PDFOperatorNames.BeginMarkedContentSequence, [PDFName.of(tag), operand]));
+  page.drawText(text, { font, size: 18, x: 76, y: 698 });
+  page.pushOperators(PDFOperator.of(PDFOperatorNames.EndMarkedContent));
+}
+
+const KEPT_DESCRIPTION = 'A chart of the year';
+
+/**
+ * A TAGGED DOCUMENT OF TWO PAGES (ADR-0163). Page 1 carries the secret as tagged text whose element, and that
+ * element's section, restate it in `/Alt`, `/ActualText`, `/E` and `/T`, beside a named property list carrying it as
+ * `/ActualText`; page 2 carries a figure whose description has nothing to do with it. MuPDF edits the element's
+ * strings as it removes the text, and writes the edited `/ActualText` into `/Alt`, so the original stayed.
+ */
+const taggedText = () =>
+  fixture(async (document) => {
+    const { context } = document;
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const first = onPage(document);
+    const second = document.addPage([...PAGE]);
+    const secret = PDFString.of(SECRET);
+    markedText(first, font, SECRET, 'P', context.obj({ MCID: 0 }));
+    first.node.set(PDFName.of('Resources'), first.node.Resources() ?? context.obj({}));
+    first.node.Resources()?.set(PDFName.of('Properties'), context.obj({ MC0: { ActualText: secret } }));
+    markedText(first, font, 'x', 'Span', PDFName.of('MC0'));
+    markedText(second, font, 'Figure', 'Figure', context.obj({ MCID: 0 }));
+    first.node.set(PDFName.of('StructParents'), context.obj(0));
+    second.node.set(PDFName.of('StructParents'), context.obj(1));
+
+    const structure = context.nextRef();
+    const section = context.nextRef();
+    const paragraph = context.register(
+      context.obj({ Type: 'StructElem', S: 'P', P: section, Pg: first.ref, K: 0, Alt: secret, ActualText: secret, E: secret, T: secret }),
+    );
+    context.assign(section, context.obj({ Type: 'StructElem', S: 'Sect', P: structure, K: [paragraph], ActualText: secret }));
+    const figure = context.register(
+      context.obj({ Type: 'StructElem', S: 'Figure', P: structure, Pg: second.ref, K: 0, Alt: PDFString.of(KEPT_DESCRIPTION) }),
+    );
+    context.assign(
+      structure,
+      context.obj({ Type: 'StructTreeRoot', K: [section, figure], ParentTree: context.obj({ Nums: [0, [paragraph], 1, [figure]] }) }),
+    );
+    document.catalog.set(PDFName.of('StructTreeRoot'), structure);
+    document.catalog.set(PDFName.of('MarkInfo'), context.obj({ Marked: true }));
+  });
+
+/** The `/Alt` of every element whose role is `role`, read back by pdf-lib. */
+async function altsOf(bytes: Uint8Array, role: string): Promise<readonly string[]> {
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  const alts: string[] = [];
+  for (const [, object] of document.context.enumerateIndirectObjects()) {
+    if (!(object instanceof PDFDict) || object.get(PDFName.of('S'))?.toString() !== `/${role}`) continue;
+    const alt = object.get(PDFName.of('Alt'));
+    if (alt instanceof PDFString || alt instanceof PDFHexString) alts.push(alt.decodeText());
+  }
+  return alts;
+}
+
+/** Serialises `bytes` through MuPDF with nothing burned in: the control for a copy no region maps to. */
+async function untouched(bytes: Uint8Array): Promise<Uint8Array> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    return await mupdfWriter.serialise(session);
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+describe('the redaction leak corpus: the structure tree (ADR-0163)', () => {
+  it('CONTROL: a serialise that burns nothing in keeps every copy the tags carry', async () => {
+    const sites = await secretSites(await untouched(await taggedText()));
+    for (const key of ['/Alt', '/ActualText', '/E', '/T']) expect(sites.some((site) => site.endsWith(key)), key).toBe(true);
+    expect(sites.some((site) => site.includes('/Properties/MC0/ActualText'))).toBe(true);
+  });
+
+  it('a burn-in takes the text alternates of every element on the page, and of its ancestors', async () => {
+    expect(await secretSites(await burnIn(await taggedText(), SECRET_BOX))).toStrictEqual([]);
+  });
+
+  it('CONTROL: the figure on the page nothing was burned on keeps its description', async () => {
+    // Without this, the case above is satisfied by a burn-in that strips every element in the document — which is
+    // the removal of the tags' text a mark on one page does not ask for.
+    expect(await altsOf(await burnIn(await taggedText(), SECRET_BOX), 'Figure')).toStrictEqual([KEPT_DESCRIPTION]);
+  });
+});
+
+/** AN OUTLINE whose title restates what is on the page. */
+const outline = () =>
+  fixture(async (document) => {
+    const { context } = document;
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const page = onPage(document);
+    page.drawText(SECRET, { font, size: 18, x: 76, y: 698 });
+    const outlines = context.nextRef();
+    const item = context.register(context.obj({ Title: PDFString.of(SECRET), Parent: outlines, Dest: [page.ref, 'Fit'] }));
+    context.assign(outlines, context.obj({ Type: 'Outlines', First: item, Last: item, Count: 1 }));
+    document.catalog.set(PDFName.of('Outlines'), outlines);
+    document.catalog.set(PDFName.of('PageMode'), PDFName.of('UseOutlines'));
+  });
+
+/** PRIVATE APPLICATION DATA, on the burned page, on the catalogue, and on a second page nothing is burned on. */
+const pieceInfo = () =>
+  fixture((document) => {
+    const { context } = document;
+    const data = (text: string) => context.obj({ Editor: { LastModified: PDFString.of('D:20261004'), Private: { Text: PDFString.of(text) } } });
+    onPage(document).node.set(PDFName.of('PieceInfo'), data(SECRET));
+    document.catalog.set(PDFName.of('PieceInfo'), data(SECRET));
+    document.addPage([...PAGE]).node.set(PDFName.of('PieceInfo'), data('kept'));
+  });
+
+describe('the redaction leak corpus: the outline and private data (ADR-0163)', () => {
+  // NO REGION MAPS TO EITHER, so a mark elsewhere is not a control: a serialise that burns nothing must keep them.
+  it('CONTROL: a serialise that burns nothing in keeps the outline title and both private copies', async () => {
+    const sites = await secretSites(await untouched(await outline()));
+    expect(sites.some((site) => site.endsWith('/Title'))).toBe(true);
+    expect((await secretSites(await untouched(await pieceInfo()))).filter((site) => site.includes('/PieceInfo'))).toHaveLength(2);
+  });
+
+  it('a burn-in removes the outline, and the page mode that opens it', async () => {
+    const burned = await burnIn(await outline(), SECRET_BOX);
+    expect(await secretSites(burned)).toStrictEqual([]);
+    const document = await PDFDocument.load(burned, { updateMetadata: false });
+    expect(document.catalog.has(PDFName.of('Outlines'))).toBe(false);
+    expect(document.catalog.has(PDFName.of('PageMode'))).toBe(false);
+  });
+
+  it('a burn-in removes the burned page’s and the catalogue’s private data, and keeps the other page’s', async () => {
+    const burned = await burnIn(await pieceInfo(), SECRET_BOX);
+    expect(await secretSites(burned)).toStrictEqual([]);
+    const document = await PDFDocument.load(burned, { updateMetadata: false });
+    // THE CONTROL INSIDE THE CASE: a burn-in that dropped every page's private data would pass the line above.
+    expect(document.getPage(1).node.has(PDFName.of('PieceInfo'))).toBe(true);
+  });
+});
+
+describe('the redaction leak corpus: what REMAINS, and is MuPDF’s (ADR-0163)', () => {
+  // PINNED, NOT SKIPPED. MuPDF 1.28.0 keeps an inline property list as it arrived, and this build's only parser of
+  // content streams is MuPDF's, so nothing here reaches it. The day this turns red, MuPDF or a shim export has closed
+  // it, and ADR-0163's last section and this case are owed a correction.
+  it('an inline /ActualText in the content stream survives a burn-in over the text it replaces', async () => {
+    const inline = await fixture(async (document) => {
+      const font = await document.embedFont(StandardFonts.Helvetica);
+      markedText(onPage(document), font, 'xxxx', 'Span', document.context.obj({ ActualText: PDFString.of(SECRET) }));
+    });
+    const sites = await secretSites(await burnIn(inline, SECRET_BOX));
+    expect(sites.length).toBe(1);
+    expect(sites[0]).toMatch(/^stream /u);
   });
 });
