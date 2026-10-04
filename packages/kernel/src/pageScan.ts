@@ -6,9 +6,8 @@ import type { CaptureResult } from './commandLog.js';
 import { COORDINATE_DECIMALS, contentNumber } from './contentNumbers.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
-import { imagesOf, roundTrippable, writeGreyJpeg } from './pageEnhance.js';
+import { decodedForRewrite, greyOf, imagesOf, roundTrippable, writeGreyJpeg } from './pageEnhance.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
-import { imageWithinPixelBound } from './pageSnapshot.js';
 import { otsu } from './pageSkew.js';
 
 /**
@@ -373,22 +372,14 @@ function straighten(document: PDFDocument, page: number): ScanOutcome {
   if (images.length !== 1 || only === undefined) return 'not-one-image';
   if (!roundTrippable(only.object)) return 'unreadable';
 
-  let pixmap: mupdf.Pixmap;
-  try {
-    const image = new mupdf.Image(only.object.readRawStream());
-    // `pageEnhance.ts`' question, asked first (CR-NAT-06): a straightened scan is re-encoded at every pixel, so one past
-    // the host's bound is left as it is and says so.
-    if (!imageWithinPixelBound(image)) return 'too-large';
-    pixmap = image.toPixmap();
-  } catch (error) {
-    // `pageEnhance.ts`' reading of the same throw: MuPDF refuses a stream that is not a
-    // format it recognises on its own, which is a property of the document. The error is
-    // kept as the cause of nothing because the outcome is the whole answer.
-    void error;
-    return 'unreadable';
-  }
+  // `pageEnhance.ts`' decode, and its refusals: a stream MuPDF does not recognise, one past the host's pixel bound
+  // (CR-NAT-06), and one carrying its own alpha, which a grey JPEG cannot keep (CR-NAT-09). Each leaves the page as it
+  // is; the alpha one reads as unreadable, the nearest answer this outcome has for *this image cannot be rewritten*.
+  const pixmap = decodedForRewrite(only.object);
+  if (pixmap === 'too-large') return 'too-large';
+  if (typeof pixmap === 'string') return 'unreadable';
 
-  const grey = pixmap.getNumberOfComponents() === 1 ? pixmap : pixmap.convertToColorSpace(mupdf.ColorSpace.DeviceGray, true);
+  const grey = greyOf(pixmap);
   let straightened: mupdf.Pixmap | null = null;
   try {
     const source: GreySamples = {
