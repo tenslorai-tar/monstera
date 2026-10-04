@@ -140,7 +140,6 @@ export function useOnColor(
         return;
       }
 
-      const wanted = read(wantedToken);
       const backgrounds: Rgb[] = [];
       for (const name of names) {
         const background = read(name);
@@ -150,6 +149,10 @@ export function useOnColor(
         }
         backgrounds.push(background);
       }
+      // A TRANSLUCENT COLOUR AS DRAWN, laid over the first surface it sits on. Read bare, its alpha was dropped and
+      // its channels solved as an opaque colour: the light theme's soft border, `rgba(15, 30, 22, 0.06)`, came out
+      // as rgb(15, 30, 22), near-black, because that already passes 3:1 (measured 2026-10-04 on the page grid).
+      const wanted = channels(style.getPropertyValue(wantedToken).trim(), backgrounds[0] ?? null);
       if (wanted === null) {
         element.style.removeProperty(property);
         return;
