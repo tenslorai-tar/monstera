@@ -219,6 +219,13 @@ export interface EnvironmentReadback {
   readonly gpu: { readonly canvas2d: string; readonly gpuCompositing: string; readonly rasterization: string };
   readonly console: readonly string[];
   /**
+   * The page's WORKERS, PDF.js's among them, reached over the window's debugger: how many attached, and the first
+   * twenty lines they logged or threw. PDF.js decodes an image in its worker, and a failure there is a `console.warn`
+   * in the worker, which `console-message` never reports. `attached: 0` means this reading could not look, not that the
+   * worker was silent: PDF.js starts one for every document.
+   */
+  readonly workers: { readonly attached: number; readonly console: readonly string[] };
+  /**
    * The bytes main served PDF.js, read on the way through `document.readRange`: how many ranges were asked for, how
    * many answered and refused, how many bytes went out of the file's whole, and when the first and last were asked
    * after the open was pressed. A white canvas with every byte served is a drawing that did not finish; one with
@@ -518,6 +525,60 @@ async function writePixels(
   }
   await writeFile(path, bgra);
   return { path, width: size.width, height: size.height };
+}
+
+/** One console argument as text: its value when it has one, else what the debugger describes it as. */
+function argumentText(argument: unknown): string {
+  if (typeof argument !== 'object' || argument === null) return String(argument);
+  const { value, description, type } = argument as { value?: unknown; description?: unknown; type?: unknown };
+  if (value !== undefined) return typeof value === 'string' ? value : JSON.stringify(value);
+  return typeof description === 'string' ? description : String(type);
+}
+
+/**
+ * Reads what the page's WORKERS log and throw, through the window's own debugger.
+ *
+ * `console-message` is a frame's channel; a dedicated worker's console reaches only a debugger, so PDF.js's worker —
+ * where it decodes an image and warns when it cannot — was a channel nothing in this harness read. The debugger is
+ * told to attach to every worker the page starts (`Target.setAutoAttach`, flat sessions, never paused), and each
+ * attached worker's `Runtime` reports its console calls and uncaught exceptions. The page's own session is never
+ * enabled: the page's console is already read, and enabling it would be a second reader of the same lines.
+ *
+ * Bounded at twenty lines of three hundred characters, the page console's bound, so a worker logging in a loop cannot
+ * make the marker line unreadable.
+ */
+async function watchWorkers(contents: Electron.WebContents): Promise<{ attached: number; readonly lines: string[] }> {
+  const watched = { attached: 0, lines: [] as string[] };
+  const push = (line: string): void => {
+    if (watched.lines.length < 20) watched.lines.push(line.slice(0, 300));
+  };
+  const debug = contents.debugger;
+  debug.attach('1.3');
+  debug.on('message', (_event, method, params, sessionId) => {
+    const p = params as {
+      sessionId?: string;
+      targetInfo?: { type?: string };
+      type?: string;
+      args?: unknown[];
+      exceptionDetails?: { text?: string; exception?: { description?: string } };
+    };
+    if (method === 'Target.attachedToTarget' && p.targetInfo?.type === 'worker' && p.sessionId !== undefined) {
+      watched.attached += 1;
+      void debug.sendCommand('Runtime.enable', {}, p.sessionId).catch((error: unknown) => {
+        push(`runtime not enabled: ${String(error)}`);
+      });
+      return;
+    }
+    // THE PAGE'S OWN SESSION is the empty id, and it is never enabled; only a worker's session reaches below.
+    if (sessionId === '') return;
+    if (method === 'Runtime.consoleAPICalled') {
+      push(`${String(p.type)}: ${(p.args ?? []).map(argumentText).join(' ')}`);
+    } else if (method === 'Runtime.exceptionThrown') {
+      push(`thrown: ${p.exceptionDetails?.exception?.description ?? p.exceptionDetails?.text ?? 'unknown'}`);
+    }
+  });
+  await debug.sendCommand('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+  return watched;
 }
 
 /**
@@ -962,8 +1023,9 @@ export async function reportCanvasPixels(
   contents.on('render-process-gone', (_event, details) => {
     renderProcessGone.push(`${details.reason} (exit ${String(details.exitCode)})`);
   });
-  // THE FIRST TWENTY warnings and errors, each cut to a line: enough to name a skipped image or a lost context, and
-  // bounded so a renderer logging in a loop cannot make the one marker line unreadable.
+  // THE FIRST TWENTY warnings and errors, each cut to a line: enough to name an image the page's thread skipped or a
+  // lost context, and bounded so a renderer logging in a loop cannot make the one marker line unreadable. The PAGE's
+  // only: `console-message` reports a frame, and PDF.js's worker logs elsewhere — read below.
   const consoleLines: string[] = [];
   contents.on('console-message', (event) => {
     if ((event.level === 'warning' || event.level === 'error') && consoleLines.length < 20) {
@@ -975,6 +1037,8 @@ export async function reportCanvasPixels(
       resolve();
     });
   });
+  // ATTACHED BEFORE THE OPEN, which is when PDF.js starts its worker, so the worker is reached from its first line.
+  const workers = await watchWorkers(contents);
 
   openedAt = process.hrtime.bigint();
   const dispatched = await clickControl(contents, openControlName, 'open control');
@@ -1147,6 +1211,7 @@ export async function reportCanvasPixels(
         rasterization: gpuStatus.rasterization,
       },
       console: consoleLines,
+      workers: { attached: workers.attached, console: [...workers.lines] },
       ranges: { ...ranges },
       frames,
     },

@@ -247,7 +247,9 @@ function describeRun(tally, environment, controls) {
     `${String(environment.ranges.fileBytes)} bytes served, first at ${String(environment.ranges.firstMs)} ms and last ` +
     `at ${String(environment.ranges.lastMs)} ms after the open. animation frames: ${String(environment.frames.ran)} ` +
     `of ${String(environment.frames.asked)} ran.` +
-    `\n      renderer warnings and errors: ${JSON.stringify(environment.console)}.`
+    `\n      renderer warnings and errors: ${JSON.stringify(environment.console)}.` +
+    `\n      workers attached: ${String(environment.workers.attached)}; their console: ` +
+    `${JSON.stringify(environment.workers.console)}.`
   );
 }
 
@@ -619,7 +621,11 @@ try {
             // here before a height reaches the bound.
             `  title bar overlay: ${String(overlay.painted.length)} report(s) at heights ` +
             `${overlay.painted.map((each) => String(each.height)).join(', ')}; the bar measures ` +
-            `${String(overlay.barHeight)} px, its area ${String(overlay.areaWidth)} of ${String(overlay.innerWidth)} px\n`,
+            `${String(overlay.barHeight)} px, its area ${String(overlay.areaWidth)} of ${String(overlay.innerWidth)} px\n` +
+            // REPORTED ON EVERY RUN, so the worker reading a failure would rest on is seen to reach PDF.js's worker on a
+            // run that passes: an attached count of 0 there says the reading cannot look.
+            `  workers attached: ${String(seen.environment.workers.attached)}, logging ` +
+            `${String(seen.environment.workers.console.length)} line(s)\n`,
     );
   }
 } catch (error) {
