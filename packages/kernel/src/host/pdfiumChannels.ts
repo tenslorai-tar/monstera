@@ -153,8 +153,10 @@ export const SMALLEST_RUN_BYTES = 192;
 export const PDFIUM_PRIOR_TEXT_MAX = 65_536;
 
 /**
- * How long a run's font name may be on this wire: the adapter reads it through a 128-byte buffer whose last byte is
- * the terminator (`baseNameOf` in `pdfiumFfi.ts`), so no name it answers is longer.
+ * How long a run's font name may be on this wire: ISO 32000's own limit on a name, 127 bytes. The adapter reads the
+ * whole name, whatever its length, and cuts a longer one to this at a whole character for the wire (`wireFontName` in
+ * `pdfiumFfi.ts`), so a document past the limit is still read. This said the bound followed from a 128-byte read
+ * buffer, which answered a longer name as 127 NULs (CR-NAT-12).
  */
 export const PDFIUM_FONT_NAME_MAX = 127;
 

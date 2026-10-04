@@ -73,7 +73,7 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFName, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
 import { PDFIUM_ADAPTER, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
@@ -154,7 +154,7 @@ async function threeRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 48 });
+const roster = createRoster(failures, { cases: 51 });
 
 /**
  * @param {string} name
@@ -452,6 +452,7 @@ async function main() {
     reclosed ?? 'it was accepted',
   );
 
+  await fontNameCases();
   await objectCases();
 
   process.stdout.write(
@@ -460,6 +461,50 @@ async function main() {
       : roster.format('PDFium adapter case'),
   );
   process.exitCode = failures.length === 0 ? 0 : 1;
+}
+
+/**
+ * The font name a run is read with, for a page whose one font's `/BaseFont` is `baseFont`.
+ *
+ * `baseFont` is a string of BYTES, one character each, which pdf-lib writes into the name as `#xx` escapes, so a
+ * UTF-8 name is passed as its UTF-8 bytes.
+ *
+ * @param {string} baseFont
+ * @returns {Promise<string | undefined>}
+ */
+async function fontNameOfRun(baseFont) {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  document.addPage([300, 100]).drawText('Named', { x: 20, y: 50, size: 11, font });
+  const dictionary = document.context.lookup(font.ref, PDFDict);
+  dictionary.set(PDFName.of('BaseFont'), PDFName.of(baseFont));
+  const session = await pdfiumWriter.open(await document.save());
+  try {
+    return (await textRuns(session, 0)).runs[0]?.style.font;
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+}
+
+/** CR-NAT-12: a base name read whole, in UTF-8, and cut to the wire's bound at a whole character. */
+async function fontNameCases() {
+  const long = `Helvetica${'X'.repeat(141)}`;
+  const read = await fontNameOfRun(long);
+  record(
+    'a base name past the wire bound is read, and cut to 127 characters of itself',
+    read === long.slice(0, 127),
+    // A 128-BYTE BUFFER answered this as 127 NULs: PDFium leaves a buffer shorter than the name untouched and still
+    // answers the full length.
+    `read ${JSON.stringify(read?.slice(0, 20))}… of ${String(read?.length)} characters`,
+  );
+  const utf8 = await fontNameOfRun('CafÃ©');
+  record(
+    'a base name is read as UTF-8, as fpdf_edit.h says the buffer is',
+    utf8 === 'Café',
+    `read ${JSON.stringify(utf8)}; decoded byte by byte it would be "CafÃ©"`,
+  );
+  const short = await fontNameOfRun('Helvetica');
+  record('CONTROL: a short base name is read whole', short === 'Helvetica', `read ${JSON.stringify(short)}`);
 }
 
 /**

@@ -3,6 +3,7 @@ import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
 import type { ByteImage, EngineWriter, PdfiumSession } from './engineSeam.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
+import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
 import { TextNotWritableError } from './textEditRefusals.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
@@ -1107,7 +1108,7 @@ function styleOf(bindings: Bound, object: unknown, programs: Map<string, Program
   return {
     size: (size[0] ?? 0) * Math.hypot(a, b),
     colour: { r: red[0] ?? 0, g: green[0] ?? 0, b: blue[0] ?? 0 },
-    font: name,
+    font: wireFontName(name),
     serif: (flags & 2) !== 0,
     mono: (flags & 1) !== 0,
     bold: face.bold,
@@ -1147,13 +1148,38 @@ function programOf(bindings: Bound, font: unknown, programs: Map<string, Program
   return face;
 }
 
-/** A font's base name, as ASCII — what `FPDFFont_GetBaseFontName` answers. */
+/** The most bytes of one base name read: a name is a PDF name, and one this long is not a font's (CR-NAT-12). */
+const MAX_FONT_NAME_BYTES = 64 * 1024;
+
+/**
+ * A font's base name — what `FPDFFont_GetBaseFontName` answers — as UTF-8, and cut to {@link PDFIUM_FONT_NAME_MAX} for
+ * the wire.
+ *
+ * **PDFium's own two calls** (`fpdf_edit.h`): the length first, terminator counted, then a buffer of that length.
+ * One fixed 128-byte buffer read a longer name as 127 NULs, because a buffer shorter than the answer is left
+ * untouched while the full length is still returned (CR-NAT-12). The buffer is UTF-8 by the same header, where this
+ * decoded it as Latin-1. A name past {@link MAX_FONT_NAME_BYTES} is answered as no name.
+ *
+ * **Cut, not refused**, at ISO 32000's own limit on a name, 127 bytes, which is the wire's bound: a document past it is
+ * still a document, and the full name has already been read for its face.
+ */
 function baseNameOf(bindings: Bound, font: unknown): string {
-  const buffer = new Uint8Array(128);
-  const length = numberFrom(bindings.fontBaseName(font, buffer, buffer.length), 'FPDFFont_GetBaseFontName');
-  // THE TERMINATOR IS COUNTED, and a name longer than the buffer answers its
-  // full length without writing — so the slice is bounded by both.
-  return String.fromCharCode(...buffer.subarray(0, Math.max(0, Math.min(length, buffer.length) - 1)));
+  const needed = numberFrom(bindings.fontBaseName(font, null, 0), 'FPDFFont_GetBaseFontName');
+  if (needed <= 1 || needed > MAX_FONT_NAME_BYTES) return '';
+  const buffer = new Uint8Array(needed);
+  if (numberFrom(bindings.fontBaseName(font, buffer, buffer.length), 'FPDFFont_GetBaseFontName') !== needed) return '';
+  return new TextDecoder().decode(buffer.subarray(0, needed - 1));
+}
+
+/** A name cut to the wire's bound at a whole character: {@link PDFIUM_FONT_NAME_MAX} UTF-16 units, as the schema counts. */
+function wireFontName(name: string): string {
+  if (name.length <= PDFIUM_FONT_NAME_MAX) return name;
+  let cut = '';
+  for (const character of name) {
+    if (cut.length + character.length > PDFIUM_FONT_NAME_MAX) break;
+    cut += character;
+  }
+  return cut;
 }
 
 /**
