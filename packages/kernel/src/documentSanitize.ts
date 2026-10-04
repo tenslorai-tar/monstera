@@ -25,6 +25,14 @@ import { withDocument, withDocumentRemoving } from './mupdfWriter.js';
  * as the object count *growing* 49 to 55. So this is a `purpose: 'removal'`
  * command and uses `withDocumentRemoving`; without that the JavaScript is still
  * in the file, and a scan for it would find it.
+ *
+ * ## Where an action can sit is ONE walk, which stripping and counting both take
+ *
+ * An action sits under the catalogue's `/OpenAction`, under an annotation's or a field's or an outline item's `/A`,
+ * and after any of those in its own `/Next` chain; a trigger dictionary `/AA` sits on the catalogue, a page, an
+ * annotation or a field. {@link actionPlaces} names them once, so the counter cannot learn a place the stripper does
+ * not, which is how the walk missed parent fields, outline items and every `/Next` (CR-DOC-13) without either half
+ * looking wrong (B3a).
  */
 
 /** Whether `object` is a dictionary this build can read keys from. */
@@ -56,69 +64,259 @@ function annotationObjects(page: mupdf.PDFPage): mupdf.PDFObject[] {
 }
 
 /**
- * Actions whose `/S` this build strips wherever it finds one.
+ * The action types each part removes, by what the part's own words promise.
  *
- * `/JavaScript` and `/Launch` run something; `/ImportData` and `/SubmitForm`
- * reach outside the document. **`/URI` and `/GoTo` are deliberately absent**: a
- * link a person clicks is content, and a sanitise that silently broke every
- * cross-reference and every web link would be taking away the document rather
- * than making it inert.
+ * - **`javascript`**, *embedded JavaScript and automatic actions*: what runs something. `/Rendition` may carry its own
+ *   `/JS`, `/RichMediaExecute` runs a command inside rich media, and `/Launch` starts a program.
+ * - **`external-actions`**, *actions that submit or fetch data*: `/SubmitForm` and `/ImportData`.
+ * - **`embedded-files`**, *attached files*: `/GoToE` opens one, and points at nothing once they are gone.
+ *
+ * CR-DOC-13 named `/Rendition`, `/RichMediaExecute` and `/GoToE` as types the one list this replaced missed. **`/URI`,
+ * `/GoTo` and `/GoToR` are deliberately in no part**: a link a person clicks is content, and a sanitise that silently
+ * broke every cross-reference and every web link would be taking away the document rather than making it inert.
  */
-const REMOVED_ACTIONS = new Set(['/JavaScript', '/Launch', '/ImportData', '/SubmitForm']);
+const RUNS = new Set(['/JavaScript', '/Launch', '/Rendition', '/RichMediaExecute']);
+const REACHES = new Set(['/SubmitForm', '/ImportData']);
+const OPENS_ATTACHMENT = new Set(['/GoToE']);
 
-/** Whether this action dictionary is one of {@link REMOVED_ACTIONS}. */
-function isActive(action: mupdf.PDFObject): boolean {
-  if (!dictionary(action)) return false;
-  return REMOVED_ACTIONS.has(String(action.get('S')));
+/** A walk of a `/Next` chain, an outline or a field tree stops at this many objects: a malformed file may nest without end. */
+const MAX_WALK = 10_000;
+
+/** Whether a walk has been here: an indirect object's number, recorded on the first visit. A direct object has none. */
+function seenBefore(object: mupdf.PDFObject, seen: Set<number>): boolean {
+  if (!object.isIndirect()) return false;
+  const number = object.asIndirect();
+  if (seen.has(number)) return true;
+  seen.add(number);
+  return false;
 }
 
 /**
- * Clears `key` from `holder` when the action under it is an active one.
+ * Every field dictionary in the `/AcroForm` tree, parents included.
  *
- * **It reads before it deletes**, rather than deleting unconditionally, because
- * `/A` on a link annotation is usually a `/URI` — the content case above. A
- * blanket delete would strip every link in the document under a command whose
- * name promises to remove active content.
+ * A parent field holds the keystroke, format, validate and calculate scripts in its `/AA` and is on no page, so a walk
+ * of `/Annots` alone never reaches them (CR-DOC-13). A field merged with its widget is reached here and as an
+ * annotation, which is harmless: removing is idempotent, and counting reads each object once through its `seen`.
  */
-function clearActiveAction(holder: mupdf.PDFObject, key: string): void {
-  const action = holder.get(key);
-  if (isActive(action)) holder.delete(key);
+function fieldObjects(document: mupdf.PDFDocument): mupdf.PDFObject[] {
+  const acroForm = document.getTrailer().get('Root').get('AcroForm');
+  if (!dictionary(acroForm)) return [];
+  const found: mupdf.PDFObject[] = [];
+  const seen = new Set<number>();
+  const pending: mupdf.PDFObject[] = [];
+  acroForm.get('Fields').forEach((value) => pending.push(value));
+  while (pending.length > 0 && found.length < MAX_WALK) {
+    const field = pending.pop();
+    if (field === undefined || !dictionary(field) || seenBefore(field, seen)) continue;
+    found.push(field);
+    field.get('Kids').forEach((kid) => pending.push(kid));
+  }
+  return found;
 }
 
-/**
- * Clears an `/AA` additional-actions dictionary entirely.
- *
- * Unlike `/A`, **every entry in `/AA` is a trigger** — page open, page close,
- * field focus, mouse enter — and none of them is content a reader follows.
- * There is nothing here to keep, so this is the one place a key goes without
- * being read first.
- */
-function clearTriggers(holder: mupdf.PDFObject): void {
-  if (!holder.get('AA').isNull()) holder.delete('AA');
+/** Every outline item, whose `/A` can be any action, JavaScript included (CR-DOC-13). */
+function outlineItems(document: mupdf.PDFDocument): mupdf.PDFObject[] {
+  const outlines = document.getTrailer().get('Root').get('Outlines');
+  if (!dictionary(outlines)) return [];
+  const found: mupdf.PDFObject[] = [];
+  const seen = new Set<number>();
+  const pending: mupdf.PDFObject[] = [outlines.get('First')];
+  while (pending.length > 0 && found.length < MAX_WALK) {
+    const item = pending.pop();
+    if (item === undefined || !dictionary(item) || seenBefore(item, seen)) continue;
+    found.push(item);
+    pending.push(item.get('Next'), item.get('First'));
+  }
+  return found;
 }
 
-/** Removes the catalogue and per-page entries that carry JavaScript. */
-function stripJavaScript(document: mupdf.PDFDocument): void {
+/** Where actions and trigger dictionaries sit, named once for every part and for the counter. */
+interface ActionPlaces {
+  /** Each `(holder, key)` under which one action, the head of its own `/Next` chain, can sit. */
+  readonly actions: readonly (readonly [mupdf.PDFObject, 'A' | 'OpenAction'])[];
+  /** Each dictionary that can hold an `/AA`. */
+  readonly triggers: readonly mupdf.PDFObject[];
+}
+
+/** Every place an action sits, and every holder of an `/AA` trigger dictionary. */
+function actionPlaces(document: mupdf.PDFDocument): ActionPlaces {
   const root = document.getTrailer().get('Root');
-  clearActiveAction(root, 'OpenAction');
-  clearTriggers(root);
-  const names = root.get('Names');
-  if (dictionary(names) && !names.get('JavaScript').isNull()) names.delete('JavaScript');
-
+  const actions: (readonly [mupdf.PDFObject, 'A' | 'OpenAction'])[] = [[root, 'OpenAction']];
+  const triggers: mupdf.PDFObject[] = [root];
   for (let index = 0; index < document.countPages(); index += 1) {
     const page = document.loadPage(index);
-    clearTriggers(page.getObject());
+    triggers.push(page.getObject());
     for (const object of annotationObjects(page)) {
-      clearActiveAction(object, 'A');
-      clearTriggers(object);
+      actions.push([object, 'A']);
+      triggers.push(object);
     }
+  }
+  for (const field of fieldObjects(document)) {
+    actions.push([field, 'A']);
+    triggers.push(field);
+  }
+  for (const item of outlineItems(document)) actions.push([item, 'A']);
+  return { actions, triggers };
+}
+
+/** Whether this action dictionary's `/S` is one of `kinds`. */
+function isOneOf(action: mupdf.PDFObject, kinds: ReadonlySet<string>): boolean {
+  return dictionary(action) && kinds.has(String(action.get('S')));
+}
+
+/** The actions that follow `action`, in order: its `/Next` is one action or an array of them. */
+function followers(action: mupdf.PDFObject): mupdf.PDFObject[] {
+  const next = action.get('Next');
+  if (dictionary(next)) return [next];
+  const list: mupdf.PDFObject[] = [];
+  if (next.isArray()) {
+    next.forEach((value) => {
+      if (dictionary(value)) list.push(value);
+    });
+  }
+  return list;
+}
+
+/**
+ * One action that runs `list` in order, or null for none: the first, or for several a copy of the first whose `/Next`
+ * is its own followers and then the rest. A COPY, because the first may be shared by another holder whose chain must
+ * not change.
+ */
+function sequence(document: mupdf.PDFDocument, list: readonly mupdf.PDFObject[]): mupdf.PDFObject | null {
+  const [first, ...rest] = list;
+  if (first === undefined) return null;
+  if (rest.length === 0) return first;
+  const head = document.newDictionary();
+  first.forEach((value, key) => {
+    if (key !== 'Next') head.put(key, value);
+  });
+  const next = document.newArray();
+  for (const action of [...followers(first), ...rest]) next.push(action);
+  head.put('Next', next);
+  return head;
+}
+
+/**
+ * Removes every action of `kinds` from the chain under `key`, and keeps every other one in the order it ran.
+ *
+ * **A removed action's followers take its place** rather than going with it: a `/JavaScript` head whose `/Next` is a
+ * `/GoTo` leaves the `/GoTo`, because a person's link is content. And **a kept action's followers are walked too**,
+ * which is the gap CR-DOC-13 found: a `/GoTo` a person clicks whose `/Next` runs JavaScript kept the script, because
+ * only the head was read. `seen` stops a chain that loops back on itself, and a removed action met a second time goes.
+ */
+function clearChain(
+  document: mupdf.PDFDocument,
+  holder: mupdf.PDFObject,
+  key: string | number,
+  kinds: ReadonlySet<string>,
+  seen: Set<number>,
+): void {
+  for (let steps = 0; steps < MAX_WALK; steps += 1) {
+    const action = holder.get(key);
+    if (!dictionary(action)) return;
+    const repeat = seenBefore(action, seen);
+    if (isOneOf(action, kinds)) {
+      // A follower this chain already ran is the loop back to it, and taking it as the next head would close the
+      // loop on itself rather than end it.
+      const ahead = followers(action).filter((next) => !(next.isIndirect() && seen.has(next.asIndirect())));
+      const rest = repeat ? null : sequence(document, ahead);
+      if (rest === null) {
+        holder.delete(key);
+        return;
+      }
+      holder.put(key, rest);
+      continue;
+    }
+    if (repeat || seen.size > MAX_WALK) return;
+    const next = action.get('Next');
+    if (next.isArray()) {
+      for (let at = next.length - 1; at >= 0; at -= 1) clearChain(document, next, at, kinds, seen);
+      if (next.length === 0) action.delete('Next');
+    } else {
+      clearChain(document, action, 'Next', kinds, seen);
+    }
+    return;
   }
 }
 
-/** Removes the catalogue's embedded-file tree. */
+/** How many actions of `kinds` the chain under `key` holds, walked as {@link clearChain} walks it. */
+function countInChain(
+  holder: mupdf.PDFObject,
+  key: string | number,
+  kinds: ReadonlySet<string>,
+  seen: Set<number>,
+): number {
+  const action = holder.get(key);
+  if (!dictionary(action) || seenBefore(action, seen) || seen.size > MAX_WALK) return 0;
+  let count = isOneOf(action, kinds) ? 1 : 0;
+  const next = action.get('Next');
+  if (next.isArray()) {
+    for (let at = 0; at < next.length; at += 1) count += countInChain(next, at, kinds, seen);
+  } else {
+    count += countInChain(action, 'Next', kinds, seen);
+  }
+  return count;
+}
+
+/**
+ * Removes every action of `kinds` from every place an action sits.
+ *
+ * **A walk per place**, where the count keeps one for the document: here `seen` only has to end a loop. Shared across
+ * places, it would read an action a second link also runs as that link's loop back, and drop it from the second chain.
+ */
+function clearActions(document: mupdf.PDFDocument, places: ActionPlaces, kinds: ReadonlySet<string>): void {
+  for (const [holder, key] of places.actions) clearChain(document, holder, key, kinds, new Set());
+}
+
+/** How many actions of `kinds` the document holds, over every place an action sits. */
+function countActions(places: ActionPlaces, kinds: ReadonlySet<string>): number {
+  const seen = new Set<number>();
+  let count = 0;
+  for (const [holder, key] of places.actions) count += countInChain(holder, key, kinds, seen);
+  return count;
+}
+
+/** Whether an annotation is a file attachment, which carries its file in `/FS` rather than in the name tree. */
+function isAttachment(annotation: mupdf.PDFObject): boolean {
+  return String(annotation.get('Subtype')) === '/FileAttachment';
+}
+
+/**
+ * Removes JavaScript and the automatic actions.
+ *
+ * **Every `/AA` goes whole**, unlike an `/A`: every entry in a trigger dictionary is a trigger — page open, page close,
+ * field focus, a field's keystroke and format scripts — and none of them is content a reader follows, so there is
+ * nothing in one to keep. An `/A` is read first, because on a link it is usually a `/URI`.
+ */
+function stripJavaScript(document: mupdf.PDFDocument): void {
+  const places = actionPlaces(document);
+  clearActions(document, places, RUNS);
+  for (const holder of places.triggers) {
+    if (!holder.get('AA').isNull()) holder.delete('AA');
+  }
+  const names = document.getTrailer().get('Root').get('Names');
+  if (dictionary(names) && !names.get('JavaScript').isNull()) names.delete('JavaScript');
+}
+
+/**
+ * Removes the attached files: the catalogue's name tree, every file attachment annotation, and every action that
+ * opens one.
+ *
+ * **The attachment annotation goes through `deleteAnnotation`**, not out of `/Annots` by hand, so MuPDF's own list of
+ * the page's annotations agrees with the dictionary — a flatten later in the same command bakes from that list, and a
+ * stale entry there would draw the attachment's icon into the page it was removed from. MuPDF's reader hides links and
+ * widgets, never an attachment, so this reader sees every one `/Annots` holds.
+ */
 function stripEmbeddedFiles(document: mupdf.PDFDocument): void {
   const names = document.getTrailer().get('Root').get('Names');
   if (dictionary(names) && !names.get('EmbeddedFiles').isNull()) names.delete('EmbeddedFiles');
+  for (let index = 0; index < document.countPages(); index += 1) {
+    const page = document.loadPage(index);
+    for (const annotation of [...page.getAnnotations()]) {
+      if (isAttachment(annotation.getObject())) page.deleteAnnotation(annotation);
+    }
+  }
+  clearActions(document, actionPlaces(document), OPENS_ATTACHMENT);
 }
 
 /**
@@ -132,14 +330,7 @@ function stripEmbeddedFiles(document: mupdf.PDFDocument): void {
 function stripExternalActions(document: mupdf.PDFDocument): void {
   const acroForm = document.getTrailer().get('Root').get('AcroForm');
   if (dictionary(acroForm) && !acroForm.get('XFA').isNull()) acroForm.delete('XFA');
-
-  for (let index = 0; index < document.countPages(); index += 1) {
-    for (const object of annotationObjects(document.loadPage(index))) {
-      // The same read-before-delete as `stripJavaScript`: `/SubmitForm` and
-      // `/ImportData` are in `REMOVED_ACTIONS` and `/URI` is not.
-      clearActiveAction(object, 'A');
-    }
-  }
+  clearActions(document, actionPlaces(document), REACHES);
 }
 
 /**
@@ -205,7 +396,10 @@ export const invertSanitizeDocument = (): never => {
  * document, so it needs a reader that walks the same places the stripper walks.
  * A reader written inside the test would be a second opinion about where
  * JavaScript lives in a PDF, agreeing with this module until one of them
- * learned a new place (B3a).
+ * learned a new place (B3a). Each count is what its part removes: `javascript`
+ * counts the running actions, every holder of an `/AA` and the catalogue's
+ * script tree; `external` the submitting actions and an XFA form; `embeddedFiles`
+ * the catalogue's file tree, each attachment annotation and each action opening one.
  */
 export function activeContentIn(document: mupdf.PDFDocument): {
   readonly javascript: number;
@@ -215,28 +409,28 @@ export function activeContentIn(document: mupdf.PDFDocument): {
 } {
   const root = document.getTrailer().get('Root');
   const names = root.get('Names');
-  let javascript = 0;
-  let external = 0;
-  let annotations = 0;
+  const places = actionPlaces(document);
 
-  if (isActive(root.get('OpenAction'))) javascript += 1;
-  if (!root.get('AA').isNull()) javascript += 1;
+  let javascript = countActions(places, RUNS);
+  const holders = new Set<number>();
+  for (const holder of places.triggers) {
+    if (!holder.get('AA').isNull() && !seenBefore(holder, holders)) javascript += 1;
+  }
   if (dictionary(names) && !names.get('JavaScript').isNull()) javascript += 1;
 
+  let external = countActions(places, REACHES);
   const acroForm = root.get('AcroForm');
   if (dictionary(acroForm) && !acroForm.get('XFA').isNull()) external += 1;
 
+  let embeddedFiles = countActions(places, OPENS_ATTACHMENT);
+  if (dictionary(names) && !names.get('EmbeddedFiles').isNull()) embeddedFiles += 1;
+
+  let annotations = 0;
   for (let index = 0; index < document.countPages(); index += 1) {
-    const page = document.loadPage(index);
-    if (!page.getObject().get('AA').isNull()) javascript += 1;
-    for (const object of annotationObjects(page)) {
+    for (const object of annotationObjects(document.loadPage(index))) {
       annotations += 1;
-      if (!object.get('AA').isNull()) javascript += 1;
-      if (isActive(object.get('A'))) external += 1;
+      if (isAttachment(object)) embeddedFiles += 1;
     }
   }
-
-  const embeddedFiles =
-    dictionary(names) && !names.get('EmbeddedFiles').isNull() ? 1 : 0;
   return { javascript, embeddedFiles, external, annotations };
 }
