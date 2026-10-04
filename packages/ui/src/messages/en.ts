@@ -2124,6 +2124,8 @@ export const RIBBON_TEXT = messageKey('surface.ribbon.text');
 export const RIBBON_COMPARE = messageKey('surface.ribbon.compare');
 /** v5-08's Forms captions: the Data menus (ADR-0101), Detect, and Flatten. */
 export const RIBBON_FORM_DATA_EXPORT = messageKey('surface.ribbon.form-data-export');
+/** Home › Export's one button for Word, Excel and PowerPoint (the owner's answer, cloud-4 item 9c). */
+export const RIBBON_EXPORT_OFFICE = messageKey('surface.ribbon.export-office');
 export const RIBBON_FORM_DATA_IMPORT = messageKey('surface.ribbon.form-data-import');
 export const RIBBON_DETECT_FIELDS = messageKey('surface.ribbon.detect-fields');
 export const RIBBON_FLATTEN_FORM = messageKey('surface.ribbon.flatten-form');
@@ -5103,6 +5105,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_TEXT]: 'Text',
   [RIBBON_COMPARE]: 'Compare',
   [RIBBON_FORM_DATA_EXPORT]: 'Export',
+  [RIBBON_EXPORT_OFFICE]: 'Export',
   [RIBBON_FORM_DATA_IMPORT]: 'Import',
   [RIBBON_DETECT_FIELDS]: 'Detect',
   [RIBBON_FLATTEN_FORM]: 'Flatten',

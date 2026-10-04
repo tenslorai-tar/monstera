@@ -10,7 +10,7 @@ Export to PowerPoint makes a presentation with one slide per page. Each slide sh
 
 ## Steps
 
-1. In the rail, choose **Home**, then **PowerPoint** in the **Export** group, next to **Excel**. It is also in **Tools** › **Convert** and in the **Tools** menu, as **Export to PowerPoint…**.
+1. In the rail, choose **Home**, then **Export** in the **Export** group, and **Export to PowerPoint…**. It is also in **Tools** › **Convert** and in the **Tools** menu.
 2. Choose where to save the file.
 
 ![The Home section's Export group with PowerPoint beside Word and Excel](screenshot:export-to-powerpoint-1)

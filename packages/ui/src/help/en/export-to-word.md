@@ -10,7 +10,7 @@ Export to Word turns the document's text and pictures into a Word (.docx) file y
 
 ## Steps
 
-1. In the rail, choose **Home**, then **Word…** in the **Export** group.
+1. In the rail, choose **Home**, then **Export** in the **Export** group, and **Export to Word…**.
 2. In **What to keep**, choose one:
    - **Editable text**: text and its fonts, flowing like a normal document
    - **Page layout**: each line where it sits on the page

@@ -10,7 +10,7 @@ Export tables to Excel reads the tables in your document, lets you check and cor
 
 ## Steps
 
-1. In the rail, choose **Home**, then **Excel…** in the **Export** group (its full name is **Export tables to Excel…**).
+1. In the rail, choose **Home**, then **Export** in the **Export** group, and **Export tables to Excel…**.
 2. If you have added an Azure or Claude key, choose in **Read the tables with**: **This PDF's own text**, **Azure Document Intelligence** or **Claude**. Without a key, the window uses the PDF's own text and says how to add a key.
 3. With **This PDF's own text**, the window shows the tables on the page you are reading. Use **Previous page** and **Next page** to look through the others, and click any cell to correct it.
 4. In **Where the tables go**, choose **A sheet for each page that has tables** or **Every table on one sheet**.

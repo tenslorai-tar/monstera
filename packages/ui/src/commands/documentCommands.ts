@@ -219,6 +219,7 @@ import {
   GROUP_QUICK_TOOLS,
   RIBBON_FLATTEN_FORM,
   RIBBON_FORM_DATA_EXPORT,
+  RIBBON_EXPORT_OFFICE,
   RIBBON_FORM_DATA_IMPORT,
   FORMS_FLATTEN,
   RIBBON_FORM_EXPORT_JSON,
@@ -2809,7 +2810,9 @@ export function exportWordCommand(
     title: EXPORT_WORD_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_WORD,
     placements: [
-      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 302 },
+      // ONE "EXPORT" BUTTON ON HOME for the three Office formats (the owner's answer, cloud-4 item 9c), so at 1280 the
+      // Quick tools keep Comment and Signature on show; Tools › Convert keeps a button each.
+      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 302, menu: RIBBON_EXPORT_OFFICE },
       { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 110 },
     ],
     when: hasDocument,
@@ -2858,7 +2861,7 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile 
     // BESIDE WORD AND EXCEL, as the owner's review of 0.1.9.0 asked: Home › Export straight after Excel, and Tools ›
     // Convert straight after Excel at the same prominence, which is also its place in the Tools menu.
     placements: [
-      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 305 },
+      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 305, menu: RIBBON_EXPORT_OFFICE },
       { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 125 },
     ],
     when: hasDocument,
@@ -2917,7 +2920,7 @@ export function exportExcelCommand(
     title: EXPORT_EXCEL_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_EXCEL,
     placements: [
-      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 304 },
+      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 304, menu: RIBBON_EXPORT_OFFICE },
       { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 120 },
     ],
     when: hasDocument,
