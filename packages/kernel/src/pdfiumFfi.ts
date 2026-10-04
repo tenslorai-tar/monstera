@@ -458,9 +458,9 @@ export function pdfiumIsOpen(): boolean {
  * between two commands, which is the shape that reads as flakiness.
  *
  * So the bytes are held **beside** the document for exactly as long as it lives,
- * and dropped in `close`. This is the same reason `mupdfWriter.ts` copies out of
- * the WASM heap rather than keeping a view into it: an engine's memory and
- * JavaScript's lifetime rules are two owners of one buffer.
+ * and dropped in `close`: PDFium reads the bytes for as long as the document is
+ * open, and JavaScript's lifetime rules know nothing of that, so two owners of
+ * one buffer agree only when this one is told explicitly.
  */
 interface Live {
   readonly document: unknown;
@@ -2818,7 +2818,7 @@ function saveAsCopy(document: unknown): Buffer {
       // `decode` COPIES out of PDFium's block into a JavaScript array, and
       // `Buffer.from` copies again — the block is valid only for the duration of
       // this callback, so a view kept past the return would be reading freed
-      // memory. Same hazard as `mupdfWriter.ts`'s view into the WASM heap.
+      // memory.
       const bytes: unknown = koffi.decode(data, 'uint8_t', size);
       blocks.push(Buffer.from(bytes as Uint8Array));
       return 1;
