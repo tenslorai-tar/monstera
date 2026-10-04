@@ -5399,14 +5399,19 @@ export function openMupdfShim(libraryPath: string): void {
 			// a number, so the same conversion happens here, once, for every export.
 			const result = call(...args.map((arg) => (typeof arg === "number" ? arg : arg ? 1 : 0)))
 			const kind = errorKind()
+			// A CALLBACK'S THROW BELONGS TO THE EXPORT THAT RAN IT, whether or not MuPDF let it reach the export: the
+			// display-list player catches a device's error and plays on, so the call returned cleanly and the value
+			// stayed here, to be thrown by the next export that failed for a reason of its own (CR-NAT-04). In WASM a
+			// JavaScript throw escaped the export that ran it every time, which is what this keeps.
+			if (pendingCallbackThrow !== undefined) {
+				const thrown = pendingCallbackThrow.value
+				pendingCallbackThrow = undefined
+				if (kind !== 0) errorClear()
+				throw thrown
+			}
 			if (kind !== 0) {
 				const message = errorMessage()
 				errorClear()
-				if (pendingCallbackThrow !== undefined) {
-					const thrown = pendingCallbackThrow.value
-					pendingCallbackThrow = undefined
-					throw thrown
-				}
 				if (kind === MZG_TRYLATER)
 					throw "TRYLATER"
 				if (kind === MZG_ABORT)

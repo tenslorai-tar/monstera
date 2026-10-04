@@ -41,7 +41,7 @@ void mzg_leave(jmp_buf *outer)
 	mzg_top = outer;
 }
 
-void mzg_throw(int kind, const char *message)
+FZ_NORETURN void mzg_throw(int kind, const char *message)
 {
 	mzg_kind = kind;
 	snprintf(mzg_message, sizeof mzg_message, "%s", message != NULL ? message : "");
@@ -74,6 +74,24 @@ MZG_EXPORT void mzg_set_js(mzg_js_callback callback)
 	mzg_callback = callback;
 }
 
+/*
+ * A failure inside mzg_js unwinds as MuPDF's own throw() decides (source/fitz/error.c): through MuPDF when an fz_try
+ * is on its error stack, so MuPDF's cleanup runs, and straight to the export's wrapper when none is. fz_throw with no
+ * fz_try ends the process ("aborting process from uncaught error!"), and an export can call back with none on the
+ * stack: wasm_walk_text calls JavaScript from its own loop, and a walker that threw took the engine host with it.
+ * The predicate is the one throw() reads, from the public fz_context, so the two cannot disagree about it (B3a).
+ */
+FZ_NORETURN static void mzg_js_fail(const char *target, const char *what)
+{
+	fz_context *ctx = mzg_context();
+	char message[sizeof mzg_message];
+
+	if (ctx != NULL && ctx->error.top > ctx->error.stack_base)
+		fz_throw(ctx, FZ_ERROR_GENERIC, "monstera_mupdf: %s %s", target, what);
+	snprintf(message, sizeof message, "monstera_mupdf: %s %s", target, what);
+	mzg_throw(MZG_ERROR, message);
+}
+
 double mzg_js(const char *target, const char *types, ...)
 {
 	double argv[16];
@@ -83,9 +101,9 @@ double mzg_js(const char *target, const char *types, ...)
 	int i;
 
 	if (argc > (int)(sizeof argv / sizeof argv[0]))
-		fz_throw(mzg_context(), FZ_ERROR_GENERIC, "monstera_mupdf: %s passes more arguments than the bridge holds", target);
+		mzg_js_fail(target, "passes more arguments than the bridge holds");
 	if (mzg_callback == NULL)
-		fz_throw(mzg_context(), FZ_ERROR_GENERIC, "monstera_mupdf: %s was called before a JavaScript callback was registered", target);
+		mzg_js_fail(target, "was called before a JavaScript callback was registered");
 
 	va_start(ap, types);
 	for (i = 0; i < argc; ++i) {
@@ -94,15 +112,15 @@ double mzg_js(const char *target, const char *types, ...)
 		case 'l': argv[i] = (double)va_arg(ap, int64_t); break;
 		case 'i': argv[i] = (double)va_arg(ap, int); break;
 		case 'f': argv[i] = va_arg(ap, double); break;
-		default: va_end(ap); fz_throw(mzg_context(), FZ_ERROR_GENERIC, "monstera_mupdf: bad type letter for %s", target);
+		default: va_end(ap); mzg_js_fail(target, "carries a bad type letter");
 		}
 	}
 	va_end(ap);
 
-	/* A JavaScript throw is carried as a MuPDF error, so MuPDF's own fz_try stack unwinds it; the object
-	 * model keeps the thrown value and rethrows it when the export returns MZG_JS. */
+	/* A JavaScript throw is carried as an error, through MuPDF's fz_try stack where there is one (mzg_js_fail); the
+	 * object model keeps the thrown value and rethrows it when the export returns. */
 	if (mzg_callback(target, argc, argv, &result) != 0)
-		fz_throw(mzg_context(), FZ_ERROR_GENERIC, "monstera_mupdf: the JavaScript callback for %s threw", target);
+		mzg_js_fail(target, "called back into JavaScript, which threw");
 	return result;
 }
 

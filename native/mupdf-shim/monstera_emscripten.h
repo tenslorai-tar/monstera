@@ -34,13 +34,14 @@ jmp_buf *mzg_enter(jmp_buf *here);
 void mzg_leave(jmp_buf *outer);
 
 /* Records the error and jumps to the innermost wrapper. Never returns. */
-void mzg_throw(int kind, const char *message);
+FZ_NORETURN void mzg_throw(int kind, const char *message);
 
 /*
  * Calls the one JavaScript callback with TARGET and the arguments TYPES names:
  * p a pointer, i an int, l a 64-bit integer, f a float (promoted to double by
  * the varargs). Returns what JavaScript returned. A callback that threw becomes
- * a MuPDF error, so MuPDF's own fz_try stack unwinds it.
+ * a MuPDF error when an fz_try is on MuPDF's stack, so MuPDF unwinds it, and
+ * jumps to the export's wrapper when none is.
  */
 double mzg_js(const char *target, const char *types, ...);
 

@@ -144,4 +144,76 @@ describe('the native MuPDF binding', () => {
   it('says it is bound, in a process whose setup bound it', () => {
     expect(mupdf.isMupdfShimBound()).toBe(true);
   });
+
+  describe('a callback that throws where MuPDF has no fz_try, or where MuPDF catches it', () => {
+    /** One span of three glyphs, built through the engine. */
+    function threeGlyphs(): mupdf.Text {
+      const text = new mupdf.Text();
+      text.showString(new mupdf.Font('Helvetica'), [1, 0, 0, 1, 0, 0], 'abc');
+      return text;
+    }
+
+    it('a text walker’s throw reaches the caller, and the process lives (CR-NAT-03)', () => {
+      // `wasm_walk_text` calls JavaScript from its own loop with no fz_try on MuPDF's stack, and fz_throw there ends
+      // the process. On the shim before the fix this case takes its worker down rather than failing.
+      const thrown = new Error('the walker refused');
+      expect(() => {
+        threeGlyphs().walk({
+          beginSpan: () => {
+            throw thrown;
+          },
+        });
+      }).toThrow(thrown);
+      // AND THE BINDING STILL WORKS: the jump landed in the export's wrapper, not past it.
+      expect(new mupdf.PDFDocument().countPages()).toBe(0);
+    });
+
+    it('CONTROL: a walker that does not throw is called for the span and each glyph', () => {
+      const seen: string[] = [];
+      threeGlyphs().walk({
+        beginSpan: () => seen.push('span'),
+        showGlyph: (_font, _trm, _glyph, unicode) => seen.push(String.fromCodePoint(unicode)),
+        endSpan: () => seen.push('end'),
+      });
+      expect(seen).toStrictEqual(['span', 'a', 'b', 'c', 'end']);
+    });
+
+    it('a throw MuPDF catches and plays past is thrown by the call that ran it, never by the next one (CR-NAT-04)', () => {
+      // MuPDF's display-list player catches a device's error and goes on, so the run returned cleanly and the thrown
+      // value waited for the next export that failed, which then threw it in place of its own error.
+      const document = pageWithOneFill();
+      const thrown = new Error('the device refused');
+      try {
+        const list = document.loadPage(0).toDisplayList();
+        expect(() => {
+          list.run(
+            new mupdf.Device({
+              fillPath: () => {
+                throw thrown;
+              },
+            }),
+            [1, 0, 0, 1, 0, 0],
+          );
+        }).toThrow(thrown);
+        // THE NEXT FAILURE IS ITS OWN: a page that does not exist, in MuPDF's words.
+        expect(() => document.loadPage(5)).toThrow(/page/iu);
+      } finally {
+        document.destroy();
+      }
+    });
+
+    it('CONTROL: the display list really calls the device, and a device that does not throw lets the run return', () => {
+      const document = pageWithOneFill();
+      try {
+        let fills = 0;
+        document
+          .loadPage(0)
+          .toDisplayList()
+          .run(new mupdf.Device({ fillPath: () => (fills += 1) }), [1, 0, 0, 1, 0, 0]);
+        expect(fills).toBe(1);
+      } finally {
+        document.destroy();
+      }
+    });
+  });
 });
