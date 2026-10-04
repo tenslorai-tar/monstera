@@ -98,3 +98,27 @@ edited word are read again rather than shifted by arithmetic.
 - The old dialog and its result schema go; the gallery entries for them go with them.
 - A word whose PDFium run cannot be found at its point cannot be replaced from the panel, and the panel says so. That
   is the honest boundary of an in-place edit without character geometry from PDFium.
+
+## Correction while building, 2026-10-04 — the highlight is the find bar's, composed in App
+
+Decision 3 gave the spelling word a highlight of its own name. Reaching the text layer with a second highlight means a
+second prop through `PageList` to every page, and `PageList` is held unchanged for the local agent's startup fix. It is
+also not needed: the find highlight already paints one query over the text layer's own lines and marks one occurrence
+by `{ page, line, offset }`, which is exactly what the review's queue holds, because the queue is built from the same
+`document.pageTextLayer` lines the layer draws.
+
+So while a review is showing a page word, App hands the page list `spelling ?? search`: the word as a
+`SearchHighlight` with `caseSensitive` and `wholeWord` on, and the occurrence as its `active` match. App is the one
+writer of what the page list paints, and the find bar's own state is untouched, so closing the review shows the find
+matches again. While a review is open the find matches are not painted; one highlight on the page is the reading this
+takes, not a cost of it.
+
+**Rejected: a module store of spelling ranges keyed by page**, read by the text layer. A tab kept behind the active
+one (`App.tsx`'s `behind` canvas) draws another document's pages through the same layer, and a store keyed by page
+alone would paint one document's word on the other's page.
+
+Decision 4 stands as written: `at` is in PDF user space, and the renderer converts the word's display-space box with
+`unscaledTransform` and the drawn page's crop, the box `PageList.onPageBox` already reports. A conversion in the
+PDFium host from `FPDF_GetPageBoundingBox` was considered while building and is rejected for the reason
+`annotationSpace.ts` gives: the visible box is PDF.js' question (B3a), and the host would be a third answer to it.
+Replace on page text waits until the page has been drawn, which the review's own jump to the page brings about.
