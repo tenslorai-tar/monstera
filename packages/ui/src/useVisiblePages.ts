@@ -121,6 +121,20 @@ export function useVisiblePages(
       if (known !== undefined && observer.current !== null) observer.current.unobserve(known);
       if (element === null) {
         slots.current.delete(page);
+        // A SLOT THAT WENT IS NOT VISIBLE (CR-COR-10). The observer reports nothing for an element removed from the
+        // page, so a delete that shortened the document left the last index here, and the next view-model read asked
+        // main for a page that is gone; its refusal marked every page in that batch as having no answer. Read after
+        // the commit, because a slot that is REPLACED is told null and then its new element in one commit, and that
+        // page never left.
+        queueMicrotask(() => {
+          if (slots.current.has(page)) return;
+          setVisible((current) => {
+            if (!current.has(page)) return current;
+            const next = new Set(current);
+            next.delete(page);
+            return next;
+          });
+        });
         return;
       }
       slots.current.set(page, element);
