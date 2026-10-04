@@ -1,9 +1,14 @@
-import type { AnnotationColour, DispatchableCommand } from '@monstera/contract';
-import { type PageTransform, type ViewportPoint, viewportPoint } from '@monstera/shared';
+import {
+  type AnnotationColour,
+  type AnnotationRect,
+  type DispatchableCommand,
+  MAX_ANNOTATION_TEXT,
+} from '@monstera/contract';
+import { type MessageKey, type PageTransform, type ViewportPoint, viewportPoint } from '@monstera/shared';
 
-import { ANNOTATION_TEXT_DIALOG_ID } from '../dialogs/annotationText.js';
 import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
-import { TYPEWRITER_DIALOG_ID } from '../dialogs/typewriter.js';
+import { WRITE_TEXT_BOX_LABEL, WRITE_TOO_LONG, WRITE_TYPEWRITER_LABEL } from '../messages/en.js';
+import type { Write } from '../pageWriting.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
@@ -24,13 +29,13 @@ import type { AnnotationStyle } from './annotationStyle.js';
  * those are the platform's, not this file's: `ToolController.commit` may answer
  * now or later, and the six shape tools kept answering now.
  *
- * ## Why the dependency is `ask` and not a dialog id
+ * ## Why the dependency is `write` and not a dialog id
  *
- * A tool that returned *"open this dialog and send that command"* would put the
- * pairing in the overlay, which would then need a table of tool-to-dialog — the
- * second wiring place the registries exist to forbid. Holding `ask` means the
- * tool opens its own dialog and builds its own command, which is ADR-0038's
- * shape with a tool where it has always had a command.
+ * A tool that returned *"open this box and send that command"* would put the
+ * pairing in the overlay, which would then need a table of tool-to-request —
+ * the second wiring place the registries exist to forbid. Holding `write`
+ * means the tool asks the page for its own words and builds its own command,
+ * which is ADR-0038's shape with the page where the dialog was (ADR-0154).
  */
 
 /**
@@ -56,9 +61,9 @@ const TEXT_COLOUR: AnnotationColour = [0.1, 0.1, 0.1];
  * The smallest box worth treating as a text box, in CSS pixels.
  *
  * `shapeTools`' threshold and its argument, with one difference that matters:
- * this tool is about to open a MODAL. A stray click that fell through would put
- * a dialog in front of a person who did not ask for one, which is worse than
- * the stray rectangle the shape tools discard.
+ * this tool is about to open a box with the caret in it. A stray click that
+ * fell through would take the keyboard from a person who did not ask for a
+ * box, which is worse than the stray rectangle the shape tools discard.
  */
 const MINIMUM_BOX = 8;
 
@@ -85,6 +90,11 @@ export interface TextToolDeps {
    */
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
   /**
+   * Asks for words typed ON THE PAGE, where they will go (ADR-0154), and settles with them or `undefined` for none.
+   * Beside `ask` and held the same way, so a tool still builds its own command from the answer.
+   */
+  readonly write: Write;
+  /**
    * The style a new annotation is drawn in.
    *
    * A VALUE rather than a reader, and the registry is rebuilt when it moves —
@@ -109,14 +119,15 @@ export const TYPEWRITER_TOOL_ID = 'annotate.typewriter';
  * box, so the two controls would have produced documents nobody could tell
  * apart. The difference was made real in the kernel rather than here (the text
  * box gained the border its name promises), and what this file carries is the
- * two things a surface decides: which dialog asks, and which draft it builds.
+ * two things a surface decides: what the box it opens is called, and which
+ * draft it builds.
  *
  * @param deps what the tool needs to ask. Captured here rather than passed to
  *   `commit`, so the six tools that need nothing keep a three-parameter commit
  */
 function boxTextTool(
   id: string,
-  dialog: string,
+  label: MessageKey,
   type: 'text-box' | 'typewriter',
   deps: TextToolDeps,
   placesOnClick = false,
@@ -137,33 +148,33 @@ function boxTextTool(
       transform: PageTransform,
     ): Promise<DispatchableCommand | undefined> => {
       // THE SAME THRESHOLD AS THE PREVIEW, read from it rather than restated —
-      // and here it also decides whether a modal opens at all, so the two
-      // coming apart would be a dialog appearing for a drag that showed no box.
-      // A CLICK is the typewriter's other gesture (`placesOnClick`): there it
-      // asks, and the box is made to fit the words at the point clicked.
+      // and here it also decides whether a box opens on the page at all, so the
+      // two coming apart would be a box appearing for a drag that showed none.
+      // A CLICK is the typewriter's other gesture (`placesOnClick`): there the
+      // box starts at the point clicked and grows with the words.
       const clicked = drawn(gesture) === undefined;
       if (clicked && !placesOnClick) return undefined;
 
-      // THE RECTANGLE IS BUILT BEFORE THE ASK, from the transform the overlay
+      // THE RECTANGLE IS BUILT BEFORE THE WORDS, from the transform the overlay
       // read at pointer-up. Building it after would convert a gesture using
       // whatever zoom the page is at when the person finishes typing. A click's
       // box needs the words, so it is built after the answer — from the same
       // `transform`, the one read at pointer-up, which is what the rule protects.
       const dragged = clicked ? undefined : draggedRect(startOf(gesture), endOf(gesture), transform);
 
-      const answered = ANNOTATION_TEXT_RESULT.safeParse(await deps.ask(dialog, {}));
-      // A DISMISSED DIALOG IS `undefined` AND SO IS A REFUSED ANSWER, which is
-      // the same outcome a drag too small to see already produces. The gate is
-      // the absence of a value rather than a flag: there is nothing to build a
-      // command from, so nothing is sent.
-      //
-      // Parsed rather than cast. `ask` answers `unknown`, and the dialog host
-      // has already validated against this schema — so a failure here means the
-      // id resolved to a dialog answering some other shape, which is a
-      // registration defect and not a person's doing. Refusing quietly is right
-      // for the same reason a dismissal is: the page is unchanged either way.
-      if (!answered.success) return undefined;
-      const rect = dragged ?? clickedRect(startOf(gesture), answered.data.text, deps.style.fontSize, transform);
+      const text = await writeAnnotationWords(deps, {
+        page,
+        // A CLICK'S BOX before any words is `clickedRect`'s for none — one line at the point clicked — so the box
+        // a person types into and the box the annotation is made from are one rule.
+        box: dragged ?? clickedRect(startOf(gesture), '', deps.style.fontSize, transform),
+        label,
+        colour: TEXT_COLOUR,
+        grows: clicked,
+      });
+      // NOTHING TYPED IS NO ANNOTATION, the outcome a drag too small to see
+      // already produces: there is nothing to build a command from.
+      if (text === undefined) return undefined;
+      const rect = dragged ?? clickedRect(startOf(gesture), text, deps.style.fontSize, transform);
 
       return {
         kind: 'addAnnotation',
@@ -171,7 +182,7 @@ function boxTextTool(
         annotation: {
           type,
           rect,
-          text: answered.data.text,
+          text,
           colour: deps.style.colour(TEXT_COLOUR),
           opacity: deps.style.opacity,
           fontSize: deps.style.fontSize,
@@ -188,16 +199,16 @@ function boxTextTool(
 
 /** A box with a border, and the words in it. */
 export function textBoxTool(deps: TextToolDeps): UiTool {
-  return boxTextTool(TEXT_BOX_TOOL_ID, ANNOTATION_TEXT_DIALOG_ID, 'text-box', deps);
+  return boxTextTool(TEXT_BOX_TOOL_ID, WRITE_TEXT_BOX_LABEL, 'text-box', deps);
 }
 
 /**
  * Words typed onto the page, with no box around them.
  *
- * **Its own dialog**, for the sticky note's reason: the two ask a person the
- * same question and mean different things by it, and a dialog titled *Text box*
- * collecting what somebody is typing onto a form is a control that says what it
- * will do and then does something else.
+ * **Its own name for the box**, for the sticky note's reason: the two ask a
+ * person the same question and mean different things by it, and a field named
+ * *Text box* collecting what somebody is typing onto a form is a control that
+ * says what it will do and then does something else.
  *
  * **The preview is still a rectangle**, and that is honest rather than a
  * leftover: what the drag names IS the box the words are laid out in, whether
@@ -205,7 +216,64 @@ export function textBoxTool(deps: TextToolDeps): UiTool {
  * leave a person guessing where their words are about to go.
  */
 export function typewriterTool(deps: TextToolDeps): UiTool {
-  return boxTextTool(TYPEWRITER_TOOL_ID, TYPEWRITER_DIALOG_ID, 'typewriter', deps, true);
+  return boxTextTool(TYPEWRITER_TOOL_ID, WRITE_TYPEWRITER_LABEL, 'typewriter', deps, true);
+}
+
+/**
+ * The rule words typed for an annotation meet: no more than the payload's limit, after the trim the result schema
+ * applies (`ANNOTATION_TEXT_RESULT`, which takes the same `MAX_ANNOTATION_TEXT`). Nothing typed is not refused here —
+ * it is no annotation, which `settle` decides.
+ */
+export function annotationTextCheck(text: string): MessageKey | undefined {
+  return text.trim().length > MAX_ANNOTATION_TEXT ? WRITE_TOO_LONG : undefined;
+}
+
+/** What a tool says when it asks the page for what a new annotation says. */
+export interface AnnotationWords {
+  readonly page: number;
+  /** Where the words go, in PDF space. */
+  readonly box: AnnotationRect;
+  readonly label: MessageKey;
+  /**
+   * The tool's own colour, resolved through the reader's style as the annotation's will be — or `undefined` for words
+   * the page does not draw where they are typed, a note's, which are set in the application's face.
+   */
+  readonly colour: AnnotationColour | undefined;
+  readonly grows: boolean;
+}
+
+/**
+ * Asks the page for what a new annotation says, and answers it as the dialog it replaces did: trimmed by
+ * `ANNOTATION_TEXT_RESULT`, or `undefined` for nothing typed. THE ONE PLACE a tool asks for an annotation's words, so
+ * the rule they meet and the style they are typed in are not spelt again by each tool (B3a).
+ */
+export async function writeAnnotationWords(
+  deps: Pick<TextToolDeps, 'write' | 'style'>,
+  words: AnnotationWords,
+): Promise<string | undefined> {
+  const { colour } = words;
+  const text = await deps.write({
+    page: words.page,
+    box: words.box,
+    shape: 'block',
+    initial: '',
+    label: words.label,
+    ...(colour === undefined
+      ? {}
+      : {
+          style: {
+            fontSize: deps.style.fontSize,
+            colour: deps.style.colour(colour),
+            font: deps.style.font,
+            direction: deps.style.direction,
+          },
+        }),
+    grows: words.grows,
+    check: annotationTextCheck,
+  });
+  if (text === undefined) return undefined;
+  const answered = ANNOTATION_TEXT_RESULT.safeParse({ text });
+  return answered.success ? answered.data.text : undefined;
 }
 
 /**

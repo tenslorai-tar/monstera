@@ -1134,6 +1134,12 @@ export const OBJECT_KIND_IMAGE = messageKey('surface.object-edit.kind-image');
 export const OBJECT_KIND_SHADING = messageKey('surface.object-edit.kind-shading');
 export const OBJECT_KIND_FORM = messageKey('surface.object-edit.kind-form');
 export const OBJECT_KIND_PICTURE = messageKey('surface.object-edit.kind-picture');
+// WORDS TYPED ON THE PAGE (ADR-0154): each box's accessible name says what is being typed, and its refusal.
+export const WRITE_TEXT_BOX_LABEL = messageKey('surface.write.text-box');
+export const WRITE_TYPEWRITER_LABEL = messageKey('surface.write.typewriter');
+export const WRITE_CALLOUT_LABEL = messageKey('surface.write.callout');
+export const WRITE_NOTE_LABEL = messageKey('surface.write.note');
+export const WRITE_TOO_LONG = messageKey('surface.write.too-long');
 export const FORMS_DELETE = messageKey('surface.forms.delete');
 export const FORMS_FLATTEN = messageKey('surface.forms.flatten');
 export const FORMS_FLATTEN_CONFIRM = messageKey('surface.forms.flatten-confirm');
@@ -1221,16 +1227,6 @@ export const NUDGE_LEFT_TITLE = messageKey('command.annotate.nudge-left');
 export const NUDGE_RIGHT_TITLE = messageKey('command.annotate.nudge-right');
 export const NUDGE_UP_TITLE = messageKey('command.annotate.nudge-up');
 export const NUDGE_DOWN_TITLE = messageKey('command.annotate.nudge-down');
-export const ANNOTATION_TEXT_TITLE = messageKey('dialog.annotation-text.title');
-export const ANNOTATION_TEXT_LABEL = messageKey('dialog.annotation-text.label');
-export const ANNOTATION_TEXT_APPLY = messageKey('dialog.annotation-text.apply');
-export const ANNOTATION_TEXT_EMPTY = messageKey('dialog.annotation-text.empty');
-export const ANNOTATION_TEXT_TOO_LONG = messageKey('dialog.annotation-text.too-long');
-export const ANNOTATION_NOTE_TITLE = messageKey('dialog.annotation-note.title');
-export const ANNOTATION_NOTE_LABEL = messageKey('dialog.annotation-note.label');
-export const ANNOTATION_NOTE_APPLY = messageKey('dialog.annotation-note.apply');
-export const ANNOTATION_NOTE_EMPTY = messageKey('dialog.annotation-note.empty');
-export const ANNOTATION_NOTE_TOO_LONG = messageKey('dialog.annotation-note.too-long');
 export const ANNOTATION_EDIT_TITLE = messageKey('dialog.annotation-edit.title');
 export const ANNOTATION_EDIT_LABEL = messageKey('dialog.annotation-edit.label');
 export const ANNOTATION_EDIT_APPLY = messageKey('dialog.annotation-edit.apply');
@@ -1344,17 +1340,7 @@ export const MEASURE_RATIO_TITLE = messageKey('setting.editing.measure-ratio');
 export const MEASURE_RATIO_DESCRIPTION = messageKey('setting.editing.measure-ratio.description');
 export const MEASURE_UNIT_TITLE = messageKey('setting.editing.measure-unit');
 export const TYPEWRITER_TOOL_TITLE = messageKey('command.annotate.typewriter');
-export const TYPEWRITER_DIALOG_TITLE = messageKey('dialog.typewriter.title');
-export const TYPEWRITER_LABEL = messageKey('dialog.typewriter.label');
-export const TYPEWRITER_APPLY = messageKey('dialog.typewriter.apply');
-export const TYPEWRITER_EMPTY = messageKey('dialog.typewriter.empty');
-export const TYPEWRITER_TOO_LONG = messageKey('dialog.typewriter.too-long');
 export const CALLOUT_TOOL_TITLE = messageKey('command.annotate.callout');
-export const CALLOUT_DIALOG_TITLE = messageKey('dialog.callout.title');
-export const CALLOUT_LABEL = messageKey('dialog.callout.label');
-export const CALLOUT_APPLY = messageKey('dialog.callout.apply');
-export const CALLOUT_EMPTY = messageKey('dialog.callout.empty');
-export const CALLOUT_TOO_LONG = messageKey('dialog.callout.too-long');
 export const ANNOTATIONS_KIND_HIGHLIGHT = messageKey('surface.annotations.kind.highlight');
 export const ANNOTATIONS_KIND_UNDERLINE = messageKey('surface.annotations.kind.underline');
 export const ANNOTATIONS_KIND_STRIKEOUT = messageKey('surface.annotations.kind.strikeout');
@@ -3303,6 +3289,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OBJECT_KIND_SHADING]: 'Gradient',
   [OBJECT_KIND_FORM]: 'Group',
   [OBJECT_KIND_PICTURE]: 'Image',
+  [WRITE_TEXT_BOX_LABEL]: 'Text box',
+  // *TYPE ONTO THE PAGE* rather than *Text*, because the difference from the text box is exactly that there is no box
+  // — the field's name is where a person using a screen reader learns which of the two they picked.
+  [WRITE_TYPEWRITER_LABEL]: 'Type onto the page',
+  [WRITE_CALLOUT_LABEL]: 'Callout',
+  [WRITE_NOTE_LABEL]: 'Comment',
+  [WRITE_TOO_LONG]: 'That is too long for one annotation. Shorten it, or use several.',
   // SAYS WHAT IT REMOVES, not just "Delete" — the annotation panel's argument
   // one walk along. The rows beside it name similar fields, and a bare verb on
   // a list of similar rows is the label a person clicks on the wrong line. It
@@ -3476,20 +3469,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MEASURE_RATIO_DESCRIPTION]: 'What one of the unit on the page stands for: 100 for a plan drawn at 1:100, 1 to measure the page itself.',
   [MEASURE_UNIT_TITLE]: 'Measurement unit',
   [TYPEWRITER_TOOL_TITLE]: 'Typewriter',
-  [TYPEWRITER_DIALOG_TITLE]: 'Typewriter',
-  // *TYPE ONTO THE PAGE* rather than *Text*, because the difference from the
-  // text box is exactly that there is no box — the label is where a person
-  // learns which of the two they picked.
-  [TYPEWRITER_LABEL]: 'Type onto the page',
-  [TYPEWRITER_APPLY]: 'Add text',
-  [TYPEWRITER_EMPTY]: 'Type the words to add to the page.',
-  [TYPEWRITER_TOO_LONG]: 'That is too long to store.',
   [CALLOUT_TOOL_TITLE]: 'Callout',
-  [CALLOUT_DIALOG_TITLE]: 'Callout',
-  [CALLOUT_LABEL]: 'Note',
-  [CALLOUT_APPLY]: 'Add callout',
-  [CALLOUT_EMPTY]: 'Type what this callout should say.',
-  [CALLOUT_TOO_LONG]: 'That note is too long to store.',
   [ANNOTATIONS_KIND_HIGHLIGHT]: 'Highlight',
   [ANNOTATIONS_KIND_UNDERLINE]: 'Underline',
   [ANNOTATIONS_KIND_STRIKEOUT]: 'Strikethrough',
@@ -3562,19 +3542,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [NUDGE_RIGHT_TITLE]: 'Move selection right',
   [NUDGE_UP_TITLE]: 'Move selection up',
   [NUDGE_DOWN_TITLE]: 'Move selection down',
-  [ANNOTATION_TEXT_TITLE]: 'Text box',
-  [ANNOTATION_TEXT_LABEL]: 'Text',
-  [ANNOTATION_TEXT_APPLY]: 'Add text box',
-  // NAMES WHAT IS MISSING, not that something is wrong. The field is empty when
-  // the dialog opens, so this is the first thing a person reads — it has to
-  // read as an instruction rather than as a complaint about what they did.
-  [ANNOTATION_TEXT_EMPTY]: 'Type the text this box should show.',
-  [ANNOTATION_TEXT_TOO_LONG]: 'That is too long for one text box. Shorten it, or use several.',
-  [ANNOTATION_NOTE_TITLE]: 'Note',
-  [ANNOTATION_NOTE_LABEL]: 'Comment',
-  [ANNOTATION_NOTE_APPLY]: 'Add note',
-  [ANNOTATION_NOTE_EMPTY]: 'Type the comment this note should hold.',
-  [ANNOTATION_NOTE_TOO_LONG]: 'That is too long for one note. Shorten it, or use several.',
   // EDITING, so the words say *change* rather than *add*: the field opens
   // holding what the mark already says, and a button reading "Add" over a
   // pre-filled box describes something the command does not do.

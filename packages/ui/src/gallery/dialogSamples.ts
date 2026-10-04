@@ -1,6 +1,5 @@
 import {
   ACCESSIBILITY_HUMAN_CHECKS,
-  MAX_ANNOTATION_TEXT,
   MAX_SIGNATURE_FIELD,
   OCR_LANGUAGES,
 } from '@monstera/contract';
@@ -527,10 +526,6 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'refused', props: { pageCount: 12, pages: [2] }, steps: [type('Pages to delete', '9-2')] },
     { state: 'everything', props: { pageCount: 12, pages: [2] }, steps: [type('Pages to delete', '1-12')] },
   ],
-  'dialog.annotation-text': [
-    ...textForm('Text', 'Approved for circulation'),
-    { state: 'refused', props: {}, steps: [type('Text', prose(MAX_ANNOTATION_TEXT))] },
-  ],
   'dialog.stamp': [
     { state: 'opened', props: { pictures: [] } },
     {
@@ -564,7 +559,6 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'still', props: { held: ['Quarterly report.pdf.bak', 'Quarterly report.pdf.bak2'], still: true } },
     { state: 'long', props: { held: [LONG_NAME.replace(/\.pdf$/u, '.pdf.bak')], still: false } },
   ],
-  'dialog.annotation-note': textForm('Comment', 'Please check these totals against the ledger.'),
   'dialog.annotation-edit': [
     { state: 'opened', props: { text: 'Please check these totals against the ledger.' } },
     { state: 'emptied', props: { text: 'Please check these totals against the ledger.' }, steps: [type('Comment', '')] },
@@ -689,8 +683,6 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     ...textForm('Page number', '4'),
     { state: 'refused', props: {}, steps: [type('Page number', 'four')] },
   ],
-  'dialog.callout': textForm('Note', 'This total includes the September adjustment.'),
-  'dialog.typewriter': textForm('Type onto the page', 'Received 1 October 2026'),
   'dialog.crop-pages': [
     { state: 'opened', props: { pages: [0] } },
     {

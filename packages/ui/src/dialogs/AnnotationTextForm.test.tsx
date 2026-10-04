@@ -3,7 +3,7 @@ import { MAX_ANNOTATION_TEXT } from '@monstera/contract';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import AnnotationNoteBody from './AnnotationNoteBody.js';
+import AnnotationEditBody from './AnnotationEditBody.js';
 import { InDialog } from './inDialog.js';
 import LinkAddressBody from './LinkAddressBody.js';
 
@@ -11,9 +11,13 @@ import LinkAddressBody from './LinkAddressBody.js';
  * The shared text form, under the rule `primitives/attempt.ts` names: what is typed being wrong is said at once, and
  * nothing typed only once the person presses the action (the owner, 2026-10-03). Its dialogs used to open with
  * *"Type the comment this note should hold."* under a field nobody had had a chance to fill.
+ *
+ * Driven through *Edit comment*, opened on a comment with nothing in it, since the note's own dialog went when a note
+ * came to be typed on the page (ADR-0154): the case is the form's, and that is the multi-line caller that remains.
  */
-const EMPTY = 'Type the comment this note should hold.';
-const TOO_LONG = 'That is too long for one note. Shorten it, or use several.';
+const EMPTY = 'A comment cannot be empty. To remove it, delete the mark instead.';
+const TOO_LONG = 'That is too long for one comment. Shorten it, or use several.';
+const APPLY = 'Save comment';
 
 afterEach(() => {
   cleanup();
@@ -23,7 +27,7 @@ function note(): { resolve: ReturnType<typeof vi.fn> } {
   const resolve = vi.fn();
   render(
     <InDialog>
-      <AnnotationNoteBody resolve={resolve} update={vi.fn()} />
+      <AnnotationEditBody text="" resolve={resolve} update={vi.fn()} />
     </InDialog>,
   );
   return { resolve };
@@ -34,13 +38,13 @@ describe('the annotation text form', () => {
     note();
     expect(screen.queryByText(EMPTY)).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Add note' }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: APPLY }).hasAttribute('disabled')).toBe(false);
   });
 
   it('says what is missing once the action is pressed with nothing typed, answers nothing, and puts the person back in the field', () => {
     const { resolve } = note();
     act(() => {
-      fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+      fireEvent.click(screen.getByRole('button', { name: APPLY }));
     });
     expect(screen.getByRole('alert').textContent).toBe(EMPTY);
     expect(resolve).not.toHaveBeenCalled();
@@ -53,7 +57,7 @@ describe('the annotation text form', () => {
       fireEvent.change(screen.getByRole('textbox', { name: 'Comment' }), { target: { value: 'Check the totals.' } });
     });
     act(() => {
-      fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+      fireEvent.click(screen.getByRole('button', { name: APPLY }));
     });
     expect(resolve).toHaveBeenCalledWith({ text: 'Check the totals.' });
     expect(screen.queryByRole('alert')).toBeNull();
@@ -65,7 +69,7 @@ describe('the annotation text form', () => {
       fireEvent.change(screen.getByRole('textbox', { name: 'Comment' }), { target: { value: 'x'.repeat(MAX_ANNOTATION_TEXT + 1) } });
     });
     expect(screen.getByRole('alert').textContent).toBe(TOO_LONG);
-    expect(screen.getByRole('button', { name: 'Add note' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: APPLY }).hasAttribute('disabled')).toBe(true);
   });
 
   it('gives a note a MULTI-LINE box, and an address one line', () => {
@@ -86,7 +90,7 @@ describe('the annotation text form', () => {
       fireEvent.change(screen.getByRole('textbox', { name: 'Comment' }), { target: { value: 'Check the totals.\nThen sign.' } });
     });
     act(() => {
-      fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+      fireEvent.click(screen.getByRole('button', { name: APPLY }));
     });
     expect(resolve).toHaveBeenCalledWith({ text: 'Check the totals.\nThen sign.' });
   });

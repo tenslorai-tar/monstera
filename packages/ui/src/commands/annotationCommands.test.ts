@@ -201,6 +201,7 @@ describe('rectangleToolCommand', () => {
 
     const toolIds = annotationTools({
       ask,
+      write: ask,
       annotations: () => Promise.resolve(undefined),
       onSelect: () => undefined,
       selected: () => undefined,

@@ -504,6 +504,8 @@ function Half({
           labelValues={{ side: i18n._(side === 'left' ? SIDE_LEFT : SIDE_RIGHT), name: shown.name }}
           // NOTHING: the find bar searched the document in the tab, not this half.
           search={undefined}
+          // NOTHING TYPED HERE: a comparison's halves take no tool, so nothing asks either one for words.
+          writing={undefined}
           differences={differences}
           // PDF.JS, ALWAYS: a difference a reader sees has to be one between the DOCUMENTS, and §6.1's second engine
           // draws measurably differently (12.716 levels over inked pixels), which one half could show and not the other.

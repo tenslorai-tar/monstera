@@ -2,7 +2,8 @@ import type { DispatchableCommand } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { ANNOTATION_NOTE_DIALOG_ID } from '../dialogs/annotationNote.js';
+import { WRITE_NOTE_LABEL } from '../messages/en.js';
+import type { WriteRequest } from '../pageWriting.js';
 import type { UiTool } from '../registries/tools.js';
 import { overlayTransform } from './annotationSpace.js';
 import { PLAIN_STYLE } from './annotationStyle.js';
@@ -40,18 +41,25 @@ const PAGE: Parameters<typeof overlayTransform>[0] = {
   zoom: 2,
 };
 
-/** A note tool whose dialog answers `answer`, and the record of what it asked. */
-function noteAnswering(answer: unknown): {
+/** Deps that ask nothing: a dialog refuses, and the page answers no words. */
+const NOTHING_ASKED = {
+  ask: (): Promise<unknown> => Promise.reject(new Error('a dialog was opened')),
+  write: (): Promise<string | undefined> => Promise.resolve(undefined),
+  style: PLAIN_STYLE,
+};
+
+/** A note tool whose page answers `answer`, and the record of what it was asked for. */
+function noteAnswering(answer: string | undefined): {
   readonly tool: UiTool;
-  readonly asked: { id: string; props: unknown }[];
+  readonly asked: WriteRequest[];
 } {
-  const asked: { id: string; props: unknown }[] = [];
+  const asked: WriteRequest[] = [];
   const tool = stickyNoteTool({
-    ask: (id, props) => {
-      asked.push({ id, props });
+    ...NOTHING_ASKED,
+    write: (request) => {
+      asked.push(request);
       return Promise.resolve(answer);
     },
-    style: PLAIN_STYLE,
   });
   return { tool, asked };
 }
@@ -75,16 +83,23 @@ async function click(
 }
 
 describe('stickyNoteTool', () => {
-  it('asks its OWN dialog, then builds the command from the answer', async () => {
-    const { tool, asked } = noteAnswering({ text: 'check this figure' });
+  it('opens its box AT THE POINT CLICKED, named for a comment, then builds the command from the words', async () => {
+    const { tool, asked } = noteAnswering('check this figure');
 
     const command = await click(tool, [20, 20]);
 
-    // BOTH HALVES, and the id is the half that separates this tool from the
-    // text box: the two dialogs ask the same question and say different words,
-    // so a tool opening the wrong one would collect a usable answer and put
-    // *Add text box* in front of somebody placing a note.
-    expect(asked).toStrictEqual([{ id: ANNOTATION_NOTE_DIALOG_ID, props: {} }]);
+    // BOTH HALVES, and the label is the half that separates this tool from the
+    // text box: the two ask the same question and say different words, so a
+    // tool naming the wrong box would collect usable words under *Text box*.
+    // NO STYLE: a comment is not drawn on the page, so it is typed on a card.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({
+      page: 3,
+      box: { x0: 60, y0: 390, x1: 60, y1: 390 },
+      shape: 'block',
+      label: WRITE_NOTE_LABEL,
+    });
+    expect(asked[0]?.style).toBeUndefined();
     expect(command).toStrictEqual({
       kind: 'addAnnotation',
       page: 3,
@@ -112,7 +127,7 @@ describe('stickyNoteTool', () => {
     // It is also why there is no threshold here. This drag is far past every
     // other tool's minimum and is still a click: the person aimed at the point
     // they pressed on.
-    const { tool } = noteAnswering({ text: 'here' });
+    const { tool } = noteAnswering('here');
 
     const command = await click(tool, [20, 20], [120, 80]);
 
@@ -122,40 +137,32 @@ describe('stickyNoteTool', () => {
   it('ASKS EVEN WHEN THE POINTER DID NOT MOVE AT ALL', async () => {
     // ASSERT THE CALL THAT WAS MADE, and this is the inverse of the text box's
     // *does not ask for a drag too small to be meant*. For that tool an unmoved
-    // pointer is a stray click and a modal would be an intrusion; for this one
+    // pointer is a stray click and a box would be an intrusion; for this one
     // an unmoved pointer is the entire gesture, so refusing it would be a tool
     // that does nothing when used exactly as intended.
     //
     // A single command assertion would not separate the two: a tool with a
     // threshold and a tool without one both produce a command for the case
     // above, and only the unmoved one tells them apart.
-    const { tool, asked } = noteAnswering({ text: 'here' });
+    const { tool, asked } = noteAnswering('here');
 
     expect(await click(tool, [40, 40])).toBeDefined();
     expect(asked).toHaveLength(1);
   });
 
-  it('sends NOTHING when the dialog is dismissed', async () => {
-    // `undefined` from `ask` is a dismissal, and the outcome is the platform's:
-    // there is no value to build a command from, so nothing is sent.
+  it('sends NOTHING when no words are typed', async () => {
+    // `undefined` from `write` is nothing typed, and the outcome is the
+    // platform's: there is no value to build a command from, so nothing is sent.
     const { tool } = noteAnswering(undefined);
     expect(await click(tool, [20, 20])).toBeUndefined();
   });
 
-  it('sends nothing when the answer is not the shape this dialog promises', async () => {
-    // A REGISTRATION DEFECT, not a person's doing: the id resolved to something
-    // answering another shape. Asserted because the alternative is a cast that
-    // would put whatever came back into a command payload.
-    const { tool } = noteAnswering({ pages: [1] });
-    expect(await click(tool, [20, 20])).toBeUndefined();
-  });
-
-  it('sends nothing for a whitespace answer, which the schema trims to empty', async () => {
+  it('sends nothing for words that are only whitespace, which the rule trims to empty', async () => {
     // A `/Text` carrying three spaces is an icon a reader clicks to be shown
     // nothing — the display-only sin one interaction further on than a blank
-    // text box. The body disables its control for this and the schema is what
+    // text box. `settle` answers nothing for a blank box, and the schema is what
     // makes the refusal hold for any other caller.
-    const { tool } = noteAnswering({ text: '   ' });
+    const { tool } = noteAnswering('   ');
     expect(await click(tool, [20, 20])).toBeUndefined();
   });
 
@@ -175,15 +182,15 @@ describe('stickyNoteTool', () => {
   });
 
   it('claims the id its command selects', () => {
-    expect(stickyNoteTool({ ask: () => Promise.resolve(undefined), style: PLAIN_STYLE }).id).toBe(STICKY_NOTE_TOOL_ID);
+    expect(stickyNoteTool(NOTHING_ASKED).id).toBe(STICKY_NOTE_TOOL_ID);
   });
 });
 
 describe('caretTool', () => {
   it('COMMITS WITHOUT ASKING ANYTHING, which is what having no content means', async () => {
     // The caret is the only annotation this build writes whose whole intent is
-    // the gesture, so its controller has no dependencies. There is no `ask` to
-    // record and that is the assertion: a caret that opened a dialog would be a
+    // the gesture, so its controller has no dependencies. There is nothing to
+    // record and that is the assertion: a caret that asked for words would be a
     // sticky note in the wrong shape.
     expect(await click(caretTool, [20, 20])).toStrictEqual({
       kind: 'addAnnotation',
@@ -238,7 +245,7 @@ describe('pointTools', () => {
     // file and missing from it is code nothing mounts. The command-side join
     // in `annotationCommands.test.ts` would catch that too — this catches it
     // one step earlier and names the list rather than the pair.
-    const registered = pointTools({ ask: () => Promise.resolve(undefined), style: PLAIN_STYLE });
+    const registered = pointTools(NOTHING_ASKED);
     expect(registered.map((tool) => tool.id)).toStrictEqual([
       STICKY_NOTE_TOOL_ID,
       CARET_TOOL_ID,

@@ -252,6 +252,7 @@ import { SIGNATURE_TOOL_ID } from './annotations/signatureTool.js';
 import { chooseSignature, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
 import { type ObjectFilter, type ObjectPick, carryPick, recolourCommand, removeCommand } from './objectEditing.js';
 import type { ObjectFill, PageObjects } from './objectEditing.js';
+import { usePageWriting } from './usePageWriting.js';
 import type { SignatureLook } from './dialogs/signature.js';
 import { applyCarrying } from './commands/applyCarrying.js';
 import {
@@ -1896,6 +1897,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * focused when that memo last ran.
    */
   const readActiveId = useCallback(() => activeId, [activeId]);
+
+  // THE ONE REQUEST FOR WORDS TYPED ON A PAGE (ADR-0154), and the means to make one: `usePageWriting` has the rules —
+  // a request belongs to its document, and only a second request finishes the first.
+  const { write, writingDocId, writing: pageWriting } = usePageWriting(activeId, tabs);
   /**
    * How many marks main's clipboard holds, as the last copy reported it — the COUNT and never the
    * marks, which stay in main because a paste is a command the renderer may not send.
@@ -2317,6 +2322,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       new ToolRegistry(
         annotationTools({
           ask,
+          write,
           annotations: listAnnotations,
           onSelect: setPicked,
           selected: readSelection,
@@ -2357,6 +2363,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       readSelection,
       scale,
       style,
+      write,
     ],
   );
 
@@ -2972,10 +2979,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           return [
             textCopy,
             ...markupSelectionCommands(textDeps),
-            // ASK IS THIS COMMAND'S ALONE, not a member of `TextSelectionDeps`: it is the only
-            // item in this menu that opens a dialog, and widening the shared interface would
+            // WRITE IS THIS COMMAND'S ALONE, not a member of `TextSelectionDeps`: it is the only
+            // item in this menu that asks for words, and widening the shared interface would
             // hand five commands a capability none of them may use.
-            commentSelectionCommand({ ...textDeps, ask }),
+            commentSelectionCommand({ ...textDeps, write }),
             redactSelectionCommand(textDeps),
             searchSelectionCommand(textDeps),
             // THE ASSISTANT'S FOUR (ADR-0088), after the menu's own seven: each names the words
@@ -3118,11 +3125,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       onSaved,
       // Stable for the same reason: a memo over a state setter.
       busy,
-      // THE SELECTED-TEXT MENU reads these three: the selection its `when` asks about, the one
-      // dispatcher, and the style a markup is drawn in.
+      // THE SELECTED-TEXT MENU reads these four: the selection its `when` asks about, the one
+      // dispatcher, the style a markup is drawn in, and the page that *Comment* asks for words.
       textSelection,
       dispatch,
       style,
+      write,
       // THE ASSISTANT'S ITEMS (ADR-0088): the one way to ask, and the annotation selection
       // *Draft a reply* reads.
       askAssistant,
@@ -3572,6 +3580,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           split={split}
           drawing={drawing}
           editing={pageEditing}
+          // ONLY THE REQUEST'S OWN DOCUMENT draws it; another on show leaves it waiting with its draft.
+          writing={writingDocId === open.docId ? pageWriting : undefined}
           panning={toolId === HAND_TOOL_ID}
           search={search ?? undefined}
           secondRenderer={secondRenderer}
@@ -4028,6 +4038,8 @@ const DocumentLayer = memo(function DocumentLayer({
             organize={undefined}
             drawing={undefined}
             editing={undefined}
+            // NOT DRAWN BEHIND: a request is drawn only while its document is on show, from its draft.
+            writing={undefined}
             panning={false}
             search={undefined}
             autoscroll={undefined}
@@ -4092,6 +4104,7 @@ function PageCanvas({
   organize,
   drawing,
   editing,
+  writing,
   panning,
   search,
   secondRenderer,
@@ -4167,6 +4180,8 @@ function PageCanvas({
   readonly drawing: PageListProps['drawing'];
   /** Edit text's mode, or `undefined` when it is off. Both panes take it. */
   readonly editing: PageListProps['editing'];
+  /** Words being typed on a page (ADR-0154). Both panes take it; each draws it over its own slot of that page. */
+  readonly writing: PageListProps['writing'];
   /** The hand tool is on: a drag moves the pages (§10.3). */
   readonly panning: boolean;
   /** What the find bar last answered, painted over both panes' text layers. */
@@ -4487,6 +4502,7 @@ function PageCanvas({
       unit={unit}
       drawing={drawing}
       editing={editing}
+      writing={writing}
       panning={panning}
       search={search}
       // NO DIFFERENCES: a comparison's marks are Side by Side's, over its own halves.
@@ -4533,6 +4549,7 @@ function PageCanvas({
       label={SPLIT_SECOND_LABEL}
       drawing={drawing}
       editing={editing}
+      writing={writing}
       panning={panning}
       search={search}
       // NO DIFFERENCES: a comparison's marks are Side by Side's, over its own halves.

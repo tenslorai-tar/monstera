@@ -72,7 +72,8 @@ function drawn(gesture: Gesture): ToolPreview | undefined {
  * reads the library afresh and opens the chooser again, for as long as the person keeps changing it. Each round lets
  * go of the previous round's `blob:` addresses, so a long session of adding holds one set of pictures at a time.
  */
-export function stampTool(deps: TextToolDeps & StampDeps): UiTool {
+// ASK AND THE STYLE ONLY: the chooser is a dialog the ADR keeps (ADR-0154 *Keeps*), and a stamp has no words to type.
+export function stampTool(deps: Pick<TextToolDeps, 'ask' | 'style'> & StampDeps): UiTool {
   const controller: ToolController = {
     ...pointerPath,
     commit: async (gesture: Gesture, page: number, transform: PageTransform): Promise<DispatchableCommand | undefined> => {

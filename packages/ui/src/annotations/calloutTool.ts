@@ -2,12 +2,11 @@ import type { AnnotationColour, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
-import { CALLOUT_DIALOG_ID } from '../dialogs/callout.js';
-import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
+import { WRITE_CALLOUT_LABEL } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
-import { type TextToolDeps, clickedRect } from './textTools.js';
+import { type TextToolDeps, clickedRect, writeAnnotationWords } from './textTools.js';
 
 /**
  * The callout — point at something, then draw the note that talks about it.
@@ -107,16 +106,23 @@ export function calloutTool(deps: TextToolDeps): UiTool {
       // WHERE THE NOTE GOES WHEN NO BOX WAS DRAGGED: the second press, or where the one drag ended. A second press
       // that did not drag used to make nothing, which threw away a callout the person had placed.
       const place = gesture.presses[1] ?? endOf(gesture);
-      // BOTH READ BEFORE THE ASK, `textTools.ts`' rule: the transform is the one
-      // the overlay measured at the release, and converting after the person has
-      // typed would place the callout using whatever zoom the page has by then.
+      // BOTH READ BEFORE THE WORDS, `textTools.ts`' rule: the transform is the
+      // one the overlay measured at the release, and converting after the person
+      // has typed would place the callout using whatever zoom the page has by then.
       const at = toPdf(startOf(gesture), transform);
       const dragged = box === undefined ? undefined : draggedRect(box.from, box.to, transform);
 
-      const answered = ANNOTATION_TEXT_RESULT.safeParse(await deps.ask(CALLOUT_DIALOG_ID, {}));
-      if (!answered.success) return undefined;
+      // TYPED INTO ITS BOX: the dragged one, or — where none was — one growing from where the note goes.
+      const text = await writeAnnotationWords(deps, {
+        page,
+        box: dragged ?? clickedRect(place, '', deps.style.fontSize, transform),
+        label: WRITE_CALLOUT_LABEL,
+        colour: CALLOUT_COLOUR,
+        grows: dragged === undefined,
+      });
+      if (text === undefined) return undefined;
       // A BOX THAT FITS THE WORDS where none was dragged: the typewriter's click rule, which needs the words.
-      const rect = dragged ?? clickedRect(place, answered.data.text, deps.style.fontSize, transform);
+      const rect = dragged ?? clickedRect(place, text, deps.style.fontSize, transform);
 
       return {
         kind: 'addAnnotation',
@@ -125,7 +131,7 @@ export function calloutTool(deps: TextToolDeps): UiTool {
           type: 'callout',
           at: { x: at.x, y: at.y },
           rect,
-          text: answered.data.text,
+          text,
           colour: deps.style.colour(CALLOUT_COLOUR),
           opacity: deps.style.opacity,
           fontSize: deps.style.fontSize,

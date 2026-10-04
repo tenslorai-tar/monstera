@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import AboutBody from './AboutBody.js';
 import AiSetupBody from './AiSetupBody.js';
 import ComponentsBody from './ComponentsBody.js';
-import AnnotationNoteBody from './AnnotationNoteBody.js';
 import CloseUnsavedBody from './CloseUnsavedBody.js';
 import CloudViewOnlyBody from './CloudViewOnlyBody.js';
 import DocusignSendBody from './DocusignSendBody.js';
@@ -65,7 +64,6 @@ const BODIES: readonly { readonly name: string; readonly body: ReactNode; readon
 
 /** Group 3: the shared text forms and the dialogs whose answers are buttons. Same shape, same assertion. */
 const GROUP_3: readonly { readonly name: string; readonly body: ReactNode; readonly firstRow: string | null }[] = [
-  { name: 'Sticky note', body: <AnnotationNoteBody resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'Text field', body: <FormFieldTextBody resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'List box', body: <FormFieldListboxBody resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'Link to an address', body: <LinkAddressBody resolve={ignore} update={ignore} />, firstRow: '' },

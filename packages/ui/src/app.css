@@ -5091,16 +5091,87 @@ optgroup {
   outline: none;
 }
 
-.m-text-editor--sans {
+.m-text-editor--sans,
+.m-inline-writer__block--sans {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-.m-text-editor--serif {
+.m-text-editor--serif,
+.m-inline-writer__block--serif {
   font-family: 'Times New Roman', Times, serif;
 }
 
-.m-text-editor--mono {
+.m-text-editor--mono,
+.m-inline-writer__block--mono {
   font-family: Consolas, 'Courier New', monospace;
+}
+
+/*
+ * WORDS TYPED ON THE PAGE (`InlineWriter`, ADR-0154). A block sits where its words will be drawn, in their size,
+ * colour, face kind and direction, on the page's paper inside the accent outline the in-place editor draws, so what is
+ * typed reads as the page will draw it. `field-sizing: content`, the platform's own growing box, lengthens it with the
+ * words, and a click's box widens with them too, up to the page's edge; it scrolls only past the page's foot. Its sizes
+ * and its inset are the page's at the zoom on screen, so they are inline values. A line is the application's own text
+ * field beside what was drawn, with its refusal under it.
+ */
+.m-inline-writer {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.m-inline-writer__block {
+  display: block;
+  box-sizing: border-box;
+  field-sizing: content;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 1px solid var(--accent);
+  overflow-x: hidden;
+  overflow-y: auto;
+  resize: none;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  /* MUPDF'S LINE SPACING for a FreeText: 14.4 for 12 points, measured in its appearance stream (`textTools.ts`). */
+  line-height: 1.2;
+  background: var(--page);
+  caret-color: var(--accent);
+}
+
+.m-inline-writer__block:focus {
+  outline: 1px solid var(--accent);
+}
+
+/* A BOX AT THE PAGE'S FOOT has no room under it, so its refusal is said above it (`InlineWriter` measures it). */
+.m-inline-writer[data-at-foot='true'] .m-inline-writer__problem {
+  inset-block-start: auto;
+  inset-block-end: calc(100% + var(--space-8));
+}
+
+.m-inline-writer--card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  inline-size: max-content;
+  margin-block: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.m-inline-writer__line {
+  inline-size: 24em;
+  max-inline-size: 60vw;
+}
+
+.m-inline-writer__message {
+  max-inline-size: 24em;
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--font-chrome-12);
 }
 
 /* THE SELECTION HANDLES: a mark that this block is open, never a control. */
@@ -5123,7 +5194,8 @@ optgroup {
 .m-text-editor-handle--sw { inset-block-start: 100%; inset-inline-start: 0; }
 .m-text-editor-handle--w { inset-block-start: 50%; inset-inline-start: 0; }
 
-.m-text-editor-problem {
+.m-text-editor-problem,
+.m-inline-writer__problem {
   position: absolute;
   inset-block-start: calc(100% + var(--space-8));
   inset-inline-start: 0;

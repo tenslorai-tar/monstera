@@ -31,6 +31,7 @@ function built(answer: unknown): {
       asked.push(id);
       return Promise.resolve(answer);
     },
+    write: () => Promise.reject(new Error('the page was asked for words')),
     style: PLAIN_STYLE,
   });
   return { tools, asked };

@@ -212,10 +212,10 @@ test('add-a-text-box-1', async ({ page }) => {
   // THROUGH THE PALETTE: at 1280 wide the Markup group folds Text box into its More.
   await runCommand(page, 'Text box');
   await dragOnPage(page, [360, 20], [540, 80]);
-  const dialog = page.getByRole('dialog', { name: 'Text box' });
-  await dialog.getByLabel('Text').fill('See figure 3');
-  // THE DIALOG ALONE: the modal blurs the page behind it, the box drawn included.
-  await shoot(page, 'add-a-text-box-1', dialog);
+  // TYPED WHERE THE WORDS GO (ADR-0154): the box drawn holds the caret, and the words are set as the page will set them.
+  const box = page.getByRole('textbox', { name: 'Text box' });
+  await box.fill('See figure 3');
+  await shootAround(page, 'add-a-text-box-1', [box], 48);
 });
 
 test('add-a-note-1', async ({ page }) => {
@@ -224,10 +224,10 @@ test('add-a-note-1', async ({ page }) => {
   await openSection(page, 'Comment');
   await runCommand(page, 'Note');
   await clickOnPage(page, [520, 60]);
-  const dialog = page.getByRole('dialog', { name: 'Note' });
-  await dialog.getByLabel('Comment').fill('Check this figure');
-  // THE DIALOG ALONE: the modal blurs the page behind it, and the note's icon is drawn only once it is added.
-  await shoot(page, 'add-a-note-1', dialog);
+  // ITS BOX OPENS WHERE IT WAS CLICKED (ADR-0154), a card on the page; the note's icon is drawn once it is added.
+  const box = page.getByRole('textbox', { name: 'Comment' });
+  await box.fill('Check this figure');
+  await shootAround(page, 'add-a-note-1', [box], 48);
 });
 
 test('add-links-1', async ({ page }) => {

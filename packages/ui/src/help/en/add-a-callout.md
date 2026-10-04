@@ -4,7 +4,7 @@ title: Add a callout
 summary: Add a text box with a line pointing at the thing you are talking about.
 keywords: [callout, pointer, leader line, label with arrow, annotation with line]
 commands: [annotate.callout]
-contexts: [dialog.callout, comment]
+contexts: [comment]
 ---
 A callout is a text box joined by a line to the spot it describes.
 
@@ -12,7 +12,8 @@ A callout is a text box joined by a line to the spot it describes.
 
 1. In the rail, choose **Comment**, then **Callout** in the **Markup** group.
 2. Press on the spot the line should point at, and drag to where the text should go. Or click the spot, then drag to draw the box for the text, or click where the box should start.
-3. In the **Callout** window, type the **Note**, then choose **Add callout**. Where you did not draw a box, it is made to fit the note.
+3. Type the note straight into its box. Where you did not draw a box, it grows with your words.
+4. To finish, click anywhere else on the page or press **Esc**. **Ctrl+Enter** finishes too; **Enter** starts a new line.
 
 ![A callout pointing at a figure, with its text box](screenshot:add-a-callout-1)
 

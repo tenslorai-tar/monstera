@@ -3,8 +3,7 @@ import type { DispatchableCommand } from '@monstera/contract';
 import { stickyNoteCommand } from '../annotations/pointTools.js';
 import { type MarkupType, markupCommand, redactTextCommand } from '../annotations/textMarkupTools.js';
 import type { AnnotationStyle } from '../annotations/annotationStyle.js';
-import { ANNOTATION_NOTE_DIALOG_ID } from '../dialogs/annotationNote.js';
-import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
+import { writeAnnotationWords } from '../annotations/textTools.js';
 import {
   COMMENT_SELECTION_TITLE,
   COPY_SELECTION_TITLE,
@@ -13,7 +12,9 @@ import {
   SEARCH_SELECTION_TITLE,
   STRIKEOUT_SELECTION_TITLE,
   UNDERLINE_SELECTION_TITLE,
+  WRITE_NOTE_LABEL,
 } from '../messages/en.js';
+import type { Write } from '../pageWriting.js';
 import { TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { TextSelection } from '../TextLayer.js';
 
@@ -99,7 +100,7 @@ export function markupSelectionCommands(deps: TextSelectionDeps): readonly UiCom
  *
  * ## It is the note tool's feature reached a second way, not a second feature
  *
- * The same dialog collects the text, and {@link stickyNoteCommand} builds the same draft, so a note
+ * The same box on the page collects the text, and {@link stickyNoteCommand} builds the same draft, so a note
  * written from the menu and one placed with the tool are one command with one colour rule. The
  * markups' arrangement exactly — a menu item that decided what a note was would be the second
  * wiring place the registry exists to forbid.
@@ -118,15 +119,13 @@ export function markupSelectionCommands(deps: TextSelectionDeps): readonly UiCom
  * no text field, so that is a contract change with no row asking for one. This row asked for
  * *comment*, and a note at the selection is the feature this platform already has.
  *
- * ## Asked, then placed, and a dismissal leaves nothing
+ * ## Asked, then placed, and nothing typed leaves nothing
  *
- * The selection is read BEFORE the dialog opens, which is `stickyNoteTool`'s rule about the
- * transform arriving one gesture earlier: a person who dismisses the dialog has changed nothing,
- * and a person who selects something else while it is open still gets the note they asked for.
+ * The selection is read BEFORE the box opens, which is `stickyNoteTool`'s rule about the
+ * transform arriving one gesture earlier: a person who types nothing has changed nothing, and a
+ * person who selects something else while it is open still gets the note they asked for.
  */
-export function commentSelectionCommand(
-  deps: TextSelectionDeps & { readonly ask: (id: string, props: unknown) => Promise<unknown> },
-): UiCommand {
+export function commentSelectionCommand(deps: TextSelectionDeps & { readonly write: Write }): UiCommand {
   return {
     id: 'text.comment',
     feedback: VISIBLE,
@@ -137,15 +136,22 @@ export function commentSelectionCommand(
       const selection = deps.selection();
       if (context.docId === undefined || selection === undefined) return;
       const style = deps.style();
-      const answered = ANNOTATION_TEXT_RESULT.safeParse(
-        await deps.ask(ANNOTATION_NOTE_DIALOG_ID, {}),
+      const at = selection.from;
+      // THE NOTE TOOL'S REQUEST, through the one helper that asks for an annotation's words: a card at
+      // the point the note will sit, in the application's face, since a comment is not drawn there.
+      const text = await writeAnnotationWords(
+        { write: deps.write, style },
+        {
+          page: selection.page,
+          box: { x0: at.x, y0: at.y, x1: at.x, y1: at.y },
+          label: WRITE_NOTE_LABEL,
+          colour: undefined,
+          grows: false,
+        },
       );
-      // A DISMISSED DIALOG AND A REFUSED ANSWER ARE BOTH NOTHING TO BUILD FROM, which is the
-      // platform's gate and `stickyNoteTool`'s comment on it: a parse failure here means the id
-      // resolved to a dialog answering another shape, a registration defect rather than a person's
-      // doing, and the page is unchanged either way.
-      if (!answered.success) return;
-      deps.place(stickyNoteCommand(selection.page, selection.from, answered.data.text, style));
+      // NOTHING TYPED IS NOTHING TO BUILD FROM, which is the platform's gate and `stickyNoteTool`'s.
+      if (text === undefined) return;
+      deps.place(stickyNoteCommand(selection.page, at, text, style));
     },
   };
 }

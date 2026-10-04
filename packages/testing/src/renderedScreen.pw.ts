@@ -4278,9 +4278,11 @@ for (const [stored, expected] of [
     await page.mouse.down();
     await page.mouse.move(x + 160, y + 60, { steps: 4 });
     await page.mouse.up();
-    const dialog = page.getByRole('dialog', { name: 'Text box' });
-    await dialog.getByLabel('Text').fill('see figure 3');
-    await dialog.getByRole('button', { name: 'Add text box' }).click();
+    // TYPED IN THE BOX ON THE PAGE (ADR-0154), which is set in the chosen face as the words will be.
+    const typed = page.getByRole('textbox', { name: 'Text box' });
+    await expect(typed).toHaveClass(new RegExp(`m-inline-writer__block--${expected}\\b`, 'u'));
+    await typed.fill('see figure 3');
+    await page.keyboard.press('Escape');
 
     const fonts = (): unknown[] =>
       sent.flatMap((params) => {

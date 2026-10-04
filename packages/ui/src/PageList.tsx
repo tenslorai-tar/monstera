@@ -18,9 +18,20 @@ import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { type TextEditing, TextEditPage } from './TextEditLayer.js';
 import { type ObjectEditing, ObjectEditPage } from './ObjectEditLayer.js';
+import { InlineWriter } from './InlineWriter.js';
+import type { Draft, WriteRequest } from './pageWriting.js';
 
 /** What a press on the page edits, when a mode rather than a drawing tool holds the tool slot. */
 export type PageEditing = TextEditing | ObjectEditing;
+
+/** The one pending request for words on a page, its draft, and where its answer goes (ADR-0154). */
+export interface PageWriting {
+  /** Which request this is, one number per request in the window. */
+  readonly id: number;
+  readonly request: WriteRequest;
+  readonly draft: Draft;
+  readonly onDone: (words: string | undefined) => void;
+}
 import { TextLayer, type TextLayerLine, readTextSelection } from './TextLayer.js';
 import { type DifferenceMark, DifferenceLayer } from './DifferenceLayer.js';
 
@@ -230,6 +241,12 @@ export interface PageListProps {
    */
   readonly editing?: PageEditing | undefined;
   /**
+   * Words being typed on a page, asked for by a tool or a command (ADR-0154), or `undefined` for none. Drawn over the
+   * request's own page only. Required and `| undefined` for {@link search}'s reason: a request dropped on the way to
+   * the slot would leave a tool waiting for words nobody can type.
+   */
+  readonly writing: PageWriting | undefined;
+  /**
    * The HAND tool (§10.3's floating toolbar): a drag on the page area scrolls it, and the pages' own
    * layers stop taking the pointer so a drag never selects text on the way. Another value of the same
    * one slot the drawing tools and Edit text share, so it never holds beside them.
@@ -415,6 +432,7 @@ export function PageList({
   startAt,
   drawing,
   editing,
+  writing,
   panning = false,
   search,
   differences,
@@ -1170,6 +1188,8 @@ export function PageList({
           // GATED ON THE SLOT'S OWN MEASUREMENT for `drawing`'s reason: an outline
           // placed with a neighbour's box would sit over the wrong words.
           editing={sizes.has(page) ? editing : undefined}
+          // ONLY THE REQUEST'S OWN PAGE, gated on its measurement for `drawing`'s reason.
+          writing={sizes.has(page) && writing?.request.page === page ? writing : undefined}
           // THE SLOT'S OWN MEASUREMENT GATES THIS TOO, and for `drawing`'s
           // reason: a text layer placed with a neighbour's box would put every
           // line in the wrong frame, which reads as a selection that drifts
@@ -1388,6 +1408,7 @@ function PageSlot({
   onFailed,
   drawing,
   editing,
+  writing,
   text,
   kind,
   annotations,
@@ -1416,6 +1437,8 @@ function PageSlot({
   readonly onFailed: (page: number) => void;
   readonly drawing: PageListProps['drawing'];
   readonly editing: PageEditing | undefined;
+  /** The pending request for words when it is THIS page's, otherwise `undefined`. */
+  readonly writing: PageWriting | undefined;
   readonly text: readonly TextLayerLine[] | undefined;
   /** What the page is made of, or `undefined` before its text has arrived. */
   readonly kind: PageTextAnswer['kind'] | undefined;
@@ -1724,6 +1747,17 @@ function PageSlot({
           drawnWith={drawnWith}
           page={page}
           tool={drawing.tool}
+        />
+      )}
+      {/* WORDS BEING TYPED, over everything else on the page: the box a person is typing in is what is in front. */}
+      {writing === undefined || size === undefined ? null : (
+        <InlineWriter
+          // A SECOND REQUEST IS A NEW EDITOR, never the first one's words and its answered state.
+          key={writing.id}
+          draft={writing.draft}
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          onDone={writing.onDone}
+          request={writing.request}
         />
       )}
     </div>

@@ -3,12 +3,9 @@ import { ACCESSIBILITY_DIALOG } from '../dialogs/accessibilityCheck.js';
 import { AI_SETUP_DIALOG } from '../dialogs/aiSetup.js';
 import { ANNOTATION_EDIT_DIALOG } from '../dialogs/annotationEdit.js';
 import { LINK_ADDRESS_DIALOG, LINK_PAGE_DIALOG } from '../dialogs/annotationLink.js';
-import { ANNOTATION_NOTE_DIALOG } from '../dialogs/annotationNote.js';
 import { ANNOTATION_REPLY_DIALOG } from '../dialogs/annotationReply.js';
-import { ANNOTATION_TEXT_DIALOG } from '../dialogs/annotationText.js';
 import { APPLY_REDACTIONS_DIALOG } from '../dialogs/applyRedactions.js';
 import { BATES_NUMBER_DIALOG } from '../dialogs/batesNumber.js';
-import { CALLOUT_DIALOG } from '../dialogs/callout.js';
 import { CAMERA_CAPTURE_DIALOG } from '../dialogs/cameraCapture.js';
 import { CLOSE_UNSAVED_DIALOG } from '../dialogs/closeUnsaved.js';
 import { CLOUD_OUTCOME_DIALOG } from '../dialogs/cloudOutcome.js';
@@ -80,7 +77,6 @@ import { SPELL_CHECK_DIALOG } from '../dialogs/spellCheck.js';
 import { SPLIT_DOCUMENT_DIALOG } from '../dialogs/splitDocument.js';
 import { STAMP_DIALOG } from '../dialogs/stamp.js';
 import { TRANSLATE_PAGE_DIALOG } from '../dialogs/translatePage.js';
-import { TYPEWRITER_DIALOG } from '../dialogs/typewriter.js';
 import { URL_OPEN_PROBLEM_DIALOG } from '../dialogs/urlOpenProblem.js';
 import { OPEN_PROBLEM_DIALOG } from '../dialogs/openProblem.js';
 import { READ_ONLY_FILE_DIALOG } from '../dialogs/readOnlyFile.js';
@@ -122,14 +118,12 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   COMMAND_PROBLEM_DIALOG,
   HISTORY_TRIMMED_DIALOG,
   DELETE_PAGES_DIALOG,
-  ANNOTATION_TEXT_DIALOG,
   STAMP_DIALOG,
   SIGNATURE_BREAK_DIALOG,
   SIGNED_EDIT_DIALOG,
   PENDING_REDACTIONS_DIALOG,
   KEPT_BACKUPS_DIALOG,
   HELD_COPIES_DIALOG,
-  ANNOTATION_NOTE_DIALOG,
   ANNOTATION_EDIT_DIALOG,
   ANNOTATION_REPLY_DIALOG,
   DOCUMENT_PASSWORD_DIALOG,
@@ -146,8 +140,6 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   DOCUSIGN_NOTICE_DIALOG,
   LINK_ADDRESS_DIALOG,
   LINK_PAGE_DIALOG,
-  CALLOUT_DIALOG,
-  TYPEWRITER_DIALOG,
   CROP_PAGES_DIALOG,
   WATERMARK_PAGES_DIALOG,
   PAGE_BACKGROUND_DIALOG,

@@ -1,20 +1,20 @@
-import type { DispatchableCommand } from '@monstera/contract';
+import { type DispatchableCommand, MAX_ANNOTATION_TEXT } from '@monstera/contract';
 import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { ANNOTATION_TEXT_DIALOG_ID } from '../dialogs/annotationText.js';
+import { WRITE_TEXT_BOX_LABEL, WRITE_TOO_LONG, WRITE_TYPEWRITER_LABEL } from '../messages/en.js';
+import type { WriteRequest } from '../pageWriting.js';
 import { overlayTransform } from './annotationSpace.js';
 import { type AnnotationStyle, PLAIN_STYLE } from './annotationStyle.js';
-import { TYPEWRITER_DIALOG_ID } from '../dialogs/typewriter.js';
-import { TEXT_BOX_TOOL_ID, textBoxTool, typewriterTool } from './textTools.js';
+import { TEXT_BOX_TOOL_ID, annotationTextCheck, textBoxTool, typewriterTool } from './textTools.js';
 
 /**
  * The text box's controller, driven without a DOM.
  *
  * `shapeTools.test.ts`' shape with one difference that is the whole subject:
  * this tool's `commit` answers a promise, because part of its intent comes from
- * a person. So every case here awaits, and the recording `ask` is what makes
- * *did it ask, and with what* assertable.
+ * a person. So every case here awaits, and the recording `write` is what makes
+ * *did it ask the page, and for what* assertable (ADR-0154).
  */
 
 const PAGE: Parameters<typeof overlayTransform>[0] = {
@@ -26,22 +26,32 @@ const PAGE: Parameters<typeof overlayTransform>[0] = {
   zoom: 2,
 };
 
-/** A tool whose dialog answers `answer`, and the record of what it was asked. */
+/** A `write` that answers `answer`, and the record of what it was asked for. */
+function writing(answer: string | undefined): {
+  readonly write: (request: WriteRequest) => Promise<string | undefined>;
+  readonly asked: WriteRequest[];
+} {
+  const asked: WriteRequest[] = [];
+  return {
+    write: (request) => {
+      asked.push(request);
+      return Promise.resolve(answer);
+    },
+    asked,
+  };
+}
+
+/** A text box whose page answers `answer`, and the record of what it was asked for. */
 function toolAnswering(
-  answer: unknown,
+  answer: string | undefined,
   style: AnnotationStyle = PLAIN_STYLE,
 ): {
   readonly tool: ReturnType<typeof textBoxTool>;
-  readonly asked: { id: string; props: unknown }[];
+  readonly asked: WriteRequest[];
 } {
-  const asked: { id: string; props: unknown }[] = [];
-  const tool = textBoxTool({
-    ask: (id, props) => {
-      asked.push({ id, props });
-      return Promise.resolve(answer);
-    },
-    style,
-  });
+  const { write, asked } = writing(answer);
+  // `ask` REFUSES: nothing here may open a dialog any more, so one that did would fail the case it ran in.
+  const tool = textBoxTool({ ask: () => Promise.reject(new Error('a dialog was opened')), write, style });
   return { tool, asked };
 }
 
@@ -59,15 +69,24 @@ async function drag(
 }
 
 describe('textBoxTool', () => {
-  it('asks its own dialog, then builds the command from the answer', async () => {
-    const { tool, asked } = toolAnswering({ text: 'see figure 3' });
+  it('asks the PAGE for the words, in the dragged box and the style they will be drawn in, then builds the command', async () => {
+    const { tool, asked } = toolAnswering('see figure 3');
 
     const command = await drag(tool, [20, 20], [120, 80]);
 
-    // BOTH HALVES. The id says it opened its own dialog rather than any other;
-    // the command says the answer reached the payload. Either alone passes for
-    // an implementation that asked and ignored, or built and never asked.
-    expect(asked).toStrictEqual([{ id: ANNOTATION_TEXT_DIALOG_ID, props: {} }]);
+    // BOTH HALVES. The request says it asked for a block in the box the drag made, on the page it was made on; the
+    // command says the answer reached the payload. Either alone passes for an implementation that asked and ignored,
+    // or built and never asked.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({
+      page: 3,
+      box: { x0: 60, y0: 390, x1: 110, y1: 360 },
+      shape: 'block',
+      initial: '',
+      label: WRITE_TEXT_BOX_LABEL,
+      style: { fontSize: 12, colour: [0.1, 0.1, 0.1], font: 'sans', direction: 'left-to-right' },
+      grows: false,
+    });
     expect(command).toStrictEqual({
       kind: 'addAnnotation',
       page: 3,
@@ -88,57 +107,64 @@ describe('textBoxTool', () => {
     });
   });
 
-  it('sets the words in the reader’s chosen FACE (`editing.annotation-font`) — the case above, on sans, is the control', async () => {
-    const { tool } = toolAnswering({ text: 'see figure 3' }, { ...PLAIN_STYLE, font: 'serif' });
+  it('sets the words in the reader’s chosen FACE (`editing.annotation-font`), on the page and in the command — the case above, on sans, is the control', async () => {
+    const { tool, asked } = toolAnswering('see figure 3', { ...PLAIN_STYLE, font: 'serif' });
     const command = await drag(tool, [20, 20], [120, 80]);
+    expect(asked[0]?.style?.font).toBe('serif');
     expect(command?.kind === 'addAnnotation' && command.annotation.type === 'text-box' ? command.annotation.font : undefined).toBe(
       'serif',
     );
   });
 
   it('and in the reader’s chosen DIRECTION (`editing.text-direction`) — the first case, left to right, is the control', async () => {
-    const { tool } = toolAnswering({ text: 'see figure 3' }, { ...PLAIN_STYLE, direction: 'right-to-left' });
+    const { tool, asked } = toolAnswering('see figure 3', { ...PLAIN_STYLE, direction: 'right-to-left' });
     const command = await drag(tool, [20, 20], [120, 80]);
+    expect(asked[0]?.style?.direction).toBe('right-to-left');
     expect(
       command?.kind === 'addAnnotation' && command.annotation.type === 'text-box' ? command.annotation.direction : undefined,
     ).toBe('right-to-left');
   });
 
-  it('sends NOTHING when the dialog is dismissed', async () => {
-    // `undefined` from `ask` is a dismissal, and the outcome is the one a drag
-    // too small to see already produces: no command. That is the gate — there
-    // is no value to build from — rather than a flag anybody checks.
+  it('sends NOTHING when the page answers no words', async () => {
+    // `undefined` from `write` is nothing typed, and the outcome is the one a drag too small to see already produces:
+    // no command. That is the gate — there is no value to build from — rather than a flag anybody checks.
     const { tool } = toolAnswering(undefined);
     expect(await drag(tool, [20, 20], [120, 80])).toBeUndefined();
   });
 
-  it('sends nothing when the answer is not the shape this dialog promises', async () => {
-    // A REGISTRATION DEFECT, not a person's doing: the id resolved to something
-    // answering another shape. Refused quietly for the dismissal's reason — the
-    // page is unchanged either way — and asserted because the alternative is a
-    // cast that would put whatever came back into a command payload.
-    const { tool } = toolAnswering({ pages: [1] });
+  it('TRIMS the words by the rule the dialog answered through, so the page and the dialog make the same annotation', async () => {
+    const { tool } = toolAnswering('  see figure 3\n');
+    const command = await drag(tool, [20, 20], [120, 80]);
+    expect(command?.kind === 'addAnnotation' && command.annotation.type === 'text-box' ? command.annotation.text : undefined).toBe(
+      'see figure 3',
+    );
+  });
+
+  it('sends nothing for words that are only whitespace, which the rule trims to empty', async () => {
+    // A `/FreeText` carrying three spaces is a rectangle with an invisible border: a text box the person typed into
+    // and cannot see. `settle` answers nothing for a new block left blank, and this is the half that makes the
+    // refusal hold for any other caller of the tool.
+    const { tool } = toolAnswering('   ');
     expect(await drag(tool, [20, 20], [120, 80])).toBeUndefined();
   });
 
-  it('sends nothing for a whitespace answer, which the schema trims to empty', async () => {
-    // A `/FreeText` carrying three spaces is a rectangle with an invisible
-    // border: a text box the person typed into and cannot see. The body
-    // disables its control for this, and the schema is what makes the refusal
-    // hold for any other caller — this case asserts the schema's half, since
-    // the body's is a rendering decision.
-    const { tool } = toolAnswering({ text: '   ' });
-    expect(await drag(tool, [20, 20], [120, 80])).toBeUndefined();
+  it('carries the payload’s length rule to the page, where words too long keep the box open (`settle`)', async () => {
+    const { tool, asked } = toolAnswering('see figure 3');
+    await drag(tool, [20, 20], [120, 80]);
+    const check = asked[0]?.check;
+    // THE RULE ITSELF, at its boundary: the contract's limit passes, one more is refused with the message.
+    expect(check?.('x'.repeat(MAX_ANNOTATION_TEXT))).toBeUndefined();
+    expect(check?.('x'.repeat(MAX_ANNOTATION_TEXT + 1))).toBe(WRITE_TOO_LONG);
+    // AFTER THE TRIM, as the result schema counts: spaces round the limit are not words.
+    expect(annotationTextCheck(` ${'x'.repeat(MAX_ANNOTATION_TEXT)} `)).toBeUndefined();
   });
 
   it('DOES NOT ASK AT ALL for a drag too small to be meant', async () => {
-    // ASSERT THE CALL THAT WAS NOT MADE. A stray click that fell through would
-    // put a modal in front of somebody who did not ask for one — which is worse
-    // than the stray rectangle the shape tools discard, and is why this tool's
-    // threshold is larger than theirs. Asserting the absent command instead
-    // would pass for an implementation that opened the dialog and then threw
-    // the answer away.
-    const { tool, asked } = toolAnswering({ text: 'see figure 3' });
+    // ASSERT THE CALL THAT WAS NOT MADE. A stray click that fell through would take the keyboard from somebody who
+    // did not ask for a box — which is worse than the stray rectangle the shape tools discard, and is why this tool's
+    // threshold is larger than theirs. Asserting the absent command instead would pass for an implementation that
+    // opened the box and then threw the answer away.
+    const { tool, asked } = toolAnswering('see figure 3');
 
     expect(await drag(tool, [40, 40], [44, 44])).toBeUndefined();
     expect(asked).toStrictEqual([]);
@@ -164,29 +190,23 @@ describe('textBoxTool', () => {
 
   it('claims the id its command selects', () => {
     // A tool's id is its command's, and the two are written in different files.
-    expect(textBoxTool({ ask: () => Promise.resolve(undefined), style: PLAIN_STYLE }).id).toBe(TEXT_BOX_TOOL_ID);
+    expect(toolAnswering(undefined).tool.id).toBe(TEXT_BOX_TOOL_ID);
   });
 });
 
 /**
- * The typewriter PLACES ON A CLICK as well as a drag (the owner's item 1e): a click asks for the words and makes the
- * box at the point clicked, sized for them. The text box's *does not ask at all for a drag too small to be meant*
- * above is the control — a stray click there is still nothing.
+ * The typewriter PLACES ON A CLICK as well as a drag (the owner's item 1e): a click opens a box at the point clicked
+ * that grows with the words, and the annotation's box is made for them. The text box's *does not ask at all for a drag
+ * too small to be meant* above is the control — a stray click there is still nothing.
  */
 describe('typewriterTool', () => {
-  /** A typewriter whose dialog answers `text`, and the record of what it was asked. */
+  /** A typewriter whose page answers `text`, and the record of what it was asked for. */
   function typewriterAnswering(text: string): {
     readonly tool: ReturnType<typeof typewriterTool>;
-    readonly asked: string[];
+    readonly asked: WriteRequest[];
   } {
-    const asked: string[] = [];
-    const tool = typewriterTool({
-      ask: (id) => {
-        asked.push(id);
-        return Promise.resolve({ text });
-      },
-      style: PLAIN_STYLE,
-    });
+    const { write, asked } = writing(text);
+    const tool = typewriterTool({ ask: () => Promise.reject(new Error('a dialog was opened')), write, style: PLAIN_STYLE });
     return { tool, asked };
   }
 
@@ -196,13 +216,22 @@ describe('typewriterTool', () => {
     return command.annotation.type === 'typewriter' ? command.annotation.rect : undefined;
   }
 
-  it('asks on a CLICK, and makes the box at the point clicked, as wide as the words and one line tall', async () => {
+  it('asks on a CLICK for a GROWING box at the point clicked, one line tall, and makes the annotation as wide as the words', async () => {
     const { tool, asked } = typewriterAnswering('see figure 3');
     // At (40, 40) on a page whose crop starts at (50, 100) and whose top is 400, at zoom 2: the click is at (70, 380)
     // in the page's points. Twelve characters at 12 points and 0.6 em, plus 3 either side, is 92.4 points wide; one
     // line at 1.2 spacing plus 3 above and below is 20.4 tall.
-    const command = await drag(tool,[40, 40], [41, 41]);
-    expect(asked).toStrictEqual([TYPEWRITER_DIALOG_ID]);
+    const command = await drag(tool, [40, 40], [41, 41]);
+
+    // THE BOX TYPED INTO starts where the click was and is the one `clickedRect` makes for no words: 6 wide, 20.4 tall.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({ shape: 'block', grows: true, label: WRITE_TYPEWRITER_LABEL });
+    const box = asked[0]?.box;
+    expect(box?.x0).toBeCloseTo(70, 6);
+    expect(box?.y0).toBeCloseTo(380, 6);
+    expect(box?.x1).toBeCloseTo(76, 6);
+    expect(box?.y1).toBeCloseTo(359.6, 6);
+
     const rect = rectOf(command) as { x0: number; y0: number; x1: number; y1: number };
     expect(rect.x0).toBeCloseTo(70, 6);
     expect(rect.y0).toBeCloseTo(380, 6);
@@ -213,7 +242,7 @@ describe('typewriterTool', () => {
   it('keeps a click near the right edge on the page: the words wrap, and the box is taller by the lines that makes', async () => {
     const { tool } = typewriterAnswering('see figure 3');
     // At x = 360 of a 400-wide viewport there are 20 points to the right: 92.4 points of words wrap onto 5 lines.
-    const rect = rectOf(await drag(tool,[360, 40], [361, 41])) as {
+    const rect = rectOf(await drag(tool, [360, 40], [361, 41])) as {
       x0: number;
       y0: number;
       x1: number;
@@ -223,9 +252,10 @@ describe('typewriterTool', () => {
     expect(rect.y0 - rect.y1).toBeCloseTo(5 * 12 * 1.2 + 6, 6);
   });
 
-  it('CONTROL: a DRAG still makes the dragged box, whatever the words', async () => {
-    const { tool } = typewriterAnswering('a line far longer than the box the person drew for it');
-    const rect = rectOf(await drag(tool,[20, 20], [120, 80]));
+  it('CONTROL: a DRAG still asks in the dragged box, which does not grow, and makes that box whatever the words', async () => {
+    const { tool, asked } = typewriterAnswering('a line far longer than the box the person drew for it');
+    const rect = rectOf(await drag(tool, [20, 20], [120, 80]));
+    expect(asked[0]).toMatchObject({ box: { x0: 60, y0: 390, x1: 110, y1: 360 }, grows: false });
     expect(rect).toStrictEqual({ x0: 60, y0: 390, x1: 110, y1: 360 });
   });
 });
