@@ -1025,6 +1025,12 @@ Before: ADR-0151, ADR-0152, ADR-0153 and ADR-0154 each came in its own commit ah
 The FEATURES rows each commit touched were read against the code. The sweep for the removed dialog found it named in no
 live document; the journal's mention is a record.
 
+**Correction, 2026-10-04, the commit after this entry.** Item 6 says MMMMMMM-2 did not recur, and it did: `cb62b976`
+corrected ADR-0154 and left its index row as it was, and so did `ce646435`, the correction made the commit after this
+audit. That is the third range with this shape. Found by reading ADR-0152's row, which carries its correction, beside
+0154's, which carried neither; the row now names both. The claim was checked against the wrong set: I read which ADR
+commits touched `README.md`, and the correction commits are the ones that did not.
+
 ---
 
 ## 2026-10-03 — Stage audit of `de106c45..5da42ae3` — findings MMMMMMM-1 to MMMMMMM-11
