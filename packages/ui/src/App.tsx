@@ -3465,7 +3465,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * `opened` is what the active layer is told, and it activates: right for the document on show, wrong for
    * one behind it, whose parser noticing a moved version must not switch the reader's tab.
    */
-  const movedBehind = useCallback(
+  // A DOCUMENT'S TRANSPORT REPORTED ITS VERSION MOVED: the tab and the store take it, for the layer on show and every
+  // layer behind alike (CR-DOC-03). The layer on show was handed `opened`, which leaves an existing tab as it is, so
+  // the move was dropped and its view stayed bound to a version main answers every range stale at.
+  const versionMoved = useCallback(
     (next: OpenedDocument): void => {
       setTabs((current) => current.map((tab) => (tab.docId === next.docId ? { ...tab, ...next } : tab)));
       stores.get(next.docId)?.getState().observed(next.version);
@@ -3513,7 +3516,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // A LAYER BEHIND READS THE ROW'S ANSWER AND NEVER WRITES IT: it is laid out in the same box (ADR-0146).
       measuresRow: false,
       requestPassword,
-      onVersionMoved: movedBehind,
+      onVersionMoved: versionMoved,
       menuAt: NO_MENU,
       rulers,
       showGrid,
@@ -3527,7 +3530,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       layout,
       onFirstFrame: markFramed,
     }),
-    [client, layout, markFramed, movedBehind, pageBadges, presence, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
+    [client, layout, markFramed, versionMoved, pageBadges, presence, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
   );
 
   return (
@@ -3673,7 +3676,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         <PageCanvas
           client={client}
           document={open}
-          onVersionMoved={opened}
+          onVersionMoved={versionMoved}
           onFirstFrame={markFramed}
           onCurrentPage={viewed}
           onPageBox={pageBoxed}

@@ -48,12 +48,28 @@ const PAGES: Readonly<Record<string, number>> = { [FIRST]: 2, [SECOND]: 4 };
 // document, so the stub answers the count that document has — without which
 // both tabs would report the same shape and the case below could not tell a
 // per-document count from a shared one.
+/** Every view opened, with the version it was bound to and the move callback it was handed, as the transport holds it. */
+const viewsOpened = vi.hoisted(
+  () =>
+    [] as {
+      readonly docId: string;
+      readonly version: number;
+      readonly onVersionMoved: (next: { readonly version: number; readonly byteLength: number }) => void;
+    }[],
+);
+
 vi.mock('./documentView.js', () => ({
-  openDocumentView: ({ docId }: { docId: DocId }) =>
-    Promise.resolve({
-      document: { numPages: PAGES[docId] ?? 1 },
+  openDocumentView: (options: {
+    docId: DocId;
+    version: number;
+    onVersionMoved: (next: { readonly version: number; readonly byteLength: number }) => void;
+  }) => {
+    viewsOpened.push({ docId: options.docId, version: options.version, onVersionMoved: options.onVersionMoved });
+    return Promise.resolve({
+      document: { numPages: PAGES[options.docId] ?? 1 },
       close: () => Promise.resolve(),
-    }),
+    });
+  },
 }));
 
 vi.mock('./renderPage.js', async (importOriginal) => ({
@@ -350,6 +366,26 @@ describe('the Organize grid, driven through App (ADR-0104)', () => {
 });
 
 describe('multi-document tabs', () => {
+  it('the document ON SHOW takes the version its transport reports moved, as one behind does (CR-DOC-03)', async () => {
+    const { client: built } = client();
+    render(<App client={built} settings={freshSettings()} />);
+    await openOne();
+    const shown = viewsOpened.filter((view) => view.docId === FIRST);
+    const bound = shown.at(-1);
+    if (bound === undefined) throw new Error('the document on show opened no view');
+    expect(bound.version).toBe(1);
+
+    // WHAT THE TRANSPORT DOES on a range answered stale: tells the layer the version main named.
+    await act(async () => {
+      bound.onVersionMoved({ version: 7, byteLength: 1024 });
+      for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
+    });
+
+    // THE VIEW IS OPENED AGAIN AT IT. A layer on show that dropped the move kept its view bound to 1, where main
+    // answers every range stale, so the page never drew.
+    expect(viewsOpened.filter((view) => view.docId === FIRST).slice(shown.length).map((view) => view.version)).toStrictEqual([7]);
+  });
+
   it('opens a SECOND document beside the first and brings it forward', async () => {
     const { client: built } = client();
     const { container } = render(<App client={built} settings={freshSettings()} />);
