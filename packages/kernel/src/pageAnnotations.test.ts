@@ -3059,6 +3059,80 @@ describe('applyAddAnnotation writes a measurement', () => {
     expect(content).toContain('50.0 mm');
   });
 
+  /** The text of an annotation's normal appearance, read with pdf-lib, a library other than the writer. */
+  async function appearanceOf(bytes: Uint8Array, at = 0): Promise<{ readonly content: string; readonly rect: number[] }> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('no /Annots');
+    const entry = annots.asArray()[at];
+    const dict = entry instanceof PDFRef ? document.context.lookup(entry, PDFDict) : undefined;
+    if (dict === undefined) throw new Error('the /Annots entry is not a dictionary');
+    const appearance = dict.lookup(PDFName.of('AP'));
+    const normal = appearance instanceof PDFDict ? appearance.get(PDFName.of('N')) : undefined;
+    const stream = normal instanceof PDFRef ? document.context.lookup(normal) : normal;
+    if (!(stream instanceof PDFStream)) throw new Error('the measurement has no appearance');
+    const rect = dict.lookup(PDFName.of('Rect'));
+    const numbers = rect instanceof PDFArray ? rect.asArray().map((value) => (value instanceof PDFNumber ? value.asNumber() : NaN)) : [];
+    return { content: Buffer.from(stream.getContents()).toString('latin1'), rect: numbers };
+  }
+
+  it('DRAWS an AREA’s and a PERIMETER’s reading on the shape, which MuPDF does not (the owner’s item 14a)', async () => {
+    // THE OWNER'S REPORT: area and perimeter showed no value. MuPDF draws `/Contents` only along a captioned line, so
+    // the two readings were in the dictionary and on no page. The label's characters, `²` as its WinAnsi byte, set in
+    // the appearance a viewer draws.
+    const area = await appearanceOf(await drawnOn(await fixture(), command({ annotation: AREA })));
+    expect(area.content).toContain('/MonsteraHelv 12 Tf');
+    expect(area.content).toContain('(2500.0 mm²) Tj');
+    const perimeter = await appearanceOf(await drawnOn(await fixture(), command({ annotation: PERIMETER })));
+    expect(perimeter.content).toContain('(150.0 mm) Tj');
+    // CONTROL: the distance's own caption is MuPDF's, and this build adds nothing to it.
+    const distance = await appearanceOf(await drawnOn(await fixture(), command({ annotation: DISTANCE })));
+    expect(distance.content).not.toContain('MonsteraMeasure');
+    expect(distance.content).toContain('50.0 mm');
+  });
+
+  it('places an AREA’s reading at the shape’s middle and grows /Rect to hold it, so a small shape does not cut it', async () => {
+    // A TEN-POINT SQUARE, far narrower than its reading, so a reading set without growing the box is clipped by every
+    // viewer that clips an appearance to its /BBox.
+    const small: AnnotationDraft = {
+      ...AREA,
+      points: [
+        { x: 50, y: 50 },
+        { x: 60, y: 50 },
+        { x: 60, y: 60 },
+        { x: 50, y: 60 },
+      ],
+    };
+    const { content, rect } = await appearanceOf(await drawnOn(await fixture(), command({ annotation: small })));
+    const [x0 = NaN, , x1 = NaN] = rect;
+    expect(x1 - x0).toBeGreaterThan(25);
+    // CENTRED on the square's middle (x = 55 in the fixture's space): the text starts left of it by half its width.
+    const placed = /([\d.]+) ([\d.]+) Td \(25\.0 mm²\)/u.exec(content);
+    expect(placed, content).not.toBeNull();
+    expect(Number(placed?.[1])).toBeLessThan(55);
+  });
+
+  it('sets the reading ONCE across a restyle, and again on the appearance the restyle drew', async () => {
+    // A REDRAW THAT REGENERATES the appearance loses the reading unless it is set again; one that does not would set it
+    // twice without the marker. Both halves: present after the restyle, and present once.
+    const drawn = await drawnOn(await fixture(), command({ annotation: AREA }));
+    const restyled = await onSession(drawn, async (session) => {
+      await applyStyleAnnotation(session, {
+        kind: 'styleAnnotation',
+        page: 0,
+        indices: [0],
+        colour: [0.8, 0.1, 0.1],
+        version: asDocVersion(1),
+      });
+      return mupdfWriter.serialise(session);
+    });
+    const { content } = await appearanceOf(restyled);
+    expect(content.split('MonsteraMeasure BMC').length - 1).toBe(1);
+    // ON THE APPEARANCE THE RESTYLE DREW, which strokes in the new colour, and still black, as MuPDF sets a caption.
+    expect(content).toContain('.8 .1 .1 RG');
+    expect(content).toContain('MonsteraMeasure BMC q 0 g BT');
+  });
+
   it('is LISTED apart from the plain shape it shares a subtype with', async () => {
     // `/Line`, `/Polygon` and `/PolyLine` are what the three measurements are
     // written as, so `getType()` cannot separate them from the line, polygon
