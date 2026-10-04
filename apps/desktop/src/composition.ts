@@ -153,7 +153,7 @@ import {
 } from './budget.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
-import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './recentPictures.js';
+import { NO_RECENT_PICTURES, type PictureFiles, type RecentPictures, createRecentPictures } from './recentPictures.js';
 import { NO_REQUEST_LOG, createRequestLog, observedHandlers } from './requestLog.js';
 import { createHeldPicture } from './heldPicture.js';
 import type { ScanSignature } from './signaturePicture.js';
@@ -1222,6 +1222,20 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // opener are both in scope on this line and nowhere else.
     restore: (docId, write) =>
       engine.recycle(docId, (id) => engineHost.restoreSessions(id, write)),
+    // A REMOVAL'S SAVE OPENS THE SESSIONS AGAIN from the file it wrote (ADR-0164), opening before releasing; a file that
+    // opens only with a password is the one refusal it expects, and the document keeps the sessions it had.
+    renew: async (docId, write) => {
+      try {
+        await engine.renew(docId, (id) => engineHost.restoreSessions(id, write));
+        return 'renewed';
+      } catch (thrown) {
+        if (thrown instanceof EngineDocumentLocked) return 'locked';
+        throw thrown;
+      }
+    },
+    // BUILT BELOW, from this service's own `firstPagePicture`; a save, which is what calls this, cannot run before the
+    // graph exists.
+    recentPicture: { retake: (docId, path) => recentPictures.retake(docId, path) },
     // THE ANNOTATION LIST, composed here for the reads above's reason, and
     // whole-document rather than per page: a panel asks where the comments are,
     // which is a question about all of it.
@@ -1551,7 +1565,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // with nowhere to put the picture would pay that on every open for nothing — measured the costly way: the
   // composition cases' fake host answers no page image, so a capture held the lane and the next command
   // waited out its timeout.
-  const recentPictures =
+  // ANNOTATED, because the service above takes `retake` from this and this takes `firstPagePicture` from it: without
+  // the type, each one's inference waits on the other's.
+  const recentPictures: RecentPictures =
     recentPictureFiles === undefined
       ? NO_RECENT_PICTURES
       : createRecentPictures({

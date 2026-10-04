@@ -193,12 +193,13 @@ async function atomicWriteStaged(
   deps: Pick<SaveDependencies, 'surface' | 'names' | 'wait'>,
   target: string,
   staged: StagedImage,
-  backups: SaveBackups = 'keep',
+  backups: SaveBackups,
 ): Promise<Awaited<ReturnType<typeof atomicWrite>>> {
   const names = deps.names(target);
   try {
     // A REMOVAL'S SAVE KEEPS NO BACKUP: the file it replaces holds what was removed, and a `.bak` of it would keep that.
-    // The names the person keeps are left where they are — they are older files, and whether to delete them is asked.
+    // The names already kept are left where they are here: they are older files, and a removal's save deletes the ones
+    // Monstera made after this write lands (ADR-0139).
     return await atomicWrite(
       deps.surface,
       target,
@@ -404,7 +405,11 @@ export async function writeDocumentSplit(
  * destination. Writing a copy over an existing file leaves the `.bak` a save
  * would leave, because it is the same act with the same hazard; a second
  * naming rule here would be two opinions about where this application puts its
- * temporary files (B3a).
+ * temporary files (B3a). **And it keeps none where a save would keep none**:
+ * `backups` is required, and a copy written while the document carries a
+ * removal passes `'none'`, because the file it replaces is the likeliest place an
+ * earlier copy of what was removed sits
+ * ([ADR-0164](../../../docs/DECISIONS/0164-a-removals-save-also-renews-the-hosts-copy-and-the-recent-picture.md)).
  *
  * ## The check runs BEFORE the flush, for `saveDocument`'s reason
  *
@@ -424,6 +429,8 @@ export async function writeDocumentSplit(
  * @param check answers whether the destination is contested
  * @param flush stages the document's current bytes
  * @param destination the path the picker returned
+ * @param backups whether the file the copy replaces is backed up ({@link SaveBackups}), REQUIRED for `saveDocument`'s
+ *   reason
  * @throws whatever `flush` threw — an engine failure, not an outcome
  */
 export async function writeDocumentCopy(
@@ -431,12 +438,13 @@ export async function writeDocumentCopy(
   check: (destination: string) => Promise<CopyTargetVerdict>,
   flush: DocumentFlush,
   destination: string,
+  backups: SaveBackups,
 ): Promise<CopyOutcome> {
   const verdict = await check(destination);
   if (verdict.kind === 'contested') return { kind: 'refused', others: verdict.others };
 
   const staged = await flush();
-  const written = await atomicWriteStaged(deps, destination, staged);
+  const written = await atomicWriteStaged(deps, destination, staged, backups);
   if (!written.ok) return { kind: 'write-failed', failure: written.error };
 
   return { kind: 'copied', bytes: staged.byteLength, destination };

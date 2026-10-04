@@ -598,6 +598,7 @@ describe('writeDocumentCopy', () => {
       () => Promise.resolve({ kind: 'writable' }),
       through(f.surface, NEW_BYTES),
       ELSEWHERE,
+      'keep',
     );
 
     expect(outcome).toStrictEqual({ kind: 'copied', bytes: NEW_BYTES.byteLength, destination: ELSEWHERE });
@@ -618,6 +619,7 @@ describe('writeDocumentCopy', () => {
       () => Promise.resolve({ kind: 'writable' }),
       through(f.surface, NEW_BYTES),
       ELSEWHERE,
+      'keep',
     );
 
     // A COPY THAT CLEARED THE DIRTY FLAG is invariant 18's loss with a friendly
@@ -642,6 +644,7 @@ describe('writeDocumentCopy', () => {
         return through(f.surface, NEW_BYTES)();
       },
       ELSEWHERE,
+      'keep',
     );
 
     expect(outcome).toStrictEqual({ kind: 'refused', others: [asDocId('other-tab')] });
@@ -666,6 +669,7 @@ describe('writeDocumentCopy', () => {
       () => Promise.resolve({ kind: 'writable' }),
       through(f.surface, NEW_BYTES),
       ELSEWHERE,
+      'keep',
     );
 
     expect(outcome.kind).toBe('write-failed');
@@ -683,8 +687,30 @@ describe('writeDocumentCopy', () => {
       () => Promise.resolve({ kind: 'writable' }),
       through(f.surface, NEW_BYTES),
       ELSEWHERE,
+      'keep',
     );
 
     expect(files.get(ELSEWHERE)).toBe('saved contents');
+  });
+
+  // A COPY WRITTEN WHILE A REMOVAL IS PENDING (ADR-0164): the file it replaces is the likeliest place an earlier copy of
+  // what was removed sits, so it keeps no backup of it. The pair asserts the choice reaches the write, in each direction.
+  it('keeps NO backup of the file it replaces when told none', async () => {
+    const files: Files = new Map([[ELSEWHERE, 'an earlier copy, before the redaction']]);
+    const f = fake(files);
+
+    await writeDocumentCopy(copyDeps(f.surface), () => Promise.resolve({ kind: 'writable' }), through(f.surface, NEW_BYTES), ELSEWHERE, 'none');
+
+    expect(files.get(ELSEWHERE)).toBe('saved contents');
+    expect(files.has('/elsewhere/report copy.pdf.bak')).toBe(false);
+  });
+
+  it('CONTROL: the same copy told keep leaves the backup a save would leave', async () => {
+    const files: Files = new Map([[ELSEWHERE, 'an earlier copy, before the redaction']]);
+    const f = fake(files);
+
+    await writeDocumentCopy(copyDeps(f.surface), () => Promise.resolve({ kind: 'writable' }), through(f.surface, NEW_BYTES), ELSEWHERE, 'keep');
+
+    expect(files.get('/elsewhere/report copy.pdf.bak')).toBe('an earlier copy, before the redaction');
   });
 });

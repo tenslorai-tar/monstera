@@ -912,6 +912,25 @@ export class EngineSessions implements EngineSessionSource {
    * @param docId the open document
    * @param reopen builds its sessions again, inside its lane
    */
+  /**
+   * Opens one document's sessions again and lets the old ones go only once the new ones exist — `recycle` with the
+   * order reversed, for a caller that must not leave the document without a session
+   * ([ADR-0164](../../../docs/DECISIONS/0164-a-removals-save-also-renews-the-hosts-copy-and-the-recent-picture.md)).
+   *
+   * **The release is the new open's to run**: the entry keeps the old one, and `holdRelease`, which the open calls
+   * once its session exists, runs it. So an open that fails — a saved file that opens only with a password — leaves
+   * the old session and its release exactly as they were, and the failure is the caller's to classify.
+   *
+   * @param docId the open document
+   * @param reopen builds its sessions again, inside its lane
+   */
+  async renew(docId: DocId, reopen: (docId: DocId) => Promise<DocumentSessions>): Promise<void> {
+    if (!this.#entries.has(docId)) return;
+    const sessions = await reopen(docId);
+    const entry = this.#entries.get(docId);
+    if (entry !== undefined) entry.sessions = sessions;
+  }
+
   async recycle(docId: DocId, reopen: (docId: DocId) => Promise<DocumentSessions>): Promise<void> {
     const entry = this.#entries.get(docId);
     if (entry === undefined) return;

@@ -402,6 +402,7 @@ export {
   type StagedImage,
   placeStaged,
   stagedBytes,
+  type SaveBackups,
   type SaveDependencies,
   type SaveFileNames,
   type CopyOutcome,

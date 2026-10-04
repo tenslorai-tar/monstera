@@ -193,4 +193,60 @@ describe('recent pictures (ADR-0100)', () => {
     store.settingsWritten();
     expect([...files.held.keys()]).toStrictEqual(['desktop.ini']);
   });
+
+  describe('a removal’s save retakes the picture (ADR-0164)', () => {
+    const BEFORE = Uint8Array.of(0xff, 0xd8, 0x01);
+
+    it('replaces the picture of the page as it was with one of the page as saved', async () => {
+      const { store, files } = pictures({ files: folder({ [pictureName(PATH)]: BEFORE }) });
+
+      await store.retake(DOC, PATH);
+
+      expect(files.held.get(pictureName(PATH))).toStrictEqual(JPEG);
+    });
+
+    it('DELETES FIRST, so a picture that cannot be drawn leaves the placeholder, never the old one', async () => {
+      const { store, files, reported } = pictures({
+        files: folder({ [pictureName(PATH)]: BEFORE }),
+        picture: () => Promise.reject(new Error('the host is gone')),
+      });
+
+      await store.retake(DOC, PATH);
+
+      expect(files.held.has(pictureName(PATH))).toBe(false);
+      expect(reported).toStrictEqual(['failed:Error']);
+    });
+
+    it('CONTROL: a capture that cannot draw leaves the old picture, which is why the retake deletes first', async () => {
+      const { store, files } = pictures({
+        files: folder({ [pictureName(PATH)]: BEFORE }),
+        picture: () => Promise.reject(new Error('the host is gone')),
+      });
+
+      await store.capture(DOC, PATH);
+
+      expect(files.held.get(pictureName(PATH))).toStrictEqual(BEFORE);
+    });
+
+    it('a picture that could not be deleted is reported and nothing is drawn over it; the retake still resolves', async () => {
+      let drawn = 0;
+      const held = folder({ [pictureName(PATH)]: BEFORE });
+      const { store, reported } = pictures({
+        files: {
+          ...held,
+          remove: () => {
+            throw Object.assign(new Error(`EBUSY: resource busy or locked, unlink '${PATH}'`), { code: 'EBUSY' });
+          },
+        },
+        picture: () => {
+          drawn += 1;
+          return Promise.resolve(JPEG);
+        },
+      });
+
+      await expect(store.retake(DOC, PATH)).resolves.toBeUndefined();
+      expect(reported).toStrictEqual(['failed:EBUSY']);
+      expect(drawn).toBe(0);
+    });
+  });
 });

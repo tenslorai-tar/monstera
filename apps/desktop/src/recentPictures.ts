@@ -23,6 +23,12 @@ export interface RecentPictures {
    * the card shows the placeholder.
    */
   capture(docId: DocId, path: string): Promise<void>;
+  /**
+   * A removal's save has written the document: its kept picture shows the page as it was, so it is deleted FIRST and
+   * then captured again, so a picture that cannot be made leaves the placeholder rather than the old one (ADR-0164).
+   * Never throws, as {@link capture}.
+   */
+  retake(docId: DocId, path: string): Promise<void>;
   /** The kept picture of a listed path, or `null` — always `null` while the setting is off. */
   read(path: string): Uint8Array<ArrayBuffer> | null;
   /** Deletes the pictures of entries that left the list. */
@@ -78,7 +84,18 @@ export function createRecentPictures(deps: {
   const dropAll = (): void => {
     for (const name of deps.files.names()) if (name.endsWith(SUFFIX)) deps.files.remove(name);
   };
-  return {
+  const pictures: RecentPictures = {
+    retake: async (docId, path) => {
+      try {
+        deps.files.remove(pictureName(path));
+      } catch (cause) {
+        // THE OLD PICTURE COULD NOT BE DELETED, so nothing is drawn over it either: a write would meet the same
+        // refusal, and the log says which. Reported, never thrown, for `capture`'s reason.
+        deps.notKept('failed', errorCode(cause));
+        return;
+      }
+      await pictures.capture(docId, path);
+    },
     capture: async (docId, path) => {
       if (!deps.enabled()) return;
       let jpeg: Uint8Array;
@@ -115,6 +132,7 @@ export function createRecentPictures(deps: {
       if (!deps.enabled()) dropAll();
     },
   };
+  return pictures;
 }
 
 /**
@@ -131,6 +149,7 @@ function errorCode(cause: unknown): string {
 
 export const NO_RECENT_PICTURES: RecentPictures = {
   capture: () => Promise.resolve(),
+  retake: () => Promise.resolve(),
   read: () => null,
   drop: () => undefined,
   settingsWritten: () => undefined,

@@ -148,6 +148,7 @@ import {
   breaksSignatures,
   StaleTargetError,
   saveWriteCause,
+  type SaveBackups,
 } from '@monstera/kernel';
 import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
 import {
@@ -185,6 +186,7 @@ import type { HeldPicture } from './heldPicture.js';
 import { type SignaturePictureSource, pickSignaturePicture } from './signaturePicture.js';
 import type { PersonalLibrary } from './personalLibrary.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
+import type { RecentPictures } from './recentPictures.js';
 import { type ShareDestination, ShareFailedError, shareTitle } from './sharing.js';
 import { type OpenExternalEditor, isPdfPath } from './openExternalEditor.js';
 
@@ -345,6 +347,14 @@ export interface EngineSessionSource {
 export type DocumentRestore = (docId: DocId, write: SnapshotWrite) => Promise<void>;
 
 /**
+ * Opens one document's sessions again from the bytes `write` puts down, keeping the old ones until the new exist
+ * (`EngineSessions.renew`), and answers `locked` when those bytes open only with a password, the old sessions kept.
+ * Composed at the root for {@link DocumentRestore}'s reason, and because the class a locked open throws is the host
+ * opener's, in scope there and nowhere here.
+ */
+export type DocumentRenew = (docId: DocId, write: SnapshotWrite) => Promise<'renewed' | 'locked'>;
+
+/**
  * What a save needs that the engine session source does not provide.
  *
  * ## Why `flush` is here and NOT on {@link EngineSessionSource}
@@ -446,6 +456,17 @@ export type PickImage = () => Promise<string | null>;
  */
 export function suggestedCopyName(name: string): string {
   return suffixed(name, 'copy');
+}
+
+/**
+ * Whether a write of this document's content backs up the file it replaces: `none` while a removal is pending, for the
+ * document's own save ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md))
+ * and for every copy or export to a file a person picked
+ * ([ADR-0164](../../../docs/DECISIONS/0164-a-removals-save-also-renews-the-hosts-copy-and-the-recent-picture.md)) —
+ * one rule, read from the document's fact, so no writer spells its own.
+ */
+function backupsFor(context: DocumentContext): SaveBackups {
+  return context.removedSinceSave ? 'none' : 'keep';
 }
 
 /**
@@ -2119,6 +2140,10 @@ export interface DocumentCommandsParts {
   /** How many signatures, and whether the next save keeps them — the writer's own decision. See {@link save}. */
   readonly signaturesKept: (session: MupdfSession) => Promise<NextSave>;
   readonly restore: DocumentRestore;
+  /** How a removal's save opens the document's sessions again from the file it wrote (ADR-0164). */
+  readonly renew: DocumentRenew;
+  /** The Recent card's picture of a document, which a removal's save takes again (ADR-0164). */
+  readonly recentPicture: Pick<RecentPictures, 'retake'>;
   /**
    * THE SIXTEENTH DEPENDENCY, and the first added since this became an options
    * object — which is what the move was for: a named key, in one place, with
@@ -2335,6 +2360,8 @@ export class DocumentCommands {
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   readonly #signaturesKept: (session: MupdfSession) => Promise<NextSave>;
   readonly #restore: DocumentRestore;
+  readonly #renew: DocumentRenew;
+  readonly #recentPicture: Pick<RecentPictures, 'retake'>;
   readonly #annotations: DocumentAnnotationsReader;
   readonly #annotationCopy: DocumentAnnotationCopyReader;
   readonly #annotationWords: DocumentAnnotationWordsReader;
@@ -2422,6 +2449,8 @@ export class DocumentCommands {
     this.#signatures = parts.signatures;
     this.#signaturesKept = parts.signaturesKept;
     this.#restore = parts.restore;
+    this.#renew = parts.renew;
+    this.#recentPicture = parts.recentPicture;
     this.#annotations = parts.annotations;
     this.#annotationCopy = parts.annotationCopy;
     this.#annotationWords = parts.annotationWords;
@@ -3759,6 +3788,7 @@ export class DocumentCommands {
         this.#copy.checkTarget,
         () => this.#save.stage(docId, sessions),
         destination,
+        backupsFor(context),
       );
     });
 
@@ -3853,12 +3883,13 @@ export class DocumentCommands {
     const destination = await this.#copy.pick(suggestedCopyName(documentName));
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () =>
+    const { value } = await this.#documents.run(docId, async (context) =>
       writeDocumentCopy(
         this.#save.deps,
         this.#copy.checkTarget,
         () => Promise.resolve(stagedBytes(signed)),
         destination,
+        backupsFor(context),
       ),
     );
     return value;
@@ -3900,7 +3931,7 @@ export class DocumentCommands {
     const destination = await this.#copy.pick(suggestedExtractName(suggest));
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3915,6 +3946,7 @@ export class DocumentCommands {
         // atomic write — is the same code on the same terms.
         async () => stagedBytes(await this.#extract(docId, sessions, pages)),
         destination,
+        backupsFor(context),
       );
     });
 
@@ -3964,7 +3996,7 @@ export class DocumentCommands {
     if (destination === null) return { kind: 'cancelled' };
     if (!isPdfPath(destination)) return { kind: 'not-pdf' };
 
-    const { value: written } = await this.#documents.run(docId, async () => {
+    const { value: written } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
       const sessions = this.#engine.sessions(docId);
@@ -3974,6 +4006,7 @@ export class DocumentCommands {
         this.#copy.checkTarget,
         async () => stagedBytes(await this.#extract(docId, sessions, [page])),
         destination,
+        backupsFor(context),
       );
     });
     if (written.kind !== 'copied') return written;
@@ -4108,7 +4141,7 @@ export class DocumentCommands {
     const destination = await this.#snapshot.pick(suggestedSnapshotName(suggest));
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -4120,6 +4153,7 @@ export class DocumentCommands {
         this.#copy.checkTarget,
         async () => stagedBytes(await this.#snapshot.region(docId, sessions, request)),
         destination,
+        backupsFor(context),
       );
     });
 
@@ -4154,7 +4188,7 @@ export class DocumentCommands {
     const destination = await this.#formData.pick(suggest, format);
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -4166,6 +4200,7 @@ export class DocumentCommands {
         this.#copy.checkTarget,
         async () => stagedBytes(await this.#formData.encode(docId, sessions, format)),
         destination,
+        backupsFor(context),
       );
     });
 
@@ -4243,7 +4278,7 @@ export class DocumentCommands {
     const destination = await this.#annotationData.pick(suggest, format);
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -4255,6 +4290,7 @@ export class DocumentCommands {
         this.#copy.checkTarget,
         async () => stagedBytes(await this.#annotationData.encode(docId, sessions, format)),
         destination,
+        backupsFor(context),
       );
     });
 
@@ -4701,7 +4737,7 @@ export class DocumentCommands {
     const destination = await this.#pickOffice(suggest, 'docx');
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -4719,6 +4755,7 @@ export class DocumentCommands {
         // Called only once the destination is free, so a contested file composes nothing.
         () => this.#word(docId, sessions, mode, pages),
         destination,
+        backupsFor(context),
       );
     });
 
@@ -5542,6 +5579,8 @@ export class DocumentCommands {
       this.#copy.checkTarget,
       () => Promise.resolve(stagedBytes(pdf)),
       destination,
+      // A NEW DOCUMENT, composed from a picked file: no open document's removal can be pending in it.
+      'keep',
     );
     if (written.kind === 'refused') {
       return { kind: 'destination-contested', openElsewhere: written.others.length };
@@ -5892,6 +5931,8 @@ export class DocumentCommands {
    * `breaks-signatures` with nothing written. In the lane, so no command can land between the question and the write.
    */
   async save(docId: DocId, request: { readonly breakSignatures: boolean }): Promise<SaveRequestOutcome> {
+    // A LIST AND NOT A NULLABLE LOCAL: the lane writes it from a closure, which control-flow analysis cannot see.
+    const removalSavedAt: string[] = [];
     const { value } = await this.#documents.run(docId, async (context): Promise<SaveRequestOutcome> => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -5920,7 +5961,7 @@ export class DocumentCommands {
         this.#save.deps,
         context,
         () => this.#save.stage(docId, sessions),
-        removal ? 'none' : 'keep',
+        backupsFor(context),
       );
       // WHY IT WAS NOT WRITTEN, asked of the file now, inside the lane, so the person is told the remedy that fits.
       if (saved.kind === 'write-failed') {
@@ -5934,12 +5975,36 @@ export class DocumentCommands {
       // copies this document still owes again, which is what keeps a held copy from being kept for ever.
       if (removal) {
         const cleared = await this.#clearCopies(context);
+        await this.#renewSessions(docId, context.path, saved.bytes);
+        removalSavedAt.push(context.path);
         return { ...saved, cleared: cleared.copies, held: cleared.held };
       }
       return { ...saved, cleared: null, held: await this.#retryHeld(context) };
     });
 
+    // THE RECENT PICTURE IS RETAKEN after the lane, which drawing page 1 needs (ADR-0164): the one kept at open shows
+    // the page as it was. Not awaited, as at open: the save has answered, and a retake reports its own failure.
+    for (const path of removalSavedAt) void this.#recentPicture.retake(docId, path);
     return value;
+  }
+
+  /**
+   * Rebuilds the document's engine sessions from the file a removal's save just wrote
+   * ([ADR-0164](../../../docs/DECISIONS/0164-a-removals-save-also-renews-the-hosts-copy-and-the-recent-picture.md)):
+   * a session is opened from a snapshot of the document as it was opened, and that file, beside the host, still held
+   * what the removal took out. The new sessions are opened BEFORE the old pair is released, so a file that cannot be
+   * opened leaves the document as it was rather than with no session.
+   *
+   * **A saved file that opens only with a password keeps the old session**, the renewal answering `locked`: protecting
+   * a document is a removal, a document a password opened is saved encrypted, and the password is not kept
+   * (ADR-0055). Its snapshot stays until the document closes, which ADR-0164's correction names as the case this
+   * does not reach.
+   */
+  async #renewSessions(docId: DocId, path: string, bytes: number): Promise<void> {
+    await this.#renew(docId, async (destination) => {
+      await this.#save.deps.surface.copy(path, destination);
+      return bytes;
+    });
   }
 
   /**

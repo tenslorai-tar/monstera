@@ -1,4 +1,7 @@
 export { mupdfWriter, signaturesKeptBySave, withDocument } from './mupdfWriter.js';
+// WHAT THE WRITER'S `open` THROWS for a file that needs a password, beside the writer, so an in-process caller tells it
+// apart by its class as the host's caller tells `EngineDocumentLocked`.
+export { DocumentLocked } from './engineSeam.js';
 export {
   applyRotatePages,
   captureRotatePages,

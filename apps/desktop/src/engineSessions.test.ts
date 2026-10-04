@@ -268,6 +268,59 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     expect(engine.held).toBe(0);
   });
 
+  describe('renew opens before it releases (ADR-0164)', () => {
+    it('holds the new sessions, and the old release runs once the new open registers its own', async () => {
+      const engine = new EngineSessions();
+      engine.begin(first);
+      engine.hold(first, someSessions('a'));
+      const ran: string[] = [];
+      await engine.holdRelease(first, () => {
+        ran.push('old');
+        return Promise.resolve();
+      });
+
+      await engine.renew(first, async (id) => {
+        // THE OLD PAIR IS STILL HELD while the new one opens: that is the difference from `recycle`.
+        expect(ran).toStrictEqual([]);
+        await engine.holdRelease(id, () => Promise.resolve());
+        return someSessions('b');
+      });
+
+      expect(engine.sessions(first)).toStrictEqual(someSessions('b'));
+      expect(ran).toStrictEqual(['old']);
+    });
+
+    it('an open that FAILS leaves the old sessions and their release exactly as they were', async () => {
+      const engine = new EngineSessions();
+      engine.begin(first);
+      engine.hold(first, someSessions('a'));
+      const ran: string[] = [];
+      await engine.holdRelease(first, () => {
+        ran.push('old');
+        return Promise.resolve();
+      });
+
+      await expect(engine.renew(first, () => Promise.reject(new Error('needs a password')))).rejects.toThrow('needs a password');
+
+      expect(engine.sessions(first)).toStrictEqual(someSessions('a'));
+      expect(ran).toStrictEqual([]);
+      // AND THE RELEASE IS STILL THE DOCUMENT'S: a close runs it.
+      await engine.releaseOnClose(first);
+      expect(ran).toStrictEqual(['old']);
+    });
+
+    it('CONTROL: recycle, given the same failing open, leaves the document with no session', async () => {
+      // Why renew exists rather than a removal's save calling recycle: this is the state the protection case reached.
+      const engine = new EngineSessions();
+      engine.begin(first);
+      engine.hold(first, someSessions('a'));
+
+      await expect(engine.recycle(first, () => Promise.reject(new Error('needs a password')))).rejects.toThrow();
+
+      expect(engine.sessions(first)).toStrictEqual({});
+    });
+  });
+
   it('a release that REJECTS still closes the document', async () => {
     const engine = new EngineSessions();
     engine.begin(first);

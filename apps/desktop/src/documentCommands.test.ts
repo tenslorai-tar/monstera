@@ -105,6 +105,7 @@ import {
   signaturesKeptBySave,
   withDocument,
   composeWordDocument,
+  DocumentLocked,
 } from '@monstera/kernel/engine';
 import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 
@@ -826,6 +827,10 @@ const INERT = {
   // ordinary one: an unsigned document, and not a removal.
   signaturesKept: () => Promise.resolve({ signatures: 0, kept: true }),
   restore: noRestore,
+  renew: () => Promise.reject(new Error('INERT: this case saves no removal and must not renew a session')),
+  // RESOLVES, unlike the refusing surfaces: a removal's save retakes the picture after its lane and does not await it,
+  // so a refusal here would be a rejection nothing handles. The cases about the retake record their own.
+  recentPicture: { retake: () => Promise.resolve() },
   annotations: noAnnotations,
   annotationCopy: noAnnotationCopy,
   annotationWords: noAnnotationWords,
@@ -1456,6 +1461,10 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       version: () => Promise<DocVersion>;
       /** The bytes the document's session holds now. */
       serialised: () => Promise<Uint8Array>;
+      /** Each snapshot a restore wrote, with the bytes the session was then rebuilt from: the supervisor's restore. */
+      restored: { readonly snapshot: string; readonly bytes: Uint8Array }[];
+      /** Each path whose Recent picture was retaken. */
+      retaken: string[];
     }> {
       savables += 1;
       const path = join(directory, `save-${String(savables)}.pdf`);
@@ -1474,10 +1483,14 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       const held = new EngineSessions();
       let current = await mupdfWriter.open(before);
       held.hold(outcome.docId, { mupdf: current });
+      const restored: { readonly snapshot: string; readonly bytes: Uint8Array }[] = [];
+      const retaken: string[] = [];
 
       return {
         path,
         before,
+        restored,
+        retaken,
         rebuild: async () => {
           current = await mupdfWriter.open(await mupdfWriter.serialise(current));
           held.hold(outcome.docId, { mupdf: current });
@@ -1495,6 +1508,29 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           documents: own,
           bus: bus(),
           engine: held,
+          // THE SUPERVISOR'S RENEWAL, as the composition root composes it: the write puts the bytes in a snapshot, the
+          // session is opened from that file and only then held, and a file that needs a password answers `locked`
+          // with the old session kept.
+          renew: async (id, write) => {
+            const snapshot = join(directory, `save-${String(savables)}-snapshot-${String(restored.length)}.pdf`);
+            await write(snapshot);
+            const bytes = new Uint8Array(readFileSync(snapshot));
+            try {
+              current = await mupdfWriter.open(bytes);
+            } catch (thrown) {
+              if (thrown instanceof DocumentLocked) return 'locked';
+              throw thrown;
+            }
+            held.hold(id, { mupdf: current });
+            restored.push({ snapshot, bytes });
+            return 'renewed';
+          },
+          recentPicture: {
+            retake: (_id, picturePath) => {
+              retaken.push(picturePath);
+              return Promise.resolve();
+            },
+          },
           copy: { pick: () => Promise.resolve(copyTo), checkTarget: (target) => own.checkCopyTarget(target) },
           save: {
             provenance,
@@ -1707,6 +1743,64 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       // THE FACT CLEARS WITH THE SAVE: the file holds the removal now, so an ordinary save after it backs up again.
       await commands.execute(saved, rotateOnce);
       expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true, cleared: null });
+    });
+
+    describe('the copies of the open document a removal’s save renews (ADR-0164)', () => {
+      it('REBUILDS the session from the file the save wrote, and retakes the Recent picture', async () => {
+        // THE SNAPSHOT the session was opened from is the document as it was opened; the rebuild is what replaces it.
+        const t = await aSavableDocument();
+        await t.commands.execute(t.saved, sanitize);
+        await t.commands.save(t.saved, { breakSignatures: false });
+
+        expect(t.restored).toHaveLength(1);
+        // FROM THE SAVED FILE, byte for byte, never from the session's own bytes or the file as it was opened.
+        expect(Buffer.from(t.restored[0]?.bytes ?? []).equals(readFileSync(t.path))).toBe(true);
+        expect(Buffer.from(t.restored[0]?.bytes ?? []).equals(Buffer.from(t.before))).toBe(false);
+        expect(t.retaken).toStrictEqual([t.path]);
+      });
+
+      it('CONTROL: an ordinary save rebuilds nothing and retakes nothing', async () => {
+        const t = await aSavableDocument();
+        await t.commands.execute(t.saved, rotateOnce);
+        expect(await t.commands.save(t.saved, { breakSignatures: false })).toMatchObject({ kind: 'saved', cleared: null });
+
+        expect(t.restored).toStrictEqual([]);
+        expect(t.retaken).toStrictEqual([]);
+      });
+
+      it('KEEPS the session of a document the save PROTECTED, whose file opens only with a password, and it still works', async () => {
+        // FOUND BY THE PROTECTION CASE BELOW, against the first version of this: protecting is a removal, the file it
+        // writes is encrypted, and a rebuild that released the old session first left the document with none, the
+        // save thrown past a file that had been written.
+        const t = await aSavableDocument();
+        await t.commands.execute(t.saved, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: 'open-me' });
+        expect(await t.commands.save(t.saved, { breakSignatures: false })).toMatchObject({ kind: 'saved' });
+
+        expect(t.restored).toStrictEqual([]);
+        expect(t.retaken).toStrictEqual([t.path]);
+        // THE OLD SESSION ANSWERS: a command after the save lands on it.
+        await expect(t.commands.execute(t.saved, rotateOnce)).resolves.toBeDefined();
+      });
+
+      it('a copy written while the removal is pending keeps no backup of the file it replaces', async () => {
+        const destination = join(directory, 'redacted copy.pdf');
+        writeFileSync(destination, 'an earlier copy, made before the redaction');
+        const t = await aSavableDocument(signaturesKeptBySave, ledger(), destination);
+        await t.commands.execute(t.saved, sanitize);
+
+        expect(await t.commands.saveCopy(t.saved)).toMatchObject({ kind: 'copied' });
+        expect(existsSync(`${destination}.bak`)).toBe(false);
+      });
+
+      it('CONTROL: the same copy with no removal pending leaves the backup a save would', async () => {
+        const destination = join(directory, 'ordinary copy.pdf');
+        writeFileSync(destination, 'an earlier copy');
+        const t = await aSavableDocument(signaturesKeptBySave, ledger(), destination);
+        await t.commands.execute(t.saved, rotateOnce);
+
+        expect(await t.commands.saveCopy(t.saved)).toMatchObject({ kind: 'copied' });
+        expect(readFileSync(`${destination}.bak`, 'utf8')).toBe('an earlier copy');
+      });
     });
 
     it('a copy ANOTHER PROGRAM HOLDS does not fail the save: it is named, owed, retried, and deleted once let go', async () => {
