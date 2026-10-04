@@ -4297,6 +4297,10 @@ export const channels = {
       characters: z.number().int().nonnegative(),
       /** Characters excluding whitespace — the figure most editors show. */
       charactersNoSpaces: z.number().int().nonnegative(),
+      /** Lines that show something; a line holding only whitespace is not one. */
+      lines: z.number().int().nonnegative(),
+      /** Characters of Chinese, Japanese and Korean writing, by Unicode script (`countWords`). */
+      cjkCharacters: z.number().int().nonnegative(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

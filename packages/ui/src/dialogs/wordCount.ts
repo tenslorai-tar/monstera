@@ -33,6 +33,8 @@ export const WORD_COUNT_DIALOG = declareDialog({
     words: z.number().int().nonnegative(),
     characters: z.number().int().nonnegative(),
     charactersNoSpaces: z.number().int().nonnegative(),
+    lines: z.number().int().nonnegative(),
+    cjkCharacters: z.number().int().nonnegative(),
     /** How many pages contributed, and how many the document has. */
     pagesCounted: z.number().int().nonnegative(),
     pageCount: z.number().int().positive(),

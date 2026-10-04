@@ -45,7 +45,21 @@ describe('countWords', () => {
       words: 2,
       characters: 5,
       charactersNoSpaces: 4,
+      lines: 1,
+      cjkCharacters: 0,
     });
+  });
+
+  it('counts LINES that show something, so a run of only spaces is not one', () => {
+    // CONTROL in the same call: three lines handed in, one of them blank — a count of the array would say three.
+    expect(countWords(['first', '   ', 'third']).lines).toBe(2);
+  });
+
+  it('counts CJK characters by SCRIPT — Han, kana and Hangul — and not their shared punctuation or Latin beside them', () => {
+    // 今天 (2 Han) + ひらがな (4 Hiragana) + カタ (2 Katakana) + 한글 (2 Hangul) = 10; `。`, `、` and `abc` are not.
+    expect(countWords(['今天ひらがな。カタ、한글 abc']).cjkCharacters).toBe(10);
+    // A Han character outside the basic plane (U+20B9F) is one, as every character here is a code point.
+    expect(countWords(['𠮟']).cjkCharacters).toBe(1);
   });
 
   it('counts the line separator it inserts, so the two figures stay consistent', () => {
@@ -56,6 +70,8 @@ describe('countWords', () => {
       words: 2,
       characters: 5,
       charactersNoSpaces: 4,
+      lines: 2,
+      cjkCharacters: 0,
     });
   });
 
@@ -64,6 +80,8 @@ describe('countWords', () => {
       words: 0,
       characters: 0,
       charactersNoSpaces: 0,
+      lines: 0,
+      cjkCharacters: 0,
     });
   });
 });

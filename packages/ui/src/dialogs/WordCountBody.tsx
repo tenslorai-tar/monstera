@@ -1,9 +1,12 @@
 import { useLingui } from '@lingui/react';
+import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
 import {
   WORD_COUNT_CHARACTERS_LABEL,
   WORD_COUNT_CHARACTERS_TIGHT_LABEL,
+  WORD_COUNT_CJK_LABEL,
+  WORD_COUNT_LINES_LABEL,
   WORD_COUNT_PAGES_LABEL,
   WORD_COUNT_PARTIAL,
   WORD_COUNT_WORDS_LABEL,
@@ -35,12 +38,16 @@ export default function WordCountBody({
   words,
   characters,
   charactersNoSpaces,
+  lines,
+  cjkCharacters,
   pagesCounted,
   pageCount,
 }: {
   readonly words: number;
   readonly characters: number;
   readonly charactersNoSpaces: number;
+  readonly lines: number;
+  readonly cjkCharacters: number;
   readonly pagesCounted: number;
   readonly pageCount: number;
 }): ReactElement {
@@ -52,20 +59,29 @@ export default function WordCountBody({
   // `String(value)` gives neither.
   const format = new Intl.NumberFormat(i18n.locale);
   const count = (value: number): string => format.format(value);
+  // THE OWNER'S ORDER, each measure a row: its name the row's header, so a screen reader announces the name with the
+  // number, and the numbers in one column, aligned so their places line up.
+  const rows: readonly (readonly [MessageKey, number])[] = [
+    [WORD_COUNT_PAGES_LABEL, pagesCounted],
+    [WORD_COUNT_WORDS_LABEL, words],
+    [WORD_COUNT_CHARACTERS_LABEL, characters],
+    [WORD_COUNT_CHARACTERS_TIGHT_LABEL, charactersNoSpaces],
+    [WORD_COUNT_LINES_LABEL, lines],
+    [WORD_COUNT_CJK_LABEL, cjkCharacters],
+  ];
 
   return (
     <div className="m-word-count">
-      {/* THE PATTERN'S FACTS, each number beside its name: the browser's own list indented each one under it. */}
-      <dl className="m-dialog-facts">
-        <dt>{_(WORD_COUNT_WORDS_LABEL)}</dt>
-        <dd>{count(words)}</dd>
-        <dt>{_(WORD_COUNT_CHARACTERS_LABEL)}</dt>
-        <dd>{count(characters)}</dd>
-        <dt>{_(WORD_COUNT_CHARACTERS_TIGHT_LABEL)}</dt>
-        <dd>{count(charactersNoSpaces)}</dd>
-        <dt>{_(WORD_COUNT_PAGES_LABEL)}</dt>
-        <dd>{count(pagesCounted)}</dd>
-      </dl>
+      <table className="m-word-count__table">
+        <tbody>
+          {rows.map(([label, value]) => (
+            <tr key={label}>
+              <th scope="row">{_(label)}</th>
+              <td>{count(value)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       {pagesCounted < pageCount ? (
         <p className="m-word-count-partial" data-partial="true">
           {/* THE TOTAL IS A NUMBER: the plural picks *page* or *pages* from it and formats it itself. A formatted

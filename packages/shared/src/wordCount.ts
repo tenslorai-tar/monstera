@@ -6,6 +6,10 @@ export interface WordCount {
   readonly characters: number;
   /** Characters excluding whitespace, which is the figure most editors show. */
   readonly charactersNoSpaces: number;
+  /** Lines that show something: a line holding only whitespace is not one. */
+  readonly lines: number;
+  /** Characters of Chinese, Japanese and Korean writing, by Unicode script. */
+  readonly cjkCharacters: number;
 }
 
 /**
@@ -52,22 +56,17 @@ const SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'word' });
 
 /** Whitespace, as one place rather than a literal at each use. */
 const WHITESPACE = /\s/u;
+/** Anything that is not whitespace: what makes a line one a reader counts. */
+const NOT_WHITESPACE = /\S/u;
 
 /**
- * Counts the words and characters in a page's lines.
- *
- * ## The join is the rule, and it is here rather than at each caller
- *
- * A structured-text line is a run on a baseline, so a wrapped sentence arrives
- * as two of them. Concatenating without a separator fuses the last word of one
- * line with the first of the next into a word that appears in no document — and
- * the count is then short by one per line, in the direction nobody checks.
- *
- * The separator is counted in `characters` too, so the two figures describe one
- * page rather than two different ones.
- *
- * @param lines the page's lines, in reading order
+ * A character of Chinese, Japanese or Korean writing, by its Unicode SCRIPT rather than by code-point ranges: the four
+ * scripts those languages write in, which is what a word processor's *Asian characters* counts. A range list would
+ * be a second opinion about which blocks hold them, and the extension blocks keep growing; the script property is the
+ * standard's own answer. The punctuation the three share (`。`, `、`) is in the Common script and is not counted.
  */
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+
 /**
  * The words in a page's lines, as the segmenter identifies them.
  *
@@ -120,6 +119,26 @@ export function* tokensOf(line: string): Generator<TextToken> {
   }
 }
 
+/**
+ * Counts the words, characters and lines in a page's lines.
+ *
+ * ## The join is the rule, and it is here rather than at each caller
+ *
+ * A structured-text line is a run on a baseline, so a wrapped sentence arrives
+ * as two of them. Concatenating without a separator fuses the last word of one
+ * line with the first of the next into a word that appears in no document — and
+ * the count is then short by one per line, in the direction nobody checks.
+ *
+ * The separator is counted in `characters` too, so the two figures describe one
+ * page rather than two different ones.
+ *
+ * ## A line is one that shows something
+ *
+ * A run holding only whitespace is not a line a reader would count, so `lines` counts the lines with at least one
+ * character that is not whitespace.
+ *
+ * @param lines the page's lines, in reading order
+ */
 export function countWords(lines: readonly string[]): WordCount {
   const text = lines.join(' ');
 
@@ -128,10 +147,18 @@ export function countWords(lines: readonly string[]): WordCount {
 
   let characters = 0;
   let charactersNoSpaces = 0;
+  let cjkCharacters = 0;
   for (const point of text) {
     characters += 1;
     if (!WHITESPACE.test(point)) charactersNoSpaces += 1;
+    if (CJK.test(point)) cjkCharacters += 1;
   }
 
-  return { words, characters, charactersNoSpaces };
+  return {
+    words,
+    characters,
+    charactersNoSpaces,
+    lines: lines.filter((line) => NOT_WHITESPACE.test(line)).length,
+    cjkCharacters,
+  };
 }

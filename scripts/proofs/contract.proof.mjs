@@ -1401,7 +1401,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false, kind: 'empty' })),
   'document.pageWordCount': () =>
     Promise.resolve(
-      ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0 }),
+      ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0, lines: 0, cjkCharacters: 0 }),
     ),
   'document.pageStructure': () =>
     Promise.resolve(
@@ -1595,7 +1595,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false, kind: 'empty' })),
   'document.pageWordCount': () =>
     Promise.resolve(
-      ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0 }),
+      ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0, lines: 0, cjkCharacters: 0 }),
     ),
   'document.pageStructure': () =>
     Promise.resolve(
@@ -1864,7 +1864,7 @@ export const shim: ContractClient = {
     Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false, kind: 'empty' })),
   'document.pageWordCount': () =>
     Promise.resolve(
-      ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0 }),
+      ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0, lines: 0, cjkCharacters: 0 }),
     ),
   'document.pageStructure': () =>
     Promise.resolve(

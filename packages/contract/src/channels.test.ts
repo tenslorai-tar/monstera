@@ -229,11 +229,11 @@ const handlers: ContractHandlers = {
         kind: 'text' as const,
       }),
     ),
-  // NON-ZERO AND ALL THREE DIFFERENT, so a case can assert which figure crossed.
+  // NON-ZERO AND ALL FIVE DIFFERENT, so a case can assert which figure crossed.
   // A fixture of zeros is what a dropped field and an empty page produce alike.
   'document.pageWordCount': () =>
     Promise.resolve(
-      ok({ version: asDocVersion(1), words: 5, characters: 27, charactersNoSpaces: 23 }),
+      ok({ version: asDocVersion(1), words: 5, characters: 27, charactersNoSpaces: 23, lines: 2, cjkCharacters: 4 }),
     ),
   'document.pageTables': () =>
     Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, tables: [], truncated: false })),

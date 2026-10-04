@@ -51,6 +51,9 @@ function clientCounting(
         words: step.words,
         characters: step.words * 5,
         charactersNoSpaces: step.words * 4,
+        // EACH ITS OWN MULTIPLE, so a total that summed the wrong field is a different number.
+        lines: step.words * 2,
+        cjkCharacters: step.words * 3,
       }),
     );
   });
@@ -90,6 +93,8 @@ describe('the word count command', () => {
           words: 20,
           characters: 100,
           charactersNoSpaces: 80,
+          lines: 40,
+          cjkCharacters: 60,
           pagesCounted: 3,
           pageCount: 3,
         },
@@ -248,7 +253,7 @@ describe('the word count command', () => {
       asked.push((params as { page: number }).page);
       controller.abort();
       return Promise.resolve(
-        ok({ version: asDocVersion(1), words: 10, characters: 50, charactersNoSpaces: 40 }),
+        ok({ version: asDocVersion(1), words: 10, characters: 50, charactersNoSpaces: 40, lines: 3, cjkCharacters: 0 }),
       );
     });
     const { ask, opened } = recordingAsk();

@@ -729,6 +729,8 @@ export const WORD_COUNT_WORDS_LABEL = messageKey('dialog.word-count.words');
 export const WORD_COUNT_CHARACTERS_LABEL = messageKey('dialog.word-count.characters');
 export const WORD_COUNT_CHARACTERS_TIGHT_LABEL = messageKey('dialog.word-count.characters-tight');
 export const WORD_COUNT_PAGES_LABEL = messageKey('dialog.word-count.pages');
+export const WORD_COUNT_LINES_LABEL = messageKey('dialog.word-count.lines');
+export const WORD_COUNT_CJK_LABEL = messageKey('dialog.word-count.cjk');
 export const WORD_COUNT_PARTIAL = messageKey('dialog.word-count.partial');
 export const PAGE_STRUCTURE_COMMAND_TITLE = messageKey('command.page-structure.title');
 export const PAGE_STRUCTURE_TITLE = messageKey('dialog.page-structure.title');
@@ -2806,9 +2808,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [WORD_COUNT_COMMAND_TITLE]: 'Word count',
   [WORD_COUNT_TITLE]: 'Word count',
   [WORD_COUNT_WORDS_LABEL]: 'Words',
-  [WORD_COUNT_CHARACTERS_LABEL]: 'Characters',
-  [WORD_COUNT_CHARACTERS_TIGHT_LABEL]: 'Characters, no spaces',
-  [WORD_COUNT_PAGES_LABEL]: 'Pages counted',
+  [WORD_COUNT_CHARACTERS_LABEL]: 'Characters (with spaces)',
+  [WORD_COUNT_CHARACTERS_TIGHT_LABEL]: 'Characters (no spaces)',
+  [WORD_COUNT_PAGES_LABEL]: 'Pages',
+  [WORD_COUNT_LINES_LABEL]: 'Lines',
+  [WORD_COUNT_CJK_LABEL]: 'CJK characters',
   // SAYS THE FIGURES ARE SHORT, in the sentence rather than in a colour: a
   // total smaller than the document is indistinguishable from a correct total
   // for a shorter one, and a reader quoting it has no way to tell.

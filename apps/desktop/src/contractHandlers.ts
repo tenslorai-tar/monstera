@@ -2448,11 +2448,11 @@ function pageWordCountHandler(
     page,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.pageWordCount']>>> => {
     try {
-      const { version, words, characters, charactersNoSpaces } = await commands.pageWordCount(
+      const { version, words, characters, charactersNoSpaces, lines, cjkCharacters } = await commands.pageWordCount(
         docId,
         page,
       );
-      return ok({ version, words, characters, charactersNoSpaces });
+      return ok({ version, words, characters, charactersNoSpaces, lines, cjkCharacters });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

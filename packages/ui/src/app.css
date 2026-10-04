@@ -4020,6 +4020,29 @@ optgroup {
   line-height: 1.5;
 }
 
+/* WORD COUNT: two columns, each measure's name and its number, the numbers at the end so their places line up. */
+.m-word-count__table {
+  border-collapse: collapse;
+  inline-size: 100%;
+  min-inline-size: 18rem;
+}
+
+.m-word-count__table th,
+.m-word-count__table td {
+  padding: var(--space-4) var(--space-8);
+  border-block-end: 1px solid var(--border-soft); /* decorative: separates rows; nothing in the table is operable */
+}
+
+.m-word-count__table th {
+  text-align: start;
+  font-weight: 400;
+}
+
+.m-word-count__table td {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
 /* COMPONENTS (ADR-0122): a line, the table of components, then Verify. Status only: nothing here downloads. */
 .m-components {
   display: flex;

@@ -434,8 +434,30 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     },
   ],
   'dialog.wordCount': [
-    { state: 'opened', props: { words: 3_482, characters: 21_906, charactersNoSpaces: 18_377, pagesCounted: 12, pageCount: 12 } },
-    { state: 'partial', props: { words: 2_015, characters: 12_640, charactersNoSpaces: 10_598, pagesCounted: 7, pageCount: 12 } },
+    {
+      state: 'opened',
+      props: {
+        words: 3_482,
+        characters: 21_906,
+        charactersNoSpaces: 18_377,
+        lines: 611,
+        cjkCharacters: 0,
+        pagesCounted: 12,
+        pageCount: 12,
+      },
+    },
+    {
+      state: 'partial',
+      props: {
+        words: 2_015,
+        characters: 12_640,
+        charactersNoSpaces: 10_598,
+        lines: 352,
+        cjkCharacters: 148,
+        pagesCounted: 7,
+        pageCount: 12,
+      },
+    },
   ],
   'dialog.pageStructure': [
     { state: 'opened', props: { kind: 'read', page: 2, nodes: STRUCTURE, truncated: false, untaggedLines: 0, images: 1 } },
