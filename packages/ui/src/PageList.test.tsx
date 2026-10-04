@@ -1582,6 +1582,28 @@ describe('PageList', () => {
         expect(atEnd).toHaveBeenCalledTimes(1);
       });
 
+      it('the Escape that stops it is SPENT, so the document’s shortcuts do not also act on it (CR-COR-11)', async () => {
+        // IN FOCUS MODE the document's Escape is `view.leave-focus`: one press would stop the scroll and leave Focus.
+        const heard: string[] = [];
+        const listen = (event: KeyboardEvent): void => {
+          heard.push(event.key);
+        };
+        document.addEventListener('keydown', listen);
+        try {
+          const end = vi.fn();
+          await mount('continuous', end, 60);
+          fireEvent.keyDown(document.body, { key: 'Escape' });
+          expect(end).toHaveBeenCalledTimes(1);
+          expect(heard).toStrictEqual([]);
+          // CONTROL: a key the scroll does not use reaches the document while it runs.
+          await mount('continuous', vi.fn(), 60);
+          fireEvent.keyDown(document.body, { key: 'a' });
+          expect(heard).toStrictEqual(['a']);
+        } finally {
+          document.removeEventListener('keydown', listen);
+        }
+      });
+
       it('in SINGLE PAGE the end of a page turns to the next, and it carries on', async () => {
         const end = vi.fn();
         const { scroller, container } = await mount('single', end, 60);

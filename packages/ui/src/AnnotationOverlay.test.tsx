@@ -215,6 +215,29 @@ describe('AnnotationOverlay', () => {
     expect(sent).toStrictEqual([]);
   });
 
+  it('the Escape that abandons a drag is SPENT there, so the document’s listener does not also leave Focus (CR-COR-11)', () => {
+    // THE APPLICATION'S SHORTCUTS LISTEN ON THE DOCUMENT, and in Focus mode Escape is `view.leave-focus`: one press would
+    // drop the shape and bring the ribbon back.
+    const heard: string[] = [];
+    const listen = (event: KeyboardEvent): void => {
+      heard.push(event.key);
+    };
+    document.addEventListener('keydown', listen);
+    try {
+      const { surface } = mounted();
+      pointer(surface, 'pointerdown', 20, 20);
+      pointer(surface, 'pointermove', 120, 80);
+      fireEvent.keyDown(surface, { key: 'Escape' });
+      expect(heard).toStrictEqual([]);
+      pointer(surface, 'pointerup', 120, 80);
+      // CONTROL: with nothing being drawn the overlay uses no key, and the same Escape reaches the document.
+      fireEvent.keyDown(surface, { key: 'Escape' });
+      expect(heard).toStrictEqual(['Escape']);
+    } finally {
+      document.removeEventListener('keydown', listen);
+    }
+  });
+
   it('abandons the drag when the pointer is cancelled', () => {
     const { surface, sent } = mounted();
     pointer(surface, 'pointerdown', 20, 20);
