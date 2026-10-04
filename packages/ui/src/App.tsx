@@ -2782,7 +2782,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onActivate: activate,
         }),
         mergeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }),
-        insertFromPdfCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        insertFromPdfCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
         replacePageCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
         importPageAsLayerCommand({ client, onApplied: applied, ask, stamp, signatures }),
         // D9's EDIT PAGE IN ANOTHER APP: its reimport opens the edited page as a tab, so it takes

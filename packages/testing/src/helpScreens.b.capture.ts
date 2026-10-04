@@ -303,7 +303,7 @@ test('insert-pages-from-a-pdf-1', async ({ page }) => {
   const dialog = page.getByRole('dialog', { name: /Insert/u });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('combobox')).toHaveText(/Appendix\.pdf/u);
-  await dialog.getByRole('textbox').first().fill('3');
+  await dialog.getByRole('textbox', { name: 'Page', exact: true }).fill('3');
   await shoot(page, 'insert-pages-from-a-pdf-1', dialog);
 });
 

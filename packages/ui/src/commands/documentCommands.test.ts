@@ -2397,29 +2397,27 @@ describe('delete pages — the mutation-dialog gate', () => {
     // THE SECOND SURFACE, and this case is what says it is one. It asserts the
     // dispatched kind is `mergeDocument` — so a future author who splits this
     // into its own kind has to change this line and meet the reason.
-    const { client, sent } = recording();
+    const { client, executed } = sourcesClient();
 
     await insertFromPdfCommand({
       client,
       stamp,
       signatures,
       onApplied: () => undefined,
+      openSource: () => Promise.resolve({ kind: 'none' }),
       // `at: 0` is the FRONT, and it is not the default the body offers — a
       // dialog stub answering the default would let a command that ignored the
-      // answer and used `pageCount` pass.
-      ask: () => Promise.resolve({ source: 'doc-0', at: 0 }),
+      // answer and used `pageCount` pass. The source pages go as runs.
+      ask: () => Promise.resolve({ kind: 'insert', source: 'doc-0', sourcePages: [1, 2, 3], at: 0 }),
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([
-      {
-        id: 'document.execute',
-        params: { docId: DOC, command: { kind: 'mergeDocument', source: 'doc-0', sourcePages: 'all', at: 0 } },
-      },
+    expect(executed).toStrictEqual([
+      { docId: DOC, command: { kind: 'mergeDocument', source: 'doc-0', sourcePages: [[1, 3]], at: 0 } },
     ]);
   });
 
-  it('insert-from-PDF hands the dialog the TARGET’s page count, not the source’s', async () => {
-    const { client } = recording();
+  it('insert-from-PDF hands the dialog the TARGET’s count and page on show, and each source’s own count', async () => {
+    const { client } = sourcesClient();
     const opened: unknown[] = [];
 
     await insertFromPdfCommand({
@@ -2427,6 +2425,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       stamp,
       signatures,
       onApplied: () => undefined,
+      openSource: () => Promise.resolve({ kind: 'none' }),
       ask: (id, props) => {
         opened.push({ id, props });
         return Promise.resolve(undefined);
@@ -2438,11 +2437,14 @@ describe('delete pages — the mutation-dialog gate', () => {
         id: 'dialog.insert-from-pdf',
         props: {
           choices: [
-            { docId: 'doc-0', name: 'Before' },
-            { docId: 'doc-2', name: 'After' },
+            { docId: 'doc-0', name: 'Before', pageCount: 4 },
+            { docId: 'doc-2', name: 'After', pageCount: 7 },
           ],
-          // `CONTEXT.pageCount`, which is the document being inserted INTO.
+          source: undefined,
+          // `CONTEXT.pageCount` and `CONTEXT.page`, the document being inserted INTO.
           pageCount: 10,
+          page: 3,
+          draft: undefined,
         },
       },
     ]);

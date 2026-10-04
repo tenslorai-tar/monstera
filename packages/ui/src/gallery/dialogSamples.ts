@@ -831,8 +831,11 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
   ],
   'dialog.merge-document-none': [{ state: 'opened', props: {} }],
   'dialog.insert-from-pdf': [
-    { state: 'opened', props: { choices: DOCUMENTS, pageCount: 12 } },
-    { state: 'long', props: { choices: LONG_DOCUMENTS, pageCount: 12 } },
+    // AFTER PAGE 3 OF 12, the page on show.
+    { state: 'opened', props: { choices: SOURCES, pageCount: 12, page: 2 } },
+    { state: 'chosen-pages', props: { choices: SOURCES, pageCount: 12, page: 2, draft: { sourcePages: { every: false, text: '2-5' }, placement: 'before', page: '1' } } },
+    { state: 'none-open', props: { choices: [], pageCount: 12, page: 2 } },
+    { state: 'long', props: { choices: LONG_SOURCES, pageCount: 12, page: 2 } },
   ],
   'dialog.replace-page': [
     // ONE PAGE FROM A TWELVE-PAGE FILE: the dialog opens on its first page, so the length is kept.

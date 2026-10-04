@@ -66,7 +66,7 @@ import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js
 import { EXTRACT_PAGES_DIALOG_ID } from '../dialogs/extractPages.js';
 import type { ExtractPagesAnswer } from '../dialogs/extractPagesResult.js';
 import { INSERT_FROM_PDF_DIALOG_ID } from '../dialogs/insertFromPdf.js';
-import type { InsertFromPdfAnswer } from '../dialogs/insertFromPdfResult.js';
+import { INSERT_FROM_PDF_RESULT } from '../dialogs/insertFromPdfResult.js';
 import { MERGE_DOCUMENT_DIALOG_ID } from '../dialogs/mergeDocument.js';
 import { MERGE_DOCUMENT_NONE_DIALOG_ID } from '../dialogs/mergeDocumentNone.js';
 import type { MergeDocumentAnswer } from '../dialogs/mergeDocumentResult.js';
@@ -1915,23 +1915,20 @@ export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
 }
 
 /**
- * Inserts another open document's pages at a chosen position.
+ * Inserts chosen pages of another document — open, or a file picked from the dialog — before or after a page.
  *
  * ## The SAME command as merge, and that is the point
  *
- * `mergeDocument` with a position the reader picks instead of the target's
- * length. A second command kind would be one operation declared twice, with two
- * grafts to keep in step; `openDocument.ts` states the shape — *"one
- * implementation with two triggers, which is not a second wiring place."*
+ * `mergeDocument` with a position the reader picks. A second command kind would
+ * be one operation declared twice, with two grafts to keep in step;
+ * `openDocument.ts` states the shape — *"one implementation with two triggers,
+ * which is not a second wiring place."* The source's pages are the same field
+ * on both (`sourcePagesSchema`).
  *
  * The two surfaces exist because the intents differ: *combine these* and *put
- * this here* are different things to ask for, and collapsing them into one
- * control with a position field would make the common case cost a decision.
- *
- * What is NOT built and would earn its own kind is *insert selected pages* —
- * see the dialog's header for why the renderer cannot bound that today.
+ * these pages here* are different things to ask for.
  */
-export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
+export function insertFromPdfCommand(deps: SourceCommandDeps): UiCommand {
   return {
     id: 'document.insert-from-pdf',
     feedback: VISIBLE,
@@ -1944,31 +1941,27 @@ export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.pageCount === undefined) return;
+      const target = context.docId;
+      const { pageCount, page } = context;
+      if (target === undefined || pageCount === undefined || page === undefined) return;
 
-      const choices = context.openDocuments
-        .filter((document) => document.docId !== context.docId)
-        .map((document) => ({ docId: document.docId, name: document.name }));
+      const asked = await askAboutSource(
+        deps,
+        context,
+        target,
+        (choices, source, draft) => deps.ask(INSERT_FROM_PDF_DIALOG_ID, { choices, source, pageCount, page, draft }),
+        (answered) => INSERT_FROM_PDF_RESULT.safeParse(answered).data,
+      );
+      if (asked === undefined) return;
 
-      if (choices.length === 0) {
-        void deps.ask(MERGE_DOCUMENT_NONE_DIALOG_ID, {});
-        return;
-      }
-
-      const answer = (await deps.ask(INSERT_FROM_PDF_DIALOG_ID, {
-        choices,
-        pageCount: context.pageCount,
-      })) as InsertFromPdfAnswer | undefined;
-      if (answer === undefined) return;
-
-      await applyDocumentCommand(deps, context.docId, {
+      await applyDocumentCommand(deps, target, {
         kind: 'mergeDocument',
-        source: answer.source as DocId,
-        sourcePages: 'all',
+        source: asked.answer.source as DocId,
+        sourcePages: asked.answer.sourcePages,
         // ALREADY ZERO-BASED. The dialog performed the one conversion, which is
         // `pageNumbering.ts`' rule — a command that subtracted one here would be
         // the second place that arithmetic lives.
-        at: answer.at,
+        at: asked.answer.at,
       });
     },
   };

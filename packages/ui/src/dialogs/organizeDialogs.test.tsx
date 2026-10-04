@@ -85,9 +85,12 @@ const BODIES: readonly {
   },
   {
     name: 'Insert from PDF',
-    body: (resolve) => <InsertFromPdfBody choices={CHOICES} pageCount={3} resolve={resolve} update={() => undefined} />,
+    body: (resolve) => (
+      <InsertFromPdfBody choices={CHOICES} pageCount={3} page={1} resolve={resolve} update={() => undefined} />
+    ),
     action: 'Insert',
-    answer: { source: 'd-a', at: 3 },
+    // AFTER THE PAGE ON SHOW, which is page 2: zero-based 2.
+    answer: { kind: 'insert', source: 'd-a', sourcePages: 'all', at: 2 },
   },
   {
     name: 'Replace pages',
@@ -136,13 +139,16 @@ describe('the Organize dialogs in the dialog pattern', () => {
   });
 
   it('each question is a ROW: its words beside its control, which is named by the same words', () => {
-    render(inDialog(<InsertFromPdfBody choices={CHOICES} pageCount={3} resolve={vi.fn()} update={() => undefined} />));
+    render(
+      inDialog(<InsertFromPdfBody choices={CHOICES} pageCount={3} page={1} resolve={vi.fn()} update={() => undefined} />),
+    );
     const rows = [...document.querySelectorAll('.m-dialog-row')].map(
       (row) => row.querySelector('.m-dialog-row__label')?.textContent,
     );
-    expect(rows).toStrictEqual(['Document to insert', 'Insert before page']);
-    expect(screen.getByRole('combobox', { name: 'Document to insert' })).toBeTruthy();
-    expect(screen.getByRole('textbox', { name: 'Insert before page' })).toBeTruthy();
+    expect(rows).toStrictEqual(['Insert from', 'Pages', 'Where']);
+    expect(screen.getByRole('combobox', { name: 'Insert from' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Where' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Page' })).toBeTruthy();
   });
 
   it('Split’s two ways are CHOICES under their question, each with its sentence, and choosing ranges asks for them', () => {

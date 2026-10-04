@@ -293,6 +293,9 @@ export const INSERT_FROM_PDF_COMMAND_TITLE = messageKey('command.insert-from-pdf
 export const INSERT_FROM_PDF_TITLE = messageKey('dialog.insert-from-pdf.title');
 export const INSERT_FROM_PDF_LABEL = messageKey('dialog.insert-from-pdf.label');
 export const INSERT_FROM_PDF_POSITION = messageKey('dialog.insert-from-pdf.position');
+export const INSERT_FROM_PDF_BEFORE = messageKey('dialog.insert-from-pdf.before');
+export const INSERT_FROM_PDF_AFTER = messageKey('dialog.insert-from-pdf.after');
+export const INSERT_FROM_PDF_PAGE = messageKey('dialog.insert-from-pdf.page');
 export const INSERT_FROM_PDF_RANGE = messageKey('dialog.insert-from-pdf.range');
 export const INSERT_FROM_PDF_APPLY = messageKey('dialog.insert-from-pdf.apply');
 export const REPLACE_PAGE_COMMAND_TITLE = messageKey('command.replace-page.title');
@@ -4229,9 +4232,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Merging copies pages from another open document. Open the document you want to merge in, then try again.',
   [INSERT_FROM_PDF_COMMAND_TITLE]: 'Insert from PDF…',
   [INSERT_FROM_PDF_TITLE]: 'Insert from PDF',
-  [INSERT_FROM_PDF_LABEL]: 'Document to insert',
-  [INSERT_FROM_PDF_POSITION]: 'Insert before page',
-  [INSERT_FROM_PDF_RANGE]: 'Between 1 and {last}, where {last} puts it at the end.',
+  [INSERT_FROM_PDF_LABEL]: 'Insert from',
+  [INSERT_FROM_PDF_POSITION]: 'Where',
+  [INSERT_FROM_PDF_BEFORE]: 'Before page',
+  [INSERT_FROM_PDF_AFTER]: 'After page',
+  [INSERT_FROM_PDF_PAGE]: 'Page',
+  // SAID ON THE PRESS, under the row: the page is one of THIS document's, which the source row above is not.
+  [INSERT_FROM_PDF_RANGE]: 'Choose a page of this document, from 1 to {last}.',
   [INSERT_FROM_PDF_APPLY]: 'Insert',
   [REPLACE_PAGE_COMMAND_TITLE]: 'Replace pages…',
   [REPLACE_PAGE_TITLE]: 'Replace pages',

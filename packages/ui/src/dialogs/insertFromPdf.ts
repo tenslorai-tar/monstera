@@ -3,15 +3,15 @@ import { z } from 'zod';
 
 import { INSERT_FROM_PDF_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
-import { INSERT_FROM_PDF_RESULT } from './insertFromPdfResult.js';
+import { INSERT_FROM_PDF_DRAFT, INSERT_FROM_PDF_RESULT } from './insertFromPdfResult.js';
+import { SOURCE_PROPS } from './sourceDocuments.js';
 
-/** The id `insertFromPdfCommand` opens to choose a source and a position. */
+/** The id `insertFromPdfCommand` opens to choose a source, its pages and a position. */
 export const INSERT_FROM_PDF_DIALOG_ID = 'dialog.insert-from-pdf';
 
 /**
- * Which OPEN document to insert, and where
- * ([ADR-0040](../../../../docs/DECISIONS/0040-a-command-names-a-second-document-by-docid.md)
- * Decision 2 names this row as the one whose extra clicks it costs).
+ * Which document to insert from, which of its pages, and where
+ * ([ADR-0040](../../../../docs/DECISIONS/0040-a-command-names-a-second-document-by-docid.md)).
  *
  * ## This is a SECOND SURFACE over `mergeDocument`, not a second command
  *
@@ -20,39 +20,27 @@ export const INSERT_FROM_PDF_DIALOG_ID = 'dialog.insert-from-pdf';
  * kind would be one operation declared twice, with two grafts to keep in step
  * and two rows in every exhaustive table. `openDocument.ts` states the shape
  * this follows: *"one implementation with two triggers, which is not a second
- * wiring place."*
+ * wiring place."* Choosing the source's pages is `sourcePagesSchema`, which both
+ * surfaces carry.
  *
- * The design that WOULD have earned a kind is *insert selected pages*, because
- * a page list is something merge cannot express. It is not built, and the
- * reason is concrete rather than scope: `OpenDocument` carries no page count
- * for an unfocused tab, so nothing in the renderer can bound a range against
- * the **source**. A range field bounded by the target's length would accept
- * `1-40` against a four-page source whenever the target was long enough, which
- * is the wrong document silently. The row carries that as what is owed.
+ * ## Two frames, and each row says which
  *
- * ## `pageCount` goes IN, as `deletePages.ts` has it
- *
- * The bound here is the TARGET's, and that is the one frame this dialog deals
- * in: `at` is a position among the reader's own pages. The source's length is
- * not needed, because every page of it is inserted.
+ * The source's pages are bounded by the SOURCE's count, which each offered
+ * document carries; the position is among the TARGET's pages, bounded by
+ * `pageCount`. *After* the last page is a real request — `at: pageCount`.
  */
 export const INSERT_FROM_PDF_DIALOG = declareDialog({
   id: INSERT_FROM_PDF_DIALOG_ID,
   title: INSERT_FROM_PDF_TITLE,
   props: z
     .object({
-      /** The other open documents, in tab order. Never includes the target. */
-      choices: z
-        .array(z.object({ docId: z.string().min(1), name: z.string().min(1) }).strict())
-        .min(1),
-      /**
-       * The TARGET's page count, bounding the position.
-       *
-       * `at` may equal it — that is *after the last page*, which is a real
-       * request and the one value past the end a caller can legitimately name
-       * (`pageOrder.ts` says the same about every insert).
-       */
+      ...SOURCE_PROPS,
+      /** The TARGET's page count, bounding the position. */
       pageCount: z.number().int().positive(),
+      /** The page on show in the target, zero-based: the position starts after it. */
+      page: z.number().int().nonnegative(),
+      /** What the person had entered before *Choose file…*, restored as the dialog reopens. */
+      draft: INSERT_FROM_PDF_DRAFT.optional(),
     })
     .strict(),
   result: INSERT_FROM_PDF_RESULT,
