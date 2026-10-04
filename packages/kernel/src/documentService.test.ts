@@ -1816,28 +1816,54 @@ describe('replacing the image from a file', () => {
     };
 
   it('holds nothing else while the new image is read, and serves ranges from the file meanwhile', async () => {
-    const seen: { resident: number; range: string }[] = [];
+    const seen: { resident: number; atOld: string; atNew: string }[] = [];
     const { service, docId } = await holding((during, id) => {
-      const answer = during.readRange(RANGE_READER_FOR_TEST, id, asDocVersion(1), 4, 7);
-      seen.push({
-        resident: during.residentDocumentBytes(),
-        range: answer.kind === 'bytes' ? new TextDecoder().decode(answer.bytes) : answer.kind,
-      });
+      const read = (version: number): string => {
+        const answer = during.readRange(RANGE_READER_FOR_TEST, id, asDocVersion(version), 4, 7);
+        return answer.kind === 'bytes'
+          ? new TextDecoder().decode(answer.bytes)
+          : `${answer.kind} ${String(answer.version)} ${String(answer.byteLength)}`;
+      };
+      seen.push({ resident: during.residentDocumentBytes(), atOld: read(1), atNew: read(2) });
     });
 
     const { value } = await service.run(docId, (context) =>
       context.replaceCanonicalImageFrom(COMMAND_WRITER_FOR_TEST, fillWith(NEW)),
     );
 
-    // THE POINT: during the read the old buffer is gone (0 held) and a range is the NEW image's, from its file. A
-    // service that read before swapping would report the old image's length here and answer `old`.
-    expect(seen).toStrictEqual([{ resident: 0, range: 'new' }]);
+    // THE POINT: during the read the old buffer is gone (0 held) and a range at the NEW version is the new image's,
+    // from its file. A service that read before swapping would report the old image's length here and answer `old`.
+    //
+    // AND A RANGE AT THE OLD VERSION IS STALE, naming the new version and length (CR-DOC-01): the version moves with
+    // the swap. Until 2026-10-04 this case asked at version 1 and expected the new bytes, which was the defect: a
+    // renderer bound to the old document read the new one's bytes at the old one's offsets.
+    expect(seen).toStrictEqual([{ resident: 0, atOld: `stale 2 ${String(NEW.byteLength)}`, atNew: 'new' }]);
     expect(value).toBe(NEW.byteLength);
     expect(service.residentDocumentBytes()).toBe(NEW.byteLength);
-    const after = service.readRange(RANGE_READER_FOR_TEST, docId, asDocVersion(1), 0, NEW.byteLength);
+    const after = service.readRange(RANGE_READER_FOR_TEST, docId, asDocVersion(2), 0, NEW.byteLength);
     expect(after.kind === 'bytes' ? new TextDecoder().decode(after.bytes) : after.kind).toBe(
       new TextDecoder().decode(NEW),
     );
+    await service.close(docId);
+  });
+
+  it('a command that replaces its image ends at ONE new version, the one ranges moved to at the swap (CR-DOC-01)', async () => {
+    // THE OTHER HALF of the window: after the replacement returns, the bus still awaits the log and the refresh before
+    // it bumps. A range at the old version there is stale too, and the bump that ends the command reports the version
+    // the swap already moved to, so the renderer is told one version, never two.
+    const { service, docId } = await holding();
+    const { value } = await service.run(docId, async (context) => {
+      await context.replaceCanonicalImageFrom(COMMAND_WRITER_FOR_TEST, fillWith(NEW));
+      const between = service.readRange(RANGE_READER_FOR_TEST, docId, asDocVersion(1), 0, 3);
+      return { between: between.kind, bumped: context.bumpVersion(COMMAND_WRITER_FOR_TEST) };
+    });
+    expect(value).toStrictEqual({ between: 'stale', bumped: asDocVersion(2) });
+
+    // CONTROL: an entry that replaces nothing still moves the version once when it bumps.
+    const { value: plain } = await service.run(docId, (context) =>
+      Promise.resolve(context.bumpVersion(COMMAND_WRITER_FOR_TEST)),
+    );
+    expect(plain).toBe(asDocVersion(3));
     await service.close(docId);
   });
 

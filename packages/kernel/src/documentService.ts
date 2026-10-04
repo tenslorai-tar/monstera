@@ -1545,6 +1545,13 @@ export class DocumentService {
    * is stated here rather than left to be re-derived from the absence of a
    * keyword.
    *
+   * **And it is only half the argument.** Reading both in one step makes them the
+   * record's at one moment; it does not make the record's version describe the
+   * record's image. That needs the image's replacement to move the version in the
+   * same step, which the lane's context does (CR-DOC-01). Until 2026-10-04 the bus
+   * moved it at the end of a command, several awaits after the swap, and a range
+   * at the old version in between was served from the new image.
+   *
    * ## The slice is COPIED
    *
    * `subarray` returns a view that keeps the whole canonical image reachable —
@@ -1902,7 +1909,11 @@ export class DocumentService {
    * A failed `fill` removes what it left and changes nothing. A failed read leaves the record serving from the file,
    * which is a correct state rather than a torn one: every range is answered and the next replacement retires it.
    */
-  async #replaceFromFile(record: DocumentRecord, fill: (destination: string) => Promise<number>): Promise<number> {
+  async #replaceFromFile(
+    record: DocumentRecord,
+    fill: (destination: string) => Promise<number>,
+    imageMoved: () => void,
+  ): Promise<number> {
     const directory = await this.#documentDirectory(record);
     record.fileSerial += 1;
     const path = join(directory, `image-${String(record.fileSerial)}.pdf`);
@@ -1922,7 +1933,8 @@ export class DocumentService {
     }
 
     // THE SWAP, with no await before the read begins: from here ranges come from the file and the old buffer is
-    // unreferenced, so `main` never holds both.
+    // unreferenced, so `main` never holds both. The version moves in the same step, so a range asked at the old one
+    // is answered stale rather than from these bytes; the swap back to memory below is the same bytes and moves nothing.
     this.#setImage(record, {
       kind: 'file',
       path,
@@ -1931,6 +1943,7 @@ export class DocumentService {
       writes: 0,
       retired: false,
     });
+    imageMoved();
 
     const bytes = await this.#readBytes(path);
     requireSoleOwnership(bytes, path);
@@ -2035,6 +2048,17 @@ export class DocumentService {
       this.#executingDocument.run(docId, async () => {
         // Read here, when the work actually runs — not when it was queued.
         const version = record.version;
+        // THE VERSION MOVES WITH THE IMAGE (CR-DOC-01). `readRange` answers whatever image the record holds at the
+        // version the record holds, and the bus bumps the version at the END of a command, after awaits that follow
+        // the replacement: the whole-file read below the swap, the log, the window's refresh. A range asked at the old
+        // version in between was served from the new image, a document made of two. So a replacement moves the
+        // version in the same synchronous step as the swap, and `bumpVersion` then reports that version rather than
+        // moving it again.
+        let movedSinceBump = false;
+        const imageMoved = (): void => {
+          record.version = asDocVersion(record.version + 1);
+          movedSinceBump = true;
+        };
         // RECONCILED AFTER EVERY ENTRY, whatever it did and whether it threw (ADR-0121): a checkpoint leaves the log
         // by a trim, by a redo tail a new command discarded, or by a command that failed after its checkpoint was
         // stored, and one rule here covers all three rather than a deletion at each place an entry can go.
@@ -2046,6 +2070,10 @@ export class DocumentService {
           // `commandBus.ts`, which is a compile-time property — checking it at
           // runtime would be the guard B5 says to prefer a type over.
           bumpVersion: () => {
+            if (movedSinceBump) {
+              movedSinceBump = false;
+              return record.version;
+            }
             record.version = asDocVersion(record.version + 1);
             return record.version;
           },
@@ -2110,9 +2138,10 @@ export class DocumentService {
           replaceCanonicalImage: (_writer, image) => {
             requireSoleOwnership(image, record.path);
             this.#setImage(record, { kind: 'memory', bytes: image, writes: 0, retired: false });
+            imageMoved();
             return image.byteLength;
           },
-          replaceCanonicalImageFrom: (_writer, fill) => this.#replaceFromFile(record, fill),
+          replaceCanonicalImageFrom: (_writer, fill) => this.#replaceFromFile(record, fill, imageMoved),
           log: record.log,
           // A GETTER, so it answers about the image the document has NOW rather
           // than the one it had when this entry started. A command rewrites the
