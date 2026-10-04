@@ -8,6 +8,7 @@ import {
   CONTEXT_PANEL_REOPEN,
   CONTEXT_PANEL_TAB_ASSISTANT,
   CONTEXT_PANEL_TAB_PROPERTIES,
+  CONTEXT_PANEL_TAB_SPELLING,
   CONTEXT_PANEL_TAB_STRIP,
 } from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
@@ -48,16 +49,22 @@ export interface ContextPanelProps {
   readonly children: ReactNode;
   /** The Assistant tab (ADR-0083), built where its conversation lives. */
   readonly assistant: ReactNode;
+  /** The Spelling tab (ADR-0156), built where the focused document's store is. */
+  readonly spelling: ReactNode;
 }
 
-/** The panel's tabs, in strip order. */
-/** Each tab's name and v5's glyph beside it: *info* for Properties, *sparkles* for the Assistant. */
+/**
+ * The panel's tabs, in strip order: each tab's name and the glyph beside it — *info* for Properties, *sparkles* for the
+ * Assistant (v5's), and the spell check command's own glyph for Spelling, so the tab and the command that opens it are
+ * one picture.
+ */
 const TABS = [
   { id: 'properties', title: CONTEXT_PANEL_TAB_PROPERTIES, icon: 'Info' },
   { id: 'assistant', title: CONTEXT_PANEL_TAB_ASSISTANT, icon: 'Sparkles' },
+  { id: 'spelling', title: CONTEXT_PANEL_TAB_SPELLING, icon: 'SpellCheck' },
 ] as const;
 
-export function ContextPanel({ settings, presence, children, assistant }: ContextPanelProps): ReactElement {
+export function ContextPanel({ settings, presence, children, assistant, spelling }: ContextPanelProps): ReactElement {
   const { i18n } = useLingui();
   const form = usePanelForm(presence, 'end');
   const tab = useSetting(settings, CONTEXT_PANEL_TAB_SETTING);
@@ -106,7 +113,7 @@ export function ContextPanel({ settings, presence, children, assistant }: Contex
       {/* ONE TAB IS MOUNTED, the document panel's rule and its reason: the other would keep
           asking for what nobody can see, and keep its controls in the tab order. */}
       <Tabs.Panel className="m-context-panel__body" data-context-panel={tab} value={tab}>
-        {tab === 'properties' ? children : assistant}
+        {tab === 'properties' ? children : tab === 'assistant' ? assistant : spelling}
       </Tabs.Panel>
     </Tabs.Root>
   );

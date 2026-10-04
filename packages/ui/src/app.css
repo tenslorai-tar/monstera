@@ -1847,18 +1847,118 @@ optgroup {
 }
 
 /*
- * The spell check review: one dialog-pattern row per word (`SpellCheckBody`), the word and where it is on the left
- * and its add at the row's end, in a `<ul>` that arrives with bullets and an indent the pattern did not ask for. The
- * word carries the weight as the row's name; the count, the page and the suggestions are its muted notes.
+ * The Spelling tab (ADR-0156): the word, where it is and the text around it, the field and the suggestions, then the
+ * actions, the options and the language, top to bottom in one column so the panel's width is the only width.
  */
-.m-spell-check__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.m-spelling {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  min-inline-size: 0;
 }
 
-.m-spell-check__list > .m-dialog-row:last-child {
-  border-block-end: 0;
+.m-spelling p {
+  margin: 0;
+}
+
+.m-spelling__current {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.m-spelling__label,
+.m-spelling__where,
+.m-spelling__language {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+/* THE WORD carries the weight; it is the document's own text and may be long, so it wraps rather than overflowing. */
+.m-spelling__word {
+  font-size: var(--font-chrome-13);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * THE WORD IN ITS SENTENCE is marked by weight and a wavy underline in the accent, never by a fill: a fill behind text
+ * is a contrast pair, and the underline is not.
+ */
+.m-spelling__context {
+  font-size: var(--font-chrome-12);
+  overflow-wrap: anywhere;
+}
+
+.m-spelling__context mark {
+  background: none;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline wavy var(--accent);
+  text-underline-offset: 3px;
+}
+
+.m-spelling__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.m-spelling__suggestion {
+  padding: var(--space-2) var(--space-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-chrome-12);
+  cursor: pointer;
+}
+
+.m-spelling__suggestion:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* THE CHOSEN SUGGESTION is the one in the field; the ring says so without a second colour pair. */
+.m-spelling__suggestion[aria-pressed='true'] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.m-spelling__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.m-spelling__notice {
+  font-size: var(--font-chrome-12);
+}
+
+.m-spelling__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-12);
+  margin: 0;
+  padding: var(--space-8) 0 0;
+  border: 0;
+  border-block-start: 1px solid var(--border-soft); /* decorative: separates the review from its options */
+}
+
+.m-spelling__options legend {
+  padding: 0;
+  margin-block-end: var(--space-4);
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+.m-spelling__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--font-chrome-12);
 }
 
 /*
@@ -6664,6 +6764,32 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * THREE TABS AND THEIR WORDS WHOLE (ADR-0156 added Spelling). Measured 2026-10-04 in Chromium 151 on the production
+ * build, English, in fractional pixels (a Range over each label): the words are 70.73, 62.95 and 54.84 px, 188.5 in
+ * all. Each tab adds its two 1 px borders, its padding and, with a glyph, 14 + 6 more; the strip's two 2 px gaps and the
+ * header's gap and chevron add 32. So with glyphs the header's content must be 346.5 px, with the words alone at
+ * 10 px padding 286.5, and at 2 px padding 238.5 — against 326 at the default panel and 250 at its 264 px minimum. The
+ * glyphs are decoration beside the name (`ContextPanel.tsx`), so they give way first and the padding next; each switch
+ * is set 16 px above its need, for a face drawn in another font. A longer language still shortens a label by the rule
+ * above, the last thing to give.
+ */
+.m-context-panel__header {
+  container: context-tabs / inline-size;
+}
+
+@container context-tabs (inline-size < 363px) {
+  .m-context-panel__tab > svg {
+    display: none;
+  }
+}
+
+@container context-tabs (inline-size < 303px) {
+  .m-context-panel__tab {
+    padding-inline: var(--space-2);
+  }
 }
 
 /* THE SELECTED TAB is Base UI's `data-active` (1.7's `TabsTabDataAttributes`) — `data-selected`, which this file

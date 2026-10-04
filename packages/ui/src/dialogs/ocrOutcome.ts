@@ -20,8 +20,8 @@ export const OCR_OUTCOME_DIALOG_ID = 'dialog.ocr-outcome';
  *
  * ## A CANCELLED RUN IS REPORTED, which is the opposite of the spell check's rule
  *
- * `checkSpelling` publishes nothing when cancelled, because a partial list of
- * misspellings reads exactly like the document's whole answer. The asymmetry is
+ * A stopped spelling review shows nothing it read (`reviewRun.ts`), because a
+ * partial list of misspellings reads exactly like the document's whole answer. The asymmetry is
  * deliberate and the reason is the noun: a recognised page is **correct work on
  * the document**, so a cancelled run has left real text behind and saying so is
  * the honest report rather than a misleading one.

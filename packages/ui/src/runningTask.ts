@@ -5,11 +5,12 @@ import type { MessageKey } from '@monstera/shared';
  *
  * ## The problem this is the shape of
  *
- * `document.word-count` and `document.spell-check` walk every page: four
- * hundred pages is four hundred round trips before anything appears, and the
- * only feedback is a dialog that has not opened yet. Both rows recorded that as
- * owed and both said the same thing about it — **it is a surface question, not
- * a missing `await`.**
+ * `document.word-count` walks every page: four hundred pages is four hundred
+ * round trips before anything appears, and the only feedback is a dialog that
+ * has not opened yet. Its row recorded that as owed and said what it was —
+ * **a surface question, not a missing `await`.** The spelling review answers
+ * the same question with a surface of its own: it walks inside the Spelling
+ * tab, which says how far it has got and offers Stop (ADR-0156).
  *
  * `searchDocument` already has progress and cancellation, and what gives it
  * them is the **find bar**: a surface that is on screen while the walk runs.

@@ -352,6 +352,8 @@ import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { OpeningState, PageList, type PageListProps } from './PageList.js';
 import { type Side, SideBySide, type SidePreferences, drawForComparison } from './SideBySide.js';
 import { SplitView } from './SplitView.js';
+import { SpellingPanel, useSpellingReview } from './SpellingPanel.js';
+import { type SpellingDeps, startReview } from './spelling/reviewRun.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { type MenuAt, NO_MENU, menuGroups } from './surfaces/ContextMenu.js';
 import { type TextSelection, readTextSelection } from './TextLayer.js';
@@ -2032,6 +2034,58 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   );
 
   /**
+   * What a spelling review needs (ADR-0156): the bag every document command is sent with, and the drawn pages' boxes
+   * the page list reported, through which a word's point is converted. A box is answered only for the document it was
+   * reported for.
+   */
+  const spellingDeps = useMemo<SpellingDeps>(
+    () => ({
+      client,
+      settings,
+      commands: { client, onApplied: applied, ask, stamp, signatures },
+      cropOf: (docId, page) => (pageBoxes.current.docId === docId ? pageBoxes.current.boxes.get(page) : undefined),
+    }),
+    [applied, ask, client, settings, signatures, stamp],
+  );
+
+  /** Spell check: the Spelling tab, shown, and a review of the document started (ADR-0156 Decision 1). */
+  const startSpelling = useCallback(
+    (docId: DocId, pages: number): void => {
+      settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'spelling');
+      presence.show('end');
+      const held = stores.get(docId);
+      if (held !== undefined) void startReview(spellingDeps, held, pages);
+    },
+    [presence, settings, spellingDeps, stores],
+  );
+
+  /**
+   * The review's word, painted on the page through the find highlight (ADR-0156's 2026-10-04 correction): the word as
+   * the query, exactly as written and whole, and the occurrence as the active match, by the text layer line and
+   * offset the review read it at. Only while the Spelling tab is the one shown, so the find bar's own matches come back
+   * when a person goes elsewhere.
+   */
+  const spellingReview = useSpellingReview(store);
+  const contextTab = useSetting(settings, CONTEXT_PANEL_TAB_SETTING);
+  const spellingWord =
+    contextTab === 'spelling' && spellingReview?.phase === 'reviewing' ? spellingReview.current : undefined;
+  const spellingHighlight = useMemo<SearchHighlight | undefined>(() => {
+    if (spellingWord?.place.kind !== 'text') return undefined;
+    const { page, line, offset } = spellingWord.place;
+    return {
+      query: spellingWord.word,
+      options: { caseSensitive: true, wholeWord: true, normalise: 'none' },
+      active: { page, line, offset },
+    };
+  }, [spellingWord]);
+  // THE PAGE THE WORD IS ON, shown when the review reaches a word on another page. Keyed on the page alone, so a word
+  // further down the same page does not pull the view back to its top, and a reader who scrolled away is not followed.
+  const spellingPage = spellingWord?.place.page;
+  useEffect(() => {
+    if (spellingPage !== undefined) navigator.jumpTo(spellingPage);
+  }, [navigator, spellingPage]);
+
+  /**
    * The assistant's *Add as note*: the answer as a sticky note on the page the reader is on, in the
    * page's top-right corner — the margin a note icon is looked for in, and inside the visible box
    * the page list drew, so it is never off the page. The note is an ordinary command: undoable, and
@@ -2778,12 +2832,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         inspectPageStructureCommand({ client, ask }),
         accessibilityCheckCommand({ client, ask }),
         readBarcodesCommand({ client, ask }),
-        // TAKES THE SETTINGS STORE, which no other command here does. The
-        // personal dictionary is what makes this feature manageable rather than
-        // fixed, and it is a preference rather than document state — so it
-        // lives in §10.4's registry, and the command that adds to it is the one
-        // that has to reach it.
-        checkSpellingCommand({ client, settings, ask, track }),
+        // THE REVIEW IS THE PANEL'S (ADR-0156): the command opens the Spelling tab and starts it.
+        checkSpellingCommand({ start: startSpelling }),
         revealLogCommand({ client }),
         // THREE ROTATIONS, one factory. D2's row is a surface over the command
         // Stage 0 already declared — `rotatePages` takes the quarter turns, so
@@ -3085,6 +3135,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // THE KEYS A PERSON CHOSE, so a change in the shortcuts dialog rebuilds the registry and the new key works at once.
       chosenShortcuts,
       startSignature,
+      startSpelling,
       // THE ZOOM STEP, through the function `+` and `−` ask: a changed step rebuilds them, or they would step by the old.
       stepZoomBy,
       activate,
@@ -3633,7 +3684,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // ONLY THE REQUEST'S OWN DOCUMENT draws it; another on show leaves it waiting with its draft.
           writing={writingDocId === open.docId ? pageWriting : undefined}
           panning={toolId === HAND_TOOL_ID}
-          search={search ?? undefined}
+          // THE REVIEW'S WORD OVER THE FIND BAR'S MATCHES while a review shows one: one highlight on the page, and App
+          // its one writer (ADR-0156's correction). The find bar's own state is untouched.
+          search={spellingHighlight ?? search ?? undefined}
           secondRenderer={secondRenderer}
           tileAbove={tileAbove}
           quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
@@ -3683,6 +3736,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                 />
                 )
               }
+              // THE SPELLING TAB (ADR-0156), over the focused document's review, which its store holds.
+              spelling={store === undefined ? null : <SpellingPanel deps={spellingDeps} store={store} settings={settings} />}
               settings={settings}
               presence={presence}
             >
@@ -4114,7 +4169,7 @@ const DocumentLayer = memo(function DocumentLayer({
             onAutoscrollEnd={IGNORE}
             panels={NO_PANELS}
             contextPanel={
-              <ContextPanel settings={background.settings} presence={background.presence} assistant={null}>
+              <ContextPanel settings={background.settings} presence={background.presence} assistant={null} spelling={null}>
                 {null}
               </ContextPanel>
             }

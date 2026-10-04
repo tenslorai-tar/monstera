@@ -603,7 +603,19 @@ test('at its MINIMUM width the right contextual panel still holds every Properti
     const chevron = header?.querySelector('button[aria-label="Collapse the properties panel"]');
     const headerFits = header !== null && header.scrollWidth <= header.clientWidth;
     const chevronPast = chevron === null || chevron === undefined ? null : chevron.getBoundingClientRect().right - paneRight;
-    return { overflow, minContent, headerFits, chevronPast };
+    // EVERY TAB'S WORD WHOLE: a label its ellipsis cut is a header that fits by hiding what the tabs are called. Read
+    // in FRACTIONAL pixels — the text's laid-out width (an ellipsis is painted, so the line keeps the whole word's
+    // width) against its box — because `scrollWidth` and `clientWidth` round, and a 71.3 px word in a 71 px box reads
+    // as fitting while it draws an ellipsis.
+    const cut = [...(header?.querySelectorAll<HTMLElement>('.m-context-panel__tab-label') ?? [])]
+      .filter((label) => {
+        const text = document.createRange();
+        text.selectNodeContents(label);
+        return text.getBoundingClientRect().width > label.getBoundingClientRect().width + 0.01;
+      })
+      .map((label) => label.textContent);
+    const labels = header?.querySelectorAll('.m-context-panel__tab-label').length ?? 0;
+    return { overflow, minContent, headerFits, chevronPast, cut, labels };
   });
   expect(measured).not.toBeNull();
   console.log(`Properties tab min-content width: ${String(measured?.minContent)} px`);
@@ -613,6 +625,9 @@ test('at its MINIMUM width the right contextual panel still holds every Properti
   expect(measured?.headerFits).toBe(true);
   expect(measured?.chevronPast).not.toBeNull();
   expect(measured?.chevronPast ?? Infinity).toBeLessThanOrEqual(0.5);
+  // THE LABELS WERE FOUND, all three, or the empty list below is the reassuring answer from a lookup that saw nothing.
+  expect(measured?.labels).toBe(3);
+  expect(measured?.cut).toStrictEqual([]);
 });
 
 test('the ASSISTANT fits its panel: the message box is inside it and nothing scrolls', async ({ page }) => {

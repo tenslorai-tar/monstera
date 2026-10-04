@@ -203,9 +203,10 @@ test('spell-check-1', async ({ page }) => {
   });
   await openDocument(page);
   await runCommand(page, 'Spell check');
-  const dialog = await theDialog(page);
-  await expect(dialog).toContainText('documnet');
-  await shoot(page, 'spell-check-1', dialog);
+  // THE REVIEW BESIDE THE PAGE (ADR-0156): the Spelling tab on its first word, and the window, so the picture shows
+  // the word marked on the page as well as in the panel.
+  await expect(page.locator('.m-spelling__word')).toHaveText('documnet');
+  await shoot(page, 'spell-check-1', 'window');
 });
 
 test('set-up-ai-1', async ({ page }) => {

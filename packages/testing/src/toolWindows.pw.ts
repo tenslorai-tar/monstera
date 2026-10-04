@@ -7,8 +7,8 @@ import { LOOKS, bridgeUnder } from './pageBridge.js';
 import { settled, startScreenListening } from './settled.js';
 
 /**
- * The five tool windows the owner had redrawn in the dialog pattern on 2 October — Cloud storage, Help, Keyboard
- * shortcuts, Spell check and Camera capture — in every look, at 1280 × 800 and in a window narrower than the
+ * The tool windows the owner had redrawn in the dialog pattern on 2 October — Cloud storage, Help, Keyboard
+ * shortcuts and Camera capture — in every look, at 1280 × 800 and in a window narrower than the
  * application's floor. What each case holds is what the owner's review of them named: nothing wraps out of or overflows
  * the window, the footer is inside it whatever the list's length, and the gate is clean with the window open. A real
  * browser lays these out; happy-dom lays nothing out.
@@ -26,7 +26,7 @@ async function palette(page: Page, title: string): Promise<void> {
 
 /**
  * Each window, how a person opens it, and WHAT IT HOLDS ONCE ITS CONTENT HAS ARRIVED. The body's chunk arrives with
- * the dialog; a provider's state and the misspelt words arrive afterwards over IPC, so a window measured on its footer
+ * the dialog; a provider's state arrives afterwards over IPC, so a window measured on its footer
  * alone can be measured empty.
  */
 const WINDOWS: readonly {
@@ -46,14 +46,6 @@ const WINDOWS: readonly {
   },
   { name: 'Help', title: 'Help centre', open: (page) => page.keyboard.press('F1') },
   { name: 'Keyboard shortcuts', title: 'Keyboard shortcuts', open: (page) => page.keyboard.press('Control+Slash') },
-  {
-    name: 'Spell check',
-    title: 'Spell check',
-    open: (page) => palette(page, 'Spell check'),
-    arrived: async (dialog) => {
-      await expect(dialog.getByText('documnet').first()).toBeVisible();
-    },
-  },
   { name: 'Camera capture', title: 'Take pictures', open: (page) => palette(page, 'New PDF from camera…') },
 ];
 
@@ -71,14 +63,13 @@ for (const tool of WINDOWS) {
         await bridgeUnder(page, look, {
           opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'report.pdf' }],
           documentBytes: new Map([[DOC, bytes]]),
-          // EACH WINDOW WITH SOMETHING IN IT: a provider signed in and one signed out, and misspelt words to list.
+          // EACH WINDOW WITH SOMETHING IN IT: a provider signed in and one signed out.
           cloudStatus: {
             providers: [
               { provider: 'onedrive', state: 'signed-out' },
               { provider: 'google-drive', state: 'signed-in' },
             ],
           },
-          pageLines: [['spelling page document', 'documnet page'], ['spelling speling page', 'documnet teh']],
         });
         await page.goto('/');
         await page.getByRole('button', { name: /^Open PDF/u }).first().click();

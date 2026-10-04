@@ -70,7 +70,6 @@ import { SIGNATURE_BREAK_DIALOG } from '../dialogs/signatureBreak.js';
 import { SIGNED_EDIT_DIALOG } from '../dialogs/signedEdit.js';
 import { SIGNATURE_PROBLEM_DIALOG } from '../dialogs/signatureProblem.js';
 import { SIGNATURES_DIALOG } from '../dialogs/signatures.js';
-import { SPELL_CHECK_DIALOG } from '../dialogs/spellCheck.js';
 import { SPLIT_DOCUMENT_DIALOG } from '../dialogs/splitDocument.js';
 import { STAMP_DIALOG } from '../dialogs/stamp.js';
 import { TRANSLATE_PAGE_DIALOG } from '../dialogs/translatePage.js';
@@ -104,7 +103,6 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   HELP_DIALOG,
   WORD_COUNT_DIALOG,
   PAGE_STRUCTURE_DIALOG,
-  SPELL_CHECK_DIALOG,
   OCR_DIALOG,
   TRANSLATE_PAGE_DIALOG,
   OCR_OUTCOME_DIALOG,

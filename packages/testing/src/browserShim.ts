@@ -438,6 +438,14 @@ export interface BrowserShimOptions {
   readonly pageLinesPlaced?: readonly (readonly ShimPlacedLine[])[];
 
   /**
+   * Each page's word boxes as the engine would read them (`document.pageWordBoxes`): a line, its box, and `x0, y0,
+   * x1, y1` for each token `tokensOf` cuts from it. STATED BY THE TEST, never derived here — the shim has no engine,
+   * and boxes it divided out of a line's width would be a metric no engine answers. Absent, every page answers none,
+   * as before.
+   */
+  readonly pageWordBoxes?: readonly (readonly (ShimPlacedLine & { readonly boxes: readonly number[] })[])[];
+
+  /**
    * What `window.edit` runs through — main's attached window, for a shim that has a page. Absent,
    * the channel answers `done: false`, main's own answer with no window attached.
    */
@@ -2285,11 +2293,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       );
     },
 
-    // NO ENGINE, SO NO WORD BOXES: every line keeps the estimate, which is what a read that boxed nothing means.
-    'document.pageWordBoxes': ({ docId }) => {
+    // NO ENGINE, SO NO WORD BOXES unless a case states them: every line keeps the estimate, which is what a read that
+    // boxed nothing means.
+    'document.pageWordBoxes': ({ docId, page }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
-      return Promise.resolve(ok({ version: asDocVersion(current), lines: [], truncated: false }));
+      const lines = (options.pageWordBoxes?.[page] ?? []).map((line) => ({ ...line, boxes: [...line.boxes] }));
+      return Promise.resolve(ok({ version: asDocVersion(current), lines, truncated: false }));
     },
 
     // SETTINGS SURVIVE WITHIN ONE SHIM, and do not survive constructing another.

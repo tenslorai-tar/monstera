@@ -38,7 +38,12 @@ function drawn(settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS)))
   lastPresence = presence;
   render(
     <Wrapped>
-      <ContextPanel assistant={<p>assistant content</p>} settings={settings} presence={presence}>
+      <ContextPanel
+        assistant={<p>assistant content</p>}
+        spelling={<p>spelling content</p>}
+        settings={settings}
+        presence={presence}
+      >
         <p>properties content</p>
       </ContextPanel>
     </Wrapped>,
@@ -99,6 +104,20 @@ describe('ContextPanel', () => {
       await Promise.resolve();
     });
     expect(screen.getByText('assistant content')).toBeDefined();
+  });
+
+  it('THREE TABS, each showing its own content and only its own, and a click moves the one setting (ADR-0156)', async () => {
+    const settings = drawn();
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toStrictEqual(['Properties', 'Assistant', 'Spelling']);
+    await act(async () => {
+      screen.getByRole('tab', { name: 'Spelling' }).click();
+      await Promise.resolve();
+    });
+    expect(settings.get(CONTEXT_PANEL_TAB_SETTING.id)).toBe('spelling');
+    expect(screen.getByText('spelling content')).toBeDefined();
+    // CONTROL: neither of the other two is drawn beside it, so the content above is the tab's and not a list of all.
+    expect(screen.queryByText('properties content')).toBeNull();
+    expect(screen.queryByText('assistant content')).toBeNull();
   });
 
   it('a STORED collapse is what opens', () => {

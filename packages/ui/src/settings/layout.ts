@@ -217,14 +217,15 @@ export const FLOAT_BAR_POSITION_SETTING: SettingDefinition<typeof FLOAT_BAR_POSI
  * The document panel's rule one side over: the setting is the one owner of which tab shows,
  * so a command that opens the assistant and a person clicking the tab move the same value.
  * **Properties by default** — the panel held only that until this tab arrived, and a person
- * who has not asked for the assistant should not find their panel replaced by it.
+ * who has not asked for the assistant should not find their panel replaced by it. **Spelling** is the third
+ * tab (ADR-0156), opened by the Spell check command.
  */
 export const CONTEXT_PANEL_TAB_SETTING: SettingDefinition<
-  z.ZodEnum<{ properties: 'properties'; assistant: 'assistant' }>
+  z.ZodEnum<{ properties: 'properties'; assistant: 'assistant'; spelling: 'spelling' }>
 > = {
   id: 'appearance.context-panel-tab',
   title: CONTEXT_PANEL_TAB_TITLE,
-  schema: z.enum(['properties', 'assistant']),
+  schema: z.enum(['properties', 'assistant', 'spelling']),
   fallback: 'properties',
   category: 'appearance',
   remembered: true,

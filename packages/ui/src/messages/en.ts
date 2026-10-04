@@ -742,19 +742,39 @@ export const PAGE_STRUCTURE_IMAGES = messageKey('dialog.page-structure.images');
 export const PAGE_STRUCTURE_TRUNCATED = messageKey('dialog.page-structure.truncated');
 export const PAGE_STRUCTURE_REFUSED = messageKey('dialog.page-structure.refused');
 export const SPELL_CHECK_COMMAND_TITLE = messageKey('command.spell-check.title');
-export const SPELL_CHECK_TITLE = messageKey('dialog.spell-check.title');
-export const SPELL_CHECK_LANGUAGE = messageKey('dialog.spell-check.language');
 export const SPELL_CHECK_LANGUAGE_EN = messageKey('dialog.spell-check.language-en');
-export const SPELL_CHECK_CLEAN = messageKey('dialog.spell-check.clean');
-export const SPELL_CHECK_UNAVAILABLE = messageKey('dialog.spell-check.unavailable');
-export const SPELL_CHECK_PARTIAL = messageKey('dialog.spell-check.partial');
-export const SPELL_CHECK_OCCURRENCES = messageKey('dialog.spell-check.occurrences');
-export const SPELL_CHECK_FIRST_PAGE = messageKey('dialog.spell-check.first-page');
-export const SPELL_CHECK_SUGGESTIONS = messageKey('dialog.spell-check.suggestions');
-export const SPELL_CHECK_NO_SUGGESTIONS = messageKey('dialog.spell-check.no-suggestions');
-export const SPELL_CHECK_ADD = messageKey('dialog.spell-check.add');
-export const SPELL_CHECK_ADDED = messageKey('dialog.spell-check.added');
-export const SPELL_CHECK_SAVE = messageKey('dialog.spell-check.save');
+export const CONTEXT_PANEL_TAB_SPELLING = messageKey('surface.context-panel.tab-spelling');
+export const SPELLING_INTRO = messageKey('surface.spelling.intro');
+export const SPELLING_START = messageKey('surface.spelling.start');
+export const SPELLING_LANGUAGE = messageKey('surface.spelling.language');
+export const SPELLING_READING = messageKey('surface.spelling.reading');
+export const SPELLING_STOP = messageKey('surface.spelling.stop');
+export const SPELLING_UNAVAILABLE = messageKey('surface.spelling.unavailable');
+export const SPELLING_REFUSED = messageKey('surface.spelling.refused');
+export const SPELLING_CLEAN = messageKey('surface.spelling.clean');
+export const SPELLING_DONE = messageKey('surface.spelling.done');
+export const SPELLING_AGAIN = messageKey('surface.spelling.again');
+export const SPELLING_WORD = messageKey('surface.spelling.word');
+export const SPELLING_WHERE_TEXT = messageKey('surface.spelling.where-text');
+export const SPELLING_WHERE_COMMENT = messageKey('surface.spelling.where-comment');
+export const SPELLING_WHERE_FIELD = messageKey('surface.spelling.where-field');
+export const SPELLING_SUGGESTIONS = messageKey('surface.spelling.suggestions');
+export const SPELLING_NO_SUGGESTIONS = messageKey('surface.spelling.no-suggestions');
+export const SPELLING_CHANGE_TO = messageKey('surface.spelling.change-to');
+export const SPELLING_REPLACE = messageKey('surface.spelling.replace');
+export const SPELLING_REPLACE_ALL = messageKey('surface.spelling.replace-all');
+export const SPELLING_IGNORE = messageKey('surface.spelling.ignore');
+export const SPELLING_IGNORE_ALL = messageKey('surface.spelling.ignore-all');
+export const SPELLING_ADD = messageKey('surface.spelling.add');
+export const SPELLING_ALSO = messageKey('surface.spelling.also');
+export const SPELLING_OPTION_COMMENTS = messageKey('surface.spelling.option-comments');
+export const SPELLING_OPTION_FIELDS = messageKey('surface.spelling.option-fields');
+export const SPELLING_CHANGED = messageKey('surface.spelling.changed');
+export const SPELLING_NOT_SHOWN = messageKey('surface.spelling.not-shown');
+export const SPELLING_DICTIONARY_FULL = messageKey('surface.spelling.dictionary-full');
+export const SPELLING_WORD_TOO_LONG = messageKey('surface.spelling.word-too-long');
+export const SPELLING_COMMENTS_TITLE = messageKey('setting.editing.spelling-comments.title');
+export const SPELLING_FIELDS_TITLE = messageKey('setting.editing.spelling-fields.title');
 export const OCR_COMMAND_TITLE = messageKey('command.ocr.title');
 export const OCR_EXPORT_COMMAND_TITLE = messageKey('command.ocr-export.title');
 export const ENHANCE_COMMAND_TITLE = messageKey('command.enhance-scans.title');
@@ -1674,6 +1694,7 @@ export const ASSISTANT_POST_REPLY = messageKey('assistant.post-reply');
 export const CONTEXT_PANEL_TAB_TITLES = {
   properties: CONTEXT_PANEL_TAB_PROPERTIES,
   assistant: CONTEXT_PANEL_TAB_ASSISTANT,
+  spelling: CONTEXT_PANEL_TAB_SPELLING,
 } as const;
 export const QUICK_TOOLBAR_OPEN_TITLE = messageKey('setting.appearance-quick-toolbar-open.title');
 export const NEXT_PANE_TITLE = messageKey('command.next-pane.title');
@@ -2293,7 +2314,6 @@ export const SIGNATURES_CERTIFICATE = messageKey('dialog.signatures.certificate'
  * noun rather than an activity.
  */
 export const WORD_COUNT_PROGRESS = messageKey('task.word-count');
-export const SPELL_CHECK_PROGRESS = messageKey('task.spell-check');
 /**
  * Recognition's own name while it runs.
  *
@@ -2838,24 +2858,42 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // NAMES THE PAGE, because the command acts on the one in front of the reader
   // and the ribbon has no other way to say so. "Replace text" alone reads as
   // find-and-replace, which is a different row and a different scope.
-  [SPELL_CHECK_TITLE]: 'Spell check',
-  [SPELL_CHECK_LANGUAGE]: 'Checked against {language}',
   [SPELL_CHECK_LANGUAGE_EN]: 'English',
-  // SAID OUT LOUD. A dialog that opened empty is indistinguishable from one
-  // whose check never ran, and *found nothing* is the answer a reader was
-  // hoping for — which is exactly when it needs stating rather than implying.
-  [SPELL_CHECK_CLEAN]: 'No misspellings found.',
-  [SPELL_CHECK_UNAVAILABLE]:
-    'The spelling dictionary could not be loaded, so nothing was checked.',
-  [SPELL_CHECK_PARTIAL]: 'Checked {counted} of {total, plural, one {# page} other {# pages}} — this list is incomplete.',
-  [SPELL_CHECK_OCCURRENCES]: '{count, plural, one {# time} other {# times}}',
-  [SPELL_CHECK_FIRST_PAGE]: 'first on page {page}',
-  [SPELL_CHECK_SUGGESTIONS]: 'Suggestions',
-  [SPELL_CHECK_NO_SUGGESTIONS]: 'No suggestions',
-  [SPELL_CHECK_ADD]: 'Add {word} to dictionary',
-  [SPELL_CHECK_ADDED]: 'Added to your dictionary',
-  [SPELL_CHECK_SAVE]:
-    '{count, plural, =0 {Save to your dictionary} one {Save one word to your dictionary} other {Save # words to your dictionary}}',
+  [CONTEXT_PANEL_TAB_SPELLING]: 'Spelling',
+  [SPELLING_INTRO]: 'Goes through the document a word at a time and shows each word it does not recognise on the page.',
+  [SPELLING_START]: 'Check spelling',
+  [SPELLING_LANGUAGE]: 'Checked against {language}',
+  [SPELLING_READING]: 'Checking page {checked} of {count}',
+  [SPELLING_STOP]: 'Stop',
+  [SPELLING_UNAVAILABLE]: 'The spelling dictionary could not be loaded, so nothing was checked.',
+  [SPELLING_REFUSED]: 'The document could not be read, so its spelling was not checked.',
+  // SAID OUT LOUD. A panel that showed nothing is indistinguishable from a check that never ran, and *found nothing*
+  // is the answer a reader was hoping for, which is exactly when it needs stating rather than implying.
+  [SPELLING_CLEAN]: 'No misspellings found.',
+  [SPELLING_DONE]:
+    '{replaced, plural, =0 {Spelling checked. No words were changed.} one {Spelling checked. One word was changed.} other {Spelling checked. # words were changed.}}',
+  [SPELLING_AGAIN]: 'Check again',
+  [SPELLING_WORD]: 'Not in the dictionary',
+  [SPELLING_WHERE_TEXT]: 'Page {page}',
+  [SPELLING_WHERE_COMMENT]: 'A comment on page {page}',
+  [SPELLING_WHERE_FIELD]: 'The field “{name}” on page {page}',
+  [SPELLING_SUGGESTIONS]: 'Suggestions',
+  [SPELLING_NO_SUGGESTIONS]: 'No suggestions',
+  [SPELLING_CHANGE_TO]: 'Change to',
+  [SPELLING_REPLACE]: 'Replace',
+  [SPELLING_REPLACE_ALL]: 'Replace all',
+  [SPELLING_IGNORE]: 'Ignore',
+  [SPELLING_IGNORE_ALL]: 'Ignore all',
+  [SPELLING_ADD]: 'Add to dictionary',
+  [SPELLING_ALSO]: 'Also check',
+  [SPELLING_OPTION_COMMENTS]: 'Comments',
+  [SPELLING_OPTION_FIELDS]: 'Form fields',
+  [SPELLING_CHANGED]: 'Nothing was changed: this text changed after it was checked. It has been read again.',
+  [SPELLING_NOT_SHOWN]: 'Nothing was changed: the page was not on screen yet. It is now, so choose Replace again.',
+  [SPELLING_DICTIONARY_FULL]: 'Your dictionary is full, so this word was not added.',
+  [SPELLING_WORD_TOO_LONG]: 'This word is too long for your dictionary, so it was not added.',
+  [SPELLING_COMMENTS_TITLE]: 'Check the spelling of comments',
+  [SPELLING_FIELDS_TITLE]: 'Check the spelling of form fields',
   // NAMES WHAT IT PRODUCES, not the technique. *OCR* is the name of the thing in
   // the ribbon group, where a reader who knows the word will look for it; the
   // command says what happens to their document.
@@ -4997,7 +5035,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [GROUP_CONVERT]: 'Convert',
   [GROUP_ACCESSIBILITY]: 'Accessibility',
   [WORD_COUNT_PROGRESS]: 'Counting words',
-  [SPELL_CHECK_PROGRESS]: 'Checking spelling',
   [OCR_PROGRESS]: 'Recognising text',
   // NAMES THE READ, which is what the bar actually counts: *looking for scans*.
   [ENHANCE_PROGRESS]: 'Looking for scanned pages',

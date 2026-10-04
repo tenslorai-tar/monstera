@@ -167,19 +167,6 @@ const SHORTCUTS = [
   { id: 'app.keyboard-shortcuts', title: KEYBOARD_SHORTCUTS_COMMAND_TITLE, chord: 'Ctrl+/', fallback: 'Ctrl+/', also: [] },
 ];
 
-const MISSPELLINGS = [
-  { word: 'recieve', occurrences: 3, firstPage: 0, suggestions: ['receive'] },
-  { word: 'seperate', occurrences: 2, firstPage: 1, suggestions: ['separate', 'desperate'] },
-  { word: 'occured', occurrences: 1, firstPage: 2, suggestions: ['occurred', 'occur'] },
-  { word: 'accomodation', occurrences: 1, firstPage: 4, suggestions: ['accommodation'] },
-  { word: 'Northgate', occurrences: 6, firstPage: 0, suggestions: [] },
-];
-const MANY_WORDS = [
-  'adress', 'begining', 'beleive', 'calender', 'comittee', 'concious', 'definately', 'embarass', 'enviroment',
-  'existance', 'foriegn', 'goverment', 'harrass', 'immediatly', 'independant', 'knowlege', 'liason', 'maintainance',
-  'neccessary', 'noticable', 'occassion', 'persistant', 'posession', 'prefered', 'publically', 'recomend', 'refered',
-  'relevent', 'succesful', 'tommorow', 'untill', 'wierd',
-];
 
 const STRUCTURE = [
   { role: 'Document', raw: 'Document', depth: 0, lines: 0 },
@@ -479,26 +466,6 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       },
     },
     { state: 'refused', props: { kind: 'refused', page: 2 } },
-  ],
-  'dialog.spell-check': [
-    { state: 'opened', props: { available: true, language: 'en', misspellings: MISSPELLINGS, pagesChecked: 12, pageCount: 12 } },
-    {
-      state: 'added',
-      props: { available: true, language: 'en', misspellings: MISSPELLINGS, pagesChecked: 12, pageCount: 12 },
-      steps: [press('Add Northgate to dictionary')],
-    },
-    { state: 'empty', props: { available: true, language: 'en', misspellings: [], pagesChecked: 12, pageCount: 12 } },
-    {
-      state: 'long',
-      props: {
-        available: true,
-        language: 'en',
-        misspellings: MANY_WORDS.map((word, at) => ({ word, occurrences: (at % 4) + 1, firstPage: at % 12, suggestions: [] })),
-        pagesChecked: 9,
-        pageCount: 12,
-      },
-    },
-    { state: 'unavailable', props: { available: false, language: 'en', misspellings: [], pagesChecked: 0, pageCount: 12 } },
   ],
   'dialog.ocr': [
     { state: 'opened', props: { pages: [0], languages: ['eng', 'fra', 'deu', 'spa'], chosen: ['eng'], servicesReady: false } },

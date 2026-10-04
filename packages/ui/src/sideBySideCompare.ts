@@ -123,7 +123,7 @@ async function walk(
   signal: AbortSignal,
   onProgress: (done: number, total: number) => void,
 ): Promise<ComparisonOutcome> {
-  // READ THROUGH A CALL, for `checkSpellingCommand`'s reason: the signal moves across every await.
+  // READ THROUGH A CALL rather than once into a variable: the signal can be aborted across any await below.
   const aborted = (): boolean => signal.aborted;
 
   const [leftMarks, rightMarks] = await Promise.all([annotationsOf(client, left), annotationsOf(client, right)]);

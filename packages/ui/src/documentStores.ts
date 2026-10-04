@@ -9,6 +9,7 @@ import {
 import { type StoreApi, createStore } from 'zustand/vanilla';
 
 import type { ReplyTarget } from './assistantRequest.js';
+import type { SpellingReview } from './spelling/review.js';
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
 
 /** The documents an *All Open Docs* ask named, and the open tabs past its bound that did not go (ADR-0134). */
@@ -221,6 +222,12 @@ export interface DocumentState {
    * as every other piece of state here is; emptied whenever the version moves.
    */
   readonly selectedPages: readonly number[];
+  /**
+   * This document's spelling review (ADR-0156), or `undefined` with none. Per document for {@link conversation}'s
+   * reason: a review that outlived its document, or followed a tab switch, would offer one file's words to change in
+   * another.
+   */
+  readonly spelling: SpellingReview | undefined;
 }
 
 export interface DocumentActions {
@@ -325,6 +332,9 @@ export interface DocumentActions {
   /** Records the Left · Right · Both choice for this conversation. */
   readonly choseSides: (sides: AskSides) => void;
 
+  /** Replaces this document's spelling review — `reviewRun.ts` is its one writer. */
+  readonly reviewSpelling: (review: SpellingReview | undefined) => void;
+
   /**
    * Records how many pages the parser found.
    *
@@ -378,6 +388,7 @@ export function createDocumentStore(
     conversation: [],
     sides: undefined,
     selectedPages: [],
+    spelling: undefined,
     observed: (next) => {
       if (next <= get().version) return false;
       // THE SELECTION GOES WITH THE VERSION IT WAS MADE AT (ADR-0104): a page number means nothing across a
@@ -464,6 +475,9 @@ export function createDocumentStore(
     },
     converse: (turns) => {
       set({ conversation: turns });
+    },
+    reviewSpelling: (review) => {
+      set({ spelling: review });
     },
     choseSides: (sides) => {
       set({ sides });

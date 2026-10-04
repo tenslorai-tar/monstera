@@ -41,6 +41,8 @@ import {
   EDITING_AZURE_ENDPOINT_TITLE,
   EDITING_AZURE_KEY_TITLE,
   EDITING_PERSONAL_DICTIONARY_TITLE,
+  SPELLING_COMMENTS_TITLE,
+  SPELLING_FIELDS_TITLE,
   MEASURE_RATIO_DESCRIPTION,
   MEASURE_RATIO_TITLE,
   MEASURE_UNIT_TITLE,
@@ -287,6 +289,28 @@ export const PERSONAL_DICTIONARY_SETTING: SettingDefinition<
   // coped with by every reader (`SettingsStore.set`).
   schema: z.array(z.string().trim().min(1).max(128)).max(MAX_PERSONAL_WORDS),
   fallback: [],
+  category: 'editing',
+};
+
+/**
+ * Whether a spelling review covers the words of comments, and of text form fields (ADR-0156 Decision 2). Both on by
+ * default: a review is asked of the document, and a comment or a field is words the document carries. Settings rather
+ * than the panel's own state, so a person who turns one off finds it off in the next review; the panel shows them as
+ * its options.
+ */
+export const SPELLING_COMMENTS_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'editing.spelling-comments',
+  title: SPELLING_COMMENTS_TITLE,
+  schema: z.boolean(),
+  fallback: true,
+  category: 'editing',
+};
+
+export const SPELLING_FIELDS_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'editing.spelling-fields',
+  title: SPELLING_FIELDS_TITLE,
+  schema: z.boolean(),
+  fallback: true,
   category: 'editing',
 };
 
