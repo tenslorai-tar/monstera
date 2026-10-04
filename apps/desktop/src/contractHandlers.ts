@@ -3454,12 +3454,14 @@ function cloudHandlers(
       try {
         // NEVER BREAKING A SIGNATURE UNASKED: a save-back is not the place a person is told, so a save that would break
         // one is not written and the save-back answers that it failed.
-        const saved = await deps.commands.save(docId, { breakSignatures: false });
-        if (saved.kind !== 'saved') return ok({ kind: 'save-failed' as const });
+        // THE IMAGE IS TAKEN WITH THE SAVE, in its lane entry (CR-DOC-04): asked for afterwards, it was whatever the
+        // document held by then, and a command landing between the two was uploaded under the version saved here.
+        const { outcome: saved, image } = await deps.commands.saveAndTake(docId, { breakSignatures: false });
+        if (saved.kind !== 'saved' || image === null) return ok({ kind: 'save-failed' as const });
         // THE UPLOAD'S REFUSAL IS CAUGHT HERE, where the saved version is in scope, so a refusal
         // after the working copy was written still says which version it holds.
         try {
-          await deps.cloud.saveBack(docId, await deps.commands.currentImage(docId));
+          await deps.cloud.saveBack(docId, image);
         } catch (thrown) {
           return ok({ ...cloudRefusal(thrown), version: saved.version });
         }

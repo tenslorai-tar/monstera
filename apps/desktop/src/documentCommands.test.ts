@@ -1590,6 +1590,32 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       expect(answers).toStrictEqual(['read-only', 'held']);
     });
 
+    it('SAVE AND TAKE answers the image of the version it saved, though a command is queued right behind it (CR-DOC-04)', async () => {
+      const rotationIn = async (bytes: Uint8Array): Promise<number> => {
+        const opened = await mupdfWriter.open(bytes);
+        try {
+          return await withDocument(opened, (document) => document.loadPage(0).getObject().get('Rotate').asNumber());
+        } finally {
+          await mupdfWriter.close(opened);
+        }
+      };
+      const t = await aSavableDocument();
+      await t.commands.execute(t.saved, rotateOnce);
+
+      // QUEUED BEFORE EITHER IS AWAITED, so the second rotation is next in the lane after the save's entry: the
+      // interleaving the old order lost, where the image was asked for as an entry of its own after this one.
+      const taking = t.commands.saveAndTake(t.saved, { breakSignatures: false });
+      const later = t.commands.execute(t.saved, rotateOnce);
+      const [{ outcome, image }] = await Promise.all([taking, later]);
+
+      expect(outcome.kind).toBe('saved');
+      if (image === null) throw new Error('a save that landed took no image');
+      // THE SAVED VERSION'S, as the file on disk holds it: one quarter turn.
+      expect([await rotationIn(image), await rotationIn(new Uint8Array(readFileSync(t.path)))]).toStrictEqual([90, 90]);
+      // CONTROL: the document moved on behind it, so an image asked for now — the old second entry — would not match.
+      expect(await rotationIn(await t.commands.currentImage(t.saved))).toBe(180);
+    });
+
     it('HOLDS BACK a save that would break signatures — the file untouched — and writes it once the person agreed', async () => {
       const asked: unknown[] = [];
       const { commands, saved, path, before } = await aSavableDocument((session) => {

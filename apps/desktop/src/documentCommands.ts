@@ -5931,8 +5931,29 @@ export class DocumentCommands {
    * `breaks-signatures` with nothing written. In the lane, so no command can land between the question and the write.
    */
   async save(docId: DocId, request: { readonly breakSignatures: boolean }): Promise<SaveRequestOutcome> {
-    // A LIST AND NOT A NULLABLE LOCAL: the lane writes it from a closure, which control-flow analysis cannot see.
+    return (await this.#saveThen(docId, request, false)).outcome;
+  }
+
+  /**
+   * Saves as {@link save} does and, where the save landed, answers the document's image TAKEN IN THE SAME LANE ENTRY:
+   * what a cloud save-back uploads (CR-DOC-04). Taken as a second lane entry it was whatever the document held when
+   * that entry ran, so a command landing between the two was uploaded under the version the save answered.
+   */
+  async saveAndTake(
+    docId: DocId,
+    request: { readonly breakSignatures: boolean },
+  ): Promise<{ readonly outcome: SaveRequestOutcome; readonly image: Uint8Array | null }> {
+    return this.#saveThen(docId, request, true);
+  }
+
+  async #saveThen(
+    docId: DocId,
+    request: { readonly breakSignatures: boolean },
+    take: boolean,
+  ): Promise<{ readonly outcome: SaveRequestOutcome; readonly image: Uint8Array | null }> {
+    // LISTS AND NOT NULLABLE LOCALS: the lane writes them from a closure, which control-flow analysis cannot see.
     const removalSavedAt: string[] = [];
+    const taken: Uint8Array[] = [];
     const { value } = await this.#documents.run(docId, async (context): Promise<SaveRequestOutcome> => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -5973,19 +5994,25 @@ export class DocumentCommands {
       if (saved.backedUp && newest !== undefined) await this.#save.provenance.made(newest);
       // A REMOVAL'S SAVE has just tried each copy, so what it could not delete is its answer; any other save tries the
       // copies this document still owes again, which is what keeps a held copy from being kept for ever.
+      let outcome: SaveRequestOutcome;
       if (removal) {
         const cleared = await this.#clearCopies(context);
         await this.#renewSessions(docId, context.path, saved.bytes);
         removalSavedAt.push(context.path);
-        return { ...saved, cleared: cleared.copies, held: cleared.held };
+        outcome = { ...saved, cleared: cleared.copies, held: cleared.held };
+      } else {
+        outcome = { ...saved, cleared: null, held: await this.#retryHeld(context) };
       }
-      return { ...saved, cleared: null, held: await this.#retryHeld(context) };
+      // THE IMAGE OF THE VERSION JUST SAVED, before this entry ends and the next command can run. From the sessions
+      // as they are now: a removal's save has just renewed them from the file it wrote.
+      if (take) taken.push(await this.#save.flush(docId, this.#engine.sessions(docId) ?? sessions));
+      return outcome;
     });
 
     // THE RECENT PICTURE IS RETAKEN after the lane, which drawing page 1 needs (ADR-0164): the one kept at open shows
     // the page as it was. Not awaited, as at open: the save has answered, and a retake reports its own failure.
     for (const path of removalSavedAt) void this.#recentPicture.retake(docId, path);
-    return value;
+    return { outcome: value, image: taken[0] ?? null };
   }
 
   /**

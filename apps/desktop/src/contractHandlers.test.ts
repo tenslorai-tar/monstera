@@ -2078,9 +2078,13 @@ describe('cloud.saveBack', () => {
       },
     };
     const commands = {
-      save: () =>
-        Promise.resolve(saved === 'saved' ? { kind: 'saved' as const, version: asDocVersion(9) } : { kind: 'write-failed' as const }),
-      currentImage: () => Promise.resolve(new Uint8Array([1, 2, 3])),
+      // THE IMAGE COMES WITH THE SAVE, from its lane entry (CR-DOC-04); `currentImage` is not this handler's to ask.
+      saveAndTake: () =>
+        Promise.resolve(
+          saved === 'saved'
+            ? { outcome: { kind: 'saved' as const, version: asDocVersion(9) }, image: new Uint8Array([1, 2, 3]) }
+            : { outcome: { kind: 'write-failed' as const }, image: null },
+        ),
     } as unknown as DocumentCommands;
     const handlers = createContractHandlers({
       assistant: INERT_ASSISTANT,
@@ -2123,7 +2127,8 @@ settings: createEphemeralSettings(),
       ok: true,
       value: { kind: 'saved-back', version: asDocVersion(9) },
     });
-    expect(uploaded).toHaveLength(1);
+    // THE SAVE'S OWN IMAGE is what goes up.
+    expect(uploaded).toStrictEqual([new Uint8Array([1, 2, 3])]);
   });
 
   it('a refusal AFTER the working copy was saved still names the version, and the refusal', async () => {
