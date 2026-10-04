@@ -4090,16 +4090,45 @@ optgroup {
   font-size: var(--font-chrome-12);
 }
 
+/* THE SECOND-DOCUMENT ROW (`SourceDocumentRow`): the open documents and *Choose file…* side by side at the row's right,
+   the select giving way first, since its list shows a long name whole and the button's words must not be cut. */
+.m-source-document {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.m-source-document > select {
+  flex: 0 1 auto;
+}
+
+/* THE BUTTON KEEPS ITS WORDS ON ONE LINE: beside a long name it was squeezed onto two (the gallery's long state). */
+.m-source-document > .m-button {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* REPLACE'S PAIRING SENTENCE, `.m-dialog-row__problem`'s size and colour, under the rows it is about. */
+.m-replace-page__problem {
+  margin: var(--space-8) 0 0;
+  color: var(--text);
+  font-size: var(--font-chrome-12);
+}
+
 /* THE SETTINGS ROWS' DROP-DOWNS TOO (v5-10 draws them as fields): they were browser-default boxes beside styled segmented
    controls and text fields, so one dialog read as two families. A dialog row's (the dialog pattern, 2026-10-02) is the
    same field. */
 .m-document-choice select,
 .m-settings-row__control select,
 .m-dialog-row__control select {
-  padding: var(--space-8);
+  /* THE TEXT FIELD'S OWN MEASURES (`.m-input`): with 8 px padding, a 13 px face and a 4 px corner the drop-down stood
+     6 px taller than the field and the button beside it in the same row, so a row read as two families. */
+  padding: var(--space-6) var(--space-8);
   border: 1px solid var(--border-control);
-  border-radius: var(--radius-4);
-  font-size: var(--font-chrome-13);
+  border-radius: var(--radius-6);
+  font-size: var(--font-chrome-12);
 }
 
 .m-document-choice select:focus-visible,

@@ -59,7 +59,7 @@ is not available.
 - [ ] **Insert blank page** — Pages · `document.insert-blank-page` · Shows: on screen · Help: *Insert a blank page*
 - [ ] **Insert image…** — Pages · `document.insert-image` · Shows: on screen · Help: *Add a picture as a new page*
 - [ ] **Extract pages…** — Pages · `document.extract-pages` · Shows: a toast · Help: *Extract pages to a new PDF*
-- [ ] **Replace page…** — Pages · `document.replace-page` · Shows: on screen · Help: *Replace a page*
+- [ ] **Replace pages…** — Pages · `document.replace-page` · Shows: on screen · Help: *Replace pages*
 - [ ] **Duplicate page** — Pages · `document.duplicate-page` · Shows: on screen · Help: *Duplicate a page*
 - [ ] **Delete page** — Pages · `document.delete-page` · Shows: on screen · Help: *Delete pages*
 - [ ] **Move page up** — Pages · `document.move-page-earlier` · Shows: on screen · Help: *Change the order of pages*

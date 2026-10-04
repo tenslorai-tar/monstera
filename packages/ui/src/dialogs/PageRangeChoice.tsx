@@ -42,14 +42,22 @@ export interface PageRange {
   readonly proceed: () => readonly number[] | undefined;
 }
 
+/** Where a page-range row starts: which option, and what is typed. */
+export interface PageRangeStart {
+  readonly every: boolean;
+  readonly text: string;
+}
+
 /**
- * The state of one page-range row: *Every page* first, nothing typed, nothing tried.
+ * The state of one page-range row: *Every page* first and nothing typed, unless `start` says otherwise — a dialog
+ * reopened after *Choose file…* starts where the person left it, and Replace starts on as many pages as it replaces.
+ * Nothing is tried either way.
  *
  * @param pageCount how many pages the document has — what *Every page* names and what a typed page is checked against
  */
-export function usePageRange(pageCount: number): PageRange {
-  const [every, setEvery] = useState(true);
-  const [text, setText] = useState('');
+export function usePageRange(pageCount: number, start: PageRangeStart = { every: true, text: '' }): PageRange {
+  const [every, setEvery] = useState(start.every);
+  const [text, setText] = useState(start.text);
   const attempt = useAttempt();
   const parsed = parsePageRanges(text, pageCount);
   const named = every ? Array.from({ length: pageCount }, (_unused, page) => page) : parsed.ok ? parsed.value : [];

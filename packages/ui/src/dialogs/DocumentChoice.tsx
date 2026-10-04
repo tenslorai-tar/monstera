@@ -2,7 +2,10 @@ import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
+import { SOURCE_CHOOSE_FILE, SOURCE_NONE_OPEN, SOURCE_PAGE_COUNT } from '../messages/en.js';
+import { Button } from '../primitives/Button.js';
 import { DialogRow } from '../primitives/Dialog.js';
+import type { SourceDocument } from './sourceDocuments.js';
 
 /** One open document, as a picker needs to name it. */
 export interface DocumentChoice {
@@ -54,26 +57,88 @@ export function DocumentChoiceSelect({
   /** A `data-` hook so each dialog's control is addressable in its own test. */
   readonly marker: string;
 }): ReactElement {
-  const { _ } = useLingui();
-
-  // A ROW OF THE DIALOG PATTERN (2026-10-02): the question at the left, the picker at the right. The row prints the
-  // question; the select is named by the same words, so what is seen and what is announced are one string.
+  // A ROW OF THE DIALOG PATTERN (2026-10-02): the question at the left, the picker at the right.
   return (
     <DialogRow label={label}>
-      <select
-        aria-label={_(label)}
-        data-document-choice={marker}
-        value={value}
-        onChange={(event) => {
-          onChange(event.target.value);
-        }}
-      >
-        {choices.map((choice) => (
-          <option key={choice.docId} value={choice.docId}>
-            {choice.name}
-          </option>
-        ))}
-      </select>
+      <DocumentSelect label={label} choices={choices} value={value} onChange={onChange} marker={marker} />
+    </DialogRow>
+  );
+}
+
+/** The select itself, named by the row's own question, so what is seen and what is announced are one string. */
+function DocumentSelect({
+  label,
+  choices,
+  value,
+  onChange,
+  marker,
+}: {
+  readonly label: MessageKey;
+  readonly choices: readonly DocumentChoice[];
+  readonly value: string;
+  readonly onChange: (docId: string) => void;
+  readonly marker: string;
+}): ReactElement {
+  const { _ } = useLingui();
+  return (
+    <select
+      aria-label={_(label)}
+      data-document-choice={marker}
+      value={value}
+      onChange={(event) => {
+        onChange(event.target.value);
+      }}
+    >
+      {choices.map((choice) => (
+        <option key={choice.docId} value={choice.docId}>
+          {choice.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * Choose the document a page command copies from: an open one, or a file picked with *Choose file…*.
+ *
+ * The four second-document dialogs' one row (Replace pages, Insert from PDF, Merge, Import page as layer). The note
+ * under the question says how many pages the chosen document has, because each of those dialogs then asks which of
+ * them, or where they go. With no other document open there is nothing to select, and the row says so beside the one
+ * thing that can be done: *Choose file…*.
+ *
+ * *Choose file…* does not pick here. It calls `onChooseFile`, and the dialog answers with that request
+ * (`chooseFileAnswer`): the command opens the file through the one open route (ADR-0040 Decision 2), so the file
+ * arrives as a tab, and asks again with it chosen.
+ */
+export function SourceDocumentRow({
+  label,
+  choices,
+  value,
+  onChange,
+  onChooseFile,
+  marker,
+}: {
+  readonly label: MessageKey;
+  readonly choices: readonly SourceDocument[];
+  readonly value: string;
+  readonly onChange: (docId: string) => void;
+  readonly onChooseFile: () => void;
+  /** A `data-` hook so each dialog's control is addressable in its own test. */
+  readonly marker: string;
+}): ReactElement {
+  const chosen = choices.find((choice) => choice.docId === value);
+  return (
+    <DialogRow
+      label={label}
+      note={chosen === undefined ? SOURCE_NONE_OPEN : SOURCE_PAGE_COUNT}
+      noteValues={chosen === undefined ? undefined : { count: chosen.pageCount }}
+    >
+      <div className="m-source-document">
+        {choices.length === 0 ? null : (
+          <DocumentSelect label={label} choices={choices} value={value} onChange={onChange} marker={marker} />
+        )}
+        <Button label={SOURCE_CHOOSE_FILE} onClick={onChooseFile} />
+      </div>
     </DialogRow>
   );
 }

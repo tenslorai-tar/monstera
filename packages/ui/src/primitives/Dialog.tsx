@@ -239,11 +239,14 @@ export function Dialog({
 export function DialogRow({
   label,
   note,
+  noteValues,
   problem,
   children,
 }: {
   readonly label: MessageKey;
   readonly note?: MessageKey | undefined;
+  /** The note's values, for a note that counts or names something — a source document's pages. */
+  readonly noteValues?: Readonly<Record<string, string | number>> | undefined;
   /** Already translated, since a refusal names the part that was wrong; empty or absent while nothing is refused. */
   readonly problem?: string | undefined;
   readonly children: ReactNode;
@@ -253,7 +256,7 @@ export function DialogRow({
     <div className="m-dialog-row">
       <div className="m-dialog-row__text">
         <span className="m-dialog-row__label">{_(label)}</span>
-        {note === undefined ? null : <span className="m-dialog-row__note">{_(note)}</span>}
+        {note === undefined ? null : <span className="m-dialog-row__note">{_(note, noteValues)}</span>}
       </div>
       <div className="m-dialog-row__control">{children}</div>
       {problem === undefined || problem === '' ? null : (

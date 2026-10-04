@@ -299,7 +299,14 @@ export const REPLACE_PAGE_COMMAND_TITLE = messageKey('command.replace-page.title
 export const REPLACE_PAGE_TITLE = messageKey('dialog.replace-page.title');
 export const REPLACE_PAGE_LABEL = messageKey('dialog.replace-page.label');
 export const REPLACE_PAGE_WHICH = messageKey('dialog.replace-page.which');
+export const REPLACE_PAGE_COUNTS_DIFFER = messageKey('dialog.replace-page.counts-differ');
 export const REPLACE_PAGE_APPLY = messageKey('dialog.replace-page.apply');
+/** The four second-document dialogs' shared words (`SourceDocumentRow`): open a file as the source, and its size. */
+export const SOURCE_CHOOSE_FILE = messageKey('dialog.source-document.choose-file');
+export const SOURCE_PAGE_COUNT = messageKey('dialog.source-document.page-count');
+export const SOURCE_NONE_OPEN = messageKey('dialog.source-document.none-open');
+export const SOURCE_PAGES_NOTE = messageKey('dialog.source-document.pages-note');
+export const SOURCE_PAGES_EMPTY = messageKey('dialog.source-document.pages-empty');
 export const IMPORT_PAGE_AS_LAYER_COMMAND_TITLE = messageKey('command.import-page-as-layer.title');
 export const IMPORT_PAGE_AS_LAYER_TITLE = messageKey('dialog.import-page-as-layer.title');
 export const IMPORT_PAGE_AS_LAYER_LABEL = messageKey('dialog.import-page-as-layer.label');
@@ -4226,13 +4233,23 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [INSERT_FROM_PDF_POSITION]: 'Insert before page',
   [INSERT_FROM_PDF_RANGE]: 'Between 1 and {last}, where {last} puts it at the end.',
   [INSERT_FROM_PDF_APPLY]: 'Insert',
-  [REPLACE_PAGE_COMMAND_TITLE]: 'Replace page…',
-  [REPLACE_PAGE_TITLE]: 'Replace page',
-  [REPLACE_PAGE_LABEL]: 'Replace it with',
-  // NAMES THE PAGE, because this control destroys one and a reader must be able
-  // to check it is the page they mean before pressing.
-  [REPLACE_PAGE_WHICH]: 'Page {page} will be removed and replaced.',
-  [REPLACE_PAGE_APPLY]: 'Replace page',
+  [REPLACE_PAGE_COMMAND_TITLE]: 'Replace pages…',
+  [REPLACE_PAGE_TITLE]: 'Replace pages',
+  [REPLACE_PAGE_LABEL]: 'Replace with',
+  // NAMES THE PAGES, because this control destroys them and a reader must be able
+  // to check they are the pages they mean before pressing.
+  [REPLACE_PAGE_WHICH]:
+    '{count, plural, one {Page {pages} will be removed and replaced.} other {Pages {pages} will be removed and replaced.}}',
+  // SAID WHEN THE KERNEL WOULD REFUSE IT: pages apart pair one for one, so the counts must match. Pages apart are at
+  // least two, so the count is never one.
+  [REPLACE_PAGE_COUNTS_DIFFER]:
+    '{count, plural, other {Choose # pages to put in: the pages being replaced are not next to each other.}}',
+  [REPLACE_PAGE_APPLY]: '{count, plural, one {Replace page} other {Replace # pages}}',
+  [SOURCE_CHOOSE_FILE]: 'Choose file…',
+  [SOURCE_PAGE_COUNT]: '{count, plural, one {# page} other {# pages}}',
+  [SOURCE_NONE_OPEN]: 'No other document is open. Choose a file.',
+  [SOURCE_PAGES_NOTE]: 'Of the document above',
+  [SOURCE_PAGES_EMPTY]: 'Type the pages to take from the document above.',
   [IMPORT_PAGE_AS_LAYER_COMMAND_TITLE]: 'Import page as layer…',
   [IMPORT_PAGE_AS_LAYER_TITLE]: 'Import a page as a layer',
   [IMPORT_PAGE_AS_LAYER_LABEL]: 'Take the first page of',

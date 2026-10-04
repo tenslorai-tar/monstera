@@ -119,6 +119,7 @@ import {
   undoCommand,
   type SignedEditing,
 } from './documentCommands.js';
+import type { SourceCommandDeps } from './sourceDocuments.js';
 
 /**
  * What each document command hands back, and — more often — what it does not.
@@ -2447,58 +2448,162 @@ describe('delete pages — the mutation-dialog gate', () => {
     ]);
   });
 
-  it('replace-page sends replacePage for the page on screen', async () => {
-    const { client, sent } = recording();
+  /**
+   * A client answering each document's page count by its id — 4 for `doc-0`, 7 for `doc-2`, 5 for a picked `doc-9` —
+   * and recording every execute. Distinct counts, so a count offered against the wrong document is a different list.
+   * `doc-gone` answers `document-not-open`, a source closed in between.
+   */
+  function sourcesClient(): { readonly client: ContractClient; readonly executed: unknown[] } {
+    const counts: Readonly<Record<string, number>> = { 'doc-0': 4, 'doc-2': 7, 'doc-9': 5 };
+    const executed: unknown[] = [];
+    const client = createClient(channels, (id, params) => {
+      if (id === 'document.viewModel') {
+        const { docId } = params as { readonly docId: string };
+        const pageCount = counts[docId];
+        if (pageCount === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+        return Promise.resolve(ok({ version: asDocVersion(1), pageCount, rotations: [0] }));
+      }
+      executed.push(params);
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+    });
+    return { client, executed };
+  }
+
+  /** The replace command with the deps every case shares, and what each case varies. */
+  function replaceWith(
+    client: ContractClient,
+    ask: (id: string, props: unknown) => Promise<unknown>,
+    openSource: SourceCommandDeps['openSource'] = () => Promise.resolve({ kind: 'none' }),
+  ): ReturnType<typeof replacePageCommand> {
+    return replacePageCommand({ client, stamp, signatures, onApplied: () => undefined, ask, openSource });
+  }
+
+  it('replace offers each other document WITH ITS PAGE COUNT, names the page on show, and sends what it answered', async () => {
+    const { client, executed } = sourcesClient();
     const opened: unknown[] = [];
 
-    await replacePageCommand({
-      client,
-      stamp,
-      signatures,
-      onApplied: () => undefined,
-      ask: (id, props) => {
-        opened.push({ id, props });
-        return Promise.resolve({ source: 'doc-2' });
-      },
+    await replaceWith(client, (id, props) => {
+      opened.push({ id, props });
+      return Promise.resolve({ kind: 'replace', source: 'doc-2', sourcePages: [0, 1] });
     }).run(CONTEXT);
 
-    // THE DIALOG IS TOLD WHICH PAGE, because it destroys one and the reader has
-    // to be able to check it before pressing.
+    // THE DIALOG IS TOLD WHICH PAGES, because it destroys them and the reader has to be able to check before pressing.
     expect(opened).toStrictEqual([
       {
         id: 'dialog.replace-page',
         props: {
           choices: [
-            { docId: 'doc-0', name: 'Before' },
-            { docId: 'doc-2', name: 'After' },
+            { docId: 'doc-0', name: 'Before', pageCount: 4 },
+            { docId: 'doc-2', name: 'After', pageCount: 7 },
           ],
-          page: 3,
+          source: undefined,
+          pages: [3],
+          draft: undefined,
         },
       },
     ]);
-    // `at: 3` is `CONTEXT.page` — the page on screen, zero-based, unconverted.
-    // A command that sent `page + 1` would replace the page after the one the
-    // dialog just named, which the dialog's own sentence would not reveal.
-    expect(sent).toStrictEqual([
-      {
-        id: 'document.execute',
-        params: { docId: DOC, command: { kind: 'replacePage', source: 'doc-2', pages: [3], sourcePages: 'all', version: 1 } },
-      },
+    // `pages: [3]` is `CONTEXT.page`, zero-based and unconverted; the source pages go as one run.
+    expect(executed).toStrictEqual([
+      { docId: DOC, command: { kind: 'replacePage', source: 'doc-2', pages: [3], sourcePages: [[0, 1]], version: 1 } },
     ]);
   });
 
-  it('CONTROL: a DISMISSED replace dialog dispatches nothing', async () => {
-    const { client, sent } = recording();
+  it('replace acts on the TICKED pages, not the page on show', async () => {
+    const { client, executed } = sourcesClient();
+    const opened: unknown[] = [];
 
-    await replacePageCommand({
+    await replaceWith(client, (id, props) => {
+      opened.push(props);
+      return Promise.resolve({ kind: 'replace', source: 'doc-0', sourcePages: 'all' });
+    }).run({ ...CONTEXT, selectedPages: [1, 6] });
+
+    expect(opened).toMatchObject([{ pages: [1, 6] }]);
+    expect(executed).toStrictEqual([
+      { docId: DOC, command: { kind: 'replacePage', source: 'doc-0', pages: [1, 6], sourcePages: 'all', version: 1 } },
+    ]);
+  });
+
+  it('CHOOSE FILE opens a source by the one route, keeping this document on show, and asks again with it chosen', async () => {
+    const { client, executed } = sourcesClient();
+    const asked: unknown[] = [];
+    const kept: unknown[] = [];
+    const answers = [
+      { kind: 'choose-file', draft: { sourcePages: { every: false, text: '2' } } },
+      { kind: 'replace', source: 'doc-9', sourcePages: [1] },
+    ];
+
+    await replaceWith(
       client,
-      stamp,
-      signatures,
-      onApplied: () => undefined,
-      ask: () => Promise.resolve(undefined),
-    }).run(CONTEXT);
+      (_id, props) => {
+        asked.push(props);
+        return Promise.resolve(answers.shift());
+      },
+      (keep) => {
+        kept.push(keep);
+        return Promise.resolve({ kind: 'opened', docId: asDocId('doc-9'), name: 'Picked.pdf' });
+      },
+    ).run(CONTEXT);
 
-    expect(sent).toStrictEqual([]);
+    expect(kept).toStrictEqual([DOC]);
+    // THE PICKED FILE IS OFFERED WITH ITS OWN COUNT, chosen, and the person's entry comes back with it.
+    expect(asked[1]).toStrictEqual({
+      choices: [
+        { docId: 'doc-0', name: 'Before', pageCount: 4 },
+        { docId: 'doc-2', name: 'After', pageCount: 7 },
+        { docId: 'doc-9', name: 'Picked.pdf', pageCount: 5 },
+      ],
+      source: 'doc-9',
+      pages: [3],
+      draft: { sourcePages: { every: false, text: '2' } },
+    });
+    expect(executed).toStrictEqual([
+      { docId: DOC, command: { kind: 'replacePage', source: 'doc-9', pages: [3], sourcePages: [1], version: 1 } },
+    ]);
+  });
+
+  it('a pick that FAILED is said, and the dialog is asked again as it was', async () => {
+    const { client, executed } = sourcesClient();
+    const asked: { readonly id: string; readonly props: unknown }[] = [];
+    const answers: unknown[] = [{ kind: 'choose-file', draft: { sourcePages: { every: true, text: '' } } }, undefined, undefined];
+
+    await replaceWith(
+      client,
+      (id, props) => {
+        asked.push({ id, props });
+        return Promise.resolve(id === 'dialog.open-problem' ? undefined : answers.shift());
+      },
+      () => Promise.resolve({ kind: 'problem', reason: 'absent' }),
+    ).run(CONTEXT);
+
+    expect(asked.map((each) => each.id)).toStrictEqual(['dialog.replace-page', 'dialog.open-problem', 'dialog.replace-page']);
+    expect(asked[1]?.props).toStrictEqual({ reason: 'absent' });
+    expect(asked[2]?.props).toMatchObject({ source: undefined, draft: { sourcePages: { every: true, text: '' } } });
+    expect(executed).toStrictEqual([]);
+  });
+
+  it('a document whose count cannot be read is NOT offered, and no other open document still opens the dialog', async () => {
+    const { client } = sourcesClient();
+    const opened: unknown[] = [];
+    const tabs = [
+      { docId: asDocId('doc-gone'), version: asDocVersion(1), byteLength: 10, name: 'Closed meanwhile' },
+      { docId: DOC, version: asDocVersion(1), byteLength: 20, name: 'This one' },
+    ];
+
+    await replaceWith(client, (_id, props) => {
+      opened.push(props);
+      return Promise.resolve(undefined);
+    }).run({ ...CONTEXT, openDocuments: tabs });
+
+    // EMPTY, AND ASKED ALL THE SAME: Choose file is the way to a source now, not a message to open one first.
+    expect(opened).toMatchObject([{ choices: [] }]);
+  });
+
+  it('CONTROL: a DISMISSED replace dialog dispatches nothing', async () => {
+    const { client, executed } = sourcesClient();
+
+    await replaceWith(client, () => Promise.resolve(undefined)).run(CONTEXT);
+
+    expect(executed).toStrictEqual([]);
   });
 
   it("import-as-layer sends importPageAsLayer for the page on screen, named as the CHOSEN tab", async () => {

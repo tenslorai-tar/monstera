@@ -28,8 +28,8 @@ function inDialog(body: ReactNode, onOpenChange: (open: boolean) => void = () =>
 }
 
 const CHOICES = [
-  { docId: 'd-a', name: 'Alpha.pdf' },
-  { docId: 'd-b', name: 'Beta.pdf' },
+  { docId: 'd-a', name: 'Alpha.pdf', pageCount: 3 },
+  { docId: 'd-b', name: 'Beta.pdf', pageCount: 1 },
 ];
 
 /** Every dialog of the group, each with the action a person presses and the answer that press must give. */
@@ -90,10 +90,11 @@ const BODIES: readonly {
     answer: { source: 'd-a', at: 3 },
   },
   {
-    name: 'Replace page',
-    body: (resolve) => <ReplacePageBody choices={CHOICES} page={1} resolve={resolve} update={() => undefined} />,
+    name: 'Replace pages',
+    body: (resolve) => <ReplacePageBody choices={CHOICES} pages={[1]} resolve={resolve} update={() => undefined} />,
     action: 'Replace page',
-    answer: { source: 'd-a' },
+    // ONE PAGE FOR ONE: Alpha has three, so the dialog opens on its first.
+    answer: { kind: 'replace', source: 'd-a', sourcePages: [0] },
   },
   {
     name: 'Import page as layer',

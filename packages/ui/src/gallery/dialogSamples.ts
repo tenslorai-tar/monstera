@@ -129,6 +129,9 @@ const DOCUMENTS = [
   { docId: '00000000-0000-4000-8000-0000000000b3', name: 'Supplier contract.pdf' },
 ];
 const LONG_DOCUMENTS = [{ docId: '00000000-0000-4000-8000-0000000000b4', name: LONG_NAME }, ...DOCUMENTS];
+/** The same documents as a second-document dialog is offered them (`sourceDocuments.ts`), each with its page count. */
+const SOURCES = DOCUMENTS.map((document, index) => ({ ...document, pageCount: [12, 1, 4][index] ?? 1 }));
+const LONG_SOURCES = [{ docId: '00000000-0000-4000-8000-0000000000b4', name: LONG_NAME, pageCount: 230 }, ...SOURCES];
 
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 9, 1, 9, 30);
@@ -832,8 +835,13 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'long', props: { choices: LONG_DOCUMENTS, pageCount: 12 } },
   ],
   'dialog.replace-page': [
-    { state: 'opened', props: { choices: DOCUMENTS, page: 2 } },
-    { state: 'long', props: { choices: LONG_DOCUMENTS, page: 2 } },
+    // ONE PAGE FROM A TWELVE-PAGE FILE: the dialog opens on its first page, so the length is kept.
+    { state: 'opened', props: { choices: SOURCES, pages: [2] } },
+    // PAGES APART, which pair one for one.
+    { state: 'ticked', props: { choices: SOURCES, pages: [1, 4] } },
+    // NOTHING ELSE OPEN: Choose file is the way to a source.
+    { state: 'none-open', props: { choices: [], pages: [2] } },
+    { state: 'long', props: { choices: LONG_SOURCES, pages: [2] } },
   ],
   'dialog.import-page-as-layer': [
     { state: 'opened', props: { choices: DOCUMENTS, page: 2 } },

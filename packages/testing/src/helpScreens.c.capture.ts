@@ -505,7 +505,7 @@ test('replace-a-page-1', async ({ page }) => {
   await openAnother(page, 'Board minutes.pdf');
   await page.getByRole('navigation', { name: 'Open documents' }).getByRole('button', { name: 'Annual report.pdf', exact: true }).click();
   await goToPage(page, 2);
-  await runCommand(page, 'Replace page…');
+  await runCommand(page, 'Replace pages…');
   const dialog = await theDialog(page);
   await shoot(page, 'replace-a-page-1', dialog);
 });

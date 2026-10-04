@@ -27,11 +27,11 @@ import type { OpenedDocument } from './importMarkdown.js';
  * `replacePage` carries it, so a document that moved is refused by the bus rather than
  * having a different page replaced (ADR-0062's 2026-09-14 correction).
  *
- * ## ON ORGANIZE › PAGES, beside *Replace page*
+ * ## ON ORGANIZE › PAGES, beside *Replace pages*
  *
  * D9's section is the Tools ribbon, but its groups there are Create, OCR, Display and
  * Application, and none of them is about a page that already exists. The act this control
- * ends in is a page replaced, which is where *Replace page* already sits.
+ * ends in is a page replaced, which is where *Replace pages* already sits.
  */
 
 /** How a send-out that did not go out is told, or `null` for the answers that need no sentence. */

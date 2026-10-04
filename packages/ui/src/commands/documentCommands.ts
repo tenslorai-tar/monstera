@@ -87,7 +87,8 @@ import { PRINT_DIALOG_ID, type PrintAnswer } from '../dialogs/print.js';
 import { PRINT_QUALITY_DPI, PRINT_QUALITY_SETTING } from '../settings/rendering.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { EXPORT_WORD_DIALOG_ID, type ExportWordAnswer } from '../dialogs/exportWord.js';
-import type { ReplacePageAnswer } from '../dialogs/replacePageResult.js';
+import { REPLACE_PAGE_RESULT } from '../dialogs/replacePageResult.js';
+import { type SourceCommandDeps, askAboutSource } from './sourceDocuments.js';
 import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
 import type { PageTransitionAnswer } from '../dialogs/pageTransitionResult.js';
 import { RESIZE_PAGES_DIALOG_ID } from '../dialogs/resizePages.js';
@@ -1974,23 +1975,23 @@ export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
 }
 
 /**
- * Replaces the page on screen with another open document's pages.
+ * Replaces the pages it acts on with chosen pages of another document — open, or a file picked from the dialog.
  *
  * ## Its OWN command kind, where insert-from-PDF is a second surface
  *
  * The distinction is what the operation does rather than what it is called: a
- * replace **destroys a page**, and merge does not. Composing it from
+ * replace **destroys pages**, and merge does not. Composing it from
  * `deletePages` plus `mergeDocument` would put two entries in the log, so one
  * action would take two undos and the document could rest between them with a
  * page gone and nothing in its place.
  *
- * ## The page is `context.page`, not a field
+ * ## The pages are `targetPages`', not a field
  *
- * `duplicatePageCommand`'s position — *the page on screen* is what a toolbar
- * control means. The dialog states which page rather than asking, because a
- * control that destroys a page must let the reader check it is the right one.
+ * The ticked pages, else the page on show (ADR-0104). The dialog states which
+ * rather than asking, because a control that destroys pages must let the reader
+ * check they are the right ones.
  */
-export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
+export function replacePageCommand(deps: SourceCommandDeps): UiCommand {
   return {
     id: 'document.replace-page',
     feedback: VISIBLE,
@@ -2001,32 +2002,28 @@ export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
-
-      const choices = context.openDocuments
-        .filter((document) => document.docId !== context.docId)
-        .map((document) => ({ docId: document.docId, name: document.name }));
-
-      if (choices.length === 0) {
-        void deps.ask(MERGE_DOCUMENT_NONE_DIALOG_ID, {});
-        return;
-      }
-
-      const answer = (await deps.ask(REPLACE_PAGE_DIALOG_ID, {
-        choices,
-        page: context.page,
-      })) as ReplacePageAnswer | undefined;
-      if (answer === undefined) return;
-
-      // THE VERSION `context.page` WAS READ AT, so a page inserted or moved while the
+      const target = context.docId;
+      const pages = targetPages(context);
+      // THE VERSION THE PAGES WERE READ AT, so a page inserted or moved while the
       // dialog was up is refused by the bus rather than replacing the page that took
-      // this index. Present exactly when `docId` is.
-      if (context.version === undefined) return;
-      await applyDocumentCommand(deps, context.docId, {
+      // its index. Present exactly when `docId` is.
+      if (target === undefined || context.version === undefined || pages.length === 0) return;
+
+      const asked = await askAboutSource(
+        deps,
+        context,
+        target,
+        (choices, source, draft) => deps.ask(REPLACE_PAGE_DIALOG_ID, { choices, source, pages: [...pages], draft }),
+        (answered) => REPLACE_PAGE_RESULT.safeParse(answered).data,
+      );
+      if (asked === undefined) return;
+
+      await applyDocumentCommand(deps, target, {
         kind: 'replacePage',
-        source: answer.source as DocId,
-        pages: [context.page],
-        sourcePages: 'all',
+        // THE SCHEMA BRANDS IT, `mergeDocumentCommand`'s note.
+        source: asked.answer.source as DocId,
+        pages: [...pages],
+        sourcePages: asked.answer.sourcePages,
         version: context.version,
       });
     },

@@ -186,6 +186,7 @@ import {
   openWaitingDocuments,
   restoreLastSession,
 } from './commands/openDocument.js';
+import type { SourceOpen } from './commands/sourceDocuments.js';
 import { clearRecentCommand } from './commands/recentCommands.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { donateCommand } from './commands/donate.js';
@@ -2415,6 +2416,32 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     },
     [openDeps, opened],
   );
+  // *CHOOSE FILE…* IN THE FOUR SECOND-DOCUMENT DIALOGS (`sourceDocuments.ts`) opens through the same dependencies once
+  // more, so the file arrives as a tab like any other — and the document being changed stays the one on show, since the
+  // person is changing it and not the file they picked. Not `shown`: a file only read from has no save to warn about.
+  // An open that failed comes back to the command, which says so before it asks again.
+  const openSource = useCallback(
+    async (keep: DocId): Promise<SourceOpen> => {
+      let outcome: SourceOpen = { kind: 'none' };
+      await openDocument({
+        client,
+        onOpened: (document) => {
+          opened(document);
+          activate(keep);
+          outcome = { kind: 'opened', docId: document.docId, name: document.name };
+        },
+        onAlreadyOpen: (docId) => {
+          const tab = tabsNow.current.find((each) => each.docId === docId);
+          if (tab !== undefined) outcome = { kind: 'opened', docId, name: tab.name };
+        },
+        onProblem: (reason) => {
+          outcome = { kind: 'problem', reason };
+        },
+      });
+      return outcome;
+    },
+    [activate, client, opened],
+  );
   const pickBeside = useCallback((side: Side, docId: DocId): void => {
     setSideBySide((current) => (current === undefined ? current : { ...current, [side]: docId }));
   }, []);
@@ -2756,7 +2783,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         }),
         mergeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }),
         insertFromPdfCommand({ client, onApplied: applied, ask, stamp, signatures }),
-        replacePageCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        replacePageCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
         importPageAsLayerCommand({ client, onApplied: applied, ask, stamp, signatures }),
         // D9's EDIT PAGE IN ANOTHER APP: its reimport opens the edited page as a tab, so it takes
         // `appendMarkdownCommand`'s two callbacks as well as `replacePageCommand`'s (ADR-0062).
@@ -2943,6 +2970,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // is the same cheap, deliberate cost the selection already pays.
       readActiveId,
       showSideBySide,
+      // *CHOOSE FILE…* in the four second-document dialogs, which closes over the open route.
+      openSource,
       // WHETHER *PASTE ANNOTATIONS* EXISTS, which changes when a copy succeeds.
       readHasCopied,
       // WHETHER *UPDATE AVAILABLE* EXISTS, which changes once, when main's answer arrives.
