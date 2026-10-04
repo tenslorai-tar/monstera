@@ -353,7 +353,15 @@ export function createHostClient({
         const { bytes } = answered.answerFile;
         fileAnswers.take(call.params, into, bytes).then(
           (raw) => {
-            if (isStopped()) return;
+            // A CALL WHOSE FILE WAS STILL BEING TAKEN WHEN THIS CLIENT STOPPED IS SETTLED HERE, because nothing else
+            // can: it left `pending` when its answer arrived, so `stop` never saw it. Returning without settling held
+            // the caller for ever, and a command's caller holds its document's lane, so every later command on that
+            // document waited behind it and its recovery never entered.
+            const stopped = state.stopped;
+            if (stopped !== null) {
+              call.reject(new HostConnectionLost(stopped));
+              return;
+            }
             let body: unknown;
             try {
               if (raw.byteLength !== bytes) throw new Error(`the file holds ${String(raw.byteLength)} bytes`);

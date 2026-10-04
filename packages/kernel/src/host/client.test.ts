@@ -403,6 +403,36 @@ describe('a file-routed answer on the client (ADR-0125)', () => {
     expect(h.terminations.map((reason) => reason.code)).toStrictEqual(['malformed-response']);
   });
 
+  /**
+   * THE ANSWER HAS ARRIVED AND ITS FILE IS STILL BEING TAKEN when the connection ends, so the call has already left
+   * the map `stop` settles. It is rejected with the ending rather than left waiting: a command's caller holds its
+   * document's lane, and a call settled by nothing held every later command on that document and its recovery.
+   * Asserted as SETTLED BEFORE THE NEXT TASK, because the defect is a promise that never settles and no wait can
+   * observe that; the take resolves in a microtask, so a settled call has settled by then.
+   */
+  it('settles a call whose file was still being taken when the connection ended', async () => {
+    const h = fileHarness(bytes);
+    const call = h.client.invoke('doc:big', { session: 's1' });
+    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength } });
+    h.client.fail({ code: 'connection-lost', detail: 'the pipe closed' });
+
+    const outcome = await Promise.race([
+      call.then(
+        () => 'resolved',
+        (error: unknown) => error,
+      ),
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve('unsettled');
+        }, 0);
+      }),
+    ]);
+    expect(outcome).toBeInstanceOf(HostConnectionLost);
+    expect((outcome as HostConnectionLost).termination.code).toBe('connection-lost');
+    // The take did run: the file was read, and only the delivery was refused.
+    expect(h.taken).toHaveLength(1);
+  });
+
   it('ends the connection when the file cannot be taken', async () => {
     const h = fileHarness(new Error('an answer arrived for a session this host is not holding'));
     const call = h.client.invoke('doc:big', { session: 's1' });
