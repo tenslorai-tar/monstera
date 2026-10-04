@@ -487,6 +487,9 @@ async function fontNameOfRun(baseFont) {
   const document = await PDFDocument.create();
   const font = await document.embedFont(StandardFonts.Helvetica);
   document.addPage([300, 100]).drawText('Named', { x: 20, y: 50, size: 11, font });
+  // FLUSHED FIRST: pdf-lib writes a font's dictionary at its reference only when the document is flushed, so before
+  // this the reference names nothing. `save` flushes again and leaves an embedded font as it is.
+  await document.flush();
   const dictionary = document.context.lookup(font.ref, PDFDict);
   dictionary.set(PDFName.of('BaseFont'), PDFName.of(baseFont));
   const session = await pdfiumWriter.open(await document.save());
