@@ -122,6 +122,11 @@ export function controlName(key) {
  *     renderProcessGone: string[],
  *     gpu: { canvas2d: string, gpuCompositing: string, rasterization: string },
  *     console: string[],
+ *     ranges: {
+ *       asked: number, answered: number, refused: number, bytes: number, fileBytes: number,
+ *       firstMs: number | null, lastMs: number | null,
+ *     },
+ *     frames: { asked: number, ran: number },
  *   },
  *   zoomed: {
  *     clicks: number,

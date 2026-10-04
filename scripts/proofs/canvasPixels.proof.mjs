@@ -242,6 +242,11 @@ function describeRun(tally, environment, controls) {
     `renderer: visibility ${environment.visibility}; 2d_canvas ${environment.gpu.canvas2d}, gpu_compositing ` +
     `${environment.gpu.gpuCompositing}, rasterization ${environment.gpu.rasterization}; processes gone ` +
     `${JSON.stringify(environment.processesGone)}; render process gone ${JSON.stringify(environment.renderProcessGone)}.` +
+    `\n      ranges: ${String(environment.ranges.asked)} asked, ${String(environment.ranges.answered)} answered, ` +
+    `${String(environment.ranges.refused)} refused or stale; ${String(environment.ranges.bytes)} of ` +
+    `${String(environment.ranges.fileBytes)} bytes served, first at ${String(environment.ranges.firstMs)} ms and last ` +
+    `at ${String(environment.ranges.lastMs)} ms after the open. animation frames: ${String(environment.frames.ran)} ` +
+    `of ${String(environment.frames.asked)} ran.` +
     `\n      renderer warnings and errors: ${JSON.stringify(environment.console)}.`
   );
 }

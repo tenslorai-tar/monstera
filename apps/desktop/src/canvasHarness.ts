@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { AI_SETUP_AT_START_SETTING_ID } from '@monstera/contract';
@@ -218,6 +218,26 @@ export interface EnvironmentReadback {
   readonly renderProcessGone: readonly string[];
   readonly gpu: { readonly canvas2d: string; readonly gpuCompositing: string; readonly rasterization: string };
   readonly console: readonly string[];
+  /**
+   * The bytes main served PDF.js, read on the way through `document.readRange`: how many ranges were asked for, how
+   * many answered and refused, how many bytes went out of the file's whole, and when the first and last were asked
+   * after the open was pressed. A white canvas with every byte served is a drawing that did not finish; one with
+   * bytes still unserved is a page whose data never arrived, a different defect.
+   */
+  readonly ranges: {
+    readonly asked: number;
+    readonly answered: number;
+    readonly refused: number;
+    readonly bytes: number;
+    readonly fileBytes: number;
+    readonly firstMs: number | null;
+    readonly lastMs: number | null;
+  };
+  /**
+   * Animation frames during the canvas wait: one asked for at every poll, and how many of them ran. PDF.js's display
+   * path continues a render from `requestAnimationFrame`, so frames that stop running stop a drawing half way.
+   */
+  readonly frames: { readonly asked: number; readonly ran: number };
 }
 
 /** Each channel's lowest and highest value over a captured rectangle, and how many pixels were read. */
@@ -750,6 +770,10 @@ async function waitForCanvas(
       `(() => {
          const canvas = document.querySelector('canvas.m-page');
          const tally = (${TALLY_PIXELS})(canvas);
+         window.__monsteraFramesAsked = (window.__monsteraFramesAsked ?? 0) + 1;
+         requestAnimationFrame(() => {
+           window.__monsteraFramesRan = (window.__monsteraFramesRan ?? 0) + 1;
+         });
          return {
            present: canvas !== null,
            width: canvas === null ? 0 : canvas.width,
@@ -908,7 +932,30 @@ export async function reportCanvasPixels(
       window.webContents[action]();
     },
   });
-  registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
+  // THE RANGES MAIN SERVES, recorded on the way through and handed on unchanged, as the overlays are above: the shipped
+  // handler answers, and the harness only counts what it answered.
+  const fileBytes = (await stat(fixture)).size;
+  const ranges = { asked: 0, answered: 0, refused: 0, bytes: 0, fileBytes, firstMs: null as number | null, lastMs: null as number | null };
+  let openedAt: bigint | null = null;
+  const sinceOpen = (): number | null => (openedAt === null ? null : Number((process.hrtime.bigint() - openedAt) / 1_000_000n));
+  const readRange = deps.handlers['document.readRange'];
+  const handlers: typeof deps.handlers = {
+    ...deps.handlers,
+    'document.readRange': async (params) => {
+      ranges.asked += 1;
+      ranges.firstMs ??= sinceOpen();
+      ranges.lastMs = sinceOpen();
+      const answer = await readRange(params);
+      if (answer.ok && answer.value.kind === 'bytes') {
+        ranges.answered += 1;
+        ranges.bytes += answer.value.bytes.byteLength;
+      } else {
+        ranges.refused += 1;
+      }
+      return answer;
+    },
+  };
+  registerContractHandlers(ipcMain, handlers, deps.incidents, senderCheckFor(window));
 
   const contents = window.webContents;
   const renderProcessGone: string[] = [];
@@ -929,8 +976,19 @@ export async function reportCanvasPixels(
     });
   });
 
+  openedAt = process.hrtime.bigint();
   const dispatched = await clickControl(contents, openControlName, 'open control');
   const settled = await waitForCanvas(contents);
+  const frames = await evaluate(
+    contents,
+    '({ asked: window.__monsteraFramesAsked ?? 0, ran: window.__monsteraFramesRan ?? 0 })',
+    (value): value is { asked: number; ran: number } =>
+      typeof value === 'object' &&
+      value !== null &&
+      typeof (value as { asked?: unknown }).asked === 'number' &&
+      typeof (value as { ran?: unknown }).ran === 'number',
+    'animation frames',
+  );
   const pageCanvases = await evaluate(contents, PAGE_CANVASES, isPageCanvases, 'page canvases');
   // THE WAIT'S OWN COUNT, taken in the reading that gave the size: a second count read here would pair the size
   // from one moment with the ink from another, which is the defect `waitForCanvas` reads both at once to prevent.
@@ -1089,6 +1147,8 @@ export async function reportCanvasPixels(
         rasterization: gpuStatus.rasterization,
       },
       console: consoleLines,
+      ranges: { ...ranges },
+      frames,
     },
     dispatched,
     zoomed,
