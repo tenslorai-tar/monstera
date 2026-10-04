@@ -347,11 +347,13 @@ export interface UiTool {
   /**
    * The pointer over the page while this tool is active (the owner's review of 0.1.6.0: the crosshair was every
    * tool's). ABSENT IS THE CROSSHAIR, the drawing tools' pointer — a shape is drawn from a corner and an arrow points
-   * at a spot — so the ~40 drawing tools say nothing and a tool that does not draw says what it is: `arrow` for one
-   * that picks or places (Select, the note), `text` for one that works on selected text. Read by `PageList`, which
+   * at a spot — so the drawing tools say nothing and a tool that does not draw says what it is: `arrow` for one that
+   * picks or places (Select, the note, the caret), `text` for one whose box the words are typed into (Text box,
+   * Typewriter), `eraser` for the eraser, whose pointer is its own picture (the owner's item 15d). The tools that work
+   * on selected text mount no surface, and the page list gives them its I-beam. Read by `AnnotationOverlay`, which
    * puts it on the surface as `data-cursor` for the stylesheet.
    */
-  readonly cursor?: 'arrow' | 'text';
+  readonly cursor?: 'arrow' | 'text' | 'eraser';
   /**
    * What the tool waits for, said in the status bar's start region while the tool is on (ADR-0154 Decision 4): *Click
    * where the comment goes*. REQUIRED, so a tool cannot arrive waiting for a press nobody is told about: every tool

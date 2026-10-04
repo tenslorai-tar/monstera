@@ -191,5 +191,5 @@ export function eraserTool(deps: EraserDeps): UiTool {
     preview: (): ToolPreview | undefined => undefined,
   };
 
-  return { id: ERASER_TOOL_ID, controller, hint: HINT_ERASER };
+  return { id: ERASER_TOOL_ID, controller, hint: HINT_ERASER, cursor: 'eraser' };
 }

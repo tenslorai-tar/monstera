@@ -199,6 +199,8 @@ export function caretTool(deps: { readonly style: AnnotationStyle }): UiTool {
   return {
     id: CARET_TOOL_ID,
     hint: HINT_CARET,
+    // THE ARROW: a caret is placed at a point by a click, the note's gesture (the owner's item 15d).
+    cursor: 'arrow',
     controller: {
       ...pointerPath,
       commit: (

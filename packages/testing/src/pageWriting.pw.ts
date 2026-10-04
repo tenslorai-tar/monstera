@@ -327,6 +327,49 @@ test('EDIT COMMENT from the mark’s menu is typed next to the mark, and Escape 
   expect(executed[0]?.command).toMatchObject({ kind: 'editAnnotationText', page: 0, index: 0, text: 'Confirm the rate' });
 });
 
+test('POINTERS: the I-beam where words are typed, the arrow where a click places, the eraser its own picture', async ({
+  page,
+}) => {
+  await opened(page, LOOKS[0], 1, []);
+  const pointer = async (title: string): Promise<string> => {
+    await chooseTool(page, title);
+    const cursor = await surface(page).evaluate((node) => getComputedStyle(node).cursor);
+    await page.keyboard.press('Escape');
+    await expect(surface(page)).toHaveCount(0);
+    return cursor;
+  };
+  expect(await pointer('Text box')).toBe('text');
+  expect(await pointer('Typewriter')).toBe('text');
+  expect(await pointer('Note')).toBe('default');
+  expect(await pointer('Insertion mark')).toBe('default');
+  const eraser = await pointer('Erase annotation');
+  // THE PICTURE, both densities, with the crosshair after it for a pointer that cannot be drawn.
+  expect(eraser).toContain('image-set');
+  expect(eraser.match(/url\(/gu)?.length).toBe(2);
+  expect(eraser.endsWith('crosshair')).toBe(true);
+  // AND BOTH PICTURES DECODE, at the sizes the densities promise: a rule naming an image the browser cannot draw is
+  // the crosshair wearing the eraser's name.
+  const urls = [...eraser.matchAll(/url\("?([^")]+)"?\)/gu)].map((match) => match[1] ?? '');
+  const sizes = await page.evaluate(
+    (sources) =>
+      Promise.all(
+        sources.map(async (source) => {
+          const image = new Image();
+          image.src = source;
+          await image.decode();
+          return [image.naturalWidth, image.naturalHeight];
+        }),
+      ),
+    urls,
+  );
+  expect(sizes).toStrictEqual([
+    [24, 24],
+    [48, 48],
+  ]);
+  // CONTROL: a drawing tool keeps the crosshair, so the rules above are each tool's and not one for every tool.
+  expect(await pointer('Rectangle')).toBe('crosshair');
+});
+
 /** The status bar's tool line (ADR-0154 Decision 4). */
 function toolLine(page: Page): Locator {
   return page.locator('.m-status-mode');

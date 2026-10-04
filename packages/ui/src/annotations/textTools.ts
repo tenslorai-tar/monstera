@@ -202,7 +202,8 @@ function boxTextTool(
 
   // THE HINT FOLLOWS THE FLAG that decides whether a click places a box, so what the bar says and what a click does
   // are one decision.
-  return { id, controller, hint: placesOnClick ? HINT_TYPEWRITER : HINT_TEXT_BOX };
+  // THE I-BEAM, since a press here is for words (the owner's item 15d).
+  return { id, controller, hint: placesOnClick ? HINT_TYPEWRITER : HINT_TEXT_BOX, cursor: 'text' };
 }
 
 /** A box with a border, and the words in it. */

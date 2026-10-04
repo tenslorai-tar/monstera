@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- THE ERASER POINTER (the owner's item 15d). Drawn over the page's paper, which is white in every theme, so one
+       drawing serves all three: a dark body and a pale tip, each outlined dark, inside a white halo that keeps it
+       readable where it crosses the darker chrome. The hotspot is the middle of the rubbing edge, (6, 19). -->
+  <g stroke-linejoin="round">
+    <path d="M3.5 16.5 L14 6 L19 11 L8.5 21.5 Z" fill="none" stroke="#ffffff" stroke-width="3"/>
+    <path d="M6.33 13.67 L14 6 L19 11 L11.33 18.67 Z" fill="#2b2b2b" stroke="#1a1a1a" stroke-width="1"/>
+    <path d="M3.5 16.5 L6.33 13.67 L11.33 18.67 L8.5 21.5 Z" fill="#f4f4f4" stroke="#1a1a1a" stroke-width="1"/>
+  </g>
+</svg>

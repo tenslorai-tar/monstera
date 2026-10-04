@@ -5426,6 +5426,20 @@ optgroup {
   cursor: default;
 }
 
+/* A TOOL WHOSE BOX THE WORDS ARE TYPED INTO: the I-beam, which is what a press there is for. */
+.m-annotation-overlay[data-cursor='text'] {
+  cursor: text;
+}
+
+/* THE ERASER'S OWN POINTER, at one and two device pixels to the CSS pixel, its hotspot the middle of the rubbing edge.
+   One drawing for every theme: it is over the paper, which is white in all three. The crosshair if the image cannot
+   be used. */
+.m-annotation-overlay[data-cursor='eraser'] {
+  cursor:
+    image-set(url('./cursors/eraser.svg') 1x, url('./cursors/eraser@2x.svg') 2x) 6 19,
+    crosshair;
+}
+
 /* THE HIGHLIGHTER'S I-BEAM over the page, where the text layer takes the drag and the words are selected
    (`UiTool.fromSelection`). Over the whole page rather than over the words alone, so the pointer does not flicker
    between an I-beam and an arrow in the gaps between lines. */
