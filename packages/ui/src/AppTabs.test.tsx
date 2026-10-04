@@ -314,9 +314,9 @@ describe('the Organize grid, driven through App (ADR-0104)', () => {
     expect(card(container, 1).getAttribute('aria-pressed')).toBe('true');
     await act(async () => {
       const rotate = [...container.querySelectorAll<HTMLButtonElement>('.m-ribbon button')].find(
-        (button) => button.textContent === 'Rotate page',
+        (button) => button.textContent === 'Rotate 90°',
       );
-      if (rotate === undefined) throw new Error('no Rotate page in the Organize ribbon');
+      if (rotate === undefined) throw new Error('no Rotate 90° in the Organize ribbon');
       rotate.click();
       await Promise.resolve();
       await Promise.resolve();
