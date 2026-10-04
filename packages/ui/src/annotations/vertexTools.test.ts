@@ -201,6 +201,39 @@ describe('polygonTool', () => {
     });
   });
 
+  it('CLOSING ON THE FIRST CORNER sends the corners placed, not the closing press as one more (14b)', async () => {
+    // THE CLOSING PRESS IS THE PERSON POINTING AT THE FIRST CORNER. Kept as a vertex, it was a fourth corner a few
+    // pixels from the first — a zero-length edge in `/Vertices`, read off a real browser's clicks.
+    const { command, over } = draw(
+      polygonTool,
+      [
+        [20, 20],
+        [120, 20],
+        [120, 80],
+        [22, 21],
+      ],
+      { finish: false },
+    );
+    expect(over).toBe(true);
+    const sent = (await command) as { annotation: { points: unknown[] } } | undefined;
+    expect(sent?.annotation.points).toHaveLength(3);
+  });
+
+  it('TWO CORNERS and a click on the first do not close: the drawing goes on rather than being lost (14b)', () => {
+    // A POLYGON NEEDS THREE CORNERS BEFORE THE PRESS THAT CLOSES IT. Counted as a corner, this press closed a
+    // two-corner shape that commits nothing.
+    const { over } = draw(
+      polygonTool,
+      [
+        [20, 20],
+        [120, 20],
+        [22, 21],
+      ],
+      { finish: false },
+    );
+    expect(over).toBe(false);
+  });
+
   it('does NOT repeat the first vertex, because MuPDF closes the shape', async () => {
     // A payload that closed the ring itself would store a duplicate corner in
     // `/Vertices` for every polygon this build writes. Asserted by count, since

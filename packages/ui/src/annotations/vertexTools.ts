@@ -107,21 +107,27 @@ function verticesOf(gesture: Gesture): readonly ViewportPoint[] {
   return kept;
 }
 
-/** Whether a press has landed back on the first vertex. */
-function closesShape(gesture: Gesture): boolean {
+/**
+ * Whether the last press landed back on the first vertex, closing a shape of `minimum` corners or more.
+ *
+ * **The closing press is not a corner** (the owner's item 14b). It is the person pointing at the first one, so the
+ * corners before it must already make the shape: `minimum` of them, then the press that closes. Counting the press as
+ * a corner closed two corners and a click on the first into a two-point polygon, which commits nothing and loses the
+ * drawing, and it kept the press as a fourth vertex on a triangle — a zero-length edge in `/Vertices`, measured in
+ * Chromium 151 with real clicks (`toolCursors.pw.ts`).
+ */
+function closesShape(gesture: Gesture, minimum: number): boolean {
   const vertices = verticesOf(gesture);
   const first = vertices[0];
   const last = vertices[vertices.length - 1];
-  // THREE, NOT TWO: with two vertices the "last" press is the second one, and a
-  // shape whose second corner is near its first is a very small polygon
-  // somebody is still drawing rather than one they have closed.
-  if (first === undefined || last === undefined || vertices.length < 3) return false;
+  if (first === undefined || last === undefined || vertices.length < minimum + 1) return false;
   return Math.hypot(last.x - first.x, last.y - first.y) <= CLOSING_RADIUS;
 }
 
-/** The vertices in PDF user space, which is what the payload carries. */
-function placed(gesture: Gesture, transform: PageTransform): AnnotationPoint[] {
-  return verticesOf(gesture).map((vertex) => {
+/** The vertices in PDF user space, which is what the payload carries — without the press that closed the shape. */
+function placed(gesture: Gesture, transform: PageTransform, closing: boolean): AnnotationPoint[] {
+  const vertices = verticesOf(gesture);
+  return (closing ? vertices.slice(0, -1) : vertices).map((vertex) => {
     const point = toPdf(vertex, transform);
     return { x: point.x, y: point.y };
   });
@@ -158,14 +164,14 @@ export function vertexTool(
     // on the page, which ends as it always did and makes nothing.
     complete: (gesture: Gesture): boolean => {
       const placedSoFar = verticesOf(gesture).length;
-      return (gesture.done && (placedSoFar >= minimum || placedSoFar <= 1)) || (closes && closesShape(gesture));
+      return (gesture.done && (placedSoFar >= minimum || placedSoFar <= 1)) || (closes && closesShape(gesture, minimum));
     },
     commit: (
       gesture: Gesture,
       page: number,
       transform: PageTransform,
     ): DispatchableCommand | undefined => {
-      const points = placed(gesture, transform);
+      const points = placed(gesture, transform, closes && closesShape(gesture, minimum));
       // TOO FEW IS THE ORDINARY OUTCOME, not an error: a double press with one
       // vertex down is a stray double-click on the page. `undefined` is what
       // every other tool answers for a gesture that produced nothing.

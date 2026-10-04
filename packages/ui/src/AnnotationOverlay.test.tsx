@@ -11,7 +11,8 @@ import { rectangleTool as buildRectangle } from './annotations/shapeTools.js';
 /** The two tools these cases drive, built with the style that chooses nothing. */
 const rectangleTool = buildRectangle(PLAIN_STYLE);
 const polygonTool = buildPolygon(PLAIN_STYLE);
-import { polygonTool as buildPolygon } from './annotations/vertexTools.js';
+const polylineTool = buildPolyline(PLAIN_STYLE);
+import { polygonTool as buildPolygon, polylineTool as buildPolyline } from './annotations/vertexTools.js';
 import type { UiTool } from './registries/tools.js';
 import { pointerPath } from './registries/tools.js';
 
@@ -356,7 +357,74 @@ describe('AnnotationOverlay', () => {
     expect(sent[0]).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'polygon' } });
   });
 
-  it('abandons a half-drawn multi-press gesture on Escape', async () => {
+  it('ESCAPE FINISHES AND KEEPS a shape there is enough of (the owner’s item 14b)', async () => {
+    // THREE CORNERS, enough for a polygon: Escape used to drop them all, and the owner asked that it keep the shape.
+    const { surface, sent } = mounted(polygonTool);
+    await click(surface, [20, 20]);
+    await click(surface, [120, 20]);
+    await click(surface, [120, 80]);
+    fireEvent.keyDown(surface, { key: 'Escape' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'polygon' } });
+    expect(inFlightPreview(surface)).toBeNull();
+  });
+
+  it('ENTER FINISHES a shape there is enough of, and keeps drawing one there is not', async () => {
+    const { surface, sent } = mounted(polygonTool);
+    await click(surface, [20, 20]);
+    await click(surface, [120, 20]);
+    // TWO CORNERS: not yet a polygon, so Enter keeps the drawing, as a double-click does.
+    fireEvent.keyDown(surface, { key: 'Enter' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent).toStrictEqual([]);
+    expect(surface.querySelector('[data-annotation-preview="path"]')).not.toBeNull();
+    await click(surface, [120, 80]);
+    fireEvent.keyDown(surface, { key: 'Enter' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'polygon' } });
+  });
+
+  it('ENTER FINISHES CONNECTED LINES, which drew for ever in the owner’s recording', async () => {
+    // AN OPEN SHAPE has no first corner to come back to, so a key and a double-click are the only finishes it has.
+    const { surface, sent } = mounted(polylineTool);
+    await click(surface, [20, 20]);
+    await click(surface, [120, 40]);
+    await click(surface, [60, 90]);
+    fireEvent.keyDown(surface, { key: 'Enter' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'polyline' } });
+    expect((sent[0] as { annotation: { points: unknown[] } }).annotation.points).toHaveLength(3);
+  });
+
+  it('A DOUBLE-CLICK ON THE FIRST CORNER closes the shape and starts no other (the owner’s item 14b)', async () => {
+    // THE OWNER'S RECORDING: the area closed on its first point, and the double-click's second press began a new
+    // shape. The first press closes this one; the second press and the `dblclick` after it must leave nothing live.
+    const { surface, sent } = mounted(polygonTool);
+    await click(surface, [20, 20]);
+    await click(surface, [120, 20]);
+    await click(surface, [120, 80]);
+    await click(surface, [20, 20], { double: true });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'polygon' } });
+    // NO LIVE SHAPE: the committed one is held until the page redraws, which is not a gesture.
+    expect(inFlightPreview(surface)).toBeNull();
+    // AND THE NEXT CLICK starts a fresh shape rather than finishing one the double-click left behind.
+    await click(surface, [200, 200]);
+    expect(sent).toHaveLength(1);
+  });
+
+  it('abandons a half-drawn multi-press gesture on Escape when it is too few corners to keep', async () => {
     // CANCELLING IS STILL THE ABSENCE OF A MEMBER (ADR-0042 Decision 4), and a
     // half-drawn polygon is what makes that worth asserting rather than
     // assuming: it is the first gesture a person can be left holding, and the

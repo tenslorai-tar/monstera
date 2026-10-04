@@ -103,6 +103,60 @@ test('HIGHLIGHT selects the words as they are dragged over, and marks exactly th
   expect(await page.evaluate(() => document.getSelection()?.toString() ?? '')).toBe('');
 });
 
+/** The commands sent so far, as their kind, the annotation's type and how many points it carries. */
+function drawn(sent: readonly Sent[]): { kind?: string; type?: string; points?: number }[] {
+  return sent
+    .filter((each) => each.channel === 'document.execute')
+    .map((each) => {
+      const command = (each.params as { command?: { kind?: string; annotation?: { type?: string; points?: unknown[] } } })
+        .command;
+      return { kind: command?.kind, type: command?.annotation?.type, points: command?.annotation?.points?.length };
+    });
+}
+
+// THE OWNER'S ITEM 14b, with the browser's own clicks and keys: a key reaches the drawing only if the surface has the
+// focus, which a synthetic key event dispatched at it cannot show.
+test('CONNECTED LINES finish on Enter, and a POLYGON on Escape keeps its corners (14b)', async ({ page }) => {
+  const sent: Sent[] = [];
+  await openWithText(page, sent);
+  const slot = page.locator('.m-page-slot').first();
+  const box = await slot.boundingBox();
+  if (box === null) throw new Error('the page has a box');
+  const at = (x: number, y: number): [number, number] => [box.x + box.width * x, box.y + box.height * y];
+
+  await chooseTool(page, 'Connected lines');
+  for (const corner of [at(0.2, 0.2), at(0.5, 0.25), at(0.35, 0.4)]) await page.mouse.click(...corner);
+  await page.keyboard.press('Enter');
+  await expect.poll(() => drawn(sent).length, { timeout: 5_000 }).toBe(1);
+  expect(drawn(sent)[0]).toStrictEqual({ kind: 'addAnnotation', type: 'polyline', points: 3 });
+
+  await chooseTool(page, 'Polygon');
+  for (const corner of [at(0.55, 0.2), at(0.8, 0.2), at(0.7, 0.4)]) await page.mouse.click(...corner);
+  await page.keyboard.press('Escape');
+  await expect.poll(() => drawn(sent).length, { timeout: 5_000 }).toBe(2);
+  expect(drawn(sent)[1]).toStrictEqual({ kind: 'addAnnotation', type: 'polygon', points: 3 });
+});
+
+test('a POLYGON closed on its FIRST corner by a real double-click starts no second shape (14b)', async ({ page }) => {
+  const sent: Sent[] = [];
+  await openWithText(page, sent);
+  await chooseTool(page, 'Polygon');
+  const slot = page.locator('.m-page-slot').first();
+  const box = await slot.boundingBox();
+  if (box === null) throw new Error('the page has a box');
+  const at = (x: number, y: number): [number, number] => [box.x + box.width * x, box.y + box.height * y];
+  for (const corner of [at(0.3, 0.2), at(0.6, 0.2), at(0.5, 0.4)]) await page.mouse.click(...corner);
+  await page.mouse.dblclick(...at(0.3, 0.2));
+  await expect.poll(() => drawn(sent).length, { timeout: 5_000 }).toBe(1);
+  expect(drawn(sent)[0]).toStrictEqual({ kind: 'addAnnotation', type: 'polygon', points: 3 });
+  // A LEFT-BEHIND SHAPE would take these two clicks and an Enter as a second polygon's corners; with none live,
+  // two corners and Enter are a drawing still going on, and nothing more is sent.
+  for (const corner of [at(0.3, 0.5), at(0.6, 0.5)]) await page.mouse.click(...corner);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  expect(drawn(sent)).toHaveLength(1);
+});
+
 test('a POLYGON is finished by a real double-click, and its corners are the ones placed (F-C5)', async ({ page }) => {
   // THE BROWSER'S OWN EVENTS, which is the point: Chromium puts no click count on a pointer event, and a synthetic
   // event carrying one is what let this pass while no polygon could be finished.

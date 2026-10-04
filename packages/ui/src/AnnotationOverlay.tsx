@@ -257,6 +257,38 @@ export function AnnotationOverlay({
     setGesture(undefined);
   }, []);
 
+  /**
+   * Enter and Escape on a gesture that outlives its releases — a polygon, a cloud, connected lines, an area or a
+   * perimeter, between presses (the owner's item 14b).
+   *
+   * **Enter finishes**, by the same path as a double-click: the tool decides, so a shape with too few corners is kept
+   * drawing rather than thrown away. **Escape finishes and keeps** a shape there is enough of, which is what the owner
+   * asked for; with too few corners to be the shape, there is nothing to keep, and it abandons. **During a drag** —
+   * the pointer still down, the rectangle or the line half drawn — Escape abandons as it always did, and Enter is
+   * nothing: those gestures end at their release.
+   */
+  const pressed = useRef(false);
+  const keyed = useCallback(
+    (key: string): boolean => {
+      if (gesture === undefined) return false;
+      if (pressed.current) {
+        if (key !== 'Escape') return false;
+        cancel();
+        return true;
+      }
+      const finished = { ...gesture, done: true };
+      if (key === 'Enter') {
+        release(finished);
+        return true;
+      }
+      if (key !== 'Escape') return false;
+      if (tool.controller.complete(finished)) release(finished);
+      else cancel();
+      return true;
+    },
+    [cancel, gesture, release, tool],
+  );
+
   const preview = gesture === undefined ? undefined : tool.controller.preview(gesture);
   // DERIVED, not cleared by an effect: once the page has been drawn from a newer view, the shape is
   // in its pixels and this stops rendering it in the same render that carries the new drawing.
@@ -271,15 +303,27 @@ export function AnnotationOverlay({
       // THE TOOL'S OWN POINTER (`UiTool.cursor`); the drawing tools say nothing and draw with the crosshair.
       data-cursor={tool.cursor ?? 'crosshair'}
       onKeyDown={(event): void => {
-        // ESCAPE ABANDONS THE DRAG, which is the fourth phase of §6's
-        // lifecycle arriving where the state lives.
-        if (event.key === 'Escape') cancel();
+        // ESCAPE AND ENTER END A GESTURE where the state lives (§6's lifecycle), and are taken from the page's own
+        // keys only when they did: a key the drawing did not use still reaches whatever else listens for it.
+        if (keyed(event.key)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
       }}
       onDoubleClick={doubled}
-      onPointerCancel={cancel}
-      onPointerDown={down}
+      onPointerCancel={(): void => {
+        pressed.current = false;
+        cancel();
+      }}
+      onPointerDown={(event): void => {
+        if (event.button === 0) pressed.current = true;
+        down(event);
+      }}
       onPointerMove={move}
-      onPointerUp={up}
+      onPointerUp={(event): void => {
+        pressed.current = false;
+        up(event);
+      }}
       ref={surface}
       // A DRAWING SURFACE, and it is focusable so Escape reaches it and so a
       // keyboard user is told the page has become one. What it is NOT is a
