@@ -1031,6 +1031,14 @@ audit. That is the third range with this shape. Found by reading ADR-0152's row,
 0154's, which carried neither; the row now names both. The claim was checked against the wrong set: I read which ADR
 commits touched `README.md`, and the correction commits are the ones that did not.
 
+**Correction, 2026-10-04, two commits after this entry: NNNNNNN-6 is withdrawn.** Its case built a payload that cannot
+exist. `mergeDocument.documents` is a union, one document with chosen pages or several each taken whole, in the type and
+in the wire schema alike (`commands.ts`), so a later document's missing page is unrepresentable, and the mutation that
+reddened the case proved nothing reachable. The case is removed. It reached the audit commit because I ran its tests
+and not the typecheck after adding it, and vitest compiles without checking types: `tsc` refused the fixture
+(TS2322), first seen at the next commit's typecheck. The loop's *checked before any is grafted* stays, true of a
+rule the union keeps, and the reader's gap was a true reading of the code that the schema answers.
+
 ---
 
 ## 2026-10-03 — Stage audit of `de106c45..5da42ae3` — findings MMMMMMM-1 to MMMMMMM-11
