@@ -6708,6 +6708,29 @@ body {
   color: var(--muted);
 }
 
+/* THE CARDS' ROOM, holding the strip on show and, while a new size is drawn (`PageGrid`), the one being prepared over
+   it: laid out at the same box so it is measured and drawn at the width it will be shown at, and hidden until then. */
+.m-page-grid__pages {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-block-size: 0;
+}
+
+.m-page-grid__layer {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+.m-page-grid__layer[data-layer='pending'] {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+}
+
 .m-thumbnails.m-thumbnails--grid {
   flex: 1 1 auto;
   /* `Thumbnails.tsx` always sets the width on the grid; the fallback is `.m-thumb`'s, for the same reason, and
@@ -6721,7 +6744,7 @@ body {
 /* FULL PAGE (the owner's review of 0.1.9.0): ONE page to a row at the grid's whole width, read top to bottom as the
    Home view reads, never two side by side. The gutter is kept whether or not the pages overflow, so the width
    `PageGrid` measures does not change when they first do. */
-.m-page-grid[data-page-view='full-page'] > .m-thumbnails--grid {
+.m-page-grid__layer[data-page-view='full-page'] > .m-thumbnails--grid {
   grid-template-columns: max-content;
   justify-content: center;
   scrollbar-gutter: stable;

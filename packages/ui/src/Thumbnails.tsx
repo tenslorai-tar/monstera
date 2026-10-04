@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { DocumentView } from './documentView.js';
 import { THUMBNAILS_LABEL, THUMBNAIL_PAGE } from './messages/en.js';
@@ -68,7 +68,14 @@ export function Thumbnails({
   size = 'medium',
   grid,
   waitForFirstFrame = false,
+  onReady,
 }: {
+  /**
+   * Told the width every card in this strip's view is drawn at, each time that becomes true: the Organize grid prepares
+   * a new size out of sight and shows it only then (`PageGrid`). A failed card counts as finished, since it is shown as
+   * failed.
+   */
+  readonly onReady?: ((width: number) => void) | undefined;
   /** How large the pictures are drawn (the Appearance setting). Medium for a strip with no setting behind it. */
   readonly size?: ThumbnailSize;
   /**
@@ -157,7 +164,11 @@ export function Thumbnails({
     | undefined;
 }): ReactElement {
   const { i18n } = useLingui();
-  const { visible, slotRef } = useVisiblePages('50%');
+  const scroller = useRef<HTMLElement | null>(null);
+  const onePage = grid?.onePage;
+  const reading = onePage !== undefined;
+  // NEAR IS THE STRIP'S OWN BOX, half of it either side; a page to a row is read as Home is, so a whole view.
+  const { visible, slotRef } = useVisiblePages(reading ? '100%' : '50%', undefined, scroller);
   const rotations = usePageRotations(client, docId, version, waitForFirstFrame ? NOTHING_VISIBLE : visible);
   // A REF, not state: the source index is read once by the drop that follows,
   // and re-rendering the whole strip mid-drag would replace the element the
@@ -169,9 +180,6 @@ export function Thumbnails({
   const strip = THUMBNAIL_SIZES[size];
   const width = grid?.width ?? strip.width;
   const { columns } = strip;
-  const scroller = useRef<HTMLElement | null>(null);
-  const onePage = grid?.onePage;
-  const reading = onePage !== undefined;
 
   // THE GRID OPENS ON THE CURRENT PAGE (item 13a), before it paints, and again when Full page and Thumbnail swap or the
   // width the cards fit changes: there is one current page, and a grid opening at its top showed page 1 while the
@@ -200,6 +208,20 @@ export function Thumbnails({
     cardOf(scroller.current, goTo)?.scrollIntoView({ block: reading ? 'start' : 'nearest' });
     onWentTo();
   }, [goTo, onWentTo, reading]);
+
+  // EACH CARD'S LAST FINISHED DRAWING, by the width it was made for, so the strip can say when everything in its view
+  // is drawn at the width asked now. A ref: a report re-renders nothing, and it is read by the check that follows it.
+  const drawnAt = useRef(new Map<number, number>());
+  const onDrawn = useCallback(
+    (page: number, at: number): void => {
+      drawnAt.current.set(page, at);
+      const element = scroller.current;
+      if (onReady === undefined || element === null) return;
+      const inView = cardsInView(element);
+      if (inView.length > 0 && inView.every((card) => drawnAt.current.get(card) === width)) onReady(width);
+    },
+    [onReady, width],
+  );
 
   // FULL PAGE'S SCROLL NAMES A PAGE: the card under the middle of the view, which is the one showing most of itself
   // there — never the topmost card a sliver of reaches, which is what a "first visible" rule would answer.
@@ -339,6 +361,7 @@ export function Thumbnails({
             width={width}
             draw={visible.has(page) && rotations.has(page)}
             rotation={rotations.get(page)}
+            onDrawn={onDrawn}
           />
           {/* THE PAGE'S NUMBER UNDER IT, as v5-02 draws the strip. Seen, not read: the button's
               accessible name already says which page this is. */}
@@ -389,6 +412,17 @@ function pageAtMiddle(strip: HTMLElement): number | undefined {
   return found === undefined ? undefined : Number(found);
 }
 
+/** The pages whose cards overlap `strip`'s view, in page order. */
+function cardsInView(strip: HTMLElement): readonly number[] {
+  const view = strip.getBoundingClientRect();
+  return [...strip.querySelectorAll<HTMLElement>('[data-thumb-page]')]
+    .filter((card) => {
+      const box = card.getBoundingClientRect();
+      return box.bottom > view.top && box.top < view.bottom;
+    })
+    .map((card) => Number(card.dataset['thumbPage']));
+}
+
 /** The empty visible set, one identity, for a strip that must not ask yet. */
 const NOTHING_VISIBLE: ReadonlySet<number> = new Set();
 
@@ -398,6 +432,7 @@ function ThumbCanvas({
   width,
   draw,
   rotation,
+  onDrawn,
 }: {
   readonly view: DocumentView | undefined;
   readonly page: number;
@@ -405,6 +440,8 @@ function ThumbCanvas({
   readonly draw: boolean;
   /** The view model's rotation, or `undefined` where it did not answer for this version. */
   readonly rotation: number | undefined;
+  /** Told when a draw for `width` lands, or fails, which is shown as failed: either way the card is finished. */
+  readonly onDrawn: (page: number, width: number) => void;
 }): ReactElement {
   const canvas = useRef<HTMLCanvasElement | null>(null);
   // WHAT THE CANVAS HOLDS AND WHAT IT WAS DRAWN FOR. A new width, rotation or version redraws, and until that draw lands
@@ -415,6 +452,12 @@ function ThumbCanvas({
     { width: number; height: number; for: { view: DocumentView; page: number; width: number; rotation: number | undefined } } | undefined
   >(undefined);
   const current = size !== undefined && size.for.view === view && size.for.page === page && size.for.width === width && size.for.rotation === rotation;
+  // THE LATEST REPORT, read when a draw lands rather than a dependency of the draw: a parent's new callback is not a
+  // reason to draw the page again.
+  const report = useRef(onDrawn);
+  useEffect(() => {
+    report.current = onDrawn;
+  }, [onDrawn]);
 
   useEffect(() => {
     const element = canvas.current;
@@ -428,6 +471,7 @@ function ThumbCanvas({
       // draw left behind: a canvas 612 points wide in a 96-pixel column (measured 2026-09-18).
       const drawn = await renderPage(view.document, pdfjsPageOf(page), element, { fitWidth: width }, rotation, superseded.signal);
       setSize({ width: drawn.width, height: drawn.height, for: { view, page, width, rotation } });
+      report.current(page, width);
     };
 
     void drawThumb().catch((error: unknown) => {
@@ -437,6 +481,7 @@ function ThumbCanvas({
       // catch, and it is what hid PDF.js refusing every redraw after a command: a thumbnail
       // that would not draw looked exactly like one not drawn yet, for ever.
       element.dataset['failed'] = 'true';
+      report.current(page, width);
     });
 
     return (): void => {

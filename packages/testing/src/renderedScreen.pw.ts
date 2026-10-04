@@ -3949,6 +3949,93 @@ test('ORGANIZE shares ONE current page with the status bar and Home: Full page�
   await expect(box).toHaveValue('6');
 });
 
+// ORGANIZE'S FULL PAGE IS SHOWN FINISHED (the owner's item 13h: "flickers and builds up in steps when switching and
+// scrolling"). Two mechanisms, each measured frame by frame here before the fix with reads slowed to 150 ms:
+// - choosing Full page widened every card at once while its canvas held the thumbnail, so the first card was the small
+//   drawing stretched (`stale`) for about 100 ms, then sharp;
+// - the strip's observer had no root, so its margin applied to the window while the strip's own box clipped every
+//   card outside its view: the next page, 180 px below, was never drawn ahead and came in blank on a scroll.
+// THE SAMPLER READS WHAT IS ON SHOW, by computed visibility rather than by the grid's own markup, so it reads the old
+// single strip and the prepared one alike — the control is the code before the fix, which fails both assertions.
+test('ORGANIZE’S FULL PAGE is shown finished: no stale or blank card on show as it is chosen, the next page drawn ahead', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const pdf = await PDFDocument.create();
+  for (let at = 0; at < 8; at += 1) pdf.addPage([612, 792]);
+  const bytes = await pdf.save();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000ee');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'pages.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    settings: { 'appearance.ribbon-section': 'organize' },
+    delays: { 'document.readRange': 150 },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const grid = page.getByRole('region', { name: 'Pages to organize' });
+  await expect(grid.locator('[data-thumb-page="0"] canvas')).toHaveAttribute('data-drawn', 'true');
+
+  /** Starts recording, every frame, each card on show in its strip's view: its page, its drawn state, its width. */
+  const record = (): Promise<void> =>
+    page.evaluate(() => {
+      const frames: { page: string; drawn: string; width: number }[][] = [];
+      (window as unknown as { frames13h: typeof frames }).frames13h = frames;
+      const tick = (): void => {
+        const region = document.querySelector('[aria-label="Pages to organize"]');
+        const cards = [...(region?.querySelectorAll<HTMLElement>('[data-thumb-page]') ?? [])].filter((card) => {
+          const strip = card.closest('.m-thumbnails')?.getBoundingClientRect();
+          const box = card.getBoundingClientRect();
+          return getComputedStyle(card).visibility === 'visible' && strip !== undefined && box.bottom > strip.top && box.top < strip.bottom;
+        });
+        frames.push(
+          cards.map((card) => {
+            const canvas = card.querySelector('canvas');
+            return {
+              page: card.dataset['thumbPage'] ?? '',
+              drawn: canvas?.dataset['drawn'] ?? 'none',
+              width: Math.round(canvas?.getBoundingClientRect().width ?? 0),
+            };
+          }),
+        );
+        if (frames.length < 240) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  const recorded = (): Promise<{ page: string; drawn: string; width: number }[][]> =>
+    page.evaluate(() => (window as unknown as { frames13h: { page: string; drawn: string; width: number }[][] }).frames13h);
+
+  await record();
+  await grid.getByRole('button', { name: 'Full page' }).click();
+  await expect(grid).toHaveAttribute('data-page-view', 'full-page');
+  await expect.poll(async () => (await recorded()).length, { timeout: 15_000 }).toBeGreaterThanOrEqual(240);
+  const switching = await recorded();
+  const shown = switching.flat();
+  // THE SAMPLER SAW BOTH ENDS (its positive control): thumbnails drawn, then a Full page card drawn at the grid's width.
+  const thumbnail = shown.find((card) => card.drawn === 'true')?.width ?? Infinity;
+  expect(thumbnail, JSON.stringify(switching.slice(0, 3))).toBeLessThan(200);
+  expect(shown.some((card) => card.drawn === 'true' && card.width > thumbnail * 3), JSON.stringify(switching.slice(-3))).toBe(true);
+  const unfinished = switching.findIndex((frame) => frame.some((card) => card.drawn !== 'true'));
+  expect(unfinished, JSON.stringify(switching[unfinished])).toBe(-1);
+
+  // THE NEXT PAGE, below the view, is drawn without a scroll reaching it — and so a wheel scroll down a page and a half,
+  // a notch at a time, never brings a blank one in.
+  await expect(grid.locator('[data-thumb-page="1"] canvas')).toHaveAttribute('data-drawn', 'true');
+  const strip = await grid.locator('.m-thumbnails').boundingBox();
+  if (strip === null) throw new Error('the Full page strip has no box');
+  await page.mouse.move(strip.x + strip.width / 2, strip.y + strip.height / 2);
+  await record();
+  for (let notch = 0; notch < 10; notch += 1) {
+    await page.mouse.wheel(0, 100);
+    await page.waitForTimeout(50);
+  }
+  await expect.poll(async () => (await recorded()).length, { timeout: 15_000 }).toBeGreaterThanOrEqual(240);
+  const scrolling = await recorded();
+  expect(scrolling.flat().some((card) => card.page === '2'), JSON.stringify(scrolling.slice(-3))).toBe(true);
+  const blank = scrolling.findIndex((frame) => frame.some((card) => card.drawn !== 'true'));
+  expect(blank, JSON.stringify(scrolling[blank])).toBe(-1);
+});
+
 // NO CARD RUNS INTO THE ONE BELOW IT, in any strip of pages. Measured 2026-10-03 in Organize's Full page at 1280 × 800:
 // rows of 613.4 px under cards of 637, because a scroll container whose cards overflow it sizes an `auto` row by its
 // card's minimum contribution — so each card ran 24 px into the gap and its page number showed over the next card.
