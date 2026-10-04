@@ -92,3 +92,12 @@ runs each: plain 21.7, 25.1 and 44.7 ms; collecting 19.5, 24.4 and 39.9 ms. The 
   collector's job done a second time (B3a), and it misses what the page shared with nothing else.
 - **Prune the tree and do nothing else.** The measurement's fourth row: the field leaves the form and the answer stays
   in the file.
+
+## Correction, 2026-10-04
+
+Mechanism 3 says that once the widgets are out and the tree is pruned, *"the widget, its answer and the whole deleted
+page are orphans"*. That is true only when nothing else names the page. Measured the next day: each of twenty-two kinds
+of reference, among them an outline entry, a link, a named destination, `/OpenAction`, a structure element, a thread
+bead and a reply's `/IRT`, keeps the deleted page and its text through the collecting save; and a field listed in
+`/AcroForm /CO` keeps its answer after this ADR's pruning. [ADR-0155](0155-a-page-that-leaves-takes-every-reference-to-it.md) completes decision 1 for
+every kind and corrects the pruning.
