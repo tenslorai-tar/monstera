@@ -122,8 +122,8 @@ function mounted(
 describe('PropertiesPanel while a measurement is drawn (the owner’s item 14a)', () => {
   it('shows the unit, inches as the rulers are, and the drawing’s scale — and neither for any other tool', () => {
     mounted(undefined, [], true);
-    expect((screen.getByRole('combobox', { name: 'Measurement unit' }) as HTMLSelectElement).value).toBe('in');
-    expect((screen.getByRole('spinbutton', { name: 'Drawing scale, 1 to' }) as HTMLInputElement).value).toBe('1');
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: 'Measurement unit' }).value).toBe('in');
+    expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Drawing scale, 1 to' }).value).toBe('1');
     cleanup();
     // CONTROL: the same panel with no measurement tool has neither row.
     mounted(undefined);
