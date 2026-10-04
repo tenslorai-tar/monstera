@@ -14,7 +14,14 @@ import {
 import { placeImageSchema } from './commands.js';
 import type { Incident } from './incident.js';
 import { MAX_PAGE_SET_ENTRIES } from './pageSet.js';
-import { AZURE_KEY_SETTING_ID } from './schemas.js';
+import {
+  AZURE_KEY_SETTING_ID,
+  FAILURE_CODE_MAX_CHARS,
+  FILE_HANDLE_MAX_CHARS,
+  INCIDENT_ID_MAX_CHARS,
+  failureSchema,
+  fileHandleSchema,
+} from './schemas.js';
 
 /** Discards a diagnostic. The sink is required rather than defaulted. */
 function ignore(_incident: Incident): void {
@@ -700,6 +707,27 @@ function reaches(schema: unknown, target: unknown, seen = new Set<unknown>()): b
   const children = Array.isArray(def) ? def : Object.values(def as Record<string, unknown>);
   return children.some((child) => reaches(child, target, seen));
 }
+
+describe('a handle, a failure code and an incident id are bounded strings (CR-SEC-06, CR-SEC-13)', () => {
+  it('each refuses one character past its bound and takes one at it', () => {
+    const of = (length: number): string => 'a'.repeat(length);
+    expect([fileHandleSchema.safeParse(of(FILE_HANDLE_MAX_CHARS)).success, fileHandleSchema.safeParse(of(FILE_HANDLE_MAX_CHARS + 1)).success]).toStrictEqual([true, false]);
+    const declared = (length: number): boolean => failureSchema.safeParse({ code: of(length) }).success;
+    expect([declared(FAILURE_CODE_MAX_CHARS), declared(FAILURE_CODE_MAX_CHARS + 1)]).toStrictEqual([true, false]);
+    const incident = (length: number): boolean =>
+      failureSchema.safeParse({ code: 'internal', incident: of(length) }).success;
+    expect([incident(INCIDENT_ID_MAX_CHARS), incident(INCIDENT_ID_MAX_CHARS + 1)]).toStrictEqual([true, false]);
+  });
+
+  it('every code a renderer channel declares fits the bound, so the bound never refuses a real answer', () => {
+    const codes = [...Object.values(channels), ...Object.values(preloadChannels)].flatMap(
+      (definition) => definition.failures as readonly string[],
+    );
+    // THE POSITIVE CONTROL: the walk found codes, so "none is too long" is a reading and not an empty list.
+    expect(codes.length).toBeGreaterThan(100);
+    expect(codes.filter((code) => code.length > FAILURE_CODE_MAX_CHARS)).toStrictEqual([]);
+  });
+});
 
 describe('DisplayLocation is display-only (ADR-0100)', () => {
   it('the walk can see: it finds the location inside document.recent’s ANSWER', () => {

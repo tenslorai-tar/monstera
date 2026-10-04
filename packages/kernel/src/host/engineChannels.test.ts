@@ -1,6 +1,8 @@
-import { ENGINE_ANSWER_FILE_MAX_BYTES, channels } from '@monstera/contract';
+import { ENGINE_ANSWER_FILE_MAX_BYTES, FAILURE_CODE_MAX_CHARS, channels } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
+import { composeChannels } from './composeChannels.js';
+import { pdfiumChannels } from './pdfiumChannels.js';
 import {
   ENGINE_ANNOTATIONS_MAX,
   ENGINE_DESTINATIONS_MAX,
@@ -24,6 +26,17 @@ import {
  * is a red case rather than a bound that quietly became a guess again.
  */
 const derived = (smallest: number): number => Math.floor(ENGINE_ANSWER_FILE_MAX_BYTES / (smallest + 1) / 100) * 100;
+
+describe('every code a host channel declares fits the wire’s bound (CR-SEC-13)', () => {
+  it('MuPDF’s, PDFium’s and the import host’s, so the bound never refuses a real answer', () => {
+    const failuresOf = (map: Readonly<Record<string, { readonly failures: readonly string[] }>>): string[] =>
+      Object.values(map).flatMap((definition) => [...definition.failures]);
+    const codes = [...failuresOf(engineChannels), ...failuresOf(pdfiumChannels), ...failuresOf(composeChannels)];
+    // THE POSITIVE CONTROL: codes were found, so an empty walk cannot read as "none too long".
+    expect(codes.length).toBeGreaterThan(10);
+    expect(codes.filter((code) => code.length > FAILURE_CODE_MAX_CHARS)).toStrictEqual([]);
+  });
+});
 
 describe('the document-wide lists’ hostile-host bounds', () => {
   it('annotations: the smallest annotation the schema accepts, and the bound it derives', () => {

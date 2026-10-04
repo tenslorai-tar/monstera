@@ -135,6 +135,22 @@ describe('createHostClient', () => {
     await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
   });
 
+  it('names WHY a response was refused in its own words, never the text the host put in it (CR-SEC-13)', async () => {
+    const h = harness({ ids: ['a'] });
+    const call = h.client.invoke('one', {});
+    const chosen = 'host-chosen-key-name-x7';
+
+    h.sendRaw(new TextEncoder().encode(JSON.stringify({ id: 'a', body: 1, [chosen]: true })));
+
+    const detail = h.terminations[0]?.detail ?? '';
+    // ZOD'S OWN MESSAGE NAMES THE UNRECOGNISED KEY, so a client that forwarded it fails here.
+    expect(detail).not.toContain(chosen);
+    // CONTROL: the detail still says what was wrong — the wire is a union of two strict shapes — so an empty or
+    // constant one cannot pass.
+    expect(detail).toContain('invalid_union at depth 0');
+    await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
+  });
+
   it('ENDS on a frame that is not UTF-8 JSON', async () => {
     const h = harness({ ids: ['a'] });
     const call = h.client.invoke('one', {});

@@ -28,7 +28,13 @@ export const DOC_ID_MAX_CHARS = 64;
 
 export const docIdSchema = z.string().min(1).max(DOC_ID_MAX_CHARS).transform(asDocId);
 export const docVersionSchema = z.number().int().nonnegative().transform(asDocVersion);
-export const fileHandleSchema = z.string().min(1).transform(asFileHandle);
+
+/**
+ * How long a `FileHandle` may be: minted as a `DocId` is, 32 random bytes in base64url (`capabilityRegistry.ts`), so
+ * the same bound and for the same reason (CR-SEC-06). Unbounded, a renderer chose how much `main` allocated per call.
+ */
+export const FILE_HANDLE_MAX_CHARS = DOC_ID_MAX_CHARS;
+export const fileHandleSchema = z.string().min(1).max(FILE_HANDLE_MAX_CHARS).transform(asFileHandle);
 
 /**
  * How an error crosses a process or worker boundary (C5).
@@ -65,6 +71,16 @@ export function envelopeSchema<T extends z.ZodType>(value: T) {
 }
 
 /**
+ * How long a declared failure code may be: kebab-case words, the longest declared 26 characters on 2026-10-04
+ * (`secret-storage-unavailable`, read from the built `channels`), so 64 leaves room and bounds a peer's choice.
+ * `channels.test.ts` holds every declared code under it, so a longer one fails there rather than at a refused answer.
+ */
+export const FAILURE_CODE_MAX_CHARS = 64;
+
+/** How long an incident id may be: `IncidentLog` mints `i` and a counter. */
+export const INCIDENT_ID_MAX_CHARS = 32;
+
+/**
  * What a failure looks like on the wire (ADR-0009 §9, and its 2026-08-19
  * decision).
  *
@@ -86,12 +102,15 @@ export function envelopeSchema<T extends z.ZodType>(value: T) {
  * `structuredErrorSchema` above is unchanged and still describes the diagnostic
  * that stays main-side. Two schemas for two objects: one crosses and one does
  * not.
+ *
+ * **Both strings are bounded** (CR-SEC-13): a host is hostile by invariant 25's premise, and an unbounded `code` was
+ * text of its choosing, up to a whole frame, carried into `main`'s diagnostics.
  */
 export const failureSchema = z.union([
   z
     .object({
       code: z.literal(INTERNAL_FAILURE),
-      incident: z.string().min(1),
+      incident: z.string().min(1).max(INCIDENT_ID_MAX_CHARS),
     })
     .strict(),
   z
@@ -99,6 +118,7 @@ export const failureSchema = z.union([
       code: z
         .string()
         .min(1)
+        .max(FAILURE_CODE_MAX_CHARS)
         .refine((code) => code !== INTERNAL_FAILURE, {
           message: `"${INTERNAL_FAILURE}" must carry an incident id; a declared code must not.`,
         }),

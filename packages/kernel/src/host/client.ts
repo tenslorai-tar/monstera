@@ -149,6 +149,19 @@ export interface HostClient {
   readonly termination: () => HostTermination | null;
 }
 
+/**
+ * Why a response did not match the wire, in words this build chose: each issue's zod code and its path's length.
+ *
+ * NEVER zod's own message (CR-SEC-13). A strict object's refusal names the keys it did not recognise, and a record's
+ * path names the peer's keys, so either one carries text the host chose — up to a frame of it — into the termination
+ * `main` writes to its diagnostics.
+ */
+function issuesOf(error: { readonly issues: readonly { readonly code: string; readonly path: readonly PropertyKey[] }[] }): string {
+  const named = error.issues.slice(0, 8).map((issue) => `${issue.code} at depth ${String(issue.path.length)}`);
+  const more = error.issues.length > named.length ? `, and ${String(error.issues.length - named.length)} more` : '';
+  return `the response did not match the host wire: ${named.join(', ')}${more}`;
+}
+
 export function createHostClient({
   transport,
   maxInFlight,
@@ -323,7 +336,7 @@ export function createHostClient({
         }
         const response = hostResponseSchema.safeParse(parsed);
         if (!response.success) {
-          stop({ code: 'malformed-response', detail: response.error.message }, true);
+          stop({ code: 'malformed-response', detail: issuesOf(response.error) }, true);
           return;
         }
         const call = pending.get(response.data.id);
