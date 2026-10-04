@@ -107,6 +107,8 @@
  * @role faint text @on ground bg bg2 surface canvas
  * @role accent-text text @on ground bg bg2 surface canvas float
  * @role border-control boundary-control @on ground bg bg2 surface surface2 canvas float
+ * @role scroll-thumb boundary-control @on ground bg bg2 surface surface2 canvas float list
+ * @role scroll-thumb-hover boundary-control @on ground bg bg2 surface surface2 canvas float list
  * @role border boundary-decorative
  * @role border-soft boundary-decorative
  * @role border-grad boundary-decorative
@@ -163,6 +165,10 @@
   --faint: #bdc5c1;
   --accent-text: #67d897;
   --border-control: rgba(255, 255, 255, 0.46);
+  /* A SCROLL BAR'S THUMB is a control a person grabs (the owner's item 9a), so it is held to a control's contrast on
+     every surface a scroller sits on, and the hover is a clear step brighter. */
+  --scroll-thumb: rgba(255, 255, 255, 0.46);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.66);
   --border: rgba(255, 255, 255, 0.085);
   --border-soft: rgba(255, 255, 255, 0.055);
   --border-grad: rgba(255, 255, 255, 0.16);
@@ -262,6 +268,8 @@
   --faint: #4f5a55;
   --accent-text: #116530;
   --border-control: rgba(15, 30, 22, 0.52);
+  --scroll-thumb: rgba(15, 30, 22, 0.52);
+  --scroll-thumb-hover: rgba(15, 30, 22, 0.72);
   --border: rgba(15, 30, 22, 0.1);
   --border-soft: rgba(15, 30, 22, 0.06);
   --border-grad: rgba(15, 30, 22, 0.16);
@@ -349,6 +357,9 @@
   --faint: #bfbfbf;
   --accent-text: #3ff08f;
   --border-control: #ffffff;
+  /* FLAT: white, and the accent while held or hovered, since a wider white bar alone is a small change to see. */
+  --scroll-thumb: #ffffff;
+  --scroll-thumb-hover: #3ff08f;
   --border: #ffffff;
   --border-soft: #8a8f94;
   --border-grad: #ffffff;
@@ -502,7 +513,12 @@
      0.1.6.0; it grew from 36 to 280 px before). Counts of lines, so they follow the text's own line height. */
   --composer-lines-min: 2;
   --composer-lines-max: 3;
-  --scrollbar: 10px;
+  /* A SCROLL BAR (the owner's item 9a, from a 4 px line): 14 across, its thumb 8 inside it and 10 under the pointer,
+     never shorter than 32, so it is easy to see and to grab, as Windows' own is. */
+  --scrollbar: 14px;
+  --scrollbar-inset: 3px;
+  --scrollbar-inset-hover: 2px;
+  --scrollbar-thumb-min: 32px;
   /* §10.3: the document panel's "six icon tabs (24 px tabs, 14 px icons)". */
   --control-panel-tab: 24px;
   /* v5 draws those tabs 34 wide at the same 24 tall; `DOCUMENT_PANEL_MIN_WIDTH` is derived from this. */

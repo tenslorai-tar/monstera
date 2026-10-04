@@ -6612,9 +6612,14 @@ body {
 
 /* THE TABS (v5): 32 tall, rounded at the top only, standing on the title bar's bottom edge; the current one lifted
    onto a surface with an accent line along its top. The line is a border, so forced colours still say which. */
+/* OVER THE TITLE BAR'S EDGE BY ITS OWN BOX, so the current tab covers the bar's 1 px foot and joins the ribbon below.
+   The tab used to be moved there by a relative offset, which a scroller counts as overflow: the strip scrolls sideways
+   (`overflow-x: auto`, which makes the other axis auto too), and that pixel drew a vertical scroll bar beside the tabs
+   whenever bars are drawn (measured 2026-10-04: content 1 px taller than the strip's 39). */
 .m-tabs {
   align-self: stretch;
   align-items: flex-end;
+  margin-block-end: -1px;
 }
 
 .m-tab-list {
@@ -6633,7 +6638,6 @@ body {
   border: 1px solid transparent;
   border-block-end: none;
   border-radius: var(--radius-8) var(--radius-8) 0 0;
-  inset-block-end: -1px;
 }
 
 .m-tab-current {
@@ -6994,16 +6998,27 @@ body {
   font-size: var(--font-chrome-11);
 }
 
-/* THE SCROLLBARS (v5): 10 px, the thumb the gradient hairline's colour, rounded, inset by a transparent border. */
+/* THE SCROLLBARS (the owner's item 9a): a rounded thumb inset in the bar by a transparent border, in a control's colour,
+   wider and brighter under the pointer and while held. v5's 10 px bar with a 3 px inset left a 4 px thumb in the
+   gradient hairline's colour, which read as a line and was hard to grab. */
 ::-webkit-scrollbar {
   inline-size: var(--scrollbar);
   block-size: var(--scrollbar);
 }
 
 ::-webkit-scrollbar-thumb {
-  border: 3px solid transparent; /* decorative: the thumb's inset; a scrollbar is operated by the platform, not drawn as a control boundary */
+  min-block-size: var(--scrollbar-thumb-min);
+  min-inline-size: var(--scrollbar-thumb-min);
+  border: var(--scrollbar-inset) solid transparent; /* decorative: the thumb's inset; a scrollbar is operated by the platform, not drawn as a control boundary */
   border-radius: var(--scrollbar);
-  background: var(--border-grad);
+  background: var(--scroll-thumb);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  border-width: var(--scrollbar-inset-hover);
+  background: var(--scroll-thumb-hover);
   background-clip: padding-box;
 }
 
