@@ -1451,6 +1451,14 @@ that applies as it is changed, which is what the owner's Settings design is,
 keeps the mutation in the command. A dialog that never calls `update` is
 unchanged.
 
+**And the opener may REPLY to a report with new props**
+([ADR-0158](DECISIONS/0158-an-opener-may-reply-to-a-report-with-new-props.md)).
+`onUpdate` receives `reply(props)` beside the report; the props are validated
+by the dialog's own props schema, reach only the dialog that reported, and the
+mounted body keeps its state. So a question a body asks while open, such as
+Settings' key check, is answered without closing the dialog, and the body still
+has no client.
+
 **Placements are part of the command, not of the surface.** A projection needs
 data to project from, so every command declares where it appears:
 
@@ -2927,6 +2935,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-04 | **An opener may reply to a report with new props** (§7's dialog clause). The owner's item 17b: a Check button per provider key in Settings, answered in place with a tick, a reason or the provider's models. The check is main's (`ai.models`, the stored key, CR-SEC-02's address rule), and the answer had no way back into an open dialog: props were fixed while open, and *Import settings…* closes and reopens. `onUpdate` now receives `reply(props)`, validated by the dialog's props schema, delivered only to the dialog that reported, with the body's state kept. Rejected: close and reopen, a client in the body, the answer in a store the body reads, a promise or callback in props, checking with `ai.checkKey` | ADR-0094's one-way `update` | [0158](DECISIONS/0158-an-opener-may-reply-to-a-report-with-new-props.md) |
 | 2026-10-04 | **A field whose value runs long takes its row's width** (§7's settings registry). The owner's item 17a: every key and endpoint field measured 168 px, the browser's twenty characters, in rows of 488 to 672 px, so a key showed about a fifth of itself. The `Input` primitive takes `runsLong`, and such a field takes its own line and the row's whole width; a text setting must declare it, a secret implies it. The gallery reads every overflowing field against its row's control column, with a positive control. Rejected: every text field full width, deciding it by id or label, deriving it from `purpose`, a width in characters, keying on `type="password"` | §7's settings row, which listed no such field | [0157](DECISIONS/0157-a-field-whose-value-runs-long-takes-its-rows-width.md) |
 | 2026-10-04 | **Spelling is reviewed a word at a time, beside the page** (§10.3's right contextual panel). The owner's item 16a: spell check opened a modal list whose one action was adding a word to the dictionary, and a modal window makes the page inert. The panel gains a third tab; a review walks the pages, and comments and text fields as two settings say, and shows one occurrence at a time, marked on the page through the find highlight, with Ignore, Ignore all, Add to dictionary, Replace and Replace all, each edit through the route that already holds its rules. One occurrence of page text is named by its point on the page (`replaceTextAt`), because the two engines' readings of a page agree on 52.9% of lines. Written into this document after the ADR, which recorded it alone. Rejected: an occurrence index, `editTextBlock` splicing, a seventh document panel, a non-modal dialog | Spell check's modal list; the panel's two tabs | [0156](DECISIONS/0156-spelling-is-reviewed-a-word-at-a-time-beside-the-page.md) |
 | 2026-10-04 | **A page that leaves takes every reference to it** (§4's removal paragraph). The owner's 12a follow-up and the local agent's L1: after a delete, bookmarks and links to the deleted page stayed, and went nowhere. Twenty-two kinds of reference were measured to keep a deleted page and its text through a collecting save; one function clears each kind in the same apply, for every command after which a page may be outside the document, and a replaced page's destinations follow its replacement. Written into this document after the ADR, which recorded it alone | ADR-0151's mechanism 3 (*the whole deleted page is an orphan*) and its field pruning; 12b's *a link to a page not taken stays and goes nowhere* | [0155](DECISIONS/0155-a-page-that-leaves-takes-every-reference-to-it.md) |
