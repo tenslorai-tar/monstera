@@ -953,6 +953,20 @@ optgroup {
   outline-offset: 2px;
 }
 
+/* READ AT THE CONTENT SIZE (the owner's item 19a): an article and the list that leads to one are text a person reads,
+   not chrome, so they take the content scale, measured 12 px before. The buttons among them follow, so a Show me
+   or Back to the list is not smaller than the sentence beside it. */
+.m-help__list,
+.m-help__article,
+.m-help__back {
+  font-size: var(--font-content-14);
+  line-height: 1.5;
+}
+
+:is(.m-help__show, .m-help__back) .m-button {
+  font-size: var(--font-content-14);
+}
+
 .m-help__item-title {
   font-weight: 600;
 }
@@ -971,6 +985,29 @@ optgroup {
 
 .m-help__article :is(h3, h4, h5, p, ol, ul) {
   margin: 0;
+}
+
+/* A STEP BETWEEN EACH LEVEL, which the browser's defaults did not give: an h4 was 1em, the size of the text under it. */
+.m-help__article :is(h3, h4, h5) {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.m-help__article h3 {
+  font-size: var(--font-content-20);
+}
+
+/* A SECTION'S HEADING closer to its own text than to the text before it, so it reads as the start of what follows. */
+.m-help__article :is(h4, h5) {
+  margin-block-start: var(--space-8);
+}
+
+.m-help__article h4 {
+  font-size: var(--font-content-16);
+}
+
+.m-help__article h5 {
+  font-size: var(--font-content-14);
 }
 
 .m-help__article :is(ol, ul) {
