@@ -302,7 +302,7 @@ const noSaving: SaveSource = {
       remove: () => Promise.reject(new Error('this case does not save')),
       exists: () => Promise.reject(new Error('this case does not save')),
     },
-    names: (target) => ({ temp: `${target}.tmp`, backups: [`${target}.bak`], retired: [] }),
+    names: (target) => ({ temp: `${target}.tmp`, previous: `${target}.previous`, backups: [`${target}.bak`], retired: [] }),
     wait: () => Promise.resolve(),
   },
   flush: () => Promise.reject(new Error('this case does not save')),

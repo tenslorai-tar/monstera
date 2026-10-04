@@ -92,6 +92,8 @@ export type WriteTargetCheck = (docId: DocId) => Promise<WriteTargetVerdict>;
  */
 export type SaveFileNames = (target: string) => {
   readonly temp: string;
+  /** Where the file being replaced is copied before the rename, and from where it becomes the newest backup. */
+  readonly previous: string;
   /** The backups to keep, newest first — empty where a person keeps none (`saving.backup-copies`). */
   readonly backups: readonly string[];
   /** Backup names a longer choice would have kept, removed after a successful save. */

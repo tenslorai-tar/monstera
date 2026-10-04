@@ -33,7 +33,12 @@ import {
 
 const DOC = asDocId('doc-under-save');
 const TARGET = '/docs/report.pdf';
-const NAMES = { temp: '/docs/report.pdf.tmp', backups: ['/docs/report.pdf.bak'], retired: [] as string[] };
+const NAMES = {
+  temp: '/docs/report.pdf.tmp',
+  previous: '/docs/report.pdf.previous',
+  backups: ['/docs/report.pdf.bak'],
+  retired: [] as string[],
+};
 const NEW_BYTES = new TextEncoder().encode('saved contents');
 
 /** A file the fake surface holds, so a case can assert what survived. */
@@ -480,6 +485,7 @@ describe('saveDocument', () => {
 const ELSEWHERE = '/elsewhere/report copy.pdf';
 const COPY_NAMES = {
   temp: '/elsewhere/report copy.pdf.tmp',
+  previous: '/elsewhere/report copy.pdf.previous',
   backups: ['/elsewhere/report copy.pdf.bak'],
   retired: [] as string[],
 };

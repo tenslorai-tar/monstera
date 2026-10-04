@@ -104,7 +104,7 @@ function fake(
   };
 }
 
-const NAMES = { temp: '/doc.pdf.tmp', backups: ['/doc.pdf.bak'], retired: [] as string[] };
+const NAMES = { temp: '/doc.pdf.tmp', previous: '/doc.pdf.previous', backups: ['/doc.pdf.bak'], retired: [] as string[] };
 const BYTES = new TextEncoder().encode('new contents');
 
 describe('atomicWrite', () => {
@@ -177,6 +177,7 @@ describe('atomicWrite', () => {
   describe('BACKUP COPIES TO KEEP (saving.backup-copies)', () => {
     const THREE = {
       temp: '/doc.pdf.tmp',
+      previous: '/doc.pdf.previous',
       backups: ['/doc.pdf.bak', '/doc.pdf.bak2', '/doc.pdf.bak3'],
       retired: ['/doc.pdf.bak4'],
     };
@@ -220,7 +221,7 @@ describe('atomicWrite', () => {
         f.surface,
         '/doc.pdf',
         (temp) => f.surface.write(temp, BYTES),
-        { temp: '/doc.pdf.tmp', backups: [], retired: ['/doc.pdf.bak'] },
+        { temp: '/doc.pdf.tmp', previous: '/doc.pdf.previous', backups: [], retired: ['/doc.pdf.bak'] },
         () => Promise.resolve(),
       );
       expect(result.ok ? result.value.backedUp : undefined).toBe(false);
@@ -245,6 +246,48 @@ describe('atomicWrite', () => {
       const result = await atomicWrite(g.surface, '/doc.pdf', (temp) => g.surface.write(temp, BYTES), THREE, () => Promise.resolve());
       expect(result.ok).toBe(false);
       expect(failed.get('/doc.pdf.bak4')).toBe('old');
+    });
+
+    it('a save whose rename FAILS leaves every kept backup exactly as it was (CR-DOC-09)', async () => {
+      // THE DEFECT: the backups were rotated and the original copied into the newest name BEFORE the rename, so a
+      // rename that then failed had overwritten the oldest, and `.bak` held the file that was never replaced.
+      const files: Files = new Map([
+        ['/doc.pdf', 'v3'],
+        ['/doc.pdf.bak', 'v2'],
+        ['/doc.pdf.bak2', 'v1'],
+        ['/doc.pdf.bak3', 'v0'],
+      ]);
+      const f = fake(files, { rename: { times: 99, code: 'ENOSPC' } });
+      const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), THREE, () => Promise.resolve());
+      expect(result.ok ? 'saved' : result.error.stage).toBe('rename');
+      expect([...files.entries()].sort()).toStrictEqual([
+        ['/doc.pdf', 'v3'],
+        ['/doc.pdf.bak', 'v2'],
+        ['/doc.pdf.bak2', 'v1'],
+        ['/doc.pdf.bak3', 'v0'],
+      ]);
+    });
+
+    it('a rotation REFUSED after the save landed keeps every version and answers no backup, never a failed save', async () => {
+      // A backup open in another program refuses its rename. The document is written, so the save is not failed, and
+      // nothing is destroyed: the replaced version stays at `previous` and each backup at its name or one older.
+      const files: Files = new Map([
+        ['/doc.pdf', 'v3'],
+        ['/doc.pdf.bak', 'v2'],
+      ]);
+      const f = fake(files);
+      const surface = {
+        ...f.surface,
+        rename: (from: string, to: string) =>
+          from.includes('.bak') ? Promise.reject(Object.assign(new Error('busy'), { code: 'EBUSY' })) : f.surface.rename(from, to),
+      };
+      const result = await atomicWrite(surface, '/doc.pdf', (temp) => surface.write(temp, BYTES), THREE, () => Promise.resolve());
+      expect(result.ok ? result.value.backedUp : result.error.stage).toBe(false);
+      expect([...files.entries()].sort()).toStrictEqual([
+        ['/doc.pdf', 'new contents'],
+        ['/doc.pdf.bak', 'v2'],
+        ['/doc.pdf.previous', 'v3'],
+      ]);
     });
   });
 
@@ -277,7 +320,9 @@ describe('atomicWrite', () => {
     expect(files.get('/doc.pdf')).toBe('new contents');
     // THREE ATTEMPTS AND TWO WAITS, asserted as counts. "It eventually worked"
     // is also what a ladder that ignored its own back-off produces.
-    expect(f.calls.filter((call) => call.startsWith('rename:'))).toHaveLength(3);
+    // THE TEMP'S renames: since CR-DOC-09 a landed save also moves the previous version into `.bak` by a rename.
+    expect(f.calls.filter((call) => call.startsWith('rename:/doc.pdf.tmp->'))).toHaveLength(3);
+    expect(files.get('/doc.pdf.bak')).toBe('original');
     expect(f.waits).toEqual([RENAME_BACKOFF_MS[1], RENAME_BACKOFF_MS[2]]);
   });
 
