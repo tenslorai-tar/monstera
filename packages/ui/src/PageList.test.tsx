@@ -1660,7 +1660,48 @@ describe('PageList', () => {
     });
   });
 
-  it('a SCROLL does not render the list: the rulers and the grid measure it on their own (row 303)', async () => {
+  it('draws the GRID inside every page, with the ruler’s spacing on the list (Part A3) — CONTROL: none while it is off', async () => {
+    const { client } = clientAnswering();
+    const drawn = (showGrid: boolean): HTMLElement => {
+      const { container } = render(
+        <PageList
+          client={client}
+          view={undefined}
+          pageCount={3}
+          docId={DOC}
+          version={VERSION}
+          onCurrentPage={vi.fn()}
+          mode={SCALE_1}
+          onZoomStep={vi.fn()}
+          onShownZoom={vi.fn()}
+          goTo={undefined}
+          startAt={FIRST_PAGE.kernel}
+          onWentTo={vi.fn()}
+          loupe={false}
+          rulers={false}
+          showGrid={showGrid}
+          unit="in"
+          search={undefined} differences={undefined} writing={undefined}
+          secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
+          menuAt={undefined}
+        />,
+      );
+      return container;
+    };
+    const on = drawn(true);
+    await settle();
+    const grids = [...on.querySelectorAll<HTMLElement>('.m-paper-grid')];
+    // ONE PER PAGE, each inside its own slot, so its origin is that page's corner — and hidden from assistive
+    // technology, since it says nothing about the document.
+    expect(grids.map((grid) => grid.closest('.m-page-slot')?.getAttribute('data-page'))).toStrictEqual(['0', '1', '2']);
+    expect(grids.every((grid) => grid.getAttribute('aria-hidden') === 'true')).toBe(true);
+    // THE SPACING IS THE RULER'S: an inch at scale 1, a point to a pixel, is 72 px.
+    expect(on.querySelector<HTMLElement>('.m-page-list')?.style.getPropertyValue('--m-grid')).toBe('72px');
+    // CONTROL: off, no page carries one.
+    expect(drawn(false).querySelectorAll('.m-paper-grid')).toHaveLength(0);
+  });
+
+  it('a SCROLL does not render the list: the rulers measure it on their own (row 303)', async () => {
     // EVERY SLOT A REAL BOX, stacked 300 px apart: happy-dom answers zero for every box, and a measure that finds no
     // page with a height sets nothing — so with zero boxes the old code also rendered nothing on a scroll, and this
     // case would pass against the defect it exists to catch.
@@ -1702,7 +1743,8 @@ describe('PageList', () => {
       const before = listRenders.count;
       // THE PREMISE: the count sees this list — its mount at least.
       expect(before).toBeGreaterThan(0);
-      for (const top of [120, 240, 360]) {
+      // THE FIRST PAGE PARTLY ON SCREEN at every one, so the ruler draws its run: a page wholly above is drawn by none.
+      for (const top of [40, 80, 120]) {
         scroller.scrollTop = top;
         fireEvent.scroll(scroller);
       }
@@ -1710,13 +1752,16 @@ describe('PageList', () => {
 
       // THE DECISION: nothing in the list rendered again.
       expect(listRenders.count).toBe(before);
-      // AND THE SCROLL WAS READ: the grid's origin follows the page now on top, which a listener that never ran would
-      // leave where the first frame put it (or unset).
-      expect(scroller.style.getPropertyValue('--m-grid-y')).not.toBe('');
-      const settledY = scroller.style.getPropertyValue('--m-grid-y');
+      // AND THE SCROLL WAS READ: the vertical ruler's first page starts where that page now is, which a listener that
+      // never ran would leave where the first frame put it (or draw nothing).
+      const firstRun = (): string | undefined =>
+        container.querySelector<HTMLElement>('.m-ruler-v .m-ruler-run')?.style.insetBlockStart;
+      expect(firstRun()).toBe('-120px');
       scroller.scrollTop = 30;
       fireEvent.scroll(scroller);
-      expect(scroller.style.getPropertyValue('--m-grid-y')).not.toBe(settledY);
+      await settle();
+      expect(firstRun()).toBe('-30px');
+      expect(listRenders.count).toBe(before);
     } finally {
       boxes.mockRestore();
     }

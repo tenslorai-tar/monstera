@@ -3365,8 +3365,9 @@ optgroup {
  * flips is lightness and the page keeps its colours recognisable. The two are
  * one effect rather than two decisions, which is why they are on one line.
  *
- * Scoped to the CANVASES, so the rulers, the grid and the strip's own chrome
- * are untouched — they belong to the shell, and the shell has a theme.
+ * Scoped to the CANVASES, so the rulers and the strip's own chrome are
+ * untouched — they belong to the shell, and the shell has a theme. The grid,
+ * drawn over the paper, takes the same filter (`.m-paper-grid`).
  */
 [data-dark-page='true'] canvas.m-page,
 [data-dark-page='true'] canvas.m-page-tile,
@@ -3614,25 +3615,35 @@ optgroup {
   border-inline-start: 1px solid var(--border); /* decorative: separates two scrollable regions of one document and bounds neither; each pane's own controls carry their focus rings */
 }
 
-.m-page-list-grid {
+/*
+ * THE GRID, over each page (Part A3).
+ *
+ * One box at the slot's inset 0, so the lines start at the page's own corner — the zero the rulers read from — and
+ * no reading has to follow a scroll. It takes no pointer, so what is under it is reached as if it were not there.
+ * The colour is `--grid-on-paper`, solved against `--page` by `PageList` at the point of use; the soft border stands
+ * in only until the first solve. The spacing is `--m-grid`, the ruler's major interval, inherited from the list.
+ */
+.m-paper-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
   background-image:
     repeating-linear-gradient(
       to right,
-      var(--border-soft) 0 1px,
+      var(--grid-on-paper, var(--border-soft)) 0 1px,
       transparent 1px var(--m-grid, 72px)
     ),
     repeating-linear-gradient(
       to bottom,
-      var(--border-soft) 0 1px,
+      var(--grid-on-paper, var(--border-soft)) 0 1px,
       transparent 1px var(--m-grid, 72px)
     );
-  /*
-   * ANCHORED TO THE PAGE'S CORNER, not to the scroller's. `--m-grid-x` and
-   * `--m-grid-y` carry the page origin, so a grid line is a mark the reader can
-   * find on the ruler. Without this the two would be regular, aligned to
-   * different zeros, and silently disagree.
-   */
-  background-position: var(--m-grid-x, 0) var(--m-grid-y, 0);
+}
+
+/* WITH THE PAPER IT IS DRAWN ON: dark page mode inverts the page canvases, so the grid takes the same filter and keeps
+   its contrast against the paper as shown. Inverting a colour 3:1 on white gives one at least 3.8:1 on black. */
+[data-dark-page='true'] .m-paper-grid {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 .m-ruler {

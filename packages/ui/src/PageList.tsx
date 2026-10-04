@@ -516,6 +516,9 @@ export function PageList({
   // and 1.49:1 in high contrast (measured 2026-10-04 with `contrast`), under the 3:1 a boundary needs in two of three.
   // `--accent-on-paper` inherits to every slot, and the rules fall back to the accent where nothing is solved.
   useOnColor(scroller, '--accent-on-paper', '--accent', ON_PAPER, 3);
+  // AND THE GRID'S LINES, by the same rule: the soft border they were drawn in is a colour for the shell's own
+  // surfaces, and on the paper it all but vanishes. A boundary's 3:1, against `--page`, since the grid is over a page.
+  useOnColor(scroller, '--grid-on-paper', '--border-soft', ON_PAPER, 3);
   // AND THE PAGES A SELECTION IS IN, on screen or not: their layers hold the selection's ends (`useSelectedTextPages`).
   const selectedPages = useSelectedTextPages(scroller);
   const pageText = usePageText(client, docId, version, firstFrame ? new Set([...visible, ...selectedPages]) : NOTHING_VISIBLE);
@@ -1071,15 +1074,13 @@ export function PageList({
           <Loupe view={view} page={lens.page} zoom={shown} rotation={rotations.get(lens.page)} at={lens.at} />
         </div>
       ) : null}
-      {rulers || grid !== undefined ? (
+      {rulers ? (
         <PageSpans
           scroller={scroller}
           slotFor={slotFor}
           visible={visible}
           viewport={viewport}
           sizes={sizes}
-          rulers={rulers}
-          grid={grid !== undefined}
           unit={unit}
           zoom={shown}
         />
@@ -1097,7 +1098,6 @@ export function PageList({
         // ONE PAGE TO A SCREEN, centred, at Fit page in a continuous layout (`app.css`); facing pages fit a spread, and
         // single page already shows one.
         fitOnePage ? 'm-page-list--fit-page' : '',
-        grid === undefined ? '' : 'm-page-list-grid',
         panning ? 'm-page-list--panning' : '',
         selectsText ? 'm-page-list--selects-text' : '',
         grab === undefined ? '' : 'is-grabbing',
@@ -1140,10 +1140,8 @@ export function PageList({
         grid === undefined && !fitOnePage
           ? undefined
           : ({
+              // INHERITED BY EVERY PAGE'S GRID, whose origin is its own page's corner, the zero the rulers read from.
               ...(grid === undefined ? {} : { '--m-grid': `${String(grid)}px` }),
-              // THE ORIGIN (`--m-grid-x`, `--m-grid-y`) IS `PageSpans`', the one the ruler uses, so a grid line is a
-              // mark the reader can find on the ruler; it is set on this element there, because it moves with every
-              // scroll and this component must not render with it.
               //
               // FIT PAGE'S ROOM: the scroller's own measured height, each page's share of it.
               ...(fitOnePage && viewport !== undefined ? { '--m-fit-room': `${String(viewport.height)}px` } : {}),
@@ -1225,6 +1223,7 @@ export function PageList({
           tiled={renderZoom * quality > tileAbove}
           quality={quality}
           badge={pageBadges}
+          grid={grid !== undefined}
           scroller={scroller}
           hidden={layout === 'single' && page !== onShow}
         />
@@ -1280,9 +1279,8 @@ const NOTHING_VISIBLE: ReadonlySet<number> = new Set();
  * past page 1's foot, so every later page read a continuation of page 1's numbers (the owner's review of 0.1.6.0).
  * The pages are the ones `visible` already names, so this asks the slots the observer is watching and no others.
  *
- * The grid's origin is the CURRENT page's corner, which is also what the horizontal ruler measures from, with the page
- * beside it in a facing row. The numbers go NEGATIVE once a page is scrolled past, which is correct: a ruler whose
- * origin clamped to zero would put its zero mark wherever the viewport happened to start.
+ * The numbers go NEGATIVE once a page is scrolled past, which is correct: a ruler whose origin clamped to zero would
+ * put its zero mark wherever the viewport happened to start.
  *
  * ## ITS OWN COMPONENT, so a scroll renders this and nothing else
  *
@@ -1292,8 +1290,8 @@ const NOTHING_VISIBLE: ReadonlySet<number> = new Set();
  * collection beside it. Held here, a scroll renders the rulers; the list renders when a page enters or leaves
  * `visible`, which is what it draws.
  *
- * The grid's origin is the same reading (a grid line is a mark the reader can find on the ruler), so it is written
- * here as the scroller's two custom properties rather than through `PageList`'s style, which would render it again.
+ * The grid needs nothing from here: it is drawn inside each page's slot, so its origin is that page's corner, the
+ * zero each ruler reads from, with no reading to keep up with a scroll.
  */
 function PageSpans({
   scroller,
@@ -1301,8 +1299,6 @@ function PageSpans({
   visible,
   viewport,
   sizes,
-  rulers,
-  grid,
   unit,
   zoom,
 }: {
@@ -1312,8 +1308,6 @@ function PageSpans({
   /** What moves the pages' corners besides a scroll, with `zoom`: read by nothing here, and a dependency of the measure. */
   readonly viewport: unknown;
   readonly sizes: unknown;
-  readonly rulers: boolean;
-  readonly grid: boolean;
   readonly unit: RulerUnit;
   readonly zoom: number;
 }): ReactElement | null {
@@ -1352,11 +1346,6 @@ function PageSpans({
       // page can lie wholly above it; the boxes read here say which pages the scrollport actually shows.
       const current = pages.find((page) => page.bottom > 0 && page.top < outer.height) ?? pages[0];
       if (current === undefined) return;
-      if (grid) {
-        box.style.setProperty('--m-grid-x', `${String(current.left)}px`);
-        box.style.setProperty('--m-grid-y', `${String(current.top)}px`);
-      }
-      if (!rulers) return;
       setSpans({
         across: pages
           .filter((page) => page.top < current.bottom && page.bottom > current.top)
@@ -1371,18 +1360,9 @@ function PageSpans({
       cancelAnimationFrame(first);
       box.removeEventListener('scroll', measure);
     };
-  }, [grid, rulers, scroller, slotFor, visible, zoom, viewport, sizes]);
+  }, [scroller, slotFor, visible, zoom, viewport, sizes]);
 
-  // THE GRID'S ORIGIN LEAVES WITH THE GRID: a property left on the scroller would anchor a grid nobody shows.
-  useEffect(() => {
-    const box = scroller.current;
-    if (grid || box === null) return undefined;
-    box.style.removeProperty('--m-grid-x');
-    box.style.removeProperty('--m-grid-y');
-    return undefined;
-  }, [grid, scroller]);
-
-  if (!rulers || spans.size.height === 0) return null;
+  if (spans.size.height === 0) return null;
   return <Rulers unit={unit} zoom={zoom} size={spans.size} across={spans.across} down={spans.down} />;
 }
 
@@ -1431,6 +1411,7 @@ function PageSlot({
   tiled,
   quality,
   badge,
+  grid,
   scroller,
   hidden,
 }: {
@@ -1477,6 +1458,8 @@ function PageSlot({
   readonly quality: number;
   /** Whether the page's number is drawn at its foot. */
   readonly badge: boolean;
+  /** Whether the grid is drawn over the page; its spacing is the list's `--m-grid`, inherited. */
+  readonly grid: boolean;
   /** The scroller the slot sits in, whose box decides which tiles are wanted. */
   readonly scroller: React.RefObject<HTMLElement | null>;
   /** Out of the layout: single page shows only the page on show, and a hidden slot is never visible, so never drawn. */
@@ -1668,6 +1651,11 @@ function PageSlot({
           style={shown === undefined ? undefined : { width: shown.width, height: shown.height }}
         />
       ) : null}
+      {/* THE GRID, OVER THE PAPER. It was the scroller's background, which every page covers: it showed in the gutters
+          and nowhere a person measures. Here it is one box over the page, so its origin is the page's corner — the
+          zero the rulers read from — and it takes no pointer. It is the shell's and not the document's: nothing that
+          prints, exports or saves reads this element. */}
+      {grid ? <div aria-hidden="true" className="m-paper-grid" data-paper-grid={String(page)} /> : null}
       {/* UNDER the annotation overlay and over the canvas. The overlay is
           mounted only while a tool is active, so while somebody is drawing the
           drawing surface takes the pointer and while nobody is, this does —
