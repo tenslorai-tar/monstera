@@ -1061,7 +1061,20 @@ delete also removes its pages' widgets and prunes the field tree, by the calls
 `deleteFormFields` makes, because until then `/AcroForm` still named the
 widgets and each widget's `/P` kept the deleted page reachable. A collecting
 save re-encodes a foreign annotation exactly as the plain one did, so the
-divergence set below is unchanged. An appended save, a signed document's,
+divergence set below is unchanged.
+
+**AND A PAGE THAT LEAVES TAKES EVERY REFERENCE TO IT, since 2026-10-04**
+([ADR-0155](DECISIONS/0155-a-page-that-leaves-takes-every-reference-to-it.md)).
+The widgets were one kind: measured that day, twenty-two kinds of reference
+(an outline entry, a link, a named destination, `/OpenAction`, a structure
+element's `/Pg`, an article bead, a reply's `/IRT`, an action chain's GoTo and
+`/AcroForm /CO` among them) each kept the deleted page and its text in a
+collecting save, and drew a bookmark or link that goes nowhere. So one function,
+run in the same apply after the page tree is rewritten, clears each kind the way
+its own structure says, for every command after which a page may be outside the
+document (delete, replace, merge, *Insert from PDF*, the undo of an insert or a
+duplicate, an extract's new file); a replaced page's destinations follow its replacement, and
+a walk from the trailer nulls any reference the list does not know. An appended save, a signed document's,
 keeps its earlier revision whole by construction, and that is ADR-0149's
 question rather than this one.
 
@@ -2767,10 +2780,13 @@ them.
   is the one writer of both open settings.
 - **The right contextual panel holds TABS**, as the left one does (amended
   2026-09-17, [ADR-0083](DECISIONS/0083-the-contextual-panel-holds-tabs-and-the-assistant-is-one.md)):
-  **Properties**, which is what it held before, and **Assistant**, the owner's
+  **Properties**, which is what it held before, **Assistant**, the owner's
   design for the AI chat — a conversation about the document is read beside the
-  document rather than over it. One tab open at a time, persisted per person;
-  collapsing the panel shuts both and reopening returns to the tab that was open.
+  document rather than over it — and **Spelling** (amended 2026-10-04,
+  [ADR-0156](DECISIONS/0156-spelling-is-reviewed-a-word-at-a-time-beside-the-page.md)),
+  where a spelling review shows one word at a time while the page shows it
+  marked. One tab open at a time, persisted per person; collapsing the panel
+  shuts it and reopening returns to the tab that was open.
 - **Layout switcher:** a segmented control in the title bar toggling three
   chrome modes, persisted per user — **Ribbon** (default) · **Studio** (the
   ribbon is auto-hidden; selecting a section opens its full tool set as a
@@ -2911,6 +2927,8 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-04 | **Spelling is reviewed a word at a time, beside the page** (§10.3's right contextual panel). The owner's item 16a: spell check opened a modal list whose one action was adding a word to the dictionary, and a modal window makes the page inert. The panel gains a third tab; a review walks the pages, and comments and text fields as two settings say, and shows one occurrence at a time, marked on the page through the find highlight, with Ignore, Ignore all, Add to dictionary, Replace and Replace all, each edit through the route that already holds its rules. One occurrence of page text is named by its point on the page (`replaceTextAt`), because the two engines' readings of a page agree on 52.9% of lines. Written into this document after the ADR, which recorded it alone. Rejected: an occurrence index, `editTextBlock` splicing, a seventh document panel, a non-modal dialog | Spell check's modal list; the panel's two tabs | [0156](DECISIONS/0156-spelling-is-reviewed-a-word-at-a-time-beside-the-page.md) |
+| 2026-10-04 | **A page that leaves takes every reference to it** (§4's removal paragraph). The owner's 12a follow-up and the local agent's L1: after a delete, bookmarks and links to the deleted page stayed, and went nowhere. Twenty-two kinds of reference were measured to keep a deleted page and its text through a collecting save; one function clears each kind in the same apply, for every command after which a page may be outside the document, and a replaced page's destinations follow its replacement. Written into this document after the ADR, which recorded it alone | ADR-0151's mechanism 3 (*the whole deleted page is an orphan*) and its field pruning; 12b's *a link to a page not taken stays and goes nowhere* | [0155](DECISIONS/0155-a-page-that-leaves-takes-every-reference-to-it.md) |
 | 2026-10-04 | **Words are typed on the page, and the page is asked for them** (§6's tool lifecycle). The owner's Group 15: Text box, Typewriter, Callout, the note, a form field's name, a link's address, *Edit comment* and *Reply* collected their words in a centred dialog away from where they go. A tool or command holds `write(request)` beside `ask`; the application draws the one pending request over its page, a block finished by Escape or a click outside, or a line committed by Enter once the dialog's own schema passes. A double-click with no gesture is the controller's `reopen` (default: nothing), which edits a mark's words in place; a waiting tool declares a `hint` the status bar shows, Escape leaving it. Rejected: a fourth `commit` parameter, the overlay drawing the editor, keeping the dialogs beside it, a per-request Escape | ADR-0038's shape for a tool's words; §6's controller members | [0154](DECISIONS/0154-words-are-typed-on-the-page-and-the-page-is-asked-for-them.md) |
 | 2026-10-04 | **Edit object is a mode on the page, and a placed picture is one of its objects** (§7's `Placement`). The owner's item 14g: direct editing on the page, no dialog, and a page holding two photos listed only *Text* and *Shape*. Reproduced: a picture placed with *Comment › Image* is a `/Stamp`, and the object walk reads the content stream, which holds no annotation. Edit object becomes a mode in the tool slot, Edit text's shape, with a ribbon menu of four filters; the page list's one `editing` slot becomes a union of the two modes. A stamp the walk calls `pictured` is offered as an object and edited by the annotation commands, page content by PDFium's; the two walks are never joined. One object is selected and survives a move, a resize or a recolour, each measured to keep PDFium's walk; a removal drops it. A fifth context menu, `object`, carries *Properties* and *Delete*. The dialog is removed. Rejected: keeping the dialog, the select tool's shape, listing stamps through `document.pageObjects`, placing pictures as content, a colour submenu | §7's four menu contexts | [0153](DECISIONS/0153-edit-object-is-a-mode-on-the-page-and-a-placed-picture-is-one-of-its-objects.md) |
 | 2026-10-04 | **A merge takes several documents in one command** (§8's `sources` axis). The owner's item 13d: several files, in an order the person sets. One `mergeDocument` per file would be N log entries for one intent, and a failure on the third would leave two merged. `CommandSources` gains `'several'`; `ApplyRequest.source` becomes `sources`, a list typed by the axis (none, a one-tuple, a non-empty list), and `engine/apply` carries a list of handles. `mergeDocument` carries `documents`, placed in order from `at`: one document with its pages chosen, or 1 to 32 documents each taken whole, so the worst is bounded by the shape the frame check reads (corrected before building, the same day: a refine over the parts' total was invisible to it). Rejected: N commands, a batch around them, a hidden intermediate document, a count in place of `'one'` | ADR-0040 Decision 4's `'none' \| 'one'`; ADR-0069's `ApplyRequest.source` | [0152](DECISIONS/0152-a-merge-takes-several-documents-in-one-command.md) |
