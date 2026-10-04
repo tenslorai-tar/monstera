@@ -48,6 +48,7 @@ import {
   remoteMupdfAccessibility,
   type SessionAssets,
   UnknownRemoteSession,
+  DuplicateRemoteSession,
 } from './remoteEngine.js';
 
 /**
@@ -1083,5 +1084,21 @@ describe('the registry answers an area by handle for the lifetime of its token',
 
     sessions.release(session);
     expect(sessions.areaForHandle('handle-1')).toBeUndefined();
+  });
+
+  it('refuses a handle it already holds, and the first document keeps its area (CR-SEC-10)', () => {
+    const sessions = createRemoteSessions();
+    const first = { snapshotDirectory: 'C:\\first-in', outputDirectory: 'C:\\first-out' };
+    const second = { snapshotDirectory: 'C:\\second-in', outputDirectory: 'C:\\second-out' };
+    const held = sessions.adopt('handle-1', first);
+
+    expect(() => sessions.adopt('handle-1', second)).toThrow(DuplicateRemoteSession);
+    // NOTHING WAS SET before the refusal: overwriting the handle's area is the aliasing itself.
+    expect(sessions.areaForHandle('handle-1')).toBe(first);
+    expect(sessions.areaFor(held)).toBe(first);
+
+    // THE CONTROL: a released handle is free again, so the refusal is about one held, not one ever seen.
+    sessions.release(held);
+    expect(sessions.areaForHandle(sessions.handleFor(sessions.adopt('handle-1', second)))).toBe(second);
   });
 });

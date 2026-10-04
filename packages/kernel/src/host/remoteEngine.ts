@@ -183,6 +183,23 @@ export class UnknownRemoteSession extends Error {
 }
 
 /**
+ * A handle the host issued while this registry already holds it (CR-SEC-10).
+ *
+ * The host mints the handle and is hostile by invariant 25, and the host's own `issue` refuses a collision
+ * (`hostSessions.ts`). A second document adopted under the first's handle would point the first's lookups at the
+ * second's directories — its prior-state parameters written where the other document's host reads, its answers read
+ * from the other's output — and releasing either would strand the other. So it is refused, and the caller ends the
+ * connection: a peer that issues one handle twice has stopped being one we understand.
+ */
+export class DuplicateRemoteSession extends Error {
+  override readonly name = 'DuplicateRemoteSession';
+
+  constructor() {
+    super('The engine host issued a session handle this registry already holds, so the host is not to be believed.');
+  }
+}
+
+/**
  * @returns a registry with no sessions in it.
  */
 export function createRemoteSessions(): RemoteSessions {
@@ -191,6 +208,8 @@ export function createRemoteSessions(): RemoteSessions {
   const byHandle = new Map<string, SessionArea>();
   return {
     adopt: (handle, area) => {
+      // A HANDLE ALREADY HELD IS REFUSED, before anything is set: overwriting `byHandle` is the aliasing itself.
+      if (byHandle.has(handle)) throw new DuplicateRemoteSession();
       // The same mint `mupdfWriter.open` makes, and the same reason it is a cast
       // rather than a constructor: the brand exists so nothing outside an
       // adapter can produce one, and an exported mint would be exactly that.

@@ -632,13 +632,15 @@ describe('the composition root, with an engine host platform', () => {
   it('builds ONE host for two documents, which is what the held promise is for', async () => {
     const paths = [aDocument('first.pdf'), aDocument('second.pdf')];
     let next = 0;
-    const spy = platformAnswering((channel) =>
-      channel === 'engine/probe-containment'
-        ? CONTAINED
-        : channel === 'engine/open'
-          ? { ok: true, value: { session: `ab0${String(next)}`, access: 1 } }
-          : ENGINE(channel, null),
-    );
+    // A HANDLE PER OPEN, as a real host issues them. This read `next`, which the picks move before either open reaches
+    // the host, so both were issued the same handle — which main now refuses (CR-SEC-10), as the host's own `issue` does.
+    let issued = 0;
+    const spy = platformAnswering((channel) => {
+      if (channel === 'engine/probe-containment') return CONTAINED;
+      if (channel !== 'engine/open') return ENGINE(channel, null);
+      issued += 1;
+      return { ok: true, value: { session: `ab0${String(issued)}`, access: 1 } };
+    });
     const { handlers } = createShellDependencies({
       ...harnessSurfaces('the composition-host test'),
       appInfo,
@@ -681,6 +683,56 @@ describe('the composition root, with an engine host platform', () => {
     const opens = spy.harness.calls.filter((call) => call === 'peer.request:engine/open');
     expect(created).toHaveLength(1);
     expect(opens).toHaveLength(2);
+    // AND IT WAS NEVER ENDED: the control for the duplicate-handle case below, where the same two opens end the host.
+    expect(spy.harness.calls).not.toContain('host.terminate');
+  });
+
+  it('a host that issues ONE HANDLE FOR TWO DOCUMENTS is ended, never left aliasing them (CR-SEC-10)', async () => {
+    const paths = [aDocument('first.pdf'), aDocument('second.pdf')];
+    let next = 0;
+    // THE FIRST HOST ISSUES `ab0f` TO BOTH, so the second document would be adopted under the first's handle: its area
+    // overwriting the first's in main's table, the first's prior state written into the second's snapshot directory.
+    // The host built after it issues a handle per open, so the documents' recovery has somewhere to land.
+    let issued = 0;
+    const spy = platformAnswering((channel) => {
+      if (channel === 'engine/probe-containment') return CONTAINED;
+      if (channel !== 'engine/open') return ENGINE(channel, null);
+      issued += 1;
+      return { ok: true, value: { session: issued <= 2 ? 'ab0f' : `ab1${String(issued)}`, access: 1 } };
+    });
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(paths[next++] ?? null),
+      enginePlatform: spy.platform,
+    });
+
+    const first = await handlers['document.open']({});
+    const second = await handlers['document.open']({});
+    if (!first.ok || first.value.kind !== 'opened') throw new Error('the first did not open');
+    if (!second.ok || second.value.kind !== 'opened') throw new Error('the second did not open');
+
+    // THE COMMANDS GO IN AFTER THE ENDING, which is the event waited for. One sent before it can be in flight on the
+    // ended host, and an in-flight call fails with the connection by design; whether it was is the runner's choice.
+    // After it, each command queues behind its document's reopen, and succeeds only once that document has a session
+    // of its own again.
+    await vi.waitFor(() => {
+      expect(spy.harness.calls).toContain('host.terminate');
+    });
+    for (const opened of [first.value, second.value]) {
+      const executed = await handlers['document.execute']({
+        docId: opened.docId,
+        command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+      });
+      expect(executed.ok).toBe(true);
+    }
+
+    // THE DECISION: the host that issued the handle twice was ended, and a second built, in which each document was
+    // opened again under a handle of its own, ONCE. The second document's open met the duplicate and is not poisoned:
+    // one host's ending is one failure for it, as for the first, so its command above succeeded.
+    const built = spy.harness.calls.lastIndexOf('host.createSuspended');
+    expect(spy.harness.calls.filter((call) => call === 'host.createSuspended')).toHaveLength(2);
+    expect(spy.harness.calls.slice(built).filter((call) => call === 'peer.request:engine/open')).toHaveLength(2);
   });
 
   it('SHUTDOWN closes the open document and then the host', async () => {

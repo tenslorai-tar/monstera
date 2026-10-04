@@ -321,6 +321,7 @@ export {
 export { TextNotInPlaceError, TextNotWritableError } from './textEditRefusals.js';
 export type { RegionRequest } from './pageSnapshot.js';
 export {
+  DuplicateRemoteSession,
   EngineCallFailed,
   EngineSessionGone,
   type RemoteSessions,

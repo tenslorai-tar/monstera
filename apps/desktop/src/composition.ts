@@ -94,6 +94,7 @@ import {
   type SessionAssets,
   type SnapshotWrite,
   type WriterRegistry,
+  DuplicateRemoteSession,
   HostConnectionLost,
   classifyContainment,
   createRemoteSessions,
@@ -2615,10 +2616,21 @@ function engineSessionOpener(
       // the registry owns the pair (ADR-0030 Decision 2), which is what lets
       // `serialise` and `close` work on a session this root opened — they read
       // the area from here rather than from a map private to the adapter.
-      return remote.adopt(answer.value.session, {
-        snapshotDirectory: paths.snapshot,
-        outputDirectory: paths.output,
-      });
+      try {
+        return remote.adopt(answer.value.session, {
+          snapshotDirectory: paths.snapshot,
+          outputDirectory: paths.output,
+        });
+      } catch (thrown) {
+        // A HANDLE ISSUED TWICE ENDS THIS HOST (CR-SEC-10), as every protocol violation does on the client's own side:
+        // the peer has stopped being one we understand, and the documents it holds are rebuilt in a host of their own
+        // rather than left reading each other's areas. NOT `live.close()`: that ends a connection as `shutdown`, which
+        // recovery rightly leaves alone, and every document waited for a host nobody built. This open then fails as
+        // every call on an ended connection does, so the ending that counted this document and queued its reopen is
+        // the one owner of what happens to it next.
+        if (thrown instanceof DuplicateRemoteSession) throw new HostConnectionLost(live.client.violated(thrown.message));
+        throw thrown;
+      }
     };
 
     const { session } = await openEngineSessionFrom(write, areas, open, password);

@@ -134,6 +134,15 @@ export interface HostClient {
    * went away, the host died. Settles every outstanding call.
    */
   readonly fail: (termination: HostTermination) => void;
+  /**
+   * The peer broke the protocol in an answer this client delivered intact: a well-formed `engine/open` whose session
+   * handle is one already held (CR-SEC-10). Ends the connection as the client's own violations do, the transport
+   * terminated and every outstanding call settled, so the ending is a failure recovery acts on and not the `shutdown`
+   * a deliberate close reports.
+   *
+   * @returns the termination this client stopped with: this violation, or the earlier cause if it had already stopped.
+   */
+  readonly violated: (detail: string) => HostTermination;
   /** How many calls are waiting for an answer. */
   readonly inFlight: () => number;
   /** Why this client stopped, or `null` while it is running. */
@@ -395,6 +404,13 @@ export function createHostClient({
       // `ours` false: the transport is already gone, and telling it to terminate
       // would be a call made to look symmetrical.
       stop(termination, false);
+    },
+
+    violated: (detail: string): HostTermination => {
+      // `ours` true, as for every violation this client raises: the peer is alive and is told to go.
+      const reason: HostTermination = { code: 'malformed-response', detail };
+      stop(reason, true);
+      return state.stopped ?? reason;
     },
 
     inFlight: (): number => pending.size,
