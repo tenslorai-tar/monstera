@@ -147,7 +147,7 @@ async function threeRunsAndARectangle() {
 const failures = [];
 // 69 until 2026-10-04, when `replaceAtCases` added five (ADR-0156), and 75 from the stage audit of
 // cb62b976..33715f7c, which gave blank paper's refusal its control.
-const roster = createRoster(failures, { cases: 75 });
+const roster = createRoster(failures, { cases: 76 });
 
 /**
  * @param {string} name
@@ -1617,6 +1617,29 @@ async function blockEditCases() {
     'a probed edit leaves NO page object behind: the saved file has exactly the pages it had',
     pageObjects(probedSaved) === pageObjects(renamed.bytes) && pageObjects(renamed.bytes) === 1,
     `page objects in the saved file ${String(pageObjects(probedSaved))}, before ${String(pageObjects(renamed.bytes))}`,
+  );
+
+  // NOR A FONT NO PAGE USES (CR-NAT-16): a probe that needs a twin loads a standard font into the document, and
+  // PDFium's save writes every object the document holds. So every font object in the saved file must be one a
+  // page's resources name, counted from the parsed file rather than from its text.
+  const fontsOf = async (/** @type {Uint8Array} */ bytes) => {
+    const parsed = await PDFDocument.load(bytes);
+    const all = parsed.context
+      .enumerateIndirectObjects()
+      .filter(([, object]) => object instanceof PDFDict && object.get(PDFName.of('Type'))?.toString() === '/Font')
+      .map(([ref]) => ref.toString());
+    const named = parsed.getPages().flatMap((page) => {
+      const fonts = page.node.Resources()?.lookupMaybe(PDFName.of('Font'), PDFDict);
+      return fonts === undefined ? [] : fonts.values().map((value) => value.toString());
+    });
+    return { all, unnamed: all.filter((ref) => !named.includes(ref)) };
+  };
+  const probedFonts = await fontsOf(probedSaved);
+  record(
+    'a probed edit leaves NO font behind that no page names',
+    // THE POSITIVE CONTROL: the edit wrote through a twin, so the file holds more than the page's own font.
+    probedFonts.all.length >= 2 && probedFonts.unnamed.length === 0,
+    `${String(probedFonts.all.length)} font object(s); not named by a page: ${JSON.stringify(probedFonts.unnamed)}`,
   );
 
   // AND WHERE NO TWIN CAN BE HAD, REFUSED — never saved as `Ø`. Helvetica itself in StandardEncoding:
