@@ -1,0 +1,63 @@
+# ADR-0164 — A removal's save also renews the host's copy and the Recent picture, and a copy written meanwhile keeps no backup
+
+- **Status:** Accepted
+- **Date:** 2026-10-04
+- **Amends:** `docs/ARCHITECTURE.md` §4, *Save is one pipeline*, as [ADR-0139](0139-a-removals-save-deletes-the-backups-monstera-made.md)
+  left it: which copies a removal's save leaves no older version of, and which write keeps no backup.
+- **Found by:** CR-DOC-11 (copies of removed content ADR-0139 does not reach: the host snapshot, the Recent preview,
+  the temp file, the Save-a-copy `.bak`).
+
+## Context
+
+ADR-0139's deliverable is the owner's sentence: *after saving a redaction, Sanitize or flatten, no Monstera-made backup
+holding removed content may remain.* It reached the backups beside the file and the undo copies. Read on 2026-10-04,
+three other copies Monstera makes still hold what was removed after that save:
+
+1. **The engine host's snapshot.** A session is opened from the canonical image written into a granted directory
+   (ADR-0023 Decision 7), and that file is the document as it was opened. Commands change the session, never the
+   file, so after a redaction's save the snapshot still holds the unredacted document until the document closes.
+2. **The Recent picture.** `RecentPictures.capture` keeps a picture of page 1 when a document opens (ADR-0100), and
+   nothing takes it again. After a redaction of page 1 the start screen shows the redacted content, as a picture, on
+   every launch.
+3. **A copy's backup.** *Save a copy* over an existing file writes the `.bak` a save would leave, by design
+   (`writeDocumentCopy`'s comment). Written while a removal is pending, which is the usual way a redacted copy is
+   made, it keeps whatever that file held, and an earlier attempt at the same copy is the likely thing it held.
+
+The fourth the finding names is not one: a temp file a crash left beside the document is the name the next save
+writes its own temp to, so a removal's save replaces it and renames it into the file. Read in `atomicWrite`, whose
+temp is `names.temp` of the target on every path; the leftover can only outlive the next save of the same file by
+that save failing before its temp write, which removes the temp too.
+
+## Decision
+
+1. **A removal's save rebuilds the document's engine sessions from the file it just wrote**, through the restore a
+   checkpoint uses (`recycle`, which releases the old granted pair and opens a new one). The old snapshot goes with
+   its directory. Inside the save's own lane entry, so no command lands between the write and the rebuild.
+2. **A document opened with a password keeps its session**, because the rebuild would need the password this build
+   does not keep (ADR-0055). Its snapshot is the encrypted file as it was opened, readable only with that password,
+   and it goes when the document closes. The refusal is a named error, and only that error is passed over.
+3. **A removal's save retakes the Recent picture**: the kept picture is deleted first and a new one made from the
+   saved document, so a picture that cannot be made leaves the placeholder, never the old one.
+4. **A copy written while the document carries a removal keeps no backup of the file it replaces.** The same
+   document fact ADR-0139 Decision 1 reads, and the same `'keep' | 'none'` argument, now required by
+   `writeDocumentCopy` too.
+
+## What this costs, said plainly
+
+A removal's save opens the document again in the engine host: one more parse of the saved file, on the save of a
+redaction, a Sanitize or a flatten, and nowhere else. A copy over an existing file, made before the removal is saved,
+no longer leaves a `.bak` of that file; the person chose to replace it, and the picker asked.
+
+## Rejected
+
+- **Deleting the snapshot and keeping the session.** The engine may read the file it was opened from, so the session
+  would be left on a file that is gone.
+- **Writing the redacted bytes into the old snapshot.** The host is granted read on that directory and nothing more,
+  by design; main writing a different document under a session opened from the first is the staleness ADR-0047
+  keeps unaskable.
+- **Retaking the picture without deleting first.** A capture that fails, or a Privacy setting turned off meanwhile,
+  would leave the old picture.
+- **A second fact for copies, "a removal ran since the document opened".** It would drop the backup of every copy made
+  after a removal was saved, to cover a destination this build cannot know holds an earlier version of the same
+  document. That case stays as it is, and is said here so it is not read as covered: a copy made after the
+  redaction is saved still leaves a `.bak` of the file it replaces.
