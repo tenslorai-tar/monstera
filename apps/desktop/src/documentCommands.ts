@@ -1904,6 +1904,19 @@ export type DocumentAnnotationCopyReader = (
   indices: readonly number[],
 ) => Promise<{ readonly json: string; readonly copyable: readonly boolean[] }>;
 
+/** One mark's whole words, read in the host. Throws `RangeError` for a handle past the walk. */
+export type DocumentAnnotationWordsReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+  index: number,
+) => Promise<{ readonly text: string; readonly whole: boolean }>;
+
+/** What {@link DocumentCommands.annotationWords} answers. */
+export type AnnotationWordsOutcome =
+  | { readonly kind: 'words'; readonly text: string; readonly whole: boolean }
+  | { readonly kind: 'stale' };
+
 /** What {@link DocumentCommands.copyAnnotations} answers. */
 export type CopyAnnotationsOutcome =
   /** The clipboard now holds `copied` marks; `skipped` were of kinds this build does not exchange. */
@@ -2107,6 +2120,7 @@ export interface DocumentCommandsParts {
   readonly annotations: DocumentAnnotationsReader;
   /** Named marks serialised for the clipboard, in the engine host. */
   readonly annotationCopy: DocumentAnnotationCopyReader;
+  readonly annotationWords: DocumentAnnotationWordsReader;
   readonly formFields: DocumentFormFieldsReader;
   readonly flatFields: DocumentFlatFieldsReader;
   /** One page's barcodes, read in the engine host (ADR-0076). */
@@ -2316,6 +2330,7 @@ export class DocumentCommands {
   readonly #restore: DocumentRestore;
   readonly #annotations: DocumentAnnotationsReader;
   readonly #annotationCopy: DocumentAnnotationCopyReader;
+  readonly #annotationWords: DocumentAnnotationWordsReader;
   /**
    * The annotation clipboard: interchange JSON, held here and never sent to the renderer.
    *
@@ -2402,6 +2417,7 @@ export class DocumentCommands {
     this.#restore = parts.restore;
     this.#annotations = parts.annotations;
     this.#annotationCopy = parts.annotationCopy;
+    this.#annotationWords = parts.annotationWords;
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
     this.#barcodes = parts.barcodes;
@@ -4310,6 +4326,30 @@ export class DocumentCommands {
     if (copied === 0) return { kind: 'nothing-copyable' };
     this.#clipboard = { json: value.json, from: { docId, page } };
     return { kind: 'copied', copied, skipped: value.copyable.length - copied };
+  }
+
+  /**
+   * One mark's own words, whole, for an editor whose listing was cut.
+   *
+   * {@link copyAnnotations}' version rule and its reason: the handle is a position in the walk read at `version`, so
+   * the read happens inside the lane and the lane's version is compared afterwards; a moved document or a handle past
+   * the walk answers `stale` rather than another mark's words.
+   */
+  async annotationWords(docId: DocId, page: number, index: number, version: DocVersion): Promise<AnnotationWordsOutcome> {
+    const { version: ranAt, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+      try {
+        return await this.#annotationWords(docId, sessions, page, index);
+      } catch (thrown) {
+        if (!(thrown instanceof RangeError)) throw thrown;
+        return undefined;
+      }
+    });
+    if (value === undefined || ranAt !== version) return { kind: 'stale' };
+    return { kind: 'words', text: value.text, whole: value.whole };
   }
 
   /**

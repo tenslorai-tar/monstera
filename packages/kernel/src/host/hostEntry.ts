@@ -16,7 +16,7 @@ import { readLayers } from '../layers.js';
 import { detectFlatFields } from '../flatFields.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
-import { readAnnotations } from '../pageAnnotations.js';
+import { readAnnotationWords, readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { extractPages } from '../pageExtract.js';
 import { rasterisePageImage } from '../pageImages.js';
@@ -214,6 +214,8 @@ const engineHandlers = createEngineHandlers({
   // AND THE CLIPBOARD'S COPY, through the interchange's one reader of entries: the records go to
   // main and stay there, so a paste can be minted where the importer is allowed to be.
   annotationRecords: copyAnnotationData,
+  // AND ONE MARK'S WHOLE WORDS, for an editor whose listing was cut: read where the mark is, beside the walk.
+  annotationWords: readAnnotationWords,
 });
 
 startEngineHost(

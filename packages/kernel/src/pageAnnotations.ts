@@ -10,6 +10,7 @@ import {
   type CommandOfKind,
   type LineEnding,
   MAX_ANNOTATION_AUTHOR,
+  MAX_ANNOTATION_TEXT,
   type TextDirection,
   strokesOfPlaced,
 } from '@monstera/contract/host';
@@ -1897,6 +1898,8 @@ export interface ListedAnnotation {
   readonly blend: AnnotationBlend;
   /** Present and true on a stamp whose appearance draws a picture — {@link picturedStamp}. */
   readonly pictured?: true;
+  /** Present and true where {@link contents} is a slice of longer words — {@link readAnnotationWords} reads them. */
+  readonly cut?: true;
 }
 
 /** MuPDF's subtype back to the name a surface may use. */
@@ -2066,6 +2069,7 @@ export function readAnnotations(
       }
       for (const annotation of marks) {
         if (!found.room()) return listedOf(found);
+        const contents = annotation.getContents();
         found.add({
           page,
           index: index++,
@@ -2077,7 +2081,10 @@ export function readAnnotations(
           // one that names them vaguely.
           kind: kindOf(annotation),
           style: styleOf(annotation),
-          contents: annotation.getContents().slice(0, MAX_LISTED_CONTENTS),
+          contents: contents.slice(0, MAX_LISTED_CONTENTS),
+          // SAID WHEN THE SLICE CUT THEM, so an editor reads the mark's own words (`readAnnotationWords`) rather than
+          // saving the slice over the whole.
+          ...(contents.length > MAX_LISTED_CONTENTS ? { cut: true as const } : {}),
           authored: authoredHere(annotation),
           author: authorOf(annotation),
           created: createdOf(annotation),
@@ -2094,6 +2101,26 @@ export function readAnnotations(
 function listedOf(found: BoundedList<ListedAnnotation>): { readonly annotations: readonly ListedAnnotation[]; readonly truncated: boolean } {
   const { items, truncated } = found.answer();
   return { annotations: items, truncated };
+}
+
+/**
+ * ONE mark's own words, whole, for an editor to start from — the walk lists them sliced, and says so with `cut`.
+ *
+ * Named by the walk's handle, page and index, through {@link annotationAt} as the edit that follows is, so the words
+ * read and the mark an edit then writes are one mark. A handle past the walk throws its `RangeError`, which the host
+ * answers by name. Words past `MAX_ANNOTATION_TEXT`, the most an edit can write back, are answered `whole: false` and
+ * sliced to it, so the editor can say it cannot start from them rather than saving a slice over them.
+ */
+export function readAnnotationWords(
+  session: MupdfSession,
+  page: number,
+  index: number,
+): Promise<{ readonly text: string; readonly whole: boolean }> {
+  return withDocument(session, (document) => {
+    const loaded = pageAt(document, page, document.countPages());
+    const words = annotationAt(loaded, index).getContents();
+    return { text: words.slice(0, MAX_ANNOTATION_TEXT), whole: words.length <= MAX_ANNOTATION_TEXT };
+  });
 }
 
 /**

@@ -32,6 +32,7 @@ import { WORD_MODES } from './wordModes.js';
 import {
   MAX_ANNOTATION_BORDER,
   MAX_REMOVED_ANNOTATIONS,
+  MAX_ANNOTATION_TEXT,
   MAX_IMAGE_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
@@ -3808,6 +3809,30 @@ export const channels = {
   ),
 
   /**
+   * ONE mark's own words, whole, for an editor whose listing was cut (`cut` on `document.annotations`' entry).
+   *
+   * The walk lists a note sliced, as one line in a panel, and an editor that started from that slice would save it
+   * over the whole. Named by the walk's handle at the version it was read at, `document.copyAnnotations`' rule: a
+   * document that has moved, or a handle past its walk, answers `stale`. `whole: false` is a note past
+   * `MAX_ANNOTATION_TEXT`, the most an edit can write back, which the editor says it cannot start from rather than
+   * editing a slice.
+   */
+  'document.annotationWords': channel(
+    'Reads one annotation’s own words whole, for editing.',
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+      index: z.number().int().nonnegative(),
+      version: docVersionSchema,
+    }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('words'), text: z.string().max(MAX_ANNOTATION_TEXT), whole: z.boolean() }),
+      z.object({ kind: z.literal('stale') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
    * Pastes the annotation clipboard onto one page — main mints the `importAnnotations`.
    *
    * `empty` is an answer rather than an error: nothing copied yet is a state a person is in, and
@@ -4596,6 +4621,12 @@ export const channels = {
              * that predates it reads as it did.
              */
             pictured: z.literal(true).exactOptional(),
+            /**
+             * Present and true where `contents` is a SLICE of longer words. A panel shows the slice; an editor reads
+             * the mark's whole words through `document.annotationWords` before it starts, so no edit saves a slice
+             * over a long comment.
+             */
+            cut: z.literal(true).exactOptional(),
           }),
         )
         .max(ANNOTATIONS_PART)

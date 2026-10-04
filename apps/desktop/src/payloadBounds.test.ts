@@ -466,6 +466,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // THE CLIPBOARD ANSWERS COUNTS, never marks — the records stay in main — so neither answer can
   // scale with anything: a copy is three numbers at most, a paste is a version and two counts.
   'document.copyAnnotations': 'needs an engine session',
+  // ONE MARK'S WORDS, BOUNDED AT `MAX_ANNOTATION_TEXT` — the most an edit can write back — so the answer is a
+  // function of one comment's bound, never of the document or how many marks it carries.
+  'document.annotationWords': 'needs an engine session',
   'document.pasteAnnotations': 'needs an engine session and a copy made first',
   // BOUNDED AT 64 BARCODES OF 7,089 CHARACTERS, per PAGE — `document.flatFieldCandidates`' shape.
   'document.pageBarcodes': 'needs an engine session',

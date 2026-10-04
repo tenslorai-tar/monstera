@@ -207,6 +207,9 @@ function start(stream: HostByteStream) {
     annotationRecords: () => {
       throw new Error('no case here reads annotation records');
     },
+    annotationWords: () => {
+      throw new Error('no case here reads annotation words');
+    },
   });
 
   const body = startEngineHost(

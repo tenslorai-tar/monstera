@@ -591,6 +591,9 @@ describe('the engine host answers a containment probe', () => {
     annotationRecords: () => {
       throw new Error('a containment probe must not read annotation records');
     },
+    annotationWords: () => {
+      throw new Error('a containment probe must not read annotation words');
+    },
   };
 
   function probeHandler(answer: ContainmentReport) {

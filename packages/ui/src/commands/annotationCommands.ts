@@ -19,6 +19,7 @@ import {
   FORM_FIELD_TEXT_TOOL_ID,
 } from '../annotations/formFieldTools.js';
 import { LINK_ADDRESS_TOOL_ID, LINK_PAGE_TOOL_ID } from '../annotations/linkTools.js';
+import { wordsToEdit } from '../annotations/markWords.js';
 import {
   MEASURE_AREA_TOOL_ID,
   MEASURE_DISTANCE_TOOL_ID,
@@ -663,13 +664,14 @@ export interface ObjectSelectionDeps {
  * remove it, delete the mark), and an edit that changes nothing would be an
  * undo step that undoes nothing.
  *
- * ## The text comes from the SELECTION, not from a read
+ * ## The text comes from the SELECTION, and is read whole only where the walk cut it
  *
  * `selection.items[0].contents` was carried out of the walk that produced the
  * handles, so the card opens holding text from the same answer the index
- * points into. A command that fetched it when the item was clicked would be a
- * second reader of that walk (B3a) and could answer at a version the handle no
- * longer names.
+ * points into. The walk slices a long comment to one line and says so, and a
+ * card opened on that slice would save it over the whole; so a cut comment is
+ * read whole first (`wordsToEdit`), at the selection's version, and one past
+ * what an edit can write back is said rather than opened.
  *
  * ## The version travels with the command
  *
@@ -678,7 +680,13 @@ export interface ObjectSelectionDeps {
  * *Delete* and the styles panel meet. The version sent is the selection's,
  * which is the one the index is a position in.
  */
-export function editSelectionCommand(deps: SelectionCommandDeps & { readonly write: Write }): UiCommand {
+export function editSelectionCommand(
+  deps: SelectionCommandDeps & {
+    readonly write: Write;
+    readonly client: ContractClient;
+    readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  },
+): UiCommand {
   const only = (): SelectedAnnotation | undefined => {
     const selection = deps.selection();
     if (selection?.items.length !== 1) return undefined;
@@ -692,17 +700,26 @@ export function editSelectionCommand(deps: SelectionCommandDeps & { readonly wri
     // copy, delete.
     placements: [{ surface: 'context-menu', context: 'annotation', order: 10 }],
     when: () => only() !== undefined,
-    run: async (): Promise<void> => {
+    run: async (context): Promise<void> => {
       const selection = deps.selection();
       const item = only();
-      if (selection === undefined || item === undefined) return;
+      if (selection === undefined || item === undefined || context.docId === undefined) return;
+      const words = await wordsToEdit(deps.client, context.docId, selection, item);
+      if (words.kind === 'too-long') {
+        void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: 'comment-too-long' });
+        return;
+      }
+      if (words.kind === 'problem') {
+        void deps.ask(COMMAND_PROBLEM_DIALOG_ID, words.problem);
+        return;
+      }
       const text = await writeMarkWords(deps.write, {
         page: selection.page,
         beside: item.rect,
         label: WRITE_EDIT_COMMENT_LABEL,
-        initial: item.contents,
+        initial: words.text,
       });
-      if (text === undefined || text === item.contents) return;
+      if (text === undefined || text === words.text) return;
       deps.onPlace({
         kind: 'editAnnotationText',
         page: selection.page,
@@ -844,7 +861,8 @@ export async function copySelectedAnnotations(
     version: selection.version,
   });
   if (!answer.ok) {
-    void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: answer.error.code });
+    // THE REFUSAL WHOLE, never its code alone: an `internal` one carries the incident id the dialog requires and shows.
+    void deps.ask(COMMAND_PROBLEM_DIALOG_ID, answer.error);
     return false;
   }
   if (answer.value.kind === 'stale') {

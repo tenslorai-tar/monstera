@@ -171,6 +171,16 @@ export type HostAnnotationRecordsReader = (
 ) => Promise<{ readonly json: string; readonly copyable: readonly boolean[] }>;
 
 /**
+ * One mark's own words, whole — `readAnnotationWords`, for an editor whose listing was cut. Throws `RangeError` for a
+ * handle past the walk, which the handler answers as `no-such-annotation`, {@link HostAnnotationRecordsReader}'s rule.
+ */
+export type HostAnnotationWordsReader = (
+  session: MupdfSession,
+  page: number,
+  index: number,
+) => Promise<{ readonly text: string; readonly whole: boolean }>;
+
+/**
  * Lists every AcroForm field. {@link HostAnnotationsReader}'s shape and its
  * reasons, over the walk that shares no entries with it: measured 2026-09-07, a
  * page carrying seven widgets answers zero annotations, so this cannot be a
@@ -466,6 +476,8 @@ export interface EngineHandlerParts {
   readonly annotations: HostAnnotationsReader;
   /** How this process reads named marks for the clipboard. `engine/annotation-records`. */
   readonly annotationRecords: HostAnnotationRecordsReader;
+  /** How this process reads one mark's whole words. `engine/annotation-words`. */
+  readonly annotationWords: HostAnnotationWordsReader;
   readonly formFields: HostFormFieldsReader;
   readonly duplicates: HostDuplicatesReader;
   readonly extract: HostExtract;
@@ -519,6 +531,7 @@ export function createEngineHandlers({
   layers,
   annotations,
   annotationRecords,
+  annotationWords,
   formFields,
   duplicates,
   extract,
@@ -971,6 +984,19 @@ export function createEngineHandlers({
         // A HANDLE PAST THE WALK is the caller's stale selection, not a failure of this process:
         // named, so main can say the marks moved rather than reporting an internal error. Every
         // other throw is not this and is left to propagate.
+        if (thrown instanceof RangeError) return { ok: false, error: { code: 'no-such-annotation' } } as const;
+        throw thrown;
+      }
+    },
+
+    'engine/annotation-words': async ({ session, page, index }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      try {
+        const words = await annotationWords(held.session, page, index);
+        return { ok: true, value: { text: words.text, whole: words.whole } };
+      } catch (thrown) {
+        // A HANDLE PAST THE WALK, by name, for `engine/annotation-records`' reason.
         if (thrown instanceof RangeError) return { ok: false, error: { code: 'no-such-annotation' } } as const;
         throw thrown;
       }

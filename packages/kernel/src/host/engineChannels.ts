@@ -507,6 +507,8 @@ const engineAnnotationSchema = z
      * present with no value is refused rather than read as a third answer.
      */
     pictured: z.literal(true).exactOptional(),
+    /** Present and true where `contents` is a slice of longer words, exactly optional for `pictured`'s reason. */
+    cut: z.literal(true).exactOptional(),
   })
   .strict();
 
@@ -2731,6 +2733,26 @@ export const engineChannels = {
       })
       .strict(),
     ['no-such-session'],
+  ),
+
+  'engine/annotation-words': fileAnswered(
+    'Reads one annotation’s own words whole, for an editor whose listing was cut.',
+    z
+      .object({
+        session: sessionSchema,
+        page: z.number().int().nonnegative(),
+        index: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z
+      .object({
+        /** The words, to `MAX_ANNOTATION_TEXT`: the most an edit can write back. */
+        text: z.string().max(MAX_ANNOTATION_TEXT),
+        /** Whether that is all of them; `false` is a note past the bound, which an editor may not start from. */
+        whole: z.boolean(),
+      })
+      .strict(),
+    ['no-such-session', 'no-such-annotation'],
   ),
 
   'engine/form-fields': fileAnswered(

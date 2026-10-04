@@ -64,6 +64,9 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     // Said rather than swallowed, because a Copy that did nothing looks like one that worked
     // until the paste finds an empty clipboard.
     z.object({ code: z.literal('not-copyable') }).strict(),
+    // A COMMENT LONGER THAN AN EDIT CAN WRITE BACK (`MAX_ANNOTATION_TEXT`), from another application: the editor does
+    // not open on a slice of it, because saving the slice would cut the rest.
+    z.object({ code: z.literal('comment-too-long') }).strict(),
     // AN IN-PLACE EDIT THE PAGE'S FONT CANNOT CARRY (ADR-0096). The editor says it beside the
     // words; this is the sentence for any other surface that writes a block.
     z.object({ code: z.literal('text-not-writable') }).strict(),

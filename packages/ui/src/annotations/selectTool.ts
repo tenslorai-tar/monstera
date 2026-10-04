@@ -84,6 +84,8 @@ export interface SelectedAnnotation {
   readonly kind: ErasableAnnotation['kind'];
   /** What it says now, carried from the walk for {@link style}'s reason. */
   readonly contents: ErasableAnnotation['contents'];
+  /** Whether the walk cut {@link contents}, carried for {@link style}'s reason; an editor reads the whole words. */
+  readonly cut?: ErasableAnnotation['cut'];
   /** Who it names, carried from the walk for {@link style}'s reason (ADR-0103). */
   readonly author: ErasableAnnotation['author'];
   /** When it was made, or `null`, carried for the same reason. */
@@ -125,6 +127,7 @@ function selectedFrom(entry: ErasableAnnotation): SelectedAnnotation | undefined
     style: entry.style,
     kind: entry.kind,
     contents: entry.contents,
+    ...(entry.cut === true ? { cut: true as const } : {}),
     author: entry.author,
     created: entry.created,
     blend: entry.blend,

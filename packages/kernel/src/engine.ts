@@ -132,6 +132,7 @@ export {
   invertAddAnnotation,
   invertPlaceAnnotation,
   invertRemoveAnnotation,
+  readAnnotationWords,
   readAnnotations,
 } from './pageAnnotations.js';
 export {

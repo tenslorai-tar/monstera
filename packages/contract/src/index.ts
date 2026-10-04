@@ -166,6 +166,8 @@ export {
   preloadChannels,
   // THE PART SIZES of the lists that cross in parts (ADR-0130): main cuts a part at them.
   ANNOTATIONS_PART,
+  // How much of one mark's comment the walk lists; past it the entry says `cut`.
+  MAX_ANNOTATION_CONTENTS,
   DESTINATIONS_PART,
   FORM_FIELDS_PART,
   LAYERS_PART,

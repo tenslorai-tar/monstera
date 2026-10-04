@@ -31,6 +31,7 @@ import type {
   HostDestinationsReader,
   HostAnnotationsReader,
   HostAnnotationRecordsReader,
+  HostAnnotationWordsReader,
   HostFlatFieldsReader,
   HostFormFieldsReader,
   HostLayersReader,
@@ -514,6 +515,20 @@ export function remoteMupdfAnnotationRecords(
       );
     }
     return answered('engine/annotation-records', result);
+  };
+}
+
+/** One mark's whole words, over the boundary. {@link remoteMupdfAnnotationRecords}' `RangeError`, for its reason. */
+export function remoteMupdfAnnotationWords(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostAnnotationWordsReader {
+  return async (session, page, index) => {
+    const result = await client['engine/annotation-words']({ session: sessions.handleFor(session), page, index });
+    if (!result.ok && result.error.code === 'no-such-annotation') {
+      throw new RangeError(`Annotation ${String(index)} on page ${String(page)} is not in the walk any more.`);
+    }
+    return answered('engine/annotation-words', result);
   };
 }
 

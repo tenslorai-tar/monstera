@@ -1035,6 +1035,11 @@ export const MAX_ANNOTATION_BORDER = 144;
  *
  * Generous enough that no note a person types meets it, so a refusal here is
  * evidence something built the command from a file rather than from a dialog.
+ *
+ * **It also bounds the read of one mark's whole words** (`document.annotationWords`), and that is the same number
+ * rather than a third one: the read exists to start an edit, and an edit writes back through this bound. Words past
+ * it could be read and never saved, so the read answers `whole: false` instead and the editor says the comment is
+ * too long to edit here, which leaves it as it is.
  */
 export const MAX_ANNOTATION_TEXT = 4096;
 

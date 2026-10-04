@@ -460,6 +460,7 @@ export function createContractHandlers(deps: {
     'document.exportAnnotations': exportAnnotationsHandler(deps.commands, mintWritten),
     'document.importAnnotations': importAnnotationsHandler(deps.commands),
     'document.copyAnnotations': copyAnnotationsHandler(deps.commands),
+    'document.annotationWords': annotationWordsHandler(deps.commands),
     'document.pasteAnnotations': pasteAnnotationsHandler(deps.commands),
     'document.importFormData': importFormDataHandler(deps.commands),
     'document.split': splitHandler(deps.commands, mintWritten),
@@ -1795,6 +1796,25 @@ function copyAnnotationsHandler(commands: DocumentCommands): ContractHandlers['d
   }): Promise<Awaited<ReturnType<ContractHandlers['document.copyAnnotations']>>> => {
     try {
       return ok(await commands.copyAnnotations(docId, page, indices, version));
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** One mark's whole words for an editor, mapped as the clipboard's copy is: both name marks by the walk's handle. */
+function annotationWordsHandler(commands: DocumentCommands): ContractHandlers['document.annotationWords'] {
+  return async ({
+    docId,
+    page,
+    index,
+    version,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.annotationWords']>>> => {
+    try {
+      return ok(await commands.annotationWords(docId, page, index, version));
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

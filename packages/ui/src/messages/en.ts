@@ -2432,6 +2432,7 @@ export const PROBLEM_STALE_TARGET = messageKey('dialog.command-problem.stale-tar
 export const PROBLEM_ENGINE_UNAVAILABLE = messageKey('dialog.command-problem.engine-unavailable');
 export const PROBLEM_RASTER_TOO_LARGE = messageKey('dialog.command-problem.raster-too-large');
 export const PROBLEM_NOT_COPYABLE = messageKey('dialog.command-problem.not-copyable');
+export const PROBLEM_COMMENT_TOO_LONG = messageKey('dialog.command-problem.comment-too-long');
 export const PROBLEM_COPY_ABSENT = messageKey('dialog.command-problem.copy-absent');
 export const PROBLEM_COPY_AT_CAPACITY = messageKey('dialog.command-problem.copy-at-capacity');
 export const PROBLEM_COPY_BUSY = messageKey('dialog.command-problem.copy-busy');
@@ -5276,6 +5277,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // and that the rest of a mixed selection still would.
   [PROBLEM_NOT_COPYABLE]:
     'These marks can’t be copied. Image stamps and some annotations from other applications don’t copy; comments, shapes, drawings and highlights do.',
+  // KEPT, said first: the comment is longer than an edit can write back, and nothing about it has changed. What the
+  // person can still do with the mark follows, because the editor they asked for is not coming.
+  [PROBLEM_COMMENT_TOO_LONG]:
+    'This comment is too long to edit here, so it has been kept as it is. You can still reply to it, copy it or delete it.',
   [PROBLEM_COPY_ABSENT]:
     'The copy was saved, but the file was gone before it could be opened, so the change was not made. The signed document has not changed.',
   [PROBLEM_COPY_AT_CAPACITY]:

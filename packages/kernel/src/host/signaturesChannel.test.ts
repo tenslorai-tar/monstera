@@ -97,6 +97,7 @@ async function joined(parts: {
       exportAnnotationData: refuse('export annotations'),
       accessibility: refuse('check accessibility'),
       annotationRecords: refuse('read annotation records'),
+      annotationWords: refuse('read annotation words'),
       signaturesKept: refuse('ask whether a save keeps signatures'),
     }),
     () => undefined,

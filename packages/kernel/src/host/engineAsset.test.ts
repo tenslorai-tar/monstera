@@ -211,6 +211,9 @@ async function joined(): Promise<{
       annotationRecords: () => {
         throw new Error('unused');
       },
+      annotationWords: () => {
+        throw new Error('unused');
+      },
     }),
     (incident) => incidents.push(incident),
   );

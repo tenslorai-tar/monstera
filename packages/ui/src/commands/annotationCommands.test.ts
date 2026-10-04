@@ -1,5 +1,5 @@
 import { MAX_ANNOTATION_TEXT, channels, createClient } from '@monstera/contract';
-import { asDocId, asDocVersion, ok } from '@monstera/shared';
+import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 
 import {
   GROUP_LINKS,
@@ -427,13 +427,29 @@ describe('editSelectionCommand', () => {
     items: [NOTE],
   };
 
-  /** The command, with the page answering `typed` for the words, and what was asked of the page. */
-  function editing(selection: AnnotationSelection | undefined, typed: string | undefined) {
+  /** The one mark, listed by a walk that sliced its comment to the listing's 512 characters. */
+  function cutSelection(): AnnotationSelection {
+    return { ...SELECTION, items: [{ ...NOTE, contents: 'a'.repeat(512), cut: true }] };
+  }
+
+  /**
+   * The command, with the page answering `typed` for the words, main answering `words` for a whole-words read, and
+   * what was asked of the page, of main and of the problem dialog.
+   */
+  function editing(selection: AnnotationSelection | undefined, typed: string | undefined, words?: unknown) {
     const placed: unknown[] = [];
     const written: WriteRequest[] = [];
+    const read: { id: string; params: unknown }[] = [];
+    const asked: { id: string; props: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      read.push({ id, params });
+      return Promise.resolve(ok(words));
+    });
     return {
       placed,
       written,
+      read,
+      asked,
       command: editSelectionCommand({
         selection: () => selection,
         onDelete: () => undefined,
@@ -441,6 +457,11 @@ describe('editSelectionCommand', () => {
         write: (request) => {
           written.push(request);
           return Promise.resolve(typed);
+        },
+        client,
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve(undefined);
         },
       }),
     };
@@ -475,14 +496,70 @@ describe('editSelectionCommand', () => {
     ]);
   });
 
-  it('carries the annotation words’ rule: more than one mark holds is refused, the limit itself passes', () => {
+  it('carries the annotation words’ rule: more than one mark holds is refused, the limit itself passes', async () => {
     const { command, written } = editing(SELECTION, undefined);
-    void command.run(WITH_DOCUMENT);
+    await command.run(WITH_DOCUMENT);
     const check = written[0]?.check;
     expect([check?.('a'.repeat(MAX_ANNOTATION_TEXT)), check?.('a'.repeat(MAX_ANNOTATION_TEXT + 1))]).toStrictEqual([
       undefined,
       WRITE_TOO_LONG,
     ]);
+  });
+
+  it('an UNCUT comment opens on the walk’s own text and reads nothing from main', async () => {
+    // The walk's text is whole here, and from the walk the handle points into, so a read would only be a second
+    // answer that could disagree with it.
+    const { command, read, written } = editing(SELECTION, undefined);
+    await command.run(WITH_DOCUMENT);
+    expect(read).toStrictEqual([]);
+    expect(written[0]?.initial).toBe('what it said before');
+  });
+
+  it('a CUT comment opens on its WHOLE words, read at the selection’s version, and an edit keeps the end', async () => {
+    // The walk lists a long comment sliced. Opened on the slice, a one-letter fix at the start would save the slice
+    // over the whole and lose the rest; the whole words are what the card holds and what the edit is made from.
+    const whole = `${'a'.repeat(600)} the end`;
+    const typed = `b${whole.slice(1)}`;
+    const { command, read, written, placed } = editing(cutSelection(), typed, { kind: 'words', text: whole, whole: true });
+    await command.run(WITH_DOCUMENT);
+    expect(read).toStrictEqual([
+      {
+        id: 'document.annotationWords',
+        params: { docId: WITH_DOCUMENT.docId, page: 2, index: 1, version: asDocVersion(7) },
+      },
+    ]);
+    expect(written[0]?.initial).toBe(whole);
+    expect(placed).toStrictEqual([
+      { kind: 'editAnnotationText', page: 2, index: 1, text: typed, version: asDocVersion(7) },
+    ]);
+  });
+
+  it('CONTROL: a cut comment LEFT AS IT WAS sends nothing, compared with the whole words rather than the slice', async () => {
+    // Compared with the slice, the whole words handed back unchanged would differ and send an edit that changes
+    // nothing.
+    const whole = 'a'.repeat(600);
+    const { command, placed } = editing(cutSelection(), whole, { kind: 'words', text: whole, whole: true });
+    await command.run(WITH_DOCUMENT);
+    expect(placed).toStrictEqual([]);
+  });
+
+  it('a comment TOO LONG to write back is SAID, and no card opens on part of it', async () => {
+    const { command, written, asked, placed } = editing(cutSelection(), 'typed', {
+      kind: 'words',
+      text: 'a'.repeat(MAX_ANNOTATION_TEXT),
+      whole: false,
+    });
+    await command.run(WITH_DOCUMENT);
+    expect(written).toStrictEqual([]);
+    expect(placed).toStrictEqual([]);
+    expect(asked).toStrictEqual([{ id: 'dialog.command-problem', props: { code: 'comment-too-long' } }]);
+  });
+
+  it('a cut comment on a document that has MOVED is stale, and no card opens', async () => {
+    const { command, written, asked } = editing(cutSelection(), 'typed', { kind: 'stale' });
+    await command.run(WITH_DOCUMENT);
+    expect(written).toStrictEqual([]);
+    expect(asked).toStrictEqual([{ id: 'dialog.command-problem', props: { code: 'stale-target' } }]);
   });
 
   it('CONTROL: nothing typed sends nothing, and the page was still asked', async () => {
@@ -878,6 +955,25 @@ describe('copyAnnotationsCommand', () => {
     expect(asked).toStrictEqual([{ id: 'dialog.command-problem', props: { code: 'stale-target' } }]);
     expect(copied).toStrictEqual([]);
     expect(toasts).toStrictEqual([]);
+  });
+
+  it('a REFUSED copy hands the dialog the refusal whole, so an internal one keeps its incident id', async () => {
+    // The dialog requires the id for `internal` and shows it; its code alone is a props object the dialog refuses.
+    const asked: { id: string; props: unknown }[] = [];
+    const command = copyAnnotationsCommand({
+      toast: () => undefined,
+      selection: () => SELECTION,
+      onDelete: () => undefined,
+      onPlace: () => undefined,
+      client: createClient(channels, () => Promise.resolve(err({ code: 'internal', incident: 'inc-7' }))),
+      ask: (id, props) => {
+        asked.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+      onCopied: () => undefined,
+    });
+    await command.run(WITH_DOCUMENT);
+    expect(asked).toStrictEqual([{ id: 'dialog.command-problem', props: { code: 'internal', incident: 'inc-7' } }]);
   });
 
   it('CONTROL: hidden with nothing selected, and sends nothing if run', async () => {

@@ -97,6 +97,11 @@ export interface ErasableAnnotation {
    * later would describe a document those handles may no longer name.
    */
   readonly contents: string;
+  /**
+   * Present when the walk sliced {@link contents}: a long comment is listed as one line, so an editor reads the mark's
+   * whole words (`document.annotationWords`) rather than saving the slice over them.
+   */
+  readonly cut?: true;
   /** `/T`, or empty — the Properties tab's author, carried for `contents`' reason (ADR-0103). */
   readonly author: string;
   /** `/CreationDate` as a UTC instant, or `null` where the mark carries none. */

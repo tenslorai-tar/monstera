@@ -11,6 +11,7 @@ import {
   PROBLEM_SERVICE_UNAUTHORISED,
   PROBLEM_SERVICE_UNAVAILABLE,
   PROBLEM_BUSY,
+  PROBLEM_COMMENT_TOO_LONG,
   PROBLEM_COPY_ABSENT,
   PROBLEM_COPY_AT_CAPACITY,
   PROBLEM_COPY_BUSY,
@@ -35,6 +36,7 @@ export type CommandProblem =
   | { readonly code: 'engine-unavailable' }
   | { readonly code: 'raster-too-large' }
   | { readonly code: 'not-copyable' }
+  | { readonly code: 'comment-too-long' }
   | { readonly code: 'text-not-writable' }
   | { readonly code: 'copy-absent' }
   | { readonly code: 'copy-at-capacity' }
@@ -59,6 +61,7 @@ const MESSAGE: Readonly<Record<CommandProblem['code'], MessageKey>> = {
   'engine-unavailable': PROBLEM_ENGINE_UNAVAILABLE,
   'raster-too-large': PROBLEM_RASTER_TOO_LARGE,
   'not-copyable': PROBLEM_NOT_COPYABLE,
+  'comment-too-long': PROBLEM_COMMENT_TOO_LONG,
   'text-not-writable': TEXT_EDIT_NOT_WRITABLE,
   'copy-absent': PROBLEM_COPY_ABSENT,
   'copy-at-capacity': PROBLEM_COPY_AT_CAPACITY,

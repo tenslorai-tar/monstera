@@ -185,6 +185,9 @@ const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), rules: [], humanChecks: [] })),
   'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.copyAnnotations': () => Promise.resolve(ok({ kind: 'nothing-copyable' as const })),
+  // `whole: false` rather than true: a handler that hard-coded the common answer
+  // would say true, and only a read that measured the words says false.
+  'document.annotationWords': () => Promise.resolve(ok({ kind: 'words' as const, text: 'a', whole: false })),
   'document.pasteAnnotations': () => Promise.resolve(ok({ kind: 'empty' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),

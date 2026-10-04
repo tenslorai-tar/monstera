@@ -253,7 +253,8 @@ import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
 import { MEASURE_TOOL_IDS } from './annotations/measureTools.js';
 import { stickyNoteCommand } from './annotations/pointTools.js';
-import type { AnnotationSelection } from './annotations/selectTool.js';
+import { type WordsToEdit, wordsToEdit } from './annotations/markWords.js';
+import type { AnnotationSelection, SelectedAnnotation } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID, selectionOfNewest, selectionOfPage } from './annotations/selectTool.js';
 import { SIGNATURE_TOOL_ID } from './annotations/signatureTool.js';
 import { chooseSignature, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
@@ -2305,6 +2306,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [dispatch],
   );
 
+  /** The comment the Properties tab's field starts from, read whole where the walk cut it (`wordsToEdit`). */
+  const wordsOfSelection = useCallback(
+    (chosen: AnnotationSelection, item: SelectedAnnotation): Promise<WordsToEdit> =>
+      activeId === undefined
+        ? Promise.resolve({ kind: 'problem', problem: { code: 'document-not-open' } })
+        : wordsToEdit(client, activeId, chosen, item),
+    [activeId, client],
+  );
+
   /** Rewriting the one selected mark's author, from the Properties tab (ADR-0103) — carried like a comment. */
   const authorSelection = useCallback(
     (chosen: AnnotationSelection, author: string): void => {
@@ -3024,7 +3034,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         marksDelete,
         // WRITE IS PASSED PER COMMAND: only the annotation-menu items that ask for words receive it, and widening
         // `SelectionCommandDeps` would hand every selection command a capability none of the others may use.
-        editSelectionCommand({ ...selectionDeps, write }),
+        editSelectionCommand({ ...selectionDeps, write, client, ask }),
         replySelectionCommand({ ...selectionDeps, write }),
         draftReplyCommand({ selection: readSelection, ask: askAssistant }),
         summariseCommentsCommand({ ask: askAssistant }),
@@ -3674,6 +3684,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                 measuring={toolId !== undefined && MEASURE_TOOL_IDS.has(toolId)}
                 context={context}
                 onComment={commentSelection}
+                wordsOf={wordsOfSelection}
                 onAuthor={authorSelection}
                 onRestyle={restyleSelection}
                 registry={registry}

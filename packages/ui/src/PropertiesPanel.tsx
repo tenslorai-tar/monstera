@@ -10,12 +10,13 @@ import {
   MIN_ANNOTATION_OPACITY,
   measureUnitSchema,
 } from '@monstera/contract';
-import { type ReactElement, useId, useState } from 'react';
+import { type ReactElement, useEffect, useId, useState } from 'react';
 
 import { ANNOTATION_KIND_LABELS } from './AnnotationsPanel.js';
 import { ColourSwatches } from './ColourChoice.js';
 import { STARTING_STYLE_COLOUR, colourFromHex, hexFromColour } from './annotations/annotationStyle.js';
-import type { AnnotationSelection } from './annotations/selectTool.js';
+import type { WordsToEdit } from './annotations/markWords.js';
+import type { AnnotationSelection, SelectedAnnotation } from './annotations/selectTool.js';
 import { LINE_WIDTH_PRESETS, STYLE_PRESETS } from './annotations/stylePresets.js';
 import {
   COMMENT_STYLES_NO_WIDTH,
@@ -40,6 +41,7 @@ import {
   PROPERTIES_OPACITY_VALUE,
   PROPERTIES_WHERE,
   PROPERTIES_WIDTH_VALUE,
+  PROBLEM_COMMENT_TOO_LONG,
   STYLE_COLOUR_AUTO,
   STYLE_PANEL_LABEL,
   MEASURE_RATIO_TITLE,
@@ -73,6 +75,9 @@ export type StyleChange =
   | { readonly borderWidth: number }
   | { readonly blend: AnnotationBlend };
 
+/** How the comment field reads the words it starts from, for one selected mark. */
+export type WordsOf = (selection: AnnotationSelection, item: SelectedAnnotation) => Promise<WordsToEdit>;
+
 export interface PropertiesPanelProps {
   readonly settings: SettingsStore;
   /** What is selected, or `undefined` for nothing — when the tab shows the authoring settings. */
@@ -81,6 +86,8 @@ export interface PropertiesPanelProps {
   readonly onRestyle: (selection: AnnotationSelection, change: StyleChange) => void;
   /** Rewrites the one selected mark's comment. */
   readonly onComment: (selection: AnnotationSelection, text: string) => void;
+  /** The comment the field may start from (`wordsToEdit`): whole, or the reason there is none. */
+  readonly wordsOf: WordsOf;
   /** Rewrites who the one selected mark names as its author (ADR-0103). */
   readonly onAuthor: (selection: AnnotationSelection, author: string) => void;
   /** Where the foot's commands come from (`properties` placements), and what they run with. */
@@ -137,6 +144,7 @@ export function PropertiesPanel({
   selection,
   onRestyle,
   onComment,
+  wordsOf,
   onAuthor,
   registry,
   context,
@@ -401,7 +409,9 @@ export function PropertiesPanel({
           // A NEW FIELD PER MARK AND PER TEXT, so a draft never outlives the mark it was typed for,
           // and the text a carried selection brings back replaces the draft that produced it.
           key={`${String(selection.page)}:${String(only.index)}:${only.contents}`}
-          text={only.contents}
+          selection={selection}
+          item={only}
+          wordsOf={wordsOf}
           onCommit={(text) => {
             onComment(selection, text);
           }}
@@ -604,33 +614,60 @@ function AuthorRow({
 
 /** The one selected mark's comment, sent when focus leaves it changed. */
 function CommentRow({
-  text,
+  selection,
+  item,
+  wordsOf,
   onCommit,
 }: {
-  readonly text: string;
+  readonly selection: AnnotationSelection;
+  readonly item: SelectedAnnotation;
+  readonly wordsOf: WordsOf;
   readonly onCommit: (text: string) => void;
 }): ReactElement {
   const { i18n } = useLingui();
   const id = useId();
-  const [draft, setDraft] = useState(text);
+  // THE WALK'S TEXT WHERE IT IS WHOLE, and nothing until the whole words are read where the walk cut it: a field that
+  // opened on the slice would save it over the comment on the first blur (`wordsToEdit`).
+  const [words, setWords] = useState<WordsToEdit | undefined>(
+    item.cut === true ? undefined : { kind: 'words', text: item.contents },
+  );
+  const [draft, setDraft] = useState(item.contents);
+  useEffect(() => {
+    if (item.cut !== true) return undefined;
+    let live = true;
+    void wordsOf(selection, item).then((read) => {
+      if (!live) return;
+      setWords(read);
+      if (read.kind === 'words') setDraft(read.text);
+    });
+    return () => {
+      live = false;
+    };
+  }, [selection, item, wordsOf]);
+  const start = words?.kind === 'words' ? words.text : undefined;
   return (
     <div className="m-properties__row">
       <label className="m-properties__label" htmlFor={id}>
         {i18n._(PROPERTIES_COMMENT)}
       </label>
       <textarea
+        aria-busy={words === undefined}
         className="m-properties__comment"
         id={id}
         maxLength={MAX_ANNOTATION_TEXT}
         onBlur={() => {
-          if (draft !== text) onCommit(draft);
+          if (start !== undefined && draft !== start) onCommit(draft);
         }}
         onChange={(event) => {
           setDraft(event.target.value);
         }}
+        // READ ONLY until there are whole words to start from, showing the walk's own start of the comment meanwhile,
+        // and for good where there are none: a comment longer than an edit can write back, or a read refused.
+        readOnly={start === undefined}
         rows={3}
         value={draft}
       />
+      {words?.kind === 'too-long' ? <p className="m-properties__meta">{i18n._(PROBLEM_COMMENT_TOO_LONG)}</p> : null}
     </div>
   );
 }

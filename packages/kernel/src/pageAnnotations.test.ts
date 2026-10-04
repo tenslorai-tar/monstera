@@ -22,6 +22,7 @@ import {
   BUILT_IN_STAMPS,
   type BuiltInStamp,
   type CommandOfKind,
+  MAX_ANNOTATION_TEXT,
 } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { ColorSpace, Matrix, PDFDocument as PDFDocumentRaw, Pixmap } from './mupdfRaw.js';
@@ -48,6 +49,7 @@ import {
   captureEditAnnotationText,
   invertEditAnnotationText,
   applyReplyToAnnotation,
+  readAnnotationWords,
   readAnnotations,
   redrawPage,
 } from './pageAnnotations.js';
@@ -108,6 +110,7 @@ async function fixture({
   crop,
   rotate,
   foreign,
+  note = 'written by another application',
   content,
   field,
   claimsAuthored,
@@ -117,6 +120,8 @@ async function fixture({
   readonly crop?: readonly number[];
   readonly rotate?: number;
   readonly foreign?: boolean;
+  /** The foreign annotation's `/Contents`, for a case about a long comment. */
+  readonly note?: string;
   readonly content?: boolean;
   readonly field?: boolean;
   /**
@@ -185,7 +190,7 @@ async function fixture({
     for (const value of [5, 5, 25, 25]) rect.push(PDFNumber.of(value));
     other.set(PDFName.of('Rect'), rect);
     other.set(PDFName.of('T'), PDFString.of('Someone Else'));
-    other.set(PDFName.of('Contents'), PDFString.of('written by another application'));
+    other.set(PDFName.of('Contents'), PDFString.of(note));
     other.set(PDFName.of('Sound'), PDFName.of('NotARealKeyForASquare'));
     if (claimsAuthored === true) {
       // THE MARK'S KEY WITH THE WRONG TYPE. `authoredHere` reads the value
@@ -1626,6 +1631,43 @@ describe('readAnnotations', () => {
   it('reports an empty document as empty rather than refusing', async () => {
     const listed = await onSession(await fixture(), (session) => readAnnotations(session));
     expect(listed).toStrictEqual({ annotations: [], truncated: false });
+  });
+
+  it('lists a LONG comment sliced and says it CUT it, and the mark’s own words read back WHOLE', async () => {
+    // An editor that started from the listing would save 512 characters over 600 and lose the end, so the walk says
+    // when it sliced and the words are read whole for the edit. The end is distinct so a read that sliced again, or
+    // answered the listing, cannot pass.
+    const note = `${'a'.repeat(600)} the end`;
+    const bytes = await fixture({ foreign: true, note });
+    const [listed, words] = await onSession(bytes, async (session) => [
+      await readAnnotations(session),
+      await readAnnotationWords(session, 0, 0),
+    ]);
+    expect(listed.annotations[0]?.contents).toBe('a'.repeat(512));
+    expect(listed.annotations[0]?.cut).toBe(true);
+    expect(words).toStrictEqual({ text: note, whole: true });
+  });
+
+  it('CONTROL: a comment the listing holds whole carries no `cut`, so no editor reads it again', async () => {
+    const listed = await onSession(await fixture({ foreign: true, note: 'a'.repeat(512) }), (session) =>
+      readAnnotations(session),
+    );
+    expect(listed.annotations[0]?.contents).toBe('a'.repeat(512));
+    expect(listed.annotations[0] !== undefined && 'cut' in listed.annotations[0]).toBe(false);
+  });
+
+  it('a comment longer than an edit can write back is read NOT WHOLE, so no editor starts from part of it', async () => {
+    const note = 'a'.repeat(MAX_ANNOTATION_TEXT + 1);
+    const words = await onSession(await fixture({ foreign: true, note }), (session) =>
+      readAnnotationWords(session, 0, 0),
+    );
+    expect([words.text.length, words.whole]).toStrictEqual([MAX_ANNOTATION_TEXT, false]);
+  });
+
+  it('a handle past the walk is a RangeError, which the host answers by name rather than another mark’s words', async () => {
+    await expect(
+      onSession(await fixture({ foreign: true }), (session) => readAnnotationWords(session, 0, 1)),
+    ).rejects.toBeInstanceOf(RangeError);
   });
 });
 

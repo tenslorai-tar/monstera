@@ -243,7 +243,7 @@ test('A CLOSED DOCUMENT’S REQUEST sends nothing, and leaves the tool free for 
 const MARK = { x0: 100, y0: 600, x1: 300, y1: 620 };
 
 /** One page carrying {@link MARK}, the select tool on, and the mark selected by a click on it. */
-async function selectedMark(page: Page, executed: Executed[]): Promise<void> {
+async function selectedMark(page: Page, executed: Executed[], contents?: string): Promise<void> {
   await page.setViewportSize({ width: 1600, height: 900 });
   const bytes = await onePagePdf();
   await bridgeUnder(
@@ -252,7 +252,7 @@ async function selectedMark(page: Page, executed: Executed[]): Promise<void> {
     {
       opens: [{ kind: 'opened', docId: FIRST, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'first.pdf' }],
       documentBytes: new Map([[FIRST, bytes]]),
-      annotations: [{ page: 0, index: 0, kind: 'highlight', rect: MARK }],
+      annotations: [{ page: 0, index: 0, kind: 'highlight', rect: MARK, ...(contents === undefined ? {} : { contents }) }],
       settings: { 'appearance.ribbon-section': 'comment' },
     },
     (channel, params) => {
@@ -325,6 +325,28 @@ test('EDIT COMMENT from the mark’s menu is typed next to the mark, and Escape 
   await page.keyboard.press('Escape');
   await expect.poll(() => executed.length).toBe(1);
   expect(executed[0]?.command).toMatchObject({ kind: 'editAnnotationText', page: 0, index: 0, text: 'Confirm the rate' });
+});
+
+test('a LONG comment opens WHOLE in the card and in the Properties field, and an edit keeps its end', async ({ page }) => {
+  // The walk lists a comment sliced to 512 characters. Opened on the slice, an edit would save it over the whole and
+  // lose the end, which is why the end is distinct and the edit is made after it.
+  const whole = `${'a'.repeat(600)} the end`;
+  const executed: Executed[] = [];
+  await selectedMark(page, executed, whole);
+  const panelField = page.getByRole('complementary', { name: 'Properties' }).getByRole('textbox', { name: 'Comment' });
+  await expect(panelField).toHaveValue(whole);
+  await expect(panelField).not.toHaveAttribute('readonly');
+
+  const mark = await markOnScreen(page);
+  await page.mouse.click(mark.x + mark.width / 2, mark.y + mark.height / 2, { button: 'right' });
+  await page.getByRole('menuitem', { name: /^Edit comment/u }).click();
+  const box = page.locator('.m-inline-writer').getByRole('textbox', { name: 'Comment' });
+  await expect(box).toHaveValue(whole);
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type(', checked');
+  await page.keyboard.press('Escape');
+  await expect.poll(() => executed.length).toBe(1);
+  expect(executed[0]?.command).toMatchObject({ kind: 'editAnnotationText', index: 0, text: `${whole}, checked` });
 });
 
 test('POINTERS: the I-beam where words are typed, the arrow where a click places, the eraser its own picture', async ({

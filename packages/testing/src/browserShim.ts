@@ -15,6 +15,8 @@ import {
   type OcrLanguage,
   type UpdateStatus,
   type WindowEditAction,
+  MAX_ANNOTATION_CONTENTS,
+  MAX_ANNOTATION_TEXT,
   MAX_FORM_DATA_BYTES,
   ACCESSIBILITY_HUMAN_CHECKS,
   MAX_IMAGE_BYTES,
@@ -554,6 +556,11 @@ export interface BrowserShimOptions {
     readonly created?: string | null;
     /** The blend its appearance is drawn in. Absent is `normal`, the format's own. */
     readonly blend?: 'multiply' | 'normal';
+    /**
+     * The mark's whole comment, for a case about editing one. The walk lists it sliced and says `cut`, as the
+     * kernel's does, and `document.annotationWords` answers it whole. Absent is no comment.
+     */
+    readonly contents?: string;
   }[];
 
   /**
@@ -1675,6 +1682,22 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       clipboardCount = indices.length;
       return Promise.resolve(ok({ kind: 'copied' as const, copied: indices.length, skipped: 0 }));
     },
+    /** One seeded mark's whole comment, at the version the walk was read at, `copyAnnotations`' stale rule. */
+    'document.annotationWords': ({ docId, page, index, version }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      const mark = options.annotations?.find((seeded) => seeded.page === page && seeded.index === index);
+      if (version !== current || mark === undefined) return Promise.resolve(ok({ kind: 'stale' as const }));
+      const words = mark.contents ?? '';
+      return Promise.resolve(
+        ok({
+          kind: 'words' as const,
+          text: words.slice(0, MAX_ANNOTATION_TEXT),
+          whole: words.length <= MAX_ANNOTATION_TEXT,
+        }),
+      );
+    },
     'document.pasteAnnotations': ({ docId }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       const current = versions.get(docId);
@@ -2127,10 +2150,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          annotations: (options.annotations ?? []).slice(from).map((annotation) => ({
+          annotations: (options.annotations ?? []).slice(from).map(({ contents = '', ...annotation }) => ({
             ...annotation,
             style: { colour: [1, 0, 0], opacity: 1, borderWidth: null },
-            contents: '',
+            contents: contents.slice(0, MAX_ANNOTATION_CONTENTS),
+            ...(contents.length > MAX_ANNOTATION_CONTENTS ? { cut: true as const } : {}),
             authored: true,
             // SEEDABLE, unlike the three above it, because a thread is a
             // relationship BETWEEN two seeded marks — a case about a reply row

@@ -82,6 +82,8 @@ const MUPDF_READS = [
   // THE CLIPBOARD'S COPY IS ONE OF MuPDF'S READS for `engine/exportAnnotations`' reason: it walks
   // MuPDF's annotation dictionaries through the interchange's one reader of entries.
   'engine/annotation-records',
+  // ONE MARK'S WHOLE WORDS ARE ONE OF MuPDF'S READS for `engine/annotations`' reason: the same walk, one entry of it.
+  'engine/annotation-words',
   'engine/form-fields',
   'engine/exportFormData',
   // WRITING THE ANNOTATIONS OUT IS ONE OF MuPDF'S READS for `engine/exportFormData`'s reason: it

@@ -220,6 +220,7 @@ describe('browser shim', () => {
       'crashReport.pending',
       'crashReport.share',
       'document.accessibilityCheck',
+      'document.annotationWords',
       'document.annotations',
       'document.appendMarkdown',
       'document.awaitExternalEdit',

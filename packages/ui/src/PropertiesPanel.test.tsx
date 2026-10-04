@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import type { WordsToEdit } from './annotations/markWords.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { STYLE_PRESETS } from './annotations/stylePresets.js';
 import { activateCatalogue, i18n } from './i18n.js';
@@ -82,18 +83,23 @@ interface Mounted {
   readonly commented: string[];
   readonly authors: string[];
   readonly ran: string[];
+  /** Every whole-words read the comment field asked for, by the mark's index. */
+  readonly read: number[];
 }
 
 function mounted(
   selection: AnnotationSelection | undefined,
   foot: readonly UiCommand[] = [],
   measuring = false,
+  // REFUSED BY NAME where a case reads nothing: an uncut comment's field must start from the walk's own text.
+  words: WordsToEdit = { kind: 'problem', problem: { code: 'document-not-open' } },
 ): Mounted {
   const store = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
   const restyled: StyleChange[] = [];
   const commented: string[] = [];
   const authors: string[] = [];
   const ran: string[] = [];
+  const read: number[] = [];
   render(
     <Wrapped>
       <PropertiesPanel
@@ -101,6 +107,11 @@ function mounted(
         onComment={(chosen, text) => {
           expect(chosen).toBe(selection);
           commented.push(text);
+        }}
+        wordsOf={(chosen, item) => {
+          expect(chosen).toBe(selection);
+          read.push(item.index);
+          return Promise.resolve(words);
         }}
         onAuthor={(chosen, author) => {
           expect(chosen).toBe(selection);
@@ -117,7 +128,7 @@ function mounted(
       />
     </Wrapped>,
   );
-  return { store, restyled, commented, authors, ran };
+  return { store, restyled, commented, authors, ran, read };
 }
 
 describe('PropertiesPanel while a measurement is drawn (the owner’s item 14a)', () => {
@@ -237,7 +248,7 @@ describe('PropertiesPanel with marks selected', () => {
   });
 
   it('the comment is sent when focus leaves it changed, and not when unchanged', () => {
-    const { commented } = mounted(ONE);
+    const { commented, read } = mounted(ONE);
     const field = screen.getByRole('textbox', { name: 'Comment' });
     expect((field as HTMLTextAreaElement).value).toBe('check the figure');
     fireEvent.blur(field);
@@ -245,6 +256,40 @@ describe('PropertiesPanel with marks selected', () => {
     fireEvent.change(field, { target: { value: 'confirm the rate' } });
     fireEvent.blur(field);
     expect(commented).toStrictEqual(['confirm the rate']);
+    // AN UNCUT COMMENT IS NOT READ AGAIN: the walk's text is whole and from the walk the handle points into.
+    expect(read).toStrictEqual([]);
+  });
+
+  /** The square, listed by a walk that sliced its comment to the listing's 512 characters. */
+  const CUT: AnnotationSelection = { ...ONE, items: [{ ...SQUARE, contents: 'a'.repeat(512), cut: true }] };
+
+  it('a CUT comment’s field starts from the WHOLE words, and is read only until they arrive', async () => {
+    // Opened on the slice, the first blur after any change would save 512 characters over 600 and lose the end.
+    const whole = `${'a'.repeat(600)} the end`;
+    const { commented, read } = mounted(CUT, [], false, { kind: 'words', text: whole });
+    const field = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Comment' });
+    // MEANWHILE the walk's own start of the comment, which a blur cannot send.
+    expect([field.readOnly, field.value]).toStrictEqual([true, 'a'.repeat(512)]);
+    fireEvent.blur(field);
+    await screen.findByDisplayValue(whole);
+    expect([field.readOnly, read]).toStrictEqual([false, [SQUARE.index]]);
+    fireEvent.blur(field);
+    expect(commented).toStrictEqual([]);
+    fireEvent.change(field, { target: { value: `b${whole.slice(1)}` } });
+    fireEvent.blur(field);
+    expect(commented).toStrictEqual([`b${whole.slice(1)}`]);
+  });
+
+  it('a comment TOO LONG to write back stays read only and says so, and nothing is sent', async () => {
+    const { commented } = mounted(CUT, [], false, { kind: 'too-long' });
+    await screen.findByText(
+      'This comment is too long to edit here, so it has been kept as it is. You can still reply to it, copy it or delete it.',
+    );
+    const field = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Comment' });
+    expect([field.readOnly, field.value]).toStrictEqual([true, 'a'.repeat(512)]);
+    fireEvent.change(field, { target: { value: 'typed anyway' } });
+    fireEvent.blur(field);
+    expect(commented).toStrictEqual([]);
   });
 
   it('the AUTHOR is sent when focus leaves it changed, and not when unchanged (ADR-0103)', () => {
@@ -368,6 +413,7 @@ describe('PropertiesPanel with an object selected on the page (ADR-0153 Decision
           object={{ pick, onRecolour: (colour) => colours.push(JSON.stringify(colour)) }}
           onAuthor={() => undefined}
           onComment={() => undefined}
+          wordsOf={() => Promise.reject(new Error('an object has no comment to read'))}
           onRestyle={() => undefined}
           registry={new CommandRegistry([])}
           selection={undefined}

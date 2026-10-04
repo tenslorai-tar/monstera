@@ -217,6 +217,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       annotationRecords: () => {
         throw new Error('a field read must not read annotation records');
       },
+      annotationWords: () => {
+        throw new Error('a field read must not read annotation words');
+      },
     }),
     (incident) => incidents.push(incident),
   );

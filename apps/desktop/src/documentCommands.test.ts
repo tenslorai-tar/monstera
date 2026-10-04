@@ -79,6 +79,7 @@ import {
 import {
   copyAnnotationData,
   findDuplicatePages,
+  readAnnotationWords,
   readAnnotations,
   readFormFields,
   localMupdfWriter,
@@ -151,6 +152,7 @@ import {
   type ImportSource,
   type DocumentAnnotationsReader,
   type DocumentAnnotationCopyReader,
+  type DocumentAnnotationWordsReader,
   type DocumentFlatFieldsReader,
   type DocumentBarcodesReader,
   type AnnotationDataSource,
@@ -595,6 +597,16 @@ const localAnnotationCopy: DocumentAnnotationCopyReader = (id, sessions, page, i
   return copyAnnotationData(held, page, indices);
 };
 
+const noAnnotationWords: DocumentAnnotationWordsReader = () =>
+  Promise.reject(new Error('this case reads no mark’s words'));
+
+/** `localAnnotationCopy`'s composition and its reason, for one mark's whole words. */
+const localAnnotationWords: DocumentAnnotationWordsReader = (id, sessions, page, index) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return readAnnotationWords(held, page, index);
+};
+
 const noFormFields: DocumentFormFieldsReader = () =>
   Promise.reject(new Error('this case does not list form fields'));
 
@@ -812,6 +824,7 @@ const INERT = {
   restore: noRestore,
   annotations: noAnnotations,
   annotationCopy: noAnnotationCopy,
+  annotationWords: noAnnotationWords,
   formFields: noFormFields,
   flatFields: noFlatFields,
   barcodes: noBarcodes,
@@ -889,6 +902,7 @@ const LOCAL_READS = {
   layers: localLayers,
   annotations: localAnnotations,
   annotationCopy: localAnnotationCopy,
+  annotationWords: localAnnotationWords,
   formFields: localFormFields,
   flatFields: localFlatFields,
   barcodes: localBarcodes,
@@ -2970,6 +2984,26 @@ describe('annotations exported to a file and imported from it, through the lane 
     const moved = asDocVersion(Number(version) + 1);
     expect(await commands.copyAnnotations(annotatedDoc, 0, [0], moved)).toStrictEqual({ kind: 'stale' });
     expect(await commands.pasteAnnotations(blankDoc, 0)).toStrictEqual({ kind: 'empty' });
+  });
+
+  it('a mark’s WORDS are read whole at the version the walk was read at', async () => {
+    const commands = commandsWith(refuseData);
+    const { version } = await commands.annotations(annotatedDoc);
+    expect(await commands.annotationWords(annotatedDoc, 0, 0, version)).toStrictEqual({
+      kind: 'words',
+      text: 'Check this (twice)',
+      whole: true,
+    });
+  });
+
+  it('a mark’s words at a version the document has left are STALE, and so is a handle past the walk', async () => {
+    // `copyAnnotations`' reason: the handle is a position in the walk, so a moved document would
+    // answer another mark's words into the editor the person opened on this one.
+    const commands = commandsWith(refuseData);
+    const { version } = await commands.annotations(annotatedDoc);
+    const moved = asDocVersion(Number(version) + 1);
+    expect(await commands.annotationWords(annotatedDoc, 0, 0, moved)).toStrictEqual({ kind: 'stale' });
+    expect(await commands.annotationWords(annotatedDoc, 0, 99, version)).toStrictEqual({ kind: 'stale' });
   });
 
   it('COPIES a mark and PASTES it into ANOTHER document, where it lands un-nudged', async () => {
