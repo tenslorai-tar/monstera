@@ -3,7 +3,7 @@ import { I18nProvider } from '@lingui/react';
 import { type DocId, asDocId } from '@monstera/shared';
 import { fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DocumentTabs } from './DocumentTabs.js';
 import { activateCatalogue, i18n } from '../i18n.js';
@@ -157,5 +157,78 @@ describe('DocumentTabs', () => {
     // ONE MENU FOR THE STRIP, never one per tab — and the list keeps `<li>` as its only children.
     expect(container.querySelectorAll('.m-context-menu-region')).toHaveLength(1);
     expect([...container.querySelectorAll('.m-tab-list > *')].every((child) => child.tagName === 'LI')).toBe(true);
+  });
+});
+
+describe('DocumentTabs on a full row (Part A1)', () => {
+  const SIX = Array.from({ length: 6 }, (_, at) => ({
+    docId: asDocId(`00000000-0000-4000-8000-00000000010${String(at)}`),
+    name: `document ${String(at)}.pdf`,
+    dirty: false,
+  }));
+
+  /** The strip drawn in a row `width` wide, with the narrowest tab 112 and each end control 24, as measured. */
+  function drawnIn(width: number, activeId: DocId, onSelect: (docId: DocId) => void = () => undefined) {
+    const sized = (element: unknown, property: 'clientWidth' | 'offsetWidth'): number => {
+      if (!(element instanceof HTMLElement)) return 0;
+      if (property === 'clientWidth' && element.classList.contains('m-tabs')) return width;
+      if (property === 'offsetWidth' && element.hasAttribute('data-tab-open')) return 24;
+      return 0;
+    };
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return sized(this, 'clientWidth');
+    });
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return sized(this, 'offsetWidth');
+    });
+    // THE STRIP'S COMPUTED STYLE, as the stylesheet makes it: this DOM has no layout and does not resolve an inherited
+    // custom property, so the token and the gaps are stated for the two elements the strip measures.
+    const computed = window.getComputedStyle.bind(window);
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+      const measuredHere = element instanceof HTMLElement && (element.classList.contains('m-tabs') || element.classList.contains('m-tab-list'));
+      if (!measuredHere) return computed(element, pseudo);
+      const style = { columnGap: '0px', getPropertyValue: (name: string) => (name === '--title-tab-min' ? '112px' : '') };
+      return style as unknown as CSSStyleDeclaration;
+    });
+    const view = render(
+      <Wrapped>
+        <DocumentTabs {...NOTHING} tabs={SIX} activeId={activeId} onSelect={onSelect} />
+      </Wrapped>,
+    );
+    return {
+      view,
+      drawn: () => [...view.container.querySelectorAll('.m-tab')].map((tab) => tab.getAttribute('data-tab')),
+    };
+  }
+
+  // EVERY SPY GOES, whatever a case did, so a case that throws cannot leave the next one measuring through it.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('DRAWS what fits, the current document among them in its own place, and lists every one from the row’s end', () => {
+    const selected: DocId[] = [];
+    const last = SIX[5]?.docId ?? FIRST;
+    const strip = drawnIn(400, last, (docId) => selected.push(docId));
+    // 400 holds three narrowest tabs beside the two end controls (3 * 112 = 336 of 352), so the sixth, which is
+    // showing, takes the third place.
+    expect(strip.drawn()).toStrictEqual([SIX[0]?.docId, SIX[1]?.docId, last]);
+    const list = only(strip.view.container, '[data-tab-all]', HTMLButtonElement);
+    expect(list.getAttribute('aria-label')).toBe('Show all 6 open documents');
+
+    fireEvent.click(list);
+    const listed = [...document.querySelectorAll('[data-tab-listed]')].map((item) => item.getAttribute('data-tab-listed'));
+    // EVERY DOCUMENT, in the strip's order, the ones the row left out among them.
+    expect(listed).toStrictEqual(SIX.map((tab) => tab.docId));
+    const fourth = document.querySelector(`[data-tab-listed="${SIX[3]?.docId ?? ''}"]`);
+    if (!(fourth instanceof HTMLElement)) throw new Error('the list draws the fourth document');
+    fireEvent.click(fourth);
+    expect(selected).toStrictEqual([SIX[3]?.docId]);
+  });
+
+  it('CONTROL: a row wide enough draws every tab and no list button', () => {
+    const strip = drawnIn(2000, SIX[5]?.docId ?? FIRST);
+    expect(strip.drawn()).toStrictEqual(SIX.map((tab) => tab.docId));
+    expect(strip.view.container.querySelector('[data-tab-all]')).toBeNull();
   });
 });

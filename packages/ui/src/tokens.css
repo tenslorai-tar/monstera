@@ -476,6 +476,9 @@
   --title-bar: 40px;
   --title-tab: 32px;
   --title-tab-max: 280px;
+  /* The narrowest a tab is drawn before the row lists the rest (Part A1): its glyph, the start of its name and its
+     close. Chosen for this build, not a v5 figure: 112 leaves about five characters of a 12 px name. */
+  --title-tab-min: 112px;
   --title-control: 26px;
   --command-search: 300px;
   --ribbon: 100px;

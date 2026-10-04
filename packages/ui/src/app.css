@@ -4934,31 +4934,43 @@ optgroup {
 /*
  * The open documents' tab strip.
  *
- * A row that SCROLLS rather than wraps: a second line of tabs moves everything
- * below it down as documents open, and a document surface whose top edge
- * depends on how many files are open is one nothing can be measured against.
+ * ONE ROW, never wrapped: a second line of tabs moves everything below it down as documents open, and a document
+ * surface whose top edge depends on how many files are open is one nothing can be measured against. And never
+ * scrolled (Part A1): every tab shrinks alike to `--title-tab-min`, and past that `DocumentTabs` draws as many as fit,
+ * the current one always among them, and lists the rest from a button at the row's end.
  */
 /* Inside the title bar, which draws the surface and the seam: the strip takes the row's remaining
-   width and scrolls within it, so a seventh document never pushes the search off the end. */
+   width, so a seventh document never pushes the search off the end. */
 .m-tabs {
   display: flex;
   flex: 1 1 auto;
   gap: var(--space-2);
   align-items: center;
   min-inline-size: 0;
-  overflow-x: auto;
+  overflow: hidden;
 }
 
+/* MAY SHRINK below its tabs' widest, so they shrink with it; the end buttons never do. */
 .m-tab-list {
   display: flex;
+  flex: 0 1 auto;
   gap: var(--space-2);
+  min-inline-size: 0;
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
+.m-tab-open {
+  flex: none;
+}
+
 .m-tab {
   display: flex;
+  /* ALIKE: every tab shrinks from its widest by the same rule, so a long name does not hold its width while a short
+     one gives way. The narrowest is the token `DocumentTabs` counts with. */
+  flex: 0 1 var(--title-tab-max);
+  min-inline-size: var(--title-tab-min);
   align-items: center;
   gap: var(--space-2);
   padding-inline: var(--space-2);
@@ -4989,7 +5001,35 @@ optgroup {
    documents whose widths depend on their names is one where the tab under the
    pointer moves as another document opens. */
 .m-tab-name {
+  /* SHRINKS INSIDE ITS TAB, where a button would otherwise keep its content's width and push the close out. */
+  flex: 0 1 auto;
+  min-inline-size: 0;
   max-inline-size: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-tab-close {
+  flex: none;
+}
+
+/* THE LIST OF EVERY DOCUMENT: the tab's own glyph and unsaved dot before each name, the name ellipsed past the
+   widest a tab is drawn. */
+.m-tab-all__entry {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-inline-size: 0;
+}
+
+.m-tab-all__entry > .m-icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.m-tab-all__name {
+  max-inline-size: var(--title-tab-max);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6645,9 +6685,10 @@ body {
 /* THE TABS (v5): 32 tall, rounded at the top only, standing on the title bar's bottom edge; the current one lifted
    onto a surface with an accent line along its top. The line is a border, so forced colours still say which. */
 /* OVER THE TITLE BAR'S EDGE BY ITS OWN BOX, so the current tab covers the bar's 1 px foot and joins the ribbon below.
-   The tab used to be moved there by a relative offset, which a scroller counts as overflow: the strip scrolls sideways
-   (`overflow-x: auto`, which makes the other axis auto too), and that pixel drew a vertical scroll bar beside the tabs
-   whenever bars are drawn (measured 2026-10-04: content 1 px taller than the strip's 39). */
+   The tab used to be moved there by a relative offset, which a scroller counts as overflow: the strip scrolled
+   sideways then (`overflow-x: auto`, which makes the other axis auto too), and that pixel drew a vertical scroll bar
+   beside the tabs whenever bars are drawn (measured 2026-10-04: content 1 px taller than the strip's 39). The strip
+   scrolls no more (Part A1), and the tab still stands on the edge by its own box. */
 .m-tabs {
   align-self: stretch;
   align-items: flex-end;

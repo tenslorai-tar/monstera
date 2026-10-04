@@ -1015,6 +1015,7 @@ export const FIND_MATCH_POSITION = messageKey('surface.find.match-position');
 export const TAB_STRIP_LABEL = messageKey('surface.tabs.label');
 export const TAB_CLOSE = messageKey('surface.tabs.close');
 export const TAB_OPEN_ANOTHER = messageKey('surface.tabs.open-another');
+export const TAB_ALL_DOCUMENTS = messageKey('surface.tabs.all');
 export const VIEW_PROBLEM_TITLE = messageKey('surface.view-problem.title');
 export const VIEW_PROBLEM_BODY = messageKey('surface.view-problem.body');
 export const VIEW_PROBLEM_RETRY = messageKey('surface.view-problem.retry');
@@ -3168,6 +3169,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // cannot tell apart.
   [TAB_CLOSE]: 'Close {name}',
   [TAB_OPEN_ANOTHER]: 'Open another document',
+  // THE COUNT IS IN THE NAME, because the button is drawn only when the row could not show them all.
+  [TAB_ALL_DOCUMENTS]: '{count, plural, one {Show the open document} other {Show all # open documents}}',
   [VIEW_PROBLEM_TITLE]: 'This document could not be displayed.',
   // NAMES WHAT SURVIVED, which is the actionable half. A reader who has just
   // watched a view vanish assumes the worst about their file; §10.5a's

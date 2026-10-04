@@ -1,10 +1,12 @@
+import { Menu } from '@base-ui/react/menu';
 import { useLingui } from '@lingui/react';
 import type { DocId } from '@monstera/shared';
-import type { ReactElement } from 'react';
+import { type ReactElement, useLayoutEffect, useRef, useState } from 'react';
 
-import { TAB_CLOSE, TAB_OPEN_ANOTHER, TAB_STRIP_LABEL, TAB_UNSAVED } from '../messages/en.js';
+import { TAB_ALL_DOCUMENTS, TAB_CLOSE, TAB_OPEN_ANOTHER, TAB_STRIP_LABEL, TAB_UNSAVED } from '../messages/en.js';
 import { Icon } from '../primitives/Icon.js';
 import { MenuArea, type MenuAt } from './ContextMenu.js';
+import { type StripMeasure, tabCapacity, tabsShown } from './tabFit.js';
 
 /** One open document, as the strip needs to draw it. */
 export interface DocumentTab {
@@ -18,6 +20,27 @@ export interface DocumentTab {
    * bar saying *Saved* (B3a).
    */
   readonly dirty: boolean;
+}
+
+/** A gap as computed, or none where the style names none. */
+function gapOf(element: Element): number {
+  const gap = Number.parseFloat(getComputedStyle(element).columnGap);
+  return Number.isFinite(gap) ? gap : 0;
+}
+
+/**
+ * The row's width and the sizes it is divided by, read from the drawn strip: the narrowest tab from its token, an
+ * end control from the *open another* button as drawn (the list button is drawn the same), the gap between tabs from
+ * the list and the gap before each control from the strip. `null` before the first layout, or where nothing has a
+ * width, so the row is never cut to fit a measure of nothing.
+ */
+function measured(strip: HTMLElement): StripMeasure | null {
+  const minimumTab = Number.parseFloat(getComputedStyle(strip).getPropertyValue('--title-tab-min'));
+  const control = strip.querySelector<HTMLElement>('[data-tab-open]')?.offsetWidth ?? 0;
+  const list = strip.querySelector('.m-tab-list');
+  const available = strip.clientWidth;
+  if (!(available > 0 && minimumTab > 0 && control > 0) || list === null) return null;
+  return { available, minimumTab, control, tabGap: gapOf(list), controlGap: gapOf(strip) };
 }
 
 /**
@@ -69,6 +92,13 @@ export interface DocumentTab {
  * A single tab still shows its close control. Hiding it would make the last
  * document the one you cannot put down, and *close the only open file* is an
  * ordinary thing to want — the start screen is where it lands.
+ *
+ * ## A FULL ROW SHRINKS, then LISTS, and never scrolls (Part A1)
+ *
+ * As a browser's does: every tab shrinks alike to `--title-tab-min`, where its name takes an ellipsis and its glyph
+ * and close stay; past that the row draws as many as it holds, always the current one among them (`tabFit.ts`),
+ * and a button at its end lists every open document. A row that scrolled instead put a scroll bar in the title bar
+ * and let the current tab slide out of view.
  */
 export function DocumentTabs({
   tabs,
@@ -98,10 +128,37 @@ export function DocumentTabs({
   readonly onOpen: () => void;
 }): ReactElement | null {
   const { _ } = useLingui();
+  const strip = useRef<HTMLElement | null>(null);
+  // THE ROW'S MEASURE, read again whenever the row's width changes: a window resized, a pane opened beside the bar.
+  const [measure, setMeasure] = useState<StripMeasure | null>(null);
+  const hasTabs = tabs.length > 0;
+  useLayoutEffect(() => {
+    const element = strip.current;
+    if (element === null || !hasTabs) return undefined;
+    const read = (): void => {
+      setMeasure(measured(element));
+    };
+    read();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(read);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasTabs]);
 
   // NOTHING WITH NO DOCUMENTS, for `QuickToolbar`'s reason: an empty strip over
   // the start screen is a control that describes nothing.
-  if (tabs.length === 0) return null;
+  if (!hasTabs) return null;
+
+  // EVERY TAB until the row has been measured, and wherever it cannot be: the shrinking alone keeps a row that fits.
+  const capacity = measure === null ? tabs.length : tabCapacity(measure, tabs.length);
+  const current = tabs.findIndex((tab) => tab.docId === activeId);
+  const drawn = tabsShown(tabs.length, current, capacity).flatMap((at) => {
+    const tab = tabs[at];
+    return tab === undefined ? [] : [tab];
+  });
+  const listed = drawn.length < tabs.length;
 
   // THE TAB A TARGET SITS IN, read from the row's own `data-tab` and answered as this strip's own `DocId`, so a mark
   // naming no open document is no tab.
@@ -111,11 +168,11 @@ export function DocumentTabs({
   };
 
   return (
-    <nav className="m-tabs" aria-label={_(TAB_STRIP_LABEL)}>
+    <nav className="m-tabs" aria-label={_(TAB_STRIP_LABEL)} ref={strip}>
       {/* AROUND THE LIST, so the list keeps list items as its only children; the area adds no box. */}
       <MenuArea keyAt={tabAt} menuAt={menuAt}>
       <ul className="m-tab-list">
-        {tabs.map((tab) => {
+        {drawn.map((tab) => {
           const showing = tab.docId === activeId;
           return (
             <li
@@ -188,6 +245,60 @@ export function DocumentTabs({
       >
         {'+'}
       </button>
+      {/* EVERY OPEN DOCUMENT, at the row's end, only where the row could not draw them all: the ones it left out are
+          reached here, in the strip's own order, the current one marked. A Base UI menu, `ChoiceMenu`'s reason. */}
+      {listed ? (
+        <Menu.Root>
+          <Menu.Trigger
+            aria-label={_(TAB_ALL_DOCUMENTS, { count: tabs.length })}
+            className="m-tab-open m-tab-all"
+            data-tab-all=""
+          >
+            <Icon name="ChevronDown" size="dense" />
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner align="end" side="bottom" sideOffset={4}>
+              <Menu.Popup className="m-context-menu m-choice-menu__popup m-tab-all__popup">
+                <Menu.RadioGroup
+                  value={activeId ?? ''}
+                  onValueChange={(next: unknown) => {
+                    // A DOCUMENT FROM THE STRIP ONLY: Base UI types a radio's value as `unknown`.
+                    const picked = tabs.find((tab) => tab.docId === next);
+                    if (picked !== undefined) onSelect(picked.docId);
+                  }}
+                >
+                  <Menu.GroupLabel className="m-choice-menu__heading">{_(TAB_STRIP_LABEL)}</Menu.GroupLabel>
+                  {tabs.map((tab) => (
+                    <Menu.RadioItem
+                      className="m-context-menu-item"
+                      closeOnClick
+                      data-tab-listed={tab.docId}
+                      key={tab.docId}
+                      label={tab.name}
+                      value={tab.docId}
+                    >
+                      <Menu.RadioItemIndicator className="m-choice-menu__mark" keepMounted>
+                        {tab.docId === activeId ? <Icon name="Check" size="dense" /> : null}
+                      </Menu.RadioItemIndicator>
+                      {/* ONE ENTRY in the item's second column, the mark in its first (`ChoiceMenu`'s grid). */}
+                      <span className="m-tab-all__entry">
+                        <Icon name="FileText" size="dense" />
+                        {tab.dirty ? (
+                          <>
+                            <span aria-hidden className="m-tab-dot" />
+                            <span className="m-visually-hidden">{_(TAB_UNSAVED)}</span>
+                          </>
+                        ) : null}
+                        <span className="m-tab-all__name">{tab.name}</span>
+                      </span>
+                    </Menu.RadioItem>
+                  ))}
+                </Menu.RadioGroup>
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
+      ) : null}
     </nav>
   );
 }
