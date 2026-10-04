@@ -128,7 +128,6 @@ const DOCUMENTS = [
   { docId: '00000000-0000-4000-8000-0000000000b2', name: 'Board minutes, September.pdf' },
   { docId: '00000000-0000-4000-8000-0000000000b3', name: 'Supplier contract.pdf' },
 ];
-const LONG_DOCUMENTS = [{ docId: '00000000-0000-4000-8000-0000000000b4', name: LONG_NAME }, ...DOCUMENTS];
 /** The same documents as a second-document dialog is offered them (`sourceDocuments.ts`), each with its page count. */
 const SOURCES = DOCUMENTS.map((document, index) => ({ ...document, pageCount: [12, 1, 4][index] ?? 1 }));
 const LONG_SOURCES = [{ docId: '00000000-0000-4000-8000-0000000000b4', name: LONG_NAME, pageCount: 230 }, ...SOURCES];
@@ -831,7 +830,6 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'none-open', props: { choices: [], pageCount: 12 } },
     { state: 'long', props: { choices: LONG_SOURCES, pageCount: 12 } },
   ],
-  'dialog.merge-document-none': [{ state: 'opened', props: {} }],
   'dialog.insert-from-pdf': [
     // AFTER PAGE 3 OF 12, the page on show.
     { state: 'opened', props: { choices: SOURCES, pageCount: 12, page: 2 } },
@@ -849,8 +847,9 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'long', props: { choices: LONG_SOURCES, pages: [2] } },
   ],
   'dialog.import-page-as-layer': [
-    { state: 'opened', props: { choices: DOCUMENTS, page: 2 } },
-    { state: 'long', props: { choices: LONG_DOCUMENTS, page: 2 } },
+    { state: 'opened', props: { choices: SOURCES, page: 2 } },
+    { state: 'none-open', props: { choices: [], page: 2 } },
+    { state: 'long', props: { choices: LONG_SOURCES, page: 2 } },
   ],
   'dialog.reimport-external-edit': [{ state: 'opened', props: { page: 2 } }],
   'dialog.external-edit-problem': [{ state: 'opened', props: { reason: 'launch-failed' } }],

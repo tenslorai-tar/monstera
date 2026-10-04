@@ -47,7 +47,6 @@ import { KEPT_BACKUPS_DIALOG } from '../dialogs/keptBackups.js';
 import { KEYBOARD_SHORTCUTS_DIALOG } from '../dialogs/keyboardShortcuts.js';
 import { MARKDOWN_IMPORT_PROBLEM_DIALOG } from '../dialogs/markdownImportProblem.js';
 import { MERGE_DOCUMENT_DIALOG } from '../dialogs/mergeDocument.js';
-import { MERGE_DOCUMENT_NONE_DIALOG } from '../dialogs/mergeDocumentNone.js';
 import { OCR_DIALOG } from '../dialogs/ocr.js';
 import { OCR_OUTCOME_DIALOG } from '../dialogs/ocrOutcome.js';
 import { OPEN_FROM_URL_DIALOG } from '../dialogs/openFromUrl.js';
@@ -172,7 +171,6 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   CAMERA_CAPTURE_DIALOG,
   GENERATE_TOC_PROBLEM_DIALOG,
   MERGE_DOCUMENT_DIALOG,
-  MERGE_DOCUMENT_NONE_DIALOG,
   INSERT_FROM_PDF_DIALOG,
   REPLACE_PAGE_DIALOG,
   IMPORT_PAGE_AS_LAYER_DIALOG,

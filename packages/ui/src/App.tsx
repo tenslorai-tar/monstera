@@ -2784,7 +2784,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         mergeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
         insertFromPdfCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
         replacePageCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
-        importPageAsLayerCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        importPageAsLayerCommand({ client, onApplied: applied, ask, stamp, signatures, openSource, settings, presence }),
         // D9's EDIT PAGE IN ANOTHER APP: its reimport opens the edited page as a tab, so it takes
         // `appendMarkdownCommand`'s two callbacks as well as `replacePageCommand`'s (ADR-0062).
         editPageExternallyCommand({

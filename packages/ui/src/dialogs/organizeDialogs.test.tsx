@@ -104,7 +104,8 @@ const BODIES: readonly {
     name: 'Import page as layer',
     body: (resolve) => <ImportPageAsLayerBody choices={CHOICES} page={1} resolve={resolve} update={() => undefined} />,
     action: 'Import as layer',
-    answer: { source: 'd-a' },
+    // ITS FIRST PAGE, as it opens.
+    answer: { kind: 'import', source: 'd-a', sourcePage: 0 },
   },
 ];
 

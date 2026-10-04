@@ -293,8 +293,6 @@ export const MERGE_DOCUMENT_AFTER_PAGE = messageKey('dialog.merge-document.after
 export const MERGE_DOCUMENT_PAGE = messageKey('dialog.merge-document.page');
 export const MERGE_DOCUMENT_RANGE = messageKey('dialog.merge-document.range');
 export const MERGE_DOCUMENT_APPLY = messageKey('dialog.merge-document.apply');
-export const MERGE_DOCUMENT_NONE_TITLE = messageKey('dialog.merge-document-none.title');
-export const MERGE_DOCUMENT_NONE_BODY = messageKey('dialog.merge-document-none.body');
 export const INSERT_FROM_PDF_COMMAND_TITLE = messageKey('command.insert-from-pdf.title');
 export const INSERT_FROM_PDF_TITLE = messageKey('dialog.insert-from-pdf.title');
 export const INSERT_FROM_PDF_LABEL = messageKey('dialog.insert-from-pdf.label');
@@ -320,6 +318,9 @@ export const IMPORT_PAGE_AS_LAYER_COMMAND_TITLE = messageKey('command.import-pag
 export const IMPORT_PAGE_AS_LAYER_TITLE = messageKey('dialog.import-page-as-layer.title');
 export const IMPORT_PAGE_AS_LAYER_LABEL = messageKey('dialog.import-page-as-layer.label');
 export const IMPORT_PAGE_AS_LAYER_WHICH = messageKey('dialog.import-page-as-layer.which');
+export const IMPORT_PAGE_AS_LAYER_WHICH_NONE = messageKey('dialog.import-page-as-layer.which-none');
+export const IMPORT_PAGE_AS_LAYER_SOURCE_PAGE = messageKey('dialog.import-page-as-layer.source-page');
+export const IMPORT_PAGE_AS_LAYER_RANGE = messageKey('dialog.import-page-as-layer.range');
 export const IMPORT_PAGE_AS_LAYER_APPLY = messageKey('dialog.import-page-as-layer.apply');
 export const EXTRACT_PAGES_COMMAND_TITLE = messageKey('command.extract-pages.title');
 export const EDIT_PAGE_EXTERNALLY_COMMAND_TITLE = messageKey('command.edit-page-externally.title');
@@ -4235,13 +4236,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MERGE_DOCUMENT_PAGE]: 'Page',
   [MERGE_DOCUMENT_RANGE]: 'Choose a page of this document, from 1 to {last}.',
   [MERGE_DOCUMENT_APPLY]: 'Merge',
-  [MERGE_DOCUMENT_NONE_TITLE]: 'Nothing to merge',
-  // NAMES THE ACTION THAT FIXES IT, because ADR-0040 Decision 2 makes opening
-  // the other document the step a reader has to take — and a message that only
-  // reported the absence would leave them looking for a merge control that
-  // takes a file.
-  [MERGE_DOCUMENT_NONE_BODY]:
-    'Merging copies pages from another open document. Open the document you want to merge in, then try again.',
   [INSERT_FROM_PDF_COMMAND_TITLE]: 'Insert from PDF…',
   [INSERT_FROM_PDF_TITLE]: 'Insert from PDF',
   [INSERT_FROM_PDF_LABEL]: 'Insert from',
@@ -4271,11 +4265,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SOURCE_PAGES_EMPTY]: 'Type the pages to take from the document above.',
   [IMPORT_PAGE_AS_LAYER_COMMAND_TITLE]: 'Import page as layer…',
   [IMPORT_PAGE_AS_LAYER_TITLE]: 'Import a page as a layer',
-  [IMPORT_PAGE_AS_LAYER_LABEL]: 'Take the first page of',
-  // SAYS WHICH PAGE, AND THAT IT IS THE FIRST: the renderer knows no other document's page
-  // count, so the dialog cannot offer a choice of source page and must not imply one.
-  [IMPORT_PAGE_AS_LAYER_WHICH]:
-    'The first page of the document you choose is placed on page {page} as a layer you can show and hide.',
+  [IMPORT_PAGE_AS_LAYER_LABEL]: 'Layer from',
+  // SAYS WHICH PAGE GOES OVER WHICH, in plain words (the owner's item 13e), as the choices change.
+  [IMPORT_PAGE_AS_LAYER_WHICH]: 'Page {source} of {name} will be laid over page {page} as a layer you can hide.',
+  [IMPORT_PAGE_AS_LAYER_WHICH_NONE]: 'The page you choose will be laid over page {page} as a layer you can hide.',
+  [IMPORT_PAGE_AS_LAYER_SOURCE_PAGE]: 'Page',
+  [IMPORT_PAGE_AS_LAYER_RANGE]: 'Choose a page of the document above, from 1 to {last}.',
   [IMPORT_PAGE_AS_LAYER_APPLY]: 'Import as layer',
   [EXTRACT_PAGES_COMMAND_TITLE]: 'Extract pages…',
   [EDIT_PAGE_EXTERNALLY_COMMAND_TITLE]: 'Edit page in another app…',

@@ -68,11 +68,10 @@ import type { ExtractPagesAnswer } from '../dialogs/extractPagesResult.js';
 import { INSERT_FROM_PDF_DIALOG_ID } from '../dialogs/insertFromPdf.js';
 import { INSERT_FROM_PDF_RESULT } from '../dialogs/insertFromPdfResult.js';
 import { MERGE_DOCUMENT_DIALOG_ID } from '../dialogs/mergeDocument.js';
-import { MERGE_DOCUMENT_NONE_DIALOG_ID } from '../dialogs/mergeDocumentNone.js';
 import { MERGE_DOCUMENT_RESULT } from '../dialogs/mergeDocumentResult.js';
 import { REPLACE_PAGE_DIALOG_ID } from '../dialogs/replacePage.js';
 import { IMPORT_PAGE_AS_LAYER_DIALOG_ID } from '../dialogs/importPageAsLayer.js';
-import type { ImportPageAsLayerAnswer } from '../dialogs/importPageAsLayerResult.js';
+import { IMPORT_PAGE_AS_LAYER_RESULT } from '../dialogs/importPageAsLayerResult.js';
 import { SPLIT_DOCUMENT_DIALOG_ID } from '../dialogs/splitDocument.js';
 import type { SplitDocumentAnswer } from '../dialogs/splitDocumentResult.js';
 import { EXPORT_PAGE_IMAGES_DIALOG_ID } from '../dialogs/exportPageImages.js';
@@ -1038,10 +1037,7 @@ export function showSearchPanel(settings: SettingsStore, presence: PanelPresence
  * only from the panel's own tabs: a person on the Comment or Forms ribbon had no control there
  * that led to them. The setting is the one owner of which panel shows, as `showSearchPanel`'s is.
  */
-export function showPanelCommand(
-  deps: { readonly settings: SettingsStore; readonly presence: PanelPresence },
-  panel: DocumentPanelTab,
-): UiCommand {
+export function showPanelCommand(deps: PanelDeps, panel: DocumentPanelTab): UiCommand {
   const shown = SHOWN_PANELS[panel];
   return {
     id: shown.id,
@@ -1057,10 +1053,24 @@ export function showPanelCommand(
     // ON while the panel is ON SCREEN on this tab — in the row or as its sheet (ADR-0146), with this tab chosen.
     checked: () => deps.presence.shown('start') && deps.settings.get(DOCUMENT_PANEL_SETTING.id) === panel,
     run: (): void => {
-      deps.settings.set(DOCUMENT_PANEL_SETTING.id, panel);
-      deps.presence.show('start');
+      showDocumentPanel(deps, panel);
     },
   };
+}
+
+/** What showing a document-panel tab needs: the setting naming the tab, and the panel's presence. */
+export interface PanelDeps {
+  readonly settings: SettingsStore;
+  readonly presence: PanelPresence;
+}
+
+/**
+ * Shows one tab of the document panel: chosen, and the panel on screen. The one way it is done, for the tab commands and
+ * for a command whose result is read in a tab — Import page as layer opens Layers.
+ */
+export function showDocumentPanel(deps: PanelDeps, panel: DocumentPanelTab): void {
+  deps.settings.set(DOCUMENT_PANEL_SETTING.id, panel);
+  deps.presence.show('start');
 }
 
 /** Which tab of the document panel a command shows — the setting's own values. */
@@ -2019,8 +2029,9 @@ export function replacePageCommand(deps: SourceCommandDeps): UiCommand {
 }
 
 /**
- * Places another open document's first page on the page on screen, as a layer
- * ([ADR-0064](../../../../docs/DECISIONS/0064-a-page-imported-as-a-layer-is-mupdfs-because-the-layer-is.md)).
+ * Lays a chosen page of another document — open, or a file picked from the dialog — over a page of this one, as a
+ * layer ([ADR-0064](../../../../docs/DECISIONS/0064-a-page-imported-as-a-layer-is-mupdfs-because-the-layer-is.md)),
+ * then shows the Layers tab, where the new layer is the row a person hides it by.
  *
  * ## The layer's NAME is the chosen tab's, read from the choice offered
  *
@@ -2028,12 +2039,14 @@ export function replacePageCommand(deps: SourceCommandDeps): UiCommand {
  * tab names. It is looked up from `choices` by the id the dialog answered, never taken
  * from the dialog, so a name that was not a tab's cannot reach the payload.
  *
- * ## The page is `context.page`, and its version travels with it
+ * ## The page is `targetPages`' first, and its version travels with it
  *
- * `replacePageCommand`'s reason: a page inserted or moved while the dialog is up would put
- * the layer on another page, so the bus refuses a stale version.
+ * The selected page, else the page on show (ADR-0104); a layer goes on one page, so of
+ * several ticked the first is the one, and the dialog's sentence names it.
+ * `replacePageCommand`'s reason for the version: a page inserted or moved while the dialog
+ * is up would put the layer on another page, so the bus refuses a stale version.
  */
-export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
+export function importPageAsLayerCommand(deps: SourceCommandDeps & PanelDeps): UiCommand {
   return {
     id: 'document.import-page-as-layer',
     feedback: VISIBLE,
@@ -2045,33 +2058,31 @@ export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
+      const target = context.docId;
+      const [page] = [...targetPages(context)].sort((a, b) => a - b);
+      if (target === undefined || page === undefined || context.version === undefined) return;
 
-      const choices = context.openDocuments
-        .filter((document) => document.docId !== context.docId)
-        .map((document) => ({ docId: document.docId, name: document.name }));
+      const asked = await askAboutSource(
+        deps,
+        context,
+        target,
+        (choices, source, draft) => deps.ask(IMPORT_PAGE_AS_LAYER_DIALOG_ID, { choices, source, page, draft }),
+        (answered) => IMPORT_PAGE_AS_LAYER_RESULT.safeParse(answered).data,
+      );
+      if (asked === undefined) return;
 
-      if (choices.length === 0) {
-        void deps.ask(MERGE_DOCUMENT_NONE_DIALOG_ID, {});
-        return;
-      }
-
-      const answer = (await deps.ask(IMPORT_PAGE_AS_LAYER_DIALOG_ID, {
-        choices,
-        page: context.page,
-      })) as ImportPageAsLayerAnswer | undefined;
-      if (answer === undefined) return;
-
-      const chosen = choices.find((choice) => choice.docId === answer.source);
-      if (chosen === undefined || context.version === undefined) return;
-      await applyDocumentCommand(deps, context.docId, {
+      const chosen = asked.choices.find((choice) => choice.docId === asked.answer.source);
+      if (chosen === undefined) return;
+      const applied = await applyDocumentCommand(deps, target, {
         kind: 'importPageAsLayer',
-        source: chosen.docId,
-        sourcePage: 0,
+        source: chosen.docId as DocId,
+        sourcePage: asked.answer.sourcePage,
         name: chosen.name,
-        at: context.page,
+        at: page,
         version: context.version,
       });
+      // THE LAYER IS READ IN ITS TAB: shown once it exists, and not for a refusal, which says itself.
+      if (applied) showDocumentPanel(deps, 'layers');
     },
   };
 }

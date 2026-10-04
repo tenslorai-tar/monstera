@@ -42,6 +42,8 @@ import type { ToastAction } from '../primitives/Toast.js';
 import type { CommandContext } from '../registries/commands.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
+import { DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
+import { PanelPresence } from '../panelPresence.js';
 import { SettingsStore } from '../settingsStore.js';
 import { outlinedMarkOf } from '../signatureFaces.js';
 import type { ShowToast } from '../toasts.js';
@@ -2606,76 +2608,103 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(executed).toStrictEqual([]);
   });
 
-  it("import-as-layer sends importPageAsLayer for the page on screen, named as the CHOSEN tab", async () => {
-    const { client, sent } = recording();
-    const opened: unknown[] = [];
-
-    await importPageAsLayerCommand({
+  /** The layer command over a real settings store and panel presence, so the tab it shows is read where it is kept. */
+  function layerWith(
+    client: ContractClient,
+    ask: (id: string, props: unknown) => Promise<unknown>,
+  ): { readonly command: ReturnType<typeof importPageAsLayerCommand>; readonly tab: () => unknown; readonly shown: () => boolean } {
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    const presence = new PanelPresence(settings);
+    const command = importPageAsLayerCommand({
       client,
       stamp,
       signatures,
       onApplied: () => undefined,
-      ask: (id, props) => {
-        opened.push({ id, props });
-        return Promise.resolve({ source: 'doc-2' });
-      },
-    }).run(CONTEXT);
+      openSource: () => Promise.resolve({ kind: 'none' }),
+      ask,
+      settings,
+      presence,
+    });
+    return { command, tab: () => settings.get(DOCUMENT_PANEL_SETTING.id), shown: () => presence.shown('start') };
+  }
+
+  it('import-as-layer lays the CHOSEN source page over the page on show, named as the chosen tab, then shows Layers', async () => {
+    const { client, executed } = sourcesClient();
+    const opened: unknown[] = [];
+
+    const layer = layerWith(client, (id, props) => {
+      opened.push({ id, props });
+      return Promise.resolve({ kind: 'import', source: 'doc-2', sourcePage: 5 });
+    });
+    expect(layer.tab()).not.toBe('layers');
+    await layer.command.run(CONTEXT);
 
     expect(opened).toStrictEqual([
       {
         id: 'dialog.import-page-as-layer',
         props: {
           choices: [
-            { docId: 'doc-0', name: 'Before' },
-            { docId: 'doc-2', name: 'After' },
+            { docId: 'doc-0', name: 'Before', pageCount: 4 },
+            { docId: 'doc-2', name: 'After', pageCount: 7 },
           ],
+          source: undefined,
           page: 3,
+          draft: undefined,
         },
       },
     ]);
     // THE NAME IS THE CHOSEN TAB'S, looked up by the id the dialog answered. The fixture
     // offers two names and the answer is NOT the first, so a command that took
     // `choices[0].name` would send 'Before' here. `at: 3` is `CONTEXT.page`, unconverted.
-    expect(sent).toStrictEqual([
+    expect(executed).toStrictEqual([
       {
-        id: 'document.execute',
-        params: {
-          docId: DOC,
-          command: { kind: 'importPageAsLayer', source: 'doc-2', sourcePage: 0, name: 'After', at: 3, version: 1 },
-        },
+        docId: DOC,
+        command: { kind: 'importPageAsLayer', source: 'doc-2', sourcePage: 5, name: 'After', at: 3, version: 1 },
       },
     ]);
+    // AND THE LAYER IS READ IN ITS TAB.
+    expect(layer.tab()).toBe('layers');
+    expect(layer.shown()).toBe(true);
   });
 
-  it('CONTROL: a DISMISSED import-as-layer dialog dispatches nothing', async () => {
-    const { client, sent } = recording();
+  it('import-as-layer goes on the FIRST ticked page', async () => {
+    const { client, executed } = sourcesClient();
+    const layer = layerWith(client, () => Promise.resolve({ kind: 'import', source: 'doc-0', sourcePage: 0 }));
 
-    await importPageAsLayerCommand({
-      client,
-      stamp,
-      signatures,
-      onApplied: () => undefined,
-      ask: () => Promise.resolve(undefined),
-    }).run(CONTEXT);
+    await layer.command.run({ ...CONTEXT, selectedPages: [6, 2] });
 
-    expect(sent).toStrictEqual([]);
+    expect(executed).toMatchObject([{ command: { at: 2 } }]);
+  });
+
+  it('CONTROL: a REFUSED import shows no tab, and a dismissed one sends nothing', async () => {
+    const refusing = createClient(channels, (id, params) => {
+      if (id === 'document.viewModel') return Promise.resolve(ok({ version: asDocVersion(1), pageCount: 4, rotations: [0] }));
+      void params;
+      return Promise.resolve(err({ code: 'document-busy' }));
+    });
+    const refused = layerWith(refusing, (id) =>
+      Promise.resolve(id === 'dialog.import-page-as-layer' ? { kind: 'import', source: 'doc-0', sourcePage: 0 } : undefined),
+    );
+    await refused.command.run(CONTEXT);
+    expect(refused.tab()).not.toBe('layers');
+
+    const { client, executed } = sourcesClient();
+    const dismissed = layerWith(client, () => Promise.resolve(undefined));
+    await dismissed.command.run(CONTEXT);
+    expect(executed).toStrictEqual([]);
+    expect(dismissed.tab()).not.toBe('layers');
   });
 
   it('an answer naming a document that was NOT offered dispatches nothing', async () => {
     // The dialog's schema accepts any non-empty string, so this is the command's own
     // decision to make: a source it never listed has no tab name to send, and sending one
     // would be a layer named after nothing the reader chose.
-    const { client, sent } = recording();
+    const { client, executed } = sourcesClient();
+    const layer = layerWith(client, () => Promise.resolve({ kind: 'import', source: DOC, sourcePage: 0 }));
 
-    await importPageAsLayerCommand({
-      client,
-      stamp,
-      signatures,
-      onApplied: () => undefined,
-      ask: () => Promise.resolve({ source: DOC }),
-    }).run(CONTEXT);
+    await layer.command.run(CONTEXT);
 
-    expect(sent).toStrictEqual([]);
+    expect(executed).toStrictEqual([]);
   });
 
   it('extract sends the parsed range to the destination channel', async () => {

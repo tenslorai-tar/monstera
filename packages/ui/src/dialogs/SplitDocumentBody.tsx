@@ -34,7 +34,7 @@ import type { DialogAnswering } from '../registries/dialogs.js';
  * ## The mode is RADIO BUTTONS, not a select
  *
  * Two mutually exclusive options, both visible: a reader can see that
- * one-per-page exists without opening anything. `DocumentChoiceSelect` next door
+ * one-per-page exists without opening anything. `SourceDocumentRow` next door
  * is a select because its options are a list that grows; this one is a choice
  * between two fixed things.
  *
