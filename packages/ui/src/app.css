@@ -3660,6 +3660,21 @@ optgroup {
   border-inline-end: 1px solid var(--border); /* decorative: as m-ruler-h above — a chrome/page divider on a strip with nothing to operate */
 }
 
+/* ONE PAGE'S RUN along a ruler, placed at the page's start and as long as the page (`Rulers.tsx`): the containing
+   block its marks are placed in, from the page's own zero, so a scroll moves the run and no mark. Across the ruler's
+   whole thickness, which is what a major mark's label is set in. */
+.m-ruler-run {
+  position: absolute;
+}
+
+.m-ruler-h .m-ruler-run {
+  inset-block: 0;
+}
+
+.m-ruler-v .m-ruler-run {
+  inset-inline: 0;
+}
+
 .m-tick {
   position: absolute;
   inline-size: 1px;

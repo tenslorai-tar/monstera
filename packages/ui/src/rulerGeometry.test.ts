@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { gridSpacing, rulerTicks, spanTicks } from './rulerGeometry.js';
+import { gridSpacing, pageRuns, rulerTicks } from './rulerGeometry.js';
 
 /**
  * The ruler's arithmetic.
@@ -90,14 +90,19 @@ describe('rulerTicks', () => {
   });
 });
 
-describe('spanTicks', () => {
-  const majors = (ticks: ReturnType<typeof spanTicks>): string[] =>
-    ticks.filter((tick) => tick.major).map((tick) => `${String(tick.offset)}:${tick.label ?? ''}`);
+describe('pageRuns', () => {
+  /** The majors a person SEES, at their place on the ruler: each run's marks moved to its start, inside the ruler. */
+  const seen = (runs: ReturnType<typeof pageRuns>, lengthPx: number): string[] =>
+    runs.flatMap((run) =>
+      run.ticks
+        .filter((tick) => tick.major && run.start + tick.offset >= 0 && run.start + tick.offset <= lengthPx)
+        .map((tick) => `${String(run.start + tick.offset)}:${tick.label ?? ''}`),
+    );
 
   it('starts every page at its OWN zero, so the second page reads 0 at its top rather than continuing', () => {
     // Two 2-inch pages at 100%, 16 px apart. Zeroed on the first page alone, the second page's top would be the
     // first page's 160 px, labelled with no whole inch, and its foot would read 4.
-    const ticks = spanTicks(
+    const runs = pageRuns(
       [
         { start: 0, end: 144 },
         { start: 160, end: 304 },
@@ -106,11 +111,11 @@ describe('spanTicks', () => {
       'in',
       1,
     );
-    expect(majors(ticks)).toStrictEqual(['0:0', '72:1', '144:2', '160:0', '232:1', '304:2']);
+    expect(seen(runs, 400)).toStrictEqual(['0:0', '72:1', '144:2', '160:0', '232:1', '304:2']);
   });
 
-  it('draws nothing in the gap between two pages, nor past the ruler', () => {
-    const ticks = spanTicks(
+  it('draws nothing in the gap between two pages: each run is as long as its page', () => {
+    const runs = pageRuns(
       [
         { start: 0, end: 144 },
         { start: 160, end: 304 },
@@ -119,17 +124,46 @@ describe('spanTicks', () => {
       'in',
       1,
     );
-    expect(ticks.some((tick) => tick.offset > 144 && tick.offset < 160)).toBe(false);
-    expect(ticks.every((tick) => tick.offset <= 250)).toBe(true);
+    expect(runs.map((run) => [run.start, run.length])).toStrictEqual([
+      [0, 144],
+      [160, 144],
+    ]);
+    expect(runs.every((run) => run.ticks.every((tick) => tick.offset >= 0 && tick.offset <= run.length))).toBe(true);
   });
 
   it('keeps a page scrolled half past the top on its own grid', () => {
     // A page whose top is 100 px above the strip: the first major on screen is its 2-inch mark, at 44.
-    expect(majors(spanTicks([{ start: -100, end: 188 }], 300, 'in', 1))).toStrictEqual(['44:2', '116:3', '188:4']);
+    expect(seen(pageRuns([{ start: -100, end: 188 }], 300, 'in', 1), 300)).toStrictEqual(['44:2', '116:3', '188:4']);
+  });
+
+  it('A SCROLL MOVES A RUN AND CHANGES NO MARK: the same page at two scroll positions has the same marks', () => {
+    // THE PROPERTY THE RUNS EXIST FOR. Each mark is measured from its page's zero, so a ruler that redraws only the
+    // run's start keeps every mark element as it was.
+    const [at] = pageRuns([{ start: 40, end: 328 }], 800, 'in', 1);
+    const [scrolled] = pageRuns([{ start: -73.5, end: 214.5 }], 800, 'in', 1);
+    expect(scrolled?.ticks).toStrictEqual(at?.ticks);
+    expect([at?.start, scrolled?.start]).toStrictEqual([40, -73.5]);
+    // CONTROL: the same marks placed from the RULER'S start, as they were before, differ at every scroll position.
+    expect(rulerTicks(800, 'in', 1, -73.5)).not.toStrictEqual(rulerTicks(800, 'in', 1, 40));
+  });
+
+  it('a page wholly off the ruler has no run, and one partly on it has its whole run', () => {
+    const runs = pageRuns(
+      [
+        { start: -400, end: -112 },
+        { start: -96, end: 192 },
+        { start: 900, end: 1188 },
+      ],
+      800,
+      'in',
+      1,
+    );
+    expect(runs.map((run) => run.start)).toStrictEqual([-96]);
+    expect(runs[0]?.ticks.at(0)?.offset).toBe(0);
   });
 
   it('marks a facing pair once down the side, where both pages share one extent', () => {
-    const pair = spanTicks(
+    const pair = pageRuns(
       [
         { start: 0, end: 144 },
         { start: 0, end: 144 },
@@ -138,21 +172,7 @@ describe('spanTicks', () => {
       'in',
       1,
     );
-    expect(majors(pair)).toStrictEqual(['0:0', '72:1', '144:2']);
-  });
-
-  it('carries which page a mark belongs to, so two pages never key a mark alike', () => {
-    const ticks = spanTicks(
-      [
-        { start: 160, end: 304 },
-        { start: 0, end: 144 },
-      ],
-      400,
-      'in',
-      1,
-    );
-    expect(new Set(ticks.map((tick) => `${String(tick.span)}:${String(tick.offset)}`)).size).toBe(ticks.length);
-    expect(ticks.find((tick) => tick.offset === 160)?.span).toBe(1);
+    expect(seen(pair, 300)).toStrictEqual(['0:0', '72:1', '144:2']);
   });
 });
 
