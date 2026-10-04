@@ -2,7 +2,7 @@ import { useLingui } from '@lingui/react';
 import { type ReactElement, useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { type ContractClient, MAX_QUERY_LENGTH } from '@monstera/contract';
-import type { DocId } from '@monstera/shared';
+import type { DocId, DocVersion } from '@monstera/shared';
 
 import { type DocumentMatch, searchDocument } from './documentSearch.js';
 import type { SearchHighlight } from './searchHighlight.js';
@@ -108,6 +108,12 @@ export interface FindBarProps {
    * is invariant L2 as a type rather than as a rule about what a renderer holds.
    */
   readonly docId: DocId | undefined;
+  /**
+   * The version on screen. An answer names pages, lines and offsets in the version it was asked of, so one asked of
+   * another is not shown: after any edit the count, the list, Next and the active mark would name text that has moved
+   * (CR-COR-09). The transport refuses a stale range for the same reason (ADR-0031).
+   */
+  readonly version: DocVersion | undefined;
   /** The page to search, zero-based, from the scroller. */
   readonly page: number | undefined;
   /** How many pages the document has, for the whole-document walk. */
@@ -220,9 +226,18 @@ interface Asked {
   readonly options: FindOptions;
 }
 
+/** What the bar holds: what it last showed, and the version that was asked of. */
+interface Held {
+  readonly at: DocVersion | undefined;
+  readonly shown: FindState;
+}
+
+const IDLE: FindState = { kind: 'idle' };
+
 export function FindBar({
   client,
   docId,
+  version,
   page,
   pageCount,
   onJump,
@@ -237,7 +252,10 @@ export function FindBar({
     wholeWord: false,
     regex: false,
   });
-  const [state, setState] = useState<FindState>({ kind: 'idle' });
+  const [held, setHeld] = useState<Held>({ at: version, shown: IDLE });
+  // ONLY AN ANSWER ABOUT THE VERSION ON SCREEN IS SHOWN, read here once so every use below takes it: an answer that
+  // arrives after an edit is held with the version it was asked of, and reads as nothing asked.
+  const state = held.at === version ? held.shown : IDLE;
   const [replacement, setReplacement] = useState('');
   /**
    * Whether a replace-all is in flight, and whether one has landed.
@@ -276,10 +294,13 @@ export function FindBar({
     // refuses it; refusing it here too means the user does not meet a validation
     // failure for having an empty box, which is the state the box starts in.
     if (query === '') {
-      setState({ kind: 'idle' });
+      setHeld({ at: version, shown: IDLE });
       return;
     }
 
+    const show = (shown: FindState): void => {
+      setHeld({ at: version, shown });
+    };
     const answer = await client['document.searchPage']({
       docId,
       page,
@@ -297,16 +318,21 @@ export function FindBar({
       // that is about what the user typed rather than about the document —
       // "this page could not be searched" is the wrong sentence for a missing
       // bracket, and it is the one a reader would act on by retrying.
-      setState({ kind: answer.error.code === 'search-pattern-invalid' ? 'bad-pattern' : 'refused' });
+      show({ kind: answer.error.code === 'search-pattern-invalid' ? 'bad-pattern' : 'refused' });
       return;
     }
-    setState({
-      kind: 'answered',
-      lines: answer.value.matches.map((match) => match.text),
-      truncated: answer.value.truncated,
-      asked: { query, options },
+    // HELD WITH THE VERSION MAIN READ, which is the authority on what the lines are lines of: the one this render
+    // held when it asked may already be behind.
+    setHeld({
+      at: answer.value.version,
+      shown: {
+        kind: 'answered',
+        lines: answer.value.matches.map((match) => match.text),
+        truncated: answer.value.truncated,
+        asked: { query, options },
+      },
     });
-  }, [client, docId, options, page, query]);
+  }, [client, docId, options, page, query, version]);
 
   useEffect(() => {
     if (seed === undefined || searchedNonce.current === seed.nonce || query !== seedQuery) return;
@@ -348,7 +374,7 @@ export function FindBar({
       });
       if (!moved) return;
       setReplaced(true);
-      setState({ kind: 'idle' });
+      setHeld({ at: version, shown: IDLE });
       onHighlight(null);
     } finally {
       // IN A `finally`, so a refusal does not leave the button disabled for
@@ -356,14 +382,17 @@ export function FindBar({
       // is returning the control to the person.
       setReplacing(false);
     }
-  }, [commands, docId, onHighlight, options, query, replacement]);
+  }, [commands, docId, onHighlight, options, query, replacement, version]);
 
   const searchAll = useCallback(async (): Promise<void> => {
     if (docId === undefined || pageCount === undefined || query === '') return;
 
     const controller = new AbortController();
     walk.current = controller;
-    setState({ kind: 'searching', done: 0, count: pageCount });
+    const show = (shown: FindState): void => {
+      setHeld({ at: version, shown });
+    };
+    show({ kind: 'searching', done: 0, count: pageCount });
 
     const outcome = await searchDocument({
       client,
@@ -374,19 +403,24 @@ export function FindBar({
       options,
       signal: controller.signal,
       onProgress: ({ pagesSearched }) => {
-        setState({ kind: 'searching', done: pagesSearched, count: pageCount });
+        show({ kind: 'searching', done: pagesSearched, count: pageCount });
       },
     });
 
     walk.current = null;
     if (outcome.kind === 'cancelled') {
-      setState({ kind: 'cancelled' });
+      show({ kind: 'cancelled' });
       return;
     }
     if (outcome.kind === 'refused') {
-      setState({
+      show({
         kind: outcome.code === 'search-pattern-invalid' ? 'bad-pattern' : 'refused',
       });
+      return;
+    }
+    // A WALK ACROSS AN EDIT has no list to show, and the edit that moved it is on screen: nothing asked.
+    if (outcome.kind === 'moved') {
+      show(IDLE);
       return;
     }
     // THE FIRST MATCH IS THE ACTIVE ONE AND THE READER IS TAKEN TO IT. A walk
@@ -394,15 +428,29 @@ export function FindBar({
     // from makes them find the first one by hand, which is the work the walk
     // just did.
     const first = outcome.matches[0];
-    setState({
-      kind: 'document',
-      matches: outcome.matches,
-      truncated: outcome.truncated,
-      active: first === undefined ? -1 : 0,
-      asked: { query, options },
+    const at = outcome.version ?? version;
+    setHeld({
+      at,
+      shown: {
+        kind: 'document',
+        matches: outcome.matches,
+        truncated: outcome.truncated,
+        active: first === undefined ? -1 : 0,
+        asked: { query, options },
+      },
     });
-    if (first !== undefined) onJump(first.page);
-  }, [client, docId, onJump, options, pageCount, query]);
+    // NOT TAKEN to a match of a version no longer on screen: that page number is the old document's.
+    if (first !== undefined && at === version) onJump(first.page);
+  }, [client, docId, onJump, options, pageCount, query, version]);
+
+  // A WALK ACROSS AN EDIT is two documents' pages in one list, so the version moving ends it; its answer would not be
+  // shown anyway. The cleanup runs when the version moves and when the bar goes.
+  useEffect(
+    () => () => {
+      walk.current?.abort();
+    },
+    [version],
+  );
 
   /**
    * Tells the surface below which matches to paint, whenever the answer moves.
@@ -469,10 +517,10 @@ export function FindBar({
       const active = (state.active + by + count) % count;
       const match = state.matches[active];
       if (match === undefined) return;
-      setState({ ...state, active });
+      setHeld({ at: version, shown: { ...state, active } });
       onJump(match.page);
     },
-    [onJump, state],
+    [onJump, state, version],
   );
 
   if (docId === undefined) return null;

@@ -3828,6 +3828,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               <FindBar
                 client={client}
                 docId={open.docId}
+                version={open.version}
                 page={context.page}
                 pageCount={pageCount}
                 onJump={navigator.jumpTo}
