@@ -126,14 +126,27 @@ try {
       [join(ROOT, 'node_modules', 'vitest', 'vitest.mjs'), 'run', ...SUITES, '--reporter=json', `--outputFile=${report}`],
       { cwd: ROOT, env: { ...hostEnvironment(), MONSTERA_EXPECTED_RUNTIME: 'electron-as-node' }, encoding: 'utf8' },
     );
-    /** @type {{ numFailedTests?: number, numPassedTests?: number, testResults?: { name: string, assertionResults: { fullName: string, status: string }[] }[] }} */
+    /** @type {{ numFailedTests?: number, numPassedTests?: number, numFailedTestSuites?: number, testResults?: { name: string, status?: string, message?: string, assertionResults: { fullName: string, status: string }[] }[] }} */
     const parsed = existsSync(report) ? JSON.parse(readFileSync(report, 'utf8')) : {};
     const results = parsed.testResults ?? [];
+    // A FILE THAT FAILED AS A WHOLE — an import, a hook, an error outside any case — fails the run with no failed
+    // case, so it is named with its own message; and vitest's report of errors outside the files goes to the output,
+    // so those lines are lifted out of it rather than left behind a 3,000-character tail.
+    const failedFiles = results
+      .filter((file) => file.status === 'failed')
+      .map((file) => `${file.name.replaceAll('\\', '/').replace(/^.*\/packages\//u, 'packages/')}: ${file.message ?? ''}`);
+    const outsideFiles = (run.stderr + run.stdout)
+      .split(/\r?\n/u)
+      .filter((line) => /Unhandled|unhandled error|Error: |⎯⎯/u.test(line))
+      .slice(0, 40);
     check(
       `the ${SUITES.join(' and ')} suites pass under the hosts’ runtime`,
       run.status === 0 && parsed.numFailedTests === 0 && (parsed.numPassedTests ?? 0) > 0,
       `vitest exited ${String(run.status)} (signal ${String(run.signal)}) with ${String(parsed.numFailedTests)} failed and ` +
-        `${String(parsed.numPassedTests)} passed. A worker that died is how a native-boundary abort reads here:\n` +
+        `${String(parsed.numPassedTests)} passed, and ${String(parsed.numFailedTestSuites)} file(s) failed whole` +
+        `${failedFiles.length > 0 ? `:\n${failedFiles.join('\n')}` : '.'}\n` +
+        `${outsideFiles.length > 0 ? `Errors outside the files:\n${outsideFiles.join('\n')}\n` : ''}` +
+        `A worker that died is how a native-boundary abort reads here:\n` +
         `${(run.stderr + run.stdout).slice(-3000)}`,
     );
     const cases = results.flatMap((file) => file.assertionResults);

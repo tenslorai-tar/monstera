@@ -1253,8 +1253,10 @@ describe('the canonical image', () => {
     // THE POINT OF THE STAT-FIRST DECISION. Reading in order to decide where the image goes would allocate the very
     // image the decision exists to keep out of memory. Counting the reads is the only way to tell a decision made
     // before the read from one made after it, because both open the document.
-    expect(outcome.kind).toBe('opened');
+    if (outcome.kind !== 'opened') throw new Error(`expected opened, got ${outcome.kind}`);
     expect(reads).toBe(0);
+    // CLOSED, so its image file's descriptor is not left open in the shared root after the case.
+    await service.close(outcome.docId);
   });
 
   it('a file that GREW past the ceiling between its stat and its read is released and held in a file instead', async () => {
@@ -1278,6 +1280,7 @@ describe('the canonical image', () => {
     expect(read.map((bytes) => bytes.buffer.byteLength)).toStrictEqual([0]);
     // The image is the COPY, made after the read, so its length is the file's own.
     expect(outcome.byteLength).toBe(size);
+    await service.close(outcome.docId);
   });
 
   it('NO ROOM ON THE DISK for the image file is at-capacity, naming what it needed, with nothing left behind', async () => {
