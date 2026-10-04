@@ -123,8 +123,6 @@ function refusalProblem(
       return { reason: 'unencodable-text', line };
     case 'malformed-csv':
       return { reason: 'malformed-csv', line };
-    case 'too-many-columns':
-      return { reason: 'too-many-columns', line };
     case 'not-utf8':
       return { reason: 'not-utf8' };
     case 'nothing-to-draw':

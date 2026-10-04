@@ -38,10 +38,6 @@ const markdownImportProblemSchema = z.discriminatedUnion('reason', [
     line: z.number().int().positive().nullable(),
   }),
   z.object({
-    reason: z.literal('too-many-columns'),
-    line: z.number().int().positive().nullable(),
-  }),
-  z.object({
     reason: z.literal('destination-contested'),
     openElsewhere: z.number().int().positive(),
   }),

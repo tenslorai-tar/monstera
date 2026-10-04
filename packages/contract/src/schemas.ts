@@ -475,11 +475,6 @@ export const COMPOSE_REFUSALS = [
    */
   'malformed-csv',
   /**
-   * A table has more columns than the page gives a cell room for three digits, so it
-   * would be drawn one character per line. The refusal names the table's line.
-   */
-  'too-many-columns',
-  /**
    * A picked image the decoder refused, or a PNG whose header states no size. The
    * refusal names which image, by its position among the files picked.
    */

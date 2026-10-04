@@ -290,10 +290,10 @@ describe('newFromCsvCommand', () => {
     ]);
   });
 
-  it('NAMES THE LINE of a malformed record, and CONTROL: a too-wide table is its own reason', async () => {
-    // TWO REASONS added for CSV, each asserted, because the mapping this command
-    // shares used to send every reason it did not name to `nothing-to-draw`.
-    for (const reason of ['malformed-csv', 'too-many-columns'] as const) {
+  it('NAMES THE LINE of a malformed record, and CONTROL: an undrawable character is its own reason', async () => {
+    // EACH REASON CARRYING A LINE asserted, because the mapping this command shares used to send every reason it did
+    // not name to `nothing-to-draw`. A table's width is no reason: `composeTable.ts` fits every table.
+    for (const reason of ['malformed-csv', 'unencodable-text'] as const) {
       const { client } = recording({
         'document.newFromCsv': ok({ kind: 'composition-refused', reason, line: 7, file: null }),
       });

@@ -613,14 +613,8 @@ export const MARKDOWN_IMPORT_NOTHING_TO_DRAW = messageKey(
 );
 export const MARKDOWN_IMPORT_CONTESTED = messageKey('dialog.markdown-import-problem.contested');
 export const MARKDOWN_IMPORT_MALFORMED_CSV = messageKey('dialog.markdown-import-problem.malformed-csv');
-export const MARKDOWN_IMPORT_TOO_MANY_COLUMNS = messageKey(
-  'dialog.markdown-import-problem.too-many-columns',
-);
 export const MARKDOWN_IMPORT_MALFORMED_CSV_NO_LINE = messageKey(
   'dialog.markdown-import-problem.malformed-csv-no-line',
-);
-export const MARKDOWN_IMPORT_TOO_MANY_COLUMNS_NO_LINE = messageKey(
-  'dialog.markdown-import-problem.too-many-columns-no-line',
 );
 export const MARKDOWN_IMPORT_WRITE_FAILED = messageKey('dialog.markdown-import-problem.write-failed');
 export const MARKDOWN_IMPORT_CONVERSION_FAILED = messageKey('dialog.markdown-import-problem.conversion-failed');
@@ -4760,12 +4754,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Nothing was imported.',
   [MARKDOWN_IMPORT_MALFORMED_CSV]:
     'Line {line} is not valid CSV — a quote is out of place or never closed. Nothing was imported.',
-  [MARKDOWN_IMPORT_TOO_MANY_COLUMNS]:
-    'The table that starts on line {line} has more columns than fit across a page. Nothing was imported.',
   [MARKDOWN_IMPORT_MALFORMED_CSV_NO_LINE]:
     'The file is not valid CSV — a quote is out of place or never closed. Nothing was imported.',
-  [MARKDOWN_IMPORT_TOO_MANY_COLUMNS_NO_LINE]:
-    'A table in the file has more columns than fit across a page. Nothing was imported.',
   [MARKDOWN_IMPORT_ABSENT]:
     'The PDF was saved, but the file was gone before it could be opened.',
   [MARKDOWN_IMPORT_AT_CAPACITY]:
