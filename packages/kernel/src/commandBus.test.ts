@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFString } from '@cantoo/pdf-lib';
+import forge from 'node-forge';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type Command, type CommandOfKind, NETWORK_OCR_ENGINES, type PageSet, outlineOpCodes } from '@monstera/contract';
@@ -26,7 +27,7 @@ import {
 import type { CommandWriter, DocumentContext, HeldFile } from './documentService.js';
 import { serialiseIntoFile } from './checkpointFile.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
-import { localMupdfWriter } from './localEngine.js';
+import { localMupdfWriter, localSignpdfWriter } from './localEngine.js';
 import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { applyAddAnnotation, readAnnotations } from './pageAnnotations.js';
@@ -416,6 +417,7 @@ describe('CommandLog — a cursor, not a stack', () => {
     if (recorded.command.kind !== 'rotatePages') {
       throw new Error(`expected a rotatePages entry, got ${recorded.command.kind}`);
     }
+    if (recorded.kind === 'terminal' && recorded.result !== null) throw new Error('expected a rotation kept whole');
     return recorded.command.pages;
   }
 
@@ -2292,5 +2294,97 @@ describe('CommandBus and what the window is handed', () => {
     } finally {
       await mupdfWriter.close(session);
     }
+  });
+});
+
+/**
+ * A command whose effect is its RESULT is redone from that result, and its entry keeps no credential
+ * ([ADR-0162](../../../docs/DECISIONS/0162-a-command-whose-effect-is-its-result-is-redone-from-that-result.md);
+ * CR-SEC-19, CR-DOC-12).
+ *
+ * The signature is real, over a P12 minted here in memory as `documentSign.test.ts` mints one, so nothing on disk is a
+ * credential. What the cases assert is the DECISION as well as the bytes: RSA PKCS#1 v1.5 is deterministic and the
+ * signing time is in seconds, so a redo that signed again inside the same second could produce the same file, and a
+ * case reading only the bytes would pass a bus that re-signs.
+ */
+describe('CommandBus and a command redone from its result', () => {
+  const PASSPHRASE = 'a passphrase the log must not keep';
+  let certificate: Uint8Array;
+
+  beforeAll(() => {
+    const keys = forge.pki.rsa.generateKeyPair(2048);
+    const cert = forge.pki.createCertificate();
+    cert.publicKey = keys.publicKey;
+    cert.serialNumber = '01';
+    cert.validity.notBefore = new Date(Date.now() - 86_400_000);
+    cert.validity.notAfter = new Date(Date.now() + 86_400_000);
+    const attrs = [{ name: 'commonName', value: 'Monstera Test' }];
+    cert.setSubject(attrs);
+    cert.setIssuer(attrs);
+    cert.sign(keys.privateKey, forge.md.sha256.create());
+    const p12 = forge.pkcs12.toPkcs12Asn1(keys.privateKey, [cert], PASSPHRASE, { algorithm: '3des' });
+    const der = forge.asn1.toDer(p12).getBytes();
+    certificate = Uint8Array.from(der, (character: string) => character.charCodeAt(0));
+  }, 60_000);
+
+  /** Signs `flat` through the bus with a writer that counts its applies, then undoes it. */
+  async function signedThenUndone(): Promise<{
+    readonly bus: CommandBus;
+    readonly context: ReturnType<typeof contextStub>;
+    readonly inputs: CommandInputs & { readonly restore: CheckpointRestore };
+    readonly applies: () => number;
+  }> {
+    let applies = 0;
+    const bus = new CommandBus({
+      signpdf: {
+        ...localSignpdfWriter,
+        apply: (request) => {
+          applies += 1;
+          return localSignpdfWriter.apply(request);
+        },
+      },
+    });
+    const context = contextStub(true);
+    const inputs = { ...noByteImageExpected, ...hostModel(flat) };
+    await bus.execute(
+      { mupdf: hosting },
+      context,
+      { kind: 'signDocument', bytes: certificate, passphrase: PASSPHRASE, name: 'Grace Hopper' },
+      inputs,
+    );
+    await bus.undo({ mupdf: hosting }, context, inputs.restore, inputs);
+    return { bus, context, inputs, applies: () => applies };
+  }
+
+  it('keeps only the command’s kind beside the result, so neither the P12 nor the passphrase is in the log', async () => {
+    const { context } = await signedThenUndone();
+    const entry = context.mutableLog.peekRedo();
+    if (entry?.kind !== 'terminal') throw new Error('expected the signature’s terminal entry');
+    expect(entry.command).toStrictEqual({ kind: 'signDocument' });
+    if (entry.result === null) throw new Error('expected the signature’s entry to keep its result');
+    // THE FILE IS THE SIGNED ONE, read off the disk: an unsigned copy carries no /ByteRange.
+    const kept = new TextDecoder('latin1').decode(await readFile(entry.result.path));
+    expect(kept).toContain('/ByteRange');
+    expect(kept).not.toContain(PASSPHRASE);
+  });
+
+  it('redo INSTALLS the signed file it kept, byte for byte, and does not sign again', async () => {
+    const { bus, context, inputs, applies } = await signedThenUndone();
+    await bus.redo({ mupdf: hosting }, context, inputs);
+
+    // THE DECISION: one signature across execute, undo and redo. A bus that re-ran the command reads 2.
+    expect(applies()).toBe(1);
+    // AND THE DOCUMENT IS THE SIGNED ONE: main's image after the redo is the image the signature installed.
+    const images = context.images();
+    expect(images.at(-1)).toStrictEqual(images[0]);
+    expect(context.mutableLog.canRedo).toBe(false);
+  });
+
+  it('the result and the checkpoint are both counted and both kept, as two whole documents on disk', async () => {
+    const { context } = await signedThenUndone();
+    const entry = context.mutableLog.peekRedo();
+    if (entry?.kind !== 'terminal' || entry.result === null) throw new Error('expected a result entry');
+    expect(context.mutableLog.checkpointPaths()).toStrictEqual(new Set([entry.checkpoint.path, entry.result.path]));
+    expect(context.mutableLog.retainedBytes()).toBe(entry.checkpoint.byteLength + entry.result.byteLength);
   });
 });

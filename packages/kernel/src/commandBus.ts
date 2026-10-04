@@ -17,6 +17,7 @@ import type {
   Checkpoint,
   CheckpointFile,
   CommandPrior,
+  LogEntry,
   LogEntryFor,
   LogTrim,
 } from './commandLog.js';
@@ -117,6 +118,29 @@ export type WriterRegistry = {
  */
 function asCheckpoint(file: CheckpointFile): Checkpoint {
   return file as Checkpoint;
+}
+
+/**
+ * The command an entry re-applies, for a redo or a replay that re-runs it.
+ *
+ * An entry redone from its RESULT keeps only its command's kind
+ * ([ADR-0162](../../../docs/DECISIONS/0162-a-command-whose-effect-is-its-result-is-redone-from-that-result.md)), so
+ * there is nothing to re-run, and asking is refused rather than answered with half a command. `redo` takes the result
+ * branch first; a replay never meets one, since a `stored-result` command's writer replaces the image and moves the
+ * base past it.
+ */
+function reapplicable(entry: LogEntry): CommandOfKind<CommandKind> {
+  if (entry.kind === 'invertible' || entry.result === null) return entry.command;
+  throw new Error(
+    `${entry.command.kind} is redone from the image it produced and keeps no command to re-run; ` +
+      'reaching for one is a defect in the caller.',
+  );
+}
+
+/** The other documents an entry names: none for one redone from its result, which keeps no command. */
+function sourcesOfEntry(entry: LogEntry): readonly DocId[] {
+  if (entry.kind === 'terminal' && entry.result !== null) return [];
+  return sourceIdsOf(reapplicable(entry));
 }
 
 /**
@@ -634,6 +658,9 @@ export class CommandBus {
    * record it, the version would bump, and the bytes would never move. The
    * declaration says an image was owed, so its absence is named rather than
    * silently treated as *nothing to install*.
+   *
+   * @returns how to write the file it installed, byte for byte, which is what a `stored-result` entry keeps
+   *   (ADR-0162); `null` for a live-session writer, which installs nothing
    */
   async #install<K extends CommandKind>(
     kind: K,
@@ -641,9 +668,9 @@ export class CommandBus {
     applied: ByteImage | StagedImage | undefined,
     context: DocumentContext,
     bytes: ByteImageAccess,
-  ): Promise<void> {
+  ): Promise<((destination: string) => Promise<number>) | null> {
     const shape = writerShapes[writer];
-    if (shape === 'live-session') return;
+    if (shape === 'live-session') return null;
     if (applied === undefined) {
       throw new Error(
         `${kind} is routed to ${writer}, which \`writerShapes\` declares a ${shape} writer, ` +
@@ -657,7 +684,7 @@ export class CommandBus {
       const image = applied as ByteImage;
       await bytes.adopt((destination) => context.writeImage(COMMAND_WRITER, image, destination));
       context.replaceCanonicalImage(COMMAND_WRITER, image);
-      return;
+      return (destination) => context.writeImage(COMMAND_WRITER, image, destination);
     }
     const staged = applied as StagedImage;
     // A HOSTED RESULT IS A FILE THE HOST WROTE (ADR-0121 Decision 3), in the session's output directory — which the
@@ -670,6 +697,7 @@ export class CommandBus {
     await context.replaceCanonicalImageFrom(COMMAND_WRITER, (destination) =>
       context.writeHeld(COMMAND_WRITER, held, destination),
     );
+    return (destination) => context.writeHeld(COMMAND_WRITER, held, destination);
   }
 
   /**
@@ -755,12 +783,12 @@ export class CommandBus {
             `when it ran.`,
         );
       }
-      const writer = this.#writerFor(entry.command.kind, spec.writer);
-      const session = await this.#sessionFor(entry.command.kind, spec.writer, sessions, inputs);
-      const preRead =
-        spec.replay === 'stored-effect' ? entry.read : await this.#preReadFor(spec, entry.command, inputs);
-      const sources = this.#sourceSessionsFor(entry.command, inputs.sources);
-      await writer.apply({ session, command: entry.command, sources, reads: preRead });
+      const command = reapplicable(entry);
+      const writer = this.#writerFor(command.kind, spec.writer);
+      const session = await this.#sessionFor(command.kind, spec.writer, sessions, inputs);
+      const preRead = spec.replay === 'stored-effect' ? entry.read : await this.#preReadFor(spec, command, inputs);
+      const sources = this.#sourceSessionsFor(command, inputs.sources);
+      await writer.apply({ session, command, sources, reads: preRead });
     }
     return pending.length;
   }
@@ -1005,6 +1033,7 @@ export class CommandBus {
           ),
           reason: captured.reason,
           read: stored,
+          result: null,
         };
 
     // RESOLVED BEFORE THE APPLY AND AFTER THE CHECKPOINT, for the same reason
@@ -1020,7 +1049,13 @@ export class CommandBus {
     // applying rather than something a caller does afterwards — and it happens
     // BEFORE the entry is recorded, for the reason the next comment gives about
     // work that threw. A rebuild that fails must leave no log entry behind.
-    await this.#install(command.kind, spec.writer, applied, context, inputs);
+    const installed = await this.#install(command.kind, spec.writer, applied, context, inputs);
+
+    // A COMMAND REDONE FROM ITS RESULT KEEPS THAT RESULT AND ITS KIND, and nothing else of the command (ADR-0162): a
+    // copy of the very file just installed, so the redone document is this one byte for byte, and no credential the
+    // apply was handed outlives this call. The entry above, which holds the command whole, is never recorded for it.
+    const recorded: LogEntryFor<K> =
+      spec.replay === 'stored-result' ? await this.#withResult(command.kind, entry, installed, context) : entry;
 
     // Recorded and counted only after the document actually changed. An entry
     // for work that threw is worse than no entry — undo would reverse a change
@@ -1032,7 +1067,7 @@ export class CommandBus {
     // The reachable neighbour — a checkpoint that fails between them — is
     // covered. Revisit when a second command has an `apply` that can fail on
     // its own.
-    context.commandLog(COMMAND_WRITER).record(entry);
+    context.commandLog(COMMAND_WRITER).record(recorded);
 
     // THE WINDOW'S BYTES, after the entry and not before it: by here the session has changed,
     // so a serialise that fails must leave the change undoable rather than unlogged.
@@ -1051,7 +1086,37 @@ export class CommandBus {
     // The bus decides WHEN and never how much — the target is the service's,
     // computed from §9.17's ceiling.
     const trimmed = context.enforceRetention(COMMAND_WRITER);
-    return { entry, trimmed, version: context.bumpVersion(COMMAND_WRITER) };
+    return { entry: recorded, trimmed, version: context.bumpVersion(COMMAND_WRITER) };
+  }
+
+  /**
+   * A `stored-result` command's entry: its checkpoint and reason, its kind, and a copy of the file its apply installed
+   * ([ADR-0162](../../../docs/DECISIONS/0162-a-command-whose-effect-is-its-result-is-redone-from-that-result.md)).
+   *
+   * @throws for a declaration that cannot hold: an invertible command has no checkpoint to keep beside a result, and a
+   *   live-session writer installs no file to keep
+   */
+  async #withResult<K extends CommandKind>(
+    kind: K,
+    entry: LogEntryFor<K>,
+    installed: ((destination: string) => Promise<number>) | null,
+    context: DocumentContext,
+  ): Promise<LogEntryFor<K>> {
+    if (entry.kind !== 'terminal' || installed === null) {
+      throw new Error(
+        `${kind} declares replay: 'stored-result', which keeps the file its apply installed beside the checkpoint ` +
+          `taken before it, and this execution ${entry.kind === 'terminal' ? 'installed no file' : 'recorded an inverse'}. ` +
+          'The declaration is wrong, and the command has run.',
+      );
+    }
+    return {
+      kind: 'terminal',
+      command: { kind },
+      checkpoint: entry.checkpoint,
+      reason: entry.reason,
+      read: undefined,
+      result: asCheckpoint(await context.storeCheckpoint(COMMAND_WRITER, installed)),
+    };
   }
 
   /**
@@ -1151,21 +1216,6 @@ export class CommandBus {
   }
 
   /**
-   * Steps the cursor forward and re-applies.
-   *
-   * **Which path this takes is §3a's declaration doing work**, for the first
-   * time. `replay: 'reapply-intent'` re-runs the command, which is only sound
-   * because re-running produces the same bytes. A command declaring
-   * `replay: 'stored-effect'` — signing, OCR, anything minting random object
-   * identifiers — must have its recorded effect re-applied instead, and that
-   * path is refused by name rather than silently taking the wrong one.
-   *
-   * No such command exists yet. The refusal is here because the alternative is
-   * a `redo` that quietly re-runs a signature and produces a different
-   * document, which is exactly the failure §3a was added ahead of any command
-   * to prevent.
-   */
-  /**
    * Which documents the next redo would name, so its caller can resolve them.
    *
    * ## Why this exists, and why it is not the index ADR-0040 refuses
@@ -1197,7 +1247,7 @@ export class CommandBus {
     const entry = context.commandLog(COMMAND_WRITER).peekRedo();
     if (entry === undefined) return [];
     // ONCE EACH: a merge may name one document twice (ADR-0152), and a caller holds each document's session once.
-    return [...new Set(sourceIdsOf(entry.command))];
+    return [...new Set(sourcesOfEntry(entry))];
   }
 
   /**
@@ -1218,7 +1268,7 @@ export class CommandBus {
 
   /** The other documents {@link replayPastImage} will re-apply against — `pendingRedoSources`, for every pending entry. */
   pendingReplaySources(context: DocumentContext): readonly DocId[] {
-    return [...new Set(context.log.pastImage.flatMap((entry) => sourceIdsOf(entry.command)))];
+    return [...new Set(context.log.pastImage.flatMap((entry) => sourcesOfEntry(entry)))];
   }
 
   async redo(
@@ -1232,10 +1282,27 @@ export class CommandBus {
 
     const spec = declaredCommands[entry.command.kind];
 
+    // AN ENTRY REDONE FROM ITS RESULT installs that result and runs nothing (ADR-0162): a signature is over an exact
+    // byte range of the file it is in, so signing again would redo a different document, and re-serialising the
+    // session would rewrite the signed file. So the result goes in as `#install` puts a hosted image in, the session
+    // rebuilt from the file and main's image replaced from it, and the image is current without a refresh.
+    if (entry.kind === 'terminal' && entry.result !== null) {
+      const result = entry.result;
+      await inputs.adopt((destination) => context.writeCheckpoint(COMMAND_WRITER, result, destination));
+      await context.replaceCanonicalImageFrom(COMMAND_WRITER, (destination) =>
+        context.writeCheckpoint(COMMAND_WRITER, result, destination),
+      );
+      this.#recordIfRemoval(spec, context);
+      log.redo();
+      await this.#show(entry.command.kind, context, inputs, true);
+      return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
+    }
+    const command = reapplicable(entry);
+
     // PICKED HERE, for `undo`'s reason: the writer comes from the log entry, so
     // the caller could not have chosen a session for it.
-    const writer = this.#writerFor(entry.command.kind, spec.writer);
-    const session = await this.#sessionFor(entry.command.kind, spec.writer, sessions, inputs);
+    const writer = this.#writerFor(command.kind, spec.writer);
+    const session = await this.#sessionFor(command.kind, spec.writer, sessions, inputs);
 
     // §3a's DECLARATION DECIDING, and this is the branch that replaced the
     // compile-time trigger that produced it (ADR-0051 Decision 2).
@@ -1262,16 +1329,16 @@ export class CommandBus {
     const preRead =
       spec.replay === 'stored-effect'
         ? entry.read
-        : await this.#preReadFor(spec, entry.command, inputs);
+        : await this.#preReadFor(spec, command, inputs);
     // RE-RESOLVED like the pre-read, and for a sharper version of its reason:
     // the log entry holds the source's `DocId`, not its session, so a redo runs
     // against whatever session that document has NOW. A stored session handle
     // would be one for a document that may have been closed and reopened, which
     // is the stale-handle failure `documentCommands` resolves inside the lane
     // to avoid.
-    const sources = this.#sourceSessionsFor(entry.command, inputs.sources);
+    const sources = this.#sourceSessionsFor(command, inputs.sources);
 
-    const applied = await writer.apply({ session, command: entry.command, sources, reads: preRead });
+    const applied = await writer.apply({ session, command, sources, reads: preRead });
     this.#recordIfRemoval(spec, context);
     // REACHABLE, unlike `undo`'s: redoing a watermark re-runs it — that is what
     // `replay: 'reapply-intent'` above has just been checked to mean — and the

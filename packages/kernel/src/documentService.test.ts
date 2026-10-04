@@ -1157,6 +1157,7 @@ function terminalEntry(size: number): LogEntry {
     checkpoint: { path: join(root, 'no-such-checkpoint.pdf'), byteLength: size } as Checkpoint,
     reason: 'a checkpoint whose only property under test is its size',
     read: undefined,
+    result: null,
   };
 }
 
@@ -1613,6 +1614,7 @@ describe('checkpoint files', () => {
       checkpoint: file as Checkpoint,
       reason: 'a stored checkpoint',
       read: undefined,
+      result: null,
     };
   }
 

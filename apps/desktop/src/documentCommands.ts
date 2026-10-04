@@ -5644,9 +5644,13 @@ export class DocumentCommands {
    *
    * ## The bytes and the passphrase end with this frame
    *
-   * Both are locals. Nothing on this class holds either, no log entry carries
-   * the key — `CommandPrior['signDocument']` is `never` — and the command's own
-   * payload is the only place they exist, for the length of one `execute`.
+   * Both are locals. Nothing on this class holds either, and the command's own
+   * payload is the only place they exist, for the length of one `execute`: the
+   * entry the bus records for a `stored-result` command keeps its kind and the
+   * signed file, and has no field a credential could be put in (ADR-0162). Until
+   * 2026-10-04 this said `CommandPrior['signDocument']` being `never` was why,
+   * which named the inverse and not the entry, and the entry kept the command
+   * whole (CR-SEC-19).
    */
   async sign(
     docId: DocId,

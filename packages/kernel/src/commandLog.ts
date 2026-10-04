@@ -788,6 +788,24 @@ export type LogEntryFor<K extends CommandKind> =
       readonly reason: string;
       /** What the apply was handed, where replay may not read it again. */
       readonly read: PreReadValue | undefined;
+      /** Redo re-runs the command: this entry's effect is not its result. */
+      readonly result: null;
+    }
+  | {
+      readonly kind: 'terminal';
+      /**
+       * THE KIND AND NOTHING ELSE (ADR-0162): a command declared `stored-result` is redone from {@link result}, so
+       * nothing re-runs it, and a credential it was applied with has no field to be recorded in. A redo or a replay
+       * that reached for the command to re-apply does not compile.
+       */
+      readonly command: { readonly kind: K };
+      readonly checkpoint: Checkpoint;
+      /** Why no inverse could be recorded. Carried so undo can explain itself. */
+      readonly reason: string;
+      /** Nothing is re-applied, so nothing the apply was handed is kept. */
+      readonly read: undefined;
+      /** The image the apply produced, which redo installs: a whole document on disk, as the checkpoint is. */
+      readonly result: Checkpoint;
     };
 
 /**
@@ -798,6 +816,18 @@ export type LogEntryFor<K extends CommandKind> =
  * prior state, because the two type arguments would be resolved independently.
  */
 export type LogEntry = { readonly [K in CommandKind]: LogEntryFor<K> }[CommandKind];
+
+/**
+ * The document-scaled files an entry holds: none for an invertible entry, its checkpoint for a terminal one, and its
+ * result beside it where it was redone from one (ADR-0162).
+ *
+ * ONE RULE for every reader that counts or keeps them, `retainedBytes`, `checkpointPaths` and `trimTo`, so a file a
+ * new shape adds cannot be retained by one and missed by another.
+ */
+export function filesOf(entry: LogEntry): readonly Checkpoint[] {
+  if (entry.kind !== 'terminal') return [];
+  return entry.result === null ? [entry.checkpoint] : [entry.checkpoint, entry.result];
+}
 
 /**
  * What a lane entry may ask of the log without holding the bus's capability.
@@ -915,7 +945,7 @@ export class CommandLog implements ReadonlyCommandLog {
   retainedBytes(): number {
     let total = 0;
     for (const entry of this.#entries) {
-      if (entry.kind === 'terminal') total += entry.checkpoint.byteLength;
+      for (const file of filesOf(entry)) total += file.byteLength;
     }
     return total;
   }
@@ -931,7 +961,7 @@ export class CommandLog implements ReadonlyCommandLog {
   checkpointPaths(): ReadonlySet<string> {
     const paths = new Set<string>();
     for (const entry of this.#entries) {
-      if (entry.kind === 'terminal') paths.add(entry.checkpoint.path);
+      for (const file of filesOf(entry)) paths.add(file.path);
     }
     return paths;
   }
@@ -997,7 +1027,7 @@ export class CommandLog implements ReadonlyCommandLog {
     const shed = (entries: readonly LogEntry[]): void => {
       droppedEntries += entries.length;
       for (const entry of entries) {
-        if (entry.kind === 'terminal') droppedBytes += entry.checkpoint.byteLength;
+        for (const file of filesOf(entry)) droppedBytes += file.byteLength;
       }
     };
 

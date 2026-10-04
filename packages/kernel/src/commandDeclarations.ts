@@ -241,12 +241,20 @@ export type Invertibility =
  * A command that is not reproducible **records its effect rather than its
  * intent**, and replay re-applies the stored effect instead of re-running the
  * operation. That sentence is the type: `reproducible: false` cannot be written
- * without `replay: 'stored-effect'`, so the consequence travels with the
- * declaration rather than living in a comment somebody has to find.
+ * without a stored replay, so the consequence travels with the declaration
+ * rather than living in a comment somebody has to find.
+ *
+ * **Which effect is stored is the second half of the choice**
+ * ([ADR-0162](../../../docs/DECISIONS/0162-a-command-whose-effect-is-its-result-is-redone-from-that-result.md)).
+ * `stored-effect` stores the pre-read value the apply was handed, and redo
+ * re-applies the command with it (OCR). `stored-result` stores the image the
+ * apply produced, and redo installs it: the effect of a signature is the signed
+ * file, and the entry keeps only the command's kind, so the credential it was
+ * applied with is never recorded.
  */
 export type Reproducibility =
   | { readonly reproducible: true; readonly replay: 'reapply-intent' }
-  | { readonly reproducible: false; readonly replay: 'stored-effect' };
+  | { readonly reproducible: false; readonly replay: 'stored-effect' | 'stored-result' };
 
 /**
  * What are this command's bytes for?
@@ -1694,7 +1702,9 @@ const declarations = {
     // the PKCS#7 itself carries a signing-time attribute. Two runs of the same
     // intent produce different bytes by design, which is what a signature IS.
     reproducible: false,
-    replay: 'stored-effect',
+    // ITS EFFECT IS THE SIGNED FILE (ADR-0162): it reads nothing, so there is no pre-read to keep, and redo installs
+    // the image the apply produced rather than signing again. The entry keeps only the kind, never the P12.
+    replay: 'stored-result',
     sources: 'none',
     targets: 'none',
     reads: 'none',

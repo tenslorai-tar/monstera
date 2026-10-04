@@ -3569,7 +3569,10 @@ export const entry: LogEntryFor<'deletePages'> = {
     // A terminal entry has carried what the apply was handed since ADR-0051, so
     // omitting it too makes the reason *checkpoint, read* — a true diagnostic
     // about two things, where this case is about one. Isolating the property
-    // under test is what keeps the reason regex above meaningful.
+    // under test is what keeps the reason regex above meaningful. `result: null`
+    // is the fixture for the same reason since ADR-0162: a terminal entry says
+    // whether it is redone from a result, and leaving that out too made the
+    // reason *checkpoint, result*.
     source: `
 import type { LogEntry } from '@monstera/kernel';
 export const entry: LogEntry = {
@@ -3577,6 +3580,45 @@ export const entry: LogEntry = {
   command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
   reason: 'no prior state',
   read: undefined,
+  result: null,
+};
+`,
+  },
+  {
+    name: 'an entry REDONE FROM ITS RESULT may not carry the credential it was signed with',
+    expect: 'reject',
+    // TS2322 with the excess property nested under it, which is how the checker reports one inside a union member.
+    code: 'TS2322',
+    // ADR-0162's whole claim: such an entry keeps its command's KIND and nothing else, so a P12 and a passphrase have
+    // no field to be recorded in. The control below is the same entry without them.
+    because: /Object literal may only specify known properties, and 'bytes' does not exist in type/u,
+    notBecause: null,
+    source: `
+import type { Checkpoint, LogEntry } from '@monstera/kernel';
+declare const file: Checkpoint;
+export const entry: LogEntry = {
+  kind: 'terminal',
+  command: { kind: 'signDocument', bytes: new Uint8Array(), passphrase: 'kept' },
+  checkpoint: file,
+  reason: 'no prior state',
+  read: undefined,
+  result: file,
+};
+`,
+  },
+  {
+    name: 'CONTROL: the same entry, keeping only the kind, compiles',
+    expect: 'allow',
+    source: `
+import type { Checkpoint, LogEntry } from '@monstera/kernel';
+declare const file: Checkpoint;
+export const entry: LogEntry = {
+  kind: 'terminal',
+  command: { kind: 'signDocument' },
+  checkpoint: file,
+  reason: 'no prior state',
+  read: undefined,
+  result: file,
 };
 `,
   },
