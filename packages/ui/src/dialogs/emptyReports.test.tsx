@@ -9,8 +9,9 @@ import { InDialog } from './inDialog.js';
 
 /**
  * A dialog that found nothing offers Close and nothing else (the gallery, 2026-10-03). Duplicate pages offered
- * *"Remove 0 duplicate page(s)"*, disabled; Fields this page could have and Edit an object offered no button at all and
- * sat outside the pattern's width. What is asserted is the footer's whole set of buttons, so a disabled action left
+ * *"Remove 0 duplicate page(s)"*, disabled; Fields this page could have offered no button at all and sat outside the
+ * pattern's width. (Edit an object did too, until it became a mode on the page whose empty state is
+ * `ObjectEditLayer.test`'s, ADR-0153.) What is asserted is the footer's whole set of buttons, so a disabled action left
  * beside Close fails as surely as a missing Close.
  */
 afterEach(() => {

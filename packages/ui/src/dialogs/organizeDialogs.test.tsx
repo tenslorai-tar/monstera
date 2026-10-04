@@ -149,6 +149,7 @@ describe('the Organize dialogs in the dialog pattern', () => {
     );
     expect(rows).toStrictEqual(['Insert from', 'Pages', 'Where']);
     expect(screen.getByRole('combobox', { name: 'Insert from' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Pages' })).toBeTruthy();
     expect(screen.getByRole('group', { name: 'Where' })).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'Page' })).toBeTruthy();
   });

@@ -342,14 +342,21 @@ describe('a command whose bytes cannot cross the wire', () => {
     //
     // So this puts the image back into the command and sends it the way the
     // transport does not, straight at the handler. The refusal is the SCHEMA's:
-    // what arrives is an object of numeric keys, and `placeImageSchema`'s
-    // `instanceof` refines it away.
-    const { call, session } = await joined();
+    // the wire's placement is the command with `bytes` omitted (`engineChannels`,
+    // the asset crossing in its place), so a strict object refuses the key.
+    const { call, session, incidents } = await joined();
 
     // `sources` IS WRITTEN, so the bytes are the one thing that can refuse this — the control below is the same call.
     const answer = await call('engine/apply', { session: 'h1', command: placement(png), sources: [] });
 
-    expect(answer).toMatchObject({ ok: false });
+    expect(answer).toMatchObject({ ok: false, error: { code: 'internal' } });
+    // REFUSED FOR THE BYTES AND NOTHING ELSE, read from the incident the wire answers with: every refusal of a call
+    // reads `internal` to the caller, so `ok: false` alone would pass for a call refused for a field it lacked.
+    expect(incidents).toHaveLength(1);
+    const issues = JSON.parse((incidents[0]?.diagnostic as { cause: { message: string } }).cause.message) as unknown;
+    expect(issues).toStrictEqual([
+      { code: 'unrecognized_keys', keys: ['bytes'], path: ['command'], message: 'Unrecognized key: "bytes"' },
+    ]);
     // AND NOTHING HAPPENED TO THE DOCUMENT, which is the half a refusal alone
     // does not give: an implementation that applied the command and then
     // reported a failure would satisfy the line above.

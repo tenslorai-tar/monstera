@@ -254,6 +254,30 @@ describe('mergeDocument', () => {
     }
   });
 
+  it('refuses a LATER document’s page it does not have before placing the documents before it', async () => {
+    // EVERY PART'S PAGES ARE CHECKED FIRST: the first document alone would be placed, so an apply that checked each
+    // part as it reached it would leave the first's pages in the target and then refuse.
+    const target = await mupdfWriter.open(await flatDocument([100]));
+    const first = await mupdfWriter.open(await drawnDocument([200]));
+    const second = await mupdfWriter.open(await drawnDocument([300, 310]));
+    try {
+      const merge: CommandOfKind<'mergeDocument'> = {
+        kind: 'mergeDocument',
+        documents: [
+          { source: asDocId('s'), sourcePages: 'all' },
+          { source: asDocId('s'), sourcePages: [5] },
+        ],
+        at: 1,
+      };
+      await expect(applyMergeDocument(target, merge, [first, second])).rejects.toThrow(
+        /Page 5 is outside this document, which has 2 page/u,
+      );
+      expect(await widthsOf(await mupdfWriter.serialise(target))).toEqual([100]);
+    } finally {
+      for (const session of [target, first, second]) await mupdfWriter.close(session);
+    }
+  });
+
   it('places SEVERAL documents one after another from `at`, in the order given (ADR-0152)', async () => {
     // Two sources whose pages differ from each other and from the target, and the second named first: a merge that
     // kept the sessions' order gives other widths. DRAWN pages, so a merge sharing one graft map across the two

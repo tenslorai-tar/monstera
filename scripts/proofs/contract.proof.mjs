@@ -349,8 +349,8 @@ const TOC_SPEC = `  generateToc: {
  * {@link MOVE_SPEC}'s reason — the missing-a-kind case omits the newest kind,
  * which is now this one.
  *
- * **Its `apply` takes three parameters** and the third is a second
- * `MupdfSession`, which is what makes this filler more than bookkeeping:
+ * **Its `apply` takes three parameters** and the third is a non-empty list of
+ * `MupdfSession`s, the documents merged, which is what makes this filler more than bookkeeping:
  * `WriterBinding` resolves the entry's `apply` from the spread declaration's
  * `writer` AND its `sources`, so a table accepting `applyMergeDocument` beside
  * `sources: 'none'` would mean that axis binds nothing. The reject case below
@@ -793,7 +793,7 @@ const SCAN_SPEC = `  straightenScans: {
  * Filler, kept separate for {@link MOVE_SPEC}'s reason; it was the newest kind until
  * `importAnnotations`.
  *
- * The third spec declaring `sources: 'one'`, and `replacePage`'s shape exactly — MuPDF,
+ * The second spec declaring `sources: 'one'` (merge declares `'several'` since ADR-0152), and `replacePage`'s shape exactly — MuPDF,
  * checkpoint, reapply-intent — because it reads another open document's page into this one.
  * Its three functions are `layers.ts`', not `pageMerge.ts`', because the command writes
  * `/OCProperties` and that module is its one writer (ADR-0064).
@@ -2729,10 +2729,12 @@ export const spec: CommandSpec<'rotatePages'> = {
     // of 2026-09-05.** This comment named "the row's own kernel proof" while no
     // row declared `sources: 'one'`, so it pointed at a guard in the future
     // tense — an allowance vouched for by something that had not been written.
-    // `mergeDocument` is that row, and the case is
+    // `mergeDocument` was that row until ADR-0152 made it `'several'`, where an
+    // apply ignoring its list type-checks the same way, and its case is
     // `THE CASE: every merged page names the node that lists it as its parent`,
-    // which fails if the apply does not read its source because there is then
-    // nothing grafted to check.
+    // which fails if the apply does not read its sources because there is then
+    // nothing grafted to check. The `'one'` row is now `replacePage`, whose
+    // cases in the same file assert the source's page widths in the target.
     //
     // That file also measures why a weaker guard would not do: replacing the
     // engine call with the rejected one left ELEVEN of its thirteen cases

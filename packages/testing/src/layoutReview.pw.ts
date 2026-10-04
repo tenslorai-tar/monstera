@@ -220,9 +220,9 @@ test('a DIALOG’S OPTION GROUP has no bare frame, and each option is a line of 
 
 // EVERY DIALOG WITH A COLUMN OF CHOICES (the owner's review of 0.1.9.0, Export to Word): the question sits on its first
 // option, no taller than its own words. The heading's flex basis, a width in a row, had become a 22ch height in the
-// column. Every dialog that draws `.m-dialog-choices` (`DialogChoices`) is opened here: Export to Word, Split, Print and
-// Edit page object, the last with two objects the shim answers for the page. Signature › Type drew a column until its
-// styles became a menu (ADR-0150).
+// column. Every dialog that draws `.m-dialog-choices` (`DialogChoices`) is opened here: Export to Word, Split and Print.
+// Signature › Type drew a column until its styles became a menu (ADR-0150), and Edit page object until it became a mode
+// on the page (ADR-0153).
 const scenes: readonly { readonly name: string; readonly shim?: SceneShim; readonly open: (page: Page) => Promise<void> }[] = [
   {
     name: 'Export to Word',
@@ -241,18 +241,6 @@ const scenes: readonly { readonly name: string; readonly shim?: SceneShim; reado
     name: 'Print',
     open: async (page: Page): Promise<void> => {
       await runCommand(page, 'Print…');
-    },
-  },
-  {
-    name: 'Edit an object on this page',
-    shim: {
-      pageObjects: [
-        { index: 0, kind: 'text', left: 72, bottom: 700, right: 300, top: 720, fill: { red: 0, green: 0, blue: 0, alpha: 1 } },
-        { index: 1, kind: 'image', left: 72, bottom: 400, right: 540, top: 680, fill: null },
-      ],
-    },
-    open: async (page: Page): Promise<void> => {
-      await runCommand(page, 'Edit an object on page');
     },
   },
 ];

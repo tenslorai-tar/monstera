@@ -42,7 +42,12 @@ async function press(page: Page, id: string): Promise<void> {
     return;
   }
   await row.locator(`[data-holds~="${id}"]`).first().click();
-  await page.getByRole('menuitem').and(page.locator(`[data-command="${id}"]`)).click();
+  // EITHER ITEM ROLE: a More draws a command that says whether it is on — a tool — as a checkable item (6bc9cd61).
+  await page
+    .getByRole('menuitem')
+    .or(page.getByRole('menuitemcheckbox'))
+    .and(page.locator(`[data-command="${id}"]`))
+    .click();
 }
 
 test('Home › SIGNATURE: the dialog, Use Signature, a click on the page — and the page sends that look there', async ({ page }) => {

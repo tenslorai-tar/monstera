@@ -892,6 +892,141 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-04 — Stage audit of `5da42ae3..cb62b976` — findings NNNNNNN-1 to NNNNNNN-10
+
+37 commits, 198 files, all work/cloud-4: item 8 (8a to 8e), and the 0.1.10.0 addition's Groups 12 (ADR-0151), 13
+(ADR-0152) and 14 (14a to 14g, ADR-0153) with ADR-0154 for Group 15. Owed because Group 15's commit would take the range
+past one batch. Label N: K is the highest on main and on every other branch, M on this one (read from each branch's
+JOURNAL). The 57 modified tests and proofs were read commit by commit through `git log -p`, the hidden deletions
+included, by three readers: no assertion was loosened outright, and every removal was a stronger replacement, a contract
+shape followed, or moved with its assertion named, except what 6bc9cd61 lost with its dialog (NNNNNNN-3). Each finding
+closed here was run red against its mutation before it was recorded.
+
+**NNNNNNN-1** (medium, closed in this commit): `6bc9cd61` reddened CI's accessibility gate on both platforms in two
+rendered cases (run 37178574067). `layoutReview.pw.ts` still opened the Edit page object dialog the commit deleted, and
+`signature.pw.ts` pressed a command in a group's More as a `menuitem`, where the same commit made a More draw a command
+that says whether it is on as a checkable item. The scene went with its dialog, and the helper takes either role. Third
+range running: LLLLLLL-3 and MMMMMMM-3 are this shape, a renderer change pushed without the rendered cases that read
+it, and LLLLLLL-3's proposal (name the rendered cases a renderer change reaches) stands. Group 15's own commit carries
+the same class one step earlier: a font case in `renderedScreen.pw.ts` typed through a dialog that change removes.
+
+**NNNNNNN-2** (medium, open, the next item): an accent mark drawn on the paper is solved against nothing. `--accent` on
+the page's white is 3.30:1 in light, 2.54:1 in dark and 1.49:1 in high contrast (measured 2026-10-04 with `contrast`),
+under the 3:1 a boundary needs in two of the three. Edit object's outlines and handles (`6bc9cd61`) are one instance and
+Edit text's block outlines, frame and handles, older than this range, the same class. Group 15's editor solves its own
+at the point of use with `useOnColor`, a rendered case per look red at 2.54 and 1.49 without it. The class wants one
+accent solved against `--page` for everything drawn on the paper, at the page list, rather than a hook per outline.
+
+**NNNNNNN-3** (medium, closed in this commit): `6bc9cd61` removed Edit page object's dialog cases and three things they
+held went with them. The read's refusal was asserted as `ok: false` only, while App reports a problem and leaves the mode
+only when `refused` is set, so a read answering `refused: undefined` for an engine failure left a person outlining
+nothing, unreported, with every case green. The page asked for was asserted nowhere, and the shim's answer ignores it.
+And the fixtures put every object at an index equal to its place in the answer, the stamp included, so a read naming an
+object by position passed. Each now has a case: the refusal of either walk carries its code and a moved version
+carries none; the page is `3` on both parts; indices differ from positions in both walks. The menu check, *one menu*,
+was also true of four commands with no menu, and names the menu now. Recorded as owed: no case joins Properties'
+recolour to what App sends (`onRecolour` to `sendObject`), and App's report-once on a refused read is held by the
+read's half alone.
+
+**NNNNNNN-4** (low, closed in this commit): two controls in `documentCommands.test.ts` could not fail. Page
+background's dialog answered the very pages the command derives itself (`97072680`), so a command sending its own
+passed; it answers others now. Import as layer's *then shows Layers* (`04b87545`) asserted a panel the default leaves
+shown; it starts hidden.
+
+**NNNNNNN-5** (low, closed in this commit): `engineAsset.test.ts`' *bytes LEFT in the payload are refused* asserted
+`ok: false`, which every refused call answers, so removing the `sources` the commit added to isolate the bytes left it
+green. Its comment also named the wrong mechanism: the refusal is the strict wire schema's `unrecognized_keys: bytes`,
+the placement crossing with its bytes omitted, not `placeImageSchema`'s `instanceof`. It asserts that one issue now, red
+with `sources` removed.
+
+**NNNNNNN-6** (low, closed in this commit): ADR-0152's *every part's pages are checked before any is grafted* had no
+case; the only out-of-range merge had one part. A later document's missing page now refuses with the target unchanged,
+red when the pages are resolved inside the graft loop (the first document's page left placed).
+
+**NNNNNNN-7** (low, closed in this commit): the double-click case's last line (`307a91b4`) could not fail: a corner the
+double-click left behind plus one click is two corners, which commits nothing either way. Three corners and Escape now
+send a polygon of exactly three, red at four with the double-click's finish removed. And Insert from PDF's row case
+names all three controls, not two of them.
+
+**NNNNNNN-8** (low, open, proposed): weak controls recorded rather than closed. *Summarise comments* is refused on a
+document with no comments, and its control changes the scope rather than the count, so refusing every comments ask
+passes both (`f80960a0`); a commented document is owed in the ask harness. `pdfiumObject`'s walk control is a removal,
+so a reorder of the same objects is unseen. Merge's *sharing its one graft map* asserts widths, which a map per pass
+also gives. `toolCursors.pw.ts`' *starts no second shape* waits 300 ms for an absence. `Thumbnails.test.tsx`' *before
+the grid paints* cannot tell a layout effect from a passive one under `render`. And the source-document cases record
+params and not the channel.
+
+**NNNNNNN-9** (low, open, owed after the keep-out): the browser shim's annotation seed carries no `pictured`, so the
+rendered Edit object case covers page content only, and a placed picture is held by the unit cases. The shim is in
+`2bc38402`'s files.
+
+**NNNNNNN-10** (recorded): ubuntu's rendered `menus.pw.ts` at 760 x 560 (*Window menu never settled*) was red at
+`37feb99f` and is intermittent, one run in five here; it is the local agent's menu area. `pageMemory.pw.ts` (*drawn 79
+not > 79*) was red once and not reproduced in six runs. The native *killed engine host recovers* step found two
+children at `76e16d7b` and passed at `b2c84e36`, a Windows harness in the local agent's area; not reproduced, nothing
+changed.
+
+**Stale comments, corrected here.** `pdfiumObject.proof.mjs` said nineteen of twenty-two; `contract.proof.mjs` called
+merge's third parameter a second session, Import as layer the third `'one'` spec, and merge the `'one'` guard row, all
+three before ADR-0152; `emptyReports.test.tsx` still listed the Edit object dialog.
+
+**Process, recorded.** Two of my checks in this range had no positive control and are named in their commits:
+`b2c84e36` counted *error TS* in coloured output, where an escape sits between the words, and `37feb99f` linted the
+source files and not the test. Guard denials in this session, each with nothing run: a heredoc into `/dev/null`, and a
+`grep` with `$'` and a redirect.
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit. On-page writing (in progress at this audit) dropped a guard of its own
+rather than keep one nothing could make fire: removing a focused field does fire a blur in Chromium 151, measured, and
+React 19.2.8 never delivers it, because its event dispatch is off from `commitBeforeMutationEffects` until the
+mutations are done; a rendered case holds that, with a control that sees an answer. No workaround-shaped change.
+
+### 2. Verified against the easy shape only?
+
+The hard shapes were taken where they existed: nested page trees for the field removal (12a), several documents with
+forms and outlines merged (13d), a citation in fourteen bracketings and in prose (14f), a stamp whose picture sits one
+Form deep (14g). The easy one stands for Edit object and the on-page editor on a ROTATED page: every case is at
+rotation 0, and the editor's box is placed through the page's transform while its words are set upright. Stated, not
+yet tried.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Once, against: 14g's dialog cases went with the dialog, NNNNNNN-3.
+
+### 3. Would CI have caught it?
+
+It did, NNNNNNN-1, and lint and types at `b2c84e36`. Every case added runs in CI. `proof:pdfiumobject` runs on Windows
+only and was run here against PDFium 155.0.8044.0's Linux build (22 passed).
+
+### 4. Are the proofs non-vacuous?
+
+The controls this range's commits name are recorded there as run red; that was not re-run here. What reading the diffs
+found is the cases that could not fail whatever the commits said: NNNNNNN-3 to -7, each now red against its mutation,
+and NNNNNNN-8's, recorded.
+
+### 4a, 4b, 4c
+
+The contrast reading separates the three looks (3.30, 2.54, 1.49). The blur-on-removal probe carries its control, an
+ordinary blur seen by the same listeners. No search instrument or derived roster was added.
+
+### 5. Executed, or asserted?
+
+Asserted and not executed: PDFium's object walk on Windows' own build, the Windows contrast themes (forced colours) over
+the new on-page surfaces, and the packaged application.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before: ADR-0151, ADR-0152, ADR-0153 and ADR-0154 each came in its own commit ahead of its feature, with its index row
+(MMMMMMM-2 did not recur), and ADR-0152 and ADR-0154 were corrected before building, each in its own commit.
+
+### 7. Do the documents still match the code?
+
+The FEATURES rows each commit touched were read against the code. The sweep for the removed dialog found it named in no
+live document; the journal's mention is a record.
+
+---
+
 ## 2026-10-03 — Stage audit of `de106c45..5da42ae3` — findings MMMMMMM-1 to MMMMMMM-11
 
 33 commits, 199 files, all work/cloud-4: CR-DOC-10, CR-NAT-01, CR-SEC-16, CR-DOC-07 (ADR-0148, ADR-0149), Groups 2,

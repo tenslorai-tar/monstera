@@ -94,7 +94,7 @@ async function twoRunsAndARectangle() {
  *
  * `createRoster` rather than a total printed from what ran, because a total
  * computed over the cases that executed agrees with any collection, including
- * one that has quietly shrunk — audit item 4c. Nineteen is an independent
+ * one that has quietly shrunk — audit item 4c. Twenty-two is an independent
  * claim about this file, not a count of it — three of them come from the loop
  * over the routing, which is why counting `record` calls by eye undercounts.
  *

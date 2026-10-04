@@ -38,6 +38,7 @@ import {
   TOAST_TEXT_SAVED,
   TOAST_TRANSITION_SET,
   TOAST_WORD_SAVED,
+  RIBBON_EDIT_OBJECT,
 } from '../messages/en.js';
 import type { ToastAction } from '../primitives/Toast.js';
 import type { CommandContext } from '../registries/commands.js';
@@ -1655,7 +1656,9 @@ describe('delete pages — the mutation-dialog gate', () => {
   it('EDIT OBJECT’s read takes EVERY PART of a dense page, and the pictures placed on it (AAAAAAA-1, 14g)', async () => {
     // TWO PARTS of content, the second starting at 512: a read that asked once would outline the first part as the
     // page. And the annotation walk's pictures, of which only the one on THIS page that draws a picture is an object.
-    const object = (index: number) => ({ index, kind: 'text' as const, left: 0, bottom: 0, right: 1, top: 1, fill: null });
+    // THE ENGINE'S INDEX IS NOT THE POSITION: each object sits at an index its place in the answer is not, so a read
+    // that named an object by where it came in the list would name another.
+    const object = (at: number) => ({ index: 7 + 2 * at, kind: 'text' as const, left: 0, bottom: 0, right: 1, top: 1, fill: null });
     const mark = (page: number, index: number, pictured: boolean) => ({
       page,
       index,
@@ -1671,13 +1674,17 @@ describe('delete pages — the mutation-dialog gate', () => {
       ...(pictured ? { pictured: true as const } : {}),
     });
     const asked: string[] = [];
+    const pages: unknown[] = [];
     const read = await readPageObjects(
       createClient(channels, (id, params) => {
         const from = (params as { from: number }).from;
         asked.push(`${id}@${String(from)}`);
+        if (id === 'document.pageObjects') pages.push((params as { page: unknown }).page);
         if (id === 'document.annotations') {
           return Promise.resolve(
-            ok({ version: asDocVersion(4), annotations: [mark(3, 0, false), mark(3, 1, true), mark(5, 0, true)], next: null, truncated: false }),
+            // THE PICTURE ON THIS PAGE is index 6 of the walk and third in its answer, after a picture on another page
+            // and a mark that draws none.
+            ok({ version: asDocVersion(4), annotations: [mark(5, 0, true), mark(3, 2, false), mark(3, 6, true)], next: null, truncated: false }),
           );
         }
         return Promise.resolve(
@@ -1693,12 +1700,16 @@ describe('delete pages — the mutation-dialog gate', () => {
     );
 
     expect(asked.sort()).toStrictEqual(['document.annotations@0', 'document.pageObjects@0', 'document.pageObjects@512']);
+    // THE PAGE ASKED FOR, zero-based as the command names it, on every part.
+    expect(pages).toStrictEqual([3, 3]);
     if (!read.ok) throw new Error('the read was refused');
     expect(read.objects.objects).toHaveLength(515);
-    // THE ENGINE'S OWN INDICES and the walk's own: the stamp is index 1 of the annotation walk, never 514.
+    // THE ENGINE'S OWN INDICES and the walk's own: the second content object is index 9, the last 1033, and the stamp
+    // is index 6 of the annotation walk — never its place in either answer.
+    expect([read.objects.objects[1]?.index, read.objects.objects[513]?.index]).toStrictEqual([9, 1033]);
     expect(read.objects.objects.at(-1)).toStrictEqual({
       source: 'stamp',
-      index: 1,
+      index: 6,
       kind: 'picture',
       box: { x0: 10, y0: 20, x1: 110, y1: 90 },
       fill: null,
@@ -1710,10 +1721,21 @@ describe('delete pages — the mutation-dialog gate', () => {
       createClient(channels, (id) => Promise.resolve(id === 'document.annotations' ? annotations : objects));
     const content = ok({ version: asDocVersion(4), objects: [], next: null, truncated: false });
     const marks = (version: number) => ok({ version: asDocVersion(version), annotations: [], next: null, truncated: false });
+    const refusal = err({ code: 'engine-unavailable' as const });
     // CONTROL: the same two walks at one version are read.
     expect((await readPageObjects(answering(content, marks(4)), DOC, 0)).ok).toBe(true);
-    expect((await readPageObjects(answering(content, marks(5)), DOC, 0)).ok).toBe(false);
-    expect((await readPageObjects(answering(err({ code: 'engine-unavailable' as const }), marks(4)), DOC, 0)).ok).toBe(false);
+    // MOVED BETWEEN THE TWO READS is no failure to report: `refused` is absent, and App reads again.
+    expect(await readPageObjects(answering(content, marks(5)), DOC, 0)).toStrictEqual({ ok: false, refused: undefined });
+    // A REFUSED WALK, of either kind, carries its refusal, which App reports once and leaves the mode on: a refusal a
+    // person meets, not a mode that silently outlines nothing.
+    expect(await readPageObjects(answering(refusal, marks(4)), DOC, 0)).toStrictEqual({
+      ok: false,
+      refused: { code: 'engine-unavailable' },
+    });
+    expect(await readPageObjects(answering(content, refusal), DOC, 0)).toStrictEqual({
+      ok: false,
+      refused: { code: 'engine-unavailable' },
+    });
   });
 
   it('EDIT OBJECT is ONE ribbon menu of four filters, each checked only while its own filter is on', () => {
@@ -1734,7 +1756,10 @@ describe('delete pages — the mutation-dialog gate', () => {
       'edit.objects-shapes',
     ]);
     // ONE MENU, so the ribbon draws one *Edit object* button opening the four.
-    expect(new Set(commands.map((command) => (command.placements[0] as { menu?: unknown }).menu)).size).toBe(1);
+    // THE MENU ITSELF, not only that the four agree: four with no menu would agree too, and draw four buttons.
+    expect(commands.map((command) => (command.placements[0] as { menu?: unknown }).menu)).toStrictEqual(
+      commands.map(() => RIBBON_EDIT_OBJECT),
+    );
 
     const [all, , images] = commands;
     if (all === undefined || images === undefined) throw new Error('no commands');
@@ -1861,8 +1886,9 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('THE BACKGROUND ASKS FOR THE PAGE ON SHOW and dispatches the colour and pages the dialog answered', async () => {
     // The dialog is told `targetPages`' answer, which is page 3 here because
-    // nothing is ticked, and the answer names page 3 and a colour no default
-    // carries — so a command that sent its own pages or its own colour fails.
+    // nothing is ticked, and the person CHANGES it to pages 1 and 5, in a colour
+    // no default carries — so a command that sent its own pages or its own
+    // colour fails.
     const { client, sent } = recording();
     const opened: unknown[] = [];
 
@@ -1873,7 +1899,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       onApplied: () => undefined,
       ask: (id, props) => {
         opened.push({ id, props });
-        return Promise.resolve({ pages: [3], red: 0.25, green: 0.5, blue: 0.75 });
+        return Promise.resolve({ pages: [1, 5], red: 0.25, green: 0.5, blue: 0.75 });
       },
     }).run(CONTEXT);
 
@@ -1883,7 +1909,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         id: 'document.execute',
         params: {
           docId: DOC,
-          command: { kind: 'setPageBackground', pages: [3], red: 0.25, green: 0.5, blue: 0.75 },
+          command: { kind: 'setPageBackground', pages: [1, 5], red: 0.25, green: 0.5, blue: 0.75 },
         },
       },
     ]);
@@ -2557,6 +2583,9 @@ describe('delete pages — the mutation-dialog gate', () => {
       settings,
       presence,
     });
+    // THE PANEL STARTS HIDDEN: it is shown by default, so a case asserting it is shown after the command would pass
+    // for a command that never showed it.
+    presence.hide('start');
     return { command, tab: () => settings.get(DOCUMENT_PANEL_SETTING.id), shown: () => presence.shown('start') };
   }
 
@@ -2569,6 +2598,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       return Promise.resolve({ kind: 'import', source: 'doc-2', sourcePage: 5 });
     });
     expect(layer.tab()).not.toBe('layers');
+    expect(layer.shown()).toBe(false);
     await layer.command.run(CONTEXT);
 
     expect(opened).toStrictEqual([

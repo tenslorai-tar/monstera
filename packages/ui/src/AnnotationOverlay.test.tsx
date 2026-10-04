@@ -419,9 +419,18 @@ describe('AnnotationOverlay', () => {
     expect(sent[0]).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'polygon' } });
     // NO LIVE SHAPE: the committed one is held until the page redraws, which is not a gesture.
     expect(inFlightPreview(surface)).toBeNull();
-    // AND THE NEXT CLICK starts a fresh shape rather than finishing one the double-click left behind.
+    // AND THE NEXT SHAPE is a fresh one: three corners and Escape send a polygon of exactly those three. A corner the
+    // double-click left behind would be a fourth, so the count is what only the correct path produces.
     await click(surface, [200, 200]);
-    expect(sent).toHaveLength(1);
+    await click(surface, [300, 200]);
+    await click(surface, [300, 300]);
+    fireEvent.keyDown(surface, { key: 'Escape' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent).toHaveLength(2);
+    const second = sent[1];
+    expect(second?.kind === 'addAnnotation' && second.annotation.type === 'polygon' ? second.annotation.points : []).toHaveLength(3);
   });
 
   it('abandons a half-drawn multi-press gesture on Escape when it is too few corners to keep', async () => {
