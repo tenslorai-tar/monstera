@@ -3,6 +3,7 @@ import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
+import { againstPaper } from './contrast.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 
 /**
@@ -82,27 +83,6 @@ async function dragOn(page: Page, from: readonly [number, number], to: readonly 
   await page.mouse.up();
 }
 
-/** WCAG's contrast ratio between an element's computed outline colour and the page's paper, `--page`. */
-async function outlineAgainstPage(element: Locator): Promise<number> {
-  return element.evaluate((node) => {
-    const luminance = (css: string): number => {
-      const probe = document.createElement('span');
-      probe.style.color = css;
-      document.body.append(probe);
-      const parts = getComputedStyle(probe).color.match(/[\d.]+/gu)?.slice(0, 3).map(Number) ?? [0, 0, 0];
-      probe.remove();
-      const [red = 0, green = 0, blue = 0] = parts.map((part) => {
-        const channel = part / 255;
-        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-      });
-      return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-    };
-    const outline = luminance(getComputedStyle(node).outlineColor);
-    const paper = luminance(getComputedStyle(node).getPropertyValue('--page').trim());
-    return (Math.max(outline, paper) + 0.05) / (Math.min(outline, paper) + 0.05);
-  });
-}
-
 async function expectNoBlocking(page: Page): Promise<void> {
   const results = await new AxeBuilder({ page }).analyze();
   const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
@@ -131,7 +111,7 @@ for (const look of LOOKS) {
     await expectNoBlocking(page);
     // THE OUTLINE IS ON THE PAPER, and clears 3:1 against it in every look. CONTROL, measured 2026-10-04: the accent
     // itself is 2.54:1 on white in dark and 1.49:1 in high contrast, so an outline left in the token fails here.
-    expect(await outlineAgainstPage(box)).toBeGreaterThanOrEqual(3);
+    expect(await againstPaper(box, 'outline-color')).toBeGreaterThanOrEqual(3);
     await page.screenshot({ path: test.info().outputPath(`text-box-${look.name}.png`) });
 
     // A PRESS ELSEWHERE ON THE PAGE finishes the words and goes no further: one command, and no second box.

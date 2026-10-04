@@ -5048,7 +5048,7 @@ optgroup {
   position: absolute;
   padding: 0;
   margin: 0;
-  border: 1px dashed var(--accent);
+  border: 1px dashed var(--accent-on-paper, var(--accent));
   border-radius: var(--radius-4);
   background: transparent;
   cursor: text;
@@ -5061,7 +5061,7 @@ optgroup {
 }
 
 .m-text-block:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-on-paper, var(--accent));
   outline-offset: 2px;
 }
 
@@ -5069,7 +5069,7 @@ optgroup {
   position: absolute;
   pointer-events: auto;
   transform-origin: top left;
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--accent-on-paper, var(--accent));
 }
 
 /*
@@ -5095,7 +5095,7 @@ optgroup {
   white-space: pre-wrap;
   overflow-wrap: break-word;
   background: var(--page);
-  caret-color: var(--accent);
+  caret-color: var(--accent-on-paper, var(--accent));
 }
 
 .m-text-editor:focus {
@@ -5137,7 +5137,7 @@ optgroup {
   margin: 0;
   border: 0;
   border-radius: 0;
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--accent-on-paper, var(--accent));
   overflow-x: hidden;
   overflow-y: auto;
   resize: none;
@@ -5146,11 +5146,11 @@ optgroup {
   /* MUPDF'S LINE SPACING for a FreeText: 14.4 for 12 points, measured in its appearance stream (`textTools.ts`). */
   line-height: 1.2;
   background: var(--page);
-  caret-color: var(--accent);
+  caret-color: var(--accent-on-paper, var(--accent));
 }
 
 .m-inline-writer__block:focus {
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--accent-on-paper, var(--accent));
 }
 
 /* A BOX AT THE PAGE'S FOOT has no room under it, so its refusal is said above it (`InlineWriter` measures it). */
@@ -5190,7 +5190,7 @@ optgroup {
   position: absolute;
   inline-size: var(--space-8);
   block-size: var(--space-8);
-  border: 1px solid var(--accent);
+  border: 1px solid var(--accent-on-paper, var(--accent));
   background: var(--surface);
   pointer-events: none;
   translate: -50% -50%;
@@ -5273,7 +5273,7 @@ optgroup {
   position: absolute;
   padding: 0;
   margin: 0;
-  border: 1px dashed var(--accent);
+  border: 1px dashed var(--accent-on-paper, var(--accent));
   border-radius: var(--radius-4);
   background: transparent;
   cursor: pointer;
@@ -5284,7 +5284,7 @@ optgroup {
 }
 
 .m-object:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-on-paper, var(--accent));
   outline-offset: 2px;
 }
 
@@ -5298,7 +5298,7 @@ optgroup {
 .m-object-handle {
   position: absolute;
   box-sizing: border-box;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--accent-on-paper, var(--accent));
   background: var(--page);
 }
 
@@ -5329,7 +5329,7 @@ optgroup {
  */
 .m-selection-box {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--accent-on-paper, var(--accent));
   stroke-width: 1;
   stroke-dasharray: 4 3;
   /* One pixel at every zoom: this is a screen affordance, not a border the
@@ -5342,7 +5342,7 @@ optgroup {
    within that reach and the two must be one number. */
 .m-selection-handle {
   fill: var(--page);
-  stroke: var(--accent);
+  stroke: var(--accent-on-paper, var(--accent));
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
@@ -5443,7 +5443,7 @@ optgroup {
  */
 .m-annotation-preview {
   fill: var(--accent-soft);
-  stroke: var(--accent);
+  stroke: var(--accent-on-paper, var(--accent));
   stroke-width: 1;
   /* SCALES WITH NOTHING. A preview outline is a screen affordance, so it stays
      one pixel at every zoom, unlike the border the annotation will carry. */

@@ -35,6 +35,9 @@ export interface PageWriting {
 import { TextLayer, type TextLayerLine, readTextSelection } from './TextLayer.js';
 import { type DifferenceMark, DifferenceLayer } from './DifferenceLayer.js';
 
+/** What a mark over a page sits on: the paper. */
+const ON_PAPER: readonly string[] = ['--page'];
+
 /** No marks on a page, one identity for every page without any. */
 const NO_MARKS: readonly DifferenceMark[] = [];
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
@@ -43,6 +46,7 @@ import { type PageTextAnswer, usePageText } from './usePageText.js';
 import { useSelectedTextPages } from './useSelectedTextPages.js';
 import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL, PAGE_OPENING } from './messages/en.js';
 import { Icon } from './primitives/Icon.js';
+import { useOnColor } from './primitives/useOnColor.js';
 import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
@@ -507,6 +511,11 @@ export function PageList({
   // NOT BEFORE THE FIRST FRAME, with the marks below: both are reads in main's one lane, and asked at mount they were
   // queued ahead of the rotation the first page waits for. Neither is drawn before a page is measured anyway.
   const scroller = useRef<HTMLDivElement | null>(null);
+  // THE ACCENT ON THE PAPER, solved once for every mark drawn over a page — an outline, a handle, a preview, a caret —
+  // against `--page`, which is what those marks sit on: the accent itself is 3.30:1 on white in light, 2.54:1 in dark
+  // and 1.49:1 in high contrast (measured 2026-10-04 with `contrast`), under the 3:1 a boundary needs in two of three.
+  // `--accent-on-paper` inherits to every slot, and the rules fall back to the accent where nothing is solved.
+  useOnColor(scroller, '--accent-on-paper', '--accent', ON_PAPER, 3);
   // AND THE PAGES A SELECTION IS IN, on screen or not: their layers hold the selection's ends (`useSelectedTextPages`).
   const selectedPages = useSelectedTextPages(scroller);
   const pageText = usePageText(client, docId, version, firstFrame ? new Set([...visible, ...selectedPages]) : NOTHING_VISIBLE);

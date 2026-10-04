@@ -22,6 +22,7 @@ import { type Page, expect, test } from '@playwright/test';
 // and `LOOKS` is theirs too: §10.4's gate and §10.7's baselines check the same three themes, and
 // two lists would drift the day one gains a fourth (audit finding IIIIII-2).
 import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
+import { againstPaper } from './contrast.js';
 import { readsAtTextFloor } from './inkOnScreen.js';
 import { pageShown, popupPlaced, settled, startScreenListening } from './settled.js';
 
@@ -4612,10 +4613,14 @@ for (const look of LOOKS) {
     const scale = (pageBox?.width ?? 0) / 612;
     expect(Math.abs((drawn?.x ?? Number.NaN) - ((pageBox?.x ?? 0) + box.x0 * scale))).toBeLessThan(2);
     expect(Math.abs((drawn?.y ?? Number.NaN) - ((pageBox?.y ?? 0) + (792 - box.y1) * scale))).toBeLessThan(2);
+    // THE OUTLINE IS ON THE PAPER and clears 3:1 against it in every look (`contrast.ts`; the accent itself is 2.54:1
+    // in dark and 1.49:1 in high contrast).
+    expect(await againstPaper(outline, 'border-top-color')).toBeGreaterThanOrEqual(3);
 
     await outline.click();
     const editor = page.locator('[data-text-editor]');
     await expect(editor).toBeFocused();
+    expect(await againstPaper(page.locator('.m-text-editor-frame'), 'outline-color')).toBeGreaterThanOrEqual(3);
     expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
       'A paragraph of words set on the page\nand a second line.',
     );
@@ -4696,8 +4701,11 @@ for (const look of LOOKS) {
     // ONLY THE IMAGE under Images: the text and the rule are not outlined.
     await expect(layer.locator('.m-object')).toHaveCount(1);
     const photo = layer.getByRole('button', { name: 'Image, 1 of 1' });
+    // THE OUTLINE AND, ONCE SELECTED, ITS HANDLES ARE ON THE PAPER and clear 3:1 against it in every look.
+    expect(await againstPaper(layer.locator('.m-object'), 'border-top-color')).toBeGreaterThanOrEqual(3);
     await photo.click();
     await expect(photo).toHaveAttribute('aria-pressed', 'true');
+    expect(await againstPaper(layer.locator('.m-object-handle').first(), 'border-top-color')).toBeGreaterThanOrEqual(3);
 
     // THE PROPERTIES TAB names it, and its foot is INSIDE the panel. CONTROL, measured 2026-10-04: a content-box tab
     // of 100% height plus its padding was 654 px in a 622 px body, so Delete sat below the panel's edge, cut off.

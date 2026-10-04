@@ -7,7 +7,6 @@ import type { OverlayPage } from './annotations/annotationSpace.js';
 import { hexFromColour } from './annotations/annotationStyle.js';
 import { overlayTransform } from './annotations/annotationSpace.js';
 import { type Draft, type WriteEnd, type WriteRequest, settle } from './pageWriting.js';
-import { useOnColor } from './primitives/useOnColor.js';
 
 /**
  * Words typed where they go (ADR-0154): a request drawn over its own page.
@@ -133,14 +132,6 @@ export function InlineWriter({ request, draft, geometry, onDone }: InlineWriterP
       window.removeEventListener('pointerdown', pressed, true);
     };
   }, []);
-
-  // THE OUTLINE AND THE CARET ARE ON THE PAPER, not on the application's surfaces, so they are solved against `--page`
-  // where they are drawn: the accent itself is 3.30:1 on white in light, 2.54:1 in dark and 1.49:1 in high contrast
-  // (measured 2026-10-04 with `contrast`), under the 3:1 a boundary needs in two of the three. A card sits on the
-  // application's own surface and keeps the field's ring, so it solves nothing.
-  const onPaper = request.shape === 'block' && request.style !== undefined ? ['--page'] : [];
-  useOnColor(field, 'outline-color', '--accent', onPaper, 3);
-  useOnColor(field, 'caret-color', '--accent', onPaper, 3);
 
   // A BOX THAT HAS REACHED THE PAGE'S FOOT scrolls, and its message would hang below the page, out of sight; it goes
   // above the box instead. Measured after each change and written to the node, like `useOnColor`, so no render waits
