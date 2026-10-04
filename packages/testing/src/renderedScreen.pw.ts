@@ -2531,7 +2531,7 @@ test('a CAPTION THAT GROWS after the fold measured it is measured again, so the 
     const labels = [...row.querySelectorAll('.m-tool-button__label')];
     return {
       room: inner - Math.max(...groups.map((group) => group.getBoundingClientRect().right)),
-      characters: labels.reduce((sum, label) => sum + (label.textContent ?? '').length, 0),
+      characters: labels.reduce((sum, label) => sum + label.textContent.length, 0),
     };
   });
   expect(characters).toBeGreaterThan(0);
