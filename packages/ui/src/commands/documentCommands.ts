@@ -3909,6 +3909,17 @@ const OBJECT_FILTER_TITLES: Readonly<Record<ObjectFilter, MessageKey>> = {
 };
 
 /**
+ * Each filter's glyph, which its menu item draws: one each, since four of one glyph in a menu say nothing about which
+ * objects each outlines. *All* keeps the pencil the menu's button draws, its first member's.
+ */
+const OBJECT_FILTER_ICONS: Readonly<Record<ObjectFilter, IconName>> = {
+  all: 'SquarePen',
+  text: 'Type',
+  images: 'Image',
+  shapes: 'Spline',
+};
+
+/**
  * Edit object's four filters, one ribbon menu (ADR-0153 Decision 2; ADR-0101).
  *
  * Each turns the mode on with its filter, and off again when it is the one already on — Edit text's toggle, per
@@ -3928,7 +3939,7 @@ export function editObjectsCommands(deps: {
   return OBJECT_FILTERS.map((filter, at) => ({
     id: `edit.objects-${filter}`,
     feedback: VISIBLE,
-    icon: 'SquarePen',
+    icon: OBJECT_FILTER_ICONS[filter],
     title: OBJECT_FILTER_TITLES[filter],
     placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 20 + at, menu: RIBBON_EDIT_OBJECT }],
     when: hasDocument,

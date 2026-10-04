@@ -330,14 +330,20 @@ optgroup {
   display: inline-flex;
 }
 
-/* A RIBBON MENU'S CHECKABLE ITEM (ADR-0153): the mark's column before the name, given through the shared item's two
-   properties for the same reason as the menu bar's. */
-.m-ribbon-menu__item {
+/* A RIBBON MENU'S ITEMS — a group's More and a named menu: the command's glyph, the title, the chord, given through the
+   shared item's two properties as the menu bar's are. A menu with a checkable member (ADR-0153) puts the mark's column
+   first on every item, so the glyphs and titles of its plain members line up with the checkable ones. */
+.m-ribbon-menu {
   --menu-item-columns: var(--icon-14) minmax(0, 1fr) auto;
   --menu-item-gap: var(--space-8);
 }
 
-.m-ribbon-menu__mark {
+.m-ribbon-menu--marks {
+  --menu-item-columns: var(--icon-14) var(--icon-14) minmax(0, 1fr) auto;
+}
+
+.m-ribbon-menu__mark,
+.m-ribbon-menu__icon {
   display: inline-flex;
 }
 

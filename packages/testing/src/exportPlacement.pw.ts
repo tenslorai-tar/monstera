@@ -30,7 +30,9 @@ async function openDocument(page: Page, sent: string[]): Promise<void> {
   await expect(page.locator('.m-page-list canvas.m-page').first()).toBeVisible({ timeout: 20_000 });
 }
 
-test('Home › Export reads Image · Word · Excel · PowerPoint · Share, and PowerPoint dispatches the PowerPoint export', async ({ page }) => {
+// THE THREE OFFICE FORMATS ARE ONE "EXPORT" BUTTON ON HOME since cloud-4 item 9c (ADR-0101's named menu), so the order
+// the owner asked for — PowerPoint straight after Excel — is the menu's, and the group reads Image · Export · Share.
+test('Home › Export reads Image · Export · Share, its menu Word · Excel · PowerPoint, and PowerPoint dispatches the PowerPoint export', async ({ page }) => {
   const sent: string[] = [];
   await openDocument(page, sent);
   await page.locator('nav.m-ribbon__rail').getByRole('button', { name: 'Home' }).click();
@@ -38,18 +40,22 @@ test('Home › Export reads Image · Word · Excel · PowerPoint · Share, and P
     .locator('.m-ribbon__group')
     .filter({ has: page.locator('.m-ribbon__caption').getByText('Export', { exact: true }) });
   const labels = (await group.getByRole('button').allTextContents()).map((label) => label.trim());
-  const order = ['Image', 'Word', 'Excel', 'PowerPoint', 'Share'].map((name) => labels.findIndex((label) => label.startsWith(name)));
+  const order = ['Image', 'Export', 'Share'].map((name) => labels.findIndex((label) => label.startsWith(name)));
   // EVERY ONE PRESENT, and in that order: an absent one is -1, which the sort below would otherwise accept at the front.
   expect(order.every((at) => at >= 0), JSON.stringify(labels)).toBe(true);
   expect(order).toStrictEqual([...order].sort((a, b) => a - b));
 
+  await group.getByRole('button', { name: /^Export\b/u }).click();
+  const menu = page.getByRole('menu');
+  await expect(menu.getByRole('menuitem')).toHaveText(['Export to Word…', 'Export tables to Excel…', 'Export to PowerPoint…']);
+
   // ITS OWN GLYPH: a slide, not the page-picture one Image draws.
-  const powerPoint = group.getByRole('button', { name: 'PowerPoint', exact: true });
+  const powerPoint = menu.getByRole('menuitem', { name: 'Export to PowerPoint…' });
   await expect(powerPoint.locator('svg.lucide-presentation')).toHaveCount(1);
   sent.length = 0;
   await powerPoint.click();
   await expect.poll(() => sent.includes('document.exportPowerPoint')).toBe(true);
-  // CONTROL: the Word button beside it asks for its mode first and sends no PowerPoint export.
+  // CONTROL: Word, beside it in the menu, asks for its mode first, so the one export sent is PowerPoint's.
   expect(sent.filter((channel) => channel.startsWith('document.export'))).toStrictEqual(['document.exportPowerPoint']);
 });
 

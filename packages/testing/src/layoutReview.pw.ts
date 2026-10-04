@@ -279,9 +279,9 @@ test('a DIALOG’S OPTION GROUP has no bare frame, and each option is a line of 
 const scenes: readonly { readonly name: string; readonly shim?: SceneShim; readonly open: (page: Page) => Promise<void> }[] = [
   {
     name: 'Export to Word',
+    // FROM THE PALETTE, as the other two: this case is about the dialog, and where its button sits moved once already.
     open: async (page: Page): Promise<void> => {
-      await openSection(page, 'Home');
-      await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Word', exact: true }).click();
+      await runCommand(page, 'Export to Word…');
     },
   },
   {

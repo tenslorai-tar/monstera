@@ -58,6 +58,7 @@ export function RibbonMore({
   readonly accessibleName?: string;
 }): ReactElement {
   const { i18n } = useLingui();
+  const marks = entries.some((entry) => entry.command.checked?.(context) !== undefined);
 
   return (
     <Menu.Root>
@@ -75,7 +76,9 @@ export function RibbonMore({
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner align="start" side="bottom">
-          <Menu.Popup className="m-context-menu">
+          {/* A MARK COLUMN ONLY WHERE A MEMBER CAN BE ON, so a menu of plain commands opens on its glyphs rather than
+              on an empty column, and a menu with a checkable member keeps every title at one edge. */}
+          <Menu.Popup className={marks ? 'm-context-menu m-ribbon-menu m-ribbon-menu--marks' : 'm-context-menu m-ribbon-menu'}>
             {entries.map((entry) => {
               const checked = entry.command.checked?.(context);
               const choose = (): void => {
@@ -85,6 +88,13 @@ export function RibbonMore({
               };
               const face = (
                 <>
+                  {/* THE COMMAND'S OWN GLYPH, the one its button draws when the row has room — so a tool keeps its
+                      face when the width or a named menu puts it here (PowerPoint's slide, the owner's review of
+                      0.1.9.0). Decorative: the item's name is its title. The registry refuses a ribbon command
+                      without an icon, so `File` is never drawn for one in the shipped graph. */}
+                  <span className="m-ribbon-menu__icon" aria-hidden="true">
+                    <Icon name={entry.command.icon ?? 'File'} size="dense" />
+                  </span>
                   <span>{i18n._(entry.command.title)}</span>
                   {entry.command.shortcut === undefined ? null : (
                     <span className="m-context-menu-chord" aria-hidden="true">
@@ -105,12 +115,13 @@ export function RibbonMore({
                   aria-keyshortcuts={entry.command.shortcut}
                   onClick={choose}
                 >
+                  {marks ? <span className="m-ribbon-menu__mark" aria-hidden="true" /> : null}
                   {face}
                 </Menu.Item>
               ) : (
                 <Menu.CheckboxItem
                   key={entry.command.id}
-                  className="m-context-menu-item m-ribbon-menu__item"
+                  className="m-context-menu-item"
                   data-command={entry.command.id}
                   label={i18n._(entry.command.title)}
                   aria-keyshortcuts={entry.command.shortcut}

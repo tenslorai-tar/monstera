@@ -61,8 +61,8 @@ test('export-pages-as-images-1', async ({ page }) => {
 test('export-to-word-1', async ({ page }) => {
   await openApp(page);
   await openDocument(page);
-  await openSection(page, 'Home');
-  await ribbonGroup(page, 'Export').getByRole('button', { name: 'Word', exact: true }).click();
+  const menu = await openGroupMenu(page, 'Home', 'Export', 'Export');
+  await menu.getByRole('menuitem', { name: 'Export to Word…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Export to Word' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('radio').first()).toBeChecked();
@@ -214,10 +214,9 @@ test('export-text-1', async ({ page }) => {
 test('export-to-powerpoint-1', async ({ page }) => {
   await openApp(page);
   await openDocument(page);
-  await openSection(page, 'Home');
-  const group = ribbonGroup(page, 'Export');
-  await group.getByRole('button', { name: 'PowerPoint', exact: true }).focus();
-  await shoot(page, 'export-to-powerpoint-1', group, 8);
+  const menu = await openGroupMenu(page, 'Home', 'Export', 'Export');
+  await menu.getByRole('menuitem', { name: 'Export to PowerPoint…' }).focus();
+  await shoot(page, 'export-to-powerpoint-1', menu, 12);
 });
 
 test('insert-a-blank-page-1', async ({ page }) => {
