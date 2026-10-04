@@ -3974,7 +3974,11 @@ test('ORGANIZE’S FULL PAGE is shown finished: no stale or blank card on show a
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   const grid = page.getByRole('region', { name: 'Pages to organize' });
-  await expect(grid.locator('[data-thumb-page="0"] canvas')).toHaveAttribute('data-drawn', 'true');
+  // EVERY THUMBNAIL DRAWN before Full page is chosen, since the sampler judges every card on show from its first frame
+  // and all eight are on show at this size. Waiting on page 0 alone let the other seven still be arriving, each range
+  // 150 ms late, and a frame of thumbnails still loading failed the case before the switch it is about (ubuntu,
+  // 9a6e4c81: eight cards 110 px wide, only page 0 drawn).
+  await expect(grid.locator('[data-thumb-page] canvas[data-drawn="true"]')).toHaveCount(8);
 
   /** Starts recording, every frame, each card on show in its strip's view: its page, its drawn state, its width. */
   const record = (): Promise<void> =>
