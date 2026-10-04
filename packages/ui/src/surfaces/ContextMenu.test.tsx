@@ -115,7 +115,7 @@ describe('ContextMenuArea', () => {
       { hidden: 'true', glyph: 'lucide-trash2' },
     ]);
     // OUT OF THE NAME: the item is still found by its title alone.
-    expect(screen.getByRole('menuitem', { name: EN[messageKey('command.rotate-page.title')] })).toBe(items[0]);
+    expect(screen.getByRole('menuitem', { name: i18n._(messageKey('command.rotate-page.title')) })).toBe(items[0]);
   });
 
   it('runs the chosen command against the context it was HANDED — the right-clicked page', async () => {
