@@ -3,7 +3,7 @@ import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
-import { popupPlaced, settled } from './settled.js';
+import { focusSettled, popupPlaced, settled } from './settled.js';
 
 /**
  * The menus, in a real browser: every popup can be used where it overlaps the window's drag rows, and a disabled
@@ -311,6 +311,8 @@ for (const size of [
       await page.getByRole('menubar').getByRole('menuitem', { name: 'More', exact: true }).click();
       const entry = page.locator('[data-folded-menu]').filter({ hasText: new RegExp(`^${name}$`, 'u') });
       await entry.focus();
+      // THE FOCUS LEFT MORE'S TRIGGER, and the menu decides on a timer whether that closes it (`focusSettled`).
+      await focusSettled(page);
       await page.keyboard.press('ArrowRight');
       return page.locator('[data-folded-popup]');
     };

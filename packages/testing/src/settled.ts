@@ -26,6 +26,25 @@ export async function pageShown(page: Page): Promise<void> {
 }
 
 /**
+ * Waits until a Base UI menu has decided whether the focus a test moved out of its trigger left the menu.
+ *
+ * Base UI 1.7.0 decides it on a `setTimeout(0)` after the trigger's blur, against the trigger's OWN popup
+ * (`floating-ui-react/hooks/useFocus.mjs`, `onBlur`), and Chromium runs input ahead of timers. So a key sent straight
+ * after `locator.focus()` on an item can open that item's submenu and move the focus into it before the check runs;
+ * the check then finds the focus in the submenu's popup, which is portalled outside the parent's, and closes the whole
+ * menu. Measured 2026-10-04 at 760 × 560, *More* then *Tools*: 8 of 60 back-to-back rounds closed, every one for
+ * `trigger-focus` on the trigger's `focusout`, 30 to 60 ms after the submenu had the focus.
+ *
+ * A `setTimeout(0)` started after the blur runs after that check, since timers of equal delay run in the order they
+ * were started (the HTML standard's timer initialisation steps), so this resolves once the decision is made.
+ */
+export async function focusSettled(page: Page): Promise<void> {
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  }));
+}
+
+/**
  * Waits until a Base UI popup (a menu, a tooltip, a select's list) has been PLACED, and answers its box.
  *
  * Before it is placed, its positioner sits at the window's top left with an inline `opacity: 0`
