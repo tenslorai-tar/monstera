@@ -104,7 +104,9 @@ test('HIGHLIGHT selects the words as they are dragged over, and marks exactly th
 });
 
 /** The commands sent so far, as their kind, the annotation's type and how many points it carries. */
-function drawn(sent: readonly Sent[]): { kind?: string; type?: string; points?: number }[] {
+function drawn(
+  sent: readonly Sent[],
+): { kind: string | undefined; type: string | undefined; points: number | undefined }[] {
   return sent
     .filter((each) => each.channel === 'document.execute')
     .map((each) => {
