@@ -1,8 +1,6 @@
 import { ABOUT_DIALOG } from '../dialogs/about.js';
 import { ACCESSIBILITY_DIALOG } from '../dialogs/accessibilityCheck.js';
 import { AI_SETUP_DIALOG } from '../dialogs/aiSetup.js';
-import { ANNOTATION_EDIT_DIALOG } from '../dialogs/annotationEdit.js';
-import { ANNOTATION_REPLY_DIALOG } from '../dialogs/annotationReply.js';
 import { APPLY_REDACTIONS_DIALOG } from '../dialogs/applyRedactions.js';
 import { BATES_NUMBER_DIALOG } from '../dialogs/batesNumber.js';
 import { CAMERA_CAPTURE_DIALOG } from '../dialogs/cameraCapture.js';
@@ -123,8 +121,6 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   PENDING_REDACTIONS_DIALOG,
   KEPT_BACKUPS_DIALOG,
   HELD_COPIES_DIALOG,
-  ANNOTATION_EDIT_DIALOG,
-  ANNOTATION_REPLY_DIALOG,
   DOCUMENT_PASSWORD_DIALOG,
   PROTECT_DOCUMENT_DIALOG,
   APPLY_REDACTIONS_DIALOG,

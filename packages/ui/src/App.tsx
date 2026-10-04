@@ -3008,14 +3008,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           claudeReady: () => claudeKeyStored,
         }),
         marksDelete,
-        // ASK IS PASSED PER COMMAND, `commentSelectionCommand`'s rule: only the
-        // annotation-menu items that open a dialog receive it, and widening
-        // `SelectionCommandDeps` would hand every selection command a
-        // capability none of the others may use. *Corrected 2026-09-21:* this
-        // said *this command's alone*, which stopped being true when *Reply*
-        // joined it — the rule was never about there being one.
-        editSelectionCommand({ ...selectionDeps, ask }),
-        replySelectionCommand({ ...selectionDeps, ask }),
+        // WRITE IS PASSED PER COMMAND: only the annotation-menu items that ask for words receive it, and widening
+        // `SelectionCommandDeps` would hand every selection command a capability none of the others may use.
+        editSelectionCommand({ ...selectionDeps, write }),
+        replySelectionCommand({ ...selectionDeps, write }),
         draftReplyCommand({ selection: readSelection, ask: askAssistant }),
         summariseCommentsCommand({ ask: askAssistant }),
         openAssistantCommand({ open: openAssistant }),

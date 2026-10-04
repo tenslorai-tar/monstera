@@ -282,7 +282,7 @@ const SETTINGS = {
   },
 };
 
-/** One dialog in the text-form family (`AnnotationTextForm`): opened, then with an ordinary answer typed. */
+/** A dialog that asks for one piece of text: opened, then with an ordinary answer typed. */
 function textForm(field: string, text: string): readonly DialogSample[] {
   return [
     { state: 'opened', props: {} },
@@ -550,11 +550,6 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'still', props: { held: ['Quarterly report.pdf.bak', 'Quarterly report.pdf.bak2'], still: true } },
     { state: 'long', props: { held: [LONG_NAME.replace(/\.pdf$/u, '.pdf.bak')], still: false } },
   ],
-  'dialog.annotation-edit': [
-    { state: 'opened', props: { text: 'Please check these totals against the ledger.' } },
-    { state: 'emptied', props: { text: 'Please check these totals against the ledger.' }, steps: [type('Comment', '')] },
-  ],
-  'dialog.annotation-reply': textForm('Your reply', 'Checked: they match the ledger now.'),
   'dialog.document-password': [
     { state: 'opened', props: { name: NAME, retry: false } },
     { state: 'filled', props: { name: NAME, retry: false }, steps: [type('Password', 'example-password')] },

@@ -30,10 +30,10 @@ import RedactMatchesBody from './RedactMatchesBody.js';
 import WatermarkPagesBody from './WatermarkPagesBody.js';
 
 /**
- * Every input dialog outside the shared text form, under `primitives/attempt.ts`' rule: it OPENS saying nothing about
+ * Every input dialog but *Open from web address*, under `primitives/attempt.ts`' rule: it OPENS saying nothing about
  * what has not been typed yet, and says it once the person presses the action — which answers nothing. The press is
  * what keeps the first half from being vacuous: a dialog that never rendered the sentence at all would pass "opens
- * quiet", and fails here at "says it once pressed". The shared form's own cases are `AnnotationTextForm.test.tsx`.
+ * quiet", and fails here at "says it once pressed". That one's own cases are `OpenFromUrlBody.test.tsx`.
  */
 
 afterEach(() => {

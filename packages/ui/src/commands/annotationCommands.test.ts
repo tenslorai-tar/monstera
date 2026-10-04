@@ -1,4 +1,4 @@
-import { channels, createClient } from '@monstera/contract';
+import { MAX_ANNOTATION_TEXT, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 
 import {
@@ -9,7 +9,11 @@ import {
   GROUP_SHAPES,
   GROUP_STAMPS,
   TOAST_COPIED,
+  WRITE_EDIT_COMMENT_LABEL,
+  WRITE_REPLY_LABEL,
+  WRITE_TOO_LONG,
 } from '../messages/en.js';
+import type { WriteRequest } from '../pageWriting.js';
 import { CommandRegistry } from '../registries/commands.js';
 import { ribbonModel } from '../surfaces/projections.js';
 import { describe, expect, it } from 'vitest';
@@ -423,33 +427,42 @@ describe('editSelectionCommand', () => {
     items: [NOTE],
   };
 
-  function editing(selection: AnnotationSelection | undefined, answer: unknown) {
+  /** The command, with the page answering `typed` for the words, and what was asked of the page. */
+  function editing(selection: AnnotationSelection | undefined, typed: string | undefined) {
     const placed: unknown[] = [];
-    const asked: { id: string; props: unknown }[] = [];
+    const written: WriteRequest[] = [];
     return {
       placed,
-      asked,
+      written,
       command: editSelectionCommand({
         selection: () => selection,
         onDelete: () => undefined,
         onPlace: (command) => placed.push(command),
-        ask: (id, props) => {
-          asked.push({ id, props });
-          return Promise.resolve(answer);
+        write: (request) => {
+          written.push(request);
+          return Promise.resolve(typed);
         },
       }),
     };
   }
 
-  it('opens the dialog HOLDING what the mark says, and sends the new text at the selection’s version', async () => {
+  it('asks the page for a block BESIDE the mark, HOLDING what it says, and sends the new text at the selection’s version', async () => {
     // Three numbers the command must not invent: the page and index come from
     // the selection rather than the context, and the version is the one the
     // walk answered at — the bus refuses the command if the document moved.
-    const { command, placed, asked } = editing(SELECTION, { text: 'what it says now' });
+    const { command, placed, written } = editing(SELECTION, '  what it says now ');
     await command.run(WITH_DOCUMENT);
 
-    expect(asked).toStrictEqual([
-      { id: 'dialog.annotation-edit', props: { text: 'what it said before' } },
+    // A CARD, with no style: a mark's comment is not drawn where it is typed (ADR-0154).
+    expect(written.map(({ check: _check, ...rest }) => rest)).toStrictEqual([
+      {
+        page: 2,
+        box: NOTE.rect,
+        shape: 'block',
+        initial: 'what it said before',
+        label: WRITE_EDIT_COMMENT_LABEL,
+        grows: false,
+      },
     ]);
     expect(placed).toStrictEqual([
       {
@@ -462,13 +475,29 @@ describe('editSelectionCommand', () => {
     ]);
   });
 
-  it('CONTROL: a dismissed dialog sends nothing, and the dialog was still opened', async () => {
-    // Without the second half, this passes for a command that never asked —
-    // dismissed and never-opened are the same observation unless the ask is
-    // counted.
-    const { command, placed, asked } = editing(SELECTION, undefined);
+  it('carries the annotation words’ rule: more than one mark holds is refused, the limit itself passes', () => {
+    const { command, written } = editing(SELECTION, undefined);
+    void command.run(WITH_DOCUMENT);
+    const check = written[0]?.check;
+    expect([check?.('a'.repeat(MAX_ANNOTATION_TEXT)), check?.('a'.repeat(MAX_ANNOTATION_TEXT + 1))]).toStrictEqual([
+      undefined,
+      WRITE_TOO_LONG,
+    ]);
+  });
+
+  it('CONTROL: nothing typed sends nothing, and the page was still asked', async () => {
+    // Without the second half, this passes for a command that never asked — nothing typed and never asked are the
+    // same observation unless the ask is counted.
+    const { command, placed, written } = editing(SELECTION, undefined);
     await command.run(WITH_DOCUMENT);
-    expect(asked).toHaveLength(1);
+    expect(written).toHaveLength(1);
+    expect(placed).toStrictEqual([]);
+  });
+
+  it('sends nothing for words LEFT AS THEY WERE, which would be an undo step that undoes nothing', async () => {
+    const { command, placed, written } = editing(SELECTION, 'what it said before');
+    await command.run(WITH_DOCUMENT);
+    expect(written).toHaveLength(1);
     expect(placed).toStrictEqual([]);
   });
 
@@ -478,7 +507,7 @@ describe('editSelectionCommand', () => {
     // comment, so the edit is a change a person can see — and it is sent for the
     // highlight's own index.
     const highlight = { ...SELECTION, items: [{ ...NOTE, kind: 'highlight' as const }] };
-    const { command, placed } = editing(highlight, { text: 'confirm the rate' });
+    const { command, placed } = editing(highlight, 'confirm the rate');
     expect(command.when?.(WITH_DOCUMENT)).toBe(true);
     await command.run(WITH_DOCUMENT);
     expect(placed).toStrictEqual([
@@ -496,7 +525,7 @@ describe('editSelectionCommand', () => {
     // There is one box to type in. A command that acted on `items[0]` would
     // quietly pick one of the two, which is worse than not offering the item.
     const two = { ...SELECTION, items: [NOTE, { ...NOTE, index: 4 }] };
-    const { command, placed } = editing(two, { text: 'ignored' });
+    const { command, placed } = editing(two, 'ignored');
     expect(command.when?.(WITH_DOCUMENT)).toBe(false);
     await command.run(WITH_DOCUMENT);
     expect(placed).toStrictEqual([]);
@@ -530,32 +559,34 @@ describe('replySelectionCommand', () => {
     items: [NOTE],
   };
 
-  function replying(selection: AnnotationSelection | undefined, answer: unknown) {
+  /** The command, with the page answering `typed` for the words, and what was asked of the page. */
+  function replying(selection: AnnotationSelection | undefined, typed: string | undefined) {
     const placed: unknown[] = [];
-    const asked: { id: string; props: unknown }[] = [];
+    const written: WriteRequest[] = [];
     return {
       placed,
-      asked,
+      written,
       command: replySelectionCommand({
         selection: () => selection,
         onDelete: () => undefined,
         onPlace: (command) => placed.push(command),
-        ask: (id, props) => {
-          asked.push({ id, props });
-          return Promise.resolve(answer);
+        write: (request) => {
+          written.push(request);
+          return Promise.resolve(typed);
         },
       }),
     };
   }
 
-  it('opens an EMPTY dialog and sends the answer against the mark it answers', async () => {
-    const { command, placed, asked } = replying(SELECTION, { text: 'my answer' });
+  it('asks the page for an EMPTY block beside the mark and sends the answer against the mark it answers', async () => {
+    const { command, placed, written } = replying(SELECTION, 'my answer');
     await command.run(WITH_DOCUMENT);
 
-    // THE EMPTY PROPS ARE THE ASSERTION, not an omission: pre-filling the
-    // parent's text would make *Reply* answer the comment by quoting it back,
-    // and that is the one way this command could differ from *Edit* invisibly.
-    expect(asked).toStrictEqual([{ id: 'dialog.annotation-reply', props: {} }]);
+    // THE EMPTY START IS THE ASSERTION, not an omission: starting from the parent's text would make *Reply* answer
+    // the comment by quoting it back, and that is the one way this command could differ from *Edit* invisibly.
+    expect(written.map(({ check: _check, ...rest }) => rest)).toStrictEqual([
+      { page: 2, box: NOTE.rect, shape: 'block', initial: '', label: WRITE_REPLY_LABEL, grows: false },
+    ]);
     expect(placed).toStrictEqual([
       {
         kind: 'replyToAnnotation',
@@ -567,20 +598,16 @@ describe('replySelectionCommand', () => {
     ]);
   });
 
-  it('CONTROL: a dismissed dialog sends nothing, and the dialog was still opened', async () => {
-    const { command, placed, asked } = replying(SELECTION, undefined);
+  it('CONTROL: nothing typed sends nothing, and the page was still asked', async () => {
+    const { command, placed, written } = replying(SELECTION, undefined);
     await command.run(WITH_DOCUMENT);
-    expect(asked).toHaveLength(1);
+    expect(written).toHaveLength(1);
     expect(placed).toStrictEqual([]);
   });
 
-  it('is offered on a kind *Edit* is HIDDEN for, which is the difference between them', async () => {
-    // The pair's `when` predicates are deliberately not the same, and this is
-    // the case that says so rather than a comment claiming it. A highlight
-    // carries text this build does not draw — so *Edit* is hidden — while a
-    // reply to it is a mark of its own that a person can see.
+  it('is offered on a highlight, whose reply is a mark of its own a person can see', async () => {
     const highlight = { ...SELECTION, items: [{ ...NOTE, kind: 'highlight' as const }] };
-    const { command, placed } = replying(highlight, { text: 'my answer' });
+    const { command, placed } = replying(highlight, 'my answer');
     expect(command.when?.(WITH_DOCUMENT)).toBe(true);
     await command.run(WITH_DOCUMENT);
     expect(placed).toHaveLength(1);
@@ -588,7 +615,7 @@ describe('replySelectionCommand', () => {
 
   it('is HIDDEN when TWO marks are selected, rather than answering the first', async () => {
     const two = { ...SELECTION, items: [NOTE, { ...NOTE, index: 4 }] };
-    const { command, placed } = replying(two, { text: 'ignored' });
+    const { command, placed } = replying(two, 'ignored');
     expect(command.when?.(WITH_DOCUMENT)).toBe(false);
     await command.run(WITH_DOCUMENT);
     expect(placed).toStrictEqual([]);

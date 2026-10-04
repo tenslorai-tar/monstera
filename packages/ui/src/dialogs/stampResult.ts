@@ -8,7 +8,7 @@ import { z } from 'zod';
  * A change is an ANSWER rather than a report (ADR-0094), because the chooser's props are fixed when it opens: a picture
  * added while it stayed open could not appear in it. Closing and asking again is the dialog seam as it stands.
  *
- * In a file of its own for `annotationTextResult.ts`' reason: the dialog's entry loads its body lazily and the body
+ * In a file of its own because the dialog's entry loads its body lazily and the body
  * needs this type, so declaring it beside the entry would make the two files circular. The stamp and the id are the
  * contract's own schemas, so the chooser cannot answer what the command or the channel refuses.
  */

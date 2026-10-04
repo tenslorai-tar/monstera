@@ -238,3 +238,91 @@ test('A CLOSED DOCUMENT’S REQUEST sends nothing, and leaves the tool free for 
   await expect.poll(() => executed.length).toBe(1);
   expect(executed[0]).toMatchObject({ docId: SECOND, command: { annotation: { text: 'on the second' } } });
 });
+
+/** The highlight the reply and edit cases answer, in PDF user space on a 612 × 792 page. */
+const MARK = { x0: 100, y0: 600, x1: 300, y1: 620 };
+
+/** One page carrying {@link MARK}, the select tool on, and the mark selected by a click on it. */
+async function selectedMark(page: Page, executed: Executed[]): Promise<void> {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const bytes = await onePagePdf();
+  await bridgeUnder(
+    page,
+    LOOKS[0],
+    {
+      opens: [{ kind: 'opened', docId: FIRST, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'first.pdf' }],
+      documentBytes: new Map([[FIRST, bytes]]),
+      annotations: [{ page: 0, index: 0, kind: 'highlight', rect: MARK }],
+      settings: { 'appearance.ribbon-section': 'comment' },
+    },
+    (channel, params) => {
+      if (channel === 'document.execute') executed.push(params as Executed);
+    },
+  );
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('canvas.m-page').first()).toBeVisible({ timeout: 20_000 });
+  await chooseTool(page, 'Select annotations');
+  const at = await markOnScreen(page);
+  await page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
+  // THE SELECTION SHOWN, which the panel being on screen is not: it is there with nothing selected too, and a press
+  // made before the selection renders is read against no selection.
+  await expect(page.getByRole('complementary', { name: 'Properties' }).getByRole('heading', { name: 'Highlight' })).toBeVisible();
+}
+
+/** Where {@link MARK} is on screen, from the drawing surface's box and the page's 612-point width. */
+async function markOnScreen(page: Page): Promise<{ x: number; y: number; width: number; height: number }> {
+  const box = await surface(page).boundingBox();
+  if (box === null) throw new Error('the drawing surface is not on screen');
+  const scale = box.width / 612;
+  return {
+    x: box.x + MARK.x0 * scale,
+    y: box.y + (792 - MARK.y1) * scale,
+    width: (MARK.x1 - MARK.x0) * scale,
+    height: (MARK.y1 - MARK.y0) * scale,
+  };
+}
+
+test('REPLY from the Properties tab types the answer NEXT TO THE MARK, and a press elsewhere sends it for that mark', async ({
+  page,
+}) => {
+  const executed: Executed[] = [];
+  await selectedMark(page, executed);
+  await page.getByRole('complementary', { name: 'Properties' }).getByRole('button', { name: /^Reply/u }).click();
+
+  const box = page.getByRole('textbox', { name: 'Your reply' });
+  await expect(box).toBeFocused();
+  // NO DIALOG over the page: the words go where the mark is.
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const mark = await markOnScreen(page);
+  const card = await box.boundingBox();
+  if (card === null) throw new Error('the reply box is not on screen');
+  // UNDER THE MARK and from its left edge, where the page has room (`besideBox`).
+  expect(card.y).toBeGreaterThanOrEqual(mark.y + mark.height - 1);
+  expect(Math.abs(card.x - mark.x)).toBeLessThan(24);
+
+  await page.keyboard.type('Checked: they match');
+  await expectNoBlocking(page);
+  await page.mouse.click(mark.x + 400, mark.y - 200);
+  await expect.poll(() => executed.length).toBe(1);
+  expect(executed[0]?.command).toMatchObject({ kind: 'replyToAnnotation', page: 0, index: 0, text: 'Checked: they match' });
+});
+
+test('EDIT COMMENT from the mark’s menu is typed next to the mark, and Escape finishes it and keeps the words', async ({
+  page,
+}) => {
+  const executed: Executed[] = [];
+  await selectedMark(page, executed);
+  const mark = await markOnScreen(page);
+  await page.mouse.click(mark.x + mark.width / 2, mark.y + mark.height / 2, { button: 'right' });
+  await page.getByRole('menuitem', { name: /^Edit comment/u }).click();
+
+  // THE CARD'S FIELD, not the Properties tab's own Comment field beside it.
+  const box = page.locator('.m-inline-writer').getByRole('textbox', { name: 'Comment' });
+  await expect(box).toBeFocused();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.keyboard.type('Confirm the rate');
+  await page.keyboard.press('Escape');
+  await expect.poll(() => executed.length).toBe(1);
+  expect(executed[0]?.command).toMatchObject({ kind: 'editAnnotationText', page: 0, index: 0, text: 'Confirm the rate' });
+});

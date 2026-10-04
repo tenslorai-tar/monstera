@@ -27,8 +27,7 @@ import type { FormFieldAnswer } from './formFieldResult.js';
  *
  * ## Why one component and three declarations
  *
- * `AnnotationTextForm`'s shape and its argument, one row along. What differs
- * between creating a radio button and creating a dropdown is **the words** and
+ * What differs between creating a radio button and creating a dropdown is **the words** and
  * **which questions are asked**; the name's validation, its refusals and the
  * guard behind the apply control are one behaviour. A single dialog with a kind
  * in its props would put user-facing wording behind a value crossing a zod
@@ -40,7 +39,7 @@ import type { FormFieldAnswer } from './formFieldResult.js';
  * resolved by `useLingui`, declared statically in the module that owns its
  * dialog.
  *
- * ## The name's third refusal, which the other form does not have
+ * ## The name's third refusal
  *
  * A dot in a field name makes a **parent** in the field tree — measured
  * 2026-09-08, `owner.first` and `owner.second` are siblings under `owner` — so
@@ -180,7 +179,7 @@ export function FormFieldForm({
           label={apply}
           onClick={() => {
             attempt.attempt();
-            // GUARDED, for `AnnotationTextForm`'s reason: the schema behind
+            // GUARDED rather than trusting the disabled attribute: the schema behind
             // `resolve` refuses an empty name, so a mismatch would throw over
             // the user's document rather than doing nothing.
             if (!usable) return;

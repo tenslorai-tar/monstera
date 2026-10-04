@@ -11,7 +11,6 @@ import { FORM_FIELD_RESULT } from './formFieldResult.js';
  *
  * ## Three declarations rather than one with a discriminant
  *
- * `AnnotationTextForm`'s ruling, one row along and for its reasons.
  * `declareDialog` takes its title **statically**, so a single dialog carrying
  * the kind in its props would have to be titled generically — *New form field*
  * for all three — where each of these says which field is about to exist.

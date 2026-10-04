@@ -22,13 +22,13 @@ import type { DocumentPasswordAnswer } from './documentPassword.js';
  * Asks for the password an encrypted document needs
  * ([ADR-0055](../../../../docs/DECISIONS/0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md)).
  *
- * ## It does NOT reuse `AnnotationTextForm`, and the reason is the trim
+ * ## It does NOT trim, unlike every other text the application asks for
  *
- * That form treats a whitespace-only value as empty, which is right for every
- * caller it has: a sticky note of three spaces is an invisible icon. A password
- * of three spaces is a password — PDF hands the bytes to a hash — so a shared
- * form would refuse a document whose owner chose one, with no sentence anywhere
- * that could explain why. The rest of the shape is deliberately that form's:
+ * Words for a mark, a name or an address treat a whitespace-only value as empty,
+ * which is right for them: a sticky note of three spaces is an invisible icon. A
+ * password of three spaces is a password — PDF hands the bytes to a hash — so a
+ * trimming form would refuse a document whose owner chose one, with no sentence
+ * anywhere that could explain why. The rest of the shape is the other dialogs':
  * too long is said as it is typed, and an empty field only once the action is
  * pressed (`attempt.ts`).
  *

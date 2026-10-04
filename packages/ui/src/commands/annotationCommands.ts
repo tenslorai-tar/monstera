@@ -26,9 +26,6 @@ import {
 } from '../annotations/measureTools.js';
 import type { AnnotationSelection, SelectedAnnotation } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
-import { ANNOTATION_EDIT_DIALOG_ID } from '../dialogs/annotationEdit.js';
-import { ANNOTATION_REPLY_DIALOG_ID } from '../dialogs/annotationReply.js';
-import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
 import { COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
 import type { PanelPresence } from '../panelPresence.js';
 import { CONTEXT_PANEL_TAB_SETTING } from '../settings/layout.js';
@@ -52,7 +49,7 @@ import {
   UNDERLINE_TOOL_ID,
 } from '../annotations/textMarkupTools.js';
 import { CARET_TOOL_ID, STICKY_NOTE_TOOL_ID } from '../annotations/pointTools.js';
-import { TEXT_BOX_TOOL_ID, TYPEWRITER_TOOL_ID } from '../annotations/textTools.js';
+import { TEXT_BOX_TOOL_ID, TYPEWRITER_TOOL_ID, writeMarkWords } from '../annotations/textTools.js';
 import {
   CLOUD_TOOL_ID,
   POLYGON_TOOL_ID,
@@ -65,6 +62,8 @@ import {
   DELETE_SELECTION_TITLE,
   EDIT_SELECTION_TITLE,
   REPLY_SELECTION_TITLE,
+  WRITE_EDIT_COMMENT_LABEL,
+  WRITE_REPLY_LABEL,
   COPY_ANNOTATIONS_TITLE,
   SELECTION_PROPERTIES_TITLE,
   ELLIPSE_TOOL_TITLE,
@@ -141,6 +140,7 @@ import {
   UNDERLINE_TOOL_TITLE,
 } from '../messages/en.js';
 import type { ObjectPick } from '../objectEditing.js';
+import type { Write } from '../pageWriting.js';
 import type { IconName } from '../primitives/icons.js';
 import { type CommandContext, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { SectionId } from '../registries/placement.js';
@@ -655,10 +655,18 @@ export interface ObjectSelectionDeps {
  * tab, which draws any selected mark's comment (ADR-0102). The list recorded that trigger as its own
  * expiry, and it fired.
  *
+ * ## Typed on a card beside the mark (ADR-0154)
+ *
+ * The comment is typed where the mark is, on the application's own card under
+ * it, rather than in a dialog over the page that hides the mark being edited.
+ * Left empty or unchanged it sends nothing: a comment cannot be emptied (to
+ * remove it, delete the mark), and an edit that changes nothing would be an
+ * undo step that undoes nothing.
+ *
  * ## The text comes from the SELECTION, not from a read
  *
  * `selection.items[0].contents` was carried out of the walk that produced the
- * handles, so the dialog opens holding text from the same answer the index
+ * handles, so the card opens holding text from the same answer the index
  * points into. A command that fetched it when the item was clicked would be a
  * second reader of that walk (B3a) and could answer at a version the handle no
  * longer names.
@@ -670,11 +678,7 @@ export interface ObjectSelectionDeps {
  * *Delete* and the styles panel meet. The version sent is the selection's,
  * which is the one the index is a position in.
  */
-export function editSelectionCommand(
-  deps: SelectionCommandDeps & {
-    readonly ask: (id: string, props: unknown) => Promise<unknown>;
-  },
-): UiCommand {
+export function editSelectionCommand(deps: SelectionCommandDeps & { readonly write: Write }): UiCommand {
   const only = (): SelectedAnnotation | undefined => {
     const selection = deps.selection();
     if (selection?.items.length !== 1) return undefined;
@@ -692,18 +696,18 @@ export function editSelectionCommand(
       const selection = deps.selection();
       const item = only();
       if (selection === undefined || item === undefined) return;
-      const answered = ANNOTATION_TEXT_RESULT.safeParse(
-        await deps.ask(ANNOTATION_EDIT_DIALOG_ID, { text: item.contents }),
-      );
-      // A DISMISSED DIALOG AND A REFUSED ANSWER ARE BOTH NOTHING TO SEND, which
-      // is the platform's gate — and here it also covers the person who cleared
-      // the box, because the result schema refuses a blank string.
-      if (!answered.success) return;
+      const text = await writeMarkWords(deps.write, {
+        page: selection.page,
+        beside: item.rect,
+        label: WRITE_EDIT_COMMENT_LABEL,
+        initial: item.contents,
+      });
+      if (text === undefined || text === item.contents) return;
       deps.onPlace({
         kind: 'editAnnotationText',
         page: selection.page,
         index: item.index,
-        text: answered.data.text,
+        text,
         version: selection.version,
       });
     },
@@ -713,14 +717,12 @@ export function editSelectionCommand(
 /**
  * Answers the selected mark — §7's *reply*, second in the annotation menu.
  *
- * ## Offered on EVERY subtype, where *Edit* is offered on four
+ * ## Offered on EVERY subtype
  *
- * The two look like a pair and their `when` predicates are deliberately not the
- * same. *Edit* is confined to the kinds this application DRAWS the text of,
- * because a change a person cannot see is worse than an absent control. A reply
- * is a mark of its own carrying its own text, so answering a highlight, an ink
- * stroke or a stranger's stamp all produce something visible — there is no kind
- * where the answer would go into the file and nowhere else.
+ * A reply is a mark of its own carrying its own text, so answering a highlight,
+ * an ink stroke or a stranger's stamp all produce something visible — there is
+ * no kind where the answer would go into the file and nowhere else. It is typed
+ * on a card beside the mark answered (ADR-0154), as *Edit* is.
  *
  * ## And it is offered on a mark this build did not write
  *
@@ -735,11 +737,7 @@ export function editSelectionCommand(
  * either four replies carrying one sentence, or a reply to whichever mark the
  * loop reached first. The control is hidden rather than guessing.
  */
-export function replySelectionCommand(
-  deps: SelectionCommandDeps & {
-    readonly ask: (id: string, props: unknown) => Promise<unknown>;
-  },
-): UiCommand {
+export function replySelectionCommand(deps: SelectionCommandDeps & { readonly write: Write }): UiCommand {
   const only = (): SelectedAnnotation | undefined => {
     const selection = deps.selection();
     if (selection?.items.length !== 1) return undefined;
@@ -760,18 +758,20 @@ export function replySelectionCommand(
       const selection = deps.selection();
       const item = only();
       if (selection === undefined || item === undefined) return;
-      // THE DIALOG OPENS EMPTY, which is the difference from *Edit* at the call
-      // site rather than in the dialog: an edit starts from what the mark says,
-      // and a reply starts from nothing because it is not that mark's text.
-      const answered = ANNOTATION_TEXT_RESULT.safeParse(
-        await deps.ask(ANNOTATION_REPLY_DIALOG_ID, {}),
-      );
-      if (!answered.success) return;
+      // THE CARD OPENS EMPTY beside the mark answered, which is the difference from *Edit*: an edit starts from what
+      // the mark says, and a reply from nothing because it is not that mark's text.
+      const text = await writeMarkWords(deps.write, {
+        page: selection.page,
+        beside: item.rect,
+        label: WRITE_REPLY_LABEL,
+        initial: '',
+      });
+      if (text === undefined) return;
       deps.onPlace({
         kind: 'replyToAnnotation',
         page: selection.page,
         index: item.index,
-        text: answered.data.text,
+        text,
         version: selection.version,
       });
     },

@@ -2,14 +2,14 @@ import { MAX_FIELD_NAME, MAX_FIELD_OPTION, MAX_FIELD_OPTIONS } from '@monstera/c
 import { z } from 'zod';
 
 /**
- * What a create-field dialog answers with — its own module, for
- * `annotationTextResult.ts`' reason and not for tidiness: each declaration
- * imports its body lazily and the bodies need this type, so declaring it beside
- * an entry would make the two files circular.
+ * What a create-field dialog answers with, and what a name typed on the page is
+ * parsed as — its own module and not for tidiness: each declaration imports its
+ * body lazily and the bodies need this type, so declaring it beside an entry
+ * would make the two files circular.
  *
- * ## One schema for five dialogs, and the optional members are the reason
+ * ## One schema for every way a field is named, and the optional members are the reason
  *
- * A text field needs a name. A radio option needs a name and which option it is.
+ * A text field and a tick box need a name, typed on the page (ADR-0154). A radio option needs a name and which option it is.
  * A dropdown needs a name and a list. Splitting that into three schemas would
  * mean three result modules and three parses at the tool, all to express *this
  * dialog did not ask that question* — which `undefined` already says.
@@ -21,9 +21,7 @@ import { z } from 'zod';
  *
  * ## Every bound is the contract's, imported rather than restated
  *
- * A second number here would be a dialog that accepts what the channel refuses —
- * the defect `annotationTextResult.ts` cites for importing `MAX_ANNOTATION_TEXT`
- * rather than copying it.
+ * A second number here would be a dialog that accepts what the channel refuses.
  *
  * The **empty-segment rule is deliberately NOT restated**, and that is the one
  * place this schema is looser than the payload. `createFormFieldSchema` refuses

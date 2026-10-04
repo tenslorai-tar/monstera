@@ -5,10 +5,10 @@ import {
   MAX_ANNOTATION_TEXT,
 } from '@monstera/contract';
 import { type MessageKey, type PageTransform, type ViewportPoint, viewportPoint } from '@monstera/shared';
+import { z } from 'zod';
 
-import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
 import { WRITE_TEXT_BOX_LABEL, WRITE_TOO_LONG, WRITE_TYPEWRITER_LABEL } from '../messages/en.js';
-import type { Write } from '../pageWriting.js';
+import type { Write, WriteRequest } from '../pageWriting.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
@@ -228,6 +228,15 @@ export function annotationTextCheck(text: string): MessageKey | undefined {
   return text.trim().length > MAX_ANNOTATION_TEXT ? WRITE_TOO_LONG : undefined;
 }
 
+/**
+ * What an annotation's words are taken as once typed. `.min(1)` and `.trim()` together are the gate: a text box
+ * carrying nothing is a rectangle with an invisible border — a control that appears to have done nothing — and
+ * whitespace produces exactly that while looking like content, so the trim happens before the bound rather than after
+ * it. The upper bound is the contract's `MAX_ANNOTATION_TEXT`, imported rather than restated, so the page cannot accept
+ * what the channel refuses.
+ */
+const ANNOTATION_TEXT_RESULT = z.object({ text: z.string().trim().min(1).max(MAX_ANNOTATION_TEXT) }).strict();
+
 /** What a tool says when it asks the page for what a new annotation says. */
 export interface AnnotationWords {
   readonly page: number;
@@ -244,15 +253,15 @@ export interface AnnotationWords {
 
 /**
  * Asks the page for what a new annotation says, and answers it as the dialog it replaces did: trimmed by
- * `ANNOTATION_TEXT_RESULT`, or `undefined` for nothing typed. THE ONE PLACE a tool asks for an annotation's words, so
- * the rule they meet and the style they are typed in are not spelt again by each tool (B3a).
+ * `ANNOTATION_TEXT_RESULT`, or `undefined` for nothing typed. With {@link writeMarkWords}, the one way an annotation's
+ * words are asked for, so the rule they meet and the style they are typed in are not spelt again by each tool (B3a).
  */
 export async function writeAnnotationWords(
   deps: Pick<TextToolDeps, 'write' | 'style'>,
   words: AnnotationWords,
 ): Promise<string | undefined> {
   const { colour } = words;
-  const text = await deps.write({
+  return askAnnotationWords(deps.write, {
     page: words.page,
     box: words.box,
     shape: 'block',
@@ -269,8 +278,31 @@ export async function writeAnnotationWords(
           },
         }),
     grows: words.grows,
-    check: annotationTextCheck,
   });
+}
+
+/**
+ * Asks the page for what an EXISTING mark says or is answered with — *Edit comment* and *Reply* (ADR-0154 Decision 1):
+ * on a card beside the mark, from `initial`, in the application's face, since a mark's comment is not drawn where it is
+ * typed. Answered as {@link writeAnnotationWords} answers, by the same rule.
+ */
+export async function writeMarkWords(
+  write: Write,
+  words: { readonly page: number; readonly beside: AnnotationRect; readonly label: MessageKey; readonly initial: string },
+): Promise<string | undefined> {
+  return askAnnotationWords(write, {
+    page: words.page,
+    box: words.beside,
+    shape: 'block',
+    initial: words.initial,
+    label: words.label,
+    grows: false,
+  });
+}
+
+/** The ask both share: the rule the words meet, and the trim and limit of the result schema the dialogs answered with. */
+async function askAnnotationWords(write: Write, request: Omit<WriteRequest, 'check'>): Promise<string | undefined> {
+  const text = await write({ ...request, check: annotationTextCheck });
   if (text === undefined) return undefined;
   const answered = ANNOTATION_TEXT_RESULT.safeParse({ text });
   return answered.success ? answered.data.text : undefined;
