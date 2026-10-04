@@ -72,6 +72,10 @@ export function PageGrid({
   selected,
   settings,
   onSelect,
+  onCurrent,
+  onViewing,
+  goTo,
+  onWentTo,
   onOpen,
   onMove,
   onDelete,
@@ -86,6 +90,13 @@ export function PageGrid({
   readonly selected: readonly number[];
   readonly settings: SettingsStore;
   readonly onSelect: (pages: readonly number[]) => void;
+  /** A clicked card becomes the current page — the document's one current page, which the status bar names. */
+  readonly onCurrent: (page: number) => void;
+  /** The page Full page shows most of, as it scrolls. Thumbnail reports none: many pages are on screen at once. */
+  readonly onViewing: (page: number) => void;
+  /** The navigator's request for a page: the grid scrolls to its card and reports it taken. */
+  readonly goTo: number | undefined;
+  readonly onWentTo: () => void;
   /** Goes to a page in the reading view. */
   readonly onOpen: (page: number) => void;
   readonly onMove: (from: number, to: number) => void;
@@ -146,7 +157,18 @@ export function PageGrid({
         onJump={onOpen}
         onMove={onMove}
         menuAt={menuAt}
-        grid={{ width, selected, onSelect, onOpen, onDelete }}
+        grid={{
+          width,
+          selected,
+          onSelect,
+          onCurrent,
+          onOpen,
+          onDelete,
+          goTo,
+          onWentTo,
+          // ONE PAGE TO A ROW is a reading position, so its scroll names a page; a grid of thumbnails shows many.
+          onePage: size === 'full-page' ? { onViewing } : undefined,
+        }}
       />
     </section>
   );

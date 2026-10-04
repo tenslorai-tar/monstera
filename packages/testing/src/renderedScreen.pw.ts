@@ -3893,6 +3893,109 @@ for (const size of [
   });
 }
 
+// ONE CURRENT PAGE FOR THE WHOLE APP (the owner's item 13a). Organize's grid wrote no current page: Full page's scroll
+// left the status bar on page 1, and its Next counted from that page and moved nothing on screen. Measured before the
+// fix in this harness: scrolled two and a half pages, the page box said 1; Next said 2 and the grid stayed where it was.
+test('ORGANIZE shares ONE current page with the status bar and Home: Full page’s scroll, Next, a click', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const pdf = await PDFDocument.create();
+  for (let at = 0; at < 8; at += 1) pdf.addPage([612, 792]);
+  const bytes = await pdf.save();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000ec');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'pages.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    settings: { 'appearance.ribbon-section': 'organize', 'appearance.organize-grid-size': 'full-page' },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const grid = page.getByRole('region', { name: 'Pages to organize' });
+  await expect(grid).toHaveAttribute('data-page-view', 'full-page');
+  await expect(grid.locator('[data-thumb-page="0"] canvas')).toHaveAttribute('data-drawn', 'true');
+  const box = page.getByRole('textbox', { name: 'Go to page' });
+  const strip = grid.locator('.m-thumbnails');
+  /** Where card `index`'s top sits against the top of the strip's view, in pixels. */
+  const offset = (index: number): Promise<number> =>
+    page.evaluate((at) => {
+      const view = document.querySelector('.m-page-grid .m-thumbnails')?.getBoundingClientRect();
+      const card = document.querySelector(`.m-page-grid [data-thumb-page="${String(at)}"]`)?.getBoundingClientRect();
+      return view === undefined || card === undefined ? Number.NaN : Math.round(card.top - view.top);
+    }, index);
+
+  // SCROLLED TO PAGE 3: the box follows, as Home's does.
+  await strip.evaluate((element) => {
+    const card = element.querySelector<HTMLElement>('[data-thumb-page="2"]');
+    if (card !== null) element.scrollTop += card.getBoundingClientRect().top - element.getBoundingClientRect().top;
+  });
+  await expect(box).toHaveValue('3');
+  // A ONE-PAGE SELECTION GOES WITH IT: the card the box names is the card a page command acts on.
+  await expect(grid.getByRole('button', { name: 'Page 3', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+  // NEXT counts from the page on screen and moves the grid, its card's top at the top of the view: no strip of page 3.
+  await page.getByRole('status', { name: 'Document status' }).getByRole('button', { name: 'Next page' }).click();
+  await expect(box).toHaveValue('4');
+  await expect.poll(() => offset(3)).toBe(0);
+  await expect(grid.getByRole('button', { name: 'Page 4', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(grid.getByRole('button', { name: 'Page 3', exact: true })).toHaveAttribute('aria-pressed', 'false');
+
+  // IN THUMBNAIL VIEW a click names the page.
+  await grid.getByRole('button', { name: 'Thumbnail' }).click();
+  await grid.getByRole('button', { name: 'Page 6', exact: true }).click();
+  await expect(box).toHaveValue('6');
+
+  // AND HOME OPENS THERE: one current page, not one per view.
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Home' }).click();
+  await expect(page.locator('canvas.m-page').first()).toBeVisible();
+  await expect(box).toHaveValue('6');
+});
+
+// NO CARD RUNS INTO THE ONE BELOW IT, in any strip of pages. Measured 2026-10-03 in Organize's Full page at 1280 × 800:
+// rows of 613.4 px under cards of 637, because a scroll container whose cards overflow it sizes an `auto` row by its
+// card's minimum contribution — so each card ran 24 px into the gap and its page number showed over the next card.
+test('NO PAGE CARD RUNS INTO THE ONE BELOW IT: Full page, the thumbnail grid and the Pages strip', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const pdf = await PDFDocument.create();
+  for (let at = 0; at < 12; at += 1) pdf.addPage([612, 792]);
+  const bytes = await pdf.save();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000ed');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'pages.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    settings: { 'appearance.ribbon-section': 'organize', 'appearance.organize-grid-size': 'full-page' },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const grid = page.getByRole('region', { name: 'Pages to organize' });
+  await expect(grid.locator('[data-thumb-page="0"] canvas')).toHaveAttribute('data-drawn', 'true');
+  /**
+   * The most any card in `selector` reaches past the top of a card in the row below it, in pixels; 0 when none does.
+   * Rows are told apart by their tops, so a two-column strip compares a card with the cards of the next row only.
+   */
+  const deepest = (selector: string): Promise<{ overlap: number; cards: number }> =>
+    page.evaluate((within) => {
+      const boxes = [...document.querySelectorAll(`${within} [data-thumb-page]`)].map((card) => card.getBoundingClientRect());
+      const tops = [...new Set(boxes.map((box) => Math.round(box.top)))].sort((a, b) => a - b);
+      let overlap = 0;
+      for (const box of boxes) {
+        const next = tops.find((top) => top > Math.round(box.top));
+        if (next !== undefined) overlap = Math.max(overlap, box.bottom - next);
+      }
+      return { overlap: Math.round(overlap * 10) / 10, cards: boxes.length };
+    }, selector);
+  const full = await deepest('.m-page-grid');
+  expect(full.cards).toBe(12);
+  expect(full.overlap, JSON.stringify(full)).toBeLessThanOrEqual(0);
+  await grid.getByRole('button', { name: 'Thumbnail' }).click();
+  await expect(grid).toHaveAttribute('data-page-view', 'thumbnail');
+  expect((await deepest('.m-page-grid')).overlap).toBeLessThanOrEqual(0);
+  // THE SIDE STRIP is the same grid with two columns, and Home is where a person meets it.
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Home' }).click();
+  await expect(page.locator('canvas.m-page').first()).toBeVisible();
+  const strip = await deepest('.m-thumbnails:not(.m-thumbnails--grid)');
+  expect(strip.cards).toBe(12);
+  expect(strip.overlap, JSON.stringify(strip)).toBeLessThanOrEqual(0);
+});
+
 // THE MENU BAR (ADR-0107), in every theme: the window's top row above the title bar, reached from the keyboard by F10,
 // walked with the arrows, an open menu marking the current theme and disabling what cannot run — and passing the gate
 // with a menu OPEN, which is the state a screen reader meets it in.

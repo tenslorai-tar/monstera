@@ -6557,6 +6557,11 @@ body {
      in a grid that centres each card in its row instead — so a card of another height (a landscape page, or one not
      drawn yet) stood above or below its neighbours. */
   align-items: start;
+  /* EVERY ROW AS TALL AS ITS CARD. The strip is a scroll container of fixed height whose cards overflow it, and with
+     negative free space an `auto` row is sized by its card's MINIMUM contribution, which is the picture without the
+     card's padding and number: measured 2026-10-03 in Organize's Full page at 1280 × 800, rows of 613.4 px under cards
+     of 637, so each card ran 24 px into the gap and the page number above showed over the next card. */
+  grid-auto-rows: max-content;
   gap: var(--space-8);
   background: transparent;
   border-inline-end: none;

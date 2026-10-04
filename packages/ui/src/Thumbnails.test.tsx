@@ -104,7 +104,15 @@ async function settle(): Promise<void> {
   });
 }
 
+/** Every `scrollIntoView` a card was asked for, as `page@block`: happy-dom has no layout to scroll. */
+const scrolledTo: string[] = [];
+
 beforeEach(() => {
+  scrolledTo.length = 0;
+  HTMLElement.prototype.scrollIntoView = function scrollIntoView(this: HTMLElement, options?: boolean | ScrollIntoViewOptions) {
+    const block = typeof options === 'object' ? (options.block ?? 'start') : 'start';
+    scrolledTo.push(`${this.dataset['thumbPage'] ?? '?'}@${block}`);
+  };
   rasterised.length = 0;
   drawnAt.length = 0;
   signals.length = 0;
@@ -136,15 +144,27 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
 
 describe('Thumbnails as the Organize grid (ADR-0104)', () => {
   /** A grid whose selection is held here, as the document store holds it, so a gesture's result is visible. */
-  function grid(selected: readonly number[] = []) {
-    const calls = { select: [] as (readonly number[])[], open: [] as number[], remove: [] as (readonly number[])[], jump: [] as number[], swap: 0 };
+  function grid(
+    selected: readonly number[] = [],
+    options: { readonly goTo?: number; readonly onePage?: boolean; readonly current?: number } = {},
+  ) {
+    const wentTo = vi.fn();
+    const viewing: number[] = [];
+    const calls = {
+      select: [] as (readonly number[])[],
+      current: [] as number[],
+      open: [] as number[],
+      remove: [] as (readonly number[])[],
+      jump: [] as number[],
+      swap: 0,
+    };
     const { container, rerender } = render(
       <Wrapped>
         <Thumbnails
           {...reads()}
           view={view()}
           pageCount={4}
-          current={0}
+          current={options.current ?? 0}
           onJump={(page) => calls.jump.push(page)}
           onSwap={() => {
             calls.swap += 1;
@@ -153,8 +173,12 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
             width: 110,
             selected,
             onSelect: (pages) => calls.select.push(pages),
+            onCurrent: (page) => calls.current.push(page),
             onOpen: (page) => calls.open.push(page),
             onDelete: (pages) => calls.remove.push(pages),
+            goTo: options.goTo,
+            onWentTo: wentTo,
+            onePage: options.onePage === true ? { onViewing: (page) => viewing.push(page) } : undefined,
           }}
         />
       </Wrapped>,
@@ -164,8 +188,39 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
       if (found === null) throw new Error(`no card for page ${String(page)}`);
       return found;
     };
-    return { calls, card, container, rerender };
+    return { calls, card, container, rerender, wentTo, viewing };
   }
+
+  describe('ONE CURRENT PAGE (item 13a)', () => {
+    it('a click makes the clicked card the current page, whatever it does to the selection', () => {
+      const { calls, card } = grid([2]);
+      fireEvent.click(card(1));
+      fireEvent.click(card(3), { shiftKey: true });
+      fireEvent.click(card(2), { ctrlKey: true });
+      expect(calls.current).toStrictEqual([1, 3, 2]);
+    });
+
+    it('OPENS on the current page: its card is scrolled into view before the grid paints', () => {
+      grid([], { current: 2 });
+      expect(scrolledTo).toStrictEqual(['2@nearest']);
+    });
+
+    it('in Full page it opens with the current card’s top at the top of the view, so no strip of the page before shows', () => {
+      grid([], { current: 2, onePage: true });
+      expect(scrolledTo).toStrictEqual(['2@start']);
+    });
+
+    it('the NAVIGATOR’S request scrolls to that card and is reported taken, once', () => {
+      const { wentTo } = grid([], { goTo: 3, onePage: true });
+      expect(scrolledTo.at(-1)).toBe('3@start');
+      expect(wentTo).toHaveBeenCalledTimes(1);
+    });
+
+    it('CONTROL: with no request nothing is reported taken, so the call above is the request’s and not the mount’s', () => {
+      const { wentTo } = grid([], { onePage: true });
+      expect(wentTo).not.toHaveBeenCalled();
+    });
+  });
 
   it('a click SELECTS the page and does not jump; Ctrl+click toggles; Shift+click extends from the last click', () => {
     const { calls, card } = grid([2]);
@@ -206,7 +261,17 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
           pageCount={4}
           current={0}
           onJump={vi.fn()}
-          grid={{ width, selected: [], onSelect: vi.fn(), onOpen: vi.fn(), onDelete: vi.fn() }}
+          grid={{
+            width,
+            selected: [],
+            onSelect: vi.fn(),
+            onCurrent: vi.fn(),
+            onOpen: vi.fn(),
+            onDelete: vi.fn(),
+            goTo: undefined,
+            onWentTo: vi.fn(),
+            onePage: undefined,
+          }}
         />
       </Wrapped>
     );
@@ -236,7 +301,17 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
           pageCount={4}
           current={0}
           onJump={vi.fn()}
-          grid={{ width, selected: [], onSelect: vi.fn(), onOpen: vi.fn(), onDelete: vi.fn() }}
+          grid={{
+            width,
+            selected: [],
+            onSelect: vi.fn(),
+            onCurrent: vi.fn(),
+            onOpen: vi.fn(),
+            onDelete: vi.fn(),
+            goTo: undefined,
+            onWentTo: vi.fn(),
+            onePage: undefined,
+          }}
         />
       </Wrapped>
     );

@@ -307,6 +307,18 @@ export interface DocumentActions {
   /** Replaces the Organize grid's page selection (ADR-0104). Sorted, de-duplicated and bounded by the count. */
   readonly selectPages: (pages: readonly number[]) => void;
 
+  /**
+   * Moves a selection of AT MOST ONE page to `page`, and keeps a selection of several as it is (the owner's item
+   * 13a). In Organize the current page and a one-page selection are the same page to a person — the card the status
+   * bar names is the card a page command acts on — so moving one moves the other. A selection of several was made on
+   * purpose, card by card, and moving between pages must not throw it away.
+   *
+   * **The one statement of that rule**, called by every Organize path that moves the current page: the status bar and
+   * the page keys through the navigator, and Full page's scrolling. It does not move {@link DocumentState.page}; the
+   * caller has already, by the action that says how (a jump or a scroll).
+   */
+  readonly selectionFollows: (page: number) => void;
+
   /** Replaces this document's conversation — the panel holds the turns it is assembling. */
   readonly converse: (turns: readonly ConversationTurn[]) => void;
 
@@ -380,6 +392,12 @@ export function createDocumentStore(
         .filter((page) => Number.isInteger(page) && page >= 0 && (count === undefined || page < count))
         .sort((a, b) => a - b);
       set({ selectedPages: next });
+    },
+    selectionFollows: (page) => {
+      const state = get();
+      if (state.selectedPages.length > 1) return;
+      if (state.selectedPages.length === 1 && state.selectedPages[0] === page) return;
+      state.selectPages([page]);
     },
     viewing: (next) => {
       if (next === get().page) return;

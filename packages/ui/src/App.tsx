@@ -1503,6 +1503,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     () => ({
       jumpTo: (page: number): void => {
         store?.getState().jumpTo(page);
+        // IN ORGANIZE A ONE-PAGE SELECTION IS THE CURRENT PAGE (item 13a), so the status bar's buttons, the page keys
+        // and the side strip move the ticked card with the page they go to. Read at the call, so the navigator stays
+        // stable across a section change and the registry is not rebuilt.
+        if (settings.get(RIBBON_SECTION_SETTING.id) === 'organize') store?.getState().selectionFollows(page);
         setGoTo(page);
       },
       back: (): void => {
@@ -1514,7 +1518,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         if (target !== undefined) setGoTo(target);
       },
     }),
-    [store],
+    [settings, store],
   );
 
   /**
@@ -1534,6 +1538,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   /** The tabs as the assistant needs them: each document's id and the name its tab shows (ADR-0134). */
   const assistantDocuments = useMemo(() => tabs.map(({ docId, name }) => ({ docId, name })), [tabs]);
 
+  // Stable, so the scroller's consume-the-request effect does not re-run on
+  // every parent render and scroll again to a page it has already reached.
+  // Declared before `organize`, which hands it to the Organize grid as well.
+  const wentTo = useCallback(() => {
+    setGoTo(undefined);
+  }, []);
+
   /**
    * The Organize grid's gestures (ADR-0104), `undefined` outside Organize — which is what keeps the reading
    * view on every other section. The selection is the document store's; Delete is `deletePages` through the
@@ -1546,6 +1557,20 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       onSelect: (pages: readonly number[]) => {
         store.getState().selectPages(pages);
       },
+      // THE CARD A PERSON CLICKED IS THE CURRENT PAGE, so the status bar names it and a page command acts on it (item
+      // 13a). The store's own page, the one Home reads: there is one current page, not one per view.
+      onCurrent: (page: number) => {
+        store.getState().viewing(page);
+      },
+      // FULL PAGE'S SCROLLING moves the current page as Home's does, and a one-page selection with it.
+      onViewing: (page: number) => {
+        store.getState().viewing(page);
+        store.getState().selectionFollows(page);
+      },
+      // THE NAVIGATOR'S REQUEST, taken by the grid while Organize is the section: Home's scroller is not mounted then,
+      // so the request used to wait for it and the grid did not move.
+      goTo,
+      onWentTo: wentTo,
       onOpen: (page: number) => {
         // TO READ A PAGE IS TO CHOOSE A SECTION THAT READS: the section is the one value the canvas follows.
         navigator.jumpTo(page);
@@ -1558,7 +1583,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         });
       },
     };
-  }, [activeId, applied, ask, client, navigator, organizing, selectedPages, settings, signatures, stamp, store]);
+  }, [activeId, applied, ask, client, goTo, navigator, organizing, selectedPages, settings, signatures, stamp, store, wentTo]);
 
   /**
    * What a command last asked of the assistant (ADR-0088), and the one way to ask it.
@@ -1595,12 +1620,6 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       document.querySelector<HTMLTextAreaElement>('[data-assistant-draft]')?.focus();
     });
   }, [presence, settings]);
-
-  // Stable, so the scroller's consume-the-request effect does not re-run on
-  // every parent render and scroll again to a page it has already reached.
-  const wentTo = useCallback(() => {
-    setGoTo(undefined);
-  }, []);
 
   // THE READER'S OWN SCROLLING, told to the store so the history has a place to
   // return to. It does NOT push — see `DocumentState.history`.
@@ -3947,6 +3966,13 @@ function PageCanvas({
     | {
         readonly selected: readonly number[];
         readonly onSelect: (pages: readonly number[]) => void;
+        /** A clicked card becomes the current page. */
+        readonly onCurrent: (page: number) => void;
+        /** The page Full page shows most of, as it scrolls. */
+        readonly onViewing: (page: number) => void;
+        /** The navigator's request for a page, which the grid scrolls to and then reports taken. */
+        readonly goTo: number | undefined;
+        readonly onWentTo: () => void;
         readonly onOpen: (page: number) => void;
         readonly onDelete: (pages: readonly number[]) => void;
       }
@@ -4392,6 +4418,10 @@ function PageCanvas({
           selected={organize.selected}
           settings={settings}
           onSelect={organize.onSelect}
+          onCurrent={organize.onCurrent}
+          onViewing={organize.onViewing}
+          goTo={organize.goTo}
+          onWentTo={organize.onWentTo}
           onOpen={organize.onOpen}
           onMove={onMove}
           onDelete={organize.onDelete}

@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { DocumentView } from './documentView.js';
 import { THUMBNAILS_LABEL, THUMBNAIL_PAGE } from './messages/en.js';
@@ -141,8 +141,18 @@ export function Thumbnails({
         readonly width: number;
         readonly selected: readonly number[];
         readonly onSelect: (pages: readonly number[]) => void;
+        /** The card a click lands on becomes the current page (item 13a), whatever the click did to the selection. */
+        readonly onCurrent: (page: number) => void;
         readonly onOpen: (page: number) => void;
         readonly onDelete: (pages: readonly number[]) => void;
+        /** The navigator's request for a page: its card is scrolled into view, then the request is reported taken. */
+        readonly goTo: number | undefined;
+        readonly onWentTo: () => void;
+        /**
+         * Present for *Full page*, one page to a row: a reading position, so the grid aligns a card's top with its own
+         * when it goes to one, and reports the page under the middle of its view as it scrolls, as Home does.
+         */
+        readonly onePage: { readonly onViewing: (page: number) => void } | undefined;
       }
     | undefined;
 }): ReactElement {
@@ -159,9 +169,65 @@ export function Thumbnails({
   const strip = THUMBNAIL_SIZES[size];
   const width = grid?.width ?? strip.width;
   const { columns } = strip;
+  const scroller = useRef<HTMLElement | null>(null);
+  const onePage = grid?.onePage;
+  const reading = onePage !== undefined;
+
+  // THE GRID OPENS ON THE CURRENT PAGE (item 13a), before it paints, and again when Full page and Thumbnail swap or the
+  // width the cards fit changes: there is one current page, and a grid opening at its top showed page 1 while the
+  // status bar named another.
+  //
+  // THE PAGE IS READ FROM A REF, kept current by the effect after it, and not from `current` in the dependency list:
+  // Full page reports the page it scrolls to, so a dependency on it would scroll the grid back to the top of that card
+  // on every report.
+  const shown = useRef(current);
+  useEffect(() => {
+    shown.current = current;
+  }, [current]);
+  const inGrid = grid !== undefined;
+  useLayoutEffect(() => {
+    if (!inGrid) return;
+    cardOf(scroller.current, shown.current)?.scrollIntoView({ block: reading ? 'start' : 'nearest' });
+  }, [inGrid, reading, width]);
+
+  // THE NAVIGATOR'S REQUEST: the status bar's buttons, the page box and the page keys. Home's scroller takes it when
+  // Home is shown; while Organize is, this does, so the grid moves to the page the bar names.
+  const goTo = grid?.goTo;
+  const onWentTo = grid?.onWentTo;
+  useEffect(() => {
+    if (goTo === undefined || onWentTo === undefined) return;
+    shown.current = goTo;
+    cardOf(scroller.current, goTo)?.scrollIntoView({ block: reading ? 'start' : 'nearest' });
+    onWentTo();
+  }, [goTo, onWentTo, reading]);
+
+  // FULL PAGE'S SCROLL NAMES A PAGE: the card under the middle of the view, which is the one showing most of itself
+  // there — never the topmost card a sliver of reaches, which is what a "first visible" rule would answer.
+  const onViewing = onePage?.onViewing;
+  useEffect(() => {
+    const element = scroller.current;
+    if (onViewing === undefined || element === null) return;
+    let frame = 0;
+    const report = (): void => {
+      frame = 0;
+      const page = pageAtMiddle(element);
+      if (page === undefined) return;
+      shown.current = page;
+      onViewing(page);
+    };
+    const scrolled = (): void => {
+      if (frame === 0) frame = requestAnimationFrame(report);
+    };
+    element.addEventListener('scroll', scrolled, { passive: true });
+    return (): void => {
+      element.removeEventListener('scroll', scrolled);
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
+  }, [onViewing]);
 
   return (
     <nav
+      ref={scroller}
       className={grid === undefined ? 'm-thumbnails' : 'm-thumbnails m-thumbnails--grid'}
       aria-label={i18n._(THUMBNAILS_LABEL)}
       // THE SIZE IS TWO CUSTOM PROPERTIES, the grid's column count and a picture's width, because they change
@@ -189,6 +255,8 @@ export function Thumbnails({
           data-thumb-page={String(page)}
           onClick={(event) => {
             if (grid !== undefined) {
+              // THE CLICKED CARD IS THE CURRENT PAGE, whichever way the click changes the selection (item 13a).
+              grid.onCurrent(page);
               if (event.shiftKey && anchor.current !== null) {
                 const from = Math.min(anchor.current, page);
                 const to = Math.max(anchor.current, page);
@@ -292,6 +360,35 @@ export function Thumbnails({
  * the page's own aspect ratio, which is what `renderPage` reports back. A new size REDRAWS, since a picture
  * drawn at 60 px and stretched to 160 is a blurred one.
  */
+/** The card for `page` in a strip, or `null` where the strip or the card is not there. */
+function cardOf(strip: HTMLElement | null, page: number): HTMLElement | null {
+  return strip?.querySelector<HTMLElement>(`[data-thumb-page="${String(page)}"]`) ?? null;
+}
+
+/**
+ * The page whose card lies under the vertical middle of `strip`'s view, in a strip of one card to a row.
+ *
+ * **A binary search over the cards in page order**, because one column of cards is sorted by position: two hundred
+ * pages cost eight reads of a box, where a walk over every card on every frame grows with the document. Between two
+ * cards — the gap — it answers the card below, which is the one coming into view.
+ */
+function pageAtMiddle(strip: HTMLElement): number | undefined {
+  const cards = strip.querySelectorAll<HTMLElement>('[data-thumb-page]');
+  if (cards.length === 0) return undefined;
+  const view = strip.getBoundingClientRect();
+  const middle = view.top + view.height / 2;
+  let low = 0;
+  let high = cards.length - 1;
+  while (low < high) {
+    const at = Math.floor((low + high) / 2);
+    const card = cards[at];
+    if (card !== undefined && card.getBoundingClientRect().bottom < middle) low = at + 1;
+    else high = at;
+  }
+  const found = cards[low]?.dataset['thumbPage'];
+  return found === undefined ? undefined : Number(found);
+}
+
 /** The empty visible set, one identity, for a strip that must not ask yet. */
 const NOTHING_VISIBLE: ReadonlySet<number> = new Set();
 
