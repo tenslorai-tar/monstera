@@ -191,7 +191,22 @@ test('identical documents in the two halves fit to the SAME width and read the s
     await page.locator('nav.m-ribbon__rail').getByRole('button', { name: 'Review' }).click();
     await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Compare', exact: true }).click();
     const surface = page.locator('section[data-side-by-side]');
-    await expect(surface.locator('[data-side-half="right"] canvas.m-page').first()).toBeVisible({ timeout: 20_000 });
+    // BOTH HALVES DRAWN, since both are read. Each half loads on its own (`view.ready`), and this waited for the right
+    // alone: on Windows at e1ade294 the left read as having no page list at 1366 (NaN), in a run that kept no
+    // artifacts, so whether it was still loading or had FAILED is not known. A failed half draws a marked canvas in
+    // place of its list, so it is named here rather than read as a width.
+    for (const side of ['left', 'right']) {
+      const half = surface.locator(`[data-side-half="${side}"]`);
+      // EITHER OUTCOME ends the wait, so a failed half is named at once rather than as a page that never drew.
+      // A FAILED HALF'S CANVAS HAS NO SIZE, so it is found by its presence; a drawn one by being on show.
+      await expect
+        .poll(async () => (await half.locator('.m-page-list canvas.m-page:visible').count()) + (await half.locator('canvas[data-failed]').count()), {
+          message: `the ${side} half settles at ${String(width)}`,
+          timeout: 20_000,
+        })
+        .toBeGreaterThan(0);
+      await expect(half.locator('canvas[data-failed]'), `the ${side} half failed to load at ${String(width)}`).toHaveCount(0);
+    }
     const read = (side: string): Promise<{ client: number; zoom: string | null }> =>
       surface.locator(`[data-side-half="${side}"]`).evaluate((half) => ({
         client: half.querySelector<HTMLElement>('.m-page-list')?.clientWidth ?? Number.NaN,
