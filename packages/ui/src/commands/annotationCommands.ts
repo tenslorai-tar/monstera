@@ -19,7 +19,7 @@ import {
   FORM_FIELD_TEXT_TOOL_ID,
 } from '../annotations/formFieldTools.js';
 import { LINK_ADDRESS_TOOL_ID, LINK_PAGE_TOOL_ID } from '../annotations/linkTools.js';
-import { wordsToEdit } from '../annotations/markWords.js';
+import { type WordsOf, markOf } from '../annotations/markWords.js';
 import {
   MEASURE_AREA_TOOL_ID,
   MEASURE_DISTANCE_TOOL_ID,
@@ -683,7 +683,7 @@ export interface ObjectSelectionDeps {
 export function editSelectionCommand(
   deps: SelectionCommandDeps & {
     readonly write: Write;
-    readonly client: ContractClient;
+    readonly wordsOf: WordsOf;
     readonly ask: (id: string, props: unknown) => Promise<unknown>;
   },
 ): UiCommand {
@@ -700,11 +700,11 @@ export function editSelectionCommand(
     // copy, delete.
     placements: [{ surface: 'context-menu', context: 'annotation', order: 10 }],
     when: () => only() !== undefined,
-    run: async (context): Promise<void> => {
+    run: async (): Promise<void> => {
       const selection = deps.selection();
       const item = only();
-      if (selection === undefined || item === undefined || context.docId === undefined) return;
-      const words = await wordsToEdit(deps.client, context.docId, selection, item);
+      if (selection === undefined || item === undefined) return;
+      const words = await deps.wordsOf(markOf(selection, item));
       if (words.kind === 'too-long') {
         void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: 'comment-too-long' });
         return;

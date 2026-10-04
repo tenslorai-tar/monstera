@@ -1,5 +1,6 @@
 import {
   type AnnotationColour,
+  type AnnotationKindName,
   type AnnotationRect,
   type DispatchableCommand,
   MAX_ANNOTATION_TEXT,
@@ -7,9 +8,11 @@ import {
 import { type MessageKey, type PageTransform, type ViewportPoint, viewportPoint } from '@monstera/shared';
 import { z } from 'zod';
 
+import { COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
 import {
   HINT_TEXT_BOX,
   HINT_TYPEWRITER,
+  WRITE_CALLOUT_LABEL,
   WRITE_TEXT_BOX_LABEL,
   WRITE_TOO_LONG,
   WRITE_TYPEWRITER_LABEL,
@@ -19,6 +22,8 @@ import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
 import type { AnnotationStyle } from './annotationStyle.js';
+import { type AnnotationSnapshot, markAt } from './eraserTool.js';
+import type { WordsOf } from './markWords.js';
 
 /**
  * The text tools — the first that cannot answer from the gesture alone.
@@ -135,7 +140,7 @@ function boxTextTool(
   id: string,
   label: MessageKey,
   type: 'text-box' | 'typewriter',
-  deps: TextToolDeps,
+  deps: TextToolDeps & ReopenDeps,
   placesOnClick = false,
 ): UiTool {
   const drawn = (gesture: Gesture): ToolPreview | undefined => {
@@ -159,6 +164,13 @@ function boxTextTool(
       // A CLICK is the typewriter's other gesture (`placesOnClick`): there the
       // box starts at the point clicked and grows with the words.
       const clicked = drawn(gesture) === undefined;
+      // A CLICK ON WORDS ALREADY ON THE PAGE EDITS THEM rather than starting another mark on top (ADR-0154 Decision 3),
+      // so the first click of a double-click does not place a second box. Only a click: a drag over a mark draws a new
+      // box, which is what a drag means.
+      if (clicked) {
+        const reopened = await reopenWords(deps, startOf(gesture), page, transform);
+        if (reopened.found) return reopened.command;
+      }
       if (clicked && !placesOnClick) return undefined;
 
       // THE RECTANGLE IS BUILT BEFORE THE WORDS, from the transform the overlay
@@ -198,6 +210,7 @@ function boxTextTool(
       };
     },
     preview: drawn,
+    reopen: async (at, page, transform) => (await reopenWords(deps, at, page, transform)).command,
   };
 
   // THE HINT FOLLOWS THE FLAG that decides whether a click places a box, so what the bar says and what a click does
@@ -207,7 +220,7 @@ function boxTextTool(
 }
 
 /** A box with a border, and the words in it. */
-export function textBoxTool(deps: TextToolDeps): UiTool {
+export function textBoxTool(deps: TextToolDeps & ReopenDeps): UiTool {
   return boxTextTool(TEXT_BOX_TOOL_ID, WRITE_TEXT_BOX_LABEL, 'text-box', deps);
 }
 
@@ -224,7 +237,7 @@ export function textBoxTool(deps: TextToolDeps): UiTool {
  * or not the box is drawn afterwards. A preview that showed no region would
  * leave a person guessing where their words are about to go.
  */
-export function typewriterTool(deps: TextToolDeps): UiTool {
+export function typewriterTool(deps: TextToolDeps & ReopenDeps): UiTool {
   return boxTextTool(TYPEWRITER_TOOL_ID, WRITE_TYPEWRITER_LABEL, 'typewriter', deps, true);
 }
 
@@ -307,6 +320,97 @@ export async function writeMarkWords(
     label: words.label,
     grows: false,
   });
+}
+
+/** What a tool that reopens words on the page needs: the walk, the page writer, the whole words, and the means to say no. */
+export interface ReopenDeps {
+  /** The same read the eraser and the select tool hold. */
+  readonly annotations: () => Promise<AnnotationSnapshot | undefined>;
+  readonly write: Write;
+  /** The words an edit starts from (`wordsToEdit`), so a reopen of a long comment does not start from the walk's slice. */
+  readonly wordsOf: WordsOf;
+  readonly ask: (id: string, props: unknown) => Promise<unknown>;
+}
+
+/**
+ * The kinds whose words are DRAWN on the page, which a reopen edits, and what the box it opens is called.
+ *
+ * Every other kind's words are its comment, which *Edit comment* and the Properties tab edit; a double-click on one
+ * reopens nothing, `pointerPath`'s default.
+ */
+const DRAWN_WORDS: Readonly<Partial<Record<AnnotationKindName, MessageKey>>> = {
+  'text-box': WRITE_TEXT_BOX_LABEL,
+  typewriter: WRITE_TYPEWRITER_LABEL,
+  callout: WRITE_CALLOUT_LABEL,
+};
+
+/**
+ * Whether a mark with drawn words was under the point, and the edit made of it — a reopen (ADR-0154 Decision 3).
+ *
+ * `found` is separate from the command because the two mean different things to a text tool's click: a mark found and
+ * left unchanged sends nothing AND places nothing, where no mark found lets the click place a new one.
+ */
+export type Reopened =
+  | { readonly found: false; readonly command?: undefined }
+  | { readonly found: true; readonly command: DispatchableCommand | undefined };
+
+/**
+ * Opens the words of the text mark under `at`, and answers `editAnnotationText` with what they became.
+ *
+ * ## In their own box, where the file says how they are drawn
+ *
+ * A text box's and a typewriter's words are typed where they are, in the size, colour and face the walk read from the
+ * mark (`typed`). A callout's sit in an inner box the walk does not carry, and a mark whose style could not be read
+ * carries none; both are edited on a card beside the mark instead, which is a place to type and never a refusal.
+ *
+ * ## From the whole words, at the walk's version
+ *
+ * The starting text is `wordsOf`'s, so a long comment is read whole rather than edited as the walk's slice, and the
+ * command names the version the walk was read at, which the bus refuses if the document has moved. Nothing typed or
+ * the words left as they were sends nothing: an edit that changes nothing would be an undo step that undoes nothing.
+ */
+export async function reopenWords(
+  deps: ReopenDeps,
+  at: ViewportPoint,
+  page: number,
+  transform: PageTransform,
+): Promise<Reopened> {
+  const snapshot = await deps.annotations();
+  if (snapshot === undefined) return { found: false };
+  const hit = markAt(snapshot.annotations, page, at, transform);
+  if (hit === undefined) return { found: false };
+  const label = DRAWN_WORDS[hit.kind];
+  if (hit.rect === null || label === undefined) return { found: false };
+
+  const words = await deps.wordsOf({
+    page,
+    version: snapshot.version,
+    index: hit.index,
+    contents: hit.contents,
+    cut: hit.cut,
+  });
+  if (words.kind !== 'words') {
+    void deps.ask(COMMAND_PROBLEM_DIALOG_ID, words.kind === 'too-long' ? { code: 'comment-too-long' } : words.problem);
+    return { found: true, command: undefined };
+  }
+  const style = hit.kind === 'callout' ? undefined : hit.typed;
+  const text =
+    style === undefined
+      ? await writeMarkWords(deps.write, { page, beside: hit.rect, label, initial: words.text })
+      : await askAnnotationWords(deps.write, {
+          page,
+          box: hit.rect,
+          shape: 'block',
+          initial: words.text,
+          label,
+          style,
+          grows: false,
+        });
+  if (text === undefined || text === words.text) return { found: true, command: undefined };
+  return {
+    found: true,
+    command: { kind: 'editAnnotationText', page, index: hit.index, text, version: snapshot.version },
+  };
 }
 
 /** The ask both share: the rule the words meet, and the trim and limit of the result schema the dialogs answered with. */

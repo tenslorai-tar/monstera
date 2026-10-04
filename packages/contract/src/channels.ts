@@ -48,6 +48,7 @@ import {
   annotationRectSchema,
   annotationAuthorSchema,
   annotationBlendSchema,
+  annotationWordsStyleSchema,
   annotationStampSchema,
   annotationInstantSchema,
   formDataFormatSchema,
@@ -4627,6 +4628,13 @@ export const channels = {
              * over a long comment.
              */
             cut: z.literal(true).exactOptional(),
+            /**
+             * How a TEXT MARK'S WORDS are drawn — a text box's, a typewriter's or a callout's `/DA` and `/Q` — so a
+             * double-click edits them in their own box, in their own size and colour (ADR-0154 Decision 3). Absent on
+             * every other kind, and on a text mark whose `/DA` says something the bounds cannot hold (an auto size,
+             * for one): that one is edited on a card beside it instead, never refused.
+             */
+            typed: annotationWordsStyleSchema.exactOptional(),
           }),
         )
         .max(ANNOTATIONS_PART)

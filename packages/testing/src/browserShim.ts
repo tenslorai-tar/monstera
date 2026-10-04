@@ -3,6 +3,7 @@ import {
   type AiModelListAnswer,
   type AiProviderId,
   type AnnotationKindName,
+  type AnnotationWordsStyle,
   CLOUD_PROVIDER_IDS,
   type ChannelResult,
   type ContractClient,
@@ -561,6 +562,8 @@ export interface BrowserShimOptions {
      * kernel's does, and `document.annotationWords` answers it whole. Absent is no comment.
      */
     readonly contents?: string;
+    /** How a text mark's words are drawn, for a case about reopening them in their own box. Absent is none read. */
+    readonly typed?: AnnotationWordsStyle;
   }[];
 
   /**

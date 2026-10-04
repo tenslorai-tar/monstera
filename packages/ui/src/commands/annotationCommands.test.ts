@@ -13,6 +13,7 @@ import {
   WRITE_REPLY_LABEL,
   WRITE_TOO_LONG,
 } from '../messages/en.js';
+import { wordsToEdit } from '../annotations/markWords.js';
 import type { WriteRequest } from '../pageWriting.js';
 import { CommandRegistry } from '../registries/commands.js';
 import { ribbonModel } from '../surfaces/projections.js';
@@ -60,9 +61,12 @@ import {
  * that would show the difference lives two components away.
  */
 
+/** The document every case's context names, by itself for a fixture that binds a read to it. */
+const DOCUMENT = asDocId('00000000-0000-4000-8000-000000000001');
+
 const WITH_DOCUMENT: CommandContext = {
   selectedPages: [],
-  docId: asDocId('00000000-0000-4000-8000-000000000001'),
+  docId: DOCUMENT,
   version: asDocVersion(1),
   hasSelection: false,
   dirty: false,
@@ -207,6 +211,7 @@ describe('rectangleToolCommand', () => {
       ask,
       write: ask,
       annotations: () => Promise.resolve(undefined),
+      wordsOf: () => Promise.reject(new Error('this case reads no words')),
       onSelect: () => undefined,
       selected: () => undefined,
       style: PLAIN_STYLE,
@@ -458,7 +463,8 @@ describe('editSelectionCommand', () => {
           written.push(request);
           return Promise.resolve(typed);
         },
-        client,
+        // THE APPLICATION'S COMPOSITION of the words read, `App.tsx`'s `wordsOf`, over a client that records the read.
+        wordsOf: (mark) => wordsToEdit(client, DOCUMENT, mark),
         ask: (id, props) => {
           asked.push({ id, props });
           return Promise.resolve(undefined);

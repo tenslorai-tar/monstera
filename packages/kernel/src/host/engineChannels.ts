@@ -52,6 +52,7 @@ import {
   annotationAuthorSchema,
   annotationBlendSchema,
   annotationInstantSchema,
+  annotationWordsStyleSchema,
   replyToAnnotationSchema,
   removeAnnotationSchema,
   replacePageSchema,
@@ -509,6 +510,8 @@ const engineAnnotationSchema = z
     pictured: z.literal(true).exactOptional(),
     /** Present and true where `contents` is a slice of longer words, exactly optional for `pictured`'s reason. */
     cut: z.literal(true).exactOptional(),
+    /** How a text mark's words are drawn, exactly optional for `pictured`'s reason (the renderer channel's member). */
+    typed: annotationWordsStyleSchema.exactOptional(),
   })
   .strict();
 

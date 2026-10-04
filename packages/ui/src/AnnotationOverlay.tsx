@@ -115,7 +115,7 @@ export function AnnotationOverlay({
    * the page's canvas, so its box IS the page on screen.
    */
   const pointAt = useCallback(
-    (event: React.PointerEvent<SVGSVGElement>): ViewportPoint | undefined => {
+    (event: { readonly clientX: number; readonly clientY: number }): ViewportPoint | undefined => {
       const element = surface.current;
       if (element === null) return undefined;
       return pointerOn(element, event.clientX, event.clientY);
@@ -248,10 +248,23 @@ export function AnnotationOverlay({
    * has already added that press to the gesture and kept it; it is then released as finished, the tool deciding what
    * a finish with too few vertices makes.
    */
-  const doubled = useCallback((): void => {
-    if (gesture === undefined) return;
-    release({ ...gesture, done: true });
-  }, [gesture, release]);
+  const doubled = useCallback(
+    (event: React.MouseEvent<SVGSVGElement>): void => {
+      if (gesture !== undefined) {
+        release({ ...gesture, done: true });
+        return;
+      }
+      // NO GESTURE IN FLIGHT: the tool's `reopen` (ADR-0154 Decision 3), which for the tools that edit words in a mark
+      // opens the mark under the point. The transform is read now, before any await, for `release`'s reason.
+      const at = pointAt(event);
+      if (at === undefined) return;
+      const transform = overlayTransform(geometry);
+      void Promise.resolve(tool.controller.reopen(at, page, transform)).then(async (command) => {
+        if (command !== undefined) await onCommand(command);
+      });
+    },
+    [geometry, gesture, onCommand, page, pointAt, release, tool],
+  );
 
   const cancel = useCallback((): void => {
     setGesture(undefined);

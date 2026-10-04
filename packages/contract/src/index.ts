@@ -246,6 +246,7 @@ export {
 export { type Incident, IncidentLog, type IncidentSink } from './incident.js';
 export {
   type AnnotationColour,
+  type AnnotationWordsStyle,
   type AnnotationDraft,
   type AnnotationKindName,
   type AnnotationPoint,
@@ -311,6 +312,7 @@ export {
   addAnnotationSchema,
   addLinkSchema,
   annotationColourSchema,
+  annotationWordsStyleSchema,
   annotationDraftSchema,
   annotationRectSchema,
   batesNumberPagesSchema,

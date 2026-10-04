@@ -3,6 +3,7 @@ import { PDFDocument } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
+import type { BrowserShimOptions } from './browserShim.js';
 import { againstPaper } from './contrast.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 
@@ -242,8 +243,11 @@ test('A CLOSED DOCUMENT’S REQUEST sends nothing, and leaves the tool free for 
 /** The highlight the reply and edit cases answer, in PDF user space on a 612 × 792 page. */
 const MARK = { x0: 100, y0: 600, x1: 300, y1: 620 };
 
-/** One page carrying {@link MARK}, the select tool on, and the mark selected by a click on it. */
-async function selectedMark(page: Page, executed: Executed[], contents?: string): Promise<void> {
+/** A mark the shim lists, less where it is: every seeded mark here sits at {@link MARK} on page 1. */
+type SeededMark = Omit<NonNullable<BrowserShimOptions['annotations']>[number], 'page' | 'index' | 'rect'>;
+
+/** One page carrying `mark` at {@link MARK}, open, with every command it sends recorded. */
+async function openedWithMark(page: Page, executed: Executed[], mark: SeededMark): Promise<void> {
   await page.setViewportSize({ width: 1600, height: 900 });
   const bytes = await onePagePdf();
   await bridgeUnder(
@@ -252,7 +256,7 @@ async function selectedMark(page: Page, executed: Executed[], contents?: string)
     {
       opens: [{ kind: 'opened', docId: FIRST, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'first.pdf' }],
       documentBytes: new Map([[FIRST, bytes]]),
-      annotations: [{ page: 0, index: 0, kind: 'highlight', rect: MARK, ...(contents === undefined ? {} : { contents }) }],
+      annotations: [{ page: 0, index: 0, rect: MARK, ...mark }],
       settings: { 'appearance.ribbon-section': 'comment' },
     },
     (channel, params) => {
@@ -262,6 +266,11 @@ async function selectedMark(page: Page, executed: Executed[], contents?: string)
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   await expect(page.locator('canvas.m-page').first()).toBeVisible({ timeout: 20_000 });
+}
+
+/** One page carrying {@link MARK}, the select tool on, and the mark selected by a click on it. */
+async function selectedMark(page: Page, executed: Executed[], contents?: string): Promise<void> {
+  await openedWithMark(page, executed, { kind: 'highlight', ...(contents === undefined ? {} : { contents }) });
   await chooseTool(page, 'Select annotations');
   const at = await markOnScreen(page);
   await page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
@@ -347,6 +356,63 @@ test('a LONG comment opens WHOLE in the card and in the Properties field, and an
   await page.keyboard.press('Escape');
   await expect.poll(() => executed.length).toBe(1);
   expect(executed[0]?.command).toMatchObject({ kind: 'editAnnotationText', index: 0, text: `${whole}, checked` });
+});
+
+/** Typed words already on the page, in a style a reopen draws them in (ADR-0154 Decision 3). */
+const TYPED_WORDS: SeededMark = {
+  kind: 'typewriter',
+  contents: 'Paid in full',
+  typed: { fontSize: 14, colour: [0, 0, 0.6], font: 'serif', direction: 'left-to-right' },
+};
+
+test('a DOUBLE-CLICK with the select tool opens typed words IN THEIR OWN BOX AND SIZE, and Escape sends the edit', async ({
+  page,
+}) => {
+  const executed: Executed[] = [];
+  await openedWithMark(page, executed, TYPED_WORDS);
+  await chooseTool(page, 'Select annotations');
+  const mark = await markOnScreen(page);
+  await page.mouse.dblclick(mark.x + mark.width / 2, mark.y + mark.height / 2);
+
+  const box = page.locator('.m-inline-writer').getByRole('textbox', { name: 'Type onto the page' });
+  await expect(box).toHaveValue('Paid in full');
+  await expect(box).toBeFocused();
+  // IN THE MARK'S BOX: the editor sits where the words are drawn, not on a card under them.
+  const at = await box.boundingBox();
+  if (at === null) throw new Error('the editor is not on screen');
+  expect(Math.abs(at.x - mark.x)).toBeLessThan(4);
+  expect(Math.abs(at.y - mark.y)).toBeLessThan(4);
+  // IN THE MARK'S SIZE, at the zoom on screen: 14 points.
+  const size = await box.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+  expect(size).toBeCloseTo((14 * mark.width) / (MARK.x1 - MARK.x0), 0);
+  await page.keyboard.press('End');
+  await page.keyboard.type(', 4 October');
+  await page.keyboard.press('Escape');
+  await expect.poll(() => executed.length).toBe(1);
+  expect(executed[0]?.command).toMatchObject({ kind: 'editAnnotationText', page: 0, index: 0, text: 'Paid in full, 4 October' });
+});
+
+test('a TYPEWRITER CLICK on typed words edits them rather than placing a second mark on top', async ({ page }) => {
+  const executed: Executed[] = [];
+  await openedWithMark(page, executed, TYPED_WORDS);
+  await chooseTool(page, 'Typewriter');
+  const mark = await markOnScreen(page);
+  await page.mouse.click(mark.x + mark.width / 2, mark.y + mark.height / 2);
+  const box = page.locator('.m-inline-writer').getByRole('textbox', { name: 'Type onto the page' });
+  await expect(box).toHaveValue('Paid in full');
+  await page.keyboard.press('End');
+  await page.keyboard.type(' (cash)');
+  await page.keyboard.press('Escape');
+  await expect.poll(() => executed.length).toBe(1);
+  expect(executed[0]?.command).toMatchObject({ kind: 'editAnnotationText', index: 0, text: 'Paid in full (cash)' });
+
+  // CONTROL: a click BESIDE the words still places a new typewriter, starting empty.
+  await page.mouse.click(mark.x + mark.width / 2, mark.y + mark.height + 120);
+  await expect(box).toHaveValue('');
+  await page.keyboard.type('Received');
+  await page.keyboard.press('Escape');
+  await expect.poll(() => executed.length).toBe(2);
+  expect(executed[1]?.command).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'typewriter', text: 'Received' } });
 });
 
 test('POINTERS: the I-beam where words are typed, the arrow where a click places, the eraser its own picture', async ({

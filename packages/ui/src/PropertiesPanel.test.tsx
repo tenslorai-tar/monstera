@@ -108,9 +108,10 @@ function mounted(
           expect(chosen).toBe(selection);
           commented.push(text);
         }}
-        wordsOf={(chosen, item) => {
-          expect(chosen).toBe(selection);
-          read.push(item.index);
+        wordsOf={(mark) => {
+          // THE SELECTION'S PAGE AND VERSION, the walk's handle and its cut — what main reads the words by.
+          expect([mark.page, mark.version]).toStrictEqual([selection?.page, selection?.version]);
+          read.push(mark.index);
           return Promise.resolve(words);
         }}
         onAuthor={(chosen, author) => {

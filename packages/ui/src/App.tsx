@@ -253,8 +253,8 @@ import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
 import { MEASURE_TOOL_IDS } from './annotations/measureTools.js';
 import { stickyNoteCommand } from './annotations/pointTools.js';
-import { type WordsToEdit, wordsToEdit } from './annotations/markWords.js';
-import type { AnnotationSelection, SelectedAnnotation } from './annotations/selectTool.js';
+import { type WordsMark, type WordsToEdit, wordsToEdit } from './annotations/markWords.js';
+import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID, selectionOfNewest, selectionOfPage } from './annotations/selectTool.js';
 import { SIGNATURE_TOOL_ID } from './annotations/signatureTool.js';
 import { chooseSignature, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
@@ -2306,12 +2306,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [dispatch],
   );
 
-  /** The comment the Properties tab's field starts from, read whole where the walk cut it (`wordsToEdit`). */
-  const wordsOfSelection = useCallback(
-    (chosen: AnnotationSelection, item: SelectedAnnotation): Promise<WordsToEdit> =>
+  /**
+   * The words every editor of a mark's words starts from, read whole where the walk cut them (`wordsToEdit`): Edit
+   * comment, the Properties field and a reopen on the page take this one function.
+   */
+  const wordsOf = useCallback(
+    (mark: WordsMark): Promise<WordsToEdit> =>
       activeId === undefined
         ? Promise.resolve({ kind: 'problem', problem: { code: 'document-not-open' } })
-        : wordsToEdit(client, activeId, chosen, item),
+        : wordsToEdit(client, activeId, mark),
     [activeId, client],
   );
 
@@ -2348,6 +2351,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           ask,
           write,
           annotations: listAnnotations,
+          // A REOPEN'S WORDS, whole where the walk cut them: the function Edit comment and the Properties field take.
+          wordsOf,
           onSelect: setPicked,
           selected: readSelection,
           style,
@@ -2387,6 +2392,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       readSelection,
       scale,
       style,
+      wordsOf,
       write,
     ],
   );
@@ -3034,7 +3040,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         marksDelete,
         // WRITE IS PASSED PER COMMAND: only the annotation-menu items that ask for words receive it, and widening
         // `SelectionCommandDeps` would hand every selection command a capability none of the others may use.
-        editSelectionCommand({ ...selectionDeps, write, client, ask }),
+        editSelectionCommand({ ...selectionDeps, write, wordsOf, ask }),
         replySelectionCommand({ ...selectionDeps, write }),
         draftReplyCommand({ selection: readSelection, ask: askAssistant }),
         summariseCommentsCommand({ ask: askAssistant }),
@@ -3151,6 +3157,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       dispatch,
       style,
       write,
+      // EDIT COMMENT'S STARTING WORDS, read whole where the walk cut them; bound to the document on screen.
+      wordsOf,
       // THE ASSISTANT'S ITEMS (ADR-0088): the one way to ask, and the annotation selection
       // *Draft a reply* reads.
       askAssistant,
@@ -3684,7 +3692,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                 measuring={toolId !== undefined && MEASURE_TOOL_IDS.has(toolId)}
                 context={context}
                 onComment={commentSelection}
-                wordsOf={wordsOfSelection}
+                wordsOf={wordsOf}
                 onAuthor={authorSelection}
                 onRestyle={restyleSelection}
                 registry={registry}

@@ -542,6 +542,59 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
     expect(dict?.lookup(PDFName.of('Q'))).toBeUndefined();
   });
 
+  it('the walk reads each text mark’s STYLE back as it was written — face, size, colour, side — for a reopen (ADR-0154)', async () => {
+    // EVERY VALUE MOVED from the draft above and from each other, so a reader answering a default, or one field from
+    // another, fails: three faces, three sizes, three colours, both sides, across the three kinds.
+    const marks: AnnotationDraft[] = [
+      { ...TEXT_BOX, font: 'serif', fontSize: 9, colour: [0.8, 0, 0], direction: 'right-to-left' },
+      { ...TEXT_BOX, type: 'typewriter', font: 'mono', fontSize: 15, colour: [0, 0.5, 0] },
+      { ...TEXT_BOX, type: 'callout', at: { x: 5, y: 5 }, font: 'sans', fontSize: 21, colour: [0, 0, 1] },
+    ];
+    for (const annotation of marks) {
+      if (annotation.type !== 'text-box' && annotation.type !== 'typewriter' && annotation.type !== 'callout') continue;
+      const bytes = await drawnOn(await fixture(), command({ annotation }));
+      const listed = await onSession(bytes, (session) => readAnnotations(session));
+      const typed = listed.annotations[0]?.typed;
+      expect(typed && { ...typed, colour: undefined }, annotation.type).toStrictEqual({
+        fontSize: annotation.fontSize,
+        colour: undefined,
+        font: annotation.font,
+        direction: annotation.direction,
+      });
+      // TO FLOAT32's PRECISION, which is what MuPDF parses a `/DA` colour into: 0.8 reads back as 0.800000011920929.
+      annotation.colour.forEach((channel, at) => {
+        expect(typed?.colour[at], `${annotation.type} channel ${String(at)}`).toBeCloseTo(channel, 6);
+      });
+    }
+  });
+
+  it('CONTROL: a mark whose words are not drawn carries no style, nor does a /DA this build cannot set back (auto size)', async () => {
+    const square = await onSession(await drawnOn(await fixture(), command()), (session) => readAnnotations(session));
+    expect(square.annotations[0] !== undefined && 'typed' in square.annotations[0]).toBe(false);
+    // `0 Tf` IS THE FORMAT'S AUTO SIZE, which no draft can write back; the mark is still listed, with no style, and a
+    // reopen types it on a card instead. The same mark with its size put back reads a style, so the absence is the
+    // size's doing.
+    const written = await drawnOn(await fixture(), command({ annotation: TEXT_BOX }));
+    const withSize = async (da: string): Promise<ListedAnnotation | undefined> => {
+      const loaded = await PDFDocument.load(written, { updateMetadata: false });
+      const annots = loaded.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+      const [first] = annots instanceof PDFArray ? annots.asArray() : [];
+      if (!(first instanceof PDFRef)) throw new Error('the fixture wrote no annotation');
+      loaded.context.lookup(first, PDFDict).set(PDFName.of('DA'), PDFString.of(da));
+      const bytes = await loaded.save();
+      return (await onSession(bytes, (session) => readAnnotations(session))).annotations[0];
+    };
+    const auto = await withSize('/Helv 0 Tf 0 g');
+    expect(auto?.kind).toBe('text-box');
+    expect(auto !== undefined && 'typed' in auto).toBe(false);
+    expect((await withSize('/Helv 10 Tf 0 g'))?.typed).toStrictEqual({
+      fontSize: 10,
+      colour: [0, 0, 0],
+      font: 'sans',
+      direction: 'left-to-right',
+    });
+  });
+
   it('HEBREW AND ARABIC are drawn in the engine’s Noto faces, not as bytes in Helvetica (ADR-0128)', async () => {
     // THE APPEARANCE'S FONTS, read by pdf-lib: what a viewer paints with. Before the layout engine was built in, a
     // Hebrew box's only font was `/Helvetica` and its letters were bytes that face has no glyphs for.

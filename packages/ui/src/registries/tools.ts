@@ -182,7 +182,7 @@ const MAX_GESTURE_POINTS = 4096;
  * every drag began up to two pixels from where it was pressed, and a
  * typewriter's click landed half a point off at zoom 2 (measured 2026-10-03).
  */
-export const pointerPath: Pick<ToolController, 'begin' | 'update' | 'complete'> = {
+export const pointerPath: Pick<ToolController, 'begin' | 'update' | 'complete' | 'reopen'> = {
   begin: (at: ViewportPoint): Gesture => ({ points: [at], presses: [at], done: false }),
   update: (gesture: Gesture, at: ViewportPoint): Gesture => {
     const last = endOf(gesture);
@@ -204,6 +204,9 @@ export const pointerPath: Pick<ToolController, 'begin' | 'update' | 'complete'> 
   // they already spread, that a multi-press tool overrides when it means
   // something else.
   complete: (): boolean => true,
+  // A DOUBLE-CLICK REOPENS NOTHING, which is what every tool but the ones that edit words in a mark mean
+  // (ADR-0154 Decision 3) — `complete`'s reason for living here.
+  reopen: (): undefined => undefined,
 };
 
 /**
@@ -295,6 +298,18 @@ export interface ToolController {
    * there too. That tool is the trigger for adding those call sites.
    */
   readonly complete: (gesture: Gesture) => boolean;
+  /**
+   * What a double-click with NO gesture in flight makes: a command, or nothing (ADR-0154 Decision 3). The select tool,
+   * Text box and Typewriter reopen a text mark under the point, its words in its own box; {@link pointerPath} answers
+   * nothing, so every other tool says nothing. It may answer later, as {@link commit} may, because the words come from
+   * a person. Required with a default, for `complete`'s reason: an optional member would let a misspelt one take the
+   * default in silence.
+   */
+  readonly reopen: (
+    at: ViewportPoint,
+    page: number,
+    transform: PageTransform,
+  ) => DispatchableCommand | undefined | Promise<DispatchableCommand | undefined>;
 }
 
 /**

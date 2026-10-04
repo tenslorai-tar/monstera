@@ -6,6 +6,8 @@ import { HINT_SELECT } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationSnapshot, ErasableAnnotation } from './eraserTool.js';
+import { markAt } from './eraserTool.js';
+import { type ReopenDeps, reopenWords } from './textTools.js';
 
 
 /**
@@ -195,7 +197,7 @@ export function selectionOfNewest(walk: AnnotationSnapshot, page: number): Annot
   return item === undefined ? undefined : { page, version: walk.version, items: [item] };
 }
 
-export interface SelectDeps {
+export interface SelectDeps extends ReopenDeps {
   /** The same read the eraser holds. */
   readonly annotations: () => Promise<AnnotationSnapshot | undefined>;
   /** Where the selection goes. `undefined` is *nothing is selected*. */
@@ -410,22 +412,9 @@ export function selectTool(deps: SelectDeps): UiTool {
       const onPage = snapshot.annotations.filter((entry) => entry.page === page);
       const picked =
         marquee.travelled < MINIMUM_MARQUEE
-          ? // A CLICK: the topmost containing the point, which is the last in
-            // the walk — `eraserTool.ts` has the argument, and both tools must
-            // agree or clicking to select and clicking to erase would pick
-            // different marks from the same pixel.
-            [
-              onPage.findLast((entry) => {
-                const box = boxOf(entry.rect, transform);
-                return (
-                  box !== null &&
-                  marquee.x0 >= box.x0 &&
-                  marquee.x0 <= box.x1 &&
-                  marquee.y0 >= box.y0 &&
-                  marquee.y0 <= box.y1
-                );
-              }),
-            ].filter((entry) => entry !== undefined)
+          ? // A CLICK: `markAt`, the one rule the eraser and a reopen take too, at the point pressed — so clicking to
+            // select, to erase and to edit pick the same mark from the same pixel.
+            [markAt(onPage, page, startOf(gesture), transform)].filter((entry) => entry !== undefined)
           : // A MARQUEE: everything it touches, in walk order, so the payload a
             // removal is built from is ordered the way the document is.
             onPage.filter((entry) => {
@@ -465,6 +454,9 @@ export function selectTool(deps: SelectDeps): UiTool {
         height: marquee.y1 - marquee.y0,
       };
     },
+    // A DOUBLE-CLICK ON A TEXT MARK EDITS ITS WORDS where they are (ADR-0154 Decision 3): the first click has selected
+    // it, and the second opens it. A double-click on any other mark reopens nothing.
+    reopen: async (at, page, transform) => (await reopenWords(deps, at, page, transform)).command,
   };
 
   // THE ARROW: this tool picks what is there rather than drawing something new (the owner's review of 0.1.6.0).

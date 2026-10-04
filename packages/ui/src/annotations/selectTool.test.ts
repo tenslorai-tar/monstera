@@ -1,4 +1,4 @@
-import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
+import type { AnnotationRect, AnnotationWordsStyle, DispatchableCommand } from '@monstera/contract';
 import { asDocVersion, viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -38,6 +38,13 @@ const PLAIN = { colour: [1, 0, 0], opacity: 1, borderWidth: 2 } as const;
  */
 const CARRIED = { style: PLAIN, kind: 'square', contents: '', author: '', created: null, blend: 'normal' } as const;
 
+/** What a reopen needs, REFUSING BY NAME: these cases select, and a case that reached the page writer fails at it. */
+const NO_REOPEN = {
+  write: () => Promise.reject(new Error('this case types nothing')),
+  wordsOf: () => Promise.reject(new Error('this case reads no words')),
+  ask: () => Promise.reject(new Error('this case opens no dialog')),
+} as const;
+
 /** PDF x 60–100, y 350–390 — screen (20,20) to (100,100). */
 const A_RECT: AnnotationRect = { x0: 60, y0: 350, x1: 100, y1: 390 };
 const A: ErasableAnnotation = { page: 3, index: 1, rect: A_RECT, ...CARRIED };
@@ -58,6 +65,7 @@ function selecting(
 } {
   const chosen: (AnnotationSelection | undefined)[] = [];
   const tool = selectTool({
+    ...NO_REOPEN,
     annotations: () =>
       Promise.resolve(annotations === undefined ? undefined : { version: VERSION, annotations }),
     onSelect: (selection) => {
@@ -151,6 +159,7 @@ describe('selectTool', () => {
     // version bump behind a click that was only meant to point at something —
     // and would then invalidate the selection it had just made.
     const tool = selectTool({
+      ...NO_REOPEN,
       annotations: () => Promise.resolve({ version: VERSION, annotations: [A] }),
       onSelect: () => undefined,
       selected: () => undefined,
@@ -161,6 +170,7 @@ describe('selectTool', () => {
 
   it('previews the marquee once the gesture is one, and not before', () => {
     const tool = selectTool({
+      ...NO_REOPEN,
       annotations: () => Promise.resolve(undefined),
       onSelect: () => undefined,
       selected: () => undefined,
@@ -274,8 +284,39 @@ describe('selectTool', () => {
     expect(await drag([40, 40], [60, 40])).toBeUndefined();
   });
 
+  it('a DOUBLE-CLICK on a text mark opens its words in its own box and sends the edit; on a square it opens nothing', async () => {
+    // The first click has selected the mark; the second, with no gesture in flight, is `reopen` (ADR-0154
+    // Decision 3). The square is the control: a mark whose words are its comment is Edit comment's, so the same
+    // double-click there must ask the page for nothing.
+    const typed: AnnotationWordsStyle = { fontSize: 11, colour: [0, 0, 0], font: 'sans', direction: 'left-to-right' };
+    const words: ErasableAnnotation = { ...A, kind: 'typewriter', contents: 'Due Friday', typed };
+    const asked: unknown[] = [];
+    const tool = selectTool({
+      ...NO_REOPEN,
+      write: (request) => {
+        asked.push(request);
+        return Promise.resolve('Due Monday');
+      },
+      wordsOf: (mark) => Promise.resolve({ kind: 'words', text: mark.contents }),
+      annotations: () => Promise.resolve({ version: VERSION, annotations: [words, B] }),
+      onSelect: () => undefined,
+      selected: () => undefined,
+    });
+    expect(await tool.controller.reopen(viewportPoint(40, 40), 3, overlayTransform(PAGE))).toStrictEqual({
+      kind: 'editAnnotationText',
+      page: 3,
+      index: 1,
+      text: 'Due Monday',
+      version: VERSION,
+    });
+    expect(asked).toMatchObject([{ box: A_RECT, initial: 'Due Friday', style: typed }]);
+    expect(await tool.controller.reopen(viewportPoint(260, 460), 3, overlayTransform(PAGE))).toBeUndefined();
+    expect(asked).toHaveLength(1);
+  });
+
   it('claims the id its command selects', () => {
     const tool = selectTool({
+      ...NO_REOPEN,
       annotations: () => Promise.resolve(undefined),
       onSelect: () => undefined,
       selected: () => undefined,

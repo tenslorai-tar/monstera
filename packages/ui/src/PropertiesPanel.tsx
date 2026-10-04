@@ -15,7 +15,7 @@ import { type ReactElement, useEffect, useId, useState } from 'react';
 import { ANNOTATION_KIND_LABELS } from './AnnotationsPanel.js';
 import { ColourSwatches } from './ColourChoice.js';
 import { STARTING_STYLE_COLOUR, colourFromHex, hexFromColour } from './annotations/annotationStyle.js';
-import type { WordsToEdit } from './annotations/markWords.js';
+import { type WordsOf, type WordsToEdit, markOf } from './annotations/markWords.js';
 import type { AnnotationSelection, SelectedAnnotation } from './annotations/selectTool.js';
 import { LINE_WIDTH_PRESETS, STYLE_PRESETS } from './annotations/stylePresets.js';
 import {
@@ -74,9 +74,6 @@ export type StyleChange =
   | { readonly opacity: number }
   | { readonly borderWidth: number }
   | { readonly blend: AnnotationBlend };
-
-/** How the comment field reads the words it starts from, for one selected mark. */
-export type WordsOf = (selection: AnnotationSelection, item: SelectedAnnotation) => Promise<WordsToEdit>;
 
 export interface PropertiesPanelProps {
   readonly settings: SettingsStore;
@@ -635,7 +632,7 @@ function CommentRow({
   useEffect(() => {
     if (item.cut !== true) return undefined;
     let live = true;
-    void wordsOf(selection, item).then((read) => {
+    void wordsOf(markOf(selection, item)).then((read) => {
       if (!live) return;
       setWords(read);
       if (read.kind === 'words') setDraft(read.text);

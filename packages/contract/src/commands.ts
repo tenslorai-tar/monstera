@@ -1305,6 +1305,23 @@ export const annotationColourSchema = z.tuple([
 export type AnnotationColour = z.infer<typeof annotationColourSchema>;
 
 /**
+ * How a text mark's words are drawn, as the file says: the type size, colour, face and the side the lines sit against
+ * — a `/FreeText`'s `/DA` and `/Q`. The four fields every text draft carries, under the same bounds, so a value read is
+ * one a draft could write back; a mark whose `/DA` says something outside them carries none (ADR-0154 Decision 3).
+ */
+export const annotationWordsStyleSchema = z
+  .object({
+    fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
+    colour: annotationColourSchema,
+    font: annotationFontSchema,
+    direction: textDirectionSchema,
+  })
+  .strict();
+
+/** See {@link annotationWordsStyleSchema}. */
+export type AnnotationWordsStyle = z.infer<typeof annotationWordsStyleSchema>;
+
+/**
  * How opaque an annotation is drawn — `/CA`, from 0.1 to 1.
  *
  * ## On EVERY member, because it is a property of an annotation

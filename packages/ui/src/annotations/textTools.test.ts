@@ -1,11 +1,13 @@
-import { type DispatchableCommand, MAX_ANNOTATION_TEXT } from '@monstera/contract';
-import { viewportPoint } from '@monstera/shared';
+import { type AnnotationWordsStyle, type DispatchableCommand, MAX_ANNOTATION_TEXT } from '@monstera/contract';
+import { asDocVersion, viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { WRITE_TEXT_BOX_LABEL, WRITE_TOO_LONG, WRITE_TYPEWRITER_LABEL } from '../messages/en.js';
 import type { WriteRequest } from '../pageWriting.js';
 import { overlayTransform } from './annotationSpace.js';
 import { type AnnotationStyle, PLAIN_STYLE } from './annotationStyle.js';
+import type { ErasableAnnotation } from './eraserTool.js';
+import type { WordsMark, WordsToEdit } from './markWords.js';
 import { TEXT_BOX_TOOL_ID, annotationTextCheck, textBoxTool, typewriterTool } from './textTools.js';
 
 /**
@@ -25,6 +27,15 @@ const PAGE: Parameters<typeof overlayTransform>[0] = {
   rotation: 0,
   zoom: 2,
 };
+
+/**
+ * A document with NO MARKS for a reopen to find, so a click places as it always did; the words read refuses by name,
+ * since nothing here may reach it.
+ */
+const NOTHING_TO_REOPEN = {
+  annotations: () => Promise.resolve({ version: asDocVersion(1), annotations: [] }),
+  wordsOf: () => Promise.reject(new Error('this case reads no words')),
+} as const;
 
 /** A `write` that answers `answer`, and the record of what it was asked for. */
 function writing(answer: string | undefined): {
@@ -51,7 +62,7 @@ function toolAnswering(
 } {
   const { write, asked } = writing(answer);
   // `ask` REFUSES: nothing here may open a dialog any more, so one that did would fail the case it ran in.
-  const tool = textBoxTool({ ask: () => Promise.reject(new Error('a dialog was opened')), write, style });
+  const tool = textBoxTool({ ...NOTHING_TO_REOPEN, ask: () => Promise.reject(new Error('a dialog was opened')), write, style });
   return { tool, asked };
 }
 
@@ -206,7 +217,12 @@ describe('typewriterTool', () => {
     readonly asked: WriteRequest[];
   } {
     const { write, asked } = writing(text);
-    const tool = typewriterTool({ ask: () => Promise.reject(new Error('a dialog was opened')), write, style: PLAIN_STYLE });
+    const tool = typewriterTool({
+      ...NOTHING_TO_REOPEN,
+      ask: () => Promise.reject(new Error('a dialog was opened')),
+      write,
+      style: PLAIN_STYLE,
+    });
     return { tool, asked };
   }
 
@@ -257,5 +273,134 @@ describe('typewriterTool', () => {
     const rect = rectOf(await drag(tool, [20, 20], [120, 80]));
     expect(asked[0]).toMatchObject({ box: { x0: 60, y0: 390, x1: 110, y1: 360 }, grows: false });
     expect(rect).toStrictEqual({ x0: 60, y0: 390, x1: 110, y1: 360 });
+  });
+});
+
+/**
+ * Words already on the page are edited where they are (ADR-0154 Decision 3): a click of Text box or Typewriter on a
+ * text mark, and a double-click with no gesture (`reopen`), open its words — in its own box and style where the walk
+ * read one, on a card beside it where it did not — and send `editAnnotationText` at the walk's version.
+ */
+describe('reopening words on the page', () => {
+  const WALKED = asDocVersion(5);
+  /** PDF x 60–160, y 300–360 — on screen (20,80) to (220,200) at the fixture's zoom 2 and crop origin. */
+  const WORDS_RECT = { x0: 60, y0: 300, x1: 160, y1: 360 } as const;
+  const TYPED: AnnotationWordsStyle = { fontSize: 14, colour: [0, 0, 0.6], font: 'serif', direction: 'left-to-right' };
+  /** The mark with no style read: how a walk lists a text mark whose `/DA` this build cannot set back. */
+  const UNTYPED: ErasableAnnotation = {
+    page: 3,
+    index: 2,
+    rect: WORDS_RECT,
+    style: { colour: [0, 0, 0], opacity: 1, borderWidth: null },
+    kind: 'typewriter',
+    contents: 'Paid in full',
+    author: '',
+    created: null,
+    blend: 'normal',
+  };
+  const MARK: ErasableAnnotation = { ...UNTYPED, typed: TYPED };
+  /** A point inside {@link WORDS_RECT} on screen. */
+  const ON_MARK = [100, 150] as const;
+
+  /** A tool over a walk holding `marks`, whose page answers `typed`, recording what was asked and read. */
+  function reopening(
+    make: typeof textBoxTool | typeof typewriterTool,
+    marks: readonly ErasableAnnotation[],
+    typed: string | undefined,
+    words?: WordsToEdit,
+  ) {
+    const { write, asked } = writing(typed);
+    const read: WordsMark[] = [];
+    const problems: unknown[] = [];
+    const tool = make({
+      annotations: () => Promise.resolve({ version: WALKED, annotations: marks }),
+      wordsOf: (mark) => {
+        read.push(mark);
+        return Promise.resolve(words ?? { kind: 'words', text: mark.contents });
+      },
+      ask: (_id, props) => {
+        problems.push(props);
+        return Promise.resolve(undefined);
+      },
+      write,
+      style: PLAIN_STYLE,
+    });
+    const click = (at: readonly [number, number]): Promise<DispatchableCommand | undefined> =>
+      Promise.resolve(tool.controller.commit(tool.controller.begin(viewportPoint(at[0], at[1])), 3, overlayTransform(PAGE)));
+    const reopen = (at: readonly [number, number]): Promise<DispatchableCommand | undefined> =>
+      Promise.resolve(tool.controller.reopen(viewportPoint(at[0], at[1]), 3, overlayTransform(PAGE)));
+    return { asked, read, problems, click, reopen };
+  }
+
+  it('a typewriter CLICK on words opens them IN THEIR OWN BOX AND STYLE, and edits them rather than placing more', async () => {
+    const { asked, click } = reopening(typewriterTool, [MARK], 'Paid in full, 4 October');
+    const command = await click(ON_MARK);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({
+      page: 3,
+      box: WORDS_RECT,
+      shape: 'block',
+      initial: 'Paid in full',
+      label: WRITE_TYPEWRITER_LABEL,
+      style: TYPED,
+      grows: false,
+    });
+    expect(command).toStrictEqual({
+      kind: 'editAnnotationText',
+      page: 3,
+      index: 2,
+      text: 'Paid in full, 4 October',
+      version: WALKED,
+    });
+  });
+
+  it('CONTROL: a typewriter click BESIDE the words places a new mark, as a click on blank paper always has', async () => {
+    const { asked, click } = reopening(typewriterTool, [MARK], 'A new line');
+    const command = await click([300, 300]);
+    expect(asked[0]?.initial).toBe('');
+    expect(command?.kind).toBe('addAnnotation');
+  });
+
+  it('words LEFT AS THEY WERE send nothing, and place nothing new on top', async () => {
+    const { asked, click } = reopening(typewriterTool, [MARK], 'Paid in full');
+    expect(await click(ON_MARK)).toBeUndefined();
+    expect(asked).toHaveLength(1);
+  });
+
+  it('a click on a mark whose words are NOT DRAWN — a square — places a new typewriter, not an edit of its comment', async () => {
+    const square: ErasableAnnotation = { ...UNTYPED, kind: 'square' };
+    const { read, click } = reopening(typewriterTool, [square], 'Beside the square');
+    expect((await click(ON_MARK))?.kind).toBe('addAnnotation');
+    expect(read).toStrictEqual([]);
+  });
+
+  it('a text box whose style could NOT be read opens on a CARD beside it, never refused', async () => {
+    const unread: ErasableAnnotation = { ...UNTYPED, kind: 'text-box' };
+    const { asked, click } = reopening(textBoxTool, [unread], 'Revised');
+    expect((await click(ON_MARK))?.kind).toBe('editAnnotationText');
+    expect(asked[0]).toMatchObject({ box: WORDS_RECT, label: WRITE_TEXT_BOX_LABEL, initial: 'Paid in full' });
+    expect(asked[0]?.style).toBeUndefined();
+  });
+
+  it('a CALLOUT opens on a card even with its style read: its words sit in an inner box the walk does not carry', async () => {
+    const callout: ErasableAnnotation = { ...MARK, kind: 'callout' };
+    const { asked, reopen } = reopening(textBoxTool, [callout], 'Revised');
+    expect((await reopen(ON_MARK))?.kind).toBe('editAnnotationText');
+    expect(asked[0]?.style).toBeUndefined();
+  });
+
+  it('a CUT comment is read whole at the walk’s version, and one too long to write back is said and not opened', async () => {
+    const cut: ErasableAnnotation = { ...MARK, contents: 'a'.repeat(512), cut: true };
+    const { asked, read, problems, reopen } = reopening(textBoxTool, [cut], 'typed', { kind: 'too-long' });
+    expect(await reopen(ON_MARK)).toBeUndefined();
+    expect(read).toStrictEqual([{ page: 3, version: WALKED, index: 2, contents: 'a'.repeat(512), cut: true }]);
+    expect(asked).toStrictEqual([]);
+    expect(problems).toStrictEqual([{ code: 'comment-too-long' }]);
+  });
+
+  it('a DOUBLE-CLICK on blank paper reopens nothing and asks nothing', async () => {
+    const { asked, reopen } = reopening(textBoxTool, [MARK], 'typed');
+    expect(await reopen([300, 300])).toBeUndefined();
+    expect(asked).toStrictEqual([]);
   });
 });

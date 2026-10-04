@@ -7,10 +7,13 @@ import {
   type AnnotationPoint,
   type AnnotationRect,
   type AnnotationStamp,
+  type AnnotationWordsStyle,
   type CommandOfKind,
   type LineEnding,
   MAX_ANNOTATION_AUTHOR,
+  MAX_ANNOTATION_FONT,
   MAX_ANNOTATION_TEXT,
+  MIN_ANNOTATION_FONT,
   type TextDirection,
   strokesOfPlaced,
 } from '@monstera/contract/host';
@@ -717,6 +720,48 @@ const BASE14_FACE: Readonly<Record<AnnotationFont, string>> = { sans: 'Helv', se
  */
 function writeDirection(annotation: PDFAnnotation, direction: TextDirection): void {
   if (direction === 'right-to-left') annotation.setQuadding(2);
+}
+
+/** The face each of {@link BASE14_FACE}'s names reads back as: the writer's table turned round, so the two are one. */
+const FACE_OF: ReadonlyMap<string, AnnotationFont> = new Map(
+  (Object.entries(BASE14_FACE) as [AnnotationFont, string][]).map(([face, name]) => [name, face]),
+);
+
+/**
+ * How a text mark's words are drawn, read as the writers above write it — `/DA` through MuPDF's own reader, `/Q` as
+ * {@link writeDirection} writes it — or nothing (ADR-0154 Decision 3).
+ *
+ * NOTHING, RATHER THAN A GUESS, for a `/DA` this build cannot set back: a face that is not one of the three, or a size
+ * outside the drafts' bounds (`0`, the format's *auto size*, among them). The mark is still listed whole; it is edited
+ * on a card beside it instead of in its box. A colour in gray or CMYK is converted to the RGB every draft holds, the
+ * format's own conversions (PDF 32000 §10.4.2), since that is a statement of the same colour rather than a guess.
+ */
+function wordsStyleOf(annotation: PDFAnnotation): { readonly typed?: AnnotationWordsStyle } {
+  if (annotation.getType() !== 'FreeText') return {};
+  const { font, size, color } = annotation.getDefaultAppearance();
+  const face = FACE_OF.get(font);
+  if (face === undefined || !(size >= MIN_ANNOTATION_FONT && size <= MAX_ANNOTATION_FONT)) return {};
+  const colour = rgbOf(color);
+  if (colour === undefined) return {};
+  return {
+    typed: {
+      fontSize: size,
+      colour,
+      font: face,
+      direction: annotation.getQuadding() === 2 ? 'right-to-left' : 'left-to-right',
+    },
+  };
+}
+
+/** A `/DA` colour as RGB: none is black, the format's default; gray and CMYK by §10.4.2; anything else is not one. */
+function rgbOf(color: readonly number[]): AnnotationWordsStyle['colour'] | undefined {
+  const unit = (value: number): number => Math.min(1, Math.max(0, value));
+  const [a = 0, b = 0, c = 0, d = 0] = color.map(unit);
+  if (color.length === 0) return [0, 0, 0];
+  if (color.length === 1) return [a, a, a];
+  if (color.length === 3) return [a, b, c];
+  if (color.length === 4) return [(1 - a) * (1 - d), (1 - b) * (1 - d), (1 - c) * (1 - d)];
+  return undefined;
 }
 
 /**
@@ -1900,6 +1945,8 @@ export interface ListedAnnotation {
   readonly pictured?: true;
   /** Present and true where {@link contents} is a slice of longer words — {@link readAnnotationWords} reads them. */
   readonly cut?: true;
+  /** How a text mark's words are drawn, where this build could set it back — {@link wordsStyleOf}. */
+  readonly typed?: AnnotationWordsStyle;
 }
 
 /** MuPDF's subtype back to the name a surface may use. */
@@ -2090,6 +2137,7 @@ export function readAnnotations(
           created: createdOf(annotation),
           blend: blendOf(annotation),
           ...(picturedStamp(annotation) ? { pictured: true as const } : {}),
+          ...wordsStyleOf(annotation),
         });
       }
     }
