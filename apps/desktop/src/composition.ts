@@ -227,13 +227,13 @@ import {
 } from './sessionDirectories.js';
 import type { RecentFiles } from './recentFiles.js';
 import { createDocusignSession } from './docusignSession.js';
-import { createCloudStorage, unconfiguredCloud } from './cloudSession.js';
+import { CLOUD_ORIGINS_FILE, createCloudStorage, unconfiguredCloud } from './cloudSession.js';
 import type { OpenInBrowser } from './docusignSignIn.js';
 import type { EditWatchSurface } from './externalEditWatch.js';
 import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import { type ChatHistory, noChatHistory } from './chatHistory.js';
-import { type SettingsSurface, createEphemeralSettings } from './settingsFile.js';
+import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { CrashReports } from './crashReports.js';
@@ -1672,6 +1672,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
               clients: cloudComposition.clients,
               openInBrowser,
               workingDirectory: cloudComposition.workingDirectory,
+              // BESIDE THE COPIES, and kept as long as they are: a copy reopened in a later run is the same cloud file.
+              origins: createJsonFile(cloudComposition.workingDirectory, CLOUD_ORIGINS_FILE),
               maxBytes: MAIN_DOCUMENT_BYTES_CEILING,
               writeWorkingCopy: async (path, open) => {
                 await mkdir(dirname(path), { recursive: true });

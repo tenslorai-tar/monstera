@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CloudOutcomeRefused, cloudSessionSecretId, createCloudStorage, safeFileName } from './cloudSession.js';
 import type { SecretStoreSurface } from './secretStore.js';
+import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailure } from './shellFailure.js';
 
 /**
@@ -95,7 +96,25 @@ function browser(): { readonly openInBrowser: (url: string) => Promise<void>; re
   };
 }
 
-function storage(provider: Provider, secrets = memorySecrets(), shown = browser(), configured = true) {
+/** Where a session keeps its working copies' origins, held in memory so a second session can read what the first kept. */
+function memoryOrigins(): SettingsSurface & { readonly held: () => Readonly<Record<string, unknown>> } {
+  let held: Readonly<Record<string, unknown>> = {};
+  return {
+    held: () => held,
+    read: () => held,
+    write: (values) => {
+      held = JSON.parse(JSON.stringify(values)) as Record<string, unknown>;
+    },
+  };
+}
+
+function storage(
+  provider: Provider,
+  secrets = memorySecrets(),
+  shown = browser(),
+  configured = true,
+  origins = memoryOrigins(),
+) {
   const written: { path: string; bytes: number }[] = [];
   /** Every line the session wrote to the diagnostics log. */
   const logged: ShellFailure[] = [];
@@ -105,6 +124,7 @@ function storage(provider: Provider, secrets = memorySecrets(), shown = browser(
     clients: { onedrive: configured ? { clientId: 'made-up-id' } : null, 'google-drive': null },
     openInBrowser: shown.openInBrowser,
     workingDirectory: 'C:/work',
+    origins,
     maxBytes: 1_000_000,
     fetchImpl: provider.fetchImpl,
     writeWorkingCopy: async (path, open) => {
@@ -279,6 +299,7 @@ describe('cloud storage in main (ADR-0091)', () => {
         clients: { onedrive: null, 'google-drive': { clientId: 'made-up-google-id', clientSecret: 'made-up' } },
         openInBrowser: shown.openInBrowser,
         workingDirectory: 'C:/work',
+        origins: memoryOrigins(),
         maxBytes: 1_000_000,
         fetchImpl: fake.fetchImpl,
         writeWorkingCopy: async (path, open) => {
@@ -325,6 +346,41 @@ describe('cloud storage in main (ADR-0091)', () => {
       await expect(cloud.pick('google-drive')).rejects.toMatchObject({ reason: 'nothing-picked' });
       expect(fake.asked).toStrictEqual(['oauth2.googleapis.com/token']);
     });
+  });
+
+  /**
+   * CR-DOC-02: a working copy is its cloud file however it is opened, and in whichever run. The origin is kept by the
+   * copy's path, so a document opened from that path later (Recent, the last session) links to the same file, at the
+   * version the last Save back left rather than the one it was downloaded at.
+   */
+  it('a working copy opened again, in a LATER RUN, is linked to its file at the version its last Save back left', async () => {
+    const provider = onedrive();
+    const secrets = memorySecrets();
+    const origins = memoryOrigins();
+    const first = storage(provider, secrets, browser(), true, origins).cloud;
+    const path = await first.download('onedrive', 'f1');
+    const opened = asDocId('00000000-0000-4000-8000-0000000000c3');
+    first.link(opened, path);
+    await first.saveBack(opened, new Uint8Array([1]));
+    first.forget(opened);
+
+    // A NEW SESSION over what the first kept, as the next run is, and the same copy opened from its path.
+    const later = storage(provider, secrets, browser(), true, origins).cloud;
+    const reopened = asDocId('00000000-0000-4000-8000-0000000000c4');
+    later.link(reopened, path);
+    expect(later.originOf(reopened)).toBe('onedrive');
+    await later.saveBack(reopened, new Uint8Array([2]));
+    // THE DECISION: the upload names the version the first Save back answered. The download's would be refused.
+    expect(provider.uploads.map((upload) => upload.ifMatch)).toStrictEqual(['"v1"', '"v2"']);
+  });
+
+  it('CONTROL: a kept origin that does not parse links nothing, and the copy opens as the local file it then is', () => {
+    const origins = memoryOrigins();
+    origins.write({ 'C:/work/onedrive/abc/contract.pdf': { provider: 'dropbox', fileId: 'f1', version: 'v1', canEdit: true } });
+    const { cloud } = storage(onedrive(), memorySecrets(), browser(), true, origins);
+    const doc = asDocId('00000000-0000-4000-8000-0000000000c5');
+    cloud.link(doc, 'C:/work/onedrive/abc/contract.pdf');
+    expect(cloud.originOf(doc)).toBeNull();
   });
 
   it('CONTROL: a document never opened from the cloud has no origin, and a path this session did not download links nothing', () => {

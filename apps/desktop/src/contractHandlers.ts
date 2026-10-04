@@ -3147,6 +3147,8 @@ interface OpenPathParts {
   readonly openedDocument: OpenedDocument;
   readonly recent: RecentFiles;
   readonly recentPictures: RecentPictures;
+  /** Links a document opened from a cloud working copy to its cloud file, by the copy's path; a no-op for any other. */
+  readonly cloud: Pick<CloudStorage, 'link'>;
 }
 
 /**
@@ -3183,6 +3185,12 @@ async function openPath(
   const outcome = await deps.documents.open(handle);
 
   if (HOLDS_NO_DOCUMENT[outcome.kind]) deps.capabilities.revoke(handle);
+
+  // A WORKING COPY IS ITS CLOUD FILE HOWEVER IT IS OPENED (CR-DOC-02). Linked here, the one way to open a document,
+  // rather than in the two cloud channels alone: a copy reopened from Recent, the last session or the picker opened as
+  // a local file, so its Save back said not-from-cloud and its edits stayed on this disk. `link` answers by the
+  // copy's path and does nothing for any other.
+  if (outcome.kind === 'opened' || outcome.kind === 'already-open') deps.cloud.link(outcome.docId, path);
 
   // ONLY FOR A DOCUMENT THIS CALL OPENED, and `already-open` is the outcome
   // that makes the distinction load-bearing rather than pedantic: that
@@ -3426,8 +3434,8 @@ function cloudHandlers(
       } catch (thrown) {
         return ok(cloudRefusal(thrown));
       }
+      // LINKED BY THE OPEN, as every working copy is (`openPath`).
       const { outcome } = await openPath(deps, path);
-      if (outcome.kind === 'opened' || outcome.kind === 'already-open') deps.cloud.link(outcome.docId, path);
       return ok(outcome);
     },
     // THE PICKER'S FILE opens as a listed one does: the same working copy, the same open, the same link.
@@ -3439,7 +3447,6 @@ function cloudHandlers(
         return ok(cloudRefusal(thrown));
       }
       const { outcome } = await openPath(deps, path);
-      if (outcome.kind === 'opened' || outcome.kind === 'already-open') deps.cloud.link(outcome.docId, path);
       return ok(outcome);
     },
     'cloud.saveBack': async ({ docId }) => {

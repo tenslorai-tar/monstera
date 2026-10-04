@@ -1989,6 +1989,19 @@ describe('cloud.pick (ADR-0091, corrected 2026-09-29)', () => {
     expect(links).toStrictEqual([[A_DOC, 'C:/work/google-drive/abc/chosen.pdf']]);
   });
 
+  it('a working copy reopened from RECENT is linked as well, by the one open (CR-DOC-02)', async () => {
+    // THE ROUTE THAT LOST IT: only the two cloud channels linked, so a copy reopened from Recent, the last session or
+    // the picker opened as a local file and its Save back said not-from-cloud. The link is asked of every open now,
+    // and the storage answers by the copy's path. CONTROL: no cloud channel is called in this case at all.
+    const { cloud, links } = cloudPicking(new CloudOutcomeRefused('nothing-picked'));
+    const opened = { kind: 'opened' as const, docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'chosen.pdf' };
+    const { capabilities, handlers } = harness(opened, () => Promise.resolve(null), undefined, { cloud });
+    const handle = capabilities.mint('C:/work/google-drive/abc/chosen.pdf');
+
+    expect(await handlers['document.openRecent']({ handle })).toStrictEqual({ ok: true, value: opened });
+    expect(links).toStrictEqual([[A_DOC, 'C:/work/google-drive/abc/chosen.pdf']]);
+  });
+
   it('CONTROL: a Picker that chose nothing is refused by name, and opens and links nothing', async () => {
     const { cloud, links } = cloudPicking(new CloudOutcomeRefused('nothing-picked'));
     const { handlers, opened } = harness(
