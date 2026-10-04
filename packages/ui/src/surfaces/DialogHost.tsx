@@ -46,15 +46,14 @@ export interface DialogHostProps {
   readonly closeLabel: MessageKey;
 }
 
-/** What one open dialog is, while it is open. */
+/** What one asked dialog is, while it is open or waiting its turn. */
 interface OpenDialog {
   readonly id: string;
   readonly props: unknown;
   /**
    * Settles the promise {@link useDialogHost}'s `ask` handed the opener.
    *
-   * Called exactly once, by whichever of resolve, close or a replacing open
-   * gets there first — which is what the state machine below is for. A promise
+   * Called once, by resolve or close, on the open that is showing. A promise
    * settled twice is not an error at run time; it is an answer nobody sees, and
    * the caller that awaited it has already moved on.
    */
@@ -80,10 +79,109 @@ interface OpenDialog {
    * replaced are never drawn into another: the object itself is no name, since a reply replaces it.
    */
   readonly token: symbol;
+  /** The same name as a React key, so each open is drawn as a dialog of its own, never as the one before it. */
+  readonly key: string;
+}
+
+/** One number per ask in the session, for {@link OpenDialog.key}. Read and moved only in `ask`. */
+let lastAsk = 0;
+
+/**
+ * Whether two validated props are the same data: plain objects, arrays and primitives compared by value, anything
+ * else by identity. Only ever used to decide that two informational dialogs say the same thing, so a value it cannot
+ * compare answers *different*, and both are shown.
+ */
+function sameData(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, index) => sameData(item, b[index]));
+  }
+  if (Object.getPrototypeOf(a) !== Object.prototype || Object.getPrototypeOf(b) !== Object.prototype) return false;
+  const keys = Object.keys(a);
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every((key) => Object.hasOwn(b, key) && sameData((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]))
+  );
 }
 
 /**
- * Holds the open dialog and the two operations on it.
+ * Holds the asked dialogs, the one showing first, and the operations on it.
+ *
+ * ## A second ask WAITS; it never takes the slot (CR-COR-08)
+ *
+ * The host has one slot, and it used to be *latest wins*: a second `ask` settled the open dialog `undefined`, which
+ * every opener reads as the person dismissing it. So an autosave refused while Delete pages was open closed Delete
+ * pages under the person's typing and told the command they had cancelled. An ask now joins the end of a queue and is
+ * shown when everything before it has settled; nothing a person is answering is taken away by something they did not
+ * do. The asks that arrive while a dialog is open are reports and closes that began outside it — commands cannot be
+ * run past a modal dialog, and its keys are its own (ADR-0111 Decision 5).
+ *
+ * **An informational dialog that says exactly what one ahead of it says is settled with it**, when that one ends: the
+ * same problem reported for each keystroke of a key that cannot be stored is one dialog to read, not one per key. Only
+ * informational ones, whose only answer is `undefined`, so no opener receives an answer meant for another.
+ *
+ * ## Ending is keyed by the open's token, never by whichever is showing
+ *
+ * `resolve`, `close` and `report` close over the open of the render that made them. A body that answers from an
+ * asynchronous handler after its open has ended holds that render's functions; were the queue's removal positional, it
+ * would end the dialog showing now without settling it, and that opener would wait for ever. Removal filters by the
+ * token, so a late answer finds nothing to remove.
+ */
+function useAskedDialogs(registry: DialogRegistry): {
+  readonly open: OpenDialog | undefined;
+  readonly ask: (id: string, props: unknown, onUpdate?: DialogReports) => Promise<unknown>;
+  /** Ends `ending` and every waiting informational dialog that says the same, each through `how`. */
+  readonly end: (ending: OpenDialog, how: (one: OpenDialog) => void) => void;
+  /** New props for one open, if it is still asked (ADR-0158). */
+  readonly redraw: (token: symbol, props: unknown) => void;
+} {
+  const [asked, setAsked] = useState<readonly OpenDialog[]>([]);
+
+  const ask = useCallback(
+    (id: string, props: unknown, onUpdate?: DialogReports) => {
+      // Throws on an unregistered id or refused props, and the throw is the
+      // point: it happens before any state changes, so a refused open leaves
+      // whatever was showing exactly as it was.
+      //
+      // OUTSIDE THE PROMISE, deliberately. Inside the executor the same throw
+      // becomes a rejection, and every caller that opens a dialog without
+      // awaiting — which is every informational one — would turn a programming
+      // error into an unhandled rejection nobody attributes. A synchronous
+      // throw still reaches an `await deps.ask(…)` as an ordinary one.
+      const validated = registry.openWith(id, props);
+      return new Promise<unknown>((settle, fail) => {
+        lastAsk += 1;
+        const one: OpenDialog = { id, props: validated.props, settle, fail, report: onUpdate, token: Symbol(id), key: `${id}#${String(lastAsk)}` };
+        setAsked((current) => [...current, one]);
+      });
+    },
+    [registry],
+  );
+
+  const end = useCallback(
+    (ending: OpenDialog, how: (one: OpenDialog) => void) => {
+      const informs = registry.get(ending.id)?.informs !== undefined;
+      const ended = asked.filter(
+        (one) => one.token === ending.token || (informs && one.id === ending.id && sameData(one.props, ending.props)),
+      );
+      // OUTSIDE THE UPDATER: React may run an updater twice, and settling is a side effect.
+      for (const one of ended) how(one);
+      const tokens = new Set(ended.map((one) => one.token).concat(ending.token));
+      setAsked((current) => current.filter((one) => !tokens.has(one.token)));
+    },
+    [asked, registry],
+  );
+
+  const redraw = useCallback((token: symbol, props: unknown) => {
+    setAsked((current) => current.map((one) => (one.token === token ? { ...one, props } : one)));
+  }, []);
+
+  return { open: asked[0], ask, end, redraw };
+}
+
+/**
+ * Holds the open dialog and the operations on it.
  *
  * A hook rather than a store because a dialog is **shell state and not document
  * state**: §6's one-store-per-`DocId` rule exists so a document's state cannot
@@ -95,7 +193,8 @@ export function useDialogHost(registry: DialogRegistry): {
   readonly open: OpenDialog | undefined;
   /**
    * Opens a dialog and **asks it a question**
-   * ([ADR-0038](../../../../docs/DECISIONS/0038-a-dialog-answers-the-command-that-opened-it.md)).
+   * ([ADR-0038](../../../../docs/DECISIONS/0038-a-dialog-answers-the-command-that-opened-it.md)), at once when none is
+   * showing and otherwise when every dialog asked before it has settled.
    *
    * The promise settles with the value the body resolved, or with `undefined`
    * when the dialog was dismissed. An informational dialog can only ever settle
@@ -105,50 +204,23 @@ export function useDialogHost(registry: DialogRegistry): {
    * and the one somebody reaches for would be the one with no gate.
    */
   readonly ask: (id: string, props: unknown, onUpdate?: DialogReports) => Promise<unknown>;
-  /** Dismisses whatever is open, settling its promise `undefined`. */
+  /** Dismisses the dialog showing, settling its promise `undefined`; the next asked, if any, is shown. */
   readonly close: () => void;
   /** Takes a body's answer, validates it, settles and closes. */
   readonly resolve: (result: unknown) => void;
   /** Takes a body's report (ADR-0094), validates it, and hands it to the opener without closing. */
   readonly report: (result: unknown) => void;
 } {
-  const [open, setOpen] = useState<OpenDialog | undefined>(undefined);
-
-  const ask = useCallback(
-    (id: string, props: unknown, onUpdate?: DialogReports) => {
-      // Throws on an unregistered id or refused props, and the throw is the
-      // point: it happens before any state changes, so a refused open leaves
-      // whatever was showing exactly as it was rather than half-replacing it.
-      //
-      // OUTSIDE THE PROMISE, deliberately. Inside the executor the same throw
-      // becomes a rejection, and every caller that opens a dialog without
-      // awaiting — which is every informational one — would turn a programming
-      // error into an unhandled rejection nobody attributes. A synchronous
-      // throw still reaches an `await deps.ask(…)` as an ordinary one.
-      const validated = registry.openWith(id, props);
-      return new Promise<unknown>((settle, fail) => {
-        setOpen((previous) => {
-          // A SECOND OPEN DISMISSES THE FIRST rather than stranding it. Before
-          // this returned a promise, replacing an open dialog was invisible; a
-          // caller awaiting the one that went would now wait for ever, which is
-          // a hang rather than a wrong answer.
-          previous?.settle(undefined);
-          return { id, props: validated.props, settle, fail, report: onUpdate, token: Symbol(id) };
-        });
-      });
-    },
-    [registry],
-  );
+  const { open, ask, end, redraw } = useAskedDialogs(registry);
 
   const close = useCallback(() => {
-    // OUTSIDE THE UPDATER, for `resolve`'s reason. Settling twice is harmless
-    // — a promise ignores the second — so this one was benign where `resolve`
-    // was not; it is written the same way anyway, because "the side effect in
-    // this updater happens to be idempotent" is a property the next one will
-    // not have.
-    open?.settle(undefined);
-    setOpen(undefined);
-  }, [open]);
+    // OUTSIDE ANY UPDATER, for `resolve`'s reason.
+    if (open !== undefined) {
+      end(open, (one) => {
+        one.settle(undefined);
+      });
+    }
+  }, [end, open]);
 
   const resolve = useCallback(
     (result: unknown) => {
@@ -163,14 +235,16 @@ export function useDialogHost(registry: DialogRegistry): {
       try {
         answer = registry.answerOf(open.id, result);
       } catch (thrown) {
-        open.fail(thrown);
-        setOpen(undefined);
+        end(open, (one) => {
+          one.fail(thrown);
+        });
         return;
       }
-      open.settle(answer);
-      setOpen(undefined);
+      end(open, (one) => {
+        one.settle(answer);
+      });
     },
-    [open, registry],
+    [end, open, registry],
   );
 
   /**
@@ -185,19 +259,20 @@ export function useDialogHost(registry: DialogRegistry): {
       try {
         reported = registry.answerOf(open.id, result);
       } catch (thrown) {
-        open.fail(thrown);
-        setOpen(undefined);
+        end(open, (one) => {
+          one.fail(thrown);
+        });
         return;
       }
       // THE REPLY (ADR-0158): new props for THIS open, validated as an open's are — a refusal throws to the opener,
-      // where an open's goes — and drawn only while this open is still the one showing.
+      // where an open's goes — and drawn only while this open is still asked.
       const { id, token } = open;
       open.report?.(reported, (props) => {
         const validated = registry.openWith(id, props);
-        setOpen((current) => (current?.token === token ? { ...current, props: validated.props } : current));
+        redraw(token, validated.props);
       });
     },
-    [open, registry],
+    [end, open, redraw, registry],
   );
 
   return { open, ask, close, resolve, report };
@@ -241,7 +316,10 @@ export function DialogHost({
   // 6b7a6bd9). A chunk loads from the package's own disk, so the wait is a few milliseconds.
   return (
     <Suspense fallback={null}>
+      {/* KEYED BY THE OPEN, so a dialog asked while another showed opens as one of its own when that one ends — its own
+          first focus, and a body that keeps nothing of the last — rather than as new contents in the old popup. */}
       <Dialog
+        key={open.key}
         open
         onOpenChange={(next) => {
           if (!next) onClose();
@@ -255,11 +333,11 @@ export function DialogHost({
         {/* A BOUNDARY PER DIALOG BODY. A body that throws, or a lazy chunk that fails to
             load — Suspense rethrows the import's rejection into the render — otherwise
             reaches the root, and React unmounts the whole window: measured blank on
-            2026-09-21, a chunk the build had replaced. Keyed on the open dialog, so the
+            2026-09-21, a chunk the build had replaced. Inside the keyed dialog, so the
             next one starts clean. A rejection is an error and stops here, inside the
             chrome; a pending load is a promise, which passes this boundary to the
             Suspense above. */}
-        <ErrorBoundary key={open.id} fallback={() => <ViewProblem scope="dialog" />}>
+        <ErrorBoundary fallback={() => <ViewProblem scope="dialog" />}>
           {entry.mount(open.props, onResolve, onUpdate)}
           {/* A dialog that asks nothing ends in its one button, from its declaration (`informs`). */}
           {entry.informs === undefined ? null : <DialogFooter dismissal={entry.informs === 'message' ? 'ok' : 'close'} />}

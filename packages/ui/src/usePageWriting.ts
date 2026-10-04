@@ -17,9 +17,8 @@ import { type Draft, type Write, type WriteRequest, draftOf, settle } from './pa
  *
  * ## `useDialogHost`'s shape, and for its reason
  *
- * State and no refs: the request is replaced inside the state updater, which is where a second `ask` dismisses the
- * first. React may run an updater twice, and the side effect there is settling a promise, which ignores a second
- * settle. A ref read by `write` would be read from a function the registries are built with during render, which is
+ * State and no refs, as `useDialogHost` holds what it was asked: the request is replaced inside the state updater.
+ * React may run an updater twice, and the side effect there is settling a promise, which ignores a second settle. A ref read by `write` would be read from a function the registries are built with during render, which is
  * the coupling the compiler's lint refuses — it cannot know no tool calls `write` while it is being constructed.
  */
 

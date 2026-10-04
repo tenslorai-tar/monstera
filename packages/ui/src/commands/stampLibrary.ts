@@ -64,9 +64,8 @@ export async function keptEntries(
 }
 
 /**
- * Keeps a picture the person picks, in one library. Each problem is AWAITED before this settles: the opener asks its
- * chooser again straight after, and a second dialog opened while the first shows dismisses the first
- * (`useDialogHost`), so an unawaited problem would flash and vanish.
+ * Keeps a picture the person picks, in one library. Each problem is AWAITED before this settles, so the chooser its
+ * opener asks again straight after comes back once the problem has been read.
  */
 export async function keepPicture(deps: LibraryPageDeps, kind: LibraryKind): Promise<void> {
   const added = await deps.client['library.addPicture']({ kind });

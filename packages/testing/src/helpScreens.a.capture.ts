@@ -6,12 +6,21 @@ import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
-import { type SceneShim, openApp, openDocument, openSection, runCommand, samplePdf, shoot } from './helpScreensHarness.js';
+import {
+  SAMPLE_DOC_ID,
+  type SceneShim,
+  openApp,
+  openDocument,
+  openSection,
+  runCommand,
+  samplePdf,
+  shoot,
+} from './helpScreensHarness.js';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 /** The id `openApp` gives the sample document, so a scene that swaps the bytes keeps the same tab. */
-const SAMPLE_ID = asDocId('00000000-0000-4000-8000-0000000000a1');
+const SAMPLE_ID = asDocId(SAMPLE_DOC_ID);
 
 /**
  * The shim options that open `bytes` as the one document, under `name`, in place of the sample — for a scene whose

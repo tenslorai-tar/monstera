@@ -60,22 +60,35 @@ export async function samplePdf(): Promise<Uint8Array> {
   return document.save();
 }
 
+/** The id the shim gives the sample document, for an option keyed by document such as `saveRefusals`. */
+export const SAMPLE_DOC_ID = '00000000-0000-4000-8000-0000000000a1';
+
 /**
  * Loads the application in the light look at the set's size, with the sample document ready to open.
  *
  * @param shim anything a scene needs the shim to hold — merged over the document it opens
+ * @param observe `bridge`'s observer, passed through: what the page asked main
  */
-export async function openApp(page: Page, shim: SceneShim = {}): Promise<void> {
+export async function openApp(
+  page: Page,
+  shim: SceneShim = {},
+  observe?: (channel: string, params: unknown) => void,
+): Promise<void> {
   await page.setViewportSize({ width: 1280, height: 800 });
   const bytes = await samplePdf();
-  const docId = asDocId('00000000-0000-4000-8000-0000000000a1');
-  await bridgeUnder(page, LIGHT, {
-    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Annual report.pdf' }],
-    documentBytes: new Map([[docId, bytes]]),
-    // THE APPLICATION'S OWN VERSION, never the shim's marker: a picture in the Help centre is of the product.
-    version: APP_VERSION,
-    ...shim,
-  });
+  const docId = asDocId(SAMPLE_DOC_ID);
+  await bridgeUnder(
+    page,
+    LIGHT,
+    {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Annual report.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      // THE APPLICATION'S OWN VERSION, never the shim's marker: a picture in the Help centre is of the product.
+      version: APP_VERSION,
+      ...shim,
+    },
+    observe,
+  );
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 }
