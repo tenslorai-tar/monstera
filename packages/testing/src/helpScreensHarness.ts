@@ -8,7 +8,7 @@ import { type Locator, type Page, expect } from '@playwright/test';
 
 import type { createBrowserShim } from './browserShim.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
-import { settled } from './settled.js';
+import { pageShown, settled } from './settled.js';
 
 /**
  * What every Help centre screenshot scene shares (the Help centre row's *screenshots owed*; ADR-0112).
@@ -93,10 +93,19 @@ export async function openApp(
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 }
 
-/** Opens the sample document from the start screen and waits for its pages to draw. */
+/**
+ * Opens the sample document from the start screen and waits until its page pane is SHOWN, laid out at its zoom.
+ *
+ * Two drawn canvases are not that: the thumbnails draw too, and with the pane still `data-first-frame="pending"` its
+ * pages can be at the width they had before the zoom was fitted. Measured 2026-10-04 on Chromium 151, 40 runs of
+ * `areaMenus.pw.ts` on eight workers: 13 of 40 returned from the canvas wait with the pane pending, 2 of them before
+ * fit width (a 300 px page at x 495 where the fitted one is 612 at 367), and a right-click there scrolled against the
+ * old layout, so the line the case then dragged across was out of view in 5 of 40 runs.
+ */
 export async function openDocument(page: Page): Promise<void> {
   await page.getByRole('button', { name: /^Open PDF/u }).first().click();
   await expect.poll(() => page.locator('canvas:visible').count(), { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
+  await pageShown(page);
 }
 
 /** Brings a rail section to the front by its name — *Home*, *Comment*, *Organize* and so on. */
