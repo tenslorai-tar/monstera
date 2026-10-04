@@ -344,7 +344,8 @@ const TOC_SPEC = `  generateToc: {
   },`;
 
 /**
- * The first spec declaring `sources: 'one'`, kept separate for
+ * The first spec naming another document, and the one declaring `sources: 'several'`
+ * since ADR-0152, kept separate for
  * {@link MOVE_SPEC}'s reason — the missing-a-kind case omits the newest kind,
  * which is now this one.
  *
@@ -366,12 +367,12 @@ const MERGE_SPEC = `  mergeDocument: {
     undo: 'checkpoint',
     reproducible: true,
     replay: 'reapply-intent',
-    sources: 'one',
+    sources: 'several',
     reads: 'none',
   },`;
 
 /**
- * The second spec declaring `sources: 'one'`, kept separate for
+ * The first spec declaring `sources: 'one'`, kept separate for
  * {@link MOVE_SPEC}'s reason — the missing-a-kind case omits the newest kind,
  * which is now this one.
  */
@@ -2640,7 +2641,67 @@ export const spec: CommandSpec<'rotatePages'> = {
   apply: (
     _target: MupdfSession,
     _command: CommandOfKind<'rotatePages'>,
-    _source: MupdfSession,
+    _sources: readonly [MupdfSession],
+  ) => Promise.resolve(),
+  capture: captureRotatePages,
+  invert: invertRotatePages,
+  invertible: true,
+  undo: 'inverse',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
+    name: 'A SOURCES-SEVERAL SPEC TAKES A NON-EMPTY LIST OF SESSIONS, and that compiles',
+    expect: 'allow',
+    // ADR-0152's capability, in the direction that must SUCCEED, for the case above's reason: the reject case below
+    // is satisfied by an axis that refuses every `'several'` apply.
+    source: `
+import type { CommandOfKind } from '@monstera/contract';
+import type { CommandSpec, MupdfSession } from '@monstera/kernel';
+import { captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+export const spec: CommandSpec<'rotatePages'> = {
+  kind: 'rotatePages',
+  writer: 'mupdf',
+  sources: 'several',
+  reads: 'none',
+  apply: (
+    _target: MupdfSession,
+    _command: CommandOfKind<'rotatePages'>,
+    _sources: readonly [MupdfSession, ...MupdfSession[]],
+  ) => Promise.resolve(),
+  capture: captureRotatePages,
+  invert: invertRotatePages,
+  invertible: true,
+  undo: 'inverse',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
+    name: 'but a spec declaring sources SEVERAL may not supply an apply that takes exactly ONE',
+    expect: 'reject',
+    code: 'TS2322',
+    // THE TUPLE IS WHAT HOLDS THE COUNT (ADR-0152 Decision 2). An apply written for one source and declared for several
+    // would read the first document and drop the rest, which is a merge of one file reading as a merge of three. The
+    // fixture is the allow case above with the third parameter narrowed, so only the count can refuse it.
+    because: /_sources: readonly \[MupdfSession\]\) => Promise<void>/u,
+    notBecause: null,
+    source: `
+import type { CommandOfKind } from '@monstera/contract';
+import type { CommandSpec, MupdfSession } from '@monstera/kernel';
+import { captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+export const spec: CommandSpec<'rotatePages'> = {
+  kind: 'rotatePages',
+  writer: 'mupdf',
+  sources: 'several',
+  reads: 'none',
+  apply: (
+    _target: MupdfSession,
+    _command: CommandOfKind<'rotatePages'>,
+    _sources: readonly [MupdfSession],
   ) => Promise.resolve(),
   capture: captureRotatePages,
   invert: invertRotatePages,
@@ -2733,7 +2794,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   apply: (
     _session: MupdfSession,
     _command: CommandOfKind<'rotatePages'>,
-    _source: MupdfSession,
+    _sources: readonly [MupdfSession],
     _outline: readonly OutlineEntry[],
   ) => Promise.resolve(),
   capture: captureRotatePages,
@@ -2959,7 +3020,7 @@ export const outer: CommandExecution<'mupdf'> = {
     // Anchored on the two missing property NAMES, which is text no other case
     // in this file produces — the byte-image and axis cases below and above are
     // TS2322 on an `Apply` instantiation.
-    because: /missing the following properties[^\n]*source, reads/u,
+    because: /missing the following properties[^\n]*sources, reads/u,
     notBecause: null,
     source: `
 import type { CommandExecution } from '@monstera/kernel';
@@ -2976,8 +3037,8 @@ export const outer: CommandExecution<'mupdf'> = {
     expect: 'allow',
     // THE HALF ADR-0069 DOES NOT CLOSE, recorded here rather than left for a
     // reader to assume closed. A delegate may still destructure the request and
-    // hand the inner writer `source: undefined` — and a literal that names both
-    // `session` and `source` may swap them, since both are `MupdfSession`.
+    // hand the inner writer `sources: []` — and a literal that names both
+    // `session` and a source may swap them, since both are `MupdfSession`.
     //
     // What changed is that either is now an edit somebody had to write down: a
     // dropped field was the ABSENCE of an edit, which is what made it invisible
@@ -2992,7 +3053,7 @@ export const outer: CommandExecution<'mupdf'> = {
 import type { CommandExecution } from '@monstera/kernel';
 declare const inner: CommandExecution<'mupdf'>;
 export const outer: CommandExecution<'mupdf'> = {
-  apply: ({ session, command, reads }) => inner.apply({ session, command, source: undefined, reads }),
+  apply: ({ session, command, reads }) => inner.apply({ session, command, sources: [], reads }),
   capture: (session, command) => inner.capture(session, command),
   invert: (session, kind, inverse) => inner.invert(session, kind, inverse),
 };

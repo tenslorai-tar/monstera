@@ -121,7 +121,7 @@ describe('a page that leaves takes its form fields with it (ADR-0151, item 12a)'
         applyReplacePage(
           session,
           { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), pages: [1], sourcePages: 'all' },
-          source,
+          [source],
         ),
       );
       expect(after).toStrictEqual({ fields: [], widgets: 0, answers: 0, pages: 2 });

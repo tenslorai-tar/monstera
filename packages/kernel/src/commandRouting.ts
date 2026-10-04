@@ -66,12 +66,12 @@ export type KindsRoutedTo<W extends WriterOfRecord> = {
  * Everything a writer needs to run one command
  * ([ADR-0069](../../../docs/DECISIONS/0069-a-writers-apply-takes-one-named-request.md)).
  *
- * ## Every field is REQUIRED, and `source` and `reads` are `| undefined`
+ * ## Every field is REQUIRED: `sources` is a list, empty for most commands, and `reads` is `| undefined`
  *
  * That spelling is the whole of this type. `exactOptionalPropertyTypes` is set
  * repository-wide, so a property declared `X | undefined` without `?` must be
  * **written** — an object literal that omits it fails with *property is
- * missing*. Declared `source?: X` instead, omitting it would compile, and this
+ * missing*. Declared `reads?: X` instead, omitting it would compile, and this
  * interface would be the positional signature with names on it.
  *
  * ## What it replaced, and why the replacement is a shape rather than a check
@@ -96,7 +96,7 @@ export type KindsRoutedTo<W extends WriterOfRecord> = {
  *
  * ## What this does NOT close
  *
- * {@link ApplyRequest.session} and {@link ApplyRequest.source} are the same
+ * {@link ApplyRequest.session} and an entry of {@link ApplyRequest.sources} are the same
  * type, so a literal that names both and swaps them compiles exactly as the
  * positional pair did. Naming removes the *dropped* field, never the *wrong*
  * value. The guard is `apps/desktop/src/compositionHost.test.ts`' case asserting
@@ -130,15 +130,17 @@ export interface ApplyRequest<W extends WriterOfRecord, K extends CommandKind> {
   readonly command: CommandOfKind<K>;
 
   /**
-   * The **second** document, for a command whose spec declares `sources: 'one'`,
-   * and `undefined` for every other.
+   * The **other** documents' sessions, in the payload's order: one for a command whose spec declares `sources: 'one'`,
+   * one or more for `'several'`, and none for every other
+   * ([ADR-0152](../../../docs/DECISIONS/0152-a-merge-takes-several-documents-in-one-command.md)). A list, so there is
+   * one field to forward whatever the command declared.
    *
    * Resolved by the bus from `spec.sources`, which is the one place that knows.
    * A writer whose table declares no such command never reads it; that it is
    * still named here is the point, because *never read* and *never passed* were
    * the same observation before this type existed.
    */
-  readonly source: WriterSession[W] | undefined;
+  readonly sources: readonly WriterSession[W][];
 
   /**
    * The value the command's spec declared `reads`, resolved before the apply,
@@ -207,7 +209,7 @@ export interface CommandExecution<W extends WriterOfRecord> {
    *
    * ## This is still not a guard on whether the writer READS what it was handed
    *
-   * A destructure that ignores `source` satisfies this signature, as a dropped
+   * A destructure that ignores `sources` satisfies this signature, as a dropped
    * parameter did. What makes a merge use its second document is
    * `pageMerge.test.ts` and what makes a TOC's numbers right is
    * `pageToc.test.ts` — the wired-tools rule's own burden, unchanged. The

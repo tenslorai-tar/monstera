@@ -4,7 +4,7 @@ import type { PDFDocument, PDFGraftMap } from './mupdfRaw.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { removeFieldsOnPages } from './formFields.js';
-import { withDocuments } from './mupdfWriter.js';
+import { withDocumentList, withDocuments } from './mupdfWriter.js';
 import { graftingWithoutPageTree } from './pageGraft.js';
 import { pagesOf } from './pageScope.js';
 
@@ -183,24 +183,40 @@ function replacedPages(command: CommandOfKind<'replacePage'>, total: number): re
  * writable. Writing a merge case against a fixture that secretly has a page
  * would be coverage of a branch nothing reached.
  */
-export const applyMergeDocument: Apply<'mupdf', 'mergeDocument', 'one'> = (
+export const applyMergeDocument: Apply<'mupdf', 'mergeDocument', 'several'> = (
   session: MupdfSession,
   command: CommandOfKind<'mergeDocument'>,
-  source: MupdfSession,
+  sources: readonly [MupdfSession, ...MupdfSession[]],
 ): Promise<void> =>
-  withDocuments(session, source, (target, from) => {
-    const count = target.countPages();
-    const at = Math.min(command.at, count);
+  withDocumentList(session, sources, (target, documents) => {
+    // EVERY PART'S PAGES ARE CHECKED BEFORE ANY IS GRAFTED (ADR-0152): an index a later document does not have refuses
+    // the merge with nothing placed, never after the documents before it went in.
+    const parts = command.documents.map((part, index) => {
+      const from = documents[index];
+      const token = sources[index];
+      if (from === undefined || token === undefined) {
+        throw new Error('unreachable: the bus resolves one session for each document the merge names');
+      }
+      return { from, token, pages: pagesOf(part.sourcePages, from.countPages()) };
+    });
 
-    // ONE MAP FOR THE WHOLE MERGE. See `graftPagesWithAnnotations`: it keeps a
-    // source's shared objects shared across the pages that reference them, and
-    // it is what puts the annotations in the same identity space as their page.
-    //
-    // READ FROM `from` AND WRITTEN INTO `target`, which is the one line where
-    // a transposition would be silent: both are `PDFDocument` and both are
-    // `MupdfSession` upstream, so nothing in the type system separates them.
-    // `withDocuments` names its parameters for this reason.
-    graftPagesWithAnnotations(target.newGraftMap(), target, from, at, pagesOf(command.sourcePages, from.countPages()));
+    // ONE MAP PER SOURCE DOCUMENT FOR THE WHOLE MERGE. See `graftPagesWithAnnotations`: a map keeps a source's shared
+    // objects shared across the pages that reference them, and puts the annotations in the same identity space as
+    // their page. It is keyed by its source because a map belongs to ONE: MuPDF binds it to the document of the first
+    // indirect object it grafts and refuses any other (`pdf-graft.c`, *"grafted objects must all belong to the same
+    // source document"*, MuPDF 1.28.0). A document named twice reuses its map, so its shared objects are copied once.
+    const maps = new Map<MupdfSession, PDFGraftMap>();
+    let at = Math.min(command.at, target.countPages());
+    for (const { from, token, pages } of parts) {
+      const map = maps.get(token) ?? target.newGraftMap();
+      maps.set(token, map);
+      // READ FROM `from` AND WRITTEN INTO `target`, which is the one line where
+      // a transposition would be silent: both are `PDFDocument` and both are
+      // `MupdfSession` upstream, so nothing in the type system separates them.
+      // `withDocumentList` names its parameters for this reason.
+      graftPagesWithAnnotations(map, target, from, at, pages);
+      at += pages.length;
+    }
   });
 
 /**
@@ -235,7 +251,7 @@ export const applyMergeDocument: Apply<'mupdf', 'mergeDocument', 'one'> = (
 export const applyReplacePage: Apply<'mupdf', 'replacePage', 'one'> = (
   session: MupdfSession,
   command: CommandOfKind<'replacePage'>,
-  source: MupdfSession,
+  [source]: readonly [MupdfSession],
 ): Promise<void> =>
   withDocuments(session, source, (target, from) => {
     // EACH REPLACED PAGE MUST EXIST, unlike an insert's index, which may be one past the end: clamping would replace the

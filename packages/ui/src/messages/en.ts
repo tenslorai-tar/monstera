@@ -293,6 +293,13 @@ export const MERGE_DOCUMENT_AFTER_PAGE = messageKey('dialog.merge-document.after
 export const MERGE_DOCUMENT_PAGE = messageKey('dialog.merge-document.page');
 export const MERGE_DOCUMENT_RANGE = messageKey('dialog.merge-document.range');
 export const MERGE_DOCUMENT_APPLY = messageKey('dialog.merge-document.apply');
+export const MERGE_DOCUMENT_ORDER = messageKey('dialog.merge-document.order');
+export const MERGE_DOCUMENT_ROW = messageKey('dialog.merge-document.row');
+export const MERGE_DOCUMENT_MOVE_UP = messageKey('dialog.merge-document.move-up');
+export const MERGE_DOCUMENT_MOVE_DOWN = messageKey('dialog.merge-document.move-down');
+export const MERGE_DOCUMENT_REMOVE = messageKey('dialog.merge-document.remove');
+export const MERGE_DOCUMENT_ADD = messageKey('dialog.merge-document.add');
+export const MERGE_DOCUMENT_NONE = messageKey('dialog.merge-document.none');
 export const INSERT_FROM_PDF_COMMAND_TITLE = messageKey('command.insert-from-pdf.title');
 export const INSERT_FROM_PDF_TITLE = messageKey('dialog.insert-from-pdf.title');
 export const INSERT_FROM_PDF_LABEL = messageKey('dialog.insert-from-pdf.label');
@@ -4226,8 +4233,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // dialog opens next*, and this command runs on the pages themselves — it has
   // no angle to collect and no scope to choose.
   [DESKEW_PAGES_COMMAND_TITLE]: 'Straighten crooked pages',
-  [MERGE_DOCUMENT_COMMAND_TITLE]: 'Merge a document…',
-  [MERGE_DOCUMENT_TITLE]: 'Merge a document',
+  [MERGE_DOCUMENT_COMMAND_TITLE]: 'Merge documents…',
+  [MERGE_DOCUMENT_TITLE]: 'Merge documents',
   [MERGE_DOCUMENT_LABEL]: 'Merge in',
   [MERGE_DOCUMENT_PLACE]: 'Place',
   [MERGE_DOCUMENT_AT_START]: 'At the start',
@@ -4236,6 +4243,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MERGE_DOCUMENT_PAGE]: 'Page',
   [MERGE_DOCUMENT_RANGE]: 'Choose a page of this document, from 1 to {last}.',
   [MERGE_DOCUMENT_APPLY]: 'Merge',
+  [MERGE_DOCUMENT_ORDER]: 'In the order they go in',
+  [MERGE_DOCUMENT_ROW]: 'Document {number}',
+  [MERGE_DOCUMENT_MOVE_UP]: 'Move document {number} up',
+  [MERGE_DOCUMENT_MOVE_DOWN]: 'Move document {number} down',
+  [MERGE_DOCUMENT_REMOVE]: 'Remove document {number}',
+  [MERGE_DOCUMENT_ADD]: 'Add a document',
+  [MERGE_DOCUMENT_NONE]: 'No document chosen yet. Add one, or choose a file.',
   [INSERT_FROM_PDF_COMMAND_TITLE]: 'Insert from PDF…',
   [INSERT_FROM_PDF_TITLE]: 'Insert from PDF',
   [INSERT_FROM_PDF_LABEL]: 'Insert from',

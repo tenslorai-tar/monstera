@@ -814,6 +814,12 @@ export const generateTocSchema = z.object({
 export const sourcePagesSchema = z.union([z.literal('all'), pairedPageSetSchema]);
 
 /**
+ * The most documents one merge takes (ADR-0152 Decision 3): a bound so the message has a size, chosen and not
+ * measured. It is not a figure for how many files people merge, and each one costs the message one id.
+ */
+export const MAX_MERGE_DOCUMENTS = 32;
+
+/**
  * Append another OPEN document's pages into this one.
  *
  * ## The source is a `DocId`, and it is a document the user has open
@@ -838,20 +844,55 @@ export const sourcePagesSchema = z.union([z.literal('all'), pairedPageSetSchema]
  * of that again, and B3a's record is that the second answer agrees with the
  * first until it does not.
  */
-export const mergeDocumentSchema = z.object({
-  kind: z.literal('mergeDocument'),
-  /** The open document whose pages are copied in. Never modified. */
-  source: docIdSchema,
-  /** Which of the source's pages are copied, in this order. See {@link sourcePagesSchema}. */
-  sourcePages: sourcePagesSchema,
-  /**
-   * Zero-based index the source's first page occupies afterwards.
-   *
-   * `insertBlankPage`'s spelling and its bound: `at` is in the destination
-   * frame, so `at: pageCount` appends and the kernel clamps to the count.
-   */
-  at: z.number().int().nonnegative(),
-}).strict();
+export const mergeDocumentSchema = z
+  .object({
+    kind: z.literal('mergeDocument'),
+    /**
+     * The open documents whose pages are copied in, in the order they land, each never modified
+     * ([ADR-0152](../../../docs/DECISIONS/0152-a-merge-takes-several-documents-in-one-command.md)): one intent and
+     * one log entry however many files the person chose, so a failure on any of them changes nothing.
+     */
+    //
+    // TWO SHAPES, and the bound is why: ONE document with the pages chosen of it (*Insert from PDF*), or one to
+    // `MAX_MERGE_DOCUMENTS` documents each taken whole (*Merge*). A list of parts each free to carry a page set has a
+    // worst of 32 sets, past the hosts' frame, and a refine holding their total to one set's is invisible to
+    // `maxEncodedBytes`, which reads the shape — so the check that owns the message's size would read it as too large,
+    // correctly by its own rule (B3a). A merge of several documents with pages chosen of each is a widening of this
+    // union, made on purpose.
+    documents: z.union([
+      z.tuple([
+        z
+          .object({
+            /** An open document. */
+            source: docIdSchema,
+            /** Which of its pages are copied, in this order. See {@link sourcePagesSchema}. */
+            sourcePages: sourcePagesSchema,
+          })
+          .strict(),
+      ]),
+      z
+        .array(
+          z
+            .object({
+              /** An open document. The same one may appear more than once. */
+              source: docIdSchema,
+              /** Every page, in its own order. */
+              sourcePages: z.literal('all'),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(MAX_MERGE_DOCUMENTS),
+    ]),
+    /**
+     * Zero-based index the first document's first page occupies afterwards; each next document follows the last.
+     *
+     * `insertBlankPage`'s spelling and its bound: `at` is in the destination
+     * frame, so `at: pageCount` appends and the kernel clamps to the count.
+     */
+    at: z.number().int().nonnegative(),
+  })
+  .strict();
 
 /**
  * Replace one page with another open document's pages.
@@ -5398,13 +5439,8 @@ export function sourceIdsOf(command: Command): readonly DocId[] {
   // Listing every arm to satisfy the rule would be a list nobody reads, nearly
   // all of whose arms are the same line. The `if` says the same thing and the
   // type check below is what keeps the names honest.
-  if (
-    command.kind === 'mergeDocument' ||
-    command.kind === 'replacePage' ||
-    command.kind === 'importPageAsLayer'
-  ) {
-    return [command.source];
-  }
+  if (command.kind === 'mergeDocument') return command.documents.map((part) => part.source);
+  if (command.kind === 'replacePage' || command.kind === 'importPageAsLayer') return [command.source];
   return NO_SOURCES;
 }
 
@@ -5424,7 +5460,8 @@ const NO_SOURCES: readonly DocId[] = Object.freeze([]);
  * else refuses to let it drift. The anchor is the kernel's `sources` axis; this
  * package cannot import the kernel, so the tie is written *there*, in
  * `commandDeclarations.test.ts`, as a mutual assignability between this type
- * and the kinds whose declaration says `sources: 'one'`.
+ * and the kinds whose declaration names another document (`sources: 'one'`,
+ * or `'several'` since ADR-0152).
  *
  * ## The line below checks less than its old name claimed
  *

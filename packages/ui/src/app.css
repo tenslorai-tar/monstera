@@ -4110,6 +4110,77 @@ optgroup {
   white-space: nowrap;
 }
 
+/* MERGE'S DOCUMENTS (ADR-0152): a numbered list, each row its number, the document, its page count and the arrows that
+   order it, with *Add a document* and *Choose file…* under the list. The select gives way first, as in a second-document
+   row, so a long name never pushes the arrows past the dialog's edge; the count and the arrows keep their size. */
+/* THE ROW'S WHOLE WIDTH under its name, so the arrows end where *Place*'s control does whatever the names' length:
+   shrink-wrapped, short names left the list ending a third of the way short of the dialog's edge. */
+.m-dialog-row__control:has(> .m-merge-list) {
+  flex-basis: 100%;
+}
+
+.m-merge-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-8);
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+/* THE LIST'S COLUMNS ARE SHARED BY EVERY ROW (a subgrid), so the selects, the counts and the arrows line up down the
+   list and the count's column is as wide as the widest count: as flex rows each select was as wide as its own name
+   and the arrows sat at a different place on every row (the gallery's *several* state, 2026-10-04). Each row stays a
+   list item, which `display: contents` would not reliably keep. */
+.m-merge-list__documents {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: var(--space-6) var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.m-merge-list__document {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+
+.m-merge-list__number {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.m-merge-list__document > select {
+  inline-size: 100%;
+}
+
+.m-merge-list__pages {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+  white-space: nowrap;
+}
+
+.m-merge-list__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.m-merge-list__add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.m-merge-list__add > .m-button {
+  white-space: nowrap;
+}
+
 /* A PAGE NUMBER beside the side it is on (Insert from PDF, Merge): as wide as one. */
 .m-page-number-field {
   inline-size: 8ch;

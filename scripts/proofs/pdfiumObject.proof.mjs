@@ -225,7 +225,7 @@ async function main() {
   const placed = await localPdfiumExecution.apply({
     session: original,
     command: place,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const placedBox = (await objectsOf(placed))[box.index] ?? box;
@@ -278,7 +278,7 @@ async function main() {
   const recoloured = await localPdfiumExecution.apply({
     session: original,
     command: recolor,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const recolouredObjects = await objectsOf(recoloured);
@@ -334,7 +334,7 @@ async function main() {
   const removed = await localPdfiumExecution.apply({
     session: original,
     command: remove,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const removedObjects = await objectsOf(removed);
@@ -397,7 +397,7 @@ async function main() {
     await localPdfiumExecution.apply({
       session: original,
       command: /** @type {never} */ ({ kind: 'rotatePages' }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
   } catch (error) {

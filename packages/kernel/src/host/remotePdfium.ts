@@ -200,16 +200,17 @@ export function remotePdfiumExecution(
     );
 
   return {
-    // NEITHER `source` NOR `reads` IS NAMED, for `pdfiumSpecs.ts`' reason: no
+    // NEITHER `sources` NOR `reads` IS NAMED, for `pdfiumSpecs.ts`' reason: no
     // PDFium command can be handed a source, and none declares `reads`. The
     // remote half is where that mattered most — a value that never crossed the
-    // pipe fails in the host rather than at the call (ADR-0069).
+    // pipe fails in the host rather than at the call (ADR-0069). The channel's
+    // `sources` is written empty, which is that fact on the wire.
     apply: async <K extends KindsRoutedTo<'pdfium'>>({
       session: image,
       command,
     }: ApplyRequest<'pdfium', K>): Promise<ByteImage> =>
       wrote(image, regeneratedBy(command), async (from, into, session) =>
-        answered('engine/apply', await client['engine/apply']({ session, command, from, into })),
+        answered('engine/apply', await client['engine/apply']({ session, command, sources: [], from, into })),
       ),
 
     capture: async <K extends KindsRoutedTo<'pdfium'>>(

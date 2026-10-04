@@ -1078,15 +1078,15 @@ describe('the composition root, a command that names a SECOND document', () => {
     expect(replaced.ok).toBe(true);
 
     const replace = applyOf(engine.applies, 'replacePage');
-    expect(replace?.['source']).toBe(sourceHandle);
+    expect(replace?.['sources']).toStrictEqual([sourceHandle]);
     // AND NOT THE TARGET'S OWN, which is the transposition `Apply`'s note says no type can catch:
     // both are `MupdfSession`.
     expect(replace?.['session']).not.toBe(sourceHandle);
 
-    // CONTROL FOR THE RECORD: a command naming no second document crosses with no `source` at all,
-    // so a peer that stored every apply with some `source` could not pass the assertion above.
+    // CONTROL FOR THE RECORD: a command naming no second document crosses with an EMPTY list,
+    // so a peer that stored every apply with some source could not pass the assertion above.
     const rotate = applyOf(engine.applies, 'rotatePages');
-    expect(rotate !== undefined && 'source' in rotate).toBe(false);
+    expect(rotate?.['sources']).toStrictEqual([]);
   });
 });
 

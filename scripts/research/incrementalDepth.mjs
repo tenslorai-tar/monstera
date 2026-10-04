@@ -126,13 +126,13 @@ async function productRedaction(/** @type {Uint8Array} */ image) {
   await localMupdfExecution.apply({
     session,
     command: { kind: 'markMatchesForRedaction', query: SECRET, pages: 'all' },
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   await localMupdfExecution.apply({
     session,
     command: { kind: 'applyRedactions', pages: 'all', cover: 'solid', images: 'pixels', keepTitle: false },
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const out = await mupdfWriter.serialise(session);

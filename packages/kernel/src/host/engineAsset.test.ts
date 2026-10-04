@@ -269,7 +269,7 @@ describe('a command whose bytes cannot cross the wire', () => {
   it('REACHES THE APPLY ANYWAY, having travelled the granted directory', async () => {
     const { remote, token, session, written, incidents } = await joined();
 
-    await remote.apply({ session: token, command: placement(png), source: undefined, reads: undefined });
+    await remote.apply({ session: token, command: placement(png), sources: [], reads: undefined });
 
     // THE EFFECT, at the far end of a real JSON round trip.
     expect(await stampsOnFirstPage(session)).toBe(1);
@@ -298,7 +298,7 @@ describe('a command whose bytes cannot cross the wire', () => {
 
   it('REMOVES THE ASSET when the call returns', async () => {
     const { remote, token, directory, written } = await joined();
-    await remote.apply({ session: token, command: placement(png), source: undefined, reads: undefined });
+    await remote.apply({ session: token, command: placement(png), sources: [], reads: undefined });
     // THE PAIR, and the second half is what makes the first mean anything:
     // an empty directory is also what *never wrote it* produces.
     expect(written.length).toBeGreaterThan(0);
@@ -313,7 +313,7 @@ describe('a command whose bytes cannot cross the wire', () => {
       remote.apply({
         session: token,
         command: { ...placement(png), pages: [0, 9] },
-        source: undefined,
+        sources: [],
         reads: undefined,
       }),
     ).rejects.toThrow();
@@ -328,7 +328,7 @@ describe('a command whose bytes cannot cross the wire', () => {
     await remote.apply({
       session: token,
       command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
     expect(written).toStrictEqual([]);
@@ -346,7 +346,8 @@ describe('a command whose bytes cannot cross the wire', () => {
     // `instanceof` refines it away.
     const { call, session } = await joined();
 
-    const answer = await call('engine/apply', { session: 'h1', command: placement(png) });
+    // `sources` IS WRITTEN, so the bytes are the one thing that can refuse this — the control below is the same call.
+    const answer = await call('engine/apply', { session: 'h1', command: placement(png), sources: [] });
 
     expect(answer).toMatchObject({ ok: false });
     // AND NOTHING HAPPENED TO THE DOCUMENT, which is the half a refusal alone
@@ -367,6 +368,7 @@ describe('a command whose bytes cannot cross the wire', () => {
     const answer = await call('engine/apply', {
       session: 'h1',
       command: wire,
+      sources: [],
       asset: 'abcd',
     });
 

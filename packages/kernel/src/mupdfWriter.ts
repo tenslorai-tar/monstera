@@ -318,6 +318,27 @@ export function withDocuments<T>(
 }
 
 /**
+ * {@link withDocuments} for a command naming SEVERAL other documents, in its order
+ * ([ADR-0152](../../../docs/DECISIONS/0152-a-merge-takes-several-documents-in-one-command.md)): every token is
+ * turned into its document by the same `documentFor`, before `work` runs, so a closed or forged one refuses the whole
+ * command rather than the part after it.
+ *
+ * @template T
+ */
+export function withDocumentList<T>(
+  target: MupdfSession,
+  sources: readonly MupdfSession[],
+  work: (target: mupdf.PDFDocument, sources: readonly mupdf.PDFDocument[]) => T,
+): Promise<T> {
+  return promised(() =>
+    work(
+      documentFor(target),
+      sources.map((source) => documentFor(source)),
+    ),
+  );
+}
+
+/**
  * A blank PDF, for an operation whose output is a document that did not exist.
  *
  * **Not a session**, and that distinction is the whole reason this is here

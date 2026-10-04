@@ -1,3 +1,4 @@
+import { MAX_MERGE_DOCUMENTS } from '@monstera/contract';
 import { z } from 'zod';
 
 import { chooseFileAnswer } from './sourceDocuments.js';
@@ -13,15 +14,28 @@ import { chooseFileAnswer } from './sourceDocuments.js';
 /** Where the merged pages go. */
 export const MERGE_PLACEMENTS = ['start', 'end', 'after'] as const;
 
-/** What the dialog reopens with after *Choose file…*: the place, and the page as typed. */
+/**
+ * The documents merged in, in the order the person set (ADR-0152): each an open document's id, one to the merge's
+ * bound, and the same one allowed twice.
+ */
+const MERGE_DOCUMENT_IDS = z.array(z.string().min(1)).min(1).max(MAX_MERGE_DOCUMENTS);
+
+/**
+ * What the dialog reopens with after *Choose file…*: the place, the page as typed, and the documents already listed —
+ * which may be none, since *Choose file…* is the way to a first document when no other is open.
+ */
 export const MERGE_DOCUMENT_DRAFT = z
-  .object({ placement: z.enum(MERGE_PLACEMENTS), page: z.string().max(20) })
+  .object({
+    placement: z.enum(MERGE_PLACEMENTS),
+    page: z.string().max(20),
+    documents: z.array(z.string().min(1)).max(MAX_MERGE_DOCUMENTS),
+  })
   .strict();
 
 export const MERGE_DOCUMENT_RESULT = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('merge'), source: z.string().min(1), at: z.number().int().nonnegative() }).strict(),
+  z.object({ kind: z.literal('merge'), documents: MERGE_DOCUMENT_IDS, at: z.number().int().nonnegative() }).strict(),
   chooseFileAnswer(MERGE_DOCUMENT_DRAFT),
 ]);
 
-/** The document merged in and where its pages land — or a file to choose first. */
+/** The documents merged in, in order, and where their pages land — or a file to choose first. */
 export type MergeDocumentAnswer = z.infer<typeof MERGE_DOCUMENT_RESULT>;

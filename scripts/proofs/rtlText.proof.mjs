@@ -99,7 +99,7 @@ async function readBack(kernel, pdfjs, blank, mark, bake) {
         annotation: { rect: BOX, colour: [0, 0, 0], opacity: 1, fontSize: 24, font: 'sans', ...mark },
         stamp: { author: 'Proof', created: '2026-10-01T00:00:00.000Z' },
       },
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
     if (bake) await kernel.withDocument(session, (/** @type {any} */ document) => document.bake(true, true));

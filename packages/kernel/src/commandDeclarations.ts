@@ -1065,8 +1065,9 @@ const declarations = {
     // argument it cannot be called without — and note what the type does NOT
     // do: an apply that ignored that argument would still compile, which
     // ADR-0040's correction records as the axis's stated limit. What guards it
-    // is `pageMerge.test.ts`, named in the proof's own allow case.
-    sources: 'one',
+    // is `pageMerge.test.ts`, named in the proof's own allow case. SEVERAL since
+    // ADR-0152: the person's files in their order, one intent and one entry.
+    sources: 'several',
     // Self-contained: it names another DOCUMENT, which is a different axis, and
     // nothing in its payload points into an answer this document gave.
     targets: 'none',

@@ -329,6 +329,7 @@ export {
   type RenderableCommand,
   insertImagePageSchema,
   mergeDocumentSchema,
+  MAX_MERGE_DOCUMENTS,
   movePageSchema,
   type NamesAnAnnotation,
   type NamesAFormField,

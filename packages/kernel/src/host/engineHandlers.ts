@@ -1135,7 +1135,7 @@ export function createEngineHandlers({
       return { ok: true, value: { groups: kept, truncated } };
     },
 
-    'engine/apply': async ({ session, command, source, asset }) => {
+    'engine/apply': async ({ session, command, sources, asset }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
 
@@ -1154,12 +1154,14 @@ export function createEngineHandlers({
       //
       // Resolved BEFORE the apply, so a miss refuses without having touched the
       // target — a merge that failed halfway would leave the target holding
-      // some of the source's pages with no log entry describing it.
-      let from: MupdfSession | undefined;
-      if (source !== undefined) {
+      // some of the source's pages with no log entry describing it. EVERY ONE
+      // of a merge's sources (ADR-0152), so the third closed is refused before
+      // the first is read.
+      const from: MupdfSession[] = [];
+      for (const source of sources) {
         const heldSource = sessions.lookup(source);
         if (heldSource === undefined) return gone;
-        from = heldSource.session;
+        from.push(heldSource.session);
       }
 
       // `reads: undefined` IS WRITTEN RATHER THAN OMITTED, and that is the
@@ -1167,7 +1169,7 @@ export function createEngineHandlers({
       // pre-read field, because no MuPDF command declares `reads`. Before this
       // the same fact was expressed by a call that simply stopped at three
       // arguments — indistinguishable from the drop that cost four rows.
-      await execution.apply({ session: held.session, command: whole, source: from, reads: undefined });
+      await execution.apply({ session: held.session, command: whole, sources: from, reads: undefined });
       return { ok: true, value: {} };
     },
 

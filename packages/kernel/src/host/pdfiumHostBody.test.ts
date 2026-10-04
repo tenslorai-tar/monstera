@@ -380,6 +380,8 @@ describe('the PDFium host body', () => {
     stream.feed(
       request('a1', 'engine/apply', {
         session,
+        // NONE, AND WRITTEN: a PDFium command names no other document, and the channel requires the list.
+        sources: [],
         command: {
           kind: 'replaceTextObject',
           page: 0,
@@ -410,6 +412,8 @@ describe('the PDFium host body', () => {
     stream.feed(
       request('a1', 'engine/apply', {
         session,
+        // NONE, AND WRITTEN: a PDFium command names no other document, and the channel requires the list.
+        sources: [],
         command: {
           kind: 'replaceTextObject',
           page: 0,
@@ -445,6 +449,8 @@ describe('the PDFium host body', () => {
     stream.feed(
       request('a1', 'engine/apply', {
         session,
+        // NONE, AND WRITTEN: a PDFium command names no other document, and the channel requires the list.
+        sources: [],
         command: {
           kind: 'replaceTextObject',
           page: 0,

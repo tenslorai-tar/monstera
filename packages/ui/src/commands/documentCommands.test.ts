@@ -2347,7 +2347,7 @@ describe('delete pages — the mutation-dialog gate', () => {
    * with **the id the reader chose** — neither test can see the other's value,
    * which is the blind spot CLAUDE.md names, so the id is what both sides hold.
    */
-  it('dispatches mergeDocument with the CHOSEN id at the place the dialog answered', async () => {
+  it('dispatches mergeDocument with the CHOSEN ids, in the dialog’s order, at the place it answered', async () => {
     const { client, executed } = sourcesClient();
     const opened: unknown[] = [];
 
@@ -2358,10 +2358,11 @@ describe('delete pages — the mutation-dialog gate', () => {
       onApplied: () => undefined,
       openSource: () => Promise.resolve({ kind: 'none' }),
       // AFTER PAGE 4, which is not the end the body opens on — a stub answering the default would let a command that
-      // ignored the answer and appended pass.
+      // ignored the answer and appended pass. TWO DOCUMENTS, against their tab order and one twice (ADR-0152), so a
+      // command that sent only the first, or sorted them, sends something else.
       ask: (id, props) => {
         opened.push({ id, props });
-        return Promise.resolve({ kind: 'merge', source: 'doc-2', at: 4 });
+        return Promise.resolve({ kind: 'merge', documents: ['doc-2', 'doc-0', 'doc-2'], at: 4 });
       },
     }).run(CONTEXT);
 
@@ -2384,7 +2385,18 @@ describe('delete pages — the mutation-dialog gate', () => {
       },
     ]);
     expect(executed).toStrictEqual([
-      { docId: DOC, command: { kind: 'mergeDocument', source: 'doc-2', sourcePages: 'all', at: 4 } },
+      {
+        docId: DOC,
+        command: {
+          kind: 'mergeDocument',
+          documents: [
+            { source: 'doc-2', sourcePages: 'all' },
+            { source: 'doc-0', sourcePages: 'all' },
+            { source: 'doc-2', sourcePages: 'all' },
+          ],
+          at: 4,
+        },
+      },
     ]);
   });
 
@@ -2433,7 +2445,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     }).run(CONTEXT);
 
     expect(executed).toStrictEqual([
-      { docId: DOC, command: { kind: 'mergeDocument', source: 'doc-0', sourcePages: [[1, 3]], at: 0 } },
+      { docId: DOC, command: { kind: 'mergeDocument', documents: [{ source: 'doc-0', sourcePages: [[1, 3]] }], at: 0 } },
     ]);
   });
 

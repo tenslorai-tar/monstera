@@ -773,7 +773,7 @@ export function remoteMupdfExecution(
     // command declares it, `engine/apply`'s schema is what has to grow — the
     // request makes that a visible edit here rather than a value that silently
     // fails to cross (ADR-0069).
-    apply: async ({ session, command, source }) => {
+    apply: async ({ session, command, sources }) => {
       await withAsset(session, command, async (wire, asset) => {
         answered(
           'engine/apply',
@@ -781,16 +781,12 @@ export function remoteMupdfExecution(
             session: sessions.handleFor(session),
             command: wire,
             asset,
-          // TRANSLATED TO A HANDLE HERE, exactly as the target is. `handleFor`
-          // is what turns main's session token into the host's, so a source
-          // that main holds but the host does not is refused at the registry
-          // rather than sent as a handle the peer would not recognise.
-          //
-            // `undefined` for every command but a merge, and the channel's
-            // schema makes that absence rather than a null — a message that
-            // omits the field, which is what eleven of the twelve MuPDF
-            // commands send.
-            source: source === undefined ? undefined : sessions.handleFor(source),
+            // TRANSLATED TO HANDLES HERE, exactly as the target is. `handleFor`
+            // is what turns main's session token into the host's, so a source
+            // that main holds but the host does not is refused at the registry
+            // rather than sent as a handle the peer would not recognise. Empty
+            // for every command naming no other document.
+            sources: sources.map((source) => sessions.handleFor(source)),
           }),
         );
       });

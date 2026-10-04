@@ -45,7 +45,7 @@ is not available.
 - [ ] **Resize pages…** — Adjust · `document.resize-pages` · Shows: on screen · Help: *Resize pages*
 - [ ] **Straighten crooked pages** — Adjust · `document.deskew-pages` · Shows: on screen · Help: *Straighten crooked scanned pages*
 - [ ] **Page transition…** — Adjust · `document.page-transition` · Shows: a toast · Help: *Add page transitions for presenting*
-- [ ] **Merge a document…** — Combine · `document.merge` · Shows: on screen · Help: *Merge PDFs into one*
+- [ ] **Merge documents…** — Combine · `document.merge` · Shows: on screen · Help: *Merge PDFs into one*
 - [ ] **Split…** — Combine · `document.split` · Shows: a toast · Help: *Split a document into several PDFs*
 - [ ] **Bates numbering…** — Marks · `document.bates-number` · Shows: on screen · Help: *Add Bates numbers*
 - [ ] **Headers and footers…** — Marks · `document.header-footer` · Shows: on screen · Help: *Add headers and footers*

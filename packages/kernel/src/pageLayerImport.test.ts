@@ -84,7 +84,7 @@ async function imported(
     await applyImportPageAsLayer(
       targetSession,
       { kind: 'importPageAsLayer', source: asDocId('s'), sourcePage, name, at, version: asDocVersion(1) },
-      sourceSession,
+      [sourceSession],
     );
     return await mupdfWriter.serialise(targetSession);
   } finally {
@@ -238,7 +238,7 @@ describe('importPageAsLayer', () => {
         applyImportPageAsLayer(
           targetSession,
           { kind: 'importPageAsLayer', source: asDocId('s'), sourcePage: 0, name: 'X', at: 2, version: asDocVersion(1) },
-          sourceSession,
+          [sourceSession],
         ),
       ).rejects.toThrow(RangeError);
       // Built from something the absent refusal would NOT satisfy: a write before the

@@ -3,6 +3,7 @@ import {
   type CommandOfKind,
   DOCUMENT_ACCESS_VALUES,
   DOCUMENT_PASSWORD_MAX_CHARS,
+  MAX_MERGE_DOCUMENTS,
   addAnnotationSchema,
   pageSetSchema,
   placeImageSchema,
@@ -1833,24 +1834,24 @@ export function coreEngineChannels<
           session: sessionSchema,
           command: schemas.command,
           /**
-           * The source document's session, for a `sources: 'one'` command.
+           * The other documents' sessions, in the command's order: one for a
+           * `sources: 'one'` command, one or more for a merge, none for every
+           * other ([ADR-0152](../../../../docs/DECISIONS/0152-a-merge-takes-several-documents-in-one-command.md)).
            *
-           * **A second SESSION TOKEN, which is why ADR-0040 needs no new
-           * process shape**: both documents are sessions in this same host, so
+           * **More SESSION TOKENS, which is why ADR-0040 needs no new
+           * process shape**: every document is a session in this same host, so
            * what crosses is another handle this host already holds — never
            * bytes, and never a path.
            *
-           * Optional because eleven of the twelve MuPDF-routed commands name no
-           * second document. It is `.optional()` rather than nullable for the
-           * reason `mergeDocumentSchema` is not: this is a field that may be
-           * absent from the message, not a value that may be null, and the two
-           * spellings mean different things to a caller.
+           * Required and empty for most commands, as `ApplyRequest.sources` is,
+           * so one field means the same thing on both sides of the pipe. Bounded
+           * by the merge's own bound, the most any command names.
            *
            * A token this host does not hold answers `no-such-session` exactly
-           * as the target's does — the handler looks both up the same way, so a
-           * closed source is the same ordinary race as a closed target.
+           * as the target's does — the handler looks every one up the same way,
+           * so a closed source is the same ordinary race as a closed target.
            */
-          source: sessionSchema.optional(),
+          sources: z.array(sessionSchema).max(MAX_MERGE_DOCUMENTS),
           /**
            * The file in this session's snapshot directory holding the command's
            * bytes, for an `asset: 'bytes'` command

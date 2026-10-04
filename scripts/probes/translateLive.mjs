@@ -142,7 +142,7 @@ const written = await localPdfiumExecution.apply({
     fit: 'shrink',
     version: 1,
   }),
-  source: undefined,
+  sources: [],
   reads: undefined,
 });
 const reopened = await pdfiumWriter.open(written);

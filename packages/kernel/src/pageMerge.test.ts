@@ -51,6 +51,18 @@ async function flatDocument(widths: readonly number[]): Promise<Uint8Array> {
 }
 
 /**
+ * {@link flatDocument} with a drawn rectangle on every page, so each page has a content stream as an INDIRECT object.
+ * A page of only direct objects never binds MuPDF's graft map to its document (`pdf-graft.c` sets `map->src` on the
+ * first indirect object), so a merge that shared one map across two documents passes on `flatDocument` and throws
+ * *"grafted objects must all belong to the same source document"* on any real page.
+ */
+async function drawnDocument(widths: readonly number[]): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  for (const width of widths) document.addPage([width, 700]).drawRectangle({ x: 10, y: 10, width: 20, height: 20 });
+  return document.save({ useObjectStreams: false });
+}
+
+/**
  * The HARD SHAPE: two leaves carrying no `/Rotate` of their own, inheriting 90
  * from an intermediate `/Pages` node.
  *
@@ -96,17 +108,31 @@ async function merged(
   targetBytes: Uint8Array,
   sourceBytes: Uint8Array,
   at: number,
-  sourcePages: CommandOfKind<'mergeDocument'>['sourcePages'] = 'all',
+  sourcePages: SourcePages = 'all',
 ): Promise<Uint8Array> {
   const target = await mupdfWriter.open(targetBytes);
   const source = await mupdfWriter.open(sourceBytes);
   try {
-    await applyMergeDocument(target, { kind: 'mergeDocument', source: asDocId('s'), sourcePages, at }, source);
+    await applyMergeDocument(target, mergeOf(at, sourcePages), [source]);
     return await mupdfWriter.serialise(target);
   } finally {
     await mupdfWriter.close(target);
     await mupdfWriter.close(source);
   }
+}
+
+/** Which pages the one document of a chosen-pages merge takes. */
+type SourcePages = CommandOfKind<'replacePage'>['sourcePages'];
+
+/** A merge at `at` of ONE document, with the pages chosen of it — Insert from PDF's shape. */
+function mergeOf(at: number, sourcePages: SourcePages = 'all'): CommandOfKind<'mergeDocument'> {
+  return { kind: 'mergeDocument', documents: [{ source: asDocId('s'), sourcePages }], at };
+}
+
+/** A merge at `at` of `count` documents, each taken whole — Merge's shape (ADR-0152). */
+function mergeWhole(at: number, count: number): CommandOfKind<'mergeDocument'> {
+  const documents = Array.from({ length: count }, () => ({ source: asDocId('s'), sourcePages: 'all' as const }));
+  return { kind: 'mergeDocument', documents, at };
 }
 
 /** Runs a replace and hands back the target's saved bytes. */
@@ -122,7 +148,7 @@ async function replaced(
     await applyReplacePage(
       target,
       { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), pages, sourcePages },
-      source,
+      [source],
     );
     return await mupdfWriter.serialise(target);
   } finally {
@@ -219,12 +245,62 @@ describe('mergeDocument', () => {
     const source = await mupdfWriter.open(await flatDocument([200, 210]));
     try {
       await expect(
-        applyMergeDocument(target, { kind: 'mergeDocument', source: asDocId('s'), sourcePages: [0, 2], at: 1 }, source),
+        applyMergeDocument(target, mergeOf(1, [0, 2]), [source]),
       ).rejects.toThrow(/Page 2 is outside this document, which has 2 page/u);
       expect(await widthsOf(await mupdfWriter.serialise(target))).toEqual([100]);
     } finally {
       await mupdfWriter.close(target);
       await mupdfWriter.close(source);
+    }
+  });
+
+  it('places SEVERAL documents one after another from `at`, in the order given (ADR-0152)', async () => {
+    // Two sources whose pages differ from each other and from the target, and the second named first: a merge that
+    // kept the sessions' order gives other widths. DRAWN pages, so a merge sharing one graft map across the two
+    // documents is refused by MuPDF here (see `drawnDocument`).
+    const target = await mupdfWriter.open(await flatDocument([100, 110]));
+    const first = await mupdfWriter.open(await drawnDocument([200, 210]));
+    const second = await mupdfWriter.open(await drawnDocument([300, 310, 320]));
+    try {
+      await applyMergeDocument(target, mergeWhole(1, 2), [second, first]);
+      expect(await widthsOf(await mupdfWriter.serialise(target))).toEqual([100, 300, 310, 320, 200, 210, 110]);
+    } finally {
+      for (const session of [target, first, second]) await mupdfWriter.close(session);
+    }
+  });
+
+  it('takes the SAME document twice, whole each time, sharing its one graft map', async () => {
+    // DRAWN, so the second pass grafts objects the map already holds — a map per pass would copy them twice and still
+    // give these widths; what this case refuses is a map that rejects its own document coming round again.
+    const target = await mupdfWriter.open(await flatDocument([100]));
+    const source = await mupdfWriter.open(await drawnDocument([200, 210]));
+    try {
+      await applyMergeDocument(target, mergeWhole(1, 2), [source, source]);
+      expect(await widthsOf(await mupdfWriter.serialise(target))).toEqual([100, 200, 210, 200, 210]);
+    } finally {
+      await mupdfWriter.close(target);
+      await mupdfWriter.close(source);
+    }
+  });
+
+  it('refuses a LATER document that is not open before placing the documents before it', async () => {
+    // The first document alone would succeed, so an apply that resolved each session as it reached it would leave the
+    // first's pages in the target and then refuse.
+    const target = await mupdfWriter.open(await flatDocument([100]));
+    const first = await mupdfWriter.open(await drawnDocument([200]));
+    const closed = await mupdfWriter.open(await drawnDocument([300]));
+    await mupdfWriter.close(closed);
+    try {
+      await expect(applyMergeDocument(target, mergeWhole(1, 2), [first, closed])).rejects.toThrow(
+        /not produced by this adapter, or it has already been closed/u,
+      );
+      expect(await widthsOf(await mupdfWriter.serialise(target))).toEqual([100]);
+      // CONTROL: the first document on its own is placed, so the refusal above is the check and not an apply that fails.
+      await applyMergeDocument(target, mergeWhole(1, 1), [first]);
+      expect(await widthsOf(await mupdfWriter.serialise(target))).toEqual([100, 200]);
+    } finally {
+      await mupdfWriter.close(target);
+      await mupdfWriter.close(first);
     }
   });
 
@@ -284,11 +360,7 @@ describe('mergeDocument', () => {
     const target = await mupdfWriter.open(await flatDocument([100]));
     const source = await mupdfWriter.open(sourceBytes);
     try {
-      await applyMergeDocument(
-        target,
-        { kind: 'mergeDocument', source: asDocId('s'), sourcePages: 'all', at: 1 },
-        source,
-      );
+      await applyMergeDocument(target, mergeOf(1, 'all'), [source]);
       const after = await mupdfWriter.serialise(source);
       expect(await widthsOf(after)).toEqual([200, 210]);
       // AND ITS TREE IS WHOLE: the annotations are grafted with every source leaf's `/Parent` removed
@@ -387,7 +459,7 @@ describe('mergeDocument', () => {
         applyReplacePage(
           target,
           { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), pages: [0, 2], sourcePages: [0] },
-          source,
+          [source],
         ),
       ).rejects.toThrow(/not next to each other needs as many pages/u);
       expect(await widthsOf(await mupdfWriter.serialise(target))).toEqual([100, 110, 120, 130]);
@@ -405,7 +477,7 @@ describe('mergeDocument', () => {
         applyReplacePage(
           target,
           { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), pages: [0], sourcePages: [1] },
-          source,
+          [source],
         ),
       ).rejects.toThrow(/Page 1 is outside this document, which has 1 page/u);
     } finally {
@@ -426,7 +498,7 @@ describe('mergeDocument', () => {
       await applyReplacePage(
         target,
         { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), pages: [0], sourcePages: 'all' },
-        source,
+        [source],
       );
       const bytes = await mupdfWriter.serialise(target);
       // Deleting the index given instead would give [210, 110, 120] — same length.
@@ -448,7 +520,7 @@ describe('mergeDocument', () => {
         applyReplacePage(
           target,
           { kind: 'replacePage', source: asDocId('s'), version: asDocVersion(1), pages: [1], sourcePages: 'all' },
-          source,
+          [source],
         ),
       ).rejects.toThrow(/outside this document/u);
     } finally {
@@ -500,7 +572,7 @@ describe('mergeDocument', () => {
     const forged = { engine: 'mupdf' } as unknown as MupdfSession;
     try {
       await expect(
-        applyMergeDocument(target, { kind: 'mergeDocument', source: asDocId('s'), sourcePages: 'all', at: 0 }, forged),
+        applyMergeDocument(target, mergeOf(0, 'all'), [forged]),
       ).rejects.toThrow(/not produced by this adapter/u);
     } finally {
       await mupdfWriter.close(target);
@@ -514,7 +586,7 @@ describe('mergeDocument', () => {
     const source = await mupdfWriter.open(await flatDocument([200]));
     try {
       await expect(
-        applyMergeDocument(target, { kind: 'mergeDocument', source: asDocId('s'), sourcePages: 'all', at: 0 }, source),
+        applyMergeDocument(target, mergeOf(0, 'all'), [source]),
       ).resolves.toBeUndefined();
       await withDocument(target, (document) => {
         expect(document.countPages()).toBe(2);

@@ -151,7 +151,7 @@ type PdfiumKind = keyof typeof pdfiumSpecs;
  * One PDFium `apply` **as this writer calls it**.
  *
  * Two parameters and no more, which is the seam's own shape rather than a
- * simplification: `Apply` resolves byte-image × `sources: 'one'` to `never`, so
+ * simplification: `Apply` resolves byte-image × any source to `never`, so
  * no PDFium command can be handed a source; and no PDFium command declares
  * `reads`, so there is no outline slot either. `pdfLibWriter.ts` carries a
  * third parameter because `generateToc` routes there — the difference between
@@ -206,8 +206,8 @@ export const localPdfiumExecution: CommandExecution<'pdfium'> = {
   // METHOD SYNTAX, so `K` is in scope for the assertion — an arrow would put
   // the cast at `CommandKind`, the whole union, which widens `capture`'s prior
   // state to a union too and stops it being assignable to `CommandPrior[K]`.
-  // NEITHER `source` NOR `reads` IS NAMED, and both facts are the table's
-  // rather than this writer's: `Apply` resolves byte-image × `sources: 'one'`
+  // NEITHER `sources` NOR `reads` IS NAMED, and both facts are the table's
+  // rather than this writer's: `Apply` resolves byte-image × any source
   // to `never`, and no PDFium command declares `reads`. The `_source?: never`
   // placeholder that stood here existed only because the bus passed
   // positionally, and went with it (ADR-0069).

@@ -87,7 +87,11 @@ for (const count of [10, 40, 160]) {
   const target = await mupdfWriter.open(await source(1));
   const from = await mupdfWriter.open(bytes);
   try {
-    await applyMergeDocument(target, { kind: 'mergeDocument', at: 1, source: asDocId('unused'), sourcePages: 'all' }, from);
+    await applyMergeDocument(
+      target,
+      { kind: 'mergeDocument', at: 1, documents: [{ source: asDocId('unused'), sourcePages: 'all' }] },
+      [from],
+    );
     const out = await mupdfWriter.serialise(target);
     console.log(`  a 1-page document after merging it: ${await objects(out)} objects`);
   } finally {

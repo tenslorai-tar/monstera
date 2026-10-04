@@ -411,11 +411,11 @@ export type Capture<W extends keyof WriterSession, K extends CommandKind> =
  * ([ADR-0040](../../../docs/DECISIONS/0040-a-command-names-a-second-document-by-docid.md)
  * Decision 4).
  *
- * `'none' | 'one'` and not a count. Nothing in D2 merges three documents at
- * once, and a list would make *how many* a runtime question at every call site
- * for a capability nothing asks for. The day a command needs two sources this
- * widens, and the widening is a **compile error at every `apply`** — which is
- * the direction that fails safe.
+ * `'none' | 'one' | 'several'` and not a count. `'one'` was the only other
+ * value until a merge of several files in one intent asked for more
+ * ([ADR-0152](../../../docs/DECISIONS/0152-a-merge-takes-several-documents-in-one-command.md));
+ * a count would make *how many* a runtime question at the applies that take
+ * exactly one, so each value names a shape instead — {@link SourceSessions}.
  *
  * It lives here rather than beside the declarations for a module-graph reason
  * that is worth stating, because the ADR's *"`Apply` is conditional on it
@@ -427,7 +427,18 @@ export type Capture<W extends keyof WriterSession, K extends CommandKind> =
  * how `W` already works, so the mechanism is the existing one rather than a new
  * one.
  */
-export type CommandSources = 'none' | 'one';
+export type CommandSources = 'none' | 'one' | 'several';
+
+/**
+ * The other documents' sessions an apply is handed, by its declaration's {@link CommandSources}: none, exactly one, or
+ * one or more in the payload's order (ADR-0152 Decision 2). A TUPLE for `'one'`, so an apply that takes one
+ * destructures `[source]` and has no second to read, and a non-empty one for `'several'`, so it cannot be handed none.
+ */
+export type SourceSessions<W extends keyof WriterSession, S extends CommandSources> = S extends 'one'
+  ? readonly [WriterSession[W]]
+  : S extends 'several'
+    ? readonly [WriterSession[W], ...WriterSession[W][]]
+    : readonly [];
 
 /**
  * What existing state a command NAMES, and therefore what makes it stale
@@ -754,15 +765,16 @@ export type PreReadValue = PreRead[keyof PreRead];
  * Conditional on the writer's shape and on {@link CommandSources}, and the two
  * conditions are not independent:
  *
- * - **byte-image + `'one'` is `never`**, so the combination cannot be written
+ * - **byte-image + any source is `never`**, so the combination cannot be written
  *   at all. A byte-image writer consumes an image and produces one; there is no
  *   session to hand it a second of, and a spec claiming both would have to
  *   supply an `apply` of type `never`, which nothing satisfies. B5 rather than a
  *   comment saying *don't do this* — ADR-0040's three rows are all MuPDF's, and
  *   the day one is not, this is a deliberate type change rather than an
  *   accident.
- * - **live-session + `'one'`** takes the source's session as a third argument
- *   it cannot be called without. The target is still the first parameter, so a
+ * - **live-session + `'one'` or `'several'`** takes the sources' sessions as a
+ *   third argument it cannot be called without, shaped by
+ *   {@link SourceSessions}. The target is still the first parameter, so a
  *   transposition is a type error only where the two sessions differ in type —
  *   they do not, both being `MupdfSession` — which is why the bus passes them
  *   positionally from a map keyed by `DocId` rather than by role.
@@ -783,7 +795,7 @@ export type PreReadValue = PreRead[keyof PreRead];
  * produces no error anywhere. It was found by **building the second axis's
  * first caller** and reading what the first axis would hand it.
  *
- * The order is `(session, command, source, read)`, so each parameter's
+ * The order is `(session, command, sources, read)`, so each parameter's
  * position is fixed by its axis rather than by which combination is in play —
  * an ordering that varied would make a two-axis apply's signature depend on
  * something the author has to remember.
@@ -804,27 +816,27 @@ export type Apply<
   R extends CommandReads = 'none',
   // A HOSTED writer's spec is a byte-image one: it runs in the host, on the image (ADR-0121 Decision 3).
 > = WriterShapeOf[W] extends 'byte-image' | 'hosted-image'
-  ? S extends 'one'
-    ? never
-    : R extends keyof PreRead
+  ? S extends 'none'
+    ? R extends keyof PreRead
       ? (
           image: WriterSession[W],
           command: CommandOfKind<K>,
           read: PreRead[R],
         ) => Promise<ByteImage>
       : (image: WriterSession[W], command: CommandOfKind<K>) => Promise<ByteImage>
-  : S extends 'one'
+    : never
+  : S extends 'one' | 'several'
     ? R extends keyof PreRead
       ? (
           session: WriterSession[W],
           command: CommandOfKind<K>,
-          source: WriterSession[W],
+          sources: SourceSessions<W, S>,
           read: PreRead[R],
         ) => Promise<void>
       : (
           session: WriterSession[W],
           command: CommandOfKind<K>,
-          source: WriterSession[W],
+          sources: SourceSessions<W, S>,
         ) => Promise<void>
     : R extends keyof PreRead
       ? (

@@ -155,11 +155,11 @@ describe('the core channel set', () => {
     const command = { kind: 'replaceTextObject' };
 
     expect(
-      channels['engine/apply'].params.safeParse({ session, command, from: 'ab', into: 'cd' })
+      channels['engine/apply'].params.safeParse({ session, command, sources: [], from: 'ab', into: 'cd' })
         .success,
     ).toBe(true);
     expect(
-      channels['engine/apply'].params.safeParse({ session, command, from: 'ab' }).success,
+      channels['engine/apply'].params.safeParse({ session, command, sources: [], from: 'ab' }).success,
       'an apply without `into` must be refused: a byte-image write with nowhere to land',
     ).toBe(false);
 
@@ -268,6 +268,7 @@ describe('the core channel set', () => {
     const accepted = apply.safeParse({
       session: 'a'.repeat(43),
       command: { kind: 'replaceTextObject' },
+      sources: [],
       from: 'ab',
       into: 'cd',
     });
@@ -280,6 +281,7 @@ describe('the core channel set', () => {
       apply.safeParse({
         session: 'a'.repeat(43),
         command: { kind: 'rotatePages' },
+        sources: [],
         from: 'ab',
         into: 'cd',
       }).success,

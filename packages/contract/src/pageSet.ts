@@ -85,10 +85,13 @@ export function pageSetOf(pages: readonly number[]): PageSet {
 /** The page-list fields a command carries: its own pages, and the pages of a second document it copies. */
 const PAGE_LIST_FIELDS = ['pages', 'sourcePages'] as const;
 
+/** The field holding a merge's parts, each of which carries its own `sourcePages` (ADR-0152). */
+const PARTS_FIELD = 'documents';
+
 /**
  * A command with its page lists written as runs — the renderer's one spelling, applied where every command leaves it
  * (`applyDocumentCommand`), so no surface has to remember to. A field that is absent, `'all'`, or a set already holding
- * runs is answered as it came.
+ * runs is answered as it came, and so is a command whose every list already is.
  */
 export function withPageRuns<TCommand extends object>(command: TCommand): TCommand {
   let written: TCommand = command;
@@ -97,6 +100,11 @@ export function withPageRuns<TCommand extends object>(command: TCommand): TComma
     const pages: unknown = (written as Record<string, unknown>)[field];
     if (!Array.isArray(pages) || !pages.every((page): page is number => typeof page === 'number')) continue;
     written = { ...written, [field]: pageSetOf(pages) };
+  }
+  const parts: unknown = (written as Record<string, unknown>)[PARTS_FIELD];
+  if (Array.isArray(parts) && parts.every((part): part is object => typeof part === 'object' && part !== null)) {
+    const runs = parts.map((part) => withPageRuns(part));
+    if (runs.some((part, at) => part !== parts[at])) written = { ...written, [PARTS_FIELD]: runs };
   }
   return written;
 }

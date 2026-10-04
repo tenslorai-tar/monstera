@@ -759,8 +759,8 @@ export class CommandBus {
       const session = await this.#sessionFor(entry.command.kind, spec.writer, sessions, inputs);
       const preRead =
         spec.replay === 'stored-effect' ? entry.read : await this.#preReadFor(spec, entry.command, inputs);
-      const source = this.#sourceSessionFor(entry.command, inputs.sources);
-      await writer.apply({ session, command: entry.command, source, reads: preRead });
+      const sources = this.#sourceSessionsFor(entry.command, inputs.sources);
+      await writer.apply({ session, command: entry.command, sources, reads: preRead });
     }
     return pending.length;
   }
@@ -818,8 +818,8 @@ export class CommandBus {
   }
 
   /**
-   * The session a command's `apply` receives for the OTHER document it names
-   * (ADR-0040 Decisions 3 and 4).
+   * The sessions a command's `apply` receives for the OTHER documents it names, in
+   * the payload's order (ADR-0040 Decisions 3 and 4, ADR-0152).
    *
    * ## It branches on the DECLARATION, never on the payload
    *
@@ -829,8 +829,9 @@ export class CommandBus {
    * inferring one from the other is the partial reimplementation B3a is about.
    *
    * So a `'none'` command resolves nothing even if its payload happens to carry
-   * an id, and a `'one'` command whose payload names none is a defect that
-   * surfaces here rather than as an `undefined` handed to an apply.
+   * an id, and a `'one'` command whose payload names none or two, or a
+   * `'several'` one naming none, is a defect that surfaces here rather than as
+   * a list of the wrong length handed to an apply.
    *
    * ## `sourceIdsOf` is the CONTRACT's answer
    *
@@ -843,7 +844,7 @@ export class CommandBus {
    *
    * ## It branches on the DECLARATION, never on the payload
    *
-   * `#sourceSessionFor`'s rule on the third axis, and the same argument:
+   * `#sourceSessionsFor`'s rule on the third axis, and the same argument:
    * `declaredCommands[kind].targets` is what says a command's meaning depends on
    * the document not having moved. A payload that happens to carry a field
    * called `version` is a different statement — one could carry a version it
@@ -879,30 +880,33 @@ export class CommandBus {
     if (named !== current) throw new StaleTargetError(command.kind, named, current);
   }
 
-  #sourceSessionFor<K extends CommandKind>(
+  #sourceSessionsFor<K extends CommandKind>(
     command: CommandOfKind<K>,
     sources: CommandSources,
-  ): WriterSession[WriterOf<K>] | undefined {
+  ): readonly WriterSession[WriterOf<K>][] {
     const kind: CommandKind = command.kind;
-    if (declaredCommands[kind].sources === 'none') return undefined;
+    const declared = declaredCommands[kind].sources;
+    if (declared === 'none') return [];
 
+    // HOW MANY is the declaration's, and the payload is held to it: `'one'` exactly one, `'several'` one or more
+    // (ADR-0152). A payload that disagrees is the same registration defect as one naming none.
     const named = sourceIdsOf(command);
-    const source = named[0];
-    if (source === undefined) {
+    if (named.length === 0 || (declared === 'one' && named.length !== 1)) {
       throw new Error(
-        `${kind} declares sources: 'one' and its payload names no document. The declaration and ` +
-          `the contract's sourceIdsOf disagree, which is a registration defect rather than a race.`,
+        `${kind} declares sources: '${declared}' and the documents its payload names number ${String(named.length)}. The ` +
+          `declaration and the contract's sourceIdsOf disagree, which is a registration defect rather than a race.`,
       );
     }
 
-    const held = sources.get(source);
-    const session = held?.[declaredCommands[kind].writer];
-    if (session === undefined) throw new MissingSourceSessionError(kind, source);
-
-    // The same correlation `#sessionFor` asserts and for the same reason: the
-    // session was looked up under this command's own declared writer, and the
-    // checker cannot carry that through a generic index.
-    return session as WriterSession[WriterOf<K>];
+    return named.map((source) => {
+      const held = sources.get(source);
+      const session = held?.[declaredCommands[kind].writer];
+      if (session === undefined) throw new MissingSourceSessionError(kind, source);
+      // The same correlation `#sessionFor` asserts and for the same reason: the
+      // session was looked up under this command's own declared writer, and the
+      // checker cannot carry that through a generic index.
+      return session as WriterSession[WriterOf<K>];
+    });
   }
 
   /**
@@ -1007,9 +1011,9 @@ export class CommandBus {
     // the pre-read is: the checkpoint has to be the target as it stands. It is
     // a map lookup rather than a read, so nothing about the source can change
     // between here and the call.
-    const source = this.#sourceSessionFor(command, inputs.sources);
+    const sources = this.#sourceSessionsFor(command, inputs.sources);
 
-    const applied = await writer.apply({ session, command, source, reads: preRead });
+    const applied = await writer.apply({ session, command, sources, reads: preRead });
     this.#recordIfRemoval(spec, context);
 
     // A BYTE-IMAGE WRITER'S RESULT IS THE DOCUMENT, so installing it is part of
@@ -1192,7 +1196,8 @@ export class CommandBus {
   pendingRedoSources(context: DocumentContext): readonly DocId[] {
     const entry = context.commandLog(COMMAND_WRITER).peekRedo();
     if (entry === undefined) return [];
-    return sourceIdsOf(entry.command);
+    // ONCE EACH: a merge may name one document twice (ADR-0152), and a caller holds each document's session once.
+    return [...new Set(sourceIdsOf(entry.command))];
   }
 
   /**
@@ -1264,9 +1269,9 @@ export class CommandBus {
     // would be one for a document that may have been closed and reopened, which
     // is the stale-handle failure `documentCommands` resolves inside the lane
     // to avoid.
-    const source = this.#sourceSessionFor(entry.command, inputs.sources);
+    const sources = this.#sourceSessionsFor(entry.command, inputs.sources);
 
-    const applied = await writer.apply({ session, command: entry.command, source, reads: preRead });
+    const applied = await writer.apply({ session, command: entry.command, sources, reads: preRead });
     this.#recordIfRemoval(spec, context);
     // REACHABLE, unlike `undo`'s: redoing a watermark re-runs it — that is what
     // `replay: 'reapply-intent'` above has just been checked to mean — and the

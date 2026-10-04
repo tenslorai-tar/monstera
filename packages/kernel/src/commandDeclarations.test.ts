@@ -43,7 +43,8 @@ import { writerShapes } from './engineSeam.js';
  * every kind.
  */
 type DeclaredSources = {
-  [K in CommandKind]: DeclaredCommands[K]['sources'] extends 'one' ? K : never;
+  // ANY VALUE BUT `'none'` names another document: `'one'`, and `'several'` since ADR-0152.
+  [K in CommandKind]: DeclaredCommands[K]['sources'] extends 'one' | 'several' ? K : never;
 }[CommandKind];
 
 /**
@@ -231,8 +232,9 @@ describe('the declaration table', () => {
     // indistinguishable from a table carrying no cross-document command at all.
     // The compiler cannot tell those apart. This can: it reads the runtime
     // table and requires a member that is known to be there.
-    const declared = KINDS.filter((kind) => declaredCommands[kind].sources === 'one');
+    const declared = KINDS.filter((kind) => declaredCommands[kind].sources !== 'none');
     expect(declared).toContain('mergeDocument');
+    expect(declared).toContain('replacePage');
   });
 
   it('CONTROL: exactly fifteen kinds declare a target, and the rest answer none', () => {

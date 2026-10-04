@@ -826,7 +826,20 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
   'dialog.generate-toc-problem': [{ state: 'opened', props: { reason: 'no-outline' } }],
   'dialog.merge-document': [
     { state: 'opened', props: { choices: SOURCES, pageCount: 12 } },
-    { state: 'after-page', props: { choices: SOURCES, pageCount: 12, draft: { placement: 'after', page: '4' } } },
+    { state: 'after-page', props: { choices: SOURCES, pageCount: 12, draft: { placement: 'after', page: '4', documents: [] } } },
+    // SEVERAL DOCUMENTS, one of them twice, in the order they go in (ADR-0152).
+    {
+      state: 'several',
+      props: {
+        choices: SOURCES,
+        pageCount: 12,
+        draft: {
+          placement: 'end',
+          page: '1',
+          documents: [...SOURCES, ...SOURCES.slice(0, 1)].map((source) => source.docId),
+        },
+      },
+    },
     { state: 'none-open', props: { choices: [], pageCount: 12 } },
     { state: 'long', props: { choices: LONG_SOURCES, pageCount: 12 } },
   ],

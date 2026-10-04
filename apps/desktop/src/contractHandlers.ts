@@ -1185,9 +1185,8 @@ function appendMarkdownHandler(
       try {
         applied = await deps.commands.execute(docId, {
           kind: 'mergeDocument',
-          source: outcome.docId,
           // EVERY PAGE THE MARKDOWN BECAME: the file was composed for this append alone.
-          sourcePages: 'all',
+          documents: [{ source: outcome.docId, sourcePages: 'all' }],
           at,
         });
       } catch (thrown) {

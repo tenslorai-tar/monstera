@@ -454,7 +454,7 @@ function appendGroup(document: PDFDocument, groupRef: PDFObject): void {
 export const applyImportPageAsLayer: Apply<'mupdf', 'importPageAsLayer', 'one'> = (
   session: MupdfSession,
   command: CommandOfKind<'importPageAsLayer'>,
-  source: MupdfSession,
+  [source]: readonly [MupdfSession],
 ): Promise<void> =>
   withDocuments(session, source, (target, from) => {
     const count = target.countPages();

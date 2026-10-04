@@ -169,7 +169,7 @@ describe('main’s PDFium writer', () => {
       await writer.apply({
         session: new Uint8Array([1, 2]),
         command: COMMAND,
-        source: undefined,
+        sources: [],
         reads: undefined,
       }),
     ).toStrictEqual(result);
@@ -197,7 +197,7 @@ describe('main’s PDFium writer', () => {
       },
     };
     const { writer } = harness(peer, transfer, keep);
-    await writer.apply({ session: new Uint8Array([1, 2]), command: COMMAND, source: undefined, reads: undefined });
+    await writer.apply({ session: new Uint8Array([1, 2]), command: COMMAND, sources: [], reads: undefined });
     expect(asked).toStrictEqual(['0@C:\\snap|001']);
     expect(transfer.log).toStrictEqual(['take:002', 'remove:001']);
   });
@@ -215,7 +215,7 @@ describe('main’s PDFium writer', () => {
       },
     };
     const { writer } = harness(peer, transfer, keep);
-    await writer.apply({ session: new Uint8Array([1, 2]), command: COMMAND, source: undefined, reads: undefined });
+    await writer.apply({ session: new Uint8Array([1, 2]), command: COMMAND, sources: [], reads: undefined });
     expect(asked).toStrictEqual(['0@C:\\snap|001']);
     expect(transfer.log).toStrictEqual(['write:001', 'take:002', 'remove:001']);
   });
@@ -253,7 +253,7 @@ describe('main’s PDFium writer', () => {
       writer.apply({
         session: new Uint8Array([1, 2]),
         command: COMMAND,
-        source: undefined,
+        sources: [],
         reads: undefined,
       }),
     ).rejects.toBeInstanceOf(EngineCallFailed);
@@ -274,7 +274,7 @@ describe('main’s PDFium writer', () => {
       writer.apply({
         session: new Uint8Array([1]),
         command: COMMAND,
-        source: undefined,
+        sources: [],
         reads: undefined,
       }),
     ).rejects.toBeInstanceOf(EngineSessionGone);
@@ -286,7 +286,7 @@ describe('main’s PDFium writer', () => {
     const refused = writer.apply({
       session: new Uint8Array([1]),
       command: COMMAND,
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
     await expect(refused).rejects.toBeInstanceOf(EngineCallFailed);
@@ -312,7 +312,7 @@ describe('main’s PDFium writer', () => {
       writer.apply({
         session: new Uint8Array([1]),
         command: COMMAND,
-        source: undefined,
+        sources: [],
         reads: undefined,
       }),
     ).rejects.toBeInstanceOf(EngineSerialiseMismatch);

@@ -1905,13 +1905,11 @@ export function mergeDocumentCommand(deps: SourceCommandDeps): UiCommand {
 
       await applyDocumentCommand(deps, target, {
         kind: 'mergeDocument',
-        // THE SCHEMA BRANDS IT. The dialog answers a plain string because a
-        // dialog result is renderer-side text until a command builds a payload,
-        // and `mergeDocumentSchema`'s `docIdSchema` is the one place that
-        // transform happens (B3a).
-        source: asked.answer.source as DocId,
-        // EVERY PAGE: choosing some is Insert from PDF's question.
-        sourcePages: 'all',
+        // ONE COMMAND FOR EVERY DOCUMENT, in the person's order (ADR-0152), and EVERY PAGE of each: choosing some is
+        // Insert from PDF's question. THE SCHEMA BRANDS EACH ID. The dialog answers plain strings because a dialog
+        // result is renderer-side text until a command builds a payload, and `mergeDocumentSchema`'s `docIdSchema` is
+        // the one place that transform happens (B3a).
+        documents: asked.answer.documents.map((source) => ({ source: source as DocId, sourcePages: 'all' as const })),
         // ALREADY ZERO-BASED, converted once in the dialog.
         at: asked.answer.at,
       });
@@ -1961,8 +1959,7 @@ export function insertFromPdfCommand(deps: SourceCommandDeps): UiCommand {
 
       await applyDocumentCommand(deps, target, {
         kind: 'mergeDocument',
-        source: asked.answer.source as DocId,
-        sourcePages: asked.answer.sourcePages,
+        documents: [{ source: asked.answer.source as DocId, sourcePages: asked.answer.sourcePages }],
         // ALREADY ZERO-BASED. The dialog performed the one conversion, which is
         // `pageNumbering.ts`' rule — a command that subtracted one here would be
         // the second place that arithmetic lives.

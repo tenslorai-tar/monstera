@@ -291,7 +291,7 @@ async function main() {
   const applied = await localPdfiumExecution.apply({
     session: original,
     command,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   record(
@@ -364,7 +364,7 @@ async function main() {
   const bothApplied = await localPdfiumExecution.apply({
     session: original,
     command: bothCommand,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const bothText = await textOf(bothApplied);
@@ -406,7 +406,7 @@ async function main() {
     await localPdfiumExecution.apply({
       session: original,
       command: /** @type {never} */ ({ kind: 'rotatePages' }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
   } catch (error) {
@@ -496,7 +496,7 @@ async function replaceAllCases() {
   const applied = await localPdfiumExecution.apply({
     session: original,
     command,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const firstPage = await pageOf(applied, 0);
@@ -560,7 +560,7 @@ async function replaceAllCases() {
   const sensitive = await localPdfiumExecution.apply({
     session: original,
     command: replaceAll({ find: 'WIDGET', replace: 'GADGET', caseSensitive: true }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   record(
@@ -575,7 +575,7 @@ async function replaceAllCases() {
   const patterned = await localPdfiumExecution.apply({
     session: original,
     command: replaceAll({ find: 'W.DGET', replace: 'GADGET', regex: true }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   record(
@@ -592,7 +592,7 @@ async function replaceAllCases() {
     await localPdfiumExecution.apply({
       session: original,
       command: replaceAll({ find: '(', replace: 'x', regex: true }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
   } catch (error) {
@@ -610,7 +610,7 @@ async function replaceAllCases() {
   const identity = await localPdfiumExecution.apply({
     session: original,
     command: replaceAll({ find: 'WIDGET', replace: 'WIDGET' }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   record(
@@ -676,7 +676,7 @@ async function promotionCases() {
   const promoted = await localPdfiumExecution.apply({
     session: original,
     command,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const after = await textOf(promoted);
@@ -714,7 +714,7 @@ async function promotionCases() {
       ...replacementFieldsOf([{ index: target ?? -1, text: PROMOTED_EDIT }]),
       version: 1,
     }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   record(
@@ -731,7 +731,7 @@ async function promotionCases() {
   const untouched = await localPdfiumExecution.apply({
     session: plain,
     command: /** @type {never} */ ({ kind: 'promoteFormObjects', page: 0 }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   record(
@@ -863,7 +863,7 @@ async function glyphLineCases() {
       fit: 'reflow',
       version: 1,
     }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const after = (await textOf(edited)).replace(/\s+/gu, ' ');
@@ -927,7 +927,7 @@ async function nestedPromotionCases() {
   const promoted = await localPdfiumExecution.apply({
     session: original,
     command: /** @type {never} */ ({ kind: 'promoteFormObjects', page: 0 }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const after = await blocksOf(promoted);
@@ -1173,7 +1173,7 @@ async function blockEditCases() {
         fit: 'reflow',
         version: 1,
       }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
 
@@ -1299,7 +1299,7 @@ async function blockEditCases() {
         fit: 'reflow',
         version: 1,
       }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
     const text = (await textOf(result)).replace(/\s+/gu, ' ');
@@ -1327,7 +1327,7 @@ async function blockEditCases() {
         fit,
         version: 1,
       }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
   // `, two more` takes the line past its old end (the old rule wrapped it there) and not past the
@@ -1397,7 +1397,7 @@ async function blockEditCases() {
         fit: 'reflow',
         version: 1,
       }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
     const text = (await textOf(result)).replace(/\s+/gu, ' ');
@@ -1433,7 +1433,7 @@ async function blockEditCases() {
       fit: 'reflow',
       version: 1,
     }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const bothText = await textOf(both);
@@ -1467,7 +1467,7 @@ async function blockEditCases() {
           fit: 'reflow',
           version: 1,
         }),
-        source: undefined,
+        sources: [],
         reads: undefined,
       });
     /** The saved page's text, or the refusal's name — so a case records a refusal rather than crashing on it. */
