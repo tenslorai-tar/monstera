@@ -155,6 +155,27 @@ export function canSeeOneMoreCore(witness) {
 }
 
 /**
+ * Whether the machine's OWN load held still across a bracket closely enough for one more busy core to be told from it.
+ *
+ * {@link busyFraction} is machine-wide, so an interval with a core pinned reads that core PLUS whatever else the
+ * machine was doing, and comparing it with a quiet interval assumes the "whatever else" was the same in both.
+ * Measured otherwise on 2026-10-04 (Guards run 37225800277, windows-latest, 4 cores): a quiet interval read 0.276 and
+ * the pinned one straight after it 0.260, so the runner's own work fell by more than the core being resolved.
+ *
+ * So the pinned interval is bracketed by a quiet one either side, and the bracket answers only when the two quiet
+ * readings differ by less than HALF a core: then the machine's load during the pinned interval is within half a core of
+ * both, and one more core is still more than either. A bracket that moved further than that has not looked.
+ *
+ * @param {{ busy: number | null, cores: number }} before
+ * @param {{ busy: number | null, cores: number }} after
+ * @returns {boolean}
+ */
+export function ambientHeld(before, after) {
+  if (before.busy === null || after.busy === null) return false;
+  return Math.abs(before.busy - after.busy) * before.cores < 0.5;
+}
+
+/**
  * One line a human reads, for a row that already carries the seconds.
  *
  * @param {{ busy: number | null, cores: number }} witness
