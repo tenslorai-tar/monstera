@@ -290,15 +290,6 @@ function textForm(field: string, text: string): readonly DialogSample[] {
   ];
 }
 
-/** A form-field dialog that names one field: opened, filled, and a name with an empty part refused. */
-function namedField(name: string): readonly DialogSample[] {
-  return [
-    { state: 'opened', props: {} },
-    { state: 'filled', props: {}, steps: [type('Field name', name)] },
-    { state: 'refused', props: {}, steps: [type('Field name', 'customer..name')] },
-  ];
-}
-
 /** A form-field dialog that lists choices: opened, filled, and with several choice rows. */
 function choiceField(name: string): readonly DialogSample[] {
   return [
@@ -675,14 +666,6 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'signers', props: {}, steps: [press('Add signer'), press('Add signer')] },
   ],
   'dialog.docusign-notice': [{ state: 'opened', props: { reason: 'sent' } }],
-  'dialog.link-address': [
-    ...textForm('Address', 'https://example.com/quarterly-report'),
-    { state: 'refused', props: {}, steps: [type('Address', 'example.com/quarterly-report')] },
-  ],
-  'dialog.link-page': [
-    ...textForm('Page number', '4'),
-    { state: 'refused', props: {}, steps: [type('Page number', 'four')] },
-  ],
   'dialog.crop-pages': [
     { state: 'opened', props: { pages: [0] } },
     {
@@ -975,8 +958,6 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'search', props: SETTINGS, steps: [type('Search settings', 'page')] },
     { state: 'no-match', props: SETTINGS, steps: [type('Search settings', 'xylophone')] },
   ],
-  'dialog.form-field-text': namedField('customer_name'),
-  'dialog.form-field-checkbox': namedField('agree_to_terms'),
   'dialog.form-field-radio': [
     { state: 'opened', props: {} },
     {

@@ -1,18 +1,15 @@
 import type { LinkTarget, DispatchableCommand } from '@monstera/contract';
-import type { PageTransform } from '@monstera/shared';
+import type { MessageKey, PageTransform } from '@monstera/shared';
 
-import {
-  LINK_ADDRESS_DIALOG_ID,
-  LINK_PAGE_DIALOG_ID,
-  LINK_TEXT_RESULT,
-} from '../dialogs/annotationLink.js';
+import { LINK_ADDRESS_LABEL, LINK_PAGE_LABEL } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
 import type { TextToolDeps } from './textTools.js';
+import { linkAddressProblem, linkPageProblem, typedPageNumber } from './typedRules.js';
 
 /**
- * The two link tools — draw a region, then say where it goes.
+ * The two link tools — draw a region, then type where it goes, in a line beside it on the page (ADR-0154).
  *
  * ## A LINK IS NOT AN ANNOTATION, and the tools do not pretend otherwise
  *
@@ -26,10 +23,9 @@ import type { TextToolDeps } from './textTools.js';
  *
  * ## Two tools rather than one with a mode
  *
- * A web address and a page number are two questions, so they are two dialogs
- * (`annotationLink.ts` has the argument) and therefore two tools: a tool holds
- * the dialog it opens, exactly as the sticky note does. What they share is this
- * file's one factory, which is the drag, the threshold and the preview.
+ * A web address and a page number are two questions, with two labels and two
+ * rules (`typedRules.ts`), and therefore two tools. What they share is this
+ * file's one factory, which is the drag, the threshold, the preview and the line.
  *
  * ## The rectangle is drawn first and the destination asked after
  *
@@ -47,13 +43,13 @@ export const LINK_PAGE_TOOL_ID = 'annotate.link-page';
  *
  * `shapeTools.ts`' number, and here the refusal is sharper than a shape's: a
  * link with no area is a region a reader cannot click, so a stray press must
- * not open a dialog asking where nothing should go.
+ * not open a line asking where nothing should go.
  */
 const MINIMUM_DRAG = 4;
 
 function linkTool(
   id: string,
-  dialog: string,
+  line: { readonly label: MessageKey; readonly check: (text: string) => MessageKey | undefined },
   deps: TextToolDeps,
   target: (text: string) => LinkTarget | undefined,
 ): UiTool {
@@ -72,17 +68,23 @@ function linkTool(
     ): Promise<DispatchableCommand | undefined> => {
       if (!drawn(gesture)) return undefined;
       // READ BEFORE THE ASK. The rectangle belongs to the drag that just
-      // happened; converting after the dialog resolves would use whatever
+      // happened; converting after the words are typed would use whatever
       // transform the page has by then.
       const rect = draggedRect(startOf(gesture), endOf(gesture), transform);
 
-      const answered = LINK_TEXT_RESULT.safeParse(await deps.ask(dialog, {}));
-      if (!answered.success) return undefined;
-      const where = target(answered.data.text);
-      // A VALUE THE DIALOG LET THROUGH AND THIS CANNOT USE is the same outcome
-      // as a dismissal — nothing to build a command from. The dialog's own rule
-      // is what stops a person reaching this, so arriving here means the two
-      // disagreed, and refusing quietly leaves the page as it was.
+      const typed = await deps.write({
+        page,
+        box: rect,
+        shape: 'line',
+        initial: '',
+        label: line.label,
+        check: line.check,
+      });
+      // NOTHING TYPED builds no command. The line answers only words its rule passes (`settle`): it stays open with the
+      // rule's message at Enter, and answers nothing when the person leaves it.
+      if (typed === undefined) return undefined;
+      const where = target(typed.trim());
+      // A VALUE THE RULE PASSED AND THIS CANNOT USE means the two disagree; refusing quietly leaves the page as it was.
       if (where === undefined) return undefined;
 
       return { kind: 'addLink', page, rect, target: where };
@@ -107,15 +109,15 @@ function linkTool(
 /** Both link tools, in the order their controls appear. */
 export function linkTools(deps: TextToolDeps): readonly UiTool[] {
   return [
-    linkTool(LINK_ADDRESS_TOOL_ID, LINK_ADDRESS_DIALOG_ID, deps, (text) => ({
+    linkTool(LINK_ADDRESS_TOOL_ID, { label: LINK_ADDRESS_LABEL, check: linkAddressProblem }, deps, (text) => ({
       kind: 'uri',
       uri: text,
     })),
-    linkTool(LINK_PAGE_TOOL_ID, LINK_PAGE_DIALOG_ID, deps, (text) => {
+    linkTool(LINK_PAGE_TOOL_ID, { label: LINK_PAGE_LABEL, check: linkPageProblem }, deps, (text) => {
       // ONE-BASED IN, ZERO-BASED OUT, and the conversion is here rather than in
-      // the dialog: the dialog collects what was typed and this builds the
-      // command, so the offset has one place instead of two halves.
-      const typed = /^[1-9][0-9]*$/u.test(text) ? Number(text) : undefined;
+      // the rule: the rule says whether what was typed is a page number and this
+      // builds the command, so the offset has one place instead of two halves.
+      const typed = typedPageNumber(text);
       return typed === undefined ? undefined : { kind: 'page', page: typed - 1 };
     }),
   ];

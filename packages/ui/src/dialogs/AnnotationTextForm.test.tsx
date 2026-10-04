@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import AnnotationEditBody from './AnnotationEditBody.js';
 import { InDialog } from './inDialog.js';
-import LinkAddressBody from './LinkAddressBody.js';
+import OpenFromUrlBody from './OpenFromUrlBody.js';
 
 /**
  * The shared text form, under the rule `primitives/attempt.ts` names: what is typed being wrong is said at once, and
@@ -76,9 +76,10 @@ describe('the annotation text form', () => {
     note();
     expect(screen.getByRole('textbox', { name: 'Comment' }).tagName).toBe('TEXTAREA');
     cleanup();
+    // *Open from URL*'s address, the one-line caller that remains now a link's address is typed on the page.
     render(
       <InDialog>
-        <LinkAddressBody resolve={vi.fn()} update={vi.fn()} />
+        <OpenFromUrlBody resolve={vi.fn()} update={vi.fn()} />
       </InDialog>,
     );
     expect(screen.getByRole('textbox').tagName).toBe('INPUT');

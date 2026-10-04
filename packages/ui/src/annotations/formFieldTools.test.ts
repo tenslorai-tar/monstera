@@ -4,12 +4,12 @@ import { viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import {
-  FORM_FIELD_CHECKBOX_DIALOG_ID,
   FORM_FIELD_DROPDOWN_DIALOG_ID,
   FORM_FIELD_LISTBOX_DIALOG_ID,
   FORM_FIELD_RADIO_DIALOG_ID,
-  FORM_FIELD_TEXT_DIALOG_ID,
 } from '../dialogs/formField.js';
+import { FORM_FIELD_NAME_LABEL, FORM_FIELD_NAME_SEGMENT } from '../messages/en.js';
+import type { WriteRequest } from '../pageWriting.js';
 import { overlayTransform } from './annotationSpace.js';
 import { PLAIN_STYLE } from './annotationStyle.js';
 import {
@@ -22,7 +22,8 @@ import {
 } from './formFieldTools.js';
 
 /**
- * The five create-field controllers, driven without a DOM.
+ * The five create-field controllers, driven without a DOM: a text field and a checkbox named in a line on the page
+ * (ADR-0154), a radio button, a dropdown and a list box through their dialogs.
  *
  * This is the UI half of the wired-tools pair: `formFieldCreate.test.ts` proves
  * the command puts a field in the document, and this proves the control
@@ -46,21 +47,32 @@ const PAGE: Parameters<typeof overlayTransform>[0] = {
   zoom: 2,
 };
 
-/** The five tools, each with a dialog answering `answer`, and what was asked. */
-function toolsAnswering(answer: unknown): {
+/**
+ * The five tools, each with a dialog answering `answer` and the page answering `typed`, and what was asked of each.
+ * A name typed on the page is answered as the line answers it: the words, or `undefined` for none.
+ */
+function toolsAnswering(
+  answer: unknown,
+  typed?: string,
+): {
   readonly tools: ReturnType<typeof formFieldTools>;
   readonly asked: { id: string; props: unknown }[];
+  readonly written: WriteRequest[];
 } {
   const asked: { id: string; props: unknown }[] = [];
+  const written: WriteRequest[] = [];
   const tools = formFieldTools({
     ask: (id, props) => {
       asked.push({ id, props });
       return Promise.resolve(answer);
     },
-    write: () => Promise.reject(new Error('the page was asked for words')),
+    write: (request) => {
+      written.push(request);
+      return Promise.resolve(typed);
+    },
     style: PLAIN_STYLE,
   });
-  return { tools, asked };
+  return { tools, asked, written };
 }
 
 function toolWithId(tools: ReturnType<typeof formFieldTools>, id: string) {
@@ -82,16 +94,21 @@ async function drag(
   return controller.commit(moved, page, overlayTransform(PAGE));
 }
 
-describe('formFieldTools — each asks its own dialog and builds its own kind', () => {
-  it('the text tool dispatches createFormField with the converted rectangle', async () => {
-    const { tools, asked } = toolsAnswering({ name: 'applicant.name' });
+describe('formFieldTools — each asks for its own name and builds its own kind', () => {
+  it('the text tool asks the page for the NAME in a line beside the box, and dispatches createFormField with it', async () => {
+    const { tools, asked, written } = toolsAnswering(undefined, 'applicant.name');
 
     const command = await drag(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [120, 80]);
 
-    // BOTH HALVES. The id says it opened its own dialog rather than any other;
-    // the command says the answer reached the payload. Either alone passes for
-    // an implementation that asked and ignored, or built and never asked.
-    expect(asked).toStrictEqual([{ id: FORM_FIELD_TEXT_DIALOG_ID, props: {} }]);
+    // BOTH HALVES. The request says it asked the page for a field name beside the box drawn, and no dialog; the
+    // command says the answer reached the payload. Either alone passes for an implementation that asked and ignored,
+    // or built and never asked.
+    expect(asked).toStrictEqual([]);
+    expect(written.map(({ check: _rule, ...request }) => request)).toStrictEqual([
+      { page: 3, box: { x0: 60, y0: 390, x1: 110, y1: 360 }, shape: 'line', initial: '', label: FORM_FIELD_NAME_LABEL },
+    ]);
+    // AND THE NAME'S RULE, the one the field dialogs take: a dot with nothing after it is a parent with no name.
+    expect([written[0]?.check?.('applicant.name'), written[0]?.check?.('applicant.')]).toStrictEqual([undefined, FORM_FIELD_NAME_SEGMENT]);
     expect(command).toStrictEqual({
       kind: 'createFormField',
       page: 3,
@@ -114,15 +131,16 @@ describe('formFieldTools — each asks its own dialog and builds its own kind', 
     });
   });
 
-  it('the checkbox tool builds a checkbox', async () => {
-    const { tools, asked } = toolsAnswering({ name: 'applicant.agrees' });
+  it('the checkbox tool is named on the page too, and builds a checkbox', async () => {
+    const { tools, asked, written } = toolsAnswering(undefined, '  applicant.agrees  ');
 
     const command = await drag(toolWithId(tools, FORM_FIELD_CHECKBOX_TOOL_ID), [20, 20], [40, 40]);
 
-    expect(asked.map((entry) => entry.id)).toStrictEqual([FORM_FIELD_CHECKBOX_DIALOG_ID]);
+    expect([asked.length, written.length]).toStrictEqual([0, 1]);
+    // TRIMMED by the result schema the dialogs answer with, so a name reaches the command one way.
     expect(command).toMatchObject({
       kind: 'createFormField',
-      fields: [{ field: { type: 'checkbox' } }],
+      fields: [{ name: 'applicant.agrees', field: { type: 'checkbox' } }],
     });
   });
 
@@ -158,7 +176,7 @@ describe('formFieldTools — each asks its own dialog and builds its own kind', 
     // The join the two halves cannot make between them: a tool may build a
     // well-shaped object that the schema refuses, and the kernel cases construct
     // their own payloads rather than taking one from here.
-    const { tools } = toolsAnswering({ name: 'a.b', option: 'one', options: ['one', 'two'] });
+    const { tools } = toolsAnswering({ name: 'a.b', option: 'one', options: ['one', 'two'] }, 'a.b');
 
     for (const tool of tools) {
       const command = await drag(tool, [20, 20], [120, 80]);
@@ -168,38 +186,39 @@ describe('formFieldTools — each asks its own dialog and builds its own kind', 
 });
 
 describe('formFieldTools — when it builds nothing', () => {
-  it('a click that did not drag opens no dialog at all', async () => {
-    const { tools, asked } = toolsAnswering({ name: 'applicant.name' });
+  it('a click that did not drag asks for nothing at all', async () => {
+    const { tools, asked, written } = toolsAnswering({ name: 'applicant.name' }, 'applicant.name');
 
     const command = await drag(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [22, 21]);
 
-    // THE DIALOG IS THE ASSERTION, not just the absent command. A tool that
-    // asked and then discarded the answer would produce the same `undefined`
-    // while putting a modal in front of somebody who clicked by accident.
+    // THE ASK IS THE ASSERTION, not just the absent command. A tool that asked and then discarded the answer would
+    // produce the same `undefined` while putting a field in front of somebody who clicked by accident.
     expect(command).toBeUndefined();
-    expect(asked).toStrictEqual([]);
+    expect([asked, written]).toStrictEqual([[], []]);
   });
 
   it('a drag that is long but not tall is a sliver, not a field', async () => {
-    const { tools, asked } = toolsAnswering({ name: 'applicant.name' });
+    const { tools, asked, written } = toolsAnswering({ name: 'applicant.name' }, 'applicant.name');
 
     // BOTH AXES. A distance test accepts 100 by 1, which is a control nobody
     // can click and — unlike an annotation — one no eraser can find again.
     expect(await drag(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [120, 21])).toBeUndefined();
-    expect(asked).toStrictEqual([]);
+    expect([asked, written]).toStrictEqual([[], []]);
   });
 
-  it('a dismissed dialog builds nothing', async () => {
-    const { tools, asked } = toolsAnswering(undefined);
+  it('nothing typed builds nothing, and a dismissed dialog builds nothing', async () => {
+    const named = toolsAnswering(undefined, undefined);
+    expect(await drag(toolWithId(named.tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [120, 80])).toBeUndefined();
+    // It DID ask — which is what separates nothing typed from a gesture too small to have asked anything.
+    expect(named.written).toHaveLength(1);
 
-    expect(await drag(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [120, 80])).toBeUndefined();
-    // It DID ask — which is what separates a dismissal from a gesture too small
-    // to have opened anything.
-    expect(asked).toHaveLength(1);
+    const dismissed = toolsAnswering(undefined);
+    expect(await drag(toolWithId(dismissed.tools, FORM_FIELD_RADIO_TOOL_ID), [20, 20], [120, 80])).toBeUndefined();
+    expect(dismissed.asked).toHaveLength(1);
   });
 
   it('a radio answer with no option builds nothing rather than a broken command', async () => {
-    // One result schema serves five dialogs, so `option` is optional there. The
+    // One result schema serves every way a field is named, so `option` is optional there. The
     // tool is what narrows it, and this is the case that says a missing member
     // stops the command rather than travelling as `undefined`.
     const { tools } = toolsAnswering({ name: 'applicant.post' });

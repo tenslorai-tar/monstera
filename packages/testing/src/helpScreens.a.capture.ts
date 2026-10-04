@@ -236,9 +236,10 @@ test('add-links-1', async ({ page }) => {
   await openSection(page, 'Comment');
   await page.getByRole('button', { name: 'Web link', exact: true }).click();
   await dragOnPage(page, [72, 122], [300, 136]);
-  const dialog = page.getByRole('dialog', { name: 'Link to a web address' });
-  await dialog.getByLabel('Address').fill('https://example.com');
-  await shoot(page, 'add-links-1', dialog);
+  // TYPED BESIDE THE REGION DRAWN (ADR-0154): a line under the box, in the application's own field.
+  const line = page.getByRole('textbox', { name: 'Address' });
+  await line.fill('https://example.com');
+  await shootAround(page, 'add-links-1', [line], 48);
 });
 
 /** The four places to write on {@link formPdf}'s page, in PDF user space: the label, and the ruled line after it. */
@@ -390,9 +391,10 @@ test('create-form-fields-1', async ({ page }) => {
   await runCommand(page, 'Draw a text field');
   // ALONG THE FULL NAME LINE, which sits 154 points down the page.
   await dragOnPage(page, [180, 140], [520, 156]);
-  const dialog = page.getByRole('dialog', { name: 'New text field' });
-  await dialog.getByLabel('Field name').fill('full_name');
-  await shoot(page, 'create-form-fields-1', dialog);
+  // NAMED BESIDE THE BOX DRAWN (ADR-0154), in a line under it.
+  const line = page.getByRole('textbox', { name: 'Field name' });
+  await line.fill('full_name');
+  await shootAround(page, 'create-form-fields-1', [line], 48);
 });
 
 test('detect-form-fields-1', async ({ page }) => {

@@ -16,7 +16,7 @@ import type { OpenFromUrlAnswer } from './openFromUrl.js';
 /**
  * Where the PDF is, on the web.
  *
- * `LinkAddressBody`'s form with one scheme instead of three: the guard fetches `https:`
+ * A web link's address rule (`typedRules.ts`' `linkAddressProblem`) with one scheme instead of three: the guard fetches `https:`
  * alone, so a person meets that sentence here rather than a refusal after pressing Open.
  *
  * A default export because `declareDialog` takes a `lazy()` component.
@@ -41,7 +41,7 @@ function secure(value: string): MessageKey | undefined {
     return new URL(value).protocol === 'https:' ? undefined : OPEN_FROM_URL_SCHEME;
   } catch (error) {
     // A STRING `URL` CANNOT PARSE is the same problem to a person as a wrong scheme —
-    // `LinkAddressBody`'s reason — and `URL` signals it with this one error.
+    // `linkAddressProblem`'s reason — and `URL` signals it with this one error.
     if (!(error instanceof TypeError)) throw error;
     return OPEN_FROM_URL_SCHEME;
   }

@@ -2,7 +2,6 @@ import { ABOUT_DIALOG } from '../dialogs/about.js';
 import { ACCESSIBILITY_DIALOG } from '../dialogs/accessibilityCheck.js';
 import { AI_SETUP_DIALOG } from '../dialogs/aiSetup.js';
 import { ANNOTATION_EDIT_DIALOG } from '../dialogs/annotationEdit.js';
-import { LINK_ADDRESS_DIALOG, LINK_PAGE_DIALOG } from '../dialogs/annotationLink.js';
 import { ANNOTATION_REPLY_DIALOG } from '../dialogs/annotationReply.js';
 import { APPLY_REDACTIONS_DIALOG } from '../dialogs/applyRedactions.js';
 import { BATES_NUMBER_DIALOG } from '../dialogs/batesNumber.js';
@@ -138,8 +137,6 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   SIGNATURES_DIALOG,
   DOCUSIGN_SEND_DIALOG,
   DOCUSIGN_NOTICE_DIALOG,
-  LINK_ADDRESS_DIALOG,
-  LINK_PAGE_DIALOG,
   CROP_PAGES_DIALOG,
   WATERMARK_PAGES_DIALOG,
   PAGE_BACKGROUND_DIALOG,

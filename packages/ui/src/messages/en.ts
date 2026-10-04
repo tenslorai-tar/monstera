@@ -1151,13 +1151,9 @@ export const FORM_FIELD_CHECKBOX_TOOL_TITLE = messageKey('command.forms.field-ch
 export const FORM_FIELD_RADIO_TOOL_TITLE = messageKey('command.forms.field-radio');
 export const FORM_FIELD_DROPDOWN_TOOL_TITLE = messageKey('command.forms.field-dropdown');
 export const FORM_FIELD_LISTBOX_TOOL_TITLE = messageKey('command.forms.field-listbox');
-export const FORM_FIELD_TEXT_TITLE = messageKey('dialog.form-field-text.title');
-export const FORM_FIELD_CHECKBOX_TITLE = messageKey('dialog.form-field-checkbox.title');
 export const FORM_FIELD_RADIO_TITLE = messageKey('dialog.form-field-radio.title');
 export const FORM_FIELD_DROPDOWN_TITLE = messageKey('dialog.form-field-dropdown.title');
 export const FORM_FIELD_LISTBOX_TITLE = messageKey('dialog.form-field-listbox.title');
-export const FORM_FIELD_TEXT_APPLY = messageKey('dialog.form-field-text.apply');
-export const FORM_FIELD_CHECKBOX_APPLY = messageKey('dialog.form-field-checkbox.apply');
 export const FORM_FIELD_RADIO_APPLY = messageKey('dialog.form-field-radio.apply');
 export const FORM_FIELD_DROPDOWN_APPLY = messageKey('dialog.form-field-dropdown.apply');
 export const FORM_FIELD_LISTBOX_APPLY = messageKey('dialog.form-field-listbox.apply');
@@ -1209,18 +1205,14 @@ export const DOCUMENT_PASSWORD_EMPTY = messageKey('dialog.document-password.empt
 export const DOCUMENT_PASSWORD_WRONG = messageKey('dialog.document-password.wrong');
 export const DOCUMENT_PASSWORD_TOO_LONG = messageKey('dialog.document-password.too-long');
 
-export const LINK_ADDRESS_TITLE = messageKey('dialog.link-address.title');
-export const LINK_ADDRESS_LABEL = messageKey('dialog.link-address.label');
-export const LINK_ADDRESS_APPLY = messageKey('dialog.link-address.apply');
-export const LINK_ADDRESS_EMPTY = messageKey('dialog.link-address.empty');
-export const LINK_ADDRESS_TOO_LONG = messageKey('dialog.link-address.too-long');
-export const LINK_ADDRESS_SCHEME = messageKey('dialog.link-address.scheme');
-export const LINK_PAGE_TITLE = messageKey('dialog.link-page.title');
-export const LINK_PAGE_LABEL = messageKey('dialog.link-page.label');
-export const LINK_PAGE_APPLY = messageKey('dialog.link-page.apply');
-export const LINK_PAGE_EMPTY = messageKey('dialog.link-page.empty');
-export const LINK_PAGE_TOO_LONG = messageKey('dialog.link-page.too-long');
-export const LINK_PAGE_NOT_A_NUMBER = messageKey('dialog.link-page.not-a-number');
+export const LINK_ADDRESS_LABEL = messageKey('surface.write.link-address.label');
+export const LINK_ADDRESS_EMPTY = messageKey('surface.write.link-address.empty');
+export const LINK_ADDRESS_TOO_LONG = messageKey('surface.write.link-address.too-long');
+export const LINK_ADDRESS_SCHEME = messageKey('surface.write.link-address.scheme');
+export const LINK_PAGE_LABEL = messageKey('surface.write.link-page.label');
+export const LINK_PAGE_EMPTY = messageKey('surface.write.link-page.empty');
+export const LINK_PAGE_TOO_LONG = messageKey('surface.write.link-page.too-long');
+export const LINK_PAGE_NOT_A_NUMBER = messageKey('surface.write.link-page.not-a-number');
 export const DELETE_SELECTION_TITLE = messageKey('command.annotate.delete-selection');
 export const SELECTION_PROPERTIES_TITLE = messageKey('command.annotate.properties');
 export const NUDGE_LEFT_TITLE = messageKey('command.annotate.nudge-left');
@@ -3321,13 +3313,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORM_FIELD_RADIO_TOOL_TITLE]: 'Draw a radio option',
   [FORM_FIELD_DROPDOWN_TOOL_TITLE]: 'Draw a dropdown',
   [FORM_FIELD_LISTBOX_TOOL_TITLE]: 'Draw a list box',
-  [FORM_FIELD_TEXT_TITLE]: 'New text field',
-  [FORM_FIELD_CHECKBOX_TITLE]: 'New tick box',
   [FORM_FIELD_RADIO_TITLE]: 'New radio option',
   [FORM_FIELD_DROPDOWN_TITLE]: 'New dropdown',
   [FORM_FIELD_LISTBOX_TITLE]: 'New list box',
-  [FORM_FIELD_TEXT_APPLY]: 'Add text field',
-  [FORM_FIELD_CHECKBOX_APPLY]: 'Add tick box',
   [FORM_FIELD_RADIO_APPLY]: 'Add radio option',
   [FORM_FIELD_DROPDOWN_APPLY]: 'Add dropdown',
   [FORM_FIELD_LISTBOX_APPLY]: 'Add list box',
@@ -3516,9 +3504,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DOCUMENT_PASSWORD_WRONG]: 'That password did not open the document. Try again.',
   [DOCUMENT_PASSWORD_TOO_LONG]: 'That is longer than any password this format can carry.',
 
-  [LINK_ADDRESS_TITLE]: 'Link to a web address',
   [LINK_ADDRESS_LABEL]: 'Address',
-  [LINK_ADDRESS_APPLY]: 'Add link',
   [LINK_ADDRESS_EMPTY]: 'Type the address this link should open.',
   [LINK_ADDRESS_TOO_LONG]: 'That address is too long to store.',
   // NAMES WHAT IS ACCEPTED rather than what was wrong, because the person is
@@ -3526,9 +3512,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // type. The three schemes are the ones this build will write into a document
   // that leaves this machine.
   [LINK_ADDRESS_SCHEME]: 'Links can open a web page or an email address: start with https://, http:// or mailto:.',
-  [LINK_PAGE_TITLE]: 'Link to a page',
   [LINK_PAGE_LABEL]: 'Page number',
-  [LINK_PAGE_APPLY]: 'Add link',
   [LINK_PAGE_EMPTY]: 'Type the page this link should go to.',
   [LINK_PAGE_TOO_LONG]: 'That is not a page number.',
   [LINK_PAGE_NOT_A_NUMBER]: 'Type a page number, counting from 1.',
