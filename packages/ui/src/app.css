@@ -6072,11 +6072,21 @@ optgroup {
   min-inline-size: 0;
 }
 
-.m-settings-row__colour,
-.m-settings-row__secret {
+.m-settings-row__colour {
   display: flex;
   align-items: center;
   gap: var(--space-8);
+}
+
+/* A KEY'S FIELD, AND UNDER IT the box that removes the stored one: the field runs long (ADR-0157), so it has the
+   column's whole width, and a box beside it would take that width back. */
+.m-settings-row__secret {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-4);
+  min-inline-size: 0;
 }
 
 .m-settings-row__unset {

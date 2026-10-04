@@ -438,6 +438,36 @@ describe('SettingsRegistry', () => {
     expect(colourKindOf(lookalike())).toBeUndefined();
   });
 
+  // ADR-0157: whether a text field runs long is decided by the setting, never defaulted.
+  const textSetting = (over: Partial<SettingDefinition>): SettingDefinition => ({
+    id: 'editing.address',
+    title: messageKey('setting.address.label'),
+    schema: z.string(),
+    fallback: '',
+    category: 'editing',
+    ...over,
+  });
+
+  it('refuses a TEXT setting that does not say whether its value runs long', () => {
+    expect(() => new SettingsRegistry([textSetting({})])).toThrow(/"editing\.address" is a text setting that does not say/u);
+  });
+
+  it('refuses runsLong on a secret, which runs long by definition, and on a setting with no text field', () => {
+    expect(() => new SettingsRegistry([textSetting({ secret: true, runsLong: true })])).toThrow(
+      /"editing\.address" declares runsLong and is not a text setting/u,
+    );
+    expect(() =>
+      new SettingsRegistry([textSetting({ schema: z.boolean(), fallback: false, runsLong: false })]),
+    ).toThrow(/"editing\.address" declares runsLong and is not a text setting/u);
+  });
+
+  it('CONTROL: a text setting saying either answer constructs, and so do a secret and a remembered string saying none', () => {
+    expect(new SettingsRegistry([textSetting({ runsLong: true })]).size).toBe(1);
+    expect(new SettingsRegistry([textSetting({ runsLong: false })]).size).toBe(1);
+    expect(new SettingsRegistry([textSetting({ secret: true })]).size).toBe(1);
+    expect(new SettingsRegistry([textSetting({ remembered: true })]).size).toBe(1);
+  });
+
   it('colourSchema refuses a starting colour an input cannot take, and a no-choice value that is a colour', () => {
     expect(() => colourSchema({ unset: 'auto', starting: '#D92626' })).toThrow(/starting colour/u);
     expect(() => colourSchema({ unset: 'auto', starting: 'red' })).toThrow(/starting colour/u);

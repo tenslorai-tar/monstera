@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { type Page, expect, test } from '@playwright/test';
 
+import { readLongFields } from './longFields.js';
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
 import { settled } from './settled.js';
 
@@ -21,6 +22,10 @@ import { settled } from './settled.js';
  * WHAT IS READ, beside the image, is what review by eye must not have to measure: whether the footer is inside the
  * window, whether anything in the dialog scrolls sideways, whether the dialog is taller than the window, and whether
  * a refusal (`role="alert"`) is showing in a state reached by no step — a warning before the person has done anything.
+ *
+ * AND EVERY FIELD HOLDING A LONG VALUE against its row's width (ADR-0157, `longFields.ts`), which is refused rather
+ * than only reported: it is the class by its symptom, so a field missing its `runsLong` is found by its value. At least
+ * one such field must have been seen in the look, or an empty list would be a gallery whose samples hold no long value.
  */
 
 const OUT = process.env['CAPTURE_OUT'] ?? join('capture', 'dialogs');
@@ -54,6 +59,8 @@ interface Reading {
   readonly sideways: readonly string[];
   readonly tallerThanWindow: boolean;
   readonly alertWithoutSteps: boolean;
+  /** Fields holding a long value drawn narrower than their row (ADR-0157). */
+  readonly longShort: readonly string[];
 }
 
 async function indexOf(page: Page, look: Look): Promise<GalleryIndex> {
@@ -75,6 +82,7 @@ for (const look of LOOKS) {
     else console.log(`GALLERY_ONLY: ${String(only.length)} of ${String(index.registered.length)} dialogs; ${String(index.unsampled.length)} have no sample`);
 
     const readings: Reading[] = [];
+    let longSeen = 0;
     for (const size of SIZES) {
       for (const id of index.registered.filter((one) => only === undefined || only.includes(one))) {
         for (const state of index.states[id] ?? []) {
@@ -147,6 +155,8 @@ for (const look of LOOKS) {
                     [...element.querySelectorAll('[role="status"]')].some((status) => status.textContent.trim() !== ''),
                 };
               });
+          const long = problem !== null ? { seen: 0, short: [] } : await dialog.evaluate(readLongFields);
+          longSeen += long.seen;
           const folder = join(OUT, look.name, size.name);
           mkdirSync(folder, { recursive: true });
           const file = join(folder, `${id.replace(/^dialog\./u, '')}--${state}.png`);
@@ -163,6 +173,7 @@ for (const look of LOOKS) {
             sideways: measured?.sideways ?? [],
             tallerThanWindow: measured?.tallerThanWindow ?? false,
             alertWithoutSteps: steps.length === 0 && (measured?.alert ?? false),
+            longShort: long.short,
           });
           await page.close();
         }
@@ -170,5 +181,11 @@ for (const look of LOOKS) {
     }
     mkdirSync(join(OUT, look.name), { recursive: true });
     writeFileSync(join(OUT, look.name, 'report.json'), JSON.stringify(readings, null, 2));
+    // WRITTEN FIRST, so a refusal below still leaves the readings to look at.
+    if (only === undefined) expect(longSeen, 'fields holding a long value seen in the gallery').toBeGreaterThan(0);
+    expect(
+      readings.flatMap((reading) => reading.longShort.map((field) => `${reading.size} ${reading.id} ${reading.state} › ${field}`)),
+      'fields holding a long value narrower than their row (ADR-0157)',
+    ).toStrictEqual([]);
   });
 }

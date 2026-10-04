@@ -539,6 +539,19 @@
   flex: 1 1 auto;
 }
 
+/* A VALUE THAT RUNS LONG — a key, an address, an endpoint (`Input`'s `runsLong`, ADR-0157) — takes its own line and the
+   row's whole width, in a dialog row and a Settings row alike. At the browser's own twenty characters a key showed
+   about a fifth of itself (168 px in rows of 488 to 672, measured 2026-10-04). */
+.m-dialog-row__control:has(> .m-field--long),
+.m-settings-row__control:has(.m-field--long) {
+  flex-basis: 100%;
+}
+
+.m-field--long {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
 .m-input:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;

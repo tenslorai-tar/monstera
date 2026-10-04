@@ -104,6 +104,8 @@ export const AZURE_OPENAI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
   title: AI_AZURE_OPENAI_ENDPOINT_TITLE,
   description: AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION,
   category: 'ai',
+  // AN ADDRESS, read whole (ADR-0157).
+  runsLong: true,
 };
 
 /**

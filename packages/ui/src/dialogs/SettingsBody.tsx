@@ -344,6 +344,8 @@ function SettingControl({
         labelShownBeside
         // THE SETTING'S OWN PURPOSE (ADR-0116), never decided here from its id.
         purpose={setting.purpose}
+        // AND WHETHER IT RUNS LONG, which every text setting declares (ADR-0157).
+        runsLong={setting.runsLong === true}
         onValueChange={(value) => {
           onDraft(value);
         }}
@@ -366,6 +368,8 @@ function SettingControl({
             onSecret({ ...secret, replace: value });
           }}
           placeholder={stored ? SETTINGS_SECRET_PLACEHOLDER : undefined}
+          // A KEY OR A TOKEN, which every secret setting is: it runs long (ADR-0157).
+          runsLong
           secret
           value={secret.replace}
         />

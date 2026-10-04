@@ -2,6 +2,7 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { type SceneShim, openApp, openDocument, openSection, runCommand, samplePdf } from './helpScreensHarness.js';
+import { readLongFields } from './longFields.js';
 import { settled } from './settled.js';
 
 /**
@@ -183,6 +184,58 @@ test('EVERY SETTINGS PAGE keeps every row’s description at its reading basis o
   expect(measured).toContain('Recognition languages');
   expect(narrow).toStrictEqual([]);
 });
+
+// A VALUE TYPED THAT RUNS LONG: an example key's length, a hundred characters and more as providers issue them. Not a
+// key of any provider's form, so nothing reading the repository takes it for one.
+const LONG_KEY = `example-key-${'0'.repeat(100)}`;
+const LONG_ADDRESS = 'https://example-resource-for-a-long-name.openai.azure.com/';
+
+for (const size of [
+  { width: 1280, height: 800 },
+  { width: 760, height: 560 },
+]) {
+  test(`at ${String(size.width)} × ${String(size.height)} a KEY or an ENDPOINT holding a long value takes its row’s width, in Settings and in the AI setup (ADR-0157)`, async ({
+    page,
+  }) => {
+    await openApp(page);
+    await page.setViewportSize(size);
+    await page.getByRole('button', { name: 'Settings' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Settings' });
+    await dialog.getByRole('button', { name: 'AI', exact: true }).click();
+    // THE PAGE SHOWS THE CHOSEN PROVIDER'S ROWS, and Azure OpenAI's are a key and an endpoint.
+    await dialog.getByRole('combobox', { name: 'AI provider' }).selectOption('azure-openai');
+    await dialog.getByLabel('Azure OpenAI endpoint', { exact: true }).fill(LONG_ADDRESS);
+    await dialog.getByLabel('Azure OpenAI key', { exact: true }).fill(LONG_KEY);
+    const ai = await dialog.evaluate(readLongFields);
+    // THE POSITIVE CONTROL: two long values were seen, so an empty list is two fields measured.
+    expect(ai.seen).toBe(2);
+    expect(ai.short).toStrictEqual([]);
+    // AND OCR's, the endpoint and key of a second service on another page.
+    await dialog.getByRole('button', { name: 'OCR', exact: true }).click();
+    await dialog.getByLabel('Azure Document Intelligence endpoint', { exact: true }).fill(LONG_ADDRESS);
+    await dialog.getByLabel('Azure Document Intelligence key', { exact: true }).fill(LONG_KEY);
+    const ocr = await dialog.evaluate(readLongFields);
+    expect(ocr.seen).toBe(2);
+    expect(ocr.short).toStrictEqual([]);
+
+    // AND A SHORT FIELD STAYS SHORT: *Your name for comments* declares it does not run long, so its field keeps the
+    // browser's width rather than the row's, which the widening of every field would not.
+    await dialog.getByRole('button', { name: 'Editing defaults' }).click();
+    const row = dialog.locator('.m-settings-row').filter({ hasText: 'Your name for comments' });
+    const name = row.getByLabel('Your name for comments', { exact: true });
+    expect((await boxOf(name)).width).toBeLessThan((await boxOf(row)).width / 2);
+    await dialog.getByRole('button', { name: 'Done' }).click();
+
+    await runCommand(page, 'Set up AI…');
+    const setup = page.getByRole('dialog', { name: 'Set up the AI assistant' });
+    await setup.getByRole('combobox', { name: 'Provider' }).selectOption('azure-openai');
+    await setup.getByLabel('API key', { exact: true }).fill(LONG_KEY);
+    await setup.getByLabel('Azure OpenAI endpoint', { exact: true }).fill(LONG_ADDRESS);
+    const first = await setup.evaluate(readLongFields);
+    expect(first.seen).toBe(2);
+    expect(first.short).toStrictEqual([]);
+  });
+}
 
 test('the FLOAT BAR covers no ORGANIZE card at 1280 × 800', async ({ page }) => {
   await openApp(page);

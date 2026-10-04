@@ -62,6 +62,8 @@ export default function OpenFromUrlBody({ resolve }: DialogAnswering<OpenFromUrl
           labelShownBeside
           onValueChange={setText}
           opensFocused
+          // A WEB ADDRESS, read whole (ADR-0157).
+          runsLong
           value={text}
         />
       </DialogRow>

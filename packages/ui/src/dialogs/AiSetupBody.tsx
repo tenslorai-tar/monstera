@@ -90,7 +90,7 @@ export default function AiSetupBody({
       </DialogRow>
       {secretsAvailable ? (
         <DialogRow label={AI_SETUP_KEY}>
-          <Input label={AI_SETUP_KEY} labelShownBeside onValueChange={setKey} secret value={key} />
+          <Input label={AI_SETUP_KEY} labelShownBeside onValueChange={setKey} runsLong secret value={key} />
         </DialogRow>
       ) : (
         <p className="m-ai-setup__problem" role="status">
@@ -99,7 +99,7 @@ export default function AiSetupBody({
       )}
       {needsEndpoint && secretsAvailable ? (
         <DialogRow label={AI_SETUP_ENDPOINT}>
-          <Input label={AI_SETUP_ENDPOINT} labelShownBeside onValueChange={setEndpoint} value={endpoint} />
+          <Input label={AI_SETUP_ENDPOINT} labelShownBeside onValueChange={setEndpoint} runsLong value={endpoint} />
         </DialogRow>
       ) : null}
       {problem === undefined ? null : (

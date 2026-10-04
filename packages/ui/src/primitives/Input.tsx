@@ -84,6 +84,16 @@ export interface InputProps {
    * the body knows whether typing is the first thing a person does in it, so the body says so.
    */
   opensFocused?: boolean;
+  /**
+   * Whether the value is one a person reads whole and that runs past the browser's twenty characters: a key, a web
+   * address, an endpoint, a file path, an OAuth value, a timestamp ([ADR-0157](../../../../docs/DECISIONS/0157-a-field-whose-value-runs-long-takes-its-rows-width.md)).
+   * Such a field takes its own line and its row's whole width; every other field keeps the browser's width, since a
+   * page number or a name in a box the dialog's width reads as a request for a long answer.
+   *
+   * **Said by the caller, never guessed from `secret`**: a document's password is a secret and short, and an endpoint
+   * runs long and is not a secret.
+   */
+  runsLong?: boolean;
 }
 
 /** The mark {@link InputProps.opensFocused} writes, which `Dialog` looks for. One spelling for both. */
@@ -100,12 +110,13 @@ export function Input({
   purpose,
   labelShownBeside = false,
   opensFocused = false,
+  runsLong = false,
 }: InputProps): ReactElement {
   // Subscribed rather than resolved once — see `Button`.
   const { _ } = useLingui();
 
   return (
-    <Field.Root className="m-field" disabled={disabled} invalid={invalid}>
+    <Field.Root className={runsLong ? 'm-field m-field--long' : 'm-field'} disabled={disabled} invalid={invalid}>
       <Field.Label className={labelShownBeside ? 'm-visually-hidden' : 'm-field__label'}>{_(label)}</Field.Label>
       <BaseInput
         {...(opensFocused ? { [OPENS_FOCUSED]: '' } : {})}

@@ -410,6 +410,8 @@ export const AZURE_DI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
   // beside the language, rather than under the editing defaults its id was declared with.
   category: 'ocr',
   description: EDITING_AZURE_ENDPOINT_DESCRIPTION,
+  // AN ADDRESS, read whole (ADR-0157).
+  runsLong: true,
 };
 
 /**
@@ -486,6 +488,8 @@ export const AUTHOR_NAME_SETTING: SettingDefinition<typeof annotationAuthorSchem
   category: 'editing',
   // THE PERSON'S OWN NAME (WCAG 1.3.5, ADR-0116): the field says so, so the platform can fill it and say what it is.
   purpose: 'name',
+  // A NAME IS SHORT, and its field keeps the browser's width (ADR-0157).
+  runsLong: false,
 };
 
 /** Who a new mark names: the name typed in {@link AUTHOR_NAME_SETTING}, else the Windows user name. */
