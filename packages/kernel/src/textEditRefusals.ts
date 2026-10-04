@@ -17,6 +17,25 @@
  * `scripts/research/pdfiumReflow.mjs`). So the edit is refused before the
  * page's content is generated, and nothing about the document changes.
  */
+/**
+ * Why a replacement of ONE occurrence, named by its point on the page, was refused (ADR-0156 Decision 4).
+ *
+ * The word was found in one engine's reading of the page and is written through the other's text objects, and the
+ * two readings agree on a page's lines about half the time (`proof:lineagreement`, 52.9%). So the occurrence is named
+ * by where it is, and the edit happens only when exactly one text object holds the word at that point exactly once.
+ * Anything else — no object there, an object without the word, the word twice in it, a word split across two objects
+ * — is this refusal, and nothing is written: replacing a guess would change a word the person did not choose.
+ */
+export class TextNotInPlaceError extends Error {
+  constructor(options?: ErrorOptions) {
+    super(
+      'no single text object holds the word at that point on the page, so it was not replaced there and nothing was written',
+      options,
+    );
+    this.name = 'TextNotInPlaceError';
+  }
+}
+
 export class TextNotWritableError extends Error {
   constructor(options?: ErrorOptions) {
     super(

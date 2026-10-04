@@ -25,6 +25,7 @@ import {
   PROBLEM_REFERENCE_LABEL,
   PROBLEM_STALE_TARGET,
   TEXT_EDIT_NOT_WRITABLE,
+  TEXT_NOT_IN_PLACE,
 } from '../messages/en.js';
 
 /** Every failure code a document command can hand a renderer. */
@@ -38,6 +39,7 @@ export type CommandProblem =
   | { readonly code: 'not-copyable' }
   | { readonly code: 'comment-too-long' }
   | { readonly code: 'text-not-writable' }
+  | { readonly code: 'text-not-in-place' }
   | { readonly code: 'copy-absent' }
   | { readonly code: 'copy-at-capacity' }
   | { readonly code: 'copy-busy' }
@@ -63,6 +65,7 @@ const MESSAGE: Readonly<Record<CommandProblem['code'], MessageKey>> = {
   'not-copyable': PROBLEM_NOT_COPYABLE,
   'comment-too-long': PROBLEM_COMMENT_TOO_LONG,
   'text-not-writable': TEXT_EDIT_NOT_WRITABLE,
+  'text-not-in-place': TEXT_NOT_IN_PLACE,
   'copy-absent': PROBLEM_COPY_ABSENT,
   'copy-at-capacity': PROBLEM_COPY_AT_CAPACITY,
   'copy-busy': PROBLEM_COPY_BUSY,

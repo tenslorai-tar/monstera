@@ -3,6 +3,7 @@ import {
   DocumentBusyError,
   DocumentNotOpenError,
   StaleTargetError,
+  TextNotInPlaceError,
   TextNotWritableError,
   UnregisteredWriterError,
 } from '@monstera/kernel';
@@ -107,6 +108,9 @@ export function executeCommandHandler(
       // what it was; the person can type something else, and `internal` would
       // send them to an incident log for a document working as made.
       if (thrown instanceof TextNotWritableError) return err({ code: 'text-not-writable' });
+      // ONE OCCURRENCE NO SINGLE TEXT OBJECT HOLDS AT ITS POINT (ADR-0156): not replaced there, nothing written, and
+      // the person can edit the line instead — theirs to act on, for the line above's reason.
+      if (thrown instanceof TextNotInPlaceError) return err({ code: 'text-not-in-place' });
       // A SERVICE'S ANSWER, from a region recognition's pre-read — an Anthropic account out of
       // credit, a key the service refused, a service that is down. Each is the reader's to act
       // on, and `internal` would send them to an incident log for an application working as

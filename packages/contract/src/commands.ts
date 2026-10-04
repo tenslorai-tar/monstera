@@ -4973,6 +4973,36 @@ export const replaceAllTextSchema = z.object({
   regex: z.boolean().optional(),
 }).strict();
 
+/**
+ * Replaces ONE occurrence of a word, named by where it is on the page (ADR-0156 Decision 4).
+ *
+ * ## The point is the occurrence's name, because a list position cannot cross
+ *
+ * The word was found in MuPDF's reading of the page, and page text is written through PDFium's text objects; the two
+ * engines' readings of one page agreed on 52.9% of lines (`proof:lineagreement`), so *the third match on page 4* names
+ * a different word about half the time. The page's geometry is what both engines share. `at` is the word's centre in
+ * PDF user space, and the kernel replaces `find` — whole word, exactly as written — in the one text object whose
+ * bounds hold `at`, and only when that object holds it exactly once. Anything else is refused as `text-not-in-place`
+ * and nothing changes.
+ *
+ * ## It names nothing it could be stale against, so it carries no version
+ *
+ * `replaceAllText`'s reason: it is content-addressed. A document that has moved either still holds the word at that
+ * point, and the edit is the one asked for, or it does not, and the refusal says so.
+ */
+export const replaceTextAtSchema = z
+  .object({
+    kind: z.literal('replaceTextAt'),
+    page: z.number().int().nonnegative(),
+    /** The word as it is on the page. Refused when empty: there is nothing to find. */
+    find: z.string().min(1).max(MAX_FIND_TEXT),
+    /** What it becomes; `replaceAllText`'s bound, a person's typing. */
+    replace: z.string().max(MAX_FIND_TEXT),
+    /** The occurrence's centre, in PDF user space. */
+    at: annotationPointSchema,
+  })
+  .strict();
+
 /** How a block edit takes words that no longer fit its box (ADR-0097 4b). */
 export const TEXT_FIT_MODES = ['reflow', 'shrink'] as const;
 
@@ -5171,6 +5201,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   deletePageObjectsSchema,
   promoteFormObjectsSchema,
   replaceAllTextSchema,
+  replaceTextAtSchema,
   editTextBlockSchema,
 ]);
 
@@ -5376,6 +5407,10 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // 52.9% line-agreement score refuses. The kernel finds them in the editing
   // engine's own runs.
   replaceAllTextSchema,
+  // RENDERABLE: two strings and a point. The point is what the renderer CAN say about where one occurrence is — the
+  // page's own geometry, read from MuPDF's quads — where a position in MuPDF's list would name another word in
+  // PDFium's about half the time (ADR-0156).
+  replaceTextAtSchema,
   // RENDERABLE: the block a person saw, as indices a read answered, and the
   // words they typed. What it cannot express is where a line breaks or where a
   // new one goes — the renderer does not have the page's fonts, so those are

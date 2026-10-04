@@ -208,7 +208,10 @@ describe('the declaration table', () => {
       // Neither grows with the document, so both belong here. `deletePageObjects`
       // is deliberately absent: PDFium cannot rebuild a removed object, so it is
       // declared terminal and appears in the control below instead.
-    ).toStrictEqual(['replaceTextObject', 'placePageObject', 'recolorPageObjects']);
+      //
+      // - `replaceTextAt`'s (2026-10-04, ADR-0156) is `replaceTextObject`'s shape with ONE object: a page, an index and
+      //   the string it held, capped by `PDFIUM_PRIOR_TEXT_MAX` on the wire. Bounded by the contract.
+    ).toStrictEqual(['replaceTextObject', 'placePageObject', 'recolorPageObjects', 'replaceTextAt']);
   });
 
   it('CONTROL: some byte-image command is TERMINAL, so the case above is a property and not a description', () => {

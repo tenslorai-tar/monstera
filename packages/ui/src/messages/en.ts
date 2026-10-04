@@ -1103,6 +1103,7 @@ export const TEXT_EDIT_UNADDRESSABLE = messageKey('surface.text-edit.unaddressab
 export const TEXT_EDIT_PROMOTE = messageKey('surface.text-edit.promote');
 export const TEXT_EDIT_ROTATED = messageKey('surface.text-edit.rotated');
 export const TEXT_EDIT_NOT_WRITABLE = messageKey('surface.text-edit.not-writable');
+export const TEXT_NOT_IN_PLACE = messageKey('surface.text-edit.not-in-place');
 export const TEXT_EDIT_HELD = messageKey('surface.text-edit.held');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
 /** What the page area says until its first page is drawn, in place of empty slots. */
@@ -3271,6 +3272,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // words, so the person can change the ones the font cannot show.
   [TEXT_EDIT_NOT_WRITABLE]:
     'Nothing was changed: the font on this page can’t show some of the characters you typed. Change them, or press Esc to put the text back.',
+  // NOTHING CHANGED, then the way that works: this word is drawn in a way that cannot be changed on its own here, and
+  // Edit text changes the line it is in.
+  [TEXT_NOT_IN_PLACE]:
+    'Nothing was changed: this word can’t be replaced on its own here. Use Edit text to change the line it is in.',
   [TEXT_EDIT_HELD]:
     'Nothing was changed, so the signatures still verify. Keep typing and you will be asked again when you finish, or press Esc to put the text back.',
   // SAYS WHAT THE PAGE IS, not what the application cannot do. A reader looking

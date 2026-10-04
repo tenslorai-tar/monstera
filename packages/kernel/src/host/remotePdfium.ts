@@ -10,7 +10,7 @@ import { serialiseIntoFile } from '../checkpointFile.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { ByteImage } from '../engineSeam.js';
 import type { TextRun } from '../pdfiumFfi.js';
-import { TextNotWritableError } from '../textEditRefusals.js';
+import { TextNotInPlaceError, TextNotWritableError } from '../textEditRefusals.js';
 import { EngineCallFailed, EngineSessionGone, type SessionArea, priorTooLargeToRecord } from './remoteEngine.js';
 import { EngineSerialiseMismatch, type SessionAreaSurface, takeAnnounced } from './remoteLifecycle.js';
 import { type PdfiumChannels, pdfiumTaggedPrior } from './pdfiumChannels.js';
@@ -133,6 +133,7 @@ function answered<T>(
   // THE SAME CLASS THE LOCAL WRITER THROWS, so main's answer to a font that
   // cannot carry the typed text does not depend on which process applied it.
   if (result.error.code === 'text-not-writable') throw new TextNotWritableError();
+  if (result.error.code === 'text-not-in-place') throw new TextNotInPlaceError();
   throw new EngineCallFailed(channel, result.error.code);
 }
 

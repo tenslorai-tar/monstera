@@ -25,6 +25,7 @@ import {
   captureReplaceAllText,
   invertReplaceAllText,
 } from './pdfiumReplaceAll.js';
+import { applyReplaceTextAt, captureReplaceTextAt } from './pdfiumReplaceAt.js';
 import {
   applyEditTextBlock,
   applyReplaceTextObject,
@@ -112,6 +113,14 @@ export const pdfiumSpecs = {
     // prior does not exist.
     capture: captureDeletePageObjects,
     invert: invertDeletePageObjects,
+  },
+  replaceTextAt: {
+    ...declaredCommands.replaceTextAt,
+    apply: applyReplaceTextAt,
+    capture: captureReplaceTextAt,
+    // `replaceTextObject`'s inverse, given the prior `captureReplaceTextAt` records in its shape: the one object's
+    // string, put back. One restore, not a second spelling of it.
+    invert: invertReplaceTextObject,
   },
   replaceAllText: {
     ...declaredCommands.replaceAllText,

@@ -1973,6 +1973,26 @@ const declarations = {
     // the page's content stream is regenerated whole; no object is unlinked.
     purpose: 'ordinary',
   },
+  replaceTextAt: {
+    kind: 'replaceTextAt',
+    display: 'image',
+    writer: 'pdfium',
+    // INVERTIBLE, `replaceTextObject`'s prior exactly: the one object's string as it was, put back into that object.
+    // A spelling review is many single replacements against one document, and a checkpoint each would be a whole
+    // document image per word.
+    invertible: true,
+    undo: 'inverse',
+    // The same word at the same point on the same bytes picks the same object and writes the same string.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // NAMES NOTHING A WALK NUMBERS: the point and the word are the occurrence's name, so there is no version for it to
+    // be stale against (ADR-0156 Decision 4) — `replaceAllText`'s shape, one occurrence wide.
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   promoteFormObjects: {
     kind: 'promoteFormObjects',
     display: 'image',

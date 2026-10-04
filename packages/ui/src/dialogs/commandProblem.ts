@@ -70,6 +70,9 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     // AN IN-PLACE EDIT THE PAGE'S FONT CANNOT CARRY (ADR-0096). The editor says it beside the
     // words; this is the sentence for any other surface that writes a block.
     z.object({ code: z.literal('text-not-writable') }).strict(),
+    // ONE OCCURRENCE NO SINGLE TEXT OBJECT HOLDS AT ITS POINT (ADR-0156): the spelling review says it beside the word;
+    // this is the sentence for any other surface that sends `replaceTextAt`.
+    z.object({ code: z.literal('text-not-in-place') }).strict(),
     // A COPY MADE FOR AN EDIT OF A SIGNED DOCUMENT (ADR-0149) that was written and could not be opened: gone before
     // the open, no room beside the documents already open, or its read refused — another program holding it, or no
     // permission. The file is where the person put it, without the edit.

@@ -732,6 +732,24 @@ const REPLACE_ALL_SPEC = `  replaceAllText: {
   },`;
 
 /**
+ * One occurrence replaced by its point (ADR-0156): invertible through the text-object inverse, its prior being one
+ * object's string.
+ */
+const REPLACE_AT_SPEC = `  replaceTextAt: {
+    kind: 'replaceTextAt',
+    writer: 'pdfium',
+    apply: applyReplaceTextAt,
+    capture: captureReplaceTextAt,
+    invert: invertReplaceTextObject,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
  * Terminal for a FOURTH reason, and it is the first one reached from the far
  * end: PDFium can take a Form XObject apart and offers nothing that builds one,
  * so every piece survives on the page and the container is what has no inverse.
@@ -1264,6 +1282,8 @@ import {
   applyReplaceAllText,
   captureReplaceAllText,
   invertReplaceAllText,
+  applyReplaceTextAt,
+  captureReplaceTextAt,
   applyPromoteFormObjects,
   capturePromoteFormObjects,
   invertPromoteFormObjects,
@@ -2080,6 +2100,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
@@ -2204,6 +2225,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
@@ -2343,6 +2365,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
@@ -2412,6 +2435,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
@@ -2490,6 +2514,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
@@ -2564,6 +2589,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
@@ -3656,8 +3682,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // spelt four and counted 45. 3 + 46 + 1 is still the union's 50.
     //
     // 52 since `placeSignatureMark` and `placeSignaturePicture` (2026-10-02, ADR-0133): three spelt, 48 counted, one.
+    // 53 since `replaceTextAt` (2026-10-04, ADR-0156): three spelt, 49 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 48 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 49 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

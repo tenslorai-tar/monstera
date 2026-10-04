@@ -60,6 +60,7 @@ import {
   EngineAnnotationDataExportFailed,
   type IdentityReader,
   StaleTargetError,
+  TextNotInPlaceError,
   TextNotWritableError,
   UnregisteredWriterError,
   type WriteTargetVerdict,
@@ -2255,7 +2256,9 @@ function editCopyHandler(
           ? 'engine-unavailable'
           : thrown instanceof TextNotWritableError
             ? 'text-not-writable'
-            : thrown instanceof DocumentPoisonedError
+            : thrown instanceof TextNotInPlaceError
+              ? 'text-not-in-place'
+              : thrown instanceof DocumentPoisonedError
               ? 'document-poisoned'
               : undefined;
       if (problem !== undefined) return ok({ ...opened, kind: 'edit-refused', problem } as const);

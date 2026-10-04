@@ -3005,4 +3005,6 @@ export type EngineFailureCode =
   // before anything is generated (ADR-0096), and main turns this into the
   // sentence that says so — where `engine-refused` becomes `internal` with an
   // incident id, for a document the engine could not work with.
-  | 'text-not-writable';
+  | 'text-not-writable'
+  // AND ONE OCCURRENCE NAMED BY ITS POINT that no single text object holds there (ADR-0156): the person's too.
+  | 'text-not-in-place';

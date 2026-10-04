@@ -2129,6 +2129,8 @@ export const channels = {
     // it is a sentence and never `internal` with an incident id for a document working as made.
     // `breaks-signatures` IS A QUESTION, NOT A FAULT (ADR-0149): the edit would rewrite a signed document whole, and
     // nothing has changed. The dispatcher asks the person and sends the command again, agreed, or works on a copy.
+    // `text-not-in-place` IS `replaceTextAt`'s (ADR-0156): no single text object holds the word at that point, so it
+    // was not replaced there. The person's to act on, by editing the line, for `text-not-writable`'s reason.
     [
       'document-not-open',
       'document-busy',
@@ -2136,6 +2138,7 @@ export const channels = {
       'stale-target',
       'engine-unavailable',
       'text-not-writable',
+      'text-not-in-place',
       'breaks-signatures',
       ...SERVICE_PROBLEMS,
     ],
@@ -3013,7 +3016,7 @@ export const channels = {
       openedSchema.extend({ kind: z.literal('edited'), historyDropped: z.number().int().nonnegative() }),
       openedSchema.extend({
         kind: z.literal('edit-refused'),
-        problem: z.enum(['engine-unavailable', 'text-not-writable', 'document-poisoned']),
+        problem: z.enum(['engine-unavailable', 'text-not-writable', 'text-not-in-place', 'document-poisoned']),
       }),
       z.object({ kind: z.literal('cancelled') }),
       importContestedSchema,

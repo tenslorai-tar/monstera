@@ -707,6 +707,8 @@ export interface CommandPrior {
    * it held — which is exactly what an invertible entry may not retain.
    */
   readonly replaceAllText: never;
+  /** The one object `replaceTextAt` picked, with the string it held: `replaceTextObject`'s prior, for its reason. */
+  readonly replaceTextAt: PriorTextObjects;
   /**
    * `never`, and it is the FIRST reason on this type reached from the far end.
    *

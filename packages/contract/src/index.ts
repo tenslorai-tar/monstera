@@ -359,6 +359,7 @@ export {
   MAX_OBJECT_SCALE,
   MIN_OBJECT_SCALE,
   replaceAllTextSchema,
+  replaceTextAtSchema,
   replaceTextObjectSchema,
   placePageObjectSchema,
   recolorPageObjectsSchema,

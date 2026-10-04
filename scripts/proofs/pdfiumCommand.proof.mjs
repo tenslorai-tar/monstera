@@ -103,7 +103,7 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 6);
+refuseStaleBuild(root, PDFIUM_COMMAND, 7);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
@@ -145,7 +145,8 @@ async function threeRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 69 });
+// 69 until 2026-10-04, when `replaceAtCases` added five (ADR-0156).
+const roster = createRoster(failures, { cases: 74 });
 
 /**
  * @param {string} name
@@ -419,6 +420,7 @@ async function main() {
   );
 
   await replaceAllCases();
+  await replaceAtCases();
   await promotionCases();
   await nestedPromotionCases();
   await blockEditCases();
@@ -471,6 +473,73 @@ async function pageOf(bytes, page) {
   } finally {
     await pdfiumWriter.close(session);
   }
+}
+
+/**
+ * One occurrence replaced by its point on the page (ADR-0156), through the same routing.
+ *
+ * Page 0 of {@link threePagesOfWidgets} holds WIDGET on two lines, each its own object, and once more split across two
+ * objects. A point on each line must change that line alone, and the split pair and blank paper must refuse and write
+ * nothing — the occurrence is named by where it is, never guessed.
+ */
+async function replaceAtCases() {
+  const original = await threePagesOfWidgets();
+  /**
+   * @param {{ x: number, y: number }} point
+   * @param {string} [find]
+   * @param {number} [page]
+   * @returns {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextAt'>}
+   */
+  const at = (point, find = 'WIDGET', page = 0) => ({ kind: 'replaceTextAt', page, find, replace: 'GADGET', at: point });
+  /** @param {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextAt'>} command */
+  const applied = (command) => localPdfiumExecution.apply({ session: original, command, sources: [], reads: undefined });
+  /** @param {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextAt'>} command */
+  const refusal = async (command) => {
+    try {
+      await applied(command);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.name : String(error);
+    }
+  };
+  const before = await pageOf(original, 0);
+
+  // ON THE FIRST LINE, baseline 230 at 11 points: the point is inside its object's bounds and outside the second's.
+  const first = await pageOf(await applied(at({ x: 80, y: 233 })), 0);
+  record(
+    'a point on the FIRST line replaces the word there and only there',
+    first.includes('The GADGET is on this page') && first.includes('and the WIDGET again below'),
+    `page 0 reads ${JSON.stringify(first)}`,
+  );
+  const second = await pageOf(await applied(at({ x: 80, y: 203 })), 0);
+  record(
+    'CONTROL: a point on the SECOND line replaces that one instead, so the point decides and not the order',
+    second.includes('The WIDGET is on this page') && second.includes('and the GADGET again below'),
+    `page 0 reads ${JSON.stringify(second)}`,
+  );
+  record(
+    'the word SPLIT ACROSS TWO OBJECTS is refused as not in place, and blank paper is too',
+    (await refusal(at({ x: 45, y: 173 }))) === 'TextNotInPlaceError' &&
+      (await refusal(at({ x: 300, y: 60 }))) === 'TextNotInPlaceError',
+    'each must throw TextNotInPlaceError rather than write a guess',
+  );
+  record(
+    'the word is matched EXACTLY AS WRITTEN: an upper-case find does not take the lower-case word at its point',
+    (await refusal(at({ x: 80, y: 203 }, 'WIDGET', 2))) === 'TextNotInPlaceError',
+    'page 2 line 2 holds "widget" in lower case',
+  );
+
+  // UNDONE BY `replaceTextObject`'s INVERSE, given the prior the capture records: the page reads as it did.
+  const command = at({ x: 80, y: 233 });
+  const captured = await localPdfiumExecution.capture(original, command);
+  const restored = captured.captured
+    ? await pageOf(await localPdfiumExecution.invert(await applied(command), command.kind, captured.prior), 0)
+    : null;
+  record(
+    'the capture records the one object’s string, and the invert puts the page back as it was',
+    captured.captured && captured.prior.objects.length === 1 && restored === before,
+    captured.captured ? `restored ${JSON.stringify(restored)}` : `not captured: ${captured.reason}`,
+  );
 }
 
 /**

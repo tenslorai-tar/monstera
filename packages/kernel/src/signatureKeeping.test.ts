@@ -8,7 +8,7 @@ import { breaksSignatures } from './signatureKeeping.js';
 const KINDS = Object.keys(declaredCommands) as CommandKind[];
 
 describe('breaksSignatures (ADR-0149)', () => {
-  it('names exactly PDFium’s seven edits and the four removals — an independent list, so a kind that moves fails here', () => {
+  it('names exactly PDFium’s eight edits and the four removals — an independent list, so a kind that moves fails here', () => {
     // THE ANCHOR IS WRITTEN OUT, never derived from the rule it checks: a list computed by the same predicate agrees
     // with any mistake in it (audit item 4c).
     const expected = [
@@ -20,6 +20,8 @@ describe('breaksSignatures (ADR-0149)', () => {
       'promoteFormObjects',
       'recolorPageObjects',
       'replaceAllText',
+      // ONE WORD REPLACED IS A PDFIUM EDIT, so the page is regenerated and the document rewritten whole (ADR-0156).
+      'replaceTextAt',
       'replaceTextObject',
       'sanitizeDocument',
       'setDocumentProtection',

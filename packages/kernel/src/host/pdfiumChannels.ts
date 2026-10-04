@@ -9,6 +9,7 @@ import {
   promoteFormObjectsSchema,
   recolorPageObjectsSchema,
   replaceAllTextSchema,
+  replaceTextAtSchema,
   replaceTextObjectSchema,
 } from '@monstera/contract/host';
 
@@ -83,6 +84,7 @@ const pdfiumCommandSchema = z.discriminatedUnion('kind', [
   deletePageObjectsSchema,
   promoteFormObjectsSchema,
   replaceAllTextSchema,
+  replaceTextAtSchema,
   editTextBlockSchema,
 ]);
 
@@ -168,6 +170,29 @@ export const PDFIUM_FONT_NAME_MAX = 127;
  * `mupdfCommandSchema`'s own note is about, on the inverse instead of the
  * command.
  */
+/** Text objects' strings as they were, and which objects put them back — `PriorTextObjects` on the wire. */
+const textObjectsPriorSchema = z
+  .object({
+    page: z.number().int().nonnegative(),
+    objects: z
+      .array(
+        z
+          .object({
+            index: z.number().int().nonnegative(),
+            text: z.string().max(PDFIUM_PRIOR_TEXT_MAX),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(ENGINE_TEXT_OBJECTS_MAX)
+      // `.readonly()` because `CommandPrior.replaceTextObject` is, and a
+      // wire type that inferred a mutable array would make main's own
+      // prior unassignable to the channel it travels on — which is the
+      // compile error that put this line here rather than a cast.
+      .readonly(),
+  })
+  .strict();
+
 const pdfiumPriorSchema = z.discriminatedUnion('kind', [
   z
     .object({
@@ -188,29 +213,12 @@ const pdfiumPriorSchema = z.discriminatedUnion('kind', [
        * answered a prior for objects it was not asked about would still restore
        * only what it named. What that could cost is bounded by the page.
        */
-      prior: z
-        .object({
-          page: z.number().int().nonnegative(),
-          objects: z
-            .array(
-              z
-                .object({
-                  index: z.number().int().nonnegative(),
-                  text: z.string().max(PDFIUM_PRIOR_TEXT_MAX),
-                })
-                .strict(),
-            )
-            .min(1)
-            .max(ENGINE_TEXT_OBJECTS_MAX)
-            // `.readonly()` because `CommandPrior.replaceTextObject` is, and a
-            // wire type that inferred a mutable array would make main's own
-            // prior unassignable to the channel it travels on — which is the
-            // compile error that put this line here rather than a cast.
-            .readonly(),
-        })
-        .strict(),
+      prior: textObjectsPriorSchema,
     })
     .strict(),
+  // `replaceTextAt`'s prior is `replaceTextObject`'s shape and restores through its inverse (ADR-0156): ONE schema for
+  // the two, so the restore cannot be handed a shape one of them would not write.
+  z.object({ kind: z.literal('replaceTextAt'), prior: textObjectsPriorSchema }).strict(),
   z
     .object({
       kind: z.literal('placePageObject'),
@@ -365,7 +373,8 @@ export const pdfiumChannels = {
     // PLUS ONE APPLY REFUSAL OF ITS OWN: an in-place edit whose typed text the
     // page's font cannot carry (ADR-0096). On the apply only — capture and invert
     // cannot produce it — and on this engine only.
-    wire: { ...byteImageWire, applyFailures: ['text-not-writable'] as const },
+    // AND A SECOND: one occurrence named by its point that no single text object holds there (ADR-0156).
+    wire: { ...byteImageWire, applyFailures: ['text-not-writable', 'text-not-in-place'] as const },
     // IN A FILE (ADR-0138): `replaceTextObject` and `editTextBlock` multiply per-entry text bounds past a frame.
     commandRoute: 'file',
   }),

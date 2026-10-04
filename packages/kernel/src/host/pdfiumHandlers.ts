@@ -3,7 +3,7 @@ import type { Handlers } from '@monstera/contract';
 import type { CommandExecution } from '../commandRouting.js';
 import type { ByteImage } from '../engineSeam.js';
 import type { TextRun } from '../pdfiumFfi.js';
-import { TextNotWritableError } from '../textEditRefusals.js';
+import { TextNotInPlaceError, TextNotWritableError } from '../textEditRefusals.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import type { HostArea, HostFilesystem, HostSessions } from './engineHandlers.js';
 import {
@@ -292,6 +292,7 @@ export function createPdfiumHandlers({
         // THE PERSON'S TO ACT ON, so its own code: main says it in a sentence,
         // where `engine-refused` is a document this engine could not work with.
         if (error instanceof TextNotWritableError) return failed('text-not-writable', error);
+        if (error instanceof TextNotInPlaceError) return failed('text-not-in-place', error);
         return failed('engine-refused', error);
       }
       const written = await files.writeOutput(held.outputDirectory, into, applied);
