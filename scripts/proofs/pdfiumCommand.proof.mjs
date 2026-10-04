@@ -1560,9 +1560,13 @@ async function blockEditCases() {
   };
   const renamed = await narrowedFixture('MonsteraNarrowSans');
 
-  // THE PREMISE, asserted rather than assumed: the fixture's own font writes `é` and a reader of the
-  // SAVED file does not see it — the defect the reopened read exists for. Without it the case below
-  // passes for a build that never twins, on a font that could carry the word all along.
+  // THE PREMISE, asserted rather than assumed: the fixture's own font cannot carry `é`. Without it the
+  // case below passes for a build that never twins, on a font that could carry the word all along.
+  //
+  // TWO OBSERVATIONS ESTABLISH IT, and since CR-NAT-10 the first is the one this build makes: the raw
+  // write's read-back refuses the word before anything is generated (TextNotWritableError), and a
+  // write that got past it would save `é` where a reader of the file does not see it. A font that
+  // could carry the word fails both, since the write is then accepted and the saved text holds it.
   let premise = 'the page’s own font carried é';
   try {
     const session = await pdfiumWriter.open(renamed.bytes);
@@ -1571,15 +1575,18 @@ async function blockEditCases() {
       if (object !== undefined) {
         await replaceTextObjects(session, 0, [{ index: object, text: accented }]);
         const saved = await pdfiumWriter.serialise(session);
-        premise = (await textOf(saved)).includes('déjà') ? 'the page’s own font carried é' : 'held';
+        premise = (await textOf(saved)).includes('déjà') ? 'the page’s own font carried é' : 'held: written and unseen';
       }
     } finally {
       await pdfiumWriter.close(session);
     }
   } catch (error) {
-    premise = `the premise could not be read: ${error instanceof Error ? error.message : String(error)}`;
+    premise =
+      error instanceof Error && error.name === 'TextNotWritableError'
+        ? 'held: refused by the read-back'
+        : `the premise could not be read: ${error instanceof Error ? error.message : String(error)}`;
   }
-  record('PREMISE: a font in StandardEncoding writes é that a reader of the saved file does not see', premise === 'held', premise);
+  record('PREMISE: a font in StandardEncoding cannot carry é', premise.startsWith('held'), premise);
 
   const twinnedText = await renamed.written();
   record(
