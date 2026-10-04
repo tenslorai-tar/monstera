@@ -66,6 +66,16 @@ edits it rather than starting another, so the first click of a double-click does
 want the note*. Every tool that places by a click or a drag declares one. Escape with no gesture in flight leaves the
 tool, which is what the hint's *Esc to cancel* promises.
 
+## Correction before building, 2026-10-04 — a request belongs to its document
+
+Decision 2 said a document closed or switched away from *finishes* the pending request. Finishing takes the editor's
+draft at the moment of the switch, and the switch happens in many handlers, none of which has the draft; doing it in an
+effect is a state write in an effect body, which the React compiler's lint refuses for a reason (a render that writes
+state renders twice). So the request **belongs to its document**: while another document is on show it is kept and
+not drawn, and it is drawn again, with its draft, when its document returns — *preserve, never drop*. A document
+**closed** with a request open drops it, and nothing is sent, as a dismissed dialog sent nothing. Only a second request
+in the same window finishes the first, as a click outside would, because that is a moment the application is already in.
+
 ## Rejected
 
 - **A fourth `commit` parameter.** Decision 1.
