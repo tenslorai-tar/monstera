@@ -110,3 +110,29 @@ and goes nowhere.
   page that is still there under a different object.
 - **Leave the source's dead links when pages are inserted.** The measurement's insert row: the page left out comes in
   with them.
+
+## Correction while building, 2026-10-04
+
+Four things the building found, each measured.
+
+1. **A link between two pages inserted together went nowhere before this decision, and decision 3 now covers it.**
+   MuPDF's `graftPage` builds a new page dictionary and maps the source page to nothing, so the annotation graft
+   brought a link's target in as a second copy of that page, outside the tree. Found by the insert case's control,
+   which the release made red by removing the link. A merge, an insert and a replace now graft each page they take
+   through the same map, which answers that copy, and the copy is followed by the page placed, as a replaced page is
+   followed by its replacement.
+2. **The walk of every object is a worklist, and the walks that follow nesting are bounded.** Recursing one frame per
+   reference, a chain of 2,000 outline entries ran out of stack (`RangeError: Maximum call stack size exceeded`),
+   which would refuse a delete because of the document. The outline, the structure tree, an action's `/Next` and a name
+   tree stop at 256 levels and leave what is below as it is; the null walk, which has no depth, still frees the page.
+3. **The Outline panel draws a heading as a heading.** It marked every entry with no page *(goes nowhere)*, so the
+   heading decision 2 keeps over its children read as the dead entry the delete removed. An entry with no page that
+   the next, deeper entry sits under is drawn as a heading; only a leaf is marked.
+4. **What it costs.** On a 2,000-page document of 8,000 objects and 130,000 entries, the release alone took 0.59 to
+   0.69 s over three runs and a whole one-page delete 0.71 to 0.72 s over two, where the collecting save of the same
+   document took 81 ms: the walk reads every entry through the native boundary. It grows with the object count, not the
+   bytes.
+
+   Measuring it found a defect older than this decision and fixed apart from it (`ca4589d3`): every tree rewrite wrote
+   each page's `/Parent` as the root dictionary inline, so one move took a 1,000-page file from 110,562 to 8,038,564
+   bytes, and the walk after one delete met 4.1 million entries in place of 130,000.
