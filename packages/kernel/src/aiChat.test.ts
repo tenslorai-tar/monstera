@@ -73,7 +73,7 @@ describe('streamChat', () => {
     expect(answer.text).toBe('Yes');
   });
 
-  it('asks Gemini with the key in the query, `model` as the role, and reads its parts', async () => {
+  it('asks Gemini with the key in a header, `model` as the role, and reads its parts', async () => {
     const { fetchImpl, sent } = streaming([
       'data: {"candidates":[{"content":{"parts":[{"text":"A"},{"text":"B"}]}}]}\n\n',
     ]);
@@ -87,7 +87,9 @@ describe('streamChat', () => {
       fetchImpl,
     });
 
-    expect(sent[0]?.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-x:streamGenerateContent?alt=sse&key=k');
+    // THE KEY RIDES IN A HEADER, and the URL a proxy logs carries none of it (CR-SEC-03).
+    expect(sent[0]?.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-x:streamGenerateContent?alt=sse');
+    expect(sent[0]?.headers['x-goog-api-key']).toBe('k');
     expect(sent[0]?.body).toMatchObject({ contents: [{ role: 'user' }, { role: 'model' }] });
     expect(answer.text).toBe('AB');
   });

@@ -43,7 +43,9 @@ import { serviceOrigin } from '@monstera/shared';
 interface ListEndpoint {
   /** The URL, or `null` where the provider publishes no list (Perplexity, measured). */
   readonly url: string | null;
-  readonly auth: 'bearer' | 'x-api-key' | 'query-key' | 'azure-api-key';
+  // NEVER IN THE URL: a query string is written into every proxy's and gateway's request log, where a header is not
+  // (CR-SEC-03). Gemini takes its key as the `x-goog-api-key` header, as its own documentation shows.
+  readonly auth: 'bearer' | 'x-api-key' | 'x-goog-api-key' | 'azure-api-key';
   /** Which shape the answer is in. */
   readonly shape: 'openai-format' | 'anthropic' | 'gemini';
 }
@@ -53,7 +55,7 @@ const LIST_ENDPOINTS: Readonly<Record<AiProviderId, ListEndpoint>> = {
   openai: { url: 'https://api.openai.com/v1/models', auth: 'bearer', shape: 'openai-format' },
   gemini: {
     url: 'https://generativelanguage.googleapis.com/v1beta/models',
-    auth: 'query-key',
+    auth: 'x-goog-api-key',
     shape: 'gemini',
   },
   mistral: { url: 'https://api.mistral.ai/v1/models', auth: 'bearer', shape: 'openai-format' },
@@ -148,7 +150,7 @@ function request(
     return { url: `${origin}/openai/models?api-version=${AZURE_API_VERSION}`, headers: { 'api-key': key } };
   }
   if (list.url === null) return null;
-  if (list.auth === 'query-key') return { url: `${list.url}?key=${encodeURIComponent(key)}`, headers: {} };
+  if (list.auth === 'x-goog-api-key') return { url: list.url, headers: { 'x-goog-api-key': key } };
   if (list.auth === 'x-api-key') {
     return { url: list.url, headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' } };
   }

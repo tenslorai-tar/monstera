@@ -304,8 +304,9 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
 
   if (adapter === 'gemini') {
     return {
-      url: `${GEMINI_BASE}/${model.replace(/^models\//u, 'models/')}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,
-      headers: { 'content-type': 'application/json' },
+      // THE KEY IS A HEADER, never the query string, which proxies and gateways log (CR-SEC-03, `aiModels.ts`).
+      url: `${GEMINI_BASE}/${model.replace(/^models\//u, 'models/')}:streamGenerateContent?alt=sse`,
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
       shape: 'gemini',
       body: JSON.stringify({
         ...(instruction === null ? {} : { systemInstruction: { parts: [{ text: instruction }] } }),
