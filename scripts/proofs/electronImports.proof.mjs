@@ -748,6 +748,18 @@ try {
           'electronBinaryPath() — and it never imports the electron package.',
       },
     ],
+    [
+      'scripts/research/fontKindEdits.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads the kernel\'s built PDFium adapter, its text-edit apply, its refusal class ' +
+          'and its block grouping, and the contract\'s block-edit encoder, so each font kind is edited by ' +
+          'the code the PDFium host runs. Every call names a packages/*/dist module. Run from plain Node ' +
+          'it starts itself under the Electron binary in Node mode through electronBinaryPath(), and it ' +
+          'never imports the electron package.',
+      },
+    ],
   ]);
 
   /** @type {Map<string, number>} */
