@@ -76,6 +76,18 @@ not drawn, and it is drawn again, with its draft, when its document returns — 
 **closed** with a request open drops it, and nothing is sent, as a dismissed dialog sent nothing. Only a second request
 in the same window finishes the first, as a click outside would, because that is a moment the application is already in.
 
+## Correction while building, 2026-10-04 — a block its rule refuses stays open
+
+Decision 1 has Escape and a click outside FINISH a block and keep its words. A block has a rule too — no more than the
+payload's `MAX_ANNOTATION_TEXT`, which the dialogs said at once and refused to apply — and finishing a block past it
+could only drop the words, since the command cannot carry them. So a block whose rule refuses its words **stays open
+with the dialog's message at every ending a person chose**, Escape included, and only a second request, which cannot
+wait, answers nothing for it: *preserve, never drop*. An edit left empty changes nothing, the edit dialog's own rule
+(*a comment cannot be empty; to remove it, delete the mark*), so nothing typed is nothing for an edit as for a new mark.
+
+Words the page does not draw where they are typed — a note's comment — are typed in the application's own field, on a
+card beside the point, rather than in a style the page will never draw them in.
+
 ## Rejected
 
 - **A fourth `commit` parameter.** Decision 1.
