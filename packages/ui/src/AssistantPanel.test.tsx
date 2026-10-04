@@ -650,6 +650,21 @@ describe('the assistant about a document (ADR-0088)', () => {
       push('ai.done', { subscription, stopped: false, web: NO_WEB });
       expect(screen.queryByText('No page cited — check this against the document.')).toBeNull();
     });
+
+    it('an answer that opens with the window’s own marker, [Page 2], cites page 2 and is NOT marked uncited (14f)', async () => {
+      // The answer the owner saw marked *No page cited*, as it was written. The mark and the link read one parser, so
+      // both are asserted: a citation the link reads and the mark does not would be the same defect the other way round.
+      const went: number[] = [];
+      const { sent, push } = await drawn({ focused: focusedOn(), onGoTo: (page) => went.push(page) });
+      type('What does it say?');
+      await send();
+      const subscription = lastSubscription(sent);
+      push('ai.delta', { subscription, text: '[Page 2] Revenue grew across all three regions.' });
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
+      expect(screen.queryByText('No page cited — check this against the document.')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+      expect(went).toStrictEqual([1]);
+    });
   });
 
   it('CONTROL: an ask about nothing carries no scope at all', async () => {

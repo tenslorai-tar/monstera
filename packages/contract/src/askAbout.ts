@@ -218,33 +218,83 @@ export type AnswerPiece =
   | { readonly text: string }
   | { readonly cited: number; readonly label: string; readonly side?: AskSide; readonly document?: number };
 
-/** A citation as the instruction asks for it: `[p. 3]`, `[p.3]`, `[Left p. 3]` / `[Right p. 3]`, or `[Doc 2 p. 3]`. */
-const CITATION = /\[(?:(Left|Right|Doc (\d{1,2})) )?p\.\s?(\d{1,6})\]/gu;
+/**
+ * A page citation however a model writes it — the instruction asks for `[p. 3]`, and a model also echoes the window's
+ * own marker, `[Page 3]`, or writes `(page 3)`, `[pp. 3–4]`, `[Doc 2, page 3]`, or *on page 3* in a sentence. An answer
+ * that began `[Page 2]` was marked *No page cited* while the parser read `[p. N]` alone (the owner's item 14f).
+ *
+ * The CORE is what every spelling shares: an optional label, a page word, a number, and a range or list after it. Which
+ * brackets surround it is read in {@link citationsIn}, so one pattern serves both the bracketed and the prose form — and
+ * no word may end just before it, so *top 3* and *homepage 3* are not citations.
+ *
+ * Groups: 1 the label, 2 a document's place, 3 a file label, 4 the page word, 5 the first page, 6 a range or list.
+ */
+const CITATION_CORE =
+  /(?<![\p{L}\p{N}])(?:(left|right|doc(?:ument)?\s?(\d{1,2})|(file)\s?\d{1,2}),?\s)?(pp?\.?|pg\.?|pages?)\s?(\d{1,6})((?:\s?[-–—]\s?\d{1,6}|(?:\s?,\s?|\s(?:and|&)\s)\d{1,6})*)/giu;
 
-const SIDE_OF: Readonly<Record<string, AskSide>> = { Left: 'left', Right: 'right' };
+/** The brackets a citation may sit in, each opener with its own closer. */
+const CLOSER_OF: Readonly<Record<string, string>> = { '[': ']', '(': ')', '【': '】' };
+
+/**
+ * A page word a SENTENCE may use. Inside brackets `[p 3]` and `[pg. 3]` can only be citations; in prose a bare *p* or
+ * *pg* is too short to tell from anything else, so it stays text.
+ */
+const PROSE_WORD = /^(?:pp?\.|pages?)$/iu;
+
+/** Only a range continues a citation in a sentence: *page 2, 2019* is a page and a year, not two pages. */
+const PROSE_RANGE = /^\s?[-–—]\s?\d{1,6}/u;
+
+const SIDE_OF: Readonly<Record<string, AskSide>> = { left: 'left', right: 'right' };
 
 /**
  * An answer split into text and page citations, each citation as the kernel indexes the page.
  *
+ * A RANGE OR A LIST CITES ITS FIRST PAGE, and its whole text is the link: `[pp. 3–4]` goes to page 3. The words are kept
+ * as written, so a list's later pages are still read in the answer; one link per listed page would cut the citation's
+ * text into pieces that no longer read as one.
+ *
+ * A SIDE IS READ ONLY IN BRACKETS. *Right, page 3* in a sentence is an answer agreeing, so there the page is cited and
+ * the word before it is text; a document's place, *Doc 2, page 3*, is never anything else and is read either way.
+ *
  * A citation of page 0 — `[p. 0]` — names no page a person reads, and stays text rather than becoming a link to the
- * page before the first; *Doc 0* names no document, and stays text the same way.
+ * page before the first; *Doc 0* names no document, and stays text the same way. A FILE's citation, `[File 2 p. 3]`,
+ * stays text too, since no open document holds it (ADR-0135) — and is read as a whole for that, so its page is never
+ * mistaken for one of the document's.
  */
 export function citationsIn(answer: string): readonly AnswerPiece[] {
   const pieces: AnswerPiece[] = [];
   let at = 0;
-  for (const match of answer.matchAll(CITATION)) {
-    const shown = Number(match[3]);
-    const place = match[2] === undefined ? undefined : Number(match[2]);
-    if (shown < 1 || place === 0) continue;
-    if (match.index > at) pieces.push({ text: answer.slice(at, match.index) });
-    const side = match[1] === undefined ? undefined : SIDE_OF[match[1]];
+  for (const match of answer.matchAll(CITATION_CORE)) {
+    const [core, label, placeText, file, word = '', first = '', tail = ''] = match;
+    const shown = Number(first);
+    const place = placeText === undefined ? undefined : Number(placeText);
+    if (shown < 1 || place === 0 || file !== undefined) continue;
+
+    const opener = /([[(【])\s?$/u.exec(answer.slice(at, match.index));
+    const closed = /^\s?([\])】])/u.exec(answer.slice(match.index + core.length));
+
+    let start: number;
+    let end: number;
+    let side: AskSide | undefined;
+    if (opener !== null && closed !== null && opener[1] !== undefined && CLOSER_OF[opener[1]] === closed[1]) {
+      start = match.index - opener[0].length;
+      end = match.index + core.length + closed[0].length;
+      side = label === undefined ? undefined : SIDE_OF[label.toLowerCase()];
+    } else {
+      if (!PROSE_WORD.test(word)) continue;
+      // A SIDE WORD IN A SENTENCE stays text before the citation; a document's place stays in it.
+      start = label !== undefined && place === undefined ? match.index + core.indexOf(word, label.length) : match.index;
+      end = match.index + core.length - tail.length + (PROSE_RANGE.exec(tail)?.[0].length ?? 0);
+    }
+
+    if (start > at) pieces.push({ text: answer.slice(at, start) });
     pieces.push({
       cited: shown - 1,
-      label: match[0],
+      label: answer.slice(start, end),
       ...(side === undefined ? {} : { side }),
       ...(place === undefined ? {} : { document: place - 1 }),
     });
-    at = match.index + match[0].length;
+    at = end;
   }
   if (at < answer.length) pieces.push({ text: answer.slice(at) });
   return pieces;

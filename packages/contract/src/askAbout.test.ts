@@ -34,6 +34,79 @@ describe('the page frame an ask and its answer share', () => {
   it('an answer with no citation is one piece of text', () => {
     expect(citationsIn('No pages here.')).toStrictEqual([{ text: 'No pages here.' }]);
   });
+
+  it('THE ANSWER THAT WAS MARKED UNCITED (14f): one that opens by echoing the window’s own marker cites that page', () => {
+    // The window marks pages as askPageMarker writes them, so a model quoting its source writes exactly this. The parser
+    // that read only `[p. N]` returned one piece of text here, and the answer was marked *No page cited*.
+    const answer = `${askPageMarker(1)} The revenue grew across all three regions.`;
+    expect(citationsIn(answer)).toStrictEqual([
+      { cited: 1, label: '[Page 2]' },
+      { text: ' The revenue grew across all three regions.' },
+    ]);
+  });
+
+  it.each([
+    ['[Page 2]', 1],
+    ['[page 2]', 1],
+    ['[PAGE 2]', 1],
+    ['[p 2]', 1],
+    ['[P. 2]', 1],
+    ['[pg. 2]', 1],
+    ['[pp. 2–3]', 1],
+    ['[pp. 2-3]', 1],
+    ['[pages 2 and 5]', 1],
+    ['[p. 2, 5]', 1],
+    ['(p. 2)', 1],
+    ['(page 2)', 1],
+    ['【p. 2】', 1],
+    ['[ p. 2 ]', 1],
+  ])('reads %s, bracketed, as one citation of its first page', (written, cited) => {
+    expect(citationsIn(written)).toStrictEqual([{ cited, label: written }]);
+  });
+
+  it('reads a citation written in a SENTENCE, and the words around it stay text', () => {
+    expect(citationsIn('As stated on page 4, and again on pp. 6–7 (see p. 9).')).toStrictEqual([
+      { text: 'As stated on ' },
+      { cited: 3, label: 'page 4' },
+      { text: ', and again on ' },
+      { cited: 5, label: 'pp. 6–7' },
+      { text: ' (see ' },
+      { cited: 8, label: 'p. 9' },
+      { text: ').' },
+    ]);
+  });
+
+  it('CONTROL: what only LOOKS like a page word stays text — inside a word, a bare p, a count, or a year after a page', () => {
+    expect(citationsIn('the top 3 rows, a homepage 3, group 4, p 5 in prose, and 10 pages')).toStrictEqual([
+      { text: 'the top 3 rows, a homepage 3, group 4, p 5 in prose, and 10 pages' },
+    ]);
+    // A list continues a citation only in brackets: in a sentence *2019* is a year.
+    expect(citationsIn('page 2, 2019 edition')).toStrictEqual([{ cited: 1, label: 'page 2' }, { text: ', 2019 edition' }]);
+  });
+
+  it('reads a document’s place and a side in every spelling, and a side word in a SENTENCE only as text', () => {
+    expect(citationsIn('[Doc 2, page 3] [document 2 p. 3] [Left page 3] [right, p. 3]')).toStrictEqual([
+      { cited: 2, label: '[Doc 2, page 3]', document: 1 },
+      { text: ' ' },
+      { cited: 2, label: '[document 2 p. 3]', document: 1 },
+      { text: ' ' },
+      { cited: 2, label: '[Left page 3]', side: 'left' },
+      { text: ' ' },
+      { cited: 2, label: '[right, p. 3]', side: 'right' },
+    ]);
+    // *Right, page 3* is an answer agreeing: the page is cited and the word is not a side.
+    expect(citationsIn('Right, page 3 says so.')).toStrictEqual([
+      { text: 'Right, ' },
+      { cited: 2, label: 'page 3' },
+      { text: ' says so.' },
+    ]);
+  });
+
+  it('CONTROL: a FILE’s page stays text in every spelling, and is never read as a page of the document', () => {
+    expect(citationsIn('[File 2 page 3] (file 2, p. 3) File 2, page 3')).toStrictEqual([
+      { text: '[File 2 page 3] (file 2, p. 3) File 2, page 3' },
+    ]);
+  });
 });
 
 describe('what an ask may be about', () => {

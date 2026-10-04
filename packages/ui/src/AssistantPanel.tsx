@@ -941,7 +941,7 @@ export function AssistantPanel({
   };
 
   /**
-   * A run of an answer's plain text, with each `[p. N]` citation a link to that page. The
+   * A run of an answer's plain text, with each page citation `citationsIn` reads a link to that page. The
    * Markdown around it is {@link answerElements}'; this is only ever handed text, never code.
    */
   const answerTextFor =
