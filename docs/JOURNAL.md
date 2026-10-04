@@ -1039,6 +1039,25 @@ and not the typecheck after adding it, and vitest compiles without checking type
 (TS2322), first seen at the next commit's typecheck. The loop's *checked before any is grafted* stays, true of a
 rule the union keeps, and the reader's gap was a true reading of the code that the schema answers.
 
+**Correction, 2026-10-04: items 4a, 4b and 4c were answered under one heading, and each is owed its own.** Guards
+refused this entry at `9a6e4c81` (*answers 8 of 11 checklist items*), rightly: a merged answer reads as three items
+asked and lets one of them go unanswered unseen. The answers, one per item:
+
+#### 4a. Has every instrument passed a resolution test?
+
+Two instruments arrived. The contrast reading on the paper separates the three looks it decides between (3.30, 2.54 and
+1.49 against a bound of 3), and its case is red at 2.54 and at 1.49 with the solved colour taken out. The
+blur-on-removal probe separates a removal from an ordinary blur, which the same listeners see in the same run.
+
+#### 4b. Is the instrument a search, with a positive control?
+
+No search arrived in this range: no scan, grep-shaped check or reachability walk was added or changed.
+
+#### 4c. Does a check derive its extent from the set it governs?
+
+No roster or derived count arrived in this range. The case counts the range's commits name are literals in their own
+files.
+
 ---
 
 ## 2026-10-03 — Stage audit of `de106c45..5da42ae3` — findings MMMMMMM-1 to MMMMMMM-11
