@@ -83,9 +83,17 @@ test('after a page delete the Outline panel shows what main answers for the new 
   const grid = page.getByRole('region', { name: 'Pages to organize' });
   await grid.getByRole('button', { name: 'Page 2', exact: true }).click();
   await page.keyboard.press('Delete');
+  // THE COMMAND ITSELF, kind and pages, not any execute whose payload happens to carry `"pages":[1]`.
   await expect
-    .poll(() => sent.filter(({ channel }) => channel === 'document.execute').map(({ params }) => JSON.stringify(params)))
-    .toContainEqual(expect.stringContaining('"pages":[1]'));
+    .poll(() =>
+      sent
+        .filter(({ channel }) => channel === 'document.execute')
+        .map(({ params }) => {
+          const command = (params as { readonly command?: { readonly kind?: unknown; readonly pages?: unknown } }).command;
+          return [command?.kind, command?.pages];
+        }),
+    )
+    .toContainEqual(['deletePages', [1]]);
 
   // NOTHING GOING NOWHERE: the entry that named page 2 is gone, the heading reads as a heading, and its child names
   // the page it is now.

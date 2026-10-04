@@ -28,8 +28,17 @@ describe('occurrenceAt', () => {
   });
 
   it('refuses a point no object holds, and an object at the point that does not hold the word', () => {
-    expect(occurrenceAt(RUNS, { find: 'brwon', replace: 'brown', at: { x: 400, y: 706 } })).toBeUndefined();
+    // A WORD ONE OBJECT ALONE HOLDS, so the point is the only thing that can refuse it: with `brwon`, which both hold,
+    // a missing bounds check left two objects and the two-object refusal answered for it.
+    expect(occurrenceAt(RUNS, { find: 'quick', replace: 'slow', at: { x: 400, y: 706 } })).toBeUndefined();
     expect(occurrenceAt(RUNS, { find: 'quick', replace: 'slow', at: { x: 120, y: 686 } })).toBeUndefined();
+  });
+
+  it('names the one of two overlapping objects that HOLDS the word, rather than refusing the pair', () => {
+    // THE WORD DECIDES WHICH OBJECT AT THE POINT: without it in the filter both objects are at the point, and a word
+    // only one of them holds is refused as two.
+    const overlapping = [run(8, 'the cat', 72, 700), run(9, 'recieve it', 72, 700)];
+    expect(occurrenceAt(overlapping, { find: 'recieve', replace: 'receive', at: { x: 100, y: 706 } })?.index).toBe(9);
   });
 
   it('refuses an object holding the word TWICE: the point is inside the object, not inside a character', () => {

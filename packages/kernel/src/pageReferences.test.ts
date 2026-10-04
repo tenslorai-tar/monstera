@@ -689,6 +689,8 @@ describe('a page that leaves takes every reference to it (ADR-0155)', () => {
         }),
         (session) => applyDeleteFormFields(session, { kind: 'deleteFormFields', page: 0, indices: [0], version: asDocVersion(1) }),
       );
+      // READ /CO ITSELF, as the case above does: the answer leaving the file follows from it, and is not it.
+      expect(dictAt(doc, catalogEntry(doc, 'AcroForm')).lookup(PDFName.of('CO'), PDFArray).size()).toBe(0);
       expect(held(doc).answer).toBe(false);
     });
   });

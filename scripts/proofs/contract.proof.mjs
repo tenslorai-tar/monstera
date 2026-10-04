@@ -2762,12 +2762,14 @@ export const spec: CommandSpec<'rotatePages'> = {
     // apply ignoring its list type-checks the same way, and its case is
     // `THE CASE: every merged page names the node that lists it as its parent`,
     // which fails if the apply does not read its sources because there is then
-    // nothing grafted to check. The `'one'` row is now `replacePage`, whose
-    // cases in the same file assert the source's page widths in the target.
+    // nothing grafted to check. Two rows declare `'one'` now: `replacePage`,
+    // whose cases in the same file assert the source's page widths in the
+    // target, and `importPageAsLayer`, whose guard is
+    // `packages/kernel/src/pageLayerImport.test.ts`.
     //
-    // That file also measures why a weaker guard would not do: replacing the
-    // engine call with the rejected one left ELEVEN of its thirteen cases
-    // green, including the rotation case. A document effect is where the
+    // That file also measured why a weaker guard would not do: on 2026-09-05
+    // (238cf2f1), replacing the engine call with the rejected one left ELEVEN
+    // of its then thirteen cases green, including the rotation case. A document effect is where the
     // wired-tools rule puts the burden, and *which* effect you assert is the
     // whole question.
     //

@@ -122,7 +122,8 @@ describe('calloutTool', () => {
     const placed = (await commit(tool, twoPress(tool, [20, 20], [100, 100], [102, 101]))) as
       | { annotation?: { at?: unknown; rect?: { x0: number; y0: number; x1: number; y1: number } } }
       | undefined;
-    // TYPED INTO A BOX THAT GROWS from the second press, since no box was drawn to type into.
+    // TYPED INTO A BOX THAT GROWS from the second press, since no box was drawn to type into — and asked once.
+    expect(asked).toHaveLength(1);
     expect(asked[0]).toMatchObject({ grows: true, box: { x0: 100, y0: 350 } });
     expect(placed?.annotation?.at).toStrictEqual({ x: 60, y: 390 });
     // THE BOX STARTS AT THE SECOND PRESS — (100, 100) at zoom 2 is (100, 350) — and runs right and down from it.
@@ -141,6 +142,7 @@ describe('calloutTool', () => {
     const placed = (await commit(tool, dragged)) as
       | { annotation?: { at?: unknown; rect?: { x0: number; y0: number } } }
       | undefined;
+    expect(asked).toHaveLength(1);
     expect(asked[0]).toMatchObject({ grows: true, box: { x0: 100, y0: 350 } });
     expect(placed?.annotation?.at).toStrictEqual({ x: 60, y: 390 });
     expect(placed?.annotation?.rect).toMatchObject({ x0: 100, y0: 350 });

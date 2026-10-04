@@ -139,14 +139,15 @@ async function threeRunsAndARectangle() {
  *
  * `createRoster` rather than a total printed from what ran, because a total
  * computed over the cases that executed agrees with any collection, including
- * one that has quietly shrunk — audit item 4c. Twenty-nine is an independent
+ * one that has quietly shrunk — audit item 4c. The figure is an independent
  * claim about this file, not a count of it.
  *
  * @type {string[]}
  */
 const failures = [];
-// 69 until 2026-10-04, when `replaceAtCases` added five (ADR-0156).
-const roster = createRoster(failures, { cases: 74 });
+// 69 until 2026-10-04, when `replaceAtCases` added five (ADR-0156), and 75 from the stage audit of
+// cb62b976..33715f7c, which gave blank paper's refusal its control.
+const roster = createRoster(failures, { cases: 75 });
 
 /**
  * @param {string} name
@@ -517,11 +518,19 @@ async function replaceAtCases() {
     second.includes('The WIDGET is on this page') && second.includes('and the GADGET again below'),
     `page 0 reads ${JSON.stringify(second)}`,
   );
+  // BLANK PAPER asks for `below`, which ONE object on the page holds: with WIDGET, two objects hold the word and the
+  // refusal would be the two-runs rule's whatever the point did, so a pick that ignored the point would pass.
   record(
     'the word SPLIT ACROSS TWO OBJECTS is refused as not in place, and blank paper is too',
     (await refusal(at({ x: 45, y: 173 }))) === 'TextNotInPlaceError' &&
-      (await refusal(at({ x: 300, y: 60 }))) === 'TextNotInPlaceError',
+      (await refusal(at({ x: 300, y: 60 }, 'below'))) === 'TextNotInPlaceError',
     'each must throw TextNotInPlaceError rather than write a guess',
+  );
+  const pointed = await pageOf(await applied(at({ x: 150, y: 203 }, 'below')), 0);
+  record(
+    'CONTROL: the same word at its own line IS replaced, so blank paper is refused for its point and not its word',
+    pointed.includes('and the WIDGET again GADGET'),
+    `page 0 reads ${JSON.stringify(pointed)}`,
   );
   record(
     'the word is matched EXACTLY AS WRITTEN: an upper-case find does not take the lower-case word at its point',

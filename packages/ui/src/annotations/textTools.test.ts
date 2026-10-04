@@ -143,7 +143,7 @@ describe('textBoxTool', () => {
     expect(await drag(tool, [20, 20], [120, 80])).toBeUndefined();
   });
 
-  it('TRIMS the words by the rule the dialog answered through, so the page and the dialog make the same annotation', async () => {
+  it('TRIMS the words the page answered with, by the one rule every writer of an annotation’s words takes', async () => {
     const { tool } = toolAnswering('  see figure 3\n');
     const command = await drag(tool, [20, 20], [120, 80]);
     expect(command?.kind === 'addAnnotation' && command.annotation.type === 'text-box' ? command.annotation.text : undefined).toBe(

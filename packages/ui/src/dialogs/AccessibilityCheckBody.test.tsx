@@ -111,7 +111,9 @@ describe('AccessibilityCheckBody', () => {
     expect(rows.slice(4).every((row) => !/Passed|Failed/u.test(row))).toBe(true);
   });
 
-  it('ONE page is "Page 4", never "Pages 4", and the pages sit in the rule’s column, under its words', () => {
+  // THE PLURAL ONLY: where the pages sit is the CSS grid's, which happy-dom does not lay out, so it is measured in the
+  // browser (fc74ae2a's commit) and not claimed here.
+  it('ONE page is "Page 4", never "Pages 4"', () => {
     render(
       <Wrapped>
         <AccessibilityCheckBody

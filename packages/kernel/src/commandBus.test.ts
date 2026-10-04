@@ -2,7 +2,7 @@ import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFString } from '@cantoo/pdf-lib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type Command, type CommandOfKind, NETWORK_OCR_ENGINES, type PageSet, outlineOpCodes } from '@monstera/contract';
@@ -1333,6 +1333,23 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       return found;
     };
     const ALL = ['bookmark', 'link', 'named destination', 'open action'];
+    /**
+     * Each of the four that names a page the document NO LONGER HOLDS. `referencesTo` cannot say this after the
+     * delete: its page 1 is then the old page 3, which nothing named, so a delete that cleared nothing read as clean.
+     */
+    const dangling = (document: PDFDocument): readonly string[] => {
+      const kept = new Set(document.getPages().map((each) => each.ref.toString()));
+      const names = document.catalog.lookupMaybe(PDFName.of('Names'), PDFDict)?.lookupMaybe(PDFName.of('Dests'), PDFDict);
+      const outline = document.catalog.lookupMaybe(PDFName.of('Outlines'), PDFDict)?.lookupMaybe(PDFName.of('First'), PDFDict);
+      const link = document.getPage(0).node.lookupMaybe(PDFName.of('Annots'), PDFArray)?.lookupMaybe(0, PDFDict);
+      const targets: readonly [string, unknown][] = [
+        ['bookmark', outline?.lookupMaybe(PDFName.of('Dest'), PDFArray)?.get(0)],
+        ['link', link?.lookupMaybe(PDFName.of('Dest'), PDFArray)?.get(0)],
+        ['named destination', names?.lookupMaybe(PDFName.of('Names'), PDFArray)?.lookupMaybe(1, PDFArray)?.get(0)],
+        ['open action', document.catalog.lookupMaybe(PDFName.of('OpenAction'), PDFArray)?.get(0)],
+      ];
+      return targets.filter(([, target]) => target instanceof PDFRef && !kept.has(target.toString())).map(([kind]) => kind);
+    };
 
     const bus = new CommandBus({ mupdf: localMupdfWriter });
     const session = await mupdfWriter.open(await source.save({ useObjectStreams: false }));
@@ -1341,10 +1358,15 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     try {
       const before = await mupdfWriter.serialise(session);
       expect(referencesTo(await PDFDocument.load(before))).toStrictEqual(ALL);
+      // THE READ CAN SEE A LEFT-BEHIND REFERENCE: a page removed by pdf-lib, which clears nothing, leaves all four
+      // naming a page the document no longer holds.
+      const torn = await PDFDocument.load(before);
+      torn.removePage(1);
+      expect(dangling(torn)).toStrictEqual(ALL);
 
       await bus.execute({ mupdf: session }, context, { kind: 'deletePages', pages: [1] }, showingInputs(session));
-      // THE DELETE CLEARED THEM: the page now at index 1 is the old page 3, and nothing names it.
-      expect(referencesTo(await PDFDocument.load(await mupdfWriter.serialise(session)))).toStrictEqual([]);
+      // THE DELETE CLEARED THEM: nothing names the page that left.
+      expect(dangling(await PDFDocument.load(await mupdfWriter.serialise(session)))).toStrictEqual([]);
 
       await bus.undo({ mupdf: session }, context, supervisor.restore, showingInputs(session));
       const restored = context.written()[0]?.bytes;

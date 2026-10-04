@@ -1987,12 +1987,10 @@ optgroup {
 }
 
 /*
- * The accessibility check's two lists: the list exception's rules, and each rule's verdict, words
- * and pages on one wrapping line so a long rule name does not push its verdict off the row.
+ * The accessibility check's two lists: the list exception's rules, and each rule's row in TWO COLUMNS, the verdict
+ * and what the rule says, with the pages under the rule's words. A wrapping row dropped the pages to the verdict's
+ * column, where they read as a verdict of their own (the owner's item 19d).
  */
-/* Each rule's verdict, words and pages on one line that wraps; the list and its rows are the pattern's. */
-/* TWO COLUMNS, the verdict and what the rule says, with the pages under the rule's words: a wrapping row dropped the
-   pages to the verdict's column, where they read as a verdict of their own (the owner's item 19d). */
 .m-accessibility-check__rules li {
   display: grid;
   grid-template-columns: 12ch minmax(0, 1fr);

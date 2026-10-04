@@ -259,14 +259,16 @@ describe('every page each rewrite keeps names the tree by REFERENCE', () => {
   // 1,000-page one's from 110,562 to 8,038,564. The fixture is 200 pages because the growth is the square of the count:
   // at that size the inline form is fourteen times the file, far past the bound below, and a reference costs nothing.
   const PAGES = 200;
-  const commands: readonly [string, (session: Parameters<typeof applyMovePage>[0]) => Promise<void>][] = [
-    ['a move', (session) => applyMovePage(session, { kind: 'movePage', from: 0, to: 1 })],
-    ['a swap', (session) => applySwapPages(session, { kind: 'swapPages', a: 0, b: 3 })],
-    ['a delete', (session) => applyDeletePages(session, { kind: 'deletePages', pages: [5] })],
-    ['a blank page', (session) => applyInsertBlankPage(session, { kind: 'insertBlankPage', at: 1 })],
-    ['a duplicate', (session) => applyDuplicatePage(session, { kind: 'duplicatePage', pages: [1] })],
+  // THE PAGE COUNT EACH LEAVES is beside the command, so an empty page list cannot pass the /Parent filter below as a
+  // tree with no stray parent in it.
+  const commands: readonly [string, number, (session: Parameters<typeof applyMovePage>[0]) => Promise<void>][] = [
+    ['a move', PAGES, (session) => applyMovePage(session, { kind: 'movePage', from: 0, to: 1 })],
+    ['a swap', PAGES, (session) => applySwapPages(session, { kind: 'swapPages', a: 0, b: 3 })],
+    ['a delete', PAGES - 1, (session) => applyDeletePages(session, { kind: 'deletePages', pages: [5] })],
+    ['a blank page', PAGES + 1, (session) => applyInsertBlankPage(session, { kind: 'insertBlankPage', at: 1 })],
+    ['a duplicate', PAGES + 1, (session) => applyDuplicatePage(session, { kind: 'duplicatePage', pages: [1] })],
   ];
-  for (const [name, work] of commands) {
+  for (const [name, count, work] of commands) {
     it(`after ${name}, every /Parent is the catalog's /Pages reference and the file stays its size`, async () => {
       const source = await flatDocument(PAGES);
       const untouched = await edited(source, () => Promise.resolve());
@@ -275,6 +277,7 @@ describe('every page each rewrite keeps names the tree by REFERENCE', () => {
       const tree = reread.catalog.get(PDFName.of('Pages'));
       const parents = reread.getPages().map((page) => page.node.get(PDFName.of('Parent')));
       expect(tree).toBeInstanceOf(PDFRef);
+      expect(parents).toHaveLength(count);
       expect(parents.filter((parent) => parent !== tree)).toStrictEqual([]);
       expect(changed.byteLength).toBeLessThan(untouched.byteLength * 1.05);
     });

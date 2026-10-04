@@ -43,9 +43,10 @@ export function linkAddressProblem(typed: string): MessageKey | undefined {
 /**
  * The page a person typed, as they count pages: from 1, or `undefined` for anything else.
  *
- * A STRICT MATCH RATHER THAN `Number(...)`, which accepts `1e3`, ` 12 `, `0x10` and `Infinity` — every one of which is
- * a person typing something other than a page number and being taken at a meaning they did not have. The rule below
- * and the link it builds both read this, so what passes is what is built.
+ * A STRICT MATCH RATHER THAN `Number(...)`, which accepts `1e3`, `0x10`, `Infinity` and an empty string — every one of
+ * which is a person typing something other than a page number and being taken at a meaning they did not have. Spaces
+ * around the digits are trimmed first, as every typed rule here does. The rule below and the link it builds both read
+ * this, so what passes is what is built.
  */
 export function typedPageNumber(typed: string): number | undefined {
   const text = typed.trim();
