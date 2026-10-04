@@ -88,6 +88,25 @@ wait, answers nothing for it: *preserve, never drop*. An edit left empty changes
 Words the page does not draw where they are typed — a note's comment — are typed in the application's own field, on a
 card beside the point, rather than in a style the page will never draw them in.
 
+## Correction while building, 2026-10-04 — where the hint is said, and who owns Escape
+
+Decision 4's hint is said in the status bar's start region, where the line naming the tool that was on already sat
+(v5-02), and it is the hint alone with one sentence for *Esc to stop*: a tool's title is written for its tooltip
+(*Hand — drag to move the pages*), and its control already shows pressed. It is shown **while the tool is on, a gesture
+in flight included**, not only between gestures: a corner tool's hint is how to finish, which is when it is needed.
+`UiTool.hint` is required, so no tool can wait for a press nobody is told about; Edit text, Edit object and the hand,
+which share the tool slot without being drawing tools, say theirs beside it.
+
+**Escape is not a command.** A chord names one command and `view.leave-focus` holds Escape, and the order is a
+person's: the innermost state goes first, as a dialog's, the palette's and Edit text's Escape already do before the
+registry sees the key. So the application's shortcut handler, with its guards (a dialog open, a field or a control
+answering the key), stops the tool before it dispatches a chord, and the order is: an autoscroll, a box being typed in,
+a gesture, marks or an object selected, the tool, then Focus. Each nearer one stops the key where it handles it.
+
+Rejected: a `tools.stop` command on Escape, which the shortcut map refuses beside `view.leave-focus` and which would
+leave Focus's Escape unable to wait its turn; and a chord shared by several commands in an order, which is a change to
+the map's one-command rule for one key.
+
 ## Rejected
 
 - **A fourth `commit` parameter.** Decision 1.
