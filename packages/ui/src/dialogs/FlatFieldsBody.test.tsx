@@ -31,7 +31,12 @@ describe('the Find fields review', () => {
           open = next;
         }}
       >
-        <FlatFieldsBody candidates={[]} resolve={(value) => answers.push(value)} truncated={false} />
+        <FlatFieldsBody
+          candidates={[]}
+          resolve={(value) => answers.push(value)}
+          truncated={false}
+          update={() => undefined}
+        />
       </InDialog>,
     );
     expect(footerButtons()).toStrictEqual(['Close']);
@@ -53,6 +58,7 @@ describe('the Find fields review', () => {
           ]}
           resolve={(value) => answers.push(value)}
           truncated={false}
+          update={() => undefined}
         />
       </InDialog>,
     );
