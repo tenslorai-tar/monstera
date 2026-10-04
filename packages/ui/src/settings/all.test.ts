@@ -52,9 +52,12 @@ describe('the registered settings', () => {
     // bar's own grip and Window › Reset Float bar position — a pair of number boxes here would place it blind.
     // EACH PROVIDER'S CHOSEN MODEL LEFT THIS LIST the day it arrived (ADR-0117, corrected 2026-09-28): its control is
     // declared, and lists what main already holds, so a props-only dialog draws it without fetching.
+    // AND THE TIPS SHOWN THIS ROUND (ADR-0159), a list of tip ids whose control is the tips themselves; the person's
+    // choice is the switch beside it, which is a row.
     expect(excluded).toStrictEqual([
       'appearance.accent',
       'appearance.float-bar-position',
+      'appearance.tips-shown',
       'editing.personal-dictionary',
       'keyboard.shortcuts',
     ]);

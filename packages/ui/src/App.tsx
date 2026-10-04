@@ -159,6 +159,8 @@ import { syncConversation } from './chatHistorySync.js';
 import { type DocumentStore, DocumentStores } from './documentStores.js';
 import { Thumbnails } from './Thumbnails.js';
 import { StatusBar } from './surfaces/StatusBar.js';
+import { StatusTip } from './surfaces/StatusTip.js';
+import { tipsOf } from './tips/tips.js';
 import { LinksPanel } from './LinksPanel.js';
 import { DestinationsPanel } from './DestinationsPanel.js';
 import { LayersPanel } from './LayersPanel.js';
@@ -365,7 +367,7 @@ import {
   redactSelectionCommand,
   searchSelectionCommand,
 } from './commands/textSelectionCommands.js';
-import { Ribbon } from './surfaces/Ribbon.js';
+import { Ribbon, SECTION_TITLES } from './surfaces/Ribbon.js';
 import { ContextPanel } from './surfaces/ContextPanel.js';
 import { DocumentBody } from './surfaces/DocumentBody.js';
 import { PanelPresence } from './panelPresence.js';
@@ -3230,6 +3232,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     onRegistries?.({ commands: registry, dialogs });
   }, [onRegistries, registry, dialogs]);
 
+  // THE TIPS, resolved against THIS registry (ADR-0159): a renamed command or a rebound key rebuilds the registry, and
+  // the tips with it, so a tip says the title and key a person sees.
+  const tips = useMemo(
+    () =>
+      tipsOf(
+        registry.all(),
+        (key) => _(key),
+        (section) => SECTION_TITLES[section],
+      ),
+    [registry, _],
+  );
+
   /**
    * What the scroller needs to let a reader draw: the active tool, and where a
    * finished gesture's command goes.
@@ -3869,6 +3883,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           byteLength={open.byteLength}
           // WHAT THE TOOL THAT IS ON WAITS FOR, by its own hint, so the bar names nothing itself.
           toolHint={toolHint}
+          // A TIP from the tips registry, its titles and keys read from this registry (ADR-0159).
+          tip={<StatusTip settings={settings} tips={tips} />}
         />
       )}
       {/* ALWAYS MOUNTED, unlike the status bar above and deliberately so: a live region

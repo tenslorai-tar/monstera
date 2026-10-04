@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import {
   REDUCE_MOTION_DESCRIPTION,
+  STATUS_TIPS_DESCRIPTION,
+  STATUS_TIPS_TITLE,
   REDUCE_MOTION_TITLE,
   THEME_DESCRIPTION,
   THEME_OPTION_TITLES,
@@ -101,6 +103,30 @@ export const REDUCE_MOTION_SETTING: SettingDefinition<z.ZodBoolean> = {
   schema: z.boolean(),
   fallback: false,
   category: 'appearance',
+};
+
+/** Shows a tip in the status bar (the owner's item 18c, ADR-0159). On by default. */
+export const STATUS_TIPS_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'appearance.status-tips',
+  title: STATUS_TIPS_TITLE,
+  description: STATUS_TIPS_DESCRIPTION,
+  schema: z.boolean(),
+  fallback: true,
+  category: 'appearance',
+};
+
+/**
+ * The tips shown in the current round (ADR-0159): a tip is not shown again until every tip has been, and the round
+ * carries across sessions. REMEMBERED, never a row: it is the application's state, and the switch above is the
+ * person's choice. Bounded so a stored list cannot grow without limit; past the bound the round starts again.
+ */
+export const TIPS_SHOWN_SETTING: SettingDefinition<z.ZodArray<z.ZodString>> = {
+  id: 'appearance.tips-shown',
+  title: STATUS_TIPS_TITLE,
+  schema: z.array(z.string().max(200)).max(2000),
+  fallback: [],
+  category: 'appearance',
+  remembered: true,
 };
 
 /** How large the Pages panel draws its page pictures (v5-10's Appearance page). */

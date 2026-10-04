@@ -6890,6 +6890,30 @@ body {
   justify-content: flex-end;
 }
 
+/* A TIP in the start's free room (ADR-0159): one line, faded in and out, and HIDDEN WHOLE when it does not fit —
+   `StatusTip` writes `data-fits` from its own measure — since a cut sentence tells a person less than none. */
+.m-status-tip {
+  flex: 1 1 0;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity var(--motion-fade) ease;
+}
+
+.m-status-tip[data-shown='true'] {
+  opacity: 1;
+}
+
+.m-status-tip[data-fits='false'] {
+  visibility: hidden;
+}
+
+:root[data-motion='reduced'] .m-status-tip {
+  transition: none;
+}
+
 /* EVERY FLOATING SURFACE (v5): menus, the context menu, a group's More, the command palette — the float surface, its
    glass and its shadow, rounded 12; items 30 tall, rounded 6. */
 /* NEVER TALLER THAN HALF THE WINDOW, NOR THAN THE ROOM ITS SIDE OF THE TRIGGER HAS: `--available-height` is set by Base

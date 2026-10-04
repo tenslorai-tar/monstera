@@ -537,6 +537,9 @@
 
   /* Motion (v5 §6): 140 ms ease-out for buttons, rises and fades; none under reduced motion. */
   --motion-fast: 140ms;
+  /* A SLOWER FADE for words that come and go by themselves (the status bar's tip, ADR-0159), so the change is seen
+     rather than jumped. `StatusTip` reads it from the element, so this is the one place it is written. */
+  --motion-fade: 400ms;
 
   --elevation-0: none;
   --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.18);

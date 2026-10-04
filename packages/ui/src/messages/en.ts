@@ -43,6 +43,35 @@ export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
 export const THEME_TITLE = messageKey('setting.appearance-theme.title');
 export const REDUCE_MOTION_TITLE = messageKey('setting.appearance-reduce-motion.title');
 export const REDUCE_MOTION_DESCRIPTION = messageKey('setting.appearance-reduce-motion.description');
+export const STATUS_TIPS_TITLE = messageKey('setting.appearance-status-tips.title');
+export const STATUS_TIPS_DESCRIPTION = messageKey('setting.appearance-status-tips.description');
+/**
+ * The status bar's tips (ADR-0159). The two DERIVED forms take a command's own title, key and ribbon place; every
+ * WRITTEN tip names its commands under placeholders, `{name}` for a title and `{nameKey}` for a key, so no tip spells a
+ * command in prose. `tips.ts` holds which tip names which command.
+ */
+export const TIP_KEY = messageKey('surface.status.tip.key');
+export const TIP_PLACE = messageKey('surface.status.tip.place');
+export const TIP_HELP = messageKey('surface.status.tip.help');
+export const TIP_PALETTE = messageKey('surface.status.tip.palette');
+export const TIP_SHORTCUTS = messageKey('surface.status.tip.shortcuts');
+export const TIP_FLOAT_BAR = messageKey('surface.status.tip.float-bar');
+export const TIP_FLOAT_BAR_RESET = messageKey('surface.status.tip.float-bar-reset');
+export const TIP_FOCUS = messageKey('surface.status.tip.focus');
+export const TIP_PANES = messageKey('surface.status.tip.panes');
+export const TIP_COMPARE = messageKey('surface.status.tip.compare');
+export const TIP_UNDO = messageKey('surface.status.tip.undo');
+export const TIP_GO_TO = messageKey('surface.status.tip.go-to');
+export const TIP_BACK = messageKey('surface.status.tip.back');
+export const TIP_RULERS = messageKey('surface.status.tip.rulers');
+export const TIP_LOUPE = messageKey('surface.status.tip.loupe');
+export const TIP_SPELLING = messageKey('surface.status.tip.spelling');
+export const TIP_KEY_CHECK = messageKey('surface.status.tip.key-check');
+export const TIP_REDACT = messageKey('surface.status.tip.redact');
+export const TIP_OCR = messageKey('surface.status.tip.ocr');
+export const TIP_ASSISTANT = messageKey('surface.status.tip.assistant');export const TIP_RIGHT_CLICK = messageKey('surface.status.tip.right-click');
+export const TIP_TIPS_OFF = messageKey('surface.status.tip.tips-off');
+export const TIP_FIND = messageKey('surface.status.tip.find');
 export const THUMBNAIL_SIZE_TITLE = messageKey('setting.viewing-thumbnail-size.title');
 export const THUMBNAIL_SIZE_DESCRIPTION = messageKey('setting.viewing-thumbnail-size.description');
 export const THUMBNAIL_SIZE_SMALL = messageKey('setting.viewing-thumbnail-size.small');
@@ -2590,6 +2619,30 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [REDUCE_MOTION_TITLE]: 'Reduce motion',
   [REDUCE_MOTION_DESCRIPTION]:
     'Turns off the transitions and animations in the interface. Also on whenever Windows asks for reduced motion.',
+  [STATUS_TIPS_TITLE]: 'Show tips in the status bar',
+  [STATUS_TIPS_DESCRIPTION]: 'A short tip at the start of the status bar, a new one every so often.',
+  [TIP_KEY]: '{command}: press {key}.',
+  [TIP_PLACE]: '{command} is in {section}, under {group}.',
+  [TIP_HELP]: 'Need help using a tool? Choose the tool, then press {helpKey}.',
+  [TIP_PALETTE]: 'Looking for a tool? Press {paletteKey} and type part of its name.',
+  [TIP_SHORTCUTS]: 'See every keyboard shortcut, and change them: press {shortcutsKey}.',
+  [TIP_FLOAT_BAR]: 'Did you know? “{floatBar}”, in the status bar, hides the Float bar.',
+  [TIP_FLOAT_BAR_RESET]: 'Float bar in the way? “{reset}” puts it back where it started.',
+  [TIP_FOCUS]: 'Need more room? “{focus}” hides the panels, and {leaveKey} brings them back.',
+  [TIP_PANES]: 'Move between the parts of the window with {nextKey}, and back with {previousKey}.',
+  [TIP_COMPARE]: '“{compare}” shows what changed between two versions of a document.',
+  [TIP_UNDO]: 'Changed something by mistake? {undoKey} undoes it, and {redoKey} does it again.',
+  [TIP_GO_TO]: 'Jump to any page: press {goToKey} and type its number.',
+  [TIP_BACK]: 'Jumped to another page? {backKey} goes back, and {forwardKey} forward.',
+  [TIP_RULERS]: 'Lining things up on the page? Try “{rulers}” and “{grid}”.',
+  [TIP_LOUPE]: '“{loupe}” magnifies the part of the page under the pointer.',
+  [TIP_SPELLING]: '“{spelling}” goes through the spelling one word at a time, beside the page.',
+  [TIP_KEY_CHECK]: 'Does an AI key work? Choose Check under it in “{settings}”, on the AI page.',
+  [TIP_REDACT]: 'A redaction mark removes nothing until you choose “{apply}”.',
+  [TIP_OCR]: 'A scanned page? “{ocr}” lets you search its words.',
+  [TIP_ASSISTANT]: 'Questions about this document? Try “{assistant}”.',  [TIP_RIGHT_CLICK]: 'Right-click a page, a comment or a tab to see what you can do with it.',
+  [TIP_TIPS_OFF]: 'Rather not see tips? Turn them off in “{settings}”, on the Appearance page.',
+  [TIP_FIND]: 'Looking for a word? {findKey} searches the whole document.',
   [THUMBNAIL_SIZE_TITLE]: 'Thumbnail size',
   [THUMBNAIL_SIZE_DESCRIPTION]: 'How large the page pictures in the Pages panel are drawn.',
   [THUMBNAIL_SIZE_OPTION_TITLES.small]: 'Small',

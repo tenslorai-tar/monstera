@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
-import { Fragment, type ReactElement, useCallback, useId, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, type ReactElement, type ReactNode, useCallback, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import {
   STATUS_PAGES,
@@ -101,6 +101,7 @@ export function StatusBar({
   saved,
   byteLength,
   toolHint,
+  tip,
 }: {
   /** The document's name, as main stated it on `document.open`. */
   readonly name: string;
@@ -135,6 +136,8 @@ export function StatusBar({
    * and the tool's own control already shows pressed.
    */
   readonly toolHint: MessageKey | undefined;
+  /** The tip drawn in the start's free room (ADR-0159), or nothing. The bar places it and knows nothing of tips. */
+  readonly tip?: ReactNode;
 }): ReactElement {
   const { i18n } = useLingui();
   // `null` until a person types: the field then shows what they typed, and otherwise the page.
@@ -238,6 +241,8 @@ export function StatusBar({
         {toolHint === undefined ? null : (
           <span className="m-status-mode">{i18n._(STATUS_TOOL_LINE, { hint: i18n._(toolHint) })}</span>
         )}
+        {/* A TIP in the room left (ADR-0159), after what the tool waits for; hidden whole when it does not fit. */}
+        {tip}
       </div>
       <div className="m-status-cluster m-status-centre" role="group" aria-label={i18n._(STATUS_NAVIGATION)}>
         {buttons(model.navigation.before)}

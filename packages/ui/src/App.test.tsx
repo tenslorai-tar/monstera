@@ -24,6 +24,7 @@ import { START_SCREEN_RECENT } from './RecentFiles.js';
 import { RECENT_RECHECK_MS } from './recentLine.js';
 import { CONTEXT_PANEL_TAB_SETTING, DOCUMENT_PANEL_SETTING, FLOAT_BAR_POSITION_SETTING } from './settings/layout.js';
 import { SECTION_TITLES } from './surfaces/Ribbon.js';
+import { WRITTEN_TIPS, tipsOf } from './tips/tips.js';
 import type { Article, Inline } from './help/article.js';
 
 /** An article's text with its bold written back as `**…**`, one line per block, for the sentence checks below. */
@@ -2628,6 +2629,41 @@ describe('App', () => {
     expect(await press(true)).toBe('status-bar');
   });
 
+  it('every TIP names only commands the application REGISTERS, and a key only for a command that has one (ADR-0159)', () => {
+    // THE OWNER'S CHECK (item 18b): a tip naming something that no longer exists fails here, against the registry this
+    // shell builds, as the Help articles' names do below. A `{nameKey}` in a tip's English words needs that command's
+    // shortcut, or the tip would say a key there is not.
+    let commands: CommandRegistry | undefined;
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} onRegistries={(registries) => (commands = registries.commands)} />);
+    if (commands === undefined) throw new Error('the shell reported no registries');
+    const registry = commands;
+    const wrong = WRITTEN_TIPS.flatMap((tip) => {
+      const words = EN[tip.words] ?? '';
+      const unknown = Object.entries(tip.names)
+        .filter(([, id]) => registry.get(id) === undefined)
+        .map(([name, id]) => `${tip.id}: {${name}} names ${id}, which is not registered`);
+      const keys = [...words.matchAll(/\{(\w+)Key\}/gu)].map((match) => match[1] ?? '');
+      const keyless = keys
+        .filter((name) => registry.get(tip.names[name] ?? '')?.shortcut === undefined)
+        .map((name) => `${tip.id}: {${name}Key} needs a key, and ${tip.names[name] ?? `no command named {${name}}`} has none`);
+      // EVERY PLACEHOLDER IS A NAME, so no word in a tip is left as a brace a person reads.
+      const placeholders = [...words.matchAll(/\{(\w+)\}/gu)].map((match) => match[1] ?? '');
+      const unnamed = placeholders
+        .filter((name) => !(name in tip.names) && !(name.endsWith('Key') && name.slice(0, -3) in tip.names))
+        .map((name) => `${tip.id}: {${name}} is named by no command`);
+      return [...unknown, ...keyless, ...unnamed];
+    });
+    expect(wrong, `\n${wrong.join('\n')}\n`).toStrictEqual([]);
+    // WELL OVER A HUNDRED, every one drawn whole against this registry.
+    const tips = tipsOf(registry.all(), (key) => i18n._(key), (section) => SECTION_TITLES[section]);
+    expect(tips.length).toBeGreaterThan(150);
+    expect(tips.filter((tip) => !tip.id.includes(':')).map((tip) => tip.id)).toStrictEqual(WRITTEN_TIPS.map((tip) => tip.id));
+    // CONTROL: the registry is the application's, so a real id is found and an invented one is not.
+    expect(registry.get('app.help')?.shortcut).toBe('F1');
+    expect(registry.get('app.frobnicate')).toBeUndefined();
+  });
+
   it('every Help article names only commands and places the application REGISTERS', () => {
     // ADR-0112 Decision 2, against the registries this shell builds rather than a list kept here. The vocabulary of
     // places is each one's own authority: the rail's sections, the two panels' tab settings, the dialog registry, and
@@ -4182,6 +4218,27 @@ describe('Settings › Viewing › Zoom step (Part F)', () => {
 
 describe('the proof locale — every word on screen came through the catalogue (BUILD-PROMPT.md:721)', () => {
   /**
+   * A text with what the proof locale marks taken out, INNERMOST FIRST. A message drawing another message's words as
+   * a value nests one mark in another — a tip saying a command's title is `⟦⟦title⟧: press Ctrl+End.⟧` — and a pattern
+   * ending at the first closing mark would take `⟦⟦title⟧` and leave the outer message's words as though unmarked.
+   */
+  function withoutMarked(text: string): string {
+    let left = text;
+    for (let before = ''; before !== left; ) {
+      before = left;
+      left = left.replace(/⟦[^⟦⟧]*⟧/gu, '');
+    }
+    return left;
+  }
+
+  it('takes out a mark nested in another, and still leaves a word outside every mark', () => {
+    expect(withoutMarked('⟦⟦Ţîţļé⟧: þŕéšš Ctrl+End.⟧')).toBe('');
+    // CONTROLS: a literal after a nested message, and one between two messages, are still left to be reported.
+    expect(withoutMarked('⟦⟦Ţîţļé⟧ þŕéšš⟧ Literal')).toBe(' Literal');
+    expect(withoutMarked('⟦þŕéšš ⟦Ţîţļé⟧⟧ and ⟦x⟧ Literal')).toBe(' and  Literal');
+  });
+
+  /**
    * Every visible text and every named attribute, with what the proof locale marks — `⟦…⟧` — taken out. What is
    * left and still has a word in it did not come from the catalogue.
    */
@@ -4199,7 +4256,7 @@ describe('the proof locale — every word on screen came through the catalogue (
       }
     }
     return found
-      .map((text) => text.replace(/⟦[^⟧]*⟧/gu, '').trim())
+      .map((text) => withoutMarked(text).trim())
       .filter((text) => /[A-Za-z]{2}/u.test(text));
   }
 

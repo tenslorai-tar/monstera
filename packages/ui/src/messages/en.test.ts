@@ -50,6 +50,11 @@ const NOT_A_PLURAL_NOUN: ReadonlySet<string> = new Set([
   'puts',
   'fixes',
   'publishes',
+  // A KEY then what it does, in the status bar's tips: *{undoKey} undoes it*.
+  'brings',
+  'undoes',
+  'goes',
+  'searches',
   'this',
   'as',
 ]);
