@@ -124,6 +124,7 @@ import {
   GROUP_COMBINE,
   GROUP_MARKS,
   GROUP_PAGES,
+  GROUP_ROTATE,
   GROUP_TEXT,
   EDIT_TEXT_COMMAND_TITLE,
   GROUP_MARKUP,
@@ -191,6 +192,7 @@ import {
   RIBBON_EXPORT_POWERPOINT,
   RIBBON_EXPORT_EXCEL,
   RIBBON_EXPORT_PDFA,
+  RIBBON_ROTATE_90,
   RIBBON_ROTATE_180,
   RIBBON_ROTATE_270,
   RIBBON_DESKEW,
@@ -1187,10 +1189,10 @@ export function findCommand(deps: { readonly settings: SettingsStore; readonly p
  * together where the single one was.
  */
 const ROTATIONS = {
-  // ONE QUARTER TURN KEEPS ITS TITLE on the ribbon: *Rotate page* is already two
-  // words, and a caption of *Rotate* beside *Rotate 180°* would read as the
-  // general case rather than as the third member of a set.
-  1: { id: 'document.rotate-page', title: ROTATE_PAGE_TITLE, icon: 'RotateCw', order: 10 },
+  // THE THREE TURNS SIDE BY SIDE, each named by its angle on the ribbon (the owner's item 13f: *Rotate 90°, 180°,
+  // 270°*). The quarter turn keeps *Rotate page* everywhere else — the page menu, the palette, the menu row — where it
+  // stands alone and the angle would be a detail.
+  1: { id: 'document.rotate-page', title: ROTATE_PAGE_TITLE, ribbonTitle: RIBBON_ROTATE_90, icon: 'RotateCw', order: 10 },
   2: {
     id: 'document.rotate-page-180',
     title: ROTATE_PAGE_180_TITLE,
@@ -1220,9 +1222,8 @@ export function rotatePageCommand(
     id,
     feedback: VISIBLE,
     title,
-    // ONE OF THE THREE HAS NO SHORT FORM, so this reads it off the table rather
-    // than spelling it — `in` narrows where a property access on the union does
-    // not, and `exactOptionalPropertyTypes` refuses a bare `undefined` here.
+    // READ OFF THE TABLE rather than spelt here — `in` narrows where a property access on the union does
+    // not, and `exactOptionalPropertyTypes` refuses a bare `undefined`.
     ...('ribbonTitle' in spec ? { ribbonTitle: spec.ribbonTitle } : {}),
     icon,
     // THE TABLE'S OWN `order`, so the three rotations sit in the ribbon in the
@@ -1231,16 +1232,15 @@ export function rotatePageCommand(
     // (the owner's list, 2026-09-19: *rotate*), and the page it rotates is the
     // one right-clicked, because the menu hands that page in as `context.page`.
     //
-    // ORGANIZE › PAGES since the owner's v5 design, where *Rotate* is the second tool. The quarter turn
-    // is that primary; the half and three-quarter turns follow it in its group's More, in the table's
-    // sequence, by an offset from the quarter turn's own number (ADR-0098).
+    // ORGANIZE › ROTATE, a group of its own after Pages (the owner's item 13f): the three turns side by side, all
+    // primary, where they were one primary and two in Pages' More. 24 puts the group after Pages and before Combine at
+    // 30, since a group sits where its earliest member does.
     placements: [
       {
         surface: 'ribbon',
         section: 'organize',
-        group: GROUP_PAGES,
-        order: 12 + (order - ROTATIONS[1].order) / 10,
-        ...(quarterTurns === 1 ? {} : { prominence: 'secondary' as const }),
+        group: GROUP_ROTATE,
+        order: 24 + (order - ROTATIONS[1].order),
       },
       ...(quarterTurns === 1 ? [{ surface: 'context-menu', context: 'page', order: 10 } as const] : []),
     ],
@@ -1288,7 +1288,7 @@ export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
     title: INSERT_BLANK_PAGE_TITLE,
     ribbonTitle: RIBBON_INSERT_BLANK,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 22, prominence: 'secondary' },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 14 },
       { surface: 'context-menu', context: 'page', order: 20 },
     ],
     when: hasDocument,
@@ -1321,7 +1321,7 @@ export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'CopyPlus',
     title: DUPLICATE_PAGE_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 20 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 22 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1371,7 +1371,7 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
     title: DELETE_PAGE_TITLE,
     placements: [
       // SECONDARY: v5-09's *Delete* is the range dialog, which deletes this page too.
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 21, prominence: 'secondary' },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 24, prominence: 'secondary' },
       { surface: 'context-menu', context: 'page', order: 40 },
     ],
     when: hasDocument,
@@ -1730,7 +1730,7 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'ImagePlus',
     title: INSERT_IMAGE_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 23, prominence: 'secondary' },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 16 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1938,7 +1938,7 @@ export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
     ribbonTitle: RIBBON_INSERT_FROM_PDF,
     placements: [
       // v5-09's *Insert*: pages from another PDF. A blank page and an image are its secondaries.
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 14 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 12 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1995,7 +1995,7 @@ export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'Replace',
     title: REPLACE_PAGE_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 18 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 20 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -2651,7 +2651,7 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile & Se
     icon: 'FileOutput',
     title: EXTRACT_PAGES_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 16 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 18 },
       { surface: 'context-menu', context: 'page', order: 30 },
     ],
     when: hasDocument,

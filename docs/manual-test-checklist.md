@@ -55,21 +55,21 @@ is not available.
 - [ ] **Add a barcode** — Marks · `organize.barcode` · Shows: on screen · Help: *Add and read barcodes and QR codes*
 - [ ] **Read barcodes** — Marks · `document.read-barcodes` · Shows: a result dialog · Help: *Add and read barcodes and QR codes*
 - [ ] **Delete pages…** — Pages · `document.delete-pages` · Shows: on screen · Help: *Delete pages*
-- [ ] **Rotate page** — Pages · `document.rotate-page` · Shows: on screen · Help: *Rotate pages*
-- [ ] **Rotate page 180°** — Pages · `document.rotate-page-180` · Shows: on screen · Help: *Rotate pages*
-- [ ] **Rotate page 270°** — Pages · `document.rotate-page-270` · Shows: on screen · Help: *Rotate pages*
 - [ ] **Insert from PDF…** — Pages · `document.insert-from-pdf` · Shows: on screen · Help: *Insert pages from another PDF*
+- [ ] **Insert blank page** — Pages · `document.insert-blank-page` · Shows: on screen · Help: *Insert a blank page*
+- [ ] **Insert image…** — Pages · `document.insert-image` · Shows: on screen · Help: *Add a picture as a new page*
 - [ ] **Extract pages…** — Pages · `document.extract-pages` · Shows: a toast · Help: *Extract pages to a new PDF*
 - [ ] **Replace page…** — Pages · `document.replace-page` · Shows: on screen · Help: *Replace a page*
 - [ ] **Duplicate page** — Pages · `document.duplicate-page` · Shows: on screen · Help: *Duplicate a page*
 - [ ] **Delete page** — Pages · `document.delete-page` · Shows: on screen · Help: *Delete pages*
-- [ ] **Insert blank page** — Pages · `document.insert-blank-page` · Shows: on screen · Help: *Insert a blank page*
-- [ ] **Insert image…** — Pages · `document.insert-image` · Shows: on screen · Help: *Add a picture as a new page*
 - [ ] **Move page up** — Pages · `document.move-page-earlier` · Shows: on screen · Help: *Change the order of pages*
 - [ ] **Move page down** — Pages · `document.move-page-later` · Shows: on screen · Help: *Change the order of pages*
 - [ ] **Import page as layer…** — Pages · `document.import-page-as-layer` · Shows: on screen · Help: *Import a page as a layer*
 - [ ] **Delete duplicate pages…** — Pages · `document.find-duplicate-pages` · Shows: a result dialog · Help: *Delete duplicate pages*
 - [ ] **Edit page in another app…** — Pages · `document.edit-page-externally` · Shows: on screen · Help: *Edit a page in another app*
+- [ ] **Rotate page** — Rotate · `document.rotate-page` · Shows: on screen · Help: *Rotate pages*
+- [ ] **Rotate page 180°** — Rotate · `document.rotate-page-180` · Shows: on screen · Help: *Rotate pages*
+- [ ] **Rotate page 270°** — Rotate · `document.rotate-page-270` · Shows: on screen · Help: *Rotate pages*
 
 ## Ribbon › Edit
 

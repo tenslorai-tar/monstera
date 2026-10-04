@@ -2018,6 +2018,7 @@ export const RIBBON_DETECT_FIELDS = messageKey('surface.ribbon.detect-fields');
 export const RIBBON_FLATTEN_FORM = messageKey('surface.ribbon.flatten-form');
 export const GROUP_EXPORT = messageKey('surface.ribbon.group.export');
 export const GROUP_COMBINE = messageKey('surface.ribbon.group.combine');
+export const GROUP_ROTATE = messageKey('surface.ribbon.group.rotate');
 export const GROUP_ADJUST = messageKey('surface.ribbon.group.adjust');
 export const GROUP_MANAGE = messageKey('surface.ribbon.group.manage');
 export const GROUP_DATA = messageKey('surface.ribbon.group.data');
@@ -2297,6 +2298,7 @@ export const RIBBON_CLOUD_REGION = messageKey('ribbon.cloud-region');
 export const RIBBON_CLAUDE_REGION = messageKey('ribbon.claude-region');
 export const RIBBON_EDIT_TEXT = messageKey('ribbon.edit-text');
 export const RIBBON_EDIT_OBJECT = messageKey('ribbon.edit-object');
+export const RIBBON_ROTATE_90 = messageKey('ribbon.rotate-90');
 export const RIBBON_ROTATE_180 = messageKey('ribbon.rotate-180');
 export const RIBBON_ROTATE_270 = messageKey('ribbon.rotate-270');
 export const RIBBON_DESKEW = messageKey('ribbon.deskew');
@@ -4908,6 +4910,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_FLATTEN_FORM]: 'Flatten',
   [GROUP_EXPORT]: 'Export',
   [GROUP_COMBINE]: 'Combine',
+  [GROUP_ROTATE]: 'Rotate',
   [GROUP_ADJUST]: 'Adjust',
   [GROUP_MANAGE]: 'Manage',
   [GROUP_DATA]: 'Data',
@@ -4966,6 +4969,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_CLAUDE_REGION]: 'Claude OCR',
   [RIBBON_EDIT_TEXT]: 'Edit text',
   [RIBBON_EDIT_OBJECT]: 'Edit object',
+  [RIBBON_ROTATE_90]: 'Rotate 90°',
   [RIBBON_ROTATE_180]: 'Rotate 180°',
   [RIBBON_ROTATE_270]: 'Rotate 270°',
   [RIBBON_DESKEW]: 'Straighten',
