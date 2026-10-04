@@ -1,4 +1,4 @@
-import { PDFArray, PDFDocument, PDFName, PDFNumber } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDocument, PDFName, PDFNumber, PDFRef } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
@@ -251,6 +251,34 @@ describe('applyMovePage', () => {
       await mupdfWriter.close(session);
     }
   });
+});
+
+describe('every page each rewrite keeps names the tree by REFERENCE', () => {
+  // MEASURED 2026-10-04, before `setKids` wrote the reference: each page's `/Parent` was the resolved root dictionary,
+  // which a save writes inline, so one move took a 200-page document's file from 22,551 to 327,152 bytes and a
+  // 1,000-page one's from 110,562 to 8,038,564. The fixture is 200 pages because the growth is the square of the count:
+  // at that size the inline form is fourteen times the file, far past the bound below, and a reference costs nothing.
+  const PAGES = 200;
+  const commands: readonly [string, (session: Parameters<typeof applyMovePage>[0]) => Promise<void>][] = [
+    ['a move', (session) => applyMovePage(session, { kind: 'movePage', from: 0, to: 1 })],
+    ['a swap', (session) => applySwapPages(session, { kind: 'swapPages', a: 0, b: 3 })],
+    ['a delete', (session) => applyDeletePages(session, { kind: 'deletePages', pages: [5] })],
+    ['a blank page', (session) => applyInsertBlankPage(session, { kind: 'insertBlankPage', at: 1 })],
+    ['a duplicate', (session) => applyDuplicatePage(session, { kind: 'duplicatePage', pages: [1] })],
+  ];
+  for (const [name, work] of commands) {
+    it(`after ${name}, every /Parent is the catalog's /Pages reference and the file stays its size`, async () => {
+      const source = await flatDocument(PAGES);
+      const untouched = await edited(source, () => Promise.resolve());
+      const changed = await edited(source, work);
+      const reread = await PDFDocument.load(changed, { updateMetadata: false });
+      const tree = reread.catalog.get(PDFName.of('Pages'));
+      const parents = reread.getPages().map((page) => page.node.get(PDFName.of('Parent')));
+      expect(tree).toBeInstanceOf(PDFRef);
+      expect(parents.filter((parent) => parent !== tree)).toStrictEqual([]);
+      expect(changed.byteLength).toBeLessThan(untouched.byteLength * 1.05);
+    });
+  }
 });
 
 describe('captureMovePage and invertMovePage', () => {

@@ -139,7 +139,12 @@ function leavesWithInheritables(document: PDFDocument): PDFObject[] {
  * flatten, the `/Count` and the reparenting in one place (B3a).
  */
 function setKids(document: PDFDocument, leaves: readonly PDFObject[]): void {
-  const root = deref(document.getTrailer().get('Root', 'Pages'));
+  // THE REFERENCE, kept apart from the dictionary it resolves to. Each leaf's `/Parent` is written from it: a resolved
+  // dictionary put as a value is written INLINE, so every page carried the whole root, its `/Kids` included —
+  // measured 2026-10-04, one move took a 1,000-page document's saved file from 110,562 to 8,038,564 bytes, growing as
+  // the square of the page count, where the format requires `/Parent` to be an indirect reference.
+  const pages = document.getTrailer().get('Root', 'Pages');
+  const root = deref(pages);
   const kids = document.newArray();
   for (const leaf of leaves) kids.push(leaf);
 
@@ -150,7 +155,7 @@ function setKids(document: PDFDocument, leaves: readonly PDFObject[]): void {
   // a removed leaf given a `/Parent` pointing at the root is a page that claims
   // to be in a tree whose `/Kids` does not list it, which is the inconsistent
   // half of a page tree that some readers repair by trusting `/Parent`.
-  for (const leaf of leaves) leaf.put('Parent', root);
+  for (const leaf of leaves) leaf.put('Parent', pages);
 
   document.setPageTreeCache(true);
 }
