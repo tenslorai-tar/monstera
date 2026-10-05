@@ -174,3 +174,19 @@ in its own ADR, written before it is built.
 - A Type 3 page cannot be edited until Phase 1, and says so instead of losing text.
 - `Failure` now has a detail axis. A code that gains one is a compile error at every site that builds it, which is the
   point.
+
+## Correction, 2026-10-05: the comparison is a multiset, and PDFium rewrites only the streams that changed
+
+Two measurements made while building Decision 1, on PDFium 155.0.8044.0's Linux build. Neither changes the decision;
+both change how it is read.
+
+- **Generation does not keep page order.** A line promoted out of a Form XObject is last among the page's text objects
+  in the session and first in the saved bytes, with every object present and unchanged. A comparison by position
+  refused that faithful save. So Decision 1's *reads back as recorded* is a comparison of what each text object says and
+  is set in as a multiset, with the count first; the record is still taken in page order, and the order is not
+  compared.
+- **PDFium rewrites only the content streams that hold a changed object.** A promotion on a hand-built Type 3 page whose
+  form was drawn into a content stream of its own kept both Type 3 lines, because the stream holding them was not
+  rewritten. So the loss needs a changed object in the same stream as the Type 3 text, which is every case measured
+  above, and a page whose Type 3 text sits in a stream nothing changed is saved, correctly. The proof's promotion case
+  joins its page into one stream so that it is the case that loses text.
