@@ -67,6 +67,9 @@
  * `--signature-ink` is black in every theme for the same kind of reason: a signature's
  * mark is drawn black on the page (`signatureDrawing.ts`, `0 g` and `0 G`), and the pad
  * and a kept drawing show it as it will land — on `--page`, the paper it lands on.
+ *
+ * `--field-ink` is black in every theme for the same reason again: MuPDF draws a form field's text black when the
+ * field names no colour of its own (`/DA` `0 g`), and the page's field editor types in it on `--page` (ADR-0168).
  */
 
 /* ─── roles ─────────────────────────────────────────────────────────────────
@@ -102,6 +105,7 @@
  * @role accent-grad-bottom fill
  * @role redact-mark graphic @on page
  * @role signature-ink graphic @on page
+ * @role field-ink text @on page
  * @role text text @on ground bg bg2 surface surface2 canvas float list active dialog-head-wash bubble-wash
  * @role muted text @on ground bg bg2 surface surface2 canvas float list bubble-wash
  * @role faint text @on ground bg bg2 surface canvas
