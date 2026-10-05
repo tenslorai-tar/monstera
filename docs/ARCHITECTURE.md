@@ -1280,7 +1280,10 @@ feature wiring, no dialog flags, and no large switch statements.
 geometry adapter (`bounds`, `transform`, `hitTest`) and a renderer; every tool
 registers a controller (`begin`, `update`, `commit`, `preview`, `complete`). The
 overlay is a dispatcher, never a monolithic switch stack. Adding a type touches
-one adapter and one renderer.
+one adapter and one renderer. **`preview` is placed as `commit` is** (amended
+2026-10-05, [ADR-0166](DECISIONS/0166-a-tools-preview-is-placed-as-its-commit-is.md)):
+it is given the page and its transform, and may describe several boxes, so a
+move or a resize shows each mark where the command will put it.
 
 **That list read `begin`, `update`, `commit → Command`, `cancel` until
 2026-09-06, and three of its four entries were false** — found by the stage
@@ -2960,6 +2963,7 @@ deliberately, in their own commit, never as a side effect.
 Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
+| 2026-10-05 | **A tool's preview is placed as its commit is** (§6, the controller's `preview`). The owner's item 14d: dragging a selected mark drew a box from the press to the pointer, a marquee, and held it after the release, so the person saw a ghost box and then the mark appearing elsewhere. `preview` is given the page and its transform, as `commit` is, and `ToolPreview` gains several boxes; the select tool's preview of a move or a resize is the placement itself, computed by the function that builds the command, and the overlay's held shape is therefore where the marks went. Not done: the mark's pixels moving, since PDF.js 6.2.108 cannot leave one annotation out of a draw, and lifting pixels would move a highlight's words with it. Rejected: a preview in PDF space converted by the overlay, a transform captured at the gesture's start, a second preview path | §6's `preview(gesture)` and one-shape `ToolPreview` | [0166](DECISIONS/0166-a-tools-preview-is-placed-as-its-commit-is.md) |
 |---|---|---|---|
 | 2026-10-04 | **A note on the 2026-09-11 row, *The download rule is law*, which stands as written.** Its *Not claimed* says Part C8's SSRF guard for **user-supplied** URLs *"is still unwritten"*. That was true on 2026-09-11 and stopped being true on 2026-09-13: `packages/kernel/src/guardedFetch.ts` fetches a URL a person chose through one guard that pins every resolution. The rest of that clause still holds: both forms of the download rule take a compile-time host list, where host-locking is the guard | Nothing; a dated note on a recorded row, which is never edited | [0061](DECISIONS/0061-a-url-a-person-chose-is-fetched-through-one-guard-that-pins-every-resolution.md) |
 | 2026-10-04 | **A document past `main`'s memory ceiling is held in a file, and opens** (§4, *Memory is one document; checkpoints are files*). The owner's F row 1: a 1.5 GB scan, or several large files, were refused as `at-capacity` because every image was read into memory at open. ADR-0121's file state, until now used only between a replacement's arrival and its read, is now where an image is held whenever holding it in memory would pass the ceiling with the other resident images, at open and at every replacement; the copy is the filesystem's and never passes through `main`. Measured on 2026-10-04: a warm 64 KiB range from the file 14.0–16.2 µs, from memory 14.6–16.9 µs; a cold read is the disk's and is not measured. `at-capacity` now means the disk is full. Not reached: cloud save-back and upload, DocuSign, signing, which bring a whole image into `main` by design. Rejected: every image in a file, the person's own file read in place, a higher ceiling, a read window | ADR-0121's *"a file-backed canonical image always"* rejection, for the documents that fit in memory no more | [0165](DECISIONS/0165-a-document-past-mains-memory-ceiling-is-held-in-a-file.md) |
