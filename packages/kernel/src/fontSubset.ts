@@ -113,6 +113,8 @@ export interface SubsetRequest {
   readonly glyphs?: Iterable<number>;
   /** Keep every glyph's id, so ids taken from the whole face stay valid in the subset. */
   readonly retainGlyphIds?: boolean;
+  /** Which face of a collection (`.ttc`) the subset is made from; the first where the file holds one face. */
+  readonly faceIndex?: number;
   /**
    * Where each variation axis is pinned; every axis not named is pinned at its default, so the subset is a static face,
    * which is the only kind a PDF font program can be.
@@ -130,7 +132,7 @@ export function subsetFont(font: Uint8Array, request: SubsetRequest): Uint8Array
   if (data === 0) return null;
   new Uint8Array(hb.memory.buffer).set(font, data);
   const blob = hb.hb_blob_create(data, font.length, MEMORY_MODE_WRITABLE, 0, 0);
-  const face = hb.hb_face_create(blob, 0);
+  const face = hb.hb_face_create(blob, request.faceIndex ?? 0);
   hb.hb_blob_destroy(blob);
   const input = hb.hb_subset_input_create_or_fail();
   let result = 0;
