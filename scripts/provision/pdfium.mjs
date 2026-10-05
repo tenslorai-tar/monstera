@@ -44,12 +44,20 @@
  * `release-assets.githubusercontent.com`, so a first-hop-only host check would
  * leave the hop that delivers the bytes unchecked.
  *
- * ## Windows x64 only, and that is the product rather than a shortcut
+ * ## Windows x64 is what ships; Linux x64 is pinned for development and tests only
  *
  * Distribution is the Microsoft Store (ADR-0018), and the engine hosts are
- * Windows processes created with an AppContainer SID. A provisioner offering
- * ten platforms, as gitleaks' does, would be offering them for a tool that runs
- * on the developer's machine; this is the shipped engine.
+ * Windows processes created with an AppContainer SID, so `pdfium-win-x64.tgz` is
+ * the shipped engine and the only one packaging reads (`SHIPPED_PLATFORM`).
+ *
+ * The same release's `pdfium-linux-x64.tgz` is pinned beside it, by the owner's
+ * decision of 2026-10-05, because a PDFium measurement taken on Linux from a
+ * library nothing pinned is a reading of an unknown binary. Its `VERSION` reads
+ * the same 155.0.8044.0 and its fourteen licence texts are byte-for-byte the
+ * Windows archive's (compared 2026-10-05), so the notice's committed copies serve
+ * both. Packaging takes `pdfiumLibrary(root, SHIPPED_PLATFORM)` and never the
+ * running platform's, so a Linux tree cannot reach a package by being the one on
+ * the machine.
  *
  * Usage:
  *   node scripts/provision/pdfium.mjs [--force] [--check]
@@ -80,34 +88,72 @@ export const PDFIUM_RELEASE = 'chromium/8044';
 /** What the archive's own `VERSION` file says, so a bump that lies is visible. */
 export const PDFIUM_VERSION = '155.0.8044.0';
 
-/** The asset, its size and its digest — all three read from the download. */
-export const PDFIUM_ASSET = 'pdfium-win-x64.tgz';
-export const PDFIUM_SHA256 =
-  '78a17d9a5f14467631c26a3ac8741b27a0471ecc05bd6a119b523598160a0537';
+/** The one platform whose library is packaged. */
+export const SHIPPED_PLATFORM = 'win32';
 
 /**
- * Every file the application loads from the extracted `bin/`, and its digest — read 2026-09-27 from a tree this
- * script had just extracted from the archive above (`pinsOf`, after a `force` run), never from one found on disk.
+ * @typedef {object} PdfiumPlatform
+ * @property {string} asset the release asset
+ * @property {string} sha256 the archive's digest, read from the download
+ * @property {number} maxBytes a ceiling on the download, counted rather than believed
+ * @property {string} folder the archive folder that holds the library
+ * @property {string} library the library's file name inside `folder`
+ * @property {Record<string, string>} pins every file in `folder`, and its digest
  */
-export const PDFIUM_BIN = {
-  'pdfium.dll': '04100c03e41cac1f979e36e5e26fb860bcb5a7461f53830d3c098716624a27a9',
+
+/**
+ * The pinned archive per platform.
+ *
+ * Windows: 3,818,370 bytes; the `bin/` pins read 2026-09-27 from a tree this script had just extracted from it
+ * (`pinsOf`, after a `force` run), never from one found on disk. Linux: 3,739,655 bytes, digest and `lib/` pin read
+ * 2026-10-05 from the archive downloaded from the release and the tree extracted from it. Four megabytes leaves room
+ * for a patch release without leaving room for a different artefact — the digest is what decides, so the bound stops a
+ * hostile response before it is hashed rather than identifying the file.
+ *
+ * @type {Readonly<Record<'win32' | 'linux', PdfiumPlatform>>}
+ */
+export const PDFIUM_PLATFORMS = {
+  win32: {
+    asset: 'pdfium-win-x64.tgz',
+    sha256: '78a17d9a5f14467631c26a3ac8741b27a0471ecc05bd6a119b523598160a0537',
+    maxBytes: 4 * 1024 * 1024,
+    folder: 'bin',
+    library: 'pdfium.dll',
+    pins: { 'pdfium.dll': '04100c03e41cac1f979e36e5e26fb860bcb5a7461f53830d3c098716624a27a9' },
+  },
+  linux: {
+    asset: 'pdfium-linux-x64.tgz',
+    sha256: 'eb142f416aed3a72fc5a02dbd5884868a16cb99dc0cf53e6bdd64afbf67b05f4',
+    maxBytes: 4 * 1024 * 1024,
+    folder: 'lib',
+    library: 'libpdfium.so',
+    pins: { 'libpdfium.so': 'b0361f8ba0bc6ffeb2325949a88f08b09356f46abe257ffdf846202999daa27b' },
+  },
 };
+
+/** The shipped asset, kept by its old names for the manifest and the notice. */
+export const PDFIUM_ASSET = PDFIUM_PLATFORMS[SHIPPED_PLATFORM].asset;
+
+/** Every file the application loads, and its digest: the shipped platform's pins. */
+export const PDFIUM_BIN = PDFIUM_PLATFORMS[SHIPPED_PLATFORM].pins;
+
+/**
+ * The pinned archive for a platform, or a refusal that names it — never another platform's archive, which would
+ * download a library this machine cannot load and report it provisioned.
+ *
+ * @param {string} platform a `process.platform` value
+ * @returns {PdfiumPlatform}
+ */
+export function pdfiumPlatform(platform) {
+  if (platform === 'win32' || platform === 'linux') return PDFIUM_PLATFORMS[platform];
+  throw new Error(`PDFium ${PDFIUM_VERSION} is pinned for Windows x64 (shipped) and Linux x64 (development); not for ${platform}`);
+}
 
 /**
  * github.com issues the release URL; it always redirects to the signed asset
  * host. Both hops are checked — `gitleaks.mjs`' list and its reason.
  */
 const ALLOWED_HOSTS = ['github.com', 'release-assets.githubusercontent.com'];
-
-/**
- * A ceiling on the download, counted rather than believed.
- *
- * The pinned asset is 3,818,370 bytes. Four megabytes leaves room for a patch
- * release without leaving room for a different artefact — and the digest is
- * what actually decides, so this bound exists to stop a hostile response
- * before it is hashed rather than to identify the file.
- */
-const MAX_ARCHIVE_BYTES = 4 * 1024 * 1024;
 
 /**
  * Where the provisioned tree lives. `.gitignore` covers `.tools/` entirely.
@@ -162,13 +208,14 @@ export const PDFIUM_LICENCE_TEXTS = [
  *
  * @param {string} extracted the directory the archive was extracted into
  * @param {string} root the repository root
+ * @param {string} asset the archive it came from, for the message
  */
-async function compareLicences(extracted, root) {
+async function compareLicences(extracted, root, asset) {
   const shipped = (await readdir(join(extracted, 'licenses'))).map((file) => `licenses/${file}`);
   const undeclared = shipped.filter((path) => !PDFIUM_LICENCE_TEXTS.includes(path));
   if (undeclared.length > 0) {
     throw new Error(
-      `${PDFIUM_ASSET} carries licence texts NOTICE does not render: ${undeclared.join(', ')}. ` +
+      `${asset} carries licence texts NOTICE does not render: ${undeclared.join(', ')}. ` +
         `Read them, commit them under scripts/release/licences/pdfium and declare them.`,
     );
   }
@@ -178,13 +225,16 @@ async function compareLicences(extracted, root) {
 }
 
 /**
- * The library every consumer loads.
+ * The library a consumer on `platform` loads: this machine's by default, and the shipped one when packaging asks for
+ * `SHIPPED_PLATFORM`.
  *
  * @param {string} root the repository root
+ * @param {string} [platform] a `process.platform` value
  * @returns {string}
  */
-export function pdfiumLibrary(root) {
-  return join(pdfiumRoot(root), 'bin', 'pdfium.dll');
+export function pdfiumLibrary(root, platform = process.platform) {
+  const pinned = pdfiumPlatform(platform);
+  return join(pdfiumRoot(root), pinned.folder, pinned.library);
 }
 
 /**
@@ -203,15 +253,20 @@ export function pdfiumEnvironment(root) {
 /**
  * Provisions the library, or reports that it is already there.
  *
- * @param {{ root: string, force?: boolean }} options
+ * @param {{ root: string, force?: boolean, platform?: string }} options
  * @returns {Promise<{ provisioned: boolean, library: string }>}
  */
-export async function provisionPdfium({ root, force = false }) {
-  const library = pdfiumLibrary(root);
+export async function provisionPdfium({ root, force = false, platform = process.platform }) {
+  const pinned = pdfiumPlatform(platform);
+  const library = pdfiumLibrary(root, platform);
   if (!force && (await fileExists(library))) {
     // PRESENT IS NOT PINNED: the tree is checked against the file pins on every run, cache hit or not
     // (`pinnedTree.mjs`), and a tree that is not exactly the pinned one is removed and the run fails.
-    await verifyPinnedTree({ directory: join(pdfiumRoot(root), 'bin'), pins: PDFIUM_BIN, context: `PDFium ${PDFIUM_VERSION}` });
+    await verifyPinnedTree({
+      directory: join(pdfiumRoot(root), pinned.folder),
+      pins: pinned.pins,
+      context: `PDFium ${PDFIUM_VERSION} (${pinned.asset})`,
+    });
     return { provisioned: false, library };
   }
 
@@ -225,28 +280,32 @@ export async function provisionPdfium({ root, force = false }) {
   await mkdir(staging, { recursive: true });
 
   try {
-    const archive = join(staging, PDFIUM_ASSET);
-    process.stderr.write(`Provisioning PDFium ${PDFIUM_VERSION} (${PDFIUM_RELEASE})…\n`);
+    const archive = join(staging, pinned.asset);
+    process.stderr.write(`Provisioning PDFium ${PDFIUM_VERSION} (${PDFIUM_RELEASE}, ${pinned.asset})…\n`);
 
     await downloadVerified({
-      url: `https://github.com/bblanchon/pdfium-binaries/releases/download/${PDFIUM_RELEASE}/${PDFIUM_ASSET}`,
+      url: `https://github.com/bblanchon/pdfium-binaries/releases/download/${PDFIUM_RELEASE}/${pinned.asset}`,
       allowedHosts: ALLOWED_HOSTS,
-      sha256: PDFIUM_SHA256,
-      maxBytes: MAX_ARCHIVE_BYTES,
+      sha256: pinned.sha256,
+      maxBytes: pinned.maxBytes,
       destination: archive,
     });
 
-    extract(staging, PDFIUM_ASSET);
+    extract(staging, pinned.asset);
     await rm(archive, { force: true });
-    await compareLicences(staging, root);
+    await compareLicences(staging, root, pinned.asset);
 
-    const staged = join(staging, 'bin', 'pdfium.dll');
+    const staged = join(staging, pinned.folder, pinned.library);
     if (!(await fileExists(staged))) {
-      throw new Error(`${PDFIUM_ASSET} did not contain bin/pdfium.dll`);
+      throw new Error(`${pinned.asset} did not contain ${pinned.folder}/${pinned.library}`);
     }
     // THE FRESH TREE MEETS THE SAME PINS, so a release bump that changes the library fails here, loudly, until the
     // table is rewritten from a verified extraction — never by copying whatever a found tree holds.
-    await verifyPinnedTree({ directory: join(staging, 'bin'), pins: PDFIUM_BIN, context: `the extracted ${PDFIUM_ASSET}` });
+    await verifyPinnedTree({
+      directory: join(staging, pinned.folder),
+      pins: pinned.pins,
+      context: `the extracted ${pinned.asset}`,
+    });
 
     await rm(versionDirectory, { recursive: true, force: true });
     await mkdir(dirname(versionDirectory), { recursive: true });
@@ -269,7 +328,8 @@ if (isMain(import.meta.url)) {
     // that quietly downloaded would make every such report a fact about what it
     // just did. And it never REPAIRS either: present-but-not-as-pinned is reported, and the tree is left for a
     // provisioning run to remove.
-    const problems = existsSync(library) ? await treeProblems(join(pdfiumRoot(root), 'bin'), PDFIUM_BIN) : ['missing'];
+    const pinned = pdfiumPlatform(process.platform);
+    const problems = existsSync(library) ? await treeProblems(join(pdfiumRoot(root), pinned.folder), pinned.pins) : ['missing'];
     process.stdout.write(
       problems.length === 0
         ? `PDFium ${PDFIUM_VERSION} present at ${library}, as pinned\n`
