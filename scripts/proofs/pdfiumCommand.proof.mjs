@@ -105,7 +105,7 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 11);
+refuseStaleBuild(root, PDFIUM_COMMAND, 12);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
@@ -236,8 +236,8 @@ const failures = [];
 // holds (the identity replace-all case became the nothing-matched one), and 84 from the line rule's two, and 87 from
 // ADR-0171's addendum: an edit of a document opened with either password, and its control with none, and 95 from
 // ADR-0173's pieces: a word saved in a bundled face, its object, its wrap, the word the twin refused, an unreadable
-// catalogue either way, and a control either side.
-const roster = createRoster(failures, { cases: 95 });
+// catalogue either way, and a control either side, and 97 from its correction: a character past the BMP and its premise.
+const roster = createRoster(failures, { cases: 97 });
 
 /**
  * @param {string} name
@@ -720,6 +720,33 @@ async function pieceCases() {
       'a word a StandardEncoding Helvetica cannot carry, which the twin refused, is saved as a piece in a bundled face',
       accentedText.includes(accented) && dejaVu !== undefined && /Arimo/u.test(dejaVu.style.font),
       `${JSON.stringify(accentedText.slice(0, 120))}; ${JSON.stringify(dejaVu === undefined ? null : [dejaVu.text, dejaVu.style.font])}`,
+    );
+
+    // A CHARACTER PAST THE BMP (ADR-0173's correction): `FPDFText_SetText` draws it as code 0, which the live read-back
+    // refuses and a reopened page reads as nothing, so only a piece set by its subset's glyph ids is saved reading it.
+    const ASTRAL = String.fromCodePoint(0x10140);
+    const carriers = faceSourceOf([{ path: fonts, origin: 'bundled' }]).faces.filter((face) => face.unicodes.has(0x10140));
+    record(
+      'PREMISE: a bundled face carries U+10140, so the case below asks the setter and not the catalogue',
+      carriers.length > 0,
+      carriers.map((face) => face.family).join(', ') || 'no bundled face carries it',
+    );
+    const astralTyped = `The first line ${ASTRAL} of the block`;
+    let astralText = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let astralObjects = [];
+    try {
+      const bytes = await edit(astralTyped);
+      astralText = await textOf(bytes);
+      astralObjects = await objectRunsOf(bytes);
+    } catch (error) {
+      astralText = `refused: ${error instanceof Error ? `${error.name} ${'characters' in error ? String(error.characters) : error.message}` : String(error)}`;
+    }
+    const astralPiece = astralObjects.find((run) => run.text.includes(ASTRAL));
+    record(
+      'a character past the BMP is saved in a bundled face and the reopened page reads it, the rest kept',
+      firstLineOf(astralText) === astralTyped && astralPiece !== undefined && !astralPiece.style.font.includes('Helvetica'),
+      `${JSON.stringify(astralText.slice(0, 120))}; ${JSON.stringify(astralPiece === undefined ? null : [astralPiece.text, astralPiece.style.font])}`,
     );
 
     // CONTROL: a Latin edit with the catalogue bound makes no piece — the same objects, and no new font in the file.

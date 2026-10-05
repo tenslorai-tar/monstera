@@ -8,6 +8,7 @@ import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { readFace } from './fontFaces.js';
 import { namedSubset } from './fontSubset.js';
+import { ShapingFace } from './textShaping.js';
 import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
 import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
 import { EditRefusedError, ReplaceMovesLineError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
@@ -98,6 +99,7 @@ interface Bound {
   readonly closeTextPage: Native;
   readonly countChars: Native;
   readonly getText: Native;
+  readonly setCharcodes: Native;
   readonly textObjectText: Native;
   readonly charObject: Native;
   readonly charGenerated: Native;
@@ -261,6 +263,9 @@ export function openPdfium(libraryPath: string): void {
     getText: native(
       library.func('int FPDFText_GetText(void *textPage, int start, int count, _Out_ uint16_t *buffer)'),
     ),
+    // TEXT SET BY CODE, for a piece in a face we loaded: its codes are the subset's glyph ids, and `FPDFText_SetText`
+    // draws a character past the BMP as code 0 (ADR-0173's correction, measured 2026-10-05).
+    setCharcodes: native(library.func('int FPDFText_SetCharcodes(void *object, const uint32_t *codes, size_t count)')),
     // ONE OBJECT'S TEXT, and it needs the page's TEXT PAGE as well as the
     // object. That second parameter is why this is not the same read as
     // `getText` above with a range: PDFium answers a text object's own string
@@ -717,11 +722,23 @@ function drawnTextOn(bindings: Bound, textPage: unknown, objects: readonly unkno
     if (numberFrom(bindings.charGenerated(textPage, at), 'FPDFText_IsGenerated') === 1) continue;
     const index = slot.get(String(koffi.address(bindings.charObject(textPage, at))));
     if (index === undefined) continue;
-    const buffer = new Uint16Array(2);
-    numberFrom(bindings.getText(textPage, at, 1, buffer), 'FPDFText_GetText');
-    texts[index] = `${texts[index] ?? ''}${String.fromCharCode(buffer[0] ?? 0)}`;
+    texts[index] = `${texts[index] ?? ''}${characterAt(bindings, textPage, at)}`;
   }
   return texts;
+}
+
+/**
+ * The text page's UTF-16 unit at `at` — the one way a page's text is read one index at a time.
+ *
+ * ONE UNIT, AND THAT READS A CHARACTER PAST THE BMP WHOLE: measured 2026-10-05 on PDFium 155.0.8044.0's Linux build, a
+ * text page indexes U+10140 set by glyph id as TWO characters, `D800` then `DD40`, from `FPDFText_GetText` and
+ * `FPDFText_GetUnicode` alike, so the units read in order are the character (ADR-0173's correction, its note on
+ * Decision 8).
+ */
+function characterAt(bindings: Bound, textPage: unknown, at: number): string {
+  const buffer = new Uint16Array(2);
+  numberFrom(bindings.getText(textPage, at, 1, buffer), 'FPDFText_GetText');
+  return String.fromCharCode(buffer[0] ?? 0);
 }
 
 /**
@@ -1052,9 +1069,7 @@ function walkRuns(
     let pending = '';
 
     for (let at = 0; at < chars; at += 1) {
-      const buffer = new Uint16Array(2);
-      numberFrom(bindings.getText(textPage, at, 1, buffer), 'FPDFText_GetText');
-      const character = String.fromCharCode(buffer[0] ?? 0);
+      const character = characterAt(bindings, textPage, at);
 
       if (numberFrom(bindings.charGenerated(textPage, at), 'FPDFText_IsGenerated') === 1) {
         pending += character;
@@ -1767,6 +1782,30 @@ function layOutBlocks(
       const standardFonts = new Map<string, unknown>();
       /** Each font program's face, read once for this edit (`programOf`). */
       const programs = new Map<string, ProgramFace | undefined>();
+      /** The glyphs of each face this edit loaded (`faceFont`), by the address of the font PDFium answered. */
+      const faceGlyphs = new Map<string, ShapingFace>();
+      /**
+       * Sets `text` on `object` — THE ONE SETTER of this edit's text. An object in a face this edit loaded is set by its
+       * subset's glyph ids (`FPDFText_SetCharcodes`), which are the codes PDFium writes for that font, so a character
+       * past the BMP draws its glyph rather than code 0; PDFium's ToUnicode for the font is its cmap, so it reads back as
+       * itself (ADR-0173's correction). Any other object is set by `FPDFText_SetText`, as before. False where the font
+       * has no glyph for a character, or PDFium refuses.
+       */
+      const setOn = (object: unknown, text: string): boolean => {
+        const font: unknown = bindings.textFont(object);
+        const glyphs = font === null ? undefined : faceGlyphs.get(String(koffi.address(font)));
+        if (glyphs === undefined) return trySetText(bindings, object, text);
+        const codes: number[] = [];
+        for (const character of text) {
+          const glyph = glyphs.glyphFor(character.codePointAt(0) ?? 0);
+          if (glyph === undefined || glyph === 0) return false;
+          codes.push(glyph);
+        }
+        return (
+          codes.length > 0 &&
+          numberFrom(bindings.setCharcodes(object, Uint32Array.from(codes), codes.length), 'FPDFText_SetCharcodes') === 1
+        );
+      };
 
       /**
        * Inserts `object` right after `anchor` in the page's order — the line it continues, or the
@@ -1821,7 +1860,7 @@ function layOutBlocks(
        */
       const carries = (object: unknown, text: string): boolean => {
         const probe = makeTextLike(bindings, document, object, 0);
-        if (!trySetText(bindings, probe, text)) {
+        if (!setOn(probe, text)) {
           bindings.destroyObject(probe);
           return false;
         }
@@ -1959,6 +1998,8 @@ function layOutBlocks(
         if (font === null) return null;
         facePrograms.push(program);
         faceFonts.set(key, font);
+        // ITS GLYPHS, read from the very program PDFium was handed: the codes it writes are that program's glyph ids.
+        faceGlyphs.set(String(koffi.address(font)), new ShapingFace(program, 0, {}));
         return font;
       };
 
@@ -1976,7 +2017,7 @@ function layOutBlocks(
        */
       const writePieces = (object: unknown, text: string): unknown[] => {
         if (!inPiecesHere) return [write(object, text)];
-        if (trySetText(bindings, object, text) && carries(object, text)) {
+        if (setOn(object, text) && carries(object, text)) {
           if (mode === 'write') record(object, text);
           pieceTexts.set(object, text);
           return [object];
@@ -2002,7 +2043,7 @@ function layOutBlocks(
           const pieceFont = piece.face === null ? bindings.textFont(object) : faceFont(piece.face, piece.weight);
           if (pieceFont === null) throw new TextNotWritableError(piece.text.trim());
           const made = reuse ? object : makeTextLike(bindings, document, object, left, pieceFont);
-          if (!trySetText(bindings, made, piece.text) || (mode === 'write' && !carries(made, piece.text))) {
+          if (!setOn(made, piece.text) || (mode === 'write' && !carries(made, piece.text))) {
             if (!reuse) bindings.destroyObject(made);
             throw new TextNotWritableError(piece.text.trim());
           }
@@ -2040,7 +2081,7 @@ function layOutBlocks(
           const now = text.slice(at, at + said.length);
           at += said.length;
           if (now !== said) {
-            setTextOn(bindings, piece, now);
+            if (!setOn(piece, now)) throw refusedAt('set-text', 'A block edit could not cut a piece it had already written');
             pieceTexts.set(piece, now);
           }
           if (mode === 'write') record(piece, now);

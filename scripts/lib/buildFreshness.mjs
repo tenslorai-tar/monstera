@@ -131,6 +131,8 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/editFaces.ts', 'packages/kernel/dist/editFaces.js', 'tsc'],
   ['packages/kernel/src/fontResolver.ts', 'packages/kernel/dist/fontResolver.js', 'tsc'],
   ['packages/kernel/src/fontSubset.ts', 'packages/kernel/dist/fontSubset.js', 'tsc'],
+  // AND THE GLYPHS a face piece is set by (ADR-0173's correction).
+  ['packages/kernel/src/textShaping.ts', 'packages/kernel/dist/textShaping.js', 'tsc'],
 ];
 
 /**
