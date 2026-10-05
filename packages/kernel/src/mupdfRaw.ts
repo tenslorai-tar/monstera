@@ -5468,6 +5468,7 @@ export function openMupdfShim(libraryPath: string): void {
 		drop: library.func("void mz_drop(void *c)") as unknown as MzNative,
 		lastError: library.func("const char *mz_last_error(void *c)") as unknown as MzNative,
 		open: library.func("int mz_open(void *c, const char *path, _Out_ void **out)") as unknown as MzNative,
+		authenticate: library.func("int mz_authenticate(void *c, void *d, const char *password, _Out_ int *access)") as unknown as MzNative,
 		close: library.func("int mz_close(void *c, void *d)") as unknown as MzNative,
 		rewriteImages: library.func("int mz_rewrite_images(void *c, void *d, int quality, int over, int to)") as unknown as MzNative,
 		saveCompacted: library.func("int mz_save_compacted(void *c, void *d, const char *path)") as unknown as MzNative,
@@ -5497,6 +5498,7 @@ interface MzApi {
 	readonly drop: MzNative
 	readonly lastError: MzNative
 	readonly open: MzNative
+	readonly authenticate: MzNative
 	readonly close: MzNative
 	readonly rewriteImages: MzNative
 	readonly saveCompacted: MzNative
@@ -5527,6 +5529,37 @@ export class MupdfOpenRefused extends MupdfNativeError {
 	}
 }
 
+/**
+ * Opens the PDF at `input` and makes the one password attempt MuPDF reads it with, before anything reads a page:
+ * `password`, or the empty one when there is none. Every shim call that reads a document's content opens through this,
+ * because a page of an encrypted document read with no key is read undecrypted and in silence — measured 2026-10-05,
+ * the inline-image keeper found nothing on an AES-256 page, and the image rewriter wrote a copy with no page in it
+ * (ADR-0171's addendum).
+ *
+ * @throws {MupdfOpenRefused} where MuPDF could not open the document, or the password it was given does not open it
+ */
+function openReading(api: MzApi, c: unknown, input: string, password: string | undefined, said: () => string): unknown {
+	const document: unknown[] = [ null ]
+	if (api.open(c, input, document) !== 0)
+		throw new MupdfOpenRefused(said())
+	const d = document[0]
+	const access: number[] = [ 0 ]
+	if (api.authenticate(c, d, password ?? "", access) !== 0) {
+		const refusal = new MupdfNativeError("try the password", said())
+		api.close(c, d)
+		throw refusal
+	}
+	if ((access[0] ?? 0) === 0) {
+		api.close(c, d)
+		throw new MupdfOpenRefused(
+			password === undefined
+				? "the document opens only with a password, and none was given"
+				: "the password given does not open the document",
+		)
+	}
+	return d
+}
+
 /** One setting of the image rewriter, in the shim's three integers. */
 export interface ImageRewrite {
 	/** JPEG quality for images stored lossy, 1 to 100. */
@@ -5544,9 +5577,13 @@ export interface ImageRewrite {
  * and this function opens nothing else. A context per call, dropped in `finally`, so a failure leaves no MuPDF state
  * behind for the next document.
  *
+ * `password` is the one the document opens with, or none ({@link openReading}). The copy keeps the document's
+ * encryption, since the save keeps its security handler.
+ *
+ * @throws {MupdfOpenRefused} where MuPDF could not open the document, or `password` does not open it
  * @throws {MupdfNativeError} where MuPDF refused a step, with its message
  */
-export function rewriteImages(input: string, output: string, setting: ImageRewrite): void {
+export function rewriteImages(input: string, output: string, setting: ImageRewrite, password?: string): void {
 	const api = mzApi
 	if (api === undefined)
 		throw new Error("the MuPDF shim is not bound in this process; openMupdfShim was not called")
@@ -5557,10 +5594,7 @@ export function rewriteImages(input: string, output: string, setting: ImageRewri
 	const c = context[0]
 	const said = (): string => String(api.lastError(c))
 	try {
-		const document: unknown[] = [ null ]
-		if (api.open(c, input, document) !== 0)
-			throw new MupdfOpenRefused(said())
-		const d = document[0]
+		const d = openReading(api, c, input, password, said)
 		try {
 			if (api.rewriteImages(c, d, setting.quality, setting.over, setting.to) !== 0)
 				throw new MupdfNativeError("rewrite the images", said())
@@ -5588,10 +5622,18 @@ export interface InlineImagesKept {
  * A page past the document's end is not rewritten: the command that named it is refused by its own engine, for its
  * own reason, and a refusal here would stand in front of that one with a worse sentence.
  *
- * @throws {MupdfOpenRefused} where MuPDF could not open the document
+ * `password` is the one the document opens with, or none ({@link openReading}). The incremental save appends under
+ * the document's own encryption.
+ *
+ * @throws {MupdfOpenRefused} where MuPDF could not open the document, or `password` does not open it
  * @throws {MupdfNativeError} where MuPDF refused a later step, with its message
  */
-export function keepInlineImages(input: string, output: string, scope: "all" | number): InlineImagesKept {
+export function keepInlineImages(
+	input: string,
+	output: string,
+	scope: "all" | number,
+	password?: string,
+): InlineImagesKept {
 	const api = mzApi
 	if (api === undefined)
 		throw new Error("the MuPDF shim is not bound in this process; openMupdfShim was not called")
@@ -5602,10 +5644,7 @@ export function keepInlineImages(input: string, output: string, scope: "all" | n
 	const c = context[0]
 	const said = (): string => String(api.lastError(c))
 	try {
-		const document: unknown[] = [ null ]
-		if (api.open(c, input, document) !== 0)
-			throw new MupdfOpenRefused(said())
-		const d = document[0]
+		const d = openReading(api, c, input, password, said)
 		try {
 			const counted: number[] = [ 0 ]
 			if (api.pageCount(c, d, counted) !== 0)

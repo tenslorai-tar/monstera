@@ -1418,6 +1418,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         engine: {
           poisoned: () => undefined,
           opensOnlyWithPassword: () => false,
+          openingPassword: () => undefined,
           sessions: () => {
             const cause = new Error(`EPERM: operation not permitted, stat '${SECRET}'`);
             cause.stack = `Error: EPERM: operation not permitted, stat '${SECRET}'\n    at readFileIdentity (${SECRET}:1:1)`;
@@ -3614,9 +3615,16 @@ describe('exportText — the document’s words, streamed one page at a time', (
     textSession = await mupdfWriter.open(bytes);
   });
 
-  function textEngine(): EngineSessions {
+  /** @param unlockedWith a password the document was unlocked with, as `document.unlock` holds it (ADR-0171) */
+  function textEngine(unlockedWith?: string): EngineSessions {
     const held = new EngineSessions();
-    held.hold(textDoc, { mupdf: textSession });
+    if (unlockedWith === undefined) {
+      held.hold(textDoc, { mupdf: textSession });
+      return held;
+    }
+    held.begin(textDoc);
+    held.markLocked(textDoc, 'needs-password');
+    held.unlock(textDoc, { mupdf: textSession }, unlockedWith);
     return held;
   }
 
@@ -3639,6 +3647,8 @@ describe('exportText — the document’s words, streamed one page at a time', (
       readonly wordPages?: PageSet[];
       readonly pdfa?: PdfaSource | null;
       readonly optimizer?: OptimizeSource | null;
+      /** The password the document was unlocked with; absent, it opened with none. */
+      readonly unlockedWith?: string;
       /** Where the copy picker answers; absent, it refuses, for an export that uses its own. */
       readonly copyTo?: string | null;
       /** A page's structure nodes in place of the real read; absent, the real read. */
@@ -3651,7 +3661,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       ...LOCAL_READS,
       documents: textService,
       bus: bus(),
-      engine: textEngine(),
+      engine: textEngine(options.unlockedWith),
       print: options.print ?? null,
       share: options.share ?? null,
       pdfa: options.pdfa ?? null,
@@ -4055,9 +4065,11 @@ describe('exportText — the document’s words, streamed one page at a time', (
     /** A rewriter answering `bytes`, recording what it was given and every discard. */
     function rewriter(answer: 'optimized' | 'unreadable' | 'unavailable', bytes = COPY.length) {
       const given: { pdf: Uint8Array; setting: string }[] = [];
+      const passwords: (string | undefined)[] = [];
       let discards = 0;
-      const source: OptimizeSource = (pdf, setting) => {
+      const source: OptimizeSource = (pdf, setting, password) => {
         given.push({ pdf, setting });
+        passwords.push(password);
         if (answer !== 'optimized') return Promise.resolve({ kind: answer });
         return Promise.resolve({
           kind: 'optimized',
@@ -4071,8 +4083,32 @@ describe('exportText — the document’s words, streamed one page at a time', (
           },
         });
       };
-      return { source, given, discards: () => discards };
+      return { source, given, passwords, discards: () => discards };
     }
+
+    it('hands the rewriter the password the document was unlocked with, measuring and writing (ADR-0171)', async () => {
+      const destination = join(mkdtempSync(join(directory, 'optimize-')), 'locked.pdf');
+      const { source, passwords } = rewriter('optimized');
+      const { commands } = exportingTo(null, {
+        optimizer: source,
+        flush: () => Promise.resolve(FLUSHED),
+        copyTo: destination,
+        unlockedWith: 'sample-only-0171',
+      });
+
+      await commands.optimizeMeasure(textDoc, 'medium');
+      await commands.optimize(textDoc, 'medium', await versionOf(commands));
+
+      // BOTH CALLS, since a copy is rewritten again at the write: either one without it read the pages undecrypted.
+      expect(passwords).toStrictEqual(['sample-only-0171', 'sample-only-0171']);
+    });
+
+    it('CONTROL: a document no password opened hands the rewriter none', async () => {
+      const { source, passwords } = rewriter('optimized', 600);
+      const { commands } = exportingTo(null, { optimizer: source, flush: () => Promise.resolve(FLUSHED) });
+      await commands.optimizeMeasure(textDoc, 'medium');
+      expect(passwords).toStrictEqual([undefined]);
+    });
 
     const versionOf = async (commands: DocumentCommands): Promise<DocVersion> =>
       (await commands.pageTables(textDoc, 0)).version;

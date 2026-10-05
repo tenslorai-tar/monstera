@@ -51,6 +51,8 @@ export type ImageOptimizer = (
   from: string,
   into: string,
   setting: { readonly quality: number; readonly over: number; readonly to: number },
+  // REQUIRED, `undefined` where the document opens with none, so a caller cannot leave it out (ADR-0171's addendum).
+  password: string | undefined,
 ) => Promise<{ readonly kind: 'optimized'; readonly bytes: number } | { readonly kind: 'unreadable' | 'missing' }>;
 
 /**
@@ -63,6 +65,8 @@ export type InlineImageKeeper = (
   from: string,
   into: string,
   scope: 'all' | number,
+  // `ImageOptimizer`'s rule: required, `undefined` where the document opens with none.
+  password: string | undefined,
 ) => Promise<
   | { readonly kind: 'kept'; readonly bytes: number; readonly converted: number; readonly left: number }
   | { readonly kind: 'unchanged'; readonly left: number }
@@ -202,12 +206,12 @@ export function createComposeHandlers({
     // absence is the transport's, MuPDF refusing the document is an answer, and anything else
     // propagates as a fault. The count is the file the rewriter wrote, which main compares with
     // the file it streams.
-    'engine/optimize': async ({ session, from, into, quality, over, to }) => {
+    'engine/optimize': async ({ session, from, password, into, quality, over, to }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
       if (optimize === null) return { ok: true, value: { kind: 'unavailable' } };
 
-      const answer = await optimize(held, from, into, { quality, over, to });
+      const answer = await optimize(held, from, into, { quality, over, to }, password ?? undefined);
       if (answer.kind !== 'optimized') {
         return answer.kind === 'missing'
           ? { ok: false, error: { code: 'asset-missing' } }
@@ -314,12 +318,12 @@ export function createComposeHandlers({
     },
 
     // `engine/optimize`'s three decisions, over the inline-image keeper (ADR-0126).
-    'engine/keep-inline-images': async ({ session, from, into, scope }) => {
+    'engine/keep-inline-images': async ({ session, from, password, into, scope }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
       if (keepInlineImages === null) return { ok: true, value: { kind: 'unavailable' } };
 
-      const answer = await keepInlineImages(held, from, into, scope);
+      const answer = await keepInlineImages(held, from, into, scope, password ?? undefined);
       switch (answer.kind) {
         case 'missing':
           return { ok: false, error: { code: 'asset-missing' } };

@@ -13,7 +13,13 @@ import {
   insertImagePageSchema,
 } from '@monstera/contract/host';
 
-import { byteImageWire, hostAreaChannels, outputNameSchema, sessionSchema } from './engineChannels.js';
+import {
+  byteImageWire,
+  documentPasswordSchema,
+  hostAreaChannels,
+  outputNameSchema,
+  sessionSchema,
+} from './engineChannels.js';
 
 /**
  * The compose host's channel set
@@ -137,6 +143,10 @@ export const composeChannels = {
       .object({
         session: sessionSchema,
         from: outputNameSchema,
+        // THE PASSWORD THE DOCUMENT OPENS WITH, `null` for none: a document opened with its password is read
+        // undecrypted without it, and the copy had no page (ADR-0171's addendum, measured 2026-10-05). REQUIRED, so a
+        // request that leaves it out is a compile error rather than a document read without its key (ADR-0069's rule).
+        password: documentPasswordSchema.nullable(),
         into: outputNameSchema,
         quality: z.number().int().min(1).max(100),
         over: z.number().int().min(0).max(MAX_REWRITE_DPI),
@@ -174,6 +184,9 @@ export const composeChannels = {
       .object({
         session: sessionSchema,
         from: outputNameSchema,
+        // `engine/optimize`'s field and reason: without it an encrypted page was read undecrypted and no inline image
+        // was found.
+        password: documentPasswordSchema.nullable(),
         into: outputNameSchema,
         scope: z.union([z.literal('all'), z.number().int().nonnegative()]),
       })

@@ -686,6 +686,32 @@ MZ_EXPORT int mz_open(mz_ctx *c, const char *path, mz_doc **out)
 }
 
 /*
+ * One password attempt on a document mz_open opened, answering MuPDF's own access bits in *access: 0 when the password
+ * does not open the document, otherwise 1 (no encryption), 2 (user), 4 (owner) or 6 (both). The empty string is an
+ * attempt like any other, and is what a caller holding no password passes.
+ *
+ * Called once, straight after mz_open and before any page is read. A failed attempt clears the key a good one set
+ * (ADR-0055), and a page read with no key is read undecrypted and in silence: measured 2026-10-05 on an AES-256
+ * document, mz_keep_inline_images found no inline image and wrote nothing, and mz_rewrite_images wrote a copy with no
+ * page in it.
+ */
+MZ_EXPORT int mz_authenticate(mz_ctx *c, mz_doc *d, const char *password, int *access)
+{
+    if (c == NULL || d == NULL || password == NULL || access == NULL) {
+        mz_fail(c, "mz_authenticate was called with a missing argument");
+        return MZ_ERR;
+    }
+
+    fz_try(c->fz)
+        *access = pdf_authenticate_password(c->fz, d->pdf, password);
+    fz_catch(c->fz) {
+        mz_record(c);
+        return MZ_ERR;
+    }
+    return MZ_OK;
+}
+
+/*
  * No fz_try, deliberately, and this is the one place in the file where its
  * ABSENCE is the load-bearing decision.
  *

@@ -86,12 +86,12 @@ if (shimPath !== null) openMupdfShim(shimPath);
 const optimize: ImageOptimizer | null =
   shimPath === null
     ? null
-    : async (area, from, into, setting) => {
+    : async (area, from, into, setting, password) => {
         const input = join(area.snapshotDirectory, from);
         const output = join(area.outputDirectory, into);
         if (!existsSync(input)) return { kind: 'missing' };
         try {
-          rewriteImages(input, output, setting);
+          rewriteImages(input, output, setting, password);
         } catch (error) {
           if (error instanceof MupdfOpenRefused) return { kind: 'unreadable' };
           throw error;
@@ -106,13 +106,13 @@ const optimize: ImageOptimizer | null =
 const keepInlineImagesIn: InlineImageKeeper | null =
   shimPath === null
     ? null
-    : async (area, from, into, scope) => {
+    : async (area, from, into, scope, password) => {
         const input = join(area.snapshotDirectory, from);
         const output = join(area.outputDirectory, into);
         if (!existsSync(input)) return { kind: 'missing' };
         let kept;
         try {
-          kept = keepInlineImages(input, output, scope);
+          kept = keepInlineImages(input, output, scope, password);
         } catch (error) {
           if (error instanceof MupdfOpenRefused) return { kind: 'unreadable' };
           throw error;

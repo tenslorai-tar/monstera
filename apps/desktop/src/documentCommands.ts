@@ -329,6 +329,11 @@ export interface EngineSessionSource {
    * kept of the document that anyone could open (`EngineSessions.opensOnlyWithPassword`).
    */
   readonly opensOnlyWithPassword: (docId: DocId) => boolean;
+  /**
+   * The password this document's file opens with, or `undefined` when it needs none (`EngineSessions.openingPassword`,
+   * ADR-0171). Read by a reader that opens the document's bytes in a host of its own, such as Optimize.
+   */
+  readonly openingPassword: (docId: DocId) => string | undefined;
 }
 
 /**
@@ -2303,6 +2308,9 @@ export type ExportTextOutcome =
 export type OptimizeSource = (
   pdf: Uint8Array,
   setting: OptimizeSetting,
+  // THE PASSWORD `pdf` OPENS WITH, required so no caller leaves it out: without it the rewriter read an encrypted
+  // document undecrypted and wrote a copy with no page (ADR-0171's addendum, measured 2026-10-05).
+  password: string | undefined,
 ) => Promise<
   | {
       readonly kind: 'optimized';
@@ -4677,7 +4685,7 @@ export class DocumentCommands {
 
     const { value } = await this.#documents.run(docId, async (context): Promise<OptimizeMeasurement> => {
       const pdf = await this.#currentBytes(docId);
-      const copy = await optimizer(pdf, setting);
+      const copy = await optimizer(pdf, setting, this.#engine.openingPassword(docId));
       if (copy.kind !== 'optimized') return copy;
       await copy.discard();
       return { kind: 'measured', version: context.version, before: pdf.length, after: copy.bytes };
@@ -4714,7 +4722,7 @@ export class DocumentCommands {
     const { value } = await this.#documents.run(docId, async (context): Promise<OptimizeOutcome> => {
       if (context.version !== version) return { kind: 'changed' };
       const pdf = await this.#currentBytes(docId);
-      const copy = await optimizer(pdf, setting);
+      const copy = await optimizer(pdf, setting, this.#engine.openingPassword(docId));
       if (copy.kind !== 'optimized') return copy;
       // DISCARDED WHATEVER HAPPENS, not only on the not-smaller branch: a contested destination
       // answers before the stream is opened, and a copy of the person's document would otherwise

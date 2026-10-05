@@ -3389,7 +3389,7 @@ function composeHostBinding(
     // input goes whatever the call answered, for `compose`'s reason. The count the host reported
     // is held to the file's size before anything is streamed, which separates *the host wrote
     // nothing* from *the read found nothing* without reading the copy into `main`.
-    optimize: async (pdf, setting) => {
+    optimize: async (pdf, setting, password) => {
       const built = await ensure();
       const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
       const from = areas.mintName();
@@ -3403,6 +3403,7 @@ function composeHostBinding(
       const answer = await built.client['engine/optimize']({
         session: built.session,
         from,
+        password: password ?? null,
         into,
         ...OPTIMIZE_SETTINGS[setting],
       }).finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
@@ -3454,7 +3455,9 @@ function composeHostBinding(
         const into = areas.mintName();
         keptPath = join(area.outputDirectory, into);
         await writeFile(join(area.snapshotDirectory, from), image);
-        const answer = await built.client['engine/keep-inline-images']({ session: built.session, from, into, scope })
+        // `null`: no PDFium call hands this keeper a document's key yet, so a document opened with its password is
+        // refused here as unreadable and said in the log, never read undecrypted (ADR-0171's addendum).
+        const answer = await built.client['engine/keep-inline-images']({ session: built.session, from, password: null, into, scope })
           .finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
         if (!answer.ok) return left(`the compose host answered ${answer.error.code}, so none was checked`);
         const value = answer.value;

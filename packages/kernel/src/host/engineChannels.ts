@@ -1411,7 +1411,7 @@ const pathSchema = z.string().min(1).max(ENGINE_PATH_MAX_CHARS);
  * that disagrees the day one is raised, with the failure landing as a frame
  * error in the middle of somebody typing (B3a).
  */
-const documentPasswordSchema = z.string().max(DOCUMENT_PASSWORD_MAX_CHARS);
+export const documentPasswordSchema = z.string().max(DOCUMENT_PASSWORD_MAX_CHARS);
 
 /**
  * One attempt's outcome, exactly as `containment.ts` defines it.

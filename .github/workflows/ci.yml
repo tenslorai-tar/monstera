@@ -374,6 +374,19 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/inlineImages.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
+      # ADR-0171's addendum. The shim's two readers of a document's content,
+      # the inline-image keeper and Optimize's rewriter, open an encrypted
+      # document with its password: without it the keeper found nothing and
+      # the rewriter wrote a copy with no page. The keeper is run with the
+      # user password, the owner password, none and a wrong one, the rewriter
+      # with the user password and none, against controls that the fixtures
+      # need a password and that an unencrypted page needs none. The shim
+      # only, so Windows requires it.
+      - name: Prove the shim opens an encrypted document with its password
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/shimPassword.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-shim' || '' }}
+
       # THE WORD EXPORT CARRIES THE PAGE'S PICTURES (ADR-0072's amendment of
       # 2026-10-01): inline in reading order, at their box in the exact layout,
       # none in text mode. The package is read back by a zip reader written in
