@@ -5273,6 +5273,73 @@ optgroup {
   outline-offset: 2px;
 }
 
+/*
+ * A PAGE'S FORM FIELDS (ADR-0168), one control over each fillable field. The layer takes no pointer; a field does.
+ * At rest a control draws nothing, because the field's value is the appearance the document draws under it; its edge
+ * shows on hover and on focus. A choice field is a list with its own text hidden, so the appearance shows through and
+ * the press opens its options at the field.
+ */
+.m-form-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.m-page-field {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.m-page-field--text {
+  cursor: text;
+}
+
+.m-page-field--choice {
+  appearance: none;
+  color: transparent;
+}
+
+.m-page-field:hover {
+  outline: 1px solid var(--accent-on-paper, var(--accent));
+}
+
+.m-page-field:focus-visible {
+  outline: 2px solid var(--accent-on-paper, var(--accent));
+  outline-offset: 2px;
+}
+
+/*
+ * A TEXT FIELD BEING TYPED IN, over the field on the page's paper in the field's own size, inside the accent outline
+ * every in-place editor draws, so what is typed stands where the field will draw it. Its size is the field's at the
+ * zoom on screen, so it is an inline value; the face is MuPDF's for a field with none of its own (`/Helv`).
+ */
+.m-page-field-editor {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: 0;
+  outline: 1px solid var(--accent-on-paper, var(--accent));
+  background: var(--page);
+  color: var(--field-ink);
+  caret-color: var(--accent-on-paper, var(--accent));
+  font-family: Helvetica, Arial, sans-serif;
+  line-height: 1.2;
+  pointer-events: auto;
+}
+
+.m-page-field-editor--lines {
+  resize: none;
+  overflow-y: auto;
+}
+
 .m-text-line {
   position: absolute;
   color: transparent;

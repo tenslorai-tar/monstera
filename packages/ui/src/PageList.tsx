@@ -45,6 +45,9 @@ import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js
 import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
 import { type PageLinkOnPage, usePageLinks } from './usePageLinks.js';
+import { FormLayer, type PageFill } from './forms/FormLayer.js';
+import type { ListedField } from './forms/fieldFill.js';
+import { usePageFormFields } from './forms/usePageFormFields.js';
 import { useSelectedTextPages } from './useSelectedTextPages.js';
 import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL, PAGE_OPENING } from './messages/en.js';
 import { Icon } from './primitives/Icon.js';
@@ -199,6 +202,12 @@ export interface PageListProps {
   readonly onFollowLink: ((followed: FollowedLink) => void) | undefined;
   /** Whether each link's edge is drawn: the Comment section is on show, where links are made. */
   readonly linksOutlined: boolean;
+  /**
+   * Fills a form field a person pressed on its page (ADR-0168), named by page, walk index and the version its list was
+   * read at, or `undefined` where this list fills none — the comparison view's panes. With it, each visible page draws
+   * its fillable fields.
+   */
+  readonly onFillField: ((fill: PageFill & { readonly version: DocVersion }) => void) | undefined;
   /**
    * What both are read in. `viewing.ruler-unit`.
    *
@@ -441,6 +450,7 @@ export function PageList({
   showGrid,
   onFollowLink,
   linksOutlined,
+  onFillField,
   unit,
   label,
   labelValues,
@@ -540,6 +550,24 @@ export function PageList({
     docId,
     version,
     firstFrame ? visible : NOTHING_VISIBLE,
+  );
+  // THE FORM'S FIELDS ON WHAT IS ON SCREEN (ADR-0168), read whole once per version and handed to each visible page,
+  // and only where this list fills fields.
+  const pageFields = usePageFormFields(
+    onFillField === undefined ? undefined : client,
+    docId,
+    version,
+    firstFrame ? visible : NOTHING_VISIBLE,
+  );
+  // AT THE VERSION ON SHOW, which is the version the fields were read at: the hook answers no fields for any other.
+  const fillOnPage = useMemo(
+    () =>
+      onFillField === undefined
+        ? undefined
+        : (fill: PageFill): void => {
+            onFillField({ ...fill, version });
+          },
+    [onFillField, version],
   );
   // EVERY PAGE'S MARKS, one read per version: the channel is whole-document, so there is nothing
   // to narrow to the visible set, and the layer is mounted only on slots that are measured.
@@ -1248,6 +1276,8 @@ export function PageList({
           links={sizes.has(page) && onFollowLink !== undefined ? pageLinks.get(page) : undefined}
           linksOutlined={linksOutlined}
           onFollowLink={onFollowLink}
+          fields={sizes.has(page) && fillOnPage !== undefined ? pageFields.get(page) : undefined}
+          onFillField={fillOnPage}
           scroller={scroller}
           hidden={layout === 'single' && page !== onShow}
         />
@@ -1439,6 +1469,8 @@ function PageSlot({
   links,
   linksOutlined,
   onFollowLink,
+  fields,
+  onFillField,
   scroller,
   hidden,
 }: {
@@ -1491,6 +1523,9 @@ function PageSlot({
   readonly links: readonly PageLinkOnPage[] | undefined;
   readonly linksOutlined: boolean;
   readonly onFollowLink: ((followed: FollowedLink) => void) | undefined;
+  /** This page's form fields, or `undefined` before they are known, the slot is measured, or where none are filled. */
+  readonly fields: readonly ListedField[] | undefined;
+  readonly onFillField: ((fill: PageFill) => void) | undefined;
   /** The scroller the slot sits in, whose box decides which tiles are wanted. */
   readonly scroller: React.RefObject<HTMLElement | null>;
   /** Out of the layout: single page shows only the page on show, and a hidden slot is never visible, so never drawn. */
@@ -1744,6 +1779,17 @@ function PageSlot({
         <AnnotationLayer
           annotations={annotations}
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          page={page}
+        />
+      )}
+      {/* THE PAGE'S FORM FIELDS (ADR-0168), over the text, the links and the marks so a press on a field fills it, and
+          under the drawing overlay, which takes the press while a tool is on. Not while Edit text or Edit object holds
+          the page: there a press is the mode's. */}
+      {fields === undefined || size === undefined || onFillField === undefined || editing !== undefined ? null : (
+        <FormLayer
+          fields={fields}
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          onFill={onFillField}
           page={page}
         />
       )}

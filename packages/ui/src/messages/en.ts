@@ -1216,6 +1216,7 @@ export const LINK_FOLLOW_TOO_LONG = messageKey('toast.link.too-long');
 export const LINK_FOLLOW_NOT_OPENED = messageKey('toast.link.not-opened');
 export const LINK_FOLLOW_UNAVAILABLE = messageKey('toast.link.unavailable');
 export const LINK_ADDED = messageKey('toast.link.added');
+export const FORM_FIELD_FILL_IN = messageKey('surface.form-layer.fill-in');
 export const FLATTEN_FORM_TITLE = messageKey('dialog.flatten-form.title');
 export const FLATTEN_FORM_EXPLAINS = messageKey('dialog.flatten-form.explains');
 export const FLATTEN_FORM_APPLY = messageKey('dialog.flatten-form.apply');
@@ -3489,6 +3490,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LINK_FOLLOW_NOT_OPENED]: 'Windows has no program to open this link with.',
   [LINK_FOLLOW_UNAVAILABLE]: 'The link could not be opened, because the document could not be read just now.',
   [LINK_ADDED]: 'Link added.',
+  [FORM_FIELD_FILL_IN]: 'Fill in {name}',
   [FLATTEN_FORM_TITLE]: 'Flatten the form',
   [FLATTEN_FORM_EXPLAINS]:
     'Every field’s contents are drawn onto its page and the form is removed, so the fields can no longer be filled in. Comments are not affected. The only way back is Undo, in this session.',

@@ -157,6 +157,8 @@
   --light-halo: #3bc677;
   --redact-mark: #000000;
   --signature-ink: #000000;
+  /* A FORM FIELD'S TEXT AS MUPDF DRAWS IT with no colour of its own (`/DA` 0 g): the page's editor types in it. */
+  --field-ink: #000000;
   --text: #eef1ef;
   /* v5 was #a8b3ad / #8e9a94 / #4ad083 / 0.36 alpha: each moved the least (toward white, 1% steps) that clears its
      floor on every colour its surfaces present over the lit ground. --faint lands on --muted's value: over this ground
@@ -262,6 +264,8 @@
   --light-halo: #16a34a;
   --redact-mark: #000000;
   --signature-ink: #000000;
+  /* A FORM FIELD'S TEXT AS MUPDF DRAWS IT with no colour of its own (`/DA` 0 g): the page's editor types in it. */
+  --field-ink: #000000;
   --text: #131816;
   /* v5 was #4c5752 / #55615b / #15803d / 0.42 alpha, each moved the least (toward black) that clears its floor. */
   --muted: #4a5550;
@@ -352,6 +356,8 @@
   --light-halo: #3ff08f;
   --redact-mark: #000000;
   --signature-ink: #000000;
+  /* A FORM FIELD'S TEXT AS MUPDF DRAWS IT with no colour of its own (`/DA` 0 g): the page's editor types in it. */
+  --field-ink: #000000;
   --text: #ffffff;
   --muted: #e6e6e6;
   --faint: #bfbfbf;

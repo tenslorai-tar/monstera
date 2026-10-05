@@ -501,6 +501,8 @@ function Half({
           // look at, not a way out of the document.
           onFollowLink={undefined}
           linksOutlined={false}
+          // NOR ARE FIELDS FILLED there (ADR-0168), for the links' reason.
+          onFillField={undefined}
           unit={preferences.unit}
           // NAMED WITH ITS SIDE AND DOCUMENT: two scrollable regions a screen-reader user cannot tell apart is what the
           // label exists to prevent.

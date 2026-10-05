@@ -3719,6 +3719,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           showGrid={showGrid}
           onFollowLink={onFollowLink}
           linksOutlined={linksOutlined}
+          onFillField={fillFormField}
           unit={unit}
           split={split}
           drawing={drawing}
@@ -4207,6 +4208,8 @@ const DocumentLayer = memo(function DocumentLayer({
             // NO LINKS BEHIND: a hidden page is pressed by nobody, so its links are not read (ADR-0167).
             onFollowLink={undefined}
             linksOutlined={false}
+            // NOR ITS FIELDS (ADR-0168), for the links' reason.
+            onFillField={undefined}
             // NOT DRAWN BEHIND: a request is drawn only while its document is on show, from its draft.
             writing={undefined}
             panning={false}
@@ -4270,6 +4273,7 @@ function PageCanvas({
   showGrid,
   onFollowLink,
   linksOutlined,
+  onFillField,
   unit,
   split,
   organize,
@@ -4348,6 +4352,8 @@ function PageCanvas({
   readonly onFollowLink: PageListProps['onFollowLink'];
   /** Whether links are outlined: the Comment section is on show. */
   readonly linksOutlined: boolean;
+  /** Fills a form field pressed on a page (ADR-0168); `undefined` behind. Both panes take it. */
+  readonly onFillField: PageListProps['onFillField'];
   readonly unit: RulerUnit;
   /** Whether a second viewport onto the same document is shown. */
   readonly split: boolean;
@@ -4676,6 +4682,7 @@ function PageCanvas({
       showGrid={showGrid}
       onFollowLink={onFollowLink}
       linksOutlined={linksOutlined}
+      onFillField={onFillField}
       unit={unit}
       drawing={drawing}
       editing={editing}
@@ -4724,6 +4731,7 @@ function PageCanvas({
       showGrid={showGrid}
       onFollowLink={onFollowLink}
       linksOutlined={linksOutlined}
+      onFillField={onFillField}
       unit={unit}
       label={SPLIT_SECOND_LABEL}
       drawing={drawing}

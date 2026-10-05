@@ -1,10 +1,11 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient, FieldFill, FormFieldKind } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
-import { type FocusEvent, type ReactElement, useEffect, useId, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useId, useState } from 'react';
 
+import { ChoiceOptions, FieldTextBox } from './forms/FieldControls.js';
+import { type ListedField, fieldFill } from './forms/fieldFill.js';
 import {
-  FORMS_CHOICE_EMPTY,
   FORMS_DELETE,
   FORMS_EMPTY,
   FORMS_FLATTEN,
@@ -19,17 +20,12 @@ import {
   FORMS_KIND_SIGNATURE,
   FORMS_KIND_TEXT,
   FORMS_LABEL,
-  FORMS_MANY_VALUES,
-  FORMS_TOO_LONG,
-  FORMS_NOT_FILLABLE,
-  FORMS_READ_ONLY,
   FORMS_ROW,
   FORMS_TRUNCATED,
   FORMS_UNAVAILABLE,
 } from './messages/en.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { readWholeList } from './readWholeList.js';
-import { composing } from './surfaces/shortcuts.js';
 
 /**
  * Every AcroForm field in the document, with the control that fills it.
@@ -309,61 +305,36 @@ function FieldControl({
   group,
   onFill,
 }: {
-  readonly field: PanelField;
+  readonly field: ListedField;
   /** The radio group this field's options share: its name, scoped by the panel. */
   readonly group: string;
   readonly onFill: (value: FieldFill) => void;
 }): ReactElement {
   const { i18n } = useLingui();
-  // What a text control showed when it took focus, which is the value a blur compares with.
-  const shown = useRef<string | undefined>(undefined);
+  // WHAT MAY BE DONE WITH IT is `fieldFill`'s, which the page's form layer takes too (ADR-0168 Decision 2): read-only,
+  // a value listed as a slice, several values and a kind nobody fills are refused by both or neither.
+  const offer = fieldFill(field);
 
-  if (field.readOnly) return <span className="m-forms-locked">{i18n._(FORMS_READ_ONLY)}</span>;
-  // A SLICE IS NOT A STARTING POINT: a fill writes its whole text over the field, so a box opened on the listing's
-  // slice would save the slice over the rest of a long value. The value is kept and the row says why.
-  if (field.cut === true) return <span className="m-forms-locked">{i18n._(FORMS_TOO_LONG)}</span>;
+  if (offer.kind === 'none') return <span className="m-forms-locked">{i18n._(offer.reason, offer.values)}</span>;
 
-  if (field.kind === 'text') {
-    const held = field.values[0] ?? '';
-    const common = {
-      // THE FIELD'S OWN NAME AS THE ACCESSIBLE NAME. B9 asks for no literal
-      // user-facing string; this is the document's string, and it is the only
-      // thing that distinguishes one row's control from another's to a screen
-      // reader.
-      'aria-label': field.name,
-      defaultValue: held,
-      // NO EDIT IS MEASURED AGAINST WHAT THE CONTROL SHOWED, never against the document's text. A control may show a
-      // value other than the one it was given — a one-line input strips line breaks, a textarea turns a CR into a
-      // line feed — and a blur compared with the document then wrote that difference back unasked.
-      // Read when the control mounts and again when it takes focus, so a blur always has what was shown to compare.
-      ref: (element: HTMLInputElement | HTMLTextAreaElement | null) => {
-        if (element !== null) shown.current = element.value;
-      },
-      onFocus: (event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        shown.current = event.currentTarget.value;
-      },
-      onBlur: (event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        if (event.currentTarget.value !== shown.current) onFill({ set: 'text', text: event.currentTarget.value });
-      },
-    };
-    // LINE BREAKS KEPT: a field that takes them, or a value that holds them however it got there, is edited in a
-    // control that keeps them. Enter is a new line there, and leaving the box is what fills.
-    if (field.multiline || LINE_BREAK.test(held)) {
-      return <textarea className="m-forms-text m-forms-text--lines" rows={TEXT_ROWS} {...common} />;
-    }
+  if (offer.kind === 'text') {
     return (
-      <input
+      <FieldTextBox
         className="m-forms-text"
-        {...common}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && !composing(event)) event.currentTarget.blur();
+        // THE FIELD'S OWN NAME AS THE ACCESSIBLE NAME. B9 asks for no literal user-facing string; this is the
+        // document's string, and it is the only thing that distinguishes one row's control from another's to a screen
+        // reader.
+        name={field.name}
+        offer={offer}
+        onCommit={(text) => {
+          onFill({ set: 'text', text });
         }}
-        type="text"
+        rows={TEXT_ROWS}
       />
     );
   }
 
-  if (field.kind === 'checkbox') {
+  if (offer.kind === 'toggle' && !offer.radio) {
     return (
       <input
         className="m-forms-check"
@@ -371,7 +342,7 @@ function FieldControl({
         // `checked` AND NOT `defaultChecked`: this one really is controlled by
         // the document, because a tick is a whole intent and the command runs
         // on the click. The re-read after the version moves is what changes it.
-        checked={field.on === true}
+        checked={offer.on}
         onChange={(event) => {
           onFill({ set: 'button', on: event.currentTarget.checked });
         }}
@@ -380,12 +351,12 @@ function FieldControl({
     );
   }
 
-  if (field.kind === 'radio') {
+  if (offer.kind === 'toggle') {
     return (
       <input
         className="m-forms-check"
         aria-label={field.name}
-        checked={field.on === true}
+        checked={offer.on}
         // ONE GROUP PER FIELD NAME, which is what makes the options one radio
         // group to the keyboard and to a screen reader: every widget of a PDF
         // radio group answers the same name. Scoped by the panel, so a field
@@ -401,65 +372,31 @@ function FieldControl({
           onFill({ set: 'button', on: true });
         }}
         onClick={() => {
-          if (field.on === true) onFill({ set: 'button', on: false });
+          if (offer.on) onFill({ set: 'button', on: false });
         }}
         type="radio"
       />
     );
   }
 
-  if (field.kind === 'dropdown' || field.kind === 'listbox') {
-    // SEVERAL VALUES IS NOT A CONTROL, and it is the wired rule cutting the way
-    // the row's own note says it cuts: a `<select>` here collects one option and
-    // the fill command carries one, so rendering it over a field holding two
-    // would offer a change that silently deletes the other. The kernel refuses
-    // to capture a prior for the same field, so there would not even be an undo.
-    // Reachable only from a document another tool filled — this build writes one
-    // value — which is exactly why it is rendered rather than assumed away.
-    if (field.values.length > 1) {
-      return (
-        <span className="m-forms-locked">
-          {i18n._(FORMS_MANY_VALUES, { values: field.values.join(', ') })}
-        </span>
-      );
-    }
-    const held = field.values[0] ?? '';
-    return (
-      <select
-        className="m-forms-choice"
-        aria-label={field.name}
-        onChange={(event) => {
-          onFill({ set: 'choice', option: event.currentTarget.value });
-        }}
-        // A LIST SHOWS SEVERAL ROWS and a dropdown shows one, which is the
-        // whole difference between the two kinds at this level. Both write one
-        // option: `/Ff`'s multi-select bit is a document capability this build
-        // does not yet write, and offering it would be a control whose command
-        // cannot express what it collected.
-        size={field.kind === 'listbox' ? Math.min(field.options.length, LIST_ROWS) : undefined}
-        value={held}
-      >
-        {/* THE EMPTY CHOICE IS ALWAYS OFFERED, because clearing is a fill: a
-            document may arrive with a field already cleared, and a list with no
-            empty entry could not show that state, let alone return to it. */}
-        <option value="">{i18n._(FORMS_CHOICE_EMPTY)}</option>
-        {field.options.map((option, at) => (
-          <option key={at} value={option}>
-            {option}
-          </option>
-        ))}
-        {/* A VALUE THE DOCUMENT DOES NOT OFFER is shown rather than dropped.
-            MuPDF stores one without complaint — measured — so a form can arrive
-            holding it, and a `<select>` whose value matches no option renders as
-            blank, which reads as an empty field rather than as a strange one. */}
-        {held !== '' && !field.options.includes(held) ? (
-          <option value={held}>{held}</option>
-        ) : null}
-      </select>
-    );
-  }
-
-  return <span className="m-forms-locked">{i18n._(FORMS_NOT_FILLABLE)}</span>;
+  return (
+    <select
+      className="m-forms-choice"
+      aria-label={field.name}
+      onChange={(event) => {
+        onFill({ set: 'choice', option: event.currentTarget.value });
+      }}
+      // A LIST SHOWS SEVERAL ROWS and a dropdown shows one, which is the
+      // whole difference between the two kinds at this level. Both write one
+      // option: `/Ff`'s multi-select bit is a document capability this build
+      // does not yet write, and offering it would be a control whose command
+      // cannot express what it collected.
+      size={field.kind === 'listbox' ? Math.min(field.options.length, LIST_ROWS) : undefined}
+      value={offer.held}
+    >
+      <ChoiceOptions offer={offer} />
+    </select>
+  );
 }
 
 /**
@@ -473,9 +410,6 @@ const LIST_ROWS = 4;
 
 /** How many lines a multi-line text field's box shows at once: a count of rows, `LIST_ROWS`' exception. */
 const TEXT_ROWS = 3;
-
-/** A line break in any of the spellings a document's text can hold. */
-const LINE_BREAK = /[\r\n]/u;
 
 /**
  * A label per kind, which is what the contract's closed union buys.
@@ -498,38 +432,6 @@ const KIND_LABELS: Record<FormFieldKind, MessageKey> = {
   other: FORMS_KIND_OTHER,
 };
 
-/** One field, as the contract carries it. */
-interface PanelField {
-  readonly page: number;
-  /**
-   * The handle's other half — where this widget sits in the WIDGET walk on its
-   * own page, which shares no entries with the annotation walk.
-   *
-   * Carried but never computed here, for `AnnotationsPanel`'s reason: it is
-   * minted by the kernel's reader and resolved by its apply.
-   */
-  readonly index: number;
-  /** **The contract's type, not a copy of its members.** See {@link KIND_LABELS}. */
-  readonly kind: FormFieldKind;
-  /** The document's own name for the field. Not unique across widgets. */
-  readonly name: string;
-  /**
-   * Empty for every button kind, by construction — see the kernel's reader.
-   *
-   * A LIST because a choice field may hold several, which `getValue()` reported
-   * as none until 2026-09-08. Nearly every field has zero or one.
-   */
-  readonly values: readonly string[];
-  /** Whether THIS widget is on, or `null` for a field with no on-state. */
-  readonly on: boolean | null;
-  readonly options: readonly string[];
-  readonly readOnly: boolean;
-  /** Whether a text field takes line breaks, so it is edited in a control that keeps them. */
-  readonly multiline: boolean;
-  /** The listing's mark for a value cut to fit it: the panel shows the field and starts no fill from the slice. */
-  readonly cut?: true | undefined;
-}
-
 /**
  * What the panel is showing.
  *
@@ -543,6 +445,7 @@ type PanelState =
   | {
       readonly kind: 'listed';
       readonly version: DocVersion;
-      readonly fields: readonly PanelField[];
+      /** The contract's own rows (`ListedField`): the handle's `index` is the WIDGET walk's, minted by the kernel. */
+      readonly fields: readonly ListedField[];
       readonly truncated: boolean;
     };

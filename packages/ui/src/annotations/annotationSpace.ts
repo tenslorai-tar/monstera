@@ -1,5 +1,13 @@
 import type { AnnotationRect } from '@monstera/contract';
-import { type PageTransform, type ViewportPoint, pageTransform, toPdf, toViewport, viewportPoint } from '@monstera/shared';
+import {
+  type PageTransform,
+  type ViewportPoint,
+  pageTransform,
+  pdfPoint,
+  toPdf,
+  toViewport,
+  viewportPoint,
+} from '@monstera/shared';
 
 /**
  * The renderer's half of the annotation coordinate boundary — Stage 3's
@@ -103,6 +111,25 @@ export interface ScreenBox {
   readonly top: number;
   readonly width: number;
   readonly height: number;
+}
+
+/**
+ * Where a rectangle in PDF user space is drawn: an annotation's or a form field's, as their lists carry them. Both
+ * corners through the page's transform, then ordered, because the PDF's y runs up the page and the screen's down.
+ */
+export function pdfRectOnScreen(
+  rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number },
+  page: OverlayPage,
+): ScreenBox {
+  const shown = overlayTransform(page);
+  const a = toViewport(pdfPoint(rect.x0, rect.y0), shown);
+  const b = toViewport(pdfPoint(rect.x1, rect.y1), shown);
+  return {
+    left: Math.min(a.x, b.x),
+    top: Math.min(a.y, b.y),
+    width: Math.abs(b.x - a.x),
+    height: Math.abs(b.y - a.y),
+  };
 }
 
 /**
