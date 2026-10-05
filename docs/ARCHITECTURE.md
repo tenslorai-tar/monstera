@@ -828,6 +828,21 @@ Adding a row still means executing it first.
   compared against the line's **own height** — so Part E2's *"constants change
   only with a corpus score"* survives with nothing here to govern, exactly as
   ADR-0034 left it for the reading side.
+- **A PDFium rewrite is saved only when it reads back as edited**
+  ([ADR-0169](DECISIONS/0169-a-pdfium-rewrite-is-saved-only-when-it-reads-back-as-edited.md)).
+  `FPDFPage_GenerateContent` writes a Type 3 text object with no font and no
+  text, so any rewrite of a page that carries one erased it and answered success
+  (measured: 60 text objects to 1 on a Chromium print). Every page a PDFium
+  session regenerates records its text objects as edited, in page order, and
+  `serialise` reopens what it saved and answers the bytes only when every such
+  page reads back the same. The check is on the one route from an edited page to
+  bytes, so no command can skip it and none declares what it touched. A text
+  object the edit did not write that is missing or changed refuses the edit at
+  step `read-back`, and nothing is saved; a write that reads back differently is
+  `text-not-writable`, naming the characters. Every refusal of a native call
+  names one of eight steps (`open`, `page`, `object`, `set-text`, `matrix`,
+  `generate`, `save`, `read-back`) and the number PDFium answered, and the host
+  forwards both rather than discarding the cause.
 - **A declaration is not an implementation, and they are separate modules**
   ([ADR-0026](DECISIONS/0026-a-declaration-is-not-an-implementation.md)). What a
   command *is* — its writer of record, its invertibility, its undo strategy, its
@@ -1185,6 +1200,19 @@ path of its own spelling, and the type would stop nothing at runtime (amended
 2026-09-25). The ids it refuses are the contract's own list, the one main
 registers from. A `File` built in script has no path, so the one route left,
 `openDropped`, cannot be handed a forged one.
+
+**AND A DECLARED FAILURE MAY CARRY A DECLARED DETAIL** (amended 2026-10-05,
+[ADR-0169](DECISIONS/0169-a-pdfium-rewrite-is-saved-only-when-it-reads-back-as-edited.md)
+Decision 4). A failure is still a code, and `internal` still carries only its
+incident id. A code may also carry one detail, declared once for that code on
+every boundary: its type beside `Failure` in `@monstera/shared` and its schema in
+`@monstera/contract`, which `satisfies` the type. `Failure` and
+`DeclaredFailure` require the detail for a code that has one and forbid it for a
+code that has none, and the boundary validates it with the code in both
+directions. **A detail is never text a native library produced**: an enum, a
+bounded integer, or characters the person typed. Two codes carry one:
+`text-not-writable` names the characters a font cannot show, and `edit-refused`
+names the step that refused and the number PDFium answered.
 
 The worker protocol takes the same shape, and the **intended** vehicle is one
 `defineWorkerContract` helper shared by both hosts. *That helper does not exist
@@ -2978,6 +3006,7 @@ deliberately, in their own commit, never as a side effect.
 Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
+| 2026-10-05 | **A PDFium rewrite is saved only when it reads back as edited, and a refusal says which step refused** (§3.2, §5). Part B, Phase 0 of the text-editing rebuild. `FPDFPage_GenerateContent` writes a Type 3 text object with no font and no text, so every PDFium command erased the Type 3 text on the page it rewrote and answered success (measured on PDFium 155.0.8044.0: 60 text objects to 1 on a Chromium print; 3 to 1 for replace, recolour and move on a hand-made page, 3 to 0 for delete), and every other refusal reached the person as *Something went wrong* because the host discarded the cause. Every regenerated page records its text objects as edited and `serialise` reopens and compares before answering bytes; a lost or changed object the edit did not write refuses at step `read-back` and nothing is saved, a write that reads differently is `text-not-writable` naming the characters. Eight step codes name every native refusal with PDFium's error number; a declared failure may carry a declared detail, typed in `@monstera/shared` and schema'd in `@monstera/contract`, never a native library's text. The editor keeps the words on every refusal; a replacement writes through the editor's twin and moves the runs after it; an empty replacement deletes, and one that changes nothing makes no version. **Rejected:** per-command touched sets compared before and after, detecting Type 3 up front, writing Type 3 back by hand (Phase 1), composite codes, a second query for the characters, forwarding the cause as text | ADR-0009 §9's 2026-08-19 *a declared failure is a code and nothing else*; ADR-0096 and ADR-0097's read-backs of what was written alone | [0169](DECISIONS/0169-a-pdfium-rewrite-is-saved-only-when-it-reads-back-as-edited.md) |
 | 2026-10-05 | **A field is filled where it is on its page** (§3.2's *PDF.js is never a source of truth*). The owner's item 14h: a form was filled only from the Forms panel, and pressing a field on the page did nothing. A form layer over each visible page puts a control over each fillable field's rectangle from `document.formFields`, above the text and link layers and below the drawing overlay. What may be filled, and how, is one function, `fieldFill`, that the page and the panel both render from. At rest the page shows the document's own appearance, which a fill regenerates (measured); a tick box or radio is a press, a text field opens an editor over the field, a choice field opens its options there. A field nobody can fill here has no control on the page. Rejected: PDF.js's form layer and its `annotationStorage`, inputs over every field at all times, a click that opens the panel, controls that decide for themselves | §3.2's rule, which named no way to fill a field on its page | [0168](DECISIONS/0168-a-field-is-filled-where-it-is-on-its-page.md) |
 | 2026-10-05 | **A link is shown on its page, and followed when a person asks** (invariant 24; the window policy's route to the browser). The owner's item 14c: a link was invisible on its page, could not be followed, and said nothing once added; the Links panel's web entries had nothing to press, since nothing was a way to ask *for that item*. Each page draws its links, outlined in the Comment section and named under the pointer; a click on a page link goes there, and a click on a web link names the address in a dialog first. `document.openLink` names the link by document, version, page and place, never by address; `main` reads the address in full from the engine host and opens `https:`, `http:` and `mailto:` only. The Links panel takes the same route; an added link says so. Rejected: the renderer passing the address, following without asking, `window.open`, widening the sign-in's HTTPS-only route, outlines at all times | invariant 24's *"until the user asks"*, which named no way to ask for a link; `openInBrowser` as the only route to the browser | [0167](DECISIONS/0167-a-link-is-shown-on-its-page-and-followed-when-a-person-asks.md) |
 | 2026-10-05 | **A tool's preview is placed as its commit is** (§6, the controller's `preview`). The owner's item 14d: dragging a selected mark drew a box from the press to the pointer, a marquee, and held it after the release, so the person saw a ghost box and then the mark appearing elsewhere. `preview` is given the page and its transform, as `commit` is, and `ToolPreview` gains several boxes; the select tool's preview of a move or a resize is the placement itself, computed by the function that builds the command, and the overlay's held shape is therefore where the marks went. Not done: the mark's pixels moving, since PDF.js 6.2.108 cannot leave one annotation out of a draw, and lifting pixels would move a highlight's words with it. Rejected: a preview in PDF space converted by the overlay, a transform captured at the gesture's start, a second preview path | §6's `preview(gesture)` and one-shape `ToolPreview` | [0166](DECISIONS/0166-a-tools-preview-is-placed-as-its-commit-is.md) |
