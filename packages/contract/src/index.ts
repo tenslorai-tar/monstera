@@ -17,6 +17,7 @@ export {
   fileRequested,
   fileRequestedAndAnswered,
 } from './channel.js';
+export { CREDENTIAL_NAME, credentialFields } from './credentialFields.js';
 export {
   type RouteViolation,
   WORST_BYTES_PER_CHAR,

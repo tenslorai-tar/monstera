@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
 
 import {
   type CommandKind,
@@ -9,6 +8,7 @@ import {
   type NamesAnAnnotation,
   type NamesASecondDocument,
   commandSchema,
+  credentialFields,
 } from '@monstera/contract';
 
 import { type DeclaredCommands, declaredCommands } from './commandDeclarations.js';
@@ -291,31 +291,11 @@ describe('the declaration table', () => {
 });
 
 /**
- * A field whose name says it carries a credential.
+ * Every credential field of every command, keyed by the command's kind.
  *
- * By NAME, which is the only thing a schema says about what a string is: a password and a page label are both
- * `z.string()`. So the rule can see a credential that is named as one, and a credential named as something else is out
- * of its reach; stated here so the case is not read as wider than it is.
+ * Through the contract's one walk, which matches by NAME: a credential named as something else is out of its reach,
+ * and that is stated here so the case is not read as wider than it is.
  */
-const CREDENTIAL_NAME = /password|passphrase|secret|privatekey|credential/iu;
-
-/** Every credential-named field reachable inside `schema`, as dotted paths. */
-function credentialFields(schema: z.ZodType, path: string): string[] {
-  if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable) {
-    return credentialFields(schema.unwrap() as z.ZodType, path);
-  }
-  if (schema instanceof z.ZodArray) return credentialFields(schema.element as z.ZodType, `${path}[]`);
-  if (schema instanceof z.ZodUnion) {
-    return (schema.options as readonly z.ZodType[]).flatMap((option) => credentialFields(option, path));
-  }
-  if (!(schema instanceof z.ZodObject)) return [];
-  return Object.entries(schema.shape as Record<string, z.ZodType>).flatMap(([name, field]) => [
-    ...(CREDENTIAL_NAME.test(name) ? [`${path}.${name}`] : []),
-    ...credentialFields(field, `${path}.${name}`),
-  ]);
-}
-
-/** Every credential field of every command, keyed by the command's kind. */
 function credentialsByKind(): ReadonlyMap<CommandKind, readonly string[]> {
   const found = new Map<CommandKind, readonly string[]>();
   for (const option of commandSchema.options) {
