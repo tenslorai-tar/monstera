@@ -222,3 +222,36 @@ License 1.1.
   other object (ADR-0171).
 - Office import, the composers and the editor see the same faces, and only the composers and the editor choose by this
   resolver's rule.
+
+## Correction, 2026-10-05: a word no face carries whole, the licence bits, and a subset's notice
+
+Three places where the code `0ab44edf` and `389cc010` built differs from the decision above, found by the stage audit
+of `974df9f5..389cc010` (RRRRRRR-3, -12 and -14) and written here before the composers that build on them land.
+
+**1. A word no face carries whole is split by grapheme, and only then.** Decision 1's step 6 drew every character the
+word's face lacks as the box. Where another face carries one of those characters, that turns a character a face can draw
+into a box, which the owner's principle *preserve, never drop* does not allow, and the owner's Q6 did not reach: it says
+where a word goes when some face carries it, and that is unchanged. So step 6 becomes:
+
+- a word goes whole to the first source that carries every character of it, as before;
+- where no source does, the face carrying most of its characters draws what it carries, each **grapheme** it lacks goes
+  to the first source that carries all of that grapheme, and only a grapheme no source carries is the box (Decision 8);
+- the unit is the grapheme cluster (`Intl.Segmenter` with `granularity: 'grapheme'`), never the code point, so a base
+  letter and its combining marks stay in one face where HarfBuzz can place the marks on it.
+
+The sentence *a word is never split between two faces except by Decision 8* is withdrawn: it now reads *a word is never
+split while one face carries all of it*. `389cc010` split by code point, and the composers' correction to grapheme comes
+with the resolver's fixes.
+
+**2. The licence bits follow the OpenType specification's own rule for more than one.** Decision 3 read each permission
+bit alone. `fsType` bits 1 to 3 are one permission, and the specification says that where a font sets more than one the
+**least restrictive** applies. So a face marked *preview and print* and *editable* is editable and is used, and one marked
+*restricted* and *editable* is editable too; a face whose least restrictive bit is *preview and print* is skipped, the
+owner's Q2, and one marked *restricted* alone is never embedded. `fontFaces.ts`' `embeddingOf` is that rule, the one
+place it is written.
+
+**3. A subset keeps its copyright notice and its licence.** `fontSubset.ts` rebuilt each subset's `name` table with the
+family, full and PostScript names alone, so an embedded subset of an open font carried neither its copyright notice
+(name 0) nor its licence (names 13 and 14). Keeping them is the direction that loses nothing, and it costs a few hundred
+bytes a font: the rebuilt table keeps records 0, 13 and 14 as the face had them. Whether embedding a subset named
+`TAG+Carlito-…` touches Carlito's Reserved Font Name stays the owner's question (the run's ledger, R3).
