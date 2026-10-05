@@ -354,3 +354,18 @@ the protect has drawn, which point 3 makes it do at once.
   signature no longer covers it; that save asks before it breaks a signature (ADR-0149), as any such save does.
 - The proof list's *"a reopen told `as-opened` instead keeps the new encryption"* control is kept in substance: a
   session reopened from the protected copy with no terms recorded keeps the protect's encryption.
+
+*Correction, 2026-10-05, while building points 1 and 2:* the reopen is told less than point 2 said, because less is
+enough. `engine/open` carries `keys`, every key the holder has with the current one first, and a `standing` of two
+values, `as-copied` and `unprotected`; there is no `protected` value carrying terms.
+
+- While a protect that encrypts is in force, every copy a reopen can reach is encrypted under it: a copy written after
+  it is serialised from a session with its terms, and a copy point 4 encrypts is reached only once the protect is
+  undone. So `as-copied` already is that protect's standing, and main never has to send terms, which would mean
+  composing MuPDF's option string in main (invariant 20's reason for `protectionOptions` living in the kernel).
+- `unprotected` is a document standing with no protection: a plain file from its first open (MuPDF's access `1`, which
+  means no `/Encrypt`; an owner-only password answers `2`, measured the same day), or a protect removing it, or the
+  undo of a protect on a plain file. The host decrypts such a copy in memory, by the protect's own inverse.
+- One rule opens a copy, `openCopy` in the kernel: each key as a fresh open, then none, then the standing. The host's
+  handler and the in-process proofs both call it.
+- The keys are bounded by the frame: 64, sized against the 262,144-byte frame, current first and then the newest.
