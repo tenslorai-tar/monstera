@@ -23,6 +23,8 @@ Replace everywhere changes every occurrence of a word or phrase in the document'
 - Some PDFs draw a single word in separate pieces. Those words are left as they were; change them with "Edit text on the page".
 - If the new words are a different width and more text follows them on the same line in a separate piece, nothing is changed, because that text would have to move. Your words stay in the boxes; change that line with "Edit text on the page".
 - The replacement uses the page's own font where it can.
+- Leave **Replace with** empty to delete the word wherever it appears.
+- If nothing Monstera can replace matches, you are told "Nothing was changed", and no step is added to **Undo**.
 
 <!--
 Screenshots to capture:
