@@ -1565,27 +1565,19 @@ const declarations = {
   },
   setDocumentProtection: {
     kind: 'setDocumentProtection',
-    // NOTHING DRAWN: its `apply` records how the document is WRITTEN (below) and changes no
-    // page, so there are no new bytes for the window to draw.
-    display: 'nothing-drawn',
+    // DRAWN, though no page changes (ADR-0171 Decision 8): the window's bytes are main's canonical image, and that image
+    // must be the document as protected, so no copy main keeps of it is the readable form. The renderer opens it with
+    // the password it holds for the document (Decision 7).
+    display: 'image',
     // `docs/ARCHITECTURE.md` §3's matrix names MuPDF for *encryption,
     // permissions* and has since the founding record, so no B4 on the routing.
     writer: 'mupdf',
-    // TERMINAL, and the reason is a rule rather than a size: the prior state of
-    // this command IS a password, and a capture would put one in main's command
-    // log — the one place ADR-0055 says it must never be. A checkpoint holds
-    // bytes, which for a previously unprotected document are the plain ones
-    // main already had.
-    //
-    // **The stated limit that follows**: a checkpoint taken on a document that
-    // was ALREADY protected is encrypted, so undoing a protection change needs
-    // the password that opens it. For a document opened with its password, main
-    // holds that one until close (ADR-0171 Decision 1). A password a protect set
-    // in this session is held by nothing yet, which is ADR-0171 Decision 8, put
-    // to the owner. Recorded here and in the FEATURES row, because a limit
-    // nobody wrote down is one the next reader treats as a bug.
-    invertible: false,
-    undo: 'checkpoint',
+    // INVERTIBLE (ADR-0171 Decision 8): the prior is the protection the session stood with, bounded and small, so the
+    // undo takes no checkpoint, and a checkpoint is a whole copy of the document as it was, readable when it was. That
+    // prior can carry an earlier protect's passwords, so the bus holds it beside the entry with the command, and the
+    // entry keeps a marker (`RecordedInverse`).
+    invertible: true,
+    undo: 'inverse',
     // REPRODUCIBLE, and the axis is about the APPLY rather than about the
     // bytes a later save happens to produce. This apply writes nothing to the
     // document: it records an option string on the session, and re-running the

@@ -762,7 +762,29 @@ const priorPageTransitionSchema = z
  * are written here rather than in a test for `MupdfChannelCoversEveryRoutedKind`'s
  * reason: an omission should fail at the line that omitted it.
  */
+/**
+ * The longest protection terms a capture may carry: `protectionOptions`' string with two passwords at their bound and
+ * every character a doubled quote, plus the method, the permissions and the separators, under 128 characters together.
+ * Derived from the password bound, so a longer password allowed tomorrow widens this with it.
+ */
+export const PROTECTION_TERMS_MAX = 4 * DOCUMENT_PASSWORD_MAX_CHARS + 128;
+
 const capturedPriorSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('setDocumentProtection'),
+      /**
+       * The protection the session stood with (ADR-0171 Decision 8). Its terms can carry a password, which crosses to
+       * main as the command's own did, and main holds it beside the log entry in memory and never in it.
+       */
+      prior: z.discriminatedUnion('standing', [
+        z
+          .object({ standing: z.literal('protected'), terms: z.string().min(1).max(PROTECTION_TERMS_MAX) })
+          .strict(),
+        z.object({ standing: z.literal('unprotected') }).strict(),
+      ]),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('rotatePages'),

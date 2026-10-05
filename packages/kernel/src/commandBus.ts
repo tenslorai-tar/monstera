@@ -17,10 +17,12 @@ import type {
   Checkpoint,
   CheckpointFile,
   CommandPrior,
+  HeldInverse,
   LogEntry,
   LogEntryFor,
   LogTrim,
   RecordedCommand,
+  RecordedInverse,
 } from './commandLog.js';
 // DECLARATIONS, not specs. The bus reads `writer` and `replay` and calls
 // nothing — `apply`, `capture` and `invert` go through the registered writer
@@ -149,7 +151,7 @@ function reapplicable(entry: LogEntry, held: HeldIntents): CommandOfKind<Command
   }
   // HELD BESIDE THE ENTRY (ADR-0171 Decision 3), keyed by it, so it lives exactly as long as the entry does. Missing is
   // unreachable while the entry lives, and re-running the kind alone would protect with no password, so it refuses.
-  const command = held.get(entry);
+  const command = held.get(entry)?.command;
   if (command === undefined) {
     throw new Error(
       `${entry.command.kind} keeps its command beside its log entry rather than in it, and none is held for this ` +
@@ -175,8 +177,37 @@ function sourcesOfEntry(entry: LogEntry, held: HeldIntents): readonly DocId[] {
  *
  * Keyed by `object` because the key is used for its identity alone: `execute` holds the entry as `LogEntryFor<K>` and
  * `redo` reads it back as `LogEntry`, two spellings of one object the checker cannot unify for a generic `K`.
+ *
+ * **The prior beside the command** for an invertible entry (Decision 8): a protect's prior is the protection before
+ * it, which carries an earlier protect's passwords, so the entry keeps `HeldInverse` and its undo reads this one.
  */
-type HeldIntents = WeakMap<object, CommandOfKind<CommandKind>>;
+type HeldIntents = WeakMap<object, HeldIntent>;
+
+interface HeldIntent {
+  readonly command: CommandOfKind<CommandKind>;
+  /** The captured prior of an invertible entry, `undefined` for a terminal one, whose undo is its checkpoint. */
+  readonly inverse: CommandPrior[CommandKind] | undefined;
+}
+
+/**
+ * The prior an invertible entry's undo applies: the entry's own, or the one held beside it where its declaration holds
+ * the intent ({@link RecordedInverse}). Missing is refused for {@link reapplicable}'s reason: an inverse built from the
+ * marker alone would restore nothing and report an undo.
+ */
+function inverseOf(entry: Extract<LogEntry, { readonly kind: 'invertible' }>, held: HeldIntents): CommandPrior[CommandKind] {
+  if (declaredCommands[entry.command.kind].replay !== 'reapply-held-intent') {
+    // NARROWED BY THE DECLARATION, `reapplicable`'s cast and its reason: `RecordedInverse` reads the same value.
+    return entry.inverse as CommandPrior[CommandKind];
+  }
+  const inverse = held.get(entry)?.inverse;
+  if (inverse === undefined) {
+    throw new Error(
+      `${entry.command.kind} keeps its prior state beside its log entry rather than in it, and none is held for this ` +
+        'entry. Nothing was undone.',
+    );
+  }
+  return inverse;
+}
 
 /**
  * What an entry keeps of the command it was made for: the kind alone where its declaration holds the intent, else the
@@ -188,6 +219,14 @@ type HeldIntents = WeakMap<object, CommandOfKind<CommandKind>>;
 function recordedOf<K extends CommandKind>(command: CommandOfKind<K>): RecordedCommand<K> {
   const kept = declaredCommands[command.kind].replay === 'reapply-held-intent' ? { kind: command.kind } : command;
   return kept as RecordedCommand<K>;
+}
+
+/** What an invertible entry keeps of its prior: the marker where its declaration holds the intent, else the prior. */
+function recordedInverseOf<K extends CommandKind>(kind: K, prior: CommandPrior[K]): RecordedInverse<K> {
+  const kept: HeldInverse | CommandPrior[K] =
+    declaredCommands[kind].replay === 'reapply-held-intent' ? { held: true } : prior;
+  // `recordedOf`'s cast, for its reason: the conditional is decided by the same `replay` value read here.
+  return kept as RecordedInverse<K>;
 }
 
 /**
@@ -1077,7 +1116,7 @@ export class CommandBus {
     // command itself goes into `#held` below, beside the entry and never in it.
     const kept = recordedOf(command);
     const entry: LogEntryFor<K> = captured.captured
-      ? { kind: 'invertible', command: kept, inverse: captured.prior, read: stored }
+      ? { kind: 'invertible', command: kept, inverse: recordedInverseOf(command.kind, captured.prior), read: stored }
       : {
           kind: 'terminal',
           command: kept,
@@ -1124,7 +1163,9 @@ export class CommandBus {
     // *a refusing APPLY after a successful capture*.
     //
     // HELD AT THE SAME MOMENT, keyed by the entry as recorded, so the two cannot exist apart.
-    if (spec.replay === 'reapply-held-intent') this.#held.set(recorded, command);
+    if (spec.replay === 'reapply-held-intent') {
+      this.#held.set(recorded, { command, inverse: captured.captured ? captured.prior : undefined });
+    }
     context.commandLog(COMMAND_WRITER).record(recorded);
 
     // THE WINDOW'S BYTES, after the entry and not before it: by here the session has changed,
@@ -1257,7 +1298,7 @@ export class CommandBus {
     // Through the writer, for `execute`'s reason. The kind travels as its own
     // argument because a recorded inverse does not carry one — see
     // `CommandExecution.invert`.
-    const inverted = await writer.invert(session, entry.command.kind, entry.inverse);
+    const inverted = await writer.invert(session, entry.command.kind, inverseOf(entry, this.#held));
     // A BYTE-IMAGE WRITER'S INVERSE PRODUCES A DOCUMENT TOO, and this line has
     // no caller today: every command routed to a byte-image writer is
     // non-invertible, so a `pdf-lib` entry is always `terminal` and returns

@@ -972,10 +972,8 @@ const FLATTEN_SPEC = `  flattenFormFields: {
   },`;
 
 /**
- * Filler, and the ONE spec here whose `capture` refuses for a reason that is a
- * rule rather than a size: a protection change's prior state is a password
- * (ADR-0055). The fixture spells it like every other, because what these
- * exercise is `CommandSpecs`' shape.
+ * Filler. A protection change is invertible since ADR-0171 Decision 8, its prior held beside the log entry rather
+ * than in it; the fixture spells it like every other, because what these exercise is `CommandSpecs`' shape.
  */
 const PROTECT_SPEC = `  setDocumentProtection: {
     kind: 'setDocumentProtection',
@@ -983,10 +981,10 @@ const PROTECT_SPEC = `  setDocumentProtection: {
     apply: applySetDocumentProtection,
     capture: captureSetDocumentProtection,
     invert: invertSetDocumentProtection,
-    invertible: false,
-    undo: 'checkpoint',
+    invertible: true,
+    undo: 'inverse',
     reproducible: true,
-    replay: 'reapply-intent',
+    replay: 'reapply-held-intent',
     sources: 'none',
     reads: 'none',
   },`;
@@ -3672,6 +3670,37 @@ export const entry: LogEntry = {
   reason: 'no prior state',
   read: undefined,
   result: null,
+};
+`,
+  },
+  {
+    name: 'an INVERTIBLE held entry may not carry its prior, which can be an earlier protect’s passwords',
+    expect: 'reject',
+    code: 'TS2353',
+    // ADR-0171 Decision 8: the prior is the protection before the protect, so a second protect's prior is the first
+    // one's terms. The entry keeps the marker `{ held: true }`, which has no field for them.
+    because: /Object literal may only specify known properties, and 'standing' does not exist in type/u,
+    notBecause: null,
+    source: `
+import type { LogEntry } from '@monstera/kernel';
+export const entry: LogEntry = {
+  kind: 'invertible',
+  command: { kind: 'setDocumentProtection' },
+  inverse: { held: true, standing: 'protected', terms: 'encrypt=aes-256,user-password="kept"' },
+  read: undefined,
+};
+`,
+  },
+  {
+    name: 'CONTROL: the same invertible held entry, keeping the marker, compiles',
+    expect: 'allow',
+    source: `
+import type { LogEntry } from '@monstera/kernel';
+export const entry: LogEntry = {
+  kind: 'invertible',
+  command: { kind: 'setDocumentProtection' },
+  inverse: { held: true },
+  read: undefined,
 };
 `,
   },

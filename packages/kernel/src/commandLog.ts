@@ -14,6 +14,7 @@ import type { Brand } from '@monstera/shared';
 //
 // Same mechanism as the Electron download one file over, with a different bill.
 import type { DeclaredCommands } from './commandDeclarations.js';
+import type { PriorProtection } from './documentProtection.js';
 import type { PreReadValue } from './engineSeam.js';
 import type { PriorFieldValue } from './formFields.js';
 import type { PriorAnnotationAuthor, PriorAnnotationText } from './pageAnnotations.js';
@@ -566,15 +567,13 @@ export interface CommandPrior {
   readonly flattenFormFields: never;
 
   /**
-   * A protection change has no prior state, and this is the one entry here
-   * where that is **not** a question of size.
+   * The protection the session stood with before the change
+   * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8).
    *
-   * The prior state is a password. A capture is serialised into this log, and
-   * ADR-0055 puts a document password out of every place main keeps anything —
-   * so `never` is a rule rather than a measurement, and it is the only entry in
-   * this table that would be perfectly representable and must not be.
+   * Its terms can carry a password, so it never reaches this log: the entry keeps {@link HeldInverse} and the bus keeps
+   * this beside it, in memory, as it keeps the command ({@link RecordedInverse}).
    */
-  readonly setDocumentProtection: never;
+  readonly setDocumentProtection: PriorProtection;
 
   /**
    * A burned-in redaction has no prior state, and recording one would be the
@@ -778,7 +777,8 @@ export type LogEntryFor<K extends CommandKind> =
       readonly kind: 'invertible';
       /** The command whole, or its kind alone where the bus holds it ({@link RecordedCommand}). */
       readonly command: RecordedCommand<K>;
-      readonly inverse: CommandPrior[K];
+      /** The prior state, or a marker where the bus holds it ({@link RecordedInverse}). */
+      readonly inverse: RecordedInverse<K>;
       /** What the apply was handed, where replay may not read it again. */
       readonly read: PreReadValue | undefined;
     }
@@ -834,6 +834,26 @@ export type RecordedCommand<K extends CommandKind> = K extends CommandKind
     ? { readonly kind: K }
     : CommandOfKind<K>
   : never;
+
+/**
+ * What an invertible entry keeps of its prior state: the prior whole, or {@link HeldInverse} for a command whose intent
+ * is held ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md)
+ * Decision 8).
+ *
+ * Decided by the same declaration as {@link RecordedCommand}, because the reason is the same: a protect's prior is the
+ * protection before it, and a second protect's prior is the first one's passwords. The bus keeps the prior beside the
+ * entry with the command, and an entry built with the prior in it does not compile.
+ */
+export type RecordedInverse<K extends CommandKind> = K extends CommandKind
+  ? DeclaredCommands[K]['replay'] extends 'reapply-held-intent'
+    ? HeldInverse
+    : CommandPrior[K]
+  : never;
+
+/** The marker a held entry keeps where its prior would be. It has no field a prior could be written in. */
+export interface HeldInverse {
+  readonly held: true;
+}
 
 /**
  * Any entry, as the log holds them.

@@ -252,6 +252,37 @@ export function protectSession(session: MupdfSession, options: string): Promise<
 }
 
 /**
+ * The protection a session stands with: the terms a protection command recorded on it, if any, and whether the
+ * session's document is encrypted now, read from its trailer (an owner-only password included, which no password
+ * question can see).
+ *
+ * **Now, not as opened.** Measured 2026-10-05 on this build's MuPDF, a generated document: a serialise with encryption
+ * terms installs that encryption in the session's own document, so its trailer gains `/Encrypt` and a later save with
+ * no terms keeps the NEW key, not the one the file was opened with. So recording no terms restores nothing once a
+ * protect has drawn, and an undo of a protect must say what it wants ({@link restoreSessionProtection}).
+ */
+export function sessionProtection(
+  session: MupdfSession,
+): Promise<{ readonly terms: string | undefined; readonly encrypted: boolean }> {
+  return promised(() => {
+    const document = documentFor(session);
+    return { terms: protections.get(session), encrypted: document.getTrailer().get('Encrypt').isDictionary() };
+  });
+}
+
+/**
+ * Puts a session's protection back to `terms`, or to none recorded, which every later serialise then reads: an undo of
+ * a protect. `documentFor` first, {@link protectSession}'s reason.
+ */
+export function restoreSessionProtection(session: MupdfSession, terms: string | undefined): Promise<void> {
+  return promised(() => {
+    documentFor(session);
+    if (terms === undefined) protections.delete(session);
+    else protections.set(session, terms);
+  });
+}
+
+/**
  * Runs `work` and records that this session has had content removed.
  *
  * {@link withDocument}'s shape for a command declaring `purpose: 'removal'`.

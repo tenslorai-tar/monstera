@@ -27,6 +27,7 @@ import {
 } from './commandLog.js';
 import type { CommandWriter, DocumentContext, HeldFile } from './documentService.js';
 import { serialiseIntoFile } from './checkpointFile.js';
+import { applySetDocumentProtection, protectionOptions } from './documentProtection.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { localMupdfWriter, localSignpdfWriter } from './localEngine.js';
 import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
@@ -2467,94 +2468,151 @@ describe('CommandBus and a command whose intent is a password', () => {
     return `${JSON.stringify(value)}\n${inspect(value, { depth: Number.POSITIVE_INFINITY })}\n${String(value)}`;
   }
 
-  it('the entry keeps the kind alone, so neither password is in any serialisation of the log', async () => {
+  const again: CommandOfKind<'setDocumentProtection'> = {
+    kind: 'setDocumentProtection',
+    encryption: 'aes-256',
+    userPassword: 'the second protect’s password',
+  };
+
+  it('neither the command’s passwords nor a PRIOR carrying them is in any serialisation of the log', async () => {
+    // TWO PROTECTS, so the second entry's prior is the first one's terms, both passwords included: the shape the
+    // marker exists for (ADR-0171 Decision 8).
     const { bus } = recordingBus();
     const session = await mupdfWriter.open(flat);
-    const context = contextStub();
+    const context = contextStub(true);
     try {
-      await bus.execute({ mupdf: session }, context, protect, noByteImageExpected);
-      const entry = context.log.entries[0];
-      if (entry?.kind !== 'terminal') throw new Error('expected the protection’s terminal entry');
-      expect(entry.command).toStrictEqual({ kind: 'setDocumentProtection' });
+      await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      await bus.execute({ mupdf: session }, context, again, showingInputs(session));
+      const entries = context.log.entries;
+      expect(entries.map((entry) => entry.kind)).toStrictEqual(['invertible', 'invertible']);
+      for (const entry of entries) {
+        expect(entry.command).toStrictEqual({ kind: 'setDocumentProtection' });
+        if (entry.kind === 'invertible') expect(entry.inverse).toStrictEqual({ held: true });
+      }
 
-      const written = everySerialisation(context.log.entries);
+      const written = everySerialisation(entries);
       expect(written).not.toContain(USER);
       expect(written).not.toContain(OWNER);
-      // POSITIVE CONTROL: the same serialisation of the command itself carries both, so the scan above can see them.
-      const command = everySerialisation([protect]);
-      expect([command.includes(USER), command.includes(OWNER)]).toStrictEqual([true, true]);
-      // AND THE PROTECTION WAS APPLIED: the bytes open with the user password and not without it.
-      expect(await accessOf(session)).toStrictEqual({ none: 0, user: 2 });
+      // POSITIVE CONTROL: the same serialisation of what the prior is made of carries both, so the scan can see them.
+      const terms = everySerialisation([protectionOptions(protect)]);
+      expect([terms.includes(USER), terms.includes(OWNER)]).toStrictEqual([true, true]);
     } finally {
       await mupdfWriter.close(session);
     }
   });
 
-  it('redo re-runs the WHOLE command from the held table, and protects a session that was not', async () => {
+  it('takes NO checkpoint, and the window’s image is the document as protected', async () => {
+    const { bus } = recordingBus();
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub(true);
+    try {
+      await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      expect(context.log.checkpointPaths()).toStrictEqual(new Set());
+      const image = context.images().at(-1);
+      if (image === undefined) throw new Error('expected the protect to draw');
+      const document = mupdf.PDFDocument.openDocument(image, 'application/pdf');
+      try {
+        expect(document.authenticatePassword('')).toBe(0);
+      } finally {
+        document.destroy();
+      }
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: a document carrying its OWN encryption takes the checkpoint instead, and it is encrypted', async () => {
+    // The capture refuses for it (`documentProtection.ts`), so the same bus takes the terminal path: without this,
+    // the case above would pass for a bus that never checkpoints anything.
+    const maker = await mupdfWriter.open(flat);
+    await applySetDocumentProtection(maker, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: 'own' });
+    const encrypted = await mupdfWriter.serialise(maker);
+    await mupdfWriter.close(maker);
+
+    const { bus } = recordingBus();
+    const session = await mupdfWriter.open(encrypted, 'own');
+    const context = contextStub(true);
+    try {
+      await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      const entry = context.log.entries[0];
+      if (entry?.kind !== 'terminal') throw new Error('expected a terminal entry');
+      const checkpoint = new Uint8Array(await readFile(entry.checkpoint.path));
+      const document = mupdf.PDFDocument.openDocument(checkpoint, 'application/pdf');
+      try {
+        // THE FILE'S OWN PASSWORD opens it, and nothing else does: it is the document as it stood, never readable.
+        expect([document.authenticatePassword(''), document.authenticatePassword('own') > 0]).toStrictEqual([0, true]);
+      } finally {
+        document.destroy();
+      }
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('undo restores the prior from the held table: a second protect undone needs the FIRST password again', async () => {
+    const { bus } = recordingBus();
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub(true);
+    try {
+      await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      await bus.execute({ mupdf: session }, context, again, showingInputs(session));
+      await bus.undo({ mupdf: session }, context, restoreStub().restore, showingInputs(session));
+      expect(await accessOf(session)).toStrictEqual({ none: 0, user: 2 });
+
+      await bus.undo({ mupdf: session }, context, restoreStub().restore, showingInputs(session));
+      // AND THE FIRST UNDO LEAVES IT AS IT WAS: no password at all.
+      expect((await accessOf(session)).none).toBe(1);
+      expect(context.log.checkpointPaths()).toStrictEqual(new Set());
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('redo re-runs the WHOLE command from the held table, and protects the session again', async () => {
     const { bus, applied } = recordingBus();
     const session = await mupdfWriter.open(flat);
-    const context = contextStub();
-    // THE SESSION AFTER THE UNDO, as the restore rebuilds it from the checkpoint: the document before the protect.
-    const restored = await mupdfWriter.open(flat);
+    const context = contextStub(true);
     try {
-      await bus.execute({ mupdf: session }, context, protect, noByteImageExpected);
-      await bus.undo({ mupdf: session }, context, restoreStub().restore, noByteImageExpected);
-      // CONTROL: the restored session is unprotected before the redo, so the redo is what protects it.
-      expect((await accessOf(restored)).none).toBe(1);
+      await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      await bus.undo({ mupdf: session }, context, restoreStub().restore, showingInputs(session));
+      // CONTROL: the session is unprotected before the redo, so the redo is what protects it.
+      expect((await accessOf(session)).none).toBe(1);
 
-      await bus.redo({ mupdf: restored }, context, noByteImageExpected);
+      await bus.redo({ mupdf: session }, context, showingInputs(session));
 
       // THE DECISION: the redo's apply was handed the command whole, passwords included.
       expect(applied).toStrictEqual([protect, protect]);
-      expect(await accessOf(restored)).toStrictEqual({ none: 0, user: 2 });
+      expect(await accessOf(session)).toStrictEqual({ none: 0, user: 2 });
       expect(context.log.canRedo).toBe(false);
     } finally {
       await mupdfWriter.close(session);
-      await mupdfWriter.close(restored);
     }
   });
 
-  it('a REPLAY past the image (ADR-0115) re-applies the held command, so a rebuilt session is protected', async () => {
-    const { bus, applied } = recordingBus();
-    const session = await mupdfWriter.open(flat);
-    const context = contextStub();
-    const rebuilt = await mupdfWriter.open(flat);
-    try {
-      await bus.execute({ mupdf: session }, context, protect, noByteImageExpected);
-      // NOTHING DRAWN, so the image never took it and the entry is past the base.
-      expect(context.log.pastImage).toHaveLength(1);
-
-      expect(await bus.replayPastImage({ mupdf: rebuilt }, context, noByteImageExpected)).toBe(1);
-
-      expect(applied).toStrictEqual([protect, protect]);
-      expect(await accessOf(rebuilt)).toStrictEqual({ none: 0, user: 2 });
-    } finally {
-      await mupdfWriter.close(session);
-      await mupdfWriter.close(rebuilt);
-    }
-  });
-
-  it('CONTROL: the held table is the ONLY source, so a bus that holds nothing for the entry refuses and applies nothing', async () => {
-    // A SECOND BUS over the same log is a bus whose table never saw the entry: the state a redo that read the entry's
-    // own command would sail through, re-applying the kind alone, which is no command at all.
+  it('CONTROL: the held table is the ONLY source, so a bus that holds nothing refuses to undo or redo the entry', async () => {
+    // A SECOND BUS over the same log is a bus whose table never saw the entry: the state an undo that read the
+    // entry's marker, or a redo that read its kind, would sail through, restoring or re-applying nothing.
     const { bus } = recordingBus();
     const stranger = recordingBus();
     const session = await mupdfWriter.open(flat);
-    const context = contextStub();
-    const restored = await mupdfWriter.open(flat);
+    const context = contextStub(true);
     try {
-      await bus.execute({ mupdf: session }, context, protect, noByteImageExpected);
-      await bus.undo({ mupdf: session }, context, restoreStub().restore, noByteImageExpected);
+      await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      await expect(
+        stranger.bus.undo({ mupdf: session }, context, restoreStub().restore, showingInputs(session)),
+      ).rejects.toThrow(/none is held for this entry/u);
+      expect(context.log.canUndo).toBe(true);
+      expect((await accessOf(session)).none).toBe(0);
 
-      await expect(stranger.bus.redo({ mupdf: restored }, context, noByteImageExpected)).rejects.toThrow(
+      await bus.undo({ mupdf: session }, context, restoreStub().restore, showingInputs(session));
+      await expect(stranger.bus.redo({ mupdf: session }, context, showingInputs(session))).rejects.toThrow(
         /none is held for this entry/u,
       );
       expect(stranger.applied).toStrictEqual([]);
       expect(context.log.canRedo).toBe(true);
-      expect((await accessOf(restored)).none).toBe(1);
+      expect((await accessOf(session)).none).toBe(1);
     } finally {
       await mupdfWriter.close(session);
-      await mupdfWriter.close(restored);
     }
   });
 });

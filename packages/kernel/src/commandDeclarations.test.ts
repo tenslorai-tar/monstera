@@ -393,8 +393,8 @@ describe('the writer-shape table', () => {
     // A merge and a delete were right on disk and invisible until reopen before this existed.
     const exceptions: Readonly<Record<string, 'view-model' | 'nothing-drawn'>> = {
       rotatePages: 'view-model',
+      // A PROTECT DRAWS since ADR-0171 Decision 8: main's image is the document as protected, so it holds no readable copy.
       setPageTransition: 'nothing-drawn',
-      setDocumentProtection: 'nothing-drawn',
     };
     const declared = Object.fromEntries(
       Object.entries(declaredCommands).map(([kind, declaration]) => [kind, declaration.display]),
