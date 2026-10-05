@@ -88,3 +88,37 @@ Noto Sans Symbols 2, generated text, 2026-10-05 (scratch probes `editWordFace.mj
 - The PDFium host reads the bundled fonts folder, by argument and the grant the compose host has.
 - A document can now carry a subset font an edit embedded, inside its encryption when it has one (ADR-0171).
 - The overflow of a block past the page (the owner's Q7) is not this decision's; it is the next piece of P1.
+
+## Correction, 2026-10-05: no ToUnicode is written after the save, because PDFium's own is the font's cmap
+
+Decisions 6, 7 and 8 rest on a reading that a closer measurement replaces, made before any of them was built (the scratch
+probes `loadFontCodes.mjs` and `cmapStandIn.mjs`, PDFium 155.0.8044.0's Linux build, the bundled Arimo and Noto Sans
+Symbols 2, generated text, read back by PDFium reopened, MuPDF and pdf.js):
+
+- **The codes are the subset's glyph ids** (Identity-H, no CIDToGIDMap), and **PDFium's saved ToUnicode is built from
+  the loaded font's cmap**, every glyph it maps, not from the text that was set. The Symbols 2 subset's ToUnicode named
+  U+10140 correctly for its glyph while the content used no such code.
+- **A character past the BMP is drawn as code 0 by `FPDFText_SetText`**, the `.notdef` glyph, so the measurement above
+  (*PDFium writes no Unicode*) saw the effect and not the cause: a ToUnicode written afterwards would make it READ right
+  over a glyph that draws wrong. Set with **`FPDFText_SetCharcodes`** and the subset's glyph ids, the same text draws (ink
+  120 against 66 in its band) and reads U+10140 in all three readers, with nothing written by us.
+- **A one-glyph box font whose cmap maps the REAL character to the box glyph** draws the box and reads the real
+  character in all three readers: 中 by `SetText`, U+1F600 by `SetCharcodes`. Each box font needs its own name after
+  the cmap is replaced: two built from the same subset were written as one font, and the second read as the first's
+  character.
+
+So, in place of Decisions 6 to 8:
+
+6. **No ToUnicode is written after the save.** A face's subset carries the characters its pieces need, and a piece is set
+   by `FPDFText_SetCharcodes` with the subset's glyph ids where its text holds a character past the BMP, and by
+   `FPDFText_SetText` otherwise. PDFium's ToUnicode is then right by construction, and PDFium's save stays the only
+   writer of the saved bytes, so a document opened with its password takes pieces and boxes like any other, with no
+   decrypted copy (ADR-0171).
+7. **A grapheme no face carries is the box**, as decided, in a one-glyph subset per distinct character whose cmap maps
+   that character to the box glyph, named `TAG+Name` from its bytes after the cmap is replaced.
+8. **The read-back reads by code point**, `FPDFText_GetUnicode` per character, live and from the saved bytes, never one
+   UTF-16 unit per index, and nothing is saved that it has not read.
+
+**Rejected, in addition:** writing a ToUnicode after the save. It makes a character past the BMP read right while it
+draws as `.notdef`, it needs the saved bytes of a password document decrypted and encrypted again, and it is a second
+writer of the bytes PDFium has just written (B3).
