@@ -82,3 +82,33 @@ a native change and is put to the owner rather than taken inside this decision.
 
 Keep the bookmarks as an option in the redaction confirm dialog, off by default, as the title is (ADR-0079,
 answered 2026-09-21)?
+
+## Correction, 2026-10-05: a burned page's copies are also in dictionaries it shares, and inside its forms
+
+Found by the stage audit of `8f322ba7..974df9f5` (QQQQQQQ-9). Decisions 2 and 4 were built against a page that holds
+its own resources and draws its tagged text itself. Measured against MuPDF 1.28.0 with the leak corpus, three shapes
+kept the removed text in the file after a burn-in:
+
+| where the copy was | why it stayed |
+|---|---|
+| a property list in resources the page inherits from `/Pages`, or in one resources object two pages share | the filter gives the burned page resources of its own and leaves the dictionaries it read where they were; the build read only the page's own after the filter |
+| the element tagging text inside a Form XObject | it is found through the form's own `/StructParents`, never the page's |
+| **the original form itself, its content whole** | the filter draws a filtered copy, and the element's `/Stm` still named the original, which kept it through the collection |
+
+Decision 4 is corrected in two ways, and Decision 2 in one:
+
+- **The lists are the ones in every dictionary the page read, before the filter and after it, and in its forms.** The
+  filter copies a list it keeps into the new resources as the same object, and drops a tag none of whose content it
+  wrote without copying its list (`pdf-op-filter.c`, `copy_resource` and `pdf_filter_EMC`), so text drawn as outlines
+  is reached only through the dictionaries read before the filter.
+- **They are stripped in place, not through a copy.** A copy kept the original for every other page that reads the
+  dictionary, and under inheritance that is every sibling. **The stated cost widens:** another page that reads the same
+  list loses its alternates too. Usage cannot be told apart without parsing content streams, which ADR-0163's last
+  section already rules out for this build.
+- **Decision 2's elements are also found through each Form XObject's `/StructParents`**, and an element's reference to
+  a form the page no longer draws is pointed at the filtered copy, which keeps the same `/StructParents` and its
+  marked-content operators. A reference on another page is left, since that page still draws the original.
+
+Rejected: **keeping the copy-on-write and accepting the residue**, which leaves the removed text in the file in the
+common case; **dropping an element's reference to the original** rather than repointing it, which also removes the
+text and leaves the element naming no content.
