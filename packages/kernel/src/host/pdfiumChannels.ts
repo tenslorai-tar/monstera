@@ -371,11 +371,13 @@ export const pdfiumChannels = {
     // read is refused — at the call that wanted the engine rather than at the
     // open (ADR-0048's withdrawn Decision 3).
     //
-    // PLUS ONE APPLY REFUSAL OF ITS OWN: an in-place edit whose typed text the
-    // page's font cannot carry (ADR-0096). On the apply only — capture and invert
-    // cannot produce it — and on this engine only.
-    // AND A SECOND: one occurrence named by its point that no single text object holds there (ADR-0156).
-    // AND A THIRD: a replacement that matches nothing or changes nothing, which makes no version (ADR-0169 Decision 6).
+    // PLUS APPLY REFUSALS OF ITS OWN, on this engine only: an in-place edit whose typed text the page's font cannot
+    // carry (ADR-0096); one occurrence named by its point that no single text object holds there (ADR-0156); a
+    // replacement that matches nothing or changes nothing, which makes no version (ADR-0169 Decision 6); and one that
+    // would move the text after it on its line.
+    //
+    // `text-not-writable` ON THE INVERT TOO: an undo writes the prior's text back and reads it back as the edit did, so
+    // a font can fail to carry it there as well (finding RRRRRRR-6). The other three are an apply's alone.
     //
     // `edit-refused` ON ALL THREE, carrying the step and PDFium's number (ADR-0169 Decision 4): capture, apply and
     // invert each open the image and run native calls, and any of them can refuse at a step a person is told about.
@@ -383,6 +385,7 @@ export const pdfiumChannels = {
       ...byteImageWire,
       transferFailures: [...byteImageWire.transferFailures, 'edit-refused'] as const,
       applyFailures: ['text-not-writable', 'text-not-in-place', 'nothing-to-replace', 'replace-moves-line'] as const,
+      invertFailures: ['text-not-writable'] as const,
     },
     // IN A FILE (ADR-0138): `replaceTextObject` and `editTextBlock` multiply per-entry text bounds past a frame.
     commandRoute: 'file',

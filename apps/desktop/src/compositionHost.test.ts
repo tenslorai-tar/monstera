@@ -1371,6 +1371,42 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(onDisk.filter((text) => text.includes(PASSWORD))).toStrictEqual([]);
   });
 
+  /**
+   * AN UNDO'S "FONT CANNOT CARRY IT" REACHES THE RENDERER BY NAME (finding RRRRRRR-6). The stretch neither half
+   * crosses: `contractHandlers.test.ts` stubs `DocumentCommands` to throw the error, and the kernel proof throws it
+   * in process. Between them sat the host's invert, which answered it as `engine-refused`, and the person read
+   * *Something went wrong*. The peer names one character the prior holds and one it never sent, and only the first
+   * may reach the person: a host is hostile, and what an undo writes is the prior.
+   */
+  it('an undo the PDFium host refuses for a font that cannot carry it reaches the renderer BY NAME', async () => {
+    const mupdf = platformAnswering(serialisingEngine());
+    const base = pdfiumPeer();
+    const pdfium: FakePeer = (channel, params) =>
+      channel === 'engine/invert'
+        ? { ok: false, error: { code: 'text-not-writable', detail: { characters: 'AZ' } } }
+        : base.peer(channel, params);
+    const second = platformAnswering(pdfium);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('undo-refused.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+    });
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const executed = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: opened.value.version },
+    });
+    expect(executed.ok, JSON.stringify(executed)).toBe(true);
+
+    const undone = await handlers['document.undo']({ docId: opened.value.docId });
+    // THE PRIOR IS `WAS` (the peer's capture), so `A` is a character the undo wrote back and `Z` is not.
+    expect(undone).toStrictEqual({ ok: false, error: { code: 'text-not-writable', detail: { characters: 'A' } } });
+    expect(second.harness.calls).toContain('peer.request:engine/invert');
+  });
+
   it('routes editTextBlock to the PDFium host, and its "font cannot carry it" refusal reaches the renderer BY NAME', async () => {
     // THE STRETCH NEITHER HALF OF THE PAIR CROSSES (ADR-0096): the kernel proof
     // throws `TextNotWritableError` in-process, and the UI case stubs the whole

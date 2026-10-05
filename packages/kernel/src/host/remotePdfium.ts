@@ -197,6 +197,17 @@ export function typedBy(command: CommandOfKind<KindsRoutedTo<'pdfium'>>): string
   }
 }
 
+/**
+ * Every string a prior holds, joined: the text an undo writes back, which is the only text a `text-not-writable` from
+ * an invert may name. Read structurally rather than per kind, because every string in a prior is one `main` sent.
+ */
+function textIn(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(textIn).join('');
+  if (typeof value === 'object' && value !== null) return Object.values(value).map(textIn).join('');
+  return '';
+}
+
 export function remotePdfiumExecution(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
@@ -359,6 +370,9 @@ export function remotePdfiumExecution(
             password,
             into,
           }),
+          // WHAT AN UNDO WRITES is the prior's text, so a refusal's characters must come from it, as an apply's must
+          // come from what was typed (RRRRRRR-6).
+          () => textIn(inverse),
         ),
       ),
   };

@@ -344,7 +344,11 @@ export function createPdfiumHandlers({
         inverted = await execution.invert(image, inverse.kind, inverse.prior);
       } catch (error) {
         // AN UNDO CAN LOSE TEXT AS AN EDIT CAN — it regenerates the page by the same call — so it refuses at the same
-        // read-back and says so the same way.
+        // read-back and says so the same way, including a font that does not carry the text it wrote back (RRRRRRR-6):
+        // `refusedBy` alone answered that as `engine-refused`, which reached the person as *Something went wrong*.
+        if (error instanceof TextNotWritableError) {
+          return { ok: false, error: { code: 'text-not-writable', detail: { characters: error.characters } } } as const;
+        }
         return refusedBy(error);
       }
       const written = await files.writeOutput(held.outputDirectory, into, inverted);

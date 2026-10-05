@@ -10,7 +10,12 @@ import {
 } from '@monstera/contract';
 
 import type { ByteImage, ImageSession } from '../engineSeam.js';
-import { EditRefusedError, NothingToReplaceError, ReplaceMovesLineError } from '../textEditRefusals.js';
+import {
+  EditRefusedError,
+  NothingToReplaceError,
+  ReplaceMovesLineError,
+  TextNotWritableError,
+} from '../textEditRefusals.js';
 import { TOKEN_BYTES } from '../token.js';
 import type { HostArea } from './engineHandlers.js';
 import { sessionFileAnswers } from './fileAnswers.js';
@@ -224,6 +229,8 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         calls.push(`invert:${seen(session)}`);
         // AN UNDO REGENERATES AS AN EDIT DOES, so it is refused at the same step with PDFium's number beside it.
         if (session.bytes.length === 3) throw new EditRefusedError('generate', 6, 'FPDFPage_GenerateContent failed');
+        // SIX BYTES ARE A PAGE WHOSE FONT DOES NOT CARRY THE TEXT THE UNDO WRITES BACK (RRRRRRR-6).
+        if (session.bytes.length === 6) throw new TextNotWritableError('A');
         return Promise.resolve(applied);
       },
     },
@@ -461,6 +468,34 @@ describe('the PDFium host body', () => {
     });
     expect(answerIn(stream.sent[2])).toMatchObject({
       body: { ok: false, error: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } } },
+    });
+    expect(files.written.size).toBe(0);
+  });
+
+  /**
+   * AN UNDO A FONT CANNOT CARRY IS SAID BY NAME (RRRRRRR-6): `refusedBy` alone knew only a refusal at a step, so this
+   * answered `engine-refused` and the person read *Something went wrong*. The channel must declare the code on the
+   * invert as well, or the host's own outbound check turns the answer into `internal`.
+   */
+  it('answers an undo whose text a font cannot carry as text-not-writable, with the characters, and writes nothing', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1, 2, 3, 4, 5, 6]));
+
+    stream.feed(
+      request('i1', 'engine/invert', {
+        session,
+        inverse: { kind: 'replaceTextObject', prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] } },
+        from: IN,
+        password: null,
+        into: OUT,
+      }, undefined, files),
+    );
+    await stream.whenSent(2);
+
+    expect(answerIn(stream.sent[1])).toMatchObject({
+      body: { ok: false, error: { code: 'text-not-writable', detail: { characters: 'A' } } },
     });
     expect(files.written.size).toBe(0);
   });

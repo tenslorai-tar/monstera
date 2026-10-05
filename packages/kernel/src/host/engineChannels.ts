@@ -1487,7 +1487,14 @@ export interface WireShape<
   TWrote extends z.ZodType,
   TTransferFailure extends readonly string[],
   TApplyFailure extends readonly string[] = readonly [],
+  TInvertFailure extends readonly string[] = readonly [],
 > {
+  /**
+   * What `engine/invert` can refuse with beyond the transfer failures, {@link applyFailures}' rule from the other side:
+   * an undo that regenerates a page writes the prior's text back and reads it back as an edit does, so it can meet a
+   * font that does not carry what it wrote. Declared where an engine's invert can produce it and nowhere else.
+   */
+  readonly invertFailures?: TInvertFailure;
   /**
    * What `engine/apply` ALONE can refuse with, beyond the transfer failures.
    *
@@ -1876,12 +1883,13 @@ export function coreEngineChannels<
   TWrote extends z.ZodType,
   const TTransferFailure extends readonly string[],
   const TApplyFailure extends readonly string[] = readonly [],
+  const TInvertFailure extends readonly string[] = readonly [],
 >(
   schemas: CoreChannelSchemas<
     TCommand,
     TCapture,
     TInverse,
-    WireShape<TOpen, TOpenFailure, TOpened, TRead, TWrite, TWrote, TTransferFailure, TApplyFailure>
+    WireShape<TOpen, TOpenFailure, TOpened, TRead, TWrite, TWrote, TTransferFailure, TApplyFailure, TInvertFailure>
   >,
 ) {
   const wire = schemas.wire;
@@ -2004,7 +2012,7 @@ export function coreEngineChannels<
         })
         .strict(),
       wire.wrote,
-      ['no-such-session', ...wire.transferFailures],
+      ['no-such-session', ...wire.transferFailures, ...(wire.invertFailures ?? ([] as const))],
     ),
   };
 }
