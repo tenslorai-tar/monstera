@@ -237,6 +237,13 @@ export const ENGINE_WORD_LINE_MAX = 1024;
 export const ENGINE_LINK_URI_MAX = 2048;
 
 /**
+ * How long an address may be when a person follows its link (ADR-0167): sixteen times the shown bound, so a tracking
+ * link is opened as the document holds it. Past this it is not opened at all, since an address cut short is another
+ * address.
+ */
+export const ENGINE_LINK_ADDRESS_MAX = 32_768;
+
+/**
  * How many recognised lines one page may answer with.
  *
  * Measured 2026-09-10 across the eleven-document corpus at 200 dpi: **5 to 54
@@ -2532,6 +2539,22 @@ export const engineChannels = {
    * (`cellFills.ts`). A shape, not MuPDF's own format, so the host builds it and the schema bounds
    * it: the count, each coordinate, and each channel.
    */
+  'engine/link-address': fileAnswered(
+    'Reads one external link’s address in full, by its place among the page’s links, for a person following it.',
+    z
+      .object({
+        session: sessionSchema,
+        page: z.number().int().nonnegative(),
+        /** The link's position in `engine/page-links`' answer for the same page. */
+        index: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z.object({ uri: z.string().max(ENGINE_LINK_ADDRESS_MAX) }).strict(),
+    // TWO REFUSALS BY NAME: no external link at that place, and an address too long to open as written. Neither is
+    // a failure of the host, and main tells the person which.
+    ['no-such-session', 'no-such-link', 'address-too-long'],
+  ),
+
   'engine/page-fills': fileAnswered(
     'Reads one page’s filled shapes from a session this host holds.',
     z

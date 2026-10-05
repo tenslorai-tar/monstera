@@ -30,7 +30,7 @@ import { readAnnotationWords, readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { readPageFills } from '../pageFills.js';
 import { readPageWordBoxes } from '../wordBoxes.js';
-import { readPageLinks } from '../pageLinks.js';
+import { readLinkAddress, readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
 import { withCellFills } from '../cellFills.js';
 import { linesOf, parsePageStructure, parsePageTables, parsePageText } from '../textStructure.js';
@@ -320,6 +320,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       // what the HOST's document says rather than what a stub was told to say.
       pageText: readPageTextJson,
       pageLinks: readPageLinks,
+      linkAddress: readLinkAddress,
       pageFills: readPageFills,
       wordBoxes: readPageWordBoxes,
       // NOT THE REAL READER, where its neighbours above are. `recognisePage`
@@ -802,6 +803,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         pageLinks: () => {
           throw new Error('unused');
         },
+        linkAddress: () => {
+          throw new Error('unused');
+        },
         pageFills: () => {
           throw new Error('unused');
         },
@@ -949,6 +953,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         pageLinks: () => {
           throw new Error('the rotation-refusal case must not read page links');
+        },
+        linkAddress: () => {
+          throw new Error('the rotation-refusal case must not read a link address');
         },
         pageFills: () => {
           throw new Error('the rotation-refusal case must not read page fills');

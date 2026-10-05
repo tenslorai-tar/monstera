@@ -187,6 +187,9 @@ function handlers() {
     openWebPage: () => {
       throw new Error('registration cases must not reach the browser');
     },
+    openLink: () => {
+      throw new Error('registration cases must not follow a link');
+    },
     openStore: () => {
       throw new Error('registration cases must not reach the Store');
     },

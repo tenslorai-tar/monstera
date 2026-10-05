@@ -89,6 +89,7 @@ import {
   readDestinations,
   extractPages,
   readLayers,
+  readLinkAddress,
   readPageLinks,
   readPageText,
   readPageTextJson,
@@ -154,6 +155,7 @@ import {
   type DocumentAnnotationsReader,
   type DocumentAnnotationCopyReader,
   type DocumentAnnotationWordsReader,
+  type DocumentLinkAddressReader,
   type DocumentFlatFieldsReader,
   type DocumentBarcodesReader,
   type AnnotationDataSource,
@@ -612,6 +614,15 @@ const localAnnotationWords: DocumentAnnotationWordsReader = (id, sessions, page,
   return readAnnotationWords(held, page, index);
 };
 
+const noLinkAddress: DocumentLinkAddressReader = () => Promise.reject(new Error('this case follows no link'));
+
+/** `localAnnotationWords`' composition and its reason, for one link's whole address (ADR-0167). */
+const localLinkAddress: DocumentLinkAddressReader = (id, sessions, page, index) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return readLinkAddress(held, page, index);
+};
+
 const noFormFields: DocumentFormFieldsReader = () =>
   Promise.reject(new Error('this case does not list form fields'));
 
@@ -834,6 +845,7 @@ const INERT = {
   annotations: noAnnotations,
   annotationCopy: noAnnotationCopy,
   annotationWords: noAnnotationWords,
+  linkAddress: noLinkAddress,
   formFields: noFormFields,
   flatFields: noFlatFields,
   barcodes: noBarcodes,
@@ -912,6 +924,7 @@ const LOCAL_READS = {
   annotations: localAnnotations,
   annotationCopy: localAnnotationCopy,
   annotationWords: localAnnotationWords,
+  linkAddress: localLinkAddress,
   formFields: localFormFields,
   flatFields: localFlatFields,
   barcodes: localBarcodes,
@@ -1044,6 +1057,49 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
 
     const applied = await commands.execute(docId, rotateOnce);
     expect(applied.version).toBeGreaterThan(0);
+  });
+});
+
+describe('a link’s whole address, through the lane (ADR-0167)', () => {
+  const address = `https://example.org/track?id=${'a'.repeat(3000)}`;
+  let linked: DocId;
+  let linkedSession: MupdfSession;
+  let linkedService: DocumentService;
+
+  // A DOCUMENT THAT ALREADY HOLDS THE LINK, on its second page: adding one is terminal, so it checkpoints, and this
+  // case is about reading, not about the save path.
+  beforeAll(async () => {
+    const pdf = await PDFDocument.create();
+    pdf.addPage([612, 792]);
+    const page = pdf.addPage([612, 792]);
+    const link = pdf.context.register(
+      pdf.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [72, 600, 200, 640], A: { S: 'URI', URI: PDFString.of(address) } }),
+    );
+    page.node.set(PDFName.of('Annots'), pdf.context.obj([link]));
+    const bytes = await pdf.save();
+    const path = join(directory, 'linked.pdf');
+    writeFileSync(path, bytes);
+    const registry = new CapabilityRegistry();
+    linkedService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
+    const outcome = await linkedService.open(registry.mint(path));
+    if (outcome.kind !== 'opened') throw new Error('the linked fixture did not open');
+    linked = outcome.docId;
+    linkedSession = await mupdfWriter.open(bytes);
+  });
+
+  it('answers the address WHOLE, at the version the link list was read at — STALE at any other', async () => {
+    const held = new EngineSessions();
+    held.hold(linked, { mupdf: linkedSession });
+    const commands = new DocumentCommands({ ...LOCAL_READS, documents: linkedService, bus: bus(), engine: held });
+    const { version } = await commands.pageLinks(linked, 1);
+
+    // WHOLE, past the listing's 2,048: the listing shows it cut, and following it opens what the document holds.
+    expect(await commands.linkAddress(linked, 1, 0, version)).toStrictEqual({ kind: 'address', uri: address });
+    // A MOVED DOCUMENT is stale rather than another link's address, and a place with no link is said by name.
+    expect(await commands.linkAddress(linked, 1, 0, asDocVersion(Number(version) + 1))).toStrictEqual({ kind: 'stale' });
+    expect(await commands.linkAddress(linked, 1, 5, version)).toStrictEqual({ kind: 'no-such-link' });
+    // CONTROL: the page without the link has none at that place.
+    expect(await commands.linkAddress(linked, 0, 0, version)).toStrictEqual({ kind: 'no-such-link' });
   });
 });
 
@@ -1278,6 +1334,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           edit: () => false,
         copyText: () => false,
         openWebPage: () => Promise.resolve(false),
+        openLink: () => Promise.reject(new Error('this case follows no link')),
         openStore: () => Promise.resolve(false),
           closeListening: () => false,
         cloud: unconfiguredCloud(),
@@ -2542,6 +2599,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         edit: () => false,
         copyText: () => false,
         openWebPage: () => Promise.resolve(false),
+        openLink: () => Promise.reject(new Error('this case follows no link')),
         openStore: () => Promise.resolve(false),
         closeListening: () => false,
         cloud: unconfiguredCloud(),

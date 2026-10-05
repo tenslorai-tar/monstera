@@ -3851,6 +3851,37 @@ export const channels = {
   ),
 
   /**
+   * Opens one of a document's web links in the person's browser, once they have asked for it (ADR-0167).
+   *
+   * **The link is named, never its address**: by its place among `document.pageLinks`' answer for the page, at the
+   * version that answer carried. `main` reads the address from the document in full and opens it only when
+   * `isFollowable` allows its scheme, so the renderer can choose only among links the document already holds. The
+   * answers that are not `opened` are each a sentence the renderer says: the document moved, no web link is there,
+   * the address is too long to open as written, its scheme is not opened, or the system did not open it.
+   */
+  'document.openLink': channel(
+    'Opens one of a document’s web links in the person’s browser, read by main from the document.',
+    z
+      .object({
+        docId: docIdSchema,
+        version: docVersionSchema,
+        page: z.number().int().nonnegative(),
+        index: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('opened') }),
+      z.object({ kind: z.literal('stale') }),
+      z.object({ kind: z.literal('no-such-link') }),
+      z.object({ kind: z.literal('too-long') }),
+      /** The scheme as the URL parser read it, or `null` for an address that is not a URL. */
+      z.object({ kind: z.literal('scheme-refused'), scheme: z.string().max(64).nullable() }),
+      z.object({ kind: z.literal('not-opened') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
    * Pastes the annotation clipboard onto one page — main mints the `importAnnotations`.
    *
    * `empty` is an answer rather than an error: nothing copied yet is a state a person is in, and

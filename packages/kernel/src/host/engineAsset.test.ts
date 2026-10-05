@@ -152,6 +152,9 @@ async function joined(): Promise<{
       pageLinks: () => {
         throw new Error('unused');
       },
+      linkAddress: () => {
+        throw new Error('unused');
+      },
       pageFills: () => {
         throw new Error('unused');
       },

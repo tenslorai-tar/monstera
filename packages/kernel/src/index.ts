@@ -129,6 +129,7 @@ export {
   type HostAccessibilityCheck,
   type HostFormFieldsReader,
   type HostLayersReader,
+  type HostLinkAddressReader,
   type HostOcrReader,
   type HostPageImage,
   type HostPageFillsReader,
@@ -342,6 +343,7 @@ export {
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfLayers,
+  remoteMupdfLinkAddress,
   remoteMupdfSignatures,
   remoteMupdfSignaturesKept,
   remoteMupdfOcr,
@@ -518,7 +520,7 @@ export {
 export { type TextAccuracy, scoreAgainstTruth } from './textAccuracy.js';
 // THE TYPES ONLY, for the reason above: a shape a consumer holds needs no
 // engine, and `readPageLinks` — which does — stays behind `/engine`.
-export type { LinkBounds, ListedPageLinks, PageLink } from './pageLinks.js';
+export type { LinkAddress, LinkBounds, ListedPageLinks, PageLink } from './pageLinks.js';
 export type { Destination, ListedDestinations } from './destinations.js';
 // TYPE ONLY, for the reason above. `readAnnotations` reaches MuPDF and is on
 // `@monstera/kernel/engine`; the listed shape is a plain object.

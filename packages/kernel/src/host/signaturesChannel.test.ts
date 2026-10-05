@@ -77,6 +77,7 @@ async function joined(parts: {
       geometry: refuse('read the page tree'),
       pageText: refuse('read the page text'),
       pageLinks: refuse('read the page links'),
+      linkAddress: refuse('read a link address'),
       pageFills: refuse('read the page fills'),
       wordBoxes: refuse('read the word boxes'),
       ocr: refuse('recognise a page'),

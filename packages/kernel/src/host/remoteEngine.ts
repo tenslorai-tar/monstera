@@ -35,6 +35,7 @@ import type {
   HostFlatFieldsReader,
   HostFormFieldsReader,
   HostLayersReader,
+  HostLinkAddressReader,
   HostOcrReader,
   HostPageFillsReader,
   HostPageLinksReader,
@@ -359,6 +360,22 @@ export function remoteMupdfPageLinks(
       'engine/page-links',
       await client['engine/page-links']({ session: sessions.handleFor(session), page }),
     );
+}
+
+/**
+ * One link's whole address, over the boundary (ADR-0167). The host's two refusals by name come back as the values
+ * the local reader answers, so main decides on one shape whichever side read it.
+ */
+export function remoteMupdfLinkAddress(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostLinkAddressReader {
+  return async (session, page, index) => {
+    const result = await client['engine/link-address']({ session: sessions.handleFor(session), page, index });
+    if (!result.ok && result.error.code === 'no-such-link') return { kind: 'no-such-link' };
+    if (!result.ok && result.error.code === 'address-too-long') return { kind: 'too-long' };
+    return { kind: 'address', uri: answered('engine/link-address', result).uri };
+  };
 }
 
 /**

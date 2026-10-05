@@ -32,6 +32,8 @@ import {
   SECRET_SETTING_IDS,
   channels,
   createClient,
+  isFollowable,
+  schemeOf,
   wrapHandlers,
 } from '@monstera/contract';
 import {
@@ -2291,6 +2293,18 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           truncated: false,
         }),
       );
+    },
+
+    // A LINK FOLLOWED AS MAIN FOLLOWS ONE (ADR-0167), from the seeded links: by its place, at the version, through the
+    // contract's one scheme rule. No browser opens; a case reads what was asked through `bridge`'s observer.
+    'document.openLink': ({ docId, version, page, index }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      if (version !== current) return Promise.resolve(ok({ kind: 'stale' as const }));
+      const link = pageLinks[page]?.[index];
+      if (link?.kind !== 'external') return Promise.resolve(ok({ kind: 'no-such-link' as const }));
+      if (!isFollowable(link.uri)) return Promise.resolve(ok({ kind: 'scheme-refused' as const, scheme: schemeOf(link.uri) }));
+      return Promise.resolve(ok({ kind: 'opened' as const }));
     },
 
     // NO ENGINE, SO NO WORD BOXES unless a case states them: every line keeps the estimate, which is what a read that

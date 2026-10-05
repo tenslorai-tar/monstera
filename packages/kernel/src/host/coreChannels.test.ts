@@ -67,6 +67,9 @@ const MUPDF_READS = [
   'engine/page-geometry',
   'engine/page-text',
   'engine/page-links',
+  // ONE LINK'S WHOLE ADDRESS IS ONE OF MuPDF'S READS for `engine/page-links`' reason: the same walk, one entry of it,
+  // for a person following the link (ADR-0167).
+  'engine/link-address',
   // A PAGE'S FILLS ARE ONE OF MuPDF'S READS: drawing the page parses it, and a table cell's
   // background is joined from them in main (`cellFills.ts`).
   'engine/page-fills',

@@ -175,6 +175,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     edit: () => false,
     copyText: () => false,
     openWebPage: () => Promise.resolve(false),
+    openLink: () => Promise.reject(new Error('no case here follows a link')),
     openStore: () => Promise.resolve(false),
     closeListening: () => false,
     cloud: unconfiguredCloud(),
@@ -469,6 +470,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // ONE MARK'S WORDS, BOUNDED AT `MAX_ANNOTATION_TEXT` — the most an edit can write back — so the answer is a
   // function of one comment's bound, never of the document or how many marks it carries.
   'document.annotationWords': 'needs an engine session',
+  // A LINK NAMED BY ITS PLACE, never its address, and an answer that is a kind and at most a bounded scheme (ADR-0167):
+  // nothing a document contributes reaches the renderer through it.
+  'document.openLink': 'needs an engine session',
   'document.pasteAnnotations': 'needs an engine session and a copy made first',
   // BOUNDED AT 64 BARCODES OF 7,089 CHARACTERS, per PAGE — `document.flatFieldCandidates`' shape.
   'document.pageBarcodes': 'needs an engine session',

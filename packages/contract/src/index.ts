@@ -176,6 +176,7 @@ export {
   TEXT_BLOCKS_PART,
 } from './channels.js';
 export { acceptAnswer, createClient, wrapHandler, wrapHandlers } from './boundary.js';
+export { FOLLOWED_SCHEMES, isFollowable, schemeOf } from './followedLinks.js';
 export { BRIDGE_KEY, type MonsteraBridge, PRELOAD_CHANNEL_IDS, type PreloadChannelId } from './bridge.js';
 export {
   AI_ANSWER_REFUSALS,

@@ -146,6 +146,9 @@ function start(stream: HostByteStream) {
     pageLinks: () => {
       throw new Error('no case here reads page links');
     },
+    linkAddress: () => {
+      throw new Error('no case here reads a link address');
+    },
     pageFills: () => {
       throw new Error('no case here reads page fills');
     },

@@ -1,7 +1,7 @@
 import { open, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { IncidentLog } from '@monstera/contract';
+import { IncidentLog, isFollowable } from '@monstera/contract';
 import { sweepCheckpointDirectories } from '@monstera/kernel';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
 
@@ -444,6 +444,17 @@ startShell(() => {
     openStore: async (page) => {
       await shell.openExternal(STORE_URIS[page]);
       return true;
+    },
+    // A DOCUMENT'S LINK, once the person asked for it (ADR-0167), and the scheme is checked AGAIN here, where the
+    // address leaves for the operating system: the only caller passes what `isFollowable` allowed, and a mistake
+    // upstream still cannot hand Windows a `file:` or a registered handler. A system with nothing to open the address
+    // rejects; that is the answer *not opened*, which the person is told, not a failure of this process.
+    openLink: async (address) => {
+      if (!isFollowable(address)) throw new Error('only an https, http or mailto address is opened from a document');
+      return shell.openExternal(address).then(
+        () => true,
+        () => false,
+      );
     },
     // Same trade, one layer along. The platform's own module may not import
     // Electron either, so *where the app may write* — which is Electron's

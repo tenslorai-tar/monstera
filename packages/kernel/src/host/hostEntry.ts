@@ -24,7 +24,7 @@ import { snapshotRegion } from '../pageSnapshot.js';
 import { recognisePage } from '../ocrRecognise.js';
 import { readPageFills } from '../pageFills.js';
 import { readPageWordBoxes } from '../wordBoxes.js';
-import { readPageLinks } from '../pageLinks.js';
+import { readLinkAddress, readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
 import { openMupdfShim } from '../mupdfRaw.js';
 import { cryptoBytes } from '../token.js';
@@ -145,6 +145,7 @@ const engineHandlers = createEngineHandlers({
   // the same answer. The Word export below calls that same reader in this process.
   pageText: readPageTextJson,
   pageLinks: readPageLinks,
+  linkAddress: readLinkAddress,
   pageFills: readPageFills,
   wordBoxes: readPageWordBoxes,
   // RUNS HERE, and that is §3's matrix rather than a placement. Recognition

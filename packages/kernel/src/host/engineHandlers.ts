@@ -30,7 +30,7 @@ import {
   type RecognisedPage,
 } from '../ocrRecognise.js';
 import type { PageFill } from '../cellFills.js';
-import type { ListedPageLinks } from '../pageLinks.js';
+import type { LinkAddress, ListedPageLinks } from '../pageLinks.js';
 import type { PageWordBoxes } from '../wordBoxes.js';
 import type { PageTextRead } from '../textStructure.js';
 import type { AccessibilityReport } from '../accessibilityRules.js';
@@ -94,6 +94,9 @@ export type HostPageLinksReader = (
   session: MupdfSession,
   page: number,
 ) => Promise<ListedPageLinks>;
+
+/** Reads one external link's address in full, by its place on its page (ADR-0167). */
+export type HostLinkAddressReader = (session: MupdfSession, page: number, index: number) => Promise<LinkAddress>;
 
 /** Reads one page's filled shapes — what a table cell's background is joined from. */
 export type HostPageFillsReader = (session: MupdfSession, page: number) => Promise<readonly PageFill[]>;
@@ -466,6 +469,8 @@ export interface EngineHandlerParts {
   readonly geometry: PageGeometryReader;
   readonly pageText: HostPageTextReader;
   readonly pageLinks: HostPageLinksReader;
+  /** One link's whole address, for a person following it. `engine/link-address`. */
+  readonly linkAddress: HostLinkAddressReader;
   /** A page's filled shapes. `engine/page-fills`. */
   readonly pageFills: HostPageFillsReader;
   /** A page's word boxes (ADR-0137). `engine/word-boxes`. */
@@ -525,6 +530,7 @@ export function createEngineHandlers({
   geometry,
   pageText,
   pageLinks,
+  linkAddress,
   pageFills,
   wordBoxes,
   ocr,
@@ -896,6 +902,16 @@ export function createEngineHandlers({
       // page index outside it.
       const listed = await pageLinks(held.session, page);
       return { ok: true, value: { links: [...listed.links], truncated: listed.truncated } };
+    },
+
+    'engine/link-address': async ({ session, page, index }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the link read's reason: the two answers that are not an address are values, not throws.
+      const read = await linkAddress(held.session, page, index);
+      if (read.kind === 'no-such-link') return { ok: false, error: { code: 'no-such-link' } } as const;
+      if (read.kind === 'too-long') return { ok: false, error: { code: 'address-too-long' } } as const;
+      return { ok: true, value: { uri: read.uri } };
     },
 
     'engine/page-fills': async ({ session, page }) => {

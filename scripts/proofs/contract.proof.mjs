@@ -1408,6 +1408,7 @@ export const handlers: ContractHandlers = {
   'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.copyAnnotations': () => Promise.resolve(ok({ kind: 'nothing-copyable' as const })),
   'document.annotationWords': () => Promise.resolve(ok({ kind: 'stale' as const })),
+  'document.openLink': () => Promise.resolve(ok({ kind: 'stale' as const })),
   'document.pasteAnnotations': () => Promise.resolve(ok({ kind: 'empty' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
@@ -1602,6 +1603,7 @@ export const handlers: ContractHandlers = {
   'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.copyAnnotations': () => Promise.resolve(ok({ kind: 'nothing-copyable' as const })),
   'document.annotationWords': () => Promise.resolve(ok({ kind: 'stale' as const })),
+  'document.openLink': () => Promise.resolve(ok({ kind: 'stale' as const })),
   'document.pasteAnnotations': () => Promise.resolve(ok({ kind: 'empty' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
@@ -1871,6 +1873,7 @@ export const shim: ContractClient = {
   'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.copyAnnotations': () => Promise.resolve(ok({ kind: 'nothing-copyable' as const })),
   'document.annotationWords': () => Promise.resolve(ok({ kind: 'stale' as const })),
+  'document.openLink': () => Promise.resolve(ok({ kind: 'stale' as const })),
   'document.pasteAnnotations': () => Promise.resolve(ok({ kind: 'empty' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),

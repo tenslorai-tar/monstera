@@ -155,6 +155,7 @@ function harness(
   // RECORDED for `sessioned`'s reason: the handler forwards one argument, and a handler that dropped
   // it would answer exactly what a correct one answers.
   const webPages: string[] = [];
+  const linksOpened: string[] = [];
   const settings = createEphemeralSettings();
   const secrets = createEphemeralSecrets();
   // RETURNED, like `settings`, so a case can read what the handlers recorded
@@ -235,6 +236,11 @@ function harness(
       webPages.push(page);
       return Promise.resolve(true);
     },
+    // RECORDED for `webPages`' reason: what reached the system is the property, not that a call was made.
+    openLink: (address) => {
+      linksOpened.push(address);
+      return Promise.resolve(true);
+    },
     openStore: () => Promise.resolve(false),
     closeListening: () => false,
     cloud: overrides.cloud ?? unconfiguredCloud(),
@@ -277,6 +283,7 @@ function harness(
     shown,
     storeOpened,
     webPages,
+    linksOpened,
   };
 }
 
@@ -576,6 +583,61 @@ describe('app.openWebPage', () => {
   });
 });
 
+describe('document.openLink (ADR-0167)', () => {
+  /** Commands whose link read answers `read` and records what it was asked. */
+  function linkCommands(read: unknown): { commands: DocumentCommands; asked: unknown[] } {
+    const asked: unknown[] = [];
+    const commands = {
+      linkAddress: (docId: DocId, page: number, index: number, version: number) => {
+        asked.push({ docId, page, index, version });
+        return Promise.resolve(read);
+      },
+    } as unknown as DocumentCommands;
+    return { commands, asked };
+  }
+  const request = { docId: A_DOC, version: asDocVersion(4), page: 2, index: 1 };
+
+  it('OPENS the address main read from the document, by the place the renderer named', async () => {
+    const tracking = `https://example.org/track?id=${'a'.repeat(5000)}`;
+    const { commands, asked } = linkCommands({ kind: 'address', uri: tracking });
+    const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+
+    expect(await handlers['document.openLink'](request)).toStrictEqual({ ok: true, value: { kind: 'opened' } });
+    // THE WHOLE ADDRESS reached the system, past the 2,048 the listing shows, and the read was asked for the place.
+    expect(linksOpened).toStrictEqual([tracking]);
+    expect(asked).toStrictEqual([{ docId: A_DOC, page: 2, index: 1, version: 4 }]);
+  });
+
+  it('NEVER OPENS a scheme a person may not follow, and names it — CONTROL: an https one is opened', async () => {
+    for (const [uri, scheme] of [
+      ['javascript:alert(1)', 'javascript:'],
+      ['file:///C:/Windows/System32/calc.exe', 'file:'],
+      [' https://example.org', null],
+    ] as const) {
+      const { commands } = linkCommands({ kind: 'address', uri });
+      const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+      expect(await handlers['document.openLink'](request)).toStrictEqual({
+        ok: true,
+        value: { kind: 'scheme-refused', scheme },
+      });
+      expect(linksOpened).toStrictEqual([]);
+    }
+    const { commands } = linkCommands({ kind: 'address', uri: 'https://example.org' });
+    const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    await handlers['document.openLink'](request);
+    expect(linksOpened).toStrictEqual(['https://example.org']);
+  });
+
+  it('opens NOTHING for a moved document, a place with no web link, or an address too long', async () => {
+    for (const kind of ['stale', 'no-such-link', 'too-long'] as const) {
+      const { commands } = linkCommands({ kind });
+      const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+      expect(await handlers['document.openLink'](request)).toStrictEqual({ ok: true, value: { kind } });
+      expect(linksOpened).toStrictEqual([]);
+    }
+  });
+});
+
 /**
  * Decision C at the channel: rows of a workbook the PDF does not hold ride with the open, so the person is told — and a
  * document that arrived whole answers exactly what `document.open` does.
@@ -847,6 +909,7 @@ describe('document.open', () => {
       edit: () => false,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
+      openLink: () => Promise.reject(new Error('this case follows no link')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
@@ -1572,6 +1635,7 @@ settings: createEphemeralSettings(),
       edit: () => false,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
+      openLink: () => Promise.reject(new Error('this case follows no link')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
@@ -1630,6 +1694,7 @@ settings: createEphemeralSettings(),
       edit: () => false,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
+      openLink: () => Promise.reject(new Error('this case follows no link')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -1782,6 +1847,7 @@ settings: createEphemeralSettings(),
       edit: () => false,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
+      openLink: () => Promise.reject(new Error('this case follows no link')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -1924,6 +1990,7 @@ settings,
       edit: () => false,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
+      openLink: () => Promise.reject(new Error('this case follows no link')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -2110,6 +2177,7 @@ settings: createEphemeralSettings(),
       edit: () => false,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
+      openLink: () => Promise.reject(new Error('this case follows no link')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud,

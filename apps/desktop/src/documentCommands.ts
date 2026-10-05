@@ -86,6 +86,7 @@ import {
   type ListedField,
   type Layer,
   type ListedLayers,
+  type LinkAddress,
   type ListedPageLinks,
   type PageLink,
   type PageStructure,
@@ -1466,6 +1467,17 @@ export type DocumentPageLinksReader = (
   page: number,
 ) => Promise<ListedPageLinks>;
 
+/** One link's whole address, read in the engine host by its place on its page (ADR-0167). */
+export type DocumentLinkAddressReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+  index: number,
+) => Promise<LinkAddress>;
+
+/** What {@link DocumentCommands.linkAddress} answers: the link's address, why there is none, or that it moved. */
+export type LinkAddressOutcome = LinkAddress | { readonly kind: 'stale' };
+
 /** One page's links, stamped with the version the lane read them at, and whether the walk stopped at its bound. */
 export interface DocumentPageLinks {
   readonly version: DocVersion;
@@ -2153,6 +2165,8 @@ export interface DocumentCommandsParts {
   /** Named marks serialised for the clipboard, in the engine host. */
   readonly annotationCopy: DocumentAnnotationCopyReader;
   readonly annotationWords: DocumentAnnotationWordsReader;
+  /** One link's whole address, for a person following it (ADR-0167). */
+  readonly linkAddress: DocumentLinkAddressReader;
   readonly formFields: DocumentFormFieldsReader;
   readonly flatFields: DocumentFlatFieldsReader;
   /** One page's barcodes, read in the engine host (ADR-0076). */
@@ -2365,6 +2379,7 @@ export class DocumentCommands {
   readonly #annotations: DocumentAnnotationsReader;
   readonly #annotationCopy: DocumentAnnotationCopyReader;
   readonly #annotationWords: DocumentAnnotationWordsReader;
+  readonly #linkAddress: DocumentLinkAddressReader;
   /**
    * The annotation clipboard: interchange JSON, held here and never sent to the renderer.
    *
@@ -2454,6 +2469,7 @@ export class DocumentCommands {
     this.#annotations = parts.annotations;
     this.#annotationCopy = parts.annotationCopy;
     this.#annotationWords = parts.annotationWords;
+    this.#linkAddress = parts.linkAddress;
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
     this.#barcodes = parts.barcodes;
@@ -4393,6 +4409,24 @@ export class DocumentCommands {
     });
     if (value === undefined || ranAt !== version) return { kind: 'stale' };
     return { kind: 'words', text: value.text, whole: value.whole };
+  }
+
+  /**
+   * One link's whole address, for a person who asked to follow it (ADR-0167 Decision 3).
+   *
+   * {@link annotationWords}' version rule and its reason: the place is a position in the page's links at `version`,
+   * so the read happens inside the lane and the lane's version is compared afterwards; a moved document answers
+   * `stale` rather than another link's address.
+   */
+  async linkAddress(docId: DocId, page: number, index: number, version: DocVersion): Promise<LinkAddressOutcome> {
+    const { version: ranAt, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return this.#linkAddress(docId, sessions, page, index);
+    });
+    return ranAt === version ? value : { kind: 'stale' };
   }
 
   /**

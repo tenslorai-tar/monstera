@@ -67,6 +67,7 @@ import {
   type HostAnnotationsReader,
   type HostAnnotationRecordsReader,
   type HostAnnotationWordsReader,
+  type HostLinkAddressReader,
   type BarcodeReport,
   type AccessibilityReportOnWire,
   type HostFlatFieldsReader,
@@ -123,6 +124,7 @@ import {
   remoteMupdfAnnotations,
   remoteMupdfAnnotationRecords,
   remoteMupdfAnnotationWords,
+  remoteMupdfLinkAddress,
   remoteMupdfBarcodes,
   remoteMupdfAccessibility,
   remoteMupdfDuplicateReport,
@@ -656,6 +658,11 @@ export interface ShellComposition {
    */
   readonly openStore?: (page: StorePage) => Promise<boolean>;
   /**
+   * Opens an address a document holds, once a person asked for that link (ADR-0167) — `shell.openExternal`, built in
+   * `entry.ts` because this file imports no Electron. Absent, `document.openLink` answers that nothing was opened.
+   */
+  readonly openLink?: (address: string) => Promise<boolean>;
+  /**
    * Where the security notice's acknowledgement is kept (ADR-0110), `update-check.json` under `userData`, resolved
    * in `entry.ts`. Absent, nothing is recorded and the notice returns at the next start.
    */
@@ -810,6 +817,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     engagementFile,
     backupLedgerFile = createEphemeralSettings(),
     openStore,
+    openLink,
     updateRecordFile,
     fetchUpdateManifest,
     enginePlatform = null,
@@ -1257,6 +1265,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.annotationWords(session, page, index);
+    },
+    // ONE LINK'S WHOLE ADDRESS, for a person following it (ADR-0167), composed for the link read's reason.
+    linkAddress: (docId, sessions, page, index) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.linkAddress(session, page, index);
     },
     // THE FORM FIELD LIST, composed here for the annotation list's reason and
     // whole-document for its reason: a panel asks what a form asks for, which
@@ -1772,6 +1786,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // the one route by which this application opens a URL outside itself.
       openWebPage: (page) => openWebPage(page, openInBrowser),
       openStore: async (page) => (openStore === undefined ? false : openStore(page)),
+      openLink: async (address) => (openLink === undefined ? false : openLink(address)),
       closeListening: () => {
         if (shellWindow === null) return false;
         closeGate.listening();
@@ -1889,6 +1904,8 @@ function engineSessionOpener(
   readonly annotationCopy: HostAnnotationRecordsReader;
   /** One mark's whole words, from whichever host is live. */
   readonly annotationWords: HostAnnotationWordsReader;
+  /** One link's whole address, from whichever host is live (ADR-0167). */
+  readonly linkAddress: HostLinkAddressReader;
   readonly formFields: HostFormFieldsReader;
   /** One page's field candidates, from whichever host is live. */
   readonly flatFields: HostFlatFieldsReader;
@@ -2263,6 +2280,20 @@ function engineSessionOpener(
     return annotationWords(session, page, index);
   };
 
+  /** One link's whole address' half of the same registration (ADR-0167). See {@link pageText}. */
+  let linkAddress: HostLinkAddressReader | null = null;
+
+  const readLinkAddressThroughHost: HostLinkAddressReader = (session, page, index) => {
+    if (linkAddress === null) {
+      throw new Error(
+        'A link address read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return linkAddress(session, page, index);
+  };
+
   /** The form field list's half of the same registration. See {@link pageText}. */
   let formFields: HostFormFieldsReader | null = null;
 
@@ -2529,6 +2560,7 @@ function engineSessionOpener(
     annotations = remoteMupdfAnnotations(client, remote);
     annotationCopy = remoteMupdfAnnotationRecords(client, remote);
     annotationWords = remoteMupdfAnnotationWords(client, remote);
+    linkAddress = remoteMupdfLinkAddress(client, remote);
     formFields = remoteMupdfFormFields(client, remote);
     flatFields = remoteMupdfFlatFields(client, remote);
     barcodes = remoteMupdfBarcodes(client, remote);
@@ -2820,6 +2852,7 @@ function engineSessionOpener(
     annotations: readAnnotationsThroughHost,
     annotationCopy: copyAnnotationsThroughHost,
     annotationWords: readAnnotationWordsThroughHost,
+    linkAddress: readLinkAddressThroughHost,
     formFields: readFormFieldsThroughHost,
     flatFields: readFlatFieldsThroughHost,
     barcodes: readBarcodesThroughHost,

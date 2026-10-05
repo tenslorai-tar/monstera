@@ -40,6 +40,8 @@ import {
   type SpellingLanguage,
   type StorePage,
   type WindowEditAction,
+  isFollowable,
+  schemeOf,
   withTargetVersion,
 } from '@monstera/contract';
 import {
@@ -373,6 +375,12 @@ export function createContractHandlers(deps: {
    * function resolves the second from the first, in `main`, so no page can name a destination.
    */
   readonly openWebPage: (page: WebPage) => Promise<boolean>;
+  /**
+   * Opens an address a document holds in the person's browser or mail program, once they asked for that link
+   * (ADR-0167), answering whether the system opened it. Only ever handed an address `main` read from the document
+   * and `isFollowable` allowed; it checks the scheme again itself, at the edge where the address leaves.
+   */
+  readonly openLink: (address: string) => Promise<boolean>;
   /** Opens one of the Store application's pages (ADR-0107), answering whether this build can reach the Store. */
   readonly openStore: (page: StorePage) => Promise<boolean>;
   /**
@@ -462,6 +470,7 @@ export function createContractHandlers(deps: {
     'document.importAnnotations': importAnnotationsHandler(deps.commands),
     'document.copyAnnotations': copyAnnotationsHandler(deps.commands),
     'document.annotationWords': annotationWordsHandler(deps.commands),
+    'document.openLink': openLinkHandler(deps.commands, deps.openLink),
     'document.pasteAnnotations': pasteAnnotationsHandler(deps.commands),
     'document.importFormData': importFormDataHandler(deps.commands),
     'document.split': splitHandler(deps.commands, mintWritten),
@@ -1824,6 +1833,35 @@ function annotationWordsHandler(commands: DocumentCommands): ContractHandlers['d
     }
   };
 }
+
+/**
+ * Follows one of a document's web links (ADR-0167 Decision 3): the address is read from the document by the link's
+ * place, at the version the renderer saw, and opened only when its scheme is one a person may follow. The renderer
+ * named a link, never an address, so nothing it holds can widen what is opened.
+ */
+function openLinkHandler(
+  commands: DocumentCommands,
+  openLink: (address: string) => Promise<boolean>,
+): ContractHandlers['document.openLink'] {
+  return async ({ docId, version, page, index }): Promise<Awaited<ReturnType<ContractHandlers['document.openLink']>>> => {
+    try {
+      const read = await commands.linkAddress(docId, page, index, version);
+      if (read.kind !== 'address') return ok({ kind: read.kind });
+      if (!isFollowable(read.uri)) {
+        return ok({ kind: 'scheme-refused', scheme: schemeOf(read.uri)?.slice(0, LINK_SCHEME_SHOWN) ?? null });
+      }
+      return ok({ kind: (await openLink(read.uri)) ? 'opened' : 'not-opened' });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The most of a refused scheme the answer carries: the contract's own bound on it. */
+const LINK_SCHEME_SHOWN = 64;
 
 /** The clipboard's paste — main mints the import — mapped as the import is. */
 function pasteAnnotationsHandler(commands: DocumentCommands): ContractHandlers['document.pasteAnnotations'] {
