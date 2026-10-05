@@ -148,3 +148,38 @@ was **before** it was protected: the protect's own undo checkpoint, and every ea
   and runs no native engine code (invariant 20).
 - **Holding it in the engine host across sessions.** A host is recycled and rebuilt by design (invariant 22), and a
   secret kept in a process this application treats as hostile is kept in the wrong place.
+
+## Addendum, 2026-10-05 — how a PDFium call is handed the password (Decision 4's mechanism)
+
+Decision 4 says the password crosses *with every image* PDFium opens and does not say how main attaches it. It is a
+change to the bus's seam, so it is recorded here before it is built (B4).
+
+**The problem.** One `CommandBus` serves every document, and what it hands a byte-image writer is the document's
+bytes and nothing else (§3; ADR-0039 removed identity from that slot). So the PDFium adapter in main, which writes the
+frame, cannot know which document an image belongs to, and so which password opens it.
+
+**Decision.** In main, a byte-image writer's execution session is the bytes **and the key that opens them**:
+`ImageSession { bytes, opensWith }`, where `opensWith` is the document's `HeldPassword` or `undefined`. The bus builds
+it in `#sessionFor` from `ByteImageAccess`, which gains `opensWith` beside `current`; the per-document inputs answer it
+from the one holder. It still carries no identity: it says how to open the bytes, not whose they are.
+
+- `HeldPassword` moves to `packages/kernel`, since a kernel type now carries it; the holder stays in `apps/desktop`.
+  Its text is revealed only where a frame is written.
+- **On the wire**, `byteImageWire.read` gains an optional `password`, so `apply`, `capture` and `invert` carry it, and
+  PDFium's own reads (`text-runs`, `page-objects`, `render-page`) take `byteImageWire.read` instead of spelling `from`
+  each: one statement of what a byte-image read carries (B3a). The compose host's `keep-inline-images`, which opens
+  the same image before a regenerating command (ADR-0126), takes it too, since MuPDF without it reads the pages
+  undecrypted.
+- **In the host**, PDFium's `open` passes it to `FPDF_LoadMemDocument64`, and the read-back (ADR-0169) reopens the
+  saved bytes with it, because the default save keeps the security handler (measured, the table above).
+- The reads main asks with a document in hand (`text-runs`, `page-objects`, `render-page`) pass the held password by
+  that document.
+
+**Rejected.**
+
+- **Matching an image to its document by object identity** (a `WeakMap` marked where `current` mints the bytes). It is
+  a second channel beside the session, it fails whenever the bytes are copied, and it is the cross-parser identity
+  join B3 names.
+- **Handing the writer the document's id.** ADR-0039 removed it from that slot, and §3's account of why a byte-image
+  host holds no per-document table rests on its absence.
+- **A decrypted image for PDFium.** It is a plaintext copy in a granted directory, the thing this ADR exists to stop.
