@@ -1059,14 +1059,10 @@ export class CommandBus {
 
     // Recorded and counted only after the document actually changed. An entry
     // for work that threw is worse than no entry — undo would reverse a change
-    // the document never received.
-    //
-    // NOT COVERED BY A TEST, and said here rather than left to be assumed: an
-    // `apply` that throws where `capture` succeeded is not constructible with
-    // the one command that exists, because both validate the same page indices.
-    // The reachable neighbour — a checkpoint that fails between them — is
-    // covered. Revisit when a second command has an `apply` that can fail on
-    // its own.
+    // the document never received. A replacement that matches nothing refuses
+    // here, after its capture ran, and makes no version by this ordering alone
+    // (ADR-0169 Decision 6) — the case that says so is the bus's
+    // *a refusing APPLY after a successful capture*.
     context.commandLog(COMMAND_WRITER).record(recorded);
 
     // THE WINDOW'S BYTES, after the entry and not before it: by here the session has changed,

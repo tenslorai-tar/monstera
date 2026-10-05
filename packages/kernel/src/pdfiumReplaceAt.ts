@@ -5,7 +5,7 @@ import type { CaptureResult } from './commandLog.js';
 import type { ByteImage } from './engineSeam.js';
 import { objectRuns, pdfiumWriter, removesItsObject, replaceTextObjects } from './pdfiumFfi.js';
 import { EMPTIED, type PriorTextObjects } from './pdfiumTextEdit.js';
-import { TextNotInPlaceError } from './textEditRefusals.js';
+import { NothingToReplaceError, TextNotInPlaceError } from './textEditRefusals.js';
 
 /**
  * One occurrence of a word replaced where it is on the page (ADR-0156 Decision 4).
@@ -98,7 +98,10 @@ export async function captureReplaceTextAt(
   });
 }
 
-/** Replaces the one occurrence, or refuses with {@link TextNotInPlaceError} and writes nothing. */
+/**
+ * Replaces the one occurrence, or refuses and writes nothing: {@link TextNotInPlaceError} where no single object holds
+ * it, {@link NothingToReplaceError} where the replacement is the word itself.
+ */
 export async function applyReplaceTextAt(
   image: ByteImage,
   command: CommandOfKind<'replaceTextAt'>,
@@ -107,9 +110,9 @@ export async function applyReplaceTextAt(
     const { runs } = await objectRuns(session, command.page);
     const picked = occurrenceAt(runs, command);
     if (picked === undefined) throw new TextNotInPlaceError();
-    // A REPLACEMENT THAT CHANGES NOTHING — the word for itself — writes nothing and generates nothing, `replacedIn`'s
-    // rule: the page is not regenerated for an edit that leaves it as it was.
-    if (picked.after === picked.before) return pdfiumWriter.serialise(session);
+    // A REPLACEMENT THAT CHANGES NOTHING — the word for itself — writes nothing and makes no version, `replaceAllText`'s
+    // rule (ADR-0169 Decision 6): refused before the serialise, so the bus records nothing.
+    if (picked.after === picked.before) throw new NothingToReplaceError();
     await replaceTextObjects(session, command.page, [{ index: picked.index, text: picked.after }]);
     return pdfiumWriter.serialise(session);
   });

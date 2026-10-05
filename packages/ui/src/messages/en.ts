@@ -1165,6 +1165,8 @@ export const TEXT_EDIT_CHARACTERS_LABEL = messageKey('surface.text-edit.characte
 /** What the editor says under any refusal it keeps the words through (ADR-0169 Decision 5). */
 export const TEXT_EDIT_REFUSED_HINT = messageKey('surface.text-edit.refused-hint');
 export const TEXT_NOT_IN_PLACE = messageKey('surface.text-edit.not-in-place');
+/** A replacement that matched nothing a text object holds, or changed nothing (ADR-0169 Decision 6). */
+export const NOTHING_TO_REPLACE = messageKey('surface.text-edit.nothing-to-replace');
 export const TEXT_EDIT_HELD = messageKey('surface.text-edit.held');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
 /** What the page area says until its first page is drawn, in place of empty slots. */
@@ -3431,6 +3433,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // Edit text changes the line it is in.
   [TEXT_NOT_IN_PLACE]:
     'Nothing was changed: this word can’t be replaced on its own here. Use Edit text to change the line it is in.',
+  // NOT "NO MATCHES": the find bar reads the page through another engine, so it can show a word drawn in two pieces
+  // that no replacement reaches. Nothing changed, then what does: Edit text changes the line.
+  [NOTHING_TO_REPLACE]:
+    'Nothing was changed: no text Monstera can replace matched. A word drawn in two pieces can be changed with Edit text.',
   [TEXT_EDIT_HELD]:
     'Nothing was changed, so the signatures still verify. Keep typing and you will be asked again when you finish, or press Esc to put the text back.',
   // SAYS WHAT THE PAGE IS, not what the application cannot do. A reader looking

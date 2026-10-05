@@ -33,6 +33,7 @@ import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { applyAddAnnotation, readAnnotations } from './pageAnnotations.js';
 import { localPdfLibWriter } from './localEngine.js';
 import { shownOn } from './shownText.js';
+import { NothingToReplaceError } from './textEditRefusals.js';
 
 /**
  * The log and the one path from a command to an entry (ADR-0009 §4).
@@ -1073,6 +1074,26 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
         document.loadPage(0).getObject().get('Rotate').toString(),
       );
       expect(applied).toBe('/Landscape');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: a refusing APPLY after a successful capture records nothing and does not bump the version', async () => {
+    // A replacement that matches nothing refuses at the apply, after its capture ran (ADR-0169 Decision 6): the one
+    // window where *no new version* rests on the recording coming after the apply rather than on an earlier refusal.
+    // Capture is the working writer's, so the case cannot pass by refusing first.
+    const bus = new CommandBus({
+      mupdf: { ...localMupdfWriter, apply: () => Promise.reject(new NothingToReplaceError()) },
+    });
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub();
+    try {
+      await expect(bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected)).rejects.toThrow(
+        NothingToReplaceError,
+      );
+      expect(context.log.entries).toStrictEqual([]);
+      expect(context.bumps()).toBe(0);
     } finally {
       await mupdfWriter.close(session);
     }

@@ -1287,6 +1287,54 @@ describe('the composition root, with BOTH engine hosts', () => {
     });
   });
 
+  it('a replacement the host found nothing to change in reaches the renderer BY NAME, and the version does not move', async () => {
+    // ADR-0169 Decision 6, across the stretch neither half crosses: the host's code, main's `answered` and the execute
+    // handler's mapping. The FIRST apply answers nothing-to-replace and every later one bytes, so an edit sent next at
+    // the version the document opened at is refused as stale if the refusal moved the version, and written if it did not.
+    const mupdf = platformAnswering(serialisingEngine());
+    const base = pdfiumPeer();
+    let applies = 0;
+    const pdfium: FakePeer = (channel, params) => {
+      if (channel === 'engine/capture') return { ok: true, value: { captured: false, reason: 'document-scaled' } };
+      if (channel === 'engine/apply') {
+        applies += 1;
+        if (applies === 1) return { ok: false, error: { code: 'nothing-to-replace' } };
+      }
+      return base.peer(channel, params);
+    };
+    const second = platformAnswering(pdfium);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('edited.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+    });
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+
+    const replaced = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'replaceAllText', find: 'absent', replace: 'present' },
+    });
+    // BY NAME: an unmapped host code becomes `internal` with an incident id, *Something went wrong* for a find that
+    // simply matched nothing.
+    expect(replaced).toStrictEqual({ ok: false, error: { code: 'nothing-to-replace' } });
+
+    const next = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: {
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines: [[2, 4], [7]], text: 'new words' }]),
+        fit: 'reflow',
+        version: opened.value.version,
+      },
+    });
+    expect(next.ok, JSON.stringify(next)).toBe(true);
+    expect(applies).toBe(2);
+  });
+
   it('answers engine-unavailable when there is no PDFium platform', async () => {
     // THE CONTROL, and it is the state most machines are in: no `pdfium.dll`,
     // so no host, so no registration. The refusal must come from the ROUTE —

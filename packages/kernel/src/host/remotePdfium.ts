@@ -12,7 +12,12 @@ import { serialiseIntoFile } from '../checkpointFile.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { ByteImage } from '../engineSeam.js';
 import type { TextRun } from '../pdfiumFfi.js';
-import { EditRefusedError, TextNotInPlaceError, TextNotWritableError } from '../textEditRefusals.js';
+import {
+  EditRefusedError,
+  NothingToReplaceError,
+  TextNotInPlaceError,
+  TextNotWritableError,
+} from '../textEditRefusals.js';
 import { EngineCallFailed, EngineSessionGone, type SessionArea, priorTooLargeToRecord } from './remoteEngine.js';
 import { EngineSerialiseMismatch, type SessionAreaSurface, takeAnnounced } from './remoteLifecycle.js';
 import { type PdfiumChannels, pdfiumTaggedPrior } from './pdfiumChannels.js';
@@ -145,6 +150,7 @@ function answered<T>(
     throw new TextNotWritableError(Array.from(error.detail.characters).filter((c) => wrote.includes(c)).join(''));
   }
   if (error.code === 'text-not-in-place') throw new TextNotInPlaceError();
+  if (error.code === 'nothing-to-replace') throw new NothingToReplaceError();
   if (error.code === 'edit-refused') {
     throw new EditRefusedError(error.detail.step, error.detail.engineError, `the PDFium host refused ${channel}`);
   }

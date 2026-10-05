@@ -2138,6 +2138,8 @@ export const channels = {
     // was not replaced there. The person's to act on, by editing the line, for `text-not-writable`'s reason.
     // `edit-refused` IS A PDFIUM REWRITE'S (ADR-0169): a native step refused, or the saved page read back without text
     // the edit did not touch, and nothing was saved. It carries the step and the number PDFium answered.
+    // `nothing-to-replace` IS A REPLACEMENT'S (ADR-0169 Decision 6): it matched nothing a text object holds, or changed
+    // nothing, so there is no new version. The person's to read, for `text-not-in-place`'s reason.
     [
       'document-not-open',
       'document-busy',
@@ -2146,6 +2148,7 @@ export const channels = {
       'engine-unavailable',
       'text-not-writable',
       'text-not-in-place',
+      'nothing-to-replace',
       'edit-refused',
       'breaks-signatures',
       ...SERVICE_PROBLEMS,
@@ -3040,7 +3043,9 @@ export const channels = {
         // A FAILURE'S OWN SHAPE, so a refusal that carries a detail carries it here as on `document.execute`
         // (ADR-0169): the copy route names the characters a font cannot show as the direct route does.
         problem: z.union([
-          z.object({ code: z.enum(['engine-unavailable', 'text-not-in-place', 'document-poisoned']) }).strict(),
+          z
+            .object({ code: z.enum(['engine-unavailable', 'text-not-in-place', 'nothing-to-replace', 'document-poisoned']) })
+            .strict(),
           z.object({ code: z.literal('text-not-writable'), detail: FAILURE_DETAIL_SCHEMAS['text-not-writable'] }).strict(),
           z.object({ code: z.literal('edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['edit-refused'] }).strict(),
         ]),

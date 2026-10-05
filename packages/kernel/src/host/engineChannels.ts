@@ -3040,4 +3040,6 @@ export type EngineFailureCode =
   // incident id, for a document the engine could not work with.
   | 'text-not-writable'
   // AND ONE OCCURRENCE NAMED BY ITS POINT that no single text object holds there (ADR-0156): the person's too.
-  | 'text-not-in-place';
+  | 'text-not-in-place'
+  // AND A REPLACEMENT THAT WOULD CHANGE NOTHING, which makes no version (ADR-0169 Decision 6): the person's too.
+  | 'nothing-to-replace';

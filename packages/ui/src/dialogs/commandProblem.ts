@@ -74,6 +74,8 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     // ONE OCCURRENCE NO SINGLE TEXT OBJECT HOLDS AT ITS POINT (ADR-0156): the spelling review says it beside the word;
     // this is the sentence for any other surface that sends `replaceTextAt`.
     z.object({ code: z.literal('text-not-in-place') }).strict(),
+    // A REPLACEMENT THAT MATCHED NOTHING A TEXT OBJECT HOLDS, OR CHANGED NOTHING (ADR-0169 Decision 6): no new version.
+    z.object({ code: z.literal('nothing-to-replace') }).strict(),
     // AN EDIT PDFIUM REFUSED (ADR-0169): the sentence is the step's, and the step and PDFium's number are the reference,
     // where `internal` shows its incident id.
     z.object({ code: z.literal('edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['edit-refused'] }).strict(),

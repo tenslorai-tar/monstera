@@ -10,6 +10,7 @@ import {
   EDIT_REFUSED_PASSWORD,
   EDIT_REFUSED_READ_BACK,
   EN,
+  NOTHING_TO_REPLACE,
   PROBLEM_BUSY,
   PROBLEM_REFERENCE_LABEL,
 } from '../messages/en.js';
@@ -76,5 +77,21 @@ describe('an edit PDFium refused says which part of the work refused', () => {
     );
     expect(screen.getByText(english(PROBLEM_BUSY))).toBeTruthy();
     expect(screen.queryByText(english(PROBLEM_REFERENCE_LABEL))).toBeNull();
+  });
+});
+
+describe('a replacement that would change nothing says so (ADR-0169 Decision 6)', () => {
+  it('says nothing was changed and names the way that works, in a sentence of its own', () => {
+    activateCatalogue('en', EN);
+    render(
+      <I18nProvider i18n={i18n}>
+        <CommandProblemBody code="nothing-to-replace" />
+      </I18nProvider>,
+    );
+    expect(screen.getByText(english(NOTHING_TO_REPLACE))).toBeTruthy();
+    expect(english(NOTHING_TO_REPLACE)).toMatch(/^Nothing was changed: .*Edit text\.$/u);
+    // ITS OWN, not its neighbour's: a word no single object holds at a point is a different refusal with a different way
+    // out, and a table that answered both with one sentence would pass the lines above.
+    expect(problemMessage({ code: 'nothing-to-replace' })).not.toBe(problemMessage({ code: 'text-not-in-place' }));
   });
 });

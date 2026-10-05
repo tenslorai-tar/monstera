@@ -9,7 +9,7 @@ import {
 } from '@monstera/contract';
 
 import type { ByteImage } from '../engineSeam.js';
-import { EditRefusedError } from '../textEditRefusals.js';
+import { EditRefusedError, NothingToReplaceError } from '../textEditRefusals.js';
 import { TOKEN_BYTES } from '../token.js';
 import type { HostArea } from './engineHandlers.js';
 import { sessionFileAnswers } from './fileAnswers.js';
@@ -195,6 +195,8 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         if (image.length === 1) throw new Error('PDFium refused the document');
         // THREE BYTES ARE A PAGE WHOSE SAVE LOST TEXT, refused the way the adapter's `serialise` refuses it (ADR-0169).
         if (image.length === 3) throw new EditRefusedError('read-back', 0, 'the saved page lost text');
+        // FOUR BYTES ARE A DOCUMENT HOLDING NOTHING THE REPLACEMENT WOULD CHANGE (ADR-0169 Decision 6).
+        if (image.length === 4) throw new NothingToReplaceError();
         return Promise.resolve(applied);
       },
       capture: (image) => {
@@ -443,6 +445,33 @@ describe('the PDFium host body', () => {
       body: { ok: false, error: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } } },
     });
     expect(files.written.size).toBe(0);
+  });
+
+  it('answers a replacement that would change nothing as nothing-to-replace, and writes nothing (ADR-0169)', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1, 2, 3, 4]));
+
+    stream.feed(
+      request('a1', 'engine/apply', {
+        session,
+        sources: [],
+        command: { kind: 'replaceAllText', find: 'absent', replace: 'present' },
+        from: IN,
+        into: OUT,
+      }, undefined, files),
+    );
+    await stream.whenSent(2);
+
+    // ITS OWN CODE, where `engine-refused` would reach the person as *Something went wrong* for a document working as
+    // made; and no output, since main reads no new version from a refusal.
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'nothing-to-replace' } } });
+    expect(files.written.size).toBe(0);
+    // THE ENGINE WAS REACHED with the file's bytes, so the code is the handler's reading of its refusal and not a
+    // request refused on the way in, which also writes nothing.
+    expect(calls).toContain('apply:1,2,3,4');
+    expect(calls.filter((entry) => entry.startsWith('incident:'))).toStrictEqual([]);
   });
 
   it('applies from the named file and writes the result into the granted directory', async () => {

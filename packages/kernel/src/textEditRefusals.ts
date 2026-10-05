@@ -42,6 +42,22 @@ export class TextNotInPlaceError extends Error {
   }
 }
 
+/**
+ * Why a replacement made no new version: nothing it was asked to replace was found in a text object, or every match
+ * already reads as its replacement (ADR-0169 Decision 6).
+ *
+ * Thrown before anything is generated or serialised, so the bus records no entry and the document keeps its version.
+ * The find bar matches through MuPDF's reading of the page and the replacement through PDFium's text objects, so a
+ * word the find bar shows can still be one no object holds whole — split across two objects — and this is what the
+ * person reads then.
+ */
+export class NothingToReplaceError extends Error {
+  constructor(options?: ErrorOptions) {
+    super('no text object holds a match the replacement would change, so nothing was written', options);
+    this.name = 'NothingToReplaceError';
+  }
+}
+
 export class TextNotWritableError extends Error {
   /**
    * The characters the font cannot show, as {@link unwritableCharacters} chose them; empty where the comparison found

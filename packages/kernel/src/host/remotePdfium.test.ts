@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createClient } from '@monstera/contract';
 
 import type { ByteImage } from '../engineSeam.js';
+import { NothingToReplaceError, TextNotInPlaceError } from '../textEditRefusals.js';
 import { EngineCallFailed, EngineSessionGone, type SessionArea } from './remoteEngine.js';
 import { EngineSerialiseMismatch } from './remoteLifecycle.js';
 import { pdfiumChannels } from './pdfiumChannels.js';
@@ -291,6 +292,23 @@ describe('main’s PDFium writer', () => {
     });
     await expect(refused).rejects.toBeInstanceOf(EngineCallFailed);
     await expect(refused).rejects.not.toBeInstanceOf(EngineSessionGone);
+  });
+
+  it('turns nothing-to-replace into the class the local writer throws, and text-not-in-place into its own (ADR-0169)', async () => {
+    const transfer = stubTransfer();
+    let code = 'nothing-to-replace';
+    const peer: Peer = { asked: [], answer: () => ({ ok: false, error: { code } }) };
+    const { writer } = harness(peer, transfer);
+    const apply = () => writer.apply({ session: new Uint8Array([1]), command: COMMAND, sources: [], reads: undefined });
+
+    // THE SAME CLASS IN EITHER PROCESS, so main says *nothing matched* whichever applied it, never *Something went wrong*.
+    await expect(apply()).rejects.toBeInstanceOf(NothingToReplaceError);
+    // AND ITS NEIGHBOUR STAYS ITS OWN: a mapping that answered every person's refusal with one class passes the line
+    // above and fails this one.
+    code = 'text-not-in-place';
+    const misplaced = apply();
+    await expect(misplaced).rejects.toBeInstanceOf(TextNotInPlaceError);
+    await expect(misplaced).rejects.not.toBeInstanceOf(NothingToReplaceError);
   });
 
   it('refuses an answer whose count disagrees with the file that arrived', async () => {

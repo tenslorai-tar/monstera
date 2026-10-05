@@ -147,8 +147,10 @@ async function threeRunsAndARectangle() {
 const failures = [];
 // 69 until 2026-10-04, when `replaceAtCases` added five (ADR-0156), and 75 from the stage audit of
 // cb62b976..33715f7c, which gave blank paper's refusal its control, and 77 from ADR-0169, which names the characters,
-// and 80 from its Decision 6's empty replacement: a word deleted, an object removed, and the checkpoint either takes.
-const roster = createRoster(failures, { cases: 80 });
+// and 80 from its Decision 6's empty replacement: a word deleted, an object removed, and the checkpoint either takes,
+// and 82 from the same decision's *no version*: one occurrence for itself, and a word the page reads but no object
+// holds (the identity replace-all case became the nothing-matched one).
+const roster = createRoster(failures, { cases: 82 });
 
 /**
  * @param {string} name
@@ -539,6 +541,14 @@ async function replaceAtCases() {
     'page 2 line 2 holds "widget" in lower case',
   );
 
+  // THE WORD FOR ITSELF MAKES NO VERSION (ADR-0169 Decision 6), where a point and a word the page holds would otherwise
+  // be saved; the first case of this function is its control, the same point with a different word.
+  record(
+    'one occurrence replaced with ITSELF is refused as nothing to replace, so no version is made',
+    (await refusal({ ...at({ x: 80, y: 233 }), replace: 'WIDGET' })) === 'NothingToReplaceError',
+    'it must throw NothingToReplaceError rather than save the page unchanged',
+  );
+
   // AN EMPTY REPLACEMENT DELETES THE WORD (ADR-0169 Decision 6), and the rest of its line stays.
   const deleted = await pageOf(await applied({ ...at({ x: 80, y: 233 }), replace: '' }), 0);
   record(
@@ -730,19 +740,50 @@ async function replaceAllCases() {
     refused ?? 'it was accepted',
   );
 
-  // A REPLACEMENT THAT PRODUCES THE ORIGINAL CHANGES NOTHING. Replacing a word
-  // with itself matches everywhere, and regenerating every page for it would be
-  // the whole cost of an edit paid for no change.
-  const identity = await localPdfiumExecution.apply({
-    session: original,
-    command: replaceAll({ find: 'WIDGET', replace: 'WIDGET' }),
-    sources: [],
-    reads: undefined,
-  });
+  // A REPLACEMENT THAT CHANGES NOTHING MAKES NO VERSION (ADR-0169 Decision 6): refused, so the bus records nothing.
+  // Replacing a word with itself matches everywhere, and a find that matches nothing matches nowhere; both serialised
+  // the document unchanged until 2026-10-05, a new version with an undo step that did nothing.
+  /** @param {Record<string, unknown>} rest */
+  const refusedAs = async (rest) => {
+    try {
+      await localPdfiumExecution.apply({ session: original, command: replaceAll(rest), sources: [], reads: undefined });
+      return 'it was SAVED';
+    } catch (error) {
+      return error instanceof Error ? error.name : String(error);
+    }
+  };
+  // CASE-SENSITIVE, because by default `WIDGET` also matches page 2's `widget`, and writing it as `WIDGET` changes it.
+  const identity = await refusedAs({ find: 'WIDGET', replace: 'WIDGET', caseSensitive: true });
+  const absent = await refusedAs({ find: 'GIZMO', replace: 'GADGET' });
   record(
-    'replacing a word with itself leaves every page’s text as it was',
-    (await pageOf(identity, 0)) === (await pageOf(original, 0)),
-    'the page reads as it did, so no object was rewritten with what it already held',
+    'a replacement that matches NOTHING, or replaces a word with ITSELF, is refused and saves nothing',
+    identity === 'NothingToReplaceError' && absent === 'NothingToReplaceError',
+    // ITS CONTROL IS THE FIRST CASE OF THIS FUNCTION: the same fixture with a find that matches is saved, so a rule that
+    // refused every replacement fails there and one that refused none fails here.
+    `itself: ${identity}; nothing matched: ${absent}`,
+  );
+  // AND THE CASE A PERSON MEETS: the page READS the word, as the find bar does, and no object holds it whole.
+  const split = await PDFDocument.create();
+  const splitFont = await split.embedFont(StandardFonts.Helvetica);
+  const splitPage = split.addPage([400, 300]);
+  splitPage.drawText('WID', { x: 30, y: 170, size: 11, font: splitFont });
+  splitPage.drawText('GET', { x: 49, y: 170, size: 11, font: splitFont });
+  const splitBytes = await split.save();
+  let splitAnswer = 'it was SAVED';
+  try {
+    await localPdfiumExecution.apply({
+      session: splitBytes,
+      command: replaceAll({ find: 'WIDGET', replace: 'GADGET' }),
+      sources: [],
+      reads: undefined,
+    });
+  } catch (error) {
+    splitAnswer = error instanceof Error ? error.name : String(error);
+  }
+  record(
+    'a word the page READS but no object holds whole is refused as nothing to replace, not saved unchanged',
+    (await pageOf(splitBytes, 0)).includes('WIDGET') && splitAnswer === 'NothingToReplaceError',
+    `page reads ${JSON.stringify(await pageOf(splitBytes, 0))}; ${splitAnswer}`,
   );
 
   // THE CAPTURE REFUSES, which is what makes the bus take a checkpoint — and

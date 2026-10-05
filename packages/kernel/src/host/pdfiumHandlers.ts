@@ -3,7 +3,12 @@ import type { Handlers } from '@monstera/contract';
 import type { CommandExecution } from '../commandRouting.js';
 import type { ByteImage } from '../engineSeam.js';
 import type { TextRun } from '../pdfiumFfi.js';
-import { EditRefusedError, TextNotInPlaceError, TextNotWritableError } from '../textEditRefusals.js';
+import {
+  EditRefusedError,
+  NothingToReplaceError,
+  TextNotInPlaceError,
+  TextNotWritableError,
+} from '../textEditRefusals.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import type { HostArea, HostFilesystem, HostSessions } from './engineHandlers.js';
 import {
@@ -309,6 +314,7 @@ export function createPdfiumHandlers({
           return { ok: false, error: { code: 'text-not-writable', detail: { characters: error.characters } } } as const;
         }
         if (error instanceof TextNotInPlaceError) return failed('text-not-in-place');
+        if (error instanceof NothingToReplaceError) return failed('nothing-to-replace');
         return refusedBy(error);
       }
       const written = await files.writeOutput(held.outputDirectory, into, applied);

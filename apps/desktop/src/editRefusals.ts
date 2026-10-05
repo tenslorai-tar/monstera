@@ -1,5 +1,6 @@
 import {
   EditRefusedError,
+  NothingToReplaceError,
   TextNotInPlaceError,
   TextNotWritableError,
   UnregisteredWriterError,
@@ -23,8 +24,9 @@ export function rewriteRefusalOf(thrown: unknown): DeclaredFailure<'edit-refused
 }
 
 /**
- * {@link rewriteRefusalOf}, and the two refusals only an edit can meet before anything is rewritten: no single text
- * object holds a word at its point (ADR-0156), and an engine this installation was assembled without.
+ * {@link rewriteRefusalOf}, and the three refusals only an edit can meet before anything is rewritten: no single text
+ * object holds a word at its point (ADR-0156), a replacement that would change nothing (ADR-0169 Decision 6), and an
+ * engine this installation was assembled without.
  *
  * ONE RULE for every route an edit takes, `document.execute` and `document.editCopy` alike. Each route spelt its own,
  * and the copy route's knew four of the codes the direct route knew, so an edit refused on a copy could not say what the
@@ -32,11 +34,15 @@ export function rewriteRefusalOf(thrown: unknown): DeclaredFailure<'edit-refused
  */
 export function editRefusalOf(
   thrown: unknown,
-): DeclaredFailure<'edit-refused' | 'text-not-writable' | 'text-not-in-place' | 'engine-unavailable'> | undefined {
+):
+  | DeclaredFailure<'edit-refused' | 'text-not-writable' | 'text-not-in-place' | 'nothing-to-replace' | 'engine-unavailable'>
+  | undefined {
   // A PROPERTY OF THE MACHINE: the composition root leaves a writer genuinely absent where no host for it could be built,
   // a state the shipped product is deliberately in, so it is a sentence and never an incident id. Which engine is ours.
   if (thrown instanceof UnregisteredWriterError) return { code: 'engine-unavailable' };
   // ONE OCCURRENCE NO SINGLE TEXT OBJECT HOLDS AT ITS POINT: nothing written, and the person can edit the line instead.
   if (thrown instanceof TextNotInPlaceError) return { code: 'text-not-in-place' };
+  // A REPLACEMENT THAT WOULD CHANGE NOTHING, refused before the bus recorded anything: the version has not moved.
+  if (thrown instanceof NothingToReplaceError) return { code: 'nothing-to-replace' };
   return rewriteRefusalOf(thrown);
 }

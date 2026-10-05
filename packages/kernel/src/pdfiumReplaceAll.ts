@@ -4,6 +4,7 @@ import type { CommandOfKind } from '@monstera/contract';
 import type { CaptureResult } from './commandLog.js';
 import type { ByteImage } from './engineSeam.js';
 import { objectRuns, pageCount, pdfiumWriter, replaceTextObjects } from './pdfiumFfi.js';
+import { NothingToReplaceError } from './textEditRefusals.js';
 
 /**
  * Document-wide replace-all, as the bus calls it.
@@ -46,7 +47,8 @@ import { objectRuns, pageCount, pdfiumWriter, replaceTextObjects } from './pdfiu
  * Decision 2, 13.7× over forty replacements). So this collects a page's
  * replacements and makes one `replaceTextObjects` call for it — and makes none
  * at all for a page with no match, because an untouched page must not pay a
- * regeneration for a command that found nothing on it.
+ * regeneration for a command that found nothing on it. A document where no page
+ * changed is {@link NothingToReplaceError}, and has no new version.
  */
 
 /**
@@ -170,6 +172,7 @@ export async function applyReplaceAllText(
 
   return onImage(image, async (session) => {
     const pages = await pageCount(session);
+    let rewritten = 0;
     for (let page = 0; page < pages; page += 1) {
       // SEQUENTIALLY, and per page. PDFium's page handles are not safe to work
       // through concurrently, and each page's generation is its own cost — so
@@ -191,7 +194,12 @@ export async function applyReplaceAllText(
       // empty list precisely so this decision is made here rather than there.
       if (replacements.length === 0) continue;
       await replaceTextObjects(session, page, replacements);
+      rewritten += 1;
     }
+    // NO PAGE CHANGED, SO NO VERSION (ADR-0169 Decision 6): thrown before the serialise, so the bus records nothing and
+    // the person reads that nothing matched. Serialised, an unchanged document came back as new bytes and a new version
+    // with an undo step that did nothing.
+    if (rewritten === 0) throw new NothingToReplaceError();
     return pdfiumWriter.serialise(session);
   });
 }
