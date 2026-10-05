@@ -747,6 +747,14 @@ Adding a row still means executing it first.
 
 - **PDF.js is never a source of truth.** It renders. The renderer's annotation
   and form models come from the kernel via the view model.
+
+  **A field is filled where it is on its page** (amended 2026-10-05,
+  [ADR-0168](DECISIONS/0168-a-field-is-filled-where-it-is-on-its-page.md)), by
+  the application's own form layer over the field's rectangle from
+  `document.formFields`, never by PDF.js's form layer, whose
+  `annotationStorage` would hold values the document does not. What may be
+  filled, and how, is one function the page and the Forms panel both take; at
+  rest the page shows the document's own appearance.
 - Engine handles are cached in `DocumentService`, created lazily, and **all
   invalidated together** on any mutation. One parse per engine per version,
   maximum.
@@ -2970,6 +2978,7 @@ deliberately, in their own commit, never as a side effect.
 Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
+| 2026-10-05 | **A field is filled where it is on its page** (§3.2's *PDF.js is never a source of truth*). The owner's item 14h: a form was filled only from the Forms panel, and pressing a field on the page did nothing. A form layer over each visible page puts a control over each fillable field's rectangle from `document.formFields`, above the text and link layers and below the drawing overlay. What may be filled, and how, is one function, `fieldFill`, that the page and the panel both render from. At rest the page shows the document's own appearance, which a fill regenerates (measured); a tick box or radio is a press, a text field opens an editor over the field, a choice field opens its options there. A field nobody can fill here has no control on the page. Rejected: PDF.js's form layer and its `annotationStorage`, inputs over every field at all times, a click that opens the panel, controls that decide for themselves | §3.2's rule, which named no way to fill a field on its page | [0168](DECISIONS/0168-a-field-is-filled-where-it-is-on-its-page.md) |
 | 2026-10-05 | **A link is shown on its page, and followed when a person asks** (invariant 24; the window policy's route to the browser). The owner's item 14c: a link was invisible on its page, could not be followed, and said nothing once added; the Links panel's web entries had nothing to press, since nothing was a way to ask *for that item*. Each page draws its links, outlined in the Comment section and named under the pointer; a click on a page link goes there, and a click on a web link names the address in a dialog first. `document.openLink` names the link by document, version, page and place, never by address; `main` reads the address in full from the engine host and opens `https:`, `http:` and `mailto:` only. The Links panel takes the same route; an added link says so. Rejected: the renderer passing the address, following without asking, `window.open`, widening the sign-in's HTTPS-only route, outlines at all times | invariant 24's *"until the user asks"*, which named no way to ask for a link; `openInBrowser` as the only route to the browser | [0167](DECISIONS/0167-a-link-is-shown-on-its-page-and-followed-when-a-person-asks.md) |
 | 2026-10-05 | **A tool's preview is placed as its commit is** (§6, the controller's `preview`). The owner's item 14d: dragging a selected mark drew a box from the press to the pointer, a marquee, and held it after the release, so the person saw a ghost box and then the mark appearing elsewhere. `preview` is given the page and its transform, as `commit` is, and `ToolPreview` gains several boxes; the select tool's preview of a move or a resize is the placement itself, computed by the function that builds the command, and the overlay's held shape is therefore where the marks went. Not done: the mark's pixels moving, since PDF.js 6.2.108 cannot leave one annotation out of a draw, and lifting pixels would move a highlight's words with it. Rejected: a preview in PDF space converted by the overlay, a transform captured at the gesture's start, a second preview path | §6's `preview(gesture)` and one-shape `ToolPreview` | [0166](DECISIONS/0166-a-tools-preview-is-placed-as-its-commit-is.md) |
 |---|---|---|---|
