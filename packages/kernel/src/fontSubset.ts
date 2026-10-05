@@ -179,13 +179,14 @@ export function subsetTag(bytes: Uint8Array): string {
 
 /**
  * `font` with its PostScript name, family and full name replaced by `postscript`, its table checksums and `head`'s
- * `checkSumAdjustment` recomputed. The `name` table is rewritten whole rather than edited: the subset's other names say
- * nothing a document needs, and a table built here has one encoding to get right.
+ * `checkSumAdjustment` recomputed. The `name` table is rewritten whole rather than edited, a table built here having
+ * one encoding to get right, and carries `kept` beside the three names: a subset's copyright notice and licence
+ * ({@link KEPT_NAME_IDS}), which its caller reads from the face.
  *
  * @throws when `postscript` is not printable ASCII without spaces (the PostScript name's own rule) or the font has no
  * `head` table.
  */
-export function withPostScriptName(font: Uint8Array, postscript: string): Uint8Array {
+export function withPostScriptName(font: Uint8Array, postscript: string, kept: readonly NameRecord[] = []): Uint8Array {
   if (!/^[\x21-\x7e]{1,63}$/u.test(postscript) || /[[\](){}<>/%]/u.test(postscript)) {
     throw new Error(`"${postscript}" is not a PostScript name`);
   }
@@ -203,7 +204,7 @@ export function withPostScriptName(font: Uint8Array, postscript: string): Uint8A
   const head = tables.find((table) => table.tag === 'head');
   if (head === undefined || head.data.length < 12) throw new Error('the font has no head table');
   head.data.fill(0, 8, 12);
-  tables.push({ tag: 'name', data: nameTable(postscript) });
+  tables.push({ tag: 'name', data: nameTable(postscript, kept) });
   tables.sort((left, right) => (left.tag < right.tag ? -1 : left.tag > right.tag ? 1 : 0));
 
   const directory = 12 + 16 * tables.length;
@@ -242,7 +243,9 @@ export function namedSubset(
   const subset = subsetFont(font, request);
   if (subset === null) return null;
   const name = `${subsetTag(subset)}+${postscript}`;
-  return { bytes: withPostScriptName(subset, name), name };
+  // THE NOTICE AND THE LICENCE TRAVEL WITH THE SUBSET, read from the face rather than from the subset, which HarfBuzz
+  // has already left without names 13 and 14.
+  return { bytes: withPostScriptName(subset, name, nameRecordsOf(font, request.faceIndex ?? 0, KEPT_NAME_IDS)), name };
 }
 
 function padded(length: number): number {
@@ -258,15 +261,76 @@ function checksum(bytes: Uint8Array): number {
   return sum;
 }
 
-/** A format 0 `name` table: names 1, 4 and 6, for the Macintosh (Roman) and Windows (UTF-16BE) platforms. */
-function nameTable(postscript: string): Uint8Array {
+/** One record of a `name` table, with its string's bytes as the table holds them. */
+export interface NameRecord {
+  readonly platform: number;
+  readonly encoding: number;
+  readonly language: number;
+  readonly id: number;
+  readonly data: Uint8Array;
+}
+
+/**
+ * The names a subset carries over from its face: the copyright notice (0), the licence description (13) and the
+ * licence's address (14). An open font's licence asks that its notice travel with it, and HarfBuzz keeps names 0 to 6
+ * alone by default, so 13 and 14 are read from the face itself (ADR-0172's correction of 2026-10-05).
+ */
+export const KEPT_NAME_IDS: ReadonlySet<number> = new Set([0, 13, 14]);
+
+/**
+ * Every record of the face's `name` table whose id is in `ids`, for the face at `faceIndex` of a collection or the one
+ * face of a plain file. Empty where the face has no `name` table; a table that runs past the file is refused.
+ */
+export function nameRecordsOf(font: Uint8Array, faceIndex: number, ids: ReadonlySet<number>): NameRecord[] {
+  const view = new DataView(font.buffer, font.byteOffset, font.byteLength);
+  const collection = font.length >= 12 && String.fromCharCode(font[0] ?? 0, font[1] ?? 0, font[2] ?? 0, font[3] ?? 0) === 'ttcf';
+  const start = collection ? view.getUint32(12 + 4 * faceIndex) : 0;
+  const count = view.getUint16(start + 4);
+  for (let index = 0; index < count; index += 1) {
+    const at = start + 12 + 16 * index;
+    if (String.fromCharCode(font[at] ?? 0, font[at + 1] ?? 0, font[at + 2] ?? 0, font[at + 3] ?? 0) !== 'name') continue;
+    const offset = view.getUint32(at + 8);
+    const length = view.getUint32(at + 12);
+    if (offset + length > font.length) throw new Error("the font's name table runs past its end");
+    const records = view.getUint16(offset + 2);
+    const strings = offset + view.getUint16(offset + 4);
+    const found: NameRecord[] = [];
+    for (let record = 0; record < records; record += 1) {
+      const entry = offset + 6 + 12 * record;
+      const id = view.getUint16(entry + 6);
+      if (!ids.has(id)) continue;
+      const from = strings + view.getUint16(entry + 10);
+      const size = view.getUint16(entry + 8);
+      if (from + size > offset + length) throw new Error(`the font's name ${String(id)} runs past its table`);
+      found.push({
+        platform: view.getUint16(entry),
+        encoding: view.getUint16(entry + 2),
+        language: view.getUint16(entry + 4),
+        id,
+        data: font.slice(from, from + size),
+      });
+    }
+    return found;
+  }
+  return [];
+}
+
+/**
+ * A format 0 `name` table: names 1, 4 and 6 for the Macintosh (Roman) and Windows (UTF-16BE) platforms, and the
+ * records `kept` carried over from the face, sorted by platform, encoding, language and id as the specification asks.
+ */
+function nameTable(postscript: string, kept: readonly NameRecord[]): Uint8Array {
   const roman = Uint8Array.from(postscript, (character) => character.charCodeAt(0));
   const utf16 = new Uint8Array(postscript.length * 2);
   for (let index = 0; index < postscript.length; index += 1) utf16[2 * index + 1] = postscript.charCodeAt(index);
   const records = [
     ...[1, 4, 6].map((id) => ({ platform: 1, encoding: 0, language: 0, id, data: roman })),
     ...[1, 4, 6].map((id) => ({ platform: 3, encoding: 1, language: 0x409, id, data: utf16 })),
-  ];
+    ...kept.filter((record) => ![1, 4, 6].includes(record.id)),
+  ].sort(
+    (left, right) =>
+      left.platform - right.platform || left.encoding - right.encoding || left.language - right.language || left.id - right.id,
+  );
   const header = 6 + 12 * records.length;
   const out = new Uint8Array(header + records.reduce((total, record) => total + record.data.length, 0));
   const writer = new DataView(out.buffer);

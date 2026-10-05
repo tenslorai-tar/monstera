@@ -5,7 +5,15 @@ import { Blob as HarfBuzzBlob, Face, Font } from 'harfbuzzjs';
 import { describe, expect, it } from 'vitest';
 
 import { embeddingOf, readFace } from './fontFaces.js';
-import { namedSubset, subsetFont, subsetTag, withPostScriptName } from './fontSubset.js';
+import {
+  KEPT_NAME_IDS,
+  type NameRecord,
+  nameRecordsOf,
+  namedSubset,
+  subsetFont,
+  subsetTag,
+  withPostScriptName,
+} from './fontSubset.js';
 
 /**
  * The font reader and the subsetter, against the bundled faces (ADR-0172 Decisions 3 and 5).
@@ -134,6 +142,29 @@ describe('namedSubset and withPostScriptName', () => {
       sum = (sum + (((renamed[at] ?? 0) << 24) | ((renamed[at + 1] ?? 0) << 16) | ((renamed[at + 2] ?? 0) << 8) | (renamed[at + 3] ?? 0))) >>> 0;
     }
     expect(sum).toBe(0xb1b0afba);
+  });
+
+  /**
+   * A SUBSET KEEPS ITS NOTICE AND ITS LICENCE (ADR-0172's correction of 2026-10-05): names 0, 13 and 14 as the face
+   * had them, where until then the rebuilt table held the three names alone. Read back by Windows' UTF-16 record.
+   * CONTROL: the face holds them, and the plain subset HarfBuzz answers holds no licence (13), so the subset's records
+   * came from the face and not from HarfBuzz.
+   */
+  it('carries the face’s copyright notice and licence records into the named subset', () => {
+    const text = (records: readonly NameRecord[], id: number): string | undefined => {
+      const record = records.find((each) => each.id === id && each.platform === 3);
+      return record === undefined ? undefined : new TextDecoder('utf-16be').decode(record.data);
+    };
+    const original = nameRecordsOf(whole, 0, KEPT_NAME_IDS);
+    expect(text(original, 0)).toMatch(/Copyright/u);
+    expect(text(original, 13)).toMatch(/SIL Open Font License/u);
+    expect(text(nameRecordsOf(subsetFont(whole, { unicodes: [0x41] }) ?? new Uint8Array(), 0, KEPT_NAME_IDS), 13)).toBeUndefined();
+
+    const named = namedSubset(whole, 'Arimo-Regular', { unicodes: [0x41] });
+    const kept = nameRecordsOf(named?.bytes ?? new Uint8Array(), 0, KEPT_NAME_IDS);
+    for (const id of [0, 13, 14]) expect(text(kept, id), `name ${String(id)}`).toBe(text(original, id));
+    // AND THE NAME IS STILL THE SUBSET'S, so the kept records did not displace the three this table exists to write.
+    expect(readFace(named?.bytes ?? new Uint8Array()).postscript).toBe(named?.name);
   });
 
   it('refuses a name PostScript does not allow', () => {
