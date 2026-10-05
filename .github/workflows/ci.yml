@@ -632,14 +632,16 @@ jobs:
         run: node scripts/ci/annotate.mjs scripts/proofs/typecheck.proof.mjs
 
       # The same gap, one gate along, and it cost a red board rather than being
-      # reasoned about: `npm run lint` is not a `check:*` name and not a `node`
-      # command line either, so the rule set governing every line of this
-      # repository was outside the sweep that runs before every push. 7ba978c
-      # added four ordinary lint errors, `npm run local -- --only check:`
-      # reported 14 of 14 passed, and CI failed at "Lint" on all three jobs.
+      # reasoned about: `npm run lint` is not a `check:*` name, so the rule set
+      # governing every line of this repository was outside the sweep that runs
+      # before every push. 7ba978c added four ordinary lint errors, `npm run
+      # local -- --only check:` reported 14 of 14 passed, and CI failed at "Lint"
+      # on all three jobs. `check:lint` names the same runner as `lint`.
       #
-      # Drives the real linter against fixture trees with their own flat config,
-      # so it needs node_modules and belongs in this job rather than with Guards.
+      # The runner is also the lint's memory guard (ADR-0170): one process per
+      # unit under one heap budget, each unit's peak printed in the Lint step.
+      # This drives it against fixture trees with their own flat config, so it
+      # needs node_modules and belongs in this job rather than with Guards.
       - name: Prove the lint runner separates a violating tree from a clean one
         run: node scripts/ci/annotate.mjs scripts/proofs/lintcheck.proof.mjs
 

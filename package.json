@@ -29,7 +29,7 @@
     "build:preload": "node scripts/build/preload.mjs",
     "build:renderer": "vite build --config scripts/build/renderer.vite.config.mjs",
     "build": "npm run typecheck && npm run build:preload && npm run build:renderer",
-    "lint": "eslint .",
+    "lint": "node scripts/lib/lintcheck.mjs",
     "test": "vitest run",
     "provision:gitleaks": "node scripts/provision/gitleaks.mjs",
     "provision:mupdf": "node scripts/provision/mupdf.mjs",

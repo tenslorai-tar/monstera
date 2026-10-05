@@ -1,58 +1,43 @@
 // @ts-check
 /**
- * Proof that the lint runner separates a violating tree from a clean one, and
- * that neither the parser nor the extent can silently shrink (rule B2).
+ * Proof that the lint runner lints every unit of a tree, separates a violation from a clean tree, and reports a unit
+ * over its heap budget as the budget (ADR-0170, rule B2).
  *
- * ## The three failures worth cases
+ * ## The failures worth cases
  *
- * A check that lints the repository has one reassuring answer — *no problems* —
- * and three ways to produce it without having looked:
+ * A lint has one reassuring answer, *no problems*, and several ways to give it without having looked:
  *
- *   - the runner reports success for a tree that violates a rule. That is the
- *     resolution test, and its fixture is one the absent guard would let
- *     through: a real violation, which nothing but ESLint catches.
- *   - the parser understands fewer segments than the authority declares, so the
- *     lint gets smaller and its output still says `ok`. `parseLintScript`
- *     returns `null` for a segment it does not understand rather than dropping
- *     it, precisely so the count can disagree.
- *   - the EXTENT shrinks with the count unmoved. This is where lint differs
- *     from the typecheck: `eslint .` narrowed to `eslint packages` is still one
- *     invocation, still parses, and lints less. `EXPECTED_TARGETS` is the
- *     literal that has to be edited for that to happen quietly, and these cases
- *     are what make the literal load-bearing rather than decorative.
+ *   - a violation is not reported. The resolution test, against a real violation nothing but ESLint catches, in each
+ *     kind of unit, so a unit kind the runner stopped linting reads red here rather than clean everywhere.
+ *   - a file belongs to no unit. The units are derived from the tree and end with the rest of it, so a file in a
+ *     directory nobody named, and a package added since, are each given a violation the runner must find.
+ *   - a unit over the budget reads as a lint problem, or as nothing. A budget too small to start under must be
+ *     reported as the budget; the same tree under the real budget is the control.
+ *   - the peak is not read. Every clean unit must report one, or the report CI prints is a column of blanks.
  *
- * The clean fixture is not symmetry for its own sake. A runner that reported
- * failure for everything would satisfy the resolution test while blocking every
- * push, and a proof that only asked *does it go red* could not tell the two
- * apart.
+ * The clean tree is not symmetry for its own sake: a runner that reported failure for everything would pass every
+ * resolution case while blocking every push.
  *
  * ## Fixtures are BUILT, never the repository
  *
- * The runner takes its ESLint path, invocations and working directory as
- * arguments so this can drive it against throwaway trees with their own flat
- * config. A runner that could only be exercised by linting the whole repository
- * would be exercised by nothing.
+ * {@link runLint} takes its ESLint path, units, working directory and budget as arguments, so this drives it against
+ * throwaway trees with their own flat config. A runner that could only be exercised by linting the repository would
+ * be exercised by nothing.
  *
  * Usage: node scripts/proofs/lintcheck.proof.mjs
  */
 
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
-import {
-  ESLINT_ENTRY,
-  EXPECTED_TARGETS,
-  parseLintScript,
-  runLint,
-  targetsOf,
-} from '../lib/lintcheck.mjs';
+import { ESLINT_ENTRY, LINT_HEAP_BUDGET_MB, lintUnits, runLint } from '../lib/lintcheck.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+const roster = createRoster(failures, { cases: 10 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -63,126 +48,120 @@ function check(label, condition, detail) {
 
 const root = repoRoot();
 const eslintPath = join(root, ESLINT_ENTRY);
-
-// ---------------------------------------------------------------------------
-// The parse, against strings rather than against the repository.
-// ---------------------------------------------------------------------------
-check(
-  'a plain lint script parses to one invocation carrying its target',
-  JSON.stringify(parseLintScript('eslint .')) === JSON.stringify([['.']]),
-  `parsed ${JSON.stringify(parseLintScript('eslint .'))}`,
-);
-
-check(
-  'a chained script parses to one invocation per segment',
-  parseLintScript('eslint . && eslint --max-warnings 0 docs').length === 2,
-  `parsed ${JSON.stringify(parseLintScript('eslint . && eslint --max-warnings 0 docs'))}. The ` +
-    `count is what the caller compares against the authority's segments, so a chain that ` +
-    `collapsed to one would be a lint that got smaller with nothing saying so.`,
-);
-
-check(
-  'a segment that is not ESLint is null rather than dropped',
-  parseLintScript('eslint . && prettier --check .')[1] === null,
-  `parsed ${JSON.stringify(parseLintScript('eslint . && prettier --check .'))}. Dropping it ` +
-    `would leave the counts equal and the check reporting on half the script.`,
-);
-
-check(
-  "a value-taking flag's value reads as a target, and the anchor survives it",
-  targetsOf([['--max-warnings', '0', '.']]).includes('.') &&
-    EXPECTED_TARGETS.every((expected) =>
-      targetsOf([['--max-warnings', '0', '.']]).includes(expected),
-    ),
-  `read ${JSON.stringify(targetsOf([['--max-warnings', '0', '.']]))}. The anchor is a SUBSET ` +
-    `test, so a spurious extra is harmless — and that is the documented behaviour only because ` +
-    `this case reddened against a comment claiming the stricter one. Equality would make adding ` +
-    `a flag an event, and adding is a widening.`,
-);
-
-check(
-  'CONTROL: a narrowed script fails the extent anchor',
-  EXPECTED_TARGETS.some((expected) => !targetsOf([['packages']]).includes(expected)),
-  `\`eslint packages\` yields ${JSON.stringify(targetsOf([['packages']]))} and ` +
-    `EXPECTED_TARGETS is ${JSON.stringify(EXPECTED_TARGETS)}. If a narrowed script satisfied the ` +
-    `anchor, the anchor is decoration — this is the case that makes the literal load-bearing.`,
-);
-
-check(
-  "and this repository's own lint script satisfies it",
-  EXPECTED_TARGETS.every((expected) => targetsOf([['.']]).includes(expected)),
-  `EXPECTED_TARGETS ${JSON.stringify(EXPECTED_TARGETS)} is not satisfied by \`eslint .\`, which ` +
-    `means the anchor refuses the script it was written for — a guard nobody can keep.`,
-);
-
-// ---------------------------------------------------------------------------
-// THE RESOLUTION TEST, against fixture trees with their own flat config.
-// ---------------------------------------------------------------------------
-/**
- * A throwaway tree with a flat config carrying one rule.
- *
- * The rule is `no-unused-vars` from ESLint's own core, so the fixture depends on
- * no plugin and no preset — a fixture whose config could stop loading would
- * report a clean tree for the same reason a broken parse does.
- *
- * @param {string} body the single source file's contents
- * @returns {string} the tree's path
- */
-function tree(body) {
-  const at = mkdtempSync(join(tmpdir(), 'monstera-lintcheck-'));
-  writeFileSync(
-    join(at, 'eslint.config.mjs'),
-    `export default [\n` +
-      `  { files: ['**/*.mjs'], rules: { 'no-unused-vars': 'error' } },\n` +
-      `];\n`,
-    'utf8',
-  );
-  writeFileSync(join(at, 'subject.mjs'), body, 'utf8');
-  return at;
-}
-
 if (!existsSync(eslintPath)) {
   process.stderr.write(
-    `ESLint is not at ${ESLINT_ENTRY}. This proof drives the real linter against fixture trees, ` +
-      `so without it there is nothing to separate. Run \`npm ci\`.\n`,
+    `ESLint is not at ${ESLINT_ENTRY}. This proof drives the real linter against fixture trees, so without it there ` +
+      `is nothing to separate. Run \`npm ci\`.\n`,
   );
   process.exit(1);
 }
 
-const dirty = tree('const unused = 1;\nexport const used = 2;\n');
-const clean = tree('export const used = 2;\n');
+// ---------------------------------------------------------------------------
+// The units of the REAL tree, read without linting it.
+// ---------------------------------------------------------------------------
+const real = lintUnits(root).map((unit) => unit.name);
+check(
+  'the real tree has a source and a tests unit for every package, then scripts, then the rest',
+  ['packages/ui', 'packages/kernel', 'packages/shared', 'apps/desktop'].every(
+    (dir) => real.includes(`${dir} (source)`) && real.includes(`${dir} (tests)`),
+  ) &&
+    real.at(-2) === 'scripts' &&
+    real.at(-1) === 'the rest of the tree',
+  `read ${JSON.stringify(real)}. A package missing here is a package the lint no longer reads, reported clean.`,
+);
+
+const CONFIG = [
+  'export default [',
+  "  { files: ['**/*.{js,mjs,ts}'], rules: { 'no-unused-vars': 'error' } },",
+  '];',
+  '',
+].join('\n');
+const DIRTY = 'const unused = 1;\nexport const used = 2;\n';
+const CLEAN = 'export const used = 2;\n';
+
+/**
+ * A tree with its own config, a package `packages/a` with a source and a test file, `scripts/`, and a directory no
+ * unit names; `dirty` says which of them carry a violation.
+ *
+ * @param {ReadonlySet<string>} dirty
+ */
+function tree(dirty) {
+  const at = mkdtempSync(join(tmpdir(), 'lintcheck-proof-'));
+  /** @param {string} path @param {string} body */
+  const put = (path, body) => {
+    mkdirSync(dirname(join(at, path)), { recursive: true });
+    writeFileSync(join(at, path), body, 'utf8');
+  };
+  put('eslint.config.js', CONFIG);
+  put('package.json', '{ "type": "module" }\n');
+  put('packages/a/package.json', '{ "type": "module" }\n');
+  put('apps/b/package.json', '{ "type": "module" }\n');
+  for (const file of ['packages/a/src/source.ts', 'packages/a/src/source.test.ts', 'apps/b/main.js', 'scripts/tool.mjs', 'other/stray.js']) {
+    put(file, dirty.has(file) ? DIRTY : CLEAN);
+  }
+  return at;
+}
+
+const everywhere = tree(
+  new Set(['packages/a/src/source.ts', 'packages/a/src/source.test.ts', 'apps/b/main.js', 'scripts/tool.mjs', 'other/stray.js']),
+);
+const testsOnly = tree(new Set(['packages/a/src/source.test.ts']));
+const clean = tree(new Set());
 try {
-  const dirtyRun = runLint(eslintPath, [['.']], dirty);
+  const statusOf = (/** @type {ReturnType<typeof runLint>} */ outcomes, /** @type {string} */ name) =>
+    outcomes.find((outcome) => outcome.unit.name === name)?.status;
+
+  const dirtyRun = runLint(eslintPath, lintUnits(everywhere), everywhere, LINT_HEAP_BUDGET_MB);
+  for (const name of ['packages/a (source)', 'packages/a (tests)', 'scripts']) {
+    check(
+      `RESOLUTION: a violation in ${name} is reported there`,
+      statusOf(dirtyRun, name) === 'problems',
+      `read ${JSON.stringify(dirtyRun.map((outcome) => [outcome.unit.name, outcome.status]))}.`,
+    );
+  }
   check(
-    'RESOLUTION: a tree that violates a rule is reported as a failure',
-    dirtyRun.failed.length === 1 &&
-      dirtyRun.failed[0]?.output.includes('no-unused-vars') === true,
-    `ran ${String(dirtyRun.ran)}, failed ${String(dirtyRun.failed.length)}, output ` +
-      `${JSON.stringify(dirtyRun.failed[0]?.output.slice(0, 400) ?? '')}. A runner that cannot ` +
-      `see a violation reports the whole repository clean, which is the answer everybody wants.`,
+    'A PACKAGE ADDED to the tree is linted with no edit to the runner (apps/b)',
+    statusOf(dirtyRun, 'apps/b (source)') === 'problems',
+    `read ${JSON.stringify(dirtyRun.map((outcome) => [outcome.unit.name, outcome.status]))}. The packages are derived ` +
+      `so that this needs nobody to remember a list.`,
+  );
+  check(
+    'A FILE NO UNIT NAMES (other/) is linted by the rest of the tree',
+    statusOf(dirtyRun, 'the rest of the tree') === 'problems',
+    `read ${JSON.stringify(dirtyRun.map((outcome) => [outcome.unit.name, outcome.status]))}. Without the rest, the ` +
+      `units' union is whatever somebody listed, and a directory added since reads clean.`,
   );
 
-  const cleanRun = runLint(eslintPath, [['.']], clean);
+  const testsRun = runLint(eslintPath, lintUnits(testsOnly), testsOnly, LINT_HEAP_BUDGET_MB);
   check(
-    'CONTROL: a clean tree is not reported as a failure',
-    cleanRun.failed.length === 0 && cleanRun.ran === 1,
-    `ran ${String(cleanRun.ran)}, failed ${String(cleanRun.failed.length)}: ` +
-      `${JSON.stringify(cleanRun.failed[0]?.output.slice(0, 400) ?? '')}. Without this, "it goes ` +
-      `red" is satisfied by a runner that goes red at everything — which blocks every push and ` +
-      `passes the resolution test.`,
+    'THE SPLIT SEPARATES: a violation in a test file is the tests unit’s, and the source unit stays clean',
+    statusOf(testsRun, 'packages/a (tests)') === 'problems' && statusOf(testsRun, 'packages/a (source)') === 'clean',
+    `read ${JSON.stringify(testsRun.map((outcome) => [outcome.unit.name, outcome.status]))}.`,
   );
 
-  const stopped = runLint(eslintPath, [['.'], ['.']], dirty);
+  const cleanRun = runLint(eslintPath, lintUnits(clean), clean, LINT_HEAP_BUDGET_MB);
   check(
-    'AND IT STOPS AT THE FIRST FAILURE, because && is part of what the authority said',
-    stopped.ran === 1,
-    `ran ${String(stopped.ran)} of 2 invocations. \`a && b\` runs b only if a succeeded, and ` +
-      `continuing past a failure is a second opinion about what the manifest said — the same ` +
-      `finding the typecheck runner carries as BBBB-2.`,
+    'CONTROL: a clean tree is clean in every unit, a package with no tests included',
+    cleanRun.every((outcome) => outcome.status === 'clean'),
+    `read ${JSON.stringify(cleanRun.map((outcome) => [outcome.unit.name, outcome.status, outcome.output.slice(0, 200)]))}.`,
+  );
+  check(
+    'EVERY clean unit reports its peak resident memory',
+    cleanRun.every((outcome) => typeof outcome.peakMb === 'number' && outcome.peakMb > 0),
+    `read ${JSON.stringify(cleanRun.map((outcome) => [outcome.unit.name, outcome.peakMb]))}. The report is what makes ` +
+      `growth visible before a crash; a blank one watches nothing.`,
+  );
+
+  // A BUDGET NO ESLINT CAN START UNDER, on the clean tree the control just passed: the only difference is the budget.
+  const [first] = lintUnits(clean);
+  const starved = first === undefined ? [] : runLint(eslintPath, [first], clean, 8);
+  check(
+    'A UNIT OVER THE BUDGET is reported as the budget, not as a lint problem, on a tree that is otherwise clean',
+    starved.length === 1 && starved[0]?.status === 'over-budget',
+    `read ${JSON.stringify(starved.map((outcome) => [outcome.unit.name, outcome.status, outcome.output.slice(-300)]))}.`,
   );
 } finally {
-  rmSync(dirty, { recursive: true, force: true });
-  rmSync(clean, { recursive: true, force: true });
+  for (const at of [everywhere, testsOnly, clean]) rmSync(at, { recursive: true, force: true });
 }
 
 process.stdout.write(

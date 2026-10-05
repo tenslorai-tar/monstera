@@ -77,3 +77,10 @@ So the cost is the sum of every program held at once, and no one unit is near an
 - `ui`'s two units each need between 1.5 and 2 GB of heap today, the least headroom in the tree; the report shows it
   growing, and a unit over the budget is a red lint with its name in it, which is the decision the guard exists to
   force before a machine crashes on it.
+
+## Correction, 2026-10-05: the sixteen units take longer than the packages did
+
+The first consequence above was estimated from the packages linted alone, about 225 s summed. Built, the runner's
+sixteen units read on the same machine at `dc5dd9e6`'s tree sum to about 273 s against 235 s for the one process, since
+each package's TypeScript program is now built twice, once for its source and once for its tests. About 15% longer,
+for a peak of 1,869 MB resident (`packages/ui`'s source) in place of 6,063 MB.
