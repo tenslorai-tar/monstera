@@ -14,9 +14,10 @@ import {
   PROBLEM_BUSY,
   PROBLEM_REFERENCE_LABEL,
   REPLACE_MOVES_LINE,
+  TEXT_EDIT_CHARACTERS_LABEL,
 } from '../messages/en.js';
 import CommandProblemBody from './CommandProblemBody.js';
-import { problemMessage } from './problemMessages.js';
+import { problemMessage, problemParticulars } from './problemMessages.js';
 
 afterEach(cleanup);
 
@@ -105,5 +106,27 @@ describe('a replacement that would change nothing says so (ADR-0169 Decision 6)'
     expect(screen.getByText(english(REPLACE_MOVES_LINE))).toBeTruthy();
     expect(english(REPLACE_MOVES_LINE)).toMatch(/^Nothing was changed: .*would have to move.*Edit text can change this line\.$/u);
     expect(problemMessage({ code: 'replace-moves-line' })).not.toBe(problemMessage({ code: 'nothing-to-replace' }));
+  });
+});
+
+/**
+ * What a surface shows beside a problem's sentence (ADR-0169). Read by the dialog and the editor alike, so a row with
+ * nothing in it reaches both.
+ */
+describe('problemParticulars', () => {
+  it('names the characters a font cannot show, one at a time', () => {
+    expect(problemParticulars({ code: 'text-not-writable', detail: { characters: '中文' } })).toStrictEqual({
+      label: TEXT_EDIT_CHARACTERS_LABEL,
+      value: '中 文',
+    });
+  });
+
+  /**
+   * RRRRRRR-16: `main` forwards only characters the person typed, so a refusal can name none. A label over an empty
+   * value reads as a list that failed to load; the sentence stands alone. CONTROL: the case above, the same code with a
+   * character, shows its row.
+   */
+  it('shows no row when the refusal names no character', () => {
+    expect(problemParticulars({ code: 'text-not-writable', detail: { characters: '' } })).toBeUndefined();
   });
 });
