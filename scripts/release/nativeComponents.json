@@ -237,6 +237,21 @@
           ]
         }
       ]
+    },
+    {
+      "package": "harfbuzzjs",
+      "components": [
+        {
+          "name": "HarfBuzz",
+          "version": "14.5.0 (read from the module's own versionString(), 2026-10-05; tag commit 863d3f7787c6df18d20e4535c5906bf3eb803bd5)",
+          "spdx": "MIT-Modern-Variant (\"Old MIT\"); its Microsoft USE data MIT",
+          "source": "https://github.com/harfbuzz/harfbuzz/tree/14.5.0",
+          "texts": [
+            { "committed": "scripts/release/licences/npm/harfbuzzjs/harfbuzz/COPYING.txt", "sha256": "ba8f810f2455c2f08e2d56bb49b72f37fcf68f1f4fade38977cfd7372050ad64" },
+            { "committed": "scripts/release/licences/npm/harfbuzzjs/harfbuzz/ms-use-COPYING.txt", "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }
+          ]
+        }
+      ]
     }
   ],
   "programs": [

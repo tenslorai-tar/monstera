@@ -1114,6 +1114,11 @@ jobs:
       - name: Lint
         run: node scripts/ci/annotate.mjs scripts/lib/lintcheck.mjs
 
+      # The kernel's font tests read the bundled faces and fail rather than skip without them (ADR-0172), so the floor
+      # provisions them as the matrix job does.
+      - name: Provision the bundled fonts
+        run: node scripts/ci/annotate.mjs scripts/provision/fonts.mjs
+
       - name: Tests
         run: npm test
 
