@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import { type ContractClient, MAX_QUERY_LENGTH, channels, createClient } from '@monstera/contract';
-import { type DocVersion, asDocId, asDocVersion, ok } from '@monstera/shared';
+import { type DocVersion, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -294,8 +294,8 @@ describe('FindBar match navigation', () => {
  * bar that sent its own defaults would look correct in every screenshot.
  */
 describe('FindBar replace-all', () => {
-  /** Renders a bar with a dispatcher, and records what it sends. */
-  function withCommands(): {
+  /** Renders a bar with a dispatcher, and records what it sends; `refusing` is the code its execute answers with. */
+  function withCommands(refusing?: 'replace-moves-line'): {
     readonly container: HTMLElement;
     readonly sent: { id: string; params: unknown }[];
     readonly applied: ReturnType<typeof vi.fn>;
@@ -315,6 +315,7 @@ describe('FindBar replace-all', () => {
           }),
         );
       }
+      if (refusing !== undefined) return Promise.resolve(err({ code: refusing }));
       return Promise.resolve(
         ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0 }),
       );
@@ -395,6 +396,30 @@ describe('FindBar replace-all', () => {
       byteLength: 10,
       historyDropped: 0,
     });
+  });
+
+  it('a Replace REFUSED as moving its line keeps both typed fields, says nothing was replaced, and redraws nothing', async () => {
+    const { container, applied } = withCommands('replace-moves-line');
+
+    await act(async () => {
+      fireEvent.change(only(container, '[data-find-input]', HTMLInputElement), { target: { value: 'narrow' } });
+      fireEvent.change(only(container, '[data-find-replacement]', HTMLInputElement), { target: { value: 'much wider' } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      only(container, '[data-find-replace-all]', HTMLButtonElement).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // THE TYPED WORDS STAY (the owner's answer of 2026-10-05): a person told why can change one word and send again.
+    expect(only(container, '[data-find-input]', HTMLInputElement).value).toBe('narrow');
+    expect(only(container, '[data-find-replacement]', HTMLInputElement).value).toBe('much wider');
+    // NOTHING MOVED: no "replaced" note and no version reported, against the case above where both happen.
+    expect(container.querySelector('.m-find-replaced')).toBeNull();
+    expect(applied).not.toHaveBeenCalled();
+    // AND THE CONTROL IS THE PERSON'S AGAIN.
+    expect(only(container, '[data-find-replace-all]', HTMLButtonElement).disabled).toBe(false);
   });
 
   it('CLEARS THE MATCHES afterwards, because the document moved under them', async () => {

@@ -13,6 +13,7 @@ import {
   EDIT_REFUSED_SAVE,
   EDIT_REFUSED_SET_TEXT,
   NOTHING_TO_REPLACE,
+  REPLACE_MOVES_LINE,
   PROBLEM_SERVICE_ADDRESS,
   PROBLEM_SERVICE_NO_KEY,
   PROBLEM_SERVICE_REFUSED,
@@ -50,6 +51,7 @@ export type CommandProblem =
   | { readonly code: 'text-not-writable'; readonly detail: FailureDetails['text-not-writable'] }
   | { readonly code: 'text-not-in-place' }
   | { readonly code: 'nothing-to-replace' }
+  | { readonly code: 'replace-moves-line' }
   | { readonly code: 'edit-refused'; readonly detail: FailureDetails['edit-refused'] }
   | { readonly code: 'copy-absent' }
   | { readonly code: 'copy-at-capacity' }
@@ -126,6 +128,7 @@ const CODE_MESSAGE: Readonly<Record<Exclude<CommandProblem['code'], 'edit-refuse
   'text-not-writable': TEXT_EDIT_NOT_WRITABLE,
   'text-not-in-place': TEXT_NOT_IN_PLACE,
   'nothing-to-replace': NOTHING_TO_REPLACE,
+  'replace-moves-line': REPLACE_MOVES_LINE,
   'copy-absent': PROBLEM_COPY_ABSENT,
   'copy-at-capacity': PROBLEM_COPY_AT_CAPACITY,
   'copy-busy': PROBLEM_COPY_BUSY,

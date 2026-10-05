@@ -193,7 +193,8 @@ export async function applyReplaceAllText(
       // NO CALL FOR A PAGE WITH NO MATCH. `replaceTextObjects` throws on an
       // empty list precisely so this decision is made here rather than there.
       if (replacements.length === 0) continue;
-      await replaceTextObjects(session, page, replacements);
+      // THE LINE IS HELD: a replacement that would move the text after it is refused, and the whole command with it.
+      await replaceTextObjects(session, page, replacements, 'held');
       rewritten += 1;
     }
     // NO PAGE CHANGED, SO NO VERSION (ADR-0169 Decision 6): thrown before the serialise, so the bus records nothing and

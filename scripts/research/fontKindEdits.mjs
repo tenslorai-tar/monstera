@@ -293,7 +293,7 @@ for (const [n, path] of outside.entries()) {
   const cIndex = c.lines[0].runs[0].index;
   /** @type {[string, (session: unknown) => Promise<unknown>][]} */
   const commands = [
-    ['replaceTextObject (line C)', (session) => pdfium.replaceTextObjects(session, 0, [{ index: cIndex, text: 'Control line changed.' }])],
+    ['replaceTextObject (line C)', (session) => pdfium.replaceTextObjects(session, 0, [{ index: cIndex, text: 'Control line changed.' }], 'as-written')],
     ['recolorPageObjects (line C)', (session) => pdfium.setObjectFills(session, 0, [{ index: cIndex, red: 200, green: 0, blue: 0, alpha: 255 }])],
     ['placePageObject (line C)', (session) => pdfium.placeObject(session, 0, cIndex, { moveBy: { x: 0, y: -20 }, scaleBy: { x: 1, y: 1 } })],
     ['deletePageObjects (line C)', (session) => pdfium.removeObjects(session, 0, [cIndex])],

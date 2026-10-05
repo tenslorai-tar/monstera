@@ -2140,6 +2140,8 @@ export const channels = {
     // the edit did not touch, and nothing was saved. It carries the step and the number PDFium answered.
     // `nothing-to-replace` IS A REPLACEMENT'S (ADR-0169 Decision 6): it matched nothing a text object holds, or changed
     // nothing, so there is no new version. The person's to read, for `text-not-in-place`'s reason.
+    // `replace-moves-line` IS A REPLACEMENT'S TOO: it would change its text's width with more text after it on the line,
+    // which only an edit that knows the line can move, so nothing was written. The person's, for the same reason.
     [
       'document-not-open',
       'document-busy',
@@ -2149,6 +2151,7 @@ export const channels = {
       'text-not-writable',
       'text-not-in-place',
       'nothing-to-replace',
+      'replace-moves-line',
       'edit-refused',
       'breaks-signatures',
       ...SERVICE_PROBLEMS,
@@ -3044,7 +3047,9 @@ export const channels = {
         // (ADR-0169): the copy route names the characters a font cannot show as the direct route does.
         problem: z.union([
           z
-            .object({ code: z.enum(['engine-unavailable', 'text-not-in-place', 'nothing-to-replace', 'document-poisoned']) })
+            .object({
+              code: z.enum(['engine-unavailable', 'text-not-in-place', 'nothing-to-replace', 'replace-moves-line', 'document-poisoned']),
+            })
             .strict(),
           z.object({ code: z.literal('text-not-writable'), detail: FAILURE_DETAIL_SCHEMAS['text-not-writable'] }).strict(),
           z.object({ code: z.literal('edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['edit-refused'] }).strict(),

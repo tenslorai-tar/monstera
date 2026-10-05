@@ -58,6 +58,18 @@ export class NothingToReplaceError extends Error {
   }
 }
 
+/**
+ * Why a Replace wrote nothing: it changes a text object's width and other text follows that object on its line, which
+ * would have to move (`replaceLineRule.ts`, the owner's answer of 2026-10-05). Moving it needs the line, which a
+ * Replace does not have; Edit text does. Thrown before anything is generated or serialised, so there is no new version.
+ */
+export class ReplaceMovesLineError extends Error {
+  constructor(options?: ErrorOptions) {
+    super('the replacement changes its text’s width and text follows it on its line, so nothing was written', options);
+    this.name = 'ReplaceMovesLineError';
+  }
+}
+
 export class TextNotWritableError extends Error {
   /**
    * The characters the font cannot show, as {@link unwritableCharacters} chose them; empty where the comparison found

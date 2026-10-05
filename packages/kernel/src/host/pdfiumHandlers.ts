@@ -6,6 +6,7 @@ import type { TextRun } from '../pdfiumFfi.js';
 import {
   EditRefusedError,
   NothingToReplaceError,
+  ReplaceMovesLineError,
   TextNotInPlaceError,
   TextNotWritableError,
 } from '../textEditRefusals.js';
@@ -315,6 +316,7 @@ export function createPdfiumHandlers({
         }
         if (error instanceof TextNotInPlaceError) return failed('text-not-in-place');
         if (error instanceof NothingToReplaceError) return failed('nothing-to-replace');
+        if (error instanceof ReplaceMovesLineError) return failed('replace-moves-line');
         return refusedBy(error);
       }
       const written = await files.writeOutput(held.outputDirectory, into, applied);

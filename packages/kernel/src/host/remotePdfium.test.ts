@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createClient } from '@monstera/contract';
 
 import type { ByteImage } from '../engineSeam.js';
-import { NothingToReplaceError, TextNotInPlaceError } from '../textEditRefusals.js';
+import { NothingToReplaceError, ReplaceMovesLineError, TextNotInPlaceError } from '../textEditRefusals.js';
 import { EngineCallFailed, EngineSessionGone, type SessionArea } from './remoteEngine.js';
 import { EngineSerialiseMismatch } from './remoteLifecycle.js';
 import { pdfiumChannels } from './pdfiumChannels.js';
@@ -309,6 +309,11 @@ describe('main’s PDFium writer', () => {
     const misplaced = apply();
     await expect(misplaced).rejects.toBeInstanceOf(TextNotInPlaceError);
     await expect(misplaced).rejects.not.toBeInstanceOf(NothingToReplaceError);
+    // AND A REPLACEMENT THAT WOULD MOVE ITS LINE is its own class too, for the same reason.
+    code = 'replace-moves-line';
+    const moving = apply();
+    await expect(moving).rejects.toBeInstanceOf(ReplaceMovesLineError);
+    await expect(moving).rejects.not.toBeInstanceOf(NothingToReplaceError);
   });
 
   it('refuses an answer whose count disagrees with the file that arrived', async () => {

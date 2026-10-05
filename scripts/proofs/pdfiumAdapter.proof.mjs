@@ -280,7 +280,7 @@ async function main() {
   // is whichever one is not in `texts`.
   const rectangle = [0, 1, 2, 3].find((index) => !texts.includes(index)) ?? -1;
   const nonText = await refusal(() =>
-    replaceTextObjects(session, 0, [{ index: rectangle, text: 'nope' }]),
+    replaceTextObjects(session, 0, [{ index: rectangle, text: 'nope' }], 'as-written'),
   );
   record(
     'replacing a non-text object is refused as a non-text object',
@@ -288,7 +288,7 @@ async function main() {
     nonText ?? 'it was accepted',
   );
   const outOfRange = await refusal(() =>
-    replaceTextObjects(session, 0, [{ index: 99, text: 'nope' }]),
+    replaceTextObjects(session, 0, [{ index: 99, text: 'nope' }], 'as-written'),
   );
   record(
     'an out-of-range index is refused as an index, not as a type',
@@ -299,7 +299,7 @@ async function main() {
   // code for, and Replace All reported success over text drawn as nothing. The fixture's Helvetica is WinAnsi, which
   // has no code for a Han character. CONTROL: the writable replacement below passes the same read-back.
   const unwritable = await refusal(() =>
-    replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: 'SECOND 漢' }]),
+    replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: 'SECOND 漢' }], 'as-written'),
   );
   record(
     'a replacement its font cannot draw is refused by the read-back, before anything is generated',
@@ -310,14 +310,14 @@ async function main() {
   // drops the rest. The read-back sees the drawn text end short of what was written and refuses, so nothing truncated
   // is ever generated. The page-unchanged case below covers this refusal too.
   const truncated = await refusal(() =>
-    replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: 'SECOND\u0000 the rest' }]),
+    replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: 'SECOND\u0000 the rest' }], 'as-written'),
   );
   record(
     'a replacement carrying a NUL is refused by the read-back, never saved cut at the terminator',
     truncated !== null && truncated.includes('cannot carry the text'),
     truncated ?? 'it was accepted, and saved as far as the NUL',
   );
-  const named = await refusal(() => replaceTextObjects(session, 0, []));
+  const named = await refusal(() => replaceTextObjects(session, 0, [], 'as-written'));
   record(
     'a replacement naming no object is refused rather than regenerating for nothing',
     named !== null && named.includes('named no text object'),
@@ -370,7 +370,7 @@ async function main() {
     priorOfNonText ?? "it answered a string for something that has no text",
   );
 
-  await replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: REPLACEMENT }]);
+  await replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: REPLACEMENT }], 'as-written');
   const saved = await pdfiumWriter.serialise(session);
 
   // READ BACK FROM A REOPENED DOCUMENT. A setter agreeing with itself proves
@@ -421,7 +421,7 @@ async function main() {
   await replaceTextObjects(both, 0, [
     { index: bothTexts[0] ?? -1, text: 'FIRST REPLACED IN THE SAME CALL' },
     { index: bothTexts[2] ?? -1, text: 'THIRD REPLACED IN THE SAME CALL' },
-  ]);
+  ], 'as-written');
   const bothReopened = await pdfiumWriter.open(await pdfiumWriter.serialise(both));
   const bothText = await pageText(bothReopened, 0);
   record(

@@ -150,7 +150,7 @@ const failures = [];
 // and 80 from its Decision 6's empty replacement: a word deleted, an object removed, and the checkpoint either takes,
 // and 82 from the same decision's *no version*: one occurrence for itself, and a word the page reads but no object
 // holds (the identity replace-all case became the nothing-matched one).
-const roster = createRoster(failures, { cases: 82 });
+const roster = createRoster(failures, { cases: 84 });
 
 /**
  * @param {string} name
@@ -556,20 +556,34 @@ async function replaceAtCases() {
     /The\s+is on this page/u.test(deleted) && !deleted.includes('The WIDGET') && deleted.includes('and the WIDGET again below'),
     `page 0 reads ${JSON.stringify(deleted)}`,
   );
-  // AND A WORD THAT WAS ITS OBJECT'S WHOLE TEXT REMOVES THE OBJECT. `WID` is the split pair's first object: PDFium's
-  // set refuses an empty string, so without the removal this is refused at `set-text` and nothing is deleted.
-  const whole = { ...at({ x: 35, y: 173 }, 'WID'), replace: '' };
+  // AND A WORD THAT WAS ITS OBJECT'S WHOLE TEXT REMOVES THE OBJECT. `GET` is the split pair's second object and ends
+  // its line: PDFium's set refuses an empty string, so without the removal this is refused at `set-text`.
+  const whole = { ...at({ x: 55, y: 173 }, 'GET'), replace: '' };
   const removal = await refusal(whole);
   const objectsBefore = (await textIndicesOf(original)).length;
   const removed = removal === null ? await applied(whole) : null;
   const objectsAfter = removed === null ? objectsBefore : (await textIndicesOf(removed)).length;
   const afterRemoval = removed === null ? '' : await pageOf(removed, 0);
   record(
-    'a word that was its object’s WHOLE text, replaced with nothing, removes that object and no other',
-    objectsAfter === objectsBefore - 1 && (afterRemoval.match(/WIDGET/gu) ?? []).length === 2,
+    'a word that was its object’s WHOLE text, at the END of its line, replaced with nothing, removes that object alone',
+    objectsAfter === objectsBefore - 1 && (afterRemoval.match(/WIDGET/gu) ?? []).length === 2 && afterRemoval.includes('WID'),
     removal === null
       ? `${String(objectsBefore)} text objects before, ${String(objectsAfter)} after; page 0 reads ${JSON.stringify(afterRemoval)}`
       : `it was refused: ${removal}`,
+  );
+
+  // A REPLACE THAT WOULD MOVE THE TEXT AFTER IT IS REFUSED (`replaceLineRule.ts`, the owner's answer of 2026-10-05): a
+  // wider `WID` would draw into `GET`, and an emptied one would leave a gap before it. CONTROL: `WDI` is the same three
+  // letters, so the same width, and is written, so a rule refusing every edit on a line of two objects fails it.
+  const wider = await refusal({ ...at({ x: 35, y: 173 }, 'WID'), replace: 'WIDE' });
+  const emptied = await refusal({ ...at({ x: 35, y: 173 }, 'WID'), replace: '' });
+  const sameWidth = { ...at({ x: 35, y: 173 }, 'WID'), replace: 'WDI' };
+  const sameRefusal = await refusal(sameWidth);
+  const sameRead = sameRefusal === null ? await pageOf(await applied(sameWidth), 0) : '';
+  record(
+    'one occurrence that would MOVE the text after it on its line is refused, wider or emptied; the same width is written',
+    wider === 'ReplaceMovesLineError' && emptied === 'ReplaceMovesLineError' && sameRead.includes('WDIGET'),
+    `wider: ${String(wider)}; emptied: ${String(emptied)}; same width: ${sameRefusal ?? JSON.stringify(sameRead)}`,
   );
   // ITS UNDO IS A CHECKPOINT: a removed object has no constructor, so the one string it held cannot put it back. The
   // same rule for the dialog's command, with a control that keeps an object and captures its string.
@@ -784,6 +798,27 @@ async function replaceAllCases() {
     'a word the page READS but no object holds whole is refused as nothing to replace, not saved unchanged',
     (await pageOf(splitBytes, 0)).includes('WIDGET') && splitAnswer === 'NothingToReplaceError',
     `page reads ${JSON.stringify(await pageOf(splitBytes, 0))}; ${splitAnswer}`,
+  );
+  // ONE REPLACEMENT THAT WOULD MOVE ITS LINE REFUSES THE WHOLE COMMAND (`replaceLineRule.ts`): `WID` matches on every
+  // line, inside the single-object lines where nothing follows and in the split pair where `GET` does, so a refusal
+  // that dropped only the offending one would save the rest. CONTROL: the same-width `WDI` is written everywhere.
+  const movesLine = await refusedAs({ find: 'WID', replace: 'WIDE', caseSensitive: true });
+  let everywhere = '';
+  try {
+    const written = await localPdfiumExecution.apply({
+      session: original,
+      command: replaceAll({ find: 'WID', replace: 'WDI', caseSensitive: true }),
+      sources: [],
+      reads: undefined,
+    });
+    everywhere = `${await pageOf(written, 0)} | ${await pageOf(written, 2)}`;
+  } catch (error) {
+    everywhere = `refused: ${error instanceof Error ? error.name : String(error)}`;
+  }
+  record(
+    'a replace-all where ONE replacement would move its line is refused WHOLE; the same width is written on every page',
+    movesLine === 'ReplaceMovesLineError' && (everywhere.match(/WDIGET/gu) ?? []).length === 4,
+    `wider: ${movesLine}; same width: ${JSON.stringify(everywhere)}`,
   );
 
   // THE CAPTURE REFUSES, which is what makes the bus take a checkpoint — and
@@ -1662,7 +1697,7 @@ async function blockEditCases() {
     try {
       const [object] = renamed.narrowedLines[1] ?? [];
       if (object !== undefined) {
-        await replaceTextObjects(session, 0, [{ index: object, text: accented }]);
+        await replaceTextObjects(session, 0, [{ index: object, text: accented }], 'as-written');
         const saved = await pdfiumWriter.serialise(session);
         premise = (await textOf(saved)).includes('déjà') ? 'the page’s own font carried é' : 'held: written and unseen';
       }

@@ -322,6 +322,7 @@ export {
 export {
   EditRefusedError,
   NothingToReplaceError,
+  ReplaceMovesLineError,
   TextNotInPlaceError,
   TextNotWritableError,
 } from './textEditRefusals.js';

@@ -204,3 +204,35 @@ same refusal travels, each of which would have turned it into `internal`:
 
 The renderer reads every problem's sentence through one function, `problemMessage`, since `edit-refused`'s sentence is
 the step's rather than the code's.
+
+## The owner's answer, 2026-10-05: a Replace that would need the line refuses
+
+P0 asked that Replace take the editor's safety: its twin-font fallback, its read-back, and moving the runs after a
+changed word. The owner's answer: *"not in P0e. For now, Replace refuses safely whenever it would need whole-line
+knowledge: typed words kept, the reason shown, nothing changed. The real fix belongs to P1 (fonts) and P2
+(paragraphs)."*
+
+- **The twin font is already a refusal.** A character the run's font cannot draw reads back as something else, and
+  `replaceTextObjects` throws `TextNotWritableError` naming the characters before anything is generated (CR-NAT-10).
+  A Replace never falls back to a twin, so it never needs the line for that.
+- **Moving later runs is the new refusal, `replace-moves-line`.** A text object keeps its origin when its string
+  changes, so a wider replacement draws into the object after it on its line and a narrower or emptied one leaves a
+  gap. Under `line: 'held'`, `replaceTextObjects` reads each object's characters before and after the sets and throws
+  `ReplaceMovesLineError` before anything is generated when a replaced object's advance end moves by more than a
+  quarter point and another object follows it on its line (`replaceLineRule.ts`). One such replacement refuses the
+  whole command. Both Replace commands hold the line; so does `replaceTextObject`, which nothing dispatches and which
+  has no line knowledge either. Only an undo writes `'as-written'`, since the strings it puts back are the line as it
+  was.
+- **The end is the ADVANCE's, not the ink's.** Measured on PDFium 155 (Linux): `WID` and `WDI` are one width in
+  Helvetica and end their ink at different places, and a rule reading ink refused the second; `FPDFText_GetLooseCharBox`
+  spans each character's advance, and with it the second is written.
+- **A change to 64f24233's behaviour, stated:** an empty replacement deleting a word that is its own object, with text
+  after it on the line, was written and left a gap. It is refused now; one that ends its line is still removed.
+- **Erring towards refusal.** *Follows on its line* is any object whose ink overlaps vertically by more than half the
+  shorter height and starts to the right of the replaced one's start, so text in another column on the same baseline
+  counts. The refusal writes nothing and names Edit text, which moves the line.
+
+Proof: `proof:pdfiumcommand` (84, real library) holds both commands refused, wider and emptied, with the same-width
+`WDI` written as the control, and a replace-all refused whole while its other matches had nothing after them;
+`replaceLineRule.test.ts` holds the rule's geometry. Mutations: the rule off, and a zero tolerance, each turn both
+command cases red. The code travels as `nothing-to-replace` does, and the find bar keeps both typed fields.

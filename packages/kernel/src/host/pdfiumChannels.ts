@@ -383,7 +383,7 @@ export const pdfiumChannels = {
     wire: {
       ...byteImageWire,
       transferFailures: [...byteImageWire.transferFailures, 'edit-refused'] as const,
-      applyFailures: ['text-not-writable', 'text-not-in-place', 'nothing-to-replace'] as const,
+      applyFailures: ['text-not-writable', 'text-not-in-place', 'nothing-to-replace', 'replace-moves-line'] as const,
     },
     // IN A FILE (ADR-0138): `replaceTextObject` and `editTextBlock` multiply per-entry text bounds past a frame.
     commandRoute: 'file',

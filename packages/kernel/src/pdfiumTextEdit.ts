@@ -169,8 +169,9 @@ export async function applyReplaceTextObject(
   command: CommandOfKind<'replaceTextObject'>,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {
-    // READ BACK THROUGH THE CONTRACT'S DECODER, the one inverse of the wire form (ADR-0142).
-    await replaceTextObjects(session, command.page, replacementsOf(command));
+    // READ BACK THROUGH THE CONTRACT'S DECODER, the one inverse of the wire form (ADR-0142). THE LINE IS HELD: strings
+    // set object by object carry no knowledge of the line, a Replace's position (`replaceLineRule.ts`).
+    await replaceTextObjects(session, command.page, replacementsOf(command), 'held');
     return pdfiumWriter.serialise(session);
   });
 }
@@ -193,7 +194,8 @@ export async function invertReplaceTextObject(
   inverse: PriorTextObjects,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {
-    await replaceTextObjects(session, inverse.page, inverse.objects);
+    // AS WRITTEN: the recorded strings are the line as it was, widths and all, and an undo is never refused for them.
+    await replaceTextObjects(session, inverse.page, inverse.objects, 'as-written');
     return pdfiumWriter.serialise(session);
   });
 }

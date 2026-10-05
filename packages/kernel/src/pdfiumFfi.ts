@@ -4,7 +4,8 @@ import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 import type { ByteImage, EngineWriter, PdfiumSession } from './engineSeam.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
-import { EditRefusedError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
+import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
+import { EditRefusedError, ReplaceMovesLineError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
 /**
@@ -93,6 +94,7 @@ interface Bound {
   readonly charObject: Native;
   readonly charGenerated: Native;
   readonly charBox: Native;
+  readonly looseCharBox: Native;
   readonly objectBounds: Native;
   readonly getMatrix: Native;
   readonly setMatrix: Native;
@@ -291,6 +293,9 @@ export function openPdfium(libraryPath: string): void {
         'int FPDFText_GetCharBox(void *textPage, int index, _Out_ double *left, _Out_ double *right, _Out_ double *bottom, _Out_ double *top)',
       ),
     ),
+    // ONE CHARACTER'S ADVANCE, as a box from its origin across its width in the font, whatever its ink: where the next
+    // character starts. `replaceLineRule.ts` measures a run's end by it, since ink ends differently letter by letter.
+    looseCharBox: native(library.func('int FPDFText_GetLooseCharBox(void *textPage, int index, _Out_ FS_RECTF *rect)')),
     // ONE OBJECT'S BOX, in PAGE space and after its matrix — measured, and it is
     // what a surface draws a handle on. Note the parameter ORDER differs from
     // `charBox` above: left, bottom, right, top here against left, right,
@@ -999,7 +1004,17 @@ interface WalkedRun {
 function walkRuns(
   bindings: Bound,
   handle: unknown,
-): { readonly runs: ReadonlyMap<number, WalkedRun>; readonly unaddressable: number } {
+): {
+  readonly runs: ReadonlyMap<number, WalkedRun>;
+  readonly unaddressable: number;
+  /**
+   * Where each run's last ADVANCE ends, by object index: the furthest right edge of its characters' loose boxes, which
+   * is where text after it starts. A run's `right` is its ink's, and two strings of one width end their ink at
+   * different places (measured: `WID` and `WDI` in Helvetica). Beside the runs rather than in them, since a run is
+   * spread into what crosses the host's pipe and this is the line rule's alone.
+   */
+  readonly ends: ReadonlyMap<number, number>;
+} {
   const textPage: unknown = bindings.loadTextPage(handle);
   if (textPage === null) throw refusedAt('page', 'PDFium could not load the page for text reading');
   try {
@@ -1013,6 +1028,7 @@ function walkRuns(
     const chars = numberFrom(bindings.countChars(textPage), 'FPDFText_CountChars');
     /** index -> the run being accumulated. Insertion order is reading order. */
     const runs = new Map<number, WalkedRun>();
+    const ends = new Map<number, number>();
     let unaddressable = 0;
     /** The run the last DRAWN character joined, for a generated space to follow. */
     let previous: WalkedRun | undefined;
@@ -1071,6 +1087,10 @@ function walkRuns(
         runs.set(index, held);
       }
       held.text += character;
+      const loose: Record<string, number> = {};
+      if (numberFrom(bindings.looseCharBox(textPage, at, loose), 'FPDFText_GetLooseCharBox') === 1) {
+        ends.set(index, Math.max(ends.get(index) ?? Number.NEGATIVE_INFINITY, loose['right'] ?? Number.NEGATIVE_INFINITY));
+      }
       // THE UNION, so a run's extent covers every character in it. A run sized
       // from its first character alone would lose an ascender and stop
       // overlapping the neighbour it shares a line with.
@@ -1089,6 +1109,7 @@ function walkRuns(
       // every comparison it would answer falsely.
       runs: new Map([...runs.entries()].filter(([, run]) => Number.isFinite(run.left))),
       unaddressable,
+      ends,
     };
   } finally {
     bindings.closeTextPage(textPage);
@@ -1323,11 +1344,19 @@ function textObjectAt(bindings: Bound, handle: unknown, page: number, index: num
  * there. `FPDFText_SetText` on a path object is undefined behaviour.
  * @throws TextNotWritableError when a write reads back as something other than what was written: the run's font
  * cannot draw it, and nothing is generated.
+ * @throws ReplaceMovesLineError under `line: 'held'` when a replacement changes its object's width and text follows it
+ * on its line, before anything is generated.
+ *
+ * @param line `'held'` for a Replace, which has no knowledge of the line and refuses an edit that would move the text
+ *   after it (`replaceLineRule.ts`); `'as-written'` where the strings are already what the line should hold: an undo
+ *   putting back the strings it recorded, which also puts back their widths, and the adapter's own proofs, which
+ *   measure the write rather than the line. Required, so no caller inherits either.
  */
 export function replaceTextObjects(
   session: PdfiumSession,
   page: number,
   replacements: readonly TextReplacement[],
+  line: 'held' | 'as-written',
 ): Promise<void> {
   return promised(() => {
     onPage(session, page, (handle) => {
@@ -1348,10 +1377,23 @@ export function replaceTextObjects(
       // after every set, as the block edit removes, so no index above was read from a page already renumbered.
       const kept = resolved.filter(({ replacement }) => !removesItsObject(replacement.text));
       const removed = resolved.filter(({ replacement }) => removesItsObject(replacement.text));
+      // THE LINE AS IT WAS, read before any write and only where it is held: each object's ink and advance end.
+      const before = line === 'held' ? lineBoxes(walkRuns(bindings, handle)) : undefined;
       for (const { replacement, object } of kept) {
         if (numberFrom(bindings.setText(object, wideString(replacement.text)), 'FPDFText_SetText') !== 1) {
           throw refusedAt('set-text', `FPDFText_SetText refused the replacement for object ${String(replacement.index)}`);
         }
+      }
+      // MEASURED AFTER THE SETS AND BEFORE THE REMOVALS, so every index still names the object it named above. An object
+      // with no characters read back has no box here and is the read-back's to refuse.
+      if (before !== undefined) {
+        const now = lineBoxes(walkRuns(bindings, handle));
+        const after = new Map<number, RunBox | null>();
+        for (const { replacement } of resolved) {
+          const box = removesItsObject(replacement.text) ? null : now.get(replacement.index);
+          if (box !== undefined) after.set(replacement.index, box);
+        }
+        if (replacementsMovingTheirLine(before, after).length > 0) throw new ReplaceMovesLineError();
       }
       for (const { replacement, object } of removed) {
         if (numberFrom(bindings.removeObject(handle, object), 'FPDFPage_RemoveObject') !== 1) {
@@ -1389,6 +1431,16 @@ export function replaceTextObjects(
       );
     });
   });
+}
+
+/** Each walked run as the line rule reads it: its ink's start and height, and its advance's end. */
+function lineBoxes(walked: ReturnType<typeof walkRuns>): ReadonlyMap<number, RunBox> {
+  const boxes = new Map<number, RunBox>();
+  for (const [index, run] of walked.runs) {
+    const end = walked.ends.get(index);
+    if (end !== undefined && Number.isFinite(end)) boxes.set(index, { left: run.left, end, bottom: run.bottom, top: run.top });
+  }
+  return boxes;
 }
 
 /**

@@ -215,7 +215,7 @@ async function edited(pdfium, bytes, promote) {
     if (promote) await pdfium.promoteFormObjects(session, 0);
     const [first] = await pdfium.textObjectIndices(session, 0);
     if (first === undefined) throw new Error('the fixture has no text object to edit');
-    await pdfium.replaceTextObjects(session, 0, [{ index: first, text: 'Edited' }]);
+    await pdfium.replaceTextObjects(session, 0, [{ index: first, text: 'Edited' }], 'as-written');
     saved = await pdfium.pdfiumWriter.serialise(session);
   } finally {
     await pdfium.pdfiumWriter.close(session);

@@ -3042,4 +3042,6 @@ export type EngineFailureCode =
   // AND ONE OCCURRENCE NAMED BY ITS POINT that no single text object holds there (ADR-0156): the person's too.
   | 'text-not-in-place'
   // AND A REPLACEMENT THAT WOULD CHANGE NOTHING, which makes no version (ADR-0169 Decision 6): the person's too.
-  | 'nothing-to-replace';
+  | 'nothing-to-replace'
+  // AND A REPLACEMENT THAT WOULD MOVE THE TEXT AFTER IT on its line, which a Replace cannot do (`replaceLineRule.ts`).
+  | 'replace-moves-line';

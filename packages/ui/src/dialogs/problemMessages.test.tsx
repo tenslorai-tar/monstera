@@ -13,6 +13,7 @@ import {
   NOTHING_TO_REPLACE,
   PROBLEM_BUSY,
   PROBLEM_REFERENCE_LABEL,
+  REPLACE_MOVES_LINE,
 } from '../messages/en.js';
 import CommandProblemBody from './CommandProblemBody.js';
 import { problemMessage } from './problemMessages.js';
@@ -93,5 +94,16 @@ describe('a replacement that would change nothing says so (ADR-0169 Decision 6)'
     // ITS OWN, not its neighbour's: a word no single object holds at a point is a different refusal with a different way
     // out, and a table that answered both with one sentence would pass the lines above.
     expect(problemMessage({ code: 'nothing-to-replace' })).not.toBe(problemMessage({ code: 'text-not-in-place' }));
+  });
+
+  it('a replacement that would MOVE ITS LINE says nothing changed, why, and what can make the edit', () => {
+    render(
+      <I18nProvider i18n={i18n}>
+        <CommandProblemBody code="replace-moves-line" />
+      </I18nProvider>,
+    );
+    expect(screen.getByText(english(REPLACE_MOVES_LINE))).toBeTruthy();
+    expect(english(REPLACE_MOVES_LINE)).toMatch(/^Nothing was changed: .*would have to move.*Edit text can change this line\.$/u);
+    expect(problemMessage({ code: 'replace-moves-line' })).not.toBe(problemMessage({ code: 'nothing-to-replace' }));
   });
 });

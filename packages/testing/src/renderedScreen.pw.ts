@@ -795,18 +795,34 @@ for (const look of LOOKS) {
   });
 }
 
-// A REPLACEMENT WITH NOTHING TO REPLACE (ADR-0169 Decision 6), in every theme: the find bar's Replace everywhere, which
-// the shim answers as main answers a find no text object holds whole. The sentence is said, and the bar does not say
-// the replacement happened.
-for (const look of LOOKS) {
-  test(`${look.name}: a replacement with NOTHING TO REPLACE says so, claims nothing, and passes axe`, async ({ page }) => {
+// A REPLACEMENT THAT CHANGED NOTHING, in every theme, for each reason: NOTHING TO REPLACE (ADR-0169 Decision 6), which
+// the shim answers as main answers a find no text object holds whole, and one that WOULD MOVE ITS LINE (the owner's
+// answer of 2026-10-05, `replaceLineRule.ts`). The sentence is said, the bar does not say the replacement happened, and
+// the words the person typed are still in both fields.
+const REPLACE_REFUSALS = [
+  {
+    name: 'NOTHING TO REPLACE',
+    code: 'nothing-to-replace',
+    sentence: 'Nothing was changed: no text Monstera can replace matched. A word drawn in two pieces can be changed with Edit text.',
+  },
+  {
+    name: 'A MOVED LINE',
+    code: 'replace-moves-line',
+    sentence:
+      'Nothing was changed: the new words are a different width, and the text after them on the line would have to move, which Replace cannot do yet. Edit text can change this line.',
+  },
+] as const;
+for (const refusal of REPLACE_REFUSALS) for (const look of LOOKS) {
+  test(`${look.name}: a replacement refused for ${refusal.name} says so, claims nothing, keeps the typed words, and passes axe`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const bytes = await threePagePdf();
     const docId = asDocId('00000000-0000-4000-8000-0000000000f2');
     await bridgeUnder(page, look, {
       opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
       documentBytes: new Map([[docId, bytes]]),
-      refusals: new Map([[docId, { code: 'nothing-to-replace' }]]),
+      refusals: new Map([[docId, { code: refusal.code }]]),
     });
     await page.goto('/');
     await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
@@ -820,20 +836,23 @@ for (const look of LOOKS) {
     await panel.getByRole('button', { name: 'Replace everywhere' }).click();
 
     const dialog = page.getByRole('dialog');
-    await expect(
-      dialog.getByText(
-        'Nothing was changed: no text Monstera can replace matched. A word drawn in two pieces can be changed with Edit text.',
-      ),
-    ).toBeVisible();
+    await expect(dialog.getByText(refusal.sentence)).toBeVisible();
     // NOTHING HAPPENED, SO NOTHING IS REPORTED: the bar's after-the-fact note is for a replacement that ran.
     await expect(panel.locator('.m-find-replaced')).toHaveCount(0);
-
+    // AXE ON THE OPEN DIALOG, which is the screen the person is shown.
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
     expect(
       blocking,
       blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
     ).toEqual([]);
+
+    // AND THE TYPED WORDS STAY, so the person can change one and send again: read once the dialog is dismissed, since
+    // the modal hides the panel behind it from the accessibility tree the locators read.
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(panel.getByRole('textbox', { name: 'Find text' })).toHaveValue('GIZMO');
+    await expect(panel.getByRole('textbox', { name: 'Replace with' })).toHaveValue('GADGET');
   });
 }
 

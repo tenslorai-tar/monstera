@@ -9,7 +9,7 @@ import {
 } from '@monstera/contract';
 
 import type { ByteImage } from '../engineSeam.js';
-import { EditRefusedError, NothingToReplaceError } from '../textEditRefusals.js';
+import { EditRefusedError, NothingToReplaceError, ReplaceMovesLineError } from '../textEditRefusals.js';
 import { TOKEN_BYTES } from '../token.js';
 import type { HostArea } from './engineHandlers.js';
 import { sessionFileAnswers } from './fileAnswers.js';
@@ -197,6 +197,8 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         if (image.length === 3) throw new EditRefusedError('read-back', 0, 'the saved page lost text');
         // FOUR BYTES ARE A DOCUMENT HOLDING NOTHING THE REPLACEMENT WOULD CHANGE (ADR-0169 Decision 6).
         if (image.length === 4) throw new NothingToReplaceError();
+        // FIVE BYTES ARE A REPLACEMENT THAT WOULD MOVE THE TEXT AFTER IT ON ITS LINE (`replaceLineRule.ts`).
+        if (image.length === 5) throw new ReplaceMovesLineError();
         return Promise.resolve(applied);
       },
       capture: (image) => {
@@ -471,6 +473,30 @@ describe('the PDFium host body', () => {
     // THE ENGINE WAS REACHED with the file's bytes, so the code is the handler's reading of its refusal and not a
     // request refused on the way in, which also writes nothing.
     expect(calls).toContain('apply:1,2,3,4');
+    expect(calls.filter((entry) => entry.startsWith('incident:'))).toStrictEqual([]);
+  });
+
+  it('answers a replacement that would move its line as replace-moves-line, and writes nothing', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1, 2, 3, 4, 5]));
+
+    stream.feed(
+      request('a1', 'engine/apply', {
+        session,
+        sources: [],
+        command: { kind: 'replaceAllText', find: 'narrow', replace: 'much wider' },
+        from: IN,
+        into: OUT,
+      }, undefined, files),
+    );
+    await stream.whenSent(2);
+
+    // ITS OWN CODE, for `nothing-to-replace`'s reason, and the engine was reached, so it is the handler's reading.
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'replace-moves-line' } } });
+    expect(files.written.size).toBe(0);
+    expect(calls).toContain('apply:1,2,3,4,5');
     expect(calls.filter((entry) => entry.startsWith('incident:'))).toStrictEqual([]);
   });
 

@@ -394,7 +394,7 @@ async function main() {
   // CLAIM 2 — an edit changes only where it was made.
   const session = await pdfiumWriter.open(original);
   const texts = await textObjectIndices(session, 0);
-  await replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: REPLACEMENT }]);
+  await replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: REPLACEMENT }], 'as-written');
   const editedBytes = await pdfiumWriter.serialise(session);
   await pdfiumWriter.close(session);
   const editedRender = renderPageOf(api, editedBytes, 0);

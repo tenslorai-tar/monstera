@@ -15,6 +15,7 @@ import type { TextRun } from '../pdfiumFfi.js';
 import {
   EditRefusedError,
   NothingToReplaceError,
+  ReplaceMovesLineError,
   TextNotInPlaceError,
   TextNotWritableError,
 } from '../textEditRefusals.js';
@@ -151,6 +152,7 @@ function answered<T>(
   }
   if (error.code === 'text-not-in-place') throw new TextNotInPlaceError();
   if (error.code === 'nothing-to-replace') throw new NothingToReplaceError();
+  if (error.code === 'replace-moves-line') throw new ReplaceMovesLineError();
   if (error.code === 'edit-refused') {
     throw new EditRefusedError(error.detail.step, error.detail.engineError, `the PDFium host refused ${channel}`);
   }

@@ -113,7 +113,7 @@ export async function applyReplaceTextAt(
     // A REPLACEMENT THAT CHANGES NOTHING — the word for itself — writes nothing and makes no version, `replaceAllText`'s
     // rule (ADR-0169 Decision 6): refused before the serialise, so the bus records nothing.
     if (picked.after === picked.before) throw new NothingToReplaceError();
-    await replaceTextObjects(session, command.page, [{ index: picked.index, text: picked.after }]);
+    await replaceTextObjects(session, command.page, [{ index: picked.index, text: picked.after }], 'held');
     return pdfiumWriter.serialise(session);
   });
 }
