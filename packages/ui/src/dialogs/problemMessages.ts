@@ -29,7 +29,9 @@ import {
   PROBLEM_INTERNAL,
   PROBLEM_NOT_OPEN,
   PROBLEM_POISONED,
+  PROBLEM_REFERENCE_LABEL,
   PROBLEM_STALE_TARGET,
+  TEXT_EDIT_CHARACTERS_LABEL,
   TEXT_EDIT_NOT_WRITABLE,
   TEXT_NOT_IN_PLACE,
 } from '../messages/en.js';
@@ -68,6 +70,26 @@ export function problemMessage(problem: CommandProblem): MessageKey {
   if (problem.code !== 'edit-refused') return CODE_MESSAGE[problem.code];
   const { step, engineError } = problem.detail;
   return step === 'open' && engineError === PDFIUM_PASSWORD_ERROR ? EDIT_REFUSED_PASSWORD : STEP_MESSAGE[step];
+}
+
+/**
+ * What a person can read or quote beside a problem's sentence, where it has something: the incident `internal` was
+ * withheld into, the step and PDFium's number an edit was refused at, or the characters a font cannot show
+ * (ADR-0169). Read by every surface that says a problem, so the dialog and the editor show the same thing.
+ */
+export function problemParticulars(
+  problem: CommandProblem,
+): { readonly label: MessageKey; readonly value: string } | undefined {
+  if (problem.code === 'internal') return { label: PROBLEM_REFERENCE_LABEL, value: problem.incident };
+  if (problem.code === 'edit-refused') {
+    return { label: PROBLEM_REFERENCE_LABEL, value: `${problem.detail.step} ${String(problem.detail.engineError)}` };
+  }
+  if (problem.code === 'text-not-writable') {
+    // ONE CHARACTER AT A TIME, a space between: an accent and a letter, or two marks, read as one smudge run together.
+    const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(problem.detail.characters);
+    return { label: TEXT_EDIT_CHARACTERS_LABEL, value: Array.from(graphemes, (part) => part.segment).join(' ') };
+  }
+  return undefined;
 }
 
 /** One sentence per step of a PDFium rewrite, each ending in *so nothing was changed*. */

@@ -221,21 +221,56 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(commits.map((commit) => commit.text)).toStrictEqual(['WORK HISTORY']);
   });
 
-  it('A FONT THAT CANNOT CARRY THE WORDS keeps the editor open and SAYS so beside them', async () => {
+  it('A FONT THAT CANNOT CARRY THE WORDS keeps the editor open and SAYS so beside them, naming the characters', async () => {
     const { view, answerWith } = mount();
-    answerWith('not-writable');
+    answerWith({ refused: { code: 'text-not-writable', detail: { characters: '中é' } } });
     fireEvent.click(find(view.container, '[data-text-block="0"]'));
     const editor = editorIn(view.container);
-    typeInto(editor, 'WORK 中');
+    typeInto(editor, 'WORK 中é');
     await act(async () => {
       fireEvent.keyDown(editor, { key: 'Escape' });
       await Promise.resolve();
     });
     expect(view.container.querySelector('[data-text-editor]')).not.toBeNull();
-    expect(view.container.querySelector('[role="alert"]')?.textContent).toContain('Nothing was changed');
+    const said = view.container.querySelector('[role="alert"]')?.textContent ?? '';
+    expect(said).toContain('Nothing was changed');
+    // ONE AT A TIME, so an accent beside a letter reads as two characters.
+    expect(said).toContain('中 é');
+    expect(said).toContain('press Esc to put the text back');
     // AND A SECOND ESCAPE PUTS THE TEXT BACK rather than sending it again.
     await act(async () => {
       fireEvent.keyDown(find(view.container, '[data-text-editor]'), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    expect(view.container.querySelector('[data-text-editor]')).toBeNull();
+  });
+
+  it('ANY REFUSAL keeps the editor and the WORDS TYPED, with its own sentence and reference (ADR-0169 Decision 5)', async () => {
+    // THE DEFECT: only the font's refusal and the signatures question kept the editor, so every other refusal closed it
+    // and the words a person typed were gone. A step PDFium refused is the case the owner met.
+    const { view, answerWith } = mount();
+    answerWith({ refused: { code: 'edit-refused', detail: { step: 'read-back', engineError: 0 } } });
+    fireEvent.click(find(view.container, '[data-text-block="0"]'));
+    const editor = editorIn(view.container);
+    typeInto(editor, 'WORK EXPERIENCE');
+    await act(async () => {
+      fireEvent.keyDown(editor, { key: 'Escape' });
+      await Promise.resolve();
+    });
+    const kept = view.container.querySelector('[data-text-editor]');
+    expect(kept?.textContent).toBe('WORK EXPERIENCE');
+    const said = view.container.querySelector('[role="alert"]')?.textContent ?? '';
+    expect(said).toContain('This page uses a font Monstera can’t rewrite yet, so nothing was changed.');
+    expect(said).toContain('read-back 0');
+  });
+
+  it('CONTROL: a block WRITTEN closes the editor, through the same finish', async () => {
+    const { view, answerWith } = mount();
+    answerWith('written');
+    fireEvent.click(find(view.container, '[data-text-block="0"]'));
+    typeInto(editorIn(view.container), 'WORK EXPERIENCE');
+    await act(async () => {
+      fireEvent.keyDown(editorIn(view.container), { key: 'Escape' });
       await Promise.resolve();
     });
     expect(view.container.querySelector('[data-text-editor]')).toBeNull();

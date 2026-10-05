@@ -4622,6 +4622,58 @@ for (const look of LOOKS) {
   });
 }
 
+// AN EDIT REFUSED IN THE EDITOR (ADR-0169 Decision 5), in every theme: the editor stays over the block with the words
+// typed, and says the step's sentence, its reference and the way out beneath them, where a dialog used to close it.
+for (const look of LOOKS) {
+  test(`${look.name}: an edit REFUSED IN THE EDITOR keeps the words typed, says why beneath them, and passes axe`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000f2');
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'edit.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      refusals: new Map([[docId, { code: 'edit-refused', detail: { step: 'read-back', engineError: 0 } }]]),
+      textBlocks: [
+        {
+          box: { x0: 100, y0: 600, x1: 400, y1: 700 },
+          lines: [
+            { runs: [{ index: 3, text: 'A paragraph of words', style: BODY_RUN }], box: { x0: 100, y0: 686, x1: 400, y1: 700 } },
+          ],
+          style: BODY_RUN,
+        },
+      ],
+    });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Edit text on the page');
+    await page.keyboard.press('Enter');
+    await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').click();
+    const editor = page.locator('[data-text-editor]');
+    await expect(editor).toBeFocused();
+    await page.keyboard.type(' typed here');
+    await page.keyboard.press('Escape');
+
+    const said = page.locator('.m-text-editor-problem');
+    await expect(said).toContainText('This page uses a font Monstera can’t rewrite yet, so nothing was changed.');
+    await expect(said).toContainText('read-back 0');
+    await expect(said).toContainText('press Esc to put the text back');
+    // THE WORDS STAY, as typed.
+    expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe('A paragraph of words typed here');
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+  });
+}
+
 // EDIT TEXT IN PLACE (ADR-0096), in every theme: the outlines sit over their words on the drawn
 // page, the editor opens over a block, and nothing on that screen fails the gate.
 for (const look of LOOKS) {

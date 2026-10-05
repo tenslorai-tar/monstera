@@ -26,6 +26,7 @@ import type { z } from 'zod';
 import { BATES_NUMBER_DIALOG_ID } from '../dialogs/batesNumber.js';
 import type { BatesNumberAnswer } from '../dialogs/batesNumberResult.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
+import type { CommandProblem } from '../dialogs/problemMessages.js';
 import { CROP_PAGES_DIALOG_ID } from '../dialogs/cropPages.js';
 import { PROTECT_DOCUMENT_DIALOG_ID } from '../dialogs/protectDocument.js';
 import type { ProtectDocumentAnswer } from '../dialogs/protectDocument.js';
@@ -3880,8 +3881,11 @@ export async function promoteTextOnPage(deps: DocumentCommandDeps, docId: DocId,
 /** One block as `document.textBlocks` answers it. */
 export type TextBlock = ChannelResult<'document.textBlocks'>['blocks'][number];
 
-/** How writing one block ended, as far as the editor over it has to act. */
-export type BlockCommit = 'written' | 'unchanged' | 'not-writable' | 'held' | 'refused';
+/**
+ * How writing one block ended, as far as the editor over it has to act: written, nothing to write, a signed document
+ * the person chose to leave as it is, or refused with the problem the editor says beside the words.
+ */
+export type BlockCommit = 'written' | 'unchanged' | 'held' | { readonly refused: CommandProblem };
 
 /**
  * Writes one block's new words: `editTextBlock`, through the one dispatcher.
@@ -3900,11 +3904,14 @@ export type BlockCommit = 'written' | 'unchanged' | 'not-writable' | 'held' | 'r
  * `lineText` — the rule the kernel diffs with — so *unchanged* here and there
  * are one opinion.
  *
- * ## `text-not-writable` is the EDITOR's to say
+ * ## EVERY refusal is the EDITOR's to say (ADR-0169 Decision 5)
  *
- * Neither the page's font nor a standard one can carry what was typed (ADR-0097);
- * the editor stays open with the words and says so beside them, where the person
- * can change them. Every other refusal goes where every refusal goes.
+ * The words were typed into the editor, and a dialog over it, closing it as it
+ * went, threw them away: the owner's *preserve, never drop* broken by the one
+ * surface built for typing. So no refusal opens a dialog here. The editor stays
+ * open with the words and says the problem beside them, its characters or its
+ * reference with it; the person changes the words, or Escape puts the page's
+ * text back.
  *
  * ## `held`: a signed document the person chose to leave as it is
  *
@@ -3921,8 +3928,8 @@ export async function commitTextBlock(
 ): Promise<BlockCommit> {
   const before = block.lines.map((line) => lineText(line.runs)).join('\n');
   if (text === before) return 'unchanged';
-  /** Set by the hook below to the refusal kept: the font's, or the signatures question left unanswered. */
-  const kept: { code: 'text-not-writable' | 'breaks-signatures' | undefined } = { code: undefined };
+  /** Set by the hook below to what the editor says: the signatures question left unanswered, or the refusal. */
+  const kept: { outcome: Exclude<BlockCommit, 'written' | 'unchanged'> | undefined } = { outcome: undefined };
   const applied = await applyDocumentCommand(
     deps,
     docId,
@@ -3937,13 +3944,19 @@ export async function commitTextBlock(
     },
     {
       keep: (error) => {
-        kept.code = error.code === 'text-not-writable' || error.code === 'breaks-signatures' ? error.code : undefined;
-        return kept.code !== undefined;
+        // A FAILURE THAT CARRIES SOMETHING passes whole, so the editor can name the characters or show the reference.
+        kept.outcome =
+          error.code === 'breaks-signatures'
+            ? 'held'
+            : { refused: 'detail' in error || error.code === 'internal' ? error : { code: error.code } };
+        return true;
       },
     },
   );
   if (applied) return 'written';
-  return kept.code === 'text-not-writable' ? 'not-writable' : kept.code === 'breaks-signatures' ? 'held' : 'refused';
+  // UNREACHABLE BY `applyDocumentCommand`'s OWN RULE: a command not applied answered a failure, and the hook kept it.
+  if (kept.outcome === undefined) throw new Error('a block edit was neither applied nor refused');
+  return kept.outcome;
 }
 
 /** Edit object's mode in the tool slot (ADR-0153 Decision 1), Edit text's slot and its reason. */

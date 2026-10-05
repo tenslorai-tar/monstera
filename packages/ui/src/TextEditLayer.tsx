@@ -6,14 +6,15 @@ import { type ReactElement, useCallback, useEffect, useLayoutEffect, useRef, use
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform } from './annotations/annotationSpace.js';
 import type { BlockCommit, TextBlock } from './commands/documentCommands.js';
+import { problemMessage, problemParticulars } from './dialogs/problemMessages.js';
 import {
   TEXT_EDIT_BLOCK_LABEL,
   TEXT_EDIT_EDITOR_LABEL,
   TEXT_EDIT_LAYER_LABEL,
   TEXT_EDIT_HELD,
   TEXT_EDIT_NONE,
-  TEXT_EDIT_NOT_WRITABLE,
   TEXT_EDIT_PROMOTE,
+  TEXT_EDIT_REFUSED_HINT,
   TEXT_EDIT_ROTATED,
   TEXT_EDIT_TRUNCATED,
   TEXT_EDIT_UNADDRESSABLE,
@@ -390,8 +391,8 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
   const { _ } = useLingui();
   const original = wordsOf(block);
   const [text, setText] = useState(original);
-  /** Why the words are still here after a commit wrote nothing: the font's refusal, or a signed document left as it was. */
-  const [problem, setProblem] = useState<'not-writable' | 'held' | undefined>(undefined);
+  /** Why the words are still here after a commit wrote nothing: a signed document left as it was, or the refusal. */
+  const [problem, setProblem] = useState<Exclude<BlockCommit, 'written' | 'unchanged'> | undefined>(undefined);
   const area = useRef<HTMLDivElement>(null);
   /** Set while a write is in flight, so a blur during it does not write twice. */
   const writing = useRef(false);
@@ -439,12 +440,13 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
     writing.current = true;
     const outcome = await onCommit(text);
     writing.current = false;
-    if (outcome === 'not-writable' || outcome === 'held') {
-      // THE EDITOR STAYS, with the words and the sentence beside them: the
-      // person can change the characters the font cannot show, or — on a signed
-      // document they chose to leave as it was (ADR-0149) — keep what they typed
-      // until they decide. A blur no longer writes until they type again, so a
-      // focus the closing dialog moves cannot ask the same question twice.
+    if (outcome !== 'written' && outcome !== 'unchanged') {
+      // THE EDITOR STAYS on EVERY refusal (ADR-0169 Decision 5), with the words
+      // and the sentence beside them: the person can change what was refused, or
+      // — on a signed document they chose to leave as it was (ADR-0149) — keep
+      // what they typed until they decide. A blur no longer writes until they type
+      // again, so a focus the closing dialog moves cannot ask the same question
+      // twice.
       setProblem(outcome);
       area.current?.focus();
       return;
@@ -506,11 +508,35 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
       {(['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const).map((corner) => (
         <span aria-hidden className={`m-text-editor-handle m-text-editor-handle--${corner}`} key={corner} />
       ))}
-      {problem === undefined ? null : (
-        <p className="m-text-editor-problem" role="alert">
-          {_(problem === 'held' ? TEXT_EDIT_HELD : TEXT_EDIT_NOT_WRITABLE)}
-        </p>
+      {problem === undefined ? null : <EditorProblem problem={problem} />}
+    </div>
+  );
+}
+
+/**
+ * What the editor says under the words it kept: the signed document's sentence, or the refusal's — the same sentence
+ * and particulars the problem dialog shows (`problemMessage`, `problemParticulars`), with the editor's own way out.
+ */
+function EditorProblem({ problem }: { readonly problem: Exclude<BlockCommit, 'written' | 'unchanged'> }): ReactElement {
+  const { _ } = useLingui();
+  if (problem === 'held') {
+    return (
+      <div className="m-text-editor-problem" role="alert">
+        <p>{_(TEXT_EDIT_HELD)}</p>
+      </div>
+    );
+  }
+  const particulars = problemParticulars(problem.refused);
+  return (
+    <div className="m-text-editor-problem" role="alert">
+      <p>{_(problemMessage(problem.refused))}</p>
+      {particulars === undefined ? null : (
+        <dl className="m-command-problem-reference">
+          <dt>{_(particulars.label)}</dt>
+          <dd>{particulars.value}</dd>
+        </dl>
       )}
+      <p>{_(TEXT_EDIT_REFUSED_HINT)}</p>
     </div>
   );
 }

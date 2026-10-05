@@ -1592,7 +1592,8 @@ describe('delete pages — the mutation-dialog gate', () => {
       'The quick brown 中',
       asDocVersion(7),
     );
-    expect(outcome).toBe('not-writable');
+    // WHOLE, characters and all, for the editor to name them.
+    expect(outcome).toStrictEqual({ refused: { code: 'text-not-writable', detail: { characters: '中' } } });
     expect(asked).toStrictEqual([]);
   });
 
@@ -1611,9 +1612,60 @@ describe('delete pages — the mutation-dialog gate', () => {
     ]);
   });
 
-  it('CONTROL: any OTHER refusal goes where every refusal goes', async () => {
-    // Without this the case above passes on a commit that swallowed every
-    // refusal — which is the silent control this project calls a defect.
+  it('EVERY OTHER refusal is the editor’s to say too, so the words stay: no dialog closes over them (ADR-0169)', async () => {
+    // THE DEFECT: any refusal but the font's opened the problem dialog and closed the editor, and the words a person
+    // typed were gone. Swallowed is not the fix either: the refusal comes back whole, for the editor to say.
+    const asked: string[] = [];
+    const client = createClient(channels, () =>
+      Promise.resolve(err({ code: 'edit-refused' as const, detail: { step: 'generate' as const, engineError: 6 } })),
+    );
+    const outcome = await commitTextBlock(
+      {
+        client,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id) => {
+          asked.push(id);
+          return Promise.resolve(undefined);
+        },
+      },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown dog',
+      asDocVersion(7),
+    );
+    expect(outcome).toStrictEqual({ refused: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } } });
+    expect(asked).toStrictEqual([]);
+  });
+
+  it('CONTROL: the SAME refusal through the ordinary dispatcher still opens the problem dialog', async () => {
+    // Without this the case above passes on a dispatcher that stopped reporting refusals anywhere — the silent
+    // control this project calls a defect. Only the editor keeps them.
+    const asked: string[] = [];
+    const client = createClient(channels, () =>
+      Promise.resolve(err({ code: 'edit-refused' as const, detail: { step: 'generate' as const, engineError: 6 } })),
+    );
+    const applied = await promoteTextOnPage(
+      {
+        client,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id) => {
+          asked.push(id);
+          return Promise.resolve(undefined);
+        },
+      },
+      DOC,
+      3,
+    );
+    expect(applied).toBe(false);
+    expect(asked).toStrictEqual(['dialog.command-problem']);
+  });
+
+  it('a STALE read is kept for the editor as well', async () => {
     const asked: string[] = [];
     const client = createClient(channels, () => Promise.resolve(err({ code: 'stale-target' as const })));
     const outcome = await commitTextBlock(
@@ -1633,8 +1685,8 @@ describe('delete pages — the mutation-dialog gate', () => {
       'The quick brown dog',
       asDocVersion(7),
     );
-    expect(outcome).toBe('refused');
-    expect(asked).toStrictEqual(['dialog.command-problem']);
+    expect(outcome).toStrictEqual({ refused: { code: 'stale-target' } });
+    expect(asked).toStrictEqual([]);
   });
 
   it('A SIGNED DOCUMENT LEFT AS IT WAS keeps the words: Cancel on the signatures question is `held` (ADR-0149)', async () => {

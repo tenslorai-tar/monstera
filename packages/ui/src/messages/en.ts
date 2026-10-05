@@ -1160,6 +1160,10 @@ export const TEXT_EDIT_UNADDRESSABLE = messageKey('surface.text-edit.unaddressab
 export const TEXT_EDIT_PROMOTE = messageKey('surface.text-edit.promote');
 export const TEXT_EDIT_ROTATED = messageKey('surface.text-edit.rotated');
 export const TEXT_EDIT_NOT_WRITABLE = messageKey('surface.text-edit.not-writable');
+/** The label beside the characters a font cannot show (ADR-0169), in the editor and the problem dialog. */
+export const TEXT_EDIT_CHARACTERS_LABEL = messageKey('surface.text-edit.characters');
+/** What the editor says under any refusal it keeps the words through (ADR-0169 Decision 5). */
+export const TEXT_EDIT_REFUSED_HINT = messageKey('surface.text-edit.refused-hint');
 export const TEXT_NOT_IN_PLACE = messageKey('surface.text-edit.not-in-place');
 export const TEXT_EDIT_HELD = messageKey('surface.text-edit.held');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
@@ -3418,8 +3422,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_EDIT_ROTATED]: 'Text set at an angle on this page can’t be edited in place.',
   // SAYS NOTHING CHANGED FIRST, then what to do: the editor stays open with the
   // words, so the person can change the ones the font cannot show.
-  [TEXT_EDIT_NOT_WRITABLE]:
-    'Nothing was changed: the font on this page can’t show some of the characters you typed. Change them, or press Esc to put the text back.',
+  // SAID IN THE EDITOR AND IN THE PROBLEM DIALOG ALIKE, so it names no key: the editor adds its own hint beneath
+  // (`TEXT_EDIT_REFUSED_HINT`), and both show the characters beside it (`TEXT_EDIT_CHARACTERS_LABEL`).
+  [TEXT_EDIT_NOT_WRITABLE]: 'Nothing was changed: the font on this page can’t show some of the characters you typed.',
+  [TEXT_EDIT_CHARACTERS_LABEL]: 'Can’t show',
+  [TEXT_EDIT_REFUSED_HINT]: 'Change the words, or press Esc to put the text back.',
   // NOTHING CHANGED, then the way that works: this word is drawn in a way that cannot be changed on its own here, and
   // Edit text changes the line it is in.
   [TEXT_NOT_IN_PLACE]:

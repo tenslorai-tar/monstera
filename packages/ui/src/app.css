@@ -5587,6 +5587,17 @@ optgroup {
   box-shadow: var(--shadow);
 }
 
+/* THE EDITOR'S IS A SENTENCE, its particulars and its way out, one under another (ADR-0169 Decision 5). */
+.m-text-editor-problem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.m-text-editor-problem p {
+  margin: 0;
+}
+
 /* WHAT A MODE SAYS OF A PAGE — nothing to edit, or more than it can outline — for Edit text and Edit object alike. */
 .m-page-mode__notes {
   position: absolute;

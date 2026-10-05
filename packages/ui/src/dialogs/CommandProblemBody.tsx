@@ -1,8 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
 
-import { PROBLEM_REFERENCE_LABEL } from '../messages/en.js';
-import { type CommandProblem, problemMessage } from './problemMessages.js';
+import { type CommandProblem, problemMessage, problemParticulars } from './problemMessages.js';
 
 export type { CommandProblem } from './problemMessages.js';
 
@@ -17,31 +16,25 @@ export type { CommandProblem } from './problemMessages.js';
  * rather than a sentence because it is a value with a label, and the value is
  * not translatable text.
  *
- * An edit PDFium refused has a reference of the same kind: the step that refused and the number PDFium answered
- * (ADR-0169 Decision 4), which together say where in the rewrite it stopped.
+ * A declared detail is shown the same way (ADR-0169 Decision 4): an edit PDFium refused has the step and PDFium's
+ * number as its reference, and a font's refusal names the characters. `problemParticulars` decides which, for every
+ * surface that says a problem.
  *
  * A default export because `declareDialog` takes a `lazy()` component.
  */
 export default function CommandProblemBody(problem: CommandProblem): ReactElement {
   const { _ } = useLingui();
-  const reference = referenceOf(problem);
+  const particulars = problemParticulars(problem);
 
   return (
     <div className="m-command-problem">
       <p>{_(problemMessage(problem))}</p>
-      {reference === undefined ? null : (
+      {particulars === undefined ? null : (
         <dl className="m-command-problem-reference">
-          <dt>{_(PROBLEM_REFERENCE_LABEL)}</dt>
-          <dd>{reference}</dd>
+          <dt>{_(particulars.label)}</dt>
+          <dd>{particulars.value}</dd>
         </dl>
       )}
     </div>
   );
-}
-
-/** The value a person can quote for this problem, where it has one. */
-function referenceOf(problem: CommandProblem): string | undefined {
-  if (problem.code === 'internal') return problem.incident;
-  if (problem.code === 'edit-refused') return `${problem.detail.step} ${String(problem.detail.engineError)}`;
-  return undefined;
 }
