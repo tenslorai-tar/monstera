@@ -4711,6 +4711,27 @@ for (const look of LOOKS) {
     // THE WORDS STAY, as typed.
     expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe('A paragraph of words typed here');
 
+    // CLEARLY READABLE OVER THE PAPER, not merely passing (the owner, 2026-10-05): the note sits on the page, so its
+    // background is composited over the page's own colour, and every line, the reference included, holds 7:1. Axe
+    // cannot judge this: the note's ground is a canvas, and it marks such text as needing review.
+    const read = await said.evaluate((note) => ({
+      paper: getComputedStyle(document.documentElement).getPropertyValue('--page').trim(),
+      ground: getComputedStyle(note).backgroundColor,
+      lines: [...note.querySelectorAll('p, dt, dd')].map((line) => ({
+        text: (line.textContent ?? '').slice(0, 24),
+        colour: getComputedStyle(line).color,
+      })),
+    }));
+    const paper = channels(read.paper);
+    const ground = paper === null ? null : channels(read.ground, paper);
+    if (ground === null) throw new Error(`could not read the note's ground: ${JSON.stringify(read)}`);
+    const ratios = read.lines.map(({ text, colour }) => {
+      const ink = channels(colour, ground);
+      return { text, ratio: ink === null ? 0 : Math.round(contrast(ink, ground) * 100) / 100 };
+    });
+    expect(ratios.length, JSON.stringify(read)).toBe(4);
+    for (const { text, ratio } of ratios) expect(ratio, `${look.name}: "${text}" over the paper, ${JSON.stringify(ratios)}`).toBeGreaterThanOrEqual(7);
+
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
     expect(

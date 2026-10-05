@@ -5570,6 +5570,10 @@ optgroup {
 .m-text-editor-handle--sw { inset-block-start: 100%; inset-inline-start: 0; }
 .m-text-editor-handle--w { inset-block-start: 50%; inset-inline-start: 0; }
 
+/* ON THE PAGE, so on the FLOAT, never the surface: dark's --surface is a 0.6 glass tint meant for the dark ground, and
+   over white paper it composites to a mid grey. Measured 2026-10-05 on Chromium 151 (`renderedScreen.pw.ts`' editor
+   refusal case, composited over --page): the Edit text refusal's reference line read 2.57:1 and its sentence 3.99:1 in
+   dark, the owner's faint line; on --float, 7.82:1 and 12.11:1. --float is the token for what floats over anything. */
 .m-text-editor-problem,
 .m-inline-writer__problem {
   position: absolute;
@@ -5581,7 +5585,7 @@ optgroup {
   padding: var(--space-4) var(--space-8);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
-  background: var(--surface);
+  background: var(--float);
   color: var(--text);
   font-family: var(--font-ui);
   box-shadow: var(--shadow);
@@ -5614,7 +5618,8 @@ optgroup {
   padding: var(--space-4) var(--space-8);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
-  background: var(--surface);
+  /* ON THE PAGE, for the editor note's reason above. */
+  background: var(--float);
   color: var(--text);
   font-family: var(--font-ui);
 }
