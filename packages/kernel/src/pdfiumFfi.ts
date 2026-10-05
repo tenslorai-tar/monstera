@@ -3101,23 +3101,6 @@ function saveAsCopy(document: unknown): Buffer {
 }
 
 /**
- * The second adapter behind the engine seam.
- *
- * `engineSeam.ts` declared `PdfiumSession` with nothing behind it and said so;
- * this is what goes behind it. A PDFium edit mutates a loaded document and the
- * bytes come back from `serialise`, exactly as MuPDF's do — but the writer of
- * record's shape is **`byte-image`** ([ADR-0047](../../../docs/DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)),
- * so this session is minted for one command and never survives it.
- * `PdfiumSession` is the handle held *inside* a command; `WriterSession['pdfium']`
- * is a `ByteImage` and they are different types on purpose.
- *
- * **This said *"the shape is `live-session`, as `writerShapes` already records"*
- * until 2026-09-09** and cited the table that by then contradicted it — a
- * compound claim whose second clause, the mechanism, stayed true and vouched
- * for the dead one beside it (finding CCCCCC-2). Nothing in `63f10be` opened
- * this file.
- */
-/**
  * Runs `work` against a session opened from `image` with the key it carries, closing it however it ends. THE ONE
  * OPENER every PDFium spec and read takes (ADR-0171's addendum), where each module had a copy of these lines: a copy
  * that opened without the key would read as the same four lines and refuse every document opened with its password.
@@ -3131,6 +3114,23 @@ export async function onImage<T>(image: ImageSession, work: (session: PdfiumSess
   }
 }
 
+/**
+ * The second adapter behind the engine seam.
+ *
+ * `engineSeam.ts` declared `PdfiumSession` with nothing behind it and said so;
+ * this is what goes behind it. A PDFium edit mutates a loaded document and the
+ * bytes come back from `serialise`, exactly as MuPDF's do — but the writer of
+ * record's shape is **`byte-image`** ([ADR-0047](../../../docs/DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)),
+ * so this session is minted for one command and never survives it.
+ * `PdfiumSession` is the handle held *inside* a command; `WriterSession['pdfium']`
+ * is an `ImageSession`, the bytes and the key that opens them, and they are different types on purpose.
+ *
+ * **This said *"the shape is `live-session`, as `writerShapes` already records"*
+ * until 2026-09-09** and cited the table that by then contradicted it — a
+ * compound claim whose second clause, the mechanism, stayed true and vouched
+ * for the dead one beside it (finding CCCCCC-2). Nothing in `63f10be` opened
+ * this file.
+ */
 export const pdfiumWriter: EngineWriter<PdfiumSession> = {
   /**
    * Parses `image` into a session.

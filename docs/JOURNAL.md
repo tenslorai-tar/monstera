@@ -892,6 +892,183 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-05 — Stage audit of `974df9f5..389cc010` — findings RRRRRRR-1 to RRRRRRR-19
+
+54 commits, 197 files, all work/cloud-5-text-edit: Part B Phase 0 (ADR-0169's read-back, step codes, Replace's line
+rule, the editor keeping the words), QQQQQQQ-8 and -9, ADR-0170's lint units, CR-DOC-11 and ADR-0171 with its addenda
+(the held password, the renderer's keys, the invertible protect, the sealed copies), and P1's first five units (the Linux
+PDFium pin, ADR-0172, the bundled fonts, HarfBuzz, the resolver). Owed because P1.5's commit would take the range to 235
+files. Label R: Q is the highest on main and on every branch, read from each branch's JOURNAL. Four readers took a
+quarter each through `git show`; every finding below was checked at its file at `389cc010` by me before it was recorded,
+and one of theirs was not taken (named under item 7). Behaviour findings are *read* where no run was made.
+
+**RRRRRRR-1** (high, open, fixed next): a document's password reaches files on disk through the hosts' file routes,
+against ADR-0171's *never written to disk*. Two shapes, found by two readers separately. PDFium's commands take their
+params from a file (`commandRoute: 'file'`, `pdfiumChannels.ts`), and since `e9b7fbed` those params spread
+`byteImageWire.read`, which carries the key, so every PDFium edit, its capture, its undo and its redo of a document opened
+with its password writes the password as JSON into the session's snapshot directory for the length of the call
+(`client.ts` `invoke`, `hostFileAnswers.ts` `put`); and since `1fe86407` a protect's captured prior carries the earlier
+protect's terms, passwords included, which MuPDF's host answers through a file in its output directory and the undo
+sends back through a params file. Each file is removed with a plain `rm` when the call ends, and survives a crash
+between. The comment at `capturedPriorSchema` saying the terms cross *as the command's own did* is false: the command
+crosses in the frame. Nothing saw it because every password case runs in process, where no transport file exists, and
+the Decision 6 scan (`67b266b4`) reads the harness's own folder after close. ADR-0171's own addendum said the key is
+revealed only where a frame is written; the route made that untrue. Read, both shapes.
+
+**RRRRRRR-2** (medium, closed in this commit): three help articles still said Monstera does not keep a password and
+that undoing a second protect may be refused (`open-a-protected-pdf.md`, `password-and-permissions.md`,
+`undo-and-redo.md`), false since `433f665f`, `1fe86407` and `99ce4c2a`. Each says what is held and until when.
+
+**RRRRRRR-3** (medium, open, corrected next, B4): the resolver gives a character another face carries to that face when
+no face carries the whole word (`fontResolver.ts`, `389cc010`), against ADR-0172 Decision 1's *a word is never split
+between two faces except by Decision 8* and the module's own header; its commit deferred the ADR correction to the end
+of the phase, which is the architecture changing after the code. And the licence rule `0ab44edf` built takes the least
+restrictive of the fsType bits, so a face marked preview-and-print and editable is subset, where the ADR's Decision 3
+says preview-and-print is skipped. Both go into ADR-0172's correction before P1.5's composers, which build on them, land.
+
+**RRRRRRR-4** (medium, closed by the next commit): `fontFaces.ts` and ADR-0172 said `proof:kernelload` keeps HarfBuzz
+out of `main`, and the proof named none of the font modules, so exporting `fontFaces` from the barrel passed it
+(`0ab44edf`). P1.5's commit adds the font and shaping modules to it with a control each.
+
+**RRRRRRR-5** (medium, open, the owner's): the page context menu's *Delete page* deletes every ticked page in the grid
+without asking (`documentCommands.ts` `deletePageCommand`), where `202138a7` made the Delete key ask first for CR-COR-06.
+The ruling's class is any delete of the ticked set; whether the menu item is in it is the owner's to say.
+
+**RRRRRRR-6** (medium-low, open): an undo or redo whose read-back refuses at `text-not-writable` reaches the person as
+*Something went wrong*. `7664bc20` declared the code on `document.undo` and `redo`, and PDFium's host answers its
+invert's errors through `refusedBy`, which knows only `EditRefusedError`, so the code becomes `engine-refused`; the test
+stubs `DocumentCommands` to throw it, the gap between the pair's two halves. Nothing is lost, since the undo is refused
+either way. The channel comment *on the apply only, capture and invert cannot produce it* is half true since `361684e2`.
+
+**RRRRRRR-7** (medium-low, open): a protect retakes the Recent picture after it answers (`void this.#recentPicture
+.retake(...)`), where ADR-0171 Decision 8 says before, and the case stubs `retake` as a recorder, so the order is
+unasserted. Sealing also runs for a protect that removes encryption, rewriting every checkpoint and backup by a full save
+that protects nothing and drops a signed backup's incremental structure; and a sealing failure after the protect applied
+is reported as the command failing (`32b365d3`). Read.
+
+**RRRRRRR-8** (medium-low, recorded): `recycle` releases a document's sessions before a reopen that can be refused
+(`433f665f`), so a reopen refused for its key leaves a password document sessionless. The one reachable shape, a protect
+with a new password then a checkpoint undo, was closed by `99ce4c2a`; the order stays, by design and documented.
+
+**RRRRRRR-9** (low, closed in this commit): two doc blocks above the wrong declaration, `pdfiumWriter`'s over `onImage`
+(`e9b7fbed`, whose *`WriterSession['pdfium']` is a `ByteImage`* the same commit made false) and `PROTECTION_TERMS_MAX`'s
+under `capturedPriorSchema`'s (`1fe86407`); and `TextLayer.tsx` saying *no prediction that held* where every prediction
+held (`b65a5e63`).
+
+**RRRRRRR-10** (low, closed in this commit): three ADR corrections without their index rows: ADR-0164's second
+(`9b210b06`), ADR-0171's of `ffb90b6a` and of `d8045694`. Recorded, not edited: `7006bd4b` inserted a paragraph into
+ADR-0169's already committed owner's answer section rather than appending a dated one, and ADR-0171's first addendum says
+an *optional* password where `e9b7fbed` built it required and nullable, which `261cecc4`'s correction did not take back.
+
+**RRRRRRR-11** (low, closed in this commit): `pdfiumCommand.proof.mjs`' removal case asserted `includes('WID')`, which the
+page's two whole `WIDGET` lines satisfy whichever object of the split pair went (`73c6d9d5`). It asserts `WID` as a word
+and no `GET` alone; green on Linux PDFium 155.0.8044.0, 87 cases.
+
+**RRRRRRR-12** (low, open, fixed with RRRRRRR-3): the resolver reads *Microsoft Sans Serif* and *Franklin Gothic Book* as
+serif families, by the substrings `serif` and `book`; it splits by code point, so a combining mark only another face
+carries leaves its base letter; and deleting its stand-in step leaves every case green, since no case names Calibri or
+Cambria (`389cc010`).
+
+**RRRRRRR-13** (low, open): `fonts.proof.mjs` and `pdfium.proof.mjs` record a could-not-look as a passing case outside
+`--require-*`, by their own spelling rather than `unverifiable.mjs` (B3a); CI passes the flag, so this is a hand run's
+answer. `fonts.mjs`' header says each file is pinned by size, and the size is never handed to `downloadVerified`; the
+digest decides.
+
+**RRRRRRR-14** (low, the owner's): an embedded subset's name table is rebuilt with records 1, 4 and 6 only
+(`fontSubset.ts`), so it carries no copyright notice and no licence record; with LEDGER R3 (Carlito's Reserved Font
+Name) this is a licence reading. The safe direction is to keep records 0, 13 and 14, and that is what the font work will
+do unless the owner says otherwise.
+
+**RRRRRRR-15** (low, open): two compound comments half true since `361684e2`: `result.ts` and `schemas.ts` still say a
+failure has two shapes and a declared code travels alone, with the third shape added beneath.
+
+**RRRRRRR-16** (low, open): a `text-not-writable` refusal with no characters to name shows its label over an empty value
+(`problemMessages.ts`, `91450ef5`), where `textEditRefusals.ts` says the person is told without a list; the editor's hint
+*Change the words* shows for refusals no change of words can pass (a Type 3 page, a stale target, a poisoned document);
+and the spelling review's Replace all keeps *Nothing was changed* after changing comments or fields when the page text
+matched no object (`3478a6da`).
+
+**RRRRRRR-17** (low, open, owed next): user-visible changes with no help article: a Type 3 page refusing every PDFium
+edit (`361684e2`), the editor keeping the words with the reason under them (`91450ef5`), an empty replacement deleting
+the word (`64f24233`) and *nothing to replace* (`3478a6da`), against the owner's standing rule; and two FEATURES rows,
+the redaction row's widened cost for shared property lists (`30891a0a`) and the backup row's copy aside (`054ce126`).
+
+**RRRRRRR-18** (low, recorded): cases that reach the easy shape only or cannot fail on their stated property. The
+read-back's no-false-refusal controls run on standard-14 Helvetica alone and the block control edits the last line
+(`361684e2`); the line rule writes an object with no measured box unchecked and considers text followers only, on a flat
+line of two (`73c6d9d5`); the destination rename is tested on a flat name tree, and `loadNameTree`'s plain object drops a
+name `__proto__` (`b7ff78ba`); `opensOnlyWithPassword` stays true after a document opened with a password has it removed,
+a picture lost in the safe direction, while ADR-0164's correction says *false again* (`9b210b06`); every password proof
+is AES-256 with an ASCII password, and the shim is never handed a wrong one; the credential walk reads an open record or
+an unrepresentable member as clean (`1ea8bea3`); a lint tests unit matching nothing reads as clean (`09f0a18f`);
+`refusedAt` reports `FPDF_GetLastError`'s leftover for refusals this application detects itself; the composition root's
+sealing path is crossed by no case (`32b365d3`); and `fontSubset`'s checksum case can fail on the whole-file adjustment
+only. The FEATURES password row said main keeps nothing for several commits after ADR-0171 measured otherwise, corrected
+inside the range.
+
+**RRRRRRR-19** (process, recorded): an ADR correction landed in its feature commit (`7664bc20`) and another was deferred
+past its code (RRRRRRR-3); the tests a contract change reaches were not run before P1.5's first commit attempt, found by
+`proof:testresolution` instead (the boxed character's unbounded string); and the escape guard denied a reflexive
+`node -e` once more, typed while checking a build.
+
+### 1. Root cause or workaround?
+
+Each fix states a mechanism. RRRRRRR-1 is a mechanism the containment decision had stated and a route quietly undid,
+not a workaround; RRRRRRR-8's order is a stated design, not a patch. No limit was raised and no check loosened: ADR-0170
+splits the lint by unit under the one heap budget rather than raising it.
+
+### 2. Verified against the easy shape only?
+
+Yes, in the places RRRRRRR-18 names: one font kind, one line shape, a flat name tree, one cipher and an ASCII password,
+and a document never unlocked. RRRRRRR-1 is the hard shape of the password work: a host across a real transport.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Towards: the read-back makes every PDFium save checked, and the PDFium proofs now run on the Linux leg with the real
+library (`c10d9807`). Away, once: the font and Linux PDFium provisioning proofs pass a could-not-look by hand
+(RRRRRRR-13).
+
+### 3. Would CI have caught it?
+
+It did, from the runs read once per sha: the audit headings (`361684e2`), the host-entry import (`30891a0a`), the lint
+heap on ubuntu (`91450ef5`), the lint rule (`73c6d9d5`), the document scope (`6a5fd8a9`), the stale-build guard
+(`90992e0c`) and the status tip (`fbcda1b0`); `8fdc790f`'s run got no runners. RRRRRRR-1 is invisible to every check,
+because every password case runs in process; RRRRRRR-2, -9 and -10 are invisible to checks by kind.
+
+### 4. Are the proofs non-vacuous?
+
+Not all: RRRRRRR-11 was vacuous on which object went, and is closed; the Decision 6 scan cannot see a host's files
+(RRRRRRR-1); the stand-in step and the picture's order are unasserted (RRRRRRR-12, -7).
+
+### 4a. Has every instrument passed a resolution test?
+
+The range's measuring instruments are the lint units' peak memory and the read-back's comparison. The peaks were read
+against `eslint .`'s whole-tree figure (ADR-0170); the comparison's controls are the saved cases, on one font kind only
+(RRRRRRR-18).
+
+### 4b. Does every search carry a positive control?
+
+The credential walk does (three known fields) and reads an open shape as clean (RRRRRRR-18); the fonts tree check carries
+the pinned set; the lint tests unit has none for an empty match (RRRRRRR-18).
+
+### 4c. Does a count derive from the set it governs?
+
+No roster in the range derives its count from what it iterates; the new proofs declare literals.
+
+### 5. Executed, or asserted?
+
+Asserted and stated: the F-C8 link to a fractional pointer on Windows (`b65a5e63`), and the claim that `kernelLoad`
+covered HarfBuzz (RRRRRRR-4), which was asserted and not true.
+
+### 6. Did architecture change before the feature?
+
+Each ADR and addendum of ADR-0169 to ADR-0172 preceded its code, with two exceptions, RRRRRRR-19's.
+
+### 7. Do the documents still match the code?
+
+Not in the places RRRRRRR-2, -10, -15 and -17 name; -2 and -10 are closed here. Not taken from the readers, after
+checking: that `components.md` owes the fonts row, since it names no component.
+
 ## 2026-10-05 — Stage audit of `8f322ba7..974df9f5` — findings QQQQQQQ-1 to QQQQQQQ-22
 
 66 commits, 200 files: the end of work/cloud-4 (11-MEDIUM's CR-COR, CR-SEC, CR-DOC and CR-NAT items, Group 10 and

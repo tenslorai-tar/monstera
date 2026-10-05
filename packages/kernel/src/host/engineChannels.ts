@@ -731,6 +731,13 @@ const priorPageTransitionSchema = z
   .strict();
 
 /**
+ * The longest protection terms a capture may carry: `protectionOptions`' string with two passwords at their bound and
+ * every character a doubled quote, plus the method, the permissions and the separators, under 128 characters together.
+ * Derived from the password bound, so a longer password allowed tomorrow widens this with it.
+ */
+export const PROTECTION_TERMS_MAX = 4 * DOCUMENT_PASSWORD_MAX_CHARS + 128;
+
+/**
  * Prior state, tagged by the command kind it belongs to.
  *
  * The tag is not redundant with the request's own `command.kind`. A response is
@@ -763,13 +770,6 @@ const priorPageTransitionSchema = z
  * are written here rather than in a test for `MupdfChannelCoversEveryRoutedKind`'s
  * reason: an omission should fail at the line that omitted it.
  */
-/**
- * The longest protection terms a capture may carry: `protectionOptions`' string with two passwords at their bound and
- * every character a doubled quote, plus the method, the permissions and the separators, under 128 characters together.
- * Derived from the password bound, so a longer password allowed tomorrow widens this with it.
- */
-export const PROTECTION_TERMS_MAX = 4 * DOCUMENT_PASSWORD_MAX_CHARS + 128;
-
 const capturedPriorSchema = z.discriminatedUnion('kind', [
   z
     .object({

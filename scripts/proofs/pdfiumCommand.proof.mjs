@@ -648,7 +648,12 @@ async function replaceAtCases() {
   const afterRemoval = removed === null ? '' : await pageOf(removed, 0);
   record(
     'a word that was its object’s WHOLE text, at the END of its line, replaced with nothing, removes that object alone',
-    objectsAfter === objectsBefore - 1 && (afterRemoval.match(/WIDGET/gu) ?? []).length === 2 && afterRemoval.includes('WID'),
+    // `WID` AS A WORD, never as a substring: the page's two whole `WIDGET` lines hold `WID` and `GET` too, so a
+    // substring test passed whichever of the split pair's objects went.
+    objectsAfter === objectsBefore - 1 &&
+      (afterRemoval.match(/WIDGET/gu) ?? []).length === 2 &&
+      /\bWID\b/u.test(afterRemoval) &&
+      !/\bGET\b/u.test(afterRemoval),
     removal === null
       ? `${String(objectsBefore)} text objects before, ${String(objectsAfter)} after; page 0 reads ${JSON.stringify(afterRemoval)}`
       : `it was refused: ${removal}`,
