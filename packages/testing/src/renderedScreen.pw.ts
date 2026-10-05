@@ -3938,6 +3938,52 @@ test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many colum
   expect(measured.state.heights[LANDSCAPE] ?? 0, detail).toBeLessThan(Math.min(...portrait) - 10);
 });
 
+// THE GRID'S SUMMARY WRAPS BETWEEN ITEMS AND NO LINE STARTS WITH A DOT. Measured 2026-10-05 at 1280 × 800, where the
+// grid is about 575 px wide: the tips were one string with the dot on it, so a wrapped line began "·" and the last tip
+// broke between its two words. Read from real layout, since happy-dom lays nothing out: each item's dot is its first
+// box, so it shows exactly when the item starts inside the clipping box.
+test('the ORGANIZE GRID’s summary wraps between whole tips, and no wrapped line starts with a separator', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const pdf = await PDFDocument.create();
+  for (let at = 0; at < 6; at += 1) pdf.addPage([612, 792]);
+  const bytes = await pdf.save();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000f2');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'lease.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    settings: { 'appearance.ribbon-section': 'organize' },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('.m-page-grid__hint').first()).toBeVisible();
+
+  const items = await page.evaluate(() => {
+    const clip = document.querySelector('.m-page-grid__summary')?.getBoundingClientRect();
+    return [...document.querySelectorAll('.m-page-grid__items > *')].map((item) => {
+      const box = item.getBoundingClientRect();
+      return {
+        text: item.textContent,
+        top: Math.round(box.top),
+        // THE DOT IS VISIBLE when the item's own box, which begins with it, starts inside the clip.
+        dotShown: clip !== undefined && box.left >= clip.left - 0.5,
+        boxes: item.getClientRects().length,
+      };
+    });
+  });
+  const detail = JSON.stringify(items);
+  // THE CASE'S PRECONDITION: the count, four tips, and a wrap at this width, or a line start is only ever the first.
+  expect(items.length, detail).toBe(5);
+  expect(new Set(items.map((item) => item.top)).size, detail).toBeGreaterThanOrEqual(2);
+  for (const [at, item] of items.entries()) {
+    const startsALine = at === 0 || item.top > (items[at - 1]?.top ?? 0);
+    // A LINE START SHOWS NO DOT, and every other item shows one between it and the item before.
+    expect(item.dotShown, `${item.text} ${startsALine ? 'starts' : 'continues'} a line: ${detail}`).toBe(!startsALine);
+    // AND EACH TIP WHOLE: one box per item. Flex wraps between items, and every tip fits a line at this width; one
+    // string, as the tips were, broke "Enter opens" across two lines here.
+    expect(item.boxes, detail).toBe(1);
+  }
+});
+
 // ORGANIZE'S FULL PAGE (the owner's review of 0.1.9.0): ONE page to a row at the grid's whole width, read top to
 // bottom as the Home view reads, and the grid's gestures still act on it. Only real layout can show this — the width
 // is read from the laid-out grid, and happy-dom lays nothing out. At 1280 × 800 and at 1920 × 1080, because the

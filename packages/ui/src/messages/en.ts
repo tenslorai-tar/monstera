@@ -96,7 +96,20 @@ export const ORGANIZE_GRID_SIZE_OPTION_TITLES = {
 export const ORGANIZE_GRID_LABEL = messageKey('surface.organize.label');
 export const ORGANIZE_GRID_COUNT = messageKey('surface.organize.count');
 export const ORGANIZE_GRID_SELECTED = messageKey('surface.organize.selected');
-export const ORGANIZE_GRID_HINT = messageKey('surface.organize.hint');
+/**
+ * The grid's hint, ONE MESSAGE PER TIP, in the order the design says them. Separate so the line can wrap between tips
+ * and never inside one, and so nothing splits a translated sentence on a separator a translation may not use.
+ */
+export const ORGANIZE_GRID_HINT_REORDER = messageKey('surface.organize.hint.reorder');
+export const ORGANIZE_GRID_HINT_SELECT = messageKey('surface.organize.hint.select');
+export const ORGANIZE_GRID_HINT_DELETE = messageKey('surface.organize.hint.delete');
+export const ORGANIZE_GRID_HINT_OPEN = messageKey('surface.organize.hint.open');
+export const ORGANIZE_GRID_HINTS = [
+  ORGANIZE_GRID_HINT_REORDER,
+  ORGANIZE_GRID_HINT_SELECT,
+  ORGANIZE_GRID_HINT_DELETE,
+  ORGANIZE_GRID_HINT_OPEN,
+] as const;
 export const CONFIRM_REDACTION_TITLE = messageKey('setting.saving-confirm-redaction.title');
 export const BACKUP_COPIES_TITLE = messageKey('setting.saving-backup-copies.title');
 export const WARN_SIGNATURE_BREAK_TITLE = messageKey('setting.saving-warn-signature-break.title');
@@ -2698,8 +2711,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ORGANIZE_GRID_LABEL]: 'Pages to organize',
   [ORGANIZE_GRID_COUNT]: '{count, plural, one {# page} other {# pages}}',
   [ORGANIZE_GRID_SELECTED]: '{count} selected',
-  // v5-09's own line: what a person can do here, in the order the design says it.
-  [ORGANIZE_GRID_HINT]: 'Drag to reorder · Ctrl+click to select several · Delete asks to remove · Enter opens',
+  // v5-09's own line: what a person can do here, in the order the design says it, one tip per message.
+  [ORGANIZE_GRID_HINT_REORDER]: 'Drag to reorder',
+  [ORGANIZE_GRID_HINT_SELECT]: 'Ctrl+click to select several',
+  [ORGANIZE_GRID_HINT_DELETE]: 'Delete asks to remove',
+  [ORGANIZE_GRID_HINT_OPEN]: 'Enter opens',
   [AUTOSAVE_TITLE]: 'Save automatically',
   [AUTOSAVE_DESCRIPTION]:
     'Saves each document with unsaved changes to its own file on a timer. Off unless you turn it on, because a save replaces the file.',

@@ -6,7 +6,7 @@ import { type ReactElement, useCallback, useEffect, useLayoutEffect, useRef, use
 import type { DocumentView } from '../documentView.js';
 import {
   ORGANIZE_GRID_COUNT,
-  ORGANIZE_GRID_HINT,
+  ORGANIZE_GRID_HINTS,
   ORGANIZE_GRID_LABEL,
   ORGANIZE_GRID_SELECTED,
   ORGANIZE_GRID_SIZE_OPTION_TITLES,
@@ -198,11 +198,18 @@ export function PageGrid({
   return (
     <section aria-label={i18n._(ORGANIZE_GRID_LABEL)} className="m-page-grid" data-page-view={shown.size} ref={section}>
       <header className="m-page-grid__head">
-        <p className="m-page-grid__summary">
-          <strong>{i18n._(ORGANIZE_GRID_COUNT, { count: pageCount })}</strong>
-          {selected.length === 0 ? null : <span>{i18n._(ORGANIZE_GRID_SELECTED, { count: selected.length })}</span>}
-          <span className="m-page-grid__hint">{i18n._(ORGANIZE_GRID_HINT)}</span>
-        </p>
+        {/* THE CLIP AND THE ROW ARE TWO BOXES so a wrapped line cannot start with a separator (app.css). */}
+        <div className="m-page-grid__summary">
+          <p className="m-page-grid__items">
+            <strong>{i18n._(ORGANIZE_GRID_COUNT, { count: pageCount })}</strong>
+            {selected.length === 0 ? null : <span>{i18n._(ORGANIZE_GRID_SELECTED, { count: selected.length })}</span>}
+            {ORGANIZE_GRID_HINTS.map((hint) => (
+              <span className="m-page-grid__hint" key={hint}>
+                {i18n._(hint)}
+              </span>
+            ))}
+          </p>
+        </div>
         <SegmentedControl
           label={ORGANIZE_GRID_SIZE_TITLE}
           options={SIZE_OPTIONS}

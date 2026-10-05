@@ -7424,20 +7424,36 @@ body {
   padding: var(--space-8) var(--space-16);
 }
 
+/* NO WRAPPED LINE STARTS WITH A SEPARATOR, at any width. Every item carries its dot as a `::before` one separator
+   wide, and the row starts that width before this box, which clips it: the item that begins a line (the first, or one
+   the row wrapped) has its dot in the clipped strip, and every other dot sits between two items. Each tip is a flex
+   item, so the row wraps between tips; NO `nowrap`, since a tip wider than the whole box would then be clipped rather
+   than wrapped. Measured 2026-10-05 on Chromium 151 at 1280 x 800, where the grid is about 575 px wide: with the dot
+   on the hint and the tips in one string, a line began with a dot and the last tip broke between its two words. */
 .m-page-grid__summary {
+  --summary-separator: var(--space-16);
+
+  overflow: hidden;
+  min-inline-size: 0;
+}
+
+.m-page-grid__items {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--space-8);
+  row-gap: var(--space-4);
   margin: 0;
+  margin-inline-start: calc(-1 * var(--summary-separator));
   font-size: var(--font-chrome-12);
 }
 
-.m-page-grid__summary > span + span::before,
-.m-page-grid__summary > strong + span::before {
-  content: '·';
-  padding-inline-end: var(--space-8);
+.m-page-grid__items > *::before {
+  display: inline-block;
+  inline-size: var(--summary-separator);
   color: var(--muted);
+  text-align: center;
+  /* Read as nothing: the dot is spacing, and a screen reader saying it between tips is noise. */
+  content: '·' / '';
 }
 
 .m-page-grid__hint {
