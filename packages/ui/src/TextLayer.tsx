@@ -1,8 +1,8 @@
-import { type LineMatch, findInLines, toPdf, toViewport, viewportPoint } from '@monstera/shared';
+import { type LineMatch, findInLines, toPdf, viewportPoint } from '@monstera/shared';
 import { type ReactElement, useEffect, useLayoutEffect, useRef } from 'react';
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
-import { overlayTransform, unscaledTransform } from './annotations/annotationSpace.js';
+import { engineBoxOnScreen, overlayTransform } from './annotations/annotationSpace.js';
 import { type HighlightPainter, type SearchHighlight, sharedPainter } from './searchHighlight.js';
 
 /**
@@ -323,24 +323,14 @@ export function TextLayer({
   // accepts pointer events would swallow drags meant for the page.
   if (lines.length === 0) return null;
 
-  const unscaled = unscaledTransform(geometry);
-  const shown = overlayTransform(geometry);
-
   return (
     <div className="m-text-layer" data-text-layer={String(page)} ref={container}>
       {/* FIRST, so every line paints and hit-tests above it: what a drag meets between the lines (`.m-text-layer__gaps`). */}
       <div className="m-text-layer__gaps" aria-hidden="true" />
       {lines.map((line, index) => {
-        // Display space to PDF user space, then PDF to the viewport. Both
-        // corners, because a rotation swaps which one is topmost and taking the
-        // reported order as top-left would place every line off the page on two
-        // of the four turns.
-        const a = toViewport(toPdf(viewportPoint(line.box.x0, line.box.y0), unscaled), shown);
-        const b = toViewport(toPdf(viewportPoint(line.box.x1, line.box.y1), unscaled), shown);
-        const left = Math.min(a.x, b.x);
-        const top = Math.min(a.y, b.y);
-        const width = Math.abs(b.x - a.x);
-        const height = Math.abs(b.y - a.y);
+        // Display space to PDF user space, then PDF to the viewport: `engineBoxOnScreen`, the one conversion every
+        // layer drawing an engine box takes.
+        const { left, top, width, height } = engineBoxOnScreen(line.box, geometry);
 
         return (
           <span

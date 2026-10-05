@@ -497,6 +497,10 @@ function Half({
           loupe={false}
           rulers={false}
           showGrid={false}
+          // NO LINKS FOLLOWED in a comparison: its pages are read against each other, and a press on one is a place to
+          // look at, not a way out of the document.
+          onFollowLink={undefined}
+          linksOutlined={false}
           unit={preferences.unit}
           // NAMED WITH ITS SIDE AND DOCUMENT: two scrollable regions a screen-reader user cannot tell apart is what the
           // label exists to prevent.

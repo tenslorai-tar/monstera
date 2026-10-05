@@ -1,5 +1,5 @@
 import type { AnnotationRect } from '@monstera/contract';
-import { type PageTransform, type ViewportPoint, pageTransform, toPdf, viewportPoint } from '@monstera/shared';
+import { type PageTransform, type ViewportPoint, pageTransform, toPdf, toViewport, viewportPoint } from '@monstera/shared';
 
 /**
  * The renderer's half of the annotation coordinate boundary — Stage 3's
@@ -95,6 +95,39 @@ export function overlayTransform(page: OverlayPage): PageTransform {
 export function unscaledTransform(page: OverlayPage): PageTransform {
   const [x0, y0, x1, y1] = page.crop;
   return pageTransform({ x0, y0, x1, y1 }, page.rotation, 1);
+}
+
+/** A box on screen, in the overlay's own CSS pixels from the page's top-left. */
+export interface ScreenBox {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Where a box the ENGINE reported in display space at scale 1 is drawn — a line of text, a link — by
+ * {@link unscaledTransform}'s two conversions, named once so every layer drawing an engine box takes the same one.
+ *
+ * The engine's display space is the page AS TURNED, so the two conversions cancel the rotation and what is left is the
+ * zoom: at zoom 2 a box at 10,20 to 110,40 is drawn at 20,40, 200 by 40, on a page turned 90 degrees as on one not
+ * turned (`LinkLayer.test.tsx`). Taking the box as PDF points instead would turn it a second time. Both corners are
+ * converted and ordered, so a box reported with its corners either way round still has a size.
+ */
+export function engineBoxOnScreen(
+  box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number },
+  page: OverlayPage,
+): ScreenBox {
+  const unscaled = unscaledTransform(page);
+  const shown = overlayTransform(page);
+  const a = toViewport(toPdf(viewportPoint(box.x0, box.y0), unscaled), shown);
+  const b = toViewport(toPdf(viewportPoint(box.x1, box.y1), unscaled), shown);
+  return {
+    left: Math.min(a.x, b.x),
+    top: Math.min(a.y, b.y),
+    width: Math.abs(b.x - a.x),
+    height: Math.abs(b.y - a.y),
+  };
 }
 
 /**

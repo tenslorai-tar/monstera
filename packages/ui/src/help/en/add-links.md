@@ -13,13 +13,14 @@ A link makes part of a page clickable. It can open a website or email address, o
 1. In the rail, choose **Comment**. In the **Links** group, choose **Web link** or **Page link**.
 2. Drag a box over the area that should be clickable. A small field opens beside it, with the cursor in it.
 3. For a web link, type the **Address** (starting with `https://`, `http://` or `mailto:`). For a page link, type the **Page number**.
-4. Press **Enter**, or click elsewhere on the page, to add the link. Press **Esc** to leave it out.
+4. Press **Enter**, or click elsewhere on the page, to add the link. Press **Esc** to leave it out. Monstera says **Link added.** when it is made.
 
 ![The Address field beside the box drawn, with an address typed](screenshot:add-links-1)
 
 ## Good to know
 
 - If the address or page number is not one a link can use, the field says why under it and stays open when you press **Enter**.
+- While **Comment** is chosen in the rail, every link on the page has an outline. Hold the pointer over one to see where it goes.
 - Links are listed in the **Bookmarks** tab, under **Links on this page**.
 - A link cannot be removed from within Monstera yet, apart from **Undo** (**Ctrl+Z**) straight after adding it.
 

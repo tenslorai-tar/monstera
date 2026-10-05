@@ -388,6 +388,10 @@
 /* A FLOAT (v5): the floating surface, its glass and its shadow, like a menu. The edge is `--border-control` still, so
    the tooltip reads in forced colours where the background is discarded. */
 .m-tooltip {
+  /* NEVER WIDER THAN THE WINDOW, breaking anywhere: a tooltip that says a document's own text (a link's address) can be
+     one unbroken word of any length. Every tooltip written for the chrome is far narrower, so none of them moves. */
+  max-inline-size: calc(100vw - 2 * var(--space-8));
+  overflow-wrap: anywhere;
   padding: var(--space-4) var(--space-8);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-6);

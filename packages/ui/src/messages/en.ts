@@ -1203,6 +1203,19 @@ export const WRITE_TOO_LONG = messageKey('surface.write.too-long');
 export const FORMS_DELETE = messageKey('surface.forms.delete');
 export const FORMS_FLATTEN = messageKey('surface.forms.flatten');
 export const FORMS_FLATTEN_CONFIRM = messageKey('surface.forms.flatten-confirm');
+export const LINK_ON_PAGE_TO_PAGE = messageKey('surface.link-layer.to-page');
+export const LINK_ON_PAGE_TO_ADDRESS = messageKey('surface.link-layer.to-address');
+export const FOLLOW_LINK_TITLE = messageKey('dialog.follow-link.title');
+export const FOLLOW_LINK_EXPLAINS = messageKey('dialog.follow-link.explains');
+export const FOLLOW_LINK_OPEN = messageKey('dialog.follow-link.open');
+export const FOLLOW_LINK_REFUSED = messageKey('dialog.follow-link.refused');
+export const FOLLOW_LINK_REFUSED_NO_SCHEME = messageKey('dialog.follow-link.refused-no-scheme');
+export const LINK_FOLLOW_STALE = messageKey('toast.link.stale');
+export const LINK_FOLLOW_GONE = messageKey('toast.link.gone');
+export const LINK_FOLLOW_TOO_LONG = messageKey('toast.link.too-long');
+export const LINK_FOLLOW_NOT_OPENED = messageKey('toast.link.not-opened');
+export const LINK_FOLLOW_UNAVAILABLE = messageKey('toast.link.unavailable');
+export const LINK_ADDED = messageKey('toast.link.added');
 export const FLATTEN_FORM_TITLE = messageKey('dialog.flatten-form.title');
 export const FLATTEN_FORM_EXPLAINS = messageKey('dialog.flatten-form.explains');
 export const FLATTEN_FORM_APPLY = messageKey('dialog.flatten-form.apply');
@@ -3459,6 +3472,23 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FORMS_FLATTEN]: 'Flatten form',
   [FORMS_FLATTEN_CONFIRM]:
     'Flattening draws every field’s contents onto the page and removes the form. The fields can no longer be filled in. Comments are not affected.',
+  // WHERE A LINK GOES, under the pointer and as its name (ADR-0167): a page by its number, an address as it is shown.
+  [LINK_ON_PAGE_TO_PAGE]: 'Go to page {page}',
+  [LINK_ON_PAGE_TO_ADDRESS]: 'Open {address}',
+  // A WEB LINK ASKS FIRST, and names where it goes: invariant 24's *until the user asks, for that item*.
+  [FOLLOW_LINK_TITLE]: 'Open this link?',
+  [FOLLOW_LINK_EXPLAINS]: 'This link leaves the document. It goes to:',
+  [FOLLOW_LINK_OPEN]: 'Open link',
+  [FOLLOW_LINK_REFUSED]:
+    'This link goes to a “{scheme}” address, which could run a program rather than show a page, so Monstera does not open it. Only web pages and email addresses are opened.',
+  [FOLLOW_LINK_REFUSED_NO_SCHEME]:
+    'This link’s address does not say what kind of address it is, so Monstera does not open it. Only web pages and email addresses are opened.',
+  [LINK_FOLLOW_STALE]: 'The document changed before the link was opened. Click the link again.',
+  [LINK_FOLLOW_GONE]: 'That link is no longer on the page.',
+  [LINK_FOLLOW_TOO_LONG]: 'This link’s address is too long to open as written, so it was not opened.',
+  [LINK_FOLLOW_NOT_OPENED]: 'Windows has no program to open this link with.',
+  [LINK_FOLLOW_UNAVAILABLE]: 'The link could not be opened, because the document could not be read just now.',
+  [LINK_ADDED]: 'Link added.',
   [FLATTEN_FORM_TITLE]: 'Flatten the form',
   [FLATTEN_FORM_EXPLAINS]:
     'Every field’s contents are drawn onto its page and the form is removed, so the fields can no longer be filled in. Comments are not affected. The only way back is Undo, in this session.',

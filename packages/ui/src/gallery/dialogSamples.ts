@@ -981,4 +981,18 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
   ],
   'dialog.form-field-dropdown': choiceField('delivery_method'),
   'dialog.form-field-listbox': choiceField('preferred_days'),
+  'dialog.follow-link': [
+    { state: 'opened', props: { address: 'https://example.org/annual-report', followable: true, scheme: 'https:' } },
+    // ONE UNBROKEN WORD, as a tracking address is: the dialog shows it whole and breaks it anywhere.
+    {
+      state: 'long',
+      props: {
+        address: `https://example.org/track?id=${'a1b2c3d4e5'.repeat(60)}`,
+        followable: true,
+        scheme: 'https:',
+      },
+    },
+    { state: 'refused', props: { address: 'file:///C:/Windows/System32/calc.exe', followable: false, scheme: 'file:' } },
+    { state: 'no-scheme', props: { address: 'example.org/annual-report', followable: false, scheme: null } },
+  ],
 };

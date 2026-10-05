@@ -162,6 +162,8 @@ import { StatusBar } from './surfaces/StatusBar.js';
 import { StatusTip } from './surfaces/StatusTip.js';
 import { tipsOf } from './tips/tips.js';
 import { LinksPanel } from './LinksPanel.js';
+import type { FollowedLink } from './LinkLayer.js';
+import { followLink } from './commands/followLink.js';
 import { DestinationsPanel } from './DestinationsPanel.js';
 import { LayersPanel } from './LayersPanel.js';
 import { AnnotationsPanel } from './AnnotationsPanel.js';
@@ -247,6 +249,7 @@ import {
   HINT_EDIT_OBJECTS,
   HINT_EDIT_TEXT,
   HINT_HAND,
+  LINK_ADDED,
   SPLIT_SECOND_LABEL,
   TOAST_DISMISS,
 } from './messages/en.js';
@@ -3267,13 +3270,33 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     const docId = open.docId;
     return {
       tool,
-      onCommand: (command: DispatchableCommand): Promise<boolean> =>
+      onCommand: async (command: DispatchableCommand): Promise<boolean> => {
         // A DRAG OF THE SELECTION is a `placeAnnotation`, which keeps the walk, so the marks stay
         // selected for the next drag — the same route an arrow key takes.
-        send(docId, command),
+        const moved = await send(docId, command);
+        // A LINK ADDED IS SAID (item 14c): PDF.js draws no mark for a link, and its outline is drawn only in the Comment
+        // section, while the command palette starts the two link tools from any. A refusal says its own problem.
+        if (moved && command.kind === 'addLink') toast('done', LINK_ADDED);
+        return moved;
+      },
       selection,
     };
-  }, [open, selection, send, toolId, tools]);
+  }, [open, selection, send, toast, toolId, tools]);
+
+  /**
+   * A link pressed on a page or in the Links panel, followed by the one route (ADR-0167): a page link jumps, a web link
+   * asks and then `main` opens it. At the version on show, which is the version the page's links were read at; one
+   * that moved in between is `main`'s to call stale.
+   */
+  const onFollowLink = useCallback(
+    (followed: FollowedLink): void => {
+      if (open === undefined) return;
+      void followLink({ client, ask, toast, jumpTo: navigator.jumpTo }, open.docId, open.version, followed);
+    },
+    [ask, client, navigator.jumpTo, open, toast],
+  );
+  // OUTLINED WHERE LINKS ARE MADE: the Comment section, whose ribbon holds the two link tools.
+  const linksOutlined = useSetting(settings, RIBBON_SECTION_SETTING) === 'comment';
 
   /**
    * What the tool that is on waits for, for the status bar's tool line (ADR-0154 Decision 4). A drawing tool's hint is
@@ -3694,6 +3717,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           loupe={loupe}
           rulers={rulers}
           showGrid={showGrid}
+          onFollowLink={onFollowLink}
+          linksOutlined={linksOutlined}
           unit={unit}
           split={split}
           drawing={drawing}
@@ -3789,12 +3814,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                   version={open.version}
                   onJump={navigator.jumpTo}
                 />
-                <LinksPanel
-                  client={client}
-                  docId={open.docId}
-                  page={context.page}
-                  onJump={navigator.jumpTo}
-                />
+                <LinksPanel client={client} docId={open.docId} page={context.page} onFollow={onFollowLink} />
               </>
             ),
             // Keyed on the version: every drawing tool moves it, so the list is re-read
@@ -4184,6 +4204,9 @@ const DocumentLayer = memo(function DocumentLayer({
             organize={undefined}
             drawing={undefined}
             editing={undefined}
+            // NO LINKS BEHIND: a hidden page is pressed by nobody, so its links are not read (ADR-0167).
+            onFollowLink={undefined}
+            linksOutlined={false}
             // NOT DRAWN BEHIND: a request is drawn only while its document is on show, from its draft.
             writing={undefined}
             panning={false}
@@ -4245,6 +4268,8 @@ function PageCanvas({
   onSwap,
   rulers,
   showGrid,
+  onFollowLink,
+  linksOutlined,
   unit,
   split,
   organize,
@@ -4319,6 +4344,10 @@ function PageCanvas({
     | undefined;
   readonly rulers: boolean;
   readonly showGrid: boolean;
+  /** Follows a link pressed on a page (ADR-0167); `undefined` behind, where nothing is pressed. Both panes take it. */
+  readonly onFollowLink: PageListProps['onFollowLink'];
+  /** Whether links are outlined: the Comment section is on show. */
+  readonly linksOutlined: boolean;
   readonly unit: RulerUnit;
   /** Whether a second viewport onto the same document is shown. */
   readonly split: boolean;
@@ -4645,6 +4674,8 @@ function PageCanvas({
       loupe={loupe}
       rulers={rulers}
       showGrid={showGrid}
+      onFollowLink={onFollowLink}
+      linksOutlined={linksOutlined}
       unit={unit}
       drawing={drawing}
       editing={editing}
@@ -4691,6 +4722,8 @@ function PageCanvas({
       loupe={loupe}
       rulers={rulers}
       showGrid={showGrid}
+      onFollowLink={onFollowLink}
+      linksOutlined={linksOutlined}
       unit={unit}
       label={SPLIT_SECOND_LABEL}
       drawing={drawing}

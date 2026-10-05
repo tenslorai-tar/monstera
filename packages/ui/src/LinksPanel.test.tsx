@@ -22,9 +22,13 @@ const DOC = asDocId('00000000-0000-4000-8000-0000000000cc');
 function clientAnswering(
   links: readonly unknown[],
   options: { refuse?: boolean } = {},
-): { client: ContractClient; asked: unknown[] } {
+): { client: ContractClient; asked: unknown[]; sent: string[] } {
   const asked: unknown[] = [];
+  // Every channel the panel reached, recorded BEFORE the refusal below, so a case can assert a press sent nothing
+  // even where the throw would land in a click handler and read as nothing having happened.
+  const sent: string[] = [];
   const client = createClient(channels, (id, params) => {
+    sent.push(id);
     if (id !== 'document.pageLinks') throw new Error(`unexpected channel ${id}`);
     asked.push(params);
     return Promise.resolve(
@@ -33,7 +37,7 @@ function clientAnswering(
         : ok({ version: asDocVersion(1), links, next: null, truncated: false }),
     );
   });
-  return { client, asked };
+  return { client, asked, sent };
 }
 
 function Wrapped({ children }: { children: ReactNode }): ReactElement {
@@ -60,7 +64,7 @@ describe('LinksPanel', () => {
     const { client, asked } = clientAnswering([]);
     render(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={7} onJump={vi.fn()} />
+        <LinksPanel client={client} docId={DOC} page={7} onFollow={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -86,7 +90,7 @@ describe('LinksPanel', () => {
     });
     const { container } = render(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={2} onJump={vi.fn()} />
+        <LinksPanel client={client} docId={DOC} page={2} onFollow={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -102,61 +106,64 @@ describe('LinksPanel', () => {
     ]);
   });
 
-  it('OFFERS A JUMP for an internal link, with the zero-based page', async () => {
+  it('FOLLOWS an internal link to its zero-based page, through the one route', async () => {
     // The UI half of this feature's pair. The kernel's half proves the engine
-    // resolves a destination; this proves the panel dispatches that page.
-    const jump = vi.fn();
+    // resolves a destination; this proves the panel hands that page on.
+    const follow = vi.fn();
     const { client } = clientAnswering([INTERNAL]);
     const { container } = render(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={0} onJump={jump} />
+        <LinksPanel client={client} docId={DOC} page={0} onFollow={follow} />
       </Wrapped>,
     );
     await settle();
 
     const button = container.querySelector('.m-links-item');
-    // LABELLED 5, DISPATCHES 4. A person reads 1-based page numbers and the
+    // LABELLED 5, HANDS ON 4. A person reads 1-based page numbers and the
     // contract carries 0-based indices, and asserting both in one case is what
     // makes the conversion visible — either alone reads as correct.
     expect(button?.textContent).toBe('Go to page 5');
     (button as HTMLButtonElement | null)?.click();
-    expect(jump).toHaveBeenCalledWith(4);
+    expect(follow).toHaveBeenCalledWith({ page: 0, index: 0, link: INTERNAL });
   });
 
-  it('gives an external link NO CONTROL, which is invariant 24 rather than a gap', async () => {
-    // "No external fetch until the user asks, for that item." A button that
-    // quietly did nothing would be the display-only defect; a button that
-    // opened a browser is a separate decision with its own confirmation. So
-    // there is no button, and the URI is shown.
-    const { client } = clientAnswering([EXTERNAL]);
+  it('an external link is a CONTROL that hands on the link by its place, and opens nothing itself (ADR-0167)', async () => {
+    // Invariant 24's *until the user asks, for that item*: pressing it is the asking, and what happens next — the
+    // dialog naming the address, then `main` opening it — is `followLink`'s, the route the page takes too. The panel
+    // sends nothing to main on its own.
+    const follow = vi.fn();
+    const { client, sent } = clientAnswering([EXTERNAL]);
     const { container } = render(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={0} onJump={vi.fn()} />
+        <LinksPanel client={client} docId={DOC} page={0} onFollow={follow} />
       </Wrapped>,
     );
     await settle();
 
-    expect(container.querySelectorAll('button')).toHaveLength(0);
-    expect(container.querySelector('.m-links-external')?.textContent).toBe(
-      'Opens https://example.org/thing',
-    );
+    const button = container.querySelector<HTMLButtonElement>('.m-links-external');
+    expect(button?.tagName).toBe('BUTTON');
+    expect(button?.textContent).toBe('Opens https://example.org/thing');
+    const before = [...sent];
+    button?.click();
+    expect(follow).toHaveBeenCalledWith({ page: 0, index: 0, link: EXTERNAL });
+    expect(sent).toStrictEqual(before);
   });
 
-  it('CONTROL: with both kinds present, exactly the internal one is a control', async () => {
-    // Without this, "no buttons" is satisfied by a panel that renders no
-    // controls at all — including for the internal links it is supposed to
-    // offer. The mixed list is what separates *the split is honoured* from
-    // *nothing is clickable*.
+  it('CONTROL: with both kinds present, each is a control naming its OWN place', async () => {
+    // A panel handing every press the first link's place would follow the wrong one on any page with two.
+    const follow = vi.fn();
     const { client } = clientAnswering([INTERNAL, EXTERNAL]);
     const { container } = render(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={0} onJump={vi.fn()} />
+        <LinksPanel client={client} docId={DOC} page={0} onFollow={follow} />
       </Wrapped>,
     );
     await settle();
 
-    expect(container.querySelectorAll('button')).toHaveLength(1);
-    expect(container.querySelectorAll('.m-links-external')).toHaveLength(1);
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>('button')];
+    expect(buttons).toHaveLength(2);
+    buttons[1]?.click();
+    expect(follow).toHaveBeenCalledWith({ page: 0, index: 1, link: EXTERNAL });
   });
 
   it('says a REFUSAL differently from an empty page', async () => {
@@ -166,7 +173,7 @@ describe('LinksPanel', () => {
     const empty = clientAnswering([]);
     const { container: emptyPanel } = render(
       <Wrapped>
-        <LinksPanel client={empty.client} docId={DOC} page={0} onJump={vi.fn()} />
+        <LinksPanel client={empty.client} docId={DOC} page={0} onFollow={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -177,7 +184,7 @@ describe('LinksPanel', () => {
     const refused = clientAnswering([], { refuse: true });
     const { container: refusedPanel } = render(
       <Wrapped>
-        <LinksPanel client={refused.client} docId={DOC} page={0} onJump={vi.fn()} />
+        <LinksPanel client={refused.client} docId={DOC} page={0} onFollow={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -190,7 +197,7 @@ describe('LinksPanel', () => {
     const { client, asked } = clientAnswering([INTERNAL]);
     const { container } = render(
       <Wrapped>
-        <LinksPanel client={client} docId={undefined} page={undefined} onJump={vi.fn()} />
+        <LinksPanel client={client} docId={undefined} page={undefined} onFollow={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -206,7 +213,7 @@ describe('LinksPanel', () => {
     const { client } = clientAnswering([INTERNAL]);
     const { container, rerender } = render(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={0} onJump={vi.fn()} />
+        <LinksPanel client={client} docId={DOC} page={0} onFollow={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -215,7 +222,7 @@ describe('LinksPanel', () => {
     // Re-rendered on a new page WITHOUT letting the answer land.
     rerender(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={1} onJump={vi.fn()} />
+        <LinksPanel client={client} docId={DOC} page={1} onFollow={vi.fn()} />
       </Wrapped>,
     );
     expect(container.querySelector('.m-links-panel')).toBeNull();

@@ -11,20 +11,22 @@ import {
   LINKS_TRUNCATED,
   LINKS_UNAVAILABLE,
 } from './messages/en.js';
+import type { FollowedLink } from './LinkLayer.js';
 import { pdfjsPageOf } from './pageNumbering.js';
 import { readWholeList } from './readWholeList.js';
+import type { PageLinkOnPage } from './usePageLinks.js';
 
 /**
  * The links on the page the reader is looking at.
  *
- * ## An INTERNAL link is a control; an EXTERNAL one is not
+ * ## Both kinds are controls, and they take the page's ONE route
  *
  * Invariant 24: opening a document runs none of its content, and **no external
- * fetch until the user asks, for that item**. So a link into the document gets
- * a button that jumps, and a link out of it is shown as its URI with nothing to
- * press. That is not a placeholder — a control that opened a browser is a
- * separate decision with its own confirmation, and offering one that quietly
- * did nothing would be the display-only defect.
+ * fetch until the user asks, for that item**. A link into the document jumps; a
+ * link out of it is pressed, then named in a dialog, then opened by `main`
+ * reading the address from the document (ADR-0167). Both go through `onFollow`,
+ * the same function a link pressed on the page goes through, so the panel and
+ * the page cannot follow links two different ways.
  *
  * The split is not computed here. The channel carries `kind` because MuPDF is
  * what knows, and a panel working it out from the URI would be a second opinion
@@ -40,15 +42,15 @@ export function LinksPanel({
   client,
   docId,
   page,
-  onJump,
+  onFollow,
 }: {
   readonly client: ContractClient;
   /** `undefined` with no document open, which renders nothing. */
   readonly docId: DocId | undefined;
   /** The page the reader is on, zero-based. `undefined` with no document. */
   readonly page: number | undefined;
-  /** Takes the reader to a page, recording the jump. */
-  readonly onJump: (page: number) => void;
+  /** Follows a link, by its page and its place on it: the route a link pressed on the page takes too (ADR-0167). */
+  readonly onFollow: (followed: FollowedLink) => void;
 }): ReactElement | null {
   const { i18n } = useLingui();
   const [state, setState] = useState<PanelState>({ kind: 'idle' });
@@ -110,21 +112,22 @@ export function LinksPanel({
             // in place. A key invented from the URI would collide on a page
             // that links to the same place twice, which is common.
             <li key={at}>
-              {link.kind === 'internal' ? (
-                <button
-                  type="button"
-                  className="m-links-item"
-                  onClick={() => {
-                    onJump(link.page);
-                  }}
-                >
-                  {i18n._(LINKS_TO_PAGE, { page: pdfjsPageOf(link.page) })}
-                </button>
-              ) : (
-                <span className="m-links-external">
-                  {i18n._(LINKS_EXTERNAL, { uri: link.uri })}
-                </span>
-              )}
+              <button
+                type="button"
+                className={link.kind === 'internal' ? 'm-links-item' : 'm-links-item m-links-external'}
+                data-links-item={String(at)}
+                onClick={() => {
+                  onFollow({ page: state.page, index: at, link });
+                }}
+              >
+                {link.kind === 'internal' ? (
+                  i18n._(LINKS_TO_PAGE, { page: pdfjsPageOf(link.page) })
+                ) : (
+                  // THE CLAMP IS ON THE TEXT, not on the button: on a padded box, three lines clamped show the top of
+                  // the fourth in the padding below them.
+                  <span className="m-links-address">{i18n._(LINKS_EXTERNAL, { uri: link.uri })}</span>
+                )}
+              </button>
             </li>
           ))}
         </ul>
@@ -133,11 +136,6 @@ export function LinksPanel({
     </nav>
   );
 }
-
-/** One link, as the contract carries it. */
-type PanelLink =
-  | { readonly kind: 'internal'; readonly page: number }
-  | { readonly kind: 'external'; readonly uri: string };
 
 /**
  * What the panel is showing.
@@ -154,7 +152,8 @@ type PanelState =
   | {
       readonly kind: 'links';
       readonly page: number;
-      readonly links: readonly PanelLink[];
+      /** As the contract carries them, the page layer's shape, so both hand `onFollow` one kind of link. */
+      readonly links: readonly PageLinkOnPage[];
       /** Whether the host's walk stopped at its bound, which only a hostile document reaches. */
       readonly truncated: boolean;
     };

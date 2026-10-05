@@ -33,6 +33,7 @@ export interface PageWriting {
   readonly onDone: (words: string | undefined) => void;
 }
 import { TextLayer, type TextLayerLine, readTextSelection } from './TextLayer.js';
+import { type FollowedLink, LinkLayer } from './LinkLayer.js';
 import { type DifferenceMark, DifferenceLayer } from './DifferenceLayer.js';
 
 /** What a mark over a page sits on: the paper. */
@@ -43,6 +44,7 @@ const NO_MARKS: readonly DifferenceMark[] = [];
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
+import { type PageLinkOnPage, usePageLinks } from './usePageLinks.js';
 import { useSelectedTextPages } from './useSelectedTextPages.js';
 import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL, PAGE_OPENING } from './messages/en.js';
 import { Icon } from './primitives/Icon.js';
@@ -190,6 +192,13 @@ export interface PageListProps {
   readonly rulers: boolean;
   /** Whether the grid overlay is drawn. `viewing.grid`. */
   readonly showGrid: boolean;
+  /**
+   * Follows a link a person pressed on a page (ADR-0167), or `undefined` where this list follows none — the comparison
+   * view's panes, whose pages are being read against each other. With it, each visible page draws its links.
+   */
+  readonly onFollowLink: ((followed: FollowedLink) => void) | undefined;
+  /** Whether each link's edge is drawn: the Comment section is on show, where links are made. */
+  readonly linksOutlined: boolean;
   /**
    * What both are read in. `viewing.ruler-unit`.
    *
@@ -430,6 +439,8 @@ export function PageList({
   loupe,
   rulers,
   showGrid,
+  onFollowLink,
+  linksOutlined,
   unit,
   label,
   labelValues,
@@ -522,6 +533,14 @@ export function PageList({
   // AND THE PAGES A SELECTION IS IN, on screen or not: their layers hold the selection's ends (`useSelectedTextPages`).
   const selectedPages = useSelectedTextPages(scroller);
   const pageText = usePageText(client, docId, version, firstFrame ? new Set([...visible, ...selectedPages]) : NOTHING_VISIBLE);
+  // THE LINKS ON WHAT IS ON SCREEN (ADR-0167), after the first frame for the text's reason, and only where this list
+  // follows links: a list with nothing to hand a press to reads nothing to draw.
+  const pageLinks = usePageLinks(
+    onFollowLink === undefined ? undefined : client,
+    docId,
+    version,
+    firstFrame ? visible : NOTHING_VISIBLE,
+  );
   // EVERY PAGE'S MARKS, one read per version: the channel is whole-document, so there is nothing
   // to narrow to the visible set, and the layer is mounted only on slots that are measured.
   const pageAnnotations = usePageAnnotations(firstFrame ? client : undefined, docId, version);
@@ -1224,6 +1243,11 @@ export function PageList({
           quality={quality}
           badge={pageBadges}
           grid={grid !== undefined}
+          // GATED ON THE SLOT'S OWN MEASUREMENT for the text layer's reason: a link placed with a neighbour's box would
+          // be pressed where the link is not.
+          links={sizes.has(page) && onFollowLink !== undefined ? pageLinks.get(page) : undefined}
+          linksOutlined={linksOutlined}
+          onFollowLink={onFollowLink}
           scroller={scroller}
           hidden={layout === 'single' && page !== onShow}
         />
@@ -1412,6 +1436,9 @@ function PageSlot({
   quality,
   badge,
   grid,
+  links,
+  linksOutlined,
+  onFollowLink,
   scroller,
   hidden,
 }: {
@@ -1460,6 +1487,10 @@ function PageSlot({
   readonly badge: boolean;
   /** Whether the grid is drawn over the page; its spacing is the list's `--m-grid`, inherited. */
   readonly grid: boolean;
+  /** This page's links, or `undefined` before they are known, the slot is measured, or where none are followed. */
+  readonly links: readonly PageLinkOnPage[] | undefined;
+  readonly linksOutlined: boolean;
+  readonly onFollowLink: ((followed: FollowedLink) => void) | undefined;
   /** The scroller the slot sits in, whose box decides which tiles are wanted. */
   readonly scroller: React.RefObject<HTMLElement | null>;
   /** Out of the layout: single page shows only the page on show, and a hidden slot is never visible, so never drawn. */
@@ -1684,6 +1715,17 @@ function PageSlot({
           lines={text}
           page={page}
           search={search}
+        />
+      )}
+      {/* THE PAGE'S LINKS (ADR-0167), over the text so a press on a link follows it rather than starting a selection,
+          and under the drawing overlay, which is mounted only while a tool is on and then takes the press. */}
+      {links === undefined || size === undefined || onFollowLink === undefined ? null : (
+        <LinkLayer
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          links={links}
+          onFollow={onFollowLink}
+          outlined={linksOutlined}
+          page={page}
         />
       )}
       {/* A COMPARISON'S MARKS (ADR-0131), over the text and under the annotations, gated on the slot's own measurement

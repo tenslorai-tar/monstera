@@ -2423,12 +2423,12 @@ optgroup {
 }
 
 /*
- * An entry that goes nowhere, and an external link: shown, not offered.
+ * An entry that goes nowhere: shown, not offered.
  * `--muted` rather than a disabled control, because there is no control — a
  * button that did nothing would be the display-only defect these rows avoid.
+ * A web link is a control since ADR-0167 (it asks, then opens), so it is not here.
  */
-.m-destination-unresolved,
-.m-links-external {
+.m-destination-unresolved {
   display: block;
   padding: var(--space-2) var(--space-4);
   color: var(--muted);
@@ -2440,7 +2440,10 @@ optgroup {
  */
 .m-destination-heading {
   display: block;
-  padding: var(--space-2) var(--space-4);
+  /* MARGIN ABOVE AND BELOW, not padding: the clamp below hides lines past the third only outside the padding box, so
+     padding would show the top of the fourth. The heading draws no background, so the two lay out alike. */
+  margin-block: var(--space-2);
+  padding-inline: var(--space-4);
   color: var(--text);
 }
 
@@ -2468,7 +2471,7 @@ optgroup {
 .m-layer-name,
 .m-destination-title,
 .m-destination-heading,
-.m-links-external {
+.m-links-address {
   min-inline-size: 0;
   overflow-wrap: anywhere;
   display: -webkit-box;
@@ -2483,6 +2486,13 @@ optgroup {
 [data-signature] .m-dialog-section__title {
   min-inline-size: 0;
   overflow-wrap: anywhere;
+}
+
+/* WHERE A WEB LINK GOES (ADR-0167), read whole before it is opened: it breaks anywhere and is not clamped, since a
+ * person deciding whether to follow it must be able to read all of it, and it is text to copy. */
+.m-follow-link__address {
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 .m-destinations-empty,
@@ -2740,9 +2750,10 @@ optgroup {
 }
 
 /* THE PANEL'S CONTENT IS TEXT, its labels are not (`.m-document-surface`): an answer, what a person sent, a comment's
-   note, a link's address. A field needs no rule, being editable. The whole panel as text put a drag off the page into
-   Properties' labels, where the page's selection collapsed (measured 2026-10-03). */
-:is(.m-assistant__text, .m-assistant__sent, .m-annotations-note, .m-links-external) {
+   note. A field needs no rule, being editable. The whole panel as text put a drag off the page into Properties' labels,
+   where the page's selection collapsed (measured 2026-10-03). A link's address is a control since ADR-0167, and is
+   copied from the dialog that names it (`.m-follow-link__address`). */
+:is(.m-assistant__text, .m-assistant__sent, .m-annotations-note) {
   user-select: text;
 }
 
@@ -5220,6 +5231,38 @@ optgroup {
 
 .m-text-layer:active .m-text-layer__gaps {
   inset: 0;
+}
+
+/*
+ * A PAGE'S LINKS (ADR-0167), one button over each link's rectangle. The layer takes no pointer, so the text layer under
+ * it still selects between the links; a link takes the pointer as a hand. Its edge is drawn on hover, on focus, and for
+ * every link in the Comment section, where links are made: an outline rather than a tint, because a tint over the
+ * paper would cover the words the link is drawn on.
+ */
+.m-link-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.m-page-link {
+  position: absolute;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.m-page-link:hover,
+.m-link-layer--outlined .m-page-link {
+  outline: 1px solid var(--accent-on-paper, var(--accent));
+}
+
+.m-page-link:focus-visible {
+  outline: 2px solid var(--accent-on-paper, var(--accent));
+  outline-offset: 2px;
 }
 
 .m-text-line {
