@@ -1,8 +1,17 @@
 import type { SERVICE_PROBLEMS } from '@monstera/contract';
-import type { FailureDetails, MessageKey } from '@monstera/shared';
+import { type EditStep, type FailureDetails, type MessageKey, PDFIUM_PASSWORD_ERROR } from '@monstera/shared';
 
 import {
   ANTHROPIC_OUT_OF_CREDIT,
+  EDIT_REFUSED_GENERATE,
+  EDIT_REFUSED_MATRIX,
+  EDIT_REFUSED_OBJECT,
+  EDIT_REFUSED_OPEN,
+  EDIT_REFUSED_PAGE,
+  EDIT_REFUSED_PASSWORD,
+  EDIT_REFUSED_READ_BACK,
+  EDIT_REFUSED_SAVE,
+  EDIT_REFUSED_SET_TEXT,
   PROBLEM_SERVICE_ADDRESS,
   PROBLEM_SERVICE_NO_KEY,
   PROBLEM_SERVICE_REFUSED,
@@ -37,6 +46,7 @@ export type CommandProblem =
   | { readonly code: 'comment-too-long' }
   | { readonly code: 'text-not-writable'; readonly detail: FailureDetails['text-not-writable'] }
   | { readonly code: 'text-not-in-place' }
+  | { readonly code: 'edit-refused'; readonly detail: FailureDetails['edit-refused'] }
   | { readonly code: 'copy-absent' }
   | { readonly code: 'copy-at-capacity' }
   | { readonly code: 'copy-busy' }
@@ -45,18 +55,42 @@ export type CommandProblem =
   | { readonly code: 'internal'; readonly incident: string };
 
 /**
- * The sentence for each code — the ONE table, read by the problem dialog and by a surface that says a refusal in its
+ * The sentence for a problem — the ONE reader, called by the problem dialog and by a surface that says a refusal in its
  * own place (the spelling panel, ADR-0156 Decision 5), so a refusal reads the same wherever it is said.
+ *
+ * A FUNCTION, because one code's sentence is not the code's: `edit-refused` says which step refused (ADR-0169
+ * Decision 5), and at `open` PDFium's password number says the document is protected.
+ *
+ * Its own module rather than the dialog body's, because the body is loaded lazily and a surface that imported this
+ * from it would load the body with it.
+ */
+export function problemMessage(problem: CommandProblem): MessageKey {
+  if (problem.code !== 'edit-refused') return CODE_MESSAGE[problem.code];
+  const { step, engineError } = problem.detail;
+  return step === 'open' && engineError === PDFIUM_PASSWORD_ERROR ? EDIT_REFUSED_PASSWORD : STEP_MESSAGE[step];
+}
+
+/** One sentence per step of a PDFium rewrite, each ending in *so nothing was changed*. */
+const STEP_MESSAGE: Readonly<Record<EditStep, MessageKey>> = {
+  open: EDIT_REFUSED_OPEN,
+  page: EDIT_REFUSED_PAGE,
+  object: EDIT_REFUSED_OBJECT,
+  'set-text': EDIT_REFUSED_SET_TEXT,
+  matrix: EDIT_REFUSED_MATRIX,
+  generate: EDIT_REFUSED_GENERATE,
+  save: EDIT_REFUSED_SAVE,
+  'read-back': EDIT_REFUSED_READ_BACK,
+};
+
+/**
+ * The sentence for each code whose sentence is the code's.
  *
  * A `Record` keyed by the code, for the reason `SaveProblemBody` uses one: the
  * union comes from the **channels**, so it grows in a file nobody editing this
  * one will open, and a missing key must land on the table rather than on a
  * return path that quietly yields `undefined`.
- *
- * Its own module rather than the dialog body's, because the body is loaded lazily and a surface that imported the table
- * from it would load the body with it.
  */
-export const PROBLEM_MESSAGE: Readonly<Record<CommandProblem['code'], MessageKey>> = {
+const CODE_MESSAGE: Readonly<Record<Exclude<CommandProblem['code'], 'edit-refused'>, MessageKey>> = {
   'document-not-open': PROBLEM_NOT_OPEN,
   'document-busy': PROBLEM_BUSY,
   'document-poisoned': PROBLEM_POISONED,

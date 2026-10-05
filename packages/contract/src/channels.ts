@@ -2136,6 +2136,8 @@ export const channels = {
     // nothing has changed. The dispatcher asks the person and sends the command again, agreed, or works on a copy.
     // `text-not-in-place` IS `replaceTextAt`'s (ADR-0156): no single text object holds the word at that point, so it
     // was not replaced there. The person's to act on, by editing the line, for `text-not-writable`'s reason.
+    // `edit-refused` IS A PDFIUM REWRITE'S (ADR-0169): a native step refused, or the saved page read back without text
+    // the edit did not touch, and nothing was saved. It carries the step and the number PDFium answered.
     [
       'document-not-open',
       'document-busy',
@@ -2144,6 +2146,7 @@ export const channels = {
       'engine-unavailable',
       'text-not-writable',
       'text-not-in-place',
+      'edit-refused',
       'breaks-signatures',
       ...SERVICE_PROBLEMS,
     ],
@@ -2201,7 +2204,9 @@ export const channels = {
       // rebind. A version here would invite a caller to reopen for no reason.
       z.object({ kind: z.literal('nothing-to-undo') }),
     ]),
-    ['document-not-open', 'document-busy', 'document-poisoned'],
+    // `edit-refused` AND `text-not-writable` because an undo of a PDFium edit runs the same rewrite, read back the
+    // same way (ADR-0169), so it is refused the same way and says the same sentence.
+    ['document-not-open', 'document-busy', 'document-poisoned', 'edit-refused', 'text-not-writable'],
   ),
   /**
    * Steps one entry forward over what undo stepped back — {@link 'document.undo'}'s other half.
@@ -2228,7 +2233,7 @@ export const channels = {
       }),
       z.object({ kind: z.literal('nothing-to-redo') }),
     ]),
-    ['document-not-open', 'document-busy', 'document-poisoned'],
+    ['document-not-open', 'document-busy', 'document-poisoned', 'edit-refused', 'text-not-writable'],
   ),
   /**
    * Save, and every part of its shape is invariant 18 or ADR-0009 §9.
@@ -3037,6 +3042,7 @@ export const channels = {
         problem: z.union([
           z.object({ code: z.enum(['engine-unavailable', 'text-not-in-place', 'document-poisoned']) }).strict(),
           z.object({ code: z.literal('text-not-writable'), detail: FAILURE_DETAIL_SCHEMAS['text-not-writable'] }).strict(),
+          z.object({ code: z.literal('edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['edit-refused'] }).strict(),
         ]),
       }),
       z.object({ kind: z.literal('cancelled') }),

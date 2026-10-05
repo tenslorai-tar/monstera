@@ -80,6 +80,13 @@ export const EDIT_STEPS = ['open', 'page', 'object', 'set-text', 'matrix', 'gene
 export type EditStep = (typeof EDIT_STEPS)[number];
 
 /**
+ * The number `FPDF_GetLastError` answers when a document needs a password: `FPDF_ERR_PASSWORD`, read from PDFium
+ * 155.0.8044.0's `fpdfview.h` (line 609, `.tools/pdfium/155.0.8044.0/include`) on 2026-10-05. At step `open` it means
+ * the document is protected, which the person is told as such (ADR-0169 Decision 7).
+ */
+export const PDFIUM_PASSWORD_ERROR = 4;
+
+/**
  * The codes that carry a detail, and the detail each carries.
  *
  * The TYPE is here and the schema is `@monstera/contract`'s `FAILURE_DETAIL_SCHEMAS`, which is checked against this

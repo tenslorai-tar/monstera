@@ -190,3 +190,17 @@ both change how it is read.
   rewritten. So the loss needs a changed object in the same stream as the Type 3 text, which is every case measured
   above, and a page whose Type 3 text sits in a stream nothing changed is saved, correctly. The proof's promotion case
   joins its page into one stream so that it is the case that loses text.
+
+## Correction, 2026-10-05: `edit-refused` is declared on every route an edit takes in `main`
+
+Decision 4 names `document.execute` as the renderer-facing channel. Building the sentences found three more routes the
+same refusal travels, each of which would have turned it into `internal`:
+
+- **`document.undo` and `document.redo`** declare `edit-refused` and `text-not-writable`, because an undo of a PDFium
+  edit runs the same rewrite and Decision 1's read-back, and a redo re-runs the edit.
+- **`document.editCopy`'s problem** carries `edit-refused` with its detail, as it carries `text-not-writable`.
+- **One rule in `main` maps them**, `editRefusalOf` and its narrower `rewriteRefusalOf` (`apps/desktop/src/editRefusals.ts`):
+  the copy route had spelt its own list and knew four of the direct route's codes.
+
+The renderer reads every problem's sentence through one function, `problemMessage`, since `edit-refused`'s sentence is
+the step's rather than the code's.

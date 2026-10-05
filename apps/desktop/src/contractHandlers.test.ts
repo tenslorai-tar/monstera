@@ -24,6 +24,7 @@ import {
   DocumentService,
   ENGINE_BARCODE_TEXT_MAX,
   ENGINE_BARCODES_MAX,
+  EditRefusedError,
   type IdentityReader,
   StaleTargetError,
   TextNotWritableError,
@@ -1099,6 +1100,23 @@ describe('document.editCopy — an edit of a signed document made on a copy (ADR
     expect(closed).toStrictEqual([]);
   });
 
+  it('a step PDFium refused on the copy says which, as the same edit says it in place (ADR-0169)', async () => {
+    // THE COPY ROUTE spelt its own list of refusals and knew four of the direct route's, so this was a defect thrown
+    // past an open copy. Both routes now take `editRefusalOf`.
+    const { commands } = commandsFor(() => Promise.reject(new EditRefusedError('read-back', 0, 'the page lost text')));
+    const { handlers, closed } = harness(OPENED, NO_PICKER, undefined, { commands });
+
+    const result = await handlers['document.editCopy']({ docId: A_DOC, command: NAMED });
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { kind: 'edit-refused', docId: COPY, problem: { code: 'edit-refused', detail: { step: 'read-back', engineError: 0 } } },
+    });
+    if (!result.ok) throw new Error('the case answered a failure');
+    expect(channels['document.editCopy'].result.safeParse(result.value).success).toBe(true);
+    expect(closed).toStrictEqual([]);
+  });
+
   it('a copy whose read was REFUSED says so and runs no edit, where it used to be thrown as a defect (cloud-4 7a)', async () => {
     // A file this build just wrote can still be held: a scanner opening it the moment it lands holds it as any
     // program does.
@@ -1144,6 +1162,35 @@ describe('document.editCopy — an edit of a signed document made on a copy (ADR
     });
     expect(refused.opened).toStrictEqual([]);
   });
+});
+
+describe('document.undo and document.redo — a rewrite refused on the way back (ADR-0169)', () => {
+  // AN UNDO OF A PDFIUM EDIT runs the same rewrite and read-back as the edit, so it is refused the same way.
+  const refusing = (thrown: Error) =>
+    ({ undo: () => Promise.reject(thrown), redo: () => Promise.reject(thrown) }) as unknown as DocumentCommands;
+  const OPENED: OpenOutcome = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' };
+  const NO_PICKER: PickDocument = () => Promise.reject(new Error('an undo never runs the open picker'));
+
+  for (const channel of ['document.undo', 'document.redo'] as const) {
+    it(`${channel} names the step and PDFium's number, and the characters a font could not carry`, async () => {
+      const step = harness(OPENED, NO_PICKER, undefined, { commands: refusing(new EditRefusedError('generate', 6, 'x')) });
+      const stepAnswer = await step.handlers[channel]({ docId: A_DOC });
+      expect(stepAnswer).toStrictEqual({ ok: false, error: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } } });
+      // DECLARED ON THE CHANNEL, which is what the boundary checks an answer's code against.
+      expect(channels[channel].failures).toEqual(expect.arrayContaining(['edit-refused', 'text-not-writable']));
+
+      const font = harness(OPENED, NO_PICKER, undefined, { commands: refusing(new TextNotWritableError('é')) });
+      expect(await font.handlers[channel]({ docId: A_DOC })).toStrictEqual({
+        ok: false,
+        error: { code: 'text-not-writable', detail: { characters: 'é' } },
+      });
+    });
+
+    it(`CONTROL: ${channel} rethrows a defect, which the boundary records as internal`, async () => {
+      const defect = harness(OPENED, NO_PICKER, undefined, { commands: refusing(new Error('a defect')) });
+      await expect(defect.handlers[channel]({ docId: A_DOC })).rejects.toThrow('a defect');
+    });
+  }
 });
 
 describe('document.workOnCopy and document.fileAccess — a file that cannot be saved over (cloud-4 7b)', () => {

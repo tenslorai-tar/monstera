@@ -635,12 +635,10 @@ export async function applyDocumentCommand(
     const failure = answer.error;
     if (failure.code === 'breaks-signatures') throw new Error('main asked again about an edit sent agreed');
     // REBUILT ONLY TO DROP THAT CODE FROM THE TYPE, and a failure that carries something passes whole so it reaches the
-    // dialog: `internal` its incident, `text-not-writable` the characters it names (ADR-0169).
+    // dialog: `internal` its incident, a code with a declared detail its detail (ADR-0169). Asked of the failure rather
+    // than by naming the codes, so a code that gains a detail needs no edit here.
     if (options.keep?.(failure) !== true) {
-      reportProblem(
-        deps,
-        failure.code === 'internal' || failure.code === 'text-not-writable' ? failure : { code: failure.code },
-      );
+      reportProblem(deps, 'detail' in failure || failure.code === 'internal' ? failure : { code: failure.code });
     }
     return false;
   }

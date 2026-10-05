@@ -759,6 +759,42 @@ test('the PAGE MENU opens from the keyboard on a focused thumbnail — Shift+F10
   }
 });
 
+// AN EDIT PDFIUM REFUSED (ADR-0169 Decision 5), in every theme: the step's sentence and the step and number as the
+// reference a person can quote, where `internal` shows its incident id. The command is the page menu's Rotate, which
+// every document offers; the shim answers it as main answers an edit refused at the read-back.
+for (const look of LOOKS) {
+  test(`${look.name}: an edit REFUSED AT A STEP says which, with its reference, and passes axe`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await threePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000f1');
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      refusals: new Map([[docId, { code: 'edit-refused', detail: { step: 'read-back', engineError: 0 } }]]),
+    });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+
+    const first = page.locator('[data-thumb-page="0"]');
+    await expect(first).toBeVisible();
+    await first.focus();
+    await page.keyboard.press('Shift+F10');
+    await page.getByRole('menu').getByRole('menuitem', { name: 'Rotate page' }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText('This page uses a font Monstera can’t rewrite yet, so nothing was changed.')).toBeVisible();
+    await expect(dialog.getByText('read-back 0')).toBeVisible();
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+  });
+}
+
 test('THUMBNAIL SIZE: a stored Large lays the Pages strip in ONE column of 160 px pictures, drawn at that width', async ({
   page,
 }) => {

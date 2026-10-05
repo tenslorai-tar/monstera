@@ -19,7 +19,7 @@ import {
 import { unscaledTransform } from '../annotations/annotationSpace.js';
 import { wordsToEdit } from '../annotations/markWords.js';
 import { type DocumentCommandDeps, applyDocumentCommand } from '../commands/documentCommands.js';
-import { PROBLEM_MESSAGE } from '../dialogs/problemMessages.js';
+import { problemMessage } from '../dialogs/problemMessages.js';
 import type { DocumentStore } from '../documentStores.js';
 import {
   PROBLEM_COMMENT_TOO_LONG,
@@ -350,7 +350,7 @@ export function addToDictionary(deps: SpellingDeps, store: DocumentStore): void 
 function noticeFor(failure: Failure<FailureOf<Channels, 'document.execute'>>): MessageKey | undefined | false {
   if (failure.code === 'internal') return false;
   if (failure.code === 'breaks-signatures') return undefined;
-  return PROBLEM_MESSAGE[failure.code];
+  return problemMessage('detail' in failure ? failure : { code: failure.code });
 }
 
 /** Sends one command, saying a refusal in the panel. `true` when the document moved. */
@@ -435,11 +435,11 @@ async function pointOf(
 ): Promise<{ readonly x: number; readonly y: number } | MessageKey> {
   const { page, line, offset } = occurrence.place;
   const layer = await deps.client['document.pageTextLayer']({ docId, page, limit: MAX_TEXT_LAYER_LINES });
-  if (!layer.ok) return PROBLEM_MESSAGE[layer.error.code];
+  if (!layer.ok) return problemMessage(layer.error);
   const lines = layer.value.lines;
   if (lines[line]?.text !== occurrence.context) return SPELLING_CHANGED;
   const boxes = await deps.client['document.pageWordBoxes']({ docId, page });
-  if (!boxes.ok) return PROBLEM_MESSAGE[boxes.error.code];
+  if (!boxes.ok) return problemMessage(boxes.error);
   if (boxes.value.version !== layer.value.version) return SPELLING_CHANGED;
   const paired = pairWordBoxes(lines, boxes.value.lines)[line];
   // THE TOKEN AT THE OFFSET, by the same segmenter the boxes were cut by: one box per token `tokensOf` cuts.
@@ -447,7 +447,7 @@ async function pointOf(
   const box = paired?.words?.[at];
   // NO BOX FOR THE WORD is a line the engine's read did not pair, and a point estimated from the line's width would
   // name a place the word may not be: refused as not in place, the edit's own answer for a point it cannot use.
-  if (box === undefined) return PROBLEM_MESSAGE['text-not-in-place'];
+  if (box === undefined) return problemMessage({ code: 'text-not-in-place' });
   const crop = deps.cropOf(docId, page);
   if (crop === undefined) return SPELLING_NOT_SHOWN;
   const model = await deps.client['document.viewModel']({ docId, pages: [page] });

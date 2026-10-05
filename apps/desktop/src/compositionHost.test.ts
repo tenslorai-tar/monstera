@@ -1225,7 +1225,7 @@ describe('the composition root, with BOTH engine hosts', () => {
     // kernel. Between them sit the host's code, main's `answered`, and the
     // execute handler's mapping — and a break anywhere there turns a sentence a
     // person can act on into `internal` with an incident id.
-    const run = async (applyAnswer: 'bytes' | 'text-not-writable') => {
+    const run = async (applyAnswer: 'bytes' | 'text-not-writable' | 'edit-refused') => {
       const mupdf = platformAnswering(serialisingEngine());
       const base = pdfiumPeer();
       const pdfium: FakePeer = (channel, params) => {
@@ -1237,6 +1237,10 @@ describe('the composition root, with BOTH engine hosts', () => {
           // ONE CHARACTER TYPED AND ONE NOT: the host is hostile by invariant 25's premise, so `main` forwards only
           // characters the command carries (ADR-0169 Decision 4), and the case asserts which one survived.
           return { ok: false, error: { code: 'text-not-writable', detail: { characters: 'w中' } } };
+        }
+        if (channel === 'engine/apply' && applyAnswer === 'edit-refused') {
+          // THE STEP AND PDFIUM'S NUMBER (ADR-0169 Decision 3), which `main` forwards as they came.
+          return { ok: false, error: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } } };
         }
         return base.peer(channel, params);
       };
@@ -1274,6 +1278,12 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(refused.executed).toStrictEqual({
       ok: false,
       error: { code: 'text-not-writable', detail: { characters: 'w' } },
+    });
+
+    // A STEP THE HOST NAMED reaches the renderer as the same step and number, never as `internal`.
+    expect((await run('edit-refused')).executed).toStrictEqual({
+      ok: false,
+      error: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } },
     });
   });
 

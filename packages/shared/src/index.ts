@@ -17,6 +17,7 @@ export {
   type Failure,
   type FailureDetails,
   type InternalFailure,
+  PDFIUM_PASSWORD_ERROR,
   type Result,
   type StructuredError,
   INTERNAL_FAILURE,

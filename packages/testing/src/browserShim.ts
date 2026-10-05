@@ -37,6 +37,7 @@ import {
   wrapHandlers,
 } from '@monstera/contract';
 import {
+  type DeclaredFailure,
   type DocId,
   type DocVersion,
   type FileHandle,
@@ -705,6 +706,12 @@ export interface BrowserShimOptions {
    */
   readonly signed?: ReadonlySet<string>;
   /**
+   * A refusal `document.execute` answers for a document, by id, whole with any detail its code declares, for a case
+   * about what a person reads of one (ADR-0169's `edit-refused`). The shim models no engine, so a case names the
+   * document, as `busy` names a saturated lane.
+   */
+  readonly refusals?: ReadonlyMap<string, DeclaredFailure<DeclaredOf<typeof channels, 'document.execute'>>>;
+  /**
    * What `document.editCopy` answers, in order — `markdownNews`' queue and default: unset or exhausted is `cancelled`.
    * An `edited` or `edit-refused` answer seeds the copy, which is open either way.
    */
@@ -1247,6 +1254,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
         throw new Error('shim: injected engine fault');
       }
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const refusal = options.refusals?.get(docId);
+      if (refusal !== undefined) return Promise.resolve(err(refusal));
 
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));

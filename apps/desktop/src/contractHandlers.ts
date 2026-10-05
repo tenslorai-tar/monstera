@@ -62,9 +62,6 @@ import {
   EngineAnnotationDataExportFailed,
   type IdentityReader,
   StaleTargetError,
-  TextNotInPlaceError,
-  TextNotWritableError,
-  UnregisteredWriterError,
   type WriteTargetVerdict,
   paragraphText,
   readDocumentRange,
@@ -78,6 +75,7 @@ import { basename, isAbsolute } from 'node:path';
 import { type DocId, type FileHandle, err, lineText, ok } from '@monstera/shared';
 
 import { executeCommandHandler } from './commandHandlers.js';
+import { editRefusalOf, rewriteRefusalOf } from './editRefusals.js';
 import {
   type DocumentCommands,
   DocumentPoisonedError,
@@ -2291,15 +2289,7 @@ function editCopyHandler(
       return ok({ ...opened, kind: 'edited', ...applied } as const);
     } catch (thrown) {
       const problem =
-        thrown instanceof UnregisteredWriterError
-          ? ({ code: 'engine-unavailable' } as const)
-          : thrown instanceof TextNotWritableError
-            ? ({ code: 'text-not-writable', detail: { characters: thrown.characters } } as const)
-            : thrown instanceof TextNotInPlaceError
-              ? ({ code: 'text-not-in-place' } as const)
-              : thrown instanceof DocumentPoisonedError
-                ? ({ code: 'document-poisoned' } as const)
-                : undefined;
+        editRefusalOf(thrown) ?? (thrown instanceof DocumentPoisonedError ? ({ code: 'document-poisoned' } as const) : undefined);
       if (problem !== undefined) return ok({ ...opened, kind: 'edit-refused', problem } as const);
       await deps.documents.close(opened.docId);
       deps.recent.closed(opened.docId);
@@ -3014,6 +3004,10 @@ function undoHandler(commands: DocumentCommands): ContractHandlers['document.und
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      // AN UNDO RUNS THE SAME REWRITE as the edit it reverses, read back the same way (ADR-0169), so it is refused the
+      // same way, and the person reads the same sentence.
+      const refusal = rewriteRefusalOf(thrown);
+      if (refusal !== undefined) return err(refusal);
       throw thrown;
     }
   };
@@ -3033,6 +3027,8 @@ function redoHandler(commands: DocumentCommands): ContractHandlers['document.red
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      const refusal = rewriteRefusalOf(thrown);
+      if (refusal !== undefined) return err(refusal);
       throw thrown;
     }
   };

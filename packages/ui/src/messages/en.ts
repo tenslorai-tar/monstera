@@ -2539,6 +2539,16 @@ export const COPY_ANNOTATIONS_TITLE = messageKey('command.annotate.copy-selectio
 export const PASTE_ANNOTATIONS_TITLE = messageKey('command.annotate.paste');
 export const PROBLEM_INTERNAL = messageKey('dialog.command-problem.internal');
 export const PROBLEM_REFERENCE_LABEL = messageKey('dialog.command-problem.reference');
+// AN EDIT PDFIUM REFUSED, one sentence per step (ADR-0169 Decision 5), and the password sentence for `open`.
+export const EDIT_REFUSED_OPEN = messageKey('dialog.command-problem.edit-refused.open');
+export const EDIT_REFUSED_PASSWORD = messageKey('dialog.command-problem.edit-refused.password');
+export const EDIT_REFUSED_PAGE = messageKey('dialog.command-problem.edit-refused.page');
+export const EDIT_REFUSED_OBJECT = messageKey('dialog.command-problem.edit-refused.object');
+export const EDIT_REFUSED_SET_TEXT = messageKey('dialog.command-problem.edit-refused.set-text');
+export const EDIT_REFUSED_MATRIX = messageKey('dialog.command-problem.edit-refused.matrix');
+export const EDIT_REFUSED_GENERATE = messageKey('dialog.command-problem.edit-refused.generate');
+export const EDIT_REFUSED_SAVE = messageKey('dialog.command-problem.edit-refused.save');
+export const EDIT_REFUSED_READ_BACK = messageKey('dialog.command-problem.edit-refused.read-back');
 // CLOUD STORAGE (ADR-0091).
 export const CLOUD_TITLE = messageKey('dialog.cloud.title');
 export const CLOUD_COMMAND_TITLE = messageKey('command.cloud.storage');
@@ -5487,4 +5497,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // A label, not a sentence: the value beside it is an opaque id, and ADR-0009
   // §9 is why it is the only thing about the diagnostic that crosses.
   [PROBLEM_REFERENCE_LABEL]: 'Reference',
+  // WHICH PART OF THE WORK REFUSED, never PDFium's own words, and each ends on the one thing the person needs: the
+  // document is as it was. `read-back` is the owner's sentence. The step and the number go in the reference line.
+  [EDIT_REFUSED_OPEN]: 'Monstera couldn’t open this document for editing, so nothing was changed.',
+  [EDIT_REFUSED_PASSWORD]: 'This document is protected by a password, and Monstera can’t edit it yet, so nothing was changed.',
+  [EDIT_REFUSED_PAGE]: 'Monstera couldn’t read this page for editing, so nothing was changed.',
+  [EDIT_REFUSED_OBJECT]: 'Monstera couldn’t change that part of the page, so nothing was changed.',
+  [EDIT_REFUSED_SET_TEXT]: 'Monstera couldn’t write that text onto the page, so nothing was changed.',
+  [EDIT_REFUSED_MATRIX]: 'Monstera couldn’t put that part of the page in place, so nothing was changed.',
+  [EDIT_REFUSED_GENERATE]: 'Monstera couldn’t rebuild the page with your change, so nothing was changed.',
+  [EDIT_REFUSED_SAVE]: 'Monstera couldn’t save the edited page, so nothing was changed.',
+  [EDIT_REFUSED_READ_BACK]: 'This page uses a font Monstera can’t rewrite yet, so nothing was changed.',
 };

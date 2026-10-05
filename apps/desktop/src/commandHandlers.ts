@@ -1,12 +1,5 @@
 import { type ContractHandlers, SERVICE_PROBLEM_OF } from '@monstera/contract';
-import {
-  DocumentBusyError,
-  DocumentNotOpenError,
-  StaleTargetError,
-  TextNotInPlaceError,
-  TextNotWritableError,
-  UnregisteredWriterError,
-} from '@monstera/kernel';
+import { DocumentBusyError, DocumentNotOpenError, StaleTargetError } from '@monstera/kernel';
 import { err, ok } from '@monstera/shared';
 
 import {
@@ -15,6 +8,7 @@ import {
   SignaturesWouldBreakError,
   serviceReasonOf,
 } from './documentCommands.js';
+import { editRefusalOf } from './editRefusals.js';
 
 /**
  * The first IPC handler, and the first code in this repository that answers
@@ -87,33 +81,10 @@ export function executeCommandHandler(
       // renderer needs is that nothing changed and the list it is holding is
       // old, and neither number helps it say that.
       if (thrown instanceof StaleTargetError) return err({ code: 'stale-target' });
-      // A PROPERTY OF THE MACHINE, and the third refusal here a user can do
-      // something about. `CommandBus` refuses by name when a command's writer of
-      // record has no adapter registered, and the composition root leaves
-      // `writers.pdfium` genuinely absent wherever no PDFium host could be built
-      // — no `pdfium.dll`, no Win32 surfaces, a packaged run.
-      //
-      // It reads as a DEFECT from inside the bus, correctly: a command reaching
-      // it is one some surface offered. What makes it an outcome here is that
-      // the surface offered it on a build assembled without that engine, which
-      // is a state the shipped product is deliberately in — and `internal` would
-      // hand somebody an incident id for a working application.
-      //
-      // The writer's NAME stays main-side with every other diagnostic. What the
-      // renderer needs is that this installation cannot do it and the document
-      // is untouched; which engine is missing is ours.
-      if (thrown instanceof UnregisteredWriterError) return err({ code: 'engine-unavailable' });
-      // WHAT WAS TYPED, which the page's font cannot carry (ADR-0096). The edit
-      // was refused before the page was generated, so the document is exactly
-      // what it was; the person can type something else, and `internal` would
-      // send them to an incident log for a document working as made. The characters the font cannot show travel with
-      // it (ADR-0169), already narrowed by the PDFium writer to ones the person typed.
-      if (thrown instanceof TextNotWritableError) {
-        return err({ code: 'text-not-writable', detail: { characters: thrown.characters } });
-      }
-      // ONE OCCURRENCE NO SINGLE TEXT OBJECT HOLDS AT ITS POINT (ADR-0156): not replaced there, nothing written, and
-      // the person can edit the line instead — theirs to act on, for the line above's reason.
-      if (thrown instanceof TextNotInPlaceError) return err({ code: 'text-not-in-place' });
+      // AN EDIT THE ENGINE REFUSED, or one this installation cannot make, each the person's to act on and none a
+      // defect: `editRefusalOf` is the one rule, shared with the copy route (ADR-0169). The document is what it was.
+      const refusal = editRefusalOf(thrown);
+      if (refusal !== undefined) return err(refusal);
       // A SERVICE'S ANSWER, from a region recognition's pre-read — an Anthropic account out of
       // credit, a key the service refused, a service that is down. Each is the reader's to act
       // on, and `internal` would send them to an incident log for an application working as
