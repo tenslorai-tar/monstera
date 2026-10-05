@@ -146,8 +146,9 @@ async function threeRunsAndARectangle() {
  */
 const failures = [];
 // 69 until 2026-10-04, when `replaceAtCases` added five (ADR-0156), and 75 from the stage audit of
-// cb62b976..33715f7c, which gave blank paper's refusal its control, and 77 from ADR-0169, which names the characters.
-const roster = createRoster(failures, { cases: 77 });
+// cb62b976..33715f7c, which gave blank paper's refusal its control, and 77 from ADR-0169, which names the characters,
+// and 80 from its Decision 6's empty replacement: a word deleted, an object removed, and the checkpoint either takes.
+const roster = createRoster(failures, { cases: 80 });
 
 /**
  * @param {string} name
@@ -536,6 +537,53 @@ async function replaceAtCases() {
     'the word is matched EXACTLY AS WRITTEN: an upper-case find does not take the lower-case word at its point',
     (await refusal(at({ x: 80, y: 203 }, 'WIDGET', 2))) === 'TextNotInPlaceError',
     'page 2 line 2 holds "widget" in lower case',
+  );
+
+  // AN EMPTY REPLACEMENT DELETES THE WORD (ADR-0169 Decision 6), and the rest of its line stays.
+  const deleted = await pageOf(await applied({ ...at({ x: 80, y: 233 }), replace: '' }), 0);
+  record(
+    'an EMPTY replacement deletes the word, and the rest of its line and the page stay',
+    /The\s+is on this page/u.test(deleted) && !deleted.includes('The WIDGET') && deleted.includes('and the WIDGET again below'),
+    `page 0 reads ${JSON.stringify(deleted)}`,
+  );
+  // AND A WORD THAT WAS ITS OBJECT'S WHOLE TEXT REMOVES THE OBJECT. `WID` is the split pair's first object: PDFium's
+  // set refuses an empty string, so without the removal this is refused at `set-text` and nothing is deleted.
+  const whole = { ...at({ x: 35, y: 173 }, 'WID'), replace: '' };
+  const removal = await refusal(whole);
+  const objectsBefore = (await textIndicesOf(original)).length;
+  const removed = removal === null ? await applied(whole) : null;
+  const objectsAfter = removed === null ? objectsBefore : (await textIndicesOf(removed)).length;
+  const afterRemoval = removed === null ? '' : await pageOf(removed, 0);
+  record(
+    'a word that was its object’s WHOLE text, replaced with nothing, removes that object and no other',
+    objectsAfter === objectsBefore - 1 && (afterRemoval.match(/WIDGET/gu) ?? []).length === 2,
+    removal === null
+      ? `${String(objectsBefore)} text objects before, ${String(objectsAfter)} after; page 0 reads ${JSON.stringify(afterRemoval)}`
+      : `it was refused: ${removal}`,
+  );
+  // ITS UNDO IS A CHECKPOINT: a removed object has no constructor, so the one string it held cannot put it back. The
+  // same rule for the dialog's command, with a control that keeps an object and captures its string.
+  const wholeCapture = await localPdfiumExecution.capture(original, whole);
+  const lastObject = (await textIndicesOf(original)).at(-1) ?? -1;
+  // TYPED as the case above types its command, the branded `version` being the one field a `.mjs` cannot mint.
+  const replacing = (/** @type {string} */ text) =>
+    /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextObject'>} */ ({
+      kind: 'replaceTextObject',
+      page: 0,
+      ...replacementFieldsOf([{ index: lastObject, text }]),
+      version: 1,
+    });
+  const dialogEmptied = await localPdfiumExecution.capture(original, replacing(''));
+  const dialogKept = await localPdfiumExecution.capture(original, replacing('GOT'));
+  record(
+    'a replacement that empties an object takes a checkpoint, by either command, and one that keeps it captures',
+    !wholeCapture.captured &&
+      wholeCapture.reason.includes('cannot rebuild') &&
+      !dialogEmptied.captured &&
+      dialogEmptied.reason.includes('cannot rebuild') &&
+      dialogKept.captured,
+    `replaceTextAt ${wholeCapture.captured ? 'captured' : 'checkpoint'}; replaceTextObject emptied ` +
+      `${dialogEmptied.captured ? 'captured' : 'checkpoint'}, kept ${dialogKept.captured ? 'captured' : 'checkpoint'}`,
   );
 
   // UNDONE BY `replaceTextObject`'s INVERSE, given the prior the capture records: the page reads as it did.

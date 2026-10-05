@@ -2,7 +2,7 @@ import { type CommandOfKind, blocksOfEdit, replacementsOf } from '@monstera/cont
 
 import type { CaptureResult } from './commandLog.js';
 import type { ByteImage } from './engineSeam.js';
-import { editTextBlocks, pdfiumWriter, replaceTextObjects, textObjectText } from './pdfiumFfi.js';
+import { editTextBlocks, pdfiumWriter, removesItsObject, replaceTextObjects, textObjectText } from './pdfiumFfi.js';
 
 /**
  * In-place text editing, as the bus calls it: **region replacement**.
@@ -64,6 +64,18 @@ export interface PriorTextObjects {
 }
 
 /**
+ * Why a replacement that empties an object, or names one that reads as no text, has no prior: the object is removed,
+ * by the replacement or by restoring nothing, and PDFium cannot rebuild one ({@link removesItsObject}). The bus takes a
+ * checkpoint, so the undo still puts the page back.
+ */
+export const EMPTIED = {
+  captured: false,
+  reason:
+    'an object left with no text is removed, and PDFium cannot rebuild a removed one, so the strings this changes ' +
+    'are not enough to put the page back',
+} as const satisfies CaptureResult<never>;
+
+/**
  * Runs `work` against a session opened from `image`, closing it however `work`
  * ends.
  *
@@ -102,15 +114,24 @@ export async function captureReplaceTextObject(
   image: ByteImage,
   command: CommandOfKind<'replaceTextObject'>,
 ): Promise<CaptureResult<PriorTextObjects>> {
+  const replacements = replacementsOf(command);
+  // AN EMPTIED OBJECT IS REMOVED, and `captureEditTextBlock`'s reason follows: PDFium cannot rebuild a removed object,
+  // so the strings this changes are not enough to put the page back.
+  if (replacements.some((replacement) => removesItsObject(replacement.text))) return Promise.resolve(EMPTIED);
   return onImage(image, async (session) => {
     const objects: { index: number; text: string }[] = [];
-    for (const replacement of replacementsOf(command)) {
+    for (const replacement of replacements) {
       try {
         // SEQUENTIALLY, on one session. `textObjectText` loads and closes a text
         // page per call, and PDFium's page handles are not safe to work through
         // concurrently — a `Promise.all` here would interleave loads against one
         // document for no gain, the whole read being in-memory.
         const text = await textObjectText(session, command.page, replacement.index);
+        // AN OBJECT THAT READS AS NO TEXT cannot be put back from what it reads: restoring nothing removes it. So it is a
+        // checkpoint, as an emptied one is. NO FIXTURE REACHES THIS, measured 2026-10-05 on PDFium 155.0.8044.0's Linux
+        // build: an empty `Tj` makes no object, and a glyph named nowhere reads as its own code (U+0081). It stays
+        // because the other answer, a removal on undo, loses the object where a checkpoint loses nothing.
+        if (removesItsObject(text)) return EMPTIED;
         objects.push({ index: replacement.index, text });
       } catch {
         // ALL OR NOTHING, and that is the capture's own rule rather than a

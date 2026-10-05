@@ -1230,8 +1230,21 @@ function isUpright(a: number, b: number, c: number, d: number): boolean {
 export interface TextReplacement {
   /** The object's index, as {@link textObjectIndices} reports it. */
   readonly index: number;
-  /** What it should say. */
+  /** What it should say; nothing at all removes the object ({@link removesItsObject}). */
   readonly text: string;
+}
+
+/**
+ * Whether a replacement leaves its object with no text, which {@link replaceTextObjects} answers by removing the object
+ * (ADR-0169 Decision 6: replacing a word with nothing deletes it).
+ *
+ * `FPDFText_SetText` refuses an empty string — measured 2026-10-05 on PDFium 155.0.8044.0's Linux build, a replace-all
+ * of an object's whole text with nothing answered 0 at the set, with `FPDF_GetLastError` 0 — so an emptied object is
+ * the editor's removed one. And a removed object renumbers the page and has no constructor, so a command that empties
+ * one cannot be undone from the strings it changed: each capture asks this, and takes a checkpoint.
+ */
+export function removesItsObject(text: string): boolean {
+  return text === '';
 }
 
 /**
@@ -1327,16 +1340,24 @@ export function replaceTextObjects(
       }
       // RESOLVED IN FULL FIRST. See the note above: a refusal must not leave
       // the page holding part of a replacement.
-      const objects = replacements.map((replacement) =>
-        textObjectAt(bindings, handle, page, replacement.index),
-      );
-      for (const [at, replacement] of replacements.entries()) {
-        if (
-          numberFrom(bindings.setText(objects[at], wideString(replacement.text)), 'FPDFText_SetText') !==
-          1
-        ) {
+      const resolved = replacements.map((replacement) => ({
+        replacement,
+        object: textObjectAt(bindings, handle, page, replacement.index),
+      }));
+      // AN EMPTIED OBJECT IS REMOVED, never set to nothing, which PDFium refuses ({@link removesItsObject}). Removed
+      // after every set, as the block edit removes, so no index above was read from a page already renumbered.
+      const kept = resolved.filter(({ replacement }) => !removesItsObject(replacement.text));
+      const removed = resolved.filter(({ replacement }) => removesItsObject(replacement.text));
+      for (const { replacement, object } of kept) {
+        if (numberFrom(bindings.setText(object, wideString(replacement.text)), 'FPDFText_SetText') !== 1) {
           throw refusedAt('set-text', `FPDFText_SetText refused the replacement for object ${String(replacement.index)}`);
         }
+      }
+      for (const { replacement, object } of removed) {
+        if (numberFrom(bindings.removeObject(handle, object), 'FPDFPage_RemoveObject') !== 1) {
+          throw refusedAt('object', `FPDFPage_RemoveObject refused object ${String(replacement.index)}, emptied by its replacement`);
+        }
+        bindings.destroyObject(object);
       }
       // EVERY WRITE IS READ BACK before anything is generated, by the block edit's rule (`editTextBlocks`): a 1 from
       // FPDFText_SetText says the string was set, not that the run's font can draw it, and a subset font missing a
@@ -1345,8 +1366,12 @@ export function replaceTextObjects(
       const textPage: unknown = bindings.loadTextPage(handle);
       if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read the replacement back');
       try {
-        const drawn = drawnTextOn(bindings, textPage, objects);
-        const pairs = replacements.map((replacement, at) => ({
+        const drawn = drawnTextOn(
+          bindings,
+          textPage,
+          kept.map(({ object }) => object),
+        );
+        const pairs = kept.map(({ replacement }, at) => ({
           written: asTextPageReads(replacement.text),
           read: drawn[at] ?? '',
         }));
@@ -1356,7 +1381,12 @@ export function replaceTextObjects(
       } finally {
         bindings.closeTextPage(textPage);
       }
-      generate(session, page, handle, objects);
+      generate(
+        session,
+        page,
+        handle,
+        kept.map(({ object }) => object),
+      );
     });
   });
 }

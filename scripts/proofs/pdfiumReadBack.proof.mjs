@@ -67,9 +67,10 @@ const { EditRefusedError } = await import('../../packages/kernel/dist/textEditRe
 
 /** @type {string[]} */
 const failures = [];
-// AN INDEPENDENT CLAIM about this file (audit item 4c): two readable premises, eight commands refused on a Type 3 page
-// and saved on a Helvetica one, three undos refused, and the hand-built page's own edit refused at the read-back.
-const roster = createRoster(failures, { cases: 22 });
+// AN INDEPENDENT CLAIM about this file (audit item 4c): two readable premises, nine commands refused on a Type 3 page
+// and saved on a Helvetica one (the ninth an emptied replacement, which removes its object), three undos refused, and
+// the hand-built page's own edit refused at the read-back.
+const roster = createRoster(failures, { cases: 24 });
 
 /** @param {string} name @param {boolean} ok @param {string} detail */
 function record(name, ok, detail) {
@@ -159,6 +160,8 @@ function commandsFor(runs, objects, target) {
   const shorter = (/** @type {string} */ text) => text.slice(0, -1);
   return [
     ['replaceTextObject', { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: first.index, text: shorter(first.text) }]), version: 1 }],
+    // EMPTIED, which removes the object rather than setting it (ADR-0169 Decision 6): a second route to generation.
+    ['replaceTextObject emptied', { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: first.index, text: '' }]), version: 1 }],
     ['placePageObject', { kind: 'placePageObject', page: 0, index: first.index, moveBy: { x: 0, y: -12 }, scaleBy: { x: 1, y: 1 }, version: 1 }],
     ['recolorPageObjects', { kind: 'recolorPageObjects', page: 0, indices: [first.index], colour: { red: 200, green: 0, blue: 0, alpha: 255 }, version: 1 }],
     ['deletePageObjects', { kind: 'deletePageObjects', page: 0, indices: [first.index], version: 1 }],

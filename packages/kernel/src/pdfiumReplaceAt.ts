@@ -3,8 +3,8 @@ import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { ByteImage } from './engineSeam.js';
-import { objectRuns, pdfiumWriter, replaceTextObjects } from './pdfiumFfi.js';
-import type { PriorTextObjects } from './pdfiumTextEdit.js';
+import { objectRuns, pdfiumWriter, removesItsObject, replaceTextObjects } from './pdfiumFfi.js';
+import { EMPTIED, type PriorTextObjects } from './pdfiumTextEdit.js';
 import { TextNotInPlaceError } from './textEditRefusals.js';
 
 /**
@@ -92,6 +92,8 @@ export async function captureReplaceTextAt(
         reason: `no single text object on page ${String(command.page)} holds the word at that point, so nothing will be replaced`,
       };
     }
+    // THE WORD WAS THE OBJECT'S WHOLE TEXT and the replacement is nothing, so the object is removed: a checkpoint.
+    if (removesItsObject(picked.after)) return EMPTIED;
     return { captured: true, prior: { page: command.page, objects: [{ index: picked.index, text: picked.before }] } };
   });
 }
