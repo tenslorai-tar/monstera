@@ -144,6 +144,9 @@ export function tipsOf(
  * The next tip and the round it leaves: one not yet shown in this round, chosen by `random`, and a new round once every
  * tip has been. A stored id that names no tip now is dropped from the round rather than counted.
  *
+ * A NEW ROUND NEVER OPENS WITH THE TIP THAT CLOSED THE LAST, while there is another: that tip is the one on show, and
+ * choosing it again showed the same sentence twice in a row, about once a round with a random draw.
+ *
  * @param random a number in [0, 1), `Math.random` in the application and a fixed sequence in a case
  */
 export function nextTip(
@@ -155,7 +158,9 @@ export function nextTip(
   const known = new Set(tips.map((tip) => tip.id));
   const round = shown.filter((id) => known.has(id));
   const left = tips.filter((tip) => !round.includes(tip.id));
-  const pool = left.length === 0 ? tips : left;
+  const onShow = round.at(-1);
+  const fresh = tips.length > 1 ? tips.filter((tip) => tip.id !== onShow) : tips;
+  const pool = left.length === 0 ? fresh : left;
   const tip = pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
   if (tip === undefined) return undefined;
   return { tip, shown: left.length === 0 ? [tip.id] : [...round, tip.id] };

@@ -57,7 +57,11 @@ export function StatusTip({ tips, settings }: { readonly tips: readonly Tip[]; r
  */
 function TipLine({ tips, settings }: { readonly tips: readonly Tip[]; readonly settings: SettingsStore }): ReactElement {
   const { i18n } = useLingui();
-  const [current, setCurrent] = useState<Tip | undefined>(undefined);
+  // A TURN, not the tip alone: every advance faded the line out, so every advance must be a new state for the effect
+  // below to fade it in. Holding the tip, an advance that chose the same one was the same state, React kept it, and
+  // the line stayed faded out under the same words until the next advance.
+  const [turn, setTurn] = useState<{ readonly tip: Tip } | undefined>(undefined);
+  const current = turn?.tip;
   const element = useRef<HTMLSpanElement>(null);
   const latest = useRef(tips);
 
@@ -72,7 +76,7 @@ function TipLine({ tips, settings }: { readonly tips: readonly Tip[]; readonly s
       if (next === undefined) return;
       settings.set(TIPS_SHOWN_SETTING.id, next.shown);
       // The words change while the tip is faded out; the layout effect below fades it back in.
-      setCurrent(next.tip);
+      setTurn({ tip: next.tip });
     };
     let fade: ReturnType<typeof setTimeout> | undefined;
     // THE FIRST AS THE WINDOW OPENS, from a timer like every later one, so a tip is chosen and its round written once
@@ -99,13 +103,13 @@ function TipLine({ tips, settings }: { readonly tips: readonly Tip[]; readonly s
       span.dataset['fits'] = span.scrollWidth > span.clientWidth + 1 ? 'false' : 'true';
     };
     measure();
-    if (current !== undefined) span.dataset['shown'] = 'true';
+    if (turn !== undefined) span.dataset['shown'] = 'true';
     const observer = new ResizeObserver(measure);
     observer.observe(span);
     return (): void => {
       observer.disconnect();
     };
-  }, [current]);
+  }, [turn]);
 
   return (
     <span aria-hidden="true" className="m-status-tip" data-tip={current?.id} ref={element}>

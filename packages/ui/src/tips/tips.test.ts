@@ -93,6 +93,20 @@ describe('nextTip', () => {
     expect(shown).toStrictEqual(['a']);
   });
 
+  it('a NEW ROUND never opens with the tip that closed the last, even when the draw lands on it', () => {
+    // 0.99 is the last of the pool: with all three in it, that is `c`, the tip on show.
+    const next = nextTip(tips, ['a', 'b', 'c'], () => 0.99);
+    expect(next?.tip.id).toBe('b');
+    expect(next?.shown).toStrictEqual(['b']);
+    // AND THE FIRST DRAW STILL REACHES THE FIRST TIP, so the pool lost the one tip and not more.
+    expect(nextTip(tips, ['a', 'b', 'c'], () => 0)?.tip.id).toBe('a');
+  });
+
+  it('CONTROL: with ONE tip there is nothing else, so it is shown again', () => {
+    const only = tips.slice(0, 1);
+    expect(nextTip(only, ['a'], () => 0.99)?.tip.id).toBe('a');
+  });
+
   it('carries a stored round, and drops an id that names no tip now rather than counting it', () => {
     const next = nextTip(tips, ['a', 'gone', 'b'], () => 0);
     expect(next?.tip.id).toBe('c');
