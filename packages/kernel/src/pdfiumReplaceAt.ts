@@ -2,8 +2,8 @@ import { compileQuery } from '@monstera/shared';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { ByteImage } from './engineSeam.js';
-import { objectRuns, pdfiumWriter, removesItsObject, replaceTextObjects } from './pdfiumFfi.js';
+import type { ByteImage, ImageSession } from './engineSeam.js';
+import { objectRuns, onImage, pdfiumWriter, removesItsObject, replaceTextObjects } from './pdfiumFfi.js';
 import { EMPTIED, type PriorTextObjects } from './pdfiumTextEdit.js';
 import { NothingToReplaceError, TextNotInPlaceError } from './textEditRefusals.js';
 
@@ -59,19 +59,6 @@ export function occurrenceAt(
   return { index: only.index, before: only.text, after };
 }
 
-/** Runs `work` against a session opened from `image`, closing it however it ends — the sibling modules' four lines. */
-async function onImage<T>(
-  image: ByteImage,
-  work: (session: Awaited<ReturnType<typeof pdfiumWriter.open>>) => Promise<T>,
-): Promise<T> {
-  const session = await pdfiumWriter.open(image);
-  try {
-    return await work(session);
-  } finally {
-    await pdfiumWriter.close(session);
-  }
-}
-
 /**
  * Records the string the picked object held, so the replacement undoes as `replaceTextObject`'s does.
  *
@@ -80,7 +67,7 @@ async function onImage<T>(
  * touch.
  */
 export async function captureReplaceTextAt(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'replaceTextAt'>,
 ): Promise<CaptureResult<PriorTextObjects>> {
   return onImage(image, async (session) => {
@@ -103,7 +90,7 @@ export async function captureReplaceTextAt(
  * it, {@link NothingToReplaceError} where the replacement is the word itself.
  */
 export async function applyReplaceTextAt(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'replaceTextAt'>,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {

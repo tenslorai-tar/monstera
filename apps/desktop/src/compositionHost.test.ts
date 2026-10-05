@@ -1046,6 +1046,8 @@ interface PdfiumPeerLog {
   readonly inputs: string[];
   /** Whether each input file still existed at the moment the peer was called. */
   readonly inputsPresent: boolean[];
+  /** The `password` each of those frames carried (ADR-0171's addendum): the text, or `null` for none. */
+  readonly passwords: unknown[];
 }
 
 /**
@@ -1063,12 +1065,14 @@ function pdfiumPeer(): PdfiumPeerLog {
   let area: { snapshot: string; output: string } | null = null;
   const inputs: string[] = [];
   const inputsPresent: boolean[] = [];
+  const passwords: unknown[] = [];
 
   const noteInput = (params: unknown): void => {
-    const { from } = params as { from: string };
+    const { from, password } = params as { from: string; password: unknown };
     if (area === null) throw new Error('a PDFium call arrived before engine/open');
     inputs.push(from);
     inputsPresent.push(existsSync(join(area.snapshot, from)));
+    passwords.push(password);
   };
 
   const answerWrite = (params: unknown): unknown => {
@@ -1083,6 +1087,7 @@ function pdfiumPeer(): PdfiumPeerLog {
   return {
     inputs,
     inputsPresent,
+    passwords,
     peer: (channel, params) => {
       switch (channel) {
         case 'engine/probe-containment':
@@ -1310,6 +1315,52 @@ describe('the composition root, with BOTH engine hosts', () => {
     // on the first host is what says the answer reached the canonical image
     // rather than being read and dropped.
     expect(spy(mupdf.harness.calls, 'peer.request:engine/open')).toBeGreaterThan(1);
+
+    // A DOCUMENT THAT OPENS WITH NO PASSWORD SENDS `null` on every frame: the control for the case below.
+    expect(pdfium.passwords).toStrictEqual(pdfium.inputs.map(() => null));
+  });
+
+  it('an UNLOCKED document’s PDFium command carries its password on every frame, and the rebuild opens with it (ADR-0171)', async () => {
+    const PASSWORD = 'sample-only-0171';
+    // THE MUPDF HOST OPENS THIS DOCUMENT ONLY WITH ITS PASSWORD, as for a file protected by one; every other answer
+    // is the routing case's.
+    const opens: unknown[] = [];
+    const inner = serialisingEngine();
+    const mupdf = platformAnswering((channel, params) => {
+      if (channel === 'engine/open') {
+        const { password } = params as { password?: unknown };
+        opens.push(password);
+        if (password !== PASSWORD) return { ok: false, error: { code: 'needs-password' } };
+      }
+      return inner(channel, params);
+    });
+    const pdfium = pdfiumPeer();
+    const second = platformAnswering(pdfium.peer);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('locked-edit.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+    });
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const unlocked = await handlers['document.unlock']({ docId: opened.value.docId, password: PASSWORD });
+    expect(unlocked.ok && unlocked.value.kind).toBe('unlocked');
+
+    const executed = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: opened.value.version },
+    });
+    expect(executed.ok, JSON.stringify(executed)).toBe(true);
+
+    // EVERY PDFIUM FRAME CARRIED THE KEY (a capture and an apply at least), and the session the edit's bytes were
+    // adopted into was opened with it too: the open after the unlock's, which the command's install made.
+    expect(pdfium.passwords.length).toBeGreaterThanOrEqual(2);
+    expect(pdfium.passwords.every((sent) => sent === PASSWORD)).toBe(true);
+    expect(opens.slice(2)).toStrictEqual(opens.slice(2).map(() => PASSWORD));
+    expect(opens.length).toBeGreaterThan(2);
   });
 
   it('routes editTextBlock to the PDFium host, and its "font cannot carry it" refusal reaches the renderer BY NAME', async () => {

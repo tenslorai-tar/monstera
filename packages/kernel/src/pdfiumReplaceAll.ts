@@ -2,8 +2,8 @@ import { compileQuery } from '@monstera/shared';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { ByteImage } from './engineSeam.js';
-import { objectRuns, pageCount, pdfiumWriter, replaceTextObjects } from './pdfiumFfi.js';
+import type { ByteImage, ImageSession } from './engineSeam.js';
+import { objectRuns, onImage, pageCount, pdfiumWriter, replaceTextObjects } from './pdfiumFfi.js';
 import { NothingToReplaceError } from './textEditRefusals.js';
 
 /**
@@ -50,26 +50,6 @@ import { NothingToReplaceError } from './textEditRefusals.js';
  * regeneration for a command that found nothing on it. A document where no page
  * changed is {@link NothingToReplaceError}, and has no new version.
  */
-
-/**
- * Runs `work` against a session opened from `image`, closing it however it ends.
- *
- * The third copy of these four lines in this package, and they stay copied:
- * sharing them would put an import edge between three modules that have no
- * other reason to know about each other, and the shared thing would be a
- * `try`/`finally`.
- */
-async function onImage<T>(
-  image: ByteImage,
-  work: (session: Awaited<ReturnType<typeof pdfiumWriter.open>>) => Promise<T>,
-): Promise<T> {
-  const session = await pdfiumWriter.open(image);
-  try {
-    return await work(session);
-  } finally {
-    await pdfiumWriter.close(session);
-  }
-}
 
 /**
  * Says why a replace-all has no prior, so the bus takes a checkpoint.
@@ -149,7 +129,7 @@ function replacedIn(
  * and the surface is where a person meets it.
  */
 export async function applyReplaceAllText(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'replaceAllText'>,
 ): Promise<ByteImage> {
   const compiled = compileQuery(command.find, {

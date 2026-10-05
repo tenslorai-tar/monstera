@@ -20,7 +20,6 @@ import {
   ENGINE_CAPTURE_REASON_MAX,
   byteImageWire,
   coreEngineChannels,
-  outputNameSchema,
   sessionSchema,
 } from './engineChannels.js';
 
@@ -447,7 +446,7 @@ export const pdfiumChannels = {
    */
   'engine/text-runs': fileAnswered(
     'Answers a page’s text runs: which object each is, what it says, where it is and how it is set.',
-    z.object({ session: sessionSchema, from: outputNameSchema, page: z.number().int().nonnegative() }).strict(),
+    z.object({ session: sessionSchema, ...byteImageWire.read, page: z.number().int().nonnegative() }).strict(),
     z
       .object({
         runs: z
@@ -565,7 +564,7 @@ export const pdfiumChannels = {
    */
   'engine/page-objects': fileAnswered(
     'Answers every object on a page: its kind, its box in page space, and its fill.',
-    z.object({ session: sessionSchema, from: outputNameSchema, page: z.number().int().nonnegative() }).strict(),
+    z.object({ session: sessionSchema, ...byteImageWire.read, page: z.number().int().nonnegative() }).strict(),
     z
       .object({
         objects: z
@@ -632,8 +631,9 @@ export const pdfiumChannels = {
     z
       .object({
         session: sessionSchema,
-        from: outputNameSchema,
-        into: outputNameSchema,
+        // `byteImageWire`'s two names, so this read carries the key the others do (ADR-0171's addendum).
+        ...byteImageWire.read,
+        ...byteImageWire.write,
         page: z.number().int().nonnegative(),
         width: z.number().int().positive(),
         height: z.number().int().positive(),

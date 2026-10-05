@@ -1,8 +1,8 @@
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { ByteImage } from './engineSeam.js';
-import { pdfiumWriter, promoteFormObjects } from './pdfiumFfi.js';
+import type { ByteImage, ImageSession } from './engineSeam.js';
+import { onImage, pdfiumWriter, promoteFormObjects } from './pdfiumFfi.js';
 
 /**
  * Normalize-then-edit, as the bus calls it.
@@ -35,26 +35,6 @@ import { pdfiumWriter, promoteFormObjects } from './pdfiumFfi.js';
  * this at a page that needs it is cheap and dispatching it at one that does not
  * is free. The count comes back so a caller can tell the two apart.
  */
-
-/**
- * Runs `work` against a session opened from `image`, closing it however it ends.
- *
- * The fourth copy of these four lines in this package, and they stay copied for
- * the reason `pdfiumReplaceAll.ts` gives: sharing them would put an import edge
- * between modules with no other reason to know about each other, and the shared
- * thing would be a `try`/`finally`.
- */
-async function onImage<T>(
-  image: ByteImage,
-  work: (session: Awaited<ReturnType<typeof pdfiumWriter.open>>) => Promise<T>,
-): Promise<T> {
-  const session = await pdfiumWriter.open(image);
-  try {
-    return await work(session);
-  } finally {
-    await pdfiumWriter.close(session);
-  }
-}
 
 /**
  * Says why a promotion has no prior, so the bus takes a checkpoint.
@@ -96,7 +76,7 @@ export function invertPromoteFormObjects(): Promise<ByteImage> {
  *   whose text has moved, and the adapter refuses rather than continuing.
  */
 export async function applyPromoteFormObjects(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'promoteFormObjects'>,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {

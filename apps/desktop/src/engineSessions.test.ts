@@ -24,7 +24,6 @@ import { mupdfWriter } from '@monstera/kernel/engine';
 import { asDocId, type DocId } from '@monstera/shared';
 
 import type { DocumentSessions } from './documentCommands.js';
-import { DocumentPasswords } from './documentPasswords.js';
 import {
   type DocumentOpenSurfaces,
   EngineSessions,
@@ -316,29 +315,28 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
 
   describe('the password a document was unlocked with (ADR-0171)', () => {
     it('is held from the unlock, read by every reopen, and wiped by the close', async () => {
-      const passwords = new DocumentPasswords();
-      const engine = new EngineSessions(passwords);
+      const engine = new EngineSessions();
       engine.begin(first);
       engine.markLocked(first, 'needs-password');
       engine.unlock(first, someSessions('a'), PASSWORD);
-      expect(engine.openingPassword(first)).toBe(PASSWORD);
+      const held = engine.opensWith(first);
+      expect(held?.reveal()).toBe(PASSWORD);
 
       // A RECYCLE REOPENS, which ADR-0055 refused for this document: the reopen runs, and the password it opens with
       // is the one held. Read inside the reopen, which is where the opener reads it.
       const offered: (string | undefined)[] = [];
       await engine.recycle(first, (id) => {
-        offered.push(engine.openingPassword(id));
+        offered.push(engine.opensWith(id)?.reveal());
         return Promise.resolve(someSessions('b'));
       });
       expect(offered).toStrictEqual([PASSWORD]);
       expect(engine.sessions(first)).toStrictEqual(someSessions('b'));
 
-      const held = passwords.heldFor(first);
       // CONTROL for the wipe below: the bytes are the password's until the close.
       expect(held?.isWiped()).toBe(false);
       await engine.releaseOnClose(first);
       expect(held?.isWiped()).toBe(true);
-      expect(engine.openingPassword(first)).toBeUndefined();
+      expect(engine.opensWith(first)).toBeUndefined();
     });
 
     it('CONTROL: a document no password opened reopens with none, and another document’s is not its', async () => {
@@ -350,7 +348,7 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
 
       const offered: (string | undefined)[] = [];
       await engine.recycle(second, (id) => {
-        offered.push(engine.openingPassword(id));
+        offered.push(engine.opensWith(id)?.reveal());
         return Promise.resolve(someSessions('d'));
       });
       expect(offered).toStrictEqual([undefined]);
@@ -364,7 +362,7 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
       expect(() => {
         engine.unlock(first, someSessions('a'), PASSWORD);
       }).toThrow(/poisoned/u);
-      expect(engine.openingPassword(first)).toBeUndefined();
+      expect(engine.opensWith(first)).toBeUndefined();
     });
   });
 

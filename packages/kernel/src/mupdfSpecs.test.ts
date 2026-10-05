@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { declaredCommands } from './commandDeclarations.js';
 import type { CommandPrior } from './commandLog.js';
-import type { ByteImage, MupdfSession } from './engineSeam.js';
+import type { ImageSession, MupdfSession } from './engineSeam.js';
 import { localMupdfExecution, mupdfSpecs } from './mupdfSpecs.js';
 import { localPdfiumExecution, pdfiumSpecs } from './pdfiumSpecs.js';
 
@@ -67,7 +67,7 @@ describe('the PDFium table', () => {
 
   it('refuses a command routed to another writer by NAME', () => {
     // Through a cast, for the case above's reason.
-    const image = new Uint8Array(0) as unknown as ByteImage;
+    const image: ImageSession = { bytes: new Uint8Array(0), opensWith: undefined };
     const elsewhere = 'rotatePages' as unknown as 'replaceAllText';
     expect(() =>
       localPdfiumExecution.invert(image, elsewhere, {} as CommandPrior['replaceAllText']),

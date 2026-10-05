@@ -160,20 +160,26 @@ describe('the core channel set', () => {
     const command = { kind: 'replaceTextObject' };
 
     expect(
-      channels['engine/apply'].params.safeParse({ session, command, sources: [], from: 'ab', into: 'cd' })
+      channels['engine/apply'].params.safeParse({ session, command, sources: [], from: 'ab', password: null, into: 'cd' })
         .success,
     ).toBe(true);
     expect(
-      channels['engine/apply'].params.safeParse({ session, command, sources: [], from: 'ab' }).success,
+      channels['engine/apply'].params.safeParse({ session, command, sources: [], from: 'ab', password: null }).success,
       'an apply without `into` must be refused: a byte-image write with nowhere to land',
     ).toBe(false);
 
-    expect(channels['engine/capture'].params.safeParse({ session, command, from: 'ab' }).success)
+    expect(channels['engine/capture'].params.safeParse({ session, command, from: 'ab', password: null }).success)
       .toBe(true);
     expect(
-      channels['engine/capture'].params.safeParse({ session, command, from: 'ab', into: 'cd' })
+      channels['engine/capture'].params.safeParse({ session, command, from: 'ab', password: null, into: 'cd' })
         .success,
       'a capture must not carry `into`: it reads prior state and produces no bytes',
+    ).toBe(false);
+    // THE KEY IS PART OF THE READ (ADR-0171's addendum): required, so a frame that leaves it out is refused rather
+    // than an encrypted image opened without its password.
+    expect(
+      channels['engine/capture'].params.safeParse({ session, command, from: 'ab' }).success,
+      'a read without `password` must be refused: `null` says none, absence says nothing',
     ).toBe(false);
   });
 
@@ -275,6 +281,7 @@ describe('the core channel set', () => {
       command: { kind: 'replaceTextObject' },
       sources: [],
       from: 'ab',
+      password: null,
       into: 'cd',
     });
     expect(accepted.success, JSON.stringify(accepted.error?.issues ?? [])).toBe(true);
@@ -288,6 +295,8 @@ describe('the core channel set', () => {
         command: { kind: 'rotatePages' },
         sources: [],
         from: 'ab',
+        // THE KEY IS GIVEN, so this frame is refused for its command and for nothing else.
+        password: null,
         into: 'cd',
       }).success,
     ).toBe(false);

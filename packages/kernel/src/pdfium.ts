@@ -1,4 +1,5 @@
 export {
+  onImage,
   openPdfium,
   pdfiumIsOpen,
   pdfiumWriter,

@@ -1615,11 +1615,12 @@ export const liveSessionWire = {
 >;
 
 /**
- * The wire of a writer whose session is the document's bytes.
+ * The wire of a writer whose session is the document's bytes and the key that
+ * opens them (ADR-0171's addendum).
  *
  * PDFium's, and any future byte-image engine's that runs in a host. Every call
- * names where its image is; a write also names where its result goes and
- * answers how many bytes arrived.
+ * names where its image is and carries its key; a write also names where its
+ * result goes and answers how many bytes arrived.
  *
  * **`engine-refused` is where ADR-0048's withdrawn Decision 3 went.** That
  * decision put *this engine cannot read this document* at `engine/open`; main's
@@ -1631,7 +1632,10 @@ export const byteImageWire = {
   open: {},
   openFailures: [],
   opened: {},
-  read: { from: outputNameSchema },
+  // THE KEY TRAVELS WITH THE NAME (ADR-0171's addendum): a document opened with its password serialises to its own
+  // encrypted form, and the host holds nothing between calls to open it with. REQUIRED and `null` for none, so a frame
+  // that leaves it out is a compile error rather than a document opened without its key (ADR-0069's rule).
+  read: { from: outputNameSchema, password: documentPasswordSchema.nullable() },
   write: { into: outputNameSchema },
   wrote: z.object({ bytes: z.number().int().nonnegative() }).strict(),
   transferFailures: ['asset-missing', 'engine-refused'],

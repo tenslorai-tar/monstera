@@ -1,7 +1,7 @@
 import { type EditStep, replacementsForLine } from '@monstera/shared';
 import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
-import type { ByteImage, EngineWriter, PdfiumSession } from './engineSeam.js';
+import type { ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
 import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
@@ -484,6 +484,8 @@ interface Live {
   readonly document: unknown;
   /** Retained for the document's lifetime. See above — this is not spare state. */
   readonly bytes: Buffer;
+  /** What the document opened with, for the read-back's reopen of the bytes it saves (ADR-0171's addendum). */
+  readonly password: string | undefined;
 }
 
 /**
@@ -2994,13 +2996,14 @@ function heldTextsOn(bindings: Bound, handle: unknown): { readonly objects: unkn
  *   2026-09-24, a Helvetica twin saved into a StandardEncoding Helvetica-family font reads `é` back as `Ø` — so it is
  *   `TextNotWritableError`, naming the characters.
  *
- * Opened WITHOUT a password, as {@link pdfiumWriter}'s `open` is: a document reaches this adapter unprotected or not at
- * all, until ADR-0169 Decision 7's own decision.
+ * Opened WITH THE PASSWORD THE SESSION OPENED WITH: the save keeps the document's security handler (flags 0, measured
+ * on PDFium 155 2026-10-05), so the bytes of a document opened with its password open only with it (ADR-0171's
+ * addendum).
  */
-function readBack(bytes: Buffer, edited: ReadonlyMap<number, EditedPage>): void {
+function readBack(bytes: Buffer, edited: ReadonlyMap<number, EditedPage>, password: string | undefined): void {
   const bindings = api();
   // `bytes` IS HELD by this frame for as long as the document is open — `FPDF_LoadMemDocument64` does not copy (`Live`).
-  const document: unknown = bindings.loadDocument(bytes, bytes.length, null);
+  const document: unknown = bindings.loadDocument(bytes, bytes.length, password ?? null);
   if (document === null) throw refusedAt('read-back', 'PDFium could not reopen the bytes it had just saved');
   try {
     const misread: { written: string; read: string }[] = [];
@@ -3114,6 +3117,20 @@ function saveAsCopy(document: unknown): Buffer {
  * for the dead one beside it (finding CCCCCC-2). Nothing in `63f10be` opened
  * this file.
  */
+/**
+ * Runs `work` against a session opened from `image` with the key it carries, closing it however it ends. THE ONE
+ * OPENER every PDFium spec and read takes (ADR-0171's addendum), where each module had a copy of these lines: a copy
+ * that opened without the key would read as the same four lines and refuse every document opened with its password.
+ */
+export async function onImage<T>(image: ImageSession, work: (session: PdfiumSession) => Promise<T>): Promise<T> {
+  const session = await pdfiumWriter.open(image.bytes, image.opensWith?.reveal());
+  try {
+    return await work(session);
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+}
+
 export const pdfiumWriter: EngineWriter<PdfiumSession> = {
   /**
    * Parses `image` into a session.
@@ -3124,22 +3141,23 @@ export const pdfiumWriter: EngineWriter<PdfiumSession> = {
    * {@link Live}), and a `ByteImage` is the kernel's canonical image, which
    * nothing below the seam may hold a live pointer into.
    *
-   * No password is offered. An encrypted document is a Stage 7 concern with its
-   * own row, and a `null` here makes PDFium refuse one loudly rather than this
-   * adapter inventing an empty-string policy nobody wrote down.
+   * **The password is the one the document was opened with in `main`, or none**
+   * (ADR-0171's addendum). `null` without one, so PDFium refuses an encrypted
+   * document loudly rather than this adapter inventing an empty-string policy
+   * nobody wrote down; the session keeps it for the read-back's reopen.
    */
-  open(image: ByteImage): Promise<PdfiumSession> {
+  open(image: ByteImage, password?: string): Promise<PdfiumSession> {
     return promised(() => {
       const bindings = api();
       const bytes = Buffer.from(image);
-      const document: unknown = bindings.loadDocument(bytes, bytes.length, null);
+      const document: unknown = bindings.loadDocument(bytes, bytes.length, password ?? null);
       // `open` WITH PDFium's own number, so a document protected by a password is named as one (`FPDF_ERR_PASSWORD`,
       // 4) rather than as a document PDFium could not read.
       if (document === null) throw refusedAt('open', 'PDFium refused the document');
       // The one place a PdfiumSession is minted. Keeping this cast unexported is
       // what makes the brand mean "this adapter produced it".
       const session = { engine: 'pdfium' } as PdfiumSession;
-      documents.set(session, { document, bytes });
+      documents.set(session, { document, bytes, password });
       return session;
     });
   },
@@ -3166,7 +3184,7 @@ export const pdfiumWriter: EngineWriter<PdfiumSession> = {
       // NOTHING LEAVES UNREAD (ADR-0169): every page this session regenerated is read back from these bytes, and a
       // page that lost text refuses before any caller holds them. A session that regenerated nothing pays nothing.
       const edited = editedPages.get(session);
-      if (edited !== undefined && edited.size > 0) readBack(bytes, edited);
+      if (edited !== undefined && edited.size > 0) readBack(bytes, edited, documents.get(session)?.password);
       return new Uint8Array(bytes);
     });
   },

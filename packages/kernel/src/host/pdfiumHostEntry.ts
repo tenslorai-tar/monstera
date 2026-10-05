@@ -2,8 +2,8 @@ import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract/host';
 
 import {
   localPdfiumExecution,
+  onImage,
   openPdfium,
-  pdfiumWriter,
   pageObjects,
   renderPageBitmap,
   textRuns,
@@ -115,9 +115,9 @@ const handlers = createPdfiumHandlers({
   // (ADR-0048's withdrawn Decision 3), so a document PDFium cannot read is
   // refused by the call that wanted it — `engine-refused` — rather than at a
   // moment when there is no document to speak of.
-  textRuns: async (image, page) => {
-    const session = await pdfiumWriter.open(image);
-    try {
+  // EACH READ OPENS THROUGH `onImage`, the one opener that takes the key the frame carried (ADR-0171's addendum).
+  textRuns: (image, page) =>
+    onImage(image, async (session) => {
       const found = await textRuns(session, page);
       // THE WALK IS WHAT KNOWS THERE WAS MORE, so the flag is computed here
       // rather than by the handler from the array it is handed — which would
@@ -131,34 +131,21 @@ const handlers = createPdfiumHandlers({
         // worth of runs.
         unaddressable: found.unaddressable,
       };
-    } finally {
-      await pdfiumWriter.close(session);
-    }
-  },
-  renderPage: async (image, page, width, height) => {
-    const session = await pdfiumWriter.open(image);
-    try {
-      // THE BITMAP'S OWN BYTES, unconverted. `renderPageBitmap` answers BGRA
-      // because that is what PDFium produces and what main's encoder takes; a
-      // conversion here would be one of two, done for a consumer that wants
-      // neither.
-      return (await renderPageBitmap(session, page, width, height)).bgra;
-    } finally {
-      await pdfiumWriter.close(session);
-    }
-  },
-  pageObjects: async (image, page) => {
-    const session = await pdfiumWriter.open(image);
-    try {
+    }),
+  // THE BITMAP'S OWN BYTES, unconverted. `renderPageBitmap` answers BGRA
+  // because that is what PDFium produces and what main's encoder takes; a
+  // conversion here would be one of two, done for a consumer that wants
+  // neither.
+  renderPage: (image, page, width, height) =>
+    onImage(image, async (session) => (await renderPageBitmap(session, page, width, height)).bgra),
+  pageObjects: (image, page) =>
+    onImage(image, async (session) => {
       const objects = await pageObjects(session, page);
       return {
         objects: objects.slice(0, ENGINE_TEXT_OBJECTS_MAX),
         truncated: objects.length > ENGINE_TEXT_OBJECTS_MAX,
       };
-    } finally {
-      await pdfiumWriter.close(session);
-    }
-  },
+    }),
 });
 
 startEngineHost(

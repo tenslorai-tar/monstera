@@ -22,7 +22,7 @@ import type {
   MupdfSession,
   SnapshotWrite,
 } from '@monstera/kernel';
-import type { DocId } from '@monstera/shared';
+import type { DocId, HeldPassword } from '@monstera/shared';
 
 import { DocumentPasswords } from './documentPasswords.js';
 import { describeEngineHostGone, type ShellFailureSink } from './shellFailure.js';
@@ -703,19 +703,14 @@ export class EngineSessions implements EngineSessionSource {
    * that drops a document's entry is the close that wipes its password: one teardown registration, not a second one a
    * close path has to remember (finding FFFF-1).
    */
-  readonly #passwords: DocumentPasswords;
-
-  /** @param passwords the holder, passed by a case that reads what a close left in it */
-  constructor(passwords: DocumentPasswords = new DocumentPasswords()) {
-    this.#passwords = passwords;
-  }
+  readonly #passwords = new DocumentPasswords();
 
   /**
-   * The password `docId`'s file opens with, for an engine session's open, or `undefined` when it needs none. Read by
-   * every open of the document's sessions: the first after an unlock, a recycle, a checkpoint's restore, a removal's
-   * save renewal and a host death's rebuild (ADR-0171 Decision 4).
+   * The key `docId`'s file opens with, unrevealed, or `undefined` when it needs none. Read by every open of the
+   * document's bytes in a host: its sessions' (the first after an unlock, a recycle, a checkpoint's restore, a removal's
+   * save renewal, a host death's rebuild), every PDFium call's and Optimize's (ADR-0171 Decision 4 and its addendum).
    */
-  readonly openingPassword = (docId: DocId): string | undefined => this.#passwords.openingPassword(docId);
+  readonly opensWith = (docId: DocId): HeldPassword | undefined => this.#passwords.opensWith(docId);
 
   /**
    * Get-or-miss, never get-or-create. Arrow-bound because this is handed over
@@ -975,7 +970,7 @@ export class EngineSessions implements EngineSessionSource {
     const entry = this.#entries.get(docId);
     if (entry === undefined) return;
 
-    // A DOCUMENT A PASSWORD OPENED IS RECYCLED LIKE ANY OTHER: `reopen` opens with {@link openingPassword}, which this
+    // A DOCUMENT A PASSWORD OPENED IS RECYCLED LIKE ANY OTHER: `reopen` opens with {@link opensWith}, which this
     // class holds until the close (ADR-0171). Refused until then, and that refusal also failed every undo past a
     // checkpoint of such a document, since a checkpoint's restore is a recycle.
     const release = entry.release;

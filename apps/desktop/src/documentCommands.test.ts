@@ -1418,7 +1418,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         engine: {
           poisoned: () => undefined,
           opensOnlyWithPassword: () => false,
-          openingPassword: () => undefined,
+          opensWith: () => undefined,
           sessions: () => {
             const cause = new Error(`EPERM: operation not permitted, stat '${SECRET}'`);
             cause.stack = `Error: EPERM: operation not permitted, stat '${SECRET}'\n    at readFileIdentity (${SECRET}:1:1)`;
@@ -4067,9 +4067,9 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const given: { pdf: Uint8Array; setting: string }[] = [];
       const passwords: (string | undefined)[] = [];
       let discards = 0;
-      const source: OptimizeSource = (pdf, setting, password) => {
+      const source: OptimizeSource = (pdf, setting, opensWith) => {
         given.push({ pdf, setting });
-        passwords.push(password);
+        passwords.push(opensWith?.reveal());
         if (answer !== 'optimized') return Promise.resolve({ kind: answer });
         return Promise.resolve({
           kind: 'optimized',

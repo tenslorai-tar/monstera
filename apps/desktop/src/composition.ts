@@ -38,6 +38,7 @@ import {
   CapabilityRegistry,
   CommandBus,
   type ByteImage,
+  type ImageSession,
   type ContainmentVerdict,
   type EngineChannels,
   DocumentNotOpenError,
@@ -986,6 +987,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     }
     return writer.serialise(session);
   };
+  // THE SAME BYTES WITH THE KEY THEY OPEN WITH, for a PDFium read (ADR-0171's addendum): a document opened with its
+  // password serialises to its own encrypted form.
+  const currentImage = async (docId: DocId, sessions: DocumentSessions): Promise<ImageSession> => ({
+    bytes: await currentBytes(docId, sessions),
+    opensWith: engine.opensWith(docId),
+  });
   // THE SAME FLUSH, STAGED: the bytes stay where the host wrote them until they are placed, so a save, a copy and a
   // refreshed image never hold them in `main` (ADR-0121 Decision 2 and its addendum). `currentBytes`' check, the
   // same writer's session.
@@ -1311,7 +1318,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // the first thing to make it matter.
     textBlocks: async (docId, sessions, page) => {
       if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s text');
-      const found = await pdfiumHost.textRuns(await currentBytes(docId, sessions), page);
+      const found = await pdfiumHost.textRuns(await currentImage(docId, sessions), page);
       // THE GROUPING IS MAIN'S, and this is the only place it happens.
       //
       // ADR-0049 permits a grouping of ours where no engine answers, and its
@@ -1365,7 +1372,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // route to them.
     pageObjects: async (docId, sessions, page) => {
       if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s objects');
-      return pdfiumHost.pageObjects(await currentBytes(docId, sessions), page);
+      return pdfiumHost.pageObjects(await currentImage(docId, sessions), page);
     },
     // THE SECOND RASTERISER, and the ENCODE is this layer's job.
     //
@@ -1390,7 +1397,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         throw new EngineUnavailableError('rendering a page with the second engine');
       }
       const raster = await pdfiumHost.renderPage(
-        await currentBytes(docId, sessions),
+        await currentImage(docId, sessions),
         page,
         width,
         height,
@@ -2720,7 +2727,7 @@ function engineSessionOpener(
   const buildSessions = async (
     docId: DocId,
     write: SnapshotWrite,
-  ): Promise<DocumentSessions> => (await buildWithAccess(docId, write, sessions.openingPassword(docId))).sessions;
+  ): Promise<DocumentSessions> => (await buildWithAccess(docId, write, sessions.opensWith(docId)?.reveal())).sessions;
 
   /**
    * One document's sessions from the canonical image — open, reopen, recycle.
@@ -2737,7 +2744,7 @@ function engineSessionOpener(
     buildWithAccess(docId, canonicalImageWrite(documents, docId), password);
 
   const create = async (docId: DocId): Promise<DocumentSessions> =>
-    (await createWithAccess(docId, sessions.openingPassword(docId))).sessions;
+    (await createWithAccess(docId, sessions.opensWith(docId)?.reveal())).sessions;
 
   // THE PROMISE IS RETURNED, not voided. `onDocumentOpened` queues its lane entry
   // before its first await, so the ordering it guarantees holds either way; what
@@ -3109,9 +3116,9 @@ function pdfiumHostBinding(
       // checkpoint on the terminal branch start a process. It is written as the
       // identity directly rather than delegated, because delegating it would
       // require a host to exist in order to return the argument.
-      serialise: (session) => Promise.resolve(session),
+      serialise: (session) => Promise.resolve(session.bytes),
       // THE IDENTITY WRITTEN OUT, for the same reason: a checkpoint of bytes already in hand starts no host.
-      serialiseInto: serialiseIntoFile((session: Uint8Array) => Promise.resolve(session)),
+      serialiseInto: serialiseIntoFile((session: ImageSession) => Promise.resolve(session.bytes)),
     },
     textRuns: async (image, page) => (await ensure()).textRuns(image, page),
     pageObjects: async (image, page) => (await ensure()).pageObjects(image, page),
@@ -3389,7 +3396,7 @@ function composeHostBinding(
     // input goes whatever the call answered, for `compose`'s reason. The count the host reported
     // is held to the file's size before anything is streamed, which separates *the host wrote
     // nothing* from *the read found nothing* without reading the copy into `main`.
-    optimize: async (pdf, setting, password) => {
+    optimize: async (pdf, setting, opensWith) => {
       const built = await ensure();
       const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
       const from = areas.mintName();
@@ -3403,7 +3410,7 @@ function composeHostBinding(
       const answer = await built.client['engine/optimize']({
         session: built.session,
         from,
-        password: password ?? null,
+        password: opensWith?.reveal() ?? null,
         into,
         ...OPTIMIZE_SETTINGS[setting],
       }).finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
@@ -3454,11 +3461,16 @@ function composeHostBinding(
         const from = areas.mintName();
         const into = areas.mintName();
         keptPath = join(area.outputDirectory, into);
-        await writeFile(join(area.snapshotDirectory, from), image);
-        // `null`: no PDFium call hands this keeper a document's key yet, so a document opened with its password is
-        // refused here as unreadable and said in the log, never read undecrypted (ADR-0171's addendum).
-        const answer = await built.client['engine/keep-inline-images']({ session: built.session, from, password: null, into, scope })
-          .finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
+        await writeFile(join(area.snapshotDirectory, from), image.bytes);
+        // THE KEY THE PDFIUM CALL CARRIES (ADR-0171's addendum): without it an encrypted page is read undecrypted and
+        // no inline image is found, so the edit after it would drop the picture with nothing said.
+        const answer = await built.client['engine/keep-inline-images']({
+          session: built.session,
+          from,
+          password: image.opensWith?.reveal() ?? null,
+          into,
+          scope,
+        }).finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
         if (!answer.ok) return left(`the compose host answered ${answer.error.code}, so none was checked`);
         const value = answer.value;
         if (value.kind === 'unavailable') return left('the native MuPDF library is not in this build, so none was checked');

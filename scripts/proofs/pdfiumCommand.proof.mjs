@@ -85,6 +85,7 @@ import {
 
 import { PDFIUM_COMMAND, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
+import { withNoPassword } from '../lib/pdfiumNoPassword.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
 
@@ -110,8 +111,12 @@ const { blockEditOf, replacementFieldsOf } = await import('../../packages/contra
 const { openPdfium, pdfiumWriter, pageText, renderPageBitmap, replaceTextObjects, textObjectIndices, textRuns } =
   await import('../../packages/kernel/dist/pdfiumFfi.js');
 const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
-const { localPdfiumExecution } = await import('../../packages/kernel/dist/pdfiumSpecs.js');
+const specs = await import('../../packages/kernel/dist/pdfiumSpecs.js');
+// OVER BYTES THAT OPEN WITH NO PASSWORD, as every fixture here but the encrypted one does (`withNoPassword`).
+const localPdfiumExecution = withNoPassword(specs.localPdfiumExecution);
 const { declaredCommands } = await import('../../packages/kernel/dist/commandDeclarations.js');
+const { EditRefusedError } = await import('../../packages/kernel/dist/textEditRefusals.js');
+const { HeldPassword } = await import('../../packages/shared/dist/index.js');
 
 const FIRST = 'FIRST RUN stays exactly where it is';
 const SECOND = 'SECOND RUN is the one that changes';
@@ -134,6 +139,81 @@ async function threeRunsAndARectangle() {
   return document.save();
 }
 
+/** Made up for this proof; no document a person owns carries them. */
+const USER_PASSWORD = 'sample-user-0171';
+const OWNER_PASSWORD = 'sample-owner-0171';
+
+/**
+ * A document that opens only with a password reaches PDFium WITH it
+ * ([ADR-0171](../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md)'s addendum).
+ *
+ * `threeRunsAndARectangle` encrypted AES-256 by pdf-lib with a user and an owner password, edited through the very
+ * execution the host runs (`specs.localPdfiumExecution`, not the no-password wrapper), with the key the bus hands it.
+ * The saved bytes are read back here with PDFium's own open, so what is asserted is the file, not the session.
+ */
+async function passwordCases() {
+  const locked = await PDFDocument.load(await threeRunsAndARectangle());
+  locked.encrypt({ userPassword: USER_PASSWORD, ownerPassword: OWNER_PASSWORD, algorithm: 'AES-256' });
+  const bytes = await locked.save();
+  const command = /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceAllText'>} */ ({
+    kind: 'replaceAllText',
+    find: 'SECOND',
+    replace: 'LATTER',
+  });
+  /** What the saved bytes say, opened with `password` or none, or why PDFium refused them. @param {Uint8Array} saved @param {string | undefined} password */
+  const reading = async (saved, password) => {
+    let session;
+    try {
+      session = await pdfiumWriter.open(saved, password);
+    } catch (error) {
+      return `refused: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    try {
+      return await pageText(session, 0);
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+
+  /** @type {readonly (readonly [string, string])[]} */
+  const keys = [['USER', USER_PASSWORD], ['OWNER', OWNER_PASSWORD]];
+  for (const [which, password] of keys) {
+    let saved;
+    let answer = 'saved';
+    try {
+      saved = await specs.localPdfiumExecution.apply({
+        session: { bytes, opensWith: new HeldPassword(password) },
+        command,
+        sources: [],
+        reads: undefined,
+      });
+    } catch (error) {
+      answer = error instanceof Error ? error.message : String(error);
+    }
+    const withNone = saved === undefined ? 'nothing saved' : await reading(saved, undefined);
+    const withUser = saved === undefined ? 'nothing saved' : await reading(saved, USER_PASSWORD);
+    record(
+      `a document opened with its ${which} password is edited through PDFium with it, and the saved file still needs one`,
+      withNone.startsWith('refused') && withUser.includes('LATTER RUN') && !withUser.includes('SECOND RUN'),
+      `${answer}; the saved file opened with none: ${withNone.slice(0, 80)}; with the user password: ${JSON.stringify(withUser.slice(0, 120))}`,
+    );
+  }
+
+  // THE CONTROL, and the input is one the edit WOULD take with its key, measured just above: the same bytes and the
+  // same command with no key are refused at the open with PDFium's own number for a password, 4 (FPDF_ERR_PASSWORD).
+  let refusal;
+  try {
+    await specs.localPdfiumExecution.apply({ session: { bytes, opensWith: undefined }, command, sources: [], reads: undefined });
+  } catch (error) {
+    refusal = error;
+  }
+  record(
+    'CONTROL: the same edit with no key is refused at open with FPDF_ERR_PASSWORD, so nothing reaches a page',
+    refusal instanceof EditRefusedError && refusal.step === 'open' && refusal.engineError === 4,
+    refusal instanceof Error ? refusal.message : 'it was SAVED without a password',
+  );
+}
+
 /**
  * The case roster.
  *
@@ -149,8 +229,9 @@ const failures = [];
 // cb62b976..33715f7c, which gave blank paper's refusal its control, and 77 from ADR-0169, which names the characters,
 // and 80 from its Decision 6's empty replacement: a word deleted, an object removed, and the checkpoint either takes,
 // and 82 from the same decision's *no version*: one occurrence for itself, and a word the page reads but no object
-// holds (the identity replace-all case became the nothing-matched one).
-const roster = createRoster(failures, { cases: 84 });
+// holds (the identity replace-all case became the nothing-matched one), and 84 from the line rule's two, and 87 from
+// ADR-0171's addendum: an edit of a document opened with either password, and its control with none.
+const roster = createRoster(failures, { cases: 87 });
 
 /**
  * @param {string} name
@@ -430,6 +511,7 @@ async function main() {
   await blockEditCases();
   await glyphLineCases();
   await settingCases();
+  await passwordCases();
 
   process.stdout.write(
     failures.length > 0

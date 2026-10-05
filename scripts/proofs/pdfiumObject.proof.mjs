@@ -38,6 +38,7 @@ import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
 import { PDFIUM_COMMAND, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
+import { withNoPassword } from '../lib/pdfiumNoPassword.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
 
@@ -59,7 +60,8 @@ refuseStaleBuild(root, PDFIUM_COMMAND, 7);
 const { openPdfium, pdfiumWriter, pageObjects, pageText } = await import(
   '../../packages/kernel/dist/pdfiumFfi.js'
 );
-const { localPdfiumExecution } = await import('../../packages/kernel/dist/pdfiumSpecs.js');
+// OVER BYTES THAT OPEN WITH NO PASSWORD, as every fixture here does (`withNoPassword`).
+const localPdfiumExecution = withNoPassword((await import('../../packages/kernel/dist/pdfiumSpecs.js')).localPdfiumExecution);
 const { declaredCommands } = await import('../../packages/kernel/dist/commandDeclarations.js');
 const { KEEPS_THE_OBJECT_WALK } = await import('../../packages/contract/dist/index.js');
 

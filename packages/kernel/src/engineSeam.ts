@@ -1,5 +1,5 @@
 import type { CommandKind, CommandOfKind, OutlineEntry } from '@monstera/contract';
-import type { Brand } from '@monstera/shared';
+import type { Brand, HeldPassword } from '@monstera/shared';
 
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 // TYPE-ONLY, and it has to be: `ocrRecognise.ts` instantiates a WASM engine on
@@ -143,6 +143,20 @@ export type MupdfSession = Brand<{ readonly engine: 'mupdf' }, 'MupdfSession'>;
 export type PdfiumSession = Brand<{ readonly engine: 'pdfium' }, 'PdfiumSession'>;
 
 /**
+ * A byte-image writer's session: the document's bytes **and the key that opens them**
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md)'s addendum).
+ *
+ * One bus serves every document, so the bytes alone cannot say which password opens them, and a document opened with
+ * its password serialises to its own encrypted form, which does not open without it. Still no identity: `opensWith`
+ * says how to open the bytes, not whose they are, and is `undefined` for a document that opens with none. The same
+ * shape in `main` and in the host, so a spec opens with the key it was handed and nothing beside it.
+ */
+export interface ImageSession {
+  readonly bytes: ByteImage;
+  readonly opensWith: HeldPassword | undefined;
+}
+
+/**
  * What each writer of record works on.
  *
  * A mapped lookup rather than a per-command declaration, so a command that
@@ -159,8 +173,10 @@ export interface WriterSession {
    * call from the live writer's `serialise` and never stores it. The live
    * PDFium handle exists only inside `pdfiumFfi.ts`, between its own `open` and
    * `close`, and never reaches this table.
+   *
+   * The bytes WITH THEIR KEY since ADR-0171's addendum ({@link ImageSession}).
    */
-  readonly pdfium: ByteImage;
+  readonly pdfium: ImageSession;
   readonly 'pdf-lib': ByteImage;
   readonly signpdf: ByteImage;
 }

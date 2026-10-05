@@ -38,6 +38,7 @@ import { PDFArray, PDFDocument, PDFName, PDFRawStream, StandardFonts, decodePDFR
 
 import { PDFIUM_READ_BACK, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
+import { withNoPassword } from '../lib/pdfiumNoPassword.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
 import { CHROMIUM_FIXTURE, CHROMIUM_LINES } from '../research/chromiumType3Fixture.mjs';
@@ -62,7 +63,8 @@ refuseStaleBuild(root, PDFIUM_READ_BACK, 11);
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
 const { objectRuns, openPdfium, pdfiumWriter, textRuns } = await import('../../packages/kernel/dist/pdfiumFfi.js');
 const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
-const { localPdfiumExecution } = await import('../../packages/kernel/dist/pdfiumSpecs.js');
+// OVER BYTES THAT OPEN WITH NO PASSWORD, as every fixture here does (`withNoPassword`).
+const localPdfiumExecution = withNoPassword((await import('../../packages/kernel/dist/pdfiumSpecs.js')).localPdfiumExecution);
 const { EditRefusedError } = await import('../../packages/kernel/dist/textEditRefusals.js');
 
 /** @type {string[]} */

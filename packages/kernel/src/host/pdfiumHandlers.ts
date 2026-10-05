@@ -1,7 +1,8 @@
 import type { Handlers } from '@monstera/contract';
+import { HeldPassword } from '@monstera/shared';
 
 import type { CommandExecution } from '../commandRouting.js';
-import type { ByteImage } from '../engineSeam.js';
+import type { ImageSession } from '../engineSeam.js';
 import type { TextRun } from '../pdfiumFfi.js';
 import {
   EditRefusedError,
@@ -77,7 +78,7 @@ import {
  * on a second engine.
  */
 export type HostTextRunsReader = (
-  image: ByteImage,
+  image: ImageSession,
   page: number,
 ) => Promise<{
   /** `pdfiumFfi.ts`' own type, named by an erased import so no binding loads here. */
@@ -102,14 +103,14 @@ export type HostTextRunsReader = (
  * handler's knowledge and not the rasteriser's.
  */
 export type HostPageRasteriser = (
-  image: ByteImage,
+  image: ImageSession,
   page: number,
   width: number,
   height: number,
 ) => Promise<Uint8Array>;
 
 export type HostPageObjectsReader = (
-  image: ByteImage,
+  image: ImageSession,
   page: number,
 ) => Promise<{
   readonly objects: readonly {
@@ -197,8 +198,11 @@ export function createPdfiumHandlers({
    * file by a route that skips the area — and there is one place to read when
    * asking what this host may open.
    */
-  const imageFor = (held: HostArea, from: string): Promise<Uint8Array> =>
-    files.readSnapshot(held.snapshotDirectory, from);
+  const imageFor = async (held: HostArea, from: string, password: string | null): Promise<ImageSession> => ({
+    bytes: await files.readSnapshot(held.snapshotDirectory, from),
+    // THE KEY THE FRAME CARRIED, held as main holds it for the length of the call (ADR-0171's addendum).
+    opensWith: password === null ? undefined : new HeldPassword(password),
+  });
 
   return {
     // NO try/catch, for `engineHandlers.ts`' reason: every outcome this can
@@ -240,12 +244,12 @@ export function createPdfiumHandlers({
       return Promise.resolve({ ok: true, value: {} });
     },
 
-    'engine/capture': async ({ session, command, from }) => {
+    'engine/capture': async ({ session, command, from, password }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
-      let image: Uint8Array;
+      let image: ImageSession;
       try {
-        image = await imageFor(held, from);
+        image = await imageFor(held, from, password);
       } catch {
         // THE SAME CODE `engine/apply` USES for a missing input, because it is
         // the same fault: main wrote the image and it went, or main did not
@@ -281,12 +285,12 @@ export function createPdfiumHandlers({
         : { ok: true, value: { captured: false, reason: captured.reason } };
     },
 
-    'engine/apply': async ({ session, command, from, into }) => {
+    'engine/apply': async ({ session, command, from, password, into }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
-      let image: Uint8Array;
+      let image: ImageSession;
       try {
-        image = await imageFor(held, from);
+        image = await imageFor(held, from, password);
       } catch {
         return failed('asset-missing');
       }
@@ -323,12 +327,12 @@ export function createPdfiumHandlers({
       return { ok: true, value: { bytes: written } };
     },
 
-    'engine/invert': async ({ session, inverse, from, into }) => {
+    'engine/invert': async ({ session, inverse, from, password, into }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
-      let image: Uint8Array;
+      let image: ImageSession;
       try {
-        image = await imageFor(held, from);
+        image = await imageFor(held, from, password);
       } catch {
         return failed('asset-missing');
       }
@@ -347,12 +351,12 @@ export function createPdfiumHandlers({
       return { ok: true, value: { bytes: written } };
     },
 
-    'engine/text-runs': async ({ session, from, page }) => {
+    'engine/text-runs': async ({ session, from, password, page }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
-      let image: Uint8Array;
+      let image: ImageSession;
       try {
-        image = await imageFor(held, from);
+        image = await imageFor(held, from, password);
       } catch {
         return failed('asset-missing');
       }
@@ -389,12 +393,12 @@ export function createPdfiumHandlers({
     // written out rather than shared, because the two differ in every line that
     // matters (which reader, which bound, which field name) and what they share
     // is a `try`/`catch` around an image lookup.
-    'engine/page-objects': async ({ session, from, page }) => {
+    'engine/page-objects': async ({ session, from, password, page }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
-      let image: Uint8Array;
+      let image: ImageSession;
       try {
-        image = await imageFor(held, from);
+        image = await imageFor(held, from, password);
       } catch {
         return failed('asset-missing');
       }
@@ -412,12 +416,12 @@ export function createPdfiumHandlers({
       }
     },
 
-    'engine/render-page': async ({ session, from, into, page, width, height }) => {
+    'engine/render-page': async ({ session, from, password, into, page, width, height }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
-      let image: Uint8Array;
+      let image: ImageSession;
       try {
-        image = await imageFor(held, from);
+        image = await imageFor(held, from, password);
       } catch {
         return failed('asset-missing');
       }

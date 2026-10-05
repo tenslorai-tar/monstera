@@ -156,6 +156,7 @@ import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
 import {
   type DocId,
   type DocVersion,
+  type HeldPassword,
   type QueryProblem,
   type WordCount,
   compileQuery,
@@ -330,10 +331,10 @@ export interface EngineSessionSource {
    */
   readonly opensOnlyWithPassword: (docId: DocId) => boolean;
   /**
-   * The password this document's file opens with, or `undefined` when it needs none (`EngineSessions.openingPassword`,
-   * ADR-0171). Read by a reader that opens the document's bytes in a host of its own, such as Optimize.
+   * The key this document's file opens with, unrevealed, or `undefined` when it needs none (`EngineSessions.opensWith`,
+   * ADR-0171). Read by everything that opens the document's bytes in a host of its own: a PDFium command and Optimize.
    */
-  readonly openingPassword: (docId: DocId) => string | undefined;
+  readonly opensWith: (docId: DocId) => HeldPassword | undefined;
 }
 
 /**
@@ -2308,9 +2309,9 @@ export type ExportTextOutcome =
 export type OptimizeSource = (
   pdf: Uint8Array,
   setting: OptimizeSetting,
-  // THE PASSWORD `pdf` OPENS WITH, required so no caller leaves it out: without it the rewriter read an encrypted
-  // document undecrypted and wrote a copy with no page (ADR-0171's addendum, measured 2026-10-05).
-  password: string | undefined,
+  // THE KEY `pdf` OPENS WITH, required so no caller leaves it out: without it the rewriter read an encrypted document
+  // undecrypted and wrote a copy with no page (ADR-0171's addendum, measured 2026-10-05).
+  opensWith: HeldPassword | undefined,
 ) => Promise<
   | {
       readonly kind: 'optimized';
@@ -3637,6 +3638,9 @@ export class DocumentCommands {
     };
     return {
       current: () => this.#save.flush(docId, live()),
+      // THE KEY THOSE BYTES OPEN WITH (ADR-0171's addendum): a document opened with its password flushes to its own
+      // encrypted form, which a byte-image writer cannot open without it.
+      opensWith: () => this.#engine.opensWith(docId),
       // THE REFRESH'S ROUTE (ADR-0121 Decision 2): the session's bytes placed in the file the service names.
       currentInto: async (destination) => placeStaged(await this.#save.stage(docId, live()), destination),
       adopt: (write) => this.#restore(docId, write),
@@ -4685,7 +4689,7 @@ export class DocumentCommands {
 
     const { value } = await this.#documents.run(docId, async (context): Promise<OptimizeMeasurement> => {
       const pdf = await this.#currentBytes(docId);
-      const copy = await optimizer(pdf, setting, this.#engine.openingPassword(docId));
+      const copy = await optimizer(pdf, setting, this.#engine.opensWith(docId));
       if (copy.kind !== 'optimized') return copy;
       await copy.discard();
       return { kind: 'measured', version: context.version, before: pdf.length, after: copy.bytes };
@@ -4722,7 +4726,7 @@ export class DocumentCommands {
     const { value } = await this.#documents.run(docId, async (context): Promise<OptimizeOutcome> => {
       if (context.version !== version) return { kind: 'changed' };
       const pdf = await this.#currentBytes(docId);
-      const copy = await optimizer(pdf, setting, this.#engine.openingPassword(docId));
+      const copy = await optimizer(pdf, setting, this.#engine.opensWith(docId));
       if (copy.kind !== 'optimized') return copy;
       // DISCARDED WHATEVER HAPPENS, not only on the not-smaller branch: a contested destination
       // answers before the stream is opened, and a copy of the person's document would otherwise

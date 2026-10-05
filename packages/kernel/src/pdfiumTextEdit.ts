@@ -1,8 +1,15 @@
 import { type CommandOfKind, blocksOfEdit, replacementsOf } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
-import type { ByteImage } from './engineSeam.js';
-import { editTextBlocks, pdfiumWriter, removesItsObject, replaceTextObjects, textObjectText } from './pdfiumFfi.js';
+import type { ByteImage, ImageSession } from './engineSeam.js';
+import {
+  editTextBlocks,
+  onImage,
+  pdfiumWriter,
+  removesItsObject,
+  replaceTextObjects,
+  textObjectText,
+} from './pdfiumFfi.js';
 
 /**
  * In-place text editing, as the bus calls it: **region replacement**.
@@ -76,26 +83,6 @@ export const EMPTIED = {
 } as const satisfies CaptureResult<never>;
 
 /**
- * Runs `work` against a session opened from `image`, closing it however `work`
- * ends.
- *
- * The three exports below are the same four lines with a different middle, and
- * this is where the `finally` lives so that none of them can be written
- * without one.
- */
-async function onImage<T>(
-  image: ByteImage,
-  work: (session: Awaited<ReturnType<typeof pdfiumWriter.open>>) => Promise<T>,
-): Promise<T> {
-  const session = await pdfiumWriter.open(image);
-  try {
-    return await work(session);
-  } finally {
-    await pdfiumWriter.close(session);
-  }
-}
-
-/**
  * The string the named object currently holds.
  *
  * ## It captures BEFORE the bus applies, and a failed read is an outcome
@@ -111,7 +98,7 @@ async function onImage<T>(
  * carries the numbers the caller sent and nothing the file said.
  */
 export async function captureReplaceTextObject(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'replaceTextObject'>,
 ): Promise<CaptureResult<PriorTextObjects>> {
   const replacements = replacementsOf(command);
@@ -165,7 +152,7 @@ export async function captureReplaceTextObject(
  * run, and a visual line is several runs.
  */
 export async function applyReplaceTextObject(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'replaceTextObject'>,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {
@@ -190,7 +177,7 @@ export async function applyReplaceTextObject(
  * single inverse is what makes the step reversible in one move.
  */
 export async function invertReplaceTextObject(
-  image: ByteImage,
+  image: ImageSession,
   inverse: PriorTextObjects,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {
@@ -234,7 +221,7 @@ export async function invertReplaceTextObject(
  * a second attempt would make the same twin.
  */
 export async function applyEditTextBlock(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'editTextBlock'>,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {

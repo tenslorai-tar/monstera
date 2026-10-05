@@ -12,6 +12,7 @@ export type {
   ByteImage,
   DocumentAccess,
   EngineWriter,
+  ImageSession,
   Invert,
   LockedReason,
   MupdfSession,

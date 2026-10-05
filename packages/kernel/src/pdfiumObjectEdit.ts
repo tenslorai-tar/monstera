@@ -1,10 +1,11 @@
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { ByteImage } from './engineSeam.js';
+import type { ByteImage, ImageSession } from './engineSeam.js';
 import {
   type ObjectMatrix,
   objectMatrix,
+  onImage,
   pageObjects,
   pdfiumWriter,
   placeObject,
@@ -59,25 +60,6 @@ export interface PriorFills {
 }
 
 /**
- * Runs `work` against a session opened from `image`, closing it however it ends.
- *
- * `pdfiumTextEdit.ts` has the same four lines and they are not shared: sharing
- * them would put an import edge between two modules that have no other reason
- * to know about each other, and the shared thing would be a `try`/`finally`.
- */
-async function onImage<T>(
-  image: ByteImage,
-  work: (session: Awaited<ReturnType<typeof pdfiumWriter.open>>) => Promise<T>,
-): Promise<T> {
-  const session = await pdfiumWriter.open(image);
-  try {
-    return await work(session);
-  } finally {
-    await pdfiumWriter.close(session);
-  }
-}
-
-/**
  * The object's matrix before the placement is applied.
  *
  * `captured: false` where the index names no object, which is what the bus
@@ -87,7 +69,7 @@ async function onImage<T>(
  * refusal.
  */
 export async function capturePlacePageObject(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'placePageObject'>,
 ): Promise<CaptureResult<PriorPlacement>> {
   return onImage(image, async (session) => {
@@ -107,7 +89,7 @@ export async function capturePlacePageObject(
 
 /** Moves and resizes the named object, and answers the document's new bytes. */
 export async function applyPlacePageObject(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'placePageObject'>,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {
@@ -129,7 +111,7 @@ export async function applyPlacePageObject(
  * transform accumulates floating-point drift over repeated undo and redo.
  */
 export async function invertPlacePageObject(
-  image: ByteImage,
+  image: ImageSession,
   inverse: PriorPlacement,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {
@@ -154,7 +136,7 @@ export async function invertPlacePageObject(
  * all-or-nothing rule on a second axis.
  */
 export async function captureRecolorPageObjects(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'recolorPageObjects'>,
 ): Promise<CaptureResult<PriorFills>> {
   return onImage(image, async (session) => {
@@ -184,7 +166,7 @@ export async function captureRecolorPageObjects(
 
 /** Recolours the named objects, and answers the document's new bytes. */
 export async function applyRecolorPageObjects(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'recolorPageObjects'>,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {
@@ -202,7 +184,7 @@ export async function applyRecolorPageObjects(
 
 /** Puts the recorded fills back, and answers the document's new bytes. */
 export async function invertRecolorPageObjects(
-  image: ByteImage,
+  image: ImageSession,
   inverse: PriorFills,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {
@@ -221,7 +203,7 @@ export async function invertRecolorPageObjects(
  * places.
  */
 export async function applyDeletePageObjects(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'deletePageObjects'>,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {

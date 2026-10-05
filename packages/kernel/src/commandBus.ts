@@ -10,7 +10,7 @@ import {
   sourceIdsOf,
   targetVersionOf,
 } from '@monstera/contract';
-import type { DocId, DocVersion } from '@monstera/shared';
+import type { DocId, DocVersion, HeldPassword } from '@monstera/shared';
 
 import type {
   CaptureResult,
@@ -55,6 +55,7 @@ import {
   type SessionsByWriter,
   type ExecutionSession,
   type HostedWriter,
+  type ImageSession,
   type SavePurpose,
   type WriterSession,
   hostedOn,
@@ -277,8 +278,8 @@ export type CheckpointRestore = (write: SnapshotWrite) => Promise<void>;
  * ## Why a byte-image session is not in `SessionsByWriter`
  *
  * A live-session writer's session is a handle the supervisor holds between
- * commands. A byte-image writer's session **is the document's current bytes**,
- * which no component holds: `main`'s canonical image is what was opened —
+ * commands. A byte-image writer's session **is the document's current bytes**
+ * (with the key they open with, ADR-0171's addendum), which no component holds: `main`'s canonical image is what was opened —
  * finding OOOOO-1, measured 2026-08-30 — and the live engine's copy is behind a
  * pipe. So there is nothing for the supervisor to have put in the map, and a
  * map entry would have had to be refreshed after every live-session command,
@@ -308,6 +309,12 @@ export type CheckpointRestore = (write: SnapshotWrite) => Promise<void>;
 export interface ByteImageAccess {
   /** The document's current bytes. The live writer's `serialise`. */
   readonly current: () => Promise<ByteImage>;
+  /**
+   * The key those bytes open with: the document's held password, or `undefined` when it opens with none. Read beside
+   * {@link current} for every byte-image session, since a document opened with its password serialises to its own
+   * encrypted form (ADR-0171's addendum).
+   */
+  readonly opensWith: () => HeldPassword | undefined;
   /**
    * The document's current bytes, written at `destination` and never read by `main` — the live writer's
    * `serialiseInto`, which a host answers by moving its output there
@@ -624,9 +631,10 @@ export class CommandBus {
     const shape = writerShapes[writer];
     if (shape === 'byte-image') {
       // The cast is the same correlation `#writerFor` asserts: `writerShapes`
-      // says this writer's session type IS `ByteImage`, and the checker cannot
-      // carry that through a generic index.
-      return (await bytes.current()) as ExecutionSession<WriterOf<K>>;
+      // says this writer's session type IS `ImageSession`, and the checker
+      // cannot carry that through a generic index.
+      const session: ImageSession = { bytes: await bytes.current(), opensWith: bytes.opensWith() };
+      return session as ExecutionSession<WriterOf<K>>;
     }
     // A HOSTED WRITER RUNS BESIDE ITS HOST'S SESSION, so that is the session it is handed — and `main` never
     // serialises the document for it (ADR-0121 Decision 3). `hostedOn` names the host; the cast is `#writerFor`'s.

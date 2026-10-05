@@ -185,7 +185,8 @@ async function edit(bytes, change, line, keep) {
   };
   let saved;
   try {
-    saved = await applyEditTextBlock(bytes, command);
+    // NO PASSWORD: a generated document (ADR-0171's addendum, the session is the bytes and their key).
+    saved = await applyEditTextBlock({ bytes, opensWith: undefined }, command);
   } catch (error) {
     return refusal(error);
   }

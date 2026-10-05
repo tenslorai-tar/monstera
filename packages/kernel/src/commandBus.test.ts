@@ -277,7 +277,7 @@ function restoreStub(): {
  * a checkpoint. The document starts as `image`. Files go under this file's temporary directory, never the working
  * directory — `adopt`'s write places a real file now.
  */
-function hostModel(image: ByteImage): Pick<CommandInputs, 'current' | 'currentInto' | 'adopt'> & {
+function hostModel(image: ByteImage): Pick<CommandInputs, 'current' | 'opensWith' | 'currentInto' | 'adopt'> & {
   readonly restore: CheckpointRestore;
 } {
   let held: ByteImage = image;
@@ -289,6 +289,8 @@ function hostModel(image: ByteImage): Pick<CommandInputs, 'current' | 'currentIn
   };
   return {
     current: () => Promise.resolve(held),
+    // A document that opens with no password, which every fixture in this file is.
+    opensWith: () => undefined,
     currentInto: (destination) => serialiseIntoFile(() => Promise.resolve(held))(held, destination),
     adopt: rebuildFrom,
     restore: rebuildFrom,
@@ -320,6 +322,9 @@ const noRestoreExpected: CheckpointRestore = () => {
  */
 const noByteImageExpected: CommandInputs = {
   current: () => {
+    throw new Error('this case runs a live-session command and must not mint a byte image');
+  },
+  opensWith: () => {
     throw new Error('this case runs a live-session command and must not mint a byte image');
   },
   currentInto: () => {

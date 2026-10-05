@@ -3,7 +3,7 @@ import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
 import type { ApplyRequest, CommandExecution, KindsRoutedTo } from './commandRouting.js';
-import type { ByteImage, Capture, Invert } from './engineSeam.js';
+import type { ByteImage, Capture, ImageSession, Invert } from './engineSeam.js';
 import {
   applyDeletePageObjects,
   applyPlacePageObject,
@@ -167,7 +167,7 @@ type PdfiumKind = keyof typeof pdfiumSpecs;
  * the two files is a fact about their tables, not about their writers.
  */
 type PdfiumApply<K extends CommandKind> = (
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<K>,
 ) => Promise<ByteImage>;
 
@@ -206,7 +206,7 @@ function specFor(command: Command): (typeof pdfiumSpecs)[PdfiumKind] {
  * **The asymmetry with `localPdfLibExecution` is worth naming**, because both
  * are byte-image executions and only one of them has a remote half. A pdf-lib
  * session is bytes and pdf-lib is JavaScript, so *where the bytes are* is
- * `main`. A PDFium session is bytes and PDFium is native, so *where the bytes
+ * `main`. A PDFium session holds bytes and PDFium is native, so *where the bytes
  * are* has to be somewhere invariant 20 allows a native library — which is the
  * host. Byte-image says nothing about placement; ADR-0047 says so in as many
  * words.
@@ -227,13 +227,13 @@ export const localPdfiumExecution: CommandExecution<'pdfium'> = {
     return (specFor(command).apply as PdfiumApply<K>)(image, command);
   },
   capture<K extends CommandKind>(
-    image: ByteImage,
+    image: ImageSession,
     command: CommandOfKind<K>,
   ): Promise<CaptureResult<CommandPrior[K]>> {
     return (specFor(command).capture as Capture<'pdfium', K>)(image, command);
   },
   invert<K extends CommandKind>(
-    image: ByteImage,
+    image: ImageSession,
     kind: K,
     inverse: CommandPrior[K],
   ): Promise<ByteImage> {

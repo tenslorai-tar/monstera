@@ -3297,10 +3297,11 @@ export const execution: CommandExecution<'pdfium'> = {
   // byte-image apply CONSUMES an image and PRODUCES one, with no assertion.
   //
   // THE IMAGE ARRIVES AS THE REQUEST'S session FIELD SINCE ADR-0069: the
-  // execution takes one named request, and this writer's session IS the bytes.
-  apply: ({ session }) => Promise.resolve(new Uint8Array(session)),
+  // execution takes one named request, and this writer's session HOLDS the
+  // bytes, beside the key that opens them since ADR-0171's addendum.
+  apply: ({ session }) => Promise.resolve(new Uint8Array(session.bytes)),
   capture: (_image, _command) => Promise.resolve({ captured: false, reason: 'none' }),
-  invert: (image, _kind, _inverse) => Promise.resolve(new Uint8Array(image)),
+  invert: (image, _kind, _inverse) => Promise.resolve(new Uint8Array(image.bytes)),
 };
 `,
   },

@@ -1,10 +1,11 @@
 import { inspect } from 'node:util';
 
-import { asDocId } from '@monstera/shared';
+import { HELD_PASSWORD_REDACTION, HeldPassword, asDocId } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { DocumentPasswords, HELD_PASSWORD_REDACTION, HeldPassword } from './documentPasswords.js';
+import { DocumentPasswords } from './documentPasswords.js';
 
+/** Made up for this file; no document carries it. */
 const PASSWORD = 'sample-only-7Q';
 const DOC = asDocId('00000000-0000-4000-8000-000000000171');
 
@@ -46,13 +47,19 @@ describe('HeldPassword (ADR-0171 Decision 2)', () => {
   it('says what it is in place of the text, so a log line shows that one was there', () => {
     const held = new HeldPassword(PASSWORD);
     expect(JSON.stringify(held)).toBe(JSON.stringify(HELD_PASSWORD_REDACTION));
+    expect(String(held)).toBe(HELD_PASSWORD_REDACTION);
+    // THROUGH THE REGISTERED SYMBOL, which is what lets the module name Node's hook without importing Node.
     expect(inspect(held)).toBe(HELD_PASSWORD_REDACTION);
   });
 
-  it('reveals the text for an engine open, and refuses once wiped', () => {
-    const held = new HeldPassword(PASSWORD);
-    expect(held.reveal()).toBe(PASSWORD);
+  it('reveals the text exactly, a character outside the basic plane included, and refuses once wiped', () => {
+    const text = 'naïve-密码-\u{1F511}';
+    const held = new HeldPassword(text);
+    expect(held.reveal()).toBe(text);
+    // CONTROL for the wipe: before it the units are the password's.
+    expect(held.isWiped()).toBe(false);
     held.wipe();
+    expect(held.isWiped()).toBe(true);
     expect(() => held.reveal()).toThrow(/wiped/u);
   });
 });
@@ -61,23 +68,23 @@ describe('DocumentPasswords (ADR-0171 Decisions 1 and 2)', () => {
   it('holds the password a document opens with, and forgetting it wipes the bytes', () => {
     const passwords = new DocumentPasswords();
     passwords.hold(DOC, PASSWORD);
-    const held = passwords.heldFor(DOC);
+    const held = passwords.opensWith(DOC);
     // CONTROL: before the close the bytes are the password's, so a wipe that did nothing would fail below.
     expect(held?.isWiped()).toBe(false);
-    expect(passwords.openingPassword(DOC)).toBe(PASSWORD);
+    expect(held?.reveal()).toBe(PASSWORD);
 
     passwords.forget(DOC);
     expect(held?.isWiped()).toBe(true);
-    expect(passwords.openingPassword(DOC)).toBeUndefined();
+    expect(passwords.opensWith(DOC)).toBeUndefined();
   });
 
   it('a password held again wipes the one it replaces', () => {
     const passwords = new DocumentPasswords();
     passwords.hold(DOC, PASSWORD);
-    const first = passwords.heldFor(DOC);
+    const first = passwords.opensWith(DOC);
     passwords.hold(DOC, 'another-one');
     expect(first?.isWiped()).toBe(true);
-    expect(passwords.openingPassword(DOC)).toBe('another-one');
+    expect(passwords.opensWith(DOC)?.reveal()).toBe('another-one');
   });
 
   it('the holder itself writes no password either', () => {

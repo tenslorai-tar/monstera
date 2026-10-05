@@ -83,6 +83,8 @@ const inputs = {
     const read = await readFile(path);
     return new Uint8Array(read.buffer, read.byteOffset, read.byteLength);
   },
+  // A GENERATED DOCUMENT, which opens with no password (ADR-0171's addendum).
+  opensWith: () => undefined,
   // THE HOST'S SERIALISE MOVED INTO PLACE, standing in: the canonical image written straight to the destination, so
   // nothing of it passes through this process's buffers — what `serialiseInto` does with a host's output.
   currentInto: (destination) =>
