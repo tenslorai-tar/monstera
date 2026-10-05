@@ -1414,7 +1414,15 @@ const imageImportOutcomeSchema = z.discriminatedUnion('kind', [
  * The native components a build runs, by the id the manifest, the shell's resolver and the Components dialog share
  * ([ADR-0122](../../../docs/DECISIONS/0122-native-components-one-resolver-a-pinned-manifest-status-and-verify.md)).
  */
-export const NATIVE_COMPONENT_IDS = ['pdfium', 'poppler', 'ghostscript', 'onlyoffice', 'mupdf-shim', 'ocr-models'] as const;
+export const NATIVE_COMPONENT_IDS = [
+  'pdfium',
+  'poppler',
+  'ghostscript',
+  'onlyoffice',
+  'mupdf-shim',
+  'ocr-models',
+  'fonts',
+] as const;
 export type NativeComponentId = (typeof NATIVE_COMPONENT_IDS)[number];
 
 export const channels = {

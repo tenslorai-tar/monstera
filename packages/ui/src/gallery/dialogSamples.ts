@@ -147,6 +147,7 @@ const COMPONENTS = [
   { id: 'onlyoffice', name: 'ONLYOFFICE', version: '9.0.4', state: 'present', missing: 0, altered: 0, extra: 0 },
   { id: 'mupdf-shim', name: 'MuPDF', version: '1.26.10', state: 'present', missing: 0, altered: 0, extra: 0 },
   { id: 'ocr-models', name: 'OCR models', version: '4.1.0', state: 'present', missing: 0, altered: 0, extra: 0 },
+  { id: 'fonts', name: 'Bundled open fonts', version: 'google/fonts 7085eb89a950', state: 'present', missing: 0, altered: 0, extra: 0 },
 ] as const;
 
 const SHORTCUTS = [

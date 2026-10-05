@@ -65,6 +65,7 @@ import { carriesIcon } from '../lib/peIcons.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { shimPath } from '../lib/shimBinary.mjs';
 import { electronRoot } from '../provision/electron.mjs';
+import { fontsDirectory } from '../provision/fonts.mjs';
 import { gswin64cPath } from '../provision/ghostscript.mjs';
 import { x2tPath } from '../provision/onlyoffice.mjs';
 import { SHIPPED_PLATFORM, pdfiumLibrary } from '../provision/pdfium.mjs';
@@ -382,6 +383,7 @@ export function componentSources(root) {
     onlyoffice: dirname(x2tPath(root)),
     'mupdf-shim': dirname(shimPath(root)),
     'ocr-models': tessdataDirectory(root),
+    fonts: fontsDirectory(root),
   };
 }
 

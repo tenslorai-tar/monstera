@@ -20,7 +20,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { fileExists } from './fetchVerified.mjs';
+import { treeProblems } from './pinnedTree.mjs';
 import { shimEnvironment } from './shimBinary.mjs';
+import { BUNDLED_FONT_PINS, fontsDirectory } from '../provision/fonts.mjs';
 import { pdfiumEnvironment } from '../provision/pdfium.mjs';
 import { gswin64cPath } from '../provision/ghostscript.mjs';
 import { x2tPath } from '../provision/onlyoffice.mjs';
@@ -39,6 +41,19 @@ import { nativeManifest } from '../release/nativeManifest.mjs';
 async function tessdataEnvironment(root) {
   if (!(await fileExists(tessdataPath(root, 'eng')))) return {};
   return { MONSTERA_TESSDATA_DIRECTORY: tessdataDirectory(root) };
+}
+
+/**
+ * The bundled fonts' directory (ADR-0172), keyed on the tree being exactly as pinned rather than on the folder
+ * existing: a font in that folder is a font the resolver may embed, so a tree with a file missing, changed or added is
+ * not passed down at all.
+ *
+ * @param {string} root
+ * @returns {Promise<Record<string, string>>}
+ */
+async function fontsEnvironment(root) {
+  const problems = await treeProblems(fontsDirectory(root), BUNDLED_FONT_PINS).catch(() => ['missing']);
+  return problems.length === 0 ? { MONSTERA_FONTS_DIRECTORY: fontsDirectory(root) } : {};
 }
 
 /**
@@ -72,7 +87,7 @@ function nativeManifestEnvironment(root) {
  * - PDFium (`pdfiumEnvironment`, the PDFium host's own spelling): absent, the editing commands are refused by name.
  * - The MuPDF shim (`shimEnvironment`): **only when the DLL was built from the source on disk**, because a host binds
  *   the shim's exports at its start and a DLL older than its source can lack one. Absent, there is no MuPDF host.
- * - The OCR models, Poppler's `pdftotext` (ADR-0071), Ghostscript (ADR-0075), ONLYOFFICE's `x2t` (ADR-0120), and the
+ * - The OCR models, the bundled fonts (ADR-0172), Poppler's `pdftotext` (ADR-0071), Ghostscript (ADR-0075), ONLYOFFICE's `x2t` (ADR-0120), and the
  *   components' manifest.
  *
  * @param {string} root
@@ -83,6 +98,7 @@ export async function developmentEnvironment(root) {
     ...pdfiumEnvironment(root),
     ...shimEnvironment({ root }),
     ...(await tessdataEnvironment(root)),
+    ...(await fontsEnvironment(root)),
     ...(await executableEnvironment('MONSTERA_POPPLER_EXECUTABLE', pdftotextPath(root))),
     ...(await executableEnvironment('MONSTERA_GHOSTSCRIPT_EXECUTABLE', gswin64cPath(root))),
     ...(await executableEnvironment('MONSTERA_ONLYOFFICE_EXECUTABLE', x2tPath(root))),

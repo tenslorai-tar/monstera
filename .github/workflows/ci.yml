@@ -321,6 +321,16 @@ jobs:
         run: >
           node scripts/ci/annotate.mjs scripts/provision/pdfium.proof.mjs --require-pdfium
 
+      # The bundled open fonts (ADR-0172): twenty-one files, 9,965,868 bytes, from one pinned google/fonts commit,
+      # each verified by SHA-256 and the folder checked as a whole tree, since a font in it is one the resolver
+      # embeds. Both legs: the composers and the editor's proofs read these faces.
+      - name: Provision the bundled fonts
+        run: node scripts/ci/annotate.mjs scripts/provision/fonts.mjs
+
+      - name: Prove the bundled fonts are the pinned set and the notice names exactly them
+        run: >
+          node scripts/ci/annotate.mjs scripts/provision/fonts.proof.mjs --require-fonts
+
       # Runs on BOTH legs, and REQUIRED on both since the Linux library is
       # pinned too (2026-10-05): a could-not-look is red on either leg. Each leg
       # measures its own platform's build of the same release.
