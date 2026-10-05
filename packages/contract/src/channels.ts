@@ -24,6 +24,7 @@ import {
   cloudStateSchema,
 } from './cloudProviders.js';
 import type { PreloadChannelId } from './bridge.js';
+import { SHOWN_SCHEME_MAX } from './followedLinks.js';
 import { pageSetSchema } from './pageSet.js';
 import { channel, type Channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { AI_ANSWER_REFUSALS, MAX_WEB_SOURCES, answerIdSchema, subscriptionIdSchema } from './events.js';
@@ -3874,8 +3875,8 @@ export const channels = {
       z.object({ kind: z.literal('stale') }),
       z.object({ kind: z.literal('no-such-link') }),
       z.object({ kind: z.literal('too-long') }),
-      /** The scheme as the URL parser read it, or `null` for an address that is not a URL. */
-      z.object({ kind: z.literal('scheme-refused'), scheme: z.string().max(64).nullable() }),
+      /** The scheme as `shownSchemeOf` says it, or `null` for an address that begins with none. */
+      z.object({ kind: z.literal('scheme-refused'), scheme: z.string().max(SHOWN_SCHEME_MAX).nullable() }),
       z.object({ kind: z.literal('not-opened') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],

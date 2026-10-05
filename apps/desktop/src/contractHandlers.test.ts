@@ -10,6 +10,7 @@ import {
   MAX_SETTINGS_FILE_BYTES,
   RECENT_CHECK_CAP_MS,
   RECENT_PREVIEWS_SETTING_ID,
+  SHOWN_SCHEME_MAX,
   blockEditOf,
   channels,
 } from '@monstera/contract';
@@ -613,13 +614,15 @@ describe('document.openLink (ADR-0167)', () => {
       ['javascript:alert(1)', 'javascript:'],
       ['file:///C:/Windows/System32/calc.exe', 'file:'],
       [' https://example.org', null],
+      // A SCHEME LONGER THAN THE ANSWER'S BOUND is said cut to it, so the answer still parses as the channel's.
+      [`${'x'.repeat(SHOWN_SCHEME_MAX + 10)}:payload`, 'x'.repeat(SHOWN_SCHEME_MAX)],
     ] as const) {
       const { commands } = linkCommands({ kind: 'address', uri });
       const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
-      expect(await handlers['document.openLink'](request)).toStrictEqual({
-        ok: true,
-        value: { kind: 'scheme-refused', scheme },
-      });
+      const answer = await handlers['document.openLink'](request);
+      expect(answer).toStrictEqual({ ok: true, value: { kind: 'scheme-refused', scheme } });
+      // PARSED HERE, because these handlers are called bare: the schema is what refuses a whole long scheme.
+      expect(answer.ok && channels['document.openLink'].result.safeParse(answer.value).success, uri).toBe(true);
       expect(linksOpened).toStrictEqual([]);
     }
     const { commands } = linkCommands({ kind: 'address', uri: 'https://example.org' });

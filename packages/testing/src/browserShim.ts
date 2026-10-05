@@ -33,7 +33,7 @@ import {
   channels,
   createClient,
   isFollowable,
-  schemeOf,
+  shownSchemeOf,
   wrapHandlers,
 } from '@monstera/contract';
 import {
@@ -2303,7 +2303,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (version !== current) return Promise.resolve(ok({ kind: 'stale' as const }));
       const link = pageLinks[page]?.[index];
       if (link?.kind !== 'external') return Promise.resolve(ok({ kind: 'no-such-link' as const }));
-      if (!isFollowable(link.uri)) return Promise.resolve(ok({ kind: 'scheme-refused' as const, scheme: schemeOf(link.uri) }));
+      if (!isFollowable(link.uri)) return Promise.resolve(ok({ kind: 'scheme-refused' as const, scheme: shownSchemeOf(link.uri) }));
       return Promise.resolve(ok({ kind: 'opened' as const }));
     },
 

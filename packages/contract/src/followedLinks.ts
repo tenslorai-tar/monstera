@@ -27,6 +27,19 @@ export function schemeOf(address: string): string | null {
   return found?.[1] === undefined ? null : `${found[1].toLowerCase()}:`;
 }
 
+/** The longest scheme a refusal says, in characters: RFC 3986 bounds no scheme, and a document can name one of any length. */
+export const SHOWN_SCHEME_MAX = 64;
+
+/**
+ * An address's scheme as a refusal SAYS it: {@link schemeOf}, cut to {@link SHOWN_SCHEME_MAX}. The one spelling for
+ * every side that puts a scheme in a message — `main`'s answer and the renderer's dialog both carry it under a schema
+ * bounded by the same constant, so a document naming a longer one is told it is refused rather than failing the parse.
+ * Never the input to a decision: {@link isFollowable} reads the whole scheme.
+ */
+export function shownSchemeOf(address: string): string | null {
+  return schemeOf(address)?.slice(0, SHOWN_SCHEME_MAX) ?? null;
+}
+
 /** Whether an address may be opened in the person's browser or mail program. */
 export function isFollowable(address: string): boolean {
   const scheme = schemeOf(address);

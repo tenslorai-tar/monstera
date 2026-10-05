@@ -41,7 +41,7 @@ import {
   type StorePage,
   type WindowEditAction,
   isFollowable,
-  schemeOf,
+  shownSchemeOf,
   withTargetVersion,
 } from '@monstera/contract';
 import {
@@ -1848,7 +1848,7 @@ function openLinkHandler(
       const read = await commands.linkAddress(docId, page, index, version);
       if (read.kind !== 'address') return ok({ kind: read.kind });
       if (!isFollowable(read.uri)) {
-        return ok({ kind: 'scheme-refused', scheme: schemeOf(read.uri)?.slice(0, LINK_SCHEME_SHOWN) ?? null });
+        return ok({ kind: 'scheme-refused', scheme: shownSchemeOf(read.uri) });
       }
       return ok({ kind: (await openLink(read.uri)) ? 'opened' : 'not-opened' });
     } catch (thrown) {
@@ -1859,9 +1859,6 @@ function openLinkHandler(
     }
   };
 }
-
-/** The most of a refused scheme the answer carries: the contract's own bound on it. */
-const LINK_SCHEME_SHOWN = 64;
 
 /** The clipboard's paste — main mints the import — mapped as the import is. */
 function pasteAnnotationsHandler(commands: DocumentCommands): ContractHandlers['document.pasteAnnotations'] {

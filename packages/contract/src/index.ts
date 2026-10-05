@@ -172,11 +172,12 @@ export {
   FORM_FIELDS_PART,
   LAYERS_PART,
   PAGE_LINKS_PART,
+  MAX_LINK_URI_LENGTH,
   PAGE_OBJECTS_PART,
   TEXT_BLOCKS_PART,
 } from './channels.js';
 export { acceptAnswer, createClient, wrapHandler, wrapHandlers } from './boundary.js';
-export { FOLLOWED_SCHEMES, isFollowable, schemeOf } from './followedLinks.js';
+export { FOLLOWED_SCHEMES, SHOWN_SCHEME_MAX, isFollowable, schemeOf, shownSchemeOf } from './followedLinks.js';
 export { BRIDGE_KEY, type MonsteraBridge, PRELOAD_CHANNEL_IDS, type PreloadChannelId } from './bridge.js';
 export {
   AI_ANSWER_REFUSALS,
