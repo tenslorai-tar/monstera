@@ -32,6 +32,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { SHIM_PASSWORD, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
@@ -261,6 +262,8 @@ if (shim === null) {
 } else {
   const require = createRequire(join(ROOT, 'packages/kernel/package.json'));
   const pdfLib = require('@cantoo/pdf-lib');
+  // BEFORE THE IMPORTS: a build older than its source would be measured and reported under this build's name.
+  refuseStaleBuild(ROOT, SHIM_PASSWORD, 2);
   const raw = await import('../../packages/kernel/dist/mupdfRaw.js');
   const writer = await import('../../packages/kernel/dist/mupdfWriter.js');
   await run(

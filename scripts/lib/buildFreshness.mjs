@@ -262,6 +262,17 @@ export const HOST_FILE_ANSWERS_LIVE = [['apps/desktop/src', 'apps/desktop/dist/e
 export const INLINE_IMAGES = [...PDFIUM_ADAPTER, ...NATIVE_ENGINE];
 
 /**
+ * What `shimPassword.proof.mjs` runs: the shim's authenticated open through the built native binding, and the writer
+ * that builds and serialises its encrypted fixtures (ADR-0171).
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const SHIM_PASSWORD = [
+  ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
+  ...NATIVE_ENGINE,
+];
+
+/**
  * What `rtlText.proof.mjs` draws through: the annotation writer, the executor and the writer that serialises, over the
  * native engine whose layout engine does the ordering and shaping (ADR-0128).
  *
@@ -448,6 +459,7 @@ export const ARTEFACT_EDGES = {
   // ADR-0126's proof, which reads two built engines. It called the guard from its first commit and had no entry here
   // until `proof:buildfreshness` named it — the anchor working, one range late.
   'proof:inlineimages': INLINE_IMAGES,
+  'proof:shimpassword': SHIM_PASSWORD,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,
   // HEBREW AND ARABIC IN TEXT MARKS, read back by pdf.js after MuPDF's bake (ADR-0128).
