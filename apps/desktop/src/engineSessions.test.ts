@@ -268,6 +268,48 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     expect(engine.held).toBe(0);
   });
 
+  describe('whether a document’s file opens only with a password (CR-DOC-11)', () => {
+    it('is no for an open document, yes while locked, yes once a password unlocked it', () => {
+      const engine = new EngineSessions();
+      engine.begin(first);
+      expect(engine.opensOnlyWithPassword(first)).toBe(false);
+      engine.markLocked(first, 'needs-password');
+      expect(engine.opensOnlyWithPassword(first)).toBe(true);
+      // UNLOCKED, and still yes: the file is the protected one, whatever the session now holds.
+      engine.hold(first, someSessions('a'));
+      expect(engine.locked(first)).toBeUndefined();
+      expect(engine.opensOnlyWithPassword(first)).toBe(true);
+    });
+
+    it('follows what each removal’s save renewal found, so removing a password makes it no again', async () => {
+      const LOCKED = new Error('the saved file opens only with a password');
+      const lockedBy = (thrown: unknown): boolean => thrown === LOCKED;
+      const engine = new EngineSessions();
+      engine.hold(first, someSessions('a'));
+
+      // THE ANSWER AND THE RECORD ARE ONE STEP: a renewal the host refused on a password says so and is remembered.
+      expect(await engine.renew(first, () => Promise.reject(LOCKED), lockedBy)).toBe('locked');
+      expect(engine.opensOnlyWithPassword(first)).toBe(true);
+      expect(engine.sessions(first)).toStrictEqual(someSessions('a'));
+
+      expect(await engine.renew(first, () => Promise.resolve(someSessions('b')), lockedBy)).toBe('renewed');
+      expect(engine.opensOnlyWithPassword(first)).toBe(false);
+
+      // AND IT IS THIS DOCUMENT'S: another one's save says nothing about it.
+      engine.hold(second, someSessions('c'));
+      await engine.renew(second, () => Promise.reject(LOCKED), lockedBy);
+      expect(engine.opensOnlyWithPassword(first)).toBe(false);
+    });
+
+    it('CONTROL: any other refusal of the renewal is thrown, and records nothing', async () => {
+      const engine = new EngineSessions();
+      engine.hold(first, someSessions('a'));
+      const broken = new Error('the host is gone');
+      await expect(engine.renew(first, () => Promise.reject(broken), () => false)).rejects.toBe(broken);
+      expect(engine.opensOnlyWithPassword(first)).toBe(false);
+    });
+  });
+
   describe('renew opens before it releases (ADR-0164)', () => {
     it('holds the new sessions, and the old release runs once the new open registers its own', async () => {
       const engine = new EngineSessions();
@@ -284,7 +326,7 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
         expect(ran).toStrictEqual([]);
         await engine.holdRelease(id, () => Promise.resolve());
         return someSessions('b');
-      });
+      }, () => false);
 
       expect(engine.sessions(first)).toStrictEqual(someSessions('b'));
       expect(ran).toStrictEqual(['old']);
@@ -300,7 +342,9 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
         return Promise.resolve();
       });
 
-      await expect(engine.renew(first, () => Promise.reject(new Error('needs a password')))).rejects.toThrow('needs a password');
+      // ANSWERED `locked` where the caller names the refusal, and the old sessions stay either way.
+      const refusal = new Error('needs a password');
+      expect(await engine.renew(first, () => Promise.reject(refusal), (thrown) => thrown === refusal)).toBe('locked');
 
       expect(engine.sessions(first)).toStrictEqual(someSessions('a'));
       expect(ran).toStrictEqual([]);

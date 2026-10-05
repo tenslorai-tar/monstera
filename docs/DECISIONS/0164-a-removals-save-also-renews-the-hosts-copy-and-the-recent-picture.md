@@ -81,3 +81,24 @@ document without its password, the very thing the person asked nobody may read, 
 closes. It sits in the host's granted directory, deleted at close and swept at the next start. Reaching it needs the
 session rebuilt from the encrypted file with the password, which this build does not keep (ADR-0055), or from bytes
 the person has not saved; both are the owner's to weigh, and the report puts it to them.
+
+## Correction, 2026-10-05: a file that opens only with a password keeps no Recent picture
+
+The owner ruled on CR-DOC-11 the same day: a protected document leaves no unprotected copy on disk, even until close.
+The Recent picture is one, and it outlives the close: a JPEG of page 1, kept beside the list until the entry leaves it.
+Decision 3 retook it after every removal's save, so a save that protected the document drew the page it had just
+protected, from the session still holding it, and an open of a file protected since its picture was taken left that
+picture in place, since a capture that cannot draw keeps the one it had.
+
+So **a file that opens only with a password keeps no picture.** `EngineSessions.opensOnlyWithPassword` is the one
+answer: locked now, unlocked by a password, or the file the last removal's save wrote opens only with one. `renew`
+answers `locked` and records it in the same step, so the save and the later question cannot disagree; removing a
+password makes it false again. `firstPagePicture` answers `none` for such a document before it asks for a session, and
+the picture store deletes the kept picture on `none`, where a picture that failed to draw is still left as it was.
+
+**What this does not reach, and is the owner's, is the rest of CR-DOC-11** (measured and mapped 2026-10-05): the host's
+snapshot above; for a document over main's memory ceiling, the canonical image file `image-0.pdf`; and the protect
+command's own undo checkpoint, which a removal's save does not delete, because the protection draws nothing, so the
+canonical image never includes it and the log never sheds an entry past the image's base (ADR-0115). Each is the
+document without its password until close, and each is closed only by the canonical image and the sessions becoming
+the encrypted file, which every reader of it, the renderer included, would then need the password for.

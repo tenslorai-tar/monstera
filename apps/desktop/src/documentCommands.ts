@@ -324,6 +324,11 @@ export interface EngineSessionSource {
    * somebody recalled (B6).
    */
   readonly poisoned: (docId: DocId) => number | undefined;
+  /**
+   * Whether this document's file opens only with a password — the supervisor's one answer, read before anything is
+   * kept of the document that anyone could open (`EngineSessions.opensOnlyWithPassword`).
+   */
+  readonly opensOnlyWithPassword: (docId: DocId) => boolean;
 }
 
 /**
@@ -2824,8 +2829,11 @@ export class DocumentCommands {
    *
    * @throws the set `askPicture` throws when the document has no usable session
    */
-  async firstPagePicture(docId: DocId): Promise<Uint8Array> {
-    const { value } = await this.#documents.run(docId, async () => {
+  async firstPagePicture(docId: DocId): Promise<Uint8Array | 'none'> {
+    const { value } = await this.#documents.run(docId, async (): Promise<Uint8Array | 'none'> => {
+      // A FILE THAT OPENS ONLY WITH A PASSWORD KEEPS NO PICTURE of its page, which would be a copy anyone can open of
+      // what the password protects (the owner, CR-DOC-11). Asked before the session, since a locked document has none.
+      if (this.#engine.opensOnlyWithPassword(docId)) return 'none';
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 

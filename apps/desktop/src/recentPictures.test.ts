@@ -26,7 +26,7 @@ function pictures(options: {
   readonly files?: ReturnType<typeof folder>;
   readonly enabled?: () => boolean;
   readonly listed?: () => boolean;
-  readonly picture?: () => Promise<Uint8Array>;
+  readonly picture?: () => Promise<Uint8Array | 'none'>;
 }) {
   const files = options.files ?? folder();
   const reported: string[] = [];
@@ -196,6 +196,32 @@ describe('recent pictures (ADR-0100)', () => {
 
   describe('a removal’s save retakes the picture (ADR-0164)', () => {
     const BEFORE = Uint8Array.of(0xff, 0xd8, 0x01);
+
+    it('a file that opens only with a password keeps NO picture: a capture deletes the one it had (CR-DOC-11)', async () => {
+      // THE PICTURE OF A PAGE A PASSWORD NOW PROTECTS, taken while the file was open to anyone: a capture that kept it,
+      // as a failed one does (the control below), would go on showing the page beside a file nobody can open.
+      const { store, files, reported } = pictures({
+        files: folder({ [pictureName(PATH)]: BEFORE }),
+        picture: () => Promise.resolve('none'),
+      });
+
+      await store.capture(DOC, PATH);
+
+      expect(files.held.has(pictureName(PATH))).toBe(false);
+      expect(store.read(PATH)).toBeNull();
+      expect(reported).toStrictEqual([]);
+    });
+
+    it('and a retake after a save that protected it draws nothing in its place', async () => {
+      const { store, files } = pictures({
+        files: folder({ [pictureName(PATH)]: BEFORE }),
+        picture: () => Promise.resolve('none'),
+      });
+
+      await store.retake(DOC, PATH);
+
+      expect(files.held.has(pictureName(PATH))).toBe(false);
+    });
 
     it('replaces the picture of the page as it was with one of the page as saved', async () => {
       const { store, files } = pictures({ files: folder({ [pictureName(PATH)]: BEFORE }) });

@@ -321,6 +321,39 @@ describe('the composition root, with an engine host platform', () => {
     expect([...(held.get(pictureName(path)) ?? [])]).toStrictEqual([...PICTURE]);
   });
 
+  it('an open the host answers NEEDS A PASSWORD deletes the picture it had and draws none (CR-DOC-11)', async () => {
+    // THE PICTURE OF A FILE SINCE PROTECTED, here or by another program: the open's capture is the one chance to take
+    // it back, and a capture that failed for want of a session kept it. Through the root, so the supervisor's answer
+    // reaches `firstPagePicture` and the picture store by the joins the application uses.
+    const peer = picturingEngine();
+    const locked: FakePeer = (channel, params) =>
+      channel === 'engine/open' ? { ok: false, error: { code: 'needs-password' } } : peer.answer(channel, params);
+    const spy = platformAnswering(locked);
+    const path = aDocument('protected.pdf');
+    const held = new Map<string, Uint8Array>([[pictureName(path), PICTURE]]);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(path),
+      enginePlatform: spy.platform,
+      recentPictureFiles: {
+        write: (name, bytes) => held.set(name, bytes),
+        read: (name) => (held.has(name) ? new Uint8Array(held.get(name) ?? []) : null),
+        remove: (name) => held.delete(name),
+        names: () => [...held.keys()],
+      },
+    });
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+
+    await vi.waitFor(() => {
+      expect(held.size).toBe(0);
+    });
+    // NOTHING WAS DRAWN: the rule is asked before the session, and a locked document has none to draw from.
+    expect(peer.asked).toStrictEqual([]);
+  });
+
   it('undoes through the host, and answers nothing-to-undo when the log is spent', async () => {
     const spy = platformAnswering(ENGINE);
     const { handlers } = createShellDependencies({

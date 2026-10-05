@@ -1417,6 +1417,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         bus: bus(),
         engine: {
           poisoned: () => undefined,
+          opensOnlyWithPassword: () => false,
           sessions: () => {
             const cause = new Error(`EPERM: operation not permitted, stat '${SECRET}'`);
             cause.stack = `Error: EPERM: operation not permitted, stat '${SECRET}'\n    at readFileIdentity (${SECRET}:1:1)`;

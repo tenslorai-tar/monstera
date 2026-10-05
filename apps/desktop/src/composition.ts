@@ -1232,15 +1232,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       engine.recycle(docId, (id) => engineHost.restoreSessions(id, write)),
     // A REMOVAL'S SAVE OPENS THE SESSIONS AGAIN from the file it wrote (ADR-0164), opening before releasing; a file that
     // opens only with a password is the one refusal it expects, and the document keeps the sessions it had.
-    renew: async (docId, write) => {
-      try {
-        await engine.renew(docId, (id) => engineHost.restoreSessions(id, write));
-        return 'renewed';
-      } catch (thrown) {
-        if (thrown instanceof EngineDocumentLocked) return 'locked';
-        throw thrown;
-      }
-    },
+    renew: (docId, write) =>
+      engine.renew(
+        docId,
+        (id) => engineHost.restoreSessions(id, write),
+        (thrown) => thrown instanceof EngineDocumentLocked,
+      ),
     // BUILT BELOW, from this service's own `firstPagePicture`; a save, which is what calls this, cannot run before the
     // graph exists.
     recentPicture: { retake: (docId, path) => recentPictures.retake(docId, path) },

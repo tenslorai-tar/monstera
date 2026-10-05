@@ -68,8 +68,11 @@ export function pictureName(path: string): string {
  */
 export function createRecentPictures(deps: {
   readonly files: PictureFiles;
-  /** Page 1 of an open document as a JPEG: `DocumentCommands.firstPagePicture`. */
-  readonly picture: (docId: DocId) => Promise<Uint8Array>;
+  /**
+   * Page 1 of an open document as a JPEG: `DocumentCommands.firstPagePicture`. `none` for a document that keeps no
+   * picture — a file that opens only with a password — whose kept picture is then deleted.
+   */
+  readonly picture: (docId: DocId) => Promise<Uint8Array | 'none'>;
   /** Whether the Privacy setting allows pictures, read from the settings file each time. */
   readonly enabled: () => boolean;
   /** Whether a path is on the recent list now. */
@@ -98,7 +101,7 @@ export function createRecentPictures(deps: {
     },
     capture: async (docId, path) => {
       if (!deps.enabled()) return;
-      let jpeg: Uint8Array;
+      let jpeg: Uint8Array | 'none';
       try {
         jpeg = await deps.picture(docId);
       } catch (cause) {
@@ -106,6 +109,16 @@ export function createRecentPictures(deps: {
         // draws nothing. The card shows the placeholder, which is what a failed picture means to a person,
         // and the log says which of those it was.
         deps.notKept('failed', errorCode(cause));
+        return;
+      }
+      // A DOCUMENT THAT KEEPS NO PICTURE loses the one it had, where a failed picture keeps it: a file protected since its
+      // picture was taken, here or by another program, must not go on showing its page (CR-DOC-11).
+      if (jpeg === 'none') {
+        try {
+          deps.files.remove(pictureName(path));
+        } catch (cause) {
+          deps.notKept('failed', errorCode(cause));
+        }
         return;
       }
       if (jpeg.length > MAX_RECENT_PREVIEW_BYTES) {

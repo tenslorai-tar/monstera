@@ -651,6 +651,12 @@ interface DocumentEntry {
    * over.
    */
   unlockedByPassword: boolean;
+  /**
+   * Whether the file this document last saved opens only with a password: a removal's save renews the sessions from
+   * the file it wrote, and the renewal answers `locked` for exactly that file (ADR-0164). Set by every renewal, either
+   * way, so removing a password makes it false again.
+   */
+  savedLocked: boolean;
 }
 
 /**
@@ -728,12 +734,29 @@ export class EngineSessions implements EngineSessionSource {
       release: null,
       locked: null,
       unlockedByPassword: false,
+      savedLocked: false,
     });
   }
 
   /** Why this document has no session, when the reason is a password. */
   readonly locked = (docId: DocId): LockedReason | undefined =>
     this.#entries.get(docId)?.locked ?? undefined;
+
+  /**
+   * Whether this document's file opens only with a password: it is locked now, a password unlocked it, or the file it
+   * last saved needs one. THE ONE ANSWER to that question, so a reader that keeps nothing of a protected document — the
+   * Recent picture (ADR-0164's 2026-10-05 correction) — cannot ask it a second way.
+   */
+  readonly opensOnlyWithPassword = (docId: DocId): boolean => {
+    const entry = this.#entries.get(docId);
+    return entry !== undefined && (entry.locked !== null || entry.unlockedByPassword || entry.savedLocked);
+  };
+
+  /** Records what a removal's save renewal found: whether the file it wrote opens only with a password. {@link renew}'s. */
+  #savedFileLocked(docId: DocId, locked: boolean): void {
+    const entry = this.#entries.get(docId);
+    if (entry !== undefined) entry.savedLocked = locked;
+  }
 
   /**
    * Records that the host answered an open with a password refusal.
@@ -775,6 +798,7 @@ export class EngineSessions implements EngineSessionSource {
         release: null,
         locked: null,
         unlockedByPassword: false,
+        savedLocked: false,
       });
       return;
     }
@@ -855,14 +879,32 @@ export class EngineSessions implements EngineSessionSource {
    * once its session exists, runs it. So an open that fails — a saved file that opens only with a password — leaves
    * the old session and its release exactly as they were, and the failure is the caller's to classify.
    *
+   * **It answers whether the file opens only with a password, and records it in the same step**, so the answer the
+   * save acts on and the one {@link opensOnlyWithPassword} later gives cannot disagree. The refusal is named by the
+   * caller (`lockedBy`), since this module takes no value from the kernel's barrel (the header's reason).
+   *
    * @param docId the open document
    * @param reopen builds its sessions again, inside its lane
+   * @param lockedBy whether a thrown value is the host's refusal of a file that opens only with a password
    */
-  async renew(docId: DocId, reopen: (docId: DocId) => Promise<DocumentSessions>): Promise<void> {
-    if (!this.#entries.has(docId)) return;
-    const sessions = await reopen(docId);
+  async renew(
+    docId: DocId,
+    reopen: (docId: DocId) => Promise<DocumentSessions>,
+    lockedBy: (thrown: unknown) => boolean,
+  ): Promise<'renewed' | 'locked'> {
+    if (!this.#entries.has(docId)) return 'renewed';
+    let sessions: DocumentSessions;
+    try {
+      sessions = await reopen(docId);
+    } catch (thrown) {
+      if (!lockedBy(thrown)) throw thrown;
+      this.#savedFileLocked(docId, true);
+      return 'locked';
+    }
     const entry = this.#entries.get(docId);
     if (entry !== undefined) entry.sessions = sessions;
+    this.#savedFileLocked(docId, false);
+    return 'renewed';
   }
 
   /**
