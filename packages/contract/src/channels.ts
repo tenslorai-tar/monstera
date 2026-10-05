@@ -85,6 +85,8 @@ import {
   docVersionSchema,
   fileHandleSchema,
   COMPOSE_REFUSALS,
+  MAX_BOXED_CHARACTERS,
+  boxedCharacterSchema,
   OPTIMIZE_SETTING_NAMES,
   URL_FETCH_REFUSALS,
   FILE_ACCESS,
@@ -1310,6 +1312,25 @@ const composedImportOutcomeSchema = z.discriminatedUnion('kind', [
 
 /** How many blocks of a workbook an import NAMES as not converted; past it, `more` counts the rest. */
 export const MAX_OFFICE_MISSING_BLOCKS = 64;
+
+/**
+ * What an import of TEXT answers — Markdown and CSV: {@link composedImportOutcomeSchema}'s members and the one only a
+ * composition of text can have. An image import cannot box a character, so its answer cannot say it did.
+ */
+const textImportOutcomeSchema = z.discriminatedUnion('kind', [
+  ...composedImportOutcomeSchema.options,
+  /**
+   * Opened, and some characters are drawn as the missing-character box because no face carries them — NAMED, never
+   * left for the person to find (the owner's answer to Q4). Every other character is drawn, and a box copies as the
+   * character it stands for.
+   */
+  openedSchema.extend({
+    kind: z.literal('opened-with-boxes'),
+    boxed: z.array(boxedCharacterSchema).min(1).max(MAX_BOXED_CHARACTERS),
+    /** Places past the named ones, COUNTED, `opened-incomplete`'s rule. */
+    more: z.number().int().min(0),
+  }),
+]);
 
 /**
  * What an Office import answers
@@ -3152,12 +3173,12 @@ export const channels = {
    *
    * ## Every open outcome, and the import's own beside them
    *
-   * {@link composedImportOutcomeSchema}, shared with `document.newFromCsv`.
+   * {@link textImportOutcomeSchema}, shared with `document.newFromCsv`.
    */
   'document.newFromMarkdown': channel(
     'Composes a Markdown file the user picks as a new PDF, saves it where they choose, and opens it.',
     z.object({}),
-    composedImportOutcomeSchema,
+    textImportOutcomeSchema,
     ['engine-unavailable'],
   ),
 
@@ -3172,7 +3193,7 @@ export const channels = {
   'document.newFromCsv': channel(
     'Sets a CSV file the user picks as a table in a new PDF, saves it where they choose, and opens it.',
     z.object({}),
-    composedImportOutcomeSchema,
+    textImportOutcomeSchema,
     ['engine-unavailable'],
   ),
 
@@ -3255,6 +3276,9 @@ export const channels = {
           byteLength: z.number().int().nonnegative(),
           name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
         }),
+        /** Every character drawn as the box, `opened-with-boxes`' list, EMPTY where none is. */
+        boxed: z.array(boxedCharacterSchema).max(MAX_BOXED_CHARACTERS),
+        more: z.number().int().min(0),
       }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),

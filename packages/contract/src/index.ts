@@ -525,6 +525,10 @@ export {
   type DocusignRefusalKind,
   COMPOSE_REFUSALS,
   type ComposeRefusal,
+  // How many places of a boxed character a text import names, and the shape of one (ADR-0172).
+  MAX_BOXED_CHARACTERS,
+  boxedCharacterSchema,
+  type BoxedCharacter,
   OPTIMIZE_SETTINGS,
   OPTIMIZE_SETTING_NAMES,
   type OptimizeSetting,

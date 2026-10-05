@@ -30,6 +30,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { electronRoot } from '../provision/electron.mjs';
+import { fontsDirectory } from '../provision/fonts.mjs';
 import { libreOfficeRoot } from '../provision/libreoffice.mjs';
 import { ghostscriptRoot } from '../provision/ghostscript.mjs';
 import { onlyofficeRoot } from '../provision/onlyoffice.mjs';
@@ -109,9 +110,14 @@ try {
       `what \`electronRoot\` already answers, and the two would drift on the next bump.`,
   );
 
+  // THE RESOLVER'S OWN ANSWER, not a spelled layout: this read `…/pdfium/<version>/bin` until the library became
+  // platform-keyed (2026-10-05, Linux's is under `lib/`), and the spelling failed on a Linux checkout while the grant
+  // was right — measured that day by hand, since CI runs this proof on the Windows containment job alone, where `bin`
+  // is the answer. The version segment still has to be there, because that is what says the path was derived.
+  const pdfiumDirectory = dirname(pdfiumLibrary(root));
   check(
     'the SECOND engine’s library is in the set, and derived from its own resolver',
-    paths.some((path) => /[\\/]\.tools[\\/]pdfium[\\/][\d.]+[\\/]bin$/u.test(path)),
+    paths.includes(pdfiumDirectory) && /[\\/]\.tools[\\/]pdfium[\\/][\d.]+[\\/][^\\/]+$/u.test(pdfiumDirectory),
     `paths: ${JSON.stringify(paths)}. The PDFium host binds pdfium.dll at startup, before its ` +
       `first handler runs, so a token that cannot read it dies with no pipe to report on — ` +
       `SSSS-1's failure on the second engine. The version segment is what says the path came ` +
@@ -155,11 +161,14 @@ try {
       `write the runtime or the shim could rewrite what it next executes.`,
   );
 
+  // THE FONTS ARE DATA TOO (ADR-0172): HarfBuzz reads them and nothing executes them, so they are the second `R`.
+  const DATA = new Set([tessdataDirectory(root), fontsDirectory(root)]);
   check(
-    'execute is granted only to what the host EXECUTES, and the models are data',
-    set.every((entry) => entry.rights === (entry.path === tessdataDirectory(root) ? 'R' : 'RX')),
+    'execute is granted only to what the host EXECUTES, and the models and fonts are data',
+    set.every((entry) => entry.rights === (DATA.has(entry.path) ? 'R' : 'RX')),
     `rights: ${JSON.stringify(set.map((entry) => `${entry.rights} ${entry.path}`))}. Every other ` +
-      `entry is a program the host runs or a library it binds; a model is bytes Tesseract reads.`,
+      `entry is a program the host runs or a library it binds; a model is bytes Tesseract reads, and a font bytes ` +
+      `HarfBuzz reads.`,
   );
 
   // -------------------------------------------------------------------------
@@ -189,7 +198,7 @@ try {
   // removed the engine that loaded it; ONLYOFFICE's x2t tree is the sixth now (ADR-0120),
   // a converter like Poppler's.
   check(
-    'the entries whose absence is not a failure are exactly the six a host can run without',
+    'the entries whose absence is not a failure are exactly the seven a host can run without',
     set
       .filter((entry) => !entry.required)
       .map((entry) => entry.path)
@@ -202,6 +211,9 @@ try {
         popplerRoot(root),
         ghostscriptRoot(root),
         onlyofficeRoot(root),
+        // THE BUNDLED FONTS (ADR-0172), the seventh: data a host reads to set text, and a compose host started
+        // without them reports every text import as its own fault rather than dying before its first line.
+        fontsDirectory(root),
       ]
         .sort()
         .join('|'),

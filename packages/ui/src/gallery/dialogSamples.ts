@@ -743,6 +743,30 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       },
     },
   ],
+  'dialog.boxed-characters': [
+    {
+      state: 'opened',
+      props: {
+        boxed: [
+          { character: '中', line: 3, column: 8 },
+          { character: '文', line: 3, column: 9 },
+          { character: 'ก', line: 12, column: null },
+        ],
+        more: 0,
+      },
+    },
+    {
+      state: 'long',
+      props: {
+        boxed: Array.from({ length: 64 }, (_unused, at) => ({
+          character: String.fromCodePoint(0x4e00 + at),
+          line: 1_000 + at * 37,
+          column: at % 5 === 0 ? null : 10_000 + at,
+        })),
+        more: 1_250,
+      },
+    },
+  ],
   'dialog.open-from-url': [
     ...textForm('Address', 'https://example.com/reports/quarterly-report.pdf'),
     { state: 'refused', props: {}, steps: [type('Address', 'http://example.com/reports/quarterly-report.pdf')] },

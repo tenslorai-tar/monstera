@@ -1,12 +1,12 @@
+import type { ComposeFonts } from './composeFonts.js';
 import {
   BODY_LEADING,
   BODY_SIZE,
-  type Faces,
   MARGIN,
   type PageWriter,
-  type PlacedRuns,
+  type PlacedLine,
   type Run,
-  checked,
+  measureRuns,
   wrap,
 } from './composeLayout.js';
 
@@ -72,12 +72,10 @@ const WIDTH_RESOLUTION = 0.001;
 /** The space after each row, at body size. */
 const ROW_GAP = 2;
 
-/** One table row: whether it is a header, and each cell's runs. */
+/** One table row: whether it is a header, and each cell's runs, which carry the source line they came from. */
 export interface TableRow {
   readonly header: boolean;
   readonly cells: readonly (readonly Run[])[];
-  /** The one-based source line the row came from, for a refusal inside it. */
-  readonly sourceLine: number | null;
 }
 
 /** A column as measured at the cells' own sizes, without padding. */
@@ -109,30 +107,17 @@ export interface TableRoom {
 }
 
 /**
- * Measures every column, refusing a character the faces cannot draw on the row it is in.
- *
- * The refusal comes first because measuring a character the face cannot encode throws a message about glyphs nobody
- * can act on; `checked` is the one place that rule lives, and `wrap` asks it again when the cell is laid.
+ * Measures every column: its widest line and its widest unbreakable unit, by `composeLayout.ts`' `measureRuns`, which
+ * breaks where `wrap` does — so a unit planned whole is one `wrap` keeps whole.
  */
-export function measureColumns(rows: readonly TableRow[], columns: number): ColumnMeasure[] {
+export function measureColumns(rows: readonly TableRow[], columns: number, fonts: ComposeFonts): ColumnMeasure[] {
   const content = new Array<number>(columns).fill(0);
   const word = new Array<number>(columns).fill(0);
   for (const row of rows) {
     row.cells.forEach((cell, column) => {
-      let line = 0;
-      for (const run of cell) {
-        if (run.text === '\n') {
-          line = 0;
-          continue;
-        }
-        checked(run, row.sourceLine);
-        line += run.font.widthOfTextAtSize(run.text, run.size);
-        content[column] = Math.max(content[column] ?? 0, line);
-        for (const piece of run.text.split(' ')) {
-          if (piece === '') continue;
-          word[column] = Math.max(word[column] ?? 0, run.font.widthOfTextAtSize(piece, run.size));
-        }
-      }
+      const measure = measureRuns(cell, fonts);
+      content[column] = Math.max(content[column] ?? 0, measure.content);
+      word[column] = Math.max(word[column] ?? 0, measure.word);
     });
   }
   return content.map((widest, column) => ({ content: widest, word: word[column] ?? 0 }));
@@ -257,7 +242,7 @@ function scaled(runs: readonly Run[], scale: number): Run[] {
  *
  * Nothing is drawn for a table with no columns. The composer decides which runs are bold; this sets them.
  */
-export function drawTable(rows: readonly TableRow[], writer: PageWriter, faces: Faces, indent: number): void {
+export function drawTable(rows: readonly TableRow[], writer: PageWriter, indent: number): void {
   const columns = rows.reduce((most, row) => Math.max(most, row.cells.length), 0);
   if (columns === 0) return;
   const turned = writer.turned;
@@ -265,7 +250,8 @@ export function drawTable(rows: readonly TableRow[], writer: PageWriter, faces: 
     upright: writer.base.width - 2 * MARGIN - indent,
     turned: turned.width - 2 * MARGIN - indent,
   };
-  const plan = planTable(measureColumns(rows, columns), room, faces.regular.widthOfTextAtSize('000', BODY_SIZE));
+  const { fonts } = writer;
+  const plan = planTable(measureColumns(rows, columns, fonts), room, fonts.width('000', 'regular', BODY_SIZE));
   if (plan.turned) writer.useSize(turned);
   plan.groups.forEach((group, at) => {
     // EACH GROUP ON ITS OWN PAGES, so the pages of one group can be laid beside the pages of the next.
@@ -292,13 +278,17 @@ function drawGroup(
   }, 0);
 
   /** A row's physical lines, every cell's line at one height drawn across together so the cells share baselines. */
-  const linesOf = (row: TableRow): PlacedRuns[][] => {
+  const linesOf = (row: TableRow): PlacedLine[][] => {
     const cells = group.map(({ column, width }) =>
-      wrap(scaled(row.cells[column] ?? [], scale), width - 2 * CELL_PADDING + WIDTH_RESOLUTION, leading, row.sourceLine),
+      wrap(scaled(row.cells[column] ?? [], scale), width - 2 * CELL_PADDING + WIDTH_RESOLUTION, leading, writer.fonts),
     );
     const height = cells.reduce((most, lines) => Math.max(most, lines.length), 1);
     return Array.from({ length: height }, (_, line) =>
-      cells.map((lines, at) => ({ offset: offsets[at] ?? 0, runs: lines[line]?.runs ?? [] })),
+      cells.map((lines, at) => ({
+        offset: offsets[at] ?? 0,
+        width: (group[at]?.width ?? 0) - 2 * CELL_PADDING,
+        line: lines[line] ?? null,
+      })),
     );
   };
   const heightOf = (lines: readonly unknown[]): number => lines.length * leading + gap;
@@ -308,7 +298,7 @@ function drawGroup(
   const headerHeight = total(headerRows.map(heightOf));
   const repeats = headerRows.length > 0 && headerHeight <= writer.textHeight / 3;
 
-  const drawRow = (lines: readonly PlacedRuns[][]): void => {
+  const drawRow = (lines: readonly PlacedLine[][]): void => {
     for (const line of lines) writer.row(line, leading, indent);
     writer.gap(gap);
   };

@@ -79,21 +79,27 @@ describe('the engine host programs', () => {
     ).toStrictEqual(['C:\\k\\pdfiumHostEntry.js', '\\\\.\\pipe\\q', 'C:\\t\\pdfium.dll']);
   });
 
-  it('gives a compose host with no shim no third argument at all', () => {
-    // THE CONTROL for the case above, and it is not the same assertion twice: a
+  it('gives a compose host with no shim and no fonts two EMPTY arguments, never a path', () => {
+    // THE CONTROL for the cases below, and it is not the same assertion twice: a
     // builder that appended a library path unconditionally would satisfy every
-    // engine expectation there, and the compose entry ignores what it does not
-    // read — so that host would start, work, and carry a filesystem path in
-    // its command line for anything on the machine to read out of the process
-    // list.
+    // engine expectation there, and that host would carry a filesystem path in its
+    // command line for anything on the machine to read out of the process list.
     expect(
-      hostCommandArguments({ kind: 'compose', shimPath: null }, 'composeHostEntry.js', 'pipe'),
-    ).toStrictEqual(['composeHostEntry.js', 'pipe']);
+      hostCommandArguments({ kind: 'compose', shimPath: null, fontsPath: null }, 'composeHostEntry.js', 'pipe'),
+    ).toStrictEqual(['composeHostEntry.js', 'pipe', '', '']);
   });
 
-  it('gives the compose host the shim’s path THIRD, where it read `argv[3]` (ADR-0087)', () => {
+  it('gives the compose host the shim’s path THIRD and the fonts’ FOURTH, where it reads them (ADR-0087, ADR-0172)', () => {
     expect(
-      hostCommandArguments({ kind: 'compose', shimPath: 'C:\\s\\monstera_mupdf.dll' }, 'composeHostEntry.js', 'pipe'),
-    ).toStrictEqual(['composeHostEntry.js', 'pipe', 'C:\\s\\monstera_mupdf.dll']);
+      hostCommandArguments(
+        { kind: 'compose', shimPath: 'C:\\s\\monstera_mupdf.dll', fontsPath: 'C:\\f' },
+        'composeHostEntry.js',
+        'pipe',
+      ),
+    ).toStrictEqual(['composeHostEntry.js', 'pipe', 'C:\\s\\monstera_mupdf.dll', 'C:\\f']);
+    // A MISSING SHIM DOES NOT MOVE THE FONTS: the entry reads `argv[4]` for them whatever came before.
+    expect(
+      hostCommandArguments({ kind: 'compose', shimPath: null, fontsPath: 'C:\\f' }, 'composeHostEntry.js', 'pipe'),
+    ).toStrictEqual(['composeHostEntry.js', 'pipe', '', 'C:\\f']);
   });
 });

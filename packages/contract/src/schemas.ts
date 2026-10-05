@@ -520,8 +520,8 @@ export type DocusignRefusalKind = (typeof DOCUSIGN_REFUSALS)[number];
 export const COMPOSE_REFUSALS = [
   /** The file's bytes are not UTF-8 text. */
   'not-utf8',
-  /** A character the standard fonts cannot draw; the refusal names its line. */
-  'unencodable-text',
+  // NO REFUSAL FOR A CHARACTER (ADR-0172): `unencodable-text` was the standard fonts' and is withdrawn. Every
+  // character is drawn, and one no face carries is a box the import NAMES after it opens.
   /** The source holds no text, so a composed document would be blank. */
   'nothing-to-draw',
   /**
@@ -541,6 +541,31 @@ export const COMPOSE_REFUSALS = [
    */
   'too-many-pixels',
 ] as const;
+
+/** How many places of a boxed character a text import NAMES; past it, `more` counts the rest. */
+export const MAX_BOXED_CHARACTERS = 64;
+
+/**
+ * A character a composed document draws as the missing-character box, and where the source holds it
+ * ([ADR-0172](../../../docs/DECISIONS/0172-one-font-resolver-open-fonts-bundled-by-fingerprint-subsets-made-in-the-host.md)
+ * Decision 8): one code point, its one-based line, and its one-based column in characters, `null` where the source
+ * does not hold it as itself.
+ *
+ * **Declared here and not in the kernel**, {@link COMPOSE_REFUSALS}' reason: the compose host's answer and the
+ * renderer's carry the same list.
+ */
+export const boxedCharacterSchema = z
+  .object({
+    // THE LENGTH AS WELL AS THE PATTERN: the payload bound is read from `.max()`, never from a regex, and one code
+    // point is at most two UTF-16 units.
+    character: z.string().max(2).regex(/^.$/su),
+    line: z.number().int().positive(),
+    column: z.number().int().positive().nullable(),
+  })
+  .strict();
+
+/** One of {@link boxedCharacterSchema}. */
+export type BoxedCharacter = z.infer<typeof boxedCharacterSchema>;
 
 /**
  * Whether an open document's own file could be written over now (cloud-4 7b) — the kernel's probe answers exactly these.

@@ -1,19 +1,19 @@
 import {
   type PDFDocument,
-  type PDFFont,
   type PDFName,
   type PDFOperator,
   type PDFPage,
-  StandardFonts,
   beginText,
   endText,
   moveText,
   rgb,
-  setFontAndSize,
-  showText,
 } from '@cantoo/pdf-lib';
 
-import type { ComposeRefusal } from '@monstera/contract';
+import { lineSpans, paragraphDirection, paragraphLevels } from './bidiOrder.js';
+import type { CidFont } from './cidFont.js';
+import type { ComposeFonts, FaceRole, SetPiece } from './composeFonts.js';
+import type { ComposePageSize } from './composeOutcome.js';
+import { breakOpportunities, graphemeBoundaries } from './lineBreaks.js';
 
 /**
  * Laying text out as new PDF pages, for every composer the compose host runs
@@ -21,40 +21,29 @@ import type { ComposeRefusal } from '@monstera/contract';
  *
  * ## One layout, and why it is its own module
  *
- * The Markdown composer was its only caller until a CSV table needed the same page
- * writer, the same wrapping, the same refusal of a character the faces cannot draw
- * and the same table rows. A second copy of any of those would be two opinions about
- * what a composed page looks like and when a character is refused (B3a), and they
- * would agree on every input except the one that differs. The table rows themselves
- * are `composeTable.ts`', which sets them through this writer.
+ * The Markdown composer and the CSV composer set the same pages, the same wrapping and the same table rows, and a
+ * second copy of any of those would be two opinions about what a composed page looks like (B3a). The table rows
+ * themselves are `composeTable.ts`', which sets them through this writer.
+ *
+ * ## Every character is drawn
+ *
+ * Text is set through `composeFonts.ts`, which gives every word a face that carries it and draws a character no face
+ * carries as the missing-character box
+ * ([ADR-0172](../../../docs/DECISIONS/0172-one-font-resolver-open-fonts-bundled-by-fingerprint-subsets-made-in-the-host.md)).
+ * So nothing here refuses text: the standard fonts' refusal of a character they could not encode is gone, and with
+ * it the only reason a person's file was turned away for what it said.
+ *
+ * ## A paragraph is ordered, then broken, then each line ordered again
+ *
+ * The Unicode Bidirectional Algorithm resolves a paragraph's levels once (`bidiOrder.ts`); the paragraph is broken
+ * into lines where `lineBreaks.ts` allows, measured in logical order; and each line is reordered for drawing on its
+ * own, which is the algorithm's own sequence. A paragraph whose first strong character is right to left is set right
+ * to left and aligned to the right edge of its room.
  *
  * ## It parses nothing
  *
  * Every function here takes text a composer has already read out of its source.
- * The parsers — `markdown-it`, the CSV reader — stay in their own modules, which
- * are the ones `proof:kernelload` keeps off the kernel's barrel.
  */
-
-/** A source a composer will not set, named so the channel can say which. */
-export class ComposeRefused extends Error {
-  constructor(
-    readonly reason: ComposeRefusal,
-    /** The one-based source line the refusal is about, where there is one. */
-    readonly line: number | null,
-    message: string,
-    /** The one-based position of the picked file the refusal is about, for a multi-file import. */
-    readonly item: number | null = null,
-  ) {
-    super(message);
-    this.name = 'ComposeRefused';
-  }
-}
-
-/** A page's size in points. */
-export interface ComposePageSize {
-  readonly width: number;
-  readonly height: number;
-}
 
 /**
  * The page's inset, in points — `pageToc.ts`' figure, so a composed page and a
@@ -66,43 +55,194 @@ export const MARGIN = 56;
 export const BODY_SIZE = 11;
 export const BODY_LEADING = 16;
 
-/** The standard faces a composer sets, by role. */
-export interface Faces {
-  readonly regular: PDFFont;
-  readonly bold: PDFFont;
-  readonly italic: PDFFont;
-  readonly boldItalic: PDFFont;
-  readonly mono: PDFFont;
-}
-
-/** One stretch of text in one face at one size. */
+/** One stretch of source text in one role at one size, and the source line it was read from. */
 export interface Run {
+  /** Its text; exactly `'\n'` for a hard break, which ends the line. */
   readonly text: string;
-  readonly font: PDFFont;
+  readonly role: FaceRole;
   readonly size: number;
+  /** The one-based source line of the block the text is in, which a box drawn in it is reported against. */
+  readonly line: number | null;
 }
 
-/** One laid-out line: its runs, left to right, and the leading it takes. */
+/** One laid-out line: its pieces in drawing order, how wide they are, and the leading it takes. */
 export interface Line {
-  readonly runs: readonly Run[];
+  readonly pieces: readonly SetPiece[];
+  readonly width: number;
   readonly leading: number;
+  /** Whether its paragraph is set right to left, and so aligned to the right of its room. */
+  readonly rtl: boolean;
 }
 
-/** The standard-14 faces, embedded once per composed document. */
-export async function embedFaces(document: PDFDocument): Promise<Faces> {
-  return {
-    regular: await document.embedFont(StandardFonts.Helvetica),
-    bold: await document.embedFont(StandardFonts.HelveticaBold),
-    italic: await document.embedFont(StandardFonts.HelveticaOblique),
-    boldItalic: await document.embedFont(StandardFonts.HelveticaBoldOblique),
-    mono: await document.embedFont(StandardFonts.Courier),
-  };
-}
-
-/** One cell of a table's physical line: where it starts past the line's indent, and its runs. */
-export interface PlacedRuns {
+/** One cell of a table's physical line: where it starts past the line's indent, how wide it is, and its line. */
+export interface PlacedLine {
   readonly offset: number;
-  readonly runs: readonly Run[];
+  readonly width: number;
+  readonly line: Line | null;
+}
+
+/** How a paragraph may be broken: between words, or — for a line of code — only where it must, between graphemes. */
+export type BreakRule = 'words' | 'graphemes';
+
+/** A paragraph's text, and which run each of its stretches came from. */
+interface Paragraph {
+  readonly text: string;
+  readonly parts: readonly { readonly start: number; readonly end: number; readonly run: Run }[];
+}
+
+/** Runs split into paragraphs at hard breaks, each its text and its runs' places in it. */
+function paragraphsOf(runs: readonly Run[]): Paragraph[] {
+  const paragraphs: Paragraph[] = [];
+  let text = '';
+  let parts: { start: number; end: number; run: Run }[] = [];
+  for (const run of runs) {
+    if (run.text === '\n') {
+      paragraphs.push({ text, parts });
+      text = '';
+      parts = [];
+      continue;
+    }
+    if (run.text === '') continue;
+    parts.push({ start: text.length, end: text.length + run.text.length, run });
+    text += run.text;
+  }
+  paragraphs.push({ text, parts });
+  return paragraphs;
+}
+
+/** The stretches of `[start, end)` that lie in one run each, in logical order. */
+function stretchesOf(paragraph: Paragraph, start: number, end: number): { start: number; end: number; run: Run }[] {
+  return paragraph.parts.flatMap((part) => {
+    const from = Math.max(start, part.start);
+    const to = Math.min(end, part.end);
+    return from < to ? [{ start: from, end: to, run: part.run }] : [];
+  });
+}
+
+/** The width of `[start, end)` of a paragraph, measured run by run. */
+function widthOf(paragraph: Paragraph, start: number, end: number, fonts: ComposeFonts): number {
+  return stretchesOf(paragraph, start, end).reduce(
+    (total, stretch) => total + fonts.width(paragraph.text.slice(stretch.start, stretch.end), stretch.run.role, stretch.run.size),
+    0,
+  );
+}
+
+/** Where `[start, end)` ends once its trailing whitespace is left off, which a line's end never draws. */
+function trimmedEnd(text: string, start: number, end: number): number {
+  let at = end;
+  while (at > start && /\s/u.test(text[at - 1] ?? '')) at -= 1;
+  return at;
+}
+
+/** The paragraph's breakable units, as `[start, end)` ranges in order. */
+function atomsOf(paragraph: Paragraph, rule: BreakRule): { start: number; end: number }[] {
+  const breaks = rule === 'words' ? breakOpportunities(paragraph.text) : graphemeBoundaries(paragraph.text);
+  const atoms: { start: number; end: number }[] = [];
+  let from = 0;
+  for (const at of [...breaks, paragraph.text.length]) {
+    if (at > from) atoms.push({ start: from, end: at });
+    from = at;
+  }
+  return atoms;
+}
+
+/**
+ * How wide a cell's text is as written and its widest unbreakable unit, which a table plans columns from. One rule
+ * with {@link wrap}: the units are the ones it breaks between.
+ */
+export function measureRuns(runs: readonly Run[], fonts: ComposeFonts): { readonly content: number; readonly word: number } {
+  let content = 0;
+  let word = 0;
+  for (const paragraph of paragraphsOf(runs)) {
+    content = Math.max(content, widthOf(paragraph, 0, trimmedEnd(paragraph.text, 0, paragraph.text.length), fonts));
+    for (const atom of atomsOf(paragraph, 'words')) {
+      word = Math.max(word, widthOf(paragraph, atom.start, trimmedEnd(paragraph.text, atom.start, atom.end), fonts));
+    }
+  }
+  return { content, word };
+}
+
+/**
+ * Lays runs into lines no wider than `room`.
+ *
+ * A run whose text is exactly `'\n'` ends the line. A unit wider than the room is broken between its graphemes rather
+ * than allowed to overhang the margin, because text past the page edge is text a reader of the composed document never
+ * sees.
+ */
+export function wrap(
+  runs: readonly Run[],
+  room: number,
+  leading: number,
+  fonts: ComposeFonts,
+  rule: BreakRule = 'words',
+): Line[] {
+  const lines: Line[] = [];
+  const paragraphs = paragraphsOf(runs);
+  paragraphs.forEach((paragraph, index) => {
+    const last = index === paragraphs.length - 1;
+    // AN EMPTY LAST PARAGRAPH IS NOTHING, and an empty earlier one is a blank line: a hard break ends a line, and the
+    // text after the last one is the only paragraph a break did not end.
+    if (paragraph.text === '') {
+      if (!last) lines.push({ pieces: [], width: 0, leading, rtl: false });
+      return;
+    }
+    const direction = paragraphDirection(paragraph.text);
+    const levels = paragraphLevels(paragraph.text, direction);
+    const ranges: { start: number; end: number }[] = [];
+    let start = 0;
+    let end = 0;
+    // THE WIDTH OF [start, end) AS A SUM OF ITS UNITS, each measured alone: a unit's text recurs ("the ", "and ") so
+    // its width is measured once, where measuring the growing line would shape every prefix of it again.
+    let used = 0;
+    const finish = (): void => {
+      ranges.push({ start, end });
+      start = end;
+      used = 0;
+    };
+    for (const atom of atomsOf(paragraph, rule)) {
+      const visible = widthOf(paragraph, atom.start, trimmedEnd(paragraph.text, atom.start, atom.end), fonts);
+      if (end > start && used + visible > room) finish();
+      if (used + visible <= room) {
+        end = atom.end;
+        used += widthOf(paragraph, atom.start, atom.end, fonts);
+        continue;
+      }
+      // ONE UNIT WIDER THAN THE WHOLE ROOM, alone on its line, broken between its graphemes where it must be.
+      const inside = graphemeBoundaries(paragraph.text.slice(atom.start, atom.end)).map((at) => atom.start + at);
+      for (const boundary of [...inside, atom.end]) {
+        if (end > start && widthOf(paragraph, start, trimmedEnd(paragraph.text, start, boundary), fonts) > room) finish();
+        end = boundary;
+      }
+      used = widthOf(paragraph, start, end, fonts);
+    }
+    if (end > start) finish();
+    for (const range of ranges) {
+      lines.push(setLine(paragraph, levels, range.start, trimmedEnd(paragraph.text, range.start, range.end), leading, direction === 'rtl', fonts));
+    }
+  });
+  return lines;
+}
+
+/** One line of a paragraph, ordered for drawing and set. */
+function setLine(
+  paragraph: Paragraph,
+  levels: ReturnType<typeof paragraphLevels>,
+  start: number,
+  end: number,
+  leading: number,
+  rtl: boolean,
+  fonts: ComposeFonts,
+): Line {
+  const pieces: SetPiece[] = [];
+  for (const span of lineSpans(levels, start, end)) {
+    const stretches = stretchesOf(paragraph, span.start, span.end);
+    if (span.rtl) stretches.reverse();
+    for (const stretch of stretches) {
+      const { role, size, line } = stretch.run;
+      pieces.push(...fonts.set(paragraph.text.slice(stretch.start, stretch.end), role, size, span.rtl, line));
+    }
+  }
+  return { pieces, width: pieces.reduce((total, piece) => total + piece.width, 0), leading, rtl };
 }
 
 /**
@@ -118,7 +258,7 @@ export class PageWriter {
 
   constructor(
     private readonly document: PDFDocument,
-    private readonly faces: Faces,
+    readonly fonts: ComposeFonts,
     /** The size the composer was asked for, which every page is set at unless a wide table turns it. */
     readonly base: ComposePageSize,
   ) {
@@ -163,18 +303,22 @@ export class PageWriter {
 
   /** Draws one line at an indent, answering the page and the baseline it used. */
   line(line: Line, indent: number): { readonly page: PDFPage; readonly baseline: number } {
-    return this.row([{ offset: 0, runs: line.runs }], line.leading, indent);
+    return this.row([{ offset: 0, width: this.room(indent), line }], line.leading, indent);
   }
 
   /**
    * Draws one physical line of cells, each from its own offset, sharing one baseline.
    *
    * The cells are placed by `Td`, which moves the text line's start by an exact amount whatever the glyphs before it
-   * advanced, so a column begins where it was measured to rather than at the next space past its edge.
+   * advanced, so a column begins where it was measured to rather than at the next space past its edge. A line set
+   * right to left starts where its width ends at the cell's right edge.
    */
-  row(cells: readonly PlacedRuns[], leading: number, indent: number): { readonly page: PDFPage; readonly baseline: number } {
+  row(cells: readonly PlacedLine[], leading: number, indent: number): { readonly page: PDFPage; readonly baseline: number } {
     const page = this.#pageWithRoomFor(leading);
-    const tallest = cells.reduce((most, cell) => Math.max(most, maxSize({ runs: cell.runs, leading })), 0);
+    const tallest = cells.reduce(
+      (most, cell) => Math.max(most, ...(cell.line?.pieces ?? []).map((piece) => piece.size)),
+      0,
+    );
     const baseline = this.#top - leading + (leading - tallest) / 2;
     // ONE TEXT OBJECT PER LINE, with the face switched inside it, never one
     // `drawText` per run. `drawText` writes a whole text object per call, and the
@@ -184,30 +328,30 @@ export class PageWriter {
     // 1,664 MiB for one MiB, because nothing adjacent shares a face. The same one
     // MiB of alternating runs drawn as one text object per line took 3.0 s, 395 MiB
     // and 188 KB against 40.7 s, 1,454 MiB and 22.8 MB. Inside a text object each
-    // `Tj` advances by its glyphs' widths, so the runs need no positions of their own.
+    // `TJ` advances by its glyphs' widths, so the pieces need no positions of their own.
     const operators: PDFOperator[] = [beginText(), moveText(MARGIN + indent, baseline)];
-    let face: PDFFont | null = null;
-    let size = 0;
+    const outlines: PDFOperator[] = [];
     let at = 0;
+    let drew = false;
     for (const cell of cells) {
-      if (!cell.runs.some((run) => run.text !== '')) continue;
-      if (cell.offset !== at) {
-        operators.push(moveText(cell.offset - at, 0));
-        at = cell.offset;
+      const line = cell.line;
+      if (line === null || line.pieces.length === 0) continue;
+      const start = cell.offset + (line.rtl ? Math.max(0, cell.width - line.width) : 0);
+      if (start !== at) {
+        operators.push(moveText(start - at, 0));
+        at = start;
       }
-      for (const run of cell.runs) {
-        if (run.text === '') continue;
-        if (run.font !== face || run.size !== size) {
-          operators.push(setFontAndSize(this.#fontKey(page, run.font), run.size));
-          face = run.font;
-          size = run.size;
-        }
-        operators.push(showText(run.font.encodeText(run.text)));
+      let pen = MARGIN + indent + start;
+      for (const piece of line.pieces) {
+        operators.push(...this.fonts.textOperators(piece, this.#fontKey(page, piece.font)));
+        outlines.push(...this.fonts.outlineOperators(piece, pen, baseline));
+        pen += piece.width;
+        drew = true;
       }
     }
     operators.push(endText());
-    if (face !== null) {
-      page.pushOperators(...operators);
+    if (drew) {
+      page.pushOperators(...operators, ...outlines);
       this.drewAnything = true;
     }
     this.#top -= leading;
@@ -215,13 +359,24 @@ export class PageWriter {
   }
 
   /**
-   * The resource name a face is drawn under on a page, registered once per page.
-   *
-   * `newFontDictionary` adds a fresh entry every time it is called — it is what
-   * `drawText` calls on every draw — so asking it per line would give each page a
-   * font resource per line. One per face per page is what a page needs.
+   * Draws `text` in `role` ending `gap` points before `x`, on `baseline`: a list item's marker in its hanging indent.
    */
-  #fontKey(page: PDFPage, font: PDFFont): PDFName {
+  marker(page: PDFPage, text: string, role: FaceRole, size: number, x: number, baseline: number, line: number | null): void {
+    const pieces = this.fonts.set(text, role, size, false, line);
+    const width = pieces.reduce((total, piece) => total + piece.width, 0);
+    const operators: PDFOperator[] = [beginText(), moveText(x - width, baseline)];
+    for (const piece of pieces) operators.push(...this.fonts.textOperators(piece, this.#fontKey(page, piece.font)));
+    operators.push(endText());
+    page.pushOperators(...operators);
+  }
+
+  /**
+   * The resource name a font is drawn under on a page, registered once per page.
+   *
+   * `newFontDictionary` adds a fresh entry every time it is called, so asking it per line would give each page a font
+   * resource per line. One per font per page is what a page needs.
+   */
+  #fontKey(page: PDFPage, font: CidFont): PDFName {
     let keys = this.#fontKeys.get(page);
     if (keys === undefined) {
       keys = new Map();
@@ -229,13 +384,13 @@ export class PageWriter {
     }
     let key = keys.get(font);
     if (key === undefined) {
-      key = page.node.newFontDictionary(font.name, font.ref);
+      key = page.node.newFontDictionary('F', font.ref);
       keys.set(font, key);
     }
     return key;
   }
 
-  readonly #fontKeys = new WeakMap<PDFPage, Map<PDFFont, PDFName>>();
+  readonly #fontKeys = new WeakMap<PDFPage, Map<CidFont, PDFName>>();
 
   /** Leaves vertical space, never carrying it onto a fresh page. */
   gap(points: number): void {
@@ -268,11 +423,6 @@ export class PageWriter {
     });
   }
 
-  /** The face every run of plain body text is set in. */
-  get body(): PDFFont {
-    return this.faces.regular;
-  }
-
   #onSize(): boolean {
     return this.#pageSize?.width === this.#size.width && this.#pageSize.height === this.#size.height;
   }
@@ -285,114 +435,4 @@ export class PageWriter {
     }
     return this.#page;
   }
-}
-
-/** The tallest type size on a line, which its baseline is set against. */
-function maxSize(line: Line): number {
-  return line.runs.reduce((largest, run) => Math.max(largest, run.size), 0);
-}
-
-/**
- * Refuses a run holding a character its face cannot encode, naming the source line.
- *
- * The face's own character set is the authority, as in `documentSign.ts`: pdf-lib
- * would otherwise throw a message about glyphs nobody can act on, or — for a code
- * point it maps — draw a different character.
- */
-export function checked(run: Run, sourceLine: number | null): Run {
-  const encodable = characterSet(run.font);
-  for (const character of run.text) {
-    if (!encodable.has(character.codePointAt(0) ?? -1)) {
-      const where = sourceLine === null ? '' : ` on line ${String(sourceLine)}`;
-      throw new ComposeRefused(
-        'unencodable-text',
-        sourceLine,
-        `the source${where} holds a character the standard fonts cannot draw`,
-      );
-    }
-  }
-  return run;
-}
-
-/** Each face's character set, built once per face rather than once per run. */
-const CHARACTER_SETS = new WeakMap<PDFFont, ReadonlySet<number>>();
-
-function characterSet(font: PDFFont): ReadonlySet<number> {
-  const known = CHARACTER_SETS.get(font);
-  if (known !== undefined) return known;
-  const built = new Set(font.getCharacterSet());
-  CHARACTER_SETS.set(font, built);
-  return built;
-}
-
-/**
- * Lays runs into lines no wider than `room`, breaking between words.
- *
- * A run whose text is exactly `'\n'` ends the line. A single word wider than the room
- * is broken by characters rather than allowed to overhang the margin, because text
- * past the page edge is text a reader of the composed document never sees.
- */
-export function wrap(
-  runs: readonly Run[],
-  room: number,
-  leading: number,
-  sourceLine: number | null,
-): Line[] {
-  const lines: Line[] = [];
-  let current: Run[] = [];
-  let used = 0;
-
-  const finish = (): void => {
-    lines.push({ runs: current, leading });
-    current = [];
-    used = 0;
-  };
-
-  for (const run of runs) {
-    if (run.text === '\n') {
-      finish();
-      continue;
-    }
-    checked(run, sourceLine);
-    // Words keep their trailing space, so a line breaks between words and the
-    // space that ended a line does not start the next one.
-    for (const word of run.text.split(/(?<= )/u)) {
-      const piece: Run = { text: word, font: run.font, size: run.size };
-      const width = run.font.widthOfTextAtSize(word, run.size);
-      if (used + width > room && used > 0) {
-        finish();
-        if (word.trim() === '') continue;
-      }
-      if (width > room) {
-        for (const part of breakByWidth(piece, room)) {
-          if (used > 0) finish();
-          current.push(part);
-          used = run.font.widthOfTextAtSize(part.text, run.size);
-        }
-        continue;
-      }
-      current.push(piece);
-      used += width;
-    }
-  }
-  if (current.length > 0) finish();
-  return lines;
-}
-
-/** Splits one run into pieces no wider than `room`, by characters. */
-export function breakByWidth(run: Run, room: number): Run[] {
-  if (run.font.widthOfTextAtSize(run.text, run.size) <= room) return [run];
-  const pieces: Run[] = [];
-  let piece = '';
-  for (const character of run.text) {
-    const next = piece + character;
-    if (piece !== '' && run.font.widthOfTextAtSize(next, run.size) > room) {
-      pieces.push({ ...run, text: piece });
-      piece = character;
-    } else {
-      piece = next;
-    }
-  }
-  if (piece !== '') pieces.push({ ...run, text: piece });
-  return pieces;
 }

@@ -36,6 +36,7 @@ import {
   type OptimizeSetting,
   MAX_TEXT_LAYER_LINE,
   type PageImageFormat,
+  type BoxedCharacter,
   type ComposeRefusal,
   type UrlFetchRefusal,
   type RequestedSignatureMark,
@@ -948,7 +949,13 @@ export interface ImportSource {
  * this type rather than a second one beside it.
  */
 export type ComposedImport =
-  | { readonly kind: 'composed'; readonly pdf: Uint8Array }
+  | {
+      readonly kind: 'composed';
+      readonly pdf: Uint8Array;
+      /** Every place a character is drawn as the missing-character box, the first named and the rest counted (ADR-0172). */
+      readonly boxed: readonly BoxedCharacter[];
+      readonly more: number;
+    }
   | {
       readonly kind: 'refused';
       readonly reason: ComposeRefusal;
@@ -979,7 +986,13 @@ export type ComposeImport =
  * what crosses is that open's outcome.
  */
 export type ComposeImportOutcome =
-  | { readonly kind: 'written'; readonly destination: string }
+  /** Written — and `boxed` names any characters drawn as the missing-character box; empty for none (ADR-0172). */
+  | {
+      readonly kind: 'written';
+      readonly destination: string;
+      readonly boxed: readonly BoxedCharacter[];
+      readonly more: number;
+    }
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'too-large'; readonly limitBytes: number }
   | { readonly kind: 'unreadable' }
@@ -5497,7 +5510,7 @@ export class DocumentCommands {
     if (composed.kind === 'refused') {
       return { kind: 'composition-refused', reason: composed.reason, line: composed.line, file: null };
     }
-    return this.#writeComposed(composed.pdf, picked);
+    return this.#writeComposed(composed, picked);
   }
 
   /**
@@ -5568,7 +5581,7 @@ export class DocumentCommands {
     }
 
     // `ordered` is not empty: an empty pick answered `cancelled` above.
-    return this.#writeComposed(composed.pdf, ordered[0] ?? 'images');
+    return this.#writeComposed(composed, ordered[0] ?? 'images');
   }
 
   /**
@@ -5594,7 +5607,7 @@ export class DocumentCommands {
     if (composed.kind === 'refused') {
       return { kind: 'composition-refused', reason: composed.reason, line: composed.line, file: null };
     }
-    return this.#writeComposed(composed.pdf, 'camera.jpg');
+    return this.#writeComposed(composed, 'camera.jpg');
   }
 
   /**
@@ -5708,7 +5721,10 @@ export class DocumentCommands {
    * One tail for every import, because where a composition is written and which
    * destinations are refused are one decision whatever the source was.
    */
-  async #writeComposed(pdf: Uint8Array, picked: string): Promise<ComposeImportOutcome> {
+  async #writeComposed(
+    { pdf, boxed, more }: Extract<ComposedImport, { readonly kind: 'composed' }>,
+    picked: string,
+  ): Promise<ComposeImportOutcome> {
     const destination = await this.#copy.pick(suggestedComposedName(picked));
     if (destination === null) return { kind: 'cancelled' };
 
@@ -5727,7 +5743,7 @@ export class DocumentCommands {
       return { kind: 'destination-contested', openElsewhere: written.others.length };
     }
     if (written.kind === 'write-failed') return { kind: 'write-failed' };
-    return { kind: 'written', destination };
+    return { kind: 'written', destination, boxed, more };
   }
 
   /**

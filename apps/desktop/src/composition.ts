@@ -3443,7 +3443,12 @@ function composeHostBinding(
           item: answer.value.item,
         };
       }
-      return { kind: 'composed', pdf: await takeComposed(area, into, answer.value.bytes) };
+      return {
+        kind: 'composed',
+        pdf: await takeComposed(area, into, answer.value.bytes),
+        boxed: answer.value.boxed,
+        more: answer.value.more,
+      };
     },
 
     // `compose`'s decisions over a list. Each picked file is read and written into the
@@ -3485,7 +3490,13 @@ function composeHostBinding(
             item: answer.value.item,
           };
         }
-        return { kind: 'composed', pdf: await takeComposed(area, into, answer.value.bytes) };
+        // THE HOST'S LIST AS IT SENT IT: an image draws no text, and the channel's answer says so with an empty one.
+        return {
+          kind: 'composed',
+          pdf: await takeComposed(area, into, answer.value.bytes),
+          boxed: answer.value.boxed,
+          more: answer.value.more,
+        };
       } finally {
         await Promise.all(
           written.map((name) => rm(join(area.snapshotDirectory, name), { force: true })),

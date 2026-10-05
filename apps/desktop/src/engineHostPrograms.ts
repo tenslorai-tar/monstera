@@ -70,6 +70,12 @@ export type EngineHostProgram =
        * host still composes imports, and Optimize answers `unavailable`.
        */
       readonly shimPath: string | null;
+      /**
+       * The absolute path to the bundled fonts' folder (ADR-0172), or `null` where the launcher passed none. The same
+       * resolver's answer. `null` is a host that cannot set text: a Markdown or CSV import is then a fault the host
+       * reports, never a person's file refused.
+       */
+      readonly fontsPath: string | null;
     }
   | {
       readonly kind: 'pdfium';
@@ -135,8 +141,7 @@ export function hostCommandArguments(
   pipeName: string,
 ): readonly string[] {
   if (program.kind === 'pdfium' || program.kind === 'mupdf') return [entryPath, pipeName, program.libraryPath];
-  // THE SHIM'S PATH SECOND, where there is one: `composeHostEntry.ts` reads `argv[3]` and binds it
-  // at its start, and reads its absence as *Optimize is unavailable*.
-  if (program.shimPath !== null) return [entryPath, pipeName, program.shimPath];
-  return [entryPath, pipeName];
+  // THE SHIM'S PATH SECOND and THE FONTS' THIRD, each EMPTY where there is none: `composeHostEntry.ts` reads `argv[3]`
+  // and `argv[4]` and takes an empty one as absent, so a position never shifts when the one before it is missing.
+  return [entryPath, pipeName, program.shimPath ?? '', program.fontsPath ?? ''];
 }

@@ -91,3 +91,23 @@ export function readCatalogue(folders: readonly FontFolder[]): Catalogue {
   }
   return { faces, unreadable };
 }
+
+/** Where a writer's faces come from: a catalogue, and how to read a face's file again. */
+export interface FaceSource {
+  readonly faces: readonly CatalogueFace[];
+  readonly read: (path: string) => Uint8Array;
+}
+
+/**
+ * The faces in `folders`, read now, and a reader for their files — what the compose host sets text from, and what
+ * its tests do, so the two cannot read a folder differently.
+ *
+ * @throws where the folders hold no face at all: a host started without its fonts, never a person's document
+ */
+export function faceSourceOf(folders: readonly FontFolder[]): FaceSource {
+  const { faces, unreadable } = readCatalogue(folders);
+  if (faces.length === 0) {
+    throw new Error(`no readable font face in ${folders.map((folder) => folder.path).join(', ')}: ${JSON.stringify(unreadable)}`);
+  }
+  return { faces, read: (path) => new Uint8Array(readFileSync(path)) };
+}

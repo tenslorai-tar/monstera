@@ -123,14 +123,11 @@ describe('newFromMarkdownCommand', () => {
     expect(calls).toStrictEqual([]);
   });
 
-  it('NAMES THE LINE of a character the fonts cannot draw', async () => {
+  it('OPENS the tab, THEN names every character drawn as a box — CONTROL: a document with none asks nothing', async () => {
+    const boxed = [{ character: '中', line: 12, column: 4 }];
+    const opened = { docId: COMPOSED, version: 1, byteLength: 2048, name: 'notes.pdf' };
     const { client } = recording({
-      'document.newFromMarkdown': ok({
-        kind: 'composition-refused',
-        reason: 'unencodable-text',
-        line: 12,
-        file: null,
-      }),
+      'document.newFromMarkdown': ok({ kind: 'opened-with-boxes', ...opened, boxed, more: 3 }),
     });
     const { calls, record, ask } = callbacks();
 
@@ -141,15 +138,21 @@ describe('newFromMarkdownCommand', () => {
       onAlreadyOpen: record('already-open'),
     }).run(CONTEXT);
 
+    // THE ORDER IS THE ASSERTION: the list is read beside the document, so the tab comes first.
     expect(calls).toStrictEqual([
-      {
-        name: 'ask',
-        value: {
-          id: 'dialog.markdown-import-problem',
-          props: { reason: 'unencodable-text', line: 12 },
-        },
-      },
+      { name: 'opened', value: opened },
+      { name: 'ask', value: { id: 'dialog.boxed-characters', props: { boxed, more: 3 } } },
     ]);
+
+    const plain = recording({ 'document.newFromMarkdown': ok({ kind: 'opened', ...opened }) });
+    const after = callbacks();
+    await newFromMarkdownCommand({
+      client: plain.client,
+      ask: after.ask,
+      onOpened: after.record('opened'),
+      onAlreadyOpen: after.record('already-open'),
+    }).run(CONTEXT);
+    expect(after.calls).toStrictEqual([{ name: 'opened', value: opened }]);
   });
 
   it('REPORTS an installation with no compose host as a refusal, not silence', async () => {
@@ -183,6 +186,8 @@ describe('appendMarkdownCommand', () => {
         byteLength: 8192,
         historyDropped: 0,
         opened: { docId: COMPOSED, version: asDocVersion(1), byteLength: 4096, name: 'notes.pdf' },
+        boxed: [],
+        more: 0,
       }),
     });
     const { calls, record, ask } = callbacks();
@@ -210,6 +215,35 @@ describe('appendMarkdownCommand', () => {
       },
       { name: 'activate', value: DOC },
     ]);
+  });
+
+  it('NAMES the characters the added pages draw as boxes, after the document is back in front', async () => {
+    const boxed = [{ character: '中', line: 2, column: null }];
+    const { client } = recording({
+      'document.appendMarkdown': ok({
+        kind: 'appended',
+        version: asDocVersion(2),
+        byteLength: 8192,
+        historyDropped: 0,
+        opened: { docId: COMPOSED, version: asDocVersion(1), byteLength: 4096, name: 'notes.pdf' },
+        boxed,
+        more: 0,
+      }),
+    });
+    const { calls, record, ask } = callbacks();
+
+    await appendMarkdownCommand({
+      client,
+      ask,
+      stamp: STAMP,
+      signatures,
+      onApplied: record('applied'),
+      onOpened: record('opened'),
+      onActivate: record('activate'),
+    }).run(CONTEXT);
+
+    expect(calls.map((call) => call.name)).toStrictEqual(['applied', 'opened', 'activate', 'ask']);
+    expect(calls.at(-1)).toStrictEqual({ name: 'ask', value: { id: 'dialog.boxed-characters', props: { boxed, more: 0 } } });
   });
 
   it('CONTROL: a file past the bound rebuilds nothing and carries the limit', async () => {
@@ -290,10 +324,15 @@ describe('newFromCsvCommand', () => {
     ]);
   });
 
-  it('NAMES THE LINE of a malformed record, and CONTROL: an undrawable character is its own reason', async () => {
-    // EACH REASON CARRYING A LINE asserted, because the mapping this command shares used to send every reason it did
-    // not name to `nothing-to-draw`. A table's width is no reason: `composeTable.ts` fits every table.
-    for (const reason of ['malformed-csv', 'unencodable-text'] as const) {
+  it('NAMES THE LINE of a malformed record, and CONTROL: an empty file is its own reason, with no line', async () => {
+    // EACH REASON asserted, because the mapping this command shares used to send every reason it did not name to
+    // `nothing-to-draw`. A table's width is no reason (`composeTable.ts` fits every table), and neither is a
+    // character (ADR-0172: one no font draws is a box).
+    const cases = [
+      { reason: 'malformed-csv', props: { reason: 'malformed-csv', line: 7 } },
+      { reason: 'nothing-to-draw', props: { reason: 'nothing-to-draw' } },
+    ] as const;
+    for (const { reason, props } of cases) {
       const { client } = recording({
         'document.newFromCsv': ok({ kind: 'composition-refused', reason, line: 7, file: null }),
       });
@@ -306,10 +345,20 @@ describe('newFromCsvCommand', () => {
         onAlreadyOpen: record('already-open'),
       }).run(CONTEXT);
 
-      expect(calls).toStrictEqual([
-        { name: 'ask', value: { id: 'dialog.markdown-import-problem', props: { reason, line: 7 } } },
-      ]);
+      expect(calls).toStrictEqual([{ name: 'ask', value: { id: 'dialog.markdown-import-problem', props } }]);
     }
+  });
+
+  it('OPENS the table, THEN names the characters it draws as boxes', async () => {
+    const boxed = [{ character: '中', line: 4, column: 1 }];
+    const opened = { docId: COMPOSED, version: 1, byteLength: 2048, name: 'table.pdf' };
+    const { client } = recording({ 'document.newFromCsv': ok({ kind: 'opened-with-boxes', ...opened, boxed, more: 0 }) });
+    const { calls, record, ask } = callbacks();
+    await newFromCsvCommand({ client, ask, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
+    expect(calls).toStrictEqual([
+      { name: 'opened', value: opened },
+      { name: 'ask', value: { id: 'dialog.boxed-characters', props: { boxed, more: 0 } } },
+    ]);
   });
 });
 

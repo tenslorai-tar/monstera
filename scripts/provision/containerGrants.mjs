@@ -81,6 +81,7 @@ import { dirname, join } from 'node:path';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { shimPath } from '../lib/shimBinary.mjs';
 import { electronRoot } from './electron.mjs';
+import { fontsDirectory } from './fonts.mjs';
 import { libreOfficeRoot } from './libreoffice.mjs';
 import { pdfiumLibrary } from './pdfium.mjs';
 import { ghostscriptRoot } from './ghostscript.mjs';
@@ -197,6 +198,16 @@ export function grantSet(root = repoRoot()) {
       path: tessdataDirectory(root),
       rights: 'R',
       why: 'the OCR models the host reads inside the container',
+      required: false,
+    },
+    // THE BUNDLED FONTS (ADR-0172), which the compose host and the PDFium host read themselves through HarfBuzz:
+    // the resolver's faces, read by path out of a folder main hands each host. `R`, because nothing in it is executed;
+    // NOT REQUIRED, for the OCR models' reason — a checkout that has not run `provision:fonts` composes and edits with
+    // the installed fonts and the document's own alone, a decided state.
+    {
+      path: fontsDirectory(root),
+      rights: 'R',
+      why: 'the bundled fonts the compose and PDFium hosts read',
       required: false,
     },
     // THE PINNED LIBREOFFICE TREE, which ADR-0063 Decision 2 runs the converter

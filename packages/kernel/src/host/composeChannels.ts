@@ -2,7 +2,9 @@ import { z } from 'zod';
 
 import {
   COMPOSE_REFUSALS,
+  MAX_BOXED_CHARACTERS,
   MAX_IMPORT_IMAGES,
+  boxedCharacterSchema,
   MAX_PAGE_COORDINATE,
   MAX_WORKBOOK_PARTS,
   MAX_WORKBOOK_ROW,
@@ -42,7 +44,8 @@ import {
  * the output directory under another, and the answer is how many bytes it wrote —
  * which main compares with the file it reads, separating *the host wrote nothing*
  * from *the read found nothing*. No path, no token tree and no document bytes
- * travel on the pipe.
+ * travel on the pipe; for a text source, the places of its boxed characters do, as
+ * lines and columns.
  */
 /**
  * What composing a source is asked with — one shape for every source format.
@@ -75,13 +78,26 @@ const composeRequestSchema = z
  *
  * ## A refusal is an ANSWER, with its line
  *
- * A source that is not UTF-8, is malformed for its format, holds a character the
- * standard fonts cannot draw, or draws nothing is a fact about the file a person
- * picked, and the person is owed which one — and, where there is one, the line. So it
- * rides in the result rather than as a failure code, which carries no line.
+ * A source that is not UTF-8, is malformed for its format, or draws nothing is a fact
+ * about the file a person picked, and the person is owed which one — and, where there
+ * is one, the line. So it rides in the result rather than as a failure code, which
+ * carries no line.
+ *
+ * ## So is a boxed character, with its line and column
+ *
+ * No character refuses a source (ADR-0172); one no face carries is drawn as the box,
+ * and `composed` names where each is, up to `MAX_BOXED_CHARACTERS`, with `more`
+ * counting the rest — a bound the frame can hold whatever the file says.
  */
 const composeResultSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('composed'), bytes: z.number().int().nonnegative() }).strict(),
+  z
+    .object({
+      kind: z.literal('composed'),
+      bytes: z.number().int().nonnegative(),
+      boxed: z.array(boxedCharacterSchema).max(MAX_BOXED_CHARACTERS),
+      more: z.number().int().min(0),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('refused'),

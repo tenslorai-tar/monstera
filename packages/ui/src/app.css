@@ -2074,6 +2074,12 @@ optgroup {
   margin: 0;
 }
 
+/* The characters a composed document shows as boxes: the workbook notice's layout, for its reason. */
+.m-boxed-characters__said,
+.m-boxed-characters__more {
+  margin: 0;
+}
+
 /*
  * The Excel review grid: a table of fields, which default flow cannot lay out — so
  * it takes the list exception's reason. The page controls sit on one line with the

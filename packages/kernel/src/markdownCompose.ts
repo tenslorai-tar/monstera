@@ -1,21 +1,17 @@
-import { PDFDocument, type PDFFont } from '@cantoo/pdf-lib';
+import { PDFDocument } from '@cantoo/pdf-lib';
 import MarkdownIt, { type Token as MarkdownToken } from 'markdown-it';
 
+import { ComposeFonts, type FaceRole } from './composeFonts.js';
+import { BODY_LEADING, BODY_SIZE, MARGIN, PageWriter, type Run, wrap } from './composeLayout.js';
 import {
-  BODY_LEADING,
-  BODY_SIZE,
   type ComposePageSize,
   ComposeRefused,
-  type Faces,
-  MARGIN,
-  PageWriter,
-  type Run,
-  breakByWidth,
-  checked,
-  embedFaces,
-  wrap,
-} from './composeLayout.js';
+  type ComposedSource,
+  type SourceBlock,
+  boxedPositions,
+} from './composeOutcome.js';
 import { type TableRow, drawTable } from './composeTable.js';
+import type { FaceSource } from './fontCatalogue.js';
 
 /**
  * A Markdown source, set as a new PDF
@@ -35,13 +31,13 @@ import { type TableRow, drawTable } from './composeTable.js';
  * stays at its default `false`, so a raw HTML line arrives as text and is drawn as
  * text; nothing here interprets markup the parser did not.
  *
- * ## Standard-14 faces, and a character they cannot draw is REFUSED
+ * ## Every character is drawn, and a missing one is SAID
  *
- * `pageToc.ts` accepts an illegible title, because a table of contents is still
- * usable with one. This is a document's whole body, and drawing through whatever
- * WinAnsi byte a character maps to would lose its content while looking complete.
- * So the font's own character set is asked first — `composeLayout.ts`' `checked`,
- * which every composer shares — and the refusal names the source line.
+ * The text is set in the bundled faces and any face the catalogue holds that carries a word
+ * ([ADR-0172](../../../docs/DECISIONS/0172-one-font-resolver-open-fonts-bundled-by-fingerprint-subsets-made-in-the-host.md)),
+ * so nothing a person wrote is refused for its characters. A character no face carries is drawn as a box that copies
+ * as the character, and the composition answers where each one is in the source — its line and its column — so the
+ * person is told which characters and where, rather than finding boxes later.
  *
  * ## An image is its ALT TEXT, and its path is never read
  *
@@ -52,8 +48,8 @@ import { type TableRow, drawTable } from './composeTable.js';
  * ## What is this module's and what is shared
  *
  * The walk over `markdown-it`'s tokens, the inline styles, headings, lists, code and
- * quotations are Markdown's. The page writer, wrapping, the encodability refusal and
- * the table layout are `composeLayout.ts`', because a CSV table sets the same rows.
+ * quotations are Markdown's. The page writer, wrapping and the table layout are
+ * `composeLayout.ts`' and `composeTable.ts`', because a CSV table sets the same rows.
  */
 
 /** Monospace type for code, a point smaller so a line of code fits as prose does. */
@@ -76,23 +72,29 @@ const BLOCK_GAP = 6;
 /** How far one level of list or quotation indents. */
 const INDENT = 18;
 
-/** A tab in code is set as this many spaces: WinAnsi has no glyph for a tab. */
+/** How far a list item's marker ends before its text. */
+const MARKER_GAP = 4;
+
+/** A tab in code is set as this many spaces: a tab is a movement to a stop, and no font draws one. */
 const TAB_SPACES = 4;
 
 /**
- * Sets a Markdown source as a new PDF, answering its bytes.
+ * Sets a Markdown source as a new PDF, answering its bytes and every character drawn as the box.
  *
  * @param source the file's bytes, exactly as picked
  * @param page the size every page is set at
- * @throws ComposeRefused for a source that is not UTF-8, holds a character the
- *   standard faces cannot draw, or draws nothing at all
+ * @param faces the catalogue the text is set from
+ * @throws ComposeRefused for a source that is not UTF-8 or draws nothing at all
  */
-export async function composeMarkdown(source: Uint8Array, page: ComposePageSize): Promise<Uint8Array> {
+export async function composeMarkdown(
+  source: Uint8Array,
+  page: ComposePageSize,
+  faces: FaceSource,
+): Promise<ComposedSource> {
   let text: string;
   try {
     // FATAL, so a byte sequence that is not UTF-8 is refused by name rather than
-    // decoded into replacement characters that would then be refused as
-    // unencodable — which would blame the font for the file's encoding.
+    // decoded into replacement characters that would be drawn as though the file said them.
     text = new TextDecoder('utf-8', { fatal: true }).decode(source);
   } catch {
     throw new ComposeRefused('not-utf8', null, 'the source is not UTF-8 text');
@@ -104,10 +106,10 @@ export async function composeMarkdown(source: Uint8Array, page: ComposePageSize)
   // creation and modification dates by default, and a composition that differed
   // on every run could not be compared with itself.
   const document = await PDFDocument.create({ updateMetadata: false });
-  const faces = await embedFaces(document);
-
-  const writer = new PageWriter(document, faces, page);
-  new BlockWalker(tokens, faces, writer).walk();
+  const fonts = new ComposeFonts(document, faces);
+  const writer = new PageWriter(document, fonts, page);
+  const walker = new BlockWalker(tokens, writer);
+  walker.walk();
 
   if (!writer.drewAnything) {
     throw new ComposeRefused(
@@ -116,7 +118,8 @@ export async function composeMarkdown(source: Uint8Array, page: ComposePageSize)
       'the source holds no text to set, so a composed document would be blank',
     );
   }
-  return document.save();
+  fonts.finish();
+  return { pdf: await document.save(), boxed: boxedPositions(text, fonts.boxed, walker.blocks) };
 }
 
 /** The inline style a run inherits from the tags open around it. */
@@ -138,10 +141,11 @@ class BlockWalker {
   /** One entry per open list: its kind and the number its next item takes. */
   readonly #lists: { ordered: boolean; next: number }[] = [];
   #quoteDepth = 0;
+  /** Every block set, by the line its runs report: the lines it spans, which a box in it is searched for in. */
+  readonly blocks = new Map<number, SourceBlock>();
 
   constructor(
     private readonly tokens: readonly MarkdownToken[],
-    private readonly faces: Faces,
     private readonly writer: PageWriter,
   ) {}
 
@@ -159,22 +163,35 @@ class BlockWalker {
     return (this.#lists.length + this.#quoteDepth) * INDENT;
   }
 
+  /**
+   * The one-based line a block starts on, recorded with the lines it spans. `markdown-it`'s `map` is the block's
+   * first line and the line after its last, both zero-based.
+   */
+  #lineOf(token: MarkdownToken): number | null {
+    if (token.map === null) return null;
+    const [first, after] = token.map;
+    this.blocks.set(first + 1, { from: first + 1, to: Math.max(first + 1, after) });
+    return first + 1;
+  }
+
   #block(token: MarkdownToken): void {
     switch (token.type) {
       case 'heading_open': {
         const level = Number.parseInt(token.tag.slice(1), 10);
         const style = HEADING[Math.min(Math.max(level, 1), 6) - 1] ?? HEADING[3];
+        const line = this.#lineOf(token);
         const inline = this.#takeInline();
         if (inline === null || style === undefined) return;
         this.writer.gap(style.leading / 2);
-        this.#paragraph(inline, { bold: true, italic: false }, style.size, style.leading, lineOf(token));
+        this.#paragraph(inline, { bold: true, italic: false }, style.size, style.leading, line);
         this.writer.gap(BLOCK_GAP);
         return;
       }
       case 'paragraph_open': {
+        const line = this.#lineOf(token);
         const inline = this.#takeInline();
         if (inline === null) return;
-        this.#paragraph(inline, { bold: false, italic: false }, BODY_SIZE, BODY_LEADING, lineOf(token));
+        this.#paragraph(inline, { bold: false, italic: false }, BODY_SIZE, BODY_LEADING, line);
         // A PARAGRAPH INSIDE A LIST ITEM keeps the items together; the gap belongs
         // after the list, not between its items.
         if (this.#lists.length === 0) this.writer.gap(BLOCK_GAP);
@@ -205,15 +222,19 @@ class BlockWalker {
         this.writer.gap(BLOCK_GAP);
         return;
       case 'fence':
-      case 'code_block':
-        this.#code(token.content, lineOf(token));
+      case 'code_block': {
+        // A FENCE'S FIRST LINE IS THE FENCE, so its code starts on the line after; an indented block's first line is
+        // its code.
+        const line = token.map === null ? null : token.map[0] + (token.type === 'fence' ? 2 : 1);
+        this.#code(token.content, line);
         this.writer.gap(BLOCK_GAP);
         return;
+      }
       case 'hr':
         this.writer.rule();
         return;
       case 'table_open':
-        this.#table(lineOf(token));
+        this.#table(this.#lineOf(token));
         this.writer.gap(BLOCK_GAP);
         return;
       default:
@@ -248,37 +269,37 @@ class BlockWalker {
     leading: number,
     sourceLine: number | null,
   ): void {
-    const runs = inlineRuns(inline.children ?? [], base, this.faces, size);
+    const runs = inlineRuns(inline.children ?? [], base, size, sourceLine);
     const indent = this.#indent;
-    const lines = wrap(runs, this.writer.room(indent), leading, sourceLine);
+    const lines = wrap(runs, this.writer.room(indent), leading, this.writer.fonts);
     const marker = this.#pendingMarker;
     this.#pendingMarker = null;
     lines.forEach((line, at) => {
       const placed = this.writer.line(line, indent);
       if (this.#quoteDepth > 0) this.writer.bar(placed.page, indent, placed.baseline, leading, INDENT);
       if (at === 0 && marker !== null && marker !== '') {
-        const markerRun = checked({ text: marker, font: this.faces.regular, size }, sourceLine);
-        const width = markerRun.font.widthOfTextAtSize(markerRun.text, size);
-        placed.page.drawText(markerRun.text, {
-          x: MARGIN + indent - width - 4,
-          y: placed.baseline,
-          size,
-          font: markerRun.font,
-        });
+        this.writer.marker(placed.page, marker, 'regular', size, MARGIN + indent - MARKER_GAP, placed.baseline, sourceLine);
       }
     });
   }
 
-  #code(content: string, sourceLine: number | null): void {
+  /**
+   * A block of code, each of its lines its own paragraph, broken only where a line is wider than the page and then
+   * between graphemes — code's spaces are its meaning, so it is never wrapped between words.
+   *
+   * @param firstLine the one-based source line the code's first line is on
+   */
+  #code(content: string, firstLine: number | null): void {
     const indent = this.#indent + INDENT / 2;
     const room = this.writer.room(indent);
     const expanded = content.replaceAll('\t', ' '.repeat(TAB_SPACES));
     const sourceLines = expanded.endsWith('\n') ? expanded.slice(0, -1).split('\n') : expanded.split('\n');
     sourceLines.forEach((text, offset) => {
-      const line = sourceLine === null ? null : sourceLine + offset + 1;
-      const run = checked({ text, font: this.faces.mono, size: CODE_SIZE }, line);
-      for (const piece of breakByWidth(run, room)) {
-        this.writer.line({ runs: [piece], leading: CODE_LEADING }, indent);
+      const line = firstLine === null ? null : firstLine + offset;
+      if (line !== null) this.blocks.set(line, { from: line, to: line });
+      const run: Run = { text, role: 'mono', size: CODE_SIZE, line };
+      for (const piece of wrap([run], room, CODE_LEADING, this.writer.fonts, 'graphemes')) {
+        this.writer.line(piece, indent);
       }
     });
   }
@@ -286,7 +307,7 @@ class BlockWalker {
   /**
    * A table's rows, read out of the tokens and set by `composeTable.ts`' `drawTable`.
    *
-   * Header cells are set bold. Every row carries the table's opening line, which is
+   * Header cells are set bold. Every cell carries the table's opening line, which is
    * the line `markdown-it` records for the table block.
    */
   #table(sourceLine: number | null): void {
@@ -301,34 +322,24 @@ class BlockWalker {
       if (token.type === 'thead_close') inHead = false;
       if (token.type === 'tr_open') current = { header: inHead, cells: [] };
       if (token.type === 'tr_close' && current !== null) {
-        rows.push({ header: current.header, cells: current.cells, sourceLine });
+        rows.push({ header: current.header, cells: current.cells });
         current = null;
       }
       if (token.type === 'inline' && current !== null) {
-        current.cells.push(
-          inlineRuns(token.children ?? [], { bold: current.header, italic: false }, this.faces, BODY_SIZE),
-        );
+        current.cells.push(inlineRuns(token.children ?? [], { bold: current.header, italic: false }, BODY_SIZE, sourceLine));
       }
     }
-    drawTable(rows, this.writer, this.faces, this.#indent);
+    drawTable(rows, this.writer, this.#indent);
   }
 }
 
-/** The one-based source line a block token starts on, where the parser recorded one. */
-function lineOf(token: MarkdownToken): number | null {
-  return token.map === null ? null : token.map[0] + 1;
+/** The role an inline style is set in. */
+function roleFor(style: InlineStyle): FaceRole {
+  if (style.bold && style.italic) return 'boldItalic';
+  if (style.bold) return 'bold';
+  if (style.italic) return 'italic';
+  return 'regular';
 }
-
-/** The face an inline style is set in. */
-function faceFor(style: InlineStyle, faces: Faces): PDFFont {
-  if (style.bold && style.italic) return faces.boldItalic;
-  if (style.bold) return faces.bold;
-  if (style.italic) return faces.italic;
-  return faces.regular;
-}
-
-/** The marker a hard break is carried as through `wrap`. */
-const HARD_BREAK = (faces: Faces, size: number): Run => ({ text: '\n', font: faces.regular, size });
 
 /**
  * Turns an inline token's children into runs.
@@ -341,28 +352,31 @@ const HARD_BREAK = (faces: Faces, size: number): Run => ({ text: '\n', font: fac
 function inlineRuns(
   children: readonly MarkdownToken[],
   base: InlineStyle,
-  faces: Faces,
   size: number,
+  line: number | null,
 ): Run[] {
   const runs: Run[] = [];
   let style = base;
   let href: string | null = null;
   let linkText = '';
+  const push = (text: string, role: FaceRole): void => {
+    runs.push({ text, role, size, line });
+  };
   for (const child of children) {
     switch (child.type) {
       case 'text':
-        runs.push({ text: child.content, font: faceFor(style, faces), size });
+        push(child.content, roleFor(style));
         if (href !== null) linkText += child.content;
         break;
       case 'code_inline':
-        runs.push({ text: child.content, font: faces.mono, size });
+        push(child.content, 'mono');
         if (href !== null) linkText += child.content;
         break;
       case 'softbreak':
-        runs.push({ text: ' ', font: faceFor(style, faces), size });
+        push(' ', roleFor(style));
         break;
       case 'hardbreak':
-        runs.push(HARD_BREAK(faces, size));
+        push('\n', 'regular');
         break;
       case 'strong_open':
         style = { ...style, bold: true };
@@ -381,14 +395,12 @@ function inlineRuns(
         linkText = '';
         break;
       case 'link_close':
-        if (href !== null && href !== '' && href !== linkText) {
-          runs.push({ text: ` (${href})`, font: faceFor(style, faces), size });
-        }
+        if (href !== null && href !== '' && href !== linkText) push(` (${href})`, roleFor(style));
         href = null;
         break;
       case 'image': {
         const alt = child.content === '' ? 'image' : child.content;
-        runs.push({ text: `[image: ${alt}]`, font: faces.italic, size });
+        push(`[image: ${alt}]`, 'italic');
         break;
       }
       default:

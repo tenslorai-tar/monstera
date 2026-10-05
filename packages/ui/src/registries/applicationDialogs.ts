@@ -82,6 +82,7 @@ import { WATERMARK_PAGES_DIALOG } from '../dialogs/watermarkPages.js';
 import { PAGE_BACKGROUND_DIALOG } from '../dialogs/pageBackground.js';
 import { WORD_COUNT_DIALOG } from '../dialogs/wordCount.js';
 import { WORKBOOK_INCOMPLETE_DIALOG } from '../dialogs/workbookIncomplete.js';
+import { BOXED_CHARACTERS_DIALOG } from '../dialogs/boxedCharacters.js';
 import type { RegisteredDialog } from './dialogs.js';
 
 /**
@@ -148,6 +149,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   INSERT_IMAGE_PROBLEM_DIALOG,
   MARKDOWN_IMPORT_PROBLEM_DIALOG,
   WORKBOOK_INCOMPLETE_DIALOG,
+  BOXED_CHARACTERS_DIALOG,
   OPEN_FROM_URL_DIALOG,
   URL_OPEN_PROBLEM_DIALOG,
   OPEN_PROBLEM_DIALOG,

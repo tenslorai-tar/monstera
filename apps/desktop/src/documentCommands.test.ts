@@ -5548,13 +5548,13 @@ describe('composeMarkdownFile: what an import answers before anything is written
       // destination fails here rather than answering.
       compose: (_format, _source, page) => {
         pages.push(page);
-        return Promise.resolve({ kind: 'refused', reason: 'unencodable-text', line: 7, item: null });
+        return Promise.resolve({ kind: 'refused', reason: 'malformed-csv', line: 7, item: null });
       },
     });
 
     expect(await commands.composeImportFile('markdown')).toStrictEqual({
       kind: 'composition-refused',
-      reason: 'unencodable-text',
+      reason: 'malformed-csv',
       line: 7,
       file: null,
     });

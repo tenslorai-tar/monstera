@@ -617,10 +617,6 @@ export const MARKDOWN_IMPORT_PROBLEM_TITLE = messageKey('dialog.markdown-import-
 export const MARKDOWN_IMPORT_UNREADABLE = messageKey('dialog.markdown-import-problem.unreadable');
 export const MARKDOWN_IMPORT_TOO_LARGE = messageKey('dialog.markdown-import-problem.too-large');
 export const MARKDOWN_IMPORT_NOT_UTF8 = messageKey('dialog.markdown-import-problem.not-utf8');
-export const MARKDOWN_IMPORT_UNENCODABLE = messageKey('dialog.markdown-import-problem.unencodable');
-export const MARKDOWN_IMPORT_UNENCODABLE_LINE = messageKey(
-  'dialog.markdown-import-problem.unencodable-line',
-);
 export const MARKDOWN_IMPORT_NOTHING_TO_DRAW = messageKey(
   'dialog.markdown-import-problem.nothing-to-draw',
 );
@@ -635,6 +631,11 @@ export const WORKBOOK_INCOMPLETE_TITLE = messageKey('dialog.workbook-incomplete.
 export const WORKBOOK_INCOMPLETE_SAID = messageKey('dialog.workbook-incomplete.said');
 export const WORKBOOK_INCOMPLETE_BLOCK = messageKey('dialog.workbook-incomplete.block');
 export const WORKBOOK_INCOMPLETE_MORE = messageKey('dialog.workbook-incomplete.more');
+export const BOXED_CHARACTERS_TITLE = messageKey('dialog.boxed-characters.title');
+export const BOXED_CHARACTERS_SAID = messageKey('dialog.boxed-characters.said');
+export const BOXED_CHARACTERS_AT = messageKey('dialog.boxed-characters.at');
+export const BOXED_CHARACTERS_AT_LINE = messageKey('dialog.boxed-characters.at-line');
+export const BOXED_CHARACTERS_MORE = messageKey('dialog.boxed-characters.more');
 export const MARKDOWN_IMPORT_ABSENT = messageKey('dialog.markdown-import-problem.absent');
 export const MARKDOWN_IMPORT_AT_CAPACITY = messageKey('dialog.markdown-import-problem.at-capacity');
 export const MARKDOWN_IMPORT_IMAGE_UNREADABLE = messageKey(
@@ -4810,10 +4811,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Nothing was imported.',
   [MARKDOWN_IMPORT_NOT_UTF8]:
     'That file is not UTF-8 text, so it cannot be read as Markdown. Nothing was imported.',
-  [MARKDOWN_IMPORT_UNENCODABLE]:
-    'The file has a character the built-in fonts cannot draw. Nothing was imported.',
-  [MARKDOWN_IMPORT_UNENCODABLE_LINE]:
-    'Line {line} has a character the built-in fonts cannot draw. Nothing was imported.',
   [MARKDOWN_IMPORT_NOTHING_TO_DRAW]: 'That file has no text to put on a page. Nothing was imported.',
   // THE REMEDY IS THE PERSON'S: close the document holding that file, or pick another
   // name. `saveCopy`'s contested sentence is the same situation.
@@ -4825,6 +4822,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'The PDF is open, but these rows of the workbook are not in it. The converter could not convert them, even in smaller parts:',
   [WORKBOOK_INCOMPLETE_BLOCK]: 'Sheet “{sheet}”, rows {from, number} to {to, number}',
   [WORKBOOK_INCOMPLETE_MORE]: '{count, plural, one {And # more block of rows.} other {And # more blocks of rows.}}',
+  [BOXED_CHARACTERS_TITLE]: 'Some characters are shown as boxes',
+  [BOXED_CHARACTERS_SAID]:
+    'The PDF is open. No font here can draw the characters below, so each one is shown as a box. The text is ' +
+    'kept: copying it gives the characters as written.',
+  [BOXED_CHARACTERS_AT]: '“{character}” ({code}), line {line, number}, column {column, number}',
+  [BOXED_CHARACTERS_AT_LINE]: '“{character}” ({code}), in the block that starts on line {line, number}',
+  [BOXED_CHARACTERS_MORE]: '{count, plural, one {And # more place.} other {And # more places.}}',
   [MARKDOWN_IMPORT_CONVERSION_FAILED]:
     'That file could not be turned into a PDF. It may be damaged, or not the kind of file its name says. ' +
     'Nothing was imported.',

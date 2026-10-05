@@ -93,6 +93,7 @@
     "proof:provision": "node scripts/provision/gitleaks.proof.mjs",
     "proof:pdfiumprovision": "node scripts/provision/pdfium.proof.mjs",
     "provision:fonts": "node scripts/provision/fonts.mjs",
+    "provision:unicodetests": "node scripts/provision/unicodeTests.mjs",
     "proof:fontsprovision": "node scripts/provision/fonts.proof.mjs",
     "proof:boundaries": "node scripts/proofs/boundaries.proof.mjs",
     "proof:testresolution": "node scripts/proofs/testResolution.proof.mjs",

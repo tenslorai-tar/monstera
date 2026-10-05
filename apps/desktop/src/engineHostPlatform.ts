@@ -469,7 +469,11 @@ export function createComposeHostPlatform(base: EngineHostPlatform): EngineHostP
             runs: 'electron-node',
             executablePath: binary,
             commandArguments: [
-              ...hostCommandArguments({ kind: 'compose', shimPath: mupdfShimPath() }, entry, pipeName),
+              ...hostCommandArguments(
+                { kind: 'compose', shimPath: mupdfShimPath(), fontsPath: nativeComponentPath('fonts') },
+                entry,
+                pipeName,
+              ),
             ],
           },
           workingDirectory: dirname(binary),

@@ -17,8 +17,6 @@ import {
   MARKDOWN_IMPORT_NOTHING_TO_DRAW,
   MARKDOWN_IMPORT_NOT_UTF8,
   MARKDOWN_IMPORT_TOO_LARGE,
-  MARKDOWN_IMPORT_UNENCODABLE,
-  MARKDOWN_IMPORT_UNENCODABLE_LINE,
   MARKDOWN_IMPORT_UNREADABLE,
   MARKDOWN_IMPORT_WRITE_FAILED,
   START_BUSY,
@@ -53,10 +51,6 @@ export default function MarkdownImportProblemBody(props: MarkdownImportProblem):
         });
       case 'not-utf8':
         return _(MARKDOWN_IMPORT_NOT_UTF8);
-      case 'unencodable-text':
-        return props.line === null
-          ? _(MARKDOWN_IMPORT_UNENCODABLE)
-          : _(MARKDOWN_IMPORT_UNENCODABLE_LINE, { line: props.line });
       case 'nothing-to-draw':
         return _(MARKDOWN_IMPORT_NOTHING_TO_DRAW);
       // THE LINE IS NAMED WHERE THERE IS ONE, and a sentence without one where there

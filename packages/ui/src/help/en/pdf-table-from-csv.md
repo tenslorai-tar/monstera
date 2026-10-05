@@ -4,7 +4,7 @@ title: Make a PDF table from a CSV file
 summary: Turn a CSV spreadsheet file into a PDF with a table.
 keywords: [csv, spreadsheet, table, comma separated, convert csv, data to pdf]
 commands: [document.new-from-csv]
-contexts: [dialog.markdown-import-problem, tools]
+contexts: [dialog.markdown-import-problem, dialog.boxed-characters, tools]
 ---
 A CSV file is a simple spreadsheet saved as text. Monstera can lay it out as a table in a new PDF.
 
@@ -20,7 +20,8 @@ A CSV file is a simple spreadsheet saved as text. Monstera can lay it out as a t
 - The first row is shown in bold as the heading.
 - The file must be UTF-8 text, up to 1 MB.
 - Each column is as wide as what it holds needs. A table too wide for the page turns the page sideways and sets its text smaller, and one wider still continues on further pages, the first column repeated on each so every row is still named.
-- A quote out of place, or a character the standard fonts cannot draw, stops the import; the message names the line.
+- A quote out of place stops the import; the message names the line.
+- Text in any language is kept. Greek, Cyrillic, Hebrew and Arabic come with Monstera, and Hebrew and Arabic read right to left. A character no font here can draw is shown as a box, and Monstera then lists each one with its line and column. The box copies as the character you wrote.
 
 <!--
 Screenshots to capture:

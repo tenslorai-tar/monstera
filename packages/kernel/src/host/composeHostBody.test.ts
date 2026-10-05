@@ -5,12 +5,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   ENGINE_HOST_FRAME_MAX_BYTES,
   FRAME_HEADER_BYTES,
+  MAX_BOXED_CHARACTERS,
   MAX_IMPORT_IMAGES,
   MAX_PAGE_COORDINATE,
   encodeFrame,
 } from '@monstera/contract';
 
-import { type ComposePageSize, ComposeRefused } from '../composeLayout.js';
+import { type ComposePageSize, ComposeRefused, type ComposedSource } from '../composeOutcome.js';
+import type { FaceSource } from '../fontCatalogue.js';
 import type { ImportImage } from '../imageCompose.js';
 import { TOKEN_BYTES } from '../token.js';
 import { composeChannels } from './composeChannels.js';
@@ -99,18 +101,25 @@ const LETTER: ComposePageSize = { width: 612, height: 792 };
 /** The bytes the stubbed composer answers, which nothing else here produces. */
 const COMPOSED = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x37]);
 
+/** The faces the stubbed host holds: none, since no stubbed composer draws. Its identity is what a case checks. */
+const FACES: FaceSource = { faces: [], read: () => new Uint8Array() };
+
+/** What a stubbed composer answers. */
+type StubComposer = (source: Uint8Array, page: ComposePageSize, faces: FaceSource) => Promise<ComposedSource>;
+
 /**
  * @param files what `readSnapshot` will find, and where `writeOutput` records.
  * @param compose what the stubbed composer does with a source.
+ * @param faces what the host's fonts answer, or a throw for a host started without them.
  */
 function start(
   files: Files,
-  compose: (source: Uint8Array, page: ComposePageSize) => Promise<Uint8Array> = () =>
-    Promise.resolve(COMPOSED),
+  compose: StubComposer = () => Promise.resolve({ pdf: COMPOSED, boxed: [] }),
   images: (images: readonly ImportImage[]) => Promise<Uint8Array> = async (listed) => {
     for (const image of listed) await image.read();
     return COMPOSED;
   },
+  faces: () => FaceSource = () => FACES,
 ) {
   const calls: string[] = [];
   const areas = createHostSessions<HostArea>(() => new Uint8Array(TOKEN_BYTES).fill(7));
@@ -169,17 +178,18 @@ function start(
         negative: { kind: 'refused', code: 'EACCES' },
         loopback: { kind: 'refused', code: 'ETIMEDOUT' },
       }),
-    composeMarkdown: (source, page) => {
-      // THE SOURCE'S BYTES AND THE PAGE, recorded so a case can assert the handler
-      // passed what the named file held rather than something else.
-      calls.push(`compose:${[...source].join(',')}:${String(page.width)}x${String(page.height)}`);
-      return compose(source, page);
+    faces,
+    composeMarkdown: (source, page, given) => {
+      // THE SOURCE'S BYTES, THE PAGE AND WHETHER IT WAS HANDED THE HOST'S FACES, recorded so a case can assert the
+      // handler passed what the named file held and what the host holds rather than something else.
+      calls.push(`compose:${[...source].join(',')}:${String(page.width)}x${String(page.height)}:${given === FACES ? 'faces' : 'other'}`);
+      return compose(source, page, given);
     },
     // ITS OWN PREFIX, so a case can say WHICH composer a channel reached. Both answer
     // the same shape, so the answer alone cannot tell them apart.
-    composeCsv: (source, page) => {
-      calls.push(`csv:${[...source].join(',')}:${String(page.width)}x${String(page.height)}`);
-      return compose(source, page);
+    composeCsv: (source, page, given) => {
+      calls.push(`csv:${[...source].join(',')}:${String(page.width)}x${String(page.height)}:${given === FACES ? 'faces' : 'other'}`);
+      return compose(source, page, given);
     },
     // EACH IMAGE'S DECODER AND THE BYTES ITS READ ANSWERED, recorded as the composer reads
     // them — so a case can assert the handler bound each entry to the file it named.
@@ -258,11 +268,12 @@ function request(
 /** Starts a host, registers the area, and returns the id the host minted. */
 async function openArea(
   files: Files,
-  compose?: (source: Uint8Array, page: ComposePageSize) => Promise<Uint8Array>,
+  compose?: StubComposer,
   images?: (images: readonly ImportImage[]) => Promise<Uint8Array>,
+  faces?: () => FaceSource,
 ): Promise<{ session: string; calls: string[] }> {
   stream = stubStream();
-  const { calls } = start(files, compose, images);
+  const { calls } = start(files, compose, images, faces);
   stream.feed(
     request('o1', 'engine/open', {
       snapshotDirectory: AREA.snapshotDirectory,
@@ -322,7 +333,7 @@ describe('the compose host channel set', () => {
     stream.feed(request('m1', 'engine/compose-markdown', { session, from: IN, into: OUT, page: LETTER }));
     await stream.whenSent(3);
 
-    expect(calls).toStrictEqual(['csv:97,44,98:612x792', 'compose:97,44,98:612x792']);
+    expect(calls).toStrictEqual(['csv:97,44,98:612x792:faces', 'compose:97,44,98:612x792:faces']);
   });
 
   it('binds each listed image to the file it names, in order, and answers the composition', async () => {
@@ -346,7 +357,7 @@ describe('the compose host channel set', () => {
     await stream.whenSent(2);
 
     expect(answerIn(stream.sent[1])).toMatchObject({
-      body: { ok: true, value: { kind: 'composed', bytes: COMPOSED.length } },
+      body: { ok: true, value: { kind: 'composed', bytes: COMPOSED.length, boxed: [], more: 0 } },
     });
     expect(calls).toStrictEqual(['image:image/jpeg:3', 'image:image/png:1,2']);
     expect(files.written.get(`${AREA.outputDirectory}|abc-02`)).toStrictEqual(COMPOSED);
@@ -445,19 +456,58 @@ describe('the compose host body', () => {
     await stream.whenSent(2);
 
     expect(answerIn(stream.sent[1])).toMatchObject({
-      body: { ok: true, value: { kind: 'composed', bytes: COMPOSED.length } },
+      body: { ok: true, value: { kind: 'composed', bytes: COMPOSED.length, boxed: [], more: 0 } },
     });
     // THE BYTES LANDED IN THE GRANTED DIRECTORY, under the output name. The count
     // alone would pass on a handler that wrote nowhere.
     expect(files.written.get(`${AREA.outputDirectory}|${OUT}`)).toStrictEqual(COMPOSED);
-    // AND THE COMPOSER SAW THE FILE'S BYTES AND THE PAGE ASKED FOR.
-    expect(calls).toStrictEqual(['compose:35,32,72:612x792']);
+    // AND THE COMPOSER SAW THE FILE'S BYTES, THE PAGE ASKED FOR AND THE HOST'S FACES.
+    expect(calls).toStrictEqual(['compose:35,32,72:612x792:faces']);
+  });
+
+  it('names the first boxed characters and COUNTS the rest — CONTROL: a short list is named whole', async () => {
+    const many = Array.from({ length: MAX_BOXED_CHARACTERS + 6 }, (_, at) => ({ character: '中', line: at + 1, column: 1 }));
+    const files = emptyFiles();
+    const { session } = await openArea(files, () => Promise.resolve({ pdf: COMPOSED, boxed: many }));
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1]));
+    stream.feed(composeRequest(session));
+    await stream.whenSent(2);
+    const answer = answerIn(stream.sent[1]) as { body: { value: { boxed: unknown[]; more: number } } };
+    expect(answer.body.value.boxed).toStrictEqual(many.slice(0, MAX_BOXED_CHARACTERS));
+    expect(answer.body.value.more).toBe(6);
+
+    const few = many.slice(0, 3);
+    const others = emptyFiles();
+    const { session: second } = await openArea(others, () => Promise.resolve({ pdf: COMPOSED, boxed: few }));
+    others.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1]));
+    stream.feed(composeRequest(second));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { kind: 'composed', boxed: few, more: 0 } } });
+  });
+
+  it('reports a host started WITHOUT ITS FONTS as a fault with an incident, never a refusal of the file', async () => {
+    // THE DECISION IS THE ASSERTION, the case below's rule: a host without its faces is this build's defect, and an
+    // answer of `refused` would tell a person their file was at fault.
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files, undefined, undefined, () => {
+      throw new Error('the compose host was started without its fonts folder');
+    });
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1]));
+    stream.feed(composeRequest(session));
+    await stream.whenSent(2);
+    const answer = answerIn(stream.sent[1]) as { body: { ok: boolean; error?: { code: string } } };
+    expect(answer.body.ok).toBe(false);
+    expect(answer.body.error?.code).toBe('internal');
+    expect(calls).toContain('incident:engine/compose-markdown');
+    // AND THE COMPOSER WAS NEVER REACHED.
+    expect(calls.filter((entry) => entry.startsWith('compose:'))).toStrictEqual([]);
+    expect(files.written.size).toBe(0);
   });
 
   it('answers a composer REFUSAL as a refusal with its line, and writes nothing', async () => {
     const files = emptyFiles();
     const { session, calls } = await openArea(files, () =>
-      Promise.reject(new ComposeRefused('unencodable-text', 3, 'refused for the case')),
+      Promise.reject(new ComposeRefused('malformed-csv', 3, 'refused for the case')),
     );
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1]));
 
@@ -465,7 +515,7 @@ describe('the compose host body', () => {
     await stream.whenSent(2);
 
     expect(answerIn(stream.sent[1])).toMatchObject({
-      body: { ok: true, value: { kind: 'refused', reason: 'unencodable-text', line: 3 } },
+      body: { ok: true, value: { kind: 'refused', reason: 'malformed-csv', line: 3 } },
     });
     expect(files.written.size).toBe(0);
     // AN ANSWER, not a fault: nothing reached the incident sink.

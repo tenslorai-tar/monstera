@@ -1082,7 +1082,12 @@ function newFromImportHandler(
     try {
       const composed = await deps.commands.composeImportFile(format);
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
-      return ok((await openPath(deps, composed.destination)).outcome);
+      const opened = (await openPath(deps, composed.destination)).outcome;
+      // THE BOXED CHARACTERS RIDE WITH THE OPEN (ADR-0172), the Office import's rule for rows it lacks: a document
+      // that opened is told which characters it draws as the box, and an open that answered anything else answers
+      // that — the file on disk is the same either way.
+      if (opened.kind !== 'opened' || composed.boxed.length === 0) return ok(opened);
+      return ok({ ...opened, kind: 'opened-with-boxes', boxed: [...composed.boxed], more: composed.more });
     } catch (thrown) {
       if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
       throw thrown;
@@ -1215,6 +1220,9 @@ function appendMarkdownHandler(
           byteLength: outcome.byteLength,
           name: outcome.name,
         },
+        // THE BOXED CHARACTERS, `newFromImportHandler`'s rule: the merged pages draw them as the composed tab does.
+        boxed: [...composed.boxed],
+        more: composed.more,
       });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });

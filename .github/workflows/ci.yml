@@ -327,6 +327,11 @@ jobs:
       - name: Provision the bundled fonts
         run: node scripts/ci/annotate.mjs scripts/provision/fonts.mjs
 
+      # Unicode 17's BidiCharacterTest.txt, 6,880,771 bytes by SHA-256 from unicode-org/unicodetools, never committed:
+      # `bidiOrder.test.ts` runs all 91,707 cases and fails rather than skips without it.
+      - name: Provision Unicode's bidirectional conformance data
+        run: node scripts/ci/annotate.mjs scripts/provision/unicodeTests.mjs
+
       - name: Prove the bundled fonts are the pinned set and the notice names exactly them
         run: >
           node scripts/ci/annotate.mjs scripts/provision/fonts.proof.mjs --require-fonts
@@ -1119,6 +1124,10 @@ jobs:
       - name: Provision the bundled fonts
         run: node scripts/ci/annotate.mjs scripts/provision/fonts.mjs
 
+      # The bidi order's conformance run reads it, and fails rather than skips without it, as the matrix job's.
+      - name: Provision Unicode's bidirectional conformance data
+        run: node scripts/ci/annotate.mjs scripts/provision/unicodeTests.mjs
+
       - name: Tests
         run: npm test
 
@@ -1220,6 +1229,11 @@ jobs:
       # container the directory PDFium lives in and so must find it there. The pinned 3.8 MB archive, hash-verified.
       - name: Provision PDFium
         run: node scripts/ci/annotate.mjs scripts/provision/pdfium.mjs
+
+      # THE BUNDLED FONTS, for the compose host's live proof below (ADR-0172): its host sets text in them, read through
+      # the container's grant, so before the grant step for PDFium's reason.
+      - name: Provision the bundled fonts
+        run: node scripts/ci/annotate.mjs scripts/provision/fonts.mjs
 
       # THIS JOB NOW NEEDS COMPILED TYPESCRIPT, and it did not before.
       #
