@@ -48,6 +48,7 @@ import { DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import { PanelPresence } from '../panelPresence.js';
 import { SettingsStore } from '../settingsStore.js';
 import { outlinedMarkOf } from '../signatureFaces.js';
+import { DocumentKeys } from '../documentKeys.js';
 import type { ShowToast } from '../toasts.js';
 import {
   type Applied,
@@ -4250,6 +4251,7 @@ describe('protectDocumentCommand', () => {
   it('dispatches EXACTLY what the dialog answered, permissions included — and SAYS it was set (ADR-0141)', async () => {
     const { client, sent } = recordingClient();
     const { toast, said } = saving();
+    const documentKeys = new DocumentKeys();
 
     await protectDocumentCommand({
       client,
@@ -4257,6 +4259,7 @@ describe('protectDocumentCommand', () => {
       signatures,
       onApplied: () => undefined,
       toast,
+      documentKeys,
       ask: () =>
         Promise.resolve({
           encryption: 'aes-256',
@@ -4265,6 +4268,8 @@ describe('protectDocumentCommand', () => {
           permissions: ['print', 'copy'],
         }),
     }).run(CONTEXT);
+    // THE USER PASSWORD IS KEPT for this document's view, and the owner password is not: it opens nothing a view needs.
+    expect(documentKeys.keysOf(DOC).map((key) => key.reveal())).toStrictEqual(['open-me']);
 
     expect(sent).toStrictEqual([
       {
@@ -4301,6 +4306,7 @@ describe('protectDocumentCommand', () => {
       signatures,
       onApplied: () => undefined,
       toast: () => undefined,
+      documentKeys: new DocumentKeys(),
       ask: () => Promise.resolve({ encryption: 'none', permissions: [] }),
     }).run(CONTEXT);
 
@@ -4318,6 +4324,7 @@ describe('protectDocumentCommand', () => {
   it('CONTROL: a DISMISSED dialog dispatches nothing, and says nothing', async () => {
     const { client, sent } = recordingClient();
     const { toast, said } = saving();
+    const documentKeys = new DocumentKeys();
 
     await protectDocumentCommand({
       client,
@@ -4325,11 +4332,13 @@ describe('protectDocumentCommand', () => {
       signatures,
       onApplied: () => undefined,
       toast,
+      documentKeys,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
 
     expect(sent).toStrictEqual([]);
     expect(said).toStrictEqual([]);
+    expect(documentKeys.keysOf(DOC)).toStrictEqual([]);
   });
 
   /**

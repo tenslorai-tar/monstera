@@ -244,6 +244,7 @@ import {
   CLOSE_UNSAVED_DIALOG_ID,
   CLOSE_UNSAVED_RESULT,
 } from './dialogs/closeUnsaved.js';
+import { type DocumentKeys, viewKeysOf } from './documentKeys.js';
 import { useDocumentView } from './useDocumentView.js';
 import {
   CLOSE_LABEL,
@@ -2875,7 +2876,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // whole of the mutation-dialog gate (ADR-0038).
         deletePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         cropPagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
-        protectDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        protectDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast, documentKeys: stores.keys }),
         sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         signDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         signaturesCommand({ client, onApplied: applied, ask, stamp, signatures }),
@@ -3186,6 +3187,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       storedSecrets,
       // THE PANELS' ONE WRITER (ADR-0146), one per settings store: the commands that show a panel are built over it.
       presence,
+      // THE RENDERER'S KEYS (ADR-0171 Decision 7), which Protect keeps a password it sets in. Stable for the app's life.
+      stores.keys,
       changeZoom,
       client,
       navigator,
@@ -3553,6 +3556,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // A LAYER BEHIND READS THE ROW'S ANSWER AND NEVER WRITES IT: it is laid out in the same box (ADR-0146).
       measuresRow: false,
       requestPassword,
+      documentKeys: stores.keys,
       onVersionMoved: versionMoved,
       menuAt: NO_MENU,
       rulers,
@@ -3567,7 +3571,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       layout,
       onFirstFrame: markFramed,
     }),
-    [client, layout, markFramed, versionMoved, pageBadges, presence, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
+    [client, layout, markFramed, versionMoved, pageBadges, presence, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, stores.keys, tileAbove, unit],
   );
 
   return (
@@ -3750,6 +3754,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           autoscroll={autoscrollOn === open.docId ? AUTOSCROLL_PIXELS_PER_SECOND[autoscrollSpeed] : undefined}
           onAutoscrollEnd={stopAutoscroll}
           requestPassword={requestPassword}
+          documentKeys={stores.keys}
           settings={settings}
           presence={presence}
           measuresRow
@@ -4115,6 +4120,7 @@ type BackgroundLayer = Pick<
   | 'presence'
   | 'measuresRow'
   | 'requestPassword'
+  | 'documentKeys'
   | 'onVersionMoved'
   | 'menuAt'
   | 'rulers'
@@ -4268,6 +4274,7 @@ function PageCanvas({
   client,
   document: open,
   requestPassword,
+  documentKeys,
   onVersionMoved,
   onCurrentPage,
   onPageBox,
@@ -4417,6 +4424,11 @@ function PageCanvas({
    * can say which document is asking, which matters with tabs (ADR-0055).
    */
   readonly requestPassword: (name: string, retry: boolean) => Promise<string | undefined>;
+  /**
+   * The passwords typed for each open document, which this pane binds to its own (ADR-0171 Decision 7), so a new
+   * version of a document opened with its password reparses without asking again.
+   */
+  readonly documentKeys: DocumentKeys;
 }): ReactElement {
   const moved = useCallback(
     (next: { readonly version: DocVersion; readonly byteLength: number }) => {
@@ -4445,7 +4457,8 @@ function PageCanvas({
     [open.name, requestPassword],
   );
 
-  const { ready, failed } = useDocumentView(client, open, moved, askPassword);
+  const keys = useMemo(() => viewKeysOf(documentKeys, open.docId), [documentKeys, open.docId]);
+  const { ready, failed } = useDocumentView(client, open, moved, askPassword, keys);
   /**
    * Whether the page area's first frame has been shown (`PageList.onFirstFrame`): until it has, the thumbnail strip
    * asks main for nothing, so the first page is the first work main's lane does for this document.

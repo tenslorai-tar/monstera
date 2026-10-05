@@ -30,6 +30,7 @@ import type { CommandProblem } from '../dialogs/problemMessages.js';
 import { CROP_PAGES_DIALOG_ID } from '../dialogs/cropPages.js';
 import { PROTECT_DOCUMENT_DIALOG_ID } from '../dialogs/protectDocument.js';
 import type { ProtectDocumentAnswer } from '../dialogs/protectDocument.js';
+import type { DocumentKeys } from '../documentKeys.js';
 import {
   APPLY_REDACTIONS_DIALOG_ID,
   type ApplyRedactionsAnswer,
@@ -4494,7 +4495,16 @@ export function applyRedactionsCommand(
  * person that — a protection command that appeared to have done something to
  * the file on screen would be claiming an effect that has not happened yet.
  */
-export function protectDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+export function protectDocumentCommand(
+  deps: DocumentCommandDeps &
+    WritesAFile & {
+      /**
+       * The renderer's keys for each document (ADR-0171 Decision 7): a user password this command sets is one the person
+       * typed, and the document's view needs it once the protect has drawn.
+       */
+      readonly documentKeys: DocumentKeys;
+    },
+): UiCommand {
   return {
     id: 'document.protect',
     // NOTHING ON THE PAGE SHOWS A PASSWORD, and it takes effect at the next save (ADR-0141).
@@ -4523,6 +4533,8 @@ export function protectDocumentCommand(deps: DocumentCommandDeps & WritesAFile):
         // who unticked nothing chose to withhold nothing.
         permissions: [...answer.permissions],
       });
+      // KEPT ONLY ONCE MAIN APPLIED IT, so a key held is one this document stands with or stood with.
+      if (applied && answer.userPassword !== undefined) deps.documentKeys.hold(context.docId, answer.userPassword);
       if (applied) confirmDone(deps, TOAST_PROTECTION_SET);
     },
   };

@@ -61,6 +61,7 @@ import {
   type DrawnPage,
   compareSides,
 } from './sideBySideCompare.js';
+import { NO_KEYS } from './documentKeys.js';
 import { useDocumentView } from './useDocumentView.js';
 import { type ZoomMode, type ZoomStep, stepZoom } from './zoom.js';
 
@@ -185,8 +186,8 @@ export function SideBySide({
   readonly preferences: SidePreferences;
 }): ReactElement {
   const { i18n } = useLingui();
-  const leftView = useDocumentView(client, left, ignoreVersion, declinePassword);
-  const rightView = useDocumentView(client, right, ignoreVersion, declinePassword);
+  const leftView = useDocumentView(client, left, ignoreVersion, declinePassword, NO_KEYS);
+  const rightView = useDocumentView(client, right, ignoreVersion, declinePassword, NO_KEYS);
 
   // KEYED ON THE PAIR, so a comparison of two other documents is never shown: picking another document drops it by
   // render, rather than by an effect that would show the stale list for a frame first.

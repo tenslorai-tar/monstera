@@ -9,6 +9,7 @@ import {
 import { type StoreApi, createStore } from 'zustand/vanilla';
 
 import type { ReplyTarget } from './assistantRequest.js';
+import { DocumentKeys } from './documentKeys.js';
 import type { SpellingReview } from './spelling/review.js';
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
 
@@ -511,6 +512,11 @@ export interface StoreWatcher {
 export class DocumentStores {
   readonly #stores = new Map<DocId, DocumentStore>();
   readonly #watchers = new Set<StoreWatcher>();
+  /**
+   * The passwords a person typed for each open document (ADR-0171 Decision 7). HERE, beside the stores rather than in
+   * their reactive state, so {@link close} wipes them in the call that drops the store and nothing renders a secret.
+   */
+  readonly keys = new DocumentKeys();
 
   /**
    * Tells `watcher` of every store opened and closed from now on, and of those already open.
@@ -563,6 +569,7 @@ export class DocumentStores {
   close(docId: DocId): boolean {
     if (!this.#stores.has(docId)) return false;
     for (const watcher of this.#watchers) watcher.closed(docId);
+    this.keys.forget(docId);
     return this.#stores.delete(docId);
   }
 
