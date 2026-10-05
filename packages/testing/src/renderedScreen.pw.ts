@@ -795,6 +795,48 @@ for (const look of LOOKS) {
   });
 }
 
+// A REPLACEMENT WITH NOTHING TO REPLACE (ADR-0169 Decision 6), in every theme: the find bar's Replace everywhere, which
+// the shim answers as main answers a find no text object holds whole. The sentence is said, and the bar does not say
+// the replacement happened.
+for (const look of LOOKS) {
+  test(`${look.name}: a replacement with NOTHING TO REPLACE says so, claims nothing, and passes axe`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await threePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000f2');
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      refusals: new Map([[docId, { code: 'nothing-to-replace' }]]),
+    });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('[data-thumb-page="0"]')).toBeVisible();
+
+    await page.keyboard.press('Control+F');
+    const panel = page.getByRole('tabpanel', { name: 'Search' });
+    await panel.getByRole('textbox', { name: 'Find text' }).fill('GIZMO');
+    await panel.getByRole('textbox', { name: 'Replace with' }).fill('GADGET');
+    await panel.getByRole('button', { name: 'Replace everywhere' }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(
+      dialog.getByText(
+        'Nothing was changed: no text Monstera can replace matched. A word drawn in two pieces can be changed with Edit text.',
+      ),
+    ).toBeVisible();
+    // NOTHING HAPPENED, SO NOTHING IS REPORTED: the bar's after-the-fact note is for a replacement that ran.
+    await expect(panel.locator('.m-find-replaced')).toHaveCount(0);
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+  });
+}
+
 test('THUMBNAIL SIZE: a stored Large lays the Pages strip in ONE column of 160 px pictures, drawn at that width', async ({
   page,
 }) => {
