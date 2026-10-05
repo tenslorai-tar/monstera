@@ -219,3 +219,7 @@ the bus to build it found two things that sentence does not settle, so the mecha
 
 Rejected: an optional `recordable` member on the spec. It is an axis defaulted to the safe value, which nobody chooses,
 and here the unsafe direction is the quiet one: a credential-bearing command that forgot it is recorded whole.
+
+*Correction, 2026-10-05, while building it:* the positive control finds **three** credential fields, not two:
+`setDocumentProtection`'s `userPassword` and `ownerPassword`, and `signDocument`'s `passphrase`. The walk matches a
+field by its name, so a credential named as something else is out of its reach.

@@ -20,6 +20,7 @@ import type {
   LogEntry,
   LogEntryFor,
   LogTrim,
+  RecordedCommand,
 } from './commandLog.js';
 // DECLARATIONS, not specs. The bus reads `writer` and `replay` and calls
 // nothing — `apply`, `capture` and `invert` go through the registered writer
@@ -129,19 +130,64 @@ function asCheckpoint(file: CheckpointFile): Checkpoint {
  * there is nothing to re-run, and asking is refused rather than answered with half a command. `redo` takes the result
  * branch first; a replay never meets one, since a `stored-result` command's writer replaces the image and moves the
  * base past it.
+ *
+ * An entry whose intent is HELD keeps only its kind too, and is re-run from {@link HeldIntents}, the one source of
+ * its command.
  */
-function reapplicable(entry: LogEntry): CommandOfKind<CommandKind> {
-  if (entry.kind === 'invertible' || entry.result === null) return entry.command;
-  throw new Error(
-    `${entry.command.kind} is redone from the image it produced and keeps no command to re-run; ` +
-      'reaching for one is a defect in the caller.',
-  );
+function reapplicable(entry: LogEntry, held: HeldIntents): CommandOfKind<CommandKind> {
+  if (entry.kind === 'terminal' && entry.result !== null) {
+    throw new Error(
+      `${entry.command.kind} is redone from the image it produced and keeps no command to re-run; ` +
+        'reaching for one is a defect in the caller.',
+    );
+  }
+  if (declaredCommands[entry.command.kind].replay !== 'reapply-held-intent') {
+    // NARROWED BY THE DECLARATION, which `RecordedCommand` reads: an entry whose kind is not held keeps its command
+    // whole. The checker cannot correlate the entry's kind with the table's value through the union, so this cast and
+    // `recordedOf`'s are the two places that say so, both reading the same `replay` value.
+    return entry.command as CommandOfKind<CommandKind>;
+  }
+  // HELD BESIDE THE ENTRY (ADR-0171 Decision 3), keyed by it, so it lives exactly as long as the entry does. Missing is
+  // unreachable while the entry lives, and re-running the kind alone would protect with no password, so it refuses.
+  const command = held.get(entry);
+  if (command === undefined) {
+    throw new Error(
+      `${entry.command.kind} keeps its command beside its log entry rather than in it, and none is held for this ` +
+        'entry. Nothing was re-applied.',
+    );
+  }
+  return command;
 }
 
 /** The other documents an entry names: none for one redone from its result, which keeps no command. */
-function sourcesOfEntry(entry: LogEntry): readonly DocId[] {
+function sourcesOfEntry(entry: LogEntry, held: HeldIntents): readonly DocId[] {
   if (entry.kind === 'terminal' && entry.result !== null) return [];
-  return sourceIdsOf(reapplicable(entry));
+  return sourceIdsOf(reapplicable(entry, held));
+}
+
+/**
+ * The commands whose intent is a password, held beside their log entries and never in them
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 3).
+ *
+ * A `WeakMap` keyed by the entry object, so an entry the log trims, a redo tail a new command truncates and a closed
+ * document's whole log take their commands with them, by the key, with nothing to remember to delete. In memory
+ * only: nothing serialises a `WeakMap`, and no reader of the log reaches this one.
+ *
+ * Keyed by `object` because the key is used for its identity alone: `execute` holds the entry as `LogEntryFor<K>` and
+ * `redo` reads it back as `LogEntry`, two spellings of one object the checker cannot unify for a generic `K`.
+ */
+type HeldIntents = WeakMap<object, CommandOfKind<CommandKind>>;
+
+/**
+ * What an entry keeps of the command it was made for: the kind alone where its declaration holds the intent, else the
+ * command whole ({@link RecordedCommand}).
+ *
+ * Cast, and sound by the declaration it reads: `RecordedCommand<K>` is decided by that same `replay` value, and the
+ * checker cannot evaluate the conditional for a generic `K`. {@link reapplicable} holds the reverse cast.
+ */
+function recordedOf<K extends CommandKind>(command: CommandOfKind<K>): RecordedCommand<K> {
+  const kept = declaredCommands[command.kind].replay === 'reapply-held-intent' ? { kind: command.kind } : command;
+  return kept as RecordedCommand<K>;
 }
 
 /**
@@ -578,6 +624,8 @@ export type Undone = Executed;
  */
 export class CommandBus {
   readonly #writers: WriterRegistry;
+  /** Commands held beside their entries rather than in them ({@link HeldIntents}). */
+  readonly #held: HeldIntents = new WeakMap();
 
   constructor(writers: WriterRegistry) {
     this.#writers = writers;
@@ -791,7 +839,7 @@ export class CommandBus {
             `when it ran.`,
         );
       }
-      const command = reapplicable(entry);
+      const command = reapplicable(entry, this.#held);
       const writer = this.#writerFor(command.kind, spec.writer);
       const session = await this.#sessionFor(command.kind, spec.writer, sessions, inputs);
       const preRead = spec.replay === 'stored-effect' ? entry.read : await this.#preReadFor(spec, command, inputs);
@@ -1025,11 +1073,14 @@ export class CommandBus {
     // a copy of every bookmark per entry for a value redo must re-read anyway is
     // the retention rule read backwards.
     const stored = spec.replay === 'stored-effect' ? preRead : undefined;
+    // WHAT THE ENTRY KEEPS OF THE COMMAND, which for a held intent is its kind alone (ADR-0171 Decision 3): the
+    // command itself goes into `#held` below, beside the entry and never in it.
+    const kept = recordedOf(command);
     const entry: LogEntryFor<K> = captured.captured
-      ? { kind: 'invertible', command, inverse: captured.prior, read: stored }
+      ? { kind: 'invertible', command: kept, inverse: captured.prior, read: stored }
       : {
           kind: 'terminal',
-          command,
+          command: kept,
           // THE ONLY Checkpoint MINT IN THE KERNEL. Taken because capture said
           // prior state could not be recorded — never speculatively. A FILE the
           // service names and the writer fills, so the bytes never pass through
@@ -1071,6 +1122,9 @@ export class CommandBus {
     // here, after its capture ran, and makes no version by this ordering alone
     // (ADR-0169 Decision 6) — the case that says so is the bus's
     // *a refusing APPLY after a successful capture*.
+    //
+    // HELD AT THE SAME MOMENT, keyed by the entry as recorded, so the two cannot exist apart.
+    if (spec.replay === 'reapply-held-intent') this.#held.set(recorded, command);
     context.commandLog(COMMAND_WRITER).record(recorded);
 
     // THE WINDOW'S BYTES, after the entry and not before it: by here the session has changed,
@@ -1251,7 +1305,7 @@ export class CommandBus {
     const entry = context.commandLog(COMMAND_WRITER).peekRedo();
     if (entry === undefined) return [];
     // ONCE EACH: a merge may name one document twice (ADR-0152), and a caller holds each document's session once.
-    return [...new Set(sourcesOfEntry(entry))];
+    return [...new Set(sourcesOfEntry(entry, this.#held))];
   }
 
   /**
@@ -1272,7 +1326,7 @@ export class CommandBus {
 
   /** The other documents {@link replayPastImage} will re-apply against — `pendingRedoSources`, for every pending entry. */
   pendingReplaySources(context: DocumentContext): readonly DocId[] {
-    return [...new Set(context.log.pastImage.flatMap((entry) => sourcesOfEntry(entry)))];
+    return [...new Set(context.log.pastImage.flatMap((entry) => sourcesOfEntry(entry, this.#held)))];
   }
 
   async redo(
@@ -1301,7 +1355,7 @@ export class CommandBus {
       await this.#show(entry.command.kind, context, inputs, true);
       return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
     }
-    const command = reapplicable(entry);
+    const command = reapplicable(entry, this.#held);
 
     // PICKED HERE, for `undo`'s reason: the writer comes from the log entry, so
     // the caller could not have chosen a session for it.

@@ -3636,6 +3636,46 @@ export const entry: LogEntry = {
 `,
   },
   {
+    name: 'an entry whose intent is HELD may not carry the passwords it was applied with',
+    expect: 'reject',
+    // TS2353 and not the signing case's TS2322: both terminal shapes resolve to the kind alone for this command, so
+    // the checker reports the excess property directly rather than under a union member it failed to match.
+    code: 'TS2353',
+    // ADR-0171 Decision 3: a command declaring `reapply-held-intent` keeps its KIND in the entry and nothing else, and
+    // the bus holds the command beside it. So the protect's passwords have no field here, and neither has the rest of
+    // the command, since a protect with its passwords taken out is still one a redo could re-run with no password.
+    because: /Object literal may only specify known properties, and 'encryption' does not exist in type/u,
+    notBecause: null,
+    source: `
+import type { Checkpoint, LogEntry } from '@monstera/kernel';
+declare const file: Checkpoint;
+export const entry: LogEntry = {
+  kind: 'terminal',
+  command: { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: 'kept' },
+  checkpoint: file,
+  reason: 'no prior state',
+  read: undefined,
+  result: null,
+};
+`,
+  },
+  {
+    name: 'CONTROL: the same held entry, keeping only the kind, compiles',
+    expect: 'allow',
+    source: `
+import type { Checkpoint, LogEntry } from '@monstera/kernel';
+declare const file: Checkpoint;
+export const entry: LogEntry = {
+  kind: 'terminal',
+  command: { kind: 'setDocumentProtection' },
+  checkpoint: file,
+  reason: 'no prior state',
+  read: undefined,
+  result: null,
+};
+`,
+  },
+  {
     name: 'a spec may not declare one writer and CAPTURE through another',
     expect: 'reject',
     code: 'TS2322',

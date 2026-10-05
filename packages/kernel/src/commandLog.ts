@@ -13,6 +13,7 @@ import type { Brand } from '@monstera/shared';
 // through a type-only import of a type.
 //
 // Same mechanism as the Electron download one file over, with a different bill.
+import type { DeclaredCommands } from './commandDeclarations.js';
 import type { PreReadValue } from './engineSeam.js';
 import type { PriorFieldValue } from './formFields.js';
 import type { PriorAnnotationAuthor, PriorAnnotationText } from './pageAnnotations.js';
@@ -775,14 +776,19 @@ export type CaptureResult<T> =
 export type LogEntryFor<K extends CommandKind> =
   | {
       readonly kind: 'invertible';
-      readonly command: CommandOfKind<K>;
+      /** The command whole, or its kind alone where the bus holds it ({@link RecordedCommand}). */
+      readonly command: RecordedCommand<K>;
       readonly inverse: CommandPrior[K];
       /** What the apply was handed, where replay may not read it again. */
       readonly read: PreReadValue | undefined;
     }
   | {
       readonly kind: 'terminal';
-      readonly command: CommandOfKind<K>;
+      /**
+       * The command whole, or its kind alone for a command whose intent the bus holds beside the entry
+       * ({@link RecordedCommand}).
+       */
+      readonly command: RecordedCommand<K>;
       readonly checkpoint: Checkpoint;
       /** Why no inverse could be recorded. Carried so undo can explain itself. */
       readonly reason: string;
@@ -807,6 +813,27 @@ export type LogEntryFor<K extends CommandKind> =
       /** The image the apply produced, which redo installs: a whole document on disk, as the checkpoint is. */
       readonly result: Checkpoint;
     };
+
+/**
+ * What a re-runnable terminal entry keeps of its command: the command whole, or **the kind alone** for a command
+ * declaring `replay: 'reapply-held-intent'`
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 3).
+ *
+ * The kind alone, not the command with its passwords taken out: a protect without them is still a valid protect, one
+ * that writes no password, so a redo that re-ran it would compile and weaken the document. `{ kind }` is not a
+ * command, so a caller reaching for it to re-run does not compile, and the bus's held table is the only source.
+ *
+ * On BOTH re-runnable shapes, though the one command declaring it today is terminal: which shape an entry takes is
+ * decided by its capture at run time, and where the intent is kept is decided by the declaration, so neither may
+ * assume the other.
+ */
+export type RecordedCommand<K extends CommandKind> = K extends CommandKind
+  ? // DISTRIBUTED over `K` by the outer test, so `RecordedCommand<CommandKind>` is each kind's answer united rather
+    // than one answer for the whole union, which would be `CommandOfKind` for every kind.
+    DeclaredCommands[K]['replay'] extends 'reapply-held-intent'
+    ? { readonly kind: K }
+    : CommandOfKind<K>
+  : never;
 
 /**
  * Any entry, as the log holds them.

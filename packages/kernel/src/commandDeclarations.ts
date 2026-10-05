@@ -251,9 +251,17 @@ export type Invertibility =
  * apply produced, and redo installs it: the effect of a signature is the signed
  * file, and the entry keeps only the command's kind, so the credential it was
  * applied with is never recorded.
+ *
+ * **Where a reproducible intent is kept is the third half**
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md)'s
+ * Decision 3 addendum). `reapply-intent` keeps it in the entry. `reapply-held-intent`
+ * keeps the kind alone in the entry and the whole command in the bus, in memory,
+ * for a command whose intent IS a password: a protect with its passwords taken
+ * out is still a valid protect, one that writes no password, so the entry holds
+ * nothing a redo could re-run by mistake.
  */
 export type Reproducibility =
-  | { readonly reproducible: true; readonly replay: 'reapply-intent' }
+  | { readonly reproducible: true; readonly replay: 'reapply-intent' | 'reapply-held-intent' }
   | { readonly reproducible: false; readonly replay: 'stored-effect' | 'stored-result' };
 
 /**
@@ -1570,11 +1578,12 @@ const declarations = {
     // main already had.
     //
     // **The stated limit that follows**: a checkpoint taken on a document that
-    // was ALREADY protected is encrypted, so undoing a second protection change
-    // needs the first password. Nothing keeps it, so that undo refuses rather
-    // than producing a session that cannot read its own document. Recorded here
-    // and in the FEATURES row, because a limit nobody wrote down is one the
-    // next reader treats as a bug.
+    // was ALREADY protected is encrypted, so undoing a protection change needs
+    // the password that opens it. For a document opened with its password, main
+    // holds that one until close (ADR-0171 Decision 1). A password a protect set
+    // in this session is held by nothing yet, which is ADR-0171 Decision 8, put
+    // to the owner. Recorded here and in the FEATURES row, because a limit
+    // nobody wrote down is one the next reader treats as a bug.
     invertible: false,
     undo: 'checkpoint',
     // REPRODUCIBLE, and the axis is about the APPLY rather than about the
@@ -1588,8 +1597,12 @@ const declarations = {
     // ever ran, and it is not this command's effect. Declaring
     // `reproducible: false` here would force `replay: 'stored-effect'`, whose
     // stored effect is the whole encrypted document.
+    //
+    // HELD, because its intent IS the passwords (ADR-0171 Decision 3): the log
+    // entry keeps the kind alone and the bus keeps the command beside it, in
+    // memory, for redo and for a replay past the image.
     reproducible: true,
-    replay: 'reapply-intent',
+    replay: 'reapply-held-intent',
     sources: 'none',
     targets: 'none',
     reads: 'none',

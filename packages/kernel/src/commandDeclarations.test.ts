@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
-import type {
-  CommandKind,
-  NamesAFormField,
-  NamesAPage,
-  NamesATextObject,
-  NamesAnAnnotation,
-  NamesASecondDocument,
+import {
+  type CommandKind,
+  type NamesAFormField,
+  type NamesAPage,
+  type NamesATextObject,
+  type NamesAnAnnotation,
+  type NamesASecondDocument,
+  commandSchema,
 } from '@monstera/contract';
 
 import { type DeclaredCommands, declaredCommands } from './commandDeclarations.js';
@@ -285,6 +287,79 @@ describe('the declaration table', () => {
     expect(new Set(named.map((kind) => declaredCommands[kind].targets))).toStrictEqual(
       new Set(['page', 'annotation', 'field', 'text-object']),
     );
+  });
+});
+
+/**
+ * A field whose name says it carries a credential.
+ *
+ * By NAME, which is the only thing a schema says about what a string is: a password and a page label are both
+ * `z.string()`. So the rule can see a credential that is named as one, and a credential named as something else is out
+ * of its reach; stated here so the case is not read as wider than it is.
+ */
+const CREDENTIAL_NAME = /password|passphrase|secret|privatekey|credential/iu;
+
+/** Every credential-named field reachable inside `schema`, as dotted paths. */
+function credentialFields(schema: z.ZodType, path: string): string[] {
+  if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable) {
+    return credentialFields(schema.unwrap() as z.ZodType, path);
+  }
+  if (schema instanceof z.ZodArray) return credentialFields(schema.element as z.ZodType, `${path}[]`);
+  if (schema instanceof z.ZodUnion) {
+    return (schema.options as readonly z.ZodType[]).flatMap((option) => credentialFields(option, path));
+  }
+  if (!(schema instanceof z.ZodObject)) return [];
+  return Object.entries(schema.shape as Record<string, z.ZodType>).flatMap(([name, field]) => [
+    ...(CREDENTIAL_NAME.test(name) ? [`${path}.${name}`] : []),
+    ...credentialFields(field, `${path}.${name}`),
+  ]);
+}
+
+/** Every credential field of every command, keyed by the command's kind. */
+function credentialsByKind(): ReadonlyMap<CommandKind, readonly string[]> {
+  const found = new Map<CommandKind, readonly string[]>();
+  for (const option of commandSchema.options) {
+    const kind = option.shape.kind.value;
+    const fields = credentialFields(option, kind);
+    if (fields.length > 0) found.set(kind, fields);
+  }
+  return found;
+}
+
+/**
+ * The replay modes that keep no credential in the log: the intent held beside the entry (ADR-0171 Decision 3), or the
+ * result alone with the command's kind (ADR-0162).
+ */
+const KEEPS_NO_CREDENTIAL: ReadonlySet<string> = new Set(['reapply-held-intent', 'stored-result']);
+
+/** The kinds whose credential would be recorded in the log, by the replay they declare. */
+function recordingACredential(
+  credentials: ReadonlyMap<CommandKind, readonly string[]>,
+  replayOf: (kind: CommandKind) => string,
+): CommandKind[] {
+  return [...credentials.keys()].filter((kind) => !KEEPS_NO_CREDENTIAL.has(replayOf(kind)));
+}
+
+describe('a credential in a command never reaches the undo log', () => {
+  it('POSITIVE CONTROL: the walk finds the three credential fields known to exist', () => {
+    // EVERY RUN, inside the case that depends on it: a walk that could not see into a schema reports nothing, which
+    // is the answer the case below hopes for.
+    const found = credentialsByKind();
+    expect(found.get('setDocumentProtection')).toStrictEqual([
+      'setDocumentProtection.userPassword',
+      'setDocumentProtection.ownerPassword',
+    ]);
+    expect(found.get('signDocument')).toStrictEqual(['signDocument.passphrase']);
+  });
+
+  it('every command carrying one declares a replay that keeps it out of the log', () => {
+    expect(recordingACredential(credentialsByKind(), (kind) => declaredCommands[kind].replay)).toStrictEqual([]);
+  });
+
+  it('CONTROL: the same rule reports the protect declared reapply-intent, which keeps its command whole', () => {
+    const replayOf = (kind: CommandKind): string =>
+      kind === 'setDocumentProtection' ? 'reapply-intent' : declaredCommands[kind].replay;
+    expect(recordingACredential(credentialsByKind(), replayOf)).toStrictEqual(['setDocumentProtection']);
   });
 });
 
