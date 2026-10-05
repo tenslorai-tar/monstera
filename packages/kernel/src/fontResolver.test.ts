@@ -138,4 +138,66 @@ describe('normaliseFamily and familyClass', () => {
     expect(familyClass('Verdana')).toBe('sans');
     expect(familyClass(null)).toBe('sans');
   });
+
+  /**
+   * RRRRRRR-12: a family name is read as one run of letters, so a sans family whose name holds `serif` or a weight
+   * named `Book` was read as serif. Each is a name Windows ships; CONTROL beside each, a serif family the narrower
+   * pattern must still read as serif.
+   */
+  it('reads a sans family whose name holds "serif" or "book" as sans, and the serif ones as serif', () => {
+    expect(familyClass('Microsoft Sans Serif')).toBe('sans');
+    expect(familyClass('MS Sans Serif')).toBe('sans');
+    expect(familyClass('Franklin Gothic Book')).toBe('sans');
+    expect(familyClass('Book Antiqua')).toBe('serif');
+    expect(familyClass('Bookman Old Style')).toBe('serif');
+    expect(familyClass('Times New Roman')).toBe('serif');
+  });
+});
+
+describe('resolveRuns: the stand-in step (RRRRRRR-12)', () => {
+  /**
+   * THE STAND-IN IS ITS OWN STEP, between the asked family installed and the family's class. Calibri's stand-in is
+   * Carlito and its class is sans, so the class step alone would choose Arimo, which leads the catalogue: only the
+   * stand-in step puts Carlito first. Deleting that step left every case green until this one.
+   */
+  it('takes the bundled stand-in for its family before the class face, and before a face earlier in the catalogue', () => {
+    const carlito = face('carlito', 'bundled', 'Carlito', ACCENTED);
+    const caladea = face('caladea', 'bundled', 'Caladea', ACCENTED);
+    const catalogue = [ARIMO, TINOS, carlito, caladea];
+    expect(summary('café', request({ family: 'Calibri', own: [] }), catalogue)).toStrictEqual([['café', 'carlito', '']]);
+    expect(summary('café', request({ family: 'Cambria-Bold', own: [] }), catalogue)).toStrictEqual([['café', 'caladea', '']]);
+    // CONTROL: a sans family with no stand-in takes the class face, so the stand-in, not the order, chose Carlito.
+    expect(summary('café', request({ family: 'Verdana', own: [] }), catalogue)).toStrictEqual([['café', 'arimo', '']]);
+  });
+});
+
+describe('resolveRuns: the grapheme is the unit when a word is split (RRRRRRR-12)', () => {
+  /** COMBINING ACUTE ACCENT, built from its number so no combining mark sits loose in this file. */
+  const ACUTE = String.fromCodePoint(0x301);
+
+  /**
+   * A MARK STAYS WITH ITS LETTER. No face carries the whole word: the word's face carries `x` and `e` but not the
+   * accent, and another face carries `e` with it. Split by code point, the `e` stayed in the word's face and the accent
+   * went alone into the other, where HarfBuzz has no letter to place it on; by grapheme, `e` and its accent go together.
+   */
+  it('sends a letter and its combining mark to one face together', () => {
+    const plain = face('plain', 'bundled', 'Arimo', 'xyzeq');
+    const marks = face('marks', 'bundled', 'Tinos', `e${ACUTE}`);
+    const runs = summary(`xye${ACUTE}q`, request({ own: [], family: 'Arial' }), [plain, marks]);
+    expect(runs).toStrictEqual([
+      ['xy', 'plain', ''],
+      [`e${ACUTE}`, 'marks', ''],
+      ['q', 'plain', ''],
+    ]);
+  });
+
+  // CONTROL: a grapheme NO face carries whole is the box, in the word's face, with every code point of it named.
+  it('boxes a grapheme no face carries whole, and names each of its code points', () => {
+    const plain = face('plain', 'bundled', 'Arimo', 'xyzeq');
+    expect(summary(`xye${ACUTE}q`, request({ own: [], family: 'Arial' }), [plain])).toStrictEqual([
+      ['xy', 'plain', ''],
+      [`e${ACUTE}`, 'plain', `e${ACUTE}`],
+      ['q', 'plain', ''],
+    ]);
+  });
 });

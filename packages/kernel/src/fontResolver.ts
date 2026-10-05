@@ -7,10 +7,15 @@
  *
  * A word goes to the first source that carries EVERY character of it: the text's own font, then a sibling in the
  * same document, then an installed font of the same family and style, then the bundled face standing in for that
- * family, then a bundled face of the same class, then any installed and any bundled face. A word is never split
- * between two faces (the owner's Q6): one odd letter inside a word reads as a mistake, while the rest of the line
- * keeps its own font. Only a character NO source carries leaves its word's face, and then as the missing-character
- * box (Decision 8), which the caller draws.
+ * family, then a bundled face of the same class, then any installed and any bundled face. A word is never split while
+ * one face carries all of it (the owner's Q6): one odd letter inside a word reads as a mistake, while the rest of the
+ * line keeps its own font.
+ *
+ * Where NO face carries the whole word, the face carrying most of it draws what it carries and each GRAPHEME it lacks
+ * goes to the first face carrying all of that grapheme, because a character a face can draw is never turned into a
+ * box (ADR-0172's correction of 2026-10-05). The grapheme and not the code point, so a mark stays with its letter where
+ * HarfBuzz can place it. Only a grapheme no source carries is the missing-character box (Decision 8), in the word's
+ * face, which the caller draws.
  *
  * ## Characters that need no glyph
  *
@@ -111,7 +116,11 @@ export function normaliseFamily(name: string): string {
 export function familyClass(family: string | null): FamilyClass {
   const name = family === null ? '' : normaliseFamily(family);
   if (/mono|courier|consol|menlo|typewriter|code/u.test(name)) return 'mono';
-  if (/times|serif|roman|georgia|garamond|cambria|caladea|tinos|minion|palatino|book|baskerville|naskh/u.test(name)) {
+  // SANS BEFORE SERIF, because the name is read as one run of letters: *Microsoft Sans Serif* normalises to
+  // `microsoftsansserif`, which holds `serif`. And no bare `book`, which is a weight in *Franklin Gothic Book*; the
+  // serif families that carry it are named.
+  if (/sans|gothic|grotesk|grotesque/u.test(name)) return 'sans';
+  if (/times|serif|roman|georgia|garamond|cambria|caladea|tinos|minion|palatino|bookantiqua|bookman|baskerville|naskh/u.test(name)) {
     return 'serif';
   }
   return 'sans';
@@ -175,6 +184,7 @@ function weightFor(face: CandidateFace | null, bold: boolean): number {
 }
 
 const WORDS = new Intl.Segmenter('und', { granularity: 'word' });
+const GRAPHEMES = new Intl.Segmenter('und', { granularity: 'grapheme' });
 
 /**
  * `text` resolved into runs, each in one face. Adjacent words in the same face are one run, and a space or a mark of
@@ -204,24 +214,24 @@ export function resolveRuns(text: string, request: FontRequest, catalogue: reado
       append(segment, whole, []);
       continue;
     }
-    // NO FACE CARRIES THE WHOLE WORD. The face carrying most of it draws what it carries; a character only another
-    // face carries is drawn in that face, because a character drawn in some face is never turned into a box; and a
-    // character no face carries is a box, in the word's face. Splitting a word is the last resort, after the box would
-    // otherwise replace something a face can draw.
+    // NO FACE CARRIES THE WHOLE WORD. The face carrying most of it draws what it carries; a grapheme only another face
+    // carries is drawn in that face, because a character drawn in some face is never turned into a box; and a grapheme
+    // no face carries is a box, in the word's face. Splitting a word is the last resort, after the box would otherwise
+    // replace something a face can draw.
     const best = candidates.reduce<{ face: CandidateFace; carried: number } | null>((most, face) => {
       const carried = points.filter((point) => face.unicodes.has(point)).length;
       return most === null || carried > most.carried ? { face, carried } : most;
     }, null);
     const wordFace = best !== null && best.carried > 0 ? best.face : (previous ?? candidates[0] ?? null);
-    for (const character of segment) {
-      const point = character.codePointAt(0) ?? 0;
-      if (needed(character).length === 0 || wordFace?.unicodes.has(point) === true) {
-        append(character, wordFace, []);
+    for (const { segment: grapheme } of GRAPHEMES.segment(segment)) {
+      const wanted = needed(grapheme);
+      if (wanted.every((point) => wordFace?.unicodes.has(point) === true)) {
+        append(grapheme, wordFace, []);
         continue;
       }
-      const other = candidates.find((candidate) => candidate.unicodes.has(point));
-      if (other !== undefined) append(character, other, []);
-      else append(character, wordFace, [character]);
+      const other = candidates.find((candidate) => wanted.every((point) => candidate.unicodes.has(point)));
+      if (other !== undefined) append(grapheme, other, []);
+      else append(grapheme, wordFace, Array.from(grapheme));
     }
   }
   return runs.map((run) => ({ text: run.text, face: run.face, weight: weightFor(run.face, request.bold), missing: run.missing }));
