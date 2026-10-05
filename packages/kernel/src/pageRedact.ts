@@ -269,6 +269,84 @@ function removeOtherCopies(document: mupdf.PDFDocument, burned: readonly BurnedP
 }
 
 /**
+ * Gives every named destination a neutral name, and every reference to one the same new name, so a destination whose
+ * name spells the redacted text no longer does and each link still lands where it did (ADR-0163, the owner's answer
+ * of 2026-10-05).
+ *
+ * **Every name, not the ones that match.** Which names restate the removed text is not known here, as it is not for the
+ * outline, so the burn-in renames all of them. The names live in the catalogue's `/Dests` (keys are names) and the
+ * `/Names` tree's `/Dests` (keys are strings); a name in both gets one new name in both, and the tree is rebuilt as a
+ * single sorted node, which the format allows at any size.
+ *
+ * **The references are found by walking every object**, because a destination is named from places with no common
+ * parent: a link's `/Dest`, a GoTo action's `/D` (on a link, a field, a page's or the document's additional actions,
+ * the open action, any `/Next` chain), and the trailer. A reference to a name defined nowhere is renamed too, since it
+ * spells its text as well and goes nowhere either way. A **GoToR** or **GoToE** action names a destination in ANOTHER
+ * file, so it is left: renaming it would break the link without touching this document's names.
+ *
+ * The old tree's nodes and the old dictionary are left unreferenced, and the removing save collects them.
+ */
+function renameDestinations(document: mupdf.PDFDocument): void {
+  const root = document.getTrailer().get('Root');
+  const renamed = new Map<string, string>();
+  const neutral = (name: string): string => {
+    const known = renamed.get(name);
+    if (known !== undefined) return known;
+    const next = `D${String(renamed.size + 1)}`;
+    renamed.set(name, next);
+    return next;
+  };
+
+  const dests = root.get('Dests');
+  if (dests.isDictionary()) {
+    const fresh = document.newDictionary();
+    dests.forEach((value, key) => {
+      fresh.put(neutral(String(key)), value);
+    });
+    root.put('Dests', fresh);
+  }
+  const names = root.get('Names');
+  if (names.isDictionary() && names.get('Dests').isDictionary()) {
+    const entries = Object.entries(document.loadNameTree('Dests')).map(([name, value]) => [neutral(name), value] as const);
+    // SORTED BY KEY, which a name tree's lookup assumes.
+    entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    const flat = document.newArray();
+    for (const [name, value] of entries) {
+      flat.push(document.newString(name));
+      flat.push(value);
+    }
+    const tree = document.newDictionary();
+    tree.put('Names', flat);
+    names.put('Dests', tree);
+  }
+
+  const renamedValue = (value: mupdf.PDFObject): mupdf.PDFObject | undefined => {
+    if (value.isName()) return document.newName(neutral(value.asName()));
+    if (value.isString()) return document.newString(neutral(value.asString()));
+    return undefined;
+  };
+  const visit = (object: mupdf.PDFObject): void => {
+    if (object.isDictionary()) {
+      const dest = renamedValue(object.get('Dest'));
+      if (dest !== undefined) object.put('Dest', dest);
+      if (String(object.get('S')) === '/GoTo') {
+        const target = renamedValue(object.get('D'));
+        if (target !== undefined) object.put('D', target);
+      }
+    }
+    // DIRECT CHILDREN ONLY: every indirect object is visited once by the loop below, so following one here would
+    // rename its references twice.
+    if (object.isDictionary() || object.isArray()) {
+      object.forEach((child) => {
+        if (!child.isIndirect()) visit(child);
+      });
+    }
+  };
+  for (let number = 1; number < document.countObjects(); number += 1) visit(document.newIndirect(number).resolve());
+  visit(document.getTrailer());
+}
+
+/**
  * Points each marked-content reference of `element` that is on `page`, and names a form the page drew before the
  * burn-in and no longer draws, at the filtered copy carrying the same `/StructParents`. A reference on another page
  * is that page's, and is left.
@@ -421,6 +499,7 @@ export const applyApplyRedactions: Apply<'mupdf', 'applyRedactions'> = (session,
     }
     if (burnedPages.length > 0) {
       removeOtherCopies(document, burnedPages, deleted);
+      renameDestinations(document);
       // READ BEFORE THE DELETE, and only when it is wanted: `/Title` has to come
       // out of the dictionary this is about to remove.
       const kept = command.keepTitle ? titleOf(document) : undefined;

@@ -126,3 +126,28 @@ redactions warning names the bookmarks among what is removed, as the setting's d
 redacted text survives a burn-in, in the `/Names` tree and in the catalogue's `/Dests` (measured 2026-10-05 against
 MuPDF 1.28.0, a generated page). It is not a bookmark, and removing it breaks every link that jumps to it; renaming
 the destinations and the document's own references to them would keep the links. Which is the owner's.
+
+## The owner's answer on named destinations, 2026-10-05: renamed, so the links keep working
+
+*"Rename them to neutral names so the links keep working."* A burn-in now gives every named destination a neutral
+name (`D1`, `D2`, …) in the catalogue's `/Dests` and in the `/Names` tree, and every reference to one the same new
+name: a link's `/Dest`, a GoTo action's `/D` wherever it sits (a link, a field, additional actions, the open action, a
+`/Next` chain). All of them, since which names restate the removed text is not known here, as it is not for the
+outline. A reference to a name defined nowhere is renamed too. The tree is rebuilt as one sorted node.
+
+- **The references are found by walking every object**, because a destination is named from places with no common
+  parent; it runs once per burn-in.
+- **A GoToR or GoToE action is left.** It names a destination in another file, and renaming it would break that link
+  without touching this document's names. **Stated cost:** such a name can still spell the removed text.
+- **MuPDF 1.28.0 reads only `/Dests` when a document has it**, and never falls back to the tree (`pdf_lookup_dest`,
+  measured on a generated document). Both stores are renamed through one map, so a name in both lands where it did in
+  whichever store a reader consults.
+
+`redactionLeaks.test.ts` holds it per store: the leak scan, which now reads names and dictionary keys as well as
+strings, finds the secret in no name after a burn-in, and each link and the open action still resolve to page 2 by
+MuPDF's own resolution. The controls are the same documents serialised with nothing burned, where the scan finds the
+secret in the store's key and the three references and every link already lands on page 2. Mutations: no rename turns
+both cases red on the scan; renaming the stores without the references turns them red on the landings.
+
+Rejected: **deleting the destinations**, which breaks every link that jumps to one; **renaming only names that match
+the marked text**, since the marked text is not known as text at this point and a near spelling would survive.

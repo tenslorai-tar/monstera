@@ -100,10 +100,16 @@ async function secretSites(bytes: Uint8Array): Promise<string[]> {
   const visit = (value: unknown, path: string): void => {
     if (value instanceof PDFString || value instanceof PDFHexString) {
       if (value.decodeText().includes(SECRET)) sites.push(`string ${path}`);
+    } else if (value instanceof PDFName) {
+      // A NAME SPELLS TEXT TOO, decoded from its `#20` escapes: a named destination is one, as a value and as a key.
+      if (value.decodeText().includes(SECRET)) sites.push(`name ${path}`);
     } else if (value instanceof PDFArray) {
       value.asArray().forEach((item, at) => { visit(item, `${path}[${String(at)}]`); });
     } else if (value instanceof PDFDict) {
-      for (const [key, item] of value.entries()) visit(item, `${path}${key.asString()}`);
+      for (const [key, item] of value.entries()) {
+        if (key.decodeText().includes(SECRET)) sites.push(`key ${path}${key.asString()}`);
+        visit(item, `${path}${key.asString()}`);
+      }
     }
   };
 
@@ -913,6 +919,82 @@ describe('the redaction leak corpus: the outline and private data (ADR-0163)', (
     // THE CONTROL INSIDE THE CASE: a burn-in that dropped every page's private data would pass the line above.
     expect(document.getPage(1).node.has(PDFName.of('PieceInfo'))).toBe(true);
   });
+});
+
+/**
+ * NAMED DESTINATIONS that spell the secret, aimed at page 2 and named from page 1 by a link's `/Dest`, a link's GoTo
+ * action and the document's open action. The links sit below the mark, so the burn-in does not remove them as covered
+ * objects.
+ *
+ * **One store per fixture.** `dictionary` is the catalogue's `/Dests`, keyed by names; `tree` is the `/Names` tree's,
+ * keyed by strings. MuPDF 1.28.0's `pdf_lookup_dest` reads `/Dests` alone whenever it exists and never falls back to
+ * the tree (measured 2026-10-05: in a document holding both, a tree name resolved to no page), so a fixture holding
+ * both could not show a tree name still landing.
+ */
+const namedDestinations = (store: 'dictionary' | 'tree') =>
+  fixture(async (document) => {
+    const { context } = document;
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const page = onPage(document);
+    page.drawText(SECRET, { font, size: 18, x: 76, y: 698 });
+    const target = document.addPage([...PAGE]);
+    const named = () => (store === 'dictionary' ? PDFName.of(SECRET) : PDFString.of(SECRET));
+    const link = (rect: number[], entries: Record<string, unknown>) =>
+      context.register(context.obj({ Type: 'Annot', Subtype: 'Link', Rect: rect, Border: [0, 0, 0], ...entries }));
+    page.node.set(
+      PDFName.of('Annots'),
+      context.obj([
+        link([72, 600, 200, 620], { Dest: named() }),
+        link([72, 560, 200, 580], { A: { S: 'GoTo', D: named() } }),
+      ]),
+    );
+    if (store === 'dictionary') {
+      const dests = context.obj({});
+      dests.set(PDFName.of(SECRET), context.obj([target.ref, 'Fit']));
+      document.catalog.set(PDFName.of('Dests'), dests);
+    } else {
+      document.catalog.set(PDFName.of('Names'), context.obj({ Dests: { Names: [named(), context.obj([target.ref, 'Fit'])] } }));
+    }
+    document.catalog.set(PDFName.of('OpenAction'), context.obj({ S: 'GoTo', D: named() }));
+  });
+
+/** Where each of page 1's links lands, and where the open action's name lands, by MuPDF's own resolution (B3a). */
+async function landings(bytes: Uint8Array): Promise<{ links: number[]; opens: number }> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    return await withDocument(session, (document) => {
+      const links = document
+        .loadPage(0)
+        .getLinks()
+        .map((each) => document.resolveLink(each));
+      const opened = document.getTrailer().get('Root').get('OpenAction').get('D');
+      const name = opened.isName() ? opened.asName() : opened.asString();
+      return { links, opens: document.resolveLink(`#nameddest=${encodeURIComponent(name)}`) };
+    });
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+describe('the redaction leak corpus: named destinations (ADR-0163, the owner’s answer)', () => {
+  for (const store of ['dictionary', 'tree'] as const) {
+    it(`CONTROL: a serialise that burns nothing in keeps the secret in every ${store} name, and every link lands on page 2`, async () => {
+      const kept = await untouched(await namedDestinations(store));
+      // THE SCAN SEES THE NAMES, or the case below would pass on a scan that cannot look: the link's `/Dest`, the
+      // action's `/D`, the open action's, and the store's own key.
+      const sites = await secretSites(kept);
+      expect(sites.filter((site) => /\/Dest$|\/A\/D$|\/OpenAction\/D$/u.test(site))).toHaveLength(3);
+      expect(sites.some((site) => (store === 'dictionary' ? site.startsWith('key ') : site.includes('/Names/Dests')))).toBe(true);
+      expect(await landings(kept)).toStrictEqual({ links: [1, 1], opens: 1 });
+    });
+
+    it(`a burn-in leaves the secret in no ${store} name, and every link still lands on page 2`, async () => {
+      const burned = await burnIn(await namedDestinations(store), SECRET_BOX);
+      expect(await secretSites(burned)).toStrictEqual([]);
+      // THE DECISION, not the end state: deleting the destinations would also leave no secret, and every link dead.
+      expect(await landings(burned)).toStrictEqual({ links: [1, 1], opens: 1 });
+    });
+  }
 });
 
 describe('the redaction leak corpus: what REMAINS, and is MuPDF’s (ADR-0163)', () => {
