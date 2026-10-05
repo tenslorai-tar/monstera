@@ -151,8 +151,10 @@ import {
   StaleTargetError,
   saveWriteCause,
   type SaveBackups,
+  type LogEntry,
 } from '@monstera/kernel';
 import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
+import type { ProtectionTerms } from './documentPasswords.js';
 import {
   type DocId,
   type DocVersion,
@@ -335,6 +337,25 @@ export interface EngineSessionSource {
    * ADR-0171). Read by everything that opens the document's bytes in a host of its own: a PDFium command and Optimize.
    */
   readonly opensWith: (docId: DocId) => HeldPassword | undefined;
+  /**
+   * A protect ran on this document: it opens and stands as `terms` leave it, and `step`, the protect's log entry, keeps
+   * where it was (`EngineSessions.protected`, ADR-0171 Decision 8). Required, so a supervisor that does not follow a
+   * protect is a compile error rather than every later reopen trying the password the document no longer has.
+   */
+  readonly protected: (docId: DocId, step: object, terms: ProtectionTerms) => void;
+  /** The protect `step` is being undone (`before`) or redone (`after`): `EngineSessions.protectionStepped`. */
+  readonly protectionStepped: (docId: DocId, step: object, to: 'before' | 'after') => void;
+}
+
+/** The terms the holder follows, for a protect; `undefined` for every other command. */
+function protectionTermsOf(command: Command): ProtectionTerms | undefined {
+  if (command.kind !== 'setDocumentProtection') return undefined;
+  return { encryption: command.encryption, userPassword: command.userPassword };
+}
+
+/** Whether a log entry is a protect's, so its undo or redo moves the holder. */
+function isProtectStep(entry: LogEntry | undefined): entry is LogEntry {
+  return entry?.command.kind === 'setDocumentProtection';
 }
 
 /**
@@ -3371,7 +3392,7 @@ export class DocumentCommands {
         }
       }
 
-      const { trimmed } = await this.#bus.execute<K>(
+      const { trimmed, entry } = await this.#bus.execute<K>(
         sessions,
         context,
         command,
@@ -3380,6 +3401,10 @@ export class DocumentCommands {
         // name*, and the payload is the contract's (ADR-0040 Decision 4).
         this.#byteImage(docId, sourceIdsOf(command)),
       );
+      // A PROTECT MOVES THE HOLDER, in the lane and after the bus recorded it, so every later open of a copy has the
+      // key the document opens with now (ADR-0171 Decision 8).
+      const terms = protectionTermsOf(command);
+      if (terms !== undefined) this.#engine.protected(docId, entry, terms);
       // READ AFTER THE BUS, INSIDE THE LANE, for the reason `Versioned` reads
       // the version there: the command rewrote the canonical image, and the
       // length the renderer needs is the new one. Reading it outside the lane
@@ -3447,13 +3472,24 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      stepped.yes =
-        (await this.#bus.undo(
-          sessions,
-          context,
-          (write) => this.#restore(docId, write),
-          this.#byteImage(docId),
-        )) !== undefined;
+      // A PROTECT'S UNDO MOVES THE HOLDER FIRST, since a protect undone by its checkpoint reopens that copy, and the
+      // reopen must be given where the document stood before it (ADR-0171 Decision 8). Moved back if the undo throws,
+      // so the holder and the log never disagree about which protect is applied.
+      const last = context.log.entries.at(-1);
+      const protect = isProtectStep(last) ? last : undefined;
+      if (protect !== undefined) this.#engine.protectionStepped(docId, protect, 'before');
+      try {
+        stepped.yes =
+          (await this.#bus.undo(
+            sessions,
+            context,
+            (write) => this.#restore(docId, write),
+            this.#byteImage(docId),
+          )) !== undefined;
+      } catch (thrown) {
+        if (protect !== undefined) this.#engine.protectionStepped(docId, protect, 'after');
+        throw thrown;
+      }
       return context.byteLength;
     });
 
@@ -3518,9 +3554,18 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      stepped.yes =
-        (await this.#bus.redo(sessions, context, this.#byteImage(docId, this.#bus.pendingRedoSources(context)))) !==
-        undefined;
+      // A PROTECT'S REDO MOVES THE HOLDER FIRST, for undo's reason in the other direction.
+      const next = context.log.peekRedo();
+      const protect = isProtectStep(next) ? next : undefined;
+      if (protect !== undefined) this.#engine.protectionStepped(docId, protect, 'after');
+      try {
+        stepped.yes =
+          (await this.#bus.redo(sessions, context, this.#byteImage(docId, this.#bus.pendingRedoSources(context)))) !==
+          undefined;
+      } catch (thrown) {
+        if (protect !== undefined) this.#engine.protectionStepped(docId, protect, 'before');
+        throw thrown;
+      }
       return context.byteLength;
     });
 

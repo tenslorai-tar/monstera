@@ -2,6 +2,8 @@ export { mupdfWriter, signaturesKeptBySave, withDocument } from './mupdfWriter.j
 // WHAT THE WRITER'S `open` THROWS for a file that needs a password, beside the writer, so an in-process caller tells it
 // apart by its class as the host's caller tells `EngineDocumentLocked`.
 export { DocumentLocked } from './engineSeam.js';
+// HOW A COPY IS OPENED AS THE DOCUMENT STANDS (ADR-0171 Decision 8): the host's rule, for an in-process proof of it.
+export { openCopy } from './openCopy.js';
 export {
   applyRotatePages,
   captureRotatePages,

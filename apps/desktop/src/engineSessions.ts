@@ -13,6 +13,7 @@
 // interchangeable and are not, and invariant 20 is what sits behind the
 // difference: no native engine code in main.
 import type {
+  DocumentAccess,
   DocumentContext,
   DocumentService,
   DocumentTeardown,
@@ -24,7 +25,7 @@ import type {
 } from '@monstera/kernel';
 import type { DocId, HeldPassword } from '@monstera/shared';
 
-import { DocumentPasswords } from './documentPasswords.js';
+import { DocumentPasswords, type EngineOpening, type ProtectionTerms } from './documentPasswords.js';
 import { describeEngineHostGone, type ShellFailureSink } from './shellFailure.js';
 
 // `import type`, and the header above says why in 38.1 MB. This one is the
@@ -106,7 +107,7 @@ export interface SessionAreaOwner {
  */
 export type EngineOpenFromPath = (
   snapshotPath: string,
-  password?: string,
+  opening: EngineOpening,
 ) => Promise<MupdfSession>;
 
 /**
@@ -138,9 +139,9 @@ export async function openEngineSession(
   docId: DocId,
   areas: SessionAreaOwner,
   open: EngineOpenFromPath,
-  password?: string,
+  opening: EngineOpening,
 ): Promise<{ readonly session: MupdfSession; readonly snapshotBytes: number }> {
-  return openEngineSessionFrom(canonicalImageWrite(documents, docId), areas, open, password);
+  return openEngineSessionFrom(canonicalImageWrite(documents, docId), areas, open, opening);
 }
 
 /**
@@ -164,15 +165,14 @@ export async function openEngineSessionFrom(
   write: SnapshotWrite,
   areas: SessionAreaOwner,
   open: EngineOpenFromPath,
-  password?: string,
+  opening: EngineOpening,
 ): Promise<{ readonly session: MupdfSession; readonly snapshotBytes: number }> {
   const { snapshotPath } = await areas.create();
   try {
     const snapshotBytes = await write(snapshotPath);
-    // THE PASSWORD IS PASSED THROUGH AND NOT HELD. It arrives as an argument,
-    // reaches one call, and leaves with the stack frame — nothing on this
-    // module's side of the seam records it (ADR-0055).
-    const session = await open(snapshotPath, password);
+    // THE KEYS ARE PASSED THROUGH AND NOT HELD HERE. They arrive held, reach one call, and leave with the stack frame;
+    // the holder is `DocumentPasswords` (ADR-0171).
+    const session = await open(snapshotPath, opening);
     return { session, snapshotBytes };
   } catch (error) {
     await areas.remove();
@@ -713,6 +713,27 @@ export class EngineSessions implements EngineSessionSource {
   readonly opensWith = (docId: DocId): HeldPassword | undefined => this.#passwords.opensWith(docId);
 
   /**
+   * What every open of one of `docId`'s copies in a host is given: every key, the current one first, and how the
+   * document stands (ADR-0171 Decision 8). Read by every reopen {@link opensWith} names for the engine host's own sessions.
+   */
+  readonly opening = (docId: DocId): EngineOpening => this.#passwords.opening(docId);
+
+  /** Records how the document stood at its first open, from the engine's access: 1 is a file with no encryption. */
+  opened(docId: DocId, access: DocumentAccess): void {
+    this.#passwords.opened(docId, access === 1);
+  }
+
+  /** A protect ran: the document opens and stands as `terms` leave it, and `step`, its log entry, keeps where it was. */
+  protected(docId: DocId, step: object, terms: ProtectionTerms): void {
+    this.#passwords.protect(docId, step, terms);
+  }
+
+  /** The protect `step` is being undone (`before`) or redone (`after`). */
+  protectionStepped(docId: DocId, step: object, to: 'before' | 'after'): void {
+    this.#passwords.step(docId, step, to);
+  }
+
+  /**
    * Get-or-miss, never get-or-create. Arrow-bound because this is handed over
    * as {@link EngineSessionSource}'s member and a method would lose its
    * receiver on the way.
@@ -764,7 +785,15 @@ export class EngineSessions implements EngineSessionSource {
    */
   readonly opensOnlyWithPassword = (docId: DocId): boolean => {
     const entry = this.#entries.get(docId);
-    return entry !== undefined && (entry.locked !== null || entry.unlockedByPassword || entry.savedLocked);
+    // A PROTECT IN THIS SESSION THAT SET A USER PASSWORD counts too: the document as it stands opens only with the key
+    // the holder now answers (ADR-0171 Decision 8).
+    return (
+      entry !== undefined &&
+      (entry.locked !== null ||
+        entry.unlockedByPassword ||
+        entry.savedLocked ||
+        this.#passwords.opensWith(docId) !== undefined)
+    );
   };
 
   /** Records what a removal's save renewal found: whether the file it wrote opens only with a password. {@link renew}'s. */

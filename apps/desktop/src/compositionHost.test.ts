@@ -527,11 +527,12 @@ describe('the composition root, with an engine host platform', () => {
       const opens: unknown[] = [];
       const spy = platformAnswering((channel, params) => {
         if (channel === 'engine/open') {
-          const { password } = params as { password?: unknown };
-          opens.push(password);
+          // EVERY KEY, as the host's `openCopy` tries them (ADR-0171 Decision 8): this file opens when one is right.
+          const { keys } = params as { keys: readonly unknown[] };
+          opens.push(keys);
           // `access: 2`, what a user password buys, beside this file's `SESSION`, which no password opened.
-          if (password === PASSWORD) return { ok: true, value: { session: 'ab0f', access: 2 } };
-          return { ok: false, error: { code: password === undefined ? 'needs-password' : 'wrong-password' } };
+          if (keys.includes(PASSWORD)) return { ok: true, value: { session: 'ab0f', access: 2 } };
+          return { ok: false, error: { code: keys.length === 0 ? 'needs-password' : 'wrong-password' } };
         }
         if (channel === 'engine/capture') {
           return { ok: true, value: { captured: false, reason: 'page 1 carries a non-numeric /Rotate (/Sideways)' } };
@@ -573,9 +574,9 @@ describe('the composition root, with an engine host platform', () => {
       // open that rebuilt the session carried the password, asserted on what the host was sent.
       const undone = await handlers['document.undo']({ docId });
       expect(undone.ok && undone.value.kind).toBe('undone');
-      expect(opens.slice(before)).toStrictEqual([PASSWORD]);
+      expect(opens.slice(before)).toStrictEqual([[PASSWORD]]);
       // AND THE OPEN-TIME ATTEMPT CARRIED NONE: nothing is held before the unlock.
-      expect(opens[0]).toBeUndefined();
+      expect(opens[0]).toStrictEqual([]);
     });
   });
 
@@ -1328,9 +1329,10 @@ describe('the composition root, with BOTH engine hosts', () => {
     const inner = serialisingEngine();
     const mupdf = platformAnswering((channel, params) => {
       if (channel === 'engine/open') {
-        const { password } = params as { password?: unknown };
-        opens.push(password);
-        if (password !== PASSWORD) return { ok: false, error: { code: 'needs-password' } };
+        // THE CURRENT KEY FIRST (ADR-0171 Decision 8), so the first of the keys is the one the document opens with now.
+        const { keys } = params as { keys: readonly unknown[] };
+        opens.push(keys[0]);
+        if (!keys.includes(PASSWORD)) return { ok: false, error: { code: 'needs-password' } };
       }
       return inner(channel, params);
     });

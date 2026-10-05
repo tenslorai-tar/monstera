@@ -52,6 +52,7 @@ import {
   taggedPrior,
 } from './engineChannels.js';
 import { pictureRefusalCodeOf, placeholderRefusalCodeOf } from './hostRefusals.js';
+import { type CopyEngine, openCopy } from '../openCopy.js';
 
 /**
  * Reads one page's structured text as MuPDF's own JSON.
@@ -564,6 +565,13 @@ export function createEngineHandlers({
   // which is a type-level trick standing where three plain lines say it.
   const gone = { ok: false, error: { code: 'no-such-session' } } as const;
 
+  /** `openCopy`'s engine calls: this writer, and the protect's own inverse for a document that stands unprotected. */
+  const copyEngine: CopyEngine<MupdfSession> = {
+    open: (image, password) => writer.open(image, password),
+    unprotect: (session) => execution.invert(session, 'setDocumentProtection', { standing: 'unprotected' }).then(() => undefined),
+    close: (session) => writer.close(session),
+  };
+
   /**
    * A DOCUMENT's failure, returned rather than thrown, for the reason above and
    * one more that is specific to these two codes.
@@ -648,7 +656,7 @@ export function createEngineHandlers({
       value: await probe({ positive, negative, loopbackPort }),
     }),
 
-    'engine/open': async ({ snapshotDirectory, snapshotName, outputDirectory, password }) => {
+    'engine/open': async ({ snapshotDirectory, snapshotName, outputDirectory, keys, standing }) => {
       // THE PATH IS USED, NOT VALIDATED, and that is the design rather than an
       // omission. Main composed these directories and wrote their DACLs; this
       // process reaches them because it was GRANTED them, and would reach
@@ -663,7 +671,8 @@ export function createEngineHandlers({
 
       let session: MupdfSession;
       try {
-        session = await writer.open(image, password);
+        // EVERY KEY, THEN HOW THE DOCUMENT STANDS (ADR-0171 Decision 8), by the one rule `openCopy` spells.
+        session = await openCopy(image, { keys, standing }, copyEngine);
       } catch (error) {
         // THE PASSWORD IS A SEPARATE OUTCOME FROM A BROKEN DOCUMENT, and the
         // difference decides what main does next: an encrypted document is one

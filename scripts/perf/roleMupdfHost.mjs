@@ -539,6 +539,9 @@ async function measureHost() {
       snapshotDirectory: paths.snapshot,
       snapshotName: SNAPSHOT_NAME,
       outputDirectory: paths.output,
+      // A PLAIN DOCUMENT, opened as main opens one no password opened (ADR-0171 Decision 8).
+      keys: [],
+      standing: 'as-copied',
     });
     const openMs = performance.now() - openStarted;
     if (!opened.ok) throw new Error(`engine/open answered ${opened.error.code}`);

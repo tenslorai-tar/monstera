@@ -82,6 +82,7 @@ import { HUMAN_CHECKS } from '../accessibilityRules.js';
 import type { CommandPrior } from '../commandLog.js';
 import { type DeclaredCommands, declaredCommands } from '../commandDeclarations.js';
 import type { KindsRoutedTo } from '../commandRouting.js';
+import { COPY_STANDINGS } from '../openCopy.js';
 import type { PlaceholderRequest } from '../signatureHole.js';
 import { PAGE_TEXT_READS } from '../textStructure.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
@@ -1436,6 +1437,18 @@ const pathSchema = z.string().min(1).max(ENGINE_PATH_MAX_CHARS);
 export const documentPasswordSchema = z.string().max(DOCUMENT_PASSWORD_MAX_CHARS);
 
 /**
+ * How many keys one `engine/open` may carry: the password a document was opened with and one per protect that set a
+ * user password in its session, distinct.
+ *
+ * **Sized to the frame.** Every request must fit one 262,144-byte frame, and a key at its 512-character bound costs
+ * about 3,100 bytes of JSON at worst, every character escaped: 256 keys measured 800,796 bytes against that frame
+ * (`hostRoutes.test.ts`, 2026-10-05), and 64 leave room for the rest of the request. Main offers the key the document
+ * opens with and the newest others up to this; a person would have to protect one document with more than 63 different
+ * passwords in one sitting for an old copy's key to go unoffered.
+ */
+export const ENGINE_OPEN_KEYS_MAX = 64;
+
+/**
  * One attempt's outcome, exactly as `containment.ts` defines it.
  *
  * The code's bound and charset are imported rather than restated: the host
@@ -1619,7 +1632,16 @@ export interface CoreChannelSchemas<
  * inventing a third arrangement.
  */
 export const liveSessionWire = {
-  open: { snapshotName: outputNameSchema, password: documentPasswordSchema.optional() },
+  open: {
+    snapshotName: outputNameSchema,
+    // EVERY KEY A COPY OF THE DOCUMENT MAY NEED, the one it opens with now first (ADR-0171 Decision 8): a checkpoint
+    // a protect encrypted needs that protect's password once the protect is undone. Tried in order, each a fresh open
+    // (ADR-0055), then no password. Empty for a document no password opened or set. Required, ADR-0069's rule.
+    keys: z.array(documentPasswordSchema).max(ENGINE_OPEN_KEYS_MAX).readonly(),
+    // HOW THE DOCUMENT STANDS, which the copy may not say: a checkpoint encrypted by a protect since undone is the
+    // document unprotected, so `unprotected` decrypts it in memory. `as-copied` keeps the copy's own encryption.
+    standing: z.enum(COPY_STANDINGS),
+  },
   openFailures: ['open-failed', 'needs-password', 'wrong-password'],
   opened: { access: z.literal(DOCUMENT_ACCESS_VALUES) },
   read: {},

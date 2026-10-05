@@ -577,11 +577,17 @@ describe('openEngineSession writes the canonical image out and opens it', () => 
     const area = areas(snapshotPath);
     let openedFrom = '';
 
-    const result = await openEngineSession(service, docId, area, async (path) => {
-      openedFrom = path;
-      opened = await mupdfWriter.open(readFileSync(path));
-      return opened;
-    });
+    const result = await openEngineSession(
+      service,
+      docId,
+      area,
+      async (path) => {
+        openedFrom = path;
+        opened = await mupdfWriter.open(readFileSync(path));
+        return opened;
+      },
+      { keys: [], standing: 'as-copied' },
+    );
 
     // The path is the assertion, not an implementation detail: `open` receiving
     // anything other than what `writeCanonicalImage` was told to write means the
@@ -597,10 +603,16 @@ describe('openEngineSession writes the canonical image out and opens it', () => 
     let reached = false;
 
     await expect(
-      openEngineSession(service, asDocId('not-open'), area, () => {
-        reached = true;
-        return Promise.reject(new Error('unreachable'));
-      }),
+      openEngineSession(
+        service,
+        asDocId('not-open'),
+        area,
+        () => {
+          reached = true;
+          return Promise.reject(new Error('unreachable'));
+        },
+        { keys: [], standing: 'as-copied' },
+      ),
     ).rejects.toThrow(/not open|write the canonical image/u);
 
     expect(reached).toBe(false);
@@ -615,8 +627,12 @@ describe('openEngineSession writes the canonical image out and opens it', () => 
     const area = areas(join(directory, 'snapshot-refused.pdf'));
 
     await expect(
-      openEngineSession(service, docId, area, () =>
-        Promise.reject(new Error('the host refused this document')),
+      openEngineSession(
+        service,
+        docId,
+        area,
+        () => Promise.reject(new Error('the host refused this document')),
+        { keys: [], standing: 'as-copied' },
       ),
     ).rejects.toThrow(/host refused/u);
 

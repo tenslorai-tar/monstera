@@ -37,6 +37,7 @@ import {
 import {
   CapabilityRegistry,
   CommandBus,
+  ENGINE_OPEN_KEYS_MAX,
   type ByteImage,
   type ImageSession,
   type ContainmentVerdict,
@@ -148,7 +149,7 @@ import {
   writeStreamedDocument,
   fetchGuardedPdf,
 } from '@monstera/kernel';
-import type { DocId } from '@monstera/shared';
+import { type DocId, HeldPassword } from '@monstera/shared';
 
 import {
   ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
@@ -219,6 +220,7 @@ import {
   canonicalImageWrite,
   openEngineSessionFrom,
 } from './engineSessions.js';
+import type { EngineOpening } from './documentPasswords.js';
 import type { ContainerSid, UserSid } from './hostDacl.js';
 import {
   type DirectoryCreationSurface,
@@ -2591,7 +2593,7 @@ function engineSessionOpener(
   const buildWithAccess = async (
     docId: DocId,
     write: SnapshotWrite,
-    password?: string,
+    opening: EngineOpening,
   ): Promise<{ readonly sessions: DocumentSessions; readonly access: DocumentAccess }> => {
     const live = await ensure();
     if (platform === null) throw new Error('unreachable: a host exists without a platform');
@@ -2641,12 +2643,15 @@ function engineSessionOpener(
     // THE PATH, NEVER THE BYTES. `openEngineSession` has the service write the
     // canonical image straight into the granted directory, so main never holds
     // a second copy and this function never holds the document at all.
-    const open: EngineOpenFromPath = async (_snapshotPath, password) => {
+    const open: EngineOpenFromPath = async (_snapshotPath, { keys, standing }) => {
       const answer = await client['engine/open']({
         snapshotDirectory: paths.snapshot,
         snapshotName,
         outputDirectory: paths.output,
-        password,
+        // REVEALED HERE, where the frame is written, and nowhere before (ADR-0171 Decision 1). The frame's bound, newest
+        // first: past it the oldest keys go unoffered, a stated limit of more than 63 passwords in one sitting.
+        keys: keys.slice(0, ENGINE_OPEN_KEYS_MAX).map((key) => key.reveal()),
+        standing,
       });
       // A PASSWORD REFUSAL IS NOT AN UNREADABLE DOCUMENT, and the two classes
       // are what carry that across the throw. `EngineOpenFailed` poisons the
@@ -2686,7 +2691,7 @@ function engineSessionOpener(
       }
     };
 
-    const { session } = await openEngineSessionFrom(write, areas, open, password);
+    const { session } = await openEngineSessionFrom(write, areas, open, opening);
     if (opened === undefined) {
       // UNREACHABLE, and asserted rather than defaulted. A default here would
       // report an access the host never stated — which for a bitfield the
@@ -2722,12 +2727,13 @@ function engineSessionOpener(
     return { sessions: { mupdf: session }, access: opened };
   };
 
-  // EVERY REOPEN OPENS WITH THE PASSWORD the document was unlocked with, read at the open from the one holder
-  // (ADR-0171 Decision 4): a checkpoint of a document opened locked is its own encrypted form, like the canonical image.
+  // EVERY REOPEN IS GIVEN EVERY KEY AND THE STANDING, read at the open from the one holder (ADR-0171 Decisions 4 and
+  // 8): a checkpoint of a document opened locked is its own encrypted form, and one a protect encrypted needs that
+  // protect's key, and is the document unprotected once that protect is undone.
   const buildSessions = async (
     docId: DocId,
     write: SnapshotWrite,
-  ): Promise<DocumentSessions> => (await buildWithAccess(docId, write, sessions.opensWith(docId)?.reveal())).sessions;
+  ): Promise<DocumentSessions> => (await buildWithAccess(docId, write, sessions.opening(docId))).sessions;
 
   /**
    * One document's sessions from the canonical image — open, reopen, recycle.
@@ -2739,12 +2745,17 @@ function engineSessionOpener(
    */
   const createWithAccess = (
     docId: DocId,
-    password?: string,
+    opening: EngineOpening,
   ): Promise<{ readonly sessions: DocumentSessions; readonly access: DocumentAccess }> =>
-    buildWithAccess(docId, canonicalImageWrite(documents, docId), password);
+    buildWithAccess(docId, canonicalImageWrite(documents, docId), opening);
 
-  const create = async (docId: DocId): Promise<DocumentSessions> =>
-    (await createWithAccess(docId, sessions.opensWith(docId)?.reveal())).sessions;
+  // THE FIRST OPEN SAYS HOW THE DOCUMENT STANDS, from the access the engine answered: 1 is a file with no encryption
+  // at all, so it stands unprotected. The holder keeps the first answer only, so a recycle of a copy cannot rewrite it.
+  const create = async (docId: DocId): Promise<DocumentSessions> => {
+    const built = await createWithAccess(docId, sessions.opening(docId));
+    sessions.opened(docId, built.access);
+    return built.sessions;
+  };
 
   // THE PROMISE IS RETURNED, not voided. `onDocumentOpened` queues its lane entry
   // before its first await, so the ordering it guarantees holds either way; what
@@ -2793,8 +2804,11 @@ function engineSessionOpener(
       // Without it a second unlock would spend a parse to answer a question the
       // supervisor already holds.
       if (sessions.locked(docId) === undefined) return { kind: 'not-locked' } as const;
+      // THE ONE KEY THIS ATTEMPT IS MADE WITH, wiped whatever happens: a wrong one leaves with the frame, and a right one
+      // is held by the supervisor in its own key below.
+      const attempt = new HeldPassword(password);
       try {
-        const built = await createWithAccess(docId, password);
+        const built = await createWithAccess(docId, { keys: [attempt], standing: 'as-copied' });
         sessions.unlock(docId, built.sessions, password);
         return { kind: 'unlocked', access: built.access } as const;
       } catch (error) {
@@ -2806,6 +2820,8 @@ function engineSessionOpener(
           return { kind: 'wrong-password' } as const;
         }
         throw error;
+      } finally {
+        attempt.wipe();
       }
     });
     return settled.value;

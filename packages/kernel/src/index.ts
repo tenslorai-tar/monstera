@@ -38,6 +38,7 @@ export type {
 // LAST remaining edge after the declaration split, and it was a plain value
 // export rather than a spelling problem (ADR-0026).
 export type { PriorPageRotation, PriorRotation } from './rotatePages.js';
+export type { CopyOpening, CopyStanding } from './openCopy.js';
 // THE TYPE ONLY, for `rotatePages`' reason: `pageTransition.ts` imports
 // `mupdfWriter.ts`, so a value export here would bind the native library in
 // every importer of this barrel. The prior-state shape is erased.
@@ -107,6 +108,7 @@ export {
 export {
   ENGINE_BARCODE_TEXT_MAX,
   ENGINE_BARCODES_MAX,
+  ENGINE_OPEN_KEYS_MAX,
   ENGINE_PATH_MAX_CHARS,
   ENGINE_SESSION_ID_MAX_CHARS,
   type EngineChannels,

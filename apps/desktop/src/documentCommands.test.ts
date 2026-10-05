@@ -107,6 +107,8 @@ import {
   withDocument,
   composeWordDocument,
   DocumentLocked,
+  localMupdfExecution,
+  openCopy,
 } from '@monstera/kernel/engine';
 import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 
@@ -185,6 +187,7 @@ import {
   type SaveSource,
   type SnapshotSource,
   SignaturesWouldBreakError,
+  type EngineSessionSource,
 } from './documentCommands.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import { EngineSessions } from './engineSessions.js';
@@ -1419,6 +1422,8 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           poisoned: () => undefined,
           opensOnlyWithPassword: () => false,
           opensWith: () => undefined,
+          protected: () => undefined,
+          protectionStepped: () => undefined,
           sessions: () => {
             const cause = new Error(`EPERM: operation not permitted, stat '${SECRET}'`);
             cause.stack = `Error: EPERM: operation not permitted, stat '${SECRET}'\n    at readFileIdentity (${SECRET}:1:1)`;
@@ -6753,6 +6758,146 @@ describe('a document opened with its password: no unprotected copy, and no passw
         'planted-utf16.bin',
         'planted-utf8.txt',
       ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * The holder follows a protect run in this session
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8):
+ * after a protect, a later terminal command's checkpoint is encrypted under the protect's password, and its undo
+ * reopens it with that key. The engine is MuPDF in this process, and every reopen goes through `openCopy`, the host's
+ * one rule for opening a copy as the document stands.
+ */
+describe('a protect in this session: the holder follows it', () => {
+  const KEY = 'sample-protect-0171-d8';
+
+  /** A generated three-page document, opened plain, with `engine` as the supervisor the commands see. */
+  async function opened(engineOf: (held: EngineSessions) => EngineSessionSource): Promise<{
+    readonly commands: DocumentCommands;
+    readonly docId: DocId;
+    readonly root: string;
+    readonly restores: () => number;
+    readonly held: EngineSessions;
+  }> {
+    const root = mkdtempSync(join(tmpdir(), 'monstera-protect-follows-'));
+    const plain = await PDFDocument.create();
+    const font = await plain.embedFont(StandardFonts.Helvetica);
+    for (let index = 0; index < 3; index += 1) {
+      plain.addPage([612, 792]).drawText(`generated page ${String(index + 1)}`, { font, size: 24, x: 72, y: 700 });
+    }
+    const path = join(root, 'plain.pdf');
+    writeFileSync(path, await plain.save());
+
+    const held = new EngineSessions();
+    const registry = new CapabilityRegistry();
+    const own = new DocumentService(registry, {
+      documentBytesCeiling: AMPLE_CEILING,
+      checkpointDirectory: join(root, 'checkpoints'),
+      teardown: held.releaseOnClose,
+    });
+    const outcome = await own.open(registry.mint(path));
+    if (outcome.kind !== 'opened') throw new Error(`fixture did not open: ${outcome.kind}`);
+    const docId = outcome.docId;
+    held.hold(docId, { mupdf: await mupdfWriter.open(new Uint8Array(readFileSync(path))) });
+    held.opened(docId, 1);
+
+    let restores = 0;
+    const flushHeld: DocumentFlush = (_id, sessions) => {
+      const mupdf = sessions.mupdf;
+      if (mupdf === undefined) throw new Error('the fixture holds a session');
+      return mupdfWriter.serialise(mupdf);
+    };
+    const commands = new DocumentCommands({
+      ...LOCAL_READS,
+      signaturesKept: signaturesKeptBySave,
+      documents: own,
+      bus: new CommandBus({ mupdf: localMupdfWriter }),
+      engine: engineOf(held),
+      // THE SUPERVISOR'S RECYCLE, opening the checkpoint as the host's `engine/open` does: every key, and the standing.
+      restore: (id, write) =>
+        held.recycle(id, async () => {
+          restores += 1;
+          const snapshot = join(root, `restore-${String(restores)}.pdf`);
+          await write(snapshot);
+          const { keys, standing } = held.opening(id);
+          const session = await openCopy(
+            new Uint8Array(readFileSync(snapshot)),
+            { keys: keys.map((key) => key.reveal()), standing },
+            {
+              open: (image, password) => mupdfWriter.open(image, password),
+              unprotect: (each) =>
+                localMupdfExecution.invert(each, 'setDocumentProtection', { standing: 'unprotected' }).then(() => undefined),
+              close: (each) => mupdfWriter.close(each),
+            },
+          );
+          return { mupdf: session };
+        }),
+      save: {
+        provenance: ledger(),
+        deps: {
+          checkWriteTarget: (id) => own.checkWriteTarget(id),
+          surface: nodeFileSurface,
+          names: (target) => siblingNames(target, 1),
+          wait: () => Promise.resolve(),
+        },
+        flush: flushHeld,
+        stage: stagingFrom(flushHeld),
+      },
+    });
+    return { commands, docId, root, restores: () => restores, held };
+  }
+
+  it('the undo of a terminal command after a protect reopens its checkpoint with the protect’s key', async () => {
+    const { commands, docId, root, restores } = await opened((held) => held);
+    try {
+      await commands.execute(docId, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: KEY });
+      // TERMINAL, so the bus checkpoints the session as it stands: encrypted under the protect's password.
+      await commands.execute(docId, { kind: 'deletePages', pages: [2] });
+      expect(await commands.undo(docId)).toBeDefined();
+      expect(restores()).toBe(1);
+      // THE CHECKPOINT WAS ENCRYPTED, so the reopen needed the key: an empty attempt refuses the restored snapshot.
+      await expect(mupdfWriter.open(new Uint8Array(readFileSync(join(root, 'restore-1.pdf'))))).rejects.toBeInstanceOf(
+        DocumentLocked,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('CONTROL: a supervisor that ignores the protect fails that undo with a password refusal', async () => {
+    const { commands, docId, root } = await opened((held) => ({
+      sessions: held.sessions,
+      poisoned: held.poisoned,
+      opensOnlyWithPassword: held.opensOnlyWithPassword,
+      opensWith: held.opensWith,
+      protected: () => undefined,
+      protectionStepped: () => undefined,
+    }));
+    try {
+      await commands.execute(docId, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: KEY });
+      await commands.execute(docId, { kind: 'deletePages', pages: [2] });
+      await expect(commands.undo(docId)).rejects.toBeInstanceOf(DocumentLocked);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('undoing the protect makes the document open with no key again, and redoing it brings the key back', async () => {
+    const { commands, docId, root, held } = await opened((supervisor) => supervisor);
+    try {
+      await commands.execute(docId, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: KEY });
+      expect(held.opensWith(docId)?.reveal()).toBe(KEY);
+      expect(held.opensOnlyWithPassword(docId)).toBe(true);
+      expect(await commands.undo(docId)).toBeDefined();
+      expect(held.opensWith(docId)).toBeUndefined();
+      expect(held.opening(docId).standing).toBe('unprotected');
+      // THE KEY IS STILL OFFERED after the undo, for the copies the protect encrypted.
+      expect(held.opening(docId).keys.map((key) => key.reveal())).toStrictEqual([KEY]);
+      expect(await commands.redo(docId)).toBeDefined();
+      expect(held.opensWith(docId)?.reveal()).toBe(KEY);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
