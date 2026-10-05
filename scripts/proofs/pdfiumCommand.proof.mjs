@@ -803,7 +803,8 @@ async function replaceAllCases() {
   // line, inside the single-object lines where nothing follows and in the split pair where `GET` does, so a refusal
   // that dropped only the offending one would save the rest. CONTROL: the same-width `WDI` is written everywhere.
   const movesLine = await refusedAs({ find: 'WID', replace: 'WIDE', caseSensitive: true });
-  let everywhere = '';
+  /** @type {string} */
+  let everywhere;
   try {
     const written = await localPdfiumExecution.apply({
       session: original,
