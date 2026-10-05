@@ -369,3 +369,56 @@ values, `as-copied` and `unprotected`; there is no `protected` value carrying te
 - One rule opens a copy, `openCopy` in the kernel: each key as a fresh open, then none, then the standing. The host's
   handler and the in-process proofs both call it.
 - The keys are bounded by the frame: 64, sized against the 262,144-byte frame, current first and then the newest.
+
+## Correction, 2026-10-05: a credential crosses to a host in the frame, never in a file
+
+The stage audit of `974df9f5..389cc010` (finding RRRRRRR-1) found the password on disk, which this decision forbids.
+The first addendum said the key *is revealed only where a frame is written*, and two routes made that untrue:
+
+- **PDFium's commands take their params from a file** (ADR-0138, `commandRoute: 'file'`), and `byteImageWire.read`
+  spreads `password` into `engine/apply`, `engine/capture` and `engine/invert`. So every PDFium edit, capture, undo and
+  redo of a document opened with its password wrote the password as JSON into the session's snapshot directory for
+  the length of the call.
+- **A protect's prior carries the earlier protect's terms**, passwords included (Decision 8), and `engine/capture`
+  answers through a file on every host while `engine/invert` always takes its params from one (ADR-0125's addendum).
+  So a second protect wrote the first protect's passwords into the host's output directory, and its undo wrote them
+  into the snapshot directory.
+
+Each file was removed with a plain `rm` when its call ended, and one survived a crash between the write and the
+removal. Nothing saw it: every password case ran in process, where no transport file exists.
+
+**The decision: a credential never enters a file the transport writes, in either direction.** The file route stays,
+because what it carries outgrows a frame; what it carries loses its credentials on the way in, and they travel in the
+frame beside the file's name:
+
+1. **One rule says what a credential is, and it is the one this ADR already has.** A field whose name matches
+   `CREDENTIAL_NAME` (`credentialFields.ts`) is a credential, so the walk that keeps one out of the undo log and out of
+   every renderer answer also decides what a file may hold (B3a). A second list of the fields to lift would be a second
+   opinion about the same question.
+2. **The transport lifts them, by value, at the point it writes the file.** `client.invoke` lifts every string held
+   under a credential-named key out of a file-routed request's params before it writes them, and names each by its
+   path in the frame's `paramsFile.credentials`; the host's runtime puts each back at its path before the channel's
+   schema runs, so a handler sees the params whole. A file-routed answer is lifted the same way by the runtime, into
+   `answerFile.credentials`, and put back by the client. A credential-named key holding anything but a string or
+   `null` is refused before anything is written, because nothing can lift it safely.
+3. **A field that carries a credential is named as one.** The protect's prior carried its terms as `terms`, a name
+   the rule cannot see. It is renamed `passwordTerms`, which is what it holds, so the lift reaches it; the rule's stated
+   limit, *a credential named as something else is out of reach*, is honoured by naming rather than widened.
+4. **Bounded by the frame.** At most four lifted values a call, where one is the most any channel carries today (a
+   PDFium call's key, or a protect prior's terms): a bound that keeps the frame's size the frame's question, not a
+   measurement. Each is at most `PROTECTION_TERMS_MAX` characters, the longest credential-bearing value a host channel
+   carries, so that bound moves to the contract beside the password's own, where the frame's schema can read it.
+5. **Proved across a real transport, with the bytes on disk read.** A client and a host runtime joined by a stream,
+   with the file answers on a temporary directory, run a call that carries a password both ways: every file the
+   transport writes is read while the call is in flight and none holds the password's bytes, while the handler receives
+   it whole and the client receives the answer's. Control: the same value under a key that is not a credential's
+   reaches the file, so the read can see what the file holds.
+
+Rejected:
+
+- **Taking credentials out of the file route by channel**, so a call carrying one is framed: PDFium's text edits
+  outgrow a frame with a password beside them, which is the reason the route exists.
+- **Keeping the prior's terms in the host** so a capture answers none: a checkpoint restore and a rebuild open a new
+  session, and the terms held in the old one go with it, which is why the prior is held in main.
+- **Wiping each file before removing it**: the bytes reach the disk the moment they are written, and a crash leaves
+  them; the defect is the write, not the removal.
