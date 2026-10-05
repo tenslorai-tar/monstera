@@ -232,6 +232,7 @@ export interface ShimFormField {
   readonly on: boolean | null;
   readonly options: readonly string[];
   readonly readOnly: boolean;
+  readonly multiline: boolean;
   readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
   /** The channel's mark for a value listed as a slice of a longer one. */
   readonly cut?: true;

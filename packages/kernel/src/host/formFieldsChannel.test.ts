@@ -255,6 +255,7 @@ function field(kind: ListedField['kind'], index: number): ListedField {
     on: null,
     options: [],
     readOnly: false,
+    multiline: false,
     rect: { x0: 1, y0: 2, x1: 3, y1: 4 },
   };
 }
@@ -336,6 +337,7 @@ describe('engine/form-fields', () => {
           on: false,
           options: ['first', 'second'],
           readOnly: false,
+          multiline: false,
           rect: null,
         },
         {
@@ -347,6 +349,7 @@ describe('engine/form-fields', () => {
           on: true,
           options: [],
           readOnly: true,
+          multiline: false,
           rect: { x0: 1, y0: 2, x1: 3, y1: 4 },
         },
         {
@@ -358,6 +361,7 @@ describe('engine/form-fields', () => {
           on: null,
           options: ['English', 'Dutch'],
           readOnly: false,
+          multiline: false,
           rect: { x0: 1, y0: 2, x1: 3, y1: 4 },
         },
       ]);

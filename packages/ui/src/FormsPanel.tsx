@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient, FieldFill, FormFieldKind } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
-import { type ReactElement, useEffect, useId, useState } from 'react';
+import { type FocusEvent, type ReactElement, useEffect, useId, useRef, useState } from 'react';
 
 import {
   FORMS_CHOICE_EMPTY,
@@ -315,6 +315,8 @@ function FieldControl({
   readonly onFill: (value: FieldFill) => void;
 }): ReactElement {
   const { i18n } = useLingui();
+  // What a text control showed when it took focus, which is the value a blur compares with.
+  const shown = useRef<string | undefined>(undefined);
 
   if (field.readOnly) return <span className="m-forms-locked">{i18n._(FORMS_READ_ONLY)}</span>;
   // A SLICE IS NOT A STARTING POINT: a fill writes its whole text over the field, so a box opened on the listing's
@@ -322,20 +324,37 @@ function FieldControl({
   if (field.cut === true) return <span className="m-forms-locked">{i18n._(FORMS_TOO_LONG)}</span>;
 
   if (field.kind === 'text') {
+    const held = field.values[0] ?? '';
+    const common = {
+      // THE FIELD'S OWN NAME AS THE ACCESSIBLE NAME. B9 asks for no literal
+      // user-facing string; this is the document's string, and it is the only
+      // thing that distinguishes one row's control from another's to a screen
+      // reader.
+      'aria-label': field.name,
+      defaultValue: held,
+      // NO EDIT IS MEASURED AGAINST WHAT THE CONTROL SHOWED, never against the document's text. A control may show a
+      // value other than the one it was given — a one-line input strips line breaks, a textarea turns a CR into a
+      // line feed — and a blur compared with the document then wrote that difference back unasked.
+      // Read when the control mounts and again when it takes focus, so a blur always has what was shown to compare.
+      ref: (element: HTMLInputElement | HTMLTextAreaElement | null) => {
+        if (element !== null) shown.current = element.value;
+      },
+      onFocus: (event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        shown.current = event.currentTarget.value;
+      },
+      onBlur: (event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        if (event.currentTarget.value !== shown.current) onFill({ set: 'text', text: event.currentTarget.value });
+      },
+    };
+    // LINE BREAKS KEPT: a field that takes them, or a value that holds them however it got there, is edited in a
+    // control that keeps them. Enter is a new line there, and leaving the box is what fills.
+    if (field.multiline || LINE_BREAK.test(held)) {
+      return <textarea className="m-forms-text m-forms-text--lines" rows={TEXT_ROWS} {...common} />;
+    }
     return (
       <input
         className="m-forms-text"
-        // THE FIELD'S OWN NAME AS THE ACCESSIBLE NAME. B9 asks for no literal
-        // user-facing string; this is the document's string, and it is the only
-        // thing that distinguishes one row's control from another's to a screen
-        // reader.
-        aria-label={field.name}
-        defaultValue={field.values[0] ?? ''}
-        onBlur={(event) => {
-          if (event.currentTarget.value !== (field.values[0] ?? '')) {
-            onFill({ set: 'text', text: event.currentTarget.value });
-          }
-        }}
+        {...common}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !composing(event)) event.currentTarget.blur();
         }}
@@ -452,6 +471,12 @@ function FieldControl({
  */
 const LIST_ROWS = 4;
 
+/** How many lines a multi-line text field's box shows at once: a count of rows, `LIST_ROWS`' exception. */
+const TEXT_ROWS = 3;
+
+/** A line break in any of the spellings a document's text can hold. */
+const LINE_BREAK = /[\r\n]/u;
+
 /**
  * A label per kind, which is what the contract's closed union buys.
  *
@@ -499,6 +524,8 @@ interface PanelField {
   readonly on: boolean | null;
   readonly options: readonly string[];
   readonly readOnly: boolean;
+  /** Whether a text field takes line breaks, so it is edited in a control that keeps them. */
+  readonly multiline: boolean;
   /** The listing's mark for a value cut to fit it: the panel shows the field and starts no fill from the slice. */
   readonly cut?: true | undefined;
 }

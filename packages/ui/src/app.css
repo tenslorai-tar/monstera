@@ -1796,8 +1796,16 @@ optgroup {
  */
 .m-forms-text,
 .m-forms-choice {
+  /* BORDER-BOX, so a one-line input, a box for line breaks and a list share one width: the browser pads each
+     differently, and measured on content boxes the textarea sat 2px short of the input above it. */
+  box-sizing: border-box;
   inline-size: 100%;
   max-inline-size: 16rem;
+}
+
+/* A FIELD THAT TAKES LINE BREAKS grows downwards when a person wants more of it shown, never across the column. */
+.m-forms-text--lines {
+  resize: vertical;
 }
 
 /*

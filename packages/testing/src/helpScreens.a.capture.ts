@@ -574,6 +574,7 @@ test('delete-form-fields-1', async ({ page }) => {
     on: null,
     options: [],
     readOnly: false,
+    multiline: false,
     rect: { x0: 180, y0: y - 2, x1: 520, y1: y + 14 },
   });
   await openApp(page, {

@@ -449,6 +449,25 @@ describe('readFormFields', () => {
     expect(answer.fields.every((field) => field.rect !== null)).toBe(true);
   });
 
+  it('SAYS WHICH TEXT FIELD TAKES LINE BREAKS — CONTROL: a one-line field and every other kind say no', async () => {
+    // A surface edits a multi-line field in a control that keeps its line breaks; a one-line input strips them from
+    // what it shows, which rewrote a multi-line answer as one line on the next blur.
+    const document = await PDFDocument.load(await form());
+    const page = document.getPage(0);
+    const address = document.getForm().createTextField('applicant.address');
+    address.enableMultiline();
+    address.setText('1 High Street\nLeeds');
+    address.addToPage(page, { x: 220, y: 300, width: 160, height: 60 });
+    const answer = await onSession(await document.save(), (session) => readFormFields(session));
+    const multiline = answer.fields.filter((field) => field.multiline).map((field) => field.name);
+    expect(multiline).toStrictEqual(['applicant.address']);
+    // CONTROL: the fixture's one-line text field is read too, so the answer above is a reading and not a default.
+    expect(answer.fields.find((field) => field.name === 'applicant.name')?.multiline).toBe(false);
+    expect(answer.fields.find((field) => field.name === 'applicant.address')?.values).toStrictEqual([
+      '1 High Street\nLeeds',
+    ]);
+  });
+
   it('IS A DIFFERENT WALK FROM THE ANNOTATIONS, sharing no entries', async () => {
     // ADR-0041 measured the annotation walk filtering widgets. This is the same
     // fact from the other side, and it is what settles a field being named by a

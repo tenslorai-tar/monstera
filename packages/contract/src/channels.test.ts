@@ -338,6 +338,8 @@ const handlers: ContractHandlers = {
             on: null,
             options: [],
             readOnly: false,
+            // TRUE HERE AND FALSE BELOW, so a boundary that defaulted the flag is visible either way.
+            multiline: true,
             rect: { x0: 10, y0: 20, x1: 110, y1: 40 },
           },
           {
@@ -349,6 +351,7 @@ const handlers: ContractHandlers = {
             on: false,
             options: [],
             readOnly: true,
+            multiline: false,
             rect: null,
           },
         ],

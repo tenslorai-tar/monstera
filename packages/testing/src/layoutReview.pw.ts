@@ -93,8 +93,8 @@ test('the FORMS TAB shows each field’s whole name', async ({ page }) => {
   await openApp(page, {
     formFields: [
       [
-        { page: 0, index: 0, kind: 'text', name: 'Full name', values: [], on: null, options: [], readOnly: false, rect: rect(640) },
-        { page: 0, index: 1, kind: 'text', name: 'Email', values: [], on: null, options: [], readOnly: false, rect: rect(600) },
+        { page: 0, index: 0, kind: 'text', name: 'Full name', values: [], on: null, options: [], readOnly: false, multiline: false, rect: rect(640) },
+        { page: 0, index: 1, kind: 'text', name: 'Email', values: [], on: null, options: [], readOnly: false, multiline: false, rect: rect(600) },
       ],
     ],
   });

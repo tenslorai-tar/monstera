@@ -93,6 +93,7 @@ describe('the document-wide lists’ hostile-host bounds', () => {
       on: null,
       options: [],
       readOnly: true,
+      multiline: false,
       rect: null,
     };
     const answer = { fields: [smallest], truncated: false };

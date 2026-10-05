@@ -413,9 +413,9 @@ export const ENGINE_ANNOTATION_CONTENTS_MAX = 512;
  * longer than this is still a value, and refusing the field would hide it from
  * the list it belongs in.
  */
-export const ENGINE_FORM_FIELDS_MAX = 77_600;
+export const ENGINE_FORM_FIELDS_MAX = 66_500;
 /** The fewest bytes one form field serialises to on this wire. Measured by `engineChannels.test.ts`. */
-export const SMALLEST_FORM_FIELD_BYTES = 107;
+export const SMALLEST_FORM_FIELD_BYTES = 125;
 export const ENGINE_FORM_FIELD_TEXT_MAX = 512;
 export const ENGINE_FORM_FIELD_OPTIONS_MAX = 512;
 /** How many values one field may carry. The contract's bound, on this wire. */
@@ -565,6 +565,8 @@ const engineFormFieldSchema = z
       .max(ENGINE_FORM_FIELD_OPTIONS_MAX)
       .readonly(),
     readOnly: z.boolean(),
+    /** Whether a text field takes line breaks; false for every other kind. */
+    multiline: z.boolean(),
     /** PDF user space, or null for a page that displays no region. */
     rect: annotationRectSchema.nullable(),
     /** Present and true where a value is a slice of a longer one, exactly optional for the annotation's `cut`. */

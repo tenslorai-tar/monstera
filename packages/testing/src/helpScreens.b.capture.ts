@@ -367,11 +367,11 @@ test('find-and-replace-1', async ({ page }) => {
 test('fill-in-a-form-1', async ({ page }) => {
   const rect = (y: number): { x0: number; y0: number; x1: number; y1: number } => ({ x0: 72, y0: y, x1: 300, y1: y + 20 });
   const fields = [
-    { page: 0, index: 0, kind: 'text', name: 'Full name', values: [], on: null, options: [], readOnly: false, rect: rect(640) },
-    { page: 0, index: 1, kind: 'text', name: 'Email', values: [], on: null, options: [], readOnly: false, rect: rect(600) },
-    { page: 0, index: 2, kind: 'checkbox', name: 'Subscribe to updates', values: [], on: true, options: [], readOnly: false, rect: rect(560) },
-    { page: 0, index: 3, kind: 'radio', name: 'Member', values: [], on: false, options: [], readOnly: false, rect: rect(520) },
-    { page: 0, index: 4, kind: 'dropdown', name: 'Region', values: ['North'], on: null, options: ['North', 'South', 'West'], readOnly: false, rect: rect(480) },
+    { page: 0, index: 0, kind: 'text', name: 'Full name', values: [], on: null, options: [], readOnly: false, multiline: false, rect: rect(640) },
+    { page: 0, index: 1, kind: 'text', name: 'Email', values: [], on: null, options: [], readOnly: false, multiline: false, rect: rect(600) },
+    { page: 0, index: 2, kind: 'checkbox', name: 'Subscribe to updates', values: [], on: true, options: [], readOnly: false, multiline: false, rect: rect(560) },
+    { page: 0, index: 3, kind: 'radio', name: 'Member', values: [], on: false, options: [], readOnly: false, multiline: false, rect: rect(520) },
+    { page: 0, index: 4, kind: 'dropdown', name: 'Region', values: ['North'], on: null, options: ['North', 'South', 'West'], readOnly: false, multiline: false, rect: rect(480) },
   ] as const;
   await openApp(page, { formFields: [fields] });
   await openDocument(page);

@@ -158,6 +158,7 @@ function field(over: Partial<ChannelField>): ChannelField {
     on: null,
     options: [],
     readOnly: false,
+    multiline: false,
     rect: null,
     ...over,
   };
@@ -224,6 +225,28 @@ describe('FormsPanel', () => {
     fireEvent.blur(screen.getByLabelText('first'));
     expect(fills).toStrictEqual([]);
   });
+
+  it('SENDS NOTHING when a field holding LINE BREAKS is left as it was, and keeps them in an edit', async () => {
+    // A one-line `<input>` strips line breaks from its value (HTML's value sanitisation), so its value differs from
+    // the document's the moment it is shown. A blur compared against the document then sent the stripped text: tabbing
+    // through a form rewrote every multi-line answer as one run-on line.
+    const { fills } = await panel([field({ name: 'address', values: ['1 High Street\nLeeds'] })]);
+    const box = screen.getByLabelText('address');
+    fireEvent.blur(box);
+    expect(fills).toStrictEqual([]);
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: '2 High Street\nLeeds' } });
+    fireEvent.blur(box);
+    expect(fills).toMatchObject([{ value: { set: 'text', text: '2 High Street\nLeeds' } }]);
+  });
+
+  it('a field that TAKES line breaks is a box for them even while empty', async () => {
+    await panel([field({ name: 'notes', multiline: true }), field({ name: 'surname', index: 1 })]);
+    expect(screen.getByLabelText('notes').tagName).toBe('TEXTAREA');
+    // CONTROL: a one-line field stays a one-line input, so the case above reads the flag rather than every field.
+    expect(screen.getByLabelText('surname').tagName).toBe('INPUT');
+  });
+
 
   it('DISPATCHES A BUTTON FILL as a STATE, not as a toggle', async () => {
     // `on: true`, not *flip it*. MuPDF's toggle is keyed on `/AS` — measured —

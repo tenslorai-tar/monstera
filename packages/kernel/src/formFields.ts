@@ -205,6 +205,8 @@ export interface ListedField {
   readonly options: readonly string[];
   /** Whether the document forbids filling it. */
   readonly readOnly: boolean;
+  /** Whether a text field takes line breaks (`/Ff` bit 13); false for every other kind. */
+  readonly multiline: boolean;
   /** Where it is, in PDF user space, or `null` for a page that displays none. */
   readonly rect: AnnotationRect | null;
   /** Present and true where a value in {@link values} is a slice of a longer one — {@link listedValues}. */
@@ -363,6 +365,9 @@ export function readFormFields(
           on: stateful ? onState(widget) : null,
           options: widget.getOptions().slice(0, MAX_FIELD_OPTIONS),
           readOnly: widget.isReadOnly(),
+          // ONLY A TEXT FIELD: bit 13 of `/Ff` is Multiline in the text-field flags (ISO 32000-1, Table 228) and is
+          // not a multiline flag for any other field type, so it is read by kind rather than for every widget.
+          multiline: kind === 'text' && widget.isMultiline(),
           rect: transform === null ? null : readRect(widget, transform),
           ...(listed.cut ? { cut: true as const } : {}),
         });

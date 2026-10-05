@@ -205,6 +205,7 @@ function harness(script: Script): {
               on: null,
               options: [],
               readOnly: field.readOnly === true,
+              multiline: false,
               rect: null,
               ...(field.cut === undefined ? {} : { cut: true }),
             })),

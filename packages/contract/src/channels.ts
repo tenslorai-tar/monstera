@@ -4796,6 +4796,11 @@ export const channels = {
             /** Whether the document forbids filling it. */
             readOnly: z.boolean(),
             /**
+             * Whether a TEXT field takes line breaks (`/Ff` bit 13); false for every other kind. A surface edits one
+             * in a control that keeps them, because a one-line input strips them from what it shows.
+             */
+            multiline: z.boolean(),
+            /**
              * Where it is, in **PDF user space** — the annotation list's frame,
              * so a surface converts it with the `PageTransform` it holds.
              *
