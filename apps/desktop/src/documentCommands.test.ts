@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 
 import { strFromU8, unzipSync } from 'fflate';
@@ -6604,5 +6604,157 @@ describe('suggestedComposedName', () => {
     expect(suggestedComposedName('C:\\notes\\README')).toBe('README.pdf');
     // A NAME THAT IS ONLY AN EXTENSION keeps it, rather than suggesting a hidden `.pdf`.
     expect(suggestedComposedName('C:\\notes\\.md')).toBe('.md.pdf');
+  });
+});
+
+/**
+ * A document opened with its password leaves no unprotected copy on disk, and no trace of the password once it closes
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 6).
+ *
+ * The document is generated and encrypted here with AES-256 and both passwords, never a person's file. Everything main
+ * writes for it goes under one root: the file and its save's backup, the service's checkpoints, and the snapshot each
+ * restore writes, as the supervisor's recycle writes one. The engine is MuPDF in this process; PDFium's output is
+ * `proof:pdfiumcommand`'s case, and the rewriter's and the inline-image keeper's are `proof:shimpassword`'s.
+ *
+ * Each scan carries its own positive control, run on the same root: a plaintext PDF planted there is reported, and the
+ * password planted in a file there is found, in both encodings.
+ */
+describe('a document opened with its password: no unprotected copy, and no password left after close', () => {
+  const USER = 'sample-user-0171-d6';
+  const OWNER = 'sample-owner-0171-d6';
+
+  /** Every file under `root`, recursively. */
+  function filesUnder(root: string): string[] {
+    return readdirSync(root, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory() ? filesUnder(join(root, entry.name)) : [join(root, entry.name)],
+    );
+  }
+
+  /** The PDFs under `root` and which of them open with no password. */
+  async function unprotectedPdfs(root: string): Promise<{ readonly pdfs: number; readonly open: readonly string[] }> {
+    const open: string[] = [];
+    let pdfs = 0;
+    for (const path of filesUnder(root)) {
+      const bytes = new Uint8Array(readFileSync(path));
+      if (!Buffer.from(bytes.subarray(0, 5)).equals(Buffer.from('%PDF-'))) continue;
+      pdfs += 1;
+      try {
+        await mupdfWriter.close(await mupdfWriter.open(bytes));
+        open.push(basename(path));
+      } catch (thrown) {
+        if (!(thrown instanceof DocumentLocked)) throw thrown;
+      }
+    }
+    return { pdfs, open };
+  }
+
+  /** The files under `root` holding either password, in UTF-8 or in UTF-16LE. */
+  function filesHoldingAPassword(root: string): string[] {
+    const needles = [USER, OWNER].flatMap((password) => [Buffer.from(password, 'utf8'), Buffer.from(password, 'utf16le')]);
+    return filesUnder(root).filter((path) => {
+      const bytes = readFileSync(path);
+      return needles.some((needle) => bytes.includes(needle));
+    });
+  }
+
+  it('edits, checkpoints, an undo’s restore, a redo and a save leave only encrypted PDFs; after close no file holds the password', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'monstera-locked-copies-'));
+    const documents = join(root, 'documents');
+    const snapshots = join(root, 'snapshots');
+    for (const directory of [documents, snapshots]) mkdirSync(directory);
+    try {
+      const plain = await PDFDocument.create();
+      const font = await plain.embedFont(StandardFonts.Helvetica);
+      for (let index = 0; index < 3; index += 1) {
+        plain.addPage([612, 792]).drawText(`generated page ${String(index + 1)}`, { font, size: 24, x: 72, y: 700 });
+      }
+      plain.encrypt({ userPassword: USER, ownerPassword: OWNER, algorithm: 'AES-256' });
+      const path = join(documents, 'locked.pdf');
+      writeFileSync(path, await plain.save());
+
+      const held = new EngineSessions();
+      const registry = new CapabilityRegistry();
+      const own = new DocumentService(registry, {
+        documentBytesCeiling: AMPLE_CEILING,
+        checkpointDirectory: join(root, 'checkpoints'),
+        teardown: held.releaseOnClose,
+      });
+      const outcome = await own.open(registry.mint(path));
+      if (outcome.kind !== 'opened') throw new Error(`fixture did not open: ${outcome.kind}`);
+      const docId = outcome.docId;
+      // OPENED LOCKED, then unlocked as `document.unlock` does: the engine opens with the password and the holder keeps it.
+      held.markLocked(docId, 'needs-password');
+      held.unlock(docId, { mupdf: await mupdfWriter.open(new Uint8Array(readFileSync(path)), USER) }, USER);
+
+      let restores = 0;
+      const flushHeld: DocumentFlush = (_id, sessions) => {
+        const mupdf = sessions.mupdf;
+        if (mupdf === undefined) throw new Error('the fixture holds a session');
+        return mupdfWriter.serialise(mupdf);
+      };
+      const commands = new DocumentCommands({
+        ...LOCAL_READS,
+        signaturesKept: signaturesKeptBySave,
+        documents: own,
+        bus: new CommandBus({ mupdf: localMupdfWriter }),
+        engine: held,
+        // THE SUPERVISOR'S RECYCLE: the checkpoint written to a snapshot file and reopened with what the holder holds.
+        restore: (id, write) =>
+          held.recycle(id, async () => {
+            restores += 1;
+            const snapshot = join(snapshots, `restore-${String(restores)}.pdf`);
+            await write(snapshot);
+            return { mupdf: await mupdfWriter.open(new Uint8Array(readFileSync(snapshot)), held.opensWith(id)?.reveal()) };
+          }),
+        save: {
+          provenance: ledger(),
+          deps: {
+            checkWriteTarget: (id) => own.checkWriteTarget(id),
+            surface: nodeFileSurface,
+            names: (target) => siblingNames(target, 1),
+            wait: () => Promise.resolve(),
+          },
+          flush: flushHeld,
+          stage: stagingFrom(flushHeld),
+        },
+      });
+
+      await commands.execute(docId, rotateOnce);
+      // TERMINAL, so the bus takes a checkpoint file before it.
+      await commands.execute(docId, { kind: 'deletePages', pages: [2] });
+      expect(await commands.undo(docId)).toBeDefined();
+      expect(restores).toBe(1);
+      expect(await commands.redo(docId)).toBeDefined();
+      expect(await commands.save(docId, { breakSignatures: false })).toMatchObject({ kind: 'saved' });
+
+      // THE FILES THE CASE IS ABOUT EXIST, so a clean answer is not an empty root's: the saved file and its backup, a
+      // checkpoint, and the restore's snapshot.
+      const before = await unprotectedPdfs(root);
+      expect(readdirSync(join(root, 'checkpoints')).length).toBeGreaterThan(0);
+      expect(readdirSync(snapshots)).toStrictEqual(['restore-1.pdf']);
+      expect(existsSync(`${path}.bak`)).toBe(true);
+      expect(before.pdfs).toBeGreaterThanOrEqual(4);
+      expect(before.open).toStrictEqual([]);
+
+      // POSITIVE CONTROL, ON THE SAME ROOT: a plaintext PDF planted here is reported, so the scan can see one.
+      writeFileSync(join(snapshots, 'planted-plain.pdf'), await pdfBytes());
+      expect((await unprotectedPdfs(root)).open).toStrictEqual(['planted-plain.pdf']);
+      rmSync(join(snapshots, 'planted-plain.pdf'));
+
+      // CLOSED: the holder wipes the password and the service removes its checkpoints.
+      await own.close(docId);
+      expect(held.opensWith(docId)).toBeUndefined();
+      expect(filesHoldingAPassword(root)).toStrictEqual([]);
+
+      // POSITIVE CONTROL, ON THE SAME ROOT: the password planted in a file in either encoding is found.
+      writeFileSync(join(snapshots, 'planted-utf8.txt'), `a note that says ${USER}`);
+      writeFileSync(join(snapshots, 'planted-utf16.bin'), Buffer.from(`and ${OWNER}`, 'utf16le'));
+      expect(filesHoldingAPassword(root).map((each) => basename(each)).sort()).toStrictEqual([
+        'planted-utf16.bin',
+        'planted-utf8.txt',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
