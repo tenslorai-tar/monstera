@@ -16,10 +16,22 @@ import type { FaceSource } from './fontCatalogue.js';
 let bound: (() => FaceSource) | null = null;
 let read: FaceSource | null = null;
 
-/** Binds the catalogue, read on its first use. A second binding replaces the first, for a proof that rebinds. */
-export function bindEditFaces(faces: () => FaceSource): void {
+/**
+ * Binds the catalogue, read on its first use. A second binding replaces the first, and `null` unbinds, for a proof
+ * that runs its cases both ways in one process.
+ */
+export function bindEditFaces(faces: (() => FaceSource) | null): void {
   bound = faces;
   read = null;
+}
+
+/**
+ * Whether a catalogue is bound, WITHOUT reading it: which path an edit takes is decided by this, and the read waits
+ * for the first word that needs a face — so a folder that cannot be read fails that word's edit, never an edit whose
+ * words the document's own fonts carry.
+ */
+export function editFacesBound(): boolean {
+  return bound !== null;
 }
 
 /** The bound catalogue, read once, or `null` where this process was given none. */

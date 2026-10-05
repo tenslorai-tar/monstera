@@ -125,6 +125,12 @@ export const PDFIUM_COMMAND = [
   ],
   // THE COMMANDS' WIRE FORM, whose encoders the proofs build each edit through (ADR-0142).
   ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
+  // AN EDIT'S PIECES (ADR-0173): the planner, the catalogue the piece cases bind, and the subsetter each face goes
+  // through — a stale one would set yesterday's words in yesterday's faces.
+  ['packages/kernel/src/editPieces.ts', 'packages/kernel/dist/editPieces.js', 'tsc'],
+  ['packages/kernel/src/editFaces.ts', 'packages/kernel/dist/editFaces.js', 'tsc'],
+  ['packages/kernel/src/fontResolver.ts', 'packages/kernel/dist/fontResolver.js', 'tsc'],
+  ['packages/kernel/src/fontSubset.ts', 'packages/kernel/dist/fontSubset.js', 'tsc'],
 ];
 
 /**

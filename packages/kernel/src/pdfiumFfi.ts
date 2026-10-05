@@ -1,8 +1,13 @@
 import { type EditStep, replacementsForLine } from '@monstera/shared';
 import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
+import { editFaces, editFacesBound } from './editFaces.js';
+import { editPieces } from './editPieces.js';
 import type { ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
+import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
+import { readFace } from './fontFaces.js';
+import { namedSubset } from './fontSubset.js';
 import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
 import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
 import { EditRefusedError, ReplaceMovesLineError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
@@ -51,6 +56,9 @@ const TEXT_OBJECT = 1;
  * also answers.
  */
 const OBJECT_FORM = 5;
+
+/** `FPDF_FONT_TRUETYPE`, the `font_type` `FPDFText_LoadFont` takes for a TrueType program (`fpdf_edit.h`). */
+const FONT_TRUETYPE = 2;
 
 /**
  * A bound C function, as this file is willing to describe one.
@@ -119,6 +127,7 @@ interface Bound {
   readonly fontAscent: Native;
   readonly fontDescent: Native;
   readonly loadStandardFont: Native;
+  readonly loadFont: Native;
   readonly pageBox: Native;
   readonly closeFont: Native;
   readonly createBitmap: Native;
@@ -417,6 +426,11 @@ export function openPdfium(libraryPath: string): void {
     // reader supplies them. THIS handle IS ours, unlike `textFont`'s, so
     // `closeFont` releases it once the edit's objects hold their own references.
     loadStandardFont: native(library.func('void *FPDFText_LoadStandardFont(void *document, const char *font)')),
+    // A FONT PROGRAM WE HAND IT, for a piece of an edit in the resolver's face (ADR-0173): a uniquely named subset,
+    // loaded as a CID TrueType font (`FPDF_FONT_TRUETYPE`, `cid` 1). Ours to close, like a standard font.
+    loadFont: native(
+      library.func('void *FPDFText_LoadFont(void *document, const uint8_t *data, uint32_t size, int font_type, int cid)'),
+    ),
     // THE PAGE'S BOX in page space — a one-line block's column is measured against it (ADR-0097).
     pageBox: native(library.func('int FPDF_GetPageBoundingBox(void *page, _Out_ FS_RECTF *rect)')),
     closeFont: native(library.func('void FPDFFont_Close(void *font)')),
@@ -1901,6 +1915,147 @@ function layOutBlocks(
         return twin;
       };
 
+      /**
+       * Whether this process sets a word its run's font cannot carry in a catalogue face (ADR-0173 Decision 4), or
+       * keeps the standard twin of before. The catalogue itself is read by the first word that needs it (`faces`).
+       */
+      const inPiecesHere = editFacesBound();
+      const faces = (): FaceSource => {
+        const read = editFaces();
+        if (read === null) throw new Error('An edit asked for the bundled fonts in a process given none.');
+        return read;
+      };
+      /** The resolver faces this edit loaded, by face and weight: ours to close, with the standard fonts. */
+      const faceFonts = new Map<string, unknown>();
+      /** Their programs, held for the edit's length, because PDFium is handed a pointer to them. */
+      const facePrograms: Uint8Array[] = [];
+      /** Every character this edit writes: ONE subset per face carries all of them (Decision 5). */
+      const editCharacters = [...new Set(edits.flatMap((edit) => Array.from(edit.text, (c) => c.codePointAt(0) ?? 0)))];
+      /** The text each piece object holds, so a wrap can trim a run's pieces from their end. */
+      const pieceTexts = new Map<unknown, string>();
+      /** Whether a run's own font draws a segment, asked once per font and segment of this edit. */
+      const ownAnswers = new Map<string, boolean>();
+
+      /** `face` at `weight`, loaded once for this edit as a uniquely named subset, or `null` where it cannot be. */
+      const faceFont = (face: CatalogueFace, weight: number): unknown => {
+        const key = `${face.id}|${String(weight)}`;
+        const loaded = faceFonts.get(key);
+        if (loaded !== undefined) return loaded;
+        const whole = faces().read(face.path);
+        const named = readFace(whole, face.faceIndex).postscript;
+        // A VARIABLE FACE'S NAME says which instance it is, as the composers name one (`composeFonts.ts`).
+        const postscript = face.weights === null ? named : `${named === '' ? 'Font' : named}-wght${String(weight)}`;
+        const subset = namedSubset(whole, postscript, {
+          unicodes: editCharacters.filter((point) => face.unicodes.has(point)),
+          faceIndex: face.faceIndex,
+          axes: face.weights === null ? {} : { wght: weight },
+        });
+        // THE WHOLE FONT only where HarfBuzz refused the subset, the licence allows it, and it is one static face
+        // PDFium can load as it stands (Decision 5).
+        const program =
+          subset?.bytes ?? (face.embedding !== 'never' && face.weights === null && face.faceIndex === 0 ? whole : null);
+        if (program === null) return null;
+        const font: unknown = bindings.loadFont(document, program, program.length, FONT_TRUETYPE, 1);
+        if (font === null) return null;
+        facePrograms.push(program);
+        faceFonts.set(key, font);
+        return font;
+      };
+
+      /**
+       * Writes `text` as the run `object` heads and answers the objects that now say it, in order: `object` alone where
+       * its own font carries the text, and otherwise its PIECES (ADR-0173 Decisions 1 to 3) — each word its font cannot
+       * carry in the resolver's face, the rest in its own, each placed at the measured right edge of the one before
+       * and inserted after it. Where this process has no catalogue, the standard twin of {@link write} as before.
+       *
+       * Every piece is read back as it is written, `write`'s reason. A piece whose face cannot be loaded, or a
+       * character no face carries, refuses the edit by name: the box and its ToUnicode are ADR-0173's next part.
+       *
+       * A TRIAL PROBES TOO, unlike `write`'s: which words become pieces decides the line's width, and a trial that
+       * measured the run's own font where the write sets another would fit a block to text that is not drawn.
+       */
+      const writePieces = (object: unknown, text: string): unknown[] => {
+        if (!inPiecesHere) return [write(object, text)];
+        if (trySetText(bindings, object, text) && carries(object, text)) {
+          if (mode === 'write') record(object, text);
+          pieceTexts.set(object, text);
+          return [object];
+        }
+        const font = String(koffi.address(bindings.textFont(object)));
+        const ownCarries = (segment: string): boolean => {
+          const key = `${font}|${segment}`;
+          let answer = ownAnswers.get(key);
+          if (answer === undefined) {
+            answer = segment.trim() === '' ? true : carries(object, segment);
+            ownAnswers.set(key, answer);
+          }
+          return answer;
+        };
+        const style = styleOf(bindings, object, programs);
+        const pieces = editPieces(text, ownCarries, { family: style.font, bold: style.bold, italic: style.italic, own: [] }, faces().faces);
+        const boxed = pieces.flatMap((piece) => piece.boxed);
+        if (boxed.length > 0) throw new TextNotWritableError(boxed.join(''));
+        const objects: unknown[] = [];
+        let left = matrixOn(bindings, object).e;
+        for (const piece of pieces) {
+          const reuse = piece.face === null && objects.length === 0;
+          const pieceFont = piece.face === null ? bindings.textFont(object) : faceFont(piece.face, piece.weight);
+          if (pieceFont === null) throw new TextNotWritableError(piece.text.trim());
+          const made = reuse ? object : makeTextLike(bindings, document, object, left, pieceFont);
+          if (!trySetText(bindings, made, piece.text) || (mode === 'write' && !carries(made, piece.text))) {
+            if (!reuse) bindings.destroyObject(made);
+            throw new TextNotWritableError(piece.text.trim());
+          }
+          if (!reuse) insertAfter(made, objects.at(-1) ?? object);
+          if (mode === 'write') record(made, piece.text);
+          pieceTexts.set(made, piece.text);
+          objects.push(made);
+          left = boundsOf(bindings, made).right;
+        }
+        // THE RUN'S OWN OBJECT GOES where its first piece is in another face, and with it what it was recorded as.
+        if (objects[0] !== object) {
+          removed.push(object);
+          const at = written.findIndex((entry) => entry.object === object);
+          if (at !== -1) written.splice(at, 1);
+        }
+        return objects;
+      };
+
+      /**
+       * Trims a run's pieces so that together they say `text`, a prefix of what they said: whole pieces off the end,
+       * then the last one kept cut where `text` ends. Each piece's font carries every prefix of its own text, so nothing
+       * is asked again; what each now says is recorded for the read-back.
+       */
+      const trimPieces = (objects: readonly unknown[], text: string): unknown[] => {
+        const kept: unknown[] = [];
+        let at = 0;
+        for (const piece of objects) {
+          const said = pieceTexts.get(piece) ?? '';
+          if (at >= text.length) {
+            removed.push(piece);
+            const entry = written.findIndex((write) => write.object === piece);
+            if (entry !== -1) written.splice(entry, 1);
+            continue;
+          }
+          const now = text.slice(at, at + said.length);
+          at += said.length;
+          if (now !== said) {
+            setTextOn(bindings, piece, now);
+            pieceTexts.set(piece, now);
+          }
+          if (mode === 'write') record(piece, now);
+          kept.push(piece);
+        }
+        return kept;
+      };
+      /**
+       * The runs written by {@link writePieces}, each with the object it was written FROM: a continuation of the run
+       * is made in that object's style, never in a piece's face, so the line it wraps onto keeps the document's font
+       * as the owner's Q6 keeps the rest of the line. Removed objects stay readable until the end (`removed`).
+       */
+      const pieced = new Map<HeldRun, unknown>();
+      const styleOfRun = (run: HeldRun): unknown => pieced.get(run) ?? run.object;
+
       try {
         for (const [blockAt, block] of blocks.entries()) {
           const { lines } = block;
@@ -1979,6 +2134,25 @@ function layOutBlocks(
             // EACH NEW LINE FOLLOWS THE ONE BEFORE IT in the page's order, starting after `after`.
             let anchor = after;
             while (rest !== '') {
+              let tail = '';
+              // IN PIECES WHERE THERE IS A CATALOGUE (ADR-0173): the line is made in `source`'s own font, written
+              // whole, and wrapped on its pieces — the last one's right edge — since a word in another face is wider or
+              // narrower than the run's own font would measure it. No standard twin: ADR-0172 withdrew it.
+              if (inPiecesHere) {
+                const object = makeTextLike(bindings, document, source, left);
+                insertAfter(object, anchor);
+                let objects = writePieces(object, rest);
+                while (boundsOf(bindings, objects.at(-1) ?? object).right > blockRight && lastBreak(rest) > 0) {
+                  const cut = lastBreak(rest);
+                  tail = tail === '' ? rest.slice(cut + 1).trimEnd() : `${rest.slice(cut + 1).trimEnd()} ${tail}`;
+                  rest = rest.slice(0, cut);
+                  objects = trimPieces(objects, rest);
+                }
+                anchor = objects.at(-1) ?? object;
+                visual.push({ objects, oldBaseline: undefined, gapAbove: pitch });
+                rest = tail;
+                continue;
+              }
               let object = makeTextLike(bindings, document, source, left);
               // A FONT THAT REFUSES THE WORDS makes the line in its standard twin from the start, so
               // the wrap below measures the font that will be drawn.
@@ -1990,7 +2164,6 @@ function layOutBlocks(
                   throw new TextNotWritableError(uncarriedIn(source, rest));
                 }
               }
-              let tail = '';
               // THE SAME WRAP AS AN OLD LINE'S, on the object's own bounds.
               while (boundsOf(bindings, object).right > blockRight && lastBreak(rest) > 0) {
                 const cut = lastBreak(rest);
@@ -2041,9 +2214,15 @@ function layOutBlocks(
               // A JOINED RUN IS WRITTEN WHOLE into its first object; its other objects go (`HeldRun.extras`).
               removed.push(...run.extras);
               run.extras = [];
-              // THE RUN NOW NAMES WHATEVER SAYS IT — itself, or its twin.
-              run.object = write(run.object, text);
-              const after = boundsOf(bindings, run.object);
+              // THE RUN NOW NAMES WHATEVER SAYS IT — itself, its twin, or its pieces (ADR-0173), the first as its
+              // object and the rest as its extras, so they move and are removed with it as a joined run's are.
+              const own = run.object;
+              const [head, ...pieces] = inPiecesHere ? writePieces(own, text) : [write(own, text)];
+              if (head === undefined) throw new Error(`A block edit on page ${String(page)} wrote a run as nothing.`);
+              run.object = head;
+              run.extras = pieces;
+              if (inPiecesHere) pieced.set(run, own);
+              const after = spanOf(bindings, [head, ...pieces]);
               push += after.right - after.left - (before.right - before.left);
             }
             // THE LINE ENDS AT ITS LAST RUN WITH TEXT: an emptied run after it is going, and a wrap
@@ -2053,23 +2232,34 @@ function layOutBlocks(
             const start = matrixOn(bindings, (line[0] ?? firstRun).object).e;
             let lastText = replacements.get(last.index) ?? last.text;
             let tail = '';
+            // A RUN WRITTEN IN PIECES ends at its last piece, and is cut by trimming them (`trimPieces`).
+            const inPieces = pieced.has(last);
+            const lastRight = (): number => boundsOf(bindings, inPieces ? (last.extras.at(-1) ?? last.object) : last.object).right;
             // A LINE THAT GREW PAST THE BLOCK WRAPS; one that did not grow never
             // does, however its rewrite measures.
-            while (push > 0 && boundsOf(bindings, last.object).right > blockRight && lastBreak(lastText) > 0) {
+            while (push > 0 && lastRight() > blockRight && lastBreak(lastText) > 0) {
               const cut = lastBreak(lastText);
               tail = tail === '' ? lastText.slice(cut + 1).trimEnd() : `${lastText.slice(cut + 1).trimEnd()} ${tail}`;
               lastText = lastText.slice(0, cut);
-              setTextOn(bindings, last.object, lastText);
+              if (inPieces) {
+                const [head, ...pieces] = trimPieces([last.object, ...last.extras], lastText);
+                if (head === undefined) throw new Error(`A block edit on page ${String(page)} wrapped a run to nothing.`);
+                last.object = head;
+                last.extras = pieces;
+              } else {
+                setTextOn(bindings, last.object, lastText);
+              }
             }
-            if (tail !== '') record(last.object, lastText);
+            if (tail !== '' && !inPieces) record(last.object, lastText);
+            const lineEnd = inPieces ? (last.extras.at(-1) ?? last.object) : last.object;
             visual.push({
               // A joined run the edit left alone still has all its objects, and they move down with the line.
               objects: line.flatMap((run) => [run.object, ...run.extras]),
               oldBaseline: baselines[k],
               gapAbove: k === 0 ? 0 : (baselines[k - 1] ?? 0) - (baselines[k] ?? 0),
             });
-            if (tail !== '') blockEnd = continueWith(last.object, tail, start, last.object);
-            else blockEnd = last.object;
+            if (tail !== '') blockEnd = continueWith(styleOfRun(last), tail, start, lineEnd);
+            else blockEnd = lineEnd;
           }
 
           // LINES TYPED BELOW THE BLOCK'S LAST, in its last line's last run's style, after whatever
@@ -2082,7 +2272,7 @@ function layOutBlocks(
               visual.push({ objects: [], oldBaseline: undefined, gapAbove: pitch });
               continue;
             }
-            blockEnd = continueWith(lastRunOfBlock.object, extra, blockStart, blockEnd);
+            blockEnd = continueWith(styleOfRun(lastRunOfBlock), extra, blockStart, blockEnd);
           }
 
           // THE LAYOUT, top to bottom: the first line stays where it is, and
@@ -2159,6 +2349,7 @@ function layOutBlocks(
         // the font it was made in, so closing the caller's handle frees nothing
         // the page still draws.
         for (const font of standardFonts.values()) bindings.closeFont(font);
+        for (const font of faceFonts.values()) bindings.closeFont(font);
         // THE SCRATCH PAGE GOES before the caller can generate or save anything.
         if (scratch !== undefined) {
           bindings.closePage(scratch.handle);
@@ -2324,6 +2515,12 @@ function boundsOf(
     throw refusedAt('object', 'FPDFPageObj_GetBounds refused an object this page handed back');
   }
   return { left: left[0] ?? 0, bottom: bottom[0] ?? 0, right: right[0] ?? 0, top: top[0] ?? 0 };
+}
+
+/** The left and right edges of a run written as several objects (ADR-0173's pieces), from each one's own bounds. */
+function spanOf(bindings: Bound, objects: readonly unknown[]): { left: number; right: number } {
+  const edges = objects.map((object) => boundsOf(bindings, object));
+  return { left: Math.min(...edges.map((edge) => edge.left)), right: Math.max(...edges.map((edge) => edge.right)) };
 }
 
 /**

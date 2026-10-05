@@ -87,6 +87,7 @@ import { PDFIUM_COMMAND, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { withNoPassword } from '../lib/pdfiumNoPassword.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
+import { fontsDirectory } from '../provision/fonts.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -104,11 +105,11 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 7);
+refuseStaleBuild(root, PDFIUM_COMMAND, 11);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
-const { openPdfium, pdfiumWriter, pageText, renderPageBitmap, replaceTextObjects, textObjectIndices, textRuns } =
+const { objectRuns, openPdfium, pdfiumWriter, pageText, renderPageBitmap, replaceTextObjects, textObjectIndices, textRuns } =
   await import('../../packages/kernel/dist/pdfiumFfi.js');
 const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
 const specs = await import('../../packages/kernel/dist/pdfiumSpecs.js');
@@ -117,6 +118,9 @@ const localPdfiumExecution = withNoPassword(specs.localPdfiumExecution);
 const { declaredCommands } = await import('../../packages/kernel/dist/commandDeclarations.js');
 const { EditRefusedError } = await import('../../packages/kernel/dist/textEditRefusals.js');
 const { HeldPassword } = await import('../../packages/shared/dist/index.js');
+// THE CATALOGUE AN EDIT SETS A WORD IN, bound as `pdfiumHostEntry.ts` binds it (ADR-0173).
+const { bindEditFaces } = await import('../../packages/kernel/dist/editFaces.js');
+const { faceSourceOf } = await import('../../packages/kernel/dist/fontCatalogue.js');
 
 const FIRST = 'FIRST RUN stays exactly where it is';
 const SECOND = 'SECOND RUN is the one that changes';
@@ -230,8 +234,10 @@ const failures = [];
 // and 80 from its Decision 6's empty replacement: a word deleted, an object removed, and the checkpoint either takes,
 // and 82 from the same decision's *no version*: one occurrence for itself, and a word the page reads but no object
 // holds (the identity replace-all case became the nothing-matched one), and 84 from the line rule's two, and 87 from
-// ADR-0171's addendum: an edit of a document opened with either password, and its control with none.
-const roster = createRoster(failures, { cases: 87 });
+// ADR-0171's addendum: an edit of a document opened with either password, and its control with none, and 95 from
+// ADR-0173's pieces: a word saved in a bundled face, its object, its wrap, the word the twin refused, an unreadable
+// catalogue either way, and a control either side.
+const roster = createRoster(failures, { cases: 95 });
 
 /**
  * @param {string} name
@@ -512,6 +518,8 @@ async function main() {
   await glyphLineCases();
   await settingCases();
   await passwordCases();
+  // LAST, because it binds the process's catalogue, and unbinds it before returning.
+  await pieceCases();
 
   process.stdout.write(
     failures.length > 0
@@ -519,6 +527,219 @@ async function main() {
       : roster.format('PDFium command case'),
   );
   process.exitCode = failures.length === 0 ? 0 : 1;
+}
+
+/**
+ * A word the run's font cannot carry is its own piece, in the resolver's face, and the rest of the line keeps the
+ * document's font ([ADR-0173](../../docs/DECISIONS/0173-an-edits-word-its-font-cannot-carry-is-its-own-piece-in-the-resolvers-face.md)
+ * Decisions 1 to 4, the owner's Q6).
+ *
+ * Against {@link aParagraph}, whose Helvetica is WinAnsi and carries no Cyrillic, with the bundled fonts bound as the
+ * PDFium host's entry binds them. THE CONTROL is the same edit with no catalogue bound, which must be refused naming
+ * the Cyrillic: so the save below is the pieces' doing, and not a font that could draw the word all along. And a Latin
+ * edit with the catalogue bound must add no object and no font, so a piece is made only for a word the font lacks.
+ */
+async function pieceCases() {
+  const fonts = fontsDirectory(root);
+  if (!existsSync(fonts)) {
+    record('the bundled fonts are provisioned for the piece cases', false, `${fonts} is absent; run scripts/provision/fonts.mjs`);
+    return;
+  }
+  const original = await aParagraph();
+  const { blocks } = await blocksOf(original);
+  const block = blocks[0];
+  if (block === undefined) {
+    record('the paragraph fixture reads as a block for the piece cases', false, 'it read as none');
+    return;
+  }
+  const lines = block.lines.map((line) => line.runs.map((run) => run.index));
+  /** @param {string} first the block's first line as typed; the other two are kept */
+  const edit = (first) =>
+    localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines, text: [first, BLOCK_LINES[1], BLOCK_LINES[2]].join('\n') }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  const WORD = 'Привет';
+  const TYPED = `The first ${WORD} line of the block`;
+  /** The lines a reading holds before the block's unedited second line, as one line: what the first line became. */
+  const firstLineOf = (/** @type {string} */ text) => {
+    const read = text.split(/\r?\n/u).map((line) => line.trim());
+    return read.slice(0, read.indexOf(BLOCK_LINES[1] ?? '')).join(' ');
+  };
+  /** Page 0's runs one per object, from bytes. @param {Uint8Array} bytes */
+  const objectRunsOf = async (bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      return (await objectRuns(session, 0)).runs;
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+
+  // THE CONTROL, with nothing bound: the font cannot carry the word and there is nowhere else to set it.
+  bindEditFaces(null);
+  /** @type {unknown} */
+  let unbound;
+  try {
+    await edit(TYPED);
+  } catch (error) {
+    unbound = error;
+  }
+  record(
+    'CONTROL: with no catalogue, a Cyrillic word typed into a Helvetica line is refused, naming it',
+    unbound instanceof Error && unbound.name === 'TextNotWritableError' && 'characters' in unbound && String(unbound.characters).includes('П'),
+    unbound instanceof Error ? `${unbound.name}: ${'characters' in unbound ? String(unbound.characters) : unbound.message}` : 'it was SAVED',
+  );
+
+  // A FOLDER THAT CANNOT BE READ fails only the edit that needs a face: the catalogue is read by the first word that
+  // needs one, never by an edit the document's own fonts carry. The control is the Cyrillic edit on the same binding,
+  // which must meet the fault — so the Latin save is the laziness, and not a binding that was never consulted.
+  bindEditFaces(() => {
+    throw new Error('this catalogue cannot be read');
+  });
+  let latinOnBroken = 'saved';
+  try {
+    await edit('The first line of a block');
+  } catch (error) {
+    latinOnBroken = error instanceof Error ? error.message : String(error);
+  }
+  let cyrillicOnBroken = 'it was SAVED';
+  try {
+    await edit(TYPED);
+  } catch (error) {
+    cyrillicOnBroken = error instanceof Error ? error.message : String(error);
+  }
+  record(
+    'an unreadable catalogue does not refuse an edit the page’s own font carries',
+    latinOnBroken === 'saved',
+    latinOnBroken,
+  );
+  record(
+    'CONTROL: and the edit that needs a face meets the unreadable catalogue as a fault, not as a twin',
+    cyrillicOnBroken.includes('this catalogue cannot be read'),
+    cyrillicOnBroken,
+  );
+
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  try {
+    /** @type {Uint8Array | undefined} */
+    let saved;
+    let answer = 'saved';
+    try {
+      saved = await edit(TYPED);
+    } catch (error) {
+      answer = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    }
+    // THE BLOCK'S FIRST LINE AS TYPED, read across the line it may wrap onto: the line grew past the block's measure.
+    const text = saved === undefined ? '' : await textOf(saved);
+    record(
+      'with the bundled fonts bound, the same edit is saved and the reopened page says it, the other lines kept',
+      firstLineOf(text) === TYPED && text.includes(BLOCK_LINES[1] ?? '') && text.includes(BLOCK_LINES[2] ?? ''),
+      `${answer}; it reads ${JSON.stringify(text.slice(0, 160))}`,
+    );
+
+    // THE WORD IN ANOTHER FACE AND THE REST IN HELVETICA, read OBJECT BY OBJECT (`objectRuns`): the editor's reading
+    // joins the pieces back into one run, since they abut on one line set alike (ADR-0130), and answers the first
+    // object's font for all of it. With the space before the word in the word's piece (Decision 2).
+    const objects = saved === undefined ? [] : await objectRunsOf(saved);
+    const holding = (/** @type {string} */ part) => objects.find((run) => run.text.includes(part));
+    const word = holding(WORD);
+    const before = holding('The first');
+    const after = holding('line of the');
+    record(
+      'the word is its own object in a bundled face, with the space before it, and the words around it stay in Helvetica',
+      word !== undefined &&
+        word.text.trimEnd() === ` ${WORD}` &&
+        /^[A-Z]{6}\+Arimo/u.test(word.style.font) &&
+        before?.style.font === 'Helvetica' &&
+        after?.style.font === 'Helvetica' &&
+        before !== word &&
+        after !== word,
+      JSON.stringify(objects.slice(0, 5).map((run) => [run.text, run.style.font])),
+    );
+
+    // AND NOTHING TYPED IS LOST WHEN A LINE IN PIECES WRAPS: past the column, the wrap trims the pieces from their
+    // end and carries the rest onto a new line, in order. The line OPENS with the word, so its first piece is in the
+    // bundled face: the lines it wraps onto must still be made in the run's own Helvetica, never in that piece's face.
+    const long = `${WORD} first line of the block grows with words enough to pass the column’s right edge and wrap ${WORD} below`;
+    let wrapped = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let wrappedObjects = [];
+    try {
+      const bytes = await edit(long);
+      wrapped = await textOf(bytes);
+      wrappedObjects = await objectRunsOf(bytes);
+    } catch (error) {
+      wrapped = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    }
+    const lineCount = wrapped.split(/\r?\n/u).indexOf(BLOCK_LINES[1] ?? '');
+    const latinInAFace = wrappedObjects.filter((run) => !run.text.includes(WORD) && run.style.font !== 'Helvetica');
+    record(
+      'a line in pieces that grows past the column wraps, every word typed reads back in order, and only the word leaves Helvetica',
+      firstLineOf(wrapped) === long && lineCount > 2 && wrappedObjects.length > 0 && latinInAFace.length === 0,
+      `${String(lineCount)} line(s) before the second; they read ${JSON.stringify(firstLineOf(wrapped))}; ` +
+        `not in Helvetica: ${JSON.stringify(latinInAFace.map((run) => [run.text, run.style.font]))}`,
+    );
+
+    // THE CASE THE TWIN COULD NOT TAKE: Helvetica in StandardEncoding, where the standard load hands back this very
+    // font, refused `é` above with no catalogue. With one, `déjà` is a piece in Arimo, and saved.
+    const narrowed = await aParagraphInStandardEncoding('Helvetica');
+    const narrowedLines = ((await blocksOf(narrowed)).blocks[0]?.lines ?? []).map((line) => line.runs.map((run) => run.index));
+    const accented = 'a second line, déjà vu';
+    let accentedText = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let accentedObjects = [];
+    try {
+      const bytes = await localPdfiumExecution.apply({
+        session: narrowed,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+          kind: 'editTextBlock',
+          page: 0,
+          ...blockEditOf([{ lines: narrowedLines, text: [BLOCK_LINES[0], accented, BLOCK_LINES[2]].join('\n') }]),
+          fit: 'reflow',
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      });
+      accentedText = await textOf(bytes);
+      accentedObjects = await objectRunsOf(bytes);
+    } catch (error) {
+      accentedText = `refused: ${error instanceof Error ? error.name : String(error)}`;
+    }
+    const dejaVu = accentedObjects.find((run) => run.text.includes('déjà'));
+    record(
+      'a word a StandardEncoding Helvetica cannot carry, which the twin refused, is saved as a piece in a bundled face',
+      accentedText.includes(accented) && dejaVu !== undefined && /Arimo/u.test(dejaVu.style.font),
+      `${JSON.stringify(accentedText.slice(0, 120))}; ${JSON.stringify(dejaVu === undefined ? null : [dejaVu.text, dejaVu.style.font])}`,
+    );
+
+    // CONTROL: a Latin edit with the catalogue bound makes no piece — the same objects, and no new font in the file.
+    let latin = 'it was refused';
+    let latinObjects = -1;
+    try {
+      const bytes = await edit('The first line of a block');
+      latinObjects = (await textIndicesOf(bytes)).length;
+      latin = JSON.stringify((await objectRunsOf(bytes)).map((run) => run.style.font));
+    } catch (error) {
+      latin = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    }
+    record(
+      'CONTROL: a Latin edit with the catalogue bound stays in its own objects and font',
+      latinObjects === (await textIndicesOf(original)).length && !latin.includes('Arimo') && latin.includes('Helvetica'),
+      `${String(latinObjects)} text object(s); fonts ${latin}`,
+    );
+  } finally {
+    bindEditFaces(null);
+  }
 }
 
 /**

@@ -20,7 +20,7 @@ Edit text lets you change the words already on a page, in place, keeping their f
 ## Good to know
 
 - Undo with **Ctrl+Z** puts the text back as it was.
-- If the page's font cannot show a letter you type, Monstera uses a standard font of the same kind for that text. If even that cannot show it, nothing is changed and you are told which letters.
+- If the page's font cannot show a word you type, that word is set in the closest font Monstera brings with it, and the rest of the line keeps the page's font. If no font Monstera has can show a letter, nothing is changed and you are told which letters.
 - When a change cannot be made, your words stay in the box with the reason under them. Change the words and finish again, or press **Esc** to put the text back.
 - Some pages use a kind of font Monstera cannot rewrite yet. On those pages you are told "This page uses a font Monstera can’t rewrite yet, so nothing was changed", and the page stays as it was.
 - Deleting every word of a block removes the block from the page.
