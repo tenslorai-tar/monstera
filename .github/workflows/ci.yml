@@ -175,8 +175,10 @@ jobs:
       - name: Typecheck and build
         run: npm run build
 
+      # `npm run lint`'s own script, by path through the wrapper, so a failing unit's report is a public annotation
+      # (`annotateCoverage.mjs`). The runner is where ESLint is invoked; this names the runner (ADR-0170).
       - name: Lint
-        run: npm run lint
+        run: node scripts/ci/annotate.mjs scripts/lib/lintcheck.mjs
 
       # A boundary that lints clean may simply be matching no files. This
       # violates every boundary on purpose and fails if any is permitted.
@@ -1082,8 +1084,9 @@ jobs:
       - name: Typecheck and build
         run: npm run build
 
+      # Through the wrapper, for the matrix job's reason.
       - name: Lint
-        run: npm run lint
+        run: node scripts/ci/annotate.mjs scripts/lib/lintcheck.mjs
 
       - name: Tests
         run: npm test
