@@ -164,32 +164,84 @@ function numberTreeValues(tree: mupdf.PDFObject, key: number): mupdf.PDFObject[]
   return found;
 }
 
+/** What a page's content is drawn through: each resources dictionary it reads, and each Form XObject it draws. */
+interface ContentReads {
+  readonly resources: readonly mupdf.PDFObject[];
+  /** By object number. */
+  readonly forms: ReadonlyMap<number, mupdf.PDFObject>;
+}
+
+/** A page the burn-in rewrote, with what its content read before MuPDF's filter ran and what it reads after. */
+interface BurnedPage {
+  readonly page: mupdf.PDFObject;
+  readonly before: ContentReads;
+  readonly after: ContentReads;
+}
+
 /**
- * Takes every copy of a burned page's text that sits outside its content (ADR-0163).
+ * The resources `page` is drawn with, its own or the nearest ancestor's (`getInheritable`, ISO 32000-1 §7.7.3.4),
+ * and every Form XObject reachable through them with the resources each carries.
+ *
+ * **Read before the burn-in as well as after, because MuPDF's filter replaces them.** Measured 2026-10-05 against
+ * MuPDF 1.28.0: the filter gives the burned page a resources dictionary of its own and a filtered copy of each form it
+ * draws, and leaves the dictionaries the page read where they were. Those are the ones that hold a property list's
+ * copy of the removed text when it is inherited from `/Pages` or shared with another page, and nothing after the
+ * filter leads back to them.
+ */
+function contentReads(page: mupdf.PDFObject): ContentReads {
+  const resources: mupdf.PDFObject[] = [];
+  const forms = new Map<number, mupdf.PDFObject>();
+  const pending = [page.getInheritable('Resources')];
+  for (let dictionary = pending.pop(); dictionary !== undefined; dictionary = pending.pop()) {
+    if (!dictionary.isDictionary()) continue;
+    resources.push(dictionary);
+    dictionary.get('XObject').forEach((xobject) => {
+      if (!xobject.isIndirect() || String(xobject.get('Subtype')) !== '/Form' || forms.has(xobject.asIndirect())) return;
+      forms.set(xobject.asIndirect(), xobject);
+      pending.push(xobject.get('Resources'));
+    });
+  }
+  return { resources, forms };
+}
+
+/**
+ * Takes every copy of a burned page's text that sits outside its content (ADR-0163 and its 2026-10-05 correction).
  *
  * - **The structure tree's references to an annotation the burn-in deleted**, which kept it alive through the
  *   collection with its `/Contents`; the element that held one counts as tagging the page.
- * - **The text alternates of every element tagging a burned page, and of its ancestors**, found through the page's
- *   `/StructParents` entry in the parent tree. MuPDF's filter edits these for the characters it removes, and writes
+ * - **The text alternates of every element tagging a burned page, and of its ancestors**, found through the parent
+ *   tree's entry for each content stream the page drew: its own `/StructParents`, and each Form XObject's, which is how
+ *   the format maps marked content inside a form. MuPDF's filter edits these for the characters it removes, and writes
  *   the edited `/ActualText` into `/Alt` (`pdf-op-filter.c` 1.28.0, line 872), so the original stays; which element
  *   held which removed character it does not report, so the page is the unit.
- * - **The alternates in the page's named property lists**, by the same reason, through a copy, so a list another
- *   page shares keeps its own.
+ * - **The element's reference to a form the page no longer draws.** The filter draws a filtered copy carrying the
+ *   same `/StructParents`, and an element's `/Stm` naming the original kept that original, removed text and all,
+ *   through the collection; it is pointed at the copy, or dropped where the page draws none.
+ * - **The alternates in every named property list the page read**, by the same reason, IN PLACE. The filter copies a
+ *   list it keeps into the page's new resources as the same object (`copy_resource`, `pdf-op-filter.c`), and drops,
+ *   copying nothing, a tag none of whose content it wrote, so a list is reached through the dictionaries read before
+ *   the filter as well as after. Those are now read only by other pages, so a copy kept for them kept the removed
+ *   text in the file; another page that reads the same list loses its alternates too, which is the stated cost.
  * - **`/PieceInfo`**, the page's and the catalogue's, and **the outline**, which no region maps to.
  */
-function removeOtherCopies(document: mupdf.PDFDocument, burned: readonly number[], deleted: ReadonlySet<number>): void {
+function removeOtherCopies(document: mupdf.PDFDocument, burned: readonly BurnedPage[], deleted: ReadonlySet<number>): void {
   const root = document.getTrailer().get('Root');
   const tagging: mupdf.PDFObject[] = [];
   const structure = root.get('StructTreeRoot');
   if (structure.isDictionary()) {
     tagging.push(...withoutReferencesTo(structure, deleted));
-    for (const index of burned) {
-      const parents = document.loadPage(index).getObject().get('StructParents');
-      if (!parents.isNumber()) continue;
-      for (const value of numberTreeValues(structure.get('ParentTree'), parents.asNumber())) {
-        if (value.isArray()) value.forEach((element) => tagging.push(element));
-        else tagging.push(value);
+    for (const { page, before, after } of burned) {
+      const tagged: mupdf.PDFObject[] = [];
+      for (const stream of [page, ...before.forms.values(), ...after.forms.values()]) {
+        const parents = stream.get('StructParents');
+        if (!parents.isNumber()) continue;
+        for (const value of numberTreeValues(structure.get('ParentTree'), parents.asNumber())) {
+          if (value.isArray()) value.forEach((element) => tagged.push(element));
+          else tagged.push(value);
+        }
       }
+      for (const element of tagged) towardsDrawnForms(element, page, before, after);
+      tagging.push(...tagged);
     }
   }
   const stripped = new Set<number>();
@@ -203,26 +255,67 @@ function removeOtherCopies(document: mupdf.PDFDocument, burned: readonly number[
     tagging.push(element.get('P'));
   }
 
-  for (const index of burned) {
-    const page = document.loadPage(index).getObject();
+  for (const { page, before, after } of burned) {
     page.delete('PieceInfo');
-    const properties = page.get('Resources', 'Properties');
-    if (!properties.isDictionary()) continue;
-    const carrying: (readonly [number | string, mupdf.PDFObject])[] = [];
-    properties.forEach((list, name) => {
-      if (list.isDictionary() && TEXT_ALTERNATES.some((key) => !list.get(key).isNull())) carrying.push([name, list]);
-    });
-    for (const [name, list] of carrying) {
-      const copy = document.newDictionary();
-      list.forEach((value, key) => {
-        if (!(TEXT_ALTERNATES as readonly (number | string)[]).includes(key)) copy.put(key, value);
+    for (const resources of [...before.resources, ...after.resources]) {
+      resources.get('Properties').forEach((list) => {
+        if (list.isDictionary()) for (const key of TEXT_ALTERNATES) list.delete(key);
       });
-      properties.put(name, copy);
     }
   }
   root.delete('PieceInfo');
   root.delete('Outlines');
   if (String(root.get('PageMode')) === '/UseOutlines') root.delete('PageMode');
+}
+
+/**
+ * Points each marked-content reference of `element` that is on `page`, and names a form the page drew before the
+ * burn-in and no longer draws, at the filtered copy carrying the same `/StructParents`. A reference on another page
+ * is that page's, and is left.
+ *
+ * **One with no copy is removed**, and an element left with no content loses its `/K`, so the original is not kept
+ * alive. No input reaches that branch on MuPDF 1.28.0, measured 2026-10-05: a form the mark empties entirely is still
+ * drawn as a copy of no length that keeps its `/StructParents`. It stays because the original holds the removed text,
+ * and a filter that ever drops the form would otherwise keep it through the structure tree.
+ */
+function towardsDrawnForms(element: mupdf.PDFObject, page: mupdf.PDFObject, before: ContentReads, after: ContentReads): void {
+  if (!element.isDictionary()) return;
+  const replaced = (kid: mupdf.PDFObject): boolean => {
+    if (!kid.isDictionary() || String(kid.get('Type')) !== '/MCR') return false;
+    const stream = kid.get('Stm');
+    const on = kid.get('Pg').isNull() ? element.get('Pg') : kid.get('Pg');
+    return (
+      stream.isIndirect() &&
+      before.forms.has(stream.asIndirect()) &&
+      !after.forms.has(stream.asIndirect()) &&
+      on.isIndirect() &&
+      on.asIndirect() === page.asIndirect()
+    );
+  };
+  /** The form the page draws now in place of `kid`'s, or `undefined` where it draws none. */
+  const copyOf = (kid: mupdf.PDFObject): mupdf.PDFObject | undefined => {
+    const parents = kid.get('Stm').get('StructParents');
+    if (!parents.isNumber()) return undefined;
+    return [...after.forms.values()].find((form) => {
+      const own = form.get('StructParents');
+      return own.isNumber() && own.asNumber() === parents.asNumber();
+    });
+  };
+  const kids = element.get('K');
+  if (kids.isArray()) {
+    for (let at = kids.length - 1; at >= 0; at -= 1) {
+      const kid = kids.get(at);
+      if (!replaced(kid)) continue;
+      const copy = copyOf(kid);
+      if (copy === undefined) kids.delete(at);
+      else kid.put('Stm', copy);
+    }
+    if (kids.length === 0) element.delete('K');
+  } else if (replaced(kids)) {
+    const copy = copyOf(kids);
+    if (copy === undefined) element.delete('K');
+    else kids.put('Stm', copy);
+  }
 }
 
 /**
@@ -305,7 +398,7 @@ function rectOfQuad(quad: mupdf.Quad): mupdf.Rect {
  */
 export const applyApplyRedactions: Apply<'mupdf', 'applyRedactions'> = (session, command) =>
   withDocumentRemoving(session, (document) => {
-    const burnedPages: number[] = [];
+    const burnedPages: BurnedPage[] = [];
     const deleted = new Set<number>();
     for (const index of scopedPages(document, command.pages)) {
       const page = document.loadPage(index);
@@ -314,16 +407,17 @@ export const applyApplyRedactions: Apply<'mupdf', 'applyRedactions'> = (session,
       // stream for no reason, which on a document-wide pass is every page.
       if (redactMarksOn(page) === 0) continue;
       removeCoveredObjects(document, page, deleted);
+      const pageObject = page.getObject();
+      const before = contentReads(pageObject);
       page.applyRedactions(
         command.cover === 'solid',
         IMAGE_METHOD[command.images],
         LINE_ART_REMOVE_IF_COVERED,
         TEXT_REMOVE,
       );
-      const pageObject = page.getObject();
       pageObject.delete('Thumb');
       pageObject.delete('Metadata');
-      burnedPages.push(index);
+      burnedPages.push({ page: pageObject, before, after: contentReads(pageObject) });
     }
     if (burnedPages.length > 0) {
       removeOtherCopies(document, burnedPages, deleted);
