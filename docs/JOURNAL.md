@@ -1052,6 +1052,26 @@ Not in seven places, all closed here (QQQQQQQ-1 to -7). The cross-document sweep
 §9 found two comments that restate *a failure is a code alone* (`result.ts`, `channel.ts`), both in the next commit's
 files, which carries them.
 
+**Correction, 2026-10-05.** Items 4, 4a and 4b above were answered under one heading, which `check:docs` reads as
+three items unanswered, and Guards was red on it at `361684e2` and `30891a0a`. The answers, one per item, from what
+QQQQQQQ-20 already records:
+
+### 4. Are the proofs non-vacuous?
+
+Not all. QQQQQQQ-20 names the cases that cannot fail on their stated property: `diagnosticHead.test.ts`, the Sanitize
+case crediting `embedded-files` with what the flatten removed, the form Escape case on a detached node, the turned-link
+control that holds by construction, and the two compose cases that match substrings.
+
+### 4a. Has every instrument passed a resolution test?
+
+No. The range's one measuring instrument is the machine witness, and its `ambientHeld` assumes load moves smoothly,
+with a skip route no case reaches (`8e4a1843`, QQQQQQQ-20). It was not resolution tested against a load that steps.
+
+### 4b. Does every search carry a positive control?
+
+All but one pair: the host-runtime diagnostic's two searches have none (`a36e1f80`, QQQQQQQ-20), and say so. The
+range's other new searches carry one where they decide anything.
+
 ## 2026-10-04 — Stage audit of `33715f7c..8f322ba7` — findings PPPPPPP-1 to PPPPPPP-14
 
 35 commits, 198 files, all work/cloud-4: Groups 16a (ADR-0156), 17a to 17c (ADR-0157, ADR-0158), 18 (ADR-0159,
