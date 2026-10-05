@@ -258,6 +258,7 @@ describe('browser shim', () => {
       'document.newerOf',
       'document.open',
       'document.openFromUrl',
+      'document.openLink',
       'document.openRecent',
       'document.openWaiting',
       'document.optimize',
