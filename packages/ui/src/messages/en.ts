@@ -2734,7 +2734,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BACKUP_COPIES_OPTION_TITLES.five]: '5',
   [BACKUP_COPIES_OPTION_TITLES.ten]: '10',
   [CONFIRM_REDACTION_DESCRIPTION]:
-    'Shows what Apply redactions will remove before it removes it. Turned off, it removes marked content on the current page straight away, with a solid cover, and removes the document title too. Undo still works until you close the document.',
+    'Shows what Apply redactions will remove before it removes it. Turned off, it removes marked content on the current page straight away, with a solid cover, and removes the document title and bookmarks too. Undo still works until you close the document.',
   [STARTING_ZOOM_TITLE]: 'Starting zoom',
   [STARTING_ZOOM_DESCRIPTION]: 'How large a document is shown when you open it. You can still zoom each one as you read.',
   [STARTING_ZOOM_OPTION_TITLES['fit-width']]: 'Fit width',
@@ -4944,8 +4944,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // the half-true sentence nobody flags, in the one dialog where being wrong
   // about what is removed is the whole risk. The title is the checkbox's to
   // describe, and it does.
+  // THE BOOKMARKS ARE NAMED because a person sees them and there is no keeping them: a title of one can spell what a
+  // mark removes, and the owner chose removal with no option (2026-10-05, ADR-0163).
   [APPLY_REDACTIONS_WARNS]:
-    'The marked content is removed from the document, not covered over, with any comments and form fields under the marks. The document’s author, subject and other properties are removed too. The only way back is Undo, in this session.',
+    'The marked content is removed from the document, not covered over, with any comments and form fields under the marks. The document’s bookmarks, author, subject and other properties are removed too. The only way back is Undo, in this session.',
   [APPLY_REDACTIONS_SCOPE]: 'Apply to',
   [APPLY_REDACTIONS_SCOPE_PAGE]: 'Page {page}',
   [APPLY_REDACTIONS_SCOPE_ALL]: 'Every page',

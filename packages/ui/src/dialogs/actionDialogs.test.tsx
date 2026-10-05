@@ -196,3 +196,14 @@ describe('the action dialogs in the dialog pattern', () => {
     });
   }
 });
+
+describe('Apply redactions says the bookmarks go, and offers no keeping them (the owner, 2026-10-05)', () => {
+  it('names the bookmarks among what is removed, and the one thing a person may keep is the title', () => {
+    render(<InDialog><ApplyRedactionsBody page={0} resolve={ignore} update={ignore} /></InDialog>);
+    expect(document.body.textContent).toContain('The document’s bookmarks, author, subject and other properties are removed too.');
+    // NO OPTION, by the owner's ruling: the title's box is the dialog's only one. A box added for the bookmarks fails
+    // here, where a case reading the sentence alone would not see it.
+    const boxes = [...document.querySelectorAll('input[type="checkbox"]')].map((box) => box.getAttribute('aria-label'));
+    expect(boxes).toStrictEqual(['Keep the document’s title']);
+  });
+});

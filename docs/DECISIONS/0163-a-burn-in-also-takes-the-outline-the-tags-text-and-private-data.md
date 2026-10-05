@@ -112,3 +112,17 @@ Decision 4 is corrected in two ways, and Decision 2 in one:
 Rejected: **keeping the copy-on-write and accepting the residue**, which leaves the removed text in the file in the
 common case; **dropping an element's reference to the original** rather than repointing it, which also removes the
 text and leaves the element naming no content.
+
+## The owner's answer, 2026-10-05: no option to keep the bookmarks
+
+The question above is answered: *"remove any bookmark that could reveal redacted text, with no option to keep them.
+Safety first."* Decision 5 stands as built, and no control offers keeping the outline.
+
+What the person is told changes, since a removal with no option must still be said before it happens: the Apply
+redactions warning names the bookmarks among what is removed, as the setting's description and the help article do.
+`actionDialogs.test.tsx` holds the sentence and that the dialog's only checkbox is the title's.
+
+**Found while answering it, and put to the owner rather than built:** a named destination whose name spells the
+redacted text survives a burn-in, in the `/Names` tree and in the catalogue's `/Dests` (measured 2026-10-05 against
+MuPDF 1.28.0, a generated page). It is not a bookmark, and removing it breaks every link that jumps to it; renaming
+the destinations and the document's own references to them would keep the links. Which is the owner's.
