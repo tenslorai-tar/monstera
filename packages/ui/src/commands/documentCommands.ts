@@ -1455,22 +1455,35 @@ export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
       // THE FIELD STARTS WITH `targetPages` (ADR-0104): the ticked ones in the grid, else the page on show.
       const pages = targetPages(context);
       if (context.docId === undefined || context.pageCount === undefined || pages.length === 0) return;
-      const answer = (await deps.ask(DELETE_PAGES_DIALOG_ID, {
-        pageCount: context.pageCount,
-        pages: [...pages],
-      })) as DeletePagesAnswer | undefined;
-
-      // DISMISSED. Nothing was collected, so nothing is dispatched — and the
-      // document has not been touched, which is why the case that holds this
-      // asserts the CALL that was not made rather than the state.
-      if (answer === undefined) return;
-
-      await applyDocumentCommand(deps, context.docId, {
-        kind: 'deletePages',
-        pages: [...answer.pages],
-      });
+      await askToDeletePages(deps, context.docId, context.pageCount, pages);
     },
   };
+}
+
+/**
+ * Opens the Delete pages dialog with `pages` in its field, and deletes what it answers — or nothing, when it is
+ * dismissed. The one way a page is deleted after asking: this command's, and the page grid's Delete key, which asks
+ * first by the owner's ruling (2026-10-05, CR-COR-06), so a key pressed by mistake costs a Cancel and never a page.
+ */
+export async function askToDeletePages(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  pageCount: number,
+  pages: readonly number[],
+): Promise<void> {
+  const answer = (await deps.ask(DELETE_PAGES_DIALOG_ID, { pageCount, pages: [...pages] })) as
+    | DeletePagesAnswer
+    | undefined;
+
+  // DISMISSED. Nothing was collected, so nothing is dispatched — and the
+  // document has not been touched, which is why the case that holds this
+  // asserts the CALL that was not made rather than the state.
+  if (answer === undefined) return;
+
+  await applyDocumentCommand(deps, docId, {
+    kind: 'deletePages',
+    pages: [...answer.pages],
+  });
 }
 
 /**

@@ -2,7 +2,7 @@
 import { I18nProvider } from '@lingui/react';
 import { type ContractClient, channels, createClient } from '@monstera/contract';
 import { type DocId, asDocId, asDocVersion, ok } from '@monstera/shared';
-import { act, fireEvent, render as renderBare, screen } from '@testing-library/react';
+import { act, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { vi } from 'vitest';
@@ -346,7 +346,42 @@ describe('the Organize grid, driven through App (ADR-0104)', () => {
       fireEvent.keyDown(card(container, 1), { key: 'Delete' });
       await Promise.resolve();
     });
+    // IT ASKS FIRST (the owner, 2026-10-05, CR-COR-06): the Delete pages dialog, holding the page the key named, and
+    // nothing is sent until the person confirms it.
+    const dialog = await screen.findByRole('dialog', { name: 'Delete pages' });
+    expect(executed.at(-1)).toMatchObject({ kind: 'rotatePages' });
+    expect(within(dialog).getByRole('textbox')).toHaveProperty('value', '2');
+    await act(async () => {
+      within(dialog).getByRole('button', { name: 'Delete pages' }).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     expect(executed.at(-1)).toStrictEqual({ kind: 'deletePages', pages: [1] });
+  });
+
+  it('CANCEL on the Delete key’s question sends nothing, so every page stays (CR-COR-06)', async () => {
+    const { client: built, executed } = organizing();
+    const { container } = render(<App client={built} settings={organizeSettings()} />);
+    await openOne();
+    const before = executed.length;
+
+    await act(async () => {
+      fireEvent.keyDown(card(container, 1), { key: 'Delete' });
+      await Promise.resolve();
+    });
+    const dialog = await screen.findByRole('dialog', { name: 'Delete pages' });
+    await act(async () => {
+      within(dialog).getByRole('button', { name: 'Cancel' }).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // THE CALL THAT WAS NOT MADE, not the page count, which a stubbed kernel would report unchanged either way.
+    expect(executed.slice(before).filter((command) => (command as { readonly kind?: unknown }).kind === 'deletePages')).toStrictEqual(
+      [],
+    );
+    expect(screen.queryByRole('dialog', { name: 'Delete pages' })).toBeNull();
+    expect(container.querySelectorAll('.m-page-grid [data-thumb-page]')).toHaveLength(2);
   });
 
   it('ENTER on a card opens that page in the reading view, which is Home', async () => {

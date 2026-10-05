@@ -2697,7 +2697,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ORGANIZE_GRID_COUNT]: '{count, plural, one {# page} other {# pages}}',
   [ORGANIZE_GRID_SELECTED]: '{count} selected',
   // v5-09's own line: what a person can do here, in the order the design says it.
-  [ORGANIZE_GRID_HINT]: 'Drag to reorder · Ctrl+click to select several · Delete removes · Enter opens',
+  [ORGANIZE_GRID_HINT]: 'Drag to reorder · Ctrl+click to select several · Delete asks to remove · Enter opens',
   [AUTOSAVE_TITLE]: 'Save automatically',
   [AUTOSAVE_DESCRIPTION]:
     'Saves each document with unsaved changes to its own file on a timer. Off unless you turn it on, because a save replaces the file.',

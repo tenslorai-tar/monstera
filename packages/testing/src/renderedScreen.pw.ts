@@ -4003,10 +4003,14 @@ for (const size of [
     // SCROLLING DOWN: six pages at that width are taller than the strip.
     expect(measured.strip.scrollHeight, detail).toBeGreaterThan(measured.strip.clientHeight * 2);
 
-    // THE GRID'S GESTURES ACT ON IT: a click ticks a page, and Delete sends the command for that page.
+    // THE GRID'S GESTURES ACT ON IT: a click ticks a page, and Delete asks for that page (CR-COR-06), then sends it.
     await grid.getByRole('button', { name: 'Page 3', exact: true }).click();
     await expect(grid.getByRole('button', { name: 'Page 3', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.keyboard.press('Delete');
+    const asked = page.getByRole('dialog', { name: 'Delete pages' });
+    await expect(asked.getByRole('textbox')).toHaveValue('3');
+    expect(JSON.stringify(sent)).not.toContain('"deletePages"');
+    await asked.getByRole('button', { name: 'Delete pages' }).click();
     await expect.poll(() => JSON.stringify(sent)).toContain('"deletePages"');
     expect(JSON.stringify(sent)).toContain('[2]');
   });

@@ -136,8 +136,9 @@ export function Thumbnails({
   /**
    * The Organize grid's half (ADR-0104): present, the strip is laid out across the canvas at `width` and its
    * pages are SELECTED rather than jumped to. Click selects one, Ctrl+click toggles one, Shift+click extends
-   * from the last clicked; Enter or a double-click opens a page in the reading view; Delete removes the
-   * selection. Absent — the side strip — none of that exists, and Shift+click keeps meaning swap.
+   * from the last clicked; Enter or a double-click opens a page in the reading view; Delete names the
+   * selection to `onDelete`, which asks before removing it. Absent — the side strip — none of that exists, and
+   * Shift+click keeps meaning swap.
    */
   readonly grid?:
     | {
@@ -337,7 +338,8 @@ export function Thumbnails({
                 if (!event.repeat) grid.onOpen(page);
                 return;
               }
-              // DELETE REMOVES THE TICKED PAGES, or this one when none is ticked: *"Delete removes"* (v5-09).
+              // DELETE NAMES THE TICKED PAGES, or this one when none is ticked (v5-09), and the grid's owner asks before
+              // removing them (CR-COR-06).
               //
               // ONCE PER PRESS: a held key repeats, the card in this slot is the page that moved into it, and each
               // repeat deleted that page too — a page per repeat with nothing asked (code review CR-COR-06), the

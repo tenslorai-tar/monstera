@@ -22,7 +22,7 @@ When you choose **Organize** in the rail, the pages area shows every page of the
 
 ## Good to know
 
-- The hint above the cards reads: Drag to reorder · Ctrl+click to select several · Delete removes · Enter opens.
+- The hint above the cards reads: Drag to reorder · Ctrl+click to select several · Delete asks to remove · Enter opens. **Delete** opens **Delete pages** with the selected pages filled in, so nothing is removed until you confirm.
 - Right-clicking a card that is not selected acts on that page alone.
 - Rotating and deleting use the selected pages. Other page tools, such as extracting or duplicating, still use the page you last had open.
 - Everything here can be undone with **Ctrl+Z**.

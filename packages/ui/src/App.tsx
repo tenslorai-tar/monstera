@@ -31,6 +31,7 @@ import {
 
 import {
   applyDocumentCommand,
+  askToDeletePages,
   imagePagesFor,
   placeImage,
   signDocument,
@@ -1577,8 +1578,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
 
   /**
    * The Organize grid's gestures (ADR-0104), `undefined` outside Organize — which is what keeps the reading
-   * view on every other section. The selection is the document store's; Delete is `deletePages` through the
-   * one dispatcher, undone like any command, so it asks nothing first.
+   * view on every other section. The selection is the document store's; Delete ASKS FIRST, in the Delete pages
+   * dialog with the pages it names, and a Cancel deletes nothing (the owner, 2026-10-05, CR-COR-06). What it
+   * confirms is `deletePages` through the one dispatcher, undone like any command.
    */
   const organize = useMemo(() => {
     if (!organizing || store === undefined || activeId === undefined) return undefined;
@@ -1606,14 +1608,29 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         navigator.jumpTo(page);
         settings.set(RIBBON_SECTION_SETTING.id, 'home');
       },
+      // THE VIEW MODEL'S COUNT, the one the grid draws its cards from: the store's is reported by the reading view's
+      // scroller, which a document opened straight into Organize has never mounted.
       onDelete: (pages: readonly number[]) => {
-        void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
-          kind: 'deletePages',
-          pages: [...pages],
-        });
+        if (pageCount === undefined) return;
+        void askToDeletePages({ client, onApplied: applied, ask, stamp, signatures }, activeId, pageCount, pages);
       },
     };
-  }, [activeId, applied, ask, client, goTo, navigator, organizing, selectedPages, settings, signatures, stamp, store, wentTo]);
+  }, [
+    activeId,
+    applied,
+    ask,
+    client,
+    goTo,
+    navigator,
+    organizing,
+    pageCount,
+    selectedPages,
+    settings,
+    signatures,
+    stamp,
+    store,
+    wentTo,
+  ]);
 
   /**
    * What a command last asked of the assistant (ADR-0088), and the one way to ask it.

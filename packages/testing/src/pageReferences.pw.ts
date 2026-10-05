@@ -83,6 +83,8 @@ test('after a page delete the Outline panel shows what main answers for the new 
   const grid = page.getByRole('region', { name: 'Pages to organize' });
   await grid.getByRole('button', { name: 'Page 2', exact: true }).click();
   await page.keyboard.press('Delete');
+  // ASKED FIRST (CR-COR-06), and confirmed.
+  await page.getByRole('dialog', { name: 'Delete pages' }).getByRole('button', { name: 'Delete pages' }).click();
   // THE COMMAND ITSELF, kind and pages, not any execute whose payload happens to carry `"pages":[1]`.
   await expect
     .poll(() =>
