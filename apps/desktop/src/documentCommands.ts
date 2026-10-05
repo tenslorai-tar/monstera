@@ -72,6 +72,7 @@ import {
   type ByteImage,
   type AccessibilityReportOnWire,
   barcodeRect,
+  copyNames,
   type CommandBus,
   type FlatFieldCandidate,
   type FoundBarcode,
@@ -6011,7 +6012,6 @@ export class DocumentCommands {
       const removal = context.removedSinceSave;
       // STAGED, so the document's bytes go from the host to the temporary file and never through `main`
       // (ADR-0121's addendum).
-      const names = this.#save.deps.names(context.path);
       const saved = await saveDocument(
         this.#save.deps,
         context,
@@ -6023,9 +6023,9 @@ export class DocumentCommands {
         return { ...saved, cause: saveWriteCause(saved.failure, await this.#documents.fileAccess(docId)) };
       }
       if (saved.kind !== 'saved') return saved;
-      // THE BACKUP THIS SAVE MADE is the newest name, `atomicWrite`'s own reading of the same list.
-      const [newest] = names.backups;
-      if (saved.backedUp && newest !== undefined) await this.#save.provenance.made(newest);
+      // THE COPY THIS SAVE MADE, wherever `atomicWrite` left it: the newest backup, or the copy-aside where moving it into
+      // the backups was refused, which is still a copy of the person's document a removal's save must find (QQQQQQQ-8).
+      if (saved.previousKeptAt !== null) await this.#save.provenance.made(saved.previousKeptAt);
       // A REMOVAL'S SAVE has just tried each copy, so what it could not delete is its answer; any other save tries the
       // copies this document still owes again, which is what keeps a held copy from being kept for ever.
       let outcome: SaveRequestOutcome;
@@ -6079,8 +6079,7 @@ export class DocumentCommands {
 
   /** The owed copies among this document's backup names, tried again; the names still held. */
   async #retryHeld(context: DocumentContext): Promise<readonly string[]> {
-    const names = this.#save.deps.names(context.path);
-    const mine = new Set([...names.backups, ...names.retired]);
+    const mine = new Set(copyNames(this.#save.deps.names(context.path)));
     const owed = this.#save.provenance.owed().filter((path) => mine.has(path));
     if (owed.length === 0) return [];
     return (await this.#save.provenance.retryOwed(owed)).map((path) => basename(path));
@@ -6088,19 +6087,18 @@ export class DocumentCommands {
 
   /**
    * Deletes, PERMANENTLY and unasked, every older copy Monstera made that may still hold what a removal took out
-   * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)): each backup beside
-   * the file — every name a backup of it can have, kept or retired — that the ledger shows Monstera wrote and nothing
-   * has changed since, and every undo copy of the document with the history that needs them. A file with a backup's
-   * name that Monstera did not make is kept and named. One Monstera made that another program holds is **held**: owed a
+   * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)): each copy beside
+   * the file — every name one can have, a backup kept or retired or the copy-aside (`copyNames`) — that the ledger shows
+   * Monstera wrote and nothing has changed since, and every undo copy of the document with the history that needs them.
+   * A file with one of those names that Monstera did not make is kept and named. One Monstera made that another program holds is **held**: owed a
    * deletion and named, never thrown past a save that has written (CR-DOC-10). In the save's own lane entry, so
    * nothing lands between.
    */
   async #clearCopies(context: DocumentContext): Promise<{ readonly copies: ClearedCopies; readonly held: readonly string[] }> {
-    const names = this.#save.deps.names(context.path);
     let backups = 0;
     const kept: string[] = [];
     const held: string[] = [];
-    for (const path of [...names.backups, ...names.retired]) {
+    for (const path of copyNames(this.#save.deps.names(context.path))) {
       const outcome = await this.#save.provenance.deleteIfMade(path);
       if (outcome === 'deleted') backups += 1;
       else if (outcome === 'not-made') kept.push(basename(path));

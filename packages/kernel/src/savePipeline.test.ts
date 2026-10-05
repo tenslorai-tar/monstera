@@ -263,7 +263,7 @@ describe('saveDocument', () => {
     expect(outcome.kind).toBe('saved');
     if (outcome.kind === 'saved') {
       expect(outcome.bytes).toBe(NEW_BYTES.byteLength);
-      expect(outcome.backedUp).toBe(true);
+      expect(outcome.previousKeptAt).toBe('/docs/report.pdf.bak');
     }
     expect(flushes.count).toBe(1);
     expect(files.get(TARGET)).toBe('saved contents');
@@ -288,7 +288,7 @@ describe('saveDocument', () => {
     );
 
     expect(outcome.kind).toBe('saved');
-    if (outcome.kind === 'saved') expect(outcome.backedUp).toBe(false);
+    if (outcome.kind === 'saved') expect(outcome.previousKeptAt).toBeNull();
     expect(files.get(TARGET)).toBe('saved contents');
     expect(files.has('/docs/report.pdf.bak')).toBe(false);
 

@@ -100,6 +100,17 @@ export type SaveFileNames = (target: string) => {
   readonly retired: readonly string[];
 };
 
+/**
+ * Every name at which a save leaves a copy of the file it replaced: each backup, kept or retired, and the copy-aside,
+ * which holds that version where moving it into the backups was refused (`AtomicWriteDone.previousKeptAt`).
+ *
+ * One list, so a caller asking *which copies of this file may Monstera have made* cannot answer it with two of the
+ * three: a removal's save walked the backups alone and left the copy-aside holding what it removed (QQQQQQQ-8).
+ */
+export function copyNames(names: ReturnType<SaveFileNames>): readonly string[] {
+  return [...names.backups, ...names.retired, names.previous];
+}
+
 /** Everything the pipeline needs that is not the document itself. */
 export interface SaveDependencies {
   readonly checkWriteTarget: WriteTargetCheck;
@@ -123,8 +134,8 @@ export type SaveOutcome =
       readonly kind: 'saved';
       readonly version: DocVersion;
       readonly bytes: number;
-      /** Whether a `.bak` was left holding the user's previous version. */
-      readonly backedUp: boolean;
+      /** Where the user's previous version was left: `AtomicWriteDone.previousKeptAt`. */
+      readonly previousKeptAt: string | null;
     }
   /**
    * The write-target check refused. The document is untouched and still dirty.
@@ -259,7 +270,7 @@ export async function saveDocument(
     kind: 'saved',
     version: await context.markSaved(SAVE_WRITER),
     bytes,
-    backedUp: written.value.backedUp,
+    previousKeptAt: written.value.previousKeptAt,
   };
 }
 

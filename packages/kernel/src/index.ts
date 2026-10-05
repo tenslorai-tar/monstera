@@ -392,6 +392,7 @@ export {
 } from './documentService.js';
 export { readDocumentRange } from './documentRanges.js';
 export {
+  type AtomicWriteDone,
   type AtomicWriteFailure,
   type AtomicWriteSurface,
   RENAME_BACKOFF_MS,
@@ -407,6 +408,7 @@ export {
   type SaveBackups,
   type SaveDependencies,
   type SaveFileNames,
+  copyNames,
   type CopyOutcome,
   type SaveOutcome,
   type WriteTargetCheck,

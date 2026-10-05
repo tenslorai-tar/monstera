@@ -1711,14 +1711,14 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       await removal.commands.execute(removal.saved, sanitize);
       await removal.rebuild();
       const removed = await removal.commands.save(removal.saved, { breakSignatures: false });
-      expect(removed).toMatchObject({ kind: 'saved', backedUp: false, cleared: { backups: 0, kept: [] } });
+      expect(removed).toMatchObject({ kind: 'saved', previousKeptAt: null, cleared: { backups: 0, kept: [] } });
       expect(holdsReplaced(removal.path, removal.before)).toStrictEqual([]);
 
       const ordinary = await aSavableDocument();
       await ordinary.commands.execute(ordinary.saved, rotateOnce);
       await ordinary.rebuild();
       const kept = await ordinary.commands.save(ordinary.saved, { breakSignatures: false });
-      expect(kept).toMatchObject({ kind: 'saved', backedUp: true, cleared: null });
+      expect(kept).toMatchObject({ kind: 'saved', previousKeptAt: `${ordinary.path}.bak`, cleared: null });
       expect(holdsReplaced(ordinary.path, ordinary.before)).toStrictEqual([`${basename(ordinary.path)}.bak`]);
     });
 
@@ -1815,7 +1815,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       const { commands, saved, path, before } = await aSavableDocument();
       // AN ORDINARY SAVE FIRST, which makes the `.bak` holding the original — the copy a later redaction must not leave.
       await commands.execute(saved, rotateOnce);
-      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true });
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ previousKeptAt: `${path}.bak` });
       expect(holdsReplaced(path, before)).toStrictEqual([`${basename(path)}.bak`]);
 
       await commands.execute(saved, sanitize);
@@ -1825,7 +1825,47 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
       // THE FACT CLEARS WITH THE SAVE: the file holds the removal now, so an ordinary save after it backs up again.
       await commands.execute(saved, rotateOnce);
-      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true, cleared: null });
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ previousKeptAt: `${path}.bak`, cleared: null });
+    });
+
+    it('a removal’s save DELETES the copy an earlier save left aside when its backup was held (QQQQQQQ-8)', async () => {
+      // THE DEFECT: a save whose backup could not be moved into place left the replaced version at its copy-aside name
+      // and answered no backup, so the ledger never recorded it and a removal's save, which walked the backup names
+      // only, left the unredacted file beside the redacted one.
+      const holdingBackup: AtomicWriteSurface = {
+        ...nodeFileSurface,
+        rename: (from, to) =>
+          from.endsWith('.monstera-previous')
+            ? Promise.reject(Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' }))
+            : nodeFileSurface.rename(from, to),
+      };
+      const { commands, saved, path, before } = await aSavableDocument(signaturesKeptBySave, ledger(), null, {
+        surface: holdingBackup,
+      });
+      const aside = `${path}.monstera-previous`;
+      await commands.execute(saved, rotateOnce);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ kind: 'saved', previousKeptAt: aside });
+      expect(holdsReplaced(path, before)).toStrictEqual([basename(aside)]);
+
+      await commands.execute(saved, sanitize);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({
+        kind: 'saved',
+        cleared: { backups: 1, kept: [] },
+        held: [],
+      });
+      // NO COPY OF THE FILE AS IT WAS, under any name beside it.
+      expect([existsSync(aside), holdsReplaced(path, before)]).toStrictEqual([false, []]);
+    });
+
+    it('CONTROL: a file at the copy-aside name that Monstera did not make is kept and named', async () => {
+      const { commands, saved, path } = await aSavableDocument();
+      const handMade = `${path}.monstera-previous`;
+      writeFileSync(handMade, 'a file somebody else put there');
+      await commands.execute(saved, sanitize);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({
+        cleared: { backups: 0, kept: [basename(handMade)] },
+      });
+      expect(readFileSync(handMade, 'utf8')).toBe('a file somebody else put there');
     });
 
     describe('the copies of the open document a removal’s save renews (ADR-0164)', () => {
@@ -1898,7 +1938,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       });
       const { commands, saved, path, before } = await aSavableDocument(signaturesKeptBySave, held);
       await commands.execute(saved, rotateOnce);
-      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true, held: [] });
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ previousKeptAt: `${path}.bak`, held: [] });
       expect(holdsReplaced(path, before)).toStrictEqual([`${basename(path)}.bak`]);
 
       await commands.execute(saved, sanitize);
@@ -1942,12 +1982,12 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       // person just asked nobody may read. So a protection change takes a removal's save (ADR-0139).
       const { commands, saved, path, before } = await aSavableDocument();
       await commands.execute(saved, rotateOnce);
-      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true });
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ previousKeptAt: `${path}.bak` });
       expect(holdsReplaced(path, before)).toStrictEqual([`${basename(path)}.bak`]);
 
       await commands.execute(saved, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: 'open-me' });
       const outcome = await commands.save(saved, { breakSignatures: false });
-      expect(outcome).toMatchObject({ kind: 'saved', backedUp: false, cleared: { backups: 1, kept: [] } });
+      expect(outcome).toMatchObject({ kind: 'saved', previousKeptAt: null, cleared: { backups: 1, kept: [] } });
       expect(existsSync(`${path}.bak`)).toBe(false);
       // AND THE FILE IS THE PROTECTED ONE: a removal's save still writes the encryption the command asked for.
       expect(Buffer.from(readFileSync(path)).includes('/Encrypt')).toBe(true);
@@ -1990,7 +2030,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
       expect(outcome.kind).toBe('saved');
       if (outcome.kind !== 'saved') throw new Error('the save did not happen');
-      expect(outcome.backedUp).toBe(true);
+      expect(outcome.previousKeptAt).toBe(`${path}.bak`);
 
       // THE BYTES ON DISK ARE THE ENGINE'S, not the ones the fixture wrote.
       // Asserting only that the file still exists would pass for a pipeline

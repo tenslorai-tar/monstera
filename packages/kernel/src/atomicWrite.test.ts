@@ -115,7 +115,7 @@ describe('atomicWrite', () => {
     const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, () => Promise.resolve());
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.backedUp).toBe(true);
+    if (result.ok) expect(result.value.previousKeptAt).toBe('/doc.pdf.bak');
     expect(files.get('/doc.pdf')).toBe('new contents');
     expect(files.get('/doc.pdf.bak')).toBe('original');
 
@@ -140,7 +140,7 @@ describe('atomicWrite', () => {
     const result = await atomicWrite(f.surface, '/doc.pdf', (temp) => f.surface.write(temp, BYTES), NAMES, () => Promise.resolve());
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.backedUp).toBe(false);
+    if (result.ok) expect(result.value.previousKeptAt).toBeNull();
     expect(files.has('/doc.pdf.bak')).toBe(false);
     expect(files.get('/doc.pdf')).toBe('new contents');
   });
@@ -224,7 +224,7 @@ describe('atomicWrite', () => {
         { temp: '/doc.pdf.tmp', previous: '/doc.pdf.previous', backups: [], retired: ['/doc.pdf.bak'] },
         () => Promise.resolve(),
       );
-      expect(result.ok ? result.value.backedUp : undefined).toBe(false);
+      expect(result.ok ? result.value.previousKeptAt : undefined).toBeNull();
       expect(f.calls.some((call) => call.startsWith('copy:'))).toBe(false);
     });
 
@@ -268,9 +268,10 @@ describe('atomicWrite', () => {
       ]);
     });
 
-    it('a rotation REFUSED after the save landed keeps every version and answers no backup, never a failed save', async () => {
+    it('a rotation REFUSED after the save landed keeps every version and answers the copy-aside, never a failed save', async () => {
       // A backup open in another program refuses its rename. The document is written, so the save is not failed, and
-      // nothing is destroyed: the replaced version stays at `previous` and each backup at its name or one older.
+      // nothing is destroyed: the replaced version stays at `previous` and each backup at its name or one older. The
+      // answer NAMES `previous`, since that is a copy of the person's document a caller must be able to find (QQQQQQQ-8).
       const files: Files = new Map([
         ['/doc.pdf', 'v3'],
         ['/doc.pdf.bak', 'v2'],
@@ -282,7 +283,7 @@ describe('atomicWrite', () => {
           from.includes('.bak') ? Promise.reject(Object.assign(new Error('busy'), { code: 'EBUSY' })) : f.surface.rename(from, to),
       };
       const result = await atomicWrite(surface, '/doc.pdf', (temp) => surface.write(temp, BYTES), THREE, () => Promise.resolve());
-      expect(result.ok ? result.value.backedUp : result.error.stage).toBe(false);
+      expect(result.ok ? result.value.previousKeptAt : result.error.stage).toBe('/doc.pdf.previous');
       expect([...files.entries()].sort()).toStrictEqual([
         ['/doc.pdf', 'new contents'],
         ['/doc.pdf.bak', 'v2'],

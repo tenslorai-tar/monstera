@@ -107,6 +107,19 @@ export interface AtomicWriteFailure {
   readonly attempts?: number;
 }
 
+/** What a write that landed left behind. */
+export interface AtomicWriteDone {
+  /**
+   * Where the version this write replaced is kept: the newest backup name, the copy-aside name where moving it into the
+   * backups was refused, or `null` where nothing was kept — no file was there, or a person keeps no backups.
+   *
+   * **A PATH, never a flag that a backup was made.** A flag answered *no* for the copy-aside, which is still a copy of
+   * the person's document, so a caller recording the copies Monstera made recorded nothing, and a removal's save
+   * left that copy beside the file it had just cleaned (QQQQQQQ-8).
+   */
+  readonly previousKeptAt: string | null;
+}
+
 /**
  * How long to wait before each rename retry, in milliseconds.
  *
@@ -153,7 +166,7 @@ export async function atomicWrite(
     readonly retired: readonly string[];
   },
   wait: (ms: number) => Promise<void>,
-): Promise<Result<{ readonly backedUp: boolean }, AtomicWriteFailure>> {
+): Promise<Result<AtomicWriteDone, AtomicWriteFailure>> {
   try {
     await writeTemp(names.temp);
   } catch (cause) {
@@ -208,11 +221,11 @@ export async function atomicWrite(
     attempts += 1;
     try {
       await surface.rename(names.temp, target);
-      const backedUp = keeping && (await rotateIn(surface, names.previous, names.backups));
+      const previousKeptAt = keeping ? ((await rotateIn(surface, names.previous, names.backups)) ? newest : names.previous) : null;
       // THE BACKUPS A SHORTER CHOICE NO LONGER KEEPS go once the save has landed — best-effort, since the save itself
       // succeeded and a copy that could not be removed is still a copy of the person's document, not a failure.
       for (const retired of names.retired) await surface.remove(retired).catch(() => undefined);
-      return ok({ backedUp });
+      return ok({ previousKeptAt });
     } catch (cause) {
       last = cause;
       // ONLY THE HOLDING ERRORS ARE RETRIED. `ENOENT` means the temp is gone
