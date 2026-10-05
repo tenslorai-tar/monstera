@@ -89,6 +89,9 @@ export function problemParticulars(
     return { label: PROBLEM_REFERENCE_LABEL, value: `${problem.detail.step} ${String(problem.detail.engineError)}` };
   }
   if (problem.code === 'text-not-writable') {
+    // NOTHING TO NAME, NOTHING SHOWN (RRRRRRR-16): `main` forwards only characters the person typed, so a refusal can
+    // arrive naming none, and a label over an empty value reads as a list that failed to load. The sentence stands alone.
+    if (problem.detail.characters === '') return undefined;
     // ONE CHARACTER AT A TIME, a space between: an accent and a letter, or two marks, read as one smudge run together.
     const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(problem.detail.characters);
     return { label: TEXT_EDIT_CHARACTERS_LABEL, value: Array.from(graphemes, (part) => part.segment).join(' ') };
