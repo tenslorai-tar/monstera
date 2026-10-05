@@ -1,4 +1,5 @@
 import { channels } from '@monstera/contract';
+import type { FailureDetails } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { COMMAND_PROBLEM_DIALOG } from './commandProblem.js';
@@ -33,6 +34,19 @@ const REPORTED = ['document.execute', 'document.undo', 'document.redo', 'documen
  */
 const ASKED: ReadonlySet<string> = new Set(['breaks-signatures']);
 
+/**
+ * A detail for each code that carries one (ADR-0169), as the failure arrives with it. Keyed by `FailureDetails`, so a
+ * code given a detail there is a compile error here until it has a sample, and is never rendered bare.
+ */
+const SAMPLE_DETAIL: { readonly [C in keyof FailureDetails]: FailureDetails[C] } = {
+  'text-not-writable': { characters: '中' },
+  'edit-refused': { step: 'read-back', engineError: 0 },
+};
+
+/** A declared failure as it would arrive: the code, and its detail where it declares one. */
+const arriving = (code: string): object =>
+  Object.hasOwn(SAMPLE_DETAIL, code) ? { code, detail: SAMPLE_DETAIL[code as keyof FailureDetails] } : { code };
+
 describe('the command-problem dialog covers every code a document command can report', () => {
   it('accepts every failure the reporting channels declare', () => {
     const declared = [...new Set(REPORTED.flatMap((id) => [...channels[id].failures]))].filter((code) => !ASKED.has(code));
@@ -43,9 +57,16 @@ describe('the command-problem dialog covers every code a document command can re
     expect(declared.length).toBeGreaterThan(2);
 
     for (const code of declared) {
-      const parsed = COMMAND_PROBLEM_DIALOG.props.safeParse({ code });
+      const parsed = COMMAND_PROBLEM_DIALOG.props.safeParse(arriving(code));
       expect(parsed.success, `the dialog cannot render "${code}"`).toBe(true);
     }
+  });
+
+  it('refuses a code that carries a detail when it arrives without one', () => {
+    // THE CONTROL for the loop above: a dialog that took `text-not-writable` bare would render a refusal that names no
+    // character while the failure named some — the detail dropped at the last step.
+    expect(COMMAND_PROBLEM_DIALOG.props.safeParse({ code: 'text-not-writable' }).success).toBe(false);
+    expect(COMMAND_PROBLEM_DIALOG.props.safeParse(arriving('text-not-writable')).success).toBe(true);
   });
 
   it('accepts `internal` WITH an incident, and refuses it without one', () => {

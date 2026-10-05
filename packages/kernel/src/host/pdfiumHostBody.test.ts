@@ -9,6 +9,7 @@ import {
 } from '@monstera/contract';
 
 import type { ByteImage } from '../engineSeam.js';
+import { EditRefusedError } from '../textEditRefusals.js';
 import { TOKEN_BYTES } from '../token.js';
 import type { HostArea } from './engineHandlers.js';
 import { sessionFileAnswers } from './fileAnswers.js';
@@ -192,6 +193,8 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         // parse — so the `engine-refused` case exercises the handler's catch
         // rather than a branch written for the test.
         if (image.length === 1) throw new Error('PDFium refused the document');
+        // THREE BYTES ARE A PAGE WHOSE SAVE LOST TEXT, refused the way the adapter's `serialise` refuses it (ADR-0169).
+        if (image.length === 3) throw new EditRefusedError('read-back', 0, 'the saved page lost text');
         return Promise.resolve(applied);
       },
       capture: (image) => {
@@ -204,6 +207,8 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
       },
       invert: (image) => {
         calls.push(`invert:${[...image].join(',')}`);
+        // AN UNDO REGENERATES AS AN EDIT DOES, so it is refused at the same step with PDFium's number beside it.
+        if (image.length === 3) throw new EditRefusedError('generate', 6, 'FPDFPage_GenerateContent failed');
         return Promise.resolve(applied);
       },
     },
@@ -400,6 +405,43 @@ describe('the PDFium host body', () => {
     // AND NOTHING WAS WRITTEN. A half-written output under a name main is about
     // to read is the state the write-outside-the-try ordering exists to
     // prevent, and asserting the code alone would pass without it.
+    expect(files.written.size).toBe(0);
+  });
+
+  it('forwards a refusal at a step WITH the step and PDFium’s number, and writes nothing (ADR-0169)', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1, 2, 3]));
+
+    stream.feed(
+      request('a1', 'engine/apply', {
+        session,
+        sources: [],
+        command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: 1 },
+        from: IN,
+        into: OUT,
+      }, undefined, files),
+    );
+    stream.feed(
+      request('a2', 'engine/invert', {
+        session,
+        inverse: { kind: 'replaceTextObject', prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] } },
+        from: IN,
+        into: OUT,
+      }, undefined, files),
+    );
+    await stream.whenSent(3);
+
+    // THE STEP AND THE NUMBER, where until 2026-10-05 the handler discarded the cause and answered `engine-refused` —
+    // which main turned into *Something went wrong*. The invert's differs from the apply's on purpose: a handler
+    // answering one fixed detail would pass a case that checked one channel.
+    expect(answerIn(stream.sent[1])).toMatchObject({
+      body: { ok: false, error: { code: 'edit-refused', detail: { step: 'read-back', engineError: 0 } } },
+    });
+    expect(answerIn(stream.sent[2])).toMatchObject({
+      body: { ok: false, error: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } } },
+    });
     expect(files.written.size).toBe(0);
   });
 

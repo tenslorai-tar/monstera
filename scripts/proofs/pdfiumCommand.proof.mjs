@@ -146,8 +146,8 @@ async function threeRunsAndARectangle() {
  */
 const failures = [];
 // 69 until 2026-10-04, when `replaceAtCases` added five (ADR-0156), and 75 from the stage audit of
-// cb62b976..33715f7c, which gave blank paper's refusal its control.
-const roster = createRoster(failures, { cases: 76 });
+// cb62b976..33715f7c, which gave blank paper's refusal its control, and 77 from ADR-0169, which names the characters.
+const roster = createRoster(failures, { cases: 77 });
 
 /**
  * @param {string} name
@@ -1646,16 +1646,27 @@ async function blockEditCases() {
   // the standard load returns this very font, so the retry reads wrong again.
   /** @type {string} */
   let helveticaRefusal;
+  /** The characters the refusal named, or `null` where it named none or did not refuse. */
+  let named = null;
   try {
     const result = await (await narrowedFixture('Helvetica')).apply();
     helveticaRefusal = `it was written, saying ${JSON.stringify((await textOf(result)).split(/\r?\n/u)[1] ?? '')}`;
   } catch (error) {
     helveticaRefusal = error instanceof Error ? error.name : String(error);
+    named = error instanceof Error && 'characters' in error ? String(error.characters) : null;
   }
   record(
     'where the twin would be the same font, the edit is REFUSED rather than saved as a different letter',
     helveticaRefusal === 'TextNotWritableError',
     helveticaRefusal,
+  );
+  // AND IT NAMES THE CHARACTERS (ADR-0169 Decision 4), and only those: the saved bytes read `déjà` back as `dØjà`
+  // (PDFium 155.0.8044.0, Linux build, 2026-10-05), so `é` is the one the font cannot show and `à` is carried. A
+  // refusal that compared nothing would name every letter of the line, and one that named `à` would be guessing.
+  record(
+    'and the refusal names exactly the characters the font cannot show',
+    named === 'é',
+    named === null ? 'it named nothing' : `it named ${JSON.stringify(named)}`,
   );
 }
 

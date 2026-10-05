@@ -343,6 +343,15 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/pdfiumObject.proof.mjs
           ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
 
+      # Every PDFium command on a page carrying Type 3 text, which PDFium's
+      # generation drops: each must refuse at the read-back and save nothing,
+      # and each has a control that must be saved (ADR-0169). Both legs, for
+      # the reason above.
+      - name: Prove a PDFium rewrite is saved only when it reads back as edited
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/pdfiumReadBack.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+
       # BUILD-PROMPT.md:706's owed fidelity proof. The corpus is not here, so its
       # corpus half reports UNVERIFIABLE and exits 0; the half that runs on every
       # runner is the load-bearing one — a constructed page whose untouched save

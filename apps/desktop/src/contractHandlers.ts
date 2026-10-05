@@ -2292,14 +2292,14 @@ function editCopyHandler(
     } catch (thrown) {
       const problem =
         thrown instanceof UnregisteredWriterError
-          ? 'engine-unavailable'
+          ? ({ code: 'engine-unavailable' } as const)
           : thrown instanceof TextNotWritableError
-            ? 'text-not-writable'
+            ? ({ code: 'text-not-writable', detail: { characters: thrown.characters } } as const)
             : thrown instanceof TextNotInPlaceError
-              ? 'text-not-in-place'
+              ? ({ code: 'text-not-in-place' } as const)
               : thrown instanceof DocumentPoisonedError
-              ? 'document-poisoned'
-              : undefined;
+                ? ({ code: 'document-poisoned' } as const)
+                : undefined;
       if (problem !== undefined) return ok({ ...opened, kind: 'edit-refused', problem } as const);
       await deps.documents.close(opened.docId);
       deps.recent.closed(opened.docId);

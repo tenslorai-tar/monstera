@@ -1572,7 +1572,9 @@ describe('delete pages — the mutation-dialog gate', () => {
 
   it('A FONT THAT CANNOT CARRY THE WORDS is the editor’s to say — no dialog opens for it', async () => {
     const asked: string[] = [];
-    const client = createClient(channels, () => Promise.resolve(err({ code: 'text-not-writable' as const })));
+    const client = createClient(channels, () =>
+      Promise.resolve(err({ code: 'text-not-writable' as const, detail: { characters: '中' } })),
+    );
     const outcome = await commitTextBlock(
       {
         client,
@@ -3318,7 +3320,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
 
     it('says so for a platform with no print dialog and for a printer that refused, and nothing for a dismissed one', async () => {
-      // THE WHOLE LIST (audit P-6): the print dialog, then the problem or nothing, and no dialog between them.
+      // THE WHOLE LIST (audit PPPPPPP-5): the print dialog, then the problem or nothing, and no dialog between them.
       const asked = { id: 'dialog.print', props: { dpi: 300, pageCount: 10 } } as const;
       for (const [answered, spokenAll] of [
         [{ kind: 'unavailable' }, [asked, { id: 'dialog.save-problem', props: { outcome: 'print-unavailable' } }]],
@@ -3727,7 +3729,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       },
     }).run(CONTEXT);
 
-    // THE WHOLE LIST (audit P-6), as the layout case above has it: the pages dialog, then the problem, and nothing else.
+    // THE WHOLE LIST (audit PPPPPPP-5), as the layout case above has it: the pages dialog, then the problem, and nothing else.
     expect(spoken).toStrictEqual([
       { id: 'dialog.export-text', props: { pageCount: 10, becomes: 'text' } },
       { id: 'dialog.save-problem', props: { outcome: 'contested' } },
@@ -5782,7 +5784,14 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
   });
 
   it('a copy whose edit was refused is still OPENED, and the refusal is said over it', async () => {
-    const copy = { kind: 'edit-refused', docId: COPY, version: 1, byteLength: 1024, name: 'signed copy.pdf', problem: 'text-not-writable' };
+    const copy = {
+      kind: 'edit-refused',
+      docId: COPY,
+      version: 1,
+      byteLength: 1024,
+      name: 'signed copy.pdf',
+      problem: { code: 'text-not-writable', detail: { characters: '中' } },
+    };
     const { client } = signedMain(copy);
     const { ask, asked } = answering('copy');
     const { signatures: signed, opened } = opening();

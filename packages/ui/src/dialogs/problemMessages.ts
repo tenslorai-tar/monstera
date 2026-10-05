@@ -1,5 +1,5 @@
 import type { SERVICE_PROBLEMS } from '@monstera/contract';
-import type { MessageKey } from '@monstera/shared';
+import type { FailureDetails, MessageKey } from '@monstera/shared';
 
 import {
   ANTHROPIC_OUT_OF_CREDIT,
@@ -35,7 +35,7 @@ export type CommandProblem =
   | { readonly code: 'raster-too-large' }
   | { readonly code: 'not-copyable' }
   | { readonly code: 'comment-too-long' }
-  | { readonly code: 'text-not-writable' }
+  | { readonly code: 'text-not-writable'; readonly detail: FailureDetails['text-not-writable'] }
   | { readonly code: 'text-not-in-place' }
   | { readonly code: 'copy-absent' }
   | { readonly code: 'copy-at-capacity' }

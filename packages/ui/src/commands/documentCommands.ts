@@ -634,9 +634,13 @@ export async function applyDocumentCommand(
     // and not a refusal a person could act on.
     const failure = answer.error;
     if (failure.code === 'breaks-signatures') throw new Error('main asked again about an edit sent agreed');
-    // REBUILT ONLY TO DROP THAT CODE FROM THE TYPE, and `internal` passes whole so its incident reaches the dialog.
+    // REBUILT ONLY TO DROP THAT CODE FROM THE TYPE, and a failure that carries something passes whole so it reaches the
+    // dialog: `internal` its incident, `text-not-writable` the characters it names (ADR-0169).
     if (options.keep?.(failure) !== true) {
-      reportProblem(deps, failure.code === 'internal' ? failure : { code: failure.code });
+      reportProblem(
+        deps,
+        failure.code === 'internal' || failure.code === 'text-not-writable' ? failure : { code: failure.code },
+      );
     }
     return false;
   }
@@ -675,7 +679,7 @@ async function editOnCopy(deps: DocumentCommandDeps, docId: DocId, command: Rend
       });
       // THE COPY IS OPEN EITHER WAY, and a refusal of the edit there is said over it: the file is where the person
       // put it, unchanged, and closing its tab is theirs.
-      if (outcome.kind === 'edit-refused') reportProblem(deps, { code: outcome.problem });
+      if (outcome.kind === 'edit-refused') reportProblem(deps, outcome.problem);
       else if (outcome.historyDropped > 0) void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: outcome.historyDropped });
       return true;
     }

@@ -16,9 +16,11 @@ import type { Incident } from './incident.js';
 import { MAX_PAGE_SET_ENTRIES } from './pageSet.js';
 import {
   AZURE_KEY_SETTING_ID,
+  ENGINE_ERROR_MAX,
   FAILURE_CODE_MAX_CHARS,
   FILE_HANDLE_MAX_CHARS,
   INCIDENT_ID_MAX_CHARS,
+  UNWRITABLE_CHARACTERS_MAX_UNITS,
   failureSchema,
   fileHandleSchema,
 } from './schemas.js';
@@ -730,6 +732,39 @@ describe('a handle, a failure code and an incident id are bounded strings (CR-SE
     // THE POSITIVE CONTROL: the walk found codes, so "none is too long" is a reading and not an empty list.
     expect(codes.length).toBeGreaterThan(100);
     expect(codes.filter((code) => code.length > FAILURE_CODE_MAX_CHARS)).toStrictEqual([]);
+  });
+});
+
+describe('a declared failure carries its detail exactly when its code declares one (ADR-0169)', () => {
+  it('takes a detailed code with its detail, and a plain code without one', () => {
+    expect(failureSchema.safeParse({ code: 'text-not-writable', detail: { characters: '中' } }).success).toBe(true);
+    expect(failureSchema.safeParse({ code: 'edit-refused', detail: { step: 'read-back', engineError: 0 } }).success).toBe(true);
+    expect(failureSchema.safeParse({ code: 'document-busy' }).success).toBe(true);
+  });
+
+  it('refuses a detailed code without its detail, so a refusal cannot arrive having dropped what it names', () => {
+    expect(failureSchema.safeParse({ code: 'text-not-writable' }).success).toBe(false);
+    expect(failureSchema.safeParse({ code: 'edit-refused' }).success).toBe(false);
+  });
+
+  it('refuses a detail on a code that declares none, and a field no detail declares', () => {
+    expect(failureSchema.safeParse({ code: 'document-busy', detail: { characters: 'x' } }).success).toBe(false);
+    expect(
+      failureSchema.safeParse({ code: 'text-not-writable', detail: { characters: 'x', message: 'from PDFium' } }).success,
+    ).toBe(false);
+  });
+
+  it('refuses a step outside the fixed set, a number past PDFium’s, and characters past the bound', () => {
+    expect(failureSchema.safeParse({ code: 'edit-refused', detail: { step: 'parse', engineError: 0 } }).success).toBe(false);
+    expect(
+      failureSchema.safeParse({ code: 'edit-refused', detail: { step: 'open', engineError: ENGINE_ERROR_MAX + 1 } }).success,
+    ).toBe(false);
+    const characters = (length: number): boolean =>
+      failureSchema.safeParse({ code: 'text-not-writable', detail: { characters: 'a'.repeat(length) } }).success;
+    expect([characters(UNWRITABLE_CHARACTERS_MAX_UNITS), characters(UNWRITABLE_CHARACTERS_MAX_UNITS + 1)]).toStrictEqual([
+      true,
+      false,
+    ]);
   });
 });
 

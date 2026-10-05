@@ -1,4 +1,4 @@
-import { SERVICE_PROBLEMS } from '@monstera/contract';
+import { FAILURE_DETAIL_SCHEMAS, SERVICE_PROBLEMS } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -68,8 +68,9 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     // not open on a slice of it, because saving the slice would cut the rest.
     z.object({ code: z.literal('comment-too-long') }).strict(),
     // AN IN-PLACE EDIT THE PAGE'S FONT CANNOT CARRY (ADR-0096). The editor says it beside the
-    // words; this is the sentence for any other surface that writes a block.
-    z.object({ code: z.literal('text-not-writable') }).strict(),
+    // words; this is the sentence for any other surface that writes a block. It names the characters
+    // (ADR-0169), so the props take the contract's one schema for them.
+    z.object({ code: z.literal('text-not-writable'), detail: FAILURE_DETAIL_SCHEMAS['text-not-writable'] }).strict(),
     // ONE OCCURRENCE NO SINGLE TEXT OBJECT HOLDS AT ITS POINT (ADR-0156): the spelling review says it beside the word;
     // this is the sentence for any other surface that sends `replaceTextAt`.
     z.object({ code: z.literal('text-not-in-place') }).strict(),

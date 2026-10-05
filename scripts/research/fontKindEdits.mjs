@@ -34,6 +34,14 @@
  * alone, erase the Type 3 lines beside it. `promoteFormObjects` regenerates through the same call and needs a form
  * XObject this script's pages do not have, so it is not run here.
  *
+ * ## Findings, 2026-10-05, after ADR-0169, PDFium 155.0.8044.0's Linux build, Electron 43.7.7 in Node mode
+ *
+ * The adapter's `serialise` now reads every regenerated page back against the page as edited. Every kind but Type 3
+ * still edits and keeps the page, both edits, so the read-back refused nothing it should have kept. Every Type 3 row
+ * now refuses at step `read-back` and saves nothing: the hand-built page (3 text objects edited, 1 saved), both
+ * Chromium rows, and replace-text, recolour, move and delete on the Helvetica line. The hand-built page's refusal is
+ * the read-back's and no longer *the font cannot carry the text*.
+ *
  * ## What it runs
  *
  * `fontKindFixtures.mjs`' pages — one per font kind, each with line A (edited), line B (the same font, untouched) and
@@ -90,7 +98,7 @@ if (!('electron' in process.versions)) {
 const built = (relative) => import(pathToFileURL(join(ROOT, relative)).href);
 const pdfium = await built('packages/kernel/dist/pdfiumFfi.js');
 const { applyEditTextBlock } = await built('packages/kernel/dist/pdfiumTextEdit.js');
-const { TextNotWritableError } = await built('packages/kernel/dist/textEditRefusals.js');
+const { EditRefusedError, TextNotWritableError } = await built('packages/kernel/dist/textEditRefusals.js');
 const { groupIntoBlocks, settingOf } = await built('packages/kernel/dist/textLines.js');
 const { blockEditOf } = await built('packages/contract/dist/commands.js');
 pdfium.openPdfium(pdfiumLibrary(ROOT));
@@ -134,6 +142,27 @@ const textOfBlock = (block) => block.lines.map((/** @type {any} */ line) => line
 const hasLine = (runs, wanted) => blocksOf(runs).some((block) => textOfBlock(block).trimEnd() === wanted);
 
 /**
+ * A refusal, classified as the shell classifies it: `TextNotWritableError` and a refusal at a named step
+ * (`EditRefusedError`, ADR-0169) are sentences a person reads; anything else is *Something went wrong*.
+ *
+ * @param {unknown} error
+ * @returns {{ outcome: string, detail: string }}
+ */
+function refusal(error) {
+  // THE CLASSES COME FROM A COMPUTED IMPORT, which types as nothing, so `instanceof` narrows nothing and each refusal
+  // is named by the shape its class declares.
+  if (error instanceof TextNotWritableError) {
+    const { characters } = /** @type {{ characters: string }} */ (error);
+    return { outcome: 'refused: font cannot carry', detail: `characters named: ${String(characters.length > 0)}` };
+  }
+  if (error instanceof EditRefusedError) {
+    const { step, message } = /** @type {{ step: string, message: string }} */ (error);
+    return { outcome: `refused at ${step}`, detail: message };
+  }
+  return { outcome: 'INTERNAL ERROR', detail: error instanceof Error ? error.message : String(error) };
+}
+
+/**
  * One edit of the block reading `line` (or of the first block, for a file whose words are not ours), classified.
  *
  * @param {Uint8Array} bytes
@@ -158,8 +187,7 @@ async function edit(bytes, change, line, keep) {
   try {
     saved = await applyEditTextBlock(bytes, command);
   } catch (error) {
-    if (error instanceof TextNotWritableError) return { outcome: 'refused, clear sentence', detail: 'TextNotWritableError' };
-    return { outcome: 'INTERNAL ERROR', detail: error instanceof Error ? error.message : String(error) };
+    return refusal(error);
   }
   const after = await runsOf(saved);
   const lost = keep.filter((wanted) => !hasLine(after, wanted));
@@ -277,7 +305,8 @@ for (const [n, path] of outside.entries()) {
       await run(session);
       saved = await pdfium.pdfiumWriter.serialise(session);
     } catch (error) {
-      rows.push(['Type 3 page, another command', label, 'INTERNAL ERROR', error instanceof Error ? error.message : String(error)]);
+      const { outcome, detail } = refusal(error);
+      rows.push(['Type 3 page, another command', label, outcome, detail]);
       continue;
     } finally {
       await pdfium.pdfiumWriter.close(session);

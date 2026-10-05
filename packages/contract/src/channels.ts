@@ -94,6 +94,7 @@ import {
   MAX_PAGE_IMAGE_DPI,
   MIN_IMAGE_QUALITY,
   MAX_IMAGE_QUALITY,
+  FAILURE_DETAIL_SCHEMAS,
 } from './schemas.js';
 
 /**
@@ -3031,7 +3032,12 @@ export const channels = {
       openedSchema.extend({ kind: z.literal('edited'), historyDropped: z.number().int().nonnegative() }),
       openedSchema.extend({
         kind: z.literal('edit-refused'),
-        problem: z.enum(['engine-unavailable', 'text-not-writable', 'text-not-in-place', 'document-poisoned']),
+        // A FAILURE'S OWN SHAPE, so a refusal that carries a detail carries it here as on `document.execute`
+        // (ADR-0169): the copy route names the characters a font cannot show as the direct route does.
+        problem: z.union([
+          z.object({ code: z.enum(['engine-unavailable', 'text-not-in-place', 'document-poisoned']) }).strict(),
+          z.object({ code: z.literal('text-not-writable'), detail: FAILURE_DETAIL_SCHEMAS['text-not-writable'] }).strict(),
+        ]),
       }),
       z.object({ kind: z.literal('cancelled') }),
       importContestedSchema,

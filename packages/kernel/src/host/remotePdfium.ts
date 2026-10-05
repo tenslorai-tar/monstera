@@ -1,4 +1,6 @@
-import type { ClientApi, Command, CommandOfKind } from '@monstera/contract';
+import type { ClientApi, Command, CommandOfKind, FailureOf } from '@monstera/contract';
+import { blocksOfEdit, replacementsOf } from '@monstera/contract/host';
+import type { Failure } from '@monstera/shared';
 
 import type {
   ApplyRequest,
@@ -10,7 +12,7 @@ import { serialiseIntoFile } from '../checkpointFile.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { ByteImage } from '../engineSeam.js';
 import type { TextRun } from '../pdfiumFfi.js';
-import { TextNotInPlaceError, TextNotWritableError } from '../textEditRefusals.js';
+import { EditRefusedError, TextNotInPlaceError, TextNotWritableError } from '../textEditRefusals.js';
 import { EngineCallFailed, EngineSessionGone, type SessionArea, priorTooLargeToRecord } from './remoteEngine.js';
 import { EngineSerialiseMismatch, type SessionAreaSurface, takeAnnounced } from './remoteLifecycle.js';
 import { type PdfiumChannels, pdfiumTaggedPrior } from './pdfiumChannels.js';
@@ -126,15 +128,59 @@ export function regeneratedBy(command: CommandOfKind<KindsRoutedTo<'pdfium'>>): 
  */
 function answered<T>(
   channel: string,
-  result: { ok: true; value: T } | { ok: false; error: { code: string } },
+  result: { ok: true; value: T } | { ok: false; error: Failure<PdfiumWriteFailure> },
+  typed: () => string = () => '',
 ): T {
   if (result.ok) return result.value;
-  if (result.error.code === 'no-such-session') throw new EngineSessionGone(channel);
+  const { error } = result;
+  if (error.code === 'no-such-session') throw new EngineSessionGone(channel);
   // THE SAME CLASS THE LOCAL WRITER THROWS, so main's answer to a font that
   // cannot carry the typed text does not depend on which process applied it.
-  if (result.error.code === 'text-not-writable') throw new TextNotWritableError();
-  if (result.error.code === 'text-not-in-place') throw new TextNotInPlaceError();
-  throw new EngineCallFailed(channel, result.error.code);
+  //
+  // ONLY CHARACTERS THAT WERE TYPED cross on from here (ADR-0169 Decision 4). The host is hostile by invariant 25's
+  // premise and its detail is bounded by the schema; this is the half the schema cannot see — that what the host named
+  // is something the person wrote, which `main` knows from the command and the host cannot change.
+  if (error.code === 'text-not-writable') {
+    const wrote = typed();
+    throw new TextNotWritableError(Array.from(error.detail.characters).filter((c) => wrote.includes(c)).join(''));
+  }
+  if (error.code === 'text-not-in-place') throw new TextNotInPlaceError();
+  if (error.code === 'edit-refused') {
+    throw new EditRefusedError(error.detail.step, error.detail.engineError, `the PDFium host refused ${channel}`);
+  }
+  throw new EngineCallFailed(channel, error.code);
+}
+
+/** Every failure the PDFium host's three write channels can answer. */
+type PdfiumWriteFailure =
+  | FailureOf<PdfiumChannels, 'engine/apply'>
+  | FailureOf<PdfiumChannels, 'engine/capture'>
+  | FailureOf<PdfiumChannels, 'engine/invert'>;
+
+/**
+ * What the person typed into a PDFium command: the text a `text-not-writable` refusal's characters must come from.
+ * Exhaustive over the kinds routed here, so a command that writes text and is routed to PDFium without an answer here
+ * is a compile error rather than a refusal that names nothing.
+ */
+export function typedBy(command: CommandOfKind<KindsRoutedTo<'pdfium'>>): string {
+  switch (command.kind) {
+    case 'replaceTextObject':
+      return replacementsOf(command)
+        .map((replacement) => replacement.text)
+        .join('');
+    case 'editTextBlock':
+      return blocksOfEdit(command)
+        .map((block) => block.text)
+        .join('');
+    case 'replaceTextAt':
+    case 'replaceAllText':
+      return command.replace;
+    case 'placePageObject':
+    case 'recolorPageObjects':
+    case 'deletePageObjects':
+    case 'promoteFormObjects':
+      return '';
+  }
 }
 
 export function remotePdfiumExecution(
@@ -211,7 +257,13 @@ export function remotePdfiumExecution(
       command,
     }: ApplyRequest<'pdfium', K>): Promise<ByteImage> =>
       wrote(image, regeneratedBy(command), async (from, into, session) =>
-        answered('engine/apply', await client['engine/apply']({ session, command, sources: [], from, into })),
+        answered(
+          'engine/apply',
+          await client['engine/apply']({ session, command, sources: [], from, into }),
+          // ASKED ONLY OF A REFUSAL that names characters: decoding a block edit's wire form costs nothing a success
+          // should pay.
+          () => typedBy(command),
+        ),
       ),
 
     capture: async <K extends KindsRoutedTo<'pdfium'>>(

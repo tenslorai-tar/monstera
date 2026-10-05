@@ -2,14 +2,7 @@ import { type CommandOfKind, blocksOfEdit, replacementsOf } from '@monstera/cont
 
 import type { CaptureResult } from './commandLog.js';
 import type { ByteImage } from './engineSeam.js';
-import {
-  editTextBlocks,
-  pdfiumWriter,
-  replaceTextObjects,
-  textObjectText,
-  drawnTexts,
-} from './pdfiumFfi.js';
-import { TextNotWritableError } from './textEditRefusals.js';
+import { editTextBlocks, pdfiumWriter, replaceTextObjects, textObjectText } from './pdfiumFfi.js';
 
 /**
  * In-place text editing, as the bus calls it: **region replacement**.
@@ -198,7 +191,7 @@ export async function invertReplaceTextObject(
  * Text neither a run's font nor its twin can carry throws `TextNotWritableError`
  * and this answers no bytes — so the document is exactly what it was.
  *
- * ## Every write is read back from the SAVED bytes, reopened
+ * ## Every write is read back from the SAVED bytes, by `serialise`
  *
  * The adapter reads each write back from the live page, and for a run's own font
  * that agrees with a reader of the file — 0 disagreements in 457 corpus writes
@@ -206,28 +199,27 @@ export async function invertReplaceTextObject(
  * does not: measured 2026-09-24, in a document already holding a Helvetica-family
  * font declared in StandardEncoding (Helvetica, Helvetica-Bold, Arial), the
  * Helvetica twin reads `é` on the live page and is saved into that font's own
- * dictionary, where a reader decodes the byte `E9` as `Ø`. Times-Roman and
- * Courier in the same encoding twin correctly, because their twin is a different
- * font.
+ * dictionary, where a reader decodes the byte `E9` as `Ø`.
  *
- * So the new bytes are opened again and every write read back as a reader reads
- * it, and anything that says other than what was written refuses the edit. There
- * is no retry: the failure this catches is the twin collapsing into the page's
- * font, and a second attempt would make the same twin.
+ * This function reopened the bytes itself until 2026-10-05, reading each write
+ * by its index, and on a page whose save lost text the index named another
+ * object, so a Type 3 page was refused as a font that cannot carry the words
+ * (ADR-0169). The adapter's `serialise` now reads every regenerated page back
+ * against the page as edited, which is the same question asked once: a lost
+ * object the edit did not write is the read-back refusal, and a write that reads
+ * differently is `TextNotWritableError` with its characters. There is no retry:
+ * a second attempt would make the same twin.
  */
 export async function applyEditTextBlock(
   image: ByteImage,
   command: CommandOfKind<'editTextBlock'>,
 ): Promise<ByteImage> {
-  const { bytes, written } = await onImage(image, async (session) => {
+  return onImage(image, async (session) => {
     // ONE FIT FOR THE COMMAND, laid out per block as before (ADR-0142).
     const blocks = blocksOfEdit(command).map((block) => ({ ...block, fit: command.fit }));
-    const placed = await editTextBlocks(session, command.page, blocks);
-    return { bytes: await pdfiumWriter.serialise(session), written: placed };
+    await editTextBlocks(session, command.page, blocks);
+    return pdfiumWriter.serialise(session);
   });
-  const read = await onImage(bytes, (session) => drawnTexts(session, command.page, written.map((write) => write.index)));
-  if (written.some((write, at) => read[at] !== write.text)) throw new TextNotWritableError();
-  return bytes;
 }
 
 /**

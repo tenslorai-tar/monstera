@@ -376,7 +376,14 @@ export const pdfiumChannels = {
     // page's font cannot carry (ADR-0096). On the apply only — capture and invert
     // cannot produce it — and on this engine only.
     // AND A SECOND: one occurrence named by its point that no single text object holds there (ADR-0156).
-    wire: { ...byteImageWire, applyFailures: ['text-not-writable', 'text-not-in-place'] as const },
+    //
+    // `edit-refused` ON ALL THREE, carrying the step and PDFium's number (ADR-0169 Decision 4): capture, apply and
+    // invert each open the image and run native calls, and any of them can refuse at a step a person is told about.
+    wire: {
+      ...byteImageWire,
+      transferFailures: [...byteImageWire.transferFailures, 'edit-refused'] as const,
+      applyFailures: ['text-not-writable', 'text-not-in-place'] as const,
+    },
     // IN A FILE (ADR-0138): `replaceTextObject` and `editTextBlock` multiply per-entry text bounds past a frame.
     commandRoute: 'file',
   }),

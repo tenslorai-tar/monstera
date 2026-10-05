@@ -23,7 +23,9 @@ export interface Channel<
    * ADR-0009 §9: a renderer-facing failure is a code, never text. Declaring the
    * codes here is what makes them checkable in both directions — a handler
    * returning an undeclared code does not compile, and the renderer knows the
-   * complete set it must handle.
+   * complete set it must handle. A code may carry a detail, declared once for the
+   * code rather than per channel (`FAILURE_DETAIL_SCHEMAS`, ADR-0169), and still
+   * never text a native library produced.
    *
    * `internal` is not listed and never needs to be. It is always available,
    * because an unexpected throw is a failure the channel did not plan for and

@@ -1,10 +1,14 @@
+import { UNWRITABLE_CHARACTERS_MAX, UNWRITABLE_CHARACTERS_MAX_UNITS } from '@monstera/contract';
+import type { EditStep } from '@monstera/shared';
+
 /**
  * Why an in-place text edit was refused because of what the PAGE can carry.
  *
- * **In a module that imports nothing**, `signingRefusals.ts`' reason: main's
+ * **In a module that imports no implementation**, `signingRefusals.ts`' reason: main's
  * barrel exports this class so the shell can turn it into a sentence, and the
  * code that throws it lives in `pdfiumFfi.ts`, which binds a native library and
- * must never be reached from the barrel (ADR-0026, `proof:kernelload`).
+ * must never be reached from the barrel (ADR-0026, `proof:kernelload`). The two
+ * bounds come from the contract, which is schemas and binds nothing.
  *
  * ## The fact it carries is measured, and so is its detector
  *
@@ -37,11 +41,66 @@ export class TextNotInPlaceError extends Error {
 }
 
 export class TextNotWritableError extends Error {
-  constructor(options?: ErrorOptions) {
+  /**
+   * The characters the font cannot show, as {@link unwritableCharacters} chose them; empty where the comparison found
+   * none to name, and the person is then told without a list.
+   */
+  readonly characters: string;
+
+  constructor(characters: string, options?: ErrorOptions) {
     super(
       'the page’s font cannot carry the text that was typed, so the edit was refused before anything was written',
       options,
     );
     this.name = 'TextNotWritableError';
+    this.characters = characters;
+  }
+}
+
+/**
+ * The characters a refusal names: those of what was WRITTEN that the read-back does not contain, each once, in the
+ * order typed, whitespace aside — ADR-0169 Decision 4.
+ *
+ * Graphemes rather than code points, so an accent typed as a combining mark is named with its letter. Bounded twice,
+ * by {@link UNWRITABLE_CHARACTERS_MAX} characters and {@link UNWRITABLE_CHARACTERS_MAX_UNITS} UTF-16 units, the wire's
+ * own bounds; past either, the first ones typed are named.
+ *
+ * @param pairs each write and what it read back as
+ */
+export function unwritableCharacters(pairs: readonly { readonly written: string; readonly read: string }[]): string {
+  const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+  const named: string[] = [];
+  let units = 0;
+  for (const { written, read } of pairs) {
+    if (written === read) continue;
+    const present = new Set(Array.from(segmenter.segment(read), (part) => part.segment));
+    for (const { segment } of segmenter.segment(written)) {
+      if (segment.trim() === '' || present.has(segment) || named.includes(segment)) continue;
+      if (named.length === UNWRITABLE_CHARACTERS_MAX || units + segment.length > UNWRITABLE_CHARACTERS_MAX_UNITS) {
+        return named.join('');
+      }
+      named.push(segment);
+      units += segment.length;
+    }
+  }
+  return named.join('');
+}
+
+/**
+ * Why a PDFium rewrite refused, naming the step from ADR-0169 Decision 3's fixed set and the number PDFium answered.
+ *
+ * Thrown where a native call refuses, with `FPDF_GetLastError` read at that moment; `engineError` is 0 where PDFium
+ * kept no error, which several of its calls do (a refused `FPDFText_SetText` answers 0). The step and the number are
+ * this application's reading of the refusal; PDFium's own words about the file never travel.
+ */
+export class EditRefusedError extends Error {
+  readonly step: EditStep;
+  readonly engineError: number;
+
+  constructor(step: EditStep, engineError: number, what: string, options?: ErrorOptions) {
+    super(`${what} (step ${step}, FPDF_GetLastError ${String(engineError)}), so nothing was changed`, options);
+    this.name = 'EditRefusedError';
+    this.step = step;
+    this.engineError = engineError;
   }
 }

@@ -1750,7 +1750,13 @@ export const handlers: ContractHandlers = {
     // thing to try here: it is the one code that exists on every channel, and a
     // handler still may not produce it — it means "a diagnostic was withheld",
     // and a handler has nowhere to withhold one to (ADR-0009, 2026-08-19).
-    because: /Type 'string' is not assignable to type 'never'/u,
+    //
+    // THE ERROR, not its code, is what meets `never` since ADR-0169: a failure
+    // type became a union of members (a detailed code is one), so a channel
+    // declaring none gives `never` for the whole error where it gave
+    // `{ code: never }`. Anchored on `error` so this cannot be the delete case's
+    // reason below, which is an object meeting `never` at the top level.
+    because: /Types of property 'error' are incompatible\.\s+Type '\{…\}' is not assignable to type 'never'/u,
     notBecause: null,
     source: `
 import type { ContractHandlers } from '@monstera/contract';
@@ -3542,7 +3548,10 @@ export const entry: LogEntry = {
     // `never` to something serialisable would put unbudgeted document-scaled
     // bytes in the log, where `retainedBytes` counts checkpoints only and would
     // under-report by exactly that amount — in the direction nobody notices.
-    because: /Type '\{…\}' is not assignable to type 'never'/u,
+    //
+    // ANCHORED AT THE START OF THE REASON: the object meets `never` at the top level here, where the handler case
+    // above meets it inside a `Result`'s `error`, and an unanchored pattern accepted both (ADR-0169).
+    because: /^Type '\{…\}' is not assignable to type 'never'/u,
     notBecause: null,
     // `LogEntryFor<'deletePages'>` and NOT the collapsed `LogEntry`. Against
     // the union TypeScript reports an excess-property mismatch on `inverse`

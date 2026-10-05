@@ -40,7 +40,8 @@ interface Run {
 
 async function run(options: {
   readonly answers?: Readonly<Record<string, unknown>>;
-  readonly failures?: Readonly<Record<string, string>>;
+  /** A channel's failure, as the wire carries it: a code, and the detail a code declares one for (ADR-0169). */
+  readonly failures?: Readonly<Record<string, { readonly code: string; readonly detail?: unknown }>>;
   readonly dialog?: unknown;
   readonly stored?: readonly string[];
   readonly cancelled?: boolean;
@@ -57,8 +58,8 @@ async function run(options: {
   };
   const client = createClient(channels, (id, params) => {
     sent.push({ id, params });
-    const code = options.failures?.[id];
-    if (code !== undefined) return Promise.resolve(err({ code }));
+    const failure = options.failures?.[id];
+    if (failure !== undefined) return Promise.resolve(err(failure));
     return Promise.resolve(ok(answers[id]));
   });
   const controller = new AbortController();
@@ -135,7 +136,9 @@ describe('translatePageCommand', () => {
   });
 
   it('a write the page’s fonts refuse is said as a toast, not as the generic problem dialog', async () => {
-    const { asked, said, applied } = await run({ failures: { 'document.execute': 'text-not-writable' } });
+    const { asked, said, applied } = await run({
+      failures: { 'document.execute': { code: 'text-not-writable', detail: { characters: '中' } } },
+    });
     expect(said).toStrictEqual([{ kind: 'problem', message: TOAST_TRANSLATE_NOT_WRITABLE }]);
     expect(asked.map((entry) => entry.id)).toStrictEqual(['dialog.translate-page']);
     expect(applied).toStrictEqual([]);

@@ -1234,7 +1234,9 @@ describe('the composition root, with BOTH engine hosts', () => {
           return { ok: true, value: { captured: false, reason: 'a block edit has no prior' } };
         }
         if (channel === 'engine/apply' && applyAnswer === 'text-not-writable') {
-          return { ok: false, error: { code: 'text-not-writable' } };
+          // ONE CHARACTER TYPED AND ONE NOT: the host is hostile by invariant 25's premise, so `main` forwards only
+          // characters the command carries (ADR-0169 Decision 4), and the case asserts which one survived.
+          return { ok: false, error: { code: 'text-not-writable', detail: { characters: 'w中' } } };
         }
         return base.peer(channel, params);
       };
@@ -1267,8 +1269,12 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(written.mupdf.harness.calls).not.toContain('peer.request:engine/apply');
 
     const refused = await run('text-not-writable');
-    // BY NAME: not `internal`, which is what an unmapped engine refusal becomes.
-    expect(refused.executed).toStrictEqual({ ok: false, error: { code: 'text-not-writable' } });
+    // BY NAME: not `internal`, which is what an unmapped engine refusal becomes — and naming `w`, which `new words`
+    // holds, and not `中`, which the host named and nobody typed.
+    expect(refused.executed).toStrictEqual({
+      ok: false,
+      error: { code: 'text-not-writable', detail: { characters: 'w' } },
+    });
   });
 
   it('answers engine-unavailable when there is no PDFium platform', async () => {

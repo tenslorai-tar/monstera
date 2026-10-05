@@ -12,7 +12,10 @@ export {
 } from './ids.js';
 export {
   type DeclaredFailure,
+  EDIT_STEPS,
+  type EditStep,
   type Failure,
+  type FailureDetails,
   type InternalFailure,
   type Result,
   type StructuredError,

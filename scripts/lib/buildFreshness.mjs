@@ -128,6 +128,20 @@ export const PDFIUM_COMMAND = [
 ];
 
 /**
+ * The read-back proof's edges: {@link PDFIUM_COMMAND}'s, and every module the other PDFium commands' specs live in,
+ * since its subject is that ALL eight reach the read-back (ADR-0169) — plus the refusals it classifies by class.
+ *
+ * @type {BuildEdge[]}
+ */
+export const PDFIUM_READ_BACK = [
+  ...PDFIUM_COMMAND,
+  ['packages/kernel/src/pdfiumObjectEdit.ts', 'packages/kernel/dist/pdfiumObjectEdit.js', 'tsc'],
+  ['packages/kernel/src/pdfiumReplaceAll.ts', 'packages/kernel/dist/pdfiumReplaceAll.js', 'tsc'],
+  ['packages/kernel/src/pdfiumPromote.ts', 'packages/kernel/dist/pdfiumPromote.js', 'tsc'],
+  ['packages/kernel/src/textEditRefusals.ts', 'packages/kernel/dist/textEditRefusals.js', 'tsc'],
+];
+
+/**
  * The substrate `lineAgreement.mjs` scores this application's reading through.
  *
  * The instrument's whole subject is what `textStructure.ts` produces, so a stale
@@ -391,6 +405,7 @@ export const ARTEFACT_EDGES = {
   // are the adapter's plus the two modules that dispatch to it and the table
   // that says they should.
   'proof:pdfiumcommand': PDFIUM_COMMAND,
+  'proof:pdfiumreadback': PDFIUM_READ_BACK,
   // The object commands read the same built modules through the same routing,
   // so the same edges: the adapter, the two that dispatch to it, and the table
   // that says they should.

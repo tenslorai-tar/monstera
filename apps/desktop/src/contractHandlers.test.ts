@@ -1087,12 +1087,15 @@ describe('document.editCopy — an edit of a signed document made on a copy (ADR
   });
 
   it('a refusal the person can act on leaves the copy OPEN and says why', async () => {
-    const { commands } = commandsFor(() => Promise.reject(new TextNotWritableError()));
+    const { commands } = commandsFor(() => Promise.reject(new TextNotWritableError('中')));
     const { handlers, closed } = harness(OPENED, NO_PICKER, undefined, { commands });
 
     const result = await handlers['document.editCopy']({ docId: A_DOC, command: NAMED });
 
-    expect(result).toMatchObject({ ok: true, value: { kind: 'edit-refused', docId: COPY, problem: 'text-not-writable' } });
+    expect(result).toMatchObject({
+      ok: true,
+      value: { kind: 'edit-refused', docId: COPY, problem: { code: 'text-not-writable', detail: { characters: '中' } } },
+    });
     expect(closed).toStrictEqual([]);
   });
 
