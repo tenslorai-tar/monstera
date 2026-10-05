@@ -196,3 +196,26 @@ Two statements above were written before the code they describe was read through
   they are handed, five of them through a copy each of one helper, so a key that stopped at the host's frame would
   reach none of them. `WriterSession['pdfium']` is `ImageSession` itself, which the spec, the host's execution and
   `main`'s all take; the five helpers become one opener that takes the key.
+
+## Addendum, 2026-10-05 — Decision 3's mechanism, before it was built
+
+Decision 3 says the entry keeps *"its command with no password in it"* and a side table keeps the passwords. Reading
+the bus to build it found two things that sentence does not settle, so the mechanism is recorded here first (B4).
+
+- **A protect with its passwords taken out is still a valid protect.** Both fields are optional and absent means *no
+  password*, so a redo or a replay that reached for the entry's command instead of the side table's would compile and
+  write the document encrypted with no password at all, reporting success. **So the entry keeps the kind alone**,
+  ADR-0162's `command: { kind }`, and the side table holds the whole command. A caller that reaches for the entry's
+  command to re-run it does not compile.
+- **Which commands are held this way is a declaration, on the replay axis** that every command already states:
+  `replay: 'reapply-held-intent'`, reproducible as `reapply-intent` is, whose intent is held by the bus beside the entry
+  rather than in it. `setDocumentProtection` is the one command that declares it. A declarations case walks every
+  command schema for a field named as a credential and requires its kind to declare `reapply-held-intent` or
+  `stored-result`; its positive control is that the walk finds the two credential fields known to exist, the protect's
+  passwords and signing's passphrase.
+- **A replay past the image takes the held command too** (ADR-0115): a host rebuild re-applies the protection with its
+  passwords, so the rebuilt session writes the document as it was protected. A held command that is missing, which the
+  table's key makes unreachable while its entry lives, refuses rather than re-applying anything.
+
+Rejected: an optional `recordable` member on the spec. It is an axis defaulted to the safe value, which nobody chooses,
+and here the unsafe direction is the quiet one: a credential-bearing command that forgot it is recorded whole.
