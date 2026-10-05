@@ -24,6 +24,7 @@ import { mupdfWriter } from '@monstera/kernel/engine';
 import { asDocId, type DocId } from '@monstera/shared';
 
 import type { DocumentSessions } from './documentCommands.js';
+import { DocumentPasswords } from './documentPasswords.js';
 import {
   type DocumentOpenSurfaces,
   EngineSessions,
@@ -44,6 +45,9 @@ import type { ShellFailure } from './shellFailure.js';
  * `writeCanonicalImage` and opens it with the real MuPDF adapter — a fake
  * service would prove the sequence and not the thing the sequence is for.
  */
+
+/** A password for the cases that hold one. Made up for this file; no document carries it. */
+const PASSWORD = 'sample-only-0171';
 
 /** Large enough that capacity is never what these tests are measuring. */
 const AMPLE_CEILING = 64 * 1024 * 1024;
@@ -276,7 +280,7 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
       engine.markLocked(first, 'needs-password');
       expect(engine.opensOnlyWithPassword(first)).toBe(true);
       // UNLOCKED, and still yes: the file is the protected one, whatever the session now holds.
-      engine.hold(first, someSessions('a'));
+      engine.unlock(first, someSessions('a'), PASSWORD);
       expect(engine.locked(first)).toBeUndefined();
       expect(engine.opensOnlyWithPassword(first)).toBe(true);
     });
@@ -307,6 +311,60 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
       const broken = new Error('the host is gone');
       await expect(engine.renew(first, () => Promise.reject(broken), () => false)).rejects.toBe(broken);
       expect(engine.opensOnlyWithPassword(first)).toBe(false);
+    });
+  });
+
+  describe('the password a document was unlocked with (ADR-0171)', () => {
+    it('is held from the unlock, read by every reopen, and wiped by the close', async () => {
+      const passwords = new DocumentPasswords();
+      const engine = new EngineSessions(passwords);
+      engine.begin(first);
+      engine.markLocked(first, 'needs-password');
+      engine.unlock(first, someSessions('a'), PASSWORD);
+      expect(engine.openingPassword(first)).toBe(PASSWORD);
+
+      // A RECYCLE REOPENS, which ADR-0055 refused for this document: the reopen runs, and the password it opens with
+      // is the one held. Read inside the reopen, which is where the opener reads it.
+      const offered: (string | undefined)[] = [];
+      await engine.recycle(first, (id) => {
+        offered.push(engine.openingPassword(id));
+        return Promise.resolve(someSessions('b'));
+      });
+      expect(offered).toStrictEqual([PASSWORD]);
+      expect(engine.sessions(first)).toStrictEqual(someSessions('b'));
+
+      const held = passwords.heldFor(first);
+      // CONTROL for the wipe below: the bytes are the password's until the close.
+      expect(held?.isWiped()).toBe(false);
+      await engine.releaseOnClose(first);
+      expect(held?.isWiped()).toBe(true);
+      expect(engine.openingPassword(first)).toBeUndefined();
+    });
+
+    it('CONTROL: a document no password opened reopens with none, and another document’s is not its', async () => {
+      const engine = new EngineSessions();
+      engine.begin(first);
+      engine.markLocked(first, 'needs-password');
+      engine.unlock(first, someSessions('a'), PASSWORD);
+      engine.hold(second, someSessions('c'));
+
+      const offered: (string | undefined)[] = [];
+      await engine.recycle(second, (id) => {
+        offered.push(engine.openingPassword(id));
+        return Promise.resolve(someSessions('d'));
+      });
+      expect(offered).toStrictEqual([undefined]);
+    });
+
+    it('a poisoned document is refused its sessions and keeps no password', () => {
+      const engine = new EngineSessions();
+      engine.begin(first);
+      engine.recordFailure([first], 'host-death');
+      engine.recordFailure([first], 'host-death');
+      expect(() => {
+        engine.unlock(first, someSessions('a'), PASSWORD);
+      }).toThrow(/poisoned/u);
+      expect(engine.openingPassword(first)).toBeUndefined();
     });
   });
 

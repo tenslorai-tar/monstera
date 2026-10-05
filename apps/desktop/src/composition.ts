@@ -2579,8 +2579,7 @@ function engineSessionOpener(
    * open: every MuPDF call that answers it is an authentication attempt, and a
    * failed attempt destroys the session's key (ADR-0055). The two exported
    * members below drop the access, because recycling and restoring do not carry
-   * one — a recycle of an unlocked document is refused, and a restore replays
-   * bytes the same password already opened.
+   * one: they reopen bytes the held password already opened (ADR-0171).
    */
   const buildWithAccess = async (
     docId: DocId,
@@ -2716,10 +2715,12 @@ function engineSessionOpener(
     return { sessions: { mupdf: session }, access: opened };
   };
 
+  // EVERY REOPEN OPENS WITH THE PASSWORD the document was unlocked with, read at the open from the one holder
+  // (ADR-0171 Decision 4): a checkpoint of a document opened locked is its own encrypted form, like the canonical image.
   const buildSessions = async (
     docId: DocId,
     write: SnapshotWrite,
-  ): Promise<DocumentSessions> => (await buildWithAccess(docId, write)).sessions;
+  ): Promise<DocumentSessions> => (await buildWithAccess(docId, write, sessions.openingPassword(docId))).sessions;
 
   /**
    * One document's sessions from the canonical image — open, reopen, recycle.
@@ -2736,7 +2737,7 @@ function engineSessionOpener(
     buildWithAccess(docId, canonicalImageWrite(documents, docId), password);
 
   const create = async (docId: DocId): Promise<DocumentSessions> =>
-    (await createWithAccess(docId)).sessions;
+    (await createWithAccess(docId, sessions.openingPassword(docId))).sessions;
 
   // THE PROMISE IS RETURNED, not voided. `onDocumentOpened` queues its lane entry
   // before its first await, so the ordering it guarantees holds either way; what
@@ -2767,12 +2768,12 @@ function engineSessionOpener(
    * flight, and the loser's session would be held for a document whose entry
    * the winner had already replaced.
    *
-   * ## The password is not held, anywhere, for any duration
+   * ## The password is held only once the engine accepted it
    *
-   * It arrives as an argument, reaches `engine/open` once, and leaves with the
-   * frame. Nothing records it — not the entry, not the record, not a retry —
-   * which is what makes the refusal in `recycle` honest rather than arbitrary
-   * (ADR-0055).
+   * A wrong one reaches `engine/open` once and leaves with the frame. A right one
+   * is handed to the supervisor with the sessions it opened, in one step, and is
+   * held there until the document closes, so every later open of its sessions
+   * can be made (ADR-0171).
    */
   const unlockDocument = async (docId: DocId, password: string): Promise<UnlockOutcome> => {
     // THE LANE'S VERSION STAMP IS DISCARDED, deliberately. Unlocking changes no
@@ -2787,7 +2788,7 @@ function engineSessionOpener(
       if (sessions.locked(docId) === undefined) return { kind: 'not-locked' } as const;
       try {
         const built = await createWithAccess(docId, password);
-        sessions.hold(docId, built.sessions);
+        sessions.unlock(docId, built.sessions, password);
         return { kind: 'unlocked', access: built.access } as const;
       } catch (error) {
         if (error instanceof EngineDocumentLocked) {

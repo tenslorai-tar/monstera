@@ -24,6 +24,7 @@ import type {
 } from '@monstera/kernel';
 import type { DocId } from '@monstera/shared';
 
+import { DocumentPasswords } from './documentPasswords.js';
 import { describeEngineHostGone, type ShellFailureSink } from './shellFailure.js';
 
 // `import type`, and the header above says why in 38.1 MB. This one is the
@@ -642,9 +643,9 @@ interface DocumentEntry {
    *
    * **Not the negation of {@link locked}**, and not derivable from the access
    * either: an owner-only document opens for everybody with `access: 2` and no
-   * password at all, and recycling that is fine. What this records is the one
-   * fact that makes a rebuild impossible — a session nothing can re-create,
-   * because the password that made it is not kept anywhere (ADR-0055).
+   * password at all. What this records is that the document's file opens only
+   * with the password {@link EngineSessions.unlock} was given, which every later
+   * open of its sessions reads back ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md)).
    *
    * Set on a successful unlock and never cleared: the document is the same
    * document for the rest of its life, and close-and-reopen is what starts
@@ -696,6 +697,25 @@ interface DocumentEntry {
  */
 export class EngineSessions implements EngineSessionSource {
   readonly #entries = new Map<DocId, DocumentEntry>();
+
+  /**
+   * The passwords the open documents' files open with (ADR-0171 Decision 1). HERE, beside the entries, so the close
+   * that drops a document's entry is the close that wipes its password: one teardown registration, not a second one a
+   * close path has to remember (finding FFFF-1).
+   */
+  readonly #passwords: DocumentPasswords;
+
+  /** @param passwords the holder, passed by a case that reads what a close left in it */
+  constructor(passwords: DocumentPasswords = new DocumentPasswords()) {
+    this.#passwords = passwords;
+  }
+
+  /**
+   * The password `docId`'s file opens with, for an engine session's open, or `undefined` when it needs none. Read by
+   * every open of the document's sessions: the first after an unlock, a recycle, a checkpoint's restore, a removal's
+   * save renewal and a host death's rebuild (ADR-0171 Decision 4).
+   */
+  readonly openingPassword = (docId: DocId): string | undefined => this.#passwords.openingPassword(docId);
 
   /**
    * Get-or-miss, never get-or-create. Arrow-bound because this is handed over
@@ -817,6 +837,19 @@ export class EngineSessions implements EngineSessionSource {
   }
 
   /**
+   * Records the sessions a password gave a locked document, and the password, in one step: the sessions are held first,
+   * since {@link hold} refuses a poisoned document and a password kept for one would outlive its use.
+   *
+   * @param docId the document `document.unlock` named
+   * @param sessions what the engine opened with `password`
+   * @param password the password it accepted
+   */
+  unlock(docId: DocId, sessions: DocumentSessions, password: string): void {
+    this.hold(docId, sessions);
+    this.#passwords.hold(docId, password);
+  }
+
+  /**
    * Drops a document's state, on close. **Registered as `DocumentService`'s
    * `teardown`, never called by hand.**
    *
@@ -854,6 +887,8 @@ export class EngineSessions implements EngineSessionSource {
     // window unrepresentable rather than unlikely, and it matches what
     // `DocumentService.close` already does with the record.
     this.#entries.delete(docId);
+    // THE PASSWORD IS WIPED WITH THE ENTRY, before the await, so a release that throws or hangs cannot leave it held.
+    this.#passwords.forget(docId);
     if (entry?.release == null) return;
 
     // FAILURE IS SWALLOWED HERE, DELIBERATELY, and this is the one place in
@@ -940,26 +975,9 @@ export class EngineSessions implements EngineSessionSource {
     const entry = this.#entries.get(docId);
     if (entry === undefined) return;
 
-    // REFUSED FOR A DOCUMENT A PASSWORD OPENED, and this is ADR-0055's rule
-    // arriving as a mechanism rather than a note. Nothing here holds the
-    // password — main does not keep it, the entry does not carry it — so a
-    // rebuild would ask the engine to open the same encrypted bytes with
-    // nothing, and the session it got back would be a locked one held for a
-    // document the supervisor believes is unlocked.
-    //
-    // A throw rather than a silent skip. Invariant 22 offers recycling and
-    // nothing schedules it, so every caller is deliberate and is entitled to
-    // know the capability does not apply here. Caching the password to make it
-    // work was the alternative and it keeps a user's secret in main's memory
-    // for the life of the document, to serve a capability nothing calls.
-    if (entry.unlockedByPassword) {
-      throw new Error(
-        `Document ${docId.slice(0, 8)}… was opened with a password, which this build does not ` +
-          `keep, so its engine session cannot be rebuilt without asking for it again. ` +
-          `Close and reopen is what re-establishes it.`,
-      );
-    }
-
+    // A DOCUMENT A PASSWORD OPENED IS RECYCLED LIKE ANY OTHER: `reopen` opens with {@link openingPassword}, which this
+    // class holds until the close (ADR-0171). Refused until then, and that refusal also failed every undo past a
+    // checkpoint of such a document, since a checkpoint's restore is a recycle.
     const release = entry.release;
     // CLEARED BEFORE THE AWAIT, like `holdRelease` does and for the same
     // reason: an entry still holding the old release across it is one a close

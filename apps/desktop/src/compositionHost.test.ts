@@ -519,6 +519,66 @@ describe('the composition root, with an engine host platform', () => {
     );
   });
 
+  describe('a document opened with its password (ADR-0171)', () => {
+    const PASSWORD = 'sample-only-0171';
+
+    /** A host whose document opens only with {@link PASSWORD}, taking a checkpoint per rotate, recording every open. */
+    function lockedHost(): { readonly spy: ReturnType<typeof platformAnswering>; readonly opens: unknown[] } {
+      const opens: unknown[] = [];
+      const spy = platformAnswering((channel, params) => {
+        if (channel === 'engine/open') {
+          const { password } = params as { password?: unknown };
+          opens.push(password);
+          // `access: 2`, what a user password buys, beside this file's `SESSION`, which no password opened.
+          if (password === PASSWORD) return { ok: true, value: { session: 'ab0f', access: 2 } };
+          return { ok: false, error: { code: password === undefined ? 'needs-password' : 'wrong-password' } };
+        }
+        if (channel === 'engine/capture') {
+          return { ok: true, value: { captured: false, reason: 'page 1 carries a non-numeric /Rotate (/Sideways)' } };
+        }
+        if (channel === 'engine/serialise') {
+          const { into } = params as { into: string };
+          writeFileSync(join(lastOutputDirectory(spy.directories), into), '%PDF-1.7 checkpoint\n');
+          return { ok: true, value: { bytes: 20 } };
+        }
+        return ENGINE(channel, params);
+      });
+      return { spy, opens };
+    }
+
+    it('an undo past a checkpoint reopens the session with the password the document was unlocked with', async () => {
+      const { spy, opens } = lockedHost();
+      const { handlers } = createShellDependencies({
+        ...harnessSurfaces('the composition-host test'),
+        appInfo,
+        pickDocument: () => Promise.resolve(aDocument('locked.pdf')),
+        enginePlatform: spy.platform,
+        checkpointDirectory: join(scratch, 'checkpoints-locked'),
+      });
+
+      const opened = await handlers['document.open']({});
+      if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+      const docId = opened.value.docId;
+      const unlocked = await handlers['document.unlock']({ docId, password: PASSWORD });
+      expect(unlocked.ok && unlocked.value.kind).toBe('unlocked');
+
+      const executed = await handlers['document.execute']({
+        docId,
+        command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+      });
+      expect(executed.ok).toBe(true);
+      const before = opens.length;
+
+      // THE RESTORE IS A RECYCLE, which ADR-0055 refused for this document: the undo failed. Now it reopens, and the
+      // open that rebuilt the session carried the password, asserted on what the host was sent.
+      const undone = await handlers['document.undo']({ docId });
+      expect(undone.ok && undone.value.kind).toBe('undone');
+      expect(opens.slice(before)).toStrictEqual([PASSWORD]);
+      // AND THE OPEN-TIME ATTEMPT CARRIED NONE: nothing is held before the unlock.
+      expect(opens[0]).toBeUndefined();
+    });
+  });
+
   it('CONTROL: a host that read the negative path is CLOSED, and no session is made', async () => {
     // The loudest case in ADR-0023's table: the host looks healthy and is not
     // contained, and every cheap containment question answers yes for it. The
