@@ -946,6 +946,13 @@ unasserted. Sealing also runs for a protect that removes encryption, rewriting e
 that protects nothing and drops a signed backup's incremental structure; and a sealing failure after the protect applied
 is reported as the command failing (`32b365d3`). Read.
 
+*Correction, 2026-10-05, the same night:* RRRRRRR-7's first claim is wrong and was recorded on a reader's word I should
+have run down. `retake` deletes the old picture SYNCHRONOUSLY, at its first line, before its first `await`, so the
+`void` call removes it before the protect returns; only the new picture is taken afterwards, and only where the
+document opens with no password. The ordering Decision 8 asks for holds. The sealing pass for a protect that removes
+encryption is real and is closed (`sealCopy` seals nothing for one); a sealing failure reported as the command failing
+is still open.
+
 **RRRRRRR-8** (medium-low, recorded): `recycle` releases a document's sessions before a reopen that can be refused
 (`433f665f`), so a reopen refused for its key leaves a password document sessionless. The one reachable shape, a protect
 with a new password then a checkpoint undo, was closed by `99ce4c2a`; the order stays, by design and documented.

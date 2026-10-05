@@ -23,11 +23,16 @@ export interface SealEngine<S> {
  * that needs a password, or opens with none and answers `2` (an owner-only password), is encrypted already, and is left:
  * rewriting it would replace an owner password main never saw. The one spelling of that rule, for every copy a protect
  * seals and for every proof of it.
+ *
+ * **A protect that removes encryption seals nothing** (stage audit RRRRRRR-7): there is no encryption to put on a copy,
+ * and rewriting it anyway is a whole save that protects nothing, which takes a signed backup's incremental structure,
+ * and so its signature's coverage, with it. Not even opened.
  */
 export async function sealCopy<S>(
   command: CommandOfKind<'setDocumentProtection'>,
   engine: SealEngine<S>,
 ): Promise<number | undefined> {
+  if (command.encryption === 'none') return undefined;
   const opened = await engine.open();
   if (opened === 'locked') return undefined;
   try {
