@@ -4718,7 +4718,7 @@ for (const look of LOOKS) {
       paper: getComputedStyle(document.documentElement).getPropertyValue('--page').trim(),
       ground: getComputedStyle(note).backgroundColor,
       lines: [...note.querySelectorAll('p, dt, dd')].map((line) => ({
-        text: (line.textContent ?? '').slice(0, 24),
+        text: line.textContent.slice(0, 24),
         colour: getComputedStyle(line).color,
       })),
     }));
