@@ -145,7 +145,7 @@ describe('the OCR region tool', () => {
     // read: a rectangle with a negative width draws nothing in SVG, and this is
     // the one place the reader sees what will be recognised before it costs
     // anything.
-    expect(controller.preview(moved)).toStrictEqual({
+    expect(controller.preview(moved, 3, overlayTransform(PAGE))).toStrictEqual({
       shape: 'rect',
       x: 20,
       y: 20,
@@ -161,7 +161,7 @@ describe('the OCR region tool', () => {
     const { controller } = ocrRegionTool(deps());
     const started = controller.begin(viewportPoint(20, 20));
     const moved = controller.update(started, viewportPoint(120, 20 + MINIMUM_REGION - 1));
-    expect(controller.preview(moved)).toBeUndefined();
+    expect(controller.preview(moved, 3, overlayTransform(PAGE))).toBeUndefined();
   });
 
   it('claims the id its command selects', () => {
@@ -217,6 +217,6 @@ describe('the network region tools', () => {
     const started = controller.begin(viewportPoint(20, 20));
     const moved = controller.update(started, viewportPoint(120, 20 + MINIMUM_REGION - 1));
     expect(controller.commit(moved, 3, overlayTransform(PAGE))).toBeUndefined();
-    expect(controller.preview(moved)).toBeUndefined();
+    expect(controller.preview(moved, 3, overlayTransform(PAGE))).toBeUndefined();
   });
 });

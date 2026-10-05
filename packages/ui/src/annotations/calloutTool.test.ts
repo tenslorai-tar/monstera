@@ -166,7 +166,7 @@ describe('calloutTool', () => {
       viewportPoint(60, 70),
     );
     // While one press has happened the line is what is being aimed.
-    expect(tool.controller.preview(aiming)).toStrictEqual({
+    expect(tool.controller.preview(aiming, 3, overlayTransform(PAGE))).toStrictEqual({
       shape: 'line',
       x1: 20,
       y1: 20,
@@ -176,7 +176,7 @@ describe('calloutTool', () => {
     // Once the box is being dragged the leader is settled and the box is what
     // is moving. The preview union has no member carrying both, and adding one
     // for this tool would put a tool's composition in the overlay's switch.
-    expect(tool.controller.preview(twoPress(tool, [20, 20], [100, 100], [180, 140]))).toStrictEqual(
+    expect(tool.controller.preview(twoPress(tool, [20, 20], [100, 100], [180, 140]), 3, overlayTransform(PAGE))).toStrictEqual(
       { shape: 'rect', x: 100, y: 100, width: 80, height: 40 },
     );
   });

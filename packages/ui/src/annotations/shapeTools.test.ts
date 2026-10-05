@@ -185,8 +185,8 @@ describe('the box tools', () => {
     // inconsistency: a preview is a box on screen and SVG has no meaning for a
     // negative width, where the command's rectangle is a pair of document
     // corners.
-    expect(rectangleTool.controller.preview(gesture(rectangleTool, [40, 40], [42, 42]))).toBeUndefined();
-    expect(ellipseTool.controller.preview(gesture(ellipseTool, [120, 80], [20, 20]))).toStrictEqual({
+    expect(rectangleTool.controller.preview(gesture(rectangleTool, [40, 40], [42, 42]), 3, overlayTransform(PAGE))).toBeUndefined();
+    expect(ellipseTool.controller.preview(gesture(ellipseTool, [120, 80], [20, 20]), 3, overlayTransform(PAGE))).toStrictEqual({
       shape: 'ellipse',
       x: 20,
       y: 20,
@@ -256,7 +256,7 @@ describe('the line tools', () => {
   });
 
   it('preview a line between the two ends, unordered', () => {
-    expect(lineAnnotationTool.controller.preview(gesture(lineAnnotationTool, [120, 80], [20, 20])))
+    expect(lineAnnotationTool.controller.preview(gesture(lineAnnotationTool, [120, 80], [20, 20]), 3, overlayTransform(PAGE)))
       .toStrictEqual({ shape: 'line', x1: 120, y1: 80, x2: 20, y2: 20 });
   });
 });
@@ -342,7 +342,7 @@ describe('the ink tool', () => {
   });
 
   it('previews the path rather than a box around it', () => {
-    expect(inkAnnotationTool.controller.preview(scribble([20, 20], [60, 40], [120, 20])))
+    expect(inkAnnotationTool.controller.preview(scribble([20, 20], [60, 40], [120, 20]), 3, overlayTransform(PAGE)))
       .toStrictEqual({
         shape: 'path',
         points: [

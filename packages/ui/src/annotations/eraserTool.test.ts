@@ -177,7 +177,7 @@ describe('eraserTool', () => {
   it('previews nothing', () => {
     const tool = eraserTool({ annotations: () => Promise.resolve(undefined) });
     const started = tool.controller.begin(viewportPoint(10, 10));
-    expect(tool.controller.preview(started)).toBeUndefined();
+    expect(tool.controller.preview(started, 3, overlayTransform(PAGE))).toBeUndefined();
   });
 
   it('ends its gesture at the release, like the eight drag tools', () => {

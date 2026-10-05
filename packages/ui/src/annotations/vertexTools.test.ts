@@ -296,7 +296,7 @@ describe('polygonTool', () => {
     // gesture has vertices.
     const twoDown = press(press(undefined, [20, 20]), [120, 20]);
     const moved = pointerPath.update(twoDown, viewportPoint(120, 90));
-    expect(polygonTool.controller.preview(moved)).toStrictEqual({
+    expect(polygonTool.controller.preview(moved, 3, overlayTransform(PAGE))).toStrictEqual({
       shape: 'path',
       points: [
         [20, 20],
@@ -310,7 +310,7 @@ describe('polygonTool', () => {
     // CONTROL for the case above: a band drawn to where the pointer already is
     // would be a zero-length segment appended to every preview, and the case
     // above cannot see it because there the pointer HAS moved.
-    expect(polygonTool.controller.preview(press(undefined, [20, 20]))).toStrictEqual({
+    expect(polygonTool.controller.preview(press(undefined, [20, 20]), 3, overlayTransform(PAGE))).toStrictEqual({
       shape: 'path',
       points: [[20, 20]],
     });

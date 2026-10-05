@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 import type { DispatchableCommand } from '@monstera/contract';
-import { messageKey } from '@monstera/shared';
+import { asDocVersion, messageKey } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { PLAIN_STYLE } from './annotations/annotationStyle.js';
+import { selectTool } from './annotations/selectTool.js';
 import { rectangleTool as buildRectangle } from './annotations/shapeTools.js';
 
 /** The two tools these cases drive, built with the style that chooses nothing. */
@@ -280,6 +281,57 @@ describe('AnnotationOverlay', () => {
 
     redraw({ drawing: 'from the new version' });
     expect(surface.querySelector('[data-annotation-held]')).toBeNull();
+  });
+
+  it('a MOVE of the selection is drawn where the mark goes, while dragged and once let go (ADR-0166, item 14d)', async () => {
+    // A selected mark at screen (20,20)–(100,100), dragged from inside it 20 px right. The in-flight shape and the
+    // shape held after the release are both the mark's box moved, (40,20)–(120,100): before ADR-0166 both were the
+    // box from the press to the pointer, (40,40)–(60,40), which is the ghost and then the jump the owner saw.
+    const rect = { x0: 60, y0: 350, x1: 100, y1: 390 };
+    const select = selectTool({
+      write: () => Promise.reject(new Error('this case types nothing')),
+      wordsOf: () => Promise.reject(new Error('this case reads no words')),
+      ask: () => Promise.reject(new Error('this case opens no dialog')),
+      annotations: () => Promise.resolve(undefined),
+      onSelect: () => undefined,
+      selected: () => ({
+        page: 3,
+        version: asDocVersion(7),
+        items: [
+          {
+            index: 1,
+            rect,
+            style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 },
+            kind: 'square',
+            contents: '',
+            author: '',
+            created: null,
+            blend: 'normal',
+          },
+        ],
+      }),
+    });
+    const { surface, sent } = mounted(select);
+    const boxOf = (element: Element | null | undefined): string[] =>
+      ['x', 'y', 'width', 'height'].map((name) => element?.querySelector('rect')?.getAttribute(name) ?? '');
+
+    pointer(surface, 'pointerdown', 40, 40);
+    pointer(surface, 'pointermove', 60, 40);
+    const flying = inFlightPreview(surface);
+    expect(flying?.getAttribute('data-annotation-preview')).toBe('boxes');
+    expect(boxOf(flying)).toStrictEqual(['40', '20', '80', '80']);
+
+    pointer(surface, 'pointerup', 60, 40);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent).toMatchObject([{ kind: 'placeAnnotation', placements: [{ index: 1, rect: { x0: 70, x1: 110 } }] }]);
+    expect(boxOf(surface.querySelector('[data-annotation-held] [data-annotation-preview]'))).toStrictEqual([
+      '40',
+      '20',
+      '80',
+      '80',
+    ]);
   });
 
   it('CONTROL: the same drawing re-rendered does not drop it, so the drop is the redraw and not any render', async () => {

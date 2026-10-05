@@ -178,8 +178,8 @@ describe('selectTool', () => {
     const started = tool.controller.begin(viewportPoint(10, 10));
     // BELOW THE THRESHOLD the gesture is still a click, and a one-pixel
     // rectangle under the pointer would show a region about to be ignored.
-    expect(tool.controller.preview(tool.controller.update(started, viewportPoint(12, 10)))).toBeUndefined();
-    expect(tool.controller.preview(tool.controller.update(started, viewportPoint(60, 50)))).toStrictEqual({
+    expect(tool.controller.preview(tool.controller.update(started, viewportPoint(12, 10)), 3, overlayTransform(PAGE))).toBeUndefined();
+    expect(tool.controller.preview(tool.controller.update(started, viewportPoint(60, 50)), 3, overlayTransform(PAGE))).toStrictEqual({
       shape: 'rect',
       x: 10,
       y: 10,
@@ -239,6 +239,46 @@ describe('selectTool', () => {
       placements: [{ index: 1, rect: { x0: 60, y0: 330, x1: 120, y1: 390 } }],
       version: VERSION,
     });
+  });
+
+  it('PREVIEWS a move and a resize where the release will put the marks (ADR-0166) — CONTROL: a marquee stays one', () => {
+    const selected = {
+      page: 3,
+      version: VERSION,
+      items: [
+        { index: 1, rect: A_RECT, ...CARRIED },
+        { index: 2, rect: B_RECT, ...CARRIED },
+      ],
+    };
+    const tool = selectTool({
+      ...NO_REOPEN,
+      annotations: () => Promise.resolve({ version: VERSION, annotations: [A, B] }),
+      onSelect: () => undefined,
+      selected: () => selected,
+    });
+    const { controller } = tool;
+    const previewOf = (from: readonly [number, number], to: readonly [number, number]): unknown =>
+      controller.preview(
+        controller.update(controller.begin(viewportPoint(from[0], from[1])), viewportPoint(to[0], to[1])),
+        3,
+        overlayTransform(PAGE),
+      );
+    // A MOVE, from inside A: BOTH boxes, each 20 px right of where it is — A at (20,20)–(100,100), B at
+    // (220,420)–(300,500). The box from the press to the pointer, (40,40)–(60,40), is what was drawn before.
+    expect(previewOf([40, 40], [60, 40])).toStrictEqual({
+      shape: 'boxes',
+      boxes: [
+        { x: 40, y: 20, width: 80, height: 80 },
+        { x: 240, y: 420, width: 80, height: 80 },
+      ],
+    });
+    // A RESIZE by A's bottom-right corner to (140, 140): A alone, its top-left kept.
+    expect(previewOf([100, 100], [140, 140])).toStrictEqual({
+      shape: 'boxes',
+      boxes: [{ x: 20, y: 20, width: 120, height: 120 }],
+    });
+    // CONTROL: a drag that starts on neither is a marquee, drawn as the box it sweeps.
+    expect(previewOf([150, 150], [190, 180])).toStrictEqual({ shape: 'rect', x: 150, y: 150, width: 40, height: 30 });
   });
 
   it('resizes only that one, even when several are selected', async () => {

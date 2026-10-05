@@ -196,7 +196,7 @@ export function AnnotationOverlay({
       const transform = overlayTransform(geometry);
       // THE SHAPE AS RELEASED, and the drawing under it now: held only once there is a command, and
       // only for a tool that previews at all.
-      const shape = tool.controller.preview(finished);
+      const shape = tool.controller.preview(finished, page, transform);
       const released = shape === undefined ? undefined : { preview: shape, since: drawnWith };
       // `Promise.resolve` OVER THE UNION. `commit` may answer now or later, and
       // this is the one line that does not care which — a synchronous answer
@@ -302,7 +302,8 @@ export function AnnotationOverlay({
     [cancel, gesture, release, tool],
   );
 
-  const preview = gesture === undefined ? undefined : tool.controller.preview(gesture);
+  // PLACED AS THE COMMIT WILL BE (ADR-0166): this render's page and transform, the ones a release now would read.
+  const preview = gesture === undefined ? undefined : tool.controller.preview(gesture, page, overlayTransform(geometry));
   // DERIVED, not cleared by an effect: once the page has been drawn from a newer view, the shape is
   // in its pixels and this stops rendering it in the same render that carries the new drawing.
   const held = committed !== undefined && committed.since === drawnWith ? committed.preview : undefined;
@@ -417,6 +418,23 @@ function Preview({ preview }: { readonly preview: ToolPreview }): ReactElement {
           data-annotation-preview="path"
           points={preview.points.map(([x, y]) => `${String(x)},${String(y)}`).join(' ')}
         />
+      );
+    case 'boxes':
+      // ONE GROUP, so a case finds the shape once however many marks move; each box in it keeps its own place.
+      return (
+        <g data-annotation-preview="boxes">
+          {preview.boxes.map((box, at) => (
+            <rect
+              className="m-annotation-preview"
+              height={box.height}
+              // POSITION IS THE IDENTITY: the boxes are one moment's list, rebuilt with every pointer move.
+              key={at}
+              width={box.width}
+              x={box.x}
+              y={box.y}
+            />
+          ))}
+        </g>
       );
     default: {
       // A MEMBER ADDED WITHOUT A BRANCH IS A COMPILE ERROR, which is the point

@@ -123,8 +123,8 @@ describe('linkTools', () => {
     const { tools } = built(undefined);
     const { controller } = toolFor(tools, LINK_ADDRESS_TOOL_ID);
     const started = controller.begin(viewportPoint(20, 20));
-    expect(controller.preview(controller.update(started, viewportPoint(22, 21)))).toBeUndefined();
-    expect(controller.preview(controller.update(started, viewportPoint(100, 60)))).toStrictEqual({
+    expect(controller.preview(controller.update(started, viewportPoint(22, 21)), 3, overlayTransform(PAGE))).toBeUndefined();
+    expect(controller.preview(controller.update(started, viewportPoint(100, 60)), 3, overlayTransform(PAGE))).toStrictEqual({
       shape: 'rect',
       x: 20,
       y: 20,

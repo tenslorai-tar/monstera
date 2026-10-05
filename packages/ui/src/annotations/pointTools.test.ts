@@ -177,8 +177,8 @@ describe('stickyNoteTool', () => {
     const { tool } = noteAnswering(undefined);
     const { controller } = tool;
     const started = controller.begin(viewportPoint(20, 20));
-    expect(controller.preview(started)).toBeUndefined();
-    expect(controller.preview(controller.update(started, viewportPoint(120, 80)))).toBeUndefined();
+    expect(controller.preview(started, 3, overlayTransform(PAGE))).toBeUndefined();
+    expect(controller.preview(controller.update(started, viewportPoint(120, 80)), 3, overlayTransform(PAGE))).toBeUndefined();
   });
 
   it('claims the id its command selects', () => {
@@ -228,9 +228,9 @@ describe('caretTool', () => {
 
   it('previews nothing, at any point in the gesture', () => {
     const started = caretTool.controller.begin(viewportPoint(20, 20));
-    expect(caretTool.controller.preview(started)).toBeUndefined();
+    expect(caretTool.controller.preview(started, 3, overlayTransform(PAGE))).toBeUndefined();
     expect(
-      caretTool.controller.preview(caretTool.controller.update(started, viewportPoint(120, 80))),
+      caretTool.controller.preview(caretTool.controller.update(started, viewportPoint(120, 80)), 3, overlayTransform(PAGE)),
     ).toBeUndefined();
   });
 

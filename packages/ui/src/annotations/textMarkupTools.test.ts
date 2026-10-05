@@ -85,11 +85,11 @@ describe('textMarkupTools', () => {
   it('previews a LINE, and only once the drag is one', () => {
     const { controller } = toolFor(HIGHLIGHT_TOOL_ID);
     const started = controller.begin(viewportPoint(20, 20));
-    expect(controller.preview(controller.update(started, viewportPoint(21, 20)))).toBeUndefined();
+    expect(controller.preview(controller.update(started, viewportPoint(21, 20)), 3, overlayTransform(PAGE))).toBeUndefined();
     // A LINE RATHER THAN A RECTANGLE, because the annotation is not a region:
     // the box a person sweeps and the runs they get are different shapes, and a
     // rectangle would promise the one the kernel will not produce.
-    expect(controller.preview(controller.update(started, viewportPoint(100, 30)))).toStrictEqual({
+    expect(controller.preview(controller.update(started, viewportPoint(100, 30)), 3, overlayTransform(PAGE))).toStrictEqual({
       shape: 'line',
       x1: 20,
       y1: 20,

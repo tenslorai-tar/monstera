@@ -271,8 +271,13 @@ export interface ToolController {
    * so a controller returning markup would put two components in charge of one
    * drawing. It also keeps this module free of React, which is what lets a case
    * assert a preview's geometry by reading four numbers.
+   *
+   * **Given what {@link commit} is given**, the page and its transform, read at the same moment
+   * ([ADR-0166](../../../../docs/DECISIONS/0166-a-tools-preview-is-placed-as-its-commit-is.md)): a preview that could
+   * see only the gesture could draw a move of a selected mark only as the box from the press to the pointer, which is
+   * neither the mark nor where it goes. A tool whose preview needs neither ignores them.
    */
-  readonly preview: (gesture: Gesture) => ToolPreview | undefined;
+  readonly preview: (gesture: Gesture, page: number, transform: PageTransform) => ToolPreview | undefined;
   /**
    * Whether the gesture is over at this pointer-up.
    *
@@ -343,6 +348,16 @@ export type ToolPreview =
       readonly shape: 'path';
       /** Every kept point, as `[x, y]` pairs in order. */
       readonly points: readonly (readonly [number, number])[];
+    }
+  | {
+      /** Several rectangles drawn as one shape: a multi-selection moving together (ADR-0166). */
+      readonly shape: 'boxes';
+      readonly boxes: readonly {
+        readonly x: number;
+        readonly y: number;
+        readonly width: number;
+        readonly height: number;
+      }[];
     };
 
 /** One registered tool. */

@@ -113,7 +113,7 @@ describe('the snapshot tool', () => {
     const moved = tool.controller.update(started, viewportPoint(20, 20));
     // DRAGGED UP AND LEFT, so the preview's own normalisation is what is being
     // read: a rectangle with a negative width draws nothing in SVG.
-    expect(tool.controller.preview(moved)).toStrictEqual({
+    expect(tool.controller.preview(moved, 3, overlayTransform(PAGE))).toStrictEqual({
       shape: 'rect',
       x: 20,
       y: 20,

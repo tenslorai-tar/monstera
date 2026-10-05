@@ -189,14 +189,14 @@ describe('textBoxTool', () => {
     const { controller } = tool;
     const started = controller.begin(viewportPoint(20, 20));
 
-    expect(controller.preview(controller.update(started, viewportPoint(120, 80)))).toStrictEqual({
+    expect(controller.preview(controller.update(started, viewportPoint(120, 80)), 3, overlayTransform(PAGE))).toStrictEqual({
       shape: 'rect',
       x: 20,
       y: 20,
       width: 100,
       height: 60,
     });
-    expect(controller.preview(controller.update(started, viewportPoint(24, 24)))).toBeUndefined();
+    expect(controller.preview(controller.update(started, viewportPoint(24, 24)), 3, overlayTransform(PAGE))).toBeUndefined();
   });
 
   it('claims the id its command selects', () => {
