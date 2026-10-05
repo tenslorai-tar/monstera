@@ -5703,7 +5703,12 @@ optgroup {
  * page is still readable underneath while the drag is being placed.
  */
 .m-annotation-preview {
-  fill: var(--accent-soft);
+  /* A TINT IN EVERY THEME, so what is under a shape being drawn or moved stays readable. This was `--accent-soft`,
+     a chrome token: translucent in light and dark, and in high contrast the opaque #0d3a22 a selected row is drawn
+     in, which over the paper hid the words beneath every preview (looked at 2026-10-05, item 14d). The accent as
+     solved against the paper, at a seventh. */
+  fill: var(--accent-on-paper, var(--accent));
+  fill-opacity: 0.14;
   stroke: var(--accent-on-paper, var(--accent));
   stroke-width: 1;
   /* SCALES WITH NOTHING. A preview outline is a screen affordance, so it stays
