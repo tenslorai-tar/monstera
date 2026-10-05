@@ -365,7 +365,11 @@ the process count.
 does not owe it.** Its meaning is *hand back what you are holding*, and holding
 is what ADR-0047 removed; a byte-image `engine/apply` writes its result into the
 granted output directory and answers a count, which is that channel's own result
-schema. `CommandExecution<W>` had already declared the asymmetry — `apply`
+schema, **and the characters it drew as boxes** (at most 64 and a count past
+them, required and empty when there is none,
+[ADR-0174](DECISIONS/0174-a-pdfium-apply-answers-the-characters-it-drew-as-boxes.md)):
+only the apply knows what it drew, so the person is told from its answer, and
+`document.execute` answers the same list. `CommandExecution<W>` had already declared the asymmetry — `apply`
 returns a `ByteImage` for a byte-image writer and nothing for a live-session one
 — so **a channel is engine-agnostic when its ANSWER means the same thing, not
 when every engine can be asked it.** The input and output file **names** ride on
@@ -3045,6 +3049,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-06 | **A PDFium apply answers the characters it drew as boxes** (§3's byte-image apply answer; `document.execute`). Part B Phase 1, the owner's Q5: `Applied<'pdfium'>` is `{ image, boxed }`, required; the host's answer caps the list at 64 and counts the rest; the bus and `document.execute` carry it; the boxed-characters dialog names each character and its page. **Rejected:** a query before the edit, a notice outside the answer, keeping the refusal, a general notices field | the byte-image apply answering its image alone (ADR-0047) | [0174](DECISIONS/0174-a-pdfium-apply-answers-the-characters-it-drew-as-boxes.md) |
 | 2026-10-05 | **ADR-0173 corrected: no ToUnicode is written after the save** (§3's in-place editing row). Measured before it was built: PDFium's saved ToUnicode is the loaded font's cmap, and `SetText` draws a character past the BMP as code 0. Such a character is set by `FPDFText_SetCharcodes` with the subset's glyph ids; a box is a one-glyph subset whose cmap maps the real character to the box glyph, uniquely named; the read-back is unchanged, a text page answering such a character as two UTF-16 units in two indices (measured). PDFium's save stays the only writer of the bytes, so a password document takes pieces and boxes. **Rejected:** a ToUnicode written after the save | ADR-0173 Decisions 6 to 8 as first written | [0173](DECISIONS/0173-an-edits-word-its-font-cannot-carry-is-its-own-piece-in-the-resolvers-face.md) |
 | 2026-10-05 | **An edit's word its font cannot carry is its own piece, in the resolver's face** (§3's in-place editing row). Part B Phase 1, the owner's Q5 and Q6: the word, with the space before it, becomes its own text object placed by measured bounds; one unique subset per face per command; a ToUnicode written by us after the save for every font loaded, for characters past the BMP and the real character under a box; the read-back by code point. Measured on PDFium 155 Linux across PDFium, MuPDF and pdf.js. **Rejected:** the whole-run twin, PDFium's ToUnicode under a box, `/ActualText`, one shared box font, writing through MuPDF | ADR-0097's whole-run twin, for edits | [0173](DECISIONS/0173-an-edits-word-its-font-cannot-carry-is-its-own-piece-in-the-resolvers-face.md) |
 | 2026-10-05 | **A credential crosses to a host in the frame, never in a file** (§3.2, §5's host pipe). Stage audit RRRRRRR-1: PDFium's file-routed commands carried the key and a protect's prior carried the earlier passwords, so both reached files the transport writes. The transport lifts every credential-named value out of a file-routed request or answer into the frame and puts it back on the other side, by `CREDENTIAL_NAME`, the rule that already keeps one out of the undo log; the prior names its terms `passwordTerms`. **Rejected:** framing such calls whole, holding the terms in the host, wiping files | ADR-0171's first addendum's *revealed only where a frame is written*, made true | [0171](DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) |
