@@ -61,8 +61,11 @@ export function FieldTextBox({
     className: offer.lines ? `${className} ${className}--lines` : className,
     defaultValue: offer.held,
     style,
+    // ONCE, AT MOUNT, for a box focused before its handler could see the focus. React calls an inline ref again on
+    // every commit, so recording on each call took the half-typed value for the shown one whenever the box rendered
+    // while a person typed, and the blur then sent nothing (QQQQQQQ-10); a later focus records it afresh.
     ref: (element: HTMLInputElement | HTMLTextAreaElement | null) => {
-      if (element !== null) shown.current = element.value;
+      if (element !== null && shown.current === undefined) shown.current = element.value;
     },
     onFocus: (event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       shown.current = event.currentTarget.value;
