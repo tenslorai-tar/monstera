@@ -54,3 +54,12 @@ So on the page a link is invisible, cannot be followed, and once drawn says noth
   scheme rule, and the sign-in's is unchanged.
 - **Outlining links at all times.** Most readers do not want rectangles over every link while reading; the pointer
   over a link still shows it, and the outline is the editing view's.
+
+## Corrections
+
+- **2026-10-05, as built (c02267ff).** Decision 2 names the dialog's buttons *Open in browser* and *Cancel*. The
+  button is *Open link*, because a `mailto:` address opens a mail program rather than a browser, and a refused scheme's
+  dialog has one button, *OK*, since it asks nothing. Decision 5's status message is a toast, *Link added.*
+- **2026-10-05.** Decision 3 says the dialog says a refused scheme "before anything is sent". It does, and the route
+  also refuses to send one whatever the dialog answers, so the dialog is not the only check on the renderer's side
+  (`followLink.test.ts`). `main`'s check remains the one that decides.
