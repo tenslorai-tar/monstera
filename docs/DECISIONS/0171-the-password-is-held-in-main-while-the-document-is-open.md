@@ -335,3 +335,22 @@ encrypted under the new terms.**
   reopen told `as-opened` instead keeps the new encryption.
 - The holder follows the protection: after a protect, the undo of a later terminal command reopens its checkpoint.
   Control: a holder that ignores the protect fails that undo with a password refusal.
+
+*Correction, 2026-10-05, while building Decision 8's point 3:* the prior is not *"the session's protection terms
+before it, or none"*. Measured the same day on this build's MuPDF, in process, on a generated document: a serialise
+with encryption terms installs that encryption in the session's own document, so its trailer gains `/Encrypt` and a
+later save with no terms recorded keeps the **new** key. Recording *none* at the undo therefore restores nothing once
+the protect has drawn, which point 3 makes it do at once.
+
+- The prior is one of two: an earlier protect's **terms**, or **unprotected**, which the undo restores by decrypting in
+  memory wherever the session is encrypted by then. Both are held beside the entry as point 3 says.
+- **A document carrying its own encryption is not captured.** Its prior is that encryption, owner password included,
+  which main never saw and which the protect's first serialise replaces in the session. So its capture refuses and the
+  bus takes a checkpoint: the document's bytes as they stood, encrypted exactly as the file is, so no readable copy is
+  made, and opened at the undo with the key the document was opened with. Point 4 leaves that checkpoint alone, since it
+  is already encrypted.
+- **Consequence, by the owner's rule that no readable copy survives a protect:** a signed document protected and then
+  unprotected by undo comes back decrypted rather than byte for byte, so its next save rewrites the file and the
+  signature no longer covers it; that save asks before it breaks a signature (ADR-0149), as any such save does.
+- The proof list's *"a reopen told `as-opened` instead keeps the new encryption"* control is kept in substance: a
+  session reopened from the protected copy with no terms recorded keeps the protect's encryption.
