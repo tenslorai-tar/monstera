@@ -1,4 +1,6 @@
-import { UNWRITABLE_CHARACTERS_MAX, UNWRITABLE_CHARACTERS_MAX_UNITS } from '@monstera/contract';
+// THE HOST ENTRY, never the root: the PDFium host loads this module, and the root builds the renderer's channel map
+// (`proof:hostload`).
+import { UNWRITABLE_CHARACTERS_MAX, UNWRITABLE_CHARACTERS_MAX_UNITS } from '@monstera/contract/host';
 import type { EditStep } from '@monstera/shared';
 
 /**
