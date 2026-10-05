@@ -119,6 +119,13 @@ So, in place of Decisions 6 to 8:
 8. **The read-back reads by code point**, `FPDFText_GetUnicode` per character, live and from the saved bytes, never one
    UTF-16 unit per index, and nothing is saved that it has not read.
 
+**Note on Decision 8, the same day, measured while it was being built** (scratch probe `astralIndices.mjs`): a text page
+indexes U+10140 set by glyph id as two characters, `D800` then `DD40`, from `FPDFText_GetUnicode` and
+`FPDFText_GetText` alike. So the read-back's one UTF-16 unit per index already reads such a character whole, and Decision
+8 as written above changes nothing in it: a read by `FPDFText_GetUnicode` was built, answered the same units, and was
+taken out again. The read-back stays as ADR-0169 left it; what makes a character past the BMP read right is Decision 6's
+setter alone, and `proof:pdfiumcommand` refuses the edit when the setter is `FPDFText_SetText` again.
+
 **Rejected, in addition:** writing a ToUnicode after the save. It makes a character past the BMP read right while it
 draws as `.notdef`, it needs the saved bytes of a password document decrypted and encrypted again, and it is a second
 writer of the bytes PDFium has just written (B3).
