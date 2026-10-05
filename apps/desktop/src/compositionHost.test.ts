@@ -1363,6 +1363,12 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(pdfium.passwords.every((sent) => sent === PASSWORD)).toBe(true);
     expect(opens.slice(2)).toStrictEqual(opens.slice(2).map(() => PASSWORD));
     expect(opens.length).toBeGreaterThan(2);
+    // AND NO FILE ON THE DISK HELD IT (ADR-0171's correction, RRRRRRR-1): PDFium's commands take their params from a
+    // file, and the key rode in the frame beside each one. CONTROL: those files exist and are the commands' params, so
+    // an empty or unrelated list cannot pass for one that held no key.
+    const onDisk = second.harness.filesOnDisk;
+    expect(onDisk.filter((text) => text.includes('"replaceTextObject"')).length).toBeGreaterThanOrEqual(2);
+    expect(onDisk.filter((text) => text.includes(PASSWORD))).toStrictEqual([]);
   });
 
   it('routes editTextBlock to the PDFium host, and its "font cannot carry it" refusal reaches the renderer BY NAME', async () => {

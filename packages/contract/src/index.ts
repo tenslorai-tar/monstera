@@ -19,6 +19,16 @@ export {
 } from './channel.js';
 export { CREDENTIAL_NAME, credentialFields } from './credentialFields.js';
 export {
+  LIFTED_CREDENTIALS_MAX,
+  PROTECTION_TERMS_MAX,
+  liftCredentials,
+  liftedCredentialSchema,
+  liftedCredentialsSchema,
+  restoreCredentials,
+  type Lifted,
+  type LiftedCredential,
+} from './liftedCredentials.js';
+export {
   type RouteViolation,
   WORST_BYTES_PER_CHAR,
   hostRouteViolations,

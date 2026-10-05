@@ -141,7 +141,9 @@ export const applySetDocumentProtection: Apply<'mupdf', 'setDocumentProtection'>
  * The protection a session stood with before a protect, which its undo restores
  * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8).
  *
- * - `protected`: an earlier protect's terms, passwords included, so this is held beside the log entry and never in it.
+ * - `protected`: an earlier protect's terms, passwords included, so this is held beside the log entry and never in it,
+ *   and named `passwordTerms` so the host transport lifts it out of every file it writes (ADR-0171's correction of
+ *   2026-10-05): the credential rule reads a name, and `terms` told it nothing.
  * - `unprotected`: no terms, and the document is not encrypted. Restored as the document unprotected: decrypted in
  *   memory where the session is encrypted by then (the protect's own drawn serialise does that, and so does a renewal
  *   or a rebuild from a protected copy); otherwise nothing is recorded, so an incremental save stays possible.
@@ -153,7 +155,7 @@ export const applySetDocumentProtection: Apply<'mupdf', 'setDocumentProtection'>
  * undo with the key the document was opened with.
  */
 export type PriorProtection =
-  | { readonly standing: 'protected'; readonly terms: string }
+  | { readonly standing: 'protected'; readonly passwordTerms: string }
   | { readonly standing: 'unprotected' };
 
 /**
@@ -164,7 +166,7 @@ export const captureSetDocumentProtection = async (
   session: MupdfSession,
 ): Promise<CaptureResult<PriorProtection>> => {
   const { terms, encrypted } = await sessionProtection(session);
-  if (terms !== undefined) return { captured: true, prior: { standing: 'protected', terms } };
+  if (terms !== undefined) return { captured: true, prior: { standing: 'protected', passwordTerms: terms } };
   if (!encrypted) return { captured: true, prior: { standing: 'unprotected' } };
   return {
     captured: false,
@@ -183,7 +185,7 @@ export const invertSetDocumentProtection = async (
   prior: PriorProtection,
 ): Promise<void> => {
   if (prior.standing === 'protected') {
-    await restoreSessionProtection(session, prior.terms);
+    await restoreSessionProtection(session, prior.passwordTerms);
     return;
   }
   const { encrypted } = await sessionProtection(session);

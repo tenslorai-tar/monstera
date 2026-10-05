@@ -9,6 +9,7 @@ import {
   MAX_IMPORT_IMAGES,
   MAX_PAGE_COORDINATE,
   encodeFrame,
+  liftCredentials,
 } from '@monstera/contract';
 
 import { type ComposePageSize, ComposeRefused, type ComposedSource } from '../composeOutcome.js';
@@ -252,10 +253,12 @@ function request(
 ): Uint8Array {
   let carried: Record<string, unknown> = { params };
   if (route.paramsIn !== undefined) {
-    const bytes = new TextEncoder().encode(JSON.stringify(params));
+    // LIFTED AS MAIN LIFTS THEM (ADR-0171's correction), so this frames exactly what main frames.
+    const { filed, credentials } = liftCredentials(params);
+    const bytes = new TextEncoder().encode(JSON.stringify(filed));
     route.paramsIn.files.read.set(`${AREA.snapshotDirectory}|${route.paramsIn.name}`, bytes);
     const session = (params as { readonly session: string }).session;
-    carried = { paramsFile: { session, name: route.paramsIn.name, bytes: bytes.byteLength } };
+    carried = { paramsFile: { session, name: route.paramsIn.name, bytes: bytes.byteLength, credentials } };
   }
   return encodeFrame(
     new TextEncoder().encode(

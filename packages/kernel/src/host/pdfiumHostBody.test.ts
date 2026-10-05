@@ -5,6 +5,7 @@ import {
   ENGINE_HOST_FRAME_MAX_BYTES,
   FRAME_HEADER_BYTES,
   encodeFrame,
+  liftCredentials,
   replacementFieldsOf,
 } from '@monstera/contract';
 
@@ -328,10 +329,12 @@ function request(id: string, channel: string, params: unknown, answerInto?: stri
   const declared: ChannelMap = pdfiumChannels;
   if (declared[channel]?.request === 'file') {
     if (files === undefined) throw new Error(`"${channel}" takes its params in a file; hand the case's files`);
-    const bytes = new TextEncoder().encode(JSON.stringify(params));
+    // LIFTED AS MAIN LIFTS THEM (ADR-0171's correction): the key travels in the frame and the file never holds it.
+    const { filed, credentials } = liftCredentials(params);
+    const bytes = new TextEncoder().encode(JSON.stringify(filed));
     files.read.set(`${AREA.snapshotDirectory}|${PARAMS}`, bytes);
     const session = (params as { readonly session: string }).session;
-    carried = { paramsFile: { session, name: PARAMS, bytes: bytes.byteLength } };
+    carried = { paramsFile: { session, name: PARAMS, bytes: bytes.byteLength, credentials } };
   }
   return encodeFrame(
     new TextEncoder().encode(
@@ -576,6 +579,10 @@ describe('the PDFium host body', () => {
 
     // CONTROL: the apply case above sends `null` and records no key, so this separates a carried key from none.
     expect(calls).toStrictEqual(['apply:4,5|key:sample-only-0171', 'text-runs:0:4,5|key:sample-only-0171']);
+    // AND THE PARAMS FILE NEVER HELD IT (ADR-0171's correction, RRRRRRR-1): the key the handler used came in the frame.
+    const paramsFile = new TextDecoder().decode(files.read.get(`${AREA.snapshotDirectory}|${PARAMS}`));
+    expect(paramsFile).toContain('"from"');
+    expect(paramsFile).not.toContain('sample-only-0171');
   });
 
   it('refuses an apply whose input file is gone, as asset-missing rather than internal', async () => {
@@ -647,7 +654,7 @@ describe('the PDFium host body', () => {
     // THE PRIOR STATE CROSSES IN A FILE (ADR-0125's addendum): it grows with the pages a command touches.
     const written = files.written.get(`${AREA.outputDirectory}|${ANSWER}`);
     expect(written, 'the capture was written into the granted OUTPUT directory under the name main minted').toBeDefined();
-    expect(answerIn(stream.sent[1])).toStrictEqual({ id: 'c1', answerFile: { bytes: written?.length } });
+    expect(answerIn(stream.sent[1])).toStrictEqual({ id: 'c1', answerFile: { bytes: written?.length, credentials: [] } });
     expect(JSON.parse(new TextDecoder().decode(written))).toMatchObject({
       ok: true,
       value: {
@@ -677,7 +684,7 @@ describe('the PDFium host body', () => {
     // answered 663,815 bytes against a 262,144-byte frame, and the host ended rather than send it.
     const written = files.written.get(`${AREA.outputDirectory}|${ANSWER}`);
     expect(written, 'the answer was written into the granted OUTPUT directory under the name main minted').toBeDefined();
-    expect(answerIn(stream.sent[1])).toStrictEqual({ id: 't1', answerFile: { bytes: written?.length } });
+    expect(answerIn(stream.sent[1])).toStrictEqual({ id: 't1', answerFile: { bytes: written?.length, credentials: [] } });
     expect(JSON.parse(new TextDecoder().decode(written))).toMatchObject({
       ok: true,
       // THE TEXT AND THE EXTENT CROSS, not merely the indices. The wire

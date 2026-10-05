@@ -634,7 +634,7 @@ describe('a file-routed answer (ADR-0125)', () => {
     const written = h.files.get('abc123');
     expect(written?.params).toStrictEqual({ session: 's1', size: 300_000 });
     expect(written?.bytes.byteLength).toBeGreaterThan(ENGINE_HOST_FRAME_MAX_BYTES);
-    expect(h.written()).toStrictEqual([{ id: 'c1', answerFile: { bytes: written?.bytes.byteLength } }]);
+    expect(h.written()).toStrictEqual([{ id: 'c1', answerFile: { bytes: written?.bytes.byteLength, credentials: [] } }]);
     expect(JSON.parse(textDecoder.decode(written?.bytes))).toStrictEqual({ ok: true, value: { blob: 'x'.repeat(300_000) } });
   });
 
@@ -709,7 +709,7 @@ describe("a file-requested call (ADR-0125's addendum)", () => {
   function staged(h: ReturnType<typeof fileHarness>, params: unknown, session = 's1') {
     const bytes = encoder.encode(JSON.stringify(params));
     h.snapshots.set(`${session}|${NAME}`, bytes);
-    return { session, name: NAME, bytes: bytes.byteLength };
+    return { session, name: NAME, bytes: bytes.byteLength, credentials: [] };
   }
 
   /** The connection ended as `malformed-request`, for the reason `rule` names, and answered nothing. */
@@ -782,7 +782,7 @@ describe("a file-requested call (ADR-0125's addendum)", () => {
 
   it('ends the connection when the named file is not there', async () => {
     const h = fileHarness();
-    h.send({ id: 'r1', channel: 'fixture.request', paramsFile: { session: 's1', name: NAME, bytes: 10 } });
+    h.send({ id: 'r1', channel: 'fixture.request', paramsFile: { session: 's1', name: NAME, bytes: 10, credentials: [] } });
     await settleWrites();
 
     refusedBy(h, /could not be read: Error: no such file/u);

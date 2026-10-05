@@ -1,7 +1,15 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ENGINE_HOST_FRAME_MAX_BYTES, FrameDecoder, answerCrossesInFile, encodeFrame } from '@monstera/contract';
+import {
+  ENGINE_HOST_FRAME_MAX_BYTES,
+  FrameDecoder,
+  type LiftedCredential,
+  answerCrossesInFile,
+  encodeFrame,
+  liftCredentials,
+  restoreCredentials,
+} from '@monstera/contract';
 import {
   type HostTermination,
   INTEGRITY_LOW,
@@ -71,6 +79,11 @@ export interface HostHarness {
   readonly calls: string[];
   readonly surfaces: EngineHostConnectionSurfaces;
   readonly endings: HostTermination[];
+  /**
+   * Every file the transport put on the disk, as text, in order: each params file this peer read and each answer file
+   * it wrote. What a case reads to know what reached the disk, which no frame shows (ADR-0171's correction).
+   */
+  readonly filesOnDisk: string[];
   /** Posts a reader message, as the worker thread would. */
   readonly post: (message: ReaderMessage) => void;
   /**
@@ -145,10 +158,20 @@ export function hostHarness(
     if (area === undefined) throw new Error(`the fake peer holds no area for session ${JSON.stringify(session)}`);
     return area;
   };
-  const writeAnswer = (params: unknown, name: string, body: unknown): number => {
-    const bytes = new TextEncoder().encode(JSON.stringify(body));
+  const filesOnDisk: string[] = [];
+  // THE ANSWER WITHOUT ITS CREDENTIALS, which go in the notice's frame, as the host's runtime does it (ADR-0171).
+  const writeAnswer = (params: unknown, name: string, body: unknown): { bytes: number; credentials: readonly LiftedCredential[] } => {
+    const { filed, credentials } = liftCredentials(body);
+    const text = JSON.stringify(filed);
+    const bytes = new TextEncoder().encode(text);
     writeFileSync(join(areaOf((params as { session?: unknown }).session).output, name), bytes);
-    return bytes.length;
+    filesOnDisk.push(text);
+    return { bytes: bytes.length, credentials };
+  };
+  const readParams = (path: string): unknown => {
+    const text = readFileSync(path, 'utf8');
+    filesOnDisk.push(text);
+    return JSON.parse(text);
   };
   const calls: string[] = [];
   const endings: HostTermination[] = [];
@@ -228,7 +251,7 @@ export function hostHarness(
               id: string;
               channel: string;
               params?: unknown;
-              paramsFile?: { session: string; name: string };
+              paramsFile?: { session: string; name: string; credentials: readonly LiftedCredential[] };
               answerInto?: string;
             };
             calls.push(`peer.request:${request.channel}`);
@@ -239,9 +262,10 @@ export function hostHarness(
             const params =
               request.paramsFile === undefined
                 ? request.params
-                : (JSON.parse(
-                    readFileSync(join(areaOf(request.paramsFile.session).snapshot, request.paramsFile.name), 'utf8'),
-                  ) as unknown);
+                : restoreCredentials(
+                    readParams(join(areaOf(request.paramsFile.session).snapshot, request.paramsFile.name)),
+                    request.paramsFile.credentials,
+                  );
             const opening = openedArea(params);
             const body = failures.peer?.(request.channel, params);
             if (body === null || body === undefined) continue;
@@ -251,7 +275,7 @@ export function hostHarness(
             }
             const envelope =
               request.answerInto !== undefined && answerCrossesInFile(body)
-                ? { id: request.id, answerFile: { bytes: writeAnswer(params, request.answerInto, body) } }
+                ? { id: request.id, answerFile: writeAnswer(params, request.answerInto, body) }
                 : { id: request.id, body };
             const answer = encodeFrame(new TextEncoder().encode(JSON.stringify(envelope)), ENGINE_HOST_FRAME_MAX_BYTES);
             // DELIVERED ON A MICROTASK, as the reader thread would: answering
@@ -342,6 +366,7 @@ export function hostHarness(
     calls,
     surfaces,
     endings,
+    filesOnDisk,
     post: (message) => {
       for (const sink of sinks.message) sink(message);
     },

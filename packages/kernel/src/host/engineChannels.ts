@@ -45,6 +45,7 @@ import {
   movePageSchema,
   ocrLanguagesSchema,
   PAGE_IMAGE_FORMATS,
+  PROTECTION_TERMS_MAX,
   placeAnnotationSchema,
   styleAnnotationSchema,
   editAnnotationTextSchema,
@@ -731,13 +732,6 @@ const priorPageTransitionSchema = z
   .strict();
 
 /**
- * The longest protection terms a capture may carry: `protectionOptions`' string with two passwords at their bound and
- * every character a doubled quote, plus the method, the permissions and the separators, under 128 characters together.
- * Derived from the password bound, so a longer password allowed tomorrow widens this with it.
- */
-export const PROTECTION_TERMS_MAX = 4 * DOCUMENT_PASSWORD_MAX_CHARS + 128;
-
-/**
  * Prior state, tagged by the command kind it belongs to.
  *
  * The tag is not redundant with the request's own `command.kind`. A response is
@@ -775,12 +769,14 @@ const capturedPriorSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('setDocumentProtection'),
       /**
-       * The protection the session stood with (ADR-0171 Decision 8). Its terms can carry a password, which crosses to
-       * main as the command's own did, and main holds it beside the log entry in memory and never in it.
+       * The protection the session stood with (ADR-0171 Decision 8). Its terms carry the passwords, so they are NAMED
+       * as a credential: a capture answers through a file and an invert takes its params from one, and the transport
+       * lifts every credential-named value into the frame (ADR-0171's correction of 2026-10-05). Main holds them beside
+       * the log entry in memory and never in it. `PROTECTION_TERMS_MAX` is the contract's, so the frame bounds the same.
        */
       prior: z.discriminatedUnion('standing', [
         z
-          .object({ standing: z.literal('protected'), terms: z.string().min(1).max(PROTECTION_TERMS_MAX) })
+          .object({ standing: z.literal('protected'), passwordTerms: z.string().min(1).max(PROTECTION_TERMS_MAX) })
           .strict(),
         z.object({ standing: z.literal('unprotected') }).strict(),
       ]),
