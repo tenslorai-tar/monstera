@@ -183,3 +183,16 @@ from the one holder. It still carries no identity: it says how to open the bytes
 - **Handing the writer the document's id.** ADR-0039 removed it from that slot, and §3's account of why a byte-image
   host holds no per-document table rests on its absence.
 - **A decrypted image for PDFium.** It is a plaintext copy in a granted directory, the thing this ADR exists to stop.
+
+### Correction to the addendum, 2026-10-05, before anything was built on it
+
+Two statements above were written before the code they describe was read through, and both are wrong.
+
+- **`HeldPassword` is in `packages/shared`, not `packages/kernel`.** `engineSessions.ts` takes no value from the
+  kernel's barrel (its header measures why), and it holds the password; `shared` is a package everything may import.
+  It holds UTF-16 code units rather than UTF-8 bytes, so it needs nothing from a platform (`shared` declares no DOM
+  or Node library).
+- **The key is in the session type at BOTH levels, not only in `main`.** The host's own PDFium specs open the bytes
+  they are handed, five of them through a copy each of one helper, so a key that stopped at the host's frame would
+  reach none of them. `WriterSession['pdfium']` is `ImageSession` itself, which the spec, the host's execution and
+  `main`'s all take; the five helpers become one opener that takes the key.
