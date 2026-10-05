@@ -207,6 +207,9 @@ the step's rather than the code's.
 
 ## The owner's answer, 2026-10-05: a Replace that would need the line refuses
 
+**This supersedes Decision 6's first and third bullets**: a replacement is not written in its standard-font twin and does
+not move the runs after it. Its read-back (the second bullet), the empty replacement and *nothing to replace* stand.
+
 P0 asked that Replace take the editor's safety: its twin-font fallback, its read-back, and moving the runs after a
 changed word. The owner's answer: *"not in P0e. For now, Replace refuses safely whenever it would need whole-line
 knowledge: typed words kept, the reason shown, nothing changed. The real fix belongs to P1 (fonts) and P2
