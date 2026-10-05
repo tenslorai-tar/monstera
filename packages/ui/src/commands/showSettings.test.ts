@@ -366,7 +366,7 @@ describe('showSettingsCommand', () => {
     });
 
     it('counts each check, and NO KEY travels in a reply', async () => {
-      // A KEY IS IN THE INPUT (audit P-4): typed before the first check and reported WITH the second, so a reply that
+      // A KEY IS IN THE INPUT (audit PPPPPPP-3): typed before the first check and reported WITH the second, so a reply that
       // carried a report's secrets, or the stored ones, would carry it. Without one the absence below could not fail.
       const typed = { values: {}, secrets: { 'ai.openai-key': 'example-key-typed' } };
       const { run, replies } = harness({

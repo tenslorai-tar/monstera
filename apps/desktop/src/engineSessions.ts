@@ -847,42 +847,24 @@ export class EngineSessions implements EngineSessionSource {
   };
 
   /**
-   * Records how to end what a document holds outside the index.
+   * Opens one document's sessions again and lets the old ones go only once the new ones exist — `recycle` with the
+   * order reversed, for a caller that must not leave the document without a session
+   * ([ADR-0164](../../../docs/DECISIONS/0164-a-removals-save-also-renews-the-hosts-copy-and-the-recent-picture.md)).
    *
-   * ## Why this exists at all
+   * **The release is the new open's to run**: the entry keeps the old one, and `holdRelease`, which the open calls
+   * once its session exists, runs it. So an open that fails — a saved file that opens only with a password — leaves
+   * the old session and its release exactly as they were, and the failure is the caller's to classify.
    *
-   * `DocumentTeardown` is documented as releasing *"whatever a document holds
-   * outside this index — the engine session, above all"*, and until this it
-   * released nothing: {@link EngineSessions.releaseOnClose} deleted a map entry.
-   * The granted directory pair therefore OUTLIVED the document that created it,
-   * leaving a readable copy of the user's document where the contained host
-   * could reach it until the next launch swept the session root.
-   *
-   * The pair was never unowned. `remoteMupdfLifecycle.close` ends the session on
-   * the host and removes the pair, and it had **no caller**: `remoteMupdfWriter`
-   * destructured `serialise` and dropped it. So the fix is not a new mechanism,
-   * it is connecting the one that was already written to the seam already
-   * documented as its home.
-   *
-   * ## A SECOND registration REPLACES, and releases what it replaces
-   *
-   * This threw, on the reasoning that one document has one session-opening so a
-   * second owner means one of them never runs. That reasoning was wrong, and CI
-   * found it: **`reopen` is `create`**. A host death rebuilds every affected
-   * document's session by re-entering the same path, so a document legitimately
-   * acquires a new session — and with it a new granted pair — while its old
-   * registration is still held. The throw turned ordinary recovery into
-   * `MissingSessionError` on the next command.
-   *
-   * Replacing alone would be the other half of the same bug: the previous pair
-   * is a real directory holding a readable copy of the user's document, and
-   * dropping the reference orphans it until the next launch's sweep. So the
-   * previous release RUNS, and this is awaited so a caller that rebuilds twice
-   * cannot interleave two releases for one document.
-   *
-   * A rebuild is the only way here, which is why nothing distinguishes it from
-   * a first registration: the entry either holds a release or it does not.
+   * @param docId the open document
+   * @param reopen builds its sessions again, inside its lane
    */
+  async renew(docId: DocId, reopen: (docId: DocId) => Promise<DocumentSessions>): Promise<void> {
+    if (!this.#entries.has(docId)) return;
+    const sessions = await reopen(docId);
+    const entry = this.#entries.get(docId);
+    if (entry !== undefined) entry.sessions = sessions;
+  }
+
   /**
    * Drops one document's sessions and opens them again — invariant 22's
    * *"dropped and rebuilt at any point between commands"*, from the side that
@@ -912,25 +894,6 @@ export class EngineSessions implements EngineSessionSource {
    * @param docId the open document
    * @param reopen builds its sessions again, inside its lane
    */
-  /**
-   * Opens one document's sessions again and lets the old ones go only once the new ones exist — `recycle` with the
-   * order reversed, for a caller that must not leave the document without a session
-   * ([ADR-0164](../../../docs/DECISIONS/0164-a-removals-save-also-renews-the-hosts-copy-and-the-recent-picture.md)).
-   *
-   * **The release is the new open's to run**: the entry keeps the old one, and `holdRelease`, which the open calls
-   * once its session exists, runs it. So an open that fails — a saved file that opens only with a password — leaves
-   * the old session and its release exactly as they were, and the failure is the caller's to classify.
-   *
-   * @param docId the open document
-   * @param reopen builds its sessions again, inside its lane
-   */
-  async renew(docId: DocId, reopen: (docId: DocId) => Promise<DocumentSessions>): Promise<void> {
-    if (!this.#entries.has(docId)) return;
-    const sessions = await reopen(docId);
-    const entry = this.#entries.get(docId);
-    if (entry !== undefined) entry.sessions = sessions;
-  }
-
   async recycle(docId: DocId, reopen: (docId: DocId) => Promise<DocumentSessions>): Promise<void> {
     const entry = this.#entries.get(docId);
     if (entry === undefined) return;
@@ -977,6 +940,43 @@ export class EngineSessions implements EngineSessionSource {
     entry.sessions = await reopen(docId);
   }
 
+  /**
+   * Records how to end what a document holds outside the index.
+   *
+   * ## Why this exists at all
+   *
+   * `DocumentTeardown` is documented as releasing *"whatever a document holds
+   * outside this index — the engine session, above all"*, and until this it
+   * released nothing: {@link EngineSessions.releaseOnClose} deleted a map entry.
+   * The granted directory pair therefore OUTLIVED the document that created it,
+   * leaving a readable copy of the user's document where the contained host
+   * could reach it until the next launch swept the session root.
+   *
+   * The pair was never unowned. `remoteMupdfLifecycle.close` ends the session on
+   * the host and removes the pair, and it had **no caller**: `remoteMupdfWriter`
+   * destructured `serialise` and dropped it. So the fix is not a new mechanism,
+   * it is connecting the one that was already written to the seam already
+   * documented as its home.
+   *
+   * ## A SECOND registration REPLACES, and releases what it replaces
+   *
+   * This threw, on the reasoning that one document has one session-opening so a
+   * second owner means one of them never runs. That reasoning was wrong, and CI
+   * found it: **`reopen` is `create`**. A host death rebuilds every affected
+   * document's session by re-entering the same path, so a document legitimately
+   * acquires a new session — and with it a new granted pair — while its old
+   * registration is still held. The throw turned ordinary recovery into
+   * `MissingSessionError` on the next command.
+   *
+   * Replacing alone would be the other half of the same bug: the previous pair
+   * is a real directory holding a readable copy of the user's document, and
+   * dropping the reference orphans it until the next launch's sweep. So the
+   * previous release RUNS, and this is awaited so a caller that rebuilds twice
+   * cannot interleave two releases for one document.
+   *
+   * A rebuild is the only way here, which is why nothing distinguishes it from
+   * a first registration: the entry either holds a release or it does not.
+   */
   async holdRelease(docId: DocId, release: () => Promise<void>): Promise<void> {
     const entry = this.#entries.get(docId);
     // NOT AN ERROR. The document closed while its session was opening, which is

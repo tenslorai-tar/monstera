@@ -135,11 +135,6 @@ export function createRecentPictures(deps: {
   return pictures;
 }
 
-/**
- * Pictures that are never made: what a graph with no folder to keep them in is given — the composition
- * root's position when `entry.ts` passed none, and a handler graph built for some OTHER channel — so it
- * neither draws a page nor needs a document service that can. Every card it answers for shows the placeholder.
- */
 /** What a failure is called in the log: a system error's code (`ENOSPC`), else its name. Never its message. */
 function errorCode(cause: unknown): string {
   if (!(cause instanceof Error)) return typeof cause;
@@ -147,6 +142,11 @@ function errorCode(cause: unknown): string {
   return typeof code === 'string' ? code : cause.name;
 }
 
+/**
+ * Pictures that are never made: what a graph with no folder to keep them in is given — the composition
+ * root's position when `entry.ts` passed none, and a handler graph built for some OTHER channel — so it
+ * neither draws a page nor needs a document service that can. Every card it answers for shows the placeholder.
+ */
 export const NO_RECENT_PICTURES: RecentPictures = {
   capture: () => Promise.resolve(),
   retake: () => Promise.resolve(),

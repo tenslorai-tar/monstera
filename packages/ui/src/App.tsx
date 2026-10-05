@@ -3483,14 +3483,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   }, [settings]);
 
   /**
-   * A version that moved underneath a BACKGROUND document's view, recorded without bringing it forward.
-   *
-   * `opened` is what the active layer is told, and it activates: right for the document on show, wrong for
-   * one behind it, whose parser noticing a moved version must not switch the reader's tab.
+   * A document's transport reported its version moved: the tab and the store take it, for the layer on show and every
+   * layer behind alike, and nothing is brought forward (CR-DOC-03). The layer on show was handed `opened`, which
+   * leaves an existing tab as it is, so the move was dropped and its view stayed bound to a version main answers every
+   * range stale at.
    */
-  // A DOCUMENT'S TRANSPORT REPORTED ITS VERSION MOVED: the tab and the store take it, for the layer on show and every
-  // layer behind alike (CR-DOC-03). The layer on show was handed `opened`, which leaves an existing tab as it is, so
-  // the move was dropped and its view stayed bound to a version main answers every range stale at.
   const versionMoved = useCallback(
     (next: OpenedDocument): void => {
       setTabs((current) => current.map((tab) => (tab.docId === next.docId ? { ...tab, ...next } : tab)));

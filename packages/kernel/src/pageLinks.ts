@@ -311,8 +311,8 @@ function linksOn(document: mupdf.PDFDocument, page: number, bound: number): List
       const [x0, y0, x1, y1] = link.getBounds();
       const bounds: LinkBounds = { x0, y0, x1, y1 };
       // SHOWN SHORTENED, never refused: one tracking link past the wire's bound made every link on the page
-      // unreadable (`shownName.ts`). Nothing follows this text — the Links panel shows an external link and offers
-      // nothing to press (invariant 24) — so the ellipsis is the whole of what a shortened URI changes.
+      // unreadable (`shownName.ts`). Nothing follows THIS text: a link a person follows is read again in full by its
+      // place, through `engine/link-address` (ADR-0167), so the ellipsis changes only what is shown.
       // RESOLVED HERE when internal, because the engine is the only thing that knows how to turn a destination into
       // a page — a named destination, an explicit /XYZ, or a page reference all arrive as one string and all mean a
       // page.

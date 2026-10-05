@@ -2537,9 +2537,8 @@ export const engineChannels = {
   ),
 
   /**
-   * One page's filled shapes and their colours — what a table cell's background is joined from
-   * (`cellFills.ts`). A shape, not MuPDF's own format, so the host builds it and the schema bounds
-   * it: the count, each coordinate, and each channel.
+   * One external link's address in full, named by its place among the page's links, so `main` reads
+   * what a person asked to follow from the document rather than from the renderer (ADR-0167).
    */
   'engine/link-address': fileAnswered(
     'Reads one external link’s address in full, by its place among the page’s links, for a person following it.',
@@ -2557,6 +2556,11 @@ export const engineChannels = {
     ['no-such-session', 'no-such-link', 'address-too-long'],
   ),
 
+  /**
+   * One page's filled shapes and their colours — what a table cell's background is joined from
+   * (`cellFills.ts`). A shape, not MuPDF's own format, so the host builds it and the schema bounds
+   * it: the count, each coordinate, and each channel.
+   */
   'engine/page-fills': fileAnswered(
     'Reads one page’s filled shapes from a session this host holds.',
     z

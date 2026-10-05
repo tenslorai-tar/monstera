@@ -892,6 +892,166 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-05 — Stage audit of `8f322ba7..974df9f5` — findings QQQQQQQ-1 to QQQQQQQ-22
+
+66 commits, 200 files: the end of work/cloud-4 (11-MEDIUM's CR-COR, CR-SEC, CR-DOC and CR-NAT items, Group 10 and
+ADR-0165, Part A's A1 to A3, 14c, 14d and 14h with ADR-0166 to ADR-0168) and the start of work/cloud-5-text-edit (the
+Type 3 research unit, ADR-0169 and its correction). Owed because Part B Phase 0's commit would take the range to 218
+files. Label Q: P is the highest on main and on every branch, read from each branch's JOURNAL. The commits were read
+one by one through `git show` by four readers, each given a quarter of the range, and every finding below was checked at
+its file by me before it was recorded; none was taken on a reader's word. Behaviour findings were confirmed by reading
+the code path, and are marked *read* where no run was made.
+
+**QQQQQQQ-1** (medium, closed in this commit): the amendment log in `docs/ARCHITECTURE.md` has not been a table since
+`aff65993`. Each new row went between the header and its `|---|` separator, so the header was followed by a row rather
+than a delimiter, and the whole log rendered as text. Four rows did it, the last of them ADR-0169's, all mine. The
+separator follows the header again. No check reads the table's form; the proposal is that `documentConsistency.mjs`
+require the separator on the line after the header, which is the owner's because it is that hook's rule.
+
+**QQQQQQQ-2** (medium, closed in this commit): ADR-0169's correction (`974df9f5`) went in without its index row naming
+it, the rule `documentConsistency.mjs` enforces and PPPPPPP-10 recorded for the fourth range running; Guards would have
+been red on the push. ADR-0009 §9, which ADR-0169 amends, said nothing of it. The row names the correction, ADR-0009
+carries an *Amended by ADR-0169* section, and its row says so.
+
+**QQQQQQQ-3** (medium, closed in this commit): §3.2's paragraph for ADR-0169 still read as a comparison by position after
+the correction made it a multiset. It is the living law, so its body is edited to say how the read-back compares.
+
+**QQQQQQQ-4** (medium, closed in this commit): `03c06040` and `3c07b811` removed the too-many-columns refusal, and the two
+help articles still told a person a wide table stops the import (`pdf-table-from-csv.md`, `pdf-from-markdown.md`).
+Both say what the table does now.
+
+**QQQQQQQ-5** (low, closed in this commit): three doc blocks above the wrong declaration, the shape CLAUDE.md names.
+`engine/link-address` carried `engine/page-fills`' (`61b7e6d2`); `errorCode` sat under `NO_RECENT_PICTURES`' (`0af4d721`);
+and `renew` (`668aee16`) sat under `recycle`'s, whose release-before-reopen paragraph says the opposite of what `renew`
+does, with `holdRelease`'s block stranded above both since before this range. Each is above its own declaration.
+
+**QQQQQQQ-6** (low, closed in this commit): two comments the range made false. `pageLinks.ts` said nothing follows a
+link's text and the Links panel offers nothing to press (`c02267ff` made both untrue); `App.tsx`'s `versionMoved` kept a
+JSDoc about background documents only, with the correction left as a line comment under it (`c05ebbeb`).
+
+**QQQQQQQ-7** (low, closed here and in the next commit): `3a98b7a1` labelled its cases *audit P-1* to *P-8*, and from
+P-3 on each named the next finding of PPPPPPP's numbering, so six cross-references resolved to the wrong finding. Each
+now carries the full label; the UI `documentCommands.test.ts` holds a staged change of the next commit, so its two lines
+land there.
+
+**QQQQQQQ-8** (high, open, fixed next): a copy of a document's previous version survives a removal's save.
+`cf51bac4` copies the replaced file to `<file>.monstera-previous` and leaves it there when the backup rotation is
+refused after the save has landed (`atomicWrite.ts`), and nothing records it in the backup ledger. A removal's save
+keeps no backup and `#clearCopies` (`documentCommands.ts`) walks only the backup and retired names, so a redaction or
+Sanitize saved after such a refusal leaves Monstera's copy of the unredacted file beside it, against ADR-0139 and
+ADR-0164. Read, both halves. It is in work/cloud-4's final sha.
+
+**QQQQQQQ-9** (high, open, fixed next): a burn-in misses copies of a burned page's text in two places ADR-0163 promises
+to reach. `removeOtherCopies` (`pageRedact.ts`, `8f399989`) reads the property lists from the page's own `/Resources`
+only, so a page inheriting them from `/Pages` keeps their alternates, and it finds tagged content by the page's
+`/StructParents`, so content inside a Form XObject, which has its own, keeps its element's `/ActualText` and `/Alt`. Read.
+It is in work/cloud-4's final sha.
+
+**QQQQQQQ-10** (medium-high, open, fixed next): a value typed into a form field can be dropped. `FieldTextBox`
+(`FieldControls.tsx`, `ce905de2` and `a5639911`) records what it showed through an inline `ref` callback, which React
+calls again on every commit, so a re-render while the person types records the typed value as shown, and the blur
+compares it with itself and sends no fill. Read. It is in work/cloud-4's final sha.
+
+**QQQQQQQ-11** (medium, open): a byte-image command makes a document held in a file resident in `main`, past the
+ceiling. `commandBus.ts`' byte-image path installs through `replaceCanonicalImage`, which writes memory without asking
+`#heldInMemory` (`documentService.ts`), whose comment says it is the rule at every replacement; ADR-0165's *not reached*
+list does not name PDFium or pdf-lib commands. Read. The root is that a byte-image result arrives in `main` as bytes, so
+the full fix is the hosted result ADR-0121 Decision 3 gives MuPDF; the replacement keeping the rule is the first half.
+
+**QQQQQQQ-12** (medium, open): CR-SEC-13 was closed at one of its two sites. `acceptAnswer` (`boundary.ts`) throws with
+zod's message, which names any key a strict schema refused, so a host's chosen key names reach `main`'s diagnostics by
+the client's envelope parse (`132d8b69` fixed the frame parse). Read.
+
+**QQQQQQQ-13** (medium, open): `at-capacity` now means the disk is full (`cc276f43`), and five strings and *Open a PDF*
+still tell a person to close a document, which frees no disk when that document is held in memory.
+
+**QQQQQQQ-14 to -18** (low to medium, open, read, recorded for their rows): a host ending announced before a document's
+`begin`, or a `shutdown` ending, leaves it neither sessioned nor poisoned (`b8d5e683`); a take failing after the client
+stopped is reported as the peer's malformed answer rather than the lost connection (`7c9109e5`); an `already-open` link
+puts back a working copy's original cloud origin over the one an upload gave it (`1c6484f2`); the form editor is sized
+from the screen box, so on a turned page its text is the field's width tall (`a5639911`); and the tab row falls back to
+every tab when its token cannot be read, then clips (`82344ac6`).
+
+**QQQQQQQ-19** (the owner's): Sanitize removes an action inside an `/AA` only whole, by its JavaScript part, so a
+`/SubmitForm` or `/GoToE` there survives a Sanitize of external actions or embedded files alone; and the outline walk is
+proven flat (`1fa294bc`). Whether `/AA` belongs to the external-actions part is a decision about what Sanitize means.
+
+**QQQQQQQ-20** (low, recorded): cases that cannot fail on their stated property, or reach the easy shape only, not
+closed here. `diagnosticHead.test.ts` cannot tell a reader that reads the whole file and cuts it (`744b043f`); the
+machine witness's `ambientHeld` assumes load moves smoothly, and its new skip route has no case and no cap
+(`8e4a1843`); `removeWorkingFile`'s two call sites and the unhandled-rejection listener have no case (`0af4d721`); the
+contained program's allowlist was proven as a function, and real hosts ran with it only on CI's Windows leg, green at
+`8e4a1843` (`aacf254b`); the composition root's `renew` is reached by no case, the harness writing its own
+(`668aee16`); a Sanitize case's flatten removes the attachment the case credits to `embedded-files` (`1fa294bc`); the
+credential claim rests on `#withResult` at run time, not on the type its comment names (`0113b321`); the pixel bound
+counts from a zero origin (`eb6bb633`); a font name is cut at 127 UTF-16 units under a comment saying bytes
+(`0991b99c`); the dense-text case passes a duplicated chunk unit (`>=`, `c9247456`); the StandardEncoding premise now
+leans on the read-back it precedes (`198c690a`); the levelling release case never checks the colour pixmap
+(`b5c6cd70`); the no-font-left case pins a twin that is used, not CR-NAT-16's unused one (`7a84b01e`); *no provider's
+URL carries the key* covers model listing only (`76334fb5`); the host-runtime diagnostic's two searches have no control
+(`a36e1f80`); the form Escape case blurs a detached node (`a5639911`); the turned-link control holds by construction
+and nothing reads MuPDF's link bounds on a `/Rotate 90` page (`c02267ff`); two compose cases match substrings
+(`03c06040`); the preview wash reads `fill: none` as drawn (`da2b4072`); `useOnColor` composites over the first of
+several backgrounds (`ef473273`); and the Forms panel's line-break control may be blind in happy-dom, which neither
+converts (`ce905de2`).
+
+**QQQQQQQ-21** (process, recorded): the tests of a changed file were not run before two commits, both reddening CI
+(`61b7e6d2`'s shim roster, `a5639911`'s token role); a lint run piped through `tail` lost its exit code once more
+(`ea16fcf7`), which the sealed last line does not cover outside `npm run local`; and three commits say a screen was
+looked at on pinned Chromium without naming the run (`82344ac6`, `b3b77c09`, `fe8da87b`).
+
+**QQQQQQQ-22** (low, recorded): a print that cannot happen is titled *The document was not saved*
+(`SAVE_PRINT_UNAVAILABLE`, pinned by `333fcbba`'s case).
+
+### 1. Root cause or workaround?
+
+Each fix in the range states a mechanism, and two say plainly that they are diagnostics rather than fixes: the
+host-runtime proof naming a whole-file failure (`a36e1f80`) and the machine witness's bracket (`8e4a1843`, QQQQQQQ-20).
+CR-SEC-13 is a half fix by class (QQQQQQQ-12). No timeout raised, no check loosened.
+
+### 2. Verified against the easy shape only?
+
+Yes, several times: the burn-in's resources and tagged content (QQQQQQQ-9), the form editor on a turned page
+(QQQQQQQ-17), the pixel bound's origin, the flat outline and the one background (QQQQQQQ-20).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Away, twice: the machine witness gained a skip route, and the StandardEncoding premise now reads the guard under test
+(QQQQQQQ-20). Towards: the read-back makes every PDFium save checked, with a case per command (`proof:pdfiumreadback`,
+next commit).
+
+### 3. Would CI have caught it?
+
+It did, from the runs read once per sha: the machine witness (`0af4d721`), the ubuntu accessibility gate (`333fcbba`),
+ADR-0164's heading (`668aee16`), the PDFium adapter's fixture flush (`6d47c11b`), the host-runtime whole-file failure
+(`198c690a`), the shim roster (`c02267ff`) and the token role (`369e738f`). QQQQQQQ-1, -2 and -4 to -6 are invisible to
+every check, and -2 would have been red on Guards. The behaviour findings -8 to -10 are cases nobody wrote, which no run
+can show.
+
+### 4, 4a, 4b. Are the proofs non-vacuous, and do the instruments see?
+
+QQQQQQQ-20 is this item's list. The range's new searches carry controls where they decide anything; the host-runtime
+diagnostic's do not, and say so.
+
+### 4c. Does a count derive from the set it governs?
+
+No roster in the range does; the machine witness's count is a literal and matches its two new checks.
+
+### 5. Executed, or asserted?
+
+Asserted and stated as such: the koffi wrap and the Windows DLL's 64-bit load (`8caaa3b3`), the range cost read on
+Linux only (`6e2d5ae9`), and the contained program's allowlist outside CI's Windows leg.
+
+### 6. Did architecture change before the feature?
+
+Yes, each time: ADR-0162 to ADR-0168 each precede their code, and ADR-0169 precedes Phase 0's.
+
+### 7. Do the documents still match the code?
+
+Not in seven places, all closed here (QQQQQQQ-1 to -7). The cross-document sweep for ADR-0169's amendment of ADR-0009
+§9 found two comments that restate *a failure is a code alone* (`result.ts`, `channel.ts`), both in the next commit's
+files, which carries them.
+
 ## 2026-10-04 — Stage audit of `33715f7c..8f322ba7` — findings PPPPPPP-1 to PPPPPPP-14
 
 35 commits, 198 files, all work/cloud-4: Groups 16a (ADR-0156), 17a to 17c (ADR-0157, ADR-0158), 18 (ADR-0159,

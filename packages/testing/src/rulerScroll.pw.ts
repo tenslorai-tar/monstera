@@ -35,7 +35,7 @@ test('a short scroll moves the vertical ruler’s runs and inserts or removes no
   await scroller.evaluate((element) => {
     element.scrollTop = 400;
   });
-  // SETTLED ON THE RULER ITSELF (audit P-7), not on a fixed wait: the list is at 400 and the labelled marks sit where
+  // SETTLED ON THE RULER ITSELF (audit PPPPPPP-6), not on a fixed wait: the list is at 400 and the labelled marks sit where
   // they sat a frame before, so the baseline below is taken from a ruler that has caught up. Read by what a person
   // sees — a label and where it is — so the settle reads any build of the ruler, the one without runs included.
   await settled(

@@ -28,7 +28,7 @@ export function readLongFields(root: Element): {
     seen += 1;
     const name = field.labels?.[0]?.textContent ?? field.getAttribute('aria-label') ?? '(unnamed)';
     const row = field.closest('.m-dialog-row, .m-settings-row');
-    // A LONG FIELD IN NO ROW THIS KNOWS is reported, never counted and passed (audit P-8): `seen` is the control the
+    // A LONG FIELD IN NO ROW THIS KNOWS is reported, never counted and passed (audit PPPPPPP-7): `seen` is the control the
     // callers assert, so every field it counts is one that was measured or named here.
     if (row === null) {
       short.push(`${name}: in no dialog or settings row, so its width could not be read`);

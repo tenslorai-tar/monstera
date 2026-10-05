@@ -221,7 +221,7 @@ describe('the pdf-lib drawing commands on a turned page whose box does not start
   });
 
   /**
-   * THE OTHER TURNS AND BOXES (audit P-1): a half turn, the other quarter turn, a CropBox inset inside the MediaBox, a
+   * THE OTHER TURNS AND BOXES (audit PPPPPPP-1): a half turn, the other quarter turn, a CropBox inset inside the MediaBox, a
    * MediaBox from a negative origin, and an inset on a turned page. Each is held to the upright control, so the
    * header's distance from the top and the centre, and the footer's from the bottom, are the same wherever the page is.
    */
