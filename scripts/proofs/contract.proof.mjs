@@ -3443,9 +3443,11 @@ export const invert: Invert<'mupdf', 'rotatePages'> = (
     // entries and moves the cursor, which is exactly what the readable view is
     // separated from. So does `imageIsCurrent` (ADR-0115): it moves the base a
     // host-death replay starts from, and a lane entry that could set it without
-    // the bus's capability could tell the replay to skip entries the image lacks.
+    // the bus's capability could tell the replay to skip entries the image lacks. And `resealed` (ADR-0171 Decision 8):
+    // it changes the length the budget counts for a held file, so recording one is the bus's alone. `bytesOf`, which
+    // only reads that length, is on the readable view and so is not in this list.
     because:
-      /missing the following properties from type 'CommandLog': #private, imageIsCurrent, trimTo, record, and 2 more/u,
+      /missing the following properties from type 'CommandLog': #private, imageIsCurrent, resealed, trimTo, and 3 more/u,
     notBecause: null,
     source: `
 import type { CommandLog, DocumentContext } from '@monstera/kernel';

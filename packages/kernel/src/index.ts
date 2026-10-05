@@ -39,6 +39,8 @@ export type {
 // export rather than a spelling problem (ADR-0026).
 export type { PriorPageRotation, PriorRotation } from './rotatePages.js';
 export type { CopyOpening, CopyStanding } from './openCopy.js';
+// HOW A PROTECT SEALS A COPY (ADR-0171 Decision 8): a rule over injected engine calls, binding nothing native.
+export { type SealEngine, sealCopy } from './sealCopy.js';
 // THE TYPE ONLY, for `rotatePages`' reason: `pageTransition.ts` imports
 // `mupdfWriter.ts`, so a value export here would bind the native library in
 // every importer of this barrel. The prior-state shape is erased.

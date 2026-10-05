@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 
 import {
   type CloudProviderId,
+  type CommandOfKind,
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_ENDPOINT_STORED,
   AZURE_KEY_SETTING_ID,
@@ -38,6 +39,7 @@ import {
   CapabilityRegistry,
   CommandBus,
   ENGINE_OPEN_KEYS_MAX,
+  sealCopy,
   type ByteImage,
   type ImageSession,
   type ContainmentVerdict,
@@ -190,6 +192,7 @@ import {
   MissingSessionError,
   NetworkKeyMissing,
   type OptimizeSource,
+  type ProtectedCopies,
 } from './documentCommands.js';
 import { pictureForAsk } from './askPicture.js';
 import { timestampTransport } from './timestampTransport.js';
@@ -1305,6 +1308,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.barcodes(session, page);
     },
+    // A PROTECT'S COPIES, sealed through the engine host (ADR-0171 Decision 8).
+    copies: engineHost.copies,
     // THE BARCODE WRITER, loaded on first use (ADR-0076). See `lazyBarcodeWriter`.
     writeBarcode: lazyBarcodeWriter,
     // THE OTHER ENGINE'S READ, and the only composition point here that reaches
@@ -1947,6 +1952,8 @@ function engineSessionOpener(
   readonly pageImage: HostPageImage;
   /** Ends the shared host on the way out of the application. */
   readonly closeHost: () => Promise<void>;
+  /** How a protect replaces the document's plaintext copies, through this host (ADR-0171 Decision 8). */
+  readonly copies: ProtectedCopies;
   /**
    * Builds one document's sessions — the same call `openedDocument` and the
    * death path make, returned so recycling uses it rather than a second one.
@@ -2590,11 +2597,20 @@ function engineSessionOpener(
    * members below drop the access, because recycling and restoring do not carry
    * one: they reopen bytes the held password already opened (ADR-0171).
    */
-  const buildWithAccess = async (
-    docId: DocId,
+  /**
+   * One engine session in a granted pair of its own, from `write`, with the access it was opened with, where its
+   * snapshot is, and how to end it. {@link buildWithAccess} makes it a document's session; a protect's sealing of a copy
+   * uses it alone and ends it (ADR-0171 Decision 8), so the two cannot open a copy two ways.
+   */
+  const openInArea = async (
     write: SnapshotWrite,
     opening: EngineOpening,
-  ): Promise<{ readonly sessions: DocumentSessions; readonly access: DocumentAccess }> => {
+  ): Promise<{
+    readonly session: MupdfSession;
+    readonly access: DocumentAccess;
+    readonly snapshotPath: string;
+    readonly end: () => Promise<void>;
+  }> => {
     const live = await ensure();
     if (platform === null) throw new Error('unreachable: a host exists without a platform');
 
@@ -2699,15 +2715,14 @@ function engineSessionOpener(
       throw new Error('the engine host issued a session without stating its access');
     }
 
-    // THE PAIR'S LIFETIME ENDS WITH THE DOCUMENT, and until this it did not.
     // `live()` rather than the captured `writer`: a host rebuilt between the
     // open and the close leaves the old writer talking to a process that is
     // gone, and the registry's token is what carries the area across.
     //
     // `close` does both halves — `engine/close` on the host, then the granted
-    // directories — so this registers the whole teardown rather than the disk
+    // directories — so this is the whole teardown rather than the disk
     // half, which is what a bare `areas.remove` here would have been.
-    await sessions.holdRelease(docId, async () => {
+    const end = async (): Promise<void> => {
       try {
         await liveWriter().close(session);
       } catch {
@@ -2722,9 +2737,30 @@ function engineSessionOpener(
         // `openEngineSession` uses on every failure path out of itself.
         await areas.remove();
       }
-    });
+    };
+    return { session, access: opened, snapshotPath: join(paths.snapshot, snapshotName), end };
+  };
 
-    return { sessions: { mupdf: session }, access: opened };
+  /**
+   * Where each open document's live session's snapshot is: the copy the host was handed at its open, which a protect
+   * rewrites from the encrypted canonical image (ADR-0171 Decision 8). Set by {@link buildWithAccess}, dropped by the
+   * release that ends that session.
+   */
+  const snapshotsOf = new Map<DocId, string>();
+
+  const buildWithAccess = async (
+    docId: DocId,
+    write: SnapshotWrite,
+    opening: EngineOpening,
+  ): Promise<{ readonly sessions: DocumentSessions; readonly access: DocumentAccess }> => {
+    const { session, access, snapshotPath, end } = await openInArea(write, opening);
+    snapshotsOf.set(docId, snapshotPath);
+    // THE PAIR'S LIFETIME ENDS WITH THE DOCUMENT, and until this it did not.
+    await sessions.holdRelease(docId, async () => {
+      if (snapshotsOf.get(docId) === snapshotPath) snapshotsOf.delete(docId);
+      await end();
+    });
+    return { sessions: { mupdf: session }, access };
   };
 
   // EVERY REOPEN IS GIVEN EVERY KEY AND THE STANDING, read at the open from the one holder (ADR-0171 Decisions 4 and
@@ -2793,6 +2829,47 @@ function engineSessionOpener(
    * held there until the document closes, so every later open of its sessions
    * can be made (ADR-0171).
    */
+  /**
+   * Seals one copy of a document under a protect's terms, by the kernel's one rule (`sealCopy`), in a host session of
+   * its own: a copy of the file goes into a fresh granted pair, opens with no key, and only a copy with no encryption
+   * at all takes the protect and is serialised back over the file (ADR-0171 Decision 8). Main never reads the bytes;
+   * the host's output is moved into place. The session is ended whatever happens.
+   */
+  const sealCopyAt = (_docId: DocId, path: string, command: CommandOfKind<'setDocumentProtection'>): Promise<number | undefined> => {
+    let end: (() => Promise<void>) | undefined;
+    return sealCopy<MupdfSession>(command, {
+      open: async () => {
+        try {
+          const opened = await openInArea(
+            async (destination) => {
+              await copyFile(path, destination);
+              return (await stat(destination)).size;
+            },
+            { keys: [], standing: 'as-copied' },
+          );
+          end = opened.end;
+          return { session: opened.session, access: opened.access };
+        } catch (thrown) {
+          if (thrown instanceof EngineDocumentLocked) return 'locked';
+          throw thrown;
+        }
+      },
+      protect: async (session, protect) => {
+        await liveWriter().apply({ session, command: protect, sources: [], reads: undefined });
+      },
+      // BESIDE THE FILE, then renamed over it, so the copy is whole at every moment: never half old and half new.
+      writeOver: async (session) => {
+        const sealing = `${path}.${randomBytes(8).toString('hex')}.sealing`;
+        const written = await liveWriter().serialiseInto(session, sealing);
+        await rename(sealing, path);
+        return written;
+      },
+      close: async () => {
+        if (end !== undefined) await end();
+      },
+    });
+  };
+
   const unlockDocument = async (docId: DocId, password: string): Promise<UnlockOutcome> => {
     // THE LANE'S VERSION STAMP IS DISCARDED, deliberately. Unlocking changes no
     // bytes and bumps no version — it gives the engine a session it could not
@@ -2889,6 +2966,15 @@ function engineSessionOpener(
     exportAnnotationData: exportAnnotationDataThroughHost,
     pageImage: pageImageThroughHost,
     closeHost,
+    copies: {
+      seal: sealCopyAt,
+      // THE LIVE SESSION'S SNAPSHOT, rewritten from the canonical image, which the protect has just made encrypted. The
+      // host read it whole at the open and never reads it again, so this only replaces the copy on disk.
+      refreshSnapshot: async (docId) => {
+        const snapshotPath = snapshotsOf.get(docId);
+        if (snapshotPath !== undefined) await canonicalImageWrite(documents, docId)(snapshotPath);
+      },
+    },
     rebuildSessions: create,
     restoreSessions: buildSessions,
     unlockDocument,

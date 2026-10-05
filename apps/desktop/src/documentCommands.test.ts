@@ -66,6 +66,7 @@ import {
   SignatureCredentialRefusedError,
   SignatureTooLargeError,
   TimestampRefusedError,
+  sealCopy,
   TimestampUnreachableError,
   UrlFetchRefused,
   serialiseIntoFile,
@@ -107,6 +108,7 @@ import {
   withDocument,
   composeWordDocument,
   DocumentLocked,
+  accessFor,
   localMupdfExecution,
   openCopy,
 } from '@monstera/kernel/engine';
@@ -188,9 +190,10 @@ import {
   type SnapshotSource,
   SignaturesWouldBreakError,
   type EngineSessionSource,
+  type ProtectedCopies,
 } from './documentCommands.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
-import { EngineSessions } from './engineSessions.js';
+import { EngineSessions, canonicalImageWrite } from './engineSessions.js';
 import { EDIT_QUIET_MS, type EditWatchSurface } from './externalEditWatch.js';
 import { LayoutTextFailedError, type LayoutTextSource } from './layoutText.js';
 import { OfficeConversionFailedError } from './officeConversion.js';
@@ -316,6 +319,7 @@ const noSaving: SaveSource = {
   provenance: {
     made: () => Promise.reject(new Error('this case does not save')),
     deleteIfMade: () => Promise.reject(new Error('this case does not save')),
+    rewriteIfMade: () => Promise.reject(new Error('this case protects nothing')),
     owed: () => [],
     retryOwed: () => Promise.reject(new Error('this case does not save')),
   },
@@ -896,6 +900,11 @@ const INERT = {
   optimizer: null,
   pickOffice: () => Promise.reject(new Error('INERT: this case does not export to Office')),
   directory: noDirectory,
+  // REFUSES BY NAME: a case that protects a document supplies its own, as `LOCAL_READS` does.
+  copies: {
+    seal: () => Promise.reject(new Error('INERT: this case seals no copy')),
+    refreshSnapshot: () => Promise.reject(new Error('INERT: this case seals no snapshot')),
+  },
   // REFUSES BY NAME, like every inert surface: a case that reached a page sent to another
   // application without meaning to fails at the call rather than opening or watching anything.
   externalEdit: {
@@ -944,6 +953,32 @@ const LOCAL_READS = {
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
   duplicates: localDuplicates,
+  copies: {
+    // THE KERNEL'S ONE RULE, `sealCopy`, over MuPDF in this process: the host's sealing without a host.
+    seal: (_id, path, command) =>
+      sealCopy<MupdfSession>(command, {
+        open: async () => {
+          try {
+            const session = await mupdfWriter.open(new Uint8Array(readFileSync(path)));
+            return { session, access: accessFor(session) };
+          } catch (thrown) {
+            if (thrown instanceof DocumentLocked) return 'locked';
+            throw thrown;
+          }
+        },
+        protect: async (session, protect) => {
+          await localMupdfWriter.apply({ session, command: protect, sources: [], reads: undefined });
+        },
+        writeOver: async (session) => {
+          const bytes = await mupdfWriter.serialise(session);
+          writeFileSync(path, bytes);
+          return bytes.byteLength;
+        },
+        close: (session) => mupdfWriter.close(session),
+      }),
+    // NO HOST, so no host snapshot: a case that writes snapshots supplies its own.
+    refreshSnapshot: () => Promise.resolve(),
+  },
 } as const satisfies Omit<DocumentCommandsParts, keyof Varying>;
 
 describe('the composition point owns DocumentService.run -> CommandBus.execute', () => {
@@ -1907,7 +1942,8 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         expect(await t.commands.save(t.saved, { breakSignatures: false })).toMatchObject({ kind: 'saved' });
 
         expect(t.restored).toStrictEqual([]);
-        expect(t.retaken).toStrictEqual([t.path]);
+        // TWICE: at the protect, whose page picture cannot be encrypted (ADR-0171 Decision 8), and at the removal's save.
+        expect(t.retaken).toStrictEqual([t.path, t.path]);
         // THE OLD SESSION ANSWERS: a command after the save lands on it.
         await expect(t.commands.execute(t.saved, rotateOnce)).resolves.toBeDefined();
       });
@@ -6774,13 +6810,21 @@ describe('a document opened with its password: no unprotected copy, and no passw
 describe('a protect in this session: the holder follows it', () => {
   const KEY = 'sample-protect-0171-d8';
 
-  /** A generated three-page document, opened plain, with `engine` as the supervisor the commands see. */
-  async function opened(engineOf: (held: EngineSessions) => EngineSessionSource): Promise<{
+  /**
+   * A generated three-page document, opened plain, with `engine` as the supervisor the commands see. `sealing: 'skip'`
+   * is the control's: a protect whose replacement step does nothing.
+   */
+  async function opened(
+    engineOf: (held: EngineSessions) => EngineSessionSource,
+    sealing: 'seal' | 'skip' = 'seal',
+  ): Promise<{
     readonly commands: DocumentCommands;
     readonly docId: DocId;
     readonly root: string;
+    readonly path: string;
     readonly restores: () => number;
     readonly held: EngineSessions;
+    readonly retakes: readonly string[];
   }> {
     const root = mkdtempSync(join(tmpdir(), 'monstera-protect-follows-'));
     const plain = await PDFDocument.create();
@@ -6805,13 +6849,33 @@ describe('a protect in this session: the holder follows it', () => {
     held.opened(docId, 1);
 
     let restores = 0;
+    // THE LIVE SESSION'S SNAPSHOT, as the host's area holds one: each restore's replaces the last, as a release removes
+    // the old area, and a protect rewrites it from the canonical image.
+    let snapshot: string | undefined;
+    const retakes: string[] = [];
     const flushHeld: DocumentFlush = (_id, sessions) => {
       const mupdf = sessions.mupdf;
       if (mupdf === undefined) throw new Error('the fixture holds a session');
       return mupdfWriter.serialise(mupdf);
     };
+    const copies: ProtectedCopies =
+      sealing === 'skip'
+        ? { seal: () => Promise.resolve(undefined), refreshSnapshot: () => Promise.resolve() }
+        : {
+            seal: LOCAL_READS.copies.seal,
+            refreshSnapshot: async (id) => {
+              if (snapshot !== undefined) await canonicalImageWrite(own, id)(snapshot);
+            },
+          };
     const commands = new DocumentCommands({
       ...LOCAL_READS,
+      copies,
+      recentPicture: {
+        retake: (_id, at) => {
+          retakes.push(at);
+          return Promise.resolve();
+        },
+      },
       signaturesKept: signaturesKeptBySave,
       documents: own,
       bus: new CommandBus({ mupdf: localMupdfWriter }),
@@ -6820,7 +6884,8 @@ describe('a protect in this session: the holder follows it', () => {
       restore: (id, write) =>
         held.recycle(id, async () => {
           restores += 1;
-          const snapshot = join(root, `restore-${String(restores)}.pdf`);
+          if (snapshot !== undefined) rmSync(snapshot, { force: true });
+          snapshot = join(root, `restore-${String(restores)}.pdf`);
           await write(snapshot);
           const { keys, standing } = held.opening(id);
           const session = await openCopy(
@@ -6847,7 +6912,7 @@ describe('a protect in this session: the holder follows it', () => {
         stage: stagingFrom(flushHeld),
       },
     });
-    return { commands, docId, root, restores: () => restores, held };
+    return { commands, docId, root, path, restores: () => restores, held, retakes };
   }
 
   it('the undo of a terminal command after a protect reopens its checkpoint with the protect’s key', async () => {
@@ -6898,6 +6963,76 @@ describe('a protect in this session: the holder follows it', () => {
       expect(held.opening(docId).keys.map((key) => key.reveal())).toStrictEqual([KEY]);
       expect(await commands.redo(docId)).toBeDefined();
       expect(held.opensWith(docId)?.reveal()).toBe(KEY);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /** Every PDF under `root` but the person's own file, and which of them open with no password, by name. */
+  async function plaintextCopies(root: string, own: string): Promise<{ readonly pdfs: readonly string[]; readonly open: readonly string[] }> {
+    const files = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory() ? files(join(dir, entry.name)) : [join(dir, entry.name)],
+      );
+    const pdfs: string[] = [];
+    const open: string[] = [];
+    for (const file of files(root)) {
+      if (file === own) continue;
+      const bytes = new Uint8Array(readFileSync(file));
+      if (!Buffer.from(bytes.subarray(0, 5)).equals(Buffer.from('%PDF-'))) continue;
+      pdfs.push(basename(file));
+      try {
+        await mupdfWriter.close(await mupdfWriter.open(bytes));
+        open.push(basename(file));
+      } catch (thrown) {
+        if (!(thrown instanceof DocumentLocked)) throw thrown;
+      }
+    }
+    return { pdfs: pdfs.sort(), open: open.sort() };
+  }
+
+  /** A backup by a save, a checkpoint by a terminal command, a snapshot by its undo's restore, and then a protect. */
+  async function copiesThenProtect(commands: DocumentCommands, docId: DocId): Promise<void> {
+    await commands.execute(docId, rotateOnce);
+    expect(await commands.save(docId, { breakSignatures: false })).toMatchObject({ kind: 'saved' });
+    await commands.execute(docId, { kind: 'deletePages', pages: [2] });
+    expect(await commands.undo(docId)).toBeDefined();
+    expect(await commands.redo(docId)).toBeDefined();
+    await commands.execute(docId, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: KEY });
+  }
+
+  it('after the protect NO copy on disk opens without the password: snapshot, checkpoint and backup; the picture is retaken', async () => {
+    const { commands, docId, root, path, retakes } = await opened((held) => held);
+    try {
+      await copiesThenProtect(commands, docId);
+      const after = await plaintextCopies(root, path);
+      // THE COPIES THE CASE IS ABOUT EXIST, so a clean answer is not an empty root's.
+      expect(after.pdfs).toContain('plain.pdf.bak');
+      expect(after.pdfs).toContain('restore-1.pdf');
+      expect(after.pdfs.length).toBeGreaterThanOrEqual(3);
+      expect(after.open).toStrictEqual([]);
+      // AND EACH OPENS WITH THE PROTECT'S PASSWORD, so they were sealed rather than broken.
+      for (const name of ['plain.pdf.bak', 'restore-1.pdf']) {
+        await mupdfWriter.close(await mupdfWriter.open(new Uint8Array(readFileSync(join(root, name))), KEY));
+      }
+      // THE RECENT PICTURE: retaken for the protected file, and the document now keeps none.
+      await Promise.resolve();
+      expect(retakes).toStrictEqual([path]);
+      expect(await commands.firstPagePicture(docId)).toBe('none');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('CONTROL: the same flow with the replacement step skipped reports every plaintext copy by name', async () => {
+    const { commands, docId, root, path } = await opened((held) => held, 'skip');
+    try {
+      await copiesThenProtect(commands, docId);
+      const after = await plaintextCopies(root, path);
+      expect(after.open).toContain('plain.pdf.bak');
+      expect(after.open).toContain('restore-1.pdf');
+      // AND A CHECKPOINT: every PDF the history holds is under `checkpoints`, and at least one is plaintext.
+      expect(after.open.filter((name) => !['plain.pdf.bak', 'restore-1.pdf'].includes(name)).length).toBeGreaterThan(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

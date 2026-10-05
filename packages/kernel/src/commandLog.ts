@@ -906,6 +906,8 @@ export interface ReadonlyCommandLog {
   retainedBytes(): number;
   /** Every checkpoint file retained, by path — `retainedBytes`' set (ADR-0121). */
   checkpointPaths(): ReadonlySet<string>;
+  /** How long a held file is now, a resealed one included (ADR-0171 Decision 8). */
+  bytesOf(file: CheckpointFile): number;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   peekRedo(): LogEntry | undefined;
@@ -925,6 +927,8 @@ export interface ReadonlyCommandLog {
 export class CommandLog implements ReadonlyCommandLog {
   /** @internal */
   readonly #entries: LogEntry[] = [];
+  /** The held files rewritten in place since they were recorded, by path, and their length now ({@link resealed}). */
+  readonly #resealed = new Map<string, number>();
 
   /** How many entries are currently applied. */
   #applied = 0;
@@ -992,9 +996,30 @@ export class CommandLog implements ReadonlyCommandLog {
   retainedBytes(): number {
     let total = 0;
     for (const entry of this.#entries) {
-      for (const file of filesOf(entry)) total += file.byteLength;
+      for (const file of filesOf(entry)) total += this.bytesOf(file);
     }
     return total;
+  }
+
+  /**
+   * How long a held file is now: its recorded length, or what {@link resealed} recorded since
+   * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8).
+   * The one answer, so the budget, a trim's report and a restore's count cannot disagree about one file.
+   */
+  bytesOf(file: CheckpointFile): number {
+    return this.#resealed.get(file.path) ?? file.byteLength;
+  }
+
+  /**
+   * Records that a held file was rewritten in place, encrypted under a protect's terms, and how long it is now. The
+   * entry keeps its identity, which the bus's held table and the protect's positions are keyed by. Refuses a path the
+   * log does not hold, since recording a length for a file nothing references would count bytes nobody keeps.
+   */
+  resealed(path: string, byteLength: number): void {
+    if (!this.checkpointPaths().has(path)) {
+      throw new Error('a resealed file must be one this log holds; this one is not.');
+    }
+    this.#resealed.set(path, byteLength);
   }
 
   /**
@@ -1074,7 +1099,10 @@ export class CommandLog implements ReadonlyCommandLog {
     const shed = (entries: readonly LogEntry[]): void => {
       droppedEntries += entries.length;
       for (const entry of entries) {
-        for (const file of filesOf(entry)) droppedBytes += file.byteLength;
+        for (const file of filesOf(entry)) {
+          droppedBytes += this.bytesOf(file);
+          this.#resealed.delete(file.path);
+        }
       }
     };
 
@@ -1164,6 +1192,9 @@ export class CommandLog implements ReadonlyCommandLog {
     this.#entries.length = this.#applied;
     this.#entries.push(entry as LogEntry);
     this.#applied += 1;
+    // A RESEALED FILE THE TRUNCATED TAIL HELD leaves with it, so the map only ever names files this log holds.
+    const held = this.checkpointPaths();
+    for (const path of this.#resealed.keys()) if (!held.has(path)) this.#resealed.delete(path);
   }
 
   /**

@@ -45,6 +45,12 @@ export interface BackupProvenance {
    * delete failed after the held-file ladder — the copy is then owed a deletion ({@link BackupProvenance.owed}).
    */
   deleteIfMade(path: string): Promise<'deleted' | 'not-made' | 'absent' | 'held'>;
+  /**
+   * Rewrites `path` in place when Monstera made it and it is unchanged since, and records the file `rewrite` left there
+   * as Monstera's in place of the old one: a protect encrypting a backup (ADR-0171 Decision 8). `rewrite` answers whether
+   * it rewrote; a file left as it was keeps its record. `not-made` and `absent` touch nothing.
+   */
+  rewriteIfMade(path: string, rewrite: (path: string) => Promise<boolean>): Promise<'rewritten' | 'left' | 'not-made' | 'absent'>;
   /** Every path owed a deletion, oldest first. */
   owed(): readonly string[];
   /**
@@ -133,6 +139,20 @@ export function createBackupProvenance(
       if (!owed.some((entry) => entry.path === path)) owed.push({ path, key });
       persist();
       return 'held';
+    },
+    rewriteIfMade: async (path, rewrite) => {
+      const identity = await deps.identity(path);
+      if (identity === null) return 'absent';
+      const key = keyOf(identity);
+      const at = key === null ? -1 : made.indexOf(key);
+      if (at < 0 || key === null) return 'not-made';
+      if (!(await rewrite(path))) return 'left';
+      // THE NEW FILE IS MONSTERA'S, and the old identity names nothing now: replaced in the one record.
+      made.splice(at, 1);
+      const next = keyOf(await deps.identity(path));
+      if (next !== null && !made.includes(next)) made.push(next);
+      persist();
+      return 'rewritten';
     },
     owed: () => owed.map((entry) => entry.path),
     retryOwed: async (paths) => {

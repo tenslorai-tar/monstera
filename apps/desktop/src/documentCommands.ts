@@ -347,6 +347,22 @@ export interface EngineSessionSource {
   readonly protectionStepped: (docId: DocId, step: object, to: 'before' | 'after') => void;
 }
 
+/**
+ * How a protect replaces a document's plaintext copies with ones encrypted under its terms
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8).
+ * Composed where the engine host is, because only a host may open a document's bytes.
+ */
+export interface ProtectedCopies {
+  /**
+   * Rewrites the file at `path` encrypted under `command`, in a host session of its own, when it opens with no key and
+   * carries no encryption at all; answers its new length, or `undefined` for a copy left as it was. An encrypted copy
+   * is left: it is protected already, and rewriting it would replace an owner password main never saw.
+   */
+  readonly seal: (docId: DocId, path: string, command: CommandOfKind<'setDocumentProtection'>) => Promise<number | undefined>;
+  /** Rewrites the live session's snapshot from the canonical image, which a protect has just made encrypted. */
+  readonly refreshSnapshot: (docId: DocId) => Promise<void>;
+}
+
 /** The terms the holder follows, for a protect; `undefined` for every other command. */
 function protectionTermsOf(command: Command): ProtectionTerms | undefined {
   if (command.kind !== 'setDocumentProtection') return undefined;
@@ -2204,6 +2220,8 @@ export interface DocumentCommandsParts {
   readonly flatFields: DocumentFlatFieldsReader;
   /** One page's barcodes, read in the engine host (ADR-0076). */
   readonly barcodes: DocumentBarcodesReader;
+  /** How a protect replaces the document's plaintext copies with encrypted ones (ADR-0171 Decision 8). */
+  readonly copies: ProtectedCopies;
   /** The accessibility check, read in the engine host (ADR-0078). */
   readonly accessibility: DocumentAccessibilityReader;
   /** Writes a barcode for placement. See {@link BarcodeWriter}. */
@@ -2433,6 +2451,7 @@ export class DocumentCommands {
   readonly #formFields: DocumentFormFieldsReader;
   readonly #flatFields: DocumentFlatFieldsReader;
   readonly #barcodes: DocumentBarcodesReader;
+  readonly #copies: ProtectedCopies;
   readonly #accessibility: DocumentAccessibilityReader;
   readonly #writeBarcode: BarcodeWriter;
   readonly #textBlocks: DocumentTextBlocksReader;
@@ -2509,6 +2528,7 @@ export class DocumentCommands {
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
     this.#barcodes = parts.barcodes;
+    this.#copies = parts.copies;
     this.#accessibility = parts.accessibility;
     this.#writeBarcode = parts.writeBarcode;
     this.#textBlocks = parts.textBlocks;
@@ -3366,6 +3386,10 @@ export class DocumentCommands {
     // that answers it"* — and that argument never depended on undo lacking a
     // command. `execute` now does the same, so the only routing table in this
     // process is the bus's (B3a).
+    //
+    // HELD ON AN OBJECT, `undo`'s idiom: where a protect ran, its file's path, so the Recent picture is retaken after
+    // the lane, whose capture enters the lane itself.
+    const protectedAt: { path: string | undefined } = { path: undefined };
     const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -3404,7 +3428,12 @@ export class DocumentCommands {
       // A PROTECT MOVES THE HOLDER, in the lane and after the bus recorded it, so every later open of a copy has the
       // key the document opens with now (ADR-0171 Decision 8).
       const terms = protectionTermsOf(command);
-      if (terms !== undefined) this.#engine.protected(docId, entry, terms);
+      if (terms !== undefined) {
+        this.#engine.protected(docId, entry, terms);
+        const protect = this.#bus.protectOf(entry);
+        if (protect !== undefined) await this.#sealPlaintextCopies(docId, context, protect);
+        protectedAt.path = context.path;
+      }
       // READ AFTER THE BUS, INSIDE THE LANE, for the reason `Versioned` reads
       // the version there: the command rewrote the canonical image, and the
       // length the renderer needs is the new one. Reading it outside the lane
@@ -3416,6 +3445,9 @@ export class DocumentCommands {
       return { byteLength: context.byteLength, historyDropped: trimmed.droppedEntries };
     });
 
+    // A PICTURE OF A PROTECTED PAGE cannot be encrypted, so it is retaken: deleted, and kept again only if the document
+    // still opens with no password (ADR-0171 Decision 8, `firstPagePicture`'s rule).
+    if (protectedAt.path !== undefined) void this.#recentPicture.retake(docId, protectedAt.path);
     return { version, ...byteLength };
   }
 
@@ -3546,6 +3578,7 @@ export class DocumentCommands {
 
   async redo(docId: DocId): Promise<Applied | undefined> {
     const stepped = { yes: false };
+    const protectedAt: { path: string | undefined } = { path: undefined };
 
     const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
@@ -3566,9 +3599,17 @@ export class DocumentCommands {
         if (protect !== undefined) this.#engine.protectionStepped(docId, protect, 'before');
         throw thrown;
       }
+      // A REDONE PROTECT SEALS AGAIN, for a copy written while it was undone.
+      const redone = protect === undefined ? undefined : this.#bus.protectOf(protect);
+      if (redone !== undefined) {
+        await this.#sealPlaintextCopies(docId, context, redone);
+        protectedAt.path = context.path;
+      }
       return context.byteLength;
     });
 
+    // `execute`'s retake, for a redone protect.
+    if (protectedAt.path !== undefined) void this.#recentPicture.retake(docId, protectedAt.path);
     return stepped.yes ? { version, byteLength, historyDropped: 0 } : undefined;
   }
 
@@ -6140,6 +6181,28 @@ export class DocumentCommands {
   async deleteHeldCopies(docId: DocId): Promise<readonly string[]> {
     const { value } = await this.#documents.run(docId, (context) => this.#retryHeld(context));
     return value;
+  }
+
+  /**
+   * Replaces every plaintext copy of this document with one encrypted under `command`, before the protect answers
+   * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8):
+   * the host's snapshot, every checkpoint and result the history holds, and every backup beside the file that Monstera
+   * made. The canonical image needs nothing here, since the protect draws. In the protect's own lane entry, so nothing
+   * lands between. An encrypted copy is left as it was (`ProtectedCopies.seal`).
+   */
+  async #sealPlaintextCopies(
+    docId: DocId,
+    context: DocumentContext,
+    command: CommandOfKind<'setDocumentProtection'>,
+  ): Promise<void> {
+    await this.#copies.refreshSnapshot(docId);
+    await this.#bus.resealCopies(context, (path) => this.#copies.seal(docId, path, command));
+    for (const path of copyNames(this.#save.deps.names(context.path))) {
+      await this.#save.provenance.rewriteIfMade(
+        path,
+        async (made) => (await this.#copies.seal(docId, made, command)) !== undefined,
+      );
+    }
   }
 
   /** The owed copies among this document's backup names, tried again; the names still held. */

@@ -2615,4 +2615,49 @@ describe('CommandBus and a command whose intent is a password', () => {
       await mupdfWriter.close(session);
     }
   });
+
+  it('resealCopies offers every held file, and the log counts each rewritten one at its new length', async () => {
+    const { bus } = recordingBus();
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub(true);
+    try {
+      await bus.execute({ mupdf: session }, context, { kind: 'deletePages', pages: [1] }, showingInputs(session));
+      const [path] = [...context.log.checkpointPaths()];
+      if (path === undefined) throw new Error('expected a checkpoint');
+      const offered: string[] = [];
+      const seal = (each: string): Promise<number> => {
+        offered.push(each);
+        return Promise.resolve(7);
+      };
+      expect(await bus.resealCopies(context, seal)).toBe(1);
+      expect(offered).toStrictEqual([path]);
+      expect(context.log.retainedBytes()).toBe(7);
+      // CONTROL: a file `seal` left keeps the length it had, so the case above is the rewrite and not the walk.
+      const before = context.log.retainedBytes();
+      expect(await bus.resealCopies(context, () => Promise.resolve(undefined))).toBe(0);
+      expect(context.log.retainedBytes()).toBe(before);
+      // AND A PATH THE LOG DOES NOT HOLD is refused rather than counted.
+      expect(() => {
+        context.mutableLog.resealed('/nowhere.pdf', 3);
+      }).toThrow(/one this log holds/u);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('protectOf answers a protect entry’s held command whole, and nothing for any other entry', async () => {
+    const { bus } = recordingBus();
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub(true);
+    try {
+      const { entry } = await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      expect(bus.protectOf(entry)).toStrictEqual(protect);
+      const rotated = await bus.execute({ mupdf: session }, context, rotateFirst, showingInputs(session));
+      expect(bus.protectOf(rotated.entry)).toBeUndefined();
+      // CONTROL: another bus holds nothing for the same entry.
+      expect(recordingBus().bus.protectOf(entry)).toBeUndefined();
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
 });

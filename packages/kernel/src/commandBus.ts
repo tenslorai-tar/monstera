@@ -1356,6 +1356,38 @@ export class CommandBus {
    * after this lane entry, by the rule that deletes every file the log stops holding. Invariant 18's *never silent* is
    * met by the request itself — the person was shown what would go — and the count comes back for them to be told.
    */
+  /**
+   * Offers every file this document's history holds, checkpoints and results, to `seal`, and records the length of
+   * each one it rewrote in place
+   * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8):
+   * at a protect and its redo, a plaintext copy is replaced by one encrypted under the protect's terms. `seal` answers
+   * the new length, or `undefined` for a file it left as it was, which an already encrypted copy is. The entries keep
+   * their identity; only the log's recorded length moves, through its one writer.
+   *
+   * @returns how many files were rewritten
+   */
+  async resealCopies(context: DocumentContext, seal: (path: string) => Promise<number | undefined>): Promise<number> {
+    const log = context.commandLog(COMMAND_WRITER);
+    let rewritten = 0;
+    for (const path of log.checkpointPaths()) {
+      const byteLength = await seal(path);
+      if (byteLength === undefined) continue;
+      log.resealed(path, byteLength);
+      rewritten += 1;
+    }
+    return rewritten;
+  }
+
+  /**
+   * The protect a log entry was made for, whole, from the held table: what a redo of it re-applies, and what its copies
+   * are sealed under. `undefined` for an entry that is not a protect's.
+   */
+  // ANY ENTRY'S SHAPE, for `HeldIntents`' reason: `execute` answers `LogEntryFor<K>` and the log answers `LogEntry`.
+  protectOf(entry: { readonly command: { readonly kind: CommandKind } }): CommandOfKind<'setDocumentProtection'> | undefined {
+    const command = entry.command.kind === 'setDocumentProtection' ? this.#held.get(entry)?.command : undefined;
+    return command?.kind === 'setDocumentProtection' ? command : undefined;
+  }
+
   forgetUndoCopies(context: DocumentContext): LogTrim {
     return context.commandLog(COMMAND_WRITER).trimTo(0);
   }
