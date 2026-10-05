@@ -87,7 +87,7 @@ describe('FormLayer', () => {
       field({ index: 6 }),
     ]);
     const controls = [...container.querySelectorAll<HTMLElement>('[data-form-field]')];
-    expect(controls.map((element) => element.dataset.formField)).toStrictEqual(['6']);
+    expect(controls.map((element) => element.getAttribute('data-form-field'))).toStrictEqual(['6']);
   });
 
   it('draws nothing at all over a page with nothing to fill', () => {
