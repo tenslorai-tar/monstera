@@ -423,29 +423,25 @@ looking at, and it returns memory to the open-cost floor. It is safe because the
 truth lives in main: canonical bytes plus the command log — **and a rebuild is
 only safe once reopening replays that log, which it does not yet do.**
 
-**Corrected 2026-09-01.** This paragraph ended *"Reopening replays the log"*, in
-the present tense, and nothing does. `openEngineSession` writes the canonical
-image and opens a session on it; there is no replay anywhere in the repository,
-and `document.viewModel` reads page geometry from the **session**. So a rebuilt
-session is the document as of its last save, while the log says otherwise — the
-two disagree, visibly, about a rotation the user can see.
+**Reopening replays the log, and it does now** (corrected 2026-09-01, when
+nothing did; built 2026-09-27,
+[ADR-0115](DECISIONS/0115-a-rebuilt-session-replays-what-the-image-does-not-hold.md)).
+Invariant 22's condition is that no mutation exists **only** on the handle, which
+the log satisfies, and the *recovery* that makes the condition useful is the
+replay. A session rebuilt after a host death
+([ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) Decision 9c)
+opens on the canonical image and re-applies, in order, the applied entries the
+image does not hold, each as its declared replay mode says (§3a): the command
+again for `reapply-intent`, the command the bus holds beside its entry for
+`reapply-held-intent`, the stored value for `stored-effect`; a `stored-result`
+entry is never in that set, because its writer replaces the image and moves the
+base past it.
 
-The sentence was a statement of design read as a statement of fact, and it made
-the conditional above look discharged. It is not: invariant 22's condition is
-that no mutation exists **only** on the handle, which the log satisfies, and the
-*recovery* that makes the condition useful is the replay. Both halves are needed
-and only one is built.
-
-**What binds until replay lands.** `DocumentService.recycle` — invariant 22's
-capability — **refuses** a document whose log holds entries and names this gap in
-the refusal, so the unsafe rebuild is unreachable rather than merely undocumented.
-The host-death path in
-[ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) Decision 9c
-has no such refusal available to it: a dead host must be rebuilt for, and that
-path therefore loses unsaved commands from the session today. **Recorded here
-rather than fixed here**, because building replay is a decision about how each
-command's `replay` mode is re-applied (§4 declares `reapply-intent` and
-`stored-effect` and only the first exists), and that is an ADR rather than a line.
+**Still refusing, and stale:** `DocumentService.recycle`, invariant 22's optional
+capability, refuses a document whose log holds entries, and its refusal still
+says nothing replays the log. That guard predates ADR-0115; it is recorded here
+as a finding, corrected 2026-10-05, rather than removed under a documentation
+change.
 
 That safety is conditional, and the condition is a requirement on every command
 (invariant 22): **no mutation may exist only on the handle.** Measured directly —
@@ -2188,10 +2184,16 @@ say**.
     A document whose engine session is gone — a dead host, or a poisoned
     document the user reopens — is brought back by opening a session on the
     canonical image and re-applying each applied log entry's command, in order.
-    Every command declared today is `replay: 'reapply-intent'`, and
-    `CommandBus.redo` makes a spec declaring otherwise a **compile** error
-    rather than a silent wrong branch, so the mode this rests on cannot widen
-    unnoticed. Where the applied prefix contains a terminal entry, its
+    Most commands declare `replay: 'reapply-intent'` and are re-run from their
+    entry; the other three modes are §3a's, and `CommandBus.redo` and
+    `replayPastImage` read the declared one: `reapply-held-intent` re-runs the
+    command the bus holds beside the entry (ADR-0171, the protect, whose intent
+    is a password), `stored-effect` re-applies the value the entry stored
+    (ADR-0051, OCR), and `stored-result` installs the image the entry kept and
+    re-runs nothing (ADR-0162, signing). This sentence said until 2026-10-05
+    that every command was `reapply-intent` and that `redo` made any other
+    declaration a compile error; that guard was replaced when `ocrPage` declared
+    `stored-effect` (ADR-0051). Where the applied prefix contains a terminal entry, its
     checkpoint is a **starting point that shortens the replay** and is never
     required for correctness: *terminal* means prior state could not be
     recorded, not that the command is irreproducible.
@@ -3030,6 +3032,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-10-05 | **Two statements about replay corrected to what the code does** (§2's reopening paragraph; invariant 18 clause (ii)). The owner's instruction after Phase 0's report. §2 still said nothing replays the log and that replay waited on *"`reapply-intent` and `stored-effect` and only the first exists"*; ADR-0115 built the replay on 2026-09-27 and four modes exist. Clause (ii) said every command is `reapply-intent` and `redo` makes another a compile error; ADR-0051 replaced that guard on 2026-09-11. Found while correcting them: `DocumentService.recycle` still refuses a document with log entries on the ground that nothing replays the log, which is recorded as a finding and not changed here | §2's *"What binds until replay lands"* paragraph; clause (ii)'s *"Every command declared today is `replay: 'reapply-intent'`"* | — (corrections of fact) |
 | 2026-10-05 | **A command whose intent carries a password keeps it out of the undo log** (§3a's replay axis, §4's terminal entry). ADR-0171 Decision 3: `setDocumentProtection` is terminal and its entry kept the command whole, both passwords included. A fourth replay mode, `reapply-held-intent`: the entry keeps `command: { kind }` alone and the bus holds the whole command in a table keyed by the entry, in memory, for redo and for a replay past the image. A protect with its passwords taken out is still a valid protect that writes no password, so the entry keeps nothing of it to re-run by mistake. A declarations case requires every credential-named command field to sit on a kind declaring this mode or `stored-result`. Rejected: an optional `recordable` member on the spec | §3a's replay axis, which kept a reproducible command's intent in its entry | [0171](DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) |
 | 2026-10-05 | **A byte-image writer's session in main is the bytes and the key that opens them** (§3). One bus serves every document and hands a byte-image writer bytes with no identity, so the PDFium adapter could not know which password opens an image. `ImageSession { bytes, opensWith }`, built by the bus from `ByteImageAccess.opensWith`; `byteImageWire.read` carries the password, PDFium's reads take that shape instead of spelling `from`, the inline-image keeper takes it, and PDFium's open and read-back use it. Rejected: matching an image to its document by object identity, handing the writer the document id, a decrypted image | §3's *hands a byte-image writer the document's bytes* (now bytes and key, still no identity) | [0171](DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) |
 | 2026-10-05 | **The password is held in main while the document is open, so every copy stays protected** (§3.2). The owner's answer to CR-DOC-11: keep it in memory while the document is open, never on disk, in a log or the undo log, wiped on close, never to the renderer. Measured: MuPDF's ordinary save of a document opened with either password stays encrypted, before and after an edit, and a decrypting save changes the live session so every later save is plaintext; PDFium refuses with 4 without the password and keeps encryption on its default save; the renderer asks for the password again at every version. One holder in main, `DocumentPasswords`, a `HeldPassword` no serialisation writes; MuPDF gets it on every session open (recycle, renewal, rebuild now reopen), PDFium with every image; a protect's log entry keeps no password, a side table keyed by the entry holds it for redo; no live session is saved decrypted. Put to the owner: what the renderer holds (its PDF.js view needs the password or plaintext bytes, and the password is typed there), and a document protected in this session with its earlier history. Rejected: a password list per version, main re-deriving encryption, holding it in the host | ADR-0055 Decision 3's *main does not keep it* and its rejected *caching the password to make recycle work*; §3.2's *recycle refuses on a document that was unlocked* | [0171](DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) |
