@@ -70,13 +70,17 @@ describe('the engine host programs', () => {
       ),
     ).toStrictEqual(['C:\\k\\hostEntry.js', '\\\\.\\pipe\\p', 'C:\\s\\monstera_mupdf.dll']);
 
+    // THE FONTS FOURTH for PDFium (ADR-0173), where `pdfiumHostEntry.ts` reads them, and EMPTY where there are none.
     expect(
       hostCommandArguments(
-        { kind: 'pdfium', libraryPath: 'C:\\t\\pdfium.dll' },
+        { kind: 'pdfium', libraryPath: 'C:\\t\\pdfium.dll', fontsPath: 'C:\\f' },
         'C:\\k\\pdfiumHostEntry.js',
         '\\\\.\\pipe\\q',
       ),
-    ).toStrictEqual(['C:\\k\\pdfiumHostEntry.js', '\\\\.\\pipe\\q', 'C:\\t\\pdfium.dll']);
+    ).toStrictEqual(['C:\\k\\pdfiumHostEntry.js', '\\\\.\\pipe\\q', 'C:\\t\\pdfium.dll', 'C:\\f']);
+    expect(
+      hostCommandArguments({ kind: 'pdfium', libraryPath: 'C:\\t\\pdfium.dll', fontsPath: null }, 'e.js', 'q'),
+    ).toStrictEqual(['e.js', 'q', 'C:\\t\\pdfium.dll', '']);
   });
 
   it('gives a compose host with no shim and no fonts two EMPTY arguments, never a path', () => {

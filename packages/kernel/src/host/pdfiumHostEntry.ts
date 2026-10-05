@@ -8,6 +8,8 @@ import {
   renderPageBitmap,
   textRuns,
 } from '../pdfium.js';
+import { bindEditFaces } from '../editFaces.js';
+import { faceSourceOf } from '../fontCatalogue.js';
 import { cryptoBytes } from '../token.js';
 import { probeContainment } from './containment.js';
 import type { HostArea } from './engineHandlers.js';
@@ -89,6 +91,11 @@ const { pipeName, libraryPath } = argumentsFrom(process.argv);
 // the C API actually offers. A first call inside a handler would make the first
 // document pay for it and would put the failure inside a channel's answer.
 openPdfium(libraryPath);
+
+// THE BUNDLED FONTS' FOLDER, the factory's THIRD argument, empty where it had none (ADR-0173 Decision 4): a word an
+// edit's own font cannot carry is set in a face the resolver chooses from it. Read on first use, as the compose host's.
+const fontsPath = process.argv[4] === undefined || process.argv[4].length === 0 ? null : process.argv[4];
+if (fontsPath !== null) bindEditFaces(() => faceSourceOf([{ path: fontsPath, origin: 'bundled' }]));
 
 /**
  * PDFium's channel set and its handlers

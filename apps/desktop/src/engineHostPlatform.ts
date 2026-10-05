@@ -315,7 +315,7 @@ export function createPdfiumHostPlatform(base: EngineHostPlatform): EngineHostPl
             runs: 'electron-node',
             executablePath: binary,
             commandArguments: [
-              ...hostCommandArguments({ kind: 'pdfium', libraryPath }, entry, pipeName),
+              ...hostCommandArguments({ kind: 'pdfium', libraryPath, fontsPath: nativeComponentPath('fonts') }, entry, pipeName),
             ],
           },
           workingDirectory: dirname(binary),

@@ -88,6 +88,11 @@ export type EngineHostProgram =
        * second resolver is the B3a defect this project has paid for three times.
        */
       readonly libraryPath: string;
+      /**
+       * The bundled fonts' folder (ADR-0173 Decision 4), or `null` where the launcher passed none: a host that edits
+       * with the document's own fonts alone, a decided state rather than a fault.
+       */
+      readonly fontsPath: string | null;
     };
 
 /**
@@ -140,7 +145,9 @@ export function hostCommandArguments(
   entryPath: string,
   pipeName: string,
 ): readonly string[] {
-  if (program.kind === 'pdfium' || program.kind === 'mupdf') return [entryPath, pipeName, program.libraryPath];
+  if (program.kind === 'mupdf') return [entryPath, pipeName, program.libraryPath];
+  // THE FONTS THIRD, EMPTY where there are none: `pdfiumHostEntry.ts` reads `argv[4]` and takes an empty one as absent.
+  if (program.kind === 'pdfium') return [entryPath, pipeName, program.libraryPath, program.fontsPath ?? ''];
   // THE SHIM'S PATH SECOND and THE FONTS' THIRD, each EMPTY where there is none: `composeHostEntry.ts` reads `argv[3]`
   // and `argv[4]` and takes an empty one as absent, so a position never shifts when the one before it is missing.
   return [entryPath, pipeName, program.shimPath ?? '', program.fontsPath ?? ''];
