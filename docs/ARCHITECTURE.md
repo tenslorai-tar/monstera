@@ -2240,6 +2240,13 @@ say**.
     embedded file reaches disk — until the user asks for it, explicitly, for that
     item.
 
+    **A link is asked for by a click on it** (amended 2026-10-05,
+    [ADR-0167](DECISIONS/0167-a-link-is-shown-on-its-page-and-followed-when-a-person-asks.md)):
+    a page link goes to its page; a web address is named in a dialog first, and
+    `main` opens it, reading the address from the document by the link's place
+    on its page and opening `https:`, `http:` and `mailto:` only. The renderer
+    never names a URL to `main`.
+
     A PDF is a program as well as a page, and the process that parses it is
     parsing the single most attacker-controlled thing this application touches.
 
@@ -2963,6 +2970,7 @@ deliberately, in their own commit, never as a side effect.
 Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
+| 2026-10-05 | **A link is shown on its page, and followed when a person asks** (invariant 24; the window policy's route to the browser). The owner's item 14c: a link was invisible on its page, could not be followed, and said nothing once added; the Links panel's web entries had nothing to press, since nothing was a way to ask *for that item*. Each page draws its links, outlined in the Comment section and named under the pointer; a click on a page link goes there, and a click on a web link names the address in a dialog first. `document.openLink` names the link by document, version, page and place, never by address; `main` reads the address in full from the engine host and opens `https:`, `http:` and `mailto:` only. The Links panel takes the same route; an added link says so. Rejected: the renderer passing the address, following without asking, `window.open`, widening the sign-in's HTTPS-only route, outlines at all times | invariant 24's *"until the user asks"*, which named no way to ask for a link; `openInBrowser` as the only route to the browser | [0167](DECISIONS/0167-a-link-is-shown-on-its-page-and-followed-when-a-person-asks.md) |
 | 2026-10-05 | **A tool's preview is placed as its commit is** (§6, the controller's `preview`). The owner's item 14d: dragging a selected mark drew a box from the press to the pointer, a marquee, and held it after the release, so the person saw a ghost box and then the mark appearing elsewhere. `preview` is given the page and its transform, as `commit` is, and `ToolPreview` gains several boxes; the select tool's preview of a move or a resize is the placement itself, computed by the function that builds the command, and the overlay's held shape is therefore where the marks went. Not done: the mark's pixels moving, since PDF.js 6.2.108 cannot leave one annotation out of a draw, and lifting pixels would move a highlight's words with it. Rejected: a preview in PDF space converted by the overlay, a transform captured at the gesture's start, a second preview path | §6's `preview(gesture)` and one-shape `ToolPreview` | [0166](DECISIONS/0166-a-tools-preview-is-placed-as-its-commit-is.md) |
 |---|---|---|---|
 | 2026-10-04 | **A note on the 2026-09-11 row, *The download rule is law*, which stands as written.** Its *Not claimed* says Part C8's SSRF guard for **user-supplied** URLs *"is still unwritten"*. That was true on 2026-09-11 and stopped being true on 2026-09-13: `packages/kernel/src/guardedFetch.ts` fetches a URL a person chose through one guard that pins every resolution. The rest of that clause still holds: both forms of the download rule take a compile-time host list, where host-locking is the guard | Nothing; a dated note on a recorded row, which is never edited | [0061](DECISIONS/0061-a-url-a-person-chose-is-fetched-through-one-guard-that-pins-every-resolution.md) |
