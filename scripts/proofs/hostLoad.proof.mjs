@@ -72,9 +72,12 @@ const HOSTED_WRITERS = ['pdfLibWriter.js', 'signaturePlaceholder.js'];
 /** The parser the signature's placeholder is written with, which `main`'s signer must not reach (ADR-0148). */
 const PDF_LIB = '@cantoo/pdf-lib';
 
+/** The text shaper, which the MuPDF host loads only when an operator edit needs a face (ADR-0177). */
+const HARFBUZZ = 'harfbuzzjs';
+
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 19 });
+const roster = createRoster(failures, { cases: 21 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -245,6 +248,24 @@ try {
       `the whole-life walk does not reach ${writer}, so the start-only case proves nothing.`,
     );
   }
+
+  // HARFBUZZ ON FIRST NEED (ADR-0177): the operator edit's face writer is a literal import(), so the MuPDF host's
+  // fixed cost does not carry the shaper (+6.4 MB at import, measured 2026-10-06) for documents that never need a face.
+  const shaperAtStart = mupdfAtStart.bare.get(HARFBUZZ) ?? [];
+  check(
+    `host/hostEntry.js does not load ${HARFBUZZ} at start`,
+    shaperAtStart.length === 0,
+    `named by ${shaperAtStart.map((module) => (mupdfAtStart.reached.get(module) ?? [module]).join(' -> ')).join('\n        and ')}.\n` +
+      `      The face writer (operatorFaces.js) is loaded by textOperatorEdit.js only when an edit needs a face; a ` +
+      `static import of it, or of a module that shapes text, puts HarfBuzz into every MuPDF host at start.`,
+  );
+  // CONTROL: over its whole life the host DOES reach the shaper, through that import(), so "not at start" is the
+  // dynamic edge being excluded, not a walk that cannot see the specifier.
+  check(
+    `CONTROL: host/hostEntry.js reaches ${HARFBUZZ} through the face writer's dynamic import`,
+    (mupdfEver.bare.get(HARFBUZZ) ?? []).length > 0,
+    `the whole-life walk names no ${HARFBUZZ}, so the start-only case above proves nothing.`,
+  );
 
   // `main`'s SIGNER PARSES NOTHING (ADR-0148): the module that holds the key half reaches neither the placeholder
   // writer nor the parser it is written with, over its whole life, so a signing in `main` cannot load the document.
