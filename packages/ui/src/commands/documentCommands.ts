@@ -3873,6 +3873,9 @@ export function editTextCommand(deps: {
     title: EDIT_TEXT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EDIT_TEXT,
     placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 10 }],
+    // THE KEY FOR THE MODE: T for text, with Shift because Ctrl+T is the browser's own and every bare Ctrl letter here is
+    // a file or an editing verb. Derived into the palette, the tooltip and the shortcut map from this one field.
+    shortcut: 'Ctrl+Shift+T',
     when: hasDocument,
     checked: () => isEditTextTool(deps.activeTool()),
     run: (): void => {

@@ -10,7 +10,7 @@ Edit text lets you change the words already on a page, in place, keeping their f
 
 ## Steps
 
-1. In the rail, choose **Edit**, then **Edit text** in the **Text** group (its full name is **Edit text on the page**).
+1. In the rail, choose **Edit**, then **Edit text** in the **Text** group (its full name is **Edit text on the page**), or press **Ctrl+Shift+T**.
 2. Every block of text you can edit is outlined. Click the block you want, and the cursor opens where you clicked.
 3. Type your changes. If a line gets longer than its block, it wraps onto a new line and the text below moves down.
 4. Press **Esc** or click away to finish. The change is written into the page.

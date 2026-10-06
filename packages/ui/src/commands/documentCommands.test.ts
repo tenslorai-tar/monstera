@@ -1513,6 +1513,13 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(active).toBe(EDIT_TEXT_TOOL_ID);
   });
 
+  it('EDIT TEXT HAS A KEY, declared on the command and nowhere else, so the palette, the tooltip and the map all read it', () => {
+    const command = editTextCommand({ activeTool: () => undefined, onSelect: () => undefined });
+    expect(command.shortcut).toBe('Ctrl+Shift+T');
+    // CONTROL: the mode's other command has none, so a key that opened Add text would be a second wiring place.
+    expect(addTextCommand({ activeTool: () => undefined, onSelect: () => undefined }).shortcut).toBeUndefined();
+  });
+
   it('ADD TEXT is Edit text’s add flavour in the same slot, and Edit text reads as on in both (ADR-0180)', () => {
     let active: string | undefined;
     const deps = {
