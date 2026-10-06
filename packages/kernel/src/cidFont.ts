@@ -73,18 +73,52 @@ function thousandths(units: number, unitsPerEm: number): number {
   return Math.round((units * 1000 * 1000) / unitsPerEm) / 1000;
 }
 
+/**
+ * A finished font, whatever document model writes it: everything this module DECIDES, as data
+ * ([ADR-0177](../../../docs/DECISIONS/0177-a-word-a-type-3-page-cannot-draw-is-set-in-the-resolvers-face-or-the-box-by-the-mupdf-host.md)
+ * Decision 3). The composers write it through pdf-lib and the Type 3 page writer through MuPDF's object model, so the
+ * codes, `W`, `CIDToGIDMap` and `ToUnicode` a page reads are one opinion whichever engine holds the page.
+ */
+export interface CidFontParts {
+  /** The `BaseFont` and `FontName`: the subset's `TAG+Name`, or the whole file's. */
+  readonly name: string;
+  readonly program: Uint8Array;
+  /** Two bytes per code from 0, each its glyph id. */
+  readonly cidToGid: Uint8Array;
+  /** `W`: each code followed by a one-element array of its width. */
+  readonly widths: readonly (number | readonly number[])[];
+  /** The `ToUnicode` CMap's text. */
+  readonly toUnicode: string;
+  readonly flags: number;
+  readonly box: readonly number[];
+  readonly italicAngle: number;
+  readonly ascent: number;
+  readonly descent: number;
+  readonly capHeight: number;
+  readonly stemV: number;
+}
+
+/**
+ * How one document model reserves a font's object and writes its {@link CidFontParts} into it. The only thing that
+ * differs between pdf-lib and MuPDF here: neither decides anything about the font.
+ */
+export interface CidFontSink<R> {
+  reserve(): R;
+  write(ref: R, parts: CidFontParts): void;
+}
+
 /** One font in a document being written, which codes are assigned in as the text is set. */
-export class CidFont {
-  readonly ref: PDFRef;
+export class CidFont<R = PDFRef> {
+  readonly ref: R;
   readonly #codes = new Map<string, Code>();
   #finished = false;
 
   constructor(
-    private readonly document: PDFDocument,
+    private readonly sink: CidFontSink<R>,
     readonly source: CidFontSource,
   ) {
     // RESERVED NOW and written at the end, so a page can name the font before anyone knows which glyphs it holds.
-    this.ref = document.context.nextRef();
+    this.ref = sink.reserve();
   }
 
   /** How many more codes this font can assign: a piece of at most this many glyphs is sure to fit. */
@@ -117,7 +151,11 @@ export class CidFont {
   finish(): void {
     if (this.#finished) return;
     this.#finished = true;
-    const { context } = this.document;
+    this.sink.write(this.ref, this.#parts());
+  }
+
+  /** What the font is, from the codes assigned: the decision, before any document model writes it. */
+  #parts(): CidFontParts {
     const { shaping } = this.source;
     const codes = [...this.#codes.values()];
     const program = this.#program(codes);
@@ -159,40 +197,22 @@ export class CidFont {
 
     const metrics = shaping.metrics();
     const scale = (value: number): number => thousandths(value, shaping.unitsPerEm);
-    const descriptor = context.obj({
-      Type: 'FontDescriptor',
-      FontName: program.name,
+    return {
+      name: program.name,
+      program: program.bytes,
+      cidToGid: map,
+      widths,
+      toUnicode: cmap,
       // SYMBOLIC (bit 3), which a CID font's descriptor states because its glyphs are reached by code, not by a
       // standard encoding; ITALIC (bit 7) where the face is.
-      Flags: 4 | (this.source.italic ? 64 : 0),
-      FontBBox: metrics.box.map(scale),
-      ItalicAngle: metrics.italicAngle,
-      Ascent: scale(metrics.ascender),
-      Descent: scale(metrics.descender),
-      CapHeight: scale(metrics.capHeight),
-      StemV: 80,
-      FontFile2: context.register(context.flateStream(program.bytes, { Length1: program.bytes.length })),
-    });
-    const descendant = context.obj({
-      Type: 'Font',
-      Subtype: 'CIDFontType2',
-      BaseFont: program.name,
-      CIDSystemInfo: { Registry: PDFString.of('Adobe'), Ordering: PDFString.of('Identity'), Supplement: 0 },
-      FontDescriptor: context.register(descriptor),
-      W: widths,
-      CIDToGIDMap: context.register(context.flateStream(map)),
-    });
-    context.assign(
-      this.ref,
-      context.obj({
-        Type: 'Font',
-        Subtype: 'Type0',
-        BaseFont: program.name,
-        Encoding: 'Identity-H',
-        DescendantFonts: [context.register(descendant)],
-        ToUnicode: context.register(context.flateStream(new TextEncoder().encode(cmap))),
-      }),
-    );
+      flags: 4 | (this.source.italic ? 64 : 0),
+      box: metrics.box.map(scale),
+      italicAngle: metrics.italicAngle,
+      ascent: scale(metrics.ascender),
+      descent: scale(metrics.descender),
+      capHeight: scale(metrics.capHeight),
+      stemV: 80,
+    };
   }
 
   /** The font program to embed and its name: a subset where the licence and the subsetter allow, else the whole file. */
@@ -223,6 +243,48 @@ export class CidFont {
     }
     return { bytes, name: `${subsetTag(bytes)}+${base}` };
   }
+}
+
+/** pdf-lib's writer of a font's parts, the composers': a reference reserved now, the dictionaries assigned at the end. */
+export function pdfLibCidSink(document: PDFDocument): CidFontSink<PDFRef> {
+  const { context } = document;
+  return {
+    reserve: () => context.nextRef(),
+    write: (ref, parts) => {
+      const descriptor = context.obj({
+        Type: 'FontDescriptor',
+        FontName: parts.name,
+        Flags: parts.flags,
+        FontBBox: [...parts.box],
+        ItalicAngle: parts.italicAngle,
+        Ascent: parts.ascent,
+        Descent: parts.descent,
+        CapHeight: parts.capHeight,
+        StemV: parts.stemV,
+        FontFile2: context.register(context.flateStream(parts.program, { Length1: parts.program.length })),
+      });
+      const descendant = context.obj({
+        Type: 'Font',
+        Subtype: 'CIDFontType2',
+        BaseFont: parts.name,
+        CIDSystemInfo: { Registry: PDFString.of('Adobe'), Ordering: PDFString.of('Identity'), Supplement: 0 },
+        FontDescriptor: context.register(descriptor),
+        W: parts.widths.map((entry) => (typeof entry === 'number' ? entry : [...entry])),
+        CIDToGIDMap: context.register(context.flateStream(parts.cidToGid)),
+      });
+      context.assign(
+        ref,
+        context.obj({
+          Type: 'Font',
+          Subtype: 'Type0',
+          BaseFont: parts.name,
+          Encoding: 'Identity-H',
+          DescendantFonts: [context.register(descendant)],
+          ToUnicode: context.register(context.flateStream(new TextEncoder().encode(parts.toUnicode))),
+        }),
+      );
+    },
+  };
 }
 
 /** A run's codes as one `TJ` string. */

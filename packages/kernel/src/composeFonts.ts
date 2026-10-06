@@ -16,7 +16,7 @@ import {
 } from '@cantoo/pdf-lib';
 
 import { paragraphDirection } from './bidiOrder.js';
-import { CidFont, adjustment, codeString } from './cidFont.js';
+import { CidFont, adjustment, codeString, pdfLibCidSink } from './cidFont.js';
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import { type FontRequest, resolveRuns } from './fontResolver.js';
 import { type OutlineCommand, type ShapedGlyph, ShapingFace } from './textShaping.js';
@@ -224,7 +224,7 @@ export class ComposeFonts {
   #open(instance: Instance): CidFont {
     const { face, weight, shaping } = instance;
     const named = shaping.postscriptName();
-    const font = new CidFont(this.document, {
+    const font = new CidFont(pdfLibCidSink(this.document), {
       bytes: this.#read(face.path),
       faceIndex: face.faceIndex,
       axes: face.weights === null ? {} : { wght: weight },
