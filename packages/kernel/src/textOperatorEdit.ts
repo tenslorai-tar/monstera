@@ -2,7 +2,12 @@ import { type CommandOfKind, blocksOfEdit } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Invert, MupdfSession } from './engineSeam.js';
+import { editFaces, editFacesBound } from './editFaces.js';
+import type { FaceSource } from './fontCatalogue.js';
+import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 import { withDocument } from './mupdfWriter.js';
+import { OperatorFaceSet } from './operatorFaces.js';
+import type { PageFont } from './pageFonts.js';
 import { type OperatorRefusal, type PageRuns, checkOperatorEdit, editOperators } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
 import { pageFonts } from './pageFonts.js';
@@ -56,7 +61,10 @@ export async function applyEditTextOperators(
     const leaf = document.findPage(command.page);
     const content = joinedContent(pageContentStreams(leaf));
     const fonts = pageFonts(leaf);
-    const made = editOperators(content, fonts, read, blocksOfEdit(command));
+    // THE RESOLVER'S FACES AND THE BOX (ADR-0177), where this process was given a catalogue: read on the first word
+    // that needs one, so an edit the page's own fonts carry never reads a font file.
+    const faces = editFacesBound() ? new OperatorFaceSet(document, lazyFaces(), fonts) : null;
+    const made = editOperators(content, fonts, read, blocksOfEdit(command), faces?.faces ?? null);
     if (!made.ok) {
       const refusal = made.error;
       if (refusal.reason === 'needs-a-face') throw new TextNotWritableError(refusal.characters.join(''));
@@ -66,9 +74,13 @@ export async function applyEditTextOperators(
       throw refusalOf(refusal);
     }
     const edit = made.value;
-    const structural = checkOperatorEdit(content, edit, fonts);
+    const added = faces?.pageFonts ?? new Map<string, PageFont>();
+    const structural = checkOperatorEdit(content, edit, new Map([...fonts, ...added]));
     if (!structural.ok) throw new EditRefusedError('read-back', 0, `the operator edit did not read back: ${structural.error}`);
 
+    // THE ADDED FONTS FIRST, named in the page's own `/Font`, so the content written next names fonts that exist.
+    const fontDictionary = added.size === 0 ? null : fontDictionaryOf(document, leaf);
+    const names = faces === null || fontDictionary === null ? [] : faces.finish(fontDictionary);
     const before = leaf.get('Contents');
     const stream = document.addStream(edit.content, document.newDictionary());
     leaf.put('Contents', stream);
@@ -79,9 +91,47 @@ export async function applyEditTextOperators(
     if (missing.length > 0) {
       leaf.put('Contents', before);
       document.deleteObject(stream);
+      for (const name of names) fontDictionary?.delete(name);
       throw new EditRefusedError('read-back', 0, `MuPDF's reading of the page does not hold ${String(missing.length)} edited block(s)`);
     }
   });
+}
+
+/** The bound catalogue, read when a word first asks for a face rather than when the edit begins. */
+function lazyFaces(): FaceSource {
+  let read: FaceSource | null = null;
+  const source = (): FaceSource => {
+    read ??= editFaces();
+    if (read === null) throw new Error('an operator edit asked for the bundled fonts in a process given none');
+    return read;
+  };
+  return {
+    get faces() {
+      return source().faces;
+    },
+    read: (path) => source().read(path),
+  };
+}
+
+/**
+ * The `/Font` dictionary the page's content names its fonts in: its own `/Resources`' or the one it inherits, made
+ * where there is none. An inherited one is shared by the pages that inherit it, and a name added there is one those
+ * pages' content never uses.
+ */
+function fontDictionaryOf(document: PDFDocument, leaf: PDFObject): PDFObject {
+  let resources = leaf.getInheritable('Resources');
+  if (!resources.isNull()) resources = resources.resolve();
+  if (!resources.isDictionary()) {
+    resources = document.newDictionary();
+    leaf.put('Resources', resources);
+  }
+  let fonts = resources.get('Font');
+  if (!fonts.isNull()) fonts = fonts.resolve();
+  if (!fonts.isDictionary()) {
+    fonts = document.newDictionary();
+    resources.put('Font', fonts);
+  }
+  return fonts;
 }
 
 /**

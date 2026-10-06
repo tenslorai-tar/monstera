@@ -3,11 +3,14 @@ import { fileURLToPath } from 'node:url';
 
 import { blockEditOf, type CommandOfKind } from '@monstera/contract/host';
 import { asDocVersion } from '@monstera/shared';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { bindEditFaces } from './editFaces.js';
+import { faceSourceOf } from './fontCatalogue.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import type { PageRuns } from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
+import { pageFonts } from './pageFonts.js';
 import { EditRefusedError, TextNotWritableError } from './textEditRefusals.js';
 import { applyEditTextOperators } from './textOperatorEdit.js';
 import { joinedContent, showOperators, textObjectCount } from './textOperators.js';
@@ -86,6 +89,53 @@ describe('applyEditTextOperators', () => {
       expect((refusal as TextNotWritableError).characters).toBe('zp');
       const after = await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))));
       expect(after).toStrictEqual(content);
+    });
+  });
+
+  describe('with the bundled fonts bound (ADR-0177)', () => {
+    beforeEach(() => {
+      bindEditFaces(() => faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }]));
+    });
+    afterEach(() => {
+      bindEditFaces(null);
+    });
+
+    /** The page's `/Font` names after the edit, and the content as text. */
+    const after = (session: Awaited<ReturnType<typeof mupdfWriter.open>>) =>
+      withDocument(session, (document) => {
+        const leaf = document.findPage(0);
+        return { fonts: [...pageFonts(leaf).keys()], content: new TextDecoder('latin1').decode(joinedContent(pageContentStreams(leaf))) };
+      });
+
+    it('sets the letters the print has no glyph for in a bundled face, keeps the rest in its Type 3 font, and saves', async () => {
+      await withChromium(async (session) => {
+        const runs = headingRuns(await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0)))));
+        await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture zap.'), runs);
+        expect(await pageWords(session)).toContain('Monsterafixturezap.');
+        const { fonts, content } = await after(session);
+        // ONE FONT ADDED, and the inserted object shows in both the print's Type 3 font and the added one.
+        const added = fonts.filter((name) => name.startsWith('MonsteraF'));
+        expect(added).toHaveLength(1);
+        expect(content).toContain(`/${added[0] ?? ''} `);
+        expect(content).toContain('/F4 ');
+        const reopened = await mupdfWriter.open(await mupdfWriter.serialise(session));
+        try {
+          expect(await pageWords(reopened)).toContain('Monsterafixturezap.');
+        } finally {
+          await mupdfWriter.close(reopened);
+        }
+      });
+    });
+
+    it('draws a character no face carries as a box that still reads as the character', async () => {
+      await withChromium(async (session) => {
+        const runs = headingRuns(await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0)))));
+        const unassigned = String.fromCodePoint(0x378);
+        await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, `Monstera fixture ${unassigned}.`), runs);
+        // THE REAL CHARACTER in MuPDF's reading: the box font's ToUnicode maps its code to U+0378, not to the box.
+        expect(await pageWords(session)).toContain(`Monsterafixture${unassigned}.`);
+        expect(await pageWords(session)).not.toContain(String.fromCodePoint(0x25a1));
+      });
     });
   });
 
