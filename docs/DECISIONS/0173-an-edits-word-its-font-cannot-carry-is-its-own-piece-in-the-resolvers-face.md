@@ -126,6 +126,12 @@ indexes U+10140 set by glyph id as two characters, `D800` then `DD40`, from `FPD
 taken out again. The read-back stays as ADR-0169 left it; what makes a character past the BMP read right is Decision 6's
 setter alone, and `proof:pdfiumcommand` refuses the edit when the setter is `FPDFText_SetText` again.
 
+**Note on Decision 9, 2026-10-06, found while it was being built:** Replace's undo restores strings by object index
+(`PriorTextObjects`), and a replacement written in pieces inserts objects after its run, which moves every later index.
+So a Replace that will be written in pieces records no strings and takes a checkpoint instead, decided by the same
+answer the writer takes (`keepsItsObject`), and the line rule reads a replacement's end from its last piece, found by
+handle. A Replace whose own font carries it still captures and undoes by strings, as before. Built in 57a80d0d.
+
 **Rejected, in addition:** writing a ToUnicode after the save. It makes a character past the BMP read right while it
 draws as `.notdef`, it needs the saved bytes of a password document decrypted and encrypted again, and it is a second
 writer of the bytes PDFium has just written (B3).
