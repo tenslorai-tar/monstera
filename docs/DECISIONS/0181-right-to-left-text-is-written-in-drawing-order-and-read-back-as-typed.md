@@ -155,3 +155,10 @@ parted.
   Every line of a shrunk block is set again, since one left at the old size would stand beside lines at the new one.
 - **Decision 11 was not built because it was already true**, and is proved by the nested-promotion cases in
   `pdfiumCommand.proof.mjs`.
+
+## Correction, 2026-10-06 (later): the first limit is removed, and R39 is accepted
+
+The first limit above is removed by [ADR-0185](0185-a-line-of-several-objects-is-read-and-written-as-one-line.md): a line of
+several objects is read as one line and written in the order it is seen, so its parts are not reordered by an edit. The
+control in `pdfiumCommand.proof.mjs` that pinned it now pins the mechanism the fix removes (each object read alone is not
+the line). Decision 5's one-object rule stays, and the owner accepted it as decided (R39, 2026-10-06).
