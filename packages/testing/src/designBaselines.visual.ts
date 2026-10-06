@@ -100,7 +100,8 @@ async function sectionDrawn(page: Page, section: string): Promise<void> {
 }
 
 /**
- * Waits until the document is DRAWN: the page and its thumbnail each hold a canvas.
+ * Waits until the document is DRAWN: the page and its thumbnail each hold a canvas, and the status bar's tip
+ * (ADR-0159) has finished its `--motion-fade` opacity transition in, never mid-fade.
  *
  * Measured 2026-09-15, three zero-tolerance comparisons of one build: the first
  * matched all 33 images, the second failed two and the third one — `dark-section-comment`
@@ -108,9 +109,23 @@ async function sectionDrawn(page: Page, section: string): Promise<void> {
  * bar still laying out. Playwright's stability rule is *two consecutive identical
  * frames*, and a document that has not started drawing is two identical frames. So
  * readiness is asserted on the thing that is late, never on how long to wait.
+ *
+ * The tip is the same shape of lateness, found the same way: `section-home` differed by 669–815 pixels
+ * (2026-10-06, local and CI readings), each time at the tip's own words, which fade in over 400ms starting
+ * from a `setTimeout(0)` on mount — so whether the fade has reached full opacity by the time a screenshot is
+ * taken depends on timing nothing else here waits on. Asserted on the computed opacity, not a delay, for the
+ * same reason as the canvases above: a wait long enough for every machine is a number nobody can read back.
  */
 async function documentDrawn(page: Page): Promise<void> {
   await expect.poll(() => page.locator('canvas:visible').count()).toBeGreaterThanOrEqual(2);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const tip = document.querySelector<HTMLElement>('.m-status-tip');
+        return tip === null ? 1 : Number.parseFloat(getComputedStyle(tip).opacity);
+      }),
+    )
+    .toBe(1);
 }
 
 /** Runs a command through the palette by its EXACT title — a prefix can match a longer command listed first. */

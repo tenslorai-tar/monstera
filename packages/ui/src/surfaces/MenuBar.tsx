@@ -444,11 +444,16 @@ export function MenuBar({
     closedFor.current.set(id, details.reason);
   };
 
-  /** Where a row menu leaves the focus as it closes: given back only when the close ends the bar's use. */
-  const focusOnClose =
-    (id: string) =>
-    (): HTMLElement | boolean =>
-      GIVES_FOCUS_BACK[closedFor.current.get(id) ?? 'none'] ? (focusBefore() ?? true) : false;
+  /**
+   * Where a row menu leaves the focus as it closes: given back only when the close ends the bar's use.
+   *
+   * Takes `id` rather than being curried on it: `finalFocus` wants a function Base UI calls later, and a ref
+   * is read inside this one — so the JSX wraps this in its OWN arrow (`() => focusOnClose(id)`) instead of
+   * calling this during render to produce one, which is what `react-hooks/refs` reads as reading a ref during
+   * render even though the read itself was always deferred to the close.
+   */
+  const focusOnClose = (id: string): HTMLElement | boolean =>
+    GIVES_FOCUS_BACK[closedFor.current.get(id) ?? 'none'] ? (focusBefore() ?? true) : false;
 
   /** A row menu opening: its title kept when the arrow keys brought it from its neighbour (`menuRowKeys.ts`). */
   const arriving = (id: string, details: Menu.Root.ChangeEventDetails): void => {
@@ -479,18 +484,21 @@ export function MenuBar({
    * Also where a row menu's close and arrival are tracked (`menuRowClose.ts`, `menuRowKeys.ts`), keyed by `id` —
    * each drawn menu's own id, or `'more'` for the folding menu, since both are one trigger of the row to Base UI's
    * menubar pattern and neither collides with a real menu id.
+   *
+   * Takes `open` and `details` rather than being curried down to them: `onOpenChange` wants a function Base UI
+   * calls later, and `closing`/`arriving` read a ref — so the JSX wraps this in its own arrow
+   * (`(open, details) => opening(id, held, open, details)`) instead of calling this during render to produce
+   * one, for `focusOnClose`'s reason above.
    */
-  const opening =
-    (id: string, held: readonly MenuBarMenuModel[]) =>
-    (open: boolean, details: Menu.Root.ChangeEventDetails): void => {
-      if (!open) {
-        closing(id, details);
-        return;
-      }
-      arriving(id, details);
-      setOpened((count) => count + 1);
-      for (const menu of held) for (const each of submenusIn(menu)) sources[each].read();
-    };
+  const opening = (id: string, held: readonly MenuBarMenuModel[], open: boolean, details: Menu.Root.ChangeEventDetails): void => {
+    if (!open) {
+      closing(id, details);
+      return;
+    }
+    arriving(id, details);
+    setOpened((count) => count + 1);
+    for (const menu of held) for (const each of submenusIn(menu)) sources[each].read();
+  };
 
   /** A menu's groups, captioned and separated: the same whether its trigger is on the row or in *More*. */
   const groupsOf = (menu: MenuBarMenuModel): ReactElement[] =>
@@ -518,7 +526,9 @@ export function MenuBar({
           {drawnMenus.map((menu) => (
             <Menu.Root
               key={menu.id}
-              onOpenChange={opening(menu.id, [menu])}
+              onOpenChange={(open, details) => {
+                opening(menu.id, [menu], open, details);
+              }}
               onOpenChangeComplete={(open) => {
                 if (open) arrived(menu.id);
               }}
@@ -528,7 +538,7 @@ export function MenuBar({
               </Menu.Trigger>
               <Menu.Portal>
                 <Menu.Positioner side="bottom" align="start" sideOffset={2}>
-                  <Menu.Popup className="m-context-menu m-menu-bar__popup" finalFocus={focusOnClose(menu.id)}>
+                  <Menu.Popup className="m-context-menu m-menu-bar__popup" finalFocus={() => focusOnClose(menu.id)}>
                     {groupsOf(menu)}
                   </Menu.Popup>
                 </Menu.Positioner>
@@ -538,7 +548,9 @@ export function MenuBar({
           {foldedMenus.length === 0 ? null : (
             // THE FOLDED MENUS (ADR-0146): one more menu on the row, each folded menu a submenu in it, in order.
             <Menu.Root
-              onOpenChange={opening('more', foldedMenus)}
+              onOpenChange={(open, details) => {
+                opening('more', foldedMenus, open, details);
+              }}
               onOpenChangeComplete={(open) => {
                 if (open) arrived('more');
               }}
@@ -548,7 +560,7 @@ export function MenuBar({
               </Menu.Trigger>
               <Menu.Portal>
                 <Menu.Positioner side="bottom" align="start" sideOffset={2}>
-                  <Menu.Popup className="m-context-menu m-menu-bar__popup" finalFocus={focusOnClose('more')}>
+                  <Menu.Popup className="m-context-menu m-menu-bar__popup" finalFocus={() => focusOnClose('more')}>
                     {foldedMenus.map((menu) => (
                       <Menu.SubmenuRoot key={menu.id}>
                         <Menu.SubmenuTrigger
