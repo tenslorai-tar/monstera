@@ -1,7 +1,9 @@
 import type { EditedBlock } from '@monstera/contract/host';
-import { type LineRun, type Result, err, lineText, ok, replacementsForLine } from '@monstera/shared';
+import { type Result, err, ok } from '@monstera/shared';
 
 import type { PageFont } from './pageFonts.js';
+import { type FlowLine, type Measure, planBlock } from './paragraphFlow.js';
+import { blockShape, paragraphSpacing } from './paragraphShape.js';
 import { type Matrix, type ShowOperator, multiply, showOperators, textObjectCount } from './textOperators.js';
 import { codesFor } from './toUnicode.js';
 
@@ -13,11 +15,11 @@ import { codesFor } from './toUnicode.js';
  *
  * ## What changes, and what does not
  *
- * Each typed line is diffed against the line it replaces by `replacementsForLine`'s rule, the PDFium writer's own
- * (ADR-0096 Decision 5). The runs before the first one the diff names keep their operators; from that run to the end
- * of the line every run is set again, each in its own state, keeping the gap it had to the run before it. A line the
- * edit moved down, because a line above it wrapped, is set again whole at its new baseline. A line the edit did not
- * reach is not touched.
+ * The block is planned as paragraphs by `planBlock`, the PDFium writer's own plan (ADR-0179): the words typed are
+ * attributed to the runs that wrote them, and only the lines from the first changed word to where the layout meets an
+ * old line again are set afresh, each word in its own run's state and aligned as the block's paragraphs were. The runs
+ * of such a line before the first one the edit names keep their operators. A line the edit moved down, because a line
+ * above it wrapped, is set again whole at its new baseline. A line the edit did not reach is not touched.
  *
  * An operator that is set again keeps its place and loses its glyphs: it becomes a `TJ` of spacing alone with the same
  * advance, so an operator after it that is positioned by advance rather than by a move stays where it was. The new
@@ -171,6 +173,8 @@ function hexOf(font: PageFont, codes: readonly number[]): string {
 export interface FacePiece {
   readonly font: PageFont;
   readonly codes: readonly number[];
+  /** The character this piece draws as the box, where it is one. */
+  readonly boxed?: string;
 }
 
 /**
@@ -185,6 +189,11 @@ export interface OperatorFaces {
    * stretch in the run's own font or a sibling as this module would, so a word partly carried keeps that part there.
    */
   set(word: string, source: ShowOperator, own: (stretch: string) => FacePiece | null): readonly FacePiece[] | null;
+  /**
+   * `pieces` were drawn, once, where the edit puts them. Separate from {@link set} because the plan MEASURES a word as
+   * often as it likes and draws it once, and the boxes a person is told about are the drawn ones.
+   */
+  drawn(pieces: readonly FacePiece[]): void;
 }
 
 interface Segment {
@@ -403,8 +412,28 @@ function write(
         : (lead.state.leading > 0 ? lead.state.leading : 1.2 * lead.state.size) * firstRun.origin.up;
 
     const visual: VisualLine[] = [];
-    const typed = block.text.replace(/\r\n?/gu, '\n').split('\n');
     const laid: string[] = [];
+    // THE BLOCK AS PARAGRAPHS (ADR-0179): the soft-ended lines are one paragraph, and `planBlock` says which lines stay,
+    // which are set again and in which run's state each word is, the PDFium writer's own plan (B3a).
+    const soft = lines.map((_, at) => at < lines.length - 1 && block.soft[at] === true);
+    const flow: FlowLine[] = lines.map((line, at) => ({
+      runs: line.map((run) => ({ id: run.run.index, text: run.run.text })),
+      soft: soft[at] === true,
+    }));
+    const shape = blockShape(
+      lines.map((line) => ({
+        x0: Math.min(...line.map((run) => run.run.left)),
+        x1: Math.max(...line.map((run) => run.run.right)),
+        characters: line.reduce((sum, run) => sum + run.run.text.length, 0),
+      })),
+      soft,
+    );
+    const spacing = paragraphSpacing(baselines, soft);
+    const byId = new Map(lines.flat().map((run) => [run.run.index, run]));
+    // WHERE A LINE SET AFRESH STARTS: the origin of the line that keeps the paragraph's left edge, since the shape's edge
+    // is where ink begins and an operator is placed by its origin.
+    const blockLeft = Math.min(...lines.map((line) => line[0]?.origin.x ?? 0));
+    const restOrigin = Math.min(...(lines.length > 1 ? lines.slice(1) : lines).map((line) => line[0]?.origin.x ?? 0));
 
     /** Empties a run's operators, and the inkless spaces PDFium joined into it that no run holds. */
     const empty = (members: readonly number[]): void => {
@@ -422,38 +451,53 @@ function write(
     };
 
     /**
-     * Lays out `words` set in `source`'s state from `x` on the current visual line, wrapping at the block's right edge
-     * when `wraps`. Answers where it ended.
+     * The pieces that draw `token` set in `source`'s state, or `null` where nothing can. A WORD THE PAGE CANNOT CARRY goes
+     * to the resolver's face or the box, where the caller gave faces (ADR-0177); without them, or where they set nothing,
+     * its letters are named and the edit is refused. Asked once per word and state, since a face set is a decision the
+     * caller records: the plan measures a word and the layout writes it, and both must hear the same answer.
      */
-    const layOut = (source: ShowOperator, words: string, x: number, wraps: boolean, left: number): number => {
+    const answers = new Map<string, readonly FacePiece[] | null>();
+    const piecesOf = (source: ShowOperator, token: string): readonly FacePiece[] | null => {
+      const key = `${String(indexOf.get(source))}|${token}`;
+      if (answers.has(key)) return answers.get(key) ?? null;
       const font = fontOf(source);
+      const found = carrier(font, token);
+      const pieces: readonly FacePiece[] | null =
+        found !== null ? [found] : token === ' ' ? [] : (faces?.set(token, source, (stretch) => carrier(font, stretch)) ?? null);
+      if (pieces === null) {
+        for (const character of token) if (carrier(font, character) === null) uncarried.add(character);
+      }
+      answers.set(key, pieces);
+      return pieces;
+    };
+    /** How far the pen moves for `pieces` in `source`'s state: a space no font carries moves it by a nominal space. */
+    const pieceWidths = (source: ShowOperator, pieces: readonly FacePiece[], unit: number): number[] =>
+      pieces.map((piece) => (advanceOf(piece.font, piece.codes, source.state) ?? 0) * unit);
+    const widthOfPieces = (source: ShowOperator, pieces: readonly FacePiece[], unit: number): number =>
+      pieces.length === 0
+        ? (SPACE_EM * source.state.size + source.state.charSpacing + source.state.wordSpacing) * source.state.scale * unit
+        : pieceWidths(source, pieces, unit).reduce((total, each) => total + each, 0);
+    /** How wide `text` is when it is set in the state of run `id`: the plan's one question. */
+    const measure: Measure = (id, text) => {
+      const run = byId.get(id) ?? firstRun;
+      const source = sourceOf(run);
+      const unit = placed(run.first).unit;
+      return tokens(text).reduce((sum, token) => {
+        const pieces = piecesOf(source, token);
+        return pieces === null ? sum : sum + widthOfPieces(source, pieces, unit);
+      }, 0);
+    };
+
+    /** Lays out `words` set in `source`'s state from `x` on `line`, answering where it ended. */
+    const layOut = (source: ShowOperator, words: string, x: number, line: VisualLine): number => {
       const unit = placed(indexOf.get(source) ?? -1).unit;
       let cursor = x;
-      // A BREAK FALLS BEFORE A WORD, so the spaces it falls on end the line above and none starts the next.
       for (const token of tokens(words)) {
-        let line = visual.at(-1);
-        if (line === undefined) throw new Error('an operator edit laid out words before any line');
-        const found = carrier(font, token);
-        // A WORD THE PAGE CANNOT CARRY goes to the resolver's face or the box, where the caller gave faces (ADR-0177);
-        // without them, or where they set nothing, its letters are named and the edit is refused.
-        const pieces: readonly FacePiece[] | null =
-          found !== null ? [found] : token === ' ' ? [] : (faces?.set(token, source, (stretch) => carrier(font, stretch)) ?? null);
-        if (pieces === null) {
-          for (const character of token) if (carrier(font, character) === null) uncarried.add(character);
-          continue;
-        }
-        const widths = pieces.map((piece) => (advanceOf(piece.font, piece.codes, source.state) ?? 0) * unit);
-        // A SPACE NO FONT CARRIES moves the pen by a nominal space; anything carried moves it by what draws it.
-        const width =
-          pieces.length === 0
-            ? (SPACE_EM * source.state.size + source.state.charSpacing + source.state.wordSpacing) * source.state.scale * unit
-            : widths.reduce((total, each) => total + each, 0);
-        if (token !== ' ' && wraps && line.segments.length > 0 && cursor + width > blockRight + SAME) {
-          visual.push({ baseline: line.baseline - pitch, segments: [] });
-          line = visual.at(-1);
-          cursor = left;
-          if (line === undefined) throw new Error('an operator edit lost the line it wrapped to');
-        }
+        const pieces = piecesOf(source, token);
+        if (pieces === null) continue;
+        faces?.drawn(pieces);
+        const widths = pieceWidths(source, pieces, unit);
+        const width = widthOfPieces(source, pieces, unit);
         // EACH PIECE'S TEXT, the word's characters its codes show, so the segments still spell the word.
         const texts = pieces.length === 1 ? [token] : pieceTexts(pieces, token);
         let at = cursor;
@@ -476,58 +520,107 @@ function write(
     const segmentWidth = (segment: Segment): number =>
       (advanceOf(segment.font, segment.codes, segment.source.state) ?? 0) * placed(indexOf.get(segment.source) ?? -1).unit;
 
+    const limits =
+      shape.align === 'center'
+        ? (() => {
+            const across = Math.max(1, 2 * Math.min(blockRight - shape.centre, shape.centre - blockLeft));
+            return { first: across, rest: across };
+          })()
+        : shape.align === 'right'
+          ? { first: Math.max(1, blockRight - blockLeft), rest: Math.max(1, blockRight - blockLeft) }
+          : {
+              first: Math.max(1, blockRight - (restOrigin + shape.firstIndent)),
+              rest: Math.max(1, blockRight - restOrigin),
+            };
+    const plan = planBlock(flow, block.text.replace(/\r\n?/gu, '\n'), measure, limits);
+
+    /** The old lines the plan keeps exactly as they are: their operators are not touched. */
+    const kept = new Set<number>();
+    /** How many leading runs of an old line a line set afresh leaves untouched. */
+    const keptRuns = new Map<number, number>();
     let previous = baselines[0] ?? 0;
-    for (const [k, line] of lines.entries()) {
-      const next = typed[k];
-      const lineRuns: LineRun[] = line.map((run) => ({ index: run.run.index, text: run.run.text }));
-      const left = line[0]?.origin.x ?? 0;
-      if (next === undefined) {
-        for (const run of line) empty(run.members);
-        emptyBetween(line[0]?.first ?? 0, line.at(-1)?.last ?? -1);
+    for (const [at, row] of plan.rows.entries()) {
+      const oldGap = (line: number): number => (baselines[line - 1] ?? 0) - (baselines[line] ?? 0);
+      const gap =
+        row.kind === 'old'
+          ? oldGap(row.line)
+          : row.kind === 'blank'
+            ? pitch + (row.opens ? spacing : 0)
+            : row.replaces > 0
+              ? oldGap(row.replaces)
+              : pitch + (row.opens ? spacing : 0);
+      const target = at === 0 ? (baselines[0] ?? 0) : previous - gap;
+      previous = target;
+      if (row.kind === 'blank') {
+        laid.push('');
         continue;
       }
-      const target = k === 0 ? (baselines[0] ?? 0) : previous - ((baselines[k - 1] ?? 0) - (baselines[k] ?? 0));
-      const moved = Math.abs(target - (baselines[k] ?? 0)) > SAME;
-      const replacements = new Map(
-        (moved ? lineRuns : replacementsForLine(lineRuns, next)).map((replacement) => [replacement.index, replacement.text]),
-      );
-      if (moved) for (const replacement of replacementsForLine(lineRuns, next)) replacements.set(replacement.index, replacement.text);
-      const firstAt = line.findIndex((run) => replacements.has(run.run.index));
-      if (firstAt === -1) {
-        laid.push(lineText(lineRuns));
-        previous = baselines[k] ?? 0;
+      if (row.kind === 'old') {
+        const line = lines[row.line];
+        if (line === undefined) continue;
+        const text = line.map((run) => run.run.text).join('');
+        // A LINE AN EARLIER WRAP MOVED DOWN is set again whole at its new baseline, keeping the gap each run had to the
+        // one before it; one that did not move is not touched.
+        if (Math.abs(target - (baselines[row.line] ?? 0)) <= SAME) {
+          kept.add(row.line);
+          laid.push(text);
+          continue;
+        }
+        const placedLine: VisualLine = { baseline: target, segments: [] };
+        visual.push(placedLine);
+        let cursor = line[0]?.origin.x ?? 0;
+        let previousEnd: number | null = null;
+        for (const [index, run] of line.entries()) {
+          if (previousEnd !== null) cursor += run.origin.x - previousEnd;
+          // A TRAILING SPACE OF A RUN WITH A RUN AFTER IT is the gap that run keeps.
+          const words = index === line.length - 1 ? run.run.text : run.run.text.replace(/ +$/u, '');
+          cursor = layOut(sourceOf(run), words, cursor, placedLine);
+          previousEnd = run.right;
+        }
+        laid.push(text);
         continue;
       }
-      const changed = next !== lineText(lineRuns);
-      visual.push({ baseline: target, segments: [] });
-      const kept = line.slice(0, firstAt);
-      let cursor = line[firstAt]?.origin.x ?? left;
-      let previousEnd: number | null = null;
-      for (const [at, run] of line.slice(firstAt).entries()) {
-        const text = replacements.get(run.run.index) ?? run.run.text;
-        const lastOfLine = at === line.length - firstAt - 1;
-        // THE GAP IT HAD to the run before it, kept; a trailing space of a run with a run after it is that gap.
-        if (previousEnd !== null) cursor = Math.max(cursor, cursor + (run.origin.x - previousEnd));
-        const words = lastOfLine ? text : text.replace(/ +$/u, '');
-        cursor = layOut(sourceOf(run), words, cursor, changed, left);
-        previousEnd = run.right;
-        empty(run.members);
+      // A LINE SET AFRESH, one run of words after another in each run's own state, aligned as the block's paragraphs are.
+      const replaced = row.replaces >= 0 ? lines[row.replaces] : undefined;
+      // THE RUNS BEFORE THE FIRST ONE THE EDIT NAMES KEEP THEIR OPERATORS, as they always have: where the line stands
+      // where it did and is set from its left, each leading piece that is exactly an old run is that run, untouched.
+      // At least one old run is set again, which is where the rest of the line begins.
+      let untouched = 0;
+      if (replaced !== undefined && shape.align === 'left' && Math.abs(target - (baselines[row.replaces] ?? 0)) <= SAME) {
+        while (untouched < replaced.length - 1) {
+          const piece = row.pieces[untouched];
+          const run = replaced[untouched];
+          if (piece?.run !== run?.run.index || piece?.text !== run?.run.text) break;
+          untouched += 1;
+        }
+        keptRuns.set(row.replaces, untouched);
       }
-      emptyBetween(line[firstAt]?.first ?? 0, line.at(-1)?.last ?? -1);
-      laid.push(lineText(kept.map((run) => ({ index: run.run.index, text: run.run.text }))) + line.slice(firstAt).map((run) => replacements.get(run.run.index) ?? run.run.text).join(''));
-      previous = visual.at(-1)?.baseline ?? target;
+      const x =
+        shape.align === 'center'
+          ? shape.centre - row.width / 2
+          : shape.align === 'right'
+            ? blockRight - row.width
+            : replaced === undefined
+              ? restOrigin + (row.first ? shape.firstIndent : 0)
+              : (replaced[untouched]?.origin.x ?? restOrigin);
+      const placedLine: VisualLine = { baseline: target, segments: [] };
+      visual.push(placedLine);
+      let cursor = x;
+      for (const piece of row.pieces.slice(untouched)) {
+        cursor = layOut(sourceOf(byId.get(piece.run) ?? firstRun), piece.text, cursor, placedLine);
+      }
+      laid.push(row.pieces.map((piece) => piece.text).join(''));
     }
-    // LINES TYPED BELOW THE BLOCK'S LAST, in its last run's state, from its last line's left.
+    // EVERY OLD LINE THE PLAN DID NOT KEEP is emptied from its first run that was set again: a line set afresh stands in
+    // for it, or the person removed it.
+    for (const [at, line] of lines.entries()) {
+      if (kept.has(at)) continue;
+      const from = keptRuns.get(at) ?? 0;
+      for (const run of line.slice(from)) empty(run.members);
+      emptyBetween(line[from]?.first ?? 0, line.at(-1)?.last ?? -1);
+    }
     const lastLine = lines.at(-1) ?? firstLine;
     const lastRun = lastLine.at(-1) ?? firstRun;
-    for (const extra of typed.slice(lines.length)) {
-      previous -= pitch;
-      laid.push(extra);
-      if (extra === '') continue;
-      visual.push({ baseline: previous, segments: [] });
-      layOut(sourceOf(lastRun), extra, lastLine[0]?.origin.x ?? 0, true, lastLine[0]?.origin.x ?? 0);
-      previous = visual.at(-1)?.baseline ?? previous;
-    }
     if (uncarried.size > 0) continue;
     for (const at of own) emptied.add(at);
     written.push(laid.join('\n'));

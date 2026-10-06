@@ -179,7 +179,7 @@ async function edit(bytes, change, line, keep) {
   const command = {
     kind: 'editTextBlock',
     page: 0,
-    ...blockEditOf([{ lines: block.lines.map((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)), text: change(textOfBlock(block).trimEnd()) }]),
+    ...blockEditOf([{ lines: block.lines.map((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)), soft: block.lines.map(() => false), text: change(textOfBlock(block).trimEnd()) }]),
     fit: 'reflow',
     version: 1,
   };

@@ -150,6 +150,7 @@ describe('editOperators on the Chromium print', () => {
           asked.push(word);
           return Array.from(word, (character) => own(character) ?? { font: face, codes: [codeFor(character)] });
         },
+        drawn: () => undefined,
       };
       const result = editOperators(content, fonts, page, [{ lines: [[page.runs[0]?.index ?? -1]], soft: [false], text: 'Monstera fixture zap.' }], faces);
       if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
@@ -217,11 +218,19 @@ describe('editOperators on a page of lines', () => {
     // 72 + 3 letters at 10: the block is 30 wide in text space, so a fourth word wraps.
     const result = editOperators(content, fonts, page, block('abc abc\ndef\nghi'));
     if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
-    expect(result.value.emptied).toStrictEqual([0, 1, 2]);
+    // THE FIRST LINE STANDS: the plan keeps an old line the new words begin with exactly (ADR-0179), so its operator is
+    // not emptied and the wrapped word and the two lines below it are the ones set.
+    expect(result.value.emptied).toStrictEqual([1, 2]);
+    expect(latin1(result.value.content)).toContain('1 0 0 -1 72 300 Tm (abc) Tj ET');
     expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
     const tms = [...(inserted(result.value)[0] ?? '').matchAll(/ (\d+(?:\.\d+)?) Tm/gu)].map((match) => Number(match[1]));
-    expect(tms).toStrictEqual([300, 330, 360, 390]);
-    expect(result.value.drawn).toStrictEqual(['abc abcdefghi']);
+    expect(tms).toStrictEqual([330, 360, 390]);
+    expect(result.value.drawn).toStrictEqual(['abcdefghi']);
+    // CONTROL: a line the words DO change is set again, so the case above is the plan's keeping the first and not an
+    // edit that never reaches the operators.
+    const changed = editOperators(content, fonts, page, block('abx abc\ndef\nghi'));
+    if (!changed.ok) throw new Error(`refused: ${JSON.stringify(changed.error)}`);
+    expect(changed.value.emptied).toStrictEqual([0, 1, 2]);
   });
 
   it('empties a removed line and inserts nothing for it', () => {
@@ -313,6 +322,94 @@ describe('an emptied operator keeps its advance only where a later one is placed
     const last = editOperators(content, fonts, page, [{ lines: [[2]], soft: [false], text: 'ex' }]);
     if (!last.ok) throw new Error(`refused: ${JSON.stringify(last.error)}`);
     expect(latin1(last.value.content)).toContain('(cd) Tj [] TJ ET');
+  });
+});
+
+/** A run PDFium would read as drawn, with its ink where it is drawn (`runsOf` leaves the ink at the origin). */
+const inked = (index: number, text: string, left: number, right: number): PageRun => ({
+  index,
+  members: [index],
+  text,
+  left,
+  right,
+  bottom: 0,
+  top: 0,
+});
+
+describe('editOperators on paragraphs (ADR-0179)', () => {
+  const regular = font('F1', 'abcdefghijklmnopqrstuvwxyz');
+  const strong = font('F2', 'abcdefghijklmnopqrstuvwxyz');
+  const fonts = new Map([
+    ['F1', regular],
+    ['F2', strong],
+  ]);
+
+  it('keeps each word in the state it was drawn in when a longer line wraps it', () => {
+    // `aaa ` and `bbb` on one line, the second in F2; `ccc` below it. Five letters at 5 units each.
+    const content = bytes(
+      [
+        'BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa ) Tj ET',
+        'BT /F2 10 Tf 1 0 0 1 92 100 Tm (bbb) Tj ET',
+        'BT /F1 10 Tf 1 0 0 1 72 88 Tm (ccc) Tj ET',
+      ].join('\n'),
+    );
+    const page: PageRuns = {
+      textObjects: [0, 1, 2],
+      runs: [inked(0, 'aaa ', 72, 92), inked(1, 'bbb', 92, 107), inked(2, 'ccc', 72, 87)],
+    };
+    const result = editOperators(content, fonts, page, [{ lines: [[0, 1], [2]], soft: [true, false], text: 'aaa xxxxx bbb ccc' }]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    expect(checkOperatorEdit(content, result.value, new Map(fonts)).ok).toBe(true);
+    const [object = ''] = inserted(result.value);
+    /** The font in force where `hex` is shown: the last `Tf` before it. */
+    const fontAt = (hex: string): string | undefined => {
+      const before = object.slice(0, object.indexOf(hex));
+      return [...before.matchAll(/\/(F\d) 10 Tf/gu)].at(-1)?.[1];
+    };
+    // `bbb` WRAPPED ONTO ANOTHER LINE AND IS STILL F2.
+    expect(object).toContain('<626262');
+    expect(fontAt('<626262')).toBe('F2');
+    // CONTROL: `aaa` and `ccc`, drawn in F1, are F1 — the edit did not set every word in the last font it wrote.
+    expect(fontAt('<616161>')).toBe('F1');
+    expect(fontAt('<636363>')).toBe('F1');
+  });
+
+  it('keeps a centred line centred when its words change', () => {
+    const content = bytes(
+      [
+        'BT /F1 10 Tf 1 0 0 1 92.5 100 Tm (abc) Tj ET',
+        'BT /F1 10 Tf 1 0 0 1 87.5 88 Tm (abcde) Tj ET',
+        'BT /F1 10 Tf 1 0 0 1 95 76 Tm (ab) Tj ET',
+      ].join('\n'),
+    );
+    const page: PageRuns = {
+      textObjects: [0, 1, 2],
+      runs: [inked(0, 'abc', 92.5, 107.5), inked(1, 'abcde', 87.5, 112.5), inked(2, 'ab', 95, 105)],
+    };
+    const result = editOperators(content, fonts, page, [
+      { lines: [[0], [1], [2]], soft: [false, false, false], text: 'abc\nabcde\nabcd' },
+    ]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    // FOUR LETTERS, 20 units wide, about the centre the lines keep, 100.
+    expect(inserted(result.value)[0]).toContain('1 0 0 1 90 76 Tm');
+    // CONTROL: the same words in lines that share a left edge are set from that edge, so the case above is alignment
+    // and not a line that always starts where the old one did.
+    const flush = bytes(
+      [
+        'BT /F1 10 Tf 1 0 0 1 72 100 Tm (abc) Tj ET',
+        'BT /F1 10 Tf 1 0 0 1 72 88 Tm (abcde) Tj ET',
+        'BT /F1 10 Tf 1 0 0 1 72 76 Tm (ab) Tj ET',
+      ].join('\n'),
+    );
+    const left: PageRuns = {
+      textObjects: [0, 1, 2],
+      runs: [inked(0, 'abc', 72, 87), inked(1, 'abcde', 72, 97), inked(2, 'ab', 72, 82)],
+    };
+    const control = editOperators(flush, fonts, left, [
+      { lines: [[0], [1], [2]], soft: [false, false, false], text: 'abc\nabcde\nabcd' },
+    ]);
+    if (!control.ok) throw new Error(`refused: ${JSON.stringify(control.error)}`);
+    expect(inserted(control.value)[0]).toContain('1 0 0 1 72 76 Tm');
   });
 });
 

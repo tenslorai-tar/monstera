@@ -52,7 +52,12 @@ export class OperatorFaceSet {
 
   /** The hook {@link editOperators} asks for a word its run's fonts cannot carry. */
   get faces(): OperatorFaces {
-    return { set: (word, op, own) => this.#set(word, op.state.font, own) };
+    return {
+      set: (word, op, own) => this.#set(word, op.state.font, own),
+      drawn: (pieces) => {
+        for (const piece of pieces) if (piece.boxed !== undefined) this.boxed.push(piece.boxed);
+      },
+    };
   }
 
   /** The fonts the edit added, by resource name, as the page will read them once {@link finish} has written them. */
@@ -77,14 +82,12 @@ export class OperatorFaceSet {
     const request = { family: font?.face ?? null, bold: (font?.weight ?? 400) >= BOLD, italic: false, own: [] };
     const pieces = editPieces(word, (stretch) => own(stretch) !== null, request, this.source.faces, []);
     const out: FacePiece[] = [];
-    const boxed: string[] = [];
     for (const piece of pieces) {
       if (piece.boxed.length > 0) {
         for (const character of piece.boxed) {
           const box = this.#box(character, piece.face);
           if (box === null) return null;
-          out.push(box);
-          boxed.push(character);
+          out.push({ ...box, boxed: character });
         }
         continue;
       }
@@ -92,7 +95,6 @@ export class OperatorFaceSet {
       if (set === null) return null;
       out.push(set);
     }
-    this.boxed.push(...boxed);
     return out;
   }
 

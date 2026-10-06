@@ -91,19 +91,22 @@ describe('applyEditTextOperators', () => {
     });
   });
 
-  it('keeps a word wider than the page, which runs past its edge, rather than refusing it (Q7)', async () => {
+  it('keeps words that run past the page edge, rather than refusing the edit (Q7)', async () => {
     await withChromium(async (session, content) => {
       const runs = headingRuns(content);
-      // EIGHT TIMES "reading", one word in the print's own letters: wider than the page at the heading's size.
-      const long = 'reading'.repeat(8);
+      // FOUR HUNDRED WORDS in the print's own letters: the heading wraps onto more lines than the page is tall, so its
+      // last lines are below the page's edge. (A single word wider than the block is broken between letters at the
+      // block's edge, ADR-0179, so a long word no longer runs past the edge sideways.)
+      const long = Array.from({ length: 400 }, () => 'reading').join(' ');
       await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, `Monstera ${long}.`), runs);
       const unclipped = await withDocument(session, (document) =>
         document.loadPage(0).toStructuredText('clip=no').asText().replace(/\s/gu, ''),
       );
-      expect(unclipped).toContain(`Monstera${long}.`);
-      // CONTROL: MuPDF's default reading, clipped to the page, does NOT hold the whole word, so this case reaches the
-      // part of the word past the edge, which the read-back refused before it read with `clip=no`.
-      expect(await pageWords(session)).not.toContain(`Monstera${long}.`);
+      const whole = `Monstera${long.replace(/ /gu, '')}.`;
+      expect(unclipped).toContain(whole);
+      // CONTROL: MuPDF's default reading, clipped to the page, does NOT hold all of it, so this case reaches the part
+      // past the edge, which the read-back refused before it read with `clip=no`.
+      expect(await pageWords(session)).not.toContain(whole);
     });
   });
 

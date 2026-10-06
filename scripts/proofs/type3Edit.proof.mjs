@@ -112,7 +112,7 @@ async function run(pdfium, kernel) {
   const command = (pageReading, text) => ({
     kind: 'editTextOperators',
     page: 0,
-    ...kernel.blockEditOf([{ lines: [line.map((/** @type {any} */ each) => each.index)], text }]),
+    ...kernel.blockEditOf([{ lines: [line.map((/** @type {any} */ each) => each.index)], soft: [false], text }]),
     fit: 'reflow',
     version: 1,
     _reading: pageReading,
