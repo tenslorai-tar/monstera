@@ -30,6 +30,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
+import { fontsDirectory } from '../provision/fonts.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 
 const ROOT = repoRoot();
@@ -39,6 +40,10 @@ const CHROMIUM = join(ROOT, 'packages', 'testing', 'fixtures', 'text-edit', 'chr
 const HEADING = 'Monstera fixture heading.';
 const EDITED = 'Monstera fixture reading.';
 const BODY = 'Body text in the regular face.';
+/** A code point no font carries (U+0378 is unassigned), so it can only be drawn as the box. */
+const UNASSIGNED = String.fromCodePoint(0x378);
+/** The heading with letters the print's Type 3 subset lacks (z, p) and the unassigned code point. */
+const FACED = `Monstera fixture zap ${UNASSIGNED}.`;
 
 const CASES = [
   'PDFium reads the print’s heading as one line of runs of page objects, and the body apart from it',
@@ -46,12 +51,14 @@ const CASES = [
   'PDFium, reading the saved bytes, finds the new heading and the body line, and not the old heading',
   'CONTROL: the body line’s operator is byte for byte the one it was',
   'CONTROL: a reading that numbers one more text object than the page has is refused, and nothing is written',
+  'with the bundled fonts bound by folder, MuPDF sets the letters the print lacks in a face and answers the one box',
+  'PDFium, reading those saved bytes, finds every new letter and the boxed code point as itself',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 5 });
-if (CASES.length !== 5) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 5`);
+const roster = createRoster(failures, { cases: 7 });
+if (CASES.length !== 7) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 7`);
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
@@ -120,8 +127,8 @@ async function run(pdfium, kernel) {
       );
       const { _reading, ...wire } = command(pageReading, text);
       const outcome = await kernel.applyEditTextOperators(session, wire, _reading).then(
-        () => ({ ok: true, error: null }),
-        (/** @type {unknown} */ error) => ({ ok: false, error }),
+        (/** @type {any} */ drawn) => ({ ok: true, error: null, drawn }),
+        (/** @type {unknown} */ error) => ({ ok: false, error, drawn: null }),
       );
       const after = await kernel.withDocument(session, (/** @type {any} */ document) =>
         kernel.joinedContent(kernel.pageContentStreams(document.findPage(0))),
@@ -172,6 +179,33 @@ async function run(pdfium, kernel) {
       latin1(refused.after) === latin1(refused.before),
     `the edit with a wrong reading answered ${refused.outcome.ok ? 'ok' : String(refused.outcome.error)}.`,
   );
+
+  // THE RESOLVER'S FACE AND THE BOX (ADR-0177), bound as the MuPDF host binds them, by their folders. The new words need
+  // z and p, which the print's subset lacks, and a code point no font carries.
+  const fonts = fontsDirectory(ROOT);
+  if (!existsSync(fonts)) {
+    check(CASES[5] ?? '', false, `${fonts} is absent; run scripts/provision/fonts.mjs`);
+    check(CASES[6] ?? '', false, 'not reached: the bundled fonts are absent');
+    return;
+  }
+  kernel.bindEditFolders(fonts, null);
+  const faced = await edited(bytes, reading, FACED);
+  kernel.bindEditFaces(null);
+  check(
+    CASES[5] ?? '',
+    faced.outcome.ok &&
+      faced.saved !== null &&
+      JSON.stringify(faced.outcome.drawn) === JSON.stringify({ boxed: [{ character: UNASSIGNED, page: 0 }], more: 0 }),
+    `the edit needing a face answered ${faced.outcome.ok ? JSON.stringify(faced.outcome.drawn) : String(faced.outcome.error)}.`,
+  );
+  const facedRead = faced.saved === null ? null : await readRuns(faced.saved);
+  const facedWords = facedRead === null ? '' : squeezed(facedRead.runs.map((/** @type {any} */ each) => each.text).join(''));
+  check(
+    CASES[6] ?? '',
+    // THE BOX READS AS ITS CHARACTER, not as U+25A1, and the letters in the added face read as themselves.
+    facedWords.includes(squeezed(FACED)) && !facedWords.includes(String.fromCodePoint(0x25a1)) && facedWords.includes(squeezed(BODY)),
+    `PDFium read the saved page as ${JSON.stringify(facedRead?.runs.map((/** @type {any} */ each) => each.text) ?? null)}.`,
+  );
 }
 
 const library = pdfiumLibrary(ROOT);
@@ -196,7 +230,18 @@ if (!existsSync(library) || shim === null) {
   const { EditRefusedError } = await import('../../packages/kernel/dist/textEditRefusals.js');
   const { joinedContent } = await import('../../packages/kernel/dist/textOperators.js');
   const { pageContentStreams } = await import('../../packages/kernel/dist/pageContent.js');
-  await run(pdfium, { blockEditOf, mupdfWriter, withDocument, applyEditTextOperators, EditRefusedError, joinedContent, pageContentStreams });
+  const { bindEditFaces, bindEditFolders } = await import('../../packages/kernel/dist/editFaces.js');
+  await run(pdfium, {
+    blockEditOf,
+    mupdfWriter,
+    withDocument,
+    applyEditTextOperators,
+    EditRefusedError,
+    joinedContent,
+    pageContentStreams,
+    bindEditFaces,
+    bindEditFolders,
+  });
   process.stdout.write(
     failures.length > 0
       ? `\n${String(failures.length)} Type 3 edit case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n`
