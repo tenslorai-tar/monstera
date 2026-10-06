@@ -5,10 +5,12 @@ import { BoundedList } from './boundedList.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_LAYER_NAME_MAX, ENGINE_LAYERS_MAX } from './host/engineChannels.js';
-import { bufferBytes, withDocument, withDocuments } from './mupdfWriter.js';
+import { withDocument, withDocuments } from './mupdfWriter.js';
+import { pageContentStreams } from './pageContent.js';
 import { pushInheritablesDown } from './pageExtract.js';
 import { pageInDocument } from './pageScope.js';
 import { shownName } from './shownName.js';
+import { joinedContent } from './textOperators.js';
 
 /**
  * Optional-content groups — layers — and the command that shows or hides one.
@@ -356,33 +358,13 @@ function freeLayerName(xobjects: PDFObject): string {
 }
 
 /**
- * A page's content streams, joined, read through their INDIRECT references.
- *
- * Measured 2026-09-14 (ADR-0064): `readStream` loads through the object number, and
- * called on `.resolve()`'s result it throws `object is not a stream` — the resolved value
- * is the stream's dictionary and no longer names the object. So the resolve is used only
- * to ask whether `/Contents` is an array.
- *
- * Each part is followed by a newline: PDF 32000-1 §7.8.2 treats an array's streams as one
- * stream split at token boundaries, and joining two with nothing between them could fuse
- * the last operator of one with the first operand of the next.
+ * A page's content streams, joined: `pageContent.ts` reads them and `textOperators.ts` joins them, each the one place
+ * that does (B3a). Each part is followed by a newline: PDF 32000-1 §7.8.2 treats an array's streams as one stream split
+ * at token boundaries, and joining two with nothing between them could fuse the last operator of one with the first
+ * operand of the next.
  */
 function joinedContents(leaf: PDFObject): Uint8Array {
-  const reference = leaf.get('Contents');
-  if (reference.isNull()) return new Uint8Array(0);
-  const resolved = reference.resolve();
-  const parts: Uint8Array[] = resolved.isArray()
-    ? Array.from({ length: resolved.length }, (_, at) => bufferBytes(resolved.get(at).readStream()))
-    : [bufferBytes(reference.readStream())];
-  const joined = new Uint8Array(parts.reduce((sum, part) => sum + part.length + 1, 0));
-  let offset = 0;
-  for (const part of parts) {
-    joined.set(part, offset);
-    offset += part.length;
-    joined[offset] = 0x0a;
-    offset += 1;
-  }
-  return joined;
+  return joinedContent(pageContentStreams(leaf));
 }
 
 /**

@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { codesFor, readToUnicode } from './toUnicode.js';
+import { type ToUnicode, codesFor, readToUnicode } from './toUnicode.js';
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+/** A CMap these cases know reads, read; one that does not is the case's own failure, named. */
+function read(cmap: Uint8Array): ToUnicode {
+  const answer = readToUnicode(cmap);
+  if (!answer.ok) throw new Error(`the fixture's CMap did not read: ${answer.error}`);
+  return answer.value;
+}
 
 /** The ToUnicode of the committed Chromium print's Type 3 heading font, as read from the fixture 2026-10-06. */
 const CHROMIUM = bytes(
@@ -15,7 +22,7 @@ const CHROMIUM = bytes(
 
 describe('readToUnicode', () => {
   it('reads a Chromium Type 3 font’s CMap: single codes, incremented ranges, one-byte codes', () => {
-    const map = readToUnicode(CHROMIUM);
+    const map = read(CHROMIUM);
     expect(map.bytes).toBe(1);
     expect([0x30, 0x52, 0x51, 0x56, 0x57, 0x48, 0x55, 0x44].map((code) => map.text.get(code)).join('')).toBe('Monstera');
     // THE RANGE'S LAST CODE is inside it, and the code after it is not.
@@ -23,7 +30,7 @@ describe('readToUnicode', () => {
   });
 
   it('reads an array range, a two-byte codespace and a character past the BMP as one', () => {
-    const map = readToUnicode(
+    const map = read(
       bytes('1 begincodespacerange <0000> <FFFF> endcodespacerange 1 beginbfrange <0001> <0003> [<0041> <D83D DE00> <0063>] endbfrange'),
     );
     expect(map.bytes).toBe(2);
@@ -31,20 +38,24 @@ describe('readToUnicode', () => {
   });
 
   it('CONTROL: refuses a range that runs backwards, rather than reading nothing from it', () => {
-    expect(() => readToUnicode(bytes('1 beginbfrange <10> <05> <0041> endbfrange'))).toThrow(/runs from 16 to 5/u);
+    expect(readToUnicode(bytes('1 beginbfrange <10> <05> <0041> endbfrange'))).toStrictEqual({
+      ok: false,
+      error: 'a range that runs from 16 to 5',
+    });
+    expect(readToUnicode(bytes('1 beginbfchar <0G> <0041> endbfchar')).ok).toBe(false);
   });
 });
 
 describe('codesFor', () => {
   it('gives each character the code that draws it, and none where one character has no code', () => {
-    const map = readToUnicode(CHROMIUM);
+    const map = read(CHROMIUM);
     expect(codesFor(map, 'Max')).toStrictEqual([0x30, 0x44, 0x5b]);
     // CONTROL: one character the subset never drew makes the whole word have no codes in this font.
     expect(codesFor(map, 'Mbx')).toBeNull();
   });
 
   it('takes the lowest code where two draw one character, so the answer is the same every time', () => {
-    const map = readToUnicode(bytes('2 beginbfchar <09> <0041> <02> <0041> endbfchar'));
+    const map = read(bytes('2 beginbfchar <09> <0041> <02> <0041> endbfchar'));
     expect(codesFor(map, 'A')).toStrictEqual([2]);
   });
 });

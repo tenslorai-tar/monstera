@@ -14,6 +14,8 @@
  * what it says itself, never as more.
  */
 
+import { type Result, err, ok } from '@monstera/shared';
+
 /** A ToUnicode read: each code's text, and how many bytes a code is. */
 export interface ToUnicode {
   /** The text each code draws, by code. */
@@ -26,7 +28,7 @@ type Token = { readonly hex: Uint8Array } | { readonly word: string } | { readon
 
 const WHITE = /\s/u;
 
-function tokens(source: string): Token[] {
+function tokens(source: string): Result<Token[], string> {
   const out: Token[] = [];
   let at = 0;
   let array: Uint8Array[] | null = null;
@@ -42,9 +44,9 @@ function tokens(source: string): Token[] {
       at += 2;
     } else if (c === '<') {
       const end = source.indexOf('>', at);
-      if (end < 0) throw new Error('a ToUnicode CMap holds a hexadecimal string that is not closed');
+      if (end < 0) return err('a hexadecimal string that is not closed');
       let digits = source.slice(at + 1, end).replace(/\s+/gu, '');
-      if (!/^[0-9a-fA-F]*$/u.test(digits)) throw new Error('a ToUnicode CMap holds a hexadecimal string with a non-digit');
+      if (!/^[0-9a-fA-F]*$/u.test(digits)) return err('a hexadecimal string with a character that is not a digit');
       if (digits.length % 2 === 1) digits += '0';
       const hex = new Uint8Array(digits.length / 2);
       for (let index = 0; index < hex.length; index += 1) hex[index] = Number.parseInt(digits.slice(2 * index, 2 * index + 2), 16);
@@ -79,7 +81,7 @@ function tokens(source: string): Token[] {
       at = end;
     }
   }
-  return out;
+  return ok(out);
 }
 
 /** A big-endian number of `bytes`. */
@@ -108,10 +110,16 @@ function incremented(start: Uint8Array, step: number): string {
 /** The bound one `bfrange` may span: a two-byte range's whole space. */
 const MAX_RANGE = 0x10000;
 
-/** Reads a ToUnicode CMap's bytes. Throws where the stream says what it cannot mean. */
-export function readToUnicode(cmap: Uint8Array): ToUnicode {
+/**
+ * Reads a ToUnicode CMap's bytes, or answers why it cannot: a stream that says what it cannot mean is a font whose
+ * characters are unknown, an ANSWER for a writer that then keeps no word in that font, so it is a result and not a throw
+ * (`ShapingFace.readable`'s reason).
+ */
+export function readToUnicode(cmap: Uint8Array): Result<ToUnicode, string> {
   const source = new TextDecoder('latin1').decode(cmap);
-  const list = tokens(source);
+  const listed = tokens(source);
+  if (!listed.ok) return listed;
+  const list = listed.value;
   const text = new Map<number, string>();
   let width = 0;
   let at = 0;
@@ -138,7 +146,7 @@ export function readToUnicode(cmap: Uint8Array): ToUnicode {
       while (hexAt(at) !== null && hexAt(at + 1) !== null) {
         const low = codeOf(hexAt(at) ?? new Uint8Array());
         const high = codeOf(hexAt(at + 1) ?? new Uint8Array());
-        if (high < low || high - low >= MAX_RANGE) throw new Error(`a ToUnicode range runs from ${String(low)} to ${String(high)}`);
+        if (high < low || high - low >= MAX_RANGE) return err(`a range that runs from ${String(low)} to ${String(high)}`);
         const destination = list[at + 2];
         if (destination !== undefined && 'array' in destination) {
           destination.array.forEach((value, step) => {
@@ -147,15 +155,15 @@ export function readToUnicode(cmap: Uint8Array): ToUnicode {
         } else if (destination !== undefined && 'hex' in destination) {
           for (let code = low; code <= high; code += 1) text.set(code, incremented(destination.hex, code - low));
         } else {
-          throw new Error('a ToUnicode range has no destination');
+          return err('a range with no destination');
         }
         at += 3;
       }
     }
   }
   const bytes = width === 0 ? 1 : width;
-  if (bytes > 4) throw new Error(`a ToUnicode codespace is ${String(bytes)} bytes wide`);
-  return { text, bytes: bytes as ToUnicode['bytes'] };
+  if (bytes > 4) return err(`a codespace ${String(bytes)} bytes wide`);
+  return ok({ text, bytes: bytes as ToUnicode['bytes'] });
 }
 
 /**
