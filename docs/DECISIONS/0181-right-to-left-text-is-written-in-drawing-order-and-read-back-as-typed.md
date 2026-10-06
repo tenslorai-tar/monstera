@@ -169,3 +169,10 @@ the line). Decision 5's one-object rule stays, and the owner accepted it as deci
 sets a lam beside an alef as the face's ligature glyph and draws a letter's marks before it, in the order the shaper answers.
 The reason given for leaving the ligature out was a reading model that expanded a form before reversing; a text page
 expands after, so the pair reads back as typed. What stays a limit is the mark's exact anchor.
+
+## Correction, 2026-10-06 (later still): Decision 9's cover reaches the ink and follows the paper
+
+[ADR-0187](0187-a-scans-edited-words-are-covered-where-the-ink-is-with-the-paper-that-is-there.md) replaces the cover Decision 9
+describes (the box plus 1.5 pt, one median colour) with one grown through the ink that touches the box and filled with the
+paper's colour at each place, a plane fitted to the ring. The stated limit (ink outside the recogniser's box, and a gradient
+behind a word, show) is removed; what stays is shading that is not linear across a word.
