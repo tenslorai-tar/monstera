@@ -106,3 +106,17 @@ committed Chromium print (`packages/testing/fixtures/text-edit/chromium-type3.pd
   PDFium's count on every edit, so a page where the two diverge refuses rather than edits the wrong run.
 - A second in-place writer exists, for a different page condition. The condition is decided once, in the reading, and
   both writers take the same block wire.
+
+## Correction, 2026-10-06: the writer is handed PDFium's joined runs, and the count rides with them (Decision 2)
+
+Found while reading the block wire before building the writer. A run crosses as its FIRST object only, and on a page
+drawn a glyph per object a run is many objects joined by `textRunJoin.ts` (ADR-0130), whose members are an explicit
+list rather than a range: an inkless space between two glyphs is not one of them. The MuPDF writer cannot recompute
+that join, which reads PDFium's glyph boxes, and a join of its own would be a second opinion about which objects a run
+is (B3a).
+
+So `editTextOperators` declares a pre-read (ADR-0040's `reads`, ADR-0051's `PreReadKinds`): `pageRuns`, PDFium's walk of
+the page as the PDFium host answers it, its joined runs with their members and the number of text objects it walked.
+The bus resolves it against the version the command names. The count Decision 2 put on the command comes from that
+pre-read instead, which is the same check from the reading that already holds it, so the command carries exactly
+`editTextBlock`'s fields.
