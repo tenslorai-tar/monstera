@@ -1358,6 +1358,15 @@ jobs:
       - name: Answers larger than a frame cross in a file, through both real hosts
         run: node scripts/ci/annotate.mjs scripts/research/hostFileAnswersLive.mjs --require-containment
 
+      # WHICH INSTALLED FACE, AND DOES PDFIUM CARRY IT OUTSIDE THE HOST. The step above's installed-fonts case was
+      # refused on 2026-10-06 (run 37407876114) while the same edit is saved on Linux, so this runs the edit through
+      # the kernel's PDFium writer in plain Node, once per installed face carrying the ideograph: a face that saves
+      # here beside a host that refuses is the host's reach, and a face refusing here is the face. After it, and
+      # whatever it answered, because its reading is what explains a red above.
+      - name: The installed face an edit sets an ideograph in, outside the contained host
+        if: ${{ !cancelled() }}
+        run: node scripts/ci/annotate.mjs --always scripts/research/installedFaceEdit.mjs
+
       # THE SWEEP, AGAINST A REAL LISTING. `sessionDirectories.test.ts` covers
       # every decision the sweep makes and supplies the listing to do it, so the
       # shipped `list` — the filter that keeps `rmSync(recursive)` off a FILE
