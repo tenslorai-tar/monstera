@@ -4921,7 +4921,10 @@ for (const look of LOOKS) {
     expect(runs.map((run) => run.weight)).toStrictEqual(['400', '700', '400']);
     const sizes = [BODY_RUN.size, SET_APART_RUN.size, BODY_RUN.size];
     expect(runs.map((run, at) => Math.abs(run.size - (sizes[at] ?? 0) * scale) < 0.05)).toStrictEqual([true, true, true]);
-    // TYPED AT THE END, the words go into the last run and take its style, and are read back as typed.
+    // TYPED AT THE END, the words go into the last run and take its style, and are read back as typed. THE CARET IS
+    // MOVED THERE: the editor opens with it where the page was pressed (ADR-0179), which is the middle of the block
+    // for `outline.click()`, and typing there put the words inside the first line.
+    await page.keyboard.press('Control+End');
     await page.keyboard.type(' More');
     expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
       'A paragraph of words set on the page\nand a second line. More',
@@ -5041,11 +5044,17 @@ for (const look of LOOKS) {
       // A POINT OUTSIDE THE WINDOW finds no element, and `undefined !== null` would read that as the editor (SSSSSSS-4).
       ({ x, y }) => {
         const found = document.elementFromPoint(x, y);
-        return found !== null && found.closest('[data-text-editor]') !== null;
+        return {
+          editors: found !== null && found.closest('[data-text-editor]') !== null,
+          found: found === null ? 'nothing' : `${found.tagName} ${String(found.getAttribute('class'))}`,
+        };
       },
-      { x: (last?.x ?? 0) + 4, y: (last?.y ?? 0) + (last?.height ?? 0) / 2 },
+      // ACROSS THE LINE'S MIDDLE, not four pixels in from its start: the block's south-west resize handle is a 24 px
+      // target centred on the frame's corner, so the line's first letters belong to it by design, and that is no
+      // clipping below the foot. The handle is named in the message when it is the thing found.
+      { x: (last?.x ?? 0) + (last?.width ?? 0) / 2, y: (last?.y ?? 0) + (last?.height ?? 0) / 2 },
     );
-    expect(hit).toBe(true);
+    expect(hit.editors, `the point at the last line's middle belongs to ${hit.found}`).toBe(true);
 
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
