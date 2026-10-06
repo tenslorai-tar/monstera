@@ -107,6 +107,28 @@ describe('showOperators', () => {
     expect(content.slice(second?.start ?? 0, second?.end ?? 0)).toBe('<52> Tj');
   });
 
+  it('carries the settings in effect from outside the BT, each superseded one gone and a Q restoring what q saved', () => {
+    const content = '/G3 gs 0 0 0 rg q 1 0 0 rg /P cs Q /G4 gs 0 G 1 0 0 RG BT /F1 9 Tf 2 Tc 3 Tc (a) Tj ET';
+    const [only] = showOperators(bytes(content));
+    expect(only?.settings.map((span) => content.slice(span.start, span.end))).toStrictEqual([
+      '/G3 gs',
+      // THE q's `rg` and `cs` are gone at Q, and the `0 0 0 rg` before it is back.
+      '0 0 0 rg',
+      // EVERY gs stays: each sets only what its dictionary names.
+      '/G4 gs',
+      // `RG` supersedes `G` in the stroke slot, as `3 Tc` does `2 Tc`.
+      '1 0 0 RG',
+      '/F1 9 Tf',
+      '3 Tc',
+    ]);
+    // CONTROL: a `cs` supersedes the fill colour set before it, and `scn` after it keeps the space.
+    const spaced = '1 0 0 rg /P cs /Q scn BT (b) Tj ET';
+    expect(showOperators(bytes(spaced))[0]?.settings.map((span) => spaced.slice(span.start, span.end))).toStrictEqual([
+      '/P cs',
+      '/Q scn',
+    ]);
+  });
+
   it('skips an inline image whole, so bytes inside it are never read as operators', () => {
     const operators = showOperators(bytes('BI /W 1 /H 1 /BPC 8 /CS /G ID (Tj) Tj EI BT (real) Tj ET'));
     expect(operators.map((operator) => latin1(operator.codes))).toStrictEqual(['real']);

@@ -257,18 +257,41 @@ export interface ShowOperator {
   /** Where the `BT` of its text object begins. */
   readonly textObject: number;
   /**
-   * The instructions between that `BT` and this operator that set what text is drawn WITH rather than where: the text
-   * state, colour and the general graphics state. Their bytes reproduce this operator's state in a new text object.
+   * The instructions IN EFFECT at this operator that set what text is drawn WITH rather than where: the text state,
+   * colour and the general graphics state, from the start of the page, through `q` and `Q`, each superseded one gone.
+   * Replayed in this order into a new text object, their bytes reproduce this operator's state wherever that object is
+   * placed: a Chromium print sets its colour and `gs` outside the `BT`, so the instructions inside it are not enough.
    */
   readonly settings: readonly { readonly start: number; readonly end: number }[];
 }
 
-/** The operators that set how text is drawn, replayed into a new text object (ADR-0176 Decision 4). */
-const SETTINGS = new Set([
-  'Tc', 'Tw', 'Tz', 'TL', 'Tf', 'Tr', 'Ts',
-  'w', 'J', 'j', 'M', 'd', 'ri', 'i', 'gs',
-  'CS', 'cs', 'SC', 'SCN', 'sc', 'scn', 'G', 'g', 'RG', 'rg', 'K', 'k',
+/**
+ * The operators that set how text is drawn, replayed into a new text object (ADR-0176 Decision 4), each with the slot
+ * it fills: a later instruction for the same slot supersedes the earlier one. `gs` has none, because each one sets only
+ * the parameters its dictionary names, so every one in effect is replayed in order.
+ */
+const SETTINGS: ReadonlyMap<string, string | null> = new Map([
+  ['Tc', 'Tc'], ['Tw', 'Tw'], ['Tz', 'Tz'], ['TL', 'TL'], ['Tf', 'Tf'], ['Tr', 'Tr'], ['Ts', 'Ts'],
+  ['w', 'w'], ['J', 'J'], ['j', 'j'], ['M', 'M'], ['d', 'd'], ['ri', 'ri'], ['i', 'i'], ['gs', null],
+  ['cs', 'fill space'], ['sc', 'fill'], ['scn', 'fill'], ['g', 'fill'], ['rg', 'fill'], ['k', 'fill'],
+  ['CS', 'stroke space'], ['SC', 'stroke'], ['SCN', 'stroke'], ['G', 'stroke'], ['RG', 'stroke'], ['K', 'stroke'],
 ]);
+
+/**
+ * What else an instruction supersedes (§8.6.8): setting a colour space sets the colour to that space's initial one, and
+ * `g`, `rg` and `k` set the space as well as the colour.
+ */
+const SUPERSEDES: ReadonlyMap<string, readonly string[]> = new Map([
+  ['cs', ['fill']], ['g', ['fill space']], ['rg', ['fill space']], ['k', ['fill space']],
+  ['CS', ['stroke']], ['G', ['stroke space']], ['RG', ['stroke space']], ['K', ['stroke space']],
+]);
+
+/** One instruction in effect, and the slot it fills. */
+interface Setting {
+  readonly slot: string | null;
+  readonly start: number;
+  readonly end: number;
+}
 
 const SHOWS = new Set(['Tj', 'TJ', "'", '"']);
 
@@ -292,12 +315,12 @@ export function showOperators(content: Uint8Array): readonly ShowOperator[] {
     font: null, size: 0, charSpacing: 0, wordSpacing: 0, scale: 1, leading: 0, rise: 0, render: 0,
   };
   let ctm: Matrix = IDENTITY;
-  /** The graphics states `q` saved, text state and CTM included (§8.4.1). */
-  const saved: { readonly state: typeof state; readonly ctm: Matrix }[] = [];
+  let settings: readonly Setting[] = [];
+  /** The graphics states `q` saved, text state, CTM and the instructions in effect included (§8.4.1). */
+  const saved: { readonly state: typeof state; readonly ctm: Matrix; readonly settings: readonly Setting[] }[] = [];
   let matrix: Matrix = IDENTITY;
   let line: Matrix = IDENTITY;
   let textObject = -1;
-  let settings: { start: number; end: number }[] = [];
   let operands: Token[] = [];
   let numbered = 0;
   /** The index the next shown operator would have when the matrix was last set. */
@@ -322,13 +345,14 @@ export function showOperators(content: Uint8Array): readonly ShowOperator[] {
     const start = operands[0]?.start ?? token.start;
     switch (op) {
       case 'q':
-        saved.push({ state, ctm });
+        saved.push({ state, ctm, settings });
         break;
       case 'Q': {
         const restored = saved.pop();
         if (restored !== undefined) {
           state = restored.state;
           ctm = restored.ctm;
+          settings = restored.settings;
         }
         break;
       }
@@ -339,7 +363,6 @@ export function showOperators(content: Uint8Array): readonly ShowOperator[] {
         matrix = IDENTITY;
         line = IDENTITY;
         textObject = token.start;
-        settings = [];
         positionedAt = found.length;
         break;
       case 'ET':
@@ -417,11 +440,13 @@ export function showOperators(content: Uint8Array): readonly ShowOperator[] {
         state: { ...state, matrix, line, ctm },
         positionedAt,
         textObject,
-        settings: [...settings],
+        settings: settings.map(({ start: from, end: to }) => ({ start: from, end: to })),
       });
       if (codes.length > 0) numbered += 1;
-    } else if (textObject >= 0 && SETTINGS.has(op)) {
-      settings.push({ start, end: token.end });
+    } else if (SETTINGS.has(op)) {
+      const slot = SETTINGS.get(op) ?? null;
+      const gone = new Set([slot, ...(SUPERSEDES.get(op) ?? [])]);
+      settings = [...settings.filter((setting) => setting.slot === null || !gone.has(setting.slot)), { slot, start, end: token.end }];
     }
     operands = [];
   }
