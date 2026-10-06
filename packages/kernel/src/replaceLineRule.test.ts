@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { replacementsMovingTheirLine, type RunBox } from './replaceLineRule.js';
+import { LINE_EDGE_TOLERANCE, replacementsMovingTheirLine, type RunBox } from './replaceLineRule.js';
 
 /** A run on a line whose characters span `bottom`..`top`. */
 const run = (left: number, end: number, bottom = 700, top = 710): RunBox => ({ left, end, bottom, top });
@@ -26,6 +26,13 @@ describe('replacementsMovingTheirLine', () => {
 
   it('CONTROL: the same width moves nothing, within a quarter point', () => {
     expect(replacementsMovingTheirLine(LINE, new Map([[0, run(72, 100.2)]]))).toStrictEqual([]);
+  });
+
+  it('TTTTTTT-1: at LINE_EDGE_TOLERANCE itself the move is not flagged, and one reading past it is', () => {
+    const atEdge = run(72, 100 + LINE_EDGE_TOLERANCE);
+    const pastEdge = run(72, 100 + LINE_EDGE_TOLERANCE + 0.01);
+    expect(replacementsMovingTheirLine(LINE, new Map([[0, atEdge]]))).toStrictEqual([]);
+    expect(replacementsMovingTheirLine(LINE, new Map([[0, pastEdge]]))).toStrictEqual([0]);
   });
 
   it('CONTROL: the LAST object on its line may change width, since nothing follows it', () => {

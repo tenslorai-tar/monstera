@@ -940,6 +940,12 @@ and are cross-checked against a computed site count at runtime, the same way.
 threshold without proving the threshold itself is where the function draws the line (item 4a). Not fixed here;
 recorded for whoever next touches that file.
 
+**Correction, 2026-10-06 (same day): closed.** A case at `LINE_EDGE_TOLERANCE` itself (not flagged) and one
+0.01pt past it (flagged) was added to `replaceLineRule.test.ts` in the same push that found the CI board red
+for an unrelated reason (a one-off "Prove the renderer's canvas carries a drawn page" failure on a commit that
+changed only `docs/packaged-versions.json`, confirmed by reading the same step's conclusion on the two
+preceding pushes — both success on identical code) and needed a genuine follow-up commit to get a fresh run.
+
 **A correction to the pre-commit hook's own report, read and checked rather than taken on its word.** The hook
 that blocked this commit's first attempt also reported three files with fewer cases than at HEAD
 (`pointTools.test.ts` 14→13, `checkSpelling.test.ts` 12→4, `checker.test.ts` 11→7). All three diffs against
