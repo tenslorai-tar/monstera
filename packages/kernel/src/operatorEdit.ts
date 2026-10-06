@@ -1,10 +1,18 @@
-import type { BlockMarkSet, EditedBlock } from '@monstera/contract/host';
+import type { BlockMarkSet, BlockPlace, EditedBlock, PageInsert } from '@monstera/contract/host';
 import { type Result, err, ok } from '@monstera/shared';
 
 import type { PageFont } from './pageFonts.js';
 import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
 import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
-import { type Matrix, type ShowOperator, multiply, showOperators, textObjectCount } from './textOperators.js';
+import {
+  type Matrix,
+  type ShowOperator,
+  contentEnd,
+  multiply,
+  showOperators,
+  textObjectCount,
+  textObjectEnds,
+} from './textOperators.js';
 import { codesFor } from './toUnicode.js';
 
 /**
@@ -163,6 +171,11 @@ function advanceOf(font: PageFont, codes: readonly number[], state: ShowOperator
   return tx;
 }
 
+/** A string's bytes as a content stream writes it in hexadecimal, so no byte past ASCII is ever written. */
+function hexOfBytes(bytes: Uint8Array): string {
+  return `<${Array.from(bytes, (byte) => byte.toString(16).toUpperCase().padStart(2, '0')).join('')}>`;
+}
+
 /** The hexadecimal string that shows `codes` in `font`. */
 function hexOf(font: PageFont, codes: readonly number[]): string {
   return `<${codes.map((code) => code.toString(16).toUpperCase().padStart(2 * font.codeBytes, '0')).join('')}>`;
@@ -227,6 +240,11 @@ interface Segment {
   /** Where it starts, in user space. */
   readonly x: number;
   readonly style: SegmentStyle | undefined;
+  /**
+   * The operator's own bytes, where this segment is an old operator carried to its new place as it was (a block placed,
+   * ADR-0188): its glyphs, its kerning and its font are the page's, not a re-setting of its words.
+   */
+  readonly verbatim?: string;
 }
 
 /** How a superscript or subscript is set, and the rule under underlined words: the PDFium writer's figures. */
@@ -239,6 +257,8 @@ const UNDERLINE_DROP = 0.12;
 interface VisualLine {
   readonly baseline: number;
   readonly segments: Segment[];
+  /** Where its ink stands, in user space, for a line carried as it was: its glyphs' own advance is not asked of a font. */
+  readonly extent?: { readonly left: number; readonly right: number };
 }
 
 /**
@@ -278,14 +298,48 @@ export function editOperators(
   blocks: readonly EditedBlock[],
   faces: OperatorFaces | null = null,
   fit: 'reflow' | 'shrink' = 'reflow',
+  inserts: readonly PageInsert[] = [],
 ): Result<OperatorEdit, OperatorRefusal> {
   try {
-    return ok(write(content, fonts, page, blocks, faces, fit));
+    return ok(write(content, fonts, page, blocks, faces, fit, inserts));
   } catch (error) {
     if (error instanceof Refused) return err(error.refusal);
     throw error;
   }
 }
+
+/** The matrix of a placement, `place`'s scale about `anchor`, then its turn about the centre that leaves, then its move. */
+export function placementMatrix(
+  place: Omit<BlockPlace, 'block'>,
+  anchor: { readonly x: number; readonly y: number },
+  centre: { readonly x: number; readonly y: number },
+): Matrix {
+  const scale = place.scale ?? 1;
+  const radians = ((place.rotate ?? 0) * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const move = place.move ?? { x: 0, y: 0 };
+  // THE CENTRE AFTER THE SCALE, which is what the turn is about (the PDFium writer's own rule, `placeObjects`).
+  const turned = { x: anchor.x + (centre.x - anchor.x) * scale, y: anchor.y + (centre.y - anchor.y) * scale };
+  const scaling: Matrix = [scale, 0, 0, scale, anchor.x * (1 - scale), anchor.y * (1 - scale)];
+  const turning: Matrix = [cos, sin, -sin, cos, turned.x - turned.x * cos + turned.y * sin, turned.y - turned.x * sin - turned.y * cos];
+  return multiply(multiply(scaling, turning), [1, 0, 0, 1, move.x, move.y]);
+}
+
+/** Whether a placement changes anything about where a block is: a move of nothing is not one. */
+function movesBlock(place: Omit<BlockPlace, 'block'> | undefined): boolean {
+  return (
+    place !== undefined &&
+    ((place.scale ?? 1) !== 1 || (place.rotate ?? 0) !== 0 || (place.move?.x ?? 0) !== 0 || (place.move?.y ?? 0) !== 0)
+  );
+}
+
+/** The seed a box of added text starts from, which its words replace: the PDFium writer's own one character. */
+const SEED_TEXT = '.';
+
+/** How far above and below its baseline a line of added text is taken to reach, in em: a face's ascent and descent, near enough for a centre. */
+const ASCENT_EM = 0.8;
+const DESCENT_EM = 0.2;
 
 function write(
   content: Uint8Array,
@@ -294,16 +348,92 @@ function write(
   blocks: readonly EditedBlock[],
   faces: OperatorFaces | null,
   fit: 'reflow' | 'shrink',
+  inserts: readonly PageInsert[],
 ): OperatorEdit {
-  const ops = showOperators(content);
-  const indexOf = new Map(ops.map((op, at) => [op, at]));
-  const counted = textObjectCount(ops);
+  const real = showOperators(content);
+  const objectEnds = textObjectEnds(content);
+  const counted = textObjectCount(real);
   if (counted !== page.textObjects.length) {
     throw new Refused({
       reason: 'numbering',
       detail: `the content shows ${String(counted)} text objects and PDFium read ${String(page.textObjects.length)}`,
     });
   }
+  // AN ADDED BOX IS AN EDIT OF ONE RUN that is not on the page: an operator made here, after the real ones, standing where
+  // the box does and in the box's own size and colour, so the layout that writes every block writes it too (ADR-0188).
+  // It is set under the CTM the content ends in, after the `Q`s that close what the content left open.
+  const closing = inserts.length > 0 ? contentEnd(content) : undefined;
+  const endInverse = closing === undefined ? null : inverse(closing.ctm);
+  if (closing !== undefined && endInverse === null) throw new Refused({ reason: 'transformed' });
+  const tail: number[] = [];
+  const syntheticFonts = new Map<ShowOperator, PageFont>();
+  const syntheticOps: ShowOperator[] = [];
+  const seeds: PageRun[] = [];
+  const encoder = new TextEncoder();
+  for (const [k, insert] of inserts.entries()) {
+    if (closing === undefined || endInverse === null) break;
+    const colour = insert.base?.colour;
+    const settings: { start: number; end: number }[] = [];
+    if (colour !== undefined) {
+      const bytes = encoder.encode(`${[colour.r, colour.g, colour.b].map((channel) => num(channel / 255)).join(' ')} rg`);
+      settings.push({ start: content.length + tail.length, end: content.length + tail.length + bytes.length });
+      tail.push(...bytes);
+    }
+    const [bx, by] = apply(endInverse, insert.left, insert.baseline);
+    const matrix: Matrix = [endInverse[0], endInverse[1], endInverse[2], endInverse[3], bx, by];
+    const op: ShowOperator = {
+      object: null,
+      operator: 'Tj',
+      start: content.length,
+      end: content.length,
+      codes: new Uint8Array(0),
+      elements: [],
+      state: {
+        font: null,
+        size: insert.size,
+        charSpacing: 0,
+        wordSpacing: 0,
+        scale: 1,
+        leading: 0,
+        rise: 0,
+        render: 0,
+        matrix,
+        line: matrix,
+        ctm: closing.ctm,
+      },
+      positionedAt: real.length + k,
+      textObject: -1,
+      settings,
+    };
+    syntheticOps.push(op);
+    syntheticFonts.set(op, {
+      resource: '',
+      subtype: '',
+      toUnicode: null,
+      codeBytes: 1,
+      width: () => null,
+      draws: () => false,
+      face: insert.base?.family ?? null,
+      weight: null,
+    });
+    seeds.push({
+      index: -1 - k,
+      members: [-1 - k],
+      text: SEED_TEXT,
+      left: insert.left,
+      right: insert.left,
+      bottom: insert.baseline - DESCENT_EM * insert.size,
+      top: insert.baseline + ASCENT_EM * insert.size,
+    });
+  }
+  const tailBytes = Uint8Array.from(tail);
+  /** The bytes of one setting: the content's own, or an added box's, which stand after the content's end. */
+  const settingBytes = (setting: { readonly start: number; readonly end: number }): Uint8Array =>
+    setting.start >= content.length
+      ? tailBytes.subarray(setting.start - content.length, setting.end - content.length)
+      : content.subarray(setting.start, setting.end);
+  const ops = [...real, ...syntheticOps];
+  const indexOf = new Map(ops.map((op, at) => [op, at]));
   /** Each PDFium page object's operator, by its index in `ops`: the k-th text object is `textObjects[k]`. */
   const opAt = new Map<number, number>();
   for (const [at, op] of ops.entries()) {
@@ -312,8 +442,16 @@ function write(
   }
   const runs = new Map(page.runs.map((run) => [run.index, run]));
   const memberOps = new Set(page.runs.flatMap((run) => run.members.map((member) => opAt.get(member) ?? -1)));
+  // THE ADDED BOXES' SEEDS are runs of their own: named by a negative index, which no page object has, and shown by the
+  // operator made for them.
+  for (const [k, seed] of seeds.entries()) {
+    runs.set(seed.index, seed);
+    opAt.set(seed.index, real.length + k);
+  }
 
   const fontOf = (op: ShowOperator): PageFont => {
+    const added = syntheticFonts.get(op);
+    if (added !== undefined) return added;
     const font = op.state.font === null ? undefined : fonts.get(op.state.font);
     if (font === undefined) throw new Refused({ reason: 'unknown-width', font: op.state.font ?? '' });
     return font;
@@ -398,7 +536,26 @@ function write(
   const baselinesOut: { first: number; last: number; lastBefore: number }[] = [];
   const uncarried = new Set<string>();
 
-  for (const block of blocks) {
+  /** What an added box is among the blocks: the seed's run, and the box's own base style. */
+  const boxes = inserts.map((insert, k) => ({
+    insert,
+    block: {
+      lines: [[-1 - k]],
+      soft: [false],
+      text: insert.text,
+      ...(insert.marks === undefined ? {} : { marks: insert.marks }),
+      ...(insert.paragraphs === undefined ? {} : { paragraphs: insert.paragraphs }),
+      place: { width: insert.measure },
+    } satisfies EditedBlock,
+  }));
+  /** An added box's `Q`s that close what the content left open: said once, before the first box. */
+  let closed = false;
+  const jobs: { readonly block: EditedBlock; readonly insert: PageInsert | undefined }[] = [
+    ...blocks.map((block) => ({ block, insert: undefined })),
+    ...boxes,
+  ];
+
+  for (const { block, insert } of jobs) {
     /** This block's emptied operators: where its inserted object goes is the first of their `BT`s. */
     const own = new Set<number>();
     const lines = block.lines.map((line) =>
@@ -430,8 +587,13 @@ function write(
     if (!lines.every((line) => line.every((run) => run.members.every((member) => sameCtm(ops[member]))))) {
       throw new Refused({ reason: 'transformed' });
     }
-    const blockRight = Math.max(...lines.flat().map((run) => run.right));
+    const inkRight = Math.max(...lines.flat().map((run) => run.right));
     const baselines = lines.map((line) => line[0]?.origin.y ?? 0);
+    // WHAT THE PERSON DID TO THE BLOCK AS A WHOLE (ADR-0188): placed, so every line of it is set again under one `cm`, or
+    // given a measure, so every paragraph of it is. Either way no line of it is left where it was.
+    const blockPlace = block.place;
+    const measured = blockPlace?.width !== undefined;
+    const replaceAll = movesBlock(blockPlace) || measured;
     const sourceOf = (run: (typeof firstLine)[number]): ShowOperator => {
       const op = ops[run.first];
       if (op === undefined) throw new Refused({ reason: 'numbering', detail: `no operator ${String(run.first)}` });
@@ -473,21 +635,30 @@ function write(
     // WHERE A LINE SET AFRESH STARTS: the origin of the line that keeps the paragraph's left edge, since the shape's edge
     // is where ink begins and an operator is placed by its origin.
     const blockLeft = Math.min(...lines.map((line) => line[0]?.origin.x ?? 0));
+    // A MEASURE THE PERSON GAVE is the measure, from the block's own left edge (the PDFium writer's rule).
+    const blockRight = blockPlace?.width !== undefined ? blockLeft + blockPlace.width : inkRight;
     const restOrigin = Math.min(...(lines.length > 1 ? lines.slice(1) : lines).map((line) => line[0]?.origin.x ?? 0));
 
     /** Empties a run's operators, and the inkless spaces PDFium joined into it that no run holds. */
     const empty = (members: readonly number[]): void => {
-      for (const member of members) own.add(member);
+      // AN ADDED BOX'S SEED IS NO OPERATOR OF THE PAGE, so it has nothing to empty.
+      for (const member of members) if (member < real.length) own.add(member);
     };
-    const emptyBetween = (from: number, to: number): void => {
+    /** The operators from `from` to `to` that are a space no run holds: the one rule for what a line's edit removes or carries. */
+    const spacesBetween = (from: number, to: number): number[] => {
+      const found: number[] = [];
       for (let at = from; at <= to; at += 1) {
         const op = ops[at];
         if (op === undefined || memberOps.has(at) || op.codes.length === 0) continue;
         const font = op.state.font === null ? undefined : fonts.get(op.state.font);
         const text = font?.toUnicode === null || font === undefined ? null : codesOf(font, op.codes).map((code) => font.toUnicode?.text.get(code) ?? '\u0000');
         // ONLY A SPACE: anything else no run holds is not this edit's to remove.
-        if (text?.every((character) => /^\s$/u.test(character)) === true) own.add(at);
+        if (text?.every((character) => /^\s$/u.test(character)) === true) found.push(at);
       }
+      return found;
+    };
+    const emptyBetween = (from: number, to: number): void => {
+      for (const at of spacesBetween(from, to)) own.add(at);
     };
 
     /**
@@ -549,8 +720,21 @@ function write(
         set.rise !== undefined
       );
     };
+    // AN ADDED BOX'S OWN LOOK is every word's, under the marks over it: its family, weight and slant go to the face the
+    // resolver picks, as a mark's do (the PDFium writer seeds the box's object with them).
+    const base = insert?.base;
+    const insertBase: Restyle | undefined =
+      base === undefined || (base.bold === undefined && base.italic === undefined && base.family === undefined)
+        ? undefined
+        : {
+            ...(base.bold === undefined ? {} : { bold: base.bold }),
+            ...(base.italic === undefined ? {} : { italic: base.italic }),
+            ...(base.family === undefined ? {} : { family: base.family }),
+          };
+    const restyleOf = (marked: ReturnType<typeof markStyle> | undefined): Restyle | undefined =>
+      insertBase === undefined ? marked?.restyle : marked?.restyle === undefined ? insertBase : { ...insertBase, ...marked.restyle };
     /** How far the pen moves for `pieces` in `source`'s state: a space no font carries moves it by a nominal space. */
-    const pieceWidths = (source: ShowOperator, pieces: readonly FacePiece[], unit: number): number[] =>
+    const pieceWidths =(source: ShowOperator, pieces: readonly FacePiece[], unit: number): number[] =>
       pieces.map((piece) => (advanceOf(piece.font, piece.codes, source.state) ?? 0) * unit);
     const widthOfPieces = (source: ShowOperator, pieces: readonly FacePiece[], unit: number): number =>
       pieces.length === 0
@@ -563,7 +747,7 @@ function write(
       const marked = mark === NO_MARK ? undefined : markStyle(run, mark);
       const unit = placed(run.first).unit * (marked?.factor ?? 1) * shrink;
       return tokens(text).reduce((sum, token) => {
-        const pieces = piecesOf(source, token, marked?.restyle);
+        const pieces = piecesOf(source, token, restyleOf(marked));
         return pieces === null ? sum : sum + widthOfPieces(source, pieces, unit);
       }, 0);
     };
@@ -591,7 +775,7 @@ function write(
             };
       let cursor = x;
       for (const token of tokens(words)) {
-        const pieces = piecesOf(source, token, marked?.restyle);
+        const pieces = piecesOf(source, token, restyleOf(marked));
         if (pieces === null) continue;
         faces?.drawn(pieces);
         const widths = pieceWidths(source, pieces, unit);
@@ -604,6 +788,7 @@ function write(
           const last = line.segments.at(-1);
           // ONE SEGMENT for words that follow on in one font and state: a glyph's advance places the next exactly there.
           if (
+            last?.verbatim === undefined &&
             last?.source === source &&
             last.font === piece.font &&
             last.style === style &&
@@ -624,6 +809,59 @@ function write(
       (advanceOf(segment.font, segment.codes, segment.source.state) ?? 0) *
       placed(indexOf.get(segment.source) ?? -1).unit *
       (segment.style?.factor ?? 1);
+    /**
+     * Carries `line`'s operators to the block's new place as they are, `dy` lower than they stood, each an object of its
+     * own at the origin it was drawn from: its codes, its kerning and its font are the page's. False where one cannot be
+     * (a quote operator, whose move depends on the line the operator before it left, or a font the page lacks), and the
+     * line's words are then set again.
+     */
+    const replay = (line: (typeof firstLine), dy: number): boolean => {
+      const carried: { readonly op: ShowOperator; readonly at: number; readonly font: PageFont; readonly run: (typeof firstLine)[number] }[] = [];
+      for (const run of line) {
+        for (const member of run.members) {
+          const op = ops[member];
+          const font = fonts.get(op?.state.font ?? '');
+          if (op === undefined || font === undefined || (op.operator !== 'Tj' && op.operator !== 'TJ')) return false;
+          carried.push({ op, at: member, font, run });
+        }
+      }
+      // THE SPACES BETWEEN ITS RUNS GO WITH IT, drawn glyphs that no run holds: left behind they would be emptied with the
+      // line, and a reader would find the words run together where the page had them apart.
+      const first = Math.min(...line.map((run) => run.first));
+      const last = Math.max(...line.map((run) => run.last));
+      for (const at of spacesBetween(first, last)) {
+        const op = ops[at];
+        const font = fonts.get(op?.state.font ?? '');
+        const run = line.find((candidate) => candidate.first <= at && at <= candidate.last) ?? line[0];
+        if (op === undefined || font === undefined || run === undefined || (op.operator !== 'Tj' && op.operator !== 'TJ')) return false;
+        carried.push({ op, at, font, run });
+      }
+      // IN THE ORDER THEY STOOD: a reader that takes the page in content order reads the spaces where the words were.
+      carried.sort((a, b) => a.at - b.at);
+      for (const { op, at, font, run } of carried) {
+        const origin = placed(at);
+        const shown = op.elements.map((element) => (typeof element === 'number' ? num(element) : hexOfBytes(element)));
+        const codes = codesOf(font, op.codes);
+        visual.push({
+          baseline: origin.y + dy,
+          // THE OPERATOR'S OWN INK IS ITS RUN'S, which is what a turn's centre is worked out from.
+          extent: { left: run.run.left, right: run.run.right },
+          segments: [
+            {
+              source: op,
+              font,
+              codes,
+              // THE WORDS AS THE STRUCTURAL READ-BACK READS THEM: a font with no ToUnicode shows one unknown character.
+              text: font.toUnicode === null ? '\u0000' : codes.map((code) => font.toUnicode?.text.get(code) ?? '\u0000').join(''),
+              x: origin.x,
+              style: undefined,
+              verbatim: op.operator === 'TJ' ? `[${shown.join(' ')}] TJ` : `${shown.join(' ')} Tj`,
+            },
+          ],
+        });
+      }
+      return true;
+    };
 
     // HOW EACH PARAGRAPH IS SET: the block's shape with what the person set over it (ADR-0180 Decision 2), as the PDFium
     // writer reads it. Edges are origins here, since an operator is placed by where its glyph is drawn from.
@@ -648,8 +886,9 @@ function write(
       }
       return { first: Math.max(1, blockRight - (set.leftEdge + set.first)), rest: Math.max(1, blockRight - set.leftEdge) };
     };
-    const forced = new Set(
-      (block.paragraphs ?? [])
+    const text = block.text.replace(/\r\n?/gu, '\n');
+    const forced = new Set([
+      ...(block.paragraphs ?? [])
         .filter(
           (setting) =>
             (setting.align !== undefined && setting.align !== shape.align) ||
@@ -659,8 +898,10 @@ function write(
             (setting.spaceBefore !== undefined && setting.spaceBefore > 0.5),
         )
         .map((setting) => setting.paragraph),
-    );
-    const text = block.text.replace(/\r\n?/gu, '\n');
+      // A NEW MEASURE SETS EVERY PARAGRAPH AGAIN, words or not: the lines the old measure broke are not the lines the new
+      // one does.
+      ...(measured ? Array.from({ length: text.split('\n').length }, (_, paragraph) => paragraph) : []),
+    ]);
     const formatting = { marks: (block.marks ?? []).map(({ from, to }) => ({ from, to })), changes, forced };
     const oldGap = (line: number): number => (baselines[line - 1] ?? 0) - (baselines[line] ?? 0);
     /**
@@ -721,8 +962,14 @@ function write(
         const text = line.map((run) => run.run.text).join('');
         // A LINE AN EARLIER WRAP MOVED DOWN is set again whole at its new baseline, keeping the gap each run had to the
         // one before it; one that did not move is not touched.
-        if (shrink === 1 && Math.abs(target - (baselines[row.line] ?? 0)) <= SAME) {
+        if (shrink === 1 && !replaceAll && Math.abs(target - (baselines[row.line] ?? 0)) <= SAME) {
           kept.add(row.line);
+          laid.push(text);
+          continue;
+        }
+        // A BLOCK PLACED OR GIVEN A MEASURE carries the lines it did not change as they are, operator by operator at its
+        // own place, so their glyphs, kerning and fonts are the page's and not a re-setting of their words (ADR-0188).
+        if (replaceAll && shrink === 1 && replay(line, target - (baselines[row.line] ?? 0))) {
           laid.push(text);
           continue;
         }
@@ -748,7 +995,7 @@ function write(
       let untouched = 0;
       const set = setFor(row.paragraph);
       const keepsItsLine = given?.leftIndent === undefined && given?.firstIndent === undefined;
-      if (shrink === 1 && replaced !== undefined && set.align === 'left' && keepsItsLine && Math.abs(target - (baselines[row.replaces] ?? 0)) <= SAME) {
+      if (shrink === 1 && !replaceAll && replaced !== undefined && set.align === 'left' && keepsItsLine && Math.abs(target - (baselines[row.replaces] ?? 0)) <= SAME) {
         while (untouched < replaced.length - 1) {
           const piece = row.pieces[untouched];
           const run = replaced[untouched];
@@ -799,9 +1046,37 @@ function write(
     drawn.push(segments.map((segment) => segment.text).join(''));
     if (segments.length === 0) continue;
     const toBt = ctm === undefined ? null : inverse(ctm);
-    if (toBt === null) throw new Refused({ reason: 'transformed' });
+    if (toBt === null || ctm === undefined) throw new Refused({ reason: 'transformed' });
     const decoder = new TextDecoder('latin1');
-    const parts = ['q BT'];
+    // THE BLOCK PLACED (ADR-0188): one `cm` in front of the object, which is the placement in the space the words are
+    // written in, so it moves, scales and turns every line of the block, the ones carried as they were and the ones set
+    // afresh, as the one thing the block is. The placement is worked out in user space, as the PDFium writer works it out:
+    // scaled about the block's top left, turned about the centre of what that leaves, then moved. (A turn is about a
+    // centre and no other placement needs one, so the extent is worked out only for a turn.)
+    let cm: Matrix | null = null;
+    if (blockPlace !== undefined && movesBlock(blockPlace)) {
+      const anchor = { x: Math.min(...lines.flat().map((run) => run.run.left)), y: Math.max(...lines.flat().map((run) => run.run.top)) };
+      let centre = anchor;
+      if ((blockPlace.rotate ?? 0) !== 0) {
+        const pointSize = lead.state.size * firstRun.origin.up;
+        const above = Math.max(ASCENT_EM * pointSize, ...lines.flat().map((run) => run.run.top - run.origin.y));
+        const below = Math.max(DESCENT_EM * pointSize, ...lines.flat().map((run) => run.origin.y - run.run.bottom));
+        const reaches = visual.map((line) => ({
+          left: line.extent?.left ?? Math.min(...line.segments.map((segment) => segment.x)),
+          right: line.extent?.right ?? Math.max(...line.segments.map((segment) => segment.x + segmentWidth(segment))),
+          top: line.baseline + above,
+          bottom: line.baseline - below,
+        }));
+        centre = {
+          x: (Math.min(...reaches.map((reach) => reach.left)) + Math.max(...reaches.map((reach) => reach.right))) / 2,
+          y: (Math.min(...reaches.map((reach) => reach.bottom)) + Math.max(...reaches.map((reach) => reach.top))) / 2,
+        };
+      }
+      cm = multiply(multiply(ctm, placementMatrix(blockPlace, anchor, centre)), toBt);
+    }
+    const parts = cm === null ? ['q BT'] : ['q', `${cm.map(num).join(' ')} cm`, 'BT'];
+    /** An instruction's settings as bytes, to tell whether two operators were drawn under the same ones. */
+    const settingsKey = (op: ShowOperator): string => op.settings.map((setting) => `${String(setting.start)}:${String(setting.end)}`).join(',');
     let replayed: ShowOperator | null = null;
     let font: string | null = null;
     let fontSize = 0;
@@ -812,14 +1087,19 @@ function write(
     for (const segment of segments) {
       const style = segment.style;
       if (segment.source !== replayed || tinted) {
-        const settings = segment.source.settings.map((setting) => decoder.decode(content.subarray(setting.start, setting.end)));
-        parts.push(...settings);
-        // A PAGE THAT NEVER SET A FILL COLOUR draws in the default, which is black; leaving a mark's colour in force would
-        // paint every word after it in that colour, so the default is said where the source says nothing.
-        if (tinted && !settings.some((setting) => /(^|\s)(g|rg|k|sc|scn)(\s|$)/u.test(setting))) parts.push('0 g');
+        // OPERATORS CARRIED AS THEY WERE under the same settings as the one before say them once.
+        const sameAsBefore =
+          !tinted && segment.verbatim !== undefined && replayed !== null && settingsKey(segment.source) === settingsKey(replayed);
+        if (!sameAsBefore) {
+          const settings = segment.source.settings.map((setting) => decoder.decode(settingBytes(setting)));
+          parts.push(...settings);
+          // A PAGE THAT NEVER SET A FILL COLOUR draws in the default, which is black; leaving a mark's colour in force would
+          // paint every word after it in that colour, so the default is said where the source says nothing.
+          if (tinted && !settings.some((setting) => /(^|\s)(g|rg|k|sc|scn)(\s|$)/u.test(setting))) parts.push('0 g');
+          font = segment.source.state.font;
+          fontSize = segment.source.state.size;
+        }
         replayed = segment.source;
-        font = segment.source.state.font;
-        fontSize = segment.source.state.size;
         tinted = false;
       }
       if (style?.colour !== undefined) {
@@ -835,7 +1115,7 @@ function write(
       const [a, b, c, d] = segment.source.state.matrix;
       const raised = segment.baseline + (style?.rise ?? 0);
       const [e, f] = apply(toBt, segment.x, raised);
-      parts.push(`${[a, b, c, d, e, f].map(num).join(' ')} Tm ${hexOf(segment.font, segment.codes)} Tj`);
+      parts.push(`${[a, b, c, d, e, f].map(num).join(' ')} Tm ${segment.verbatim ?? `${hexOf(segment.font, segment.codes)} Tj`}`);
       if (style?.underline === true) {
         // THE RULE: this wide, a little under the baseline, in the words' colour where a mark set one and else black —
         // the page's own fill is not something its operators can be asked.
@@ -852,6 +1132,26 @@ function write(
     parts.push(...(rules.length === 0 ? ['ET Q\n'] : ['ET', ...rules, 'Q\n']));
     // BEFORE THE FIRST EDITED OPERATOR'S BT, so inside its marked content; for lines only added below the block, before
     // its last run's, whose marked content they continue.
+    if (insert !== undefined) {
+      // AN ADDED BOX goes at the end of the content, after the `Q`s that close what the content left open (said once), so it
+      // is drawn on top of the page under the CTM the page itself is drawn under.
+      // A LINE BREAK FIRST, since the content need not end in white space and its last token must not run into a `Q`.
+      const closers = closed || closing === undefined ? '' : 'Q\n'.repeat(closing.depth);
+      closed = true;
+      insertions.push({ at: content.length, text: `\n${closers}${parts.join('\n')}` });
+      continue;
+    }
+    if (own.size === 0) {
+      // LINES ONLY ADDED BELOW THE BLOCK go after its last run's text object, still inside the marked content it continues
+      // and under the graphics state it was drawn under, so a reader that takes the page in content order reads them after
+      // the lines they follow and the block's words are one stretch of its reading (a join is such an edit).
+      const after = objectEnds.get(ops[lastRun.last]?.textObject ?? -1);
+      if (after !== undefined) {
+        // A LINE BREAK FIRST: the text object it follows ends at its `ET`, and a `q` set against it would be one token.
+        insertions.push({ at: after, text: `\n${parts.join('\n')}` });
+        continue;
+      }
+    }
     const anchors = own.size > 0 ? [...own] : [lastRun.last];
     const anchor = Math.min(...anchors.map((at) => ops[at]?.textObject ?? Number.POSITIVE_INFINITY));
     if (!Number.isFinite(anchor) || anchor < 0) throw new Refused({ reason: 'numbering', detail: 'an edited operator is outside a text object' });
@@ -882,7 +1182,6 @@ function write(
   // AN INSERTION SITS BEFORE AN EMPTIED OPERATOR AT THE SAME OFFSET, and two blocks' insertions keep their order.
   splices.sort((left, right) => left.start - right.start || Number(right.inserted) - Number(left.inserted));
 
-  const encoder = new TextEncoder();
   const pieces: Uint8Array[] = [];
   const changes: { before: Span; after: Span; inserted: boolean }[] = [];
   let read = 0;

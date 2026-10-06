@@ -246,8 +246,12 @@ describe('editOperators on a page of lines', () => {
     if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
     expect(result.value.emptied).toStrictEqual([]);
     expect(inserted(result.value)[0]).toContain('1 0 0 -1 72 390 Tm <6A6B6C> Tj');
-    // BEFORE THE LAST LINE'S BT: no operator was emptied to place it by.
-    expect(latin1(result.value.content)).toContain('ET Q\nBT /F1 20 Tf 1 0 0 -1 72 360 Tm (ghi) Tj');
+    // AFTER THE LAST LINE'S OBJECT, so a reader taking the page in content order reads the new line after the ones it
+    // follows (ADR-0188): no operator was emptied to place it by, and the line is not before the one it comes below.
+    const text = latin1(result.value.content);
+    expect(text).toContain('(ghi) Tj ET\nq BT');
+    // CONTROL: it is not in front of the last line, where it would be read before it.
+    expect(text.indexOf('(ghi) Tj')).toBeLessThan(text.indexOf('<6A6B6C> Tj'));
     expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
   });
 
@@ -554,5 +558,174 @@ describe('checkOperatorEdit', () => {
     });
     // CONTROL: the edit as made reads back.
     expect(checkOperatorEdit(content, edit, fonts)).toStrictEqual({ ok: true, value: undefined });
+  });
+});
+
+/**
+ * A PLACEMENT AND AN ADDED BOX (ADR-0188), checked in USER SPACE: where the output's operators draw, through the CTM they
+ * are under, which is what a reader sees and what neither the bytes nor the engine's reading state on their own.
+ */
+describe('a placement and an added box (ADR-0188)', () => {
+  const content = bytes(THREE_LINES);
+  const fonts = new Map([['F1', LETTERS]]);
+  /** The page as PDFium would read it, with the INK stated: the first line's box in user space (0.75 of the text space). */
+  const stated = (): PageRuns => {
+    const read = runsOf(content, fonts);
+    // THE FIRST LINE: origin (54, 567) in user space, 22.5 across (three letters of 10), reaching 12 above its baseline and 3 below.
+    return {
+      ...read,
+      runs: read.runs.map((run, at) => {
+        const baseline = 792 - 0.75 * (300 + 30 * at);
+        return { ...run, left: 54, right: 76.5, bottom: baseline - 3, top: baseline + 12 };
+      }),
+    };
+  };
+  const placedBlock = (place: NonNullable<EditedBlockOf['place']>): EditedBlockOf => ({ lines: [[0]], soft: [false], text: 'abc', place });
+  type EditedBlockOf = Parameters<typeof editOperators>[3][number];
+
+  /** The origin each operator of `edit` inside an inserted object draws from, in user space. */
+  const origins = (edit: OperatorEdit): { readonly x: number; readonly y: number; readonly a: number; readonly b: number }[] => {
+    const spans = edit.changes.filter((change) => change.inserted).map((change) => change.after);
+    return showOperators(edit.content)
+      .filter((op) => spans.some((span) => op.start >= span.start && op.end <= span.end))
+      .map((op) => {
+        const m = multiplyMatrices(op.state.matrix, op.state.ctm);
+        return { x: m[4] ?? 0, y: m[5] ?? 0, a: m[0] ?? 0, b: m[1] ?? 0 };
+      });
+  };
+  const multiplyMatrices = (left: readonly number[], right: readonly number[]): readonly number[] => {
+    const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0] = left;
+    const [A = 0, B = 0, C = 0, D = 0, E = 0, F = 0] = right;
+    return [a * A + b * C, a * B + b * D, c * A + d * C, c * B + d * D, e * A + f * C + E, e * B + f * D + F];
+  };
+  const made = (blocks: Parameters<typeof editOperators>[3], faces?: OperatorFaces, inserts: Parameters<typeof editOperators>[6] = []) => {
+    const result = editOperators(content, fonts, stated(), blocks, faces ?? null, 'reflow', inserts);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
+    return result.value;
+  };
+
+  it('moves a line by the points asked, in user space, whatever scale and flip the page is drawn under', () => {
+    const [carried] = origins(made([placedBlock({ move: { x: 10, y: 5 } })]));
+    // (54, 567) before; the page is drawn at 0.75 and flipped, and ten points across and five up are ten and five in user space.
+    expect(carried?.x).toBeCloseTo(64, 3);
+    expect(carried?.y).toBeCloseTo(572, 3);
+  });
+
+  it('scales a line about the block’s top left: its size changes, its top left does not, and its baseline comes up to it', () => {
+    const [carried] = origins(made([placedBlock({ scale: 0.5 })]));
+    // THE TOP LEFT IS (54, 579); the baseline at 567 is twelve below it and is six below it after.
+    expect(carried?.x).toBeCloseTo(54, 3);
+    expect(carried?.y).toBeCloseTo(573, 3);
+    // AND THE GLYPHS ARE HALF AS WIDE: the line's own 0.75 is 0.375.
+    expect(carried?.a).toBeCloseTo(0.375, 5);
+  });
+
+  it('turns a line about the centre of its extent', () => {
+    const [carried] = origins(made([placedBlock({ rotate: 90 })]));
+    // THE CENTRE is (65.25, 571.5): the extent is 54 to 76.5 across and 564 to 579 up. A quarter turn counter-clockwise
+    // takes the origin (54, 567), which is (-11.25, -4.5) from it, to (-(-4.5), -11.25) from it.
+    expect(carried?.x).toBeCloseTo(65.25 + 4.5, 3);
+    expect(carried?.y).toBeCloseTo(571.5 - 11.25, 3);
+    // AND THE GLYPHS RUN UP THE PAGE: the x axis of the line is the page's y axis.
+    expect(carried?.a).toBeCloseTo(0, 5);
+    expect(carried?.b).toBeCloseTo(0.75, 5);
+  });
+
+  // THE CONTROL for all three: the same words with no placement carry no cm, so the numbers above are the placement's.
+  it('writes no cm and carries nothing for an edit that places nothing', () => {
+    const edit = made([{ lines: [[0], [1], [2]], soft: [false, false, false], text: 'abc\ndef\nghx' }]);
+    expect(inserted(edit)).toHaveLength(1);
+    expect(inserted(edit).every((object) => !object.includes(' cm\nBT'))).toBe(true);
+    // CONTROL: and a placement writes one, so the absence above is the edit's and not the way this reads.
+    expect(inserted(made([placedBlock({ move: { x: 1, y: 0 } })])).every((object) => object.includes(' cm\nBT'))).toBe(true);
+  });
+
+  it('carries a line’s operators as they were: its own codes and kerning, not its words set again', () => {
+    const kerned = bytes('0.75 0 0 -0.75 0 792 cm\nBT /F1 20 Tf 1 0 0 -1 72 300 Tm [(a) -120 (bc)] TJ ET');
+    const page = runsOf(kerned, fonts);
+    const edit = editOperators(kerned, fonts, { ...page, runs: page.runs.map((run) => ({ ...run, left: 54, right: 76.5, bottom: 564, top: 579 })) }, [
+      { lines: [[0]], soft: [false], text: 'abc', place: { move: { x: 10, y: 0 } } },
+    ]);
+    if (!edit.ok) throw new Error(`refused: ${JSON.stringify(edit.error)}`);
+    // THE KERNING IS IN IT, as hexadecimal: the run is its page's, not a re-setting of three letters.
+    expect(latin1(edit.value.content)).toContain('[<61> -120 <6263>] TJ');
+    expect(checkOperatorEdit(kerned, edit.value, fonts).ok).toBe(true);
+  });
+
+  it('gives a block a measure by setting every paragraph of it again, wrapped there', () => {
+    // A WORD IS 22.5 POINTS HERE (three letters of 10 in a 0.75 text space), so thirty points hold one and not two.
+    const narrow = made([{ lines: [[0]], soft: [false], text: 'abc abc', place: { width: 30 } }]);
+    expect(narrow.written).toStrictEqual(['abc\nabc']);
+    // THE MEASURE DRIVES THE WRAP BOTH WAYS: three hundred points hold both words on one line, where the block's own right
+    // edge (the line's 22.5) held one. The last is the control that the measure and not the words made the first wrap.
+    const wide = made([{ lines: [[0]], soft: [false], text: 'abc abc', place: { width: 300 } }]);
+    expect(wide.written).toStrictEqual(['abc abc']);
+    const own = made([{ lines: [[0]], soft: [false], text: 'abc abc' }]);
+    expect(own.written).toStrictEqual(['abc\nabc']);
+  });
+
+  describe('an added box', () => {
+    // THE CALLER'S ADDED FONT: a code per letter it is asked for, as in the case above.
+    const added = new Map<number, string>();
+    const face: PageFont = {
+      resource: 'MonsteraFace1',
+      subtype: 'Type0',
+      toUnicode: { text: added, bytes: 2 },
+      codeBytes: 2,
+      width: (code) => (added.has(code) ? 0.5 : null),
+      draws: (code) => added.has(code),
+      face: 'Resolver',
+      weight: 400,
+    };
+    const codeFor = (character: string): number => {
+      for (const [code, text] of added) if (text === character) return code;
+      added.set(added.size + 1, character);
+      return added.size;
+    };
+    const asked: { word: string; family: string | undefined }[] = [];
+    const faces: OperatorFaces = {
+      set: (word, _source, _own, restyle) => {
+        asked.push({ word, family: restyle?.family });
+        return Array.from(word, (character) => ({ font: face, codes: [codeFor(character)] }));
+      },
+      drawn: () => undefined,
+    };
+    const box = { left: 100, baseline: 600, measure: 200, size: 10, text: 'xyz' };
+    const withFonts = new Map([...fonts, ['MonsteraFace1', face]]);
+
+    it('is drawn last, closing what the page left open first, under the CTM the page is drawn under', () => {
+      // A PAGE THAT NEVER CLOSED ITS q, and a cm outside it that stays: the CTM at the end is 2 across and 3 up, 2 and 3 and 0.
+      const open = bytes('2 0 0 3 5 7 cm\nq 0.5 0 0 0.5 0 0 cm\nBT /F1 20 Tf 1 0 0 1 10 10 Tm (abc) Tj ET');
+      const page = runsOf(open, fonts);
+      const result = editOperators(open, fonts, page, [], faces, 'reflow', [box]);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      const text = latin1(result.value.content);
+      // ONE Q, said once, then the box's own object.
+      expect(text).toMatch(/Tj ET\nQ\nq BT/u);
+      expect(checkOperatorEdit(open, result.value, withFonts).ok).toBe(true);
+      // AND IT DRAWS WHERE THE BOX SAYS in user space: (100, 600), through the CTM the content is left in once the q is closed.
+      const [first] = showOperators(result.value.content).filter((op) => op.start >= text.indexOf('q BT', text.indexOf('Q\n')));
+      const m = multiplyMatrices(first?.state.matrix ?? [], first?.state.ctm ?? []);
+      expect(m[4]).toBeCloseTo(100, 3);
+      expect(m[5]).toBeCloseTo(600, 3);
+      // CONTROL: the Q is the page's closing and not every box's: a second box adds none.
+      const two = editOperators(open, fonts, page, [], faces, 'reflow', [box, { ...box, baseline: 500, text: 'xy' }]);
+      if (!two.ok) throw new Error(`refused: ${JSON.stringify(two.error)}`);
+      expect(latin1(two.value.content).match(/\nQ\nq BT/gu)?.length).toBe(1);
+    });
+
+    it('is set in the face the resolver gives for the family asked, and only for the words it holds', () => {
+      asked.length = 0;
+      const result = editOperators(content, fonts, stated(), [], faces, 'reflow', [{ ...box, base: { family: 'Courier' } }]);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      expect(asked).toContainEqual({ word: 'xyz', family: 'Courier' });
+      expect(result.value.drawn).toStrictEqual(['xyz']);
+    });
+
+    it('is refused where nothing can set it, naming the characters, and writes nothing', () => {
+      const result = editOperators(content, fonts, stated(), [], null, 'reflow', [box]);
+      expect(result).toStrictEqual({ ok: false, error: { reason: 'needs-a-face', characters: ['x', 'y', 'z'] } });
+    });
   });
 });

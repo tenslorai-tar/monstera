@@ -55,12 +55,24 @@ const CASES = [
   'PDFium, reading those saved bytes, finds every new letter and the boxed code point as itself',
   'with fit shrink, a heading made half as long again again is set smaller on its OWN baseline, and PDFium reads it back whole',
   'CONTROL: the same words with fit reflow are not written on that row: they wrap onto the heading below it and are refused, or leave only a part of them there',
+  'a heading MOVED is read by PDFium from the saved bytes exactly the points further on, with the lines beside it where they were',
+  'CONTROL: the same heading written with no placement is read where it was, so the move above is the placement’s',
+  'a heading SCALED to half is read half as wide, with its top left where it was',
+  'a heading TURNED a quarter is read running up the page, about the centre it had',
+  'CONTROL: the heading unturned is wider than it is tall, so the quarter turn above is the one that made it tall',
+  'a heading given a NARROWER MEASURE wraps inside it, every word kept in order and the first line where it began',
+  'CONTROL: the same words with no measure stay on one line, so it is the measure that wrapped them',
+  'a heading resized from its WEST side (moved and given a measure at once) is read at its new left edge and wrapped there',
+  'a JOIN of the two headings is one paragraph: the second heading’s words follow the first’s, and its old place is empty',
+  'a SPLIT leaves the first half where it was and moves the second half down by the distance asked',
+  'a box of text ADDED to the page is read by PDFium at the left and baseline it was given, in a bundled face',
+  'CONTROL: before the edit the page holds no such text, and the box added carries a font the page did not have',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
-if (CASES.length !== 9) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 9`);
+const roster = createRoster(failures, { cases: 21 });
+if (CASES.length !== 21) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 21`);
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
@@ -216,6 +228,190 @@ async function run(pdfium, kernel) {
     `with reflow the row read ${JSON.stringify(reflowedRow)} (${reflowed.outcome.ok ? 'written' : String(reflowed.outcome.error)}).`,
   );
 
+  // A PLACEMENT, A MEASURE, A JOIN AND A SPLIT (ADR-0188): the heading is carried, scaled, turned, wrapped, joined to the
+  // heading below it and split from it, and PDFium reads each from the saved bytes. Every number is a reading of where the
+  // words stand, never what the writer meant to write.
+  /** @param {any[]} blocks @param {any[]} inserts */
+  const applied = async (blocks, inserts = []) => {
+    const session = await kernel.mupdfWriter.open(bytes);
+    try {
+      const wire = { kind: 'editTextOperators', page: 0, ...kernel.blockEditOf(blocks, inserts), fit: 'reflow', version: 1 };
+      const outcome = await kernel.applyEditTextOperators(session, wire, reading).then(
+        (/** @type {any} */ drawn) => ({ ok: true, error: null, drawn }),
+        (/** @type {unknown} */ error) => ({ ok: false, error, drawn: null }),
+      );
+      const content = await kernel.withDocument(session, (/** @type {any} */ document) =>
+        kernel.joinedContent(kernel.pageContentStreams(document.findPage(0))),
+      );
+      return { outcome, content: new TextDecoder('latin1').decode(content), saved: outcome.ok ? await kernel.mupdfWriter.serialise(session) : null };
+    } finally {
+      await kernel.mupdfWriter.close(session);
+    }
+  };
+  const headingBlock = { lines: [line.map((/** @type {any} */ each) => each.index)], soft: [false], text: HEADING };
+  const second = reading.runs.filter((/** @type {any} */ each) => each.bottom < 667 && each.top > 650);
+  const secondBlock = { lines: [second.map((/** @type {any} */ each) => each.index)], soft: [false], text: 'A second heading in the same face.' };
+  const others = reading.runs.filter((/** @type {any} */ each) => !line.includes(each));
+  const near = (/** @type {number} */ a, /** @type {number} */ b, tolerance = 0.9) => Math.abs(a - b) <= tolerance;
+  /** The box of a set of runs: where the words stand. */
+  const boxOf = (/** @type {any[]} */ runs) => ({
+    left: Math.min(...runs.map((each) => each.left)),
+    right: Math.max(...runs.map((each) => each.right)),
+    bottom: Math.min(...runs.map((each) => each.bottom)),
+    top: Math.max(...runs.map((each) => each.top)),
+  });
+  /** The runs of a saved page that are not one of the lines beside the heading, left where they were: the heading's pieces. */
+  const piecesOf = (/** @type {any} */ read) =>
+    read.runs.filter((/** @type {any} */ each) => !others.some((/** @type {any} */ other) => other.text === each.text && near(other.left, each.left) && near(other.bottom, each.bottom)));
+  const originalBox = boxOf(line);
+  /** Whether every line beside the heading is read in the saved page as it was, word for word and place for place. */
+  const othersStand = (/** @type {any} */ read) =>
+    others.every((/** @type {any} */ other) =>
+      read.runs.some((/** @type {any} */ each) => each.text === other.text && near(each.left, other.left) && near(each.bottom, other.bottom)),
+    );
+
+  const moved = await applied([{ ...headingBlock, place: { move: { x: 40, y: 30 } } }]);
+  const movedRead = moved.saved === null ? null : await readRuns(moved.saved);
+  const movedBox = movedRead === null ? null : boxOf(piecesOf(movedRead));
+  check(
+    CASES[9] ?? '',
+    movedBox !== null &&
+      near(movedBox.left, originalBox.left + 40) &&
+      near(movedBox.right, originalBox.right + 40) &&
+      near(movedBox.bottom, originalBox.bottom + 30) &&
+      near(movedBox.top, originalBox.top + 30) &&
+      movedRead !== null &&
+      othersStand(movedRead),
+    `the heading read at ${JSON.stringify(movedBox)} against ${JSON.stringify(originalBox)} moved by (40, 30) (${moved.outcome.ok ? 'written' : String(moved.outcome.error)}).`,
+  );
+  // THE CONTROL: the words written again with no placement are read where the heading was.
+  const stayed = await applied([{ ...headingBlock, text: EDITED }]);
+  const stayedRead = stayed.saved === null ? null : await readRuns(stayed.saved);
+  const stayedBox = stayedRead === null ? null : boxOf(piecesOf(stayedRead));
+  check(
+    CASES[10] ?? '',
+    stayedBox !== null && near(stayedBox.left, originalBox.left) && near(stayedBox.bottom, originalBox.bottom),
+    `the heading edited with no placement read at ${JSON.stringify(stayedBox)} against ${JSON.stringify(originalBox)}.`,
+  );
+
+  const scaled = await applied([{ ...headingBlock, place: { scale: 0.5 } }]);
+  const scaledRead = scaled.saved === null ? null : await readRuns(scaled.saved);
+  const scaledBox = scaledRead === null ? null : boxOf(piecesOf(scaledRead));
+  const originalWidth = originalBox.right - originalBox.left;
+  check(
+    CASES[11] ?? '',
+    scaledBox !== null &&
+      Math.abs((scaledBox.right - scaledBox.left) / originalWidth - 0.5) < 0.03 &&
+      near(scaledBox.left, originalBox.left) &&
+      near(scaledBox.top, originalBox.top, 1.5) &&
+      scaledRead !== null &&
+      othersStand(scaledRead),
+    `the scaled heading read at ${JSON.stringify(scaledBox)} against ${JSON.stringify(originalBox)}.`,
+  );
+
+  const turned = await applied([{ ...headingBlock, place: { rotate: 90 } }]);
+  const turnedRead = turned.saved === null ? null : await readRuns(turned.saved);
+  const turnedBox = turnedRead === null ? null : boxOf(piecesOf(turnedRead));
+  const centreOf = (/** @type {any} */ box) => ({ x: (box.left + box.right) / 2, y: (box.bottom + box.top) / 2 });
+  check(
+    CASES[12] ?? '',
+    turnedBox !== null &&
+      turnedBox.top - turnedBox.bottom > 3 * (turnedBox.right - turnedBox.left) &&
+      Math.abs(centreOf(turnedBox).x - centreOf(originalBox).x) < 5 &&
+      Math.abs(centreOf(turnedBox).y - centreOf(originalBox).y) < 5,
+    `the turned heading read at ${JSON.stringify(turnedBox)} against ${JSON.stringify(originalBox)}.`,
+  );
+  check(
+    CASES[13] ?? '',
+    originalWidth > 3 * (originalBox.top - originalBox.bottom),
+    `the heading as it was is ${originalWidth.toFixed(1)} wide and ${(originalBox.top - originalBox.bottom).toFixed(1)} tall.`,
+  );
+
+  // THE MEASURE CASES ARE LIFTED CLEAR of the heading below, since a wrapped heading's lines go down and PDFium reads two
+  // lines that overlap as one: moving up a hundred points is a north-west handle's own gesture, and the move is the same
+  // in the control.
+  const lift = { x: 0, y: 100 };
+  /** The lines of a read page's heading pieces: runs grouped by the baseline they stand on, top first. */
+  const linesOfPieces = (/** @type {any[]} */ pieces) => {
+    /** @type {any[][]} */
+    const rows = [];
+    for (const piece of [...pieces].sort((a, b) => b.top - a.top)) {
+      const row = rows.find((each) => each.some((member) => Math.abs(member.top - piece.top) < 6 || Math.abs(member.bottom - piece.bottom) < 6));
+      if (row === undefined) rows.push([piece]);
+      else row.push(piece);
+    }
+    return rows;
+  };
+  const narrow = await applied([{ ...headingBlock, place: { move: lift, width: 120 } }]);
+  const narrowRead = narrow.saved === null ? null : await readRuns(narrow.saved);
+  const narrowPieces = narrowRead === null ? [] : piecesOf(narrowRead);
+  const narrowRows = linesOfPieces(narrowPieces);
+  const readInOrder = (/** @type {any[][]} */ rows) =>
+    squeezed(rows.map((row) => [...row].sort((a, b) => a.left - b.left).map((each) => each.text).join('')).join(''));
+  check(
+    CASES[14] ?? '',
+    narrow.outcome.ok &&
+      narrowRows.length >= 2 &&
+      readInOrder(narrowRows) === squeezed(HEADING) &&
+      narrowPieces.every((/** @type {any} */ each) => each.right <= originalBox.left + 120 + 4) &&
+      near(Math.min(...(narrowRows[0] ?? []).map((/** @type {any} */ each) => each.left)), originalBox.left, 2) &&
+      // AND THE FIRST LINE IS A HUNDRED UP, so the lift this case is made clear of the heading below by is itself read.
+      near(Math.max(...(narrowRows[0] ?? []).map((/** @type {any} */ each) => each.top)), originalBox.top + 100, 1.5),
+    `the heading with a measure of 120 read as ${JSON.stringify(narrowRows.map((row) => row.map((/** @type {any} */ each) => each.text)))} (${narrow.outcome.ok ? 'written' : String(narrow.outcome.error)}).`,
+  );
+  const lifted = await applied([{ ...headingBlock, place: { move: lift } }]);
+  const liftedRead = lifted.saved === null ? null : await readRuns(lifted.saved);
+  check(
+    CASES[15] ?? '',
+    liftedRead !== null &&
+      linesOfPieces(piecesOf(liftedRead)).length === 1 &&
+      near(boxOf(piecesOf(liftedRead)).top, originalBox.top + 100, 1.5),
+    `the heading lifted with no measure read in ${String(liftedRead === null ? null : linesOfPieces(piecesOf(liftedRead)).length)} line(s).`,
+  );
+  const west = await applied([{ ...headingBlock, place: { move: { x: 30, y: 100 }, width: 150 } }]);
+  const westRead = west.saved === null ? null : await readRuns(west.saved);
+  const westRows = westRead === null ? [] : linesOfPieces(piecesOf(westRead));
+  check(
+    CASES[16] ?? '',
+    west.outcome.ok &&
+      westRows.length >= 2 &&
+      readInOrder(westRows) === squeezed(HEADING) &&
+      near(Math.min(...westRows.flat().map((/** @type {any} */ each) => each.left)), originalBox.left + 30, 2.5) &&
+      westRows.flat().every((/** @type {any} */ each) => each.right <= originalBox.left + 30 + 150 + 4),
+    `the heading moved 30 and given a measure of 150 read as ${JSON.stringify(westRows.map((row) => row.map((/** @type {any} */ each) => each.text)))} (${west.outcome.ok ? 'written' : String(west.outcome.error)}).`,
+  );
+
+  // A JOIN is the upper block's words with the lower's after them and the lower emptied: one edit of two blocks.
+  const SECOND_WORDS = 'A second heading in the same face.';
+  const joined = await applied([{ ...headingBlock, text: `${HEADING} ${SECOND_WORDS}` }, { ...secondBlock, text: '' }]);
+  const joinedRead = joined.saved === null ? null : await readRuns(joined.saved);
+  const joinedWords = joinedRead === null ? '' : squeezed([...joinedRead.runs].sort((a, b) => b.top - a.top || a.left - b.left).map((/** @type {any} */ each) => each.text).join(''));
+  check(
+    CASES[17] ?? '',
+    joined.outcome.ok &&
+      joinedWords.includes(squeezed(`${HEADING}${SECOND_WORDS}`)) &&
+      joinedRead !== null &&
+      !joinedRead.runs.some((/** @type {any} */ each) => each.text === 'A second heading in the same face' && near(each.bottom, 651.4, 1.5)) &&
+      joinedWords.includes(squeezed(BODY)),
+    `the joined page read as ${JSON.stringify(joinedRead?.runs.map((/** @type {any} */ each) => each.text) ?? null)} (${joined.outcome.ok ? 'written' : String(joined.outcome.error)}).`,
+  );
+
+  // A SPLIT is an entry for each half, the second moved down: here the heading below it is the second half, moved 15 down.
+  const split = await applied([headingBlock, { ...secondBlock, text: SECOND_WORDS, place: { move: { x: 0, y: -15 } } }]);
+  const splitRead = split.saved === null ? null : await readRuns(split.saved);
+  const secondBefore = boxOf(second);
+  const secondAfter = splitRead === null ? null : boxOf(splitRead.runs.filter((/** @type {any} */ each) => squeezed(each.text) !== squeezed(BODY) && each.bottom < 660 && each.top > 630));
+  check(
+    CASES[18] ?? '',
+    split.outcome.ok &&
+      secondAfter !== null &&
+      near(secondAfter.bottom, secondBefore.bottom - 15) &&
+      near(secondAfter.left, secondBefore.left) &&
+      splitRead !== null &&
+      line.every((/** @type {any} */ each) => splitRead.runs.some((/** @type {any} */ run) => run.text === each.text && near(run.left, each.left) && near(run.bottom, each.bottom))),
+    `the second half read at ${JSON.stringify(secondAfter)} against ${JSON.stringify(secondBefore)} (${split.outcome.ok ? 'written' : String(split.outcome.error)}).`,
+  );
+
   // THE RESOLVER'S FACE AND THE BOX (ADR-0177), bound as the MuPDF host binds them, by their folders. The new words need
   // z and p, which the print's subset lacks, and a code point no font carries.
   const fonts = fontsDirectory(ROOT);
@@ -241,6 +437,39 @@ async function run(pdfium, kernel) {
     // THE BOX READS AS ITS CHARACTER, not as U+25A1, and the letters in the added face read as themselves.
     facedWords.includes(squeezed(FACED)) && !facedWords.includes(String.fromCodePoint(0x25a1)) && facedWords.includes(squeezed(BODY)),
     `PDFium read the saved page as ${JSON.stringify(facedRead?.runs.map((/** @type {any} */ each) => each.text) ?? null)}.`,
+  );
+
+  // A BOX OF TEXT ADDED TO THE PAGE (ADR-0188), set in the resolver's face where the box says.
+  const BOX_WORDS = 'A new box of text';
+  kernel.bindEditFolders(fonts, null);
+  const boxed = await applied([], [{ left: 100, baseline: 400, measure: 200, size: 14, text: BOX_WORDS }]);
+  kernel.bindEditFaces(null);
+  const boxedRead = boxed.saved === null ? null : await readRuns(boxed.saved);
+  const boxRun = boxedRead?.runs.find((/** @type {any} */ each) => squeezed(each.text) === squeezed(BOX_WORDS));
+  check(
+    CASES[19] ?? '',
+    boxed.outcome.ok &&
+      boxRun !== undefined &&
+      near(boxRun.left, 100, 1.5) &&
+      boxRun.bottom > 400 - 6 &&
+      boxRun.bottom < 400 + 1 &&
+      boxRun.top - boxRun.bottom > 5 &&
+      boxRun.top - boxRun.bottom < 20 &&
+      boxedRead !== null &&
+      othersStand(boxedRead) &&
+      line.every((/** @type {any} */ each) => boxedRead.runs.some((/** @type {any} */ run) => run.text === each.text && near(run.left, each.left) && near(run.bottom, each.bottom))),
+    `PDFium read the box as ${JSON.stringify(boxRun === undefined ? null : { text: boxRun.text, left: boxRun.left, bottom: boxRun.bottom, top: boxRun.top })} (${boxed.outcome.ok ? 'written' : String(boxed.outcome.error)}).`,
+  );
+  check(
+    CASES[20] ?? '',
+    !reading.runs.some((/** @type {any} */ each) => squeezed(each.text).includes(squeezed(BOX_WORDS))) &&
+      /\/MonsteraF\d+ 14 Tf/u.test(boxed.content) &&
+      !(await (async () => {
+        // WITH NO FACE BOUND the same box is refused, and the page is as it came.
+        const refused = await applied([], [{ left: 100, baseline: 400, measure: 200, size: 14, text: BOX_WORDS }]);
+        return refused.outcome.ok;
+      })()),
+    'the page held no such words before, the box carried a font of its own, and with no face bound it was refused.',
   );
 }
 

@@ -310,7 +310,38 @@ export function joinedContent(streams: readonly Uint8Array[]): Uint8Array {
 
 /** Every text-showing operator of a page's joined content, in order, numbered by PDFium's rule. */
 export function showOperators(content: Uint8Array): readonly ShowOperator[] {
+  return scan(content).operators;
+}
+
+/**
+ * Where each of the page's text objects ends, by where it begins (`ShowOperator.textObject`): the offset just past its
+ * `ET`. A text object that is never closed has none. An object placed to continue a text object's own marked content,
+ * after it in the reading, goes here, which is still under the graphics state the object was drawn under.
+ */
+export function textObjectEnds(content: Uint8Array): ReadonlyMap<number, number> {
+  return scan(content).ends;
+}
+
+/**
+ * What a page's content leaves open at its end: how many `q` it never closed, and the CTM the page is drawn under once
+ * they are (a `cm` outside every `q` is permanent). An object appended to the content is set under this, after as many
+ * `Q` as the first.
+ */
+export function contentEnd(content: Uint8Array): { readonly depth: number; readonly ctm: Matrix } {
+  const { depth, baseCtm } = scan(content);
+  return { depth, ctm: baseCtm };
+}
+
+/** The ONE pass over a content stream (the numbering rule and the `q` and `Q` it is read through are stated here once). */
+function scan(content: Uint8Array): {
+  readonly operators: readonly ShowOperator[];
+  readonly depth: number;
+  readonly baseCtm: Matrix;
+  readonly ends: ReadonlyMap<number, number>;
+} {
   const found: ShowOperator[] = [];
+  /** Where each text object ends, by where it begins: the offset just past its `ET`. */
+  const ends = new Map<number, number>();
   let state: Omit<TextState, 'matrix' | 'line' | 'ctm'> = {
     font: null, size: 0, charSpacing: 0, wordSpacing: 0, scale: 1, leading: 0, rise: 0, render: 0,
   };
@@ -366,6 +397,7 @@ export function showOperators(content: Uint8Array): readonly ShowOperator[] {
         positionedAt = found.length;
         break;
       case 'ET':
+        if (textObject >= 0) ends.set(textObject, token.end);
         textObject = -1;
         break;
       case 'Tc':
@@ -450,7 +482,7 @@ export function showOperators(content: Uint8Array): readonly ShowOperator[] {
     }
     operands = [];
   }
-  return found;
+  return { operators: found, depth: saved.length, baseCtm: saved[0]?.ctm ?? ctm, ends };
 }
 
 /** The operator PDFium's text object `object` is, or `undefined` where the content shows fewer. */

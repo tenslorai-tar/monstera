@@ -56,16 +56,6 @@ export async function applyEditTextOperators(
   command: CommandOfKind<'editTextOperators'>,
   read: PageRuns,
 ): Promise<DrawnBoxes> {
-  // A PLACEMENT OR AN ADDED BOX IS NOT WRITTEN BY THIS WRITER YET, and is said so rather than dropped: the block wire is
-  // shared by both writers, so a field this one does not apply would otherwise be accepted and do nothing (ADR-0180,
-  // corrected 2026-10-06). The refusal names the page's kind of text, and the document is exactly what it was.
-  if ((command.places?.length ?? 0) > 0 || (command.inserts?.length ?? 0) > 0) {
-    throw new EditRefusedError(
-      'matrix',
-      0,
-      'a page whose text is drawn in a Type 3 font is not moved, resized, rotated or added to yet',
-    );
-  }
   // THE FACE WRITER ON FIRST NEED, by a literal `import()` as the host loads pdf-lib (ADR-0121 Decision 3): it brings
   // HarfBuzz, +6.4 MB of resident set at import (measured 2026-10-06, Node 22.22.0 on Linux, three runs against a control
   // that imports nothing), which every MuPDF host would otherwise pay at start against a 100 MB fixed-cost budget.
@@ -81,7 +71,7 @@ export async function applyEditTextOperators(
     // THE RESOLVER'S FACES AND THE BOX (ADR-0177): read on the first word that needs one, so an edit the page's own
     // fonts carry never reads a font file.
     const faces = faceSet === null ? null : new faceSet(document, lazyFaces(), fonts);
-    const made = editOperators(content, fonts, read, blocksOfEdit(command), faces?.faces ?? null, command.fit);
+    const made = editOperators(content, fonts, read, blocksOfEdit(command), faces?.faces ?? null, command.fit, command.inserts ?? []);
     if (!made.ok) {
       const refusal = made.error;
       if (refusal.reason === 'needs-a-face') throw new TextNotWritableError(refusal.characters.join(''));
@@ -129,7 +119,15 @@ export async function applyEditTextOperators(
 function needsAFace(session: MupdfSession, command: CommandOfKind<'editTextOperators'>, read: PageRuns): Promise<boolean> {
   return withDocument(session, (document) => {
     const leaf = document.findPage(command.page);
-    const made = editOperators(joinedContent(pageContentStreams(leaf)), pageFonts(leaf), read, blocksOfEdit(command), null, command.fit);
+    const made = editOperators(
+      joinedContent(pageContentStreams(leaf)),
+      pageFonts(leaf),
+      read,
+      blocksOfEdit(command),
+      null,
+      command.fit,
+      command.inserts ?? [],
+    );
     return !made.ok && made.error.reason === 'needs-a-face';
   });
 }

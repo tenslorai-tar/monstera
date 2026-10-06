@@ -91,31 +91,78 @@ describe('applyEditTextOperators', () => {
     });
   });
 
-  it('SAYS a placement or an added box is not written on a Type 3 page, rather than accepting it and doing nothing', async () => {
-    await withChromium(async (session, content) => {
-      const runs = headingRuns(content);
-      const index = runs.runs[0]?.index ?? 0;
-      const words = 'Monstera fixture heading.';
-      const moved: CommandOfKind<'editTextOperators'> = {
-        ...command(index, words),
-        ...blockEditOf([{ lines: [[index]], soft: [false], text: words, place: { move: { x: 10, y: 0 } } }]),
-      };
-      const added: CommandOfKind<'editTextOperators'> = {
-        ...command(index, words),
-        ...blockEditOf([{ lines: [[index]], soft: [false], text: words }], [{ left: 72, baseline: 600, measure: 100, size: 12, text: 'Added' }]),
-      };
-      for (const refused of [moved, added]) {
-        const refusal = await applyEditTextOperators(session, refused, runs).then(
+  describe('a placement and an added box (ADR-0188)', () => {
+    const words = 'Monstera fixture heading.';
+    const placed = (index: number, place: NonNullable<Parameters<typeof blockEditOf>[0][number]['place']>): CommandOfKind<'editTextOperators'> => ({
+      ...command(index, words),
+      ...blockEditOf([{ lines: [[index]], soft: [false], text: words, place }]),
+    });
+    const latin1 = (data: Uint8Array): string => new TextDecoder('latin1').decode(data);
+
+    it('carries a moved heading to its place under one cm, and MuPDF still reads every word of it', async () => {
+      await withChromium(async (session, content) => {
+        const runs = headingRuns(content);
+        await applyEditTextOperators(session, placed(runs.runs[0]?.index ?? 0, { move: { x: 10, y: 0 } }), runs);
+        const after = latin1(await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0)))));
+        // THE MOVE IN THE SPACE THE WORDS ARE WRITTEN IN: ten points through the page's own scale (0.24 and 3.125, so 0.75).
+        expect(after).toMatch(/q\n1 0 0 1 13\.3333\d* 0 cm\nBT/u);
+        expect(await pageWords(session)).toContain('Monsterafixtureheading.');
+        // THE LINE IS CARRIED, NOT REWRITTEN: its glyphs are the page's own codes, and the old ones are emptied.
+        expect(after).toContain('<30> Tj');
+        expect(after).toContain('[] TJ');
+      });
+    });
+
+    // THE CONTROL: a move of nothing is no placement, so it adds no `cm` and the edit says it changed nothing, rather than
+    // the case above being a `cm` every edit carries.
+    it('writes no cm for a move of nothing, and says it changed nothing', async () => {
+      await withChromium(async (session, content) => {
+        const runs = headingRuns(content);
+        const refusal = await applyEditTextOperators(session, placed(runs.runs[0]?.index ?? 0, { move: { x: 0, y: 0 } }), runs).then(
           () => null,
           (error: unknown) => error,
         );
-        expect(refusal).toBeInstanceOf(EditRefusedError);
-        expect((refusal as EditRefusedError).step).toBe('matrix');
-      }
-      // CONTROL: the same words with no place and no box are written, so the refusal above is the placement's.
-      await applyEditTextOperators(session, command(index, 'Monstera fixture reading.'), runs);
-      const after = await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))));
-      expect(after).not.toStrictEqual(content);
+        expect(refusal).toBeInstanceOf(Error);
+        expect((refusal as Error).message).toContain('changed nothing');
+        expect(await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))))).toStrictEqual(content);
+      });
+    });
+
+    it('re-plans a heading given a measure: it wraps where the measure ends, and no word is lost', async () => {
+      await withChromium(async (session, content) => {
+        const runs = headingRuns(content);
+        // THE INK IS STATED HERE (the helper leaves it at the origin), so the measure is from a left edge of 72.
+        const index = runs.runs[0]?.index ?? 0;
+        await applyEditTextOperators(session, placed(index, { width: 130 }), runs);
+        expect(await pageWords(session)).toContain('Monsterafixtureheading.');
+        const lines = await withDocument(session, (document) =>
+          document
+            .loadPage(0)
+            .toStructuredText()
+            .asText()
+            .split('\n')
+            .filter((line) => line.trim() !== ''),
+        );
+        // MORE THAN ONE LINE of the heading where there was one: the words wrapped.
+        expect(lines.filter((line) => /Monstera|fixture|heading/u.test(line)).length).toBeGreaterThan(1);
+      });
+    });
+
+    it('refuses an added box when no face is bound, naming its characters, and leaves the page as it came', async () => {
+      await withChromium(async (session, content) => {
+        const runs = headingRuns(content);
+        const index = runs.runs[0]?.index ?? 0;
+        const added: CommandOfKind<'editTextOperators'> = {
+          ...command(index, words),
+          ...blockEditOf([{ lines: [[index]], soft: [false], text: words }], [{ left: 72, baseline: 600, measure: 100, size: 12, text: 'Added' }]),
+        };
+        const refusal = await applyEditTextOperators(session, added, runs).then(
+          () => null,
+          (error: unknown) => error,
+        );
+        expect(refusal).toBeInstanceOf(TextNotWritableError);
+        expect(await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))))).toStrictEqual(content);
+      });
     });
   });
 
@@ -175,6 +222,28 @@ describe('applyEditTextOperators', () => {
         } finally {
           await mupdfWriter.close(reopened);
         }
+      });
+    });
+
+    it('adds a box of text after everything the page draws, in a bundled face, where the box says (ADR-0188)', async () => {
+      await withChromium(async (session) => {
+        const content = await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))));
+        const runs = headingRuns(content);
+        const index = runs.runs[0]?.index ?? 0;
+        const words = 'Monstera fixture heading.';
+        const added: CommandOfKind<'editTextOperators'> = {
+          ...command(index, words),
+          ...blockEditOf([{ lines: [[index]], soft: [false], text: words }], [{ left: 100, baseline: 400, measure: 200, size: 14, text: 'A new box' }]),
+        };
+        expect(await applyEditTextOperators(session, added, runs)).toStrictEqual({ boxed: [], more: 0 });
+        expect(await pageWords(session)).toContain('Anewbox');
+        const { fonts, content: written } = await after(session);
+        expect(fonts.filter((name) => name.startsWith('MonsteraF'))).toHaveLength(1);
+        // THE BOX IS THE LAST THING DRAWN, and the line it is set at is the box's own in user space: 100 across and 400 up,
+        // through the page's own 0.24 scale and its flip (BT space is 100 / 0.24 across, and (400 - 792) / -0.24 down).
+        expect(written.slice(written.indexOf('q BT\n', written.lastIndexOf('EMC')))).toMatch(/4\.16666\d* 0 0 -4\.16666\d* 416\.66\d* 1633\.33\d* Tm/u);
+        // CONTROL: the page's own body line comes before it, so it is the box that was added and not the body that was moved.
+        expect(written.indexOf('/F5 14 Tf')).toBeLessThan(written.indexOf('/MonsteraF'));
       });
     });
 
