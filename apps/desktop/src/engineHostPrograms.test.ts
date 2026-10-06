@@ -70,17 +70,30 @@ describe('the engine host programs', () => {
       ),
     ).toStrictEqual(['C:\\k\\hostEntry.js', '\\\\.\\pipe\\p', 'C:\\s\\monstera_mupdf.dll']);
 
-    // THE FONTS FOURTH for PDFium (ADR-0173), where `pdfiumHostEntry.ts` reads them, and EMPTY where there are none.
+    // THE FONTS FOURTH and THE INSTALLED FONTS FIFTH for PDFium (ADR-0173, ADR-0172 Decision 2), where
+    // `pdfiumHostEntry.ts` reads them, each EMPTY where there are none — and a missing bundled folder does not move the
+    // installed one.
     expect(
       hostCommandArguments(
-        { kind: 'pdfium', libraryPath: 'C:\\t\\pdfium.dll', fontsPath: 'C:\\f' },
+        { kind: 'pdfium', libraryPath: 'C:\\t\\pdfium.dll', fontsPath: 'C:\\f', installedFontsPath: 'C:\\Windows\\Fonts' },
         'C:\\k\\pdfiumHostEntry.js',
         '\\\\.\\pipe\\q',
       ),
-    ).toStrictEqual(['C:\\k\\pdfiumHostEntry.js', '\\\\.\\pipe\\q', 'C:\\t\\pdfium.dll', 'C:\\f']);
+    ).toStrictEqual(['C:\\k\\pdfiumHostEntry.js', '\\\\.\\pipe\\q', 'C:\\t\\pdfium.dll', 'C:\\f', 'C:\\Windows\\Fonts']);
     expect(
-      hostCommandArguments({ kind: 'pdfium', libraryPath: 'C:\\t\\pdfium.dll', fontsPath: null }, 'e.js', 'q'),
-    ).toStrictEqual(['e.js', 'q', 'C:\\t\\pdfium.dll', '']);
+      hostCommandArguments(
+        { kind: 'pdfium', libraryPath: 'C:\\t\\pdfium.dll', fontsPath: null, installedFontsPath: null },
+        'e.js',
+        'q',
+      ),
+    ).toStrictEqual(['e.js', 'q', 'C:\\t\\pdfium.dll', '', '']);
+    expect(
+      hostCommandArguments(
+        { kind: 'pdfium', libraryPath: 'C:\\t\\pdfium.dll', fontsPath: null, installedFontsPath: 'C:\\Windows\\Fonts' },
+        'e.js',
+        'q',
+      ),
+    ).toStrictEqual(['e.js', 'q', 'C:\\t\\pdfium.dll', '', 'C:\\Windows\\Fonts']);
   });
 
   it('gives a compose host with no shim and no fonts two EMPTY arguments, never a path', () => {
@@ -89,21 +102,29 @@ describe('the engine host programs', () => {
     // engine expectation there, and that host would carry a filesystem path in its
     // command line for anything on the machine to read out of the process list.
     expect(
-      hostCommandArguments({ kind: 'compose', shimPath: null, fontsPath: null }, 'composeHostEntry.js', 'pipe'),
-    ).toStrictEqual(['composeHostEntry.js', 'pipe', '', '']);
+      hostCommandArguments(
+        { kind: 'compose', shimPath: null, fontsPath: null, installedFontsPath: null },
+        'composeHostEntry.js',
+        'pipe',
+      ),
+    ).toStrictEqual(['composeHostEntry.js', 'pipe', '', '', '']);
   });
 
   it('gives the compose host the shim’s path THIRD and the fonts’ FOURTH, where it reads them (ADR-0087, ADR-0172)', () => {
     expect(
       hostCommandArguments(
-        { kind: 'compose', shimPath: 'C:\\s\\monstera_mupdf.dll', fontsPath: 'C:\\f' },
+        { kind: 'compose', shimPath: 'C:\\s\\monstera_mupdf.dll', fontsPath: 'C:\\f', installedFontsPath: 'C:\\W\\Fonts' },
         'composeHostEntry.js',
         'pipe',
       ),
-    ).toStrictEqual(['composeHostEntry.js', 'pipe', 'C:\\s\\monstera_mupdf.dll', 'C:\\f']);
-    // A MISSING SHIM DOES NOT MOVE THE FONTS: the entry reads `argv[4]` for them whatever came before.
+    ).toStrictEqual(['composeHostEntry.js', 'pipe', 'C:\\s\\monstera_mupdf.dll', 'C:\\f', 'C:\\W\\Fonts']);
+    // A MISSING SHIM DOES NOT MOVE THE FONTS: the entry reads `argv[4]` and `argv[5]` whatever came before.
     expect(
-      hostCommandArguments({ kind: 'compose', shimPath: null, fontsPath: 'C:\\f' }, 'composeHostEntry.js', 'pipe'),
-    ).toStrictEqual(['composeHostEntry.js', 'pipe', '', 'C:\\f']);
+      hostCommandArguments(
+        { kind: 'compose', shimPath: null, fontsPath: 'C:\\f', installedFontsPath: null },
+        'composeHostEntry.js',
+        'pipe',
+      ),
+    ).toStrictEqual(['composeHostEntry.js', 'pipe', '', 'C:\\f', '']);
   });
 });

@@ -81,12 +81,13 @@ const CASES = [
   'CONTROL: the generated page draws its inline picture before any edit',
   'the inline-picture page, edited through the compose and PDFium hosts and saved, still draws its picture',
   'the Word export, composed in the real MuPDF host and moved by main, carries both pictures, the first between its paragraphs',
+  'the real PDFium host set the ideograph in an installed face, and boxed only the code point no font carries',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 16 });
-if (CASES.length !== 16) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 16`);
+const roster = createRoster(failures, { cases: 17 });
+if (CASES.length !== 17) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 17`);
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -259,6 +260,14 @@ if (!runnable) {
     `document.exportWord answered ${JSON.stringify(seen.wordExported)}; the package holds ${String(seen.wordPictures)} ` +
       `picture(s) and the first is ${seen.wordInOrder === true ? '' : 'NOT '}between its paragraphs. An error with the ` +
       'failures case red is the host ending on the export.',
+  );
+  check(
+    CASES[16] ?? '',
+    JSON.stringify(seen.installedBoxes) ===
+      JSON.stringify({ boxed: [{ character: String.fromCodePoint(0x378), page: 0 }], more: 0 }),
+    `the second edit answered ${JSON.stringify(seen.installedBoxes)}. The ideograph AMONG the boxes is a PDFium host that ` +
+      'could not read the installed fonts or a machine with no editable face for it, which ADR-0172 Decision 2 answers ' +
+      'with a correction, never a wider grant; no box at all is the unassigned code point drawn as nothing.',
   );
 
   process.stdout.write(

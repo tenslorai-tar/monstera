@@ -7,6 +7,7 @@ import type { Result } from '@monstera/shared';
 
 import type { EngineHostPlatform } from './composition.js';
 import { providedConverterExecutable } from './containedProgram.js';
+import { installedFontsFolder } from './installedFonts.js';
 import { nativeComponentPath } from './nativeComponents.js';
 import type { ConverterPlatform } from './converterSession.js';
 import { LAYOUT_TEXT_BOUNDS } from './layoutText.js';
@@ -315,7 +316,16 @@ export function createPdfiumHostPlatform(base: EngineHostPlatform): EngineHostPl
             runs: 'electron-node',
             executablePath: binary,
             commandArguments: [
-              ...hostCommandArguments({ kind: 'pdfium', libraryPath, fontsPath: nativeComponentPath('fonts') }, entry, pipeName),
+              ...hostCommandArguments(
+                {
+                  kind: 'pdfium',
+                  libraryPath,
+                  fontsPath: nativeComponentPath('fonts'),
+                  installedFontsPath: installedFontsFolder(),
+                },
+                entry,
+                pipeName,
+              ),
             ],
           },
           workingDirectory: dirname(binary),
@@ -470,7 +480,12 @@ export function createComposeHostPlatform(base: EngineHostPlatform): EngineHostP
             executablePath: binary,
             commandArguments: [
               ...hostCommandArguments(
-                { kind: 'compose', shimPath: mupdfShimPath(), fontsPath: nativeComponentPath('fonts') },
+                {
+                  kind: 'compose',
+                  shimPath: mupdfShimPath(),
+                  fontsPath: nativeComponentPath('fonts'),
+                  installedFontsPath: installedFontsFolder(),
+                },
                 entry,
                 pipeName,
               ),

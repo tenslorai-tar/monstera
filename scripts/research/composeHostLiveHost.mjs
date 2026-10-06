@@ -55,8 +55,13 @@ const REPORT_PATH = process.argv[2] ?? '';
 const SOURCE = '# Compose host\n\nThe real host wrote this page.\n';
 const SOURCE_WORDS = 8;
 
-/** A line holding one character no bundled face carries, at column 6: the CJK ideograph for "middle", by its number. */
-const BOXED_SOURCE = `Text ${String.fromCodePoint(0x4e2d)} here.\n`;
+/**
+ * A line holding the CJK ideograph for "middle" at column 6, which no BUNDLED face carries and Windows' installed CJK
+ * faces do (ADR-0172 Decision 2), and at column 8 U+0378, a code point Unicode leaves unassigned, which NO font carries:
+ * the control that the box still draws, in the same line, so the ideograph's absence from the boxes is the installed
+ * face's doing and not a box that stopped drawing. Each by its number.
+ */
+const BOXED_SOURCE = `Text ${String.fromCodePoint(0x4e2d)} ${String.fromCodePoint(0x378)} here.\n`;
 
 /** The CSV source, and its six fields, each one word on the composed table. */
 const CSV_SOURCE = 'name,qty\nApples,3\nPears,12\n';

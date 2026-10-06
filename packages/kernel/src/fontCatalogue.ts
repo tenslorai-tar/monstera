@@ -92,6 +92,18 @@ export function readCatalogue(folders: readonly FontFolder[]): Catalogue {
   return { faces, unreadable };
 }
 
+/**
+ * The folders a host reads faces from, as its factory handed them: the bundled set, then the machine's installed fonts
+ * (ADR-0172 Decision 1's order is the resolver's, by `origin`, so this order decides nothing). THE ONE STATEMENT of it
+ * for both hosts that set text, so the PDFium host and the compose host cannot read two different sets.
+ */
+export function fontFoldersOf(bundled: string | null, installed: string | null): readonly FontFolder[] {
+  return [
+    ...(bundled === null ? [] : [{ path: bundled, origin: 'bundled' as const }]),
+    ...(installed === null ? [] : [{ path: installed, origin: 'installed' as const }]),
+  ];
+}
+
 /** Where a writer's faces come from: a catalogue, and how to read a face's file again. */
 export interface FaceSource {
   readonly faces: readonly CatalogueFace[];

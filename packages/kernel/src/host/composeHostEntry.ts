@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract/host';
 
 import { composeCsv } from '../csvCompose.js';
-import { type FaceSource, faceSourceOf } from '../fontCatalogue.js';
+import { type FaceSource, faceSourceOf, fontFoldersOf } from '../fontCatalogue.js';
 import { composeImages } from '../imageCompose.js';
 import { composeMarkdown } from '../markdownCompose.js';
 import { MupdfOpenRefused, keepInlineImages, openMupdfShim, rewriteImages } from '../mupdfRaw.js';
@@ -82,6 +82,9 @@ if (shimPath !== null) openMupdfShim(shimPath);
  */
 const fontsPath = process.argv[4] === undefined || process.argv[4].length === 0 ? null : process.argv[4];
 
+/** The machine's installed fonts' folder (ADR-0172 Decision 2), the FOURTH argument, empty where it had none. */
+const installedPath = process.argv[5] === undefined || process.argv[5].length === 0 ? null : process.argv[5];
+
 /**
  * The catalogue the composers set text from, READ ON FIRST USE and kept: an Optimize or an image import never needs
  * it, and twenty-one faces read once are cheaper than a read per import. A folder that holds no face is a host started
@@ -91,7 +94,7 @@ let catalogue: FaceSource | null = null;
 function faces(): FaceSource {
   if (catalogue === null) {
     if (fontsPath === null) throw new Error('the compose host was started without its fonts folder');
-    catalogue = faceSourceOf([{ path: fontsPath, origin: 'bundled' }]);
+    catalogue = faceSourceOf(fontFoldersOf(fontsPath, installedPath));
   }
   return catalogue;
 }

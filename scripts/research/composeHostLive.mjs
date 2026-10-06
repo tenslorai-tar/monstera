@@ -52,7 +52,7 @@ const CASES = [
   'the real compose host set a CSV file as a table and the file opened',
   'the real MuPDF host read the CSV table and found every field',
   'the real compose host made one page per picked image, and the real MuPDF host counted them',
-  'the real compose host read its fonts through its grant, and named a boxed character by line and column',
+  'the real compose host read its fonts through its grant and the installed fonts, and named only the character no font carries',
 ];
 
 /** @type {string[]} */
@@ -198,11 +198,13 @@ if (!runnable) {
     seen.boxedComposed?.ok === true &&
       seen.boxedComposed.value?.kind === 'opened-with-boxes' &&
       JSON.stringify(seen.boxedComposed.value?.boxed) ===
-        JSON.stringify([{ character: String.fromCodePoint(0x4e2d), line: 1, column: 6 }]) &&
+        JSON.stringify([{ character: String.fromCodePoint(0x378), line: 1, column: 8 }]) &&
       seen.boxedComposed.value?.more === 0,
-    `document.newFromMarkdown answered ${JSON.stringify(seen.boxedComposed)} for a line holding one character no ` +
-      'bundled face carries. `internal` is a host that could not read its fonts folder, which in a container is a ' +
-      'grant that does not reach it; `opened` is a box nobody was told about.',
+    `document.newFromMarkdown answered ${JSON.stringify(seen.boxedComposed)} for a line holding a CJK ideograph no ` +
+      'bundled face carries and an unassigned code point no font carries. `internal` is a host that could not read ' +
+      'its fonts folder, a grant that does not reach it. The ideograph AMONG the boxes is a host that could not read ' +
+      'the installed fonts, or a machine with no editable face for it (ADR-0172 Decision 2 says which is a correction, ' +
+      'never a wider grant); `opened` with no box at all is the unassigned one drawn as nothing.',
   );
 
   check(

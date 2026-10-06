@@ -76,6 +76,8 @@ export type EngineHostProgram =
        * reports, never a person's file refused.
        */
       readonly fontsPath: string | null;
+      /** The machine's installed fonts' folder (ADR-0172 Decision 2), or `null`: `installedFonts.ts`' answer. */
+      readonly installedFontsPath: string | null;
     }
   | {
       readonly kind: 'pdfium';
@@ -93,6 +95,8 @@ export type EngineHostProgram =
        * with the document's own fonts alone, a decided state rather than a fault.
        */
       readonly fontsPath: string | null;
+      /** The machine's installed fonts' folder (ADR-0172 Decision 2), or `null`: `installedFonts.ts`' answer. */
+      readonly installedFontsPath: string | null;
     };
 
 /**
@@ -146,9 +150,13 @@ export function hostCommandArguments(
   pipeName: string,
 ): readonly string[] {
   if (program.kind === 'mupdf') return [entryPath, pipeName, program.libraryPath];
-  // THE FONTS THIRD, EMPTY where there are none: `pdfiumHostEntry.ts` reads `argv[4]` and takes an empty one as absent.
-  if (program.kind === 'pdfium') return [entryPath, pipeName, program.libraryPath, program.fontsPath ?? ''];
-  // THE SHIM'S PATH SECOND and THE FONTS' THIRD, each EMPTY where there is none: `composeHostEntry.ts` reads `argv[3]`
-  // and `argv[4]` and takes an empty one as absent, so a position never shifts when the one before it is missing.
-  return [entryPath, pipeName, program.shimPath ?? '', program.fontsPath ?? ''];
+  // THE FONTS THIRD and THE INSTALLED FONTS FOURTH, each EMPTY where there is none: `pdfiumHostEntry.ts` reads `argv[4]`
+  // and `argv[5]` and takes an empty one as absent.
+  if (program.kind === 'pdfium') {
+    return [entryPath, pipeName, program.libraryPath, program.fontsPath ?? '', program.installedFontsPath ?? ''];
+  }
+  // THE SHIM'S PATH SECOND, THE FONTS' THIRD and THE INSTALLED FONTS' FOURTH, each EMPTY where there is none:
+  // `composeHostEntry.ts` reads `argv[3]` to `argv[5]` and takes an empty one as absent, so a position never shifts
+  // when the one before it is missing.
+  return [entryPath, pipeName, program.shimPath ?? '', program.fontsPath ?? '', program.installedFontsPath ?? ''];
 }

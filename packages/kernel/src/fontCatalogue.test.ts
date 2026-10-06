@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { faceCount, readCatalogue } from './fontCatalogue.js';
+import { faceCount, fontFoldersOf, readCatalogue } from './fontCatalogue.js';
 import { readFace } from './fontFaces.js';
 import { subsetFont } from './fontSubset.js';
 
@@ -115,5 +115,23 @@ describe('readCatalogue', () => {
     const { faces, unreadable } = readCatalogue([{ path: join(scratch, 'absent'), origin: 'installed' }]);
     expect(faces).toStrictEqual([]);
     expect(unreadable).toHaveLength(1);
+  });
+});
+
+describe('fontFoldersOf (ADR-0172 Decision 2)', () => {
+  it('reads the bundled folder as bundled and the installed one as installed, each where the factory gave it', () => {
+    expect(fontFoldersOf('B', 'I')).toStrictEqual([
+      { path: 'B', origin: 'bundled' },
+      { path: 'I', origin: 'installed' },
+    ]);
+    expect(fontFoldersOf('B', null)).toStrictEqual([{ path: 'B', origin: 'bundled' }]);
+    expect(fontFoldersOf(null, 'I')).toStrictEqual([{ path: 'I', origin: 'installed' }]);
+  });
+
+  it('CONTROL: an installed face read through it is offered to the resolver as INSTALLED, never as bundled', () => {
+    copyFileSync(join(bundledFolder(), 'Cousine-Regular.ttf'), join(scratch, 'Cousine-Regular.ttf'));
+    const { faces } = readCatalogue(fontFoldersOf(bundledFolder(), scratch));
+    expect(faces.filter((face) => face.origin === 'installed').map((face) => face.family)).toStrictEqual(['Cousine']);
+    expect(faces.filter((face) => face.origin === 'bundled')).toHaveLength(21);
   });
 });

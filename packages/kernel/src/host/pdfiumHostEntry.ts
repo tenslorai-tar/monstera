@@ -10,7 +10,7 @@ import {
   textRuns,
 } from '../pdfium.js';
 import { bindEditFaces } from '../editFaces.js';
-import { faceSourceOf } from '../fontCatalogue.js';
+import { faceSourceOf, fontFoldersOf } from '../fontCatalogue.js';
 import { cryptoBytes } from '../token.js';
 import { probeContainment } from './containment.js';
 import type { HostArea } from './engineHandlers.js';
@@ -96,7 +96,10 @@ openPdfium(libraryPath);
 // THE BUNDLED FONTS' FOLDER, the factory's THIRD argument, empty where it had none (ADR-0173 Decision 4): a word an
 // edit's own font cannot carry is set in a face the resolver chooses from it. Read on first use, as the compose host's.
 const fontsPath = process.argv[4] === undefined || process.argv[4].length === 0 ? null : process.argv[4];
-if (fontsPath !== null) bindEditFaces(() => faceSourceOf([{ path: fontsPath, origin: 'bundled' }]));
+// AND THE MACHINE'S INSTALLED FONTS, the FOURTH argument (ADR-0172 Decision 2): read beside the bundled set, so a
+// character no bundled face carries goes to an installed face whose licence allows editing before it is drawn as a box.
+const installedPath = process.argv[5] === undefined || process.argv[5].length === 0 ? null : process.argv[5];
+if (fontsPath !== null) bindEditFaces(() => faceSourceOf(fontFoldersOf(fontsPath, installedPath)));
 
 /**
  * PDFium's channel set and its handlers

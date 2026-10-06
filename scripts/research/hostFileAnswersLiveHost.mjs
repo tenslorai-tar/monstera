@@ -57,6 +57,12 @@ const GLYPHS = 1600;
 const EDITED = 'Edited through the real host';
 
 /**
+ * The CJK ideograph for "middle", which no bundled face carries and Windows' installed CJK faces do, then U+0378, which
+ * Unicode leaves unassigned and no font carries: the control that the box still draws in the same edit. By number.
+ */
+const INSTALLED_ONLY = `${String.fromCodePoint(0x4e2d)} ${String.fromCodePoint(0x378)}`;
+
+/**
  * How many text fields the generated form has: enough that its field list exceeds a frame (3,000 fields measured
  * 531,355 B) AND one part of `document.formFields` (`FORM_FIELDS_PART`, 4,096), so the renderer's list crosses in two
  * parts cut by main's real handler (ADR-0130 Decision 2).
@@ -390,6 +396,8 @@ async function main() {
     let saved = null;
     /** @type {any} */
     let reopenedBlocks = null;
+    /** @type {any} */
+    let installedBoxes = null;
     if (opened?.ok === true && opened.value.kind === 'opened') {
       const docId = opened.value.docId;
       blocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0, from: 0 }));
@@ -419,6 +427,30 @@ async function main() {
         const again = await observed(() => handlers['document.open']({}));
         if (again?.ok === true && again.value.kind === 'opened') {
           reopenedBlocks = await observed(() => handlers['document.textBlocks']({ docId: again.value.docId, page: 0, from: 0 }));
+          // THE INSTALLED FONTS, through the PDFium host's own container (ADR-0172 Decision 2): a second edit on the
+          // reopened page, so the frame cases above keep their meaning, adding the ideograph no bundled face carries and
+          // the unassigned code point no font carries. The answer's boxes say which one an installed face drew.
+          const block = reopenedBlocks?.ok === true ? reopenedBlocks.value.blocks[0] : undefined;
+          if (block !== undefined) {
+            const answered = await observed(() =>
+              handlers['document.execute']({
+                docId: again.value.docId,
+                command: {
+                  kind: 'editTextBlock',
+                  page: 0,
+                  ...blockEditOf([
+                    {
+                      lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                      text: `${EDITED} ${INSTALLED_ONLY}`,
+                    },
+                  ]),
+                  fit: 'reflow',
+                  version: reopenedBlocks.value.version,
+                },
+              }),
+            );
+            installedBoxes = answered?.ok === true ? { boxed: answered.value.boxed, more: answered.value.more } : answered;
+          }
         }
       }
     }
@@ -593,6 +625,7 @@ async function main() {
       saved: saved?.ok === true ? saved.value.kind : saved,
       reopenedHasEdit: blockTexts(reopenedBlocks).some((text) => text.replace(/\s+/gu, ' ').includes(EDITED)),
       reopenedBlocks: reopenedBlocks?.ok === true ? 'ok' : reopenedBlocks,
+      installedBoxes,
       failures,
     };
     // THE REPORT FIRST, for `hostRecoveryHost.mjs`' reason: everything after it is cleanup, and cleanup can fail.
