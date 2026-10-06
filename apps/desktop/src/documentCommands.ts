@@ -2182,6 +2182,11 @@ export interface Applied {
   readonly boxed: BoxedInEditEntry[];
   /** How many boxes past the named ones. */
   readonly more: number;
+  /**
+   * The older copies a protect could not encrypt, by name (ADR-0178), empty for every other command and for a protect
+   * that sealed every copy. A protect that applied is not failed by a copy another program holds; the person is told.
+   */
+  readonly unsealedCopies: readonly string[];
 }
 
 /**
@@ -3475,6 +3480,9 @@ export class DocumentCommands {
     // HELD ON AN OBJECT, `undo`'s idiom: where a protect ran, its file's path, so the Recent picture is retaken after
     // the lane, whose capture enters the lane itself.
     const protectedAt: { path: string | undefined } = { path: undefined };
+    // THE COPIES A PROTECT COULD NOT SEAL, held across the lane like `protectedAt`: a protect that applied names them
+    // rather than failing (ADR-0178). Empty for every other command, and for a protect that sealed every copy.
+    const unsealed: { copies: readonly string[] } = { copies: [] };
     const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -3516,7 +3524,7 @@ export class DocumentCommands {
       if (terms !== undefined) {
         this.#engine.protected(docId, entry, terms);
         const protect = this.#bus.protectOf(entry);
-        if (protect !== undefined) await this.#sealPlaintextCopies(docId, context, protect);
+        if (protect !== undefined) unsealed.copies = await this.#sealPlaintextCopies(docId, context, protect);
         protectedAt.path = context.path;
       }
       // READ AFTER THE BUS, INSIDE THE LANE, for the reason `Versioned` reads
@@ -3527,8 +3535,14 @@ export class DocumentCommands {
       // The trim travels with the length for the same reason: it is what THIS
       // command cost, and a second command's trim attributed to this one would
       // tell the user their history shrank at the wrong moment.
-      // AND WHAT IT DREW AS BOXES (ADR-0174), for the trim's reason: this command's, through the one cap.
-      return { byteLength: context.byteLength, historyDropped: trimmed.droppedEntries, ...cappedBoxes(drawn) };
+      // AND WHAT IT DREW AS BOXES (ADR-0174), for the trim's reason: this command's, through the one cap. AND THE
+      // COPIES A PROTECT COULD NOT SEAL (ADR-0178), empty for every other command: the person is owed them.
+      return {
+        byteLength: context.byteLength,
+        historyDropped: trimmed.droppedEntries,
+        ...cappedBoxes(drawn),
+        unsealedCopies: unsealed.copies,
+      };
     });
 
     // A PICTURE OF A PROTECTED PAGE cannot be encrypted, so it is retaken: deleted, and kept again only if the document
@@ -3625,7 +3639,9 @@ export class DocumentCommands {
     // and this is the same statement at the boundary. A field omitted here
     // would make the renderer's obligation optional on one path.
     // NO BOXES, the bus's `TOLD_AT_THE_EDIT` at the boundary (ADR-0174 Decision 3).
-    return stepped.yes ? { version, byteLength, historyDropped: 0, boxed: [], more: 0 } : undefined;
+    // NO UNSEALED COPIES: undo and redo seal nothing — a protect's seal pass is its own and runs at apply, not here
+    // (ADR-0178). A field omitted here would make the renderer's obligation optional on one path, `historyDropped`'s reason.
+    return stepped.yes ? { version, byteLength, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] } : undefined;
   }
 
   /**
@@ -3698,7 +3714,9 @@ export class DocumentCommands {
     // `execute`'s retake, for a redone protect.
     if (protectedAt.path !== undefined) void this.#recentPicture.retake(docId, protectedAt.path);
     // NO BOXES, the bus's `TOLD_AT_THE_EDIT` at the boundary (ADR-0174 Decision 3).
-    return stepped.yes ? { version, byteLength, historyDropped: 0, boxed: [], more: 0 } : undefined;
+    // NO UNSEALED COPIES: undo and redo seal nothing — a protect's seal pass is its own and runs at apply, not here
+    // (ADR-0178). A field omitted here would make the renderer's obligation optional on one path, `historyDropped`'s reason.
+    return stepped.yes ? { version, byteLength, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] } : undefined;
   }
 
   /**
@@ -6282,20 +6300,46 @@ export class DocumentCommands {
    * the host's snapshot, every checkpoint and result the history holds, and every backup beside the file that Monstera
    * made. The canonical image needs nothing here, since the protect draws. In the protect's own lane entry, so nothing
    * lands between. An encrypted copy is left as it was (`ProtectedCopies.seal`).
+   *
+   * **A copy that CANNOT be written now does not fail the protect**
+   * ([ADR-0178](../../../docs/DECISIONS/0178-a-protect-that-applied-is-not-failed-by-a-copy-it-could-not-seal.md)):
+   * the protect has already applied and been recorded by the time this runs, so a copy another program holds, or that
+   * cannot be written, is the person's to be told of — not a reason to reject the command and report the applied
+   * protect as failed. A thrown seal is mapped to `'unsealed'` at this boundary, where the throw happens; `seal`
+   * answering `undefined` is a copy deliberately **left** (already encrypted) and is NOT named. The basenames of the
+   * copies left unsealed come back for the renderer to name. The snapshot refresh is not one of these copies — it is
+   * rewritten from the new canonical image main holds, with no external file to be held — so its failure is a host
+   * fault that still throws.
+   *
+   * @returns the basenames of the copies this could not seal, empty when every copy was sealed or left encrypted.
    */
   async #sealPlaintextCopies(
     docId: DocId,
     context: DocumentContext,
     command: CommandOfKind<'setDocumentProtection'>,
-  ): Promise<void> {
+  ): Promise<readonly string[]> {
     await this.#copies.refreshSnapshot(docId);
-    await this.#bus.resealCopies(context, (path) => this.#copies.seal(docId, path, command));
+    // A SEAL THAT THROWS IS `'unsealed'`, never a thrown command: the copy another program holds is named, not fatal.
+    const trySeal = async (path: string): Promise<number | undefined | 'unsealed'> => {
+      try {
+        return await this.#copies.seal(docId, path, command);
+      } catch {
+        return 'unsealed';
+      }
+    };
+    const unsealed: string[] = [];
+    const { unsealed: checkpoints } = await this.#bus.resealCopies(context, trySeal);
+    for (const path of checkpoints) unsealed.push(basename(path));
     for (const path of copyNames(this.#save.deps.names(context.path))) {
-      await this.#save.provenance.rewriteIfMade(
-        path,
-        async (made) => (await this.#copies.seal(docId, made, command)) !== undefined,
-      );
+      await this.#save.provenance.rewriteIfMade(path, async (made) => {
+        const sealed = await trySeal(made);
+        if (sealed === 'unsealed') unsealed.push(basename(path));
+        // REWRITTEN is a number; LEFT (`undefined`) and UNSEALED are both "not rewritten" to the ledger, which records
+        // a rewrite only. The unsealed one is named above; the left one is already encrypted and needs no record.
+        return typeof sealed === 'number';
+      });
     }
+    return unsealed;
   }
 
   /** The owed copies among this document's backup names, tried again; the names still held. */

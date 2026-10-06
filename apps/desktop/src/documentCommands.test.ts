@@ -193,6 +193,7 @@ import {
   SignaturesWouldBreakError,
   type EngineSessionSource,
   type ProtectedCopies,
+  type Applied,
 } from './documentCommands.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import { EngineSessions, canonicalImageWrite } from './engineSessions.js';
@@ -6829,7 +6830,7 @@ describe('a protect in this session: the holder follows it', () => {
    */
   async function opened(
     engineOf: (held: EngineSessions) => EngineSessionSource,
-    sealing: 'seal' | 'skip' = 'seal',
+    sealing: 'seal' | 'skip' | 'throws' = 'seal',
   ): Promise<{
     readonly commands: DocumentCommands;
     readonly docId: DocId;
@@ -6871,15 +6872,18 @@ describe('a protect in this session: the holder follows it', () => {
       if (mupdf === undefined) throw new Error('the fixture holds a session');
       return mupdfWriter.serialise(mupdf);
     };
+    // THE SNAPSHOT REFRESH is not a copy seal: it rewrites the host's snapshot from the canonical image main holds,
+    // so it works whether or not the copy seals fail (ADR-0178). `'throws'` fails every COPY seal, as a program
+    // holding a copy would, and leaves this alone.
+    const refreshFromImage = async (id: DocId): Promise<void> => {
+      if (snapshot !== undefined) await canonicalImageWrite(own, id)(snapshot);
+    };
     const copies: ProtectedCopies =
       sealing === 'skip'
         ? { seal: () => Promise.resolve(undefined), refreshSnapshot: () => Promise.resolve() }
-        : {
-            seal: LOCAL_READS.copies.seal,
-            refreshSnapshot: async (id) => {
-              if (snapshot !== undefined) await canonicalImageWrite(own, id)(snapshot);
-            },
-          };
+        : sealing === 'throws'
+          ? { seal: () => Promise.reject(new Error('INERT: another program holds this copy')), refreshSnapshot: refreshFromImage }
+          : { seal: LOCAL_READS.copies.seal, refreshSnapshot: refreshFromImage };
     const commands = new DocumentCommands({
       ...LOCAL_READS,
       copies,
@@ -7046,6 +7050,46 @@ describe('a protect in this session: the holder follows it', () => {
       expect(after.open).toContain('restore-1.pdf');
       // AND A CHECKPOINT: every PDF the history holds is under `checkpoints`, and at least one is plaintext.
       expect(after.open.filter((name) => !['plain.pdf.bak', 'restore-1.pdf'].includes(name)).length).toBeGreaterThan(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /** A backup, a checkpoint and a snapshot, then the protect — whose result is returned rather than awaited away. */
+  async function protectAfterCopies(commands: DocumentCommands, docId: DocId): Promise<Applied> {
+    await commands.execute(docId, rotateOnce);
+    expect(await commands.save(docId, { breakSignatures: false })).toMatchObject({ kind: 'saved' });
+    await commands.execute(docId, { kind: 'deletePages', pages: [2] });
+    expect(await commands.undo(docId)).toBeDefined();
+    expect(await commands.redo(docId)).toBeDefined();
+    return commands.execute(docId, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: KEY });
+  }
+
+  it('a protect whose copy seal FAILS still applies, and names the copies it could not encrypt (R14, ADR-0178)', async () => {
+    // The glue between the kernel half (`resealCopies` collects the `'unsealed'` paths) and the UI half (the window
+    // names them): the host maps a thrown seal to that outcome WITHOUT failing the protect. Before ADR-0178 this
+    // threw out of the lane and the applied protect was reported as a failure.
+    const { commands, docId, root } = await opened((held) => held, 'throws');
+    try {
+      const applied = await protectAfterCopies(commands, docId);
+      // APPLIED, not thrown: a version came back, so the protect is recorded and the document saves encrypted.
+      expect(applied.version).toBeGreaterThan(0);
+      // AND THE COPIES IT COULD NOT ENCRYPT ARE NAMED — the backup among them — so the person is told, not misled.
+      expect(applied.unsealedCopies).toContain('plain.pdf.bak');
+      expect(applied.unsealedCopies.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('CONTROL: a protect that seals every copy names none, so the case above is the failure and not the walk', async () => {
+    const { commands, docId, root } = await opened((held) => held, 'seal');
+    try {
+      const applied = await protectAfterCopies(commands, docId);
+      expect(applied.version).toBeGreaterThan(0);
+      // EMPTY: every copy sealed, so nothing is named. A host that named every non-rewritten copy — a left one too —
+      // would fail here, which is why `resealCopies` keeps `'unsealed'` distinct from `undefined`.
+      expect(applied.unsealedCopies).toStrictEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

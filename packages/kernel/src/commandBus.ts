@@ -1396,22 +1396,38 @@ export class CommandBus {
    * Offers every file this document's history holds, checkpoints and results, to `seal`, and records the length of
    * each one it rewrote in place
    * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8):
-   * at a protect and its redo, a plaintext copy is replaced by one encrypted under the protect's terms. `seal` answers
-   * the new length, or `undefined` for a file it left as it was, which an already encrypted copy is. The entries keep
-   * their identity; only the log's recorded length moves, through its one writer.
+   * at a protect and its redo, a plaintext copy is replaced by one encrypted under the protect's terms.
    *
-   * @returns how many files were rewritten
+   * `seal` answers one of THREE outcomes, which
+   * [ADR-0178](../../../docs/DECISIONS/0178-a-protect-that-applied-is-not-failed-by-a-copy-it-could-not-seal.md)
+   * keeps distinct: a new length for a file it **rewrote**, `undefined` for one it **left** (already encrypted, so
+   * re-encrypting would replace a key main never saw), and `'unsealed'` for one it **could not write** — one another
+   * program holds, or that cannot be written now. A left file and an unsealed one are not the same answer: reading a
+   * failure as a skip would lose it silently, and a skip as a failure would name a correctly encrypted copy. The
+   * entries keep their identity; only the log's recorded length moves, through its one writer.
+   *
+   * @returns how many files were rewritten, and the paths `seal` could not write — never a throw for one copy, since
+   * the protect has already applied and a copy it could not seal is the person's to be told of, not a reason to fail
+   * the command (ADR-0178).
    */
-  async resealCopies(context: DocumentContext, seal: (path: string) => Promise<number | undefined>): Promise<number> {
+  async resealCopies(
+    context: DocumentContext,
+    seal: (path: string) => Promise<number | undefined | 'unsealed'>,
+  ): Promise<{ readonly rewritten: number; readonly unsealed: readonly string[] }> {
     const log = context.commandLog(COMMAND_WRITER);
     let rewritten = 0;
+    const unsealed: string[] = [];
     for (const path of log.checkpointPaths()) {
       const byteLength = await seal(path);
       if (byteLength === undefined) continue;
+      if (byteLength === 'unsealed') {
+        unsealed.push(path);
+        continue;
+      }
       log.resealed(path, byteLength);
       rewritten += 1;
     }
-    return rewritten;
+    return { rewritten, unsealed };
   }
 
   /**

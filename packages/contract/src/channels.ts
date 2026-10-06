@@ -2153,6 +2153,18 @@ export const channels = {
        * REQUIRED and empty when there is none, `historyDropped`'s reason: the person is owed them.
        */
       ...drawnBoxesShape,
+      /**
+       * The older copies a protect could not encrypt, by name
+       * ([ADR-0178](../../../docs/DECISIONS/0178-a-protect-that-applied-is-not-failed-by-a-copy-it-could-not-seal.md)):
+       * a protect that applied is not failed by a copy another program holds or that cannot be written now, and the
+       * person is told which copies may still hold the document as it was so they can close the holder and protect
+       * again.
+       *
+       * **REQUIRED and empty for every command but a protect that left a copy unsealed**, `historyDropped`'s reason:
+       * a plaintext copy of a protected document is the person's to be told of (invariant 18's *never silent*), and
+       * an optional field is one a renderer satisfies by not reading it. Every other command answers `[]`.
+       */
+      unsealedCopies: z.array(z.string()).readonly(),
     }),
     // `stale-target` IS ON THIS CHANNEL ALONE, because a command is the only
     // thing that names existing state (ADR-0041 Decision 2). A read answers with

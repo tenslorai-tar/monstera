@@ -63,7 +63,7 @@ function drawn(lines: readonly string[]): { readonly sent: unknown[]; readonly s
         return Promise.resolve(ok({ version: asDocVersion(1), fields: [], next: null, truncated: false }));
       case 'document.execute':
         sent.push(params['command']);
-        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 1, historyDropped: 0, boxed: [], more: 0 }));
+        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 1, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
       default:
         throw new Error(`unexpected channel ${id}`);
     }

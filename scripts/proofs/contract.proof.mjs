@@ -1363,7 +1363,7 @@ export const handlers: ContractHandlers = {
   'document.sign': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.signatures': () => Promise.resolve(ok({ signatures: [], unreadable: false })),
   'document.execute': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0, boxed: [], more: 0 })),
+    Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), cleared: null, held: [] })),

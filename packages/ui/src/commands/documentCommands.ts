@@ -63,6 +63,7 @@ import { FLAT_FIELDS_DIALOG_ID } from '../dialogs/flatFields.js';
 import type { FlatFieldsAnswer } from '../dialogs/flatFieldsResult.js';
 import { type EditableObject, OBJECT_FILTERS, type ObjectFilter, type PageObjects } from '../objectEditing.js';
 import { BOXED_CHARACTERS_DIALOG_ID } from '../dialogs/boxedCharacters.js';
+import { UNSEALED_COPIES_DIALOG_ID } from '../dialogs/unsealedCopies.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG_ID } from '../dialogs/importFormDataProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
@@ -657,6 +658,12 @@ export async function applyDocumentCommand(
   // list that names one for the same reason: the dialog's schema refuses an empty one.
   if (answer.value.boxed.length > 0) {
     void deps.ask(BOXED_CHARACTERS_DIALOG_ID, { from: 'edit', boxed: answer.value.boxed, more: answer.value.more });
+  }
+  // THE COPIES A PROTECT COULD NOT ENCRYPT (ADR-0178), named here for the same reason — every command's answer passes
+  // through — and empty for all but a protect that left one unsealed. The protect's own *Protection set* toast is
+  // true and stands; this is its caveat, so the person learns the older copies may still hold the document as it was.
+  if (answer.value.unsealedCopies.length > 0) {
+    void deps.ask(UNSEALED_COPIES_DIALOG_ID, { copies: [...answer.value.unsealedCopies] });
   }
   return true;
 }

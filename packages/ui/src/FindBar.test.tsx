@@ -317,7 +317,7 @@ describe('FindBar replace-all', () => {
       }
       if (refusing !== undefined) return Promise.resolve(err({ code: refusing }));
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0 }),
+        ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }),
       );
     });
     const { container } = render(
@@ -397,6 +397,7 @@ describe('FindBar replace-all', () => {
       historyDropped: 0,
       boxed: [],
       more: 0,
+      unsealedCopies: [],
     });
   });
 

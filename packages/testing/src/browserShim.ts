@@ -272,6 +272,12 @@ export interface BrowserShimOptions {
    */
   readonly boxes?: ReadonlyMap<string, readonly BoxedInEditEntry[]>;
   /**
+   * The older copies each document's next command reports it could not encrypt, by id
+   * ([ADR-0178](../../../docs/DECISIONS/0178-a-protect-that-applied-is-not-failed-by-a-copy-it-could-not-seal.md)) —
+   * a value a test supplies, `trims`' reason: the shim seals no copies, having no filesystem.
+   */
+  readonly unsealed?: ReadonlyMap<string, readonly string[]>;
+  /**
    * Documents whose save answers something other than `saved`, by id.
    *
    * Same reasoning as {@link BrowserShimOptions.busy} and the same shape: the
@@ -1306,6 +1312,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           // NONE BY DEFAULT and a set a test controls, `trims`' reasons: the shim draws nothing (ADR-0174).
           boxed: [...(options.boxes?.get(docId) ?? [])],
           more: 0,
+          // NONE BY DEFAULT and a set a test controls (ADR-0178): the shim seals no copies, so a protect names none.
+          unsealedCopies: [...(options.unsealed?.get(docId) ?? [])],
         }),
       );
     },

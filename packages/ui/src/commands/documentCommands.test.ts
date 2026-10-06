@@ -214,7 +214,7 @@ function sourcesClient(): { readonly client: ContractClient; readonly executed: 
       return Promise.resolve(ok({ version: asDocVersion(1), pageCount, rotations: [0] }));
     }
     executed.push(params);
-    return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }));
+    return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
   });
   return { client, executed };
 }
@@ -345,6 +345,7 @@ describe('rotate page', () => {
       historyDropped: 0,
       boxed: [],
       more: 0,
+      unsealedCopies: [],
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -353,7 +354,7 @@ describe('rotate page', () => {
     // visible in any state: the version alone rebinds the renderer's transport
     // to the previous image's length, which is a RangeError past the end of the
     // new document or a parse of a truncated one.
-    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }]);
+    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }]);
   });
 
   /**
@@ -369,6 +370,7 @@ describe('rotate page', () => {
       historyDropped: 0,
       boxed: [{ character: '中', page: 3 }],
       more: 2,
+      unsealedCopies: [],
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -376,6 +378,45 @@ describe('rotate page', () => {
     expect(shown).toStrictEqual([
       { id: 'dialog.boxed-characters', props: { from: 'edit', boxed: [{ character: '中', page: 3 }], more: 2 } },
     ]);
+  });
+
+  /**
+   * ADR-0178's renderer half: a protect that could not encrypt some older copies names them through the one window.
+   * The kernel/host half is `apps/desktop`'s *copy seal FAILS still applies* case. CONTROL: the empty-list case below
+   * opens nothing, so the window here is the list's doing — a renderer that opened it regardless would fail it.
+   */
+  it('names the older copies a protect could not encrypt, through the one window', async () => {
+    const { shown, onApplied, ask } = recorder();
+    const client = clientAnswering('document.execute', {
+      version: asDocVersion(2),
+      byteLength: 2048,
+      historyDropped: 0,
+      boxed: [],
+      more: 0,
+      unsealedCopies: ['report.pdf.bak', 'report.pdf.previous'],
+    });
+
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([
+      { id: 'dialog.unsealed-copies', props: { copies: ['report.pdf.bak', 'report.pdf.previous'] } },
+    ]);
+  });
+
+  it('CONTROL: a command that sealed every copy opens no unsealed-copies window', async () => {
+    const { shown, onApplied, ask } = recorder();
+    const client = clientAnswering('document.execute', {
+      version: asDocVersion(2),
+      byteLength: 2048,
+      historyDropped: 0,
+      boxed: [],
+      more: 0,
+      unsealedCopies: [],
+    });
+
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([]);
   });
 
   /**
@@ -391,6 +432,7 @@ describe('rotate page', () => {
       historyDropped: 3,
       boxed: [],
       more: 0,
+      unsealedCopies: [],
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -401,7 +443,7 @@ describe('rotate page', () => {
     // AND THE VIEW STILL MOVED. The command succeeded; a version reported to
     // nobody would leave the renderer showing the page as it was while a dialog
     // explains what the rotation cost.
-    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 3, boxed: [], more: 0 }]);
+    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 3, boxed: [], more: 0, unsealedCopies: [] }]);
   });
 
   it('a declared failure changes nothing, so the view is not rebuilt', async () => {
@@ -448,6 +490,7 @@ describe('rotate page', () => {
       historyDropped: 0,
       boxed: [],
       more: 0,
+      unsealedCopies: [],
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -504,7 +547,7 @@ describe('move page up / down — Organize › Arrange', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     return { client, sent };
   }
@@ -948,7 +991,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       const answer = answers[id];
       if (answer !== undefined) return Promise.resolve(ok(answer));
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }),
+        ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }),
       );
     });
     return { client, sent };
@@ -1408,7 +1451,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         );
       }
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0 }),
+        ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }),
       );
     });
 
@@ -1545,7 +1588,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     const applied: Applied[] = [];
     const outcome = await commitTextBlock(
@@ -1588,7 +1631,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     const outcome = await commitTextBlock(
       { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
@@ -1627,7 +1670,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: string[] = [];
     const client = createClient(channels, (id) => {
       sent.push(id);
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     const outcome = await commitTextBlock(
       { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
@@ -1675,7 +1718,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: unknown[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     await promoteTextOnPage({ client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures }, DOC, 3);
     expect(sent).toStrictEqual([
@@ -4085,7 +4128,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         ok(
           id === 'document.duplicatePages'
             ? { version: asDocVersion(1), groups: [{ pages: [0, 4] }], truncated: false }
-            : { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 },
+            : { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
         ),
       );
     });
@@ -4202,7 +4245,7 @@ describe('generate table of contents', () => {
         return Promise.resolve(ok({ version: asDocVersion(1), destinations, next: null, truncated: false }));
       }
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 8192, historyDropped: 0, boxed: [], more: 0 }),
+        ok({ version: asDocVersion(2), byteLength: 8192, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }),
       );
     });
     return { client, sent };
@@ -4231,7 +4274,7 @@ describe('generate table of contents', () => {
       { id: 'document.execute', params: { docId: DOC, command: { kind: 'generateToc', at: 0 } } },
     ]);
     expect(record.applied).toStrictEqual([
-      { version: 2, byteLength: 8192, historyDropped: 0, boxed: [], more: 0 },
+      { version: 2, byteLength: 8192, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
     ]);
     expect(record.shown).toStrictEqual([]);
   });
@@ -4313,7 +4356,7 @@ describe('protectDocumentCommand', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     return { client, sent };
   }
@@ -4445,7 +4488,7 @@ describe('protectDocumentCommand', () => {
             }),
           );
         }
-        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }));
+        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
       });
       return { client, sent };
     }
@@ -5436,7 +5479,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
     const sent: unknown[] = [];
     const client = createClient(channels, (_id, params) => {
       sent.push((params as { command: unknown }).command);
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     return { client, sent };
   }
@@ -5861,7 +5904,7 @@ describe('every file write confirms, and its Show in folder reveals the file the
 describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
   const SANITIZE: DispatchableCommand = { kind: 'sanitizeDocument', parts: ['javascript'] };
   const COPY = asDocId('doc-copy');
-  const APPLIED = { version: asDocVersion(5), byteLength: 4096, historyDropped: 0, boxed: [], more: 0 };
+  const APPLIED = { version: asDocVersion(5), byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] };
 
   /** Main as ADR-0149 has it: `breaks-signatures` until the edit is sent agreed, and `editCopy` answering `copy`. */
   function signedMain(copy: unknown = { kind: 'cancelled' }): {

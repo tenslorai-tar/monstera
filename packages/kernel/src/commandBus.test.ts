@@ -2651,12 +2651,17 @@ describe('CommandBus and a command whose intent is a password', () => {
         offered.push(each);
         return Promise.resolve(7);
       };
-      expect(await bus.resealCopies(context, seal)).toBe(1);
+      expect(await bus.resealCopies(context, seal)).toStrictEqual({ rewritten: 1, unsealed: [] });
       expect(offered).toStrictEqual([path]);
       expect(context.log.retainedBytes()).toBe(7);
       // CONTROL: a file `seal` left keeps the length it had, so the case above is the rewrite and not the walk.
       const before = context.log.retainedBytes();
-      expect(await bus.resealCopies(context, () => Promise.resolve(undefined))).toBe(0);
+      expect(await bus.resealCopies(context, () => Promise.resolve(undefined))).toStrictEqual({ rewritten: 0, unsealed: [] });
+      expect(context.log.retainedBytes()).toBe(before);
+      // A FILE `seal` COULD NOT WRITE is answered by its path and counts as no rewrite (ADR-0178): the length it
+      // carried does not move, because an unsealed copy is not a resealed one. The distinct `'unsealed'` is why — a
+      // seal that returned `undefined` for a failure would leave this copy counted as left and named to nobody.
+      expect(await bus.resealCopies(context, () => Promise.resolve('unsealed'))).toStrictEqual({ rewritten: 0, unsealed: [path] });
       expect(context.log.retainedBytes()).toBe(before);
       // AND A PATH THE LOG DOES NOT HOLD is refused rather than counted.
       expect(() => {

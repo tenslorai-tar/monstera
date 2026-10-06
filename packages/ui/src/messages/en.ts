@@ -638,6 +638,8 @@ export const BOXED_CHARACTERS_AT_LINE = messageKey('dialog.boxed-characters.at-l
 export const BOXED_CHARACTERS_MORE = messageKey('dialog.boxed-characters.more');
 export const BOXED_CHARACTERS_SAID_EDIT = messageKey('dialog.boxed-characters.said-edit');
 export const BOXED_CHARACTERS_ON_PAGE = messageKey('dialog.boxed-characters.on-page');
+export const UNSEALED_COPIES_TITLE = messageKey('dialog.unsealed-copies.title');
+export const UNSEALED_COPIES_SAID = messageKey('dialog.unsealed-copies.said');
 export const MARKDOWN_IMPORT_ABSENT = messageKey('dialog.markdown-import-problem.absent');
 export const MARKDOWN_IMPORT_AT_CAPACITY = messageKey('dialog.markdown-import-problem.at-capacity');
 export const MARKDOWN_IMPORT_IMAGE_UNREADABLE = messageKey(
@@ -4840,6 +4842,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Your change is made. No font here can draw the characters below, so each one is shown as a box on the page. ' +
     'The text is kept: copying or searching it finds the characters as you typed them.',
   [BOXED_CHARACTERS_ON_PAGE]: '“{character}” ({code}), page {page, number}',
+  [UNSEALED_COPIES_TITLE]: 'Some older copies could not be encrypted',
+  [UNSEALED_COPIES_SAID]:
+    'The password and permissions are set. These older copies could not be encrypted, perhaps because another ' +
+    'program has one open, so they may still hold the document as it was. Close any program using them and protect ' +
+    'the document again to finish.',
   [MARKDOWN_IMPORT_CONVERSION_FAILED]:
     'That file could not be turned into a PDF. It may be damaged, or not the kind of file its name says. ' +
     'Nothing was imported.',
