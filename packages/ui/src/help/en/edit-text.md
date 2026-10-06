@@ -24,7 +24,8 @@ Edit text lets you change the words already on a page, in place, keeping their f
 - If the page's font cannot show a word you type, that word is set in another copy of the same font already on the page where one can show it, and otherwise in the closest font Monstera brings with it or one installed on this computer whose licence allows editing. The rest of the line keeps the page's font.
 - If none of those fonts can show a character, it is drawn as a small empty box (□) and your change is still made. The text keeps the real character, so copying or searching finds it, and Monstera tells you which characters are shown as boxes and on which page.
 - When a change cannot be made, your words stay in the box with the reason under them. Change the words and finish again, or press **Esc** to put the text back.
-- Some pages use a kind of font Monstera cannot rewrite yet. On those pages you are told "This page uses a font Monstera can’t rewrite yet, so nothing was changed", and the page stays as it was.
+- Some pages, often ones printed from a web browser, draw their text in a kind of font that is drawn from shapes stored in the page. On those pages you can change the words using the letters the page already holds. A word that needs a letter the page has no shape for is not written yet: your words stay in the box and you are told which letters are missing.
+- Some pages use a font Monstera cannot rewrite yet. On those pages you are told "This page uses a font Monstera can’t rewrite yet, so nothing was changed", and the page stays as it was.
 - Deleting every word of a block removes the block from the page.
 - If some text was pasted into the page as a single block, Monstera says so and offers **Unpack it so it can be edited**.
 - Text set at an angle cannot be edited in place.
