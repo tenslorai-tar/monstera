@@ -121,3 +121,37 @@ not of order).
   its marks by run order; reordering runs would move the origin of every right-to-left line.
 - **Refuse a right-to-left line the writer could not read back exactly.** The owner's rule: a person is never refused
   because of their document.
+
+## Correction, 2026-10-06: what building Decisions 3, 7, 8 and 9 showed
+
+Written the day the decisions were built, in the order they were built, so a reader can see where the decision and the code
+parted.
+
+- **Decision 3's model was fitted twice and the second fit is the one that stands.** The first model (reverse every run of
+  right-to-left letters) agreed with every single word and failed on a line of two. Measured against the library, a text
+  page reverses SEGMENTS of one kind in place and leaves the words in the order drawn, and treats a neutral between two
+  segments, or after one at the end, as part of them (reversed and mirrored) while a colon, a comma or a hyphen stays where
+  it is drawn. `readBackOf` is that rule and the cases it was fitted to are in `bidiDrawing.test.ts`.
+- **Decision 5's rule is narrower than it reads and exists because of the read.** A text page reads the objects of a line in the
+  order they stand, so the line as typed is recovered only for a line in ONE object. The one-object rule is what makes a line
+  with a Hebrew word and a Latin word read back right, and the case it cannot serve (a line no face carries whole) is pinned
+  by a control and stated in the limits.
+- **Decision 7 changed the host pipe.** A run's style crosses it as `orientation` (one of five names) where it crossed as
+  `upright` (a boolean), so the smallest run on the wire grew by eight bytes and the bound on a page's runs
+  (`ENGINE_TEXT_OBJECTS_MAX`) moves from 43,400 to 41,700, which is still far above any page. The test for *is this text
+  edited in place* is one function (`isEditedInPlace`) that the composition, the join and the proofs all ask: three scripts
+  filtered by the field the first version replaced and found no blocks.
+- **Decision 8 does not refuse where a parameter cannot be copied.** An array or a dictionary parameter is not copied and
+  the mark is, because PDFium has no call to write one and a refusal would stop an edit of a tagged page for a bounding box.
+  A continuation line takes the marks of the line it continues, so one number may stand on more than one object of a page.
+- **Decision 9 is bounded by the picture.** Recognised words are edited as a scan only where they lie over an image object;
+  invisible text over nothing stays invisible, as ADR-0179 keeps it, and the proof pins both. The offer to recognise is made
+  on every page with no text and runs the one `document.ocr` command for that page, which asks what the page is: a blank
+  page is told so by the command, and not by this note. The paper is read once from a raster before any object changes, a
+  ring of three pixels outside each recognised word's box (the box and 1.5 points of margin), through the page's own
+  page-to-device mapping, so a turned page reads right.
+- **Decision 10's fit is the PDFium writer's, shared.** The bounds (`MIN_FIT`, `FIT_STEPS`) and the bisection moved to
+  `paragraphFlow.ts` (`largestFit`) and the operator writer asks the plan itself where the PDFium writer asks trial pages.
+  Every line of a shrunk block is set again, since one left at the old size would stand beside lines at the new one.
+- **Decision 11 was not built because it was already true**, and is proved by the nested-promotion cases in
+  `pdfiumCommand.proof.mjs`.
