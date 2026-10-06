@@ -134,3 +134,21 @@ to decide that the text above leaves open.
   stated would have refused every word the heading's subset lacks on the one page this ADR was written for.
 - **A word space neither font draws** is moved, never drawn, by 0.278 em, the space advance of Liberation Sans and of
   Helvetica. The Chromium subsets draw their spaces (code 3), so on that page the gap comes from the font itself.
+
+**Note on Decision 2, 2026-10-06: how the command and its pre-read reach the MuPDF host.** Two facts decide it, and
+neither is a choice. The command carries `editTextBlock`'s block wire, which ADR-0138 Decision 4 measured past the frame
+at its schema's worst, so it cannot travel by MuPDF's framed `engine/apply`, whose route ADR-0138 Decision 2 declares
+`frame` and keeps there. And the `pageRuns` pre-read has never crossed into a MuPDF host: no MuPDF command declared
+`reads` before this one, as `remoteEngine.ts`' apply records, naming this day as the one `engine/apply`'s schema has to
+grow.
+
+So the MuPDF host gains `engine/apply-file`: `engine/apply`'s request and handler, file-requested by ADR-0125 Decision
+7's route, for the MuPDF kinds declared to need it, with the pre-read in the same request under the 8 MiB ceiling.
+**Declared per kind, never chosen by size**, ADR-0138's rule: `editTextOperators` is the kind, and a MuPDF kind that
+grows past the frame still turns the request rule red. The pre-read is the PDFium host's `engine/page-runs` answer,
+which crossed under the same ceiling, so it joins `engine/applyPdfLib`'s pre-read in ADR-0138 Decision 4's pinned
+exceptions for the same reason. One schema, `host/pageRunsWire.ts`, is that answer and this request's field.
+
+**Rejected:** moving every MuPDF kind to a file route (a file write per rotation, for the one kind that needs it); a
+pre-read slot on the framed `engine/apply` (the kind is past the frame without it); the host computing the runs (it has
+no PDFium, and the join reads PDFium's glyph boxes).
