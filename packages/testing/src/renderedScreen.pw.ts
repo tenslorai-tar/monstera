@@ -5046,7 +5046,10 @@ for (const look of LOOKS) {
     await page.setViewportSize({ width: 1280, height: 800 });
     const bytes = await onePagePdf();
     const docId = asDocId('00000000-0000-4000-8000-0000000000e3');
-    const words = 'iiiiiiii WWWW';
+    // NARROW LETTERS ONLY, so the two faces differ by more than either platform's monospace can close: `iiiiiiii WWWW`
+    // measured 69.97 px against Consolas' 85.78 on windows-latest (run 37416673829, 2026-10-06), 0.82 of it, where a
+    // fifth narrower was asked. An `i` is 0.222 em in Liberation Sans against 0.55 in Consolas and 0.602 in DejaVu Sans Mono.
+    const words = 'iiiiiiiiiiii';
     await bridgeUnder(page, look, {
       opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'fonts.pdf' }],
       documentBytes: new Map([[docId, bytes]]),
@@ -5082,8 +5085,9 @@ for (const look of LOOKS) {
     expect(drawn.family.startsWith(family)).toBe(true);
     expect(drawn.family).toContain('monospace');
     expect(kept.family.startsWith('Consolas')).toBe(true);
-    // DRAWN IN IT: the same words, set proportionally, are at least a fifth narrower than the kind's monospace.
-    expect(drawn.width).toBeLessThan(kept.width * 0.8);
+    // DRAWN IN IT: the same words, set proportionally, are under three fifths of the kind's monospace (about 0.4 on
+    // both platforms; a face that never loaded falls back to the monospace and measures 1).
+    expect(drawn.width).toBeLessThan(kept.width * 0.6);
     const loaded = (name: string) =>
       page.evaluate((wanted) => [...document.fonts].some((face) => face.family === wanted && face.status === 'loaded'), name);
     expect(await loaded(family)).toBe(true);
