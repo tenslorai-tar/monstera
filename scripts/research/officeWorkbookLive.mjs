@@ -27,7 +27,7 @@ import { join } from 'node:path';
 import { HOST_FILE_ANSWERS_LIVE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
-import { shimEnvironment } from '../lib/shimBinary.mjs';
+import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { x2tPath } from '../provision/onlyoffice.mjs';
 import { pdftotextPath } from '../provision/poppler.mjs';
@@ -81,9 +81,12 @@ try {
     cwd: ROOT,
     stdio: 'inherit',
     timeout: 40 * 60_000,
+    // THE DEVELOPMENT LAUNCHER'S ONE ANSWER, as `hostFileAnswersLive.mjs` takes it (SSSSSSS-1), and the converter named
+    // after it whether or not it is provisioned, so a missing x2t is this harness's own refusal rather than an import
+    // the shell quietly has no converter for.
     env: {
       ...process.env,
-      ...shimEnvironment({ root: ROOT }),
+      ...(await developmentEnvironment(ROOT)),
       MONSTERA_ONLYOFFICE_EXECUTABLE: x2tPath(ROOT),
       ELECTRON_RUN_AS_NODE: '1',
     },

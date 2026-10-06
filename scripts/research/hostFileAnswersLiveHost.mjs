@@ -701,6 +701,9 @@ async function main() {
     }
 
     const report = {
+      // WHAT THE SHELL WAS HANDED, read here rather than inferred from the edits: the bundled fonts' folder reaches the
+      // hosts only through this variable in development (`nativeComponents.ts`).
+      fontsVariable: process.env['MONSTERA_FONTS_DIRECTORY'] ?? null,
       type3Boxes,
       freshBoxes,
       wordExported: wordExported?.ok === true ? wordExported.value.kind : wordExported,

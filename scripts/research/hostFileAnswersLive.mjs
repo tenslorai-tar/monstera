@@ -49,11 +49,13 @@ import { join } from 'node:path';
 import { HOST_FILE_ANSWERS_LIVE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
-import { shimBuildState, shimEnvironment } from '../lib/shimBinary.mjs';
+import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
+import { shimBuildState } from '../lib/shimBinary.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { inspect } from '../provision/containerGrants.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
-import { pdfiumEnvironment, pdfiumLibrary } from '../provision/pdfium.mjs';
+import { fontsDirectory } from '../provision/fonts.mjs';
+import { pdfiumLibrary } from '../provision/pdfium.mjs';
 
 const ROOT = repoRoot();
 const CHILD = join(ROOT, 'scripts', 'research', 'hostFileAnswersLiveHost.mjs');
@@ -85,12 +87,13 @@ const CASES = [
   'the real PDFium host boxed the code point no font carries in a bundled face, in the same container',
   'the real PDFium host boxed it as the FIRST edit of a fresh open, in the same container',
   'the real MuPDF host set a Type 3 page’s new letters in a bundled face and boxed only the code point no font carries',
+  'CONTROL: the shell was handed the provisioned bundled fonts’ folder, as the development launcher hands it',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 20 });
-if (CASES.length !== 20) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 20`);
+const roster = createRoster(failures, { cases: 21 });
+if (CASES.length !== 21) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 21`);
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -150,12 +153,10 @@ if (!runnable) {
       cwd: ROOT,
       stdio: 'inherit',
       timeout: 180_000,
-      env: {
-        ...process.env,
-        ...shimEnvironment({ root: ROOT }),
-        ...pdfiumEnvironment(ROOT),
-        ELECTRON_RUN_AS_NODE: '1',
-      },
+      // THE DEVELOPMENT LAUNCHER'S ONE ANSWER (`developmentEnvironment`), never a subset picked here: this read only the
+      // shim's and PDFium's variables until 2026-10-06, so the shell had no bundled fonts' folder, both contained hosts
+      // bound no faces, and cases 17 to 20 were refused naming every character a face would have drawn (SSSSSSS-1).
+      env: { ...process.env, ...(await developmentEnvironment(ROOT)), ELECTRON_RUN_AS_NODE: '1' },
     });
     if (result.error !== undefined) {
       throw new Error(`could not run ${CHILD} under ${ELECTRON_BINARY}`, { cause: result.error });
@@ -295,6 +296,15 @@ if (!runnable) {
     `the Type 3 edit answered ${JSON.stringify(seen.type3Boxes)}. A text-not-writable naming z and p is a MuPDF host ` +
       'given no fonts or unable to read them in its container; a rewrite other than "operators" is the page sent to ' +
       'the PDFium writer, so this case measured nothing about the MuPDF host (ADR-0177).',
+  );
+  // THE HARNESS'S INPUT, asserted directly: a harness fix changes what the child is handed, and every case above reads
+  // only what the hosts answered, so a reverted environment would read as the hosts refusing (CLAUDE.md, item 2).
+  check(
+    CASES[20] ?? '',
+    seen.fontsVariable === fontsDirectory(ROOT),
+    `the shell's MONSTERA_FONTS_DIRECTORY was ${JSON.stringify(seen.fontsVariable)}, against the provisioned ` +
+      `${fontsDirectory(ROOT)}. Null is a launch environment without the fonts, which makes every face case above a ` +
+      'host with no catalogue rather than a reading of containment; run scripts/provision/fonts.mjs if it is absent.',
   );
 
   process.stdout.write(

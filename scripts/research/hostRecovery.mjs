@@ -51,7 +51,8 @@ import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
-import { shimBuildState, shimEnvironment } from '../lib/shimBinary.mjs';
+import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
+import { shimBuildState } from '../lib/shimBinary.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { inspect } from '../provision/containerGrants.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
@@ -204,7 +205,9 @@ if (!runnable) {
       cwd: ROOT,
       stdio: 'inherit',
       timeout: 180_000,
-      env: { ...process.env, ...shimEnvironment({ root: ROOT }), ELECTRON_RUN_AS_NODE: '1' },
+      // THE DEVELOPMENT LAUNCHER'S ONE ANSWER, as `hostFileAnswersLive.mjs` takes it: a subset picked here is a second
+      // opinion about what the shell is handed, and that harness's subset left out the fonts (SSSSSSS-1).
+      env: { ...process.env, ...(await developmentEnvironment(ROOT)), ELECTRON_RUN_AS_NODE: '1' },
     });
     if (result.error !== undefined) {
       throw new Error(`could not run ${CHILD} under ${ELECTRON_BINARY}`, { cause: result.error });
