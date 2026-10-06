@@ -3,9 +3,16 @@ import { fileURLToPath } from 'node:url';
 
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type CommandOfKind, createClient, type Incident, wrapHandlers } from '@monstera/contract';
+import { blockEditOf } from '@monstera/contract/host';
+
+import { bindEditFaces } from '../editFaces.js';
+import { faceSourceOf } from '../fontCatalogue.js';
+import type { PageRuns } from '../operatorEdit.js';
+import { pageContentStreams } from '../pageContent.js';
+import { joinedContent, showOperators, textObjectCount } from '../textOperators.js';
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
@@ -1138,5 +1145,72 @@ describe('the registry answers an area by handle for the lifetime of its token',
     // THE CONTROL: a released handle is free again, so the refusal is about one held, not one ever seen.
     sessions.release(held);
     expect(sessions.areaForHandle(sessions.handleFor(sessions.adopt('handle-1', second)))).toBe(second);
+  });
+});
+
+/** The Chromium print committed as Part B's starting material, whose heading is set in a Type 3 font (ADR-0176). */
+const CHROMIUM_TYPE3 = fileURLToPath(new URL('../../../testing/fixtures/text-edit/chromium-type3.pdf', import.meta.url));
+
+/**
+ * PDFium's reading of the print's heading as `proof:pdfiumcommand` measured it, as `textOperatorEdit.test.ts` states
+ * it: text objects numbered from 0 with nothing between them, the heading one run, its inkless spaces (code 3) members
+ * of none.
+ */
+function headingRuns(content: Uint8Array): PageRuns {
+  const ops = showOperators(content);
+  const heading = ops.filter((op) => op.textObject === ops[0]?.textObject && op.object !== null);
+  const members = heading.filter((op) => !(op.codes.length === 1 && op.codes[0] === 3)).map((op) => op.object ?? -1);
+  return {
+    textObjects: Array.from({ length: textObjectCount(ops) }, (_, at) => at),
+    runs: [{ index: members[0] ?? 0, members, text: 'Monstera fixture heading.', left: 0, right: 0, bottom: 0, top: 0 }],
+  };
+}
+
+describe('an operator edit over engine/apply-file answers its boxes (ADR-0177 Decision 7)', () => {
+  beforeAll(() => {
+    bindEditFaces(() => faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }]));
+  });
+  afterAll(() => {
+    bindEditFaces(null);
+  });
+
+  async function edit(text: string) {
+    const { session, token, remote } = await joined(new Uint8Array(readFileSync(CHROMIUM_TYPE3)));
+    try {
+      const content = await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))));
+      const runs = headingRuns(content);
+      return await remote.apply({
+        session: token,
+        command: {
+          kind: 'editTextOperators',
+          page: 0,
+          ...blockEditOf([{ lines: [[runs.runs[0]?.index ?? 0]], text }]),
+          fit: 'reflow',
+          version: asDocVersion(1),
+        },
+        sources: [],
+        reads: runs,
+      });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('names a character no face carries, with its page, after crossing the pipe', async () => {
+    const unassigned = String.fromCodePoint(0x378);
+    expect(await edit(`Monstera fixture ${unassigned}.`)).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0 });
+  });
+
+  it('names the first sixty-four boxes and counts the rest, by the one cap', async () => {
+    // SEVENTY DRAWN, in seven words so every line stays on the page: an answer that skipped the cap is refused by the
+    // channel's own schema, and one that dropped the list answers `boxed: []`, which the first case refuses.
+    const unassigned = String.fromCodePoint(0x378);
+    const answer = await edit(`Monstera ${Array.from({ length: 7 }, () => unassigned.repeat(10)).join(' ')}.`);
+    expect(answer.boxed).toHaveLength(64);
+    expect(answer.more).toBe(6);
+  });
+
+  it('answers no box for a word set in faces alone, so the list above is the edit’s and not a constant', async () => {
+    expect(await edit('Monstera fixture zap.')).toStrictEqual({ boxed: [], more: 0 });
   });
 });

@@ -11,7 +11,7 @@ import type { HUMAN_CHECKS } from '../accessibilityRules.js';
 import type { FoundBarcode } from '../barcodeReader.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import { declaredCommands } from '../commandDeclarations.js';
-import type { MupdfSession, PreReadValue } from '../engineSeam.js';
+import { type MupdfSession, NO_BOXES, type PreReadValue } from '../engineSeam.js';
 import type { PageRuns } from '../operatorEdit.js';
 import { EditRefusedError, TextNotWritableError } from '../textEditRefusals.js';
 import type { NextSave } from '../mupdfWriter.js';
@@ -866,8 +866,8 @@ export function remoteMupdfExecution(
         if (!result.ok && result.error.code === 'edit-refused') {
           throw new EditRefusedError(result.error.detail.step, result.error.detail.engineError, 'the MuPDF host refused the operator edit');
         }
-        answered('engine/apply-file', result);
-        return;
+        // THE BOXES THE HOST CAPPED, passed on whole: the bus hands them to `document.execute` (ADR-0177 Decision 7).
+        return answered('engine/apply-file', result);
       }
       if (reads !== undefined) throw new Error(`"${split.command.kind}" carries a pre-read, which engine/apply has no slot for.`);
       await withAsset(session, command, async (wire, asset) => {
@@ -887,6 +887,8 @@ export function remoteMupdfExecution(
           }),
         );
       });
+      // NO KIND `engine/apply` CARRIES SETS TEXT, and its host refuses one that drew a box (`engineHandlers.ts`).
+      return NO_BOXES;
     },
 
     capture: async <K extends KindsRoutedTo<'mupdf'>>(

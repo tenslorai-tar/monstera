@@ -328,9 +328,9 @@ describe('MuPDF’s channel map', () => {
 
   it('answers an apply with NOTHING, which is the live-session shape on the wire', () => {
     // The other side of the byte-image case above, and the pair is what makes
-    // either mean anything: `CommandExecution<'mupdf'>.apply` returns
-    // `Promise<void>`, so this result must accept an empty object and refuse a
-    // byte count. Without the refusal a schema of `z.object({})` non-strict
+    // either mean anything: no kind `engine/apply` carries sets text, so its
+    // MuPDF apply answers no box (ADR-0177 keeps those on `engine/apply-file`),
+    // and this result must accept an empty object and refuse a byte count. Without the refusal a schema of `z.object({})` non-strict
     // would satisfy both engines and the parameter would be doing nothing.
     const applied = engineChannels['engine/apply'].result;
     expect(applied.safeParse({}).success).toBe(true);

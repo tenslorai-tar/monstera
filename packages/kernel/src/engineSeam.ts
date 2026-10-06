@@ -866,6 +866,17 @@ export type PreReadValue = PreRead[keyof PreRead];
  * nothing. `R extends keyof PreRead` is the same test written over the axis, and
  * the apply is handed `PreRead[R]`. Found the same way the composition above was,
  * by building the next caller (ADR-0051).
+ *
+ * ## A live-session apply handed a pre-read ANSWERS ITS BOXES
+ *
+ * ([ADR-0177](../../../docs/DECISIONS/0177-a-word-a-type-3-page-cannot-draw-is-set-in-the-resolvers-face-or-the-box-by-the-mupdf-host.md)
+ * Decision 7). The one such apply is `editTextOperators`, which sets words and may draw a character as the box; the
+ * person is owed those characters, so its answer is {@link DrawnBoxes} and a forwarding site cannot drop it. Keyed on
+ * the axis rather than on the kind because `localMupdfExecution` dispatches on that axis, so the branch it calls and
+ * the answer it returns are decided by the same declaration. Only the branch with no sources: no command declares
+ * sources AND a pre-read on this writer, and the dispatcher's reading branch passes no sources, so that combination
+ * is one it does not dispatch today. Every other live-session apply sets no text and answers nothing, and the
+ * execution answers {@link NO_BOXES} for it.
  */
 export type Apply<
   W extends keyof WriterSession,
@@ -901,7 +912,7 @@ export type Apply<
           session: WriterSession[W],
           command: CommandOfKind<K>,
           read: PreRead[R],
-        ) => Promise<void>
+        ) => Promise<DrawnBoxes>
       : (session: WriterSession[W], command: CommandOfKind<K>) => Promise<void>;
 
 /**

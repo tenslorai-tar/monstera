@@ -110,7 +110,11 @@ describe('applyEditTextOperators', () => {
     it('sets the letters the print has no glyph for in a bundled face, keeps the rest in its Type 3 font, and saves', async () => {
       await withChromium(async (session) => {
         const runs = headingRuns(await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0)))));
-        await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture zap.'), runs);
+        // NO BOX: every letter is in the print's font or a bundled face, so the list the box case reads is not a constant.
+        expect(await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture zap.'), runs)).toStrictEqual({
+          boxed: [],
+          more: 0,
+        });
         expect(await pageWords(session)).toContain('Monsterafixturezap.');
         const { fonts, content } = await after(session);
         // ONE FONT ADDED, and the inserted object shows in both the print's Type 3 font and the added one.
@@ -131,7 +135,9 @@ describe('applyEditTextOperators', () => {
       await withChromium(async (session) => {
         const runs = headingRuns(await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0)))));
         const unassigned = String.fromCodePoint(0x378);
-        await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, `Monstera fixture ${unassigned}.`), runs);
+        const drawn = await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, `Monstera fixture ${unassigned}.`), runs);
+        // THE PERSON IS TOLD (ADR-0177 Decision 7): the character and its page, answered by the apply.
+        expect(drawn).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0 });
         // THE REAL CHARACTER in MuPDF's reading: the box font's ToUnicode maps its code to U+0378, not to the box.
         expect(await pageWords(session)).toContain(`Monsterafixture${unassigned}.`);
         expect(await pageWords(session)).not.toContain(String.fromCodePoint(0x25a1));

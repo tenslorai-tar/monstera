@@ -1,7 +1,7 @@
 import { type CommandOfKind, blocksOfEdit } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
-import type { Invert, MupdfSession } from './engineSeam.js';
+import type { DrawnBoxes, Invert, MupdfSession } from './engineSeam.js';
 import { editFaces, editFacesBound } from './editFaces.js';
 import type { FaceSource } from './fontCatalogue.js';
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
@@ -56,8 +56,8 @@ export async function applyEditTextOperators(
   session: MupdfSession,
   command: CommandOfKind<'editTextOperators'>,
   read: PageRuns,
-): Promise<void> {
-  await withDocument(session, (document) => {
+): Promise<DrawnBoxes> {
+  return await withDocument(session, (document) => {
     const leaf = document.findPage(command.page);
     const content = joinedContent(pageContentStreams(leaf));
     const fonts = pageFonts(leaf);
@@ -94,6 +94,10 @@ export async function applyEditTextOperators(
       for (const name of names) fontDictionary?.delete(name);
       throw new EditRefusedError('read-back', 0, `MuPDF's reading of the page does not hold ${String(missing.length)} edited block(s)`);
     }
+    // EVERY CHARACTER DRAWN AS THE BOX, uncapped: the host names the first ones and counts the rest at the pipe
+    // (`cappedBoxes`), as the PDFium writer's apply does (ADR-0177 Decision 7).
+    const boxed = (faces?.boxed ?? []).map((character) => ({ character, page: command.page }));
+    return { boxed, more: 0 };
   });
 }
 

@@ -775,7 +775,7 @@ export class CommandBus {
   async #install<K extends CommandKind>(
     kind: K,
     writer: WriterOf<K>,
-    applied: AppliedImage | StagedImage | undefined,
+    applied: AppliedImage | StagedImage | DrawnBoxes | undefined,
     context: DocumentContext,
     bytes: ByteImageAccess,
   ): Promise<((destination: string) => Promise<number>) | null> {
@@ -814,11 +814,15 @@ export class CommandBus {
 
   /**
    * The characters an operation drew as boxes (ADR-0174), read BY THE DECLARATION as {@link CommandBus.#install} reads
-   * the image: a byte-image writer answers them beside its image, and the other shapes set no text that can be boxed.
+   * the image: a byte-image writer answers them beside its image, a live-session one answers them alone (ADR-0177
+   * Decision 7), and a hosted one sets no text that can be boxed.
    */
-  #boxesIn(writer: WriterOfRecord, applied: AppliedImage | StagedImage | undefined): DrawnBoxes {
-    if (writerShapes[writer] !== 'byte-image' || applied === undefined) return NO_BOXES;
-    const { boxed, more } = applied as AppliedImage;
+  #boxesIn(writer: WriterOfRecord, applied: AppliedImage | StagedImage | DrawnBoxes | undefined): DrawnBoxes {
+    const shape = writerShapes[writer];
+    if (shape === 'hosted-image') return NO_BOXES;
+    // AN ANSWER IS OWED, `#install`'s rule: an apply that forgot its return would otherwise read as one that drew none.
+    if (applied === undefined) throw new Error(`An apply routed to ${writer} answered nothing where it owes its boxes.`);
+    const { boxed, more } = applied as DrawnBoxes;
     return { boxed, more };
   }
 

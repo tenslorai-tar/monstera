@@ -2137,8 +2137,9 @@ export const engineChannels = {
     // THE SHAPE, NOT A SET OF FIELDS. MuPDF is `writerShapes`' one live-session
     // entry, so its wire is the constant every live-session engine takes: an
     // open that opens a document, no image named on the way in, nothing written
-    // on the way out, and an apply that answers nothing — which is
-    // `CommandExecution<'mupdf'>.apply`'s `Promise<void>` on the wire.
+    // on the way out, and an `engine/apply` that answers nothing, because no
+    // kind it carries sets text. The one MuPDF apply that answers boxes is
+    // carried by `engine/apply-file` below, whose answer holds them (ADR-0177).
     wire: liveSessionWire,
     // IN THE FRAME: every MuPDF kind fits one at its worst, the largest `addAnnotation` at 247,050 bytes (ADR-0138).
     commandRoute: 'frame',
@@ -2169,7 +2170,8 @@ export const engineChannels = {
         reads: pageRunsSchema,
       })
       .strict(),
-    z.object({}).strict(),
+    // WHAT IT DREW AS BOXES (ADR-0177 Decision 7), capped and counted as the PDFium host's answer carries them.
+    z.object({ ...drawnBoxesShape }).strict(),
     ['no-such-session', 'text-not-writable', 'edit-refused'],
   ),
 

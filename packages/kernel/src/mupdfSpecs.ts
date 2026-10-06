@@ -3,7 +3,7 @@ import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
 import type { ApplyRequest, CommandExecution, KindsRoutedTo } from './commandRouting.js';
-import type { Capture, Invert, MupdfSession, PreReadValue } from './engineSeam.js';
+import { type Capture, type DrawnBoxes, type Invert, type MupdfSession, NO_BOXES, type PreReadValue } from './engineSeam.js';
 import {
   applyImportPageAsLayer,
   applySetLayerVisibility,
@@ -475,12 +475,12 @@ type MupdfApply<K extends CommandKind> = (
   sources: readonly MupdfSession[],
 ) => Promise<void>;
 
-/** A spec declaring a pre-read: its third parameter is the value the bus resolved. */
+/** A spec declaring a pre-read: its third parameter is the value the bus resolved, and it answers its boxes (`Apply`). */
 type MupdfReadingApply<K extends CommandKind> = (
   session: MupdfSession,
   command: CommandOfKind<K>,
   read: PreReadValue,
-) => Promise<void>;
+) => Promise<DrawnBoxes>;
 
 /**
  * Executing MuPDF commands **in this process** — the contained MuPDF host, and main's
@@ -494,7 +494,7 @@ export const localMupdfExecution: CommandExecution<'mupdf'> = {
   // cast at `CommandKind` — the whole union — which widens `capture`'s prior
   // state to a union too and stops being assignable to `CommandPrior[K]`. The
   // narrowing has to name the instantiation it is claiming.
-  apply<K extends KindsRoutedTo<'mupdf'>>({
+  async apply<K extends KindsRoutedTo<'mupdf'>>({
     session,
     command,
     sources,
@@ -502,14 +502,15 @@ export const localMupdfExecution: CommandExecution<'mupdf'> = {
     // make, which this session cannot. `reads: 'outline'` stays pdf-lib's, because a MuPDF apply that wanted an outline
     // already holds the session `readDestinations` takes. Under ADR-0069 the request carries the field either way.
     reads,
-  }: ApplyRequest<'mupdf', K>): Promise<void> {
+  }: ApplyRequest<'mupdf', K>): Promise<DrawnBoxes> {
     // A SPEC DECLARING A PRE-READ TAKES IT where every other takes its sources: `Apply`'s shape for a live-session
     // writer with sources `'none'` and a read. The bus has resolved it against this command, so its absence here is
-    // the bus's defect and is refused by name rather than handed on as `undefined`.
+    // the bus's defect and is refused by name rather than handed on as `undefined`. It answers the characters it drew
+    // as boxes (ADR-0177 Decision 7), and the same declaration decides both, so they cannot disagree.
     const spec = specFor(command);
     if (spec.reads !== 'none') {
       if (reads === undefined) throw new Error(`"${spec.kind}" declares a pre-read and was applied without one.`);
-      return (spec.apply as MupdfReadingApply<K>)(session, command, reads);
+      return await (spec.apply as MupdfReadingApply<K>)(session, command, reads);
     }
     // THE CAST NAMES THE PLAIN LIST, the widest of the three shapes this table
     // holds, and the call passes `sources` through whatever the command
@@ -521,7 +522,9 @@ export const localMupdfExecution: CommandExecution<'mupdf'> = {
     // count is the bus's obligation, where the knowledge is — it reads
     // `spec.sources`, holds the payload to it, and refuses by name when the map
     // does not carry an id (ADR-0152).
-    return (specFor(command).apply as MupdfApply<K>)(session, command, sources);
+    await (specFor(command).apply as MupdfApply<K>)(session, command, sources);
+    // EVERY OTHER MuPDF APPLY SETS NO TEXT, so it drew no box (`Apply`).
+    return NO_BOXES;
   },
   capture<K extends CommandKind>(
     session: MupdfSession,

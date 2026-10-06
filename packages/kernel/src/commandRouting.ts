@@ -4,6 +4,7 @@ import type { CaptureResult, CommandPrior } from './commandLog.js';
 import type { WriterOf, WriterOfRecord } from './commandDeclarations.js';
 import type {
   AppliedImage,
+  DrawnBoxes,
   EngineWriter,
   ExecutionSession,
   PreReadValue,
@@ -235,20 +236,31 @@ export interface CommandExecution<W extends WriterOfRecord> {
     session: ExecutionSession<W>,
     kind: K,
     inverse: CommandPrior[K],
-  ): Applied<W>;
+  ): Inverted<W>;
 }
 
 /**
- * What an execution's `apply` and `invert` answer, by shape: the new image and the characters it drew as boxes for a
+ * What an execution's `invert` answers, by shape: the new image and the characters it drew as boxes for a
  * byte-image writer ([ADR-0174](../../../docs/DECISIONS/0174-a-pdfium-apply-answers-the-characters-it-drew-as-boxes.md)), nothing for a
  * live-session one, and for a HOSTED one the new image **staged where the host wrote it** — `main` places it without
  * reading it ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 3).
  */
-export type Applied<W extends WriterOfRecord> = WriterShapeOf[W] extends 'byte-image'
+export type Inverted<W extends WriterOfRecord> = WriterShapeOf[W] extends 'byte-image'
   ? Promise<AppliedImage>
   : WriterShapeOf[W] extends 'hosted-image'
     ? Promise<StagedImage>
     : Promise<void>;
+
+/**
+ * What an execution's `apply` answers: {@link Inverted}'s shapes, except that a LIVE-SESSION apply answers the
+ * characters it drew as boxes ([ADR-0177](../../../docs/DECISIONS/0177-a-word-a-type-3-page-cannot-draw-is-set-in-the-resolvers-face-or-the-box-by-the-mupdf-host.md)
+ * Decision 7), `NO_BOXES` for every command that sets no text. Required rather than optional, `historyDropped`'s
+ * rule: an answer a forwarding site could leave out is one it will. An invert answers none, because the person was
+ * told at the edit (ADR-0174 Decision 3).
+ */
+export type Applied<W extends WriterOfRecord> = WriterShapeOf[W] extends 'live-session'
+  ? Promise<DrawnBoxes>
+  : Inverted<W>;
 
 /**
  * One writer of record, **as `CommandBus` actually calls it**: run a command

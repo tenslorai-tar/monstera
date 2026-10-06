@@ -28,7 +28,7 @@ import {
 import type { CommandWriter, DocumentContext, HeldFile } from './documentService.js';
 import { serialiseIntoFile } from './checkpointFile.js';
 import { applySetDocumentProtection, protectionOptions } from './documentProtection.js';
-import type { ByteImage, MupdfSession } from './engineSeam.js';
+import { type ByteImage, type MupdfSession, NO_BOXES } from './engineSeam.js';
 import { localMupdfWriter, localSignpdfWriter } from './localEngine.js';
 import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
 import * as mupdf from './mupdfRaw.js';
@@ -1544,7 +1544,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
         ...localMupdfWriter,
         apply: ({ command }) => {
           applied.push(command);
-          return Promise.resolve();
+          return Promise.resolve(NO_BOXES);
         },
       },
     });
@@ -1564,6 +1564,19 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
       expect(entry.kind).toBe('invertible');
       expect(context.log.entries).toHaveLength(1);
       expect(context.bumps()).toBe(1);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('hands a LIVE-SESSION apply’s boxes to the caller, as it hands a byte-image one’s (ADR-0177 Decision 7)', async () => {
+    // THE ANSWER IS THE APPLY'S, not a constant: two characters on two pages, which no other path produces.
+    const drawn = { boxed: [{ character: '\u{378}', page: 0 }, { character: '\u{379}', page: 2 }], more: 3 };
+    const bus = new CommandBus({ mupdf: { ...localMupdfWriter, apply: () => Promise.resolve(drawn) } });
+    const session = await mupdfWriter.open(flat);
+    try {
+      const executed = await bus.execute({ mupdf: session }, contextStub(), rotateFirst, noByteImageExpected);
+      expect(executed.drawn).toStrictEqual(drawn);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -1640,7 +1653,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
         ...localMupdfWriter,
         apply: ({ command }) => {
           applied.push(command);
-          return Promise.resolve();
+          return Promise.resolve(NO_BOXES);
         },
       },
     });
