@@ -312,6 +312,13 @@ export function wordAt(root: HTMLElement, node: Node, offset: number): { word: s
   return { word: token.text, range };
 }
 
+/** The place, among the editor's paragraphs, of the one holding `node`: what a split before a paragraph names. */
+export function paragraphAt(root: HTMLElement, node: Node): number | undefined {
+  const { paragraphs } = paragraphsOf(root);
+  const place = paragraphs.findIndex((paragraph) => paragraph.nodes.some((each) => each === node));
+  return place === -1 ? undefined : place;
+}
+
 /** Replaces the words a range covers with `text`, in the style of its first node, and tells the editor it changed. */
 export function replaceRange(root: HTMLElement, range: Range, text: string): void {
   const first = range.startContainer;

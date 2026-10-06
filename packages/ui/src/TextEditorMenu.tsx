@@ -10,11 +10,14 @@ import {
   EDIT_PASTE_TITLE,
   EDIT_SELECT_ALL_TITLE,
   TEXT_MENU_ADD_WORD,
+  TEXT_MENU_JOIN_ABOVE,
+  TEXT_MENU_JOIN_BELOW,
   TEXT_MENU_LABEL,
   TEXT_MENU_NO_SUGGESTIONS,
+  TEXT_MENU_SPLIT,
 } from './messages/en.js';
 import type { Lookup } from './spelling/personalWords.js';
-import { replaceRange, wordAt } from './textFormatting.js';
+import { paragraphAt, replaceRange, wordAt } from './textFormatting.js';
 
 /**
  * The in-place editor's right-click menu: what a word processor's offers over a word and over a selection
@@ -47,8 +50,21 @@ export interface EditorSpelling {
   readonly keep: (word: string) => MessageKey | undefined;
 }
 
+/**
+ * What the menu may do to the BLOCK, each present only where it can be done now (ADR-0180 Decision 7): a join with the
+ * block above or below, and a split before the paragraph the pointer is in. Hidden rather than disabled where it does not
+ * apply, since a control that cannot do anything here describes nothing.
+ */
+export interface EditorOps {
+  readonly joinAbove?: () => void;
+  readonly joinBelow?: () => void;
+  readonly split?: () => void;
+}
+
 /** What the menu holds for the right-click it was opened by. */
 interface Shown {
+  /** What may be done to the block, asked when the menu opened. */
+  readonly ops: EditorOps;
   /** The word under the pointer, and the words it spans, where the pointer was over one. */
   readonly word?: string;
   readonly range?: Range;
@@ -64,10 +80,13 @@ export function TextEditorMenu({
   root,
   spell,
   native,
+  ops,
   onOpenChange,
   onNotice,
   children,
 }: {
+  /** What may be done to the block, asked with the paragraph the pointer is in (`undefined` where it is in none). */
+  readonly ops?: ((paragraph: number | undefined) => EditorOps) | undefined;
   /** The editor's element: where a right-click is about the words, and where the focus returns. */
   readonly root: RefObject<HTMLDivElement | null>;
   readonly spell?: EditorSpelling | undefined;
@@ -142,6 +161,7 @@ export function TextEditorMenu({
             serial.current += 1;
             const mine = serial.current;
             setShown({
+              ops: ops?.(at === undefined ? undefined : paragraphAt(element, at.node)) ?? {},
               selected,
               saved: selection !== null && selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : undefined,
               ...(found === undefined ? {} : { word: found.word, range: found.range }),
@@ -246,6 +266,28 @@ export function TextEditorMenu({
                 >
                   <span>{_(EDIT_SELECT_ALL_TITLE)}</span>
                 </ContextMenu.Item>
+                {shown.ops.joinAbove === undefined && shown.ops.joinBelow === undefined && shown.ops.split === undefined ? null : (
+                  <ContextMenu.Separator className="m-context-menu-separator" />
+                )}
+                {(
+                  [
+                    ['join-above', TEXT_MENU_JOIN_ABOVE, shown.ops.joinAbove],
+                    ['join-below', TEXT_MENU_JOIN_BELOW, shown.ops.joinBelow],
+                    ['split', TEXT_MENU_SPLIT, shown.ops.split],
+                  ] as const
+                ).map(([name, title, act]) =>
+                  act === undefined ? null : (
+                    <ContextMenu.Item
+                      className="m-context-menu-item"
+                      data-block-op={name}
+                      key={name}
+                      label={_(title)}
+                      onClick={act}
+                    >
+                      <span>{_(title)}</span>
+                    </ContextMenu.Item>
+                  ),
+                )}
               </ContextMenu.Popup>
             </ContextMenu.Positioner>
           </ContextMenu.Portal>

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import type { BlockFormatting, PageInsert } from '@monstera/contract';
+import type { BlockFormatting, EditedBlock, PageInsert } from '@monstera/contract';
 import { asDocVersion, type MessageKey } from '@monstera/shared';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -644,6 +644,98 @@ describe('Edit text on the page (ADR-0096)', () => {
       });
       expect(committed).toStrictEqual([]);
       expect(pageMenu).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('join and split from the menu (ADR-0180 Decision 7)', () => {
+    const REGULAR = { size: 11, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
+    const line = (index: number, text: string, soft: boolean, top: number) => ({
+      runs: [{ index, text, style: REGULAR }],
+      box: { x0: 72, y0: top - 14, x1: 300, y1: top },
+      soft,
+    });
+    /** Two blocks one above the other, the upper of two paragraphs, close enough to be one text's continuation. */
+    const STACKED: PageBlocks = {
+      ...BLOCKS,
+      blocks: [
+        {
+          box: { x0: 72, y0: 686, x1: 300, y1: 728 },
+          lines: [line(1, 'First paragraph.', false, 728), line(2, 'Second paragraph.', false, 714), line(3, 'Third.', false, 700)],
+          style: REGULAR,
+          shape: { align: 'left', firstIndent: 0 },
+        },
+        {
+          box: { x0: 72, y0: 650, x1: 300, y1: 664 },
+          lines: [line(4, 'The block below.', false, 664)],
+          style: REGULAR,
+          shape: { align: 'left', firstIndent: 0 },
+        },
+      ],
+    };
+    function mountStacked() {
+      const sent: { edits: EditedBlock[]; version: number }[] = [];
+      const onRestructure = vi.fn((edits: EditedBlock[], read: BlocksRead) => {
+        sent.push({ edits, version: read.version });
+        return Promise.resolve<BlockCommit>('written');
+      });
+      const made = mount({ blocks: STACKED, onRestructure });
+      fireEvent.click(find(made.view.container, '[data-text-block="0"]'));
+      const editor = editorIn(made.view.container);
+      /** The caret in the paragraph `at` of the editor (a `div` each), then a right-click. */
+      const rightClickIn = async (paragraph: number) => {
+        const row = editor.children[paragraph];
+        const node = row === undefined ? null : document.createTreeWalker(row, 4).nextNode();
+        if (!(node instanceof Text)) throw new Error('no such paragraph');
+        const range = document.createRange();
+        range.setStart(node, 1);
+        range.collapse(true);
+        document.getSelection()?.removeAllRanges();
+        document.getSelection()?.addRange(range);
+        await act(async () => {
+          fireEvent.contextMenu(editor, { clientX: 10, clientY: 10 });
+          await Promise.resolve();
+        });
+      };
+      return { ...made, editor, sent, rightClickIn };
+    }
+
+    it('joins with the block below as two entries of ONE command: the words extended and the lower block emptied', async () => {
+      const { sent, rightClickIn } = mountStacked();
+      await rightClickIn(0);
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('menuitem', { name: 'Join with the text below' }));
+        await Promise.resolve();
+      });
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.edits.map((edit) => edit.text)).toStrictEqual(['First paragraph.\nSecond paragraph.\nThird. The block below.', '']);
+      expect(sent[0]?.version).toBe(7);
+    });
+
+    it('splits before the paragraph the caret is in, the second half moved down, and not before the first paragraph', async () => {
+      const { sent, rightClickIn } = mountStacked();
+      await rightClickIn(1);
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('menuitem', { name: 'Split the text before this paragraph' }));
+        await Promise.resolve();
+      });
+      expect(sent[0]?.edits.map((edit) => edit.text)).toStrictEqual(['First paragraph.', 'Second paragraph.\nThird.']);
+      expect(sent[0]?.edits[1]?.place).toStrictEqual({ move: { x: 0, y: -14 } });
+    });
+
+    it('CONTROL: there is nothing to split before the first paragraph, and nothing to join above the top block', async () => {
+      const { rightClickIn } = mountStacked();
+      await rightClickIn(0);
+      await screen.findByRole('menuitem', { name: 'Paste' });
+      expect(screen.queryByRole('menuitem', { name: 'Split the text before this paragraph' })).toBeNull();
+      expect(screen.queryByRole('menuitem', { name: 'Join with the text above' })).toBeNull();
+    });
+
+    it('is not offered once words are typed, since a join writes the block as the page has it and would drop them', async () => {
+      const { editor, rightClickIn } = mountStacked();
+      typeInto(editor, 'Typed over.');
+      await rightClickIn(0);
+      await screen.findByRole('menuitem', { name: 'Paste' });
+      expect(screen.queryByRole('menuitem', { name: 'Join with the text below' })).toBeNull();
     });
   });
 

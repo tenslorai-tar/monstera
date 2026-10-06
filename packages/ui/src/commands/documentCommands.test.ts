@@ -67,6 +67,7 @@ import {
   EDIT_TEXT_TOOL_ID,
   EDIT_TEXT_ADD_TOOL_ID,
   addTextCommand,
+  commitBlocks,
   commitPageInsert,
   HAND_TOOL_ID,
   handToolCommand,
@@ -1545,6 +1546,41 @@ describe('delete pages — the mutation-dialog gate', () => {
     // AND EDIT TEXT PRESSED WHILE ADDING leaves the mode, as it does from plain Edit text.
     void edit.run(CONTEXT);
     expect(active).toBeUndefined();
+  });
+
+  it('A JOIN OR A SPLIT is ONE command of several blocks, the second half carrying its movement (ADR-0180 Decision 7)', async () => {
+    // THE UI HALF OF THE WIRED PAIR for join and split. Its kernel half is `proof:pdfiumcommand`'s join and split cases:
+    // two blocks read back as one, one as two, and the same split without its movement read back as one again.
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+    });
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
+    const outcome = await commitBlocks(
+      deps,
+      DOC,
+      3,
+      [
+        { lines: [[1], [2]], soft: [false, false], text: 'First.\nSecond.' },
+        { lines: [[4]], soft: [false], text: 'Below.', place: { move: { x: 0, y: -14 } } },
+      ],
+      { version: asDocVersion(7), rewrite: 'objects' },
+    );
+    expect(outcome).toBe('written');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.params).toMatchObject({
+      command: {
+        kind: 'editTextBlock',
+        page: 3,
+        runs: [1, 2, 4],
+        blockStarts: [0, 2],
+        text: 'First.\nSecond.Below.',
+        textStarts: [0, 14],
+        places: [{ block: 1, move: { x: 0, y: -14 } }],
+        version: 7,
+      },
+    });
   });
 
   it('A NEW BOX is sent as `inserts` on the block wire, with no block, and nothing for words that are only white space', async () => {

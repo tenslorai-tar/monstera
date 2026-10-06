@@ -1210,6 +1210,9 @@ export const TEXT_BLOCK_REMOVE = messageKey('surface.text-block.remove');
 export const TEXT_MENU_LABEL = messageKey('surface.text-editor.menu');
 export const TEXT_MENU_NO_SUGGESTIONS = messageKey('surface.text-editor.menu.no-suggestions');
 export const TEXT_MENU_ADD_WORD = messageKey('surface.text-editor.menu.add-word');
+export const TEXT_MENU_JOIN_ABOVE = messageKey('surface.text-editor.menu.join-above');
+export const TEXT_MENU_JOIN_BELOW = messageKey('surface.text-editor.menu.join-below');
+export const TEXT_MENU_SPLIT = messageKey('surface.text-editor.menu.split');
 export const ADD_TEXT_COMMAND_TITLE = messageKey('command.text.add');
 export const HINT_ADD_TEXT = messageKey('tool.hint.add-text');
 export const TEXT_ADD_SURFACE = messageKey('surface.text-add.surface');
@@ -3537,6 +3540,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_MENU_LABEL]: 'Text editing',
   [TEXT_MENU_NO_SUGGESTIONS]: 'No suggestions',
   [TEXT_MENU_ADD_WORD]: 'Add “{word}” to the dictionary',
+  [TEXT_MENU_JOIN_ABOVE]: 'Join with the text above',
+  [TEXT_MENU_JOIN_BELOW]: 'Join with the text below',
+  [TEXT_MENU_SPLIT]: 'Split the text before this paragraph',
   [ADD_TEXT_COMMAND_TITLE]: 'Add text',
   [HINT_ADD_TEXT]: 'Click the page where the new text should go, then type.',
   [TEXT_ADD_SURFACE]: 'Click where the new text should go',

@@ -4121,6 +4121,21 @@ async function sendBlockEdit(
 }
 
 /**
+ * Writes several blocks of one page in ONE command: a join (the upper block's words with the lower's, the lower
+ * emptied) and a split (each half, the second moved down) are each such a write (ADR-0180 Decision 7), and one command is
+ * one undo step. The outcome is {@link commitTextBlock}'s.
+ */
+export function commitBlocks(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  page: number,
+  blocks: Parameters<typeof blockEditOf>[0],
+  read: BlocksRead,
+): Promise<BlockCommit> {
+  return sendBlockEdit(deps, docId, page, read, blocks);
+}
+
+/**
  * Adds a box of new text to a page (ADR-0180 Decision 6, corrected 2026-10-06): the words and where they go, sent as
  * `inserts` on the same block wire an edit uses, by the writer the page's read named. The outcome is
  * {@link commitTextBlock}'s, so the editor over a new box says a refusal as the editor over a block does.

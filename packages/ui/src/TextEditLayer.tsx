@@ -1,11 +1,10 @@
 import { useLingui } from '@lingui/react';
-import type { BlockFormatting, PageInsert, WindowEditAction } from '@monstera/contract';
+import type { BlockFormatting, EditedBlock, PageInsert, WindowEditAction } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import {
   type DocVersion,
   joinAfterLine,
   lineText,
-  paragraphsOfLines,
   pdfPoint,
   toPdf,
   toViewport,
@@ -38,10 +37,11 @@ import {
   TEXT_HANDLE_WIDTH,
 } from './messages/en.js';
 import { composing } from './surfaces/shortcuts.js';
-import { TextEditorMenu, type EditorSpelling } from './TextEditorMenu.js';
+import { joinEdits, neighbourOf, splitEdits, wordsOfBlock } from './textBlockOps.js';
+import { type EditorOps, type EditorSpelling, TextEditorMenu } from './TextEditorMenu.js';
 import { TextFormatBar } from './TextFormatBar.js';
 import { formatOpenEditor, registerEditor } from './textEditorControl.js';
-import { insertTab, readEditor } from './textFormatting.js';
+import { insertTab, isFormatted, readEditor } from './textFormatting.js';
 import {
   dragged,
   type Handle,
@@ -111,6 +111,8 @@ export interface TextEditLayerProps {
   readonly native?: (action: WindowEditAction) => void;
   /** The spelling checker's answers for the editor's right-click menu. */
   readonly spell?: EditorSpelling;
+  /** Writes blocks joined or split in one command (ADR-0180 Decision 7), at the version the blocks were read at. */
+  readonly onRestructure?: (edits: EditedBlock[], read: BlocksRead) => Promise<BlockCommit>;
   /** Writes one block's new words, at the version the blocks were read at and by the writer that read named. */
   readonly onCommit: (block: TextBlock, text: string, read: BlocksRead, formatting?: BlockFormatting) => Promise<BlockCommit>;
   /** The fonts the open block's runs are drawn in, rebuilt by the host, at the version it was read at (ADR-0175). */
@@ -294,9 +296,7 @@ function averageColour(a: string | undefined, b: string | undefined): string | u
  * break a line break, by the one join the kernel diffs them against
  * ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)).
  */
-function wordsOf(block: TextBlock): string {
-  return paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
-}
+const wordsOf = wordsOfBlock;
 
 /** A block's lines grouped into the paragraphs the editor draws: a line that ends soft continues in the next. */
 function paragraphsOf(block: TextBlock): TextBlock['lines'][number][][] {
@@ -342,6 +342,7 @@ export function TextEditLayer({
   onAdded,
   native,
   spell,
+  onRestructure,
   onCommit,
   runFonts,
   onPromote,
@@ -456,6 +457,15 @@ export function TextEditLayer({
               finishingRef={finishingRef}
               geometry={geometry}
               native={native}
+              restructure={
+                onRestructure === undefined
+                  ? undefined
+                  : {
+                      above: blocks.blocks[neighbourOf(blocks.blocks, at, 'above') ?? -1],
+                      below: blocks.blocks[neighbourOf(blocks.blocks, at, 'below') ?? -1],
+                      apply: (edits) => onRestructure(edits, blocks),
+                    }
+              }
               spell={spell}
               stuckRef={stuckRef}
               // THE BLOCK'S POSITION AND THE VERSION, so a new read — or the
@@ -684,6 +694,8 @@ export interface TextEditing {
   readonly native: (action: WindowEditAction) => void;
   /** The spelling checker's answers for the editor's right-click menu. */
   readonly spell: EditorSpelling;
+  /** Writes blocks joined or split, in one command. */
+  readonly onRestructure: (page: number, edits: EditedBlock[], read: BlocksRead) => Promise<BlockCommit>;
 }
 
 /**
@@ -736,6 +748,7 @@ export function TextEditPage({
       onAdded={editing.onAdded}
       native={editing.native}
       spell={editing.spell}
+      onRestructure={(edits, read) => editing.onRestructure(page, edits, read)}
       onInsert={(insert, read) => editing.onInsert(page, insert, read)}
       runFonts={(block, at) => editing.runFonts(page, block, at)}
       onPromote={() => {
@@ -770,6 +783,14 @@ interface BlockEditorProps {
   readonly native?: ((action: WindowEditAction) => void) | undefined;
   /** The spelling checker's answers, for the right-click menu. */
   readonly spell?: EditorSpelling | undefined;
+  /** The blocks beside this one it may be joined with, and the write of a join or a split (ADR-0180 Decision 7). */
+  readonly restructure?:
+    | {
+        readonly above: TextBlock | undefined;
+        readonly below: TextBlock | undefined;
+        readonly apply: (edits: EditedBlock[]) => Promise<BlockCommit>;
+      }
+    | undefined;
   /** Where this editor puts the function that writes it, so a click on another block can ask for the write. */
   readonly finishingRef: React.RefObject<(() => Promise<void>) | undefined>;
   /** Where this editor says whether it holds words it could not write. */
@@ -896,6 +917,7 @@ function BlockEditor({
   placeable = true,
   native,
   spell,
+  restructure,
   finishingRef,
   stuckRef,
 }: BlockEditorProps): ReactElement {
@@ -1004,17 +1026,16 @@ function BlockEditor({
   const [notice, setNotice] = useState<MessageKey | undefined>(undefined);
   /** Where the block is being put (ADR-0180, corrected): shown over the editor and sent with its words when it writes. */
   const [placement, setPlacement] = useState<Placement>(NOT_PLACED);
-  const finishWith = useCallback(
-    async (words: string): Promise<void> => {
+  /**
+   * Sends ONE write for this editor and takes its outcome: the words' write and a join's or a split's alike, so what is
+   * done while it is in flight, and what a refusal does, have one answer (B3a).
+   */
+  const settle = useCallback(
+    async (send: () => Promise<BlockCommit>): Promise<void> => {
       if (writing.current) return;
       writing.current = true;
       setBusy(true);
-      // THE FORMATTING FROM THE EDITOR AS IT STANDS, read in the one walk that gave the words (`readEditor`), and where
-      // the person put the block: one command, so one undo step for words, style and place alike.
-      const element = area.current;
-      const place = placeOf(placement, block.box);
-      const formatting = element === null ? {} : readEditor(element).formatting;
-      const outcome = await onCommit(words, place === undefined ? formatting : { ...formatting, place });
+      const outcome = await send();
       writing.current = false;
       setBusy(false);
       if (outcome !== 'written' && outcome !== 'unchanged') {
@@ -1029,8 +1050,39 @@ function BlockEditor({
       }
       onClose(outcome);
     },
-    [block.box, onClose, onCommit, placement],
+    [onClose],
   );
+  const finishWith = useCallback(
+    (words: string): Promise<void> =>
+      settle(() => {
+        // THE FORMATTING FROM THE EDITOR AS IT STANDS, read in the one walk that gave the words (`readEditor`), and where
+        // the person put the block: one command, so one undo step for words, style and place alike.
+        const element = area.current;
+        const place = placeOf(placement, block.box);
+        const formatting = element === null ? {} : readEditor(element).formatting;
+        return onCommit(words, place === undefined ? formatting : { ...formatting, place });
+      }),
+    [block.box, onCommit, placement, settle],
+  );
+  /**
+   * What the right-click menu may do to the BLOCK, asked when it opens: join with the block above or below, and split
+   * before the paragraph the caret is in (ADR-0180 Decision 7). Offered only while nothing is unwritten — a join writes the
+   * block as the page has it, and words typed since would be dropped by it — so the person finishes first, with Escape.
+   */
+  const blockOps = (caret: number | undefined): EditorOps => {
+    const element = area.current;
+    if (restructure === undefined || element === null || busy || problem !== undefined) return {};
+    const untouched =
+      text === wordsOfBlock(block) && !isFormatted(readEditor(element).formatting) && placeOf(placement, block.box) === undefined;
+    if (!untouched) return {};
+    const { above, below, apply } = restructure;
+    const split = caret === undefined ? undefined : splitEdits(block, caret);
+    return {
+      ...(above === undefined ? {} : { joinAbove: () => void settle(() => apply(joinEdits(above, block))) }),
+      ...(below === undefined ? {} : { joinBelow: () => void settle(() => apply(joinEdits(block, below))) }),
+      ...(split === undefined ? {} : { split: () => void settle(() => apply(split)) }),
+    };
+  };
   const finish = useCallback((): Promise<void> => finishWith(text), [finishWith, text]);
   useEffect(() => {
     actions.current = {
@@ -1194,6 +1246,7 @@ function BlockEditor({
       >
       <TextEditorMenu
         native={native}
+        ops={blockOps}
         onNotice={setNotice}
         onOpenChange={(now) => {
           menuOpen.current = now;

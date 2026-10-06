@@ -67,6 +67,7 @@ import {
   EDIT_TEXT_TOOL_ID,
   EDIT_TEXT_ADD_TOOL_ID,
   addTextCommand,
+  commitBlocks,
   commitPageInsert,
   commitTextBlock,
   isEditTextTool,
@@ -3410,6 +3411,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         look: (word) => lookUp({ client, settings }, word),
         keep: (word) => keepWord(settings, word),
       },
+      onRestructure: (page, edits, read) => commitBlocks(deps, docId, page, edits, read),
       onInsert: (page, insert, read) => commitPageInsert(deps, docId, page, insert, read),
       // ONE BOX, then back to editing what is on the page.
       onAdded: () => {

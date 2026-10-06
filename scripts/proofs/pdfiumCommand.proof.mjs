@@ -265,7 +265,7 @@ const failures = [];
 // edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
 // marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
 // with the control that separates the mark from the fixture.
-const roster = createRoster(failures, { cases: 157 });
+const roster = createRoster(failures, { cases: 162 });
 
 /**
  * @param {string} name
@@ -546,6 +546,7 @@ async function main() {
   await paragraphCases();
   await formatCases();
   await placeCases();
+  await joinSplitCases();
   await pastThePageCases();
   await glyphLineCases();
   await settingCases();
@@ -2943,6 +2944,105 @@ async function placeCases() {
     'an added box takes marks as an edit does: its bold word is bold and the rest of it is not',
     heavy?.style.bold === true && plain?.style.bold === false,
     `heavy ${String(heavy?.style.bold)}, plain ${String(plain?.style.bold)}`,
+  );
+}
+
+/**
+ * JOIN AND SPLIT as edits of the block wire (ADR-0180 Decision 7): two blocks made one by extending the upper's words and
+ * emptying the lower, one made two by naming each half's own lines and moving the second down. The grouping is the read's,
+ * so each case reads the saved bytes and counts blocks, which is the observable a join and a split exist to change.
+ */
+async function joinSplitCases() {
+  const original = await twoBlocks();
+  const read = await blocksOf(original);
+  const upper = read.blocks.find((block) => block.lines[0]?.runs[0]?.text.startsWith('Upper'));
+  const lower = read.blocks.find((block) => block.lines[0]?.runs[0]?.text.startsWith('Lower'));
+  if (upper === undefined || lower === undefined) {
+    record('the join fixture reads as two blocks', false, `${String(read.blocks.length)} block(s)`);
+    return;
+  }
+  const entry = (/** @type {typeof upper} */ block, /** @type {string} */ text, /** @type {object | undefined} */ extra) => ({
+    lines: block.lines.map((line) => line.runs.map((run) => run.index)),
+    soft: block.lines.map((line) => line.soft),
+    text,
+    ...(extra ?? {}),
+  });
+  const wordsOf = (/** @type {typeof upper} */ block) =>
+    paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  const send = (/** @type {object[]} */ blocks, /** @type {Uint8Array} */ session = original) =>
+    localPdfiumExecution.apply({
+      session,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf(/** @type {never} */ (blocks)),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+
+  // JOIN: the upper block's words with the lower's after them, the lower emptied.
+  const joinedWords = `${wordsOf(upper)} ${wordsOf(lower)}`;
+  const joined = await send([entry(upper, joinedWords), entry(lower, '')]);
+  const after = await blocksOf(joined);
+  const one = after.blocks[0];
+  record(
+    'a join reads back as ONE block holding both blocks’ words, where it read as two',
+    read.blocks.length === 2 && after.blocks.length === 1 &&
+      one !== undefined && one.lines.map((line) => lineText(line.runs)).join(' ').replace(/\s+/gu, ' ').trim() ===
+        joinedWords.replace(/\s+/gu, ' '),
+    `${String(read.blocks.length)} block(s) before, ${String(after.blocks.length)} after; ${JSON.stringify(one?.lines.map((line) => lineText(line.runs)))}`,
+  );
+  const tops = after.runs.map((run) => run.bottom).sort((a, b) => b - a);
+  const gaps = tops.slice(1).map((value, at) => (tops[at] ?? 0) - value).filter((gap) => gap > 0.5);
+  record(
+    'and the lower block’s words stand at the pitch of the block they joined, not where the lower block was',
+    gaps.length > 0 && Math.max(...gaps) < 20,
+    `gaps between lines ${JSON.stringify(gaps.map((gap) => Math.round(gap * 10) / 10))}`,
+  );
+  const unemptied = await send([entry(upper, joinedWords)]).catch(() => undefined);
+  record(
+    'CONTROL: extending the upper block WITHOUT emptying the lower leaves the lower’s words on the page twice, which is why both are in one command',
+    unemptied !== undefined && (await blocksOf(unemptied)).runs.filter((run) => run.text.includes('Lower block first')).length >= 2,
+    unemptied === undefined ? 'refused' : 'one copy',
+  );
+
+  // SPLIT: one block of two paragraphs made two.
+  const two = await aTypeset({ lines: ['First paragraph line', 'Second paragraph line'] });
+  const twoRead = await blocksOf(two);
+  const both = twoRead.blocks[0];
+  if (both === undefined) {
+    record('the split fixture reads as a block', false, 'no block');
+    return;
+  }
+  const firstLine = both.lines[0];
+  const secondLine = both.lines[1];
+  if (firstLine === undefined || secondLine === undefined) {
+    record('the split fixture reads as two lines', false, `${String(both.lines.length)} line(s)`);
+    return;
+  }
+  const pitch = firstLine.box.y1 - secondLine.box.y1;
+  const half = (/** @type {typeof firstLine} */ line, /** @type {object | undefined} */ extra) => ({
+    lines: [line.runs.map((run) => run.index)],
+    soft: [false],
+    text: lineText(line.runs),
+    ...(extra ?? {}),
+  });
+  const split = await send([half(firstLine), half(secondLine, { place: { move: { x: 0, y: -pitch } } })], two);
+  const splitRead = await blocksOf(split);
+  record(
+    'a split reads back as TWO blocks, where it read as one, with each half’s words',
+    twoRead.blocks.length === 1 && splitRead.blocks.length === 2 &&
+      splitRead.blocks.map((block) => wordsOf(block)).join('|') === 'First paragraph line|Second paragraph line',
+    `${String(twoRead.blocks.length)} block(s) before, ${String(splitRead.blocks.length)} after`,
+  );
+  const barely = await send([half(firstLine), half(secondLine, { place: { move: { x: 0, y: -1 } } })], two);
+  record(
+    'CONTROL: the same two halves moved by a point read as one block again, which is what a full line of movement is for',
+    (await blocksOf(barely)).blocks.length === 1,
+    `${String((await blocksOf(barely)).blocks.length)} block(s)`,
   );
 }
 
