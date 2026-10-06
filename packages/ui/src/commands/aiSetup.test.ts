@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { AI_SETUP_DIALOG_ID, type AiSetupAnswer } from '../dialogs/aiSetup.js';
 import { TOAST_AI_KEY_CHECKED, TOAST_AI_KEY_KEPT_UNCHECKED } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
+import type { DialogReports } from '../registries/dialogs.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { AI_SETUP_AT_START_SETTING } from '../settings/ai.js';
 import { ALL_SETTINGS } from '../settings/all.js';
@@ -34,6 +35,7 @@ function client(check: { problem?: 'unauthorised' | 'unreachable'; checked?: boo
   const built = createClient(channels, (id, params) => {
     sent.push({ id, params });
     if (id === 'settings.loadSecrets') return Promise.resolve(ok({ stored: [], available: true }));
+    if (id === 'app.openWebPage') return Promise.resolve(ok({ opened: true }));
     if (id === 'ai.checkKey') {
       return Promise.resolve(
         ok(
@@ -49,17 +51,22 @@ function client(check: { problem?: 'unauthorised' | 'unreachable'; checked?: boo
 }
 
 /** A dialog host answering from a script, recording what each opening was shown. */
-function dialogs(answers: readonly (AiSetupAnswer | undefined)[]): {
-  readonly ask: (id: string, props: unknown) => Promise<unknown>;
+function dialogs(
+  answers: readonly (AiSetupAnswer | undefined)[],
+  /** What the window REPORTS before it answers, in order — the *get a key* link. */
+  reports: readonly unknown[] = [],
+): {
+  readonly ask: (id: string, props: unknown, onUpdate?: DialogReports) => Promise<unknown>;
   readonly shown: unknown[];
 } {
   const queue = [...answers];
   const shown: unknown[] = [];
   return {
     shown,
-    ask: (id, props) => {
+    ask: (id, props, onUpdate) => {
       expect(id).toBe(AI_SETUP_DIALOG_ID);
       shown.push(props);
+      for (const reported of reports) onUpdate?.(reported, () => undefined);
       return Promise.resolve(queue.shift());
     },
   };
@@ -70,6 +77,38 @@ function settings(): SettingsStore {
 }
 
 const CHECK: AiSetupAnswer = { kind: 'check', provider: 'openai', key: 'sk-test', endpoint: '' };
+
+describe('Set up AI — the get-a-key link (ADR-0184)', () => {
+  it('opens the chosen provider’s key page BY NAME, composes no address, and leaves everything else untouched', async () => {
+    const { client: built, sent } = client({});
+    const store = settings();
+    await aiSetupCommand({
+      client: built,
+      settings: store,
+      ask: dialogs([{ kind: 'skip' }], [{ kind: 'key-page', provider: 'groq' }]).ask,
+      onSecretsChanged: () => undefined,
+      toast: () => undefined,
+    }).run(START);
+    // THE PLACE, NOT AN ADDRESS: `main` turns it into one.
+    expect(sent.filter((call) => call.id === 'app.openWebPage').map((call) => call.params)).toStrictEqual([
+      { page: 'ai-key-groq' },
+    ]);
+    // THE LINK IS NOT A CHECK: no key was sent anywhere.
+    expect(sent.some((call) => call.id === 'ai.checkKey')).toBe(false);
+  });
+
+  it('a report that is not the link opens nothing', async () => {
+    const { client: built, sent } = client({});
+    await aiSetupCommand({
+      client: built,
+      settings: settings(),
+      ask: dialogs([{ kind: 'skip' }], [{ kind: 'something-else' }]).ask,
+      onSecretsChanged: () => undefined,
+      toast: () => undefined,
+    }).run(START);
+    expect(sent.some((call) => call.id === 'app.openWebPage')).toBe(false);
+  });
+});
 
 describe('Set up AI (E5 onboarding)', () => {
   it('CHECKS the typed key in one call, stores nothing itself, and a key that checks out turns the offer off', async () => {

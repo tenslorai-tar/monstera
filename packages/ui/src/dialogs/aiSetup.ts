@@ -26,6 +26,9 @@ export type AiSetupProblem = (typeof AI_SETUP_PROBLEMS)[number];
  */
 export const AI_SETUP_RESULT = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('skip') }).strict(),
+  // *GET A KEY* (ADR-0184): reported, never resolved — the window stays open while the provider's page opens in the
+  // person's browser, and the OPENER opens it by name through `app.openWebPage`, since this window composes no address.
+  z.object({ kind: z.literal('key-page'), provider: z.enum(AI_PROVIDER_IDS) }).strict(),
   z
     .object({
       kind: z.literal('check'),

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AI_KEY_PAGES,
+  AI_KEY_PAGE_OF,
   AI_PROVIDERS,
   AI_PROVIDER_IDS,
   AI_PROVIDER_KEY_SETTING_IDS,
@@ -35,6 +37,14 @@ describe('the AI provider registry', () => {
     // as the other way round.
     expect(new Set(fromTable)).toStrictEqual(new Set(AI_PROVIDER_KEY_SETTING_IDS));
     expect(AI_PROVIDER_KEY_SETTING_IDS).toHaveLength(AI_PROVIDER_IDS.length);
+  });
+
+  it('gives each provider its own key page, and the page list names exactly those (ADR-0184)', () => {
+    const fromTable = AI_PROVIDER_IDS.map((id) => AI_KEY_PAGE_OF[id]);
+    expect(new Set(fromTable).size).toBe(AI_PROVIDER_IDS.length);
+    // BOTH DIRECTIONS, for the key list's reason.
+    expect(new Set(fromTable)).toStrictEqual(new Set(AI_KEY_PAGES));
+    for (const id of AI_PROVIDER_IDS) expect(AI_KEY_PAGE_OF[id]).toBe(`ai-key-${id}`);
   });
 
   it('keeps Anthropic on the id D6 already placed', () => {

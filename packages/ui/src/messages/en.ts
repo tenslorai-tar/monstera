@@ -1708,6 +1708,10 @@ export const TOAST_AI_KEY_KEPT_UNCHECKED = messageKey('toast.ai-key-kept-uncheck
 export const AI_SETUP_INTRO = messageKey('dialog.ai-setup.intro');
 export const AI_SETUP_PROVIDER = messageKey('dialog.ai-setup.provider');
 export const AI_SETUP_KEY = messageKey('dialog.ai-setup.key');
+export const AI_SETUP_CHOOSE_PROVIDER = messageKey('dialog.ai-setup.choose-provider');
+export const AI_SETUP_KEY_NEEDED = messageKey('dialog.ai-setup.key-needed');
+export const AI_SETUP_GET_KEY = messageKey('dialog.ai-setup.get-key');
+export const AI_SETUP_AZURE_NOTE = messageKey('dialog.ai-setup.azure-note');
 export const AI_SETUP_ENDPOINT = messageKey('dialog.ai-setup.endpoint');
 export const AI_SETUP_CHECK = messageKey('dialog.ai-setup.check');
 export const AI_SETUP_SKIP = messageKey('dialog.ai-setup.skip');
@@ -4079,6 +4083,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'The assistant answers questions about your documents using an AI provider you choose, with your own key. Everything else in Monstera works without one, so you can skip this and add a key later in Settings.',
   [AI_SETUP_PROVIDER]: 'Provider',
   [AI_SETUP_KEY]: 'API key',
+  // NOTHING PRE-SELECTED (ADR-0184): a provider the person did not choose is a key pasted for the wrong service.
+  [AI_SETUP_CHOOSE_PROVIDER]: 'Choose a provider',
+  [AI_SETUP_KEY_NEEDED]:
+    '{provider} needs an API key. You get one by signing in to your {provider} account on its website.',
+  [AI_SETUP_GET_KEY]: 'Get a {provider} key',
+  [AI_SETUP_AZURE_NOTE]:
+    'In the Azure portal, open your Azure OpenAI resource, then Keys and Endpoint: copy a key and the endpoint from there.',
   [AI_SETUP_ENDPOINT]: 'Azure OpenAI endpoint',
   [AI_SETUP_CHECK]: 'Check and save',
   [AI_SETUP_SKIP]: 'Skip',

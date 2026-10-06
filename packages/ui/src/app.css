@@ -4342,6 +4342,25 @@ optgroup {
   color: var(--text);
 }
 
+/* THE PROVIDER LIST IS AS WIDE AS THE KEY FIELD (ADR-0184): a long value takes its row's whole width
+   (`.m-field--long`), so the list does too, and the two read as one column. */
+.m-dialog-row__control:has(> .m-ai-setup__provider) {
+  flex-basis: 100%;
+}
+
+.m-ai-setup__provider {
+  flex: 1 1 auto;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.m-ai-setup__key-help {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
 .m-ai-setup__actions {
   display: flex;
   justify-content: flex-end;

@@ -1,8 +1,9 @@
-import { AZURE_OPENAI_ENDPOINT_SETTING_ID, type ContractClient } from '@monstera/contract';
+import { AI_KEY_PAGE_OF, AZURE_OPENAI_ENDPOINT_SETTING_ID, type ContractClient } from '@monstera/contract';
 
-import { AI_SETUP_DIALOG_ID, type AiSetupAnswer, type AiSetupProblem } from '../dialogs/aiSetup.js';
+import { AI_SETUP_DIALOG_ID, AI_SETUP_RESULT, type AiSetupAnswer, type AiSetupProblem } from '../dialogs/aiSetup.js';
 import { AI_SETUP_COMMAND_TITLE, GROUP_AI, TOAST_AI_KEY_CHECKED, TOAST_AI_KEY_KEPT_UNCHECKED } from '../messages/en.js';
 import { TOASTS, type UiCommand } from '../registries/commands.js';
+import type { DialogReports } from '../registries/dialogs.js';
 import { confirmDone } from './confirmWritten.js';
 import { AI_SETUP_AT_START_SETTING } from '../settings/ai.js';
 import type { SettingsStore } from '../settingsStore.js';
@@ -33,7 +34,7 @@ import type { ShowToast } from '../toasts.js';
 export function aiSetupCommand(deps: {
   readonly client: ContractClient;
   readonly settings: SettingsStore;
-  readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  readonly ask: (id: string, props: unknown, onUpdate?: DialogReports) => Promise<unknown>;
   readonly onSecretsChanged: () => void;
   readonly toast: ShowToast;
 }): UiCommand {
@@ -52,16 +53,29 @@ export function aiSetupCommand(deps: {
       let provider: (AiSetupAnswer & { kind: 'check' })['provider'] | undefined;
 
       for (;;) {
-        const answer = (await deps.ask(AI_SETUP_DIALOG_ID, {
-          secretsAvailable,
-          ...(problem === undefined ? {} : { problem }),
-          ...(provider === undefined ? {} : { provider }),
-        })) as AiSetupAnswer | undefined;
+        const answer = (await deps.ask(
+          AI_SETUP_DIALOG_ID,
+          {
+            secretsAvailable,
+            ...(problem === undefined ? {} : { problem }),
+            ...(provider === undefined ? {} : { provider }),
+          },
+          // *GET A KEY* REPORTS AND THE WINDOW STAYS OPEN: the provider's page opens by its NAME, which `main` turns
+          // into an address (ADR-0184), and the person comes back to the key field.
+          (reported) => {
+            const asked = AI_SETUP_RESULT.safeParse(reported);
+            if (asked.success && asked.data.kind === 'key-page') {
+              void deps.client['app.openWebPage']({ page: AI_KEY_PAGE_OF[asked.data.provider] });
+            }
+          },
+        )) as AiSetupAnswer | undefined;
         if (answer === undefined) return;
         if (answer.kind === 'skip') {
           deps.settings.set(AI_SETUP_AT_START_SETTING.id, false);
           return;
         }
+        // ONLY A CHECK IS LEFT: the link is a report and cannot close the window.
+        if (answer.kind !== 'check') return;
 
         provider = answer.provider;
         const endpoint = answer.provider === 'azure-openai' ? answer.endpoint : undefined;

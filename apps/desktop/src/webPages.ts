@@ -82,11 +82,33 @@ const SOURCE = 'https://github.com/tenslorai-tar/monstera';
  */
 const LICENCES = 'https://github.com/tenslorai-tar/monstera/blob/main/NOTICE';
 
+/**
+ * Where each AI provider hands out an API key (ADR-0184), for the setup window's *get a key* link. Each was asked for
+ * with `curl -sIL` on 2026-10-06 and answered: Anthropic's console moved to `platform.claude.com` and is the address it
+ * redirected to; Google, Mistral and OpenRouter sent the request to their sign-in with this page as the destination;
+ * Groq answered 200 itself; OpenAI, xAI, Azure, Perplexity and DeepSeek answered 403 or 405 to a non-browser request,
+ * which is their bot screen and not the page being absent. Azure's key is read from the resource it belongs to, so the
+ * address is the portal — the setup window says where to look.
+ */
+const AI_KEY_ADDRESSES = {
+  'ai-key-anthropic': 'https://platform.claude.com/settings/keys',
+  'ai-key-openai': 'https://platform.openai.com/api-keys',
+  'ai-key-gemini': 'https://aistudio.google.com/apikey',
+  'ai-key-mistral': 'https://console.mistral.ai/api-keys',
+  'ai-key-xai': 'https://console.x.ai',
+  'ai-key-azure-openai': 'https://portal.azure.com',
+  'ai-key-openrouter': 'https://openrouter.ai/keys',
+  'ai-key-groq': 'https://console.groq.com/keys',
+  'ai-key-perplexity': 'https://www.perplexity.ai/settings/api',
+  'ai-key-deepseek': 'https://platform.deepseek.com/api_keys',
+} as const;
+
 const ADDRESSES: WebAddresses = {
   donate: DONATE,
   'store-listing': STORE_LISTING,
   source: SOURCE,
   licences: LICENCES,
+  ...AI_KEY_ADDRESSES,
 };
 
 /**

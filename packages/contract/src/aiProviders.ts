@@ -96,6 +96,44 @@ export const AI_PROVIDER_KEY_SETTING_IDS = [
   'ai.deepseek-key',
 ] as const;
 
+/**
+ * The page where each provider hands out an API key, as `app.openWebPage` names it (ADR-0184) — a PLACE, never an
+ * address: `main` holds the addresses (`webPages.ts`), so the setup window can offer a link and still compose none.
+ *
+ * Written out as literals for {@link AI_PROVIDER_KEY_SETTING_IDS}' reason: the failure this guards against makes the
+ * list SMALLER, a provider whose key page nothing offers, and a list computed from the table would agree with any
+ * omission. `aiProviders.test.ts` holds it equal to the table as a set, so the pair catches both directions.
+ */
+export const AI_KEY_PAGES = [
+  'ai-key-anthropic',
+  'ai-key-openai',
+  'ai-key-gemini',
+  'ai-key-mistral',
+  'ai-key-xai',
+  'ai-key-azure-openai',
+  'ai-key-openrouter',
+  'ai-key-groq',
+  'ai-key-perplexity',
+  'ai-key-deepseek',
+] as const;
+
+/** One of {@link AI_KEY_PAGES}. */
+export type AiKeyPage = (typeof AI_KEY_PAGES)[number];
+
+/** Each provider's key page. A `Record`, so a provider added to the table is a compile error here until it has one. */
+export const AI_KEY_PAGE_OF: Readonly<Record<AiProviderId, AiKeyPage>> = {
+  anthropic: 'ai-key-anthropic',
+  openai: 'ai-key-openai',
+  gemini: 'ai-key-gemini',
+  mistral: 'ai-key-mistral',
+  xai: 'ai-key-xai',
+  'azure-openai': 'ai-key-azure-openai',
+  openrouter: 'ai-key-openrouter',
+  groq: 'ai-key-groq',
+  perplexity: 'ai-key-perplexity',
+  deepseek: 'ai-key-deepseek',
+};
+
 export const AI_PROVIDERS: Readonly<Record<AiProviderId, AiProvider>> = {
   anthropic: { id: 'anthropic', keySetting: ANTHROPIC_KEY_SETTING_ID, adapter: 'anthropic' },
   openai: { id: 'openai', keySetting: 'ai.openai-key', adapter: 'openai-format' },

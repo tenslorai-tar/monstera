@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { AI_KEY_PAGE_OF, AI_PROVIDER_IDS, type AiKeyPage } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import { openWebPage, STORE_PRODUCT_ID, STORE_URIS } from './webPages.js';
@@ -69,6 +70,10 @@ describe('openWebPage', () => {
     // a version that opened the wrong entry would reach the opener rather than agree by opening nothing.
     await expect(
       openWebPage('store-listing', open, {
+        ...(Object.fromEntries(AI_PROVIDER_IDS.map((id) => [AI_KEY_PAGE_OF[id], 'https://example.com/'])) as Record<
+          AiKeyPage,
+          string
+        >),
         donate: 'https://monsterapdf.com/donate',
         'store-listing': '',
         source: 'https://github.com/tenslorai-tar/monstera',
@@ -79,6 +84,18 @@ describe('openWebPage', () => {
     // ASSERT THE CALL, not the answer: a version that handed `''` to the opener would also resolve
     // `false` if the opener refused it, and would have reached `shell.openExternal` on the way.
     expect(opened).toStrictEqual([]);
+  });
+
+  it('opens each AI provider’s key page, and every provider has one at its own address (ADR-0184)', async () => {
+    const { open, opened } = opener();
+    for (const provider of AI_PROVIDER_IDS) await expect(openWebPage(AI_KEY_PAGE_OF[provider], open)).resolves.toBe(true);
+    expect(opened).toHaveLength(AI_PROVIDER_IDS.length);
+    // THE WHOLE ADDRESSES FOR TWO, asserted here and not read from the module, and each different from the next so a
+    // page that opened its neighbour's address is seen.
+    expect(opened[0]).toBe('https://platform.claude.com/settings/keys');
+    expect(opened[7]).toBe('https://console.groq.com/keys');
+    expect(new Set(opened).size).toBe(opened.length);
+    for (const url of opened) expect(new URL(url).protocol).toBe('https:');
   });
 
   it('every address it does have is HTTPS — the one route refuses anything else', async () => {
