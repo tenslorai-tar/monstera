@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import type { BlockFormatting } from '@monstera/contract';
+import type { BlockFormatting, PageInsert } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -514,6 +514,73 @@ describe('Edit text on the page (ADR-0096)', () => {
         await Promise.resolve();
       });
       expect(sent.map((one) => one.text)).toStrictEqual(['']);
+    });
+  });
+
+  describe('adding a box of new text (ADR-0180 Decision 6)', () => {
+    function mountAdding() {
+      const inserts: { insert: PageInsert; version: number }[] = [];
+      const onInsert = vi.fn((insert: PageInsert, read: BlocksRead) => {
+        inserts.push({ insert, version: read.version });
+        return Promise.resolve<BlockCommit>('written');
+      });
+      const onAdded = vi.fn();
+      const made = mount({ adding: true, onInsert, onAdded });
+      return { ...made, inserts, onAdded };
+    }
+
+    it('offers the empty page as a surface only while adding', () => {
+      const adding = mountAdding();
+      expect(adding.view.container.querySelector('[data-text-add-surface]')).not.toBeNull();
+      adding.view.unmount();
+      // CONTROL: plain Edit text has no such surface, so a press on the empty page is nothing there.
+      const plain = mount();
+      expect(plain.view.container.querySelector('[data-text-add-surface]')).toBeNull();
+    });
+
+    it('a press on the page opens a box there, and what is typed is added at that place, in the page’s points', async () => {
+      const { view, inserts, onAdded } = mountAdding();
+      fireEvent.click(find(view.container, '[data-text-add-surface]'), { clientX: 100, clientY: 200, detail: 1 });
+      const editor = editorIn(view.container);
+      typeInto(editor, 'A new note');
+      await act(async () => {
+        fireEvent.keyDown(editor, { key: 'Escape' });
+        await Promise.resolve();
+      });
+      // THE PAGE IS 792 HIGH AT ZOOM 1: a press 200 down is 592 up, and the first baseline an ascent (9.6) below that.
+      expect(inserts).toHaveLength(1);
+      expect(inserts[0]?.insert).toStrictEqual({ left: 100, baseline: 582.4, measure: 360, size: 12, text: 'A new note' });
+      expect(inserts[0]?.version).toBe(7);
+      expect(onAdded).toHaveBeenCalledTimes(1);
+    });
+
+    it('carries the marks the person gave the words, and has no handles of its own', async () => {
+      const { view, inserts } = mountAdding();
+      fireEvent.click(find(view.container, '[data-text-add-surface]'), { clientX: 100, clientY: 200, detail: 1 });
+      expect(view.container.querySelectorAll('[data-handle]')).toHaveLength(0);
+      const editor = editorIn(view.container);
+      typeInto(editor, 'plain heavy');
+      const text = editor.querySelector('div')?.firstChild;
+      if (!(text instanceof Text)) throw new Error('no text typed');
+      const range = document.createRange();
+      range.setStart(text, 6);
+      range.setEnd(text, 11);
+      document.getSelection()?.removeAllRanges();
+      document.getSelection()?.addRange(range);
+      fireEvent(document, new Event('selectionchange'));
+      fireEvent.keyDown(editor, { key: 'b', ctrlKey: true });
+      await act(async () => {
+        fireEvent.keyDown(editor, { key: 'Escape' });
+        await Promise.resolve();
+      });
+      expect(inserts[0]?.insert.marks).toStrictEqual([{ from: 6, to: 11, set: { bold: true } }]);
+    });
+
+    it('CONTROL: a block clicked while adding is still edited, since the surface is under the outlines', () => {
+      const { view } = mountAdding();
+      fireEvent.click(find(view.container, '[data-text-block="1"]'));
+      expect(editorIn(view.container).textContent).toContain('Helps with care and support');
+      expect(view.container.querySelector('[data-text-add-surface]')).not.toBeNull();
     });
   });
 

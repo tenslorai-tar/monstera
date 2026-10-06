@@ -65,6 +65,9 @@ import {
   exportFormDataXfdfCommand,
   detectFlatFieldsCommand,
   EDIT_TEXT_TOOL_ID,
+  EDIT_TEXT_ADD_TOOL_ID,
+  addTextCommand,
+  commitPageInsert,
   HAND_TOOL_ID,
   handToolCommand,
   selectTextCommand,
@@ -1508,6 +1511,54 @@ describe('delete pages — the mutation-dialog gate', () => {
     active = 'annotate.rectangle';
     void command.run(CONTEXT);
     expect(active).toBe(EDIT_TEXT_TOOL_ID);
+  });
+
+  it('ADD TEXT is Edit text’s add flavour in the same slot, and Edit text reads as on in both (ADR-0180)', () => {
+    let active: string | undefined;
+    const deps = {
+      activeTool: () => active,
+      onSelect: (id: string | undefined) => {
+        active = id;
+      },
+    };
+    const add = addTextCommand(deps);
+    const edit = editTextCommand(deps);
+    void add.run(CONTEXT);
+    expect(active).toBe(EDIT_TEXT_ADD_TOOL_ID);
+    expect(add.checked?.(CONTEXT)).toBe(true);
+    // EDIT TEXT IS ON IN BOTH FLAVOURS, so its button does not read as off while a box is being added.
+    expect(edit.checked?.(CONTEXT)).toBe(true);
+    // PRESSED AGAIN it goes back to plain Edit text rather than leaving the mode: one question, one answer.
+    void add.run(CONTEXT);
+    expect(active).toBe(EDIT_TEXT_TOOL_ID);
+    // CONTROL: from another tool it switches to the add flavour.
+    active = 'annotate.rectangle';
+    void add.run(CONTEXT);
+    expect(active).toBe(EDIT_TEXT_ADD_TOOL_ID);
+    // AND EDIT TEXT PRESSED WHILE ADDING leaves the mode, as it does from plain Edit text.
+    void edit.run(CONTEXT);
+    expect(active).toBeUndefined();
+  });
+
+  it('A NEW BOX is sent as `inserts` on the block wire, with no block, and nothing for words that are only white space', async () => {
+    // THE UI HALF OF THE WIRED PAIR for an added box. Its kernel half is `proof:pdfiumcommand`'s added-box cases.
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+    });
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
+    const insert = { left: 72, baseline: 600, measure: 200, size: 12, text: 'A note' };
+    expect(await commitPageInsert(deps, DOC, 3, insert, { version: asDocVersion(7), rewrite: 'objects' })).toBe('written');
+    expect(sent[0]?.params).toMatchObject({
+      command: { kind: 'editTextBlock', page: 3, runs: [], blockStarts: [], inserts: [insert], version: 7 },
+    });
+    // A BOX NOBODY TYPED IN adds nothing, and the kernel would refuse it.
+    expect(await commitPageInsert(deps, DOC, 3, { ...insert, text: '   ' }, { version: asDocVersion(7), rewrite: 'objects' })).toBe('unchanged');
+    expect(sent).toHaveLength(1);
+    // CONTROL: a page the read named `operators` is sent by that writer, as an edit is.
+    await commitPageInsert(deps, DOC, 3, insert, { version: asDocVersion(7), rewrite: 'operators' });
+    expect(sent[1]?.params).toMatchObject({ command: { kind: 'editTextOperators' } });
   });
 
   it('the HAND turns its mode on and off, and from another tool switches to the hand (§10.3)', () => {

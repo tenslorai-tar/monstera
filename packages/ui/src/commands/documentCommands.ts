@@ -10,6 +10,7 @@ import {
   type FormDataFormat,
   type FormDataImportFormat,
   type OptimizeSetting,
+  type PageInsert,
   type PageSet,
   type SaveWriteCause,
   type RenderableCommand,
@@ -140,6 +141,7 @@ import {
   GROUP_PAGES,
   GROUP_ROTATE,
   GROUP_TEXT,
+  ADD_TEXT_COMMAND_TITLE,
   EDIT_TEXT_COMMAND_TITLE,
   GROUP_MARKUP,
   SHOW_BOOKMARKS_TITLE,
@@ -3808,6 +3810,38 @@ export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile & Settle
 export const EDIT_TEXT_TOOL_ID = 'text.edit';
 
 /**
+ * Edit text in its ADD flavour (ADR-0180 Decision 6): the same mode with a press on the empty page opening a new box,
+ * and the slot's own value rather than a flag beside it, so leaving the mode, or choosing another tool, ends it by the
+ * slot's own rule and nothing can be left over for the next entry.
+ */
+export const EDIT_TEXT_ADD_TOOL_ID = 'text.add';
+
+/** Whether a tool id is Edit text, in either flavour: the ONE answer every surface of the mode asks (B3a). */
+export const isEditTextTool = (id: string | undefined): boolean => id === EDIT_TEXT_TOOL_ID || id === EDIT_TEXT_ADD_TOOL_ID;
+
+/**
+ * Add text: a box of new words where the person clicks on the page. One box, then back to Edit text, since a person who
+ * has typed a box wants to look at it.
+ */
+export function addTextCommand(deps: {
+  readonly activeTool: () => string | undefined;
+  readonly onSelect: (id: string | undefined) => void;
+}): UiCommand {
+  return {
+    id: EDIT_TEXT_ADD_TOOL_ID,
+    feedback: VISIBLE,
+    icon: 'Plus',
+    title: ADD_TEXT_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 11 }],
+    when: hasDocument,
+    checked: () => deps.activeTool() === EDIT_TEXT_ADD_TOOL_ID,
+    run: (): void => {
+      deps.onSelect(deps.activeTool() === EDIT_TEXT_ADD_TOOL_ID ? EDIT_TEXT_TOOL_ID : EDIT_TEXT_ADD_TOOL_ID);
+    },
+  };
+}
+
+/**
  * Edit text: every editable block on the page outlined in place, and edited
  * where it is ([ADR-0096](../../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)).
  *
@@ -3840,11 +3874,11 @@ export function editTextCommand(deps: {
     ribbonTitle: RIBBON_EDIT_TEXT,
     placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 10 }],
     when: hasDocument,
-    checked: () => deps.activeTool() === EDIT_TEXT_TOOL_ID,
+    checked: () => isEditTextTool(deps.activeTool()),
     run: (): void => {
       // READ THROUGH THE FUNCTION, `toolCommand`'s rule: the command is built
       // once, and a captured id would toggle against whatever was active then.
-      deps.onSelect(deps.activeTool() === EDIT_TEXT_TOOL_ID ? undefined : EDIT_TEXT_TOOL_ID);
+      deps.onSelect(isEditTextTool(deps.activeTool()) ? undefined : EDIT_TEXT_TOOL_ID);
     },
   };
 }
@@ -4036,28 +4070,36 @@ export async function commitTextBlock(
   const before = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
   // UNCHANGED ONLY WHEN THE WORDS AND THEIR FORMATTING both are: a bold word is an edit with the same words (ADR-0180).
   if (text === before && !isFormatted(formatting)) return 'unchanged';
+  return sendBlockEdit(deps, docId, page, read, [
+    {
+      lines: block.lines.map((line) => line.runs.map((run) => run.index)),
+      soft: block.lines.map((line) => line.soft),
+      text,
+      ...formatting,
+    },
+  ]);
+}
+
+/**
+ * The ONE way a block edit leaves the renderer, an edit of blocks and an added box alike (B3a): the wire form through the
+ * contract's encoder (ADR-0142), the writer the page's read named (ADR-0176 Decision 1: a page showing Type 3 text is
+ * rewritten in its own content stream), reflow (a person typing sees the block grow and it stays that way), and the
+ * outcome the editor says: written, held for the signatures question, or the refusal.
+ */
+async function sendBlockEdit(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  page: number,
+  read: BlocksRead,
+  blocks: Parameters<typeof blockEditOf>[0],
+  inserts: PageInsert[] = [],
+): Promise<BlockCommit> {
   /** Set by the hook below to what the editor says: the signatures question left unanswered, or the refusal. */
   const kept: { outcome: Exclude<BlockCommit, 'written' | 'unchanged'> | undefined } = { outcome: undefined };
   const applied = await applyDocumentCommand(
     deps,
     docId,
-    {
-      // THE PAGE'S WRITER, as the read named it: a page showing Type 3 text is rewritten in its own content stream.
-      kind: BLOCK_EDIT_KIND[read.rewrite],
-      page,
-      // IN THE WIRE FORM, through the contract's one encoder (ADR-0142).
-      ...blockEditOf([
-        {
-          lines: block.lines.map((line) => line.runs.map((run) => run.index)),
-          soft: block.lines.map((line) => line.soft),
-          text,
-          ...formatting,
-        },
-      ]),
-      // REFLOW: a person typing sees the block grow as they type, and it stays that way.
-      fit: 'reflow',
-      version: read.version,
-    },
+    { kind: BLOCK_EDIT_KIND[read.rewrite], page, ...blockEditOf(blocks, inserts), fit: 'reflow', version: read.version },
     {
       keep: (error) => {
         // A FAILURE THAT CARRIES SOMETHING passes whole, so the editor can name the characters or show the reference.
@@ -4073,6 +4115,25 @@ export async function commitTextBlock(
   // UNREACHABLE BY `applyDocumentCommand`'s OWN RULE: a command not applied answered a failure, and the hook kept it.
   if (kept.outcome === undefined) throw new Error('a block edit was neither applied nor refused');
   return kept.outcome;
+}
+
+/**
+ * Adds a box of new text to a page (ADR-0180 Decision 6, corrected 2026-10-06): the words and where they go, sent as
+ * `inserts` on the same block wire an edit uses, by the writer the page's read named. The outcome is
+ * {@link commitTextBlock}'s, so the editor over a new box says a refusal as the editor over a block does.
+ *
+ * `unchanged` for words that are only white space: a box nobody typed in adds nothing, and the kernel would refuse it.
+ */
+export async function commitPageInsert(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  page: number,
+  insert: PageInsert,
+  read: BlocksRead,
+): Promise<BlockCommit> {
+  if (insert.text.trim() === '') return 'unchanged';
+  // NO BLOCK, ONLY A BOX: the encoder's second argument.
+  return sendBlockEdit(deps, docId, page, read, [], [insert]);
 }
 
 /** Edit object's mode in the tool slot (ADR-0153 Decision 1), Edit text's slot and its reason. */

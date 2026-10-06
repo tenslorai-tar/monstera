@@ -5431,6 +5431,25 @@ optgroup {
   background: var(--accent-soft);
 }
 
+/* ADD TEXT: the empty page as a surface UNDER the outlines (they stack from z-index 1), so a press on a block still edits it
+   and a press anywhere else is where the new words go. */
+.m-text-add-surface {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: crosshair;
+  pointer-events: auto;
+}
+
+.m-text-add-surface:focus-visible {
+  outline: 2px solid var(--accent-on-paper, var(--accent));
+  outline-offset: -2px;
+}
+
 /* A BLOCK WHOSE WORDS RUN PAST THE PAGE (the owner's Q7): told apart by its line, solid and twice as thick, in the
    outline's own colour, so every look that draws the dashed outline draws this one too; the page's note says why. */
 .m-text-block--past {

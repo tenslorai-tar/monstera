@@ -65,7 +65,11 @@ import {
   flattenForm,
   flattenFormCommand,
   EDIT_TEXT_TOOL_ID,
+  EDIT_TEXT_ADD_TOOL_ID,
+  addTextCommand,
+  commitPageInsert,
   commitTextBlock,
+  isEditTextTool,
   readRunFonts,
   editTextCommand,
   handToolCommand,
@@ -252,6 +256,7 @@ import { useDocumentView } from './useDocumentView.js';
 import {
   CLOSE_LABEL,
   HINT_EDIT_OBJECTS,
+  HINT_ADD_TEXT,
   HINT_EDIT_TEXT,
   HINT_HAND,
   LINK_ADDED,
@@ -360,6 +365,7 @@ import { autosaveEvery, createAutosave } from './autosave.js';
 import { AUTOSAVE_SETTING, CONFIRM_REDACTION_SETTING, WARN_SIGNATURE_BREAK_SETTING } from './settings/saving.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { OpeningState, PageList, type PageListProps } from './PageList.js';
+import type { TextEditing } from './TextEditLayer.js';
 import { type Side, SideBySide, type SidePreferences, drawForComparison } from './SideBySide.js';
 import { SplitView } from './SplitView.js';
 import { SpellingPanel, useSpellingReview } from './SpellingPanel.js';
@@ -527,6 +533,7 @@ const NOTE_MARGIN = 36;
 const MODE_HINTS: ReadonlyMap<string, MessageKey> = new Map([
   [HAND_TOOL_ID, HINT_HAND],
   [EDIT_TEXT_TOOL_ID, HINT_EDIT_TEXT],
+  [EDIT_TEXT_ADD_TOOL_ID, HINT_ADD_TEXT],
   [EDIT_OBJECTS_TOOL_ID, HINT_EDIT_OBJECTS],
 ]);
 
@@ -3061,6 +3068,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
         editTextCommand({ activeTool: readTool, onSelect: setToolId }),
+        // ADD TEXT, the same mode in its add flavour: a press on the empty page opens a box of new words (ADR-0180).
+        addTextCommand({ activeTool: readTool, onSelect: setToolId }),
         // ITS FORMATTING (ADR-0180): projections of one table, offered while an editor is open.
         ...textFormatCommands(),
         signatureCommand({
@@ -3347,8 +3356,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * engine would otherwise raise the same sentence once per page. The first
    * refusal is reported and the mode is left; the others see the mode gone.
    */
-  const editing = useMemo<PageListProps['editing']>(() => {
-    if (toolId !== EDIT_TEXT_TOOL_ID || open === undefined) return undefined;
+  const inEditText = isEditTextTool(toolId);
+  const textMode = useMemo<Omit<TextEditing, 'adding'> | undefined>(() => {
+    if (!inEditText || open === undefined) return undefined;
     const { docId } = open;
     /** Whether this mode has reported a refused read already — once per entry into it. */
     const refusal = { reported: false };
@@ -3386,6 +3396,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       },
       onCommit: (page, block, text, read, formatting) => commitTextBlock(deps, docId, page, block, text, read, formatting),
       runFonts: (page, block, version) => readRunFonts(client, docId, page, block, version),
+      onInsert: (page, insert, read) => commitPageInsert(deps, docId, page, insert, read),
+      // ONE BOX, then back to editing what is on the page.
+      onAdded: () => {
+        setToolId(EDIT_TEXT_TOOL_ID);
+      },
       onPromote: (page) => {
         void promoteTextOnPage(deps, docId, page);
       },
@@ -3393,7 +3408,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setToolId(undefined);
       },
     };
-  }, [applied, ask, client, open, signatures, stamp, toolId]);
+  }, [applied, ask, client, inEditText, open, signatures, stamp]);
+  // THE ADD FLAVOUR BESIDE THE MODE, not inside it: choosing Add text from Edit text, or leaving it, must not hand every
+  // page a new reader and read them all again, which is what a value inside the memo above would do.
+  const editing = useMemo<PageListProps['editing']>(
+    () => (textMode === undefined ? undefined : { ...textMode, adding: toolId === EDIT_TEXT_ADD_TOOL_ID }),
+    [textMode, toolId],
+  );
 
   /**
    * Edit object's read of one page, for the document on show (ADR-0153 Decision 3). Its own memo rather than part of

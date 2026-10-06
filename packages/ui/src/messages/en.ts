@@ -1207,6 +1207,9 @@ export const TEXT_FORMAT_INDENT_MORE = messageKey('command.text.format.indent-mo
 export const TEXT_FORMAT_INDENT_LESS = messageKey('command.text.format.indent-less');
 export const TEXT_FORMAT_BAR_LABEL = messageKey('surface.text-format.bar');
 export const TEXT_BLOCK_REMOVE = messageKey('surface.text-block.remove');
+export const ADD_TEXT_COMMAND_TITLE = messageKey('command.text.add');
+export const HINT_ADD_TEXT = messageKey('tool.hint.add-text');
+export const TEXT_ADD_SURFACE = messageKey('surface.text-add.surface');
 export const TEXT_HANDLE_WIDTH = messageKey('surface.text-block.handle-width');
 export const TEXT_HANDLE_SCALE = messageKey('surface.text-block.handle-scale');
 export const TEXT_HANDLE_MOVE = messageKey('surface.text-block.handle-move');
@@ -3528,6 +3531,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_FORMAT_INDENT_LESS]: 'Decrease indent',
   [TEXT_FORMAT_BAR_LABEL]: 'Text formatting',
   [TEXT_BLOCK_REMOVE]: 'Remove this text',
+  [ADD_TEXT_COMMAND_TITLE]: 'Add text',
+  [HINT_ADD_TEXT]: 'Click the page where the new text should go, then type.',
+  [TEXT_ADD_SURFACE]: 'Click where the new text should go',
   [TEXT_HANDLE_WIDTH]: 'Drag to change the width of the text',
   [TEXT_HANDLE_SCALE]: 'Drag to make the text bigger or smaller',
   [TEXT_HANDLE_MOVE]: 'Drag to move the text',

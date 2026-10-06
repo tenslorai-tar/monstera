@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import type { BlockFormatting } from '@monstera/contract';
+import type { BlockFormatting, PageInsert } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import {
   type DocVersion,
@@ -16,7 +16,7 @@ import { type ReactElement, useCallback, useEffect, useId, useLayoutEffect, useR
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform } from './annotations/annotationSpace.js';
-import type { BlockCommit, BlocksRead, RunFonts, TextBlock } from './commands/documentCommands.js';
+import { type BlockCommit, type BlocksRead, NO_RUN_FONTS, type RunFonts, type TextBlock } from './commands/documentCommands.js';
 import { problemMessage, problemParticulars } from './dialogs/problemMessages.js';
 import {
   TEXT_EDIT_BLOCK_LABEL,
@@ -31,6 +31,7 @@ import {
   TEXT_EDIT_TRUNCATED,
   TEXT_EDIT_UNADDRESSABLE,
   TEXT_EDIT_UNREADABLE,
+  TEXT_ADD_SURFACE,
   TEXT_HANDLE_MOVE,
   TEXT_HANDLE_SCALE,
   TEXT_HANDLE_TURN,
@@ -99,6 +100,12 @@ export interface TextEditLayerProps {
   readonly blocks: PageBlocks | undefined;
   /** Whether the read of this page was REFUSED: the page says so, and the mode stays on for the others. */
   readonly unreadable?: boolean;
+  /** Whether a press on the empty page opens a box of new text (Add text), rather than being nothing. */
+  readonly adding?: boolean;
+  /** Adds a box of new text to the page, at the version the blocks were read at. */
+  readonly onInsert?: (insert: PageInsert, read: BlocksRead) => Promise<BlockCommit>;
+  /** Called when a box was added or abandoned, so the mode goes back to editing what is there. */
+  readonly onAdded?: () => void;
   /** Writes one block's new words, at the version the blocks were read at and by the writer that read named. */
   readonly onCommit: (block: TextBlock, text: string, read: BlocksRead, formatting?: BlockFormatting) => Promise<BlockCommit>;
   /** The fonts the open block's runs are drawn in, rebuilt by the host, at the version it was read at (ADR-0175). */
@@ -325,6 +332,9 @@ export function TextEditLayer({
   geometry,
   blocks,
   unreadable = false,
+  adding = false,
+  onInsert,
+  onAdded,
   onCommit,
   runFonts,
   onPromote,
@@ -382,6 +392,14 @@ export function TextEditLayer({
     setNext(undefined);
     setOpened(at === undefined || blocks === undefined ? undefined : { at, version: blocks.version, click });
   };
+  /**
+   * The box of NEW text being typed, and the version of the read it was begun over (ADR-0180 Decision 6). Like an open
+   * block it is a read's: a newer read closes it, derived for `chosen`'s reason.
+   */
+  const [fresh, setFresh] = useState<{ readonly made: FreshBox; readonly version: DocVersion } | undefined>();
+  const freshOpen = fresh !== undefined && fresh.version === blocks?.version ? fresh.made : undefined;
+  /** Whether any editor is open on this page, a block's or a new box's: what a click on another block must write first. */
+  const editing = open !== undefined || freshOpen !== undefined;
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent): void => {
@@ -481,9 +499,10 @@ export function TextEditLayer({
             onClick={(event) => {
               // A KEY'S ACTIVATION reports a click at no point (`detail` 0): the caret then goes to the end, as before.
               const click = event.detail === 0 ? undefined : { x: event.clientX, y: event.clientY };
-              if (open !== undefined && open !== at) {
-                // ANOTHER BLOCK IS OPEN: its words are written first and this one opens after it (`next`). One that holds
-                // words it could not write is left as it is: the editor says why, and a click elsewhere replaces nothing.
+              if (editing && open !== at) {
+                // ANOTHER EDITOR IS OPEN, a block's or a new box's: its words are written first and this block opens after
+                // it (`next`). One that holds words it could not write is left as it is: the editor says why, and a click
+                // elsewhere replaces nothing.
                 if (stuckRef.current) return;
                 setNext({ box: block.box, click, version: blocks.version });
                 void finishingRef.current?.();
@@ -514,9 +533,115 @@ export function TextEditLayer({
           </p>,
         ];
       })}
+      {adding && blocks !== undefined && freshOpen === undefined ? (
+        // ADD TEXT: the empty page is a surface under the outlines, so a press on a block still edits that block and a
+        // press anywhere else is where the new words go. A key's activation reports no point and puts it at the margin.
+        <button
+          aria-label={_(TEXT_ADD_SURFACE)}
+          className="m-text-add-surface"
+          data-text-add-surface=""
+          onClick={(event) => {
+            const edge = event.currentTarget.getBoundingClientRect();
+            const css =
+              event.detail === 0
+                ? { x: NEW_TEXT_MARGIN * geometry.zoom, y: NEW_TEXT_MARGIN * geometry.zoom }
+                : { x: event.clientX - edge.left, y: event.clientY - edge.top };
+            setFresh({ made: freshBox(css, geometry), version: blocks.version });
+            setNext(undefined);
+          }}
+          type="button"
+        />
+      ) : null}
+      {freshOpen !== undefined && blocks !== undefined ? (
+        <BlockEditor
+          block={freshOpen.block}
+          click={undefined}
+          finishingRef={finishingRef}
+          geometry={geometry}
+          key={`fresh-${String(blocks.version)}`}
+          onClose={(outcome) => {
+            const waiting = nextRef.current;
+            setFresh(undefined);
+            // BACK TO EDITING what is on the page, whether the box was written or abandoned: one box at a time. A block
+            // clicked while this was open opens now where nothing was written, and after the read where it was.
+            if (outcome === 'unchanged' && waiting !== undefined) {
+              const target = blocks.blocks.findIndex((other) => overlaps(other.box, waiting.box));
+              if (target !== -1) {
+                setOpen(target, waiting.click);
+                return;
+              }
+            }
+            if (outcome === 'put-back' || outcome === 'unchanged') setNext(undefined);
+            if (outcome !== 'written') onAdded?.();
+          }}
+          onCommit={async (text, formatting) => {
+            const outcome = (await onInsert?.(insertOf(freshOpen, text, formatting), blocks)) ?? 'unchanged';
+            if (outcome !== 'written' && outcome !== 'unchanged') setNext(undefined);
+            if (outcome === 'written') onAdded?.();
+            return outcome;
+          }}
+          paper={undefined}
+          past={false}
+          placeable={false}
+          placed={place(freshOpen.block.box, geometry)}
+          runFonts={() => Promise.resolve(NO_RUN_FONTS)}
+          stuckRef={stuckRef}
+        />
+      ) : null}
       {notes.length > 0 ? <div className="m-page-mode__notes">{notes}</div> : null}
     </div>
   );
+}
+
+/** The margin a new box keeps from the page's edge, in points, and the size and colour its words start in. */
+const NEW_TEXT_MARGIN = 36;
+const NEW_TEXT_SIZE = 12;
+
+/** A box of new text as the editor opens it: a synthetic block holding one empty run, and where it goes on the page. */
+interface FreshBox {
+  readonly block: TextBlock;
+  readonly left: number;
+  readonly baseline: number;
+  readonly measure: number;
+}
+
+/**
+ * The box a press at `css` (the layer's pixels) begins: its top left where the person pressed, the measure the page's
+ * margin leaves it and a first baseline one ascent below its top. The block it is drawn as is the editor's own shape, with
+ * a run no page holds (index 0 names no object: nothing reads it, since a box is written by its words alone).
+ */
+function freshBox(css: { readonly x: number; readonly y: number }, geometry: OverlayPage): FreshBox {
+  const [x0, , x1] = geometry.crop;
+  const at = toPdf(viewportPoint(css.x, css.y), overlayTransform(geometry));
+  const left = Math.min(Math.max(at.x, x0), Math.max(x0, x1 - NEW_TEXT_MARGIN));
+  const measure = Math.min(Math.max(x1 - NEW_TEXT_MARGIN - left, 80), 360);
+  const baseline = at.y - NEW_TEXT_SIZE * 0.8;
+  const style = { size: NEW_TEXT_SIZE, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
+  const box = { x0: left, y0: at.y - NEW_TEXT_SIZE * 1.2, x1: left + measure, y1: at.y };
+  return {
+    block: {
+      box,
+      lines: [{ runs: [{ index: 0, text: '', style }], box, soft: false }],
+      style,
+      shape: { align: 'left', firstIndent: 0 },
+    },
+    left,
+    baseline,
+    measure,
+  };
+}
+
+/** The wire's box from what the editor says of it: its words, with the marks and paragraph settings the person gave them. */
+function insertOf(made: FreshBox, text: string, formatting: BlockFormatting): PageInsert {
+  return {
+    left: made.left,
+    baseline: made.baseline,
+    measure: made.measure,
+    size: NEW_TEXT_SIZE,
+    text,
+    ...(formatting.marks === undefined ? {} : { marks: [...formatting.marks] }),
+    ...(formatting.paragraphs === undefined ? {} : { paragraphs: [...formatting.paragraphs] }),
+  };
 }
 
 /** What the mode hands each page: where blocks come from and where an edit goes. */
@@ -538,6 +663,12 @@ export interface TextEditing {
   readonly runFonts: (page: number, block: TextBlock, version: DocVersion) => Promise<RunFonts>;
   readonly onPromote: (page: number) => void;
   readonly onLeave: () => void;
+  /** Whether a press on the empty page opens a box of new text: Edit text's ADD flavour (ADR-0180 Decision 6). */
+  readonly adding: boolean;
+  /** Adds a box of new text to a page. */
+  readonly onInsert: (page: number, insert: PageInsert, read: BlocksRead) => Promise<BlockCommit>;
+  /** A box was added or abandoned: back to editing what is on the page. */
+  readonly onAdded: () => void;
 }
 
 /**
@@ -586,6 +717,9 @@ export function TextEditPage({
       geometry={geometry}
       onCommit={(block, text, read, formatting) => editing.onCommit(page, block, text, read, formatting)}
       onLeave={editing.onLeave}
+      adding={editing.adding}
+      onAdded={editing.onAdded}
+      onInsert={(insert, read) => editing.onInsert(page, insert, read)}
       runFonts={(block, at) => editing.runFonts(page, block, at)}
       onPromote={() => {
         editing.onPromote(page);
@@ -610,6 +744,11 @@ interface BlockEditorProps {
   readonly onClose: (outcome: 'written' | 'unchanged' | 'put-back') => void;
   /** The fonts this block's runs are drawn in, read once when the editor opens (ADR-0175). */
   readonly runFonts: () => Promise<RunFonts>;
+  /**
+   * Whether the block can be placed with handles and keys. False for a box of new text, whose place is where it was
+   * begun and which can be moved once it is on the page like any block.
+   */
+  readonly placeable?: boolean;
   /** Where this editor puts the function that writes it, so a click on another block can ask for the write. */
   readonly finishingRef: React.RefObject<(() => Promise<void>) | undefined>;
   /** Where this editor says whether it holds words it could not write. */
@@ -733,6 +872,7 @@ function BlockEditor({
   onCommit,
   onClose,
   runFonts,
+  placeable = true,
   finishingRef,
   stuckRef,
 }: BlockEditorProps): ReactElement {
@@ -874,10 +1014,10 @@ function BlockEditor({
         void finishWith('');
       },
       nudge: (step) => {
-        setPlacement((now) => nudged(step, now, block.box, geometry.zoom));
+        if (placeable) setPlacement((now) => nudged(step, now, block.box, geometry.zoom));
       },
     };
-  }, [block.box, finishWith, geometry.zoom]);
+  }, [block.box, finishWith, geometry.zoom, placeable]);
   // READABLE BY THE LAYER, which asks for this write when another block is clicked and must not replace words that were
   // refused (`stuckRef`).
   useEffect(() => {
@@ -1060,7 +1200,7 @@ function BlockEditor({
       />
       {/* THE HANDLES, each one doing what it looks like it does (the wired-tools rule): the sides set the width, the
           corners scale, the top grip moves and the one to the right turns. The same placements are made by keys. */}
-      {HANDLES.map(({ handle, label }) => (
+      {(placeable ? HANDLES : []).map(({ handle, label }) => (
         <button
           aria-label={_(label)}
           className={`m-text-editor-handle m-text-editor-handle--${handle}`}

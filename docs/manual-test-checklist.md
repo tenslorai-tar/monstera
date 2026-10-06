@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 238 — and the checks only the installed window can answer.
+Every command the application registers — 239 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -90,6 +90,7 @@ is not available.
 - [ ] **Spell check** — Proofing · `document.spell-check` · Shows: on screen · Help: *Check spelling*
 - [ ] **Word count** — Proofing · `document.word-count` · Shows: a result dialog · Help: *Count words and characters*
 - [ ] **Edit text on the page** — Text · `text.edit` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Add text** — Text · `text.add` · Shows: on screen
 - [ ] **Edit all objects** — Text · `edit.objects-all` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Edit text objects** — Text · `edit.objects-text` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Edit images** — Text · `edit.objects-images` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
