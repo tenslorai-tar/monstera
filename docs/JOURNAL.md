@@ -994,6 +994,71 @@ reached by no case. And `installedFaceEdit.mjs` prints its MuPDF round trip's La
 -14 to -16. 5: SSSSSSS-15 and -20 are read, not run. 6: every ADR and correction in the range landed before the code it
 governs (f7cf22da measured before Decisions 6 to 8 were built; e93b67f1 before 7f17b295). 7: SSSSSSS-10 to -13, -19.
 
+**Added 2026-10-06 06:50, after Guards refused 7e927345 on both legs (run 37421078524).** The paragraph above answered
+the items without the headings `unansweredAuditItems` reads, and left 2a, 4a and 4c unanswered, which is RRRR-1's shape
+again: a checklist folded into prose. The answers below are the record's; the paragraph above stays as it was written.
+
+### 1. Root cause or workaround?
+
+Every fix in the range states its mechanism and none regenerates: SSSSSSS-2's edges are now compared with the imports
+rather than completed once, and SSSSSSS-5 and -6 assert what only the correct path produces. No override and no loosened
+check.
+
+### 2. Verified against the easy shape only?
+
+Yes, once, and it is the open finding: the installed-faces edit was verified on Linux plain Node and failed in the
+contained PDFium host on Windows (SSSSSSS-1). The Type 3 writer was verified on the real Chromium print, not only on
+generated pages.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Yes, in the strengthening direction: `buildFreshness.proof.mjs` now derives each proof's needed edges from its imports
+by path, which can run everywhere it ran before. Its stated limit is bare package specifiers (SSSSSSS-2). Nothing moved
+from asserted to derived under a provisioning condition.
+
+### 3. Would CI have caught it?
+
+SSSSSSS-21: only Guards found the two research scripts `buildFreshness.proof.mjs` scans, because `affectedProofs.mjs`
+follows imports and that proof scans files it never imports. SSSSSSS-1 was found by CI's Windows leg and could not have
+been found here. Run evidence: f278ec74's runs 37416673753 and 37416673829.
+
+### 4. Are the proofs non-vacuous?
+
+SSSSSSS-5 to -8 were cases that their own mutation left green; each was rebuilt and its mutation run red. SSSSSSS-14 to
+-17 stay open as cases that cannot fail on the branch they name.
+
+### 4a. Has every instrument passed a resolution test?
+
+`installedFaceEdit.mjs` separates a saved edit from a refused one and names the boxed characters, which it did on
+Windows (176 faces, only U+0378 boxed); it prints its MuPDF round trip's Latin control rather than asserting it
+(SSSSSSS-22). `type3Correspondence.mjs` could not separate an empty read from agreement until SSSSSSS-3.
+
+### 4b. Does every search carry a positive control?
+
+`type3Correspondence.mjs`' control passed on zero objects (SSSSSSS-3, closed). The new edge-coverage case carries a
+control that names an import when its edge is removed (SSSSSSS-2).
+
+### 4c. Does a count derive from the set it governs?
+
+The `buildFreshness` call-site counts are literals beside the edges, an independent claim, and they moved by hand in
+6bf1531e. Nothing in this range derives a count from the set it counts.
+
+### 5. Executed, or asserted?
+
+Asserted, not run: SSSSSSS-15 (the restore branch after MuPDF's read-back) and SSSSSSS-20 (the composition root's
+readers left bound). Everything else recorded above was run at `f278ec74`.
+
+### 6. Did architecture change before the feature?
+
+Yes. ADR-0176 and its correction landed before the Type 3 writer's command (e93b67f1 before 7f17b295), and ADR-0173's
+to ADR-0175's decisions before their code. SSSSSSS-18 records the one amendment still owed before its step: ADR-0174
+carries boxes for byte-image writers only.
+
+### 7. Do the documents still match the code?
+
+SSSSSSS-10 to -13 were corrected in this commit; SSSSSSS-19 (a count in ARCHITECTURE) and SSSSSSS-1 (two help articles
+on Windows) stay open.
+
 ## 2026-10-05 — Stage audit of `974df9f5..389cc010` — findings RRRRRRR-1 to RRRRRRR-19
 
 54 commits, 197 files, all work/cloud-5-text-edit: Part B Phase 0 (ADR-0169's read-back, step codes, Replace's line
