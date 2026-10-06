@@ -1177,6 +1177,7 @@ export const TEXT_EDIT_UNREADABLE = messageKey('surface.text-edit.unreadable');
 export const TEXT_EDIT_TRUNCATED = messageKey('surface.text-edit.truncated');
 export const TEXT_EDIT_UNADDRESSABLE = messageKey('surface.text-edit.unaddressable');
 export const TEXT_EDIT_PROMOTE = messageKey('surface.text-edit.promote');
+export const TEXT_EDIT_RECOGNISE = messageKey('surface.text-edit.recognise');
 export const TEXT_EDIT_TURNED = messageKey('surface.text-edit.turned');
 export const TEXT_EDIT_VERTICAL = messageKey('surface.text-edit.vertical');
 export const TEXT_EDIT_SLANTED = messageKey('surface.text-edit.slanted');
@@ -3501,6 +3502,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // SAYS WHAT IT DOES TO THE PAGE: the block becomes ordinary page content,
   // which is a change to the document a person is agreeing to.
   [TEXT_EDIT_PROMOTE]: 'Unpack it so it can be edited',
+  // A SCAN HAS NO TEXT TO EDIT UNTIL IT IS READ (ADR-0181 Decision 9): the button runs the recognise command for this page,
+  // so the words it finds are the ones the editor then offers.
+  [TEXT_EDIT_RECOGNISE]: 'If this is a scan, recognise its words so they can be edited',
   // ONE SENTENCE FOR EACH KIND THE PAGE HAS (ADR-0181 Decision 7), so a person is told which text is not theirs to edit
   // and why, rather than that some text is set at an angle.
   [TEXT_EDIT_TURNED]: 'Text turned at an angle on this page can’t be edited in place.',

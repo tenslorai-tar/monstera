@@ -1130,6 +1130,20 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(packed.view.container.textContent).not.toContain('no text that can be edited');
   });
 
+  it('a page with no text offers to RECOGNISE it, and only then: a page with blocks does not (ADR-0181 Decision 9)', () => {
+    const onRecognise = vi.fn();
+    const empty = mount({ blocks: { ...BLOCKS, blocks: [] }, onRecognise });
+    fireEvent.click(empty.view.getByRole('button', { name: /recognise its words/u }));
+    expect(onRecognise).toHaveBeenCalledTimes(1);
+    empty.view.unmount();
+    // CONTROL: the same offer is not made over text that is already there, nor where nothing can recognise.
+    const withText = mount({ onRecognise });
+    expect(withText.view.queryByRole('button', { name: /recognise its words/u })).toBeNull();
+    withText.view.unmount();
+    const nowhere = mount({ blocks: { ...BLOCKS, blocks: [] } });
+    expect(nowhere.view.queryByRole('button', { name: /recognise its words/u })).toBeNull();
+  });
+
   it('names each KIND of text it will not edit, so a person is told which text and why (ADR-0181)', () => {
     const angled = (set: Partial<PageBlocks['angled']>): PageBlocks => ({
       ...BLOCKS,

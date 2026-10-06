@@ -3365,6 +3365,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * refusal is reported and the mode is left; the others see the mode gone.
    */
   const inEditText = isEditTextTool(toolId);
+  /**
+   * Recognises one page through the registry's own `document.ocr`, set below once the registry and the context exist: the
+   * mode's memo is built before them, and the click that calls it comes after (ADR-0181 Decision 9).
+   */
+  const recognisePage = useRef<(page: number) => void>(() => undefined);
   const textMode = useMemo<Omit<TextEditing, 'adding'> | undefined>(() => {
     if (!inEditText || open === undefined) return undefined;
     const { docId } = open;
@@ -3420,6 +3425,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       },
       onPromote: (page) => {
         void promoteTextOnPage(deps, docId, page);
+      },
+      onRecognise: (page) => {
+        recognisePage.current(page);
       },
       onLeave: () => {
         setToolId(undefined);
@@ -3531,6 +3539,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     setToolId(undefined);
     return true;
   }, [objectSelection, selection, toolId]);
+  // THE RECOGNISE BUTTON'S TARGET (ADR-0181 Decision 9): the one `document.ocr` command, run for the page the button is on
+  // and not for the grid's ticked pages, so what it walks is the page that said it has no text.
+  useEffect(() => {
+    recognisePage.current = (page: number): void => {
+      const command = registry.get('document.ocr');
+      if (command !== undefined) void command.run({ ...context, page, selectedPages: NO_PAGES });
+    };
+  }, [context, registry]);
   useShortcuts(registry, context, openDialog !== undefined, stopTool);
   useTheme(settings);
 

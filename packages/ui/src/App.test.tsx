@@ -2576,6 +2576,48 @@ describe('App', () => {
       });
       expect(blockReads.length).toBe(before);
     });
+
+    it('EDIT TEXT: a page with no text offers to recognise it, and the button runs the registry’s own recognise command (ADR-0181)', async () => {
+      // THE WIRED PAIR'S MISSING HALF: `TextEditLayer.test.tsx` proves the button calls `onRecognise`, and the kernel proof
+      // proves a recognised scan is edited; this is the line between them, which only the shell holds.
+      const asked: string[] = [];
+      const client = createClient(channels, (id) => {
+        asked.push(id);
+        if (id === 'document.textBlocks') {
+          return Promise.resolve(
+            ok({
+              version: asDocVersion(1),
+              blocks: [],
+              next: null,
+              truncated: false,
+              rotated: 0,
+              angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 },
+              unaddressable: 0,
+              rewrite: 'objects' as const,
+            }),
+          );
+        }
+        if (id === 'app.ocrLanguages') return Promise.resolve(ok({ languages: ['eng'] }));
+        const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
+        const answer = answers[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+      await pressCommand('Edit text', 'Edit');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      // CONTROL: nothing asked for the languages until the button was pressed.
+      expect(asked).not.toContain('app.ocrLanguages');
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('button', { name: /recognise its words/u }));
+        await Promise.resolve();
+      });
+      expect(asked).toContain('app.ocrLanguages');
+      expect(await screen.findByRole('dialog', { name: 'Recognise text' })).toBeDefined();
+    });
   });
 
   it('the start screen names no command itself — it renders what the registry holds', () => {

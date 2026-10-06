@@ -12,6 +12,7 @@ import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 import { editFaces, editFacesBound } from './editFaces.js';
 import { arabicForms, lettersOfForms } from './arabicForms.js';
 import { drawnOrder, drawnRightToLeft, drewTheGlyphs, isBidirectional, logicalOf, readBackOf } from './bidiOrder.js';
+import { paperColourAround } from './paperColour.js';
 import { resolveRuns } from './fontResolver.js';
 import { type EditPiece, editPieces } from './editPieces.js';
 import { inDrawingOrder } from './visualPieces.js';
@@ -174,6 +175,9 @@ interface Bound {
   readonly loadStandardFont: Native;
   readonly loadFont: Native;
   readonly pageBox: Native;
+  readonly pageWidth: Native;
+  readonly pageHeight: Native;
+  readonly pageToDevice: Native;
   readonly closeFont: Native;
   readonly createBitmap: Native;
   readonly fillRect: Native;
@@ -549,6 +553,15 @@ export function openPdfium(libraryPath: string): void {
     ),
     // THE PAGE'S BOX in page space — a one-line block's column is measured against it (ADR-0097).
     pageBox: native(library.func('int FPDF_GetPageBoundingBox(void *page, _Out_ FS_RECTF *rect)')),
+    // THE PAGE AS SHOWN, rotation included, and where a point of it falls on a raster of that shape: what a scan's paper is
+    // read from (ADR-0181 Decision 9).
+    pageWidth: native(library.func('float FPDF_GetPageWidthF(void *page)')),
+    pageHeight: native(library.func('float FPDF_GetPageHeightF(void *page)')),
+    pageToDevice: native(
+      library.func(
+        'int FPDF_PageToDevice(void *page, int startX, int startY, int sizeX, int sizeY, int rotate, double pageX, double pageY, _Out_ int *deviceX, _Out_ int *deviceY)',
+      ),
+    ),
     closeFont: native(library.func('void FPDFFont_Close(void *font)')),
     // THE RASTERISER, and it is the only part of this adapter a READER uses.
     // §6.1's setting, amended 2026-09-10: a second opinion about how a page
@@ -2811,6 +2824,27 @@ function layOutBlocks(
       /** Whether any block was placed, which is a change the page's generation must be told of though no word moved. */
       let placed = false;
 
+      // A SCAN'S RECOGNISED WORDS (ADR-0181 Decision 9): the objects of each block that are an OCR layer over a picture, and
+      // the paper round each, read ONCE from the page as it is now, before any object is changed. Where such a word is
+      // edited the new words are drawn and the picture's old ones are covered with the paper, since the page is a picture
+      // and the words a person reads there are its pixels. Only a write does it: a trial lays out for a fit and draws nothing.
+      const scanned = blocks.map((block) =>
+        mode === 'write' ? recognisedOverPictures(bindings, handle, block.lines.flat().flatMap((run) => [run.object, ...run.extras])) : [],
+      );
+      const coverBoxes = scanned.flatMap((objects) =>
+        objects.map((object): Bounds => {
+          const box = boundsOf(bindings, object);
+          return {
+            left: box.left - COVER_MARGIN,
+            bottom: box.bottom - COVER_MARGIN,
+            right: box.right + COVER_MARGIN,
+            top: box.top + COVER_MARGIN,
+          };
+        }),
+      );
+      const papers = coverBoxes.length === 0 ? [] : paperRoundBoxes(bindings, handle, coverBoxes);
+      let coverAt = 0;
+
         for (const [blockAt, block] of blocks.entries()) {
           const { lines } = block;
           const [firstLine] = lines;
@@ -3139,6 +3173,44 @@ function layOutBlocks(
           // baseline, not a bounding box: a descender is not a line, and comparing bottoms would
           // shrink a block for a `g`.
           if (block.fit === 'shrink') fits[blockAt] = baseline >= lastBaselineBefore;
+
+          // A RECOGNISED SCAN, EDITED (ADR-0181 Decision 9): the words written are drawn, not invisible, and the picture's
+          // words they replace are covered with the paper round them, above the picture and below the new words. The
+          // picture itself is not changed, so nothing is dropped, and the page is as it was after one Undo.
+          const onScan = scanned[blockAt] ?? [];
+          const covers = coverBoxes.slice(coverAt, coverAt + onScan.length);
+          const papersHere = papers.slice(coverAt, coverAt + onScan.length);
+          coverAt += onScan.length;
+          if (onScan.length > 0) {
+            const address = (object: unknown): string => String(koffi.address(object));
+            const gone = new Set(removed.map(address));
+            const wrote = new Set(written.map((entry) => address(entry.object)));
+            const touched = onScan.flatMap((object, at) => (gone.has(address(object)) || wrote.has(address(object)) ? [at] : []));
+            if (touched.length > 0) {
+              for (const { object } of visual.flatMap((line) => line.objects)) {
+                if (!wrote.has(address(object)) || numberFrom(bindings.getRenderMode(object), 'FPDFTextObj_GetTextRenderMode') !== 3) continue;
+                if (numberFrom(bindings.setRenderMode(object, 0), 'FPDFTextObj_SetTextRenderMode') !== 1) {
+                  throw refusedAt('object', 'FPDFTextObj_SetTextRenderMode refused to draw a line written over a scan');
+                }
+              }
+              const indices = objectIndices(bindings, handle);
+              const lowest = Math.min(...onScan.map((object) => indices.get(address(object)) ?? Number.POSITIVE_INFINITY));
+              for (const at of touched) {
+                const box = covers[at];
+                const paper = papersHere[at];
+                if (box === undefined || paper === undefined || !Number.isFinite(lowest)) continue;
+                const cover: unknown = bindings.newRect(box.left, box.bottom, box.right - box.left, box.top - box.bottom);
+                if (cover === null) throw refusedAt('object', 'FPDFPageObj_CreateNewRect refused the paper over a scanned word');
+                bindings.setFillColour(cover, paper.r, paper.g, paper.b, 255);
+                if (numberFrom(bindings.setDrawMode(cover, 1, 0), 'FPDFPath_SetDrawMode') !== 1) {
+                  throw refusedAt('object', 'FPDFPath_SetDrawMode refused the paper over a scanned word');
+                }
+                if (numberFrom(bindings.insertObjectAt(handle, cover, lowest), 'FPDFPage_InsertObjectAtIndex') !== 1) {
+                  throw refusedAt('object', `FPDFPage_InsertObjectAtIndex refused the paper over a scanned word on page ${String(page)}`);
+                }
+              }
+            }
+          }
         }
 
         // A TRIAL ENDS HERE: nothing removed, nothing read back, nothing generated — the page is
@@ -3564,6 +3636,86 @@ function objectAt(bindings: Bound, handle: unknown, page: number, index: number)
     throw refusedAt('object', `FPDFPage_GetObject answered nothing for index ${String(index)} on page ${String(page)}`);
   }
   return object;
+}
+
+/** A box in PDF user space, as {@link boundsOf} reads it. */
+interface Bounds {
+  readonly left: number;
+  readonly bottom: number;
+  readonly right: number;
+  readonly top: number;
+}
+
+const IMAGE_OBJECT = 3;
+
+/** How many raster pixels a point of the page is, when the page is read for its paper: past what a scan's grain needs. */
+const PAPER_PIXELS_PER_POINT = 2;
+
+/** How far past a recognised word's box the paper cover reaches, in points: a scanned word's ink is wider than its box. */
+const COVER_MARGIN = 1.5;
+
+/**
+ * THE RECOGNISED WORDS OF A SCAN AMONG `objects` ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
+ * Decision 9): those painted invisibly (render mode 3, how an OCR text layer is drawn) that lie over a picture, so the
+ * words a person reads there are the picture's.
+ *
+ * The picture is the test, and not the invisibility alone: invisible text over nothing is text a document keeps for a
+ * reader that is not eyes, and an edit of it stays as invisible as it was (ADR-0179's keep list).
+ */
+function recognisedOverPictures(bindings: Bound, handle: unknown, objects: readonly unknown[]): unknown[] {
+  const pictures: Bounds[] = [];
+  const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  for (let at = 0; at < count; at += 1) {
+    const object: unknown = bindings.getObject(handle, at);
+    if (object !== null && numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') === IMAGE_OBJECT) {
+      pictures.push(boundsOf(bindings, object));
+    }
+  }
+  if (pictures.length === 0) return [];
+  return objects.filter((object) => {
+    if (numberFrom(bindings.getRenderMode(object), 'FPDFTextObj_GetTextRenderMode') !== 3) return false;
+    const box = boundsOf(bindings, object);
+    return pictures.some((picture) => box.left < picture.right && box.right > picture.left && box.bottom < picture.top && box.top > picture.bottom);
+  });
+}
+
+/**
+ * The paper round each of `boxes` on the page as it is drawn now, read once from one raster
+ * (`paperColourAround`), in the order the boxes were given.
+ */
+function paperRoundBoxes(
+  bindings: Bound,
+  handle: unknown,
+  boxes: readonly Bounds[],
+): { readonly r: number; readonly g: number; readonly b: number }[] {
+  const width = Math.max(1, Math.round(numberFrom(bindings.pageWidth(handle), 'FPDF_GetPageWidthF') * PAPER_PIXELS_PER_POINT));
+  const height = Math.max(1, Math.round(numberFrom(bindings.pageHeight(handle), 'FPDF_GetPageHeightF') * PAPER_PIXELS_PER_POINT));
+  const raster = rasteriseOn(bindings, handle, width, height);
+  return boxes.map((box) => {
+    // THE PAGE'S OWN MAPPING, rotation included: the four corners of the box, where they fall on this raster.
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (const [x, y] of [
+      [box.left, box.bottom],
+      [box.left, box.top],
+      [box.right, box.bottom],
+      [box.right, box.top],
+    ] as const) {
+      const deviceX = [0];
+      const deviceY = [0];
+      if (numberFrom(bindings.pageToDevice(handle, 0, 0, width, height, 0, x, y, deviceX, deviceY), 'FPDF_PageToDevice') !== 1) {
+        return { r: 255, g: 255, b: 255 };
+      }
+      xs.push(deviceX[0] ?? 0);
+      ys.push(deviceY[0] ?? 0);
+    }
+    return paperColourAround(raster.bgra, width, height, {
+      x0: Math.min(...xs),
+      y0: Math.min(...ys),
+      x1: Math.max(...xs),
+      y1: Math.max(...ys),
+    });
+  });
 }
 
 /** One object's box, read through `FPDFPageObj_GetBounds`. */
@@ -4173,42 +4325,42 @@ export function renderPageBitmap(
   width: number,
   height: number,
 ): Promise<PageBitmap> {
-  return promised(() =>
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
-        throw new Error(
-          `A raster of ${String(width)}x${String(height)} is not a size PDFium can allocate. ` +
-            'The caller states the size and a non-positive one means the caller has a bug.',
-        );
-      }
-      const bitmap: unknown = bindings.createBitmap(width, height, 1);
-      if (bitmap === null) {
-        throw new Error(
-          `FPDFBitmap_Create refused ${String(width)}x${String(height)} ` +
-            `(FPDF_GetLastError ${String(bindings.lastError())}).`,
-        );
-      }
-      try {
-        bindings.fillRect(bitmap, 0, 0, width, height, 0xffffffff);
-        // FLAGS 0. `FPDF_LCD_TEXT` would produce sub-pixel-positioned text whose
-        // correctness depends on the physical pixel layout of the display it
-        // lands on, and this bitmap is encoded and sent somewhere else.
-        bindings.renderPage(bitmap, handle, 0, 0, width, height, 0, 0);
-        const stride = numberFrom(bindings.bitmapStride(bitmap), 'FPDFBitmap_GetStride');
-        const pointer: unknown = bindings.bitmapBuffer(bitmap);
-        if (pointer === null) throw new Error('FPDFBitmap_GetBuffer answered nothing.');
-        const source = koffi.decode(pointer, 'uint8_t', stride * height) as Uint8Array;
-        const bgra = new Uint8Array(width * height * 4);
-        for (let row = 0; row < height; row += 1) {
-          bgra.set(source.subarray(row * stride, row * stride + width * 4), row * width * 4);
-        }
-        return { width, height, bgra };
-      } finally {
-        bindings.destroyBitmap(bitmap);
-      }
-    }),
-  );
+  return promised(() => onPage(session, page, (handle) => rasteriseOn(api(), handle, width, height)));
+}
+
+/** A page already loaded, rasterised at exactly `width` by `height`: the one raster reader (B3a), by {@link renderPageBitmap} and by a scan's paper. */
+function rasteriseOn(bindings: Bound, handle: unknown, width: number, height: number): PageBitmap {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    throw new Error(
+      `A raster of ${String(width)}x${String(height)} is not a size PDFium can allocate. ` +
+        'The caller states the size and a non-positive one means the caller has a bug.',
+    );
+  }
+  const bitmap: unknown = bindings.createBitmap(width, height, 1);
+  if (bitmap === null) {
+    throw new Error(
+      `FPDFBitmap_Create refused ${String(width)}x${String(height)} ` +
+        `(FPDF_GetLastError ${String(bindings.lastError())}).`,
+    );
+  }
+  try {
+    bindings.fillRect(bitmap, 0, 0, width, height, 0xffffffff);
+    // FLAGS 0. `FPDF_LCD_TEXT` would produce sub-pixel-positioned text whose
+    // correctness depends on the physical pixel layout of the display it
+    // lands on, and this bitmap is encoded and sent somewhere else.
+    bindings.renderPage(bitmap, handle, 0, 0, width, height, 0, 0);
+    const stride = numberFrom(bindings.bitmapStride(bitmap), 'FPDFBitmap_GetStride');
+    const pointer: unknown = bindings.bitmapBuffer(bitmap);
+    if (pointer === null) throw new Error('FPDFBitmap_GetBuffer answered nothing.');
+    const source = koffi.decode(pointer, 'uint8_t', stride * height) as Uint8Array;
+    const bgra = new Uint8Array(width * height * 4);
+    for (let row = 0; row < height; row += 1) {
+      bgra.set(source.subarray(row * stride, row * stride + width * 4), row * width * 4);
+    }
+    return { width, height, bgra };
+  } finally {
+    bindings.destroyBitmap(bitmap);
+  }
 }
 
 /**

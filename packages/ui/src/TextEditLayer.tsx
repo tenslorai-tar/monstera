@@ -25,6 +25,7 @@ import {
   TEXT_EDIT_NONE,
   TEXT_EDIT_PAST_PAGE,
   TEXT_EDIT_PROMOTE,
+  TEXT_EDIT_RECOGNISE,
   TEXT_EDIT_REFUSED_HINT,
   TEXT_EDIT_MIRRORED,
   TEXT_EDIT_SLANTED,
@@ -124,6 +125,8 @@ export interface TextEditLayerProps {
   readonly runFonts: (block: TextBlock, version: DocVersion) => Promise<RunFonts>;
   /** Unpacks the page's blocked-in text so it can be edited. */
   readonly onPromote: () => void;
+  /** Recognises a page that has no text, so a scan's words can be edited (ADR-0181 Decision 9); absent offers nothing. */
+  readonly onRecognise?: () => void;
   /** Leaves the mode: Escape pressed with no block open. */
   readonly onLeave: () => void;
   /**
@@ -351,6 +354,7 @@ export function TextEditLayer({
   onCommit,
   runFonts,
   onPromote,
+  onRecognise,
   onLeave,
   paperAt,
 }: TextEditLayerProps): ReactElement {
@@ -428,7 +432,22 @@ export function TextEditLayer({
   if (unreadable && blocks === undefined) notes.push(<p key="unreadable">{_(TEXT_EDIT_UNREADABLE)}</p>);
   if (blocks !== undefined) {
     if (blocks.blocks.length === 0 && blocks.unaddressable === 0 && blocks.rotated === 0) {
-      notes.push(<p key="none">{_(TEXT_EDIT_NONE)}</p>);
+      // A PAGE WITH NO TEXT MAY BE A SCAN (ADR-0181 Decision 9): it offers to be recognised, through the command that does
+      // it, and the words it finds are then the ones the editor offers. The command asks what each page is, so a page that
+      // is blank is told so by it and not by this note.
+      notes.push(
+        <p key="none">
+          {_(TEXT_EDIT_NONE)}
+          {onRecognise === undefined ? null : (
+            <>
+              {' '}
+              <button className="m-text-edit__promote" onClick={onRecognise} type="button">
+                {_(TEXT_EDIT_RECOGNISE)}
+              </button>
+            </>
+          )}
+        </p>,
+      );
     }
     if (blocks.truncated) notes.push(<p key="truncated">{_(TEXT_EDIT_TRUNCATED)}</p>);
     // THE KINDS THE PAGE HAS, each in its own sentence, in a fixed order (ADR-0181 Decision 7).
@@ -693,6 +712,8 @@ export interface TextEditing {
   /** The fonts one block's runs are drawn in, as the host rebuilt them, at the version the block was read at (ADR-0175). */
   readonly runFonts: (page: number, block: TextBlock, version: DocVersion) => Promise<RunFonts>;
   readonly onPromote: (page: number) => void;
+  /** Recognises a page that has no text (the one `document.ocr` command), so a scan's words can be edited. */
+  readonly onRecognise: (page: number) => void;
   readonly onLeave: () => void;
   /** Whether a press on the empty page opens a box of new text: Edit text's ADD flavour (ADR-0180 Decision 6). */
   readonly adding: boolean;
@@ -763,6 +784,9 @@ export function TextEditPage({
       runFonts={(block, at) => editing.runFonts(page, block, at)}
       onPromote={() => {
         editing.onPromote(page);
+      }}
+      onRecognise={() => {
+        editing.onRecognise(page);
       }}
       page={page}
       paperAt={paperAt}

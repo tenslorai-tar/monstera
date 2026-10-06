@@ -65,6 +65,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { crc32, deflateSync } from 'node:zlib';
 
 import {
   PDFDict,
@@ -268,7 +269,7 @@ const failures = [];
 // edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
 // marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
 // with the control that separates the mark from the fixture.
-const roster = createRoster(failures, { cases: 180 });
+const roster = createRoster(failures, { cases: 186 });
 
 /**
  * @param {string} name
@@ -552,6 +553,7 @@ async function main() {
   await joinSplitCases();
   await directionCases();
   await markCases();
+  await scanCases();
   await pastThePageCases();
   await glyphLineCases();
   await settingCases();
@@ -3128,6 +3130,196 @@ async function markCases() {
     'CONTROL: an untagged page stays untagged, so the marks are copied and not invented',
     none.sequences === 0 && none.numbers.length === 0 && none.texts > 0,
     JSON.stringify(none),
+  );
+}
+
+/**
+ * A PNG of `width` by `height` whose pixel at (x, y) is `pixelAt(x, y)`: the smallest encoder a scan fixture needs, built
+ * here so the picture is known to the pixel.
+ *
+ * @param {number} width
+ * @param {number} height
+ * @param {(x: number, y: number) => readonly [number, number, number]} pixelAt
+ */
+function pngOf(width, height, pixelAt) {
+  const rows = Buffer.alloc((width * 3 + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    const row = y * (width * 3 + 1);
+    rows[row] = 0;
+    for (let x = 0; x < width; x += 1) {
+      const [r, g, b] = pixelAt(x, y);
+      rows[row + 1 + x * 3] = r;
+      rows[row + 2 + x * 3] = g;
+      rows[row + 3 + x * 3] = b;
+    }
+  }
+  /** @param {string} kind @param {Buffer} data */
+  const chunk = (kind, data) => {
+    const body = Buffer.concat([Buffer.from(kind, 'latin1'), data]);
+    const out = Buffer.alloc(8 + data.length + 4);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc32(body), 8 + data.length);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  header[9] = 2;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(rows)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/** The colour of the scan's paper and of its ink, and where each of its two lines of words stands. */
+const PAPER = /** @type {const} */ ([250, 240, 200]);
+const INK = /** @type {const} */ ([20, 20, 20]);
+const SCAN_LINES = [
+  { text: 'Recognised first line', baseline: 300 },
+  { text: 'Recognised second line', baseline: 286 },
+];
+
+/**
+ * A SCANNED PAGE: a cream picture of the whole page with a bar of ink where each line's words are, and over it the text a
+ * recogniser read, painted invisibly (render mode 3) at the same places. The bars are exactly as wide as their words, so
+ * what a cover leaves of the ink is known to the pixel.
+ *
+ * @param {{ picture?: boolean }} [options] `picture: false` leaves the picture out: invisible text over nothing
+ */
+async function aScan({ picture = true } = {}) {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 400]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const widths = SCAN_LINES.map((line) => font.widthOfTextAtSize(line.text, 11));
+  if (picture) {
+    const image = await document.embedPng(
+      pngOf(400, 400, (x, y) => {
+        for (const [at, line] of SCAN_LINES.entries()) {
+          // THE INK: the glyphs' own extent, a baseline up to its x-height and cap, as a solid bar.
+          const top = 400 - (line.baseline + 7);
+          const bottom = 400 - (line.baseline - 1);
+          if (y >= top && y <= bottom && x >= 72 && x < 72 + (widths[at] ?? 0)) return INK;
+        }
+        return PAPER;
+      }),
+    );
+    page.drawImage(image, { x: 0, y: 0, width: 400, height: 400 });
+  }
+  page.pushOperators(setTextRenderingMode(3));
+  for (const line of SCAN_LINES) page.drawText(line.text, { x: 72, y: line.baseline, size: 11, font });
+  return { bytes: await document.save(), widths };
+}
+
+/**
+ * A SCANNED PAGE IS RECOGNISED, THEN EDITED (ADR-0181 Decision 9): words typed over a recognised line are drawn, the
+ * picture's old words under them are covered with the paper round them, and the words not touched are left as the
+ * picture. Every case reads the pixels of reopened bytes, and carries the control the bug would also pass: the page with
+ * no picture stays invisible (ADR-0179's keep list), and the line not edited keeps its ink.
+ */
+async function scanCases() {
+  const { bytes, widths } = await aScan();
+  const pixel = async (/** @type {Uint8Array} */ page, /** @type {number} */ x, /** @type {number} */ y) => {
+    const session = await pdfiumWriter.open(page);
+    try {
+      const raster = await renderPageBitmap(session, 0, 400, 400);
+      const at = (y * 400 + x) * 4;
+      return [raster.bgra[at + 2] ?? 0, raster.bgra[at + 1] ?? 0, raster.bgra[at] ?? 0];
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const dark = async (/** @type {Uint8Array} */ page, /** @type {{ x0: number; y0: number; x1: number; y1: number }} */ box) => {
+    const session = await pdfiumWriter.open(page);
+    try {
+      const raster = await renderPageBitmap(session, 0, 400, 400);
+      let count = 0;
+      for (let y = box.y0; y < box.y1; y += 1) {
+        for (let x = box.x0; x < box.x1; x += 1) if ((raster.bgra[(y * 400 + x) * 4] ?? 255) < 100) count += 1;
+      }
+      return count;
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  // WHERE EACH LINE'S INK IS: a point well inside its bar, and a point near the bar's far end.
+  const rowOf = (/** @type {number} */ line) => 400 - ((SCAN_LINES[line]?.baseline ?? 0) + 3);
+  const farEnd = (/** @type {number} */ line) => Math.floor(72 + (widths[line] ?? 0) - 6);
+  const isPaper = (/** @type {readonly number[]} */ colour) => colour.every((value, at) => Math.abs(value - (PAPER[at] ?? 0)) <= 6);
+  const isInk = (/** @type {readonly number[]} */ colour) => colour.every((value) => value < 80);
+
+  const fixture = await blocksOf(bytes);
+  const block = fixture.blocks[0];
+  record(
+    'the scan fixture is two lines of recognised words over a picture whose ink is under them',
+    block?.lines.length === 2 && isInk(await pixel(bytes, farEnd(0), rowOf(0))) && isInk(await pixel(bytes, farEnd(1), rowOf(1))) &&
+      isPaper(await pixel(bytes, 380, 380)),
+    `${String(block?.lines.length)} line(s); ink ${JSON.stringify(await pixel(bytes, farEnd(1), rowOf(1)))}`,
+  );
+  if (block === undefined) return;
+  const lines = block.lines.map((line) => line.runs.map((run) => run.index));
+  const type = (/** @type {Uint8Array} */ page, /** @type {string} */ text) =>
+    localPdfiumExecution.apply({
+      session: page,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines, soft: lines.map(() => false), text }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+
+  // THE SECOND LINE EDITED to something shorter than it was: its far end is where the old ink is and no new word is.
+  const edited = await type(bytes, `${SCAN_LINES[0]?.text ?? ''}\nEdited`);
+  record(
+    'the picture’s old words under an edited line are covered with the PAPER round them, where no new word stands',
+    isPaper(await pixel(edited, farEnd(1), rowOf(1))),
+    `the far end of the old ink reads ${JSON.stringify(await pixel(edited, farEnd(1), rowOf(1)))}, paper ${JSON.stringify(PAPER)}`,
+  );
+  const newWords = await dark(edited, { x0: 72, y0: 400 - (286 + 10), x1: 72 + 40, y1: 400 - (286 - 3) });
+  record(
+    'and the words typed are DRAWN there, as words and not as the solid bar they cover',
+    newWords > 15 && newWords < 250,
+    `${String(newWords)} dark pixel(s) where the new line is`,
+  );
+  record(
+    'the line that was not edited keeps its ink: it is the picture’s, and nothing was dropped',
+    isInk(await pixel(edited, farEnd(0), rowOf(0))),
+    `the first line's far end reads ${JSON.stringify(await pixel(edited, farEnd(0), rowOf(0)))}`,
+  );
+  // THE CONTROL THAT SEPARATES THE COVER FROM A CHANGE EVERYWHERE: edit the first line only and the second keeps its ink.
+  const firstOnly = await type(bytes, `Changed\n${SCAN_LINES[1]?.text ?? ''}`);
+  record(
+    'CONTROL: editing the first line covers the first and leaves the second line’s ink, so the cover is where the edit is',
+    isPaper(await pixel(firstOnly, farEnd(0), rowOf(0))) && isInk(await pixel(firstOnly, farEnd(1), rowOf(1))),
+    `first ${JSON.stringify(await pixel(firstOnly, farEnd(0), rowOf(0)))}, second ${JSON.stringify(await pixel(firstOnly, farEnd(1), rowOf(1)))}`,
+  );
+  // INVISIBLE TEXT WITH NO PICTURE UNDER IT is not a scan, and stays invisible as ADR-0179 keeps it.
+  const bare = await aScan({ picture: false });
+  const bareBlock = (await blocksOf(bare.bytes)).blocks[0];
+  const bareLines = bareBlock?.lines.map((line) => line.runs.map((run) => run.index)) ?? [];
+  const bareEdited = await localPdfiumExecution.apply({
+    session: bare.bytes,
+    command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+      kind: 'editTextBlock',
+      page: 0,
+      ...blockEditOf([{ lines: bareLines, soft: bareLines.map(() => false), text: `${SCAN_LINES[0]?.text ?? ''}\nEdited` }]),
+      fit: 'reflow',
+      version: 1,
+    }),
+    sources: [],
+    reads: undefined,
+  });
+  record(
+    'CONTROL: the same edit of invisible text over NO picture draws nothing and covers nothing, so it is the picture that makes it a scan',
+    (await dark(bareEdited, { x0: 0, y0: 0, x1: 400, y1: 400 })) === 0 && (await textOf(bareEdited)).includes('Edited'),
+    `${String(await dark(bareEdited, { x0: 0, y0: 0, x1: 400, y1: 400 }))} dark pixel(s)`,
   );
 }
 
