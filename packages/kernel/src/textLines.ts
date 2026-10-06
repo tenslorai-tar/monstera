@@ -361,16 +361,37 @@ export function paragraphText(
   lines: readonly { readonly text: string; readonly box: { readonly x0: number; readonly x1: number } }[],
   right: number,
 ): string {
+  const soft = softEnds(lines, right);
   let text = '';
   for (const [at, line] of lines.entries()) {
     text += line.text;
+    if (at === lines.length - 1) break;
+    text = soft[at] === true ? `${text.trimEnd()} ` : `${text}\n`;
+  }
+  return text;
+}
+
+/**
+ * Whether each line of a block ENDS in a soft wrap, by the typesetter's own test: the next line's first word would not
+ * have fitted at this line's end ([ADR-0097](../../../docs/DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md)
+ * 4c). The ONE place a soft end is decided: {@link paragraphText}, the reading `document.textBlocks` answers and the
+ * translation all take it from here, and a block's writer takes it from the wire rather than deciding again
+ * ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)
+ * Decision 2). The last line ends nothing, so it is never soft.
+ *
+ * @param lines the block's lines, top to bottom, each its text and its box
+ * @param right the block's right edge
+ */
+export function softEnds(
+  lines: readonly { readonly text: string; readonly box: { readonly x0: number; readonly x1: number } }[],
+  right: number,
+): boolean[] {
+  return lines.map((line, at) => {
     const next = lines[at + 1];
-    if (next === undefined) break;
+    if (next === undefined) return false;
     const nextText = next.text.trimStart();
     const firstWord = nextText.split(/\s/u)[0] ?? '';
     const perCharacter = nextText.length === 0 ? 0 : (next.box.x1 - next.box.x0) / nextText.length;
-    const soft = firstWord !== '' && line.box.x1 + (firstWord.length + 1) * perCharacter > right;
-    text = soft ? `${text.trimEnd()} ` : `${text}\n`;
-  }
-  return text;
+    return firstWord !== '' && line.box.x1 + (firstWord.length + 1) * perCharacter > right;
+  });
 }
