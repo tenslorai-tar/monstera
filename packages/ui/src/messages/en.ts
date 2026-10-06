@@ -1186,6 +1186,8 @@ export const NOTHING_TO_REPLACE = messageKey('surface.text-edit.nothing-to-repla
 /** A replacement that would change its text's width with more text after it on the line (`replaceLineRule.ts`). */
 export const REPLACE_MOVES_LINE = messageKey('surface.text-edit.replace-moves-line');
 export const TEXT_EDIT_HELD = messageKey('surface.text-edit.held');
+/** A block whose words run past the page's edge: written whole, outlined, and said (the owner's Q7). */
+export const TEXT_EDIT_PAST_PAGE = messageKey('surface.text-edit.past-page');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
 /** What the page area says until its first page is drawn, in place of empty slots. */
 export const PAGE_OPENING = messageKey('surface.page.opening');
@@ -3463,6 +3465,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Nothing was changed: the new words are a different width, and the text after them on the line would have to move, which Replace cannot do yet. Edit text can change this line.',
   [TEXT_EDIT_HELD]:
     'Nothing was changed, so the signatures still verify. Keep typing and you will be asked again when you finish, or press Esc to put the text back.',
+  // THE OWNER'S OWN SENTENCE (Q7), and nothing promised that the editor cannot do: the words are all kept, and the way
+  // to make them fit is to shorten them, which the open editor is for.
+  [TEXT_EDIT_PAST_PAGE]: 'This text no longer fits on the page',
   // SAYS WHAT THE PAGE IS, not what the application cannot do. A reader looking
   // at words they cannot select has one question — why — and *this page is a
   // picture* answers it. It deliberately does not say *scanned*: the kernel

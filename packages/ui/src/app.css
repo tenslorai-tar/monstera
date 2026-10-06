@@ -5431,6 +5431,27 @@ optgroup {
   background: var(--accent-soft);
 }
 
+/* A BLOCK WHOSE WORDS RUN PAST THE PAGE (the owner's Q7): told apart by its line, solid and twice as thick, in the
+   outline's own colour, so every look that draws the dashed outline draws this one too; the page's note says why. */
+.m-text-block--past {
+  border: 2px solid var(--accent-on-paper, var(--accent));
+}
+
+/* ITS SENTENCE, sat on the block's top edge where the words begin, and set as the editor's problem is. */
+.m-text-block__past {
+  position: absolute;
+  transform: translateY(calc(-100% - var(--space-4)));
+  margin: 0;
+  padding: var(--space-2) var(--space-8);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--float);
+  color: var(--text);
+  font-family: var(--font-ui);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .m-text-block:focus-visible {
   outline: 2px solid var(--accent-on-paper, var(--accent));
   outline-offset: 2px;
@@ -5606,6 +5627,12 @@ optgroup {
 
 .m-text-editor-problem p {
   margin: 0;
+}
+
+/* ABOVE THE WORDS, for what is said of words that ran past the page's foot: below them is out of sight. */
+.m-text-editor-problem--above {
+  inset-block-start: auto;
+  inset-block-end: calc(100% + var(--space-8));
 }
 
 /* WHAT A MODE SAYS OF A PAGE — nothing to edit, or more than it can outline — for Edit text and Edit object alike. */

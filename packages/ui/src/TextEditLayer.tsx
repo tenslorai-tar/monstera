@@ -13,6 +13,7 @@ import {
   TEXT_EDIT_LAYER_LABEL,
   TEXT_EDIT_HELD,
   TEXT_EDIT_NONE,
+  TEXT_EDIT_PAST_PAGE,
   TEXT_EDIT_PROMOTE,
   TEXT_EDIT_REFUSED_HINT,
   TEXT_EDIT_ROTATED,
@@ -109,6 +110,38 @@ function place(box: TextBlock['box'], geometry: OverlayPage): Placed {
   };
 }
 
+/**
+ * How far, in points, a block's ink may cross the page's edge before it is said not to fit: a quarter of a point,
+ * under anything a reader sees and over the rounding of a glyph's box set flush against the edge.
+ */
+const PAGE_EDGE_TOLERANCE = 0.25;
+
+/**
+ * Whether a block's words run past the page's visible box, so some of them are written and cannot be seen (the
+ * owner's Q7). Both boxes are in PDF space, the pair {@link place} already puts on screen, so this asks no second
+ * conversion. Measured 2026-10-06 on PDFium 155.0.8044.0's Linux build: a block typed past the foot of the page is
+ * saved whole and PDFium's reading answers every line, its box reaching below the page, while MuPDF's reading of the
+ * same bytes drops the lines past the edge, so the read this layer outlines is the one that can see them.
+ */
+export function pastItsPage(box: TextBlock['box'], crop: OverlayPage['crop']): boolean {
+  const [x0, y0, x1, y1] = crop;
+  return (
+    box.x0 < x0 - PAGE_EDGE_TOLERANCE ||
+    box.y0 < y0 - PAGE_EDGE_TOLERANCE ||
+    box.x1 > x1 + PAGE_EDGE_TOLERANCE ||
+    box.y1 > y1 + PAGE_EDGE_TOLERANCE
+  );
+}
+
+/**
+ * Whether two boxes share any area: how a new read finds the block a write grew. Its first line stays where it was and
+ * the rest grows down, so the new block covers the old one's top; a corner is not enough, since a box is its glyphs'
+ * ink and a first line that gains a capital or an accent moves its own top.
+ */
+function overlaps(a: TextBlock['box'], b: TextBlock['box']): boolean {
+  return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+}
+
 /** The CSS a placed box is drawn with. */
 function boxStyle(placed: Placed): React.CSSProperties {
   return {
@@ -194,8 +227,22 @@ export function TextEditLayer({
   // effect: an open block's indices describe the version it was read at, so an
   // editor over a newer answer would write words over objects the page no
   // longer has — and an effect would leave it open for one render first.
-  const open = opened !== undefined && opened.version === blocks?.version ? opened.at : undefined;
+  const chosen = opened !== undefined && opened.version === blocks?.version ? opened.at : undefined;
+  /**
+   * The block a written edit was made to, and the version it was read at, until the editor that reopens over it closes
+   * or the person opens another (the owner's Q7).
+   */
+  const [written, setWritten] = useState<{ readonly box: TextBlock['box']; readonly version: DocVersion } | undefined>();
+  // A WRITE THAT RAN PAST THE PAGE REOPENS ITS EDITOR, with every word in it and the sentence under them, so the
+  // person sees what they typed and can shorten it. DERIVED, for the reason `chosen` is: the read after the write
+  // is the first that holds the block as written, and an effect would draw that read once with no editor first.
+  const regrown =
+    written === undefined || blocks === undefined || blocks.version === written.version
+      ? -1
+      : blocks.blocks.findIndex((block) => overlaps(block.box, written.box) && pastItsPage(block.box, geometry.crop));
+  const open = chosen ?? (regrown === -1 ? undefined : regrown);
   const setOpen = (at: number | undefined): void => {
+    setWritten(undefined);
     setOpened(at === undefined || blocks === undefined ? undefined : { at, version: blocks.version });
   };
 
@@ -250,20 +297,29 @@ export function TextEditLayer({
               // CLOSES ONLY ITSELF. A click on another block blurs this one, and
               // the write it starts finishes after that block has opened — an
               // unconditional close would shut the block the person just chose.
-              onClose={() => {
+              // A WRITE KEEPS `written` for the read after it; any other close ends the reopening.
+              onClose={(outcome) => {
+                if (outcome !== 'written') setWritten(undefined);
                 setOpened((current) => (current?.at === at ? undefined : current));
               }}
-              onCommit={(text) => onCommit(block, text, blocks.version)}
+              onCommit={async (text) => {
+                const outcome = await onCommit(block, text, blocks.version);
+                if (outcome === 'written') setWritten({ box: block.box, version: blocks.version });
+                return outcome;
+              }}
               paper={paperAround(placed, paperAt)}
+              past={pastItsPage(block.box, geometry.crop)}
               placed={placed}
             />
           );
         }
         const words = wordsOf(block).replace(/\s+/gu, ' ').trim();
-        return (
+        const past = pastItsPage(block.box, geometry.crop);
+        const outline = (
           <button
             aria-label={_(TEXT_EDIT_BLOCK_LABEL, { words: words.length > 40 ? `${words.slice(0, 40)}…` : words })}
-            className="m-text-block"
+            {...(past ? { 'aria-description': _(TEXT_EDIT_PAST_PAGE) } : {})}
+            className={past ? 'm-text-block m-text-block--past' : 'm-text-block'}
             data-text-block={String(at)}
             key={`block-${String(blocks.version)}-${String(at)}`}
             onClick={() => {
@@ -273,6 +329,22 @@ export function TextEditLayer({
             type="button"
           />
         );
+        if (!past) return outline;
+        // SAID AT THE BLOCK'S TOP, which stays on the page when its words run off the foot: a note at the page's top
+        // was scrolled away whenever the block was on screen, measured in Chromium 151. Hidden from the accessibility
+        // tree, since the outline it labels already describes itself with the same sentence.
+        return [
+          outline,
+          <p
+            aria-hidden="true"
+            className="m-text-block__past"
+            data-text-block-past={String(at)}
+            key={`past-${String(blocks.version)}-${String(at)}`}
+            style={{ left: placed.left, top: placed.top }}
+          >
+            {_(TEXT_EDIT_PAST_PAGE)}
+          </p>,
+        ];
       })}
       {notes.length > 0 ? <div className="m-page-mode__notes">{notes}</div> : null}
     </div>
@@ -349,8 +421,11 @@ interface BlockEditorProps {
   readonly geometry: OverlayPage;
   readonly placed: Placed;
   readonly paper: string | undefined;
+  /** Whether the block's words run past the page as read, which the editor says beside them (the owner's Q7). */
+  readonly past: boolean;
   readonly onCommit: (text: string) => Promise<BlockCommit>;
-  readonly onClose: () => void;
+  /** Closes the editor: after a write, after nothing to write, or put back with Escape after a refusal. */
+  readonly onClose: (outcome: 'written' | 'unchanged' | 'put-back') => void;
 }
 
 /** What a run is drawn in: the page's own values — size, fill, weight, slant — and the face kind by class. */
@@ -387,7 +462,7 @@ function drawRun(span: HTMLElement, style: TextBlock['style'], zoom: number): vo
  * types, the DOM is theirs, and a render that reconciled the runs over it would
  * put the page's words back over what they typed.
  */
-function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: BlockEditorProps): ReactElement {
+function BlockEditor({ block, geometry, placed, paper, past, onCommit, onClose }: BlockEditorProps): ReactElement {
   const { _ } = useLingui();
   const original = wordsOf(block);
   const [text, setText] = useState(original);
@@ -451,7 +526,7 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
       area.current?.focus();
       return;
     }
-    onClose();
+    onClose(outcome);
   }, [onClose, onCommit, text]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
@@ -463,7 +538,7 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
     // sentence says so, and a second Escape that re-sent the same words would
     // meet the same refusal.
     if (problem !== undefined) {
-      onClose();
+      onClose('put-back');
       return;
     }
     void finish();
@@ -508,7 +583,16 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
       {(['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const).map((corner) => (
         <span aria-hidden className={`m-text-editor-handle m-text-editor-handle--${corner}`} key={corner} />
       ))}
-      {problem === undefined ? null : <EditorProblem problem={problem} />}
+      {problem !== undefined ? (
+        <EditorProblem problem={problem} />
+      ) : past ? (
+        // THE WORDS ARE ALL WRITTEN and some are past the page's edge: said as a status and not a refusal, since
+        // nothing was refused and the way to make them fit is this editor. ABOVE the words, where they begin on the
+        // page: below them is past the foot the words ran off, and out of the window (measured in Chromium 151).
+        <div className="m-text-editor-problem m-text-editor-problem--above" role="status">
+          <p>{_(TEXT_EDIT_PAST_PAGE)}</p>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -4923,6 +4923,101 @@ for (const look of LOOKS) {
   });
 }
 
+// A BLOCK WHOSE WORDS RUN PAST THE PAGE (the owner's Q7), in every theme: outlined apart and said on the page, and
+// open, every line in the editor, the one below the page's foot included and SEEN, with the sentence beside them.
+for (const look of LOOKS) {
+  test(`${look.name}: a block PAST THE PAGE is outlined apart, said, and opens with every line visible`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000e2');
+    // EIGHT LINES FROM 60 POINTS ABOVE THE FOOT, six of them below it, as a write that grew past the page reads: far
+    // enough that the last is out of the window until it is scrolled to.
+    const lines = [
+      'A paragraph near the foot',
+      'and its second line',
+      'a third line past the page',
+      'a fourth line',
+      'a fifth line',
+      'a sixth line',
+      'a seventh line',
+      'THE LAST LINE TYPED',
+    ];
+    const box = { x0: 100, y0: -115, x1: 340, y1: 60 };
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'past.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      textBlocks: [
+        {
+          box: { x0: 100, y0: 600, x1: 400, y1: 700 },
+          lines: [{ runs: [{ index: 1, text: 'A block that fits', style: BODY_RUN }], box: { x0: 100, y0: 600, x1: 400, y1: 700 } }],
+          style: BODY_RUN,
+        },
+        {
+          box,
+          lines: lines.map((text, at) => ({
+            runs: [{ index: 10 + at, text, style: BODY_RUN }],
+            box: { x0: 100, y0: 46 - at * 23, x1: 340, y1: 60 - at * 23 },
+          })),
+          style: BODY_RUN,
+        },
+      ],
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Edit text on the page');
+    await page.keyboard.press('Enter');
+
+    const past = page.locator('[data-text-edit-layer="0"] [data-text-block="1"]');
+    const fits = page.locator('[data-text-edit-layer="0"] [data-text-block="0"]');
+    await expect(past).toHaveCount(1);
+    // TOLD APART BY ITS LINE, which clears 3:1 against the paper as the dashed one does; CONTROL: the block that fits.
+    const lineOf = (outline: typeof past) =>
+      outline.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return `${style.borderTopStyle} ${style.borderTopWidth}`;
+      });
+    expect(await lineOf(past)).toBe('solid 2px');
+    expect(await lineOf(fits)).toBe('dashed 1px');
+    expect(await againstPaper(past, 'border-top-color')).toBeGreaterThanOrEqual(3);
+    // SAID WHERE IT IS SEEN: the block is scrolled to, and its sentence is in the window with it. A note at the page's
+    // top passed a text assertion here while it was scrolled out of sight.
+    await past.scrollIntoViewIfNeeded();
+    const said = page.locator('[data-text-block-past="1"]');
+    await expect(said).toHaveText('This text no longer fits on the page');
+    await expect(said).toBeInViewport();
+
+    await past.click();
+    const editor = page.locator('[data-text-editor]');
+    await expect(editor).toBeFocused();
+    expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(lines.join('\n'));
+    const status = page.locator('.m-text-editor-frame [role="status"]');
+    await expect(status).toHaveText('This text no longer fits on the page');
+    // IN THE WINDOW, above the words: below them it was past the foot they ran off, and out of sight.
+    await expect(status).toBeInViewport();
+    // THE LAST LINE CAN BE SEEN, not only present: scrolled to, it is in the window, and the point at its middle is the
+    // editor's, so nothing between the editor and the window clips it below the page's foot.
+    const lastLine = editor.locator('.m-text-editor__line').last();
+    await lastLine.scrollIntoViewIfNeeded();
+    await expect(lastLine).toBeInViewport();
+    const last = await lastLine.boundingBox();
+    expect(last).not.toBeNull();
+    const hit = await page.evaluate(
+      ({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-text-editor]') !== null,
+      { x: (last?.x ?? 0) + 4, y: (last?.y ?? 0) + (last?.height ?? 0) / 2 },
+    );
+    expect(hit).toBe(true);
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+  });
+}
+
 // EDIT OBJECT ON THE PAGE (ADR-0153), in a real browser and every look: the filter outlines its kind, a press selects,
 // a drag sends the move, Delete removes, and the Properties tab shows the object with its foot inside the panel. The
 // component case drives the layer in happy-dom, which has no pointer capture and lays nothing out; this is the

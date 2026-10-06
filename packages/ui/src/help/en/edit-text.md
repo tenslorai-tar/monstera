@@ -27,6 +27,7 @@ Edit text lets you change the words already on a page, in place, keeping their f
 - Deleting every word of a block removes the block from the page.
 - If some text was pasted into the page as a single block, Monstera says so and offers **Unpack it so it can be edited**.
 - Text set at an angle cannot be edited in place.
+- If your words run past the edge of the page, nothing is lost: the change is made with every word, and the editor opens again over the block with "This text no longer fits on the page" above it, so you can shorten what you wrote. Words past the edge are kept in the file but cannot be seen on the page, found by search or printed until they fit. When you close the editor, the block keeps a solid outline and the same sentence.
 - Text that grows can overlap what is below it; check the page afterwards. Justified text loses its even edges when edited.
 - To change a word everywhere in the document, see "Find and replace text".
 

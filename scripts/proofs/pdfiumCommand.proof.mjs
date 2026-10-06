@@ -241,7 +241,7 @@ const failures = [];
 // ADR-0173's pieces: a word saved in a bundled face, its object, its wrap, the word the twin refused, an unreadable
 // catalogue either way, and a control either side, and 97 from its correction: a character past the BMP and its premise,
 // and 100 from the box: its premise, its reading, and its answer (ADR-0174).
-const roster = createRoster(failures, { cases: 107 });
+const roster = createRoster(failures, { cases: 110 });
 
 /**
  * @param {string} name
@@ -519,6 +519,7 @@ async function main() {
   await promotionCases();
   await nestedPromotionCases();
   await blockEditCases();
+  await pastThePageCases();
   await glyphLineCases();
   await settingCases();
   await passwordCases();
@@ -820,6 +821,81 @@ async function pieceCases() {
   } finally {
     bindEditFaces(null);
   }
+}
+
+/**
+ * A block typed past the foot of its page is written WHOLE, and nothing typed is lost (the owner's Q7): the edit is
+ * never refused for it, every line reads back from the saved bytes in order, and the block read the editor outlines
+ * answers every line with its box below the page, which is what the renderer says *no longer fits* from. THE CONTROL is
+ * the same paragraph given lines that fit, whose block stays on the page: so the first case's box is the overflow's, not
+ * a reading that always reaches below.
+ */
+async function pastThePageCases() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 400]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  page.drawText('A paragraph near the foot of the page', { x: 72, y: 40, size: 11, font });
+  page.drawText('and its second line', { x: 72, y: 26, size: 11, font });
+  const original = await document.save();
+  const lines = ((await blocksOf(original)).blocks[0]?.lines ?? []).map((line) => line.runs.map((run) => run.index));
+  /** @param {readonly string[]} typed */
+  const typing = (typed) =>
+    localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines, text: typed.join('\n') }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  const past = [
+    'A paragraph near the foot of the page',
+    'and its second line',
+    'a third line typed',
+    'a fourth line typed',
+    'a fifth line typed',
+    'THE LAST LINE TYPED',
+  ];
+  /** @type {string} */
+  let read;
+  /** @type {{ y0: number, lines: number } | null} */
+  let block = null;
+  try {
+    const bytes = await typing(past);
+    read = await pageOf(bytes, 0);
+    const [first] = (await blocksOf(bytes)).blocks;
+    block = first === undefined ? null : { y0: first.box.y0, lines: first.lines.length };
+  } catch (error) {
+    read = `refused: ${error instanceof Error ? error.name : String(error)}`;
+  }
+  const order = read.split(/\r?\n/u).map((line) => line.trim());
+  record(
+    'a block typed past the foot of its page is saved, and every line typed reads back from the saved bytes in order',
+    JSON.stringify(order.slice(0, past.length)) === JSON.stringify(past),
+    JSON.stringify(read.slice(0, 200)),
+  );
+  record(
+    'and the block read answers every line with its box below the page, which the editor outlines as past it',
+    block !== null && block.lines === past.length && block.y0 < 0,
+    JSON.stringify(block),
+  );
+  /** @type {{ y0: number, lines: number } | string} */
+  let fitting = 'it read as no block';
+  try {
+    const [first] = (await blocksOf(await typing(['A paragraph near the foot', 'of the page']))).blocks;
+    if (first !== undefined) fitting = { y0: first.box.y0, lines: first.lines.length };
+  } catch (error) {
+    fitting = `refused: ${error instanceof Error ? error.name : String(error)}`;
+  }
+  record(
+    'CONTROL: the same paragraph given lines that fit stays on the page',
+    typeof fitting !== 'string' && fitting.lines === 2 && fitting.y0 >= 0,
+    JSON.stringify(fitting),
+  );
 }
 
 /**

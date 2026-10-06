@@ -100,10 +100,10 @@ function mount(overrides: Partial<Parameters<typeof TextEditLayer>[0]> = {}) {
   });
   const onLeave = vi.fn();
   const onPromote = vi.fn();
-  const view = render(
+  const layer = (blocks: PageBlocks) => (
     <Wrapped>
       <TextEditLayer
-        blocks={BLOCKS}
+        blocks={blocks}
         geometry={GEOMETRY}
         onCommit={onCommit}
         onLeave={onLeave}
@@ -112,8 +112,9 @@ function mount(overrides: Partial<Parameters<typeof TextEditLayer>[0]> = {}) {
         paperAt={() => 'rgb(250, 250, 250)'}
         {...overrides}
       />
-    </Wrapped>,
+    </Wrapped>
   );
+  const view = render(layer(overrides.blocks ?? BLOCKS));
   return {
     view,
     commits,
@@ -121,6 +122,10 @@ function mount(overrides: Partial<Parameters<typeof TextEditLayer>[0]> = {}) {
     onPromote,
     answerWith: (next: BlockCommit) => {
       answer = next;
+    },
+    /** The read after a write, as `TextEditPage` hands it down: a new version of the page's blocks. */
+    show: (blocks: PageBlocks) => {
+      view.rerender(layer(blocks));
     },
   };
 }
@@ -300,6 +305,95 @@ describe('Edit text on the page (ADR-0096)', () => {
       await Promise.resolve();
     });
     expect(view.container.querySelector('[data-text-editor]')).toBeNull();
+  });
+
+  /**
+   * The paragraph as a write that ran past the page leaves it, read again: its first line where it was, and six lines
+   * reaching below the page's foot (the owner's Q7). `bottom` is where its last line's ink ends, in PDF space, so one
+   * fixture states both the read that is past the page and the control that is not.
+   */
+  const grown = (bottom: number): PageBlocks => {
+    const typed = ['Helps with care and support', 'at every stage.', 'A third line', 'a fourth', 'a fifth', 'LAST LINE'];
+    const pitch = (636 - bottom) / (typed.length - 1);
+    const [heading] = BLOCKS.blocks;
+    if (heading === undefined) throw new Error('the fixture lost its heading');
+    return {
+      ...BLOCKS,
+      version: asDocVersion(8),
+      blocks: [
+        heading,
+        {
+          box: { x0: 72, y0: bottom, x1: 400, y1: 650 },
+          lines: typed.map((text, at) => ({
+            runs: [{ index: 20 + at, text, style: STYLE }],
+            box: { x0: 72, y0: 636 - at * pitch, x1: 300, y1: 650 - at * pitch },
+          })),
+          style: STYLE,
+        },
+      ],
+    };
+  };
+  const TYPED = 'Helps with care and support\nat every stage.\nA third line\na fourth\na fifth\nLAST LINE';
+
+  it('A WRITE THAT RUNS PAST THE PAGE reopens the editor over it with EVERY word, and says it no longer fits (Q7)', async () => {
+    const { view, answerWith, show } = mount();
+    answerWith('written');
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    typeInto(editorIn(view.container), TYPED);
+    await act(async () => {
+      fireEvent.keyDown(editorIn(view.container), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    // WRITTEN: the editor closed, and the read after the write arrives with the block past the page's foot.
+    expect(view.container.querySelector('[data-text-editor]')).toBeNull();
+    show(grown(-30));
+    const editor = editorIn(view.container);
+    // NOTHING TYPED IS LOST: every line, the last below the page, is in the editor the person sees.
+    for (const line of TYPED.split('\n')) expect(editor.textContent).toContain(line);
+    expect(view.container.querySelector('[role="status"]')?.textContent).toBe('This text no longer fits on the page');
+  });
+
+  it('CONTROL: a write whose read FITS the page reopens nothing and says nothing', async () => {
+    const { view, answerWith, show } = mount();
+    answerWith('written');
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    typeInto(editorIn(view.container), TYPED);
+    await act(async () => {
+      fireEvent.keyDown(editorIn(view.container), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    show(grown(540));
+    expect(view.container.querySelector('[data-text-editor]')).toBeNull();
+    expect(view.container.textContent).not.toContain('no longer fits');
+  });
+
+  it('the REOPENED editor closes on Escape with nothing to write, and stays closed; the page then says why', async () => {
+    const { view, answerWith, show } = mount();
+    answerWith('written');
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    typeInto(editorIn(view.container), TYPED);
+    await act(async () => {
+      fireEvent.keyDown(editorIn(view.container), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    show(grown(-30));
+    answerWith('unchanged');
+    await act(async () => {
+      fireEvent.keyDown(editorIn(view.container), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    expect(view.container.querySelector('[data-text-editor]')).toBeNull();
+    // THE SAME READ AGAIN reopens nothing: the reopening ended with the editor it opened.
+    show({ ...grown(-30) });
+    expect(view.container.querySelector('[data-text-editor]')).toBeNull();
+    // AND THE BLOCK IS OUTLINED APART, named as past the page, with the page's note; the block on the page is not.
+    const past = find(view.container, '[data-text-block="1"]');
+    expect(past.className).toContain('m-text-block--past');
+    expect(past.getAttribute('aria-description')).toBe('This text no longer fits on the page');
+    expect(find(view.container, '[data-text-block="0"]').className).not.toContain('m-text-block--past');
+    // SAID AT THE BLOCK, for it alone: the block on the page has no sentence beside it.
+    expect(find(view.container, '[data-text-block-past="1"]').textContent).toBe('This text no longer fits on the page');
+    expect(view.container.querySelector('[data-text-block-past="0"]')).toBeNull();
   });
 
   it('ESCAPE WITH NO BLOCK OPEN leaves the mode', () => {
