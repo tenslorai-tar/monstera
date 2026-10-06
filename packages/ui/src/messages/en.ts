@@ -1206,6 +1206,11 @@ export const TEXT_FORMAT_NUMBERING = messageKey('command.text.format.numbering')
 export const TEXT_FORMAT_INDENT_MORE = messageKey('command.text.format.indent-more');
 export const TEXT_FORMAT_INDENT_LESS = messageKey('command.text.format.indent-less');
 export const TEXT_FORMAT_BAR_LABEL = messageKey('surface.text-format.bar');
+export const TEXT_BLOCK_REMOVE = messageKey('surface.text-block.remove');
+export const TEXT_HANDLE_WIDTH = messageKey('surface.text-block.handle-width');
+export const TEXT_HANDLE_SCALE = messageKey('surface.text-block.handle-scale');
+export const TEXT_HANDLE_MOVE = messageKey('surface.text-block.handle-move');
+export const TEXT_HANDLE_TURN = messageKey('surface.text-block.handle-turn');
 export const TEXT_FORMAT_FAMILY = messageKey('surface.text-format.family');
 export const TEXT_FORMAT_FAMILY_RUN = messageKey('surface.text-format.family-run');
 export const TEXT_FORMAT_SIZE = messageKey('surface.text-format.size');
@@ -3522,6 +3527,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_FORMAT_INDENT_MORE]: 'Increase indent',
   [TEXT_FORMAT_INDENT_LESS]: 'Decrease indent',
   [TEXT_FORMAT_BAR_LABEL]: 'Text formatting',
+  [TEXT_BLOCK_REMOVE]: 'Remove this text',
+  [TEXT_HANDLE_WIDTH]: 'Drag to change the width of the text',
+  [TEXT_HANDLE_SCALE]: 'Drag to make the text bigger or smaller',
+  [TEXT_HANDLE_MOVE]: 'Drag to move the text',
+  [TEXT_HANDLE_TURN]: 'Drag to turn the text',
   [TEXT_FORMAT_FAMILY]: 'Font',
   [TEXT_FORMAT_FAMILY_RUN]: 'As on the page',
   [TEXT_FORMAT_SIZE]: 'Size in points',

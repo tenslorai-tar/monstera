@@ -1,6 +1,16 @@
 import { useLingui } from '@lingui/react';
 import type { BlockFormatting } from '@monstera/contract';
-import { type DocVersion, joinAfterLine, lineText, paragraphsOfLines, pdfPoint, toViewport } from '@monstera/shared';
+import type { MessageKey } from '@monstera/shared';
+import {
+  type DocVersion,
+  joinAfterLine,
+  lineText,
+  paragraphsOfLines,
+  pdfPoint,
+  toPdf,
+  toViewport,
+  viewportPoint,
+} from '@monstera/shared';
 import type React from 'react';
 import { type ReactElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
@@ -21,11 +31,25 @@ import {
   TEXT_EDIT_TRUNCATED,
   TEXT_EDIT_UNADDRESSABLE,
   TEXT_EDIT_UNREADABLE,
+  TEXT_HANDLE_MOVE,
+  TEXT_HANDLE_SCALE,
+  TEXT_HANDLE_TURN,
+  TEXT_HANDLE_WIDTH,
 } from './messages/en.js';
 import { composing } from './surfaces/shortcuts.js';
 import { TextFormatBar } from './TextFormatBar.js';
 import { formatOpenEditor, registerEditor } from './textEditorControl.js';
 import { insertTab, readEditor } from './textFormatting.js';
+import {
+  dragged,
+  type Handle,
+  NOT_PLACED,
+  type Nudge,
+  nudged,
+  type Placement,
+  placeOf,
+  placeTransform,
+} from './textPlacement.js';
 
 /**
  * Text edited where it is on the page — Edit text's mode, drawn over one page
@@ -39,13 +63,15 @@ import { insertTab, readEditor } from './textFormatting.js';
  * colour and kind of face, with the page's own paper colour behind it so the
  * words it replaces do not show through. Typing wraps inside the block's
  * width; Escape or a click anywhere else writes the edit; an edit that changed
- * nothing writes nothing. Selection handles mark the open block.
+ * nothing writes nothing. Selection handles mark the open block and place it.
  *
- * ## The handles are a MARK, not a control
+ * ## The handles are CONTROLS, and each does what it looks like it does
  *
- * They say *this block is the one open*, as the recording's do. They take no
- * pointer and have no cursor of their own: a handle that looked draggable and
- * did nothing would be the wired-tools rule's defect drawn eight times.
+ * Until ADR-0180 they were a mark that said *this block is the one open*, with no pointer and no cursor, because a
+ * handle that looked draggable and did nothing would be the wired-tools rule's defect drawn eight times. Now the sides
+ * set the block's measure, the corners scale it, the top grip moves it and the one to the right turns it; the same
+ * placements are made by keys (Alt with an arrow, a bracket, plus or minus, a comma or a full stop). What is done is
+ * shown at once and written WITH the words, as one command.
  *
  * ## What it knows, which is deliberately little
  *
@@ -662,6 +688,18 @@ function drawRun(span: HTMLElement, style: TextBlock['style'], zoom: number): vo
   span.style.color = `rgb(${String(r)}, ${String(g)}, ${String(b)})`;
 }
 
+/** The handles a block is placed by, and what each says it does. */
+const HANDLES = [
+  { handle: 'nw', label: TEXT_HANDLE_SCALE },
+  { handle: 'ne', label: TEXT_HANDLE_SCALE },
+  { handle: 'se', label: TEXT_HANDLE_SCALE },
+  { handle: 'sw', label: TEXT_HANDLE_SCALE },
+  { handle: 'e', label: TEXT_HANDLE_WIDTH },
+  { handle: 'w', label: TEXT_HANDLE_WIDTH },
+  { handle: 'n', label: TEXT_HANDLE_MOVE },
+  { handle: 'r', label: TEXT_HANDLE_TURN },
+] as const satisfies readonly { readonly handle: Handle; readonly label: MessageKey }[];
+
 /**
  * The open block: an editable element over the words, each run set like the page's
  * ([ADR-0145](../../../docs/DECISIONS/0145-the-text-editor-shows-each-run-in-its-own-style.md)).
@@ -715,10 +753,27 @@ function BlockEditor({
   useEffect(() => {
     zoomNow.current = geometry.zoom;
   }, [geometry.zoom]);
+  // THE BLOCK'S OWN ACTIONS, for the bar's Remove and the keys' steps, read through a ref so the registration made once
+  // for this editor's life always reaches the latest of them.
+  const actions = useRef<{ remove: () => void; nudge: (step: Nudge) => void }>({
+    remove: () => undefined,
+    nudge: () => undefined,
+  });
   useEffect(() => {
     const element = area.current;
     if (element === null) return undefined;
-    return registerEditor({ root: element, zoom: () => zoomNow.current });
+    return registerEditor({
+      root: element,
+      zoom: () => zoomNow.current,
+      block: {
+        remove: () => {
+          actions.current.remove();
+        },
+        nudge: (step) => {
+          actions.current.nudge(step);
+        },
+      },
+    });
   }, []);
 
   // THE RUNS, each in its own style, and the caret at the end. The block is this editor's for its whole life — a new
@@ -780,27 +835,49 @@ function BlockEditor({
 
   /** Whether a write is in flight: the words are not editable meanwhile, so nothing is typed into a block already sent. */
   const [busy, setBusy] = useState(false);
-  const finish = useCallback(async (): Promise<void> => {
-    if (writing.current) return;
-    writing.current = true;
-    setBusy(true);
-    // THE FORMATTING FROM THE EDITOR AS IT STANDS, read in the one walk that gave the words (`readEditor`).
-    const element = area.current;
-    const outcome = await onCommit(text, element === null ? {} : readEditor(element).formatting);
-    writing.current = false;
-    setBusy(false);
-    if (outcome !== 'written' && outcome !== 'unchanged') {
-      // THE EDITOR STAYS on EVERY refusal (ADR-0169 Decision 5), with the words
-      // and the sentence beside them: the person can change what was refused, or
-      // — on a signed document they chose to leave as it was (ADR-0149) — keep
-      // what they typed until they decide. A blur no longer writes until they type
-      // again, so a focus the closing dialog moves cannot ask the same question
-      // twice.
-      setProblem(outcome);
-      return;
-    }
-    onClose(outcome);
-  }, [onClose, onCommit, text]);
+  /** Where the block is being put (ADR-0180, corrected): shown over the editor and sent with its words when it writes. */
+  const [placement, setPlacement] = useState<Placement>(NOT_PLACED);
+  const finishWith = useCallback(
+    async (words: string): Promise<void> => {
+      if (writing.current) return;
+      writing.current = true;
+      setBusy(true);
+      // THE FORMATTING FROM THE EDITOR AS IT STANDS, read in the one walk that gave the words (`readEditor`), and where
+      // the person put the block: one command, so one undo step for words, style and place alike.
+      const element = area.current;
+      const place = placeOf(placement, block.box);
+      const formatting = element === null ? {} : readEditor(element).formatting;
+      const outcome = await onCommit(words, place === undefined ? formatting : { ...formatting, place });
+      writing.current = false;
+      setBusy(false);
+      if (outcome !== 'written' && outcome !== 'unchanged') {
+        // THE EDITOR STAYS on EVERY refusal (ADR-0169 Decision 5), with the words
+        // and the sentence beside them: the person can change what was refused, or
+        // — on a signed document they chose to leave as it was (ADR-0149) — keep
+        // what they typed until they decide. A blur no longer writes until they type
+        // again, so a focus the closing dialog moves cannot ask the same question
+        // twice.
+        setProblem(outcome);
+        return;
+      }
+      onClose(outcome);
+    },
+    [block.box, onClose, onCommit, placement],
+  );
+  const finish = useCallback((): Promise<void> => finishWith(text), [finishWith, text]);
+  useEffect(() => {
+    actions.current = {
+      // REMOVED BY ITS WORDS GOING, which is what removes a block (ADR-0096 Decision 5): the editor is emptied and written.
+      remove: () => {
+        area.current?.replaceChildren();
+        setText('');
+        void finishWith('');
+      },
+      nudge: (step) => {
+        setPlacement((now) => nudged(step, now, block.box, geometry.zoom));
+      },
+    };
+  }, [block.box, finishWith, geometry.zoom]);
   // READABLE BY THE LAYER, which asks for this write when another block is clicked and must not replace words that were
   // refused (`stuckRef`).
   useEffect(() => {
@@ -820,8 +897,74 @@ function BlockEditor({
     if (!busy && problem !== undefined) area.current?.focus();
   }, [busy, problem]);
 
+  // A DRAG OF A HANDLE: where the pointer went down and the placement it began from. The movement is converted to PDF
+  // points by the page's one transform, and every placement is worked out in the text's own axes (`textPlacement`).
+  const dragging = useRef<{ handle: Handle; x: number; y: number; from: Placement } | undefined>(undefined);
+  const pdfDelta = (dx: number, dy: number): { x: number; y: number } => {
+    const shown = overlayTransform(geometry);
+    const origin = toPdf(viewportPoint(0, 0), shown);
+    const moved = toPdf(viewportPoint(dx, dy), shown);
+    return { x: moved.x - origin.x, y: moved.y - origin.y };
+  };
+  const handleProps = (handle: Handle) => ({
+    // A PRESS ON A HANDLE KEEPS THE FOCUS IN THE WORDS: the editor writes when focus leaves it, not when a block is dragged.
+    onMouseDown: (event: React.MouseEvent) => {
+      event.preventDefault();
+    },
+    onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
+      if (busy) return;
+      event.preventDefault();
+      event.stopPropagation();
+      dragging.current = { handle, x: event.clientX, y: event.clientY, from: placement };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    onPointerMove: (event: React.PointerEvent<HTMLElement>) => {
+      const drag = dragging.current;
+      if (drag === undefined) return;
+      setPlacement(dragged(drag.handle, drag.from, pdfDelta(event.clientX - drag.x, event.clientY - drag.y), block.box, geometry.zoom));
+    },
+    onPointerUp: (event: React.PointerEvent<HTMLElement>) => {
+      dragging.current = undefined;
+      event.currentTarget.releasePointerCapture(event.pointerId);
+      area.current?.focus();
+    },
+  });
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
     if (composing(event)) return;
+    // THE BLOCK PLACED BY KEYS, for a person who cannot drag a handle: Alt with an arrow moves it a point (ten with
+    // Shift), Alt with plus or minus scales it, and Alt with a bracket changes its width.
+    if (event.altKey && !event.ctrlKey && !event.metaKey) {
+      const far = event.shiftKey ? 10 : 1;
+      const step: Nudge | undefined =
+        event.key === 'ArrowLeft'
+          ? { kind: 'move', x: -far, y: 0 }
+          : event.key === 'ArrowRight'
+            ? { kind: 'move', x: far, y: 0 }
+            : event.key === 'ArrowUp'
+              ? { kind: 'move', x: 0, y: far }
+              : event.key === 'ArrowDown'
+                ? { kind: 'move', x: 0, y: -far }
+                : event.key === '=' || event.key === '+'
+                  ? { kind: 'scale', by: 0.05 }
+                  : event.key === '-'
+                    ? { kind: 'scale', by: -0.05 }
+                    : event.key === ']'
+                      ? { kind: 'width', by: 10 * far }
+                      : event.key === '['
+                        ? { kind: 'width', by: -10 * far }
+                        : event.key === '.'
+                          ? { kind: 'turn', degrees: -5 }
+                          : event.key === ','
+                            ? { kind: 'turn', degrees: 5 }
+                            : undefined;
+      if (step !== undefined) {
+        event.preventDefault();
+        event.stopPropagation();
+        actions.current.nudge(step);
+        return;
+      }
+    }
     // TAB INSERTS A TAB, not a move of the focus out of the words: spaces to the next stop (ADR-0180 Decision 8).
     if (event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) {
       event.preventDefault();
@@ -870,6 +1013,16 @@ function BlockEditor({
       style={{ ...boxStyle(placed), height: 'auto', minHeight: placed.height }}
     >
       <TextFormatBar />
+      {/* THE PLACER: what the person has done to the block so far, shown as a transform over the editor and its handles so
+          the bar and the sentences stay upright where they are. The measure is its width, so the words wrap at it live. */}
+      <div
+        className="m-text-editor-placer"
+        data-placed={placeOf(placement, block.box) === undefined ? undefined : ''}
+        style={{
+          ...(placement.width === undefined ? {} : { width: placement.width * geometry.zoom }),
+          transform: placeTransform(placement, { width: placed.width, height: placed.height }, geometry.zoom),
+        }}
+      >
       <div
         aria-label={_(TEXT_EDIT_EDITOR_LABEL)}
         aria-multiline="true"
@@ -905,10 +1058,21 @@ function BlockEditor({
             : {}),
         }}
       />
-      {/* THE HANDLES, a mark and not a control — see the file's header. */}
-      {(['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const).map((corner) => (
-        <span aria-hidden className={`m-text-editor-handle m-text-editor-handle--${corner}`} key={corner} />
+      {/* THE HANDLES, each one doing what it looks like it does (the wired-tools rule): the sides set the width, the
+          corners scale, the top grip moves and the one to the right turns. The same placements are made by keys. */}
+      {HANDLES.map(({ handle, label }) => (
+        <button
+          aria-label={_(label)}
+          className={`m-text-editor-handle m-text-editor-handle--${handle}`}
+          data-handle={handle}
+          disabled={busy}
+          key={handle}
+          tabIndex={-1}
+          type="button"
+          {...handleProps(handle)}
+        />
       ))}
+      </div>
       {problem !== undefined ? (
         <EditorProblem problem={problem} />
       ) : past ? (

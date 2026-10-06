@@ -8,6 +8,7 @@ import {
   stateAt,
   toggleList,
 } from './textFormatting.js';
+import type { Nudge } from './textPlacement.js';
 
 /**
  * The open in-place editor, as the commands that format it see it
@@ -29,6 +30,11 @@ export interface OpenEditor {
   readonly root: HTMLElement;
   /** The editor's zoom, which a style it draws is multiplied by. */
   readonly zoom: () => number;
+  /** What is done to the BLOCK rather than to its words: removed, or placed by one key's step. */
+  readonly block: {
+    readonly remove: () => void;
+    readonly nudge: (nudge: Nudge) => void;
+  };
 }
 
 let open: OpenEditor | undefined;
@@ -68,6 +74,20 @@ export function registerEditor(editor: OpenEditor): () => void {
     }
     announce();
   };
+}
+
+/** Removes the open block from the page when the editor next writes: its words go, which is what removes a block. */
+export function removeOpenBlock(): boolean {
+  if (open === undefined) return false;
+  open.block.remove();
+  return true;
+}
+
+/** Places the open block one step, as a key does a drag. */
+export function nudgeOpenBlock(nudge: Nudge): boolean {
+  if (open === undefined) return false;
+  open.block.nudge(nudge);
+  return true;
 }
 
 /** Whether an editor is open: what every formatting command's `when` asks. */

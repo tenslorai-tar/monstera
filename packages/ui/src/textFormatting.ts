@@ -409,7 +409,10 @@ export function insertTab(root: HTMLElement, zoom: number): void {
   for (let spaces = 0; spaces < 24 && (caretX() ?? target) < target - 0.5; spaces += 1) insertAtCaret(root, ' ');
 }
 
-/** Whether the editor holds any formatting at all: what makes a commit with unchanged words still a write. */
+/**
+ * Whether the editor holds anything BEYOND ITS WORDS: marks, paragraph settings, or a place the block was put. The one
+ * answer to what makes a commit with unchanged words still a write, so the editor's commit and the command's agree.
+ */
 export function isFormatted(formatting: BlockFormatting): boolean {
-  return (formatting.marks?.length ?? 0) > 0 || (formatting.paragraphs?.length ?? 0) > 0;
+  return (formatting.marks?.length ?? 0) > 0 || (formatting.paragraphs?.length ?? 0) > 0 || formatting.place !== undefined;
 }

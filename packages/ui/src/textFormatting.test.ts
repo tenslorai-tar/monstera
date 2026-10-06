@@ -209,5 +209,7 @@ describe('isFormatted', () => {
     expect(isFormatted({})).toBe(false);
     expect(isFormatted({ marks: [{ from: 0, to: 1, set: { bold: true } }] })).toBe(true);
     expect(isFormatted({ paragraphs: [{ paragraph: 0, align: 'right' }] })).toBe(true);
+    // A BLOCK THAT WAS ONLY PUT SOMEWHERE is a write too: its words are the same and the page is not.
+    expect(isFormatted({ place: { move: { x: 4, y: 0 } } })).toBe(true);
   });
 });

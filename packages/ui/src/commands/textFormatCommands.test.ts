@@ -42,7 +42,7 @@ describe('the formatting commands', () => {
     const selection = document.getSelection();
     selection?.removeAllRanges();
     selection?.addRange(range);
-    const unregister = registerEditor({ root, zoom: () => 1 });
+    const unregister = registerEditor({ root, zoom: () => 1, block: { remove: () => undefined, nudge: () => undefined } });
     document.dispatchEvent(new Event('selectionchange'));
     void bold.run({} as never);
     expect(root.querySelector('[data-fmt]')?.getAttribute('data-fmt')).toBe('{"bold":true}');

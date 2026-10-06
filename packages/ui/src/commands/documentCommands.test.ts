@@ -1701,6 +1701,29 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(split).toBe('written');
   });
 
+  it('A BLOCK ONLY PUT SOMEWHERE is written, with its place on the wire (ADR-0180, corrected 2026-10-06)', async () => {
+    // THE UI HALF OF THE WIRED PAIR for a placement. Its kernel half is `proof:pdfiumcommand`'s placement cases. The words
+    // are exactly the page's, which the case above sends nothing for: a block that was moved is not unchanged.
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+    });
+    const outcome = await commitTextBlock(
+      { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown fox jumps over',
+      { version: asDocVersion(7), rewrite: 'objects' },
+      { place: { move: { x: 12, y: -4 }, width: 180 } },
+    );
+    expect(outcome).toBe('written');
+    expect(sent[0]?.params).toMatchObject({
+      command: { kind: 'editTextBlock', places: [{ block: 0, move: { x: 12, y: -4 }, width: 180 }], text: 'The quick brown fox jumps over' },
+    });
+  });
+
   it('A FONT THAT CANNOT CARRY THE WORDS is the editor’s to say — no dialog opens for it', async () => {
     const asked: string[] = [];
     const client = createClient(channels, () =>

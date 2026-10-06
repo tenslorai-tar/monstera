@@ -4,6 +4,7 @@ import { useState, useSyncExternalStore, type ReactElement } from 'react';
 import { ColourSwatches } from './ColourChoice.js';
 import { FORMAT_ENTRIES } from './commands/textFormatCommands.js';
 import {
+  TEXT_BLOCK_REMOVE,
   TEXT_FORMAT_BAR_LABEL,
   TEXT_FORMAT_COLOUR_AUTO,
   TEXT_FORMAT_COLOUR_CUSTOM,
@@ -23,7 +24,7 @@ import {
 import { IconButton } from './primitives/IconButton.js';
 import { ICONS } from './primitives/icons.js';
 import { TEXT_COLOUR_FALLBACK, TEXT_COLOURS } from './textColours.js';
-import { editorRevision, formatOpenEditor, onEditorChange, openEditorState } from './textEditorControl.js';
+import { editorRevision, formatOpenEditor, onEditorChange, openEditorState, removeOpenBlock } from './textEditorControl.js';
 
 /**
  * The in-place editor's bar: the formatting a command cannot be, because it takes a value
@@ -150,6 +151,14 @@ export function TextFormatBar(): ReactElement {
           formatOpenEditor({ kind: 'set', change: { colour: rgb ?? null } });
         }}
         presets={TEXT_COLOURS}
+      />
+      <IconButton
+        icon={ICONS.Trash2}
+        label={TEXT_BLOCK_REMOVE}
+        onClick={() => {
+          removeOpenBlock();
+        }}
+        size="control"
       />
     </div>
   );

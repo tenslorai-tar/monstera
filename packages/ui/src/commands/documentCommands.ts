@@ -25,6 +25,7 @@ import { type DocId, type DocVersion, type Failure, type MessageKey, lineText, p
 
 import type { z } from 'zod';
 
+import { isFormatted } from '../textFormatting.js';
 import { BATES_NUMBER_DIALOG_ID } from '../dialogs/batesNumber.js';
 import type { BatesNumberAnswer } from '../dialogs/batesNumberResult.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
@@ -4034,7 +4035,7 @@ export async function commitTextBlock(
   // THE BLOCK'S WORDS AS IT SHOWS THEM, by the one join the kernel diffs against (ADR-0179): soft wraps are spaces.
   const before = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
   // UNCHANGED ONLY WHEN THE WORDS AND THEIR FORMATTING both are: a bold word is an edit with the same words (ADR-0180).
-  if (text === before && (formatting.marks?.length ?? 0) === 0 && (formatting.paragraphs?.length ?? 0) === 0) return 'unchanged';
+  if (text === before && !isFormatted(formatting)) return 'unchanged';
   /** Set by the hook below to what the editor says: the signatures question left unanswered, or the refusal. */
   const kept: { outcome: Exclude<BlockCommit, 'written' | 'unchanged'> | undefined } = { outcome: undefined };
   const applied = await applyDocumentCommand(

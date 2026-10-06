@@ -426,6 +426,97 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(said).toContain('read-back 0');
   });
 
+  describe('placing a block with its handles (ADR-0180, corrected 2026-10-06)', () => {
+    /** The editor open on block 0 (box 72..300 by 700..740 at zoom 1), with every commit's formatting kept. */
+    function openForPlacing() {
+      const sent: { text: string; formatting: BlockFormatting | undefined }[] = [];
+      const onCommit = vi.fn((_block: TextBlock, text: string, _read: BlocksRead, formatting?: BlockFormatting) => {
+        sent.push({ text, formatting });
+        return Promise.resolve<BlockCommit>('written');
+      });
+      const made = mount({ onCommit });
+      fireEvent.click(find(made.view.container, '[data-text-block="0"]'));
+      const editor = editorIn(made.view.container);
+      /** A drag of the handle `name` by (dx, dy) screen pixels, as a pointer does it. */
+      const drag = (name: string, dx: number, dy: number) => {
+        const handle = find(made.view.container, `[data-handle="${name}"]`);
+        fireEvent.pointerDown(handle, { clientX: 100, clientY: 100, pointerId: 1 });
+        fireEvent.pointerMove(handle, { clientX: 100 + dx, clientY: 100 + dy, pointerId: 1 });
+        fireEvent.pointerUp(handle, { clientX: 100 + dx, clientY: 100 + dy, pointerId: 1 });
+      };
+      const finish = async () => {
+        await act(async () => {
+          fireEvent.keyDown(editor, { key: 'Escape' });
+          await Promise.resolve();
+        });
+      };
+      return { ...made, editor, sent, drag, finish };
+    }
+
+    it('dragging a side sets the measure the words are laid out at, and writes it with the words', async () => {
+      const { sent, drag, finish } = openForPlacing();
+      drag('e', 40, 0);
+      await finish();
+      // THE BLOCK IS 228 WIDE (72 to 300) and the side was dragged 40 points out.
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.formatting?.place).toStrictEqual({ width: 268 });
+    });
+
+    it('the top grip moves the block, the screen’s y running down where the page’s runs up', async () => {
+      const { sent, drag, finish } = openForPlacing();
+      drag('n', 10, -5);
+      await finish();
+      expect(sent[0]?.formatting?.place).toStrictEqual({ move: { x: 10, y: 5 } });
+    });
+
+    it('a corner scales and the handle to the right turns, each as one placement', async () => {
+      const scaled = openForPlacing();
+      scaled.drag('se', 114, 0);
+      await scaled.finish();
+      expect(scaled.sent[0]?.formatting?.place?.scale).toBeCloseTo(1.5, 6);
+      scaled.view.unmount();
+      const turned = openForPlacing();
+      // THE HANDLE STARTS 20 BEYOND THE RIGHT EDGE, 134 from the middle of a block 228 wide; straight up from there is a
+      // quarter turn once it has come over the middle.
+      turned.drag('r', -134, -134);
+      await turned.finish();
+      expect(turned.sent[0]?.formatting?.place?.rotate).toBeCloseTo(90, 6);
+    });
+
+    it('CONTROL: with no handle touched the write carries no place, so the cases above are the handles’', async () => {
+      const { sent, finish } = openForPlacing();
+      await finish();
+      expect(sent[0]?.formatting?.place).toBeUndefined();
+    });
+
+    it('shows the placement over the editor while it is made, and not before', () => {
+      const { view, drag } = openForPlacing();
+      const placer = find(view.container, '.m-text-editor-placer');
+      expect(placer.getAttribute('data-placed')).toBeNull();
+      drag('e', 40, 0);
+      expect(placer.getAttribute('data-placed')).toBe('');
+      // THE MEASURE IS THE PLACER'S WIDTH, so the browser wraps the words at it while they are typed.
+      expect(placer.style.width).toBe('268px');
+    });
+
+    it('a key places the block the way a drag does: Alt with an arrow moves it, with Shift ten times as far', async () => {
+      const { sent, editor, finish } = openForPlacing();
+      fireEvent.keyDown(editor, { key: 'ArrowRight', altKey: true });
+      fireEvent.keyDown(editor, { key: 'ArrowUp', altKey: true, shiftKey: true });
+      await finish();
+      expect(sent[0]?.formatting?.place).toStrictEqual({ move: { x: 1, y: 10 } });
+    });
+
+    it('the bar’s Remove empties the block and writes it, which is what removes a block', async () => {
+      const { view, sent } = openForPlacing();
+      await act(async () => {
+        fireEvent.click(find(view.container, '[data-text-format-bar] button[aria-label="Remove this text"]'));
+        await Promise.resolve();
+      });
+      expect(sent.map((one) => one.text)).toStrictEqual(['']);
+    });
+  });
+
   describe('a click from block to block (ADR-0180 Decision 8)', () => {
     /** A commit the test settles itself, so the sequence between the click and the answer can be looked at. */
     function mountDeferred() {
