@@ -5642,6 +5642,47 @@ optgroup {
   margin: 0;
 }
 
+/* THE EDITOR'S BAR sits on the float for the reason above: it floats over paper. */
+.m-text-format-bar {
+  position: absolute;
+  inset-block-end: calc(100% + var(--space-8));
+  inset-inline-start: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  inline-size: max-content;
+  max-inline-size: 36em;
+  padding: var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--float);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--font-chrome-12);
+  box-shadow: var(--shadow);
+}
+
+.m-text-format-bar__select,
+.m-text-format-bar__size {
+  block-size: var(--control-height, auto);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--surface-input, var(--float));
+  color: var(--text);
+  font: inherit;
+}
+
+.m-text-format-bar__size {
+  inline-size: 4.5em;
+}
+
+/* A SPAN THE FORMATTING MADE keeps the run's own line box: its size is the person's, its place is the run's. */
+.m-text-editor__fmt {
+  line-height: inherit;
+}
+
 /* ABOVE THE WORDS, for what is said of words that ran past the page's foot: below them is out of sight. */
 .m-text-editor-problem--above {
   inset-block-start: auto;

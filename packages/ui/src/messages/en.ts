@@ -1190,6 +1190,42 @@ export const REPLACE_MOVES_LINE = messageKey('surface.text-edit.replace-moves-li
 export const TEXT_EDIT_HELD = messageKey('surface.text-edit.held');
 /** A block whose words run past the page's edge: written whole, outlined, and said (the owner's Q7). */
 export const TEXT_EDIT_PAST_PAGE = messageKey('surface.text-edit.past-page');
+// THE EDITOR'S FORMATTING (ADR-0180): the ribbon group, each command, and the bar's own value controls.
+export const GROUP_FORMAT = messageKey('surface.ribbon.group.format');
+export const TEXT_FORMAT_BOLD = messageKey('command.text.format.bold');
+export const TEXT_FORMAT_ITALIC = messageKey('command.text.format.italic');
+export const TEXT_FORMAT_UNDERLINE = messageKey('command.text.format.underline');
+export const TEXT_FORMAT_SUPERSCRIPT = messageKey('command.text.format.superscript');
+export const TEXT_FORMAT_SUBSCRIPT = messageKey('command.text.format.subscript');
+export const TEXT_FORMAT_ALIGN_LEFT = messageKey('command.text.format.align-left');
+export const TEXT_FORMAT_ALIGN_CENTER = messageKey('command.text.format.align-center');
+export const TEXT_FORMAT_ALIGN_RIGHT = messageKey('command.text.format.align-right');
+export const TEXT_FORMAT_BULLETS = messageKey('command.text.format.bullets');
+export const TEXT_FORMAT_NUMBERING = messageKey('command.text.format.numbering');
+export const TEXT_FORMAT_INDENT_MORE = messageKey('command.text.format.indent-more');
+export const TEXT_FORMAT_INDENT_LESS = messageKey('command.text.format.indent-less');
+export const TEXT_FORMAT_BAR_LABEL = messageKey('surface.text-format.bar');
+export const TEXT_FORMAT_FAMILY = messageKey('surface.text-format.family');
+export const TEXT_FORMAT_FAMILY_RUN = messageKey('surface.text-format.family-run');
+export const TEXT_FORMAT_SIZE = messageKey('surface.text-format.size');
+export const TEXT_FORMAT_FAMILY_ARIAL = messageKey('surface.text-format.family-arial');
+export const TEXT_FORMAT_FAMILY_CALIBRI = messageKey('surface.text-format.family-calibri');
+export const TEXT_FORMAT_FAMILY_CAMBRIA = messageKey('surface.text-format.family-cambria');
+export const TEXT_FORMAT_FAMILY_TIMES = messageKey('surface.text-format.family-times');
+export const TEXT_FORMAT_FAMILY_COURIER = messageKey('surface.text-format.family-courier');
+export const TEXT_FORMAT_COLOUR_CUSTOM = messageKey('surface.text-format.colour-custom');
+export const TEXT_FORMAT_COLOUR_AUTO = messageKey('surface.text-format.colour-auto');
+export const TEXT_FORMAT_COLOUR_BLACK = messageKey('surface.text-format.colour-black');
+export const TEXT_FORMAT_COLOUR_GREY = messageKey('surface.text-format.colour-grey');
+export const TEXT_FORMAT_COLOUR_RED = messageKey('surface.text-format.colour-red');
+export const TEXT_FORMAT_COLOUR_ORANGE = messageKey('surface.text-format.colour-orange');
+export const TEXT_FORMAT_COLOUR_GREEN = messageKey('surface.text-format.colour-green');
+export const TEXT_FORMAT_COLOUR_BLUE = messageKey('surface.text-format.colour-blue');
+export const TEXT_FORMAT_COLOUR_PURPLE = messageKey('surface.text-format.colour-purple');
+export const TEXT_FORMAT_SPACING = messageKey('surface.text-format.spacing');
+export const TEXT_FORMAT_SPACING_SINGLE = messageKey('surface.text-format.spacing-single');
+export const TEXT_FORMAT_SPACING_ONE_HALF = messageKey('surface.text-format.spacing-one-half');
+export const TEXT_FORMAT_SPACING_DOUBLE = messageKey('surface.text-format.spacing-double');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
 /** What the page area says until its first page is drawn, in place of empty slots. */
 export const PAGE_OPENING = messageKey('surface.page.opening');
@@ -3470,6 +3506,41 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // THE OWNER'S OWN SENTENCE (Q7), and nothing promised that the editor cannot do: the words are all kept, and the way
   // to make them fit is to shorten them, which the open editor is for.
   [TEXT_EDIT_PAST_PAGE]: 'This text no longer fits on the page',
+  [GROUP_FORMAT]: 'Format',
+  [TEXT_FORMAT_BOLD]: 'Bold',
+  [TEXT_FORMAT_ITALIC]: 'Italic',
+  [TEXT_FORMAT_UNDERLINE]: 'Underline',
+  [TEXT_FORMAT_SUPERSCRIPT]: 'Superscript',
+  [TEXT_FORMAT_SUBSCRIPT]: 'Subscript',
+  [TEXT_FORMAT_ALIGN_LEFT]: 'Align left',
+  [TEXT_FORMAT_ALIGN_CENTER]: 'Centre',
+  [TEXT_FORMAT_ALIGN_RIGHT]: 'Align right',
+  [TEXT_FORMAT_BULLETS]: 'Bullets',
+  [TEXT_FORMAT_NUMBERING]: 'Numbering',
+  [TEXT_FORMAT_INDENT_MORE]: 'Increase indent',
+  [TEXT_FORMAT_INDENT_LESS]: 'Decrease indent',
+  [TEXT_FORMAT_BAR_LABEL]: 'Text formatting',
+  [TEXT_FORMAT_FAMILY]: 'Font',
+  [TEXT_FORMAT_FAMILY_RUN]: 'As on the page',
+  [TEXT_FORMAT_SIZE]: 'Size in points',
+  [TEXT_FORMAT_FAMILY_ARIAL]: 'Arial',
+  [TEXT_FORMAT_FAMILY_CALIBRI]: 'Calibri',
+  [TEXT_FORMAT_FAMILY_CAMBRIA]: 'Cambria',
+  [TEXT_FORMAT_FAMILY_TIMES]: 'Times New Roman',
+  [TEXT_FORMAT_FAMILY_COURIER]: 'Courier New',
+  [TEXT_FORMAT_COLOUR_CUSTOM]: 'Other text colour',
+  [TEXT_FORMAT_COLOUR_AUTO]: 'Text colour as on the page',
+  [TEXT_FORMAT_COLOUR_BLACK]: 'Black',
+  [TEXT_FORMAT_COLOUR_GREY]: 'Grey',
+  [TEXT_FORMAT_COLOUR_RED]: 'Red',
+  [TEXT_FORMAT_COLOUR_ORANGE]: 'Orange',
+  [TEXT_FORMAT_COLOUR_GREEN]: 'Green',
+  [TEXT_FORMAT_COLOUR_BLUE]: 'Blue',
+  [TEXT_FORMAT_COLOUR_PURPLE]: 'Purple',
+  [TEXT_FORMAT_SPACING]: 'Line spacing',
+  [TEXT_FORMAT_SPACING_SINGLE]: 'Single',
+  [TEXT_FORMAT_SPACING_ONE_HALF]: '1.5',
+  [TEXT_FORMAT_SPACING_DOUBLE]: 'Double',
   // SAYS WHAT THE PAGE IS, not what the application cannot do. A reader looking
   // at words they cannot select has one question — why — and *this page is a
   // picture* answers it. It deliberately does not say *scanned*: the kernel

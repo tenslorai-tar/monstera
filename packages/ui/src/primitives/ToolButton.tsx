@@ -64,6 +64,11 @@ export interface ToolButtonProps {
    * `undefined` writes nothing: a button that sets no state is not a toggle.
    */
   readonly pressed?: boolean | undefined;
+  /**
+   * That a press leaves the focus where it was (`UiCommand.keepsFocus`): the mouse-down's default, which moves it to the
+   * button, is the one thing refused. The click still happens.
+   */
+  readonly keepsFocus?: boolean | undefined;
 }
 
 /**
@@ -77,7 +82,15 @@ export function ribbonCaption(text: string): string {
   return text.endsWith('…') ? text.slice(0, -1).trimEnd() : text;
 }
 
-export function ToolButton({ label, description, icon, onClick, command, pressed }: ToolButtonProps): ReactElement {
+export function ToolButton({
+  label,
+  description,
+  icon,
+  onClick,
+  command,
+  pressed,
+  keepsFocus,
+}: ToolButtonProps): ReactElement {
   const { _ } = useLingui();
   const describedBy = useId();
   const button = (
@@ -88,6 +101,9 @@ export function ToolButton({ label, description, icon, onClick, command, pressed
       data-command={command}
       nativeButton
       onClick={onClick}
+      // A PRESS THAT KEEPS THE FOCUS: the words a formatting command is for are selected in an editor that closes when it
+      // loses the focus.
+      onMouseDown={keepsFocus === true ? (event) => { event.preventDefault(); } : undefined}
       type="button"
     >
       <Icon name={icon} size="ribbon" />

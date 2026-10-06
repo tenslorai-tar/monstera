@@ -1,4 +1,5 @@
 import { useLingui } from '@lingui/react';
+import type { BlockFormatting } from '@monstera/contract';
 import { type DocVersion, joinAfterLine, lineText, paragraphsOfLines, pdfPoint, toViewport } from '@monstera/shared';
 import type React from 'react';
 import { type ReactElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
@@ -21,6 +22,9 @@ import {
   TEXT_EDIT_UNADDRESSABLE,
 } from './messages/en.js';
 import { composing } from './surfaces/shortcuts.js';
+import { TextFormatBar } from './TextFormatBar.js';
+import { formatOpenEditor, registerEditor } from './textEditorControl.js';
+import { insertTab, readEditor } from './textFormatting.js';
 
 /**
  * Text edited where it is on the page — Edit text's mode, drawn over one page
@@ -67,7 +71,7 @@ export interface TextEditLayerProps {
   /** The page's blocks, or `undefined` while they are being read. */
   readonly blocks: PageBlocks | undefined;
   /** Writes one block's new words, at the version the blocks were read at and by the writer that read named. */
-  readonly onCommit: (block: TextBlock, text: string, read: BlocksRead) => Promise<BlockCommit>;
+  readonly onCommit: (block: TextBlock, text: string, read: BlocksRead, formatting?: BlockFormatting) => Promise<BlockCommit>;
   /** The fonts the open block's runs are drawn in, rebuilt by the host, at the version it was read at (ADR-0175). */
   readonly runFonts: (block: TextBlock, version: DocVersion) => Promise<RunFonts>;
   /** Unpacks the page's blocked-in text so it can be edited. */
@@ -382,8 +386,8 @@ export function TextEditLayer({
                 if (outcome !== 'written') setWritten(undefined);
                 setOpened((current) => (current?.at === at ? undefined : current));
               }}
-              onCommit={async (text) => {
-                const outcome = await onCommit(block, text, blocks);
+              onCommit={async (text, formatting) => {
+                const outcome = await onCommit(block, text, blocks, formatting);
                 if (outcome === 'written') setWritten({ box: block.box, version: blocks.version });
                 return outcome;
               }}
@@ -443,7 +447,13 @@ export interface TextEditing {
   readonly version: DocVersion;
   /** Reads one page's blocks, or `undefined` where the read was refused. */
   readonly read: (page: number) => Promise<PageBlocks | undefined>;
-  readonly onCommit: (page: number, block: TextBlock, text: string, read: BlocksRead) => Promise<BlockCommit>;
+  readonly onCommit: (
+    page: number,
+    block: TextBlock,
+    text: string,
+    read: BlocksRead,
+    formatting?: BlockFormatting,
+  ) => Promise<BlockCommit>;
   /** The fonts one block's runs are drawn in, as the host rebuilt them, at the version the block was read at (ADR-0175). */
   readonly runFonts: (page: number, block: TextBlock, version: DocVersion) => Promise<RunFonts>;
   readonly onPromote: (page: number) => void;
@@ -491,7 +501,7 @@ export function TextEditPage({
     <TextEditLayer
       blocks={answer?.version === version ? answer.blocks : undefined}
       geometry={geometry}
-      onCommit={(block, text, read) => editing.onCommit(page, block, text, read)}
+      onCommit={(block, text, read, formatting) => editing.onCommit(page, block, text, read, formatting)}
       onLeave={editing.onLeave}
       runFonts={(block, at) => editing.runFonts(page, block, at)}
       onPromote={() => {
@@ -512,7 +522,7 @@ interface BlockEditorProps {
   readonly click: { readonly x: number; readonly y: number } | undefined;
   /** Whether the block's words run past the page as read, which the editor says beside them (the owner's Q7). */
   readonly past: boolean;
-  readonly onCommit: (text: string) => Promise<BlockCommit>;
+  readonly onCommit: (text: string, formatting: BlockFormatting) => Promise<BlockCommit>;
   /** Closes the editor: after a write, after nothing to write, or put back with Escape after a refusal. */
   readonly onClose: (outcome: 'written' | 'unchanged' | 'put-back') => void;
   /** The fonts this block's runs are drawn in, read once when the editor opens (ADR-0175). */
@@ -637,6 +647,16 @@ function BlockEditor({
   // reads for is this editor's until it closes (`key`), so a second read would only load the same fonts again.
   const [readFonts] = useState(() => runFonts);
   useRunFonts(area, readFonts, useId());
+  // THE EDITOR IS OPEN, for the formatting commands to act on (ADR-0180): registered for its life, at the zoom now.
+  const zoomNow = useRef(geometry.zoom);
+  useEffect(() => {
+    zoomNow.current = geometry.zoom;
+  }, [geometry.zoom]);
+  useEffect(() => {
+    const element = area.current;
+    if (element === null) return undefined;
+    return registerEditor({ root: element, zoom: () => zoomNow.current });
+  }, []);
 
   // THE RUNS, each in its own style, and the caret at the end. The block is this editor's for its whole life — a new
   // read or another block is a new editor (`key`) — so this runs once.
@@ -690,7 +710,7 @@ function BlockEditor({
   useLayoutEffect(() => {
     const element = area.current;
     if (element === null) return;
-    for (const span of element.querySelectorAll<HTMLElement>('.m-text-editor__run')) {
+    for (const span of element.querySelectorAll<HTMLElement>('.m-text-editor__run, .m-text-editor__fmt[data-size]')) {
       span.style.fontSize = `${String(Number(span.dataset['size'] ?? '0') * geometry.zoom)}px`;
     }
   }, [geometry.zoom]);
@@ -698,7 +718,9 @@ function BlockEditor({
   const finish = useCallback(async (): Promise<void> => {
     if (writing.current) return;
     writing.current = true;
-    const outcome = await onCommit(text);
+    // THE FORMATTING FROM THE EDITOR AS IT STANDS, read in the one walk that gave the words (`readEditor`).
+    const element = area.current;
+    const outcome = await onCommit(text, element === null ? {} : readEditor(element).formatting);
     writing.current = false;
     if (outcome !== 'written' && outcome !== 'unchanged') {
       // THE EDITOR STAYS on EVERY refusal (ADR-0169 Decision 5), with the words
@@ -715,8 +737,26 @@ function BlockEditor({
   }, [onClose, onCommit, text]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (composing(event)) return;
+    // TAB INSERTS A TAB, not a move of the focus out of the words: spaces to the next stop (ADR-0180 Decision 8).
+    if (event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (area.current !== null && !event.shiftKey) insertTab(area.current, geometry.zoom);
+      return;
+    }
+    // THE CHORDS OF FORMATTING, the editor's own while it has the focus: the page's shortcuts do not reach a field.
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
+      const property = event.key === 'b' ? 'bold' : event.key === 'i' ? 'italic' : event.key === 'u' ? 'underline' : undefined;
+      if (property !== undefined) {
+        event.preventDefault();
+        event.stopPropagation();
+        formatOpenEditor({ kind: 'toggle', property });
+        return;
+      }
+    }
     // A COMPOSITION'S ESCAPE cancels the candidate, and is not the editor's (`composing`).
-    if (event.key !== 'Escape' || composing(event)) return;
+    if (event.key !== 'Escape') return;
     event.preventDefault();
     event.stopPropagation();
     // AFTER A REFUSAL, Escape puts the text back rather than trying again: the
@@ -735,18 +775,25 @@ function BlockEditor({
   return (
     // THE FRAME GROWS WITH ITS WORDS: at least the block's height, and as tall as
     // the editor inside it, so the handles enclose a line typed past the last.
-    <div className="m-text-editor-frame" style={{ ...boxStyle(placed), height: 'auto', minHeight: placed.height }}>
+    <div
+      className="m-text-editor-frame"
+      // THE FRAME, NOT THE EDITOR, IS WHAT LOSES THE FOCUS: it moves between the words and the bar's own fields (a size, a
+      // colour) without writing, and writes only when it leaves both.
+      onBlur={(event) => {
+        if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+        if (problem === undefined) void finish();
+      }}
+      style={{ ...boxStyle(placed), height: 'auto', minHeight: placed.height }}
+    >
+      <TextFormatBar />
       <div
         aria-label={_(TEXT_EDIT_EDITOR_LABEL)}
         aria-multiline="true"
         className={`m-text-editor ${faceOf(block.style)}`}
         contentEditable="plaintext-only"
         data-text-editor=""
-        onBlur={() => {
-          if (problem === undefined) void finish();
-        }}
         onInput={(event) => {
-          setText(event.currentTarget.innerText);
+          setText(readEditor(event.currentTarget).text);
           setProblem(undefined);
         }}
         onKeyDown={onKeyDown}

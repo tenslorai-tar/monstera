@@ -1,6 +1,7 @@
 import {
   type AnnotationRect,
   type AnnotationStamp,
+  type BlockFormatting,
   type ChannelResult,
   type Channels,
   type ContractClient,
@@ -4027,10 +4028,13 @@ export async function commitTextBlock(
   block: TextBlock,
   text: string,
   read: BlocksRead,
+  /** What spans of the words are, and how paragraphs are set, where the person chose (ADR-0180). */
+  formatting: BlockFormatting = {},
 ): Promise<BlockCommit> {
   // THE BLOCK'S WORDS AS IT SHOWS THEM, by the one join the kernel diffs against (ADR-0179): soft wraps are spaces.
   const before = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
-  if (text === before) return 'unchanged';
+  // UNCHANGED ONLY WHEN THE WORDS AND THEIR FORMATTING both are: a bold word is an edit with the same words (ADR-0180).
+  if (text === before && (formatting.marks?.length ?? 0) === 0 && (formatting.paragraphs?.length ?? 0) === 0) return 'unchanged';
   /** Set by the hook below to what the editor says: the signatures question left unanswered, or the refusal. */
   const kept: { outcome: Exclude<BlockCommit, 'written' | 'unchanged'> | undefined } = { outcome: undefined };
   const applied = await applyDocumentCommand(
@@ -4046,6 +4050,7 @@ export async function commitTextBlock(
           lines: block.lines.map((line) => line.runs.map((run) => run.index)),
           soft: block.lines.map((line) => line.soft),
           text,
+          ...formatting,
         },
       ]),
       // REFLOW: a person typing sees the block grow as they type, and it stays that way.

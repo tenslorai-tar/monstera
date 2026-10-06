@@ -114,6 +114,8 @@ import {
   zoomCommand,
   actualSizeCommand,
 } from './commands/documentCommands.js';
+import { textFormatCommands } from './commands/textFormatCommands.js';
+import { editorIsOpen, onEditorChange } from './textEditorControl.js';
 import { proceeds, settlePendingRedactions } from './commands/pendingRedactions.js';
 import type { PendingRedactionOccasion } from './dialogs/pendingRedactions.js';
 import { confirmCopied } from './commands/confirmWritten.js';
@@ -695,6 +697,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   const [toastStore] = useState(() => createToastStore());
   const toasts = useSyncExternalStore(toastStore.subscribe, () => toastStore.getState().toasts);
+  // WHETHER THE IN-PLACE TEXT EDITOR IS OPEN, from the one place it registers (ADR-0180).
+  const textEditorOpen = useSyncExternalStore(onEditorChange, editorIsOpen);
   const toast = useCallback<ShowToast>(
     (kind, message, action) => {
       toastStore.getState().show(kind, message, action);
@@ -3057,6 +3061,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
         editTextCommand({ activeTool: readTool, onSelect: setToolId }),
+        // ITS FORMATTING (ADR-0180): projections of one table, offered while an editor is open.
+        ...textFormatCommands(),
         signatureCommand({
           activeTool: readTool,
           onStart: startSignature,
@@ -3375,7 +3381,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         }
         return undefined;
       },
-      onCommit: (page, block, text, read) => commitTextBlock(deps, docId, page, block, text, read),
+      onCommit: (page, block, text, read, formatting) => commitTextBlock(deps, docId, page, block, text, read, formatting),
       runFonts: (page, block, version) => readRunFonts(client, docId, page, block, version),
       onPromote: (page) => {
         void promoteTextOnPage(deps, docId, page);
@@ -3462,8 +3468,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       openDocuments: tabs,
       // THE ORGANIZE GRID'S TICKED PAGES, read by commands only through `targetPages` (ADR-0104).
       selectedPages: open === undefined ? NO_PAGES : selectedPages,
+      // WHETHER THE IN-PLACE EDITOR IS OPEN, which the formatting commands are offered for (ADR-0180).
+      editingText: textEditorOpen,
     }),
-    [currentPage, open, pageCount, selectedPages, tabs, textSelection],
+    [currentPage, open, pageCount, selectedPages, tabs, textEditorOpen, textSelection],
   );
 
   // ESCAPE STOPS the tool that is on (ADR-0154 Decision 4), innermost first, as Edit object's own layer does: marks or

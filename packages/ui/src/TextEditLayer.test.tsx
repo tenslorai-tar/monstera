@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
+import type { BlockFormatting } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
@@ -546,6 +547,96 @@ describe('Edit text on the page (ADR-0096)', () => {
     // SAID AT THE BLOCK, for it alone: the block on the page has no sentence beside it.
     expect(find(view.container, '[data-text-block-past="1"]').textContent).toBe('This text no longer fits on the page');
     expect(view.container.querySelector('[data-text-block-past="0"]')).toBeNull();
+  });
+
+  describe('formatting (ADR-0180)', () => {
+    /** The editor open on block 0 with its first text node selected from `from` to `to`, and every commit's formatting kept. */
+    function openWithSelection(from: number, to: number, blockAt = 1, nodeAt = 0) {
+      const formats: (BlockFormatting | undefined)[] = [];
+      const onCommit = vi.fn((_block: TextBlock, _text: string, _read: BlocksRead, formatting?: BlockFormatting) => {
+        formats.push(formatting);
+        return Promise.resolve<BlockCommit>('written');
+      });
+      const made = mount({ onCommit });
+      fireEvent.click(find(made.view.container, `[data-text-block="${String(blockAt)}"]`));
+      const editor = editorIn(made.view.container);
+      const walker = document.createTreeWalker(editor, 4);
+      let node = walker.nextNode();
+      for (let skip = 0; skip < nodeAt; skip += 1) node = walker.nextNode();
+      if (!(node instanceof Text)) throw new Error('the editor holds no text');
+      const range = document.createRange();
+      range.setStart(node, from);
+      range.setEnd(node, to);
+      const selection = document.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      fireEvent(document, new Event('selectionchange'));
+      return { ...made, editor, formats };
+    }
+
+    it('Ctrl+B bolds the selected words, and the write carries a mark over exactly those words', async () => {
+      // "and" of the second run, which the page sets regular: the first line's first run is 16 characters long.
+      const { editor, formats } = openWithSelection(0, 3, 1, 1);
+      fireEvent.keyDown(editor, { key: 'b', ctrlKey: true });
+      await act(async () => {
+        fireEvent.keyDown(editor, { key: 'Escape' });
+        await Promise.resolve();
+      });
+      expect(formats).toHaveLength(1);
+      expect(formats[0]?.marks).toStrictEqual([{ from: 16, to: 19, set: { bold: true } }]);
+    });
+
+    it('CONTROL: on words the page already sets bold, the same chord takes it off, so a toggle reads the words and not a constant', async () => {
+      const { editor, formats } = openWithSelection(0, 4, 0);
+      fireEvent.keyDown(editor, { key: 'b', ctrlKey: true });
+      await act(async () => {
+        fireEvent.keyDown(editor, { key: 'Escape' });
+        await Promise.resolve();
+      });
+      expect(formats[0]?.marks?.[0]?.set).toStrictEqual({ bold: false });
+    });
+
+    it('CONTROL: with nothing formatted the write carries no marks, so the case above is the chord and not a default', async () => {
+      const { editor, formats } = openWithSelection(0, 4);
+      await act(async () => {
+        fireEvent.keyDown(editor, { key: 'Escape' });
+        await Promise.resolve();
+      });
+      expect(formats[0]?.marks).toBeUndefined();
+    });
+
+    it('Tab inserts spaces and keeps the focus in the words, where it would have left them', () => {
+      const { editor } = openWithSelection(0, 0);
+      const before = editor.textContent;
+      const event = fireEvent.keyDown(editor, { key: 'Tab' });
+      // `fireEvent` answers false when the default was prevented: the browser's move of the focus did not happen.
+      expect(event).toBe(false);
+      expect(editor.textContent.length).toBeGreaterThan(before.length);
+    });
+
+    it('a focus that moves to the bar does not write, and one that leaves both does', async () => {
+      const { view, editor, formats } = openWithSelection(0, 4);
+      const bar = find(view.container, '[data-text-format-bar]');
+      const field = find(bar, 'select');
+      await act(async () => {
+        fireEvent.blur(editor, { relatedTarget: field });
+        await Promise.resolve();
+      });
+      expect(formats).toHaveLength(0);
+      expect(view.container.querySelector('[data-text-editor]')).not.toBeNull();
+      await act(async () => {
+        fireEvent.blur(editor);
+        await Promise.resolve();
+      });
+      expect(formats).toHaveLength(1);
+    });
+
+    it('a press on a bar button keeps the focus in the editor, and a press on a field does not', () => {
+      const { view } = openWithSelection(0, 4);
+      const bar = find(view.container, '[data-text-format-bar]');
+      expect(fireEvent.mouseDown(find(bar, 'button'))).toBe(false);
+      expect(fireEvent.mouseDown(find(bar, 'input'))).toBe(true);
+    });
   });
 
   it('ESCAPE WITH NO BLOCK OPEN leaves the mode', () => {

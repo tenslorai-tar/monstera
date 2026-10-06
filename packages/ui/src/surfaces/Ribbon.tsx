@@ -459,6 +459,7 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
                   command={entry.command.id}
                   // THE STATE IT SETS, where it sets one: the tool that is on, a panel that is shown (WCAG 4.1.2).
                   pressed={entry.command.checked?.(context)}
+                  keepsFocus={entry.command.keepsFocus}
                   // THE REGISTRY GUARANTEES IT: a command placed on the ribbon with no
                   // icon is refused at construction, so `File` is never drawn for a
                   // command in the shipped graph.
