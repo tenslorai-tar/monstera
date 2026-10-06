@@ -392,6 +392,16 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/inlineImages.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
+      # ADR-0176. A page holding Type 3 text, edited end to end: PDFium's real
+      # reading of the Chromium print is the MuPDF writer's input, MuPDF
+      # rewrites the heading in its own font, and PDFium reads the saved bytes
+      # again. A reading numbering one object too many must be refused with
+      # nothing written. Both engines are needed, as for inline images.
+      - name: Prove a Type 3 page is edited by PDFium's reading and MuPDF's writer
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/type3Edit.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-engines' || '' }}
+
       # ADR-0171's addendum. The shim's two readers of a document's content,
       # the inline-image keeper and Optimize's rewriter, open an encrypted
       # document with its password: without it the keeper found nothing and

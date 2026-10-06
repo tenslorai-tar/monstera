@@ -143,6 +143,7 @@
     "proof:pdfiumreadback": "node scripts/proofs/pdfiumReadBack.proof.mjs",
     "proof:editfidelity": "node scripts/proofs/editFidelity.proof.mjs",
     "proof:inlineimages": "node scripts/proofs/inlineImages.proof.mjs",
+    "proof:type3edit": "node scripts/proofs/type3Edit.proof.mjs",
     "proof:shimpassword": "node scripts/proofs/shimPassword.proof.mjs",
     "proof:wordpictures": "node scripts/proofs/wordPictures.proof.mjs",
     "proof:rtltext": "node scripts/proofs/rtlText.proof.mjs",

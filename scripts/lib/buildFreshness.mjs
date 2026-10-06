@@ -264,6 +264,19 @@ export const COMPOSE_HOST_LIVE = [
 export const NATIVE_ENGINE = [['packages/kernel/src/mupdfRaw.ts', 'packages/kernel/dist/mupdfRaw.js', 'tsc']];
 
 /**
+ * What `type3Edit.proof.mjs` runs (ADR-0176): PDFium's reading and MuPDF's operator writer, which reaches the
+ * numbering, the fonts, the ToUnicode reader and the refusals beneath it. The kernel's whole `src`, so a module the
+ * writer imports two steps down is dated too; the contract's encoder; and the native engine MuPDF runs on.
+ *
+ * @type {BuildEdge[]}
+ */
+export const TYPE3_EDIT = [
+  ['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'],
+  ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
+  ...NATIVE_ENGINE,
+];
+
+/**
  * The engine hosts' readers and channel schemas, which `hostAnswerSizes.mjs` and `hostSchemaBounds.mjs` measure: the
  * kernel's reads and host channels, the contract's frame and boundary, and the shared types they are built on
  * (ADR-0125).
@@ -501,6 +514,8 @@ export const ARTEFACT_EDGES = {
   // ADR-0126's proof, which reads two built engines. It called the guard from its first commit and had no entry here
   // until `proof:buildfreshness` named it — the anchor working, one range late.
   'proof:inlineimages': INLINE_IMAGES,
+  // PDFium's reading and MuPDF's operator writer, end to end on a Type 3 page (ADR-0176).
+  'proof:type3edit': TYPE3_EDIT,
   'proof:shimpassword': SHIM_PASSWORD,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,
