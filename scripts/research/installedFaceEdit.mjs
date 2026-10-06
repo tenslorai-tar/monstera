@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
+import { NATIVE_ENGINE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { withNoPassword } from '../lib/pdfiumNoPassword.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
@@ -45,6 +46,25 @@ const UNASSIGNED = String.fromCodePoint(0x378);
 const LATIN = 'Edited through the real host';
 /** How many installed faces are tried one by one: the resolver's first choices are the ones an edit meets. */
 const TRIED = 5;
+
+// EVERY BUILT MODULE THIS IMPORTS, refused when stale before any of them loads: a stale one would print last build's
+// answer under this build's name.
+refuseStaleBuild(
+  root,
+  [
+    ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
+    ['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc'],
+    ['packages/kernel/src/pdfiumSpecs.ts', 'packages/kernel/dist/pdfiumSpecs.js', 'tsc'],
+    ['packages/kernel/src/editFaces.ts', 'packages/kernel/dist/editFaces.js', 'tsc'],
+    ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
+    ['packages/kernel/src/fontResolver.ts', 'packages/kernel/dist/fontResolver.js', 'tsc'],
+    ['packages/kernel/src/textLines.ts', 'packages/kernel/dist/textLines.js', 'tsc'],
+    ['apps/desktop/src/installedFonts.ts', 'apps/desktop/dist/installedFonts.js', 'tsc'],
+    ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
+    ...NATIVE_ENGINE,
+  ],
+  10,
+);
 
 // LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads: none of it may reach Electron.
 const { blockEditOf } = await import('../../packages/contract/dist/commands.js');

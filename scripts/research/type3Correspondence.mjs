@@ -38,6 +38,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 
+import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { pageStreams as streamsOf } from '../lib/pageStreams.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 import { CHROMIUM_FIXTURE } from './chromiumType3Fixture.mjs';
@@ -110,6 +111,15 @@ if (library === null || !existsSync(library)) {
   process.stdout.write('UNVERIFIABLE: PDFium is not provisioned (scripts/provision/pdfium.mjs)\n');
   process.exit(0);
 }
+// EVERY BUILT MODULE THIS IMPORTS, refused when stale before either loads.
+refuseStaleBuild(
+  ROOT,
+  [
+    ['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc'],
+    ['packages/kernel/src/textOperators.ts', 'packages/kernel/dist/textOperators.js', 'tsc'],
+  ],
+  2,
+);
 // LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads.
 const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
 const operators = await import('../../packages/kernel/dist/textOperators.js');
