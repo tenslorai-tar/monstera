@@ -808,10 +808,17 @@ Adding a row still means executing it first.
   the renderer. Every working copy of a document opened locked is the
   document's own encrypted form. **The renderer keeps what the person typed**
   for its own view of that document, in memory, wiped at close (Decision 7).
-  **A protect leaves no plaintext copy** (Decision 8): it is invertible, so its
+  **A protect leaves no *silently* unprotected copy** (Decision 8, amended by
+  [ADR-0178](DECISIONS/0178-a-protect-that-applied-is-not-failed-by-a-copy-it-could-not-seal.md)):
+  it is invertible, so its
   undo takes no checkpoint, except on a document carrying its own encryption,
   whose checkpoint is encrypted as the file is; it refreshes the canonical image; and before it
-  answers, every plaintext copy is encrypted under its terms. Main holds the
+  answers, every plaintext copy it can write is encrypted under its terms. A copy
+  it **cannot** write at that moment — one another program holds — does not fail
+  the protect, which has already applied: `document.execute` answers the copies
+  left unsealed by name and the person is told, so the residual is visible and
+  finished by protecting again, never a lie that the protect failed nor a silent
+  linger (ADR-0178, found by R14). Main holds the
   standing protection and every key until close, and every reopen of a copy is
   told the standing, so an older copy comes back as the document it was.
 - **A grouping of our own is permitted where no engine answers, and only where a
