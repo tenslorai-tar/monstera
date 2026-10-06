@@ -70,9 +70,12 @@ import {
   PDFDict,
   PDFDocument,
   PDFName,
+  PDFOperator,
+  PDFOperatorNames,
   StandardFonts,
   beginText,
   concatTransformationMatrix,
+  endMarkedContent,
   endText,
   popGraphicsState,
   pushGraphicsState,
@@ -265,7 +268,7 @@ const failures = [];
 // edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
 // marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
 // with the control that separates the mark from the fixture.
-const roster = createRoster(failures, { cases: 176 });
+const roster = createRoster(failures, { cases: 180 });
 
 /**
  * @param {string} name
@@ -548,6 +551,7 @@ async function main() {
   await placeCases();
   await joinSplitCases();
   await directionCases();
+  await markCases();
   await pastThePageCases();
   await glyphLineCases();
   await settingCases();
@@ -3044,6 +3048,86 @@ async function joinSplitCases() {
     'CONTROL: the same two halves moved by a point read as one block again, which is what a full line of movement is for',
     (await blocksOf(barely)).blocks.length === 1,
     `${String((await blocksOf(barely)).blocks.length)} block(s)`,
+  );
+}
+
+/**
+ * A paragraph of three lines, each in its own marked-content sequence with its own `MCID` — how a tagged PDF names its text
+ * for the structure tree.
+ */
+async function aTaggedParagraph() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 400]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  for (const [at, line] of BLOCK_LINES.entries()) {
+    // `obj` of an object literal answers a PDFDict, which the operator's argument type does not list among the ones it takes
+    const properties = /** @type {never} */ (document.context.obj({ MCID: at }));
+    page.pushOperators(PDFOperator.of(PDFOperatorNames.BeginMarkedContentSequence, [PDFName.of('P'), properties]));
+    page.drawText(line, { x: 72, y: 300 - at * 14, size: 11, font });
+    page.pushOperators(endMarkedContent());
+  }
+  return document.save();
+}
+
+/**
+ * MARKED CONTENT IS KEPT (ADR-0181 Decision 8): an object that takes an old one's place stands in the same content
+ * sequence, so a tagged page keeps the structure that names its text. The control is the untagged page, which stays
+ * untagged, so the marks are copied and not invented.
+ */
+async function markCases() {
+  const bdcOf = async (/** @type {Uint8Array} */ bytes) => {
+    const content = Buffer.from(
+      (await pageStreams(bytes, 0)).reduce((all, part) => Uint8Array.from([...all, ...part, 10]), new Uint8Array()),
+    ).toString('latin1');
+    return {
+      sequences: (content.match(/\bBDC\b/gu) ?? []).length,
+      numbers: [...content.matchAll(/\/MCID\s+(\d+)/gu)].map((each) => Number(each[1])),
+      texts: (content.match(/\bBT\b/gu) ?? []).length,
+    };
+  };
+  const edit = async (/** @type {Uint8Array} */ original, /** @type {string} */ text) => {
+    const [block] = (await blocksOf(original)).blocks;
+    if (block === undefined) throw new Error('the marked fixture read as no block');
+    const lines = block.lines.map((line) => line.runs.map((run) => run.index));
+    return localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines, soft: lines.map(() => true), text }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  };
+  const tagged = await aTaggedParagraph();
+  const before = await bdcOf(tagged);
+  record(
+    'the tagged fixture is three text objects in three marked sequences, MCID 0 to 2',
+    before.sequences === 3 && before.texts === 3 && before.numbers.join() === '0,1,2',
+    JSON.stringify(before),
+  );
+  // THE WORDS CHANGED AND A LINE ADDED: the first and second lines are kept or replaced, and the new line continues one.
+  const edited = await edit(tagged, `${BLOCK_LINES.join(' ')} with a good many more words at its end so the block gains a line`);
+  const after = await bdcOf(edited);
+  record(
+    'every text object an edit leaves on a tagged page is in a marked sequence, and the numbers it was given are still named',
+    after.texts > 0 && after.sequences === after.texts && [0, 1, 2].every((number) => after.numbers.includes(number)),
+    JSON.stringify(after),
+  );
+  record(
+    'a line the edit ADDED takes the marks of the line it continues',
+    after.texts > before.texts && after.sequences === after.texts,
+    `${String(before.texts)} text objects before, ${String(after.texts)} after, ${String(after.sequences)} sequences`,
+  );
+  const plain = await edit(await aParagraph(), `${BLOCK_LINES.join(' ')} with a good many more words at its end so the block gains a line`);
+  const none = await bdcOf(plain);
+  record(
+    'CONTROL: an untagged page stays untagged, so the marks are copied and not invented',
+    none.sequences === 0 && none.numbers.length === 0 && none.texts > 0,
+    JSON.stringify(none),
   );
 }
 

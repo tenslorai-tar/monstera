@@ -30,7 +30,8 @@ import { ShapingFace } from './textShaping.js';
 import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
 import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
 import { EditRefusedError, ReplaceMovesLineError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
-import { type JoinedRun, type Orientation, joinRuns, membersOf } from './textRunJoin.js';
+import type { Orientation } from './textLines.js';
+import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
 /**
  * The PDFium native boundary.
@@ -131,6 +132,17 @@ interface Bound {
   readonly setFillColour: Native;
   readonly getRenderMode: Native;
   readonly setRenderMode: Native;
+  readonly countMarks: Native;
+  readonly getMark: Native;
+  readonly markName: Native;
+  readonly markParamCount: Native;
+  readonly markParamKey: Native;
+  readonly markParamType: Native;
+  readonly markParamInt: Native;
+  readonly markParamString: Native;
+  readonly addMark: Native;
+  readonly markSetInt: Native;
+  readonly markSetString: Native;
   readonly getStrokeColour: Native;
   readonly setStrokeColour: Native;
   readonly getStrokeWidth: Native;
@@ -390,6 +402,43 @@ export function openPdfium(libraryPath: string): void {
     // picture, and outlined text loses its outline (ADR-0179's keep list).
     getRenderMode: native(library.func('int FPDFTextObj_GetTextRenderMode(void *object)')),
     setRenderMode: native(library.func('int FPDFTextObj_SetTextRenderMode(void *object, int mode)')),
+    // THE MARKED CONTENT an object stands in (`BDC … EMC`): its marks, each a name and parameters, an `MCID` among them.
+    // A tagged page's structure tree names its text by that number, so a new object that takes an old one's place must
+    // carry the marks, or the structure points at nothing (ADR-0181 Decision 8). Names and keys come back as UTF-16LE
+    // with their terminator, their lengths in BYTES; a name or key going in is a byte string.
+    countMarks: native(library.func('int FPDFPageObj_CountMarks(void *object)')),
+    getMark: native(library.func('void *FPDFPageObj_GetMark(void *object, unsigned long index)')),
+    markName: native(
+      library.func(
+        'int FPDFPageObjMark_GetName(void *mark, _Out_ uint8_t *buffer, unsigned long length, _Out_ unsigned long *needed)',
+      ),
+    ),
+    markParamCount: native(library.func('int FPDFPageObjMark_CountParams(void *mark)')),
+    markParamKey: native(
+      library.func(
+        'int FPDFPageObjMark_GetParamKey(void *mark, unsigned long index, _Out_ uint8_t *buffer, unsigned long length, _Out_ unsigned long *needed)',
+      ),
+    ),
+    markParamType: native(library.func('int FPDFPageObjMark_GetParamValueType(void *mark, const char *key)')),
+    markParamInt: native(
+      library.func('int FPDFPageObjMark_GetParamIntValue(void *mark, const char *key, _Out_ int *value)'),
+    ),
+    markParamString: native(
+      library.func(
+        'int FPDFPageObjMark_GetParamStringValue(void *mark, const char *key, _Out_ uint8_t *buffer, unsigned long length, _Out_ unsigned long *needed)',
+      ),
+    ),
+    addMark: native(library.func('void *FPDFPageObj_AddMark(void *object, const char *name)')),
+    markSetInt: native(
+      library.func(
+        'int FPDFPageObjMark_SetIntParam(void *document, void *object, void *mark, const char *key, int value)',
+      ),
+    ),
+    markSetString: native(
+      library.func(
+        'int FPDFPageObjMark_SetStringParam(void *document, void *object, void *mark, const char *key, const char *value)',
+      ),
+    ),
     getStrokeColour: native(
       library.func(
         'int FPDFPageObj_GetStrokeColor(void *object, _Out_ unsigned int *r, _Out_ unsigned int *g, _Out_ unsigned int *b, _Out_ unsigned int *a)',
@@ -2152,6 +2201,8 @@ function pieceWriter(
         if (numberFrom(bindings.insertObjectAt(handle, object, at + 1), 'FPDFPage_InsertObjectAtIndex') !== 1) {
           throw refusedAt('object', `FPDFPage_InsertObjectAtIndex refused a line this edit made on page ${String(page)}`);
         }
+        // THE OBJECT STANDS IN THE CONTENT THE ONE IT FOLLOWS STANDS IN (ADR-0181 Decision 8).
+        copyMarks(bindings, document, anchor, object);
       };
       /**
        * The blank page the font probes are read on, made on first use: appended after the
@@ -3338,6 +3389,75 @@ function blockPitch(bindings: Bound, object: unknown, baselines: readonly number
   }
   const bounds = boundsOf(bindings, object);
   return bounds.top - bounds.bottom;
+}
+
+/** `FPDF_OBJECT_*` of a mark's parameter: the two kinds PDFium's calls can both read and set. */
+const MARK_NUMBER = 2;
+const MARK_STRING = 3;
+const MARK_NAME = 4;
+
+/** The longest name, key or string value of a mark one read takes, in bytes: a hostile file's, bounded. */
+const MAX_MARK_STRING_BYTES = 4096;
+
+/** A mark's string read by PDFium's two-call convention (UTF-16LE with its terminator, the length in bytes). */
+function markString(
+  call: (buffer: Uint8Array | null, length: number, needed: number[]) => unknown,
+  what: string,
+): string | null {
+  const needed = [0];
+  if (numberFrom(call(null, 0, needed), what) !== 1) return null;
+  const bytes = needed[0] ?? 0;
+  if (bytes <= 2) return '';
+  if (bytes > MAX_MARK_STRING_BYTES) return null;
+  const buffer = new Uint8Array(bytes);
+  if (numberFrom(call(buffer, buffer.length, needed), what) !== 1) return null;
+  return Buffer.from(buffer.subarray(0, bytes - 2)).toString('utf16le');
+}
+
+/**
+ * The marked content `from` stands in, set on `to` ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
+ * Decision 8): each mark's name and the parameters PDFium can both read and set (numbers and strings, an `MCID` among
+ * them).
+ *
+ * A tagged page's structure tree names its text by that number, so an object that takes an old one's place without the
+ * mark leaves the structure pointing at nothing, and a screen reader loses the text. A parameter of another kind (an
+ * array or a dictionary, a figure's bounding box) is not copied: the mark is, so the object stays in its content
+ * sequence, and what is lost is a property of the sequence that PDFium has no call to write.
+ *
+ * A continuation line takes the marks of the line it continues, so one sequence's number may stand on more than one
+ * object on the page.
+ */
+function copyMarks(bindings: Bound, document: unknown, from: unknown, to: unknown): void {
+  const count = numberFrom(bindings.countMarks(from), 'FPDFPageObj_CountMarks');
+  for (let at = 0; at < count; at += 1) {
+    const mark: unknown = bindings.getMark(from, at);
+    if (mark === null) continue;
+    const name = markString((buffer, length, needed) => bindings.markName(mark, buffer, length, needed), 'FPDFPageObjMark_GetName');
+    if (name === null || name === '') continue;
+    const made: unknown = bindings.addMark(to, name);
+    if (made === null) throw refusedAt('object', `FPDFPageObj_AddMark refused the mark ${name} of a line this edit made`);
+    const params = numberFrom(bindings.markParamCount(mark), 'FPDFPageObjMark_CountParams');
+    for (let index = 0; index < params; index += 1) {
+      const key = markString(
+        (buffer, length, needed) => bindings.markParamKey(mark, index, buffer, length, needed),
+        'FPDFPageObjMark_GetParamKey',
+      );
+      if (key === null || key === '') continue;
+      const kind = numberFrom(bindings.markParamType(mark, key), 'FPDFPageObjMark_GetParamValueType');
+      if (kind === MARK_NUMBER) {
+        const value = [0];
+        if (numberFrom(bindings.markParamInt(mark, key, value), 'FPDFPageObjMark_GetParamIntValue') === 1) {
+          numberFrom(bindings.markSetInt(document, to, made, key, value[0] ?? 0), 'FPDFPageObjMark_SetIntParam');
+        }
+      } else if (kind === MARK_STRING || kind === MARK_NAME) {
+        const text = markString(
+          (buffer, length, needed) => bindings.markParamString(mark, key, buffer, length, needed),
+          'FPDFPageObjMark_GetParamStringValue',
+        );
+        if (text !== null) numberFrom(bindings.markSetString(document, to, made, key, text), 'FPDFPageObjMark_SetStringParam');
+      }
+    }
+  }
 }
 
 /**

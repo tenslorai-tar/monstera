@@ -327,6 +327,7 @@ export {
   type GroupableRun,
   groupIntoBlocks,
   groupIntoLines,
+  isEditedInPlace,
   settingOf,
   softEnds,
 } from './textLines.js';

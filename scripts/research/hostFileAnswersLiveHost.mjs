@@ -341,7 +341,8 @@ async function main() {
     try {
       const runs = await pdfium.textRuns(measured, 0);
       runCount = runs.runs.length;
-      uprightRunCount = runs.runs.filter((/** @type {any} */ run) => run.style.upright).length;
+      const { isEditedInPlace } = await built('packages/kernel/dist/textLines.js');
+      uprightRunCount = runs.runs.filter((/** @type {any} */ run) => isEditedInPlace(run.style)).length;
       runsAnswerBytes = Buffer.byteLength(JSON.stringify({ ok: true, value: runs }));
     } finally {
       await pdfium.pdfiumWriter.close(measured);

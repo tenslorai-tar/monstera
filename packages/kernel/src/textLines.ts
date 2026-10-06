@@ -52,6 +52,20 @@
 
 import { blockShape } from './paragraphShape.js';
 
+/** How a text object's matrix sets it (`orientationOf`, `pdfiumFfi.ts`): `upright` is the only one an editor is placed along. */
+export type Orientation = 'upright' | 'turned' | 'vertical' | 'slanted' | 'mirrored';
+
+/**
+ * Whether text set like this is edited in place: straight text only, since an editor cannot be placed along an axis the
+ * page is not set on ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
+ * Decision 7). The ONE spelling of that test (B3a): the composition leaves other text out of the blocks, the join does
+ * not join it, and the proofs that group runs ask the same question, so a kind added to {@link Orientation} is decided
+ * here and nowhere else.
+ */
+export function isEditedInPlace(style: { readonly orientation: Orientation }): boolean {
+  return style.orientation === 'upright';
+}
+
 /** One text run as the line grouping needs it. `pdfiumFfi.ts`'s `TextRun`, structurally. */
 export interface GroupableRun {
   readonly index: number;

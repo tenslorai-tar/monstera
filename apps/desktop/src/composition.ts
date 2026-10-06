@@ -106,6 +106,7 @@ import {
   createRemoteSessions,
   engineChannels,
   groupIntoBlocks,
+  isEditedInPlace,
   settingOf,
   hostedPdfLibExecution,
   nodeFileSurface,
@@ -1350,13 +1351,19 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // cannot be placed along an axis the page is not set on, and a block
       // mixing upright and rotated runs would be outlined as a box around
       // neither.
-      const upright = found.runs.filter((run) => run.style.orientation === 'upright');
+      const upright = found.runs.filter((run) => isEditedInPlace(run.style));
       // COUNTED BY KIND (ADR-0181 Decision 7), from the one classification the read makes, so the editor names which text
       // is not its to edit and `rotated` stays the total it always was.
-      const angled = { turned: 0, vertical: 0, slanted: 0, mirrored: 0 };
+      const counts = new Map<string, number>();
       for (const run of found.runs) {
-        if (run.style.orientation !== 'upright') angled[run.style.orientation] += run.text.length;
+        if (!isEditedInPlace(run.style)) counts.set(run.style.orientation, (counts.get(run.style.orientation) ?? 0) + run.text.length);
       }
+      const angled = {
+        turned: counts.get('turned') ?? 0,
+        vertical: counts.get('vertical') ?? 0,
+        slanted: counts.get('slanted') ?? 0,
+        mirrored: counts.get('mirrored') ?? 0,
+      };
       const rotated = angled.turned + angled.vertical + angled.slanted + angled.mirrored;
       return {
         blocks: groupIntoBlocks(

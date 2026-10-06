@@ -62,7 +62,7 @@ refuseStaleBuild(root, PDFIUM_READ_BACK, 23);
 
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
 const { objectRuns, openPdfium, pdfiumWriter, textRuns } = await import('../../packages/kernel/dist/pdfiumFfi.js');
-const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
+const { groupIntoBlocks, isEditedInPlace, settingOf } = await import('../../packages/kernel/dist/textLines.js');
 // OVER BYTES THAT OPEN WITH NO PASSWORD, as every fixture here does (`withNoPassword`).
 const localPdfiumExecution = withNoPassword((await import('../../packages/kernel/dist/pdfiumSpecs.js')).localPdfiumExecution);
 const { EditRefusedError } = await import('../../packages/kernel/dist/textEditRefusals.js');
@@ -105,7 +105,7 @@ async function objectRunsOf(bytes) {
 
 /** @param {readonly Run[]} runs @returns {readonly any[]} `groupIntoBlocks`' answer, imported by a computed path */
 const blocksOf = (runs) =>
-  groupIntoBlocks(runs.filter((run) => run.style.upright).map((run) => ({ ...run, setting: settingOf(run.style) })));
+  groupIntoBlocks(runs.filter((run) => isEditedInPlace(run.style)).map((run) => ({ ...run, setting: settingOf(run.style) })));
 
 /** @param {any} block */
 const textOfBlock = (block) =>

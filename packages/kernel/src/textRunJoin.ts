@@ -21,6 +21,8 @@
  * wider than the letters' size on one baseline in one face is a word or a space between words.
  */
 
+import { type Orientation, isEditedInPlace } from './textLines.js';
+
 /** How a run is set, compared field by field — `pdfiumFfi.ts`' `RunStyle`. */
 export interface JoinStyle {
   readonly size: number;
@@ -31,9 +33,6 @@ export interface JoinStyle {
   readonly bold: boolean;
   readonly orientation: Orientation;
 }
-
-/** How a text object's matrix sets it; `upright` is the only one the editor offers for editing (`orientationOf`). */
-export type Orientation = 'upright' | 'turned' | 'vertical' | 'slanted' | 'mirrored';
 
 /** One object's run, as the walk read it. */
 export interface ObjectRun<Style extends JoinStyle = JoinStyle> {
@@ -100,7 +99,7 @@ function measure(run: ObjectRun): number {
  */
 function continues(run: JoinedRun, next: ObjectRun): boolean {
   // UPRIGHT ONLY: a gap along x means nothing for text set at an angle, and the editor leaves that text out anyway.
-  if (run.style.orientation !== 'upright' || !sameStyle(run.style, next.style)) return false;
+  if (!isEditedInPlace(run.style) || !sameStyle(run.style, next.style)) return false;
   const size = measure(run);
   if (size <= 0) return false;
   const overlap = Math.min(run.top, next.top) - Math.max(run.bottom, next.bottom);
