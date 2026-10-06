@@ -11,7 +11,7 @@ import {
   displayLocationSchema,
   preloadChannels,
 } from './channels.js';
-import { placeImageSchema } from './commands.js';
+import { MAX_BLOCK_FONTS, MAX_RUN_FONT_BYTES, placeImageSchema } from './commands.js';
 import type { Incident } from './incident.js';
 import { MAX_PAGE_SET_ENTRIES } from './pageSet.js';
 import {
@@ -155,7 +155,9 @@ const handlers: ContractHandlers = {
     Promise.resolve(
       ok({ version: asDocVersion(1), width, height, png: new Uint8Array([0x89, 0x50]) }),
     ),
-  'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.runFonts': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), fonts: [new Uint8Array([0, 1, 0, 0])], runs: [0, null] })),
+  'document.split':() => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportPageImages': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportText': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportWord': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -835,6 +837,30 @@ describe('pages past 4,096 cross as one page set (JOURNAL, No document-size refu
       const value = name === 'document.split each' ? { each: tooMany } : tooMany;
       expect(field.safeParse(value).success, name).toBe(false);
     }
+  });
+});
+
+describe('a block’s run fonts are bounded bytes, and every run names one the answer carries (ADR-0175)', () => {
+  const answer = channels['document.runFonts'].result;
+  const version = asDocVersion(3);
+  const of = (length: number) => ({ version, fonts: [new Uint8Array(length)], runs: [0, null, 0] });
+
+  it('takes a font at the bound, the most fonts, and none', () => {
+    const most = { version, fonts: Array.from({ length: MAX_BLOCK_FONTS }, () => new Uint8Array(4)), runs: [MAX_BLOCK_FONTS - 1] };
+    expect([
+      answer.safeParse(of(MAX_RUN_FONT_BYTES)).success,
+      answer.safeParse(most).success,
+      answer.safeParse({ version, fonts: [], runs: [null, null] }).success,
+    ]).toStrictEqual([true, true, true]);
+  });
+
+  it('CONTROL: one byte past the bound, an empty font, a font too many, or a run past the fonts is refused', () => {
+    expect(answer.safeParse(of(MAX_RUN_FONT_BYTES + 1)).success).toBe(false);
+    expect(answer.safeParse(of(0)).success).toBe(false);
+    const tooMany = { version, fonts: Array.from({ length: MAX_BLOCK_FONTS + 1 }, () => new Uint8Array(4)), runs: [0] };
+    expect(answer.safeParse(tooMany).success).toBe(false);
+    expect(answer.safeParse({ version, fonts: [new Uint8Array(4)], runs: [0, 1] }).success).toBe(false);
+    expect(answer.safeParse({ version, fonts: ['AAEAAA'], runs: [0] }).success).toBe(false);
   });
 });
 

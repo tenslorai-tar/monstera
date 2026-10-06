@@ -168,6 +168,7 @@ import {
   type DocumentTextBlocksReader,
   type DocumentPageObjectsReader,
   type DocumentPageRasteriser,
+  type DocumentRunFontsReader,
   EngineUnavailableError,
   suggestedComposedName,
   suggestedUrlName,
@@ -664,6 +665,10 @@ const noPageObjects: DocumentPageObjectsReader = () =>
 const noRenderPage: DocumentPageRasteriser = () =>
   Promise.reject(new EngineUnavailableError('rendering a page with the second engine'));
 
+/** The composition's answer with no PDFium host: no run has a font (ADR-0175), which is an answer and not a refusal. */
+const noRunFonts: DocumentRunFontsReader = (_docId, _sessions, _page, indices) =>
+  Promise.resolve({ fonts: [], runs: indices.map(() => null) });
+
 /** The candidate proposal's composition, per page. */
 const noBarcodes: DocumentBarcodesReader = () =>
   Promise.reject(new Error('this case does not read barcodes'));
@@ -861,6 +866,7 @@ const INERT = {
   textBlocks: noTextBlocks,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
+  runFonts: noRunFonts,
   duplicates: noDuplicates,
   copy: noCopying,
   image: noImages,
@@ -952,6 +958,7 @@ const LOCAL_READS = {
   textBlocks: noTextBlocks,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
+  runFonts: noRunFonts,
   duplicates: localDuplicates,
   copies: {
     // THE KERNEL'S ONE RULE, `sealCopy`, over MuPDF in this process: the host's sealing without a host.

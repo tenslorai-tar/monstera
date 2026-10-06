@@ -282,6 +282,7 @@ describe('browser shim', () => {
       'document.redo',
       'document.reimportExternalEdit',
       'document.renderPage',
+      'document.runFonts',
       'document.save',
       'document.saveCopy',
       'document.searchPage',

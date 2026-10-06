@@ -116,7 +116,7 @@ const {
   pageText,
   renderPageBitmap,
   replaceTextObjects,
-  runFont,
+  runFonts,
   textObjectIndices,
   textRuns,
 } = await import('../../packages/kernel/dist/pdfiumFfi.js');
@@ -1246,19 +1246,25 @@ async function runFontCases() {
     const runs = (await objectRuns(session, 0)).runs;
     const piece = runs.find((run) => run.text.includes('Привет'));
     const helvetica = runs.find((run) => run.style.font === 'Helvetica');
-    const pieceFont = piece === undefined ? null : await runFont(session, 0, piece.index);
-    const helveticaFont = helvetica === undefined ? 'no Helvetica run' : await runFont(session, 0, helvetica.index);
+    if (piece === undefined || helvetica === undefined) {
+      record('the edited page holds a run in the embedded subset and one in Helvetica', false, JSON.stringify(runs.map((run) => run.style.font)));
+      return;
+    }
+    // THE SUBSET'S RUN ASKED TWICE, around the Helvetica run: one font answered, both asks naming it, and the Helvetica
+    // run none — so a read that rebuilt per run, or answered every run alike, fails one of the two records.
+    const read = await runFonts(session, 0, [piece.index, helvetica.index, piece.index]);
+    const pieceFont = read.fonts[0];
     // THE REBUILT FONT DRAWS THE RUN: every character of the piece maps to a glyph in it.
-    const mapped = pieceFont === null ? [] : Array.from((piece?.text ?? '').trim(), (c) => runFontGlyph(pieceFont, c));
+    const mapped = pieceFont === undefined ? [] : Array.from(piece.text.trim(), (c) => runFontGlyph(pieceFont, c));
     record(
-      'a run in an embedded subset has a font rebuilt from its program, mapping every character the run holds',
-      pieceFont !== null && mapped.length > 0 && mapped.every((glyph) => glyph > 0),
-      `${String(pieceFont?.length ?? 'no font')} bytes; glyphs ${JSON.stringify(mapped)}`,
+      'a block’s runs in an embedded subset have one font rebuilt from its program, mapping every character the run holds',
+      read.fonts.length === 1 && read.runs[0] === 0 && read.runs[2] === 0 && mapped.length > 0 && mapped.every((glyph) => glyph > 0),
+      `${String(read.fonts.length)} fonts, places ${JSON.stringify(read.runs)}; glyphs ${JSON.stringify(mapped)}`,
     );
     record(
       'CONTROL: a run in a font that is not embedded has none, PDFium’s substitute being all there is',
-      helveticaFont === null,
-      helveticaFont === null ? 'none' : typeof helveticaFont === 'string' ? helveticaFont : `${String(helveticaFont.length)} bytes`,
+      read.runs[1] === null,
+      `place ${JSON.stringify(read.runs[1])}`,
     );
   } finally {
     await pdfiumWriter.close(session);

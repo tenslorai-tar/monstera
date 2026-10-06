@@ -527,6 +527,12 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // document's size. A thousand-page report and a one-page note answer the same
   // number of bytes for the same canvas.
   'document.renderPage': 'needs an engine session',
+  // THE THIRD SANCTIONED BYTE CROSSING (ADR-0175), and FONTS rather than a
+  // raster: a block's embedded programs, each rebuilt in the host without its
+  // hinting, refused above `MAX_RUN_FONT_BYTES`, at most `MAX_BLOCK_FONTS` of
+  // them. A function of the fonts one block is set in, never of how many pages
+  // the document has.
+  'document.runFonts': 'needs an engine session',
   'document.duplicatePages': 'needs an engine session',
 };
 

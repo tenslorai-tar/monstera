@@ -1,3 +1,4 @@
+import { MAX_BLOCK_FONTS } from '@monstera/contract/host';
 import { type EditStep, replacementsForLine } from '@monstera/shared';
 import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
@@ -830,7 +831,9 @@ export interface RunStyle {
   readonly colour: { readonly r: number; readonly g: number; readonly b: number };
   /**
    * The font's base name, as PDFium answers it — which font the run is set in, for the block grouping's *a change of
-   * font starts a new block* (`textLines.ts`). It never reaches a renderer: the page's font cannot be loaded there.
+   * font starts a new block* (`textLines.ts`). It never reaches a renderer, and nor does the font's program: what the
+   * editor draws a run in is a font the host rebuilds from that program's checked glyphs, read on its own channel
+   * (`runFont`, ADR-0175).
    */
   readonly font: string;
   /** Font descriptor flag 2 — a serif face. */
@@ -1250,47 +1253,77 @@ function embeddedProgramOf(bindings: Bound, font: unknown): Uint8Array | null {
   return numberFrom(bindings.fontData(font, bytes, length, needed), 'FPDFFont_GetFontData') === 1 ? bytes : null;
 }
 
+/** A block's run fonts: each font once, and for each run asked about its font's place among them, or `null`. */
+export interface BlockFonts {
+  readonly fonts: readonly Uint8Array[];
+  readonly runs: readonly (number | null)[];
+}
+
 /**
- * The font the editor draws the run whose first object is `index` in, rebuilt from its own program, or `null` where it
- * has none (ADR-0175, `runFont.ts`). Checked against every character drawn in that font ON THE PAGE, the run's and every
- * other object's in it: a joined run spans several objects, and a letter the person types may be one another line holds.
+ * The fonts the editor draws the runs whose first objects are `indices` in, each rebuilt from its own program
+ * (ADR-0175, `runFont.ts`). ONE ANSWER PER FONT, keyed by the font handle's address, which is the page's own font and
+ * stable while the page is open: the check and the rebuild depend on the font alone, so runs that share one share its
+ * answer, and a run in a font past {@link MAX_BLOCK_FONTS} is answered with none.
+ *
+ * Each font is checked against every character drawn in it ON THE PAGE, the run's and every other object's in it: a
+ * joined run spans several objects, and a letter the person types may be one another line holds.
  */
-export function runFont(session: PdfiumSession, page: number, index: number): Promise<Uint8Array | null> {
+export function runFonts(session: PdfiumSession, page: number, indices: readonly number[]): Promise<BlockFonts> {
   return promised(() =>
     onPage(session, page, (handle) => {
       const bindings = api();
-      const font: unknown = bindings.textFont(textObjectAt(bindings, handle, page, index));
-      if (font === null) return null;
-      const program = embeddedProgramOf(bindings, font);
-      if (program === null) return null;
-      const wanted = String(koffi.address(font));
-      const inFont: unknown[] = [];
-      const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
-      for (let at = 0; at < count; at += 1) {
-        const object: unknown = bindings.getObject(handle, at);
-        if (object === null || numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') !== TEXT_OBJECT) continue;
-        const own: unknown = bindings.textFont(object);
-        if (own !== null && String(koffi.address(own)) === wanted) inFont.push(object);
-      }
-      const textPage: unknown = bindings.loadTextPage(handle);
-      if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read a run’s characters');
-      let text: string;
+      const fonts: Uint8Array[] = [];
+      /** Each font met, by address: its place in `fonts`, or `null` for one with none. */
+      const answered = new Map<string, number | null>();
+      let textPage: unknown = null;
       try {
-        text = drawnTextOn(bindings, textPage, inFont).join('');
+        const runs = indices.map((index) => {
+          const font: unknown = bindings.textFont(textObjectAt(bindings, handle, page, index));
+          if (font === null) return null;
+          const key = String(koffi.address(font));
+          const known = answered.get(key);
+          if (known !== undefined) return known;
+          let at: number | null = null;
+          if (fonts.length < MAX_BLOCK_FONTS) {
+            if (textPage === null) {
+              textPage = bindings.loadTextPage(handle);
+              if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read a run’s characters');
+            }
+            const rebuilt = fontOfRun(bindings, handle, textPage, font, key);
+            if (rebuilt !== null) at = fonts.push(rebuilt) - 1;
+          }
+          answered.set(key, at);
+          return at;
+        });
+        return { fonts, runs };
       } finally {
-        bindings.closeTextPage(textPage);
+        if (textPage !== null) bindings.closeTextPage(textPage);
       }
-      const drawn = new Map<number, DrawnGlyph>();
-      for (const character of text) {
-        const point = character.codePointAt(0) ?? 0;
-        if (drawn.has(point)) continue;
-        const glyph = drawnGlyphOf(bindings, font, point);
-        if (glyph === null) return null;
-        drawn.set(point, glyph);
-      }
-      return runFontFor(program, drawn);
     }),
   );
+}
+
+/** One font's rebuilt program, checked against what PDFium draws for every character the page sets in it, or `null`. */
+function fontOfRun(bindings: Bound, handle: unknown, textPage: unknown, font: unknown, key: string): Uint8Array | null {
+  const program = embeddedProgramOf(bindings, font);
+  if (program === null) return null;
+  const inFont: unknown[] = [];
+  const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  for (let at = 0; at < count; at += 1) {
+    const object: unknown = bindings.getObject(handle, at);
+    if (object === null || numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') !== TEXT_OBJECT) continue;
+    const own: unknown = bindings.textFont(object);
+    if (own !== null && String(koffi.address(own)) === key) inFont.push(object);
+  }
+  const drawn = new Map<number, DrawnGlyph>();
+  for (const character of drawnTextOn(bindings, textPage, inFont).join('')) {
+    const point = character.codePointAt(0) ?? 0;
+    if (drawn.has(point)) continue;
+    const glyph = drawnGlyphOf(bindings, font, point);
+    if (glyph === null) return null;
+    drawn.set(point, glyph);
+  }
+  return runFontFor(program, drawn);
 }
 
 /**

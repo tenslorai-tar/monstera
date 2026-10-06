@@ -3428,13 +3428,28 @@ export const MAX_LIBRARY_ENTRIES = 16;
 export const MAX_LIBRARY_PICTURE_BYTES = 2 * 1024 * 1024;
 
 /**
- * The most bytes one run's font may cross in (`document.runFont`, ADR-0175): the third sanctioned byte crossing, a font
+ * The most bytes one run's font may cross in (`document.runFonts`, ADR-0175): the third sanctioned byte crossing, a font
  * the PDFium host rebuilt from an embedded program. Here and not beside the channel, because the host that builds the
  * font refuses one past it and a host takes its contract values from `@monstera/contract/host`. One mebibyte is past
  * every Latin subset a PDF carries (the Arimo subset an edit makes is 2,888 bytes, measured 2026-10-06) and short of a
  * whole CJK face, which the editor draws in its kind of face instead: a font past it is not offered, never cut.
  */
 export const MAX_RUN_FONT_BYTES = 1024 * 1024;
+
+/**
+ * The most runs one `document.runFonts` read names. A block's runs are its text objects, and a producer that writes a
+ * word per object makes a paragraph of hundreds; the editor asks in reads of this many, each costing one write of the
+ * document's image for the host, so the bound decides how many writes a long block costs rather than whether its
+ * fonts are read.
+ */
+export const MAX_FONT_RUNS = 4096;
+
+/**
+ * The most fonts one `document.runFonts` answer carries: one per distinct font among the runs it was asked about,
+ * however many runs share it. A run in a font past the sixteenth is answered with none and drawn in its kind of face,
+ * so an answer is at most sixteen times {@link MAX_RUN_FONT_BYTES}.
+ */
+export const MAX_BLOCK_FONTS = 16;
 
 /** A picture's name, as main takes it from the file's own name: bounded, and shown as text. */
 export const MAX_LIBRARY_NAME = 64;

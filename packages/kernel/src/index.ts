@@ -302,6 +302,8 @@ export {
   regeneratedBy,
   remotePdfiumPageObjects,
   remotePdfiumRenderPage,
+  remotePdfiumRunFonts,
+  type RunFonts,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
 } from './host/remotePdfium.js';

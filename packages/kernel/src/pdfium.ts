@@ -13,6 +13,8 @@ export {
   objectMatrix,
   removeObjects,
   replaceTextObjects,
+  runFonts,
+  type BlockFonts,
   setObjectFills,
   setObjectMatrix,
   textObjectIndices,

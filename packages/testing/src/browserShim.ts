@@ -608,6 +608,15 @@ export interface BrowserShimOptions {
    */
   readonly textBlocks?: ChannelResult<'document.textBlocks'>['blocks'] | null;
   /**
+   * What `document.runFonts` answers (ADR-0175): the fonts, and each run's place among them by the run's first object.
+   * Every font is answered whatever was asked, as a host answers each font met once. Absent is none for every run, which
+   * is what an installation with no PDFium answers, and the editor draws each run in its kind of face.
+   */
+  readonly runFonts?: {
+    readonly fonts: readonly Uint8Array<ArrayBuffer>[];
+    readonly runs: ReadonlyMap<number, number>;
+  };
+  /**
    * What `ai.translatePage` answers. Absent is a refusal with no key — no provider exists in a
    * browser — so a case that wants the write that follows a translation hands one in.
    */
@@ -2268,6 +2277,18 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       );
     },
 
+    'document.runFonts': ({ docId, indices }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      const given = options.runFonts;
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(current),
+          fonts: given?.fonts ?? [],
+          runs: indices.map((index) => given?.runs.get(index) ?? null),
+        }),
+      );
+    },
     'document.renderPage': ({ docId }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));

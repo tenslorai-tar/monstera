@@ -292,6 +292,8 @@ export {
   MAX_LIBRARY_ENTRIES,
   MAX_LIBRARY_NAME,
   MAX_LIBRARY_PICTURE_BYTES,
+  MAX_BLOCK_FONTS,
+  MAX_FONT_RUNS,
   MAX_RUN_FONT_BYTES,
   keepableSignatureSchema,
   libraryEntrySchema,

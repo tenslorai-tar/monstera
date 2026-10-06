@@ -110,6 +110,17 @@ export type HostPageRasteriser = (
   height: number,
 ) => Promise<Uint8Array>;
 
+/**
+ * How this process rebuilds the fonts a block's runs are drawn in (ADR-0175): each font once, and for each run its
+ * font's place, or `null` for a run with none. Injected for {@link HostPageRasteriser}'s reason, and answering bytes for
+ * the same one: where the file goes is the handler's.
+ */
+export type HostRunFontsReader = (
+  image: ImageSession,
+  page: number,
+  indices: readonly number[],
+) => Promise<{ readonly fonts: readonly Uint8Array[]; readonly runs: readonly (number | null)[] }>;
+
 export type HostPageObjectsReader = (
   image: ImageSession,
   page: number,
@@ -147,6 +158,8 @@ export interface PdfiumHandlerParts {
   readonly pageObjects: HostPageObjectsReader;
   /** How this process rasterises a page. `engine/render-page`. */
   readonly renderPage: HostPageRasteriser;
+  /** How this process rebuilds a block's run fonts. `engine/run-fonts`. */
+  readonly runFonts: HostRunFontsReader;
 }
 
 export function createPdfiumHandlers({
@@ -156,6 +169,7 @@ export function createPdfiumHandlers({
   pageObjects,
   probe,
   renderPage,
+  runFonts,
   textRuns,
 }: PdfiumHandlerParts): Handlers<PdfiumChannels> {
   // THE MISS IS RETURNED, NEVER THROWN — `engineHandlers.ts`'s rule, and it is
@@ -445,6 +459,36 @@ export function createPdfiumHandlers({
       // reads nothing rather than a partial image.
       const written = await files.writeOutput(held.outputDirectory, into, raster);
       return { ok: true, value: { bytes: written } };
+    },
+
+    'engine/run-fonts': async ({ session, from, password, into, page, indices }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      let image: ImageSession;
+      try {
+        image = await imageFor(held, from, password);
+      } catch {
+        return failed('asset-missing');
+      }
+      let read;
+      try {
+        read = await runFonts(image, page, indices);
+      } catch {
+        // `engine/render-page`'s reason: a page or an object this document does not have is the request's.
+        return failed('engine-refused');
+      }
+      const sizes = read.fonts.map((font) => font.length);
+      // NONE IS AN ANSWER, and nothing is written for it: main reads no file when every size is absent.
+      if (sizes.length > 0) {
+        const all = new Uint8Array(sizes.reduce((total, size) => total + size, 0));
+        let at = 0;
+        for (const font of read.fonts) {
+          all.set(font, at);
+          at += font.length;
+        }
+        await files.writeOutput(held.outputDirectory, into, all);
+      }
+      return { ok: true, value: { sizes, runs: [...read.runs] } };
     },
   };
 }

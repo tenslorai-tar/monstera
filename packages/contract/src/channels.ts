@@ -61,6 +61,9 @@ import {
 import {
   MAX_LIBRARY_ENTRIES,
   MAX_LIBRARY_PICTURE_BYTES,
+  MAX_BLOCK_FONTS,
+  MAX_FONT_RUNS,
+  MAX_RUN_FONT_BYTES,
   keepableSignatureSchema,
   libraryEntrySchema,
   libraryIdSchema,
@@ -791,9 +794,11 @@ export const pdfBoxSchema = z
 /**
  * How a block's text is set, as far as an editor drawn over it can use.
  *
- * The page's own font cannot travel — a renderer that loaded it would be a
- * second parser of the document's bytes — so what crosses is its KIND and the
- * size it is drawn at. `colour` is the fill its glyphs are painted in.
+ * The page's own font program never travels — a renderer that loaded it would
+ * be a second parser of the document's bytes — so what crosses here is its KIND
+ * and the size it is drawn at. `colour` is the fill its glyphs are painted in.
+ * A run whose embedded program the host can check and rebuild has that rebuilt
+ * font on its own read, `document.runFonts` (ADR-0175), never in this answer.
  */
 export const textBlockStyleSchema = z
   .object({
@@ -5208,6 +5213,49 @@ export const channels = {
     // an OUTCOME a caller can act on: ask for fewer pixels. An incident id for a
     // person who zoomed in would be a defect's answer to a working build.
     ['document-not-open', 'document-poisoned', 'engine-unavailable', 'raster-too-large'],
+  ),
+
+  /**
+   * The fonts the editor draws a block's runs in, rebuilt by the PDFium host from the runs' own programs
+   * ([ADR-0175](../../../docs/DECISIONS/0175-the-typing-box-draws-a-run-in-its-own-font-rebuilt-in-the-host.md)): the
+   * third sanctioned byte crossing, beside `document.readRange` and this one's neighbour `document.renderPage`.
+   *
+   * Never the document's program. ONE READ PER BLOCK, each font once however many runs share it: every read writes the
+   * document's image for the host and opens it there, so a read per run cost a block's run count in whole-image writes.
+   * A run with no font — not embedded, not an sfnt, or glyphs that do not read as the page's — is `null` and the editor
+   * draws it in its kind of face. Read when the editor opens over a block, never in `document.textBlocks`, whose parts
+   * outline every page.
+   */
+  'document.runFonts': channel(
+    'The fonts a block’s runs are drawn in, rebuilt by the editing engine from the runs’ own programs, each once.',
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+      /** The runs' first objects, as `document.textBlocks` named them. */
+      indices: z.array(z.number().int().min(0).max(MAX_OBJECT_INDEX)).min(1).max(MAX_FONT_RUNS).readonly(),
+    }),
+    z
+      .object({
+        version: docVersionSchema,
+        /** The rebuilt fonts, each bounded in the predicate where the payload sweep can name it. */
+        fonts: z
+          .array(
+            z.instanceof(Uint8Array).refine((bytes) => bytes.length > 0 && bytes.length <= MAX_RUN_FONT_BYTES, {
+              message: `a run font empty or larger than ${String(MAX_RUN_FONT_BYTES)} bytes`,
+            }),
+          )
+          .max(MAX_BLOCK_FONTS)
+          .readonly(),
+        /** For each run asked about, in the order asked, its font's place in `fonts`, or `null` for none. */
+        runs: z
+          .array(z.number().int().min(0).max(MAX_BLOCK_FONTS - 1).nullable())
+          .max(MAX_FONT_RUNS)
+          .readonly(),
+      })
+      .refine((answer) => answer.runs.every((at) => at === null || at < answer.fonts.length), {
+        message: 'a run names a font the answer does not carry',
+      }),
+    ['document-not-open', 'document-poisoned'],
   ),
 
   'document.duplicatePages': channel(

@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
 import {
+  MAX_BLOCK_FONTS,
+  MAX_FONT_RUNS,
+  MAX_RUN_FONT_BYTES,
   channel,
   fileAnswered,
   deletePageObjectsSchema,
@@ -653,6 +656,38 @@ export const pdfiumChannels = {
          * partial write is a refusal rather than a truncated image.
          */
         bytes: z.number().int().nonnegative(),
+      })
+      .strict(),
+    ['no-such-session', 'asset-missing', 'engine-refused'],
+  ),
+
+  /**
+   * The fonts the editor draws a block's runs in, rebuilt by this host from the runs' own programs, each font once
+   * ([ADR-0175](../../../../docs/DECISIONS/0175-the-typing-box-draws-a-run-in-its-own-font-rebuilt-in-the-host.md)),
+   * into the granted output directory as `engine/render-page` writes a raster: font bytes cannot be framed JSON.
+   *
+   * The fonts are written one after another and `sizes` says where each ends; nothing is written when there are none.
+   * A run with no font (not embedded, not an sfnt, a glyph that does not read as PDFium's, past the cap) is `null` in
+   * `runs`: none is the ordinary case and not a failure, and the editor draws the run in its kind of face.
+   */
+  'engine/run-fonts': channel(
+    'Rebuilds the fonts a block’s runs are drawn in, each once, into the granted output directory.',
+    z
+      .object({
+        session: sessionSchema,
+        ...byteImageWire.read,
+        ...byteImageWire.write,
+        page: z.number().int().nonnegative(),
+        /** The runs' first objects, as `engine/text-runs` named them. */
+        indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_FONT_RUNS),
+      })
+      .strict(),
+    z
+      .object({
+        /** Each font's length in the order written: main refuses a file whose length disagrees with their sum. */
+        sizes: z.array(z.number().int().min(1).max(MAX_RUN_FONT_BYTES)).max(MAX_BLOCK_FONTS),
+        /** For each run asked about, in the order asked, its font's place in `sizes`, or `null` for none. */
+        runs: z.array(z.number().int().min(0).max(MAX_BLOCK_FONTS - 1).nullable()).max(MAX_FONT_RUNS),
       })
       .strict(),
     ['no-such-session', 'asset-missing', 'engine-refused'],

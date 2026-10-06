@@ -1357,6 +1357,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 })),
+  'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
@@ -1552,6 +1553,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 })),
+  'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
@@ -1828,6 +1830,7 @@ export const shim: ContractClient = {
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 })),
+  'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>

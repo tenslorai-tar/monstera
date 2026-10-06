@@ -12,6 +12,7 @@ import { pdfiumChannels } from './pdfiumChannels.js';
 import {
   type PdfiumInputKeeper,
   type PdfiumTransfer,
+  remotePdfiumRunFonts,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
 } from './remotePdfium.js';
@@ -103,6 +104,7 @@ function harness(peer: Peer, transfer: PdfiumTransfer, keep?: PdfiumInputKeeper)
   return {
     writer: remotePdfiumWriter(client, held, transfer, keep),
     textRuns: remotePdfiumTextRuns(client, held, transfer),
+    runFonts: remotePdfiumRunFonts(client, held, transfer),
   };
 }
 
@@ -452,6 +454,70 @@ describe('main’s PDFium writer', () => {
     // refused as a malformed envelope first, and this control would pass for that reason.
     code = 'asset-missing';
     await expect(writer.capture(imageOf(new Uint8Array([1])), COMMAND)).rejects.toThrow(/asset-missing/u);
+  });
+
+  /**
+   * A BLOCK'S FONTS COME BACK OUT OF THE OUTPUT DIRECTORY in one file, cut where each size ends (ADR-0175), and no sizes
+   * is a block with none: nothing is taken, since the host wrote nothing. Each is the other's control, and the input is
+   * removed either way.
+   */
+  it('cuts a block’s fonts out of one file by the sizes the host answered, and for none takes nothing', async () => {
+    const transfer = stubTransfer();
+    let sizes = [3, 2];
+    const peer: Peer = {
+      asked: [],
+      answer: (channel, params) => {
+        expect(channel).toBe('engine/run-fonts');
+        expect(params).toMatchObject({ page: 2, indices: [6, 7, 9] });
+        if (sizes.length > 0) transfer.outputs.set((params as { into: string }).into, new Uint8Array([1, 2, 3, 8, 9]));
+        return { ok: true, value: { sizes, runs: sizes.length > 0 ? [1, null, 0] : [null, null, null] } };
+      },
+    };
+    const { runFonts } = harness(peer, transfer);
+    const read = await runFonts(imageOf(new Uint8Array([5])), 2, [6, 7, 9]);
+    expect(read.fonts.map((font) => Array.from(font))).toStrictEqual([[1, 2, 3], [8, 9]]);
+    expect(read.runs).toStrictEqual([1, null, 0]);
+    sizes = [];
+    transfer.log.length = 0;
+    expect(await runFonts(imageOf(new Uint8Array([5])), 2, [6, 7, 9])).toStrictEqual({ fonts: [], runs: [null, null, null] });
+    expect(transfer.log.some((entry) => entry.startsWith('take:'))).toBe(false);
+    expect(transfer.log.at(-1)?.startsWith('remove:')).toBe(true);
+  });
+
+  it('refuses a block’s fonts whose sizes disagree with the file that arrived', async () => {
+    const transfer = stubTransfer();
+    const peer: Peer = {
+      asked: [],
+      answer: (_channel, params) => {
+        transfer.outputs.set((params as { into: string }).into, new Uint8Array([1, 2, 3]));
+        return { ok: true, value: { sizes: [4], runs: [0] } };
+      },
+    };
+    const { runFonts } = harness(peer, transfer);
+    await expect(runFonts(imageOf(new Uint8Array([5])), 0, [1])).rejects.toBeInstanceOf(EngineSerialiseMismatch);
+  });
+
+  /**
+   * THE ANSWER IS HELD TO THE QUESTION, which the channel's schema cannot do: it bounds each field and sees neither the
+   * request nor the other field. A run too few, and a place past the fonts answered, are each refused; the same answer
+   * with the right count and a place in range is the control, read whole.
+   */
+  it('refuses an answer with a run too few, or naming a font it does not carry', async () => {
+    const transfer = stubTransfer();
+    let runs: (number | null)[] = [0];
+    const peer: Peer = {
+      asked: [],
+      answer: (_channel, params) => {
+        transfer.outputs.set((params as { into: string }).into, new Uint8Array([1, 2]));
+        return { ok: true, value: { sizes: [2], runs } };
+      },
+    };
+    const { runFonts } = harness(peer, transfer);
+    await expect(runFonts(imageOf(new Uint8Array([5])), 0, [1, 4])).rejects.toThrow(/answered 1 runs for 2 asked/u);
+    runs = [0, 1];
+    await expect(runFonts(imageOf(new Uint8Array([5])), 0, [1, 4])).rejects.toThrow(/past the 1 it answered/u);
+    runs = [0, 0];
+    expect((await runFonts(imageOf(new Uint8Array([5])), 0, [1, 4])).runs).toStrictEqual([0, 0]);
   });
 
   it('reads a page’s text runs through the same input write', async () => {

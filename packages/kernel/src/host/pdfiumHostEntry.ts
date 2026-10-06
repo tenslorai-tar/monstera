@@ -6,6 +6,7 @@ import {
   openPdfium,
   pageObjects,
   renderPageBitmap,
+  runFonts,
   textRuns,
 } from '../pdfium.js';
 import { bindEditFaces } from '../editFaces.js';
@@ -153,6 +154,8 @@ const handlers = createPdfiumHandlers({
         truncated: objects.length > ENGINE_TEXT_OBJECTS_MAX,
       };
     }),
+  // REBUILT HERE, in the contained process, from the runs' own programs (ADR-0175): the document's program never leaves.
+  runFonts: (image, page, indices) => onImage(image, (session) => runFonts(session, page, indices)),
 });
 
 startEngineHost(

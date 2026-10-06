@@ -266,6 +266,16 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9]), dra
       // teach the case nothing about the handler.
       return Promise.resolve(new Uint8Array(width * height * 4).fill(7));
     },
+    runFonts: (image, page, indices) => {
+      calls.push(`run-fonts:${String(page)}:${indices.join(',')}:${seen(image)}`);
+      if (image.bytes.length === 1 && image.bytes[0] === 0) throw new Error('PDFium refused the document');
+      // RUNS 4 AND 6 SHARE A FONT, RUN 8 HAS ANOTHER, and every other run none: the handler must write both fonts one
+      // after the other and pass the places through, and a block of runs with none must write nothing.
+      const fonts = [new Uint8Array([0, 1, 0, 0, 5]), new Uint8Array([0x4f, 0x54, 0x54, 0x4f])];
+      const place = (index: number): number | null => (index === 4 || index === 6 ? 0 : index === 8 ? 1 : null);
+      const runs = indices.map(place);
+      return Promise.resolve({ fonts: runs.some((at) => at !== null) ? fonts : [], runs });
+    },
     pageObjects: (image, page) => {
       calls.push(`page-objects:${String(page)}:${seen(image)}`);
       return Promise.resolve({
@@ -828,6 +838,46 @@ describe('the PDFium host body', () => {
     expect(answerIn(stream.sent[1])).toMatchObject({
       body: { ok: false, error: { code: 'engine-refused' } },
     });
+    expect(files.written.size).toBe(0);
+  });
+
+  /**
+   * A BLOCK'S FONTS ARE WRITTEN WHERE A RASTER IS (ADR-0175), into the output directory one after another with their
+   * sizes answered, and a block whose runs have none answers no sizes and writes nothing. Each case is the other's
+   * control: a handler answering every block alike fails one of them.
+   */
+  it('writes a block’s fonts into the OUTPUT directory in order, and for runs with none answers no sizes and writes nothing', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([9]));
+
+    const ask = (id: string, indices: number[]) =>
+      request(id, 'engine/run-fonts', { session, from: IN, password: null, into: OUT, page: 1, indices });
+    stream.feed(ask('r1', [4, 5, 8, 6]));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { sizes: [5, 4], runs: [0, null, 1, 0] } } });
+    expect(Array.from(files.written.get(`${AREA.outputDirectory}|${OUT}`) ?? [])).toStrictEqual([
+      0, 1, 0, 0, 5, 0x4f, 0x54, 0x54, 0x4f,
+    ]);
+
+    files.written.clear();
+    stream.feed(ask('r2', [5, 7]));
+    await stream.whenSent(3);
+    expect(answerIn(stream.sent[2])).toMatchObject({ body: { ok: true, value: { sizes: [], runs: [null, null] } } });
+    expect(files.written.size).toBe(0);
+    // THE PAGE AND THE RUNS REACHED THE READER, each time, as one read per block.
+    expect(calls).toStrictEqual(['run-fonts:1:4,5,8,6:9', 'run-fonts:1:5,7:9']);
+  });
+
+  it('refuses a block’s fonts the document cannot answer, writing nothing', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([0]));
+    stream.feed(request('r1', 'engine/run-fonts', { session, from: IN, password: null, into: OUT, page: 0, indices: [4] }));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'engine-refused' } } });
     expect(files.written.size).toBe(0);
   });
 

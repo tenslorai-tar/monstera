@@ -501,6 +501,57 @@ export function remotePdfiumRenderPage(
   };
 }
 
+/** A block's run fonts as `main` holds them: each font once, and for each run asked about its place, or `null`. */
+export interface RunFonts {
+  readonly fonts: readonly Uint8Array[];
+  readonly runs: readonly (number | null)[];
+}
+
+/**
+ * The fonts a block's runs are drawn in, over the boundary (ADR-0175): {@link remotePdfiumRenderPage}'s round trip, since
+ * font bytes cannot be framed JSON, ONCE for the block. No sizes is a block with no fonts, and the host wrote nothing,
+ * so nothing is read; otherwise the file is their sum, held to itself by `takeAnnounced` and cut where each ends.
+ *
+ * THE HOST'S ANSWER IS CHECKED AGAINST THE QUESTION, since the host is hostile by invariant 25's premise: one place per
+ * run asked about, and none naming a font the answer does not carry. The schema bounds each field and cannot see the
+ * other one or the request.
+ */
+export function remotePdfiumRunFonts(
+  client: ClientApi<PdfiumChannels>,
+  held: () => PdfiumArea,
+  transfer: PdfiumTransfer,
+): (image: ImageSession, page: number, indices: readonly number[]) => Promise<RunFonts> {
+  return async (image, page, indices) => {
+    const { session, area } = held();
+    const from = transfer.mintName();
+    const into = transfer.mintName();
+    await transfer.writeSnapshot(area, from, image.bytes);
+    try {
+      const { sizes, runs } = answered(
+        'engine/run-fonts',
+        await client['engine/run-fonts']({ session, from, password: frameKey(image), into, page, indices: [...indices] }),
+      );
+      if (runs.length !== indices.length) {
+        throw new EngineCallFailed('engine/run-fonts', `answered ${String(runs.length)} runs for ${String(indices.length)} asked`);
+      }
+      if (runs.some((at) => at !== null && at >= sizes.length)) {
+        throw new EngineCallFailed('engine/run-fonts', `named a font past the ${String(sizes.length)} it answered`);
+      }
+      if (sizes.length === 0) return { fonts: [], runs };
+      const all = await takeAnnounced(transfer, area, into, sizes.reduce((total, size) => total + size, 0));
+      let at = 0;
+      const fonts = sizes.map((size) => {
+        const font = all.subarray(at, at + size);
+        at += size;
+        return font;
+      });
+      return { fonts, runs };
+    } finally {
+      await transfer.removeSnapshot(area, from);
+    }
+  };
+}
+
 /**
  * One page's objects, over the boundary.
  *

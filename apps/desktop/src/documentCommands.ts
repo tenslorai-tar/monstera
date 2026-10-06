@@ -1934,6 +1934,23 @@ export interface DocumentPageObjects {
 }
 
 /**
+ * The fonts the editor draws a block's runs in, rebuilt by the PDFium host from the runs' own programs, each once, with
+ * each run's place among them or `null` for none (ADR-0175). The third sanctioned byte crossing; the document's own
+ * program never leaves the host.
+ *
+ * `Uint8Array<ArrayBuffer>`, {@link DocumentPageRasteriser}'s `png` reason: structured clone sends a view's WHOLE
+ * buffer, so a view onto a shared one would hand the renderer whatever else shares it — here the block's other fonts,
+ * which arrive cut from one file. The composition copies each into a buffer of its own, so the narrower type is true
+ * rather than asserted.
+ */
+export type DocumentRunFontsReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+  indices: readonly number[],
+) => Promise<{ readonly fonts: readonly Uint8Array<ArrayBuffer>[]; readonly runs: readonly (number | null)[] }>;
+
+/**
  * One page rasterised by the EDITING engine, as PNG bytes.
  *
  * §6.1's setting, amended 2026-09-10: a second opinion about how a page looks
@@ -2258,6 +2275,8 @@ export interface DocumentCommandsParts {
   readonly pageObjects: DocumentPageObjectsReader;
   /** The editing engine's raster of a page, or a thrower. */
   readonly renderPage: DocumentPageRasteriser;
+  /** A block's run fonts rebuilt by the editing engine's host, each once (ADR-0175). */
+  readonly runFonts: DocumentRunFontsReader;
   readonly duplicates: DocumentDuplicatesReader;
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
@@ -2476,6 +2495,7 @@ export class DocumentCommands {
   readonly #textBlocks: DocumentTextBlocksReader;
   readonly #pageObjects: DocumentPageObjectsReader;
   readonly #renderPage: DocumentPageRasteriser;
+  readonly #runFonts: DocumentRunFontsReader;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
@@ -2553,6 +2573,7 @@ export class DocumentCommands {
     this.#textBlocks = parts.textBlocks;
     this.#pageObjects = parts.pageObjects;
     this.#renderPage = parts.renderPage;
+    this.#runFonts = parts.runFonts;
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#image = parts.image;
@@ -3323,6 +3344,32 @@ export class DocumentCommands {
     });
 
     return { version, width: value.width, height: value.height, png: value.png };
+  }
+
+  /**
+   * A block's run fonts, inside the document's lane: {@link renderPage}'s guards in its order and for its reason, since
+   * this read too hands PDFium the document's bytes, and a font read interleaved with an apply could check a run against
+   * a page that is neither. The version comes back so the editor drops fonts for a page that has moved.
+   */
+  async runFonts(
+    docId: DocId,
+    page: number,
+    indices: readonly number[],
+  ): Promise<{
+    readonly version: DocVersion;
+    readonly fonts: readonly Uint8Array<ArrayBuffer>[];
+    readonly runs: readonly (number | null)[];
+  }> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#runFonts(docId, sessions, page, indices);
+    });
+    return { version, fonts: value.fonts, runs: value.runs };
   }
 
   /**
