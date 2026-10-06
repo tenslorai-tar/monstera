@@ -29,7 +29,7 @@ const CONTEXT: CommandContext = {
   pageCount: 5,
   openDocuments: [],
 };
-const BLOCKS = [{ lines: [[3]], text: 'Facture' }];
+const BLOCKS = [{ lines: [[3]], soft: [false], text: 'Facture' }];
 
 interface Run {
   readonly sent: { id: string; params: unknown }[];

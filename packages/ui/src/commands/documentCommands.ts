@@ -20,7 +20,7 @@ import {
   withPageRuns,
   withStamp,
 } from '@monstera/contract';
-import { type DocId, type DocVersion, type Failure, type MessageKey, lineText } from '@monstera/shared';
+import { type DocId, type DocVersion, type Failure, type MessageKey, lineText, paragraphsOfLines } from '@monstera/shared';
 
 import type { z } from 'zod';
 
@@ -4028,7 +4028,8 @@ export async function commitTextBlock(
   text: string,
   read: BlocksRead,
 ): Promise<BlockCommit> {
-  const before = block.lines.map((line) => lineText(line.runs)).join('\n');
+  // THE BLOCK'S WORDS AS IT SHOWS THEM, by the one join the kernel diffs against (ADR-0179): soft wraps are spaces.
+  const before = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
   if (text === before) return 'unchanged';
   /** Set by the hook below to what the editor says: the signatures question left unanswered, or the refusal. */
   const kept: { outcome: Exclude<BlockCommit, 'written' | 'unchanged'> | undefined } = { outcome: undefined };
@@ -4040,7 +4041,13 @@ export async function commitTextBlock(
       kind: BLOCK_EDIT_KIND[read.rewrite],
       page,
       // IN THE WIRE FORM, through the contract's one encoder (ADR-0142).
-      ...blockEditOf([{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text }]),
+      ...blockEditOf([
+        {
+          lines: block.lines.map((line) => line.runs.map((run) => run.index)),
+          soft: block.lines.map((line) => line.soft),
+          text,
+        },
+      ]),
       // REFLOW: a person typing sees the block grow as they type, and it stays that way.
       fit: 'reflow',
       version: read.version,

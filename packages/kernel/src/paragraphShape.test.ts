@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { characterUnit, paragraphShape, paragraphSpacing, type LineExtent } from './paragraphShape.js';
+import { blockShape, characterUnit, paragraphShape, paragraphSpacing, type LineExtent } from './paragraphShape.js';
 
 /** Six points a character, so an edge is "agreeing" within six points and the cases read in characters. */
 const CHARACTER = 6;
@@ -76,6 +76,27 @@ describe('paragraphShape', () => {
     // second would read an indent of 0.
     expect(paragraphShape([line(72, 30), line(75, 24), line(75, 36)]).firstIndent).toBe(0);
     expect(paragraphShape([line(72, 30), line(81, 24), line(81, 36)]).firstIndent).toBe(-9);
+  });
+});
+
+describe('blockShape: a block of several paragraphs', () => {
+  it('takes the shape of the first paragraph of two lines or more, so a one-line paragraph above does not decide it', () => {
+    // A one-line heading, then a paragraph with a first-line indent.
+    const lines = [line(72, 10), line(90, 36), line(72, 40), line(72, 12)];
+    expect(blockShape(lines, [false, true, true, false])).toMatchObject({ align: 'left', firstIndent: 18, left: 72 });
+  });
+
+  it('reads stacked one-line paragraphs together, which is how centred headings are told from a left column', () => {
+    expect(blockShape([centred(300, 30), centred(300, 18), centred(300, 24)], [false, false, false]).align).toBe('center');
+    expect(blockShape([line(72, 30), line(72, 18), line(72, 24)], [false, false, false]).align).toBe('left');
+  });
+
+  it('CONTROL: read across both paragraphs at once, the indent of the second is mistaken for the first’s', () => {
+    // The block-wide reading sees a first line at 72 and the rest at 72 and 90: it cannot find the indent the second
+    // paragraph's own first line has, which is what reading a paragraph at a time is for.
+    const lines = [line(72, 30), line(72, 20), line(90, 36), line(72, 12)];
+    expect(paragraphShape(lines).firstIndent).not.toBe(18);
+    expect(blockShape(lines, [true, false, true, false])).toMatchObject({ align: 'left', firstIndent: 0, left: 72 });
   });
 });
 

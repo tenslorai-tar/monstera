@@ -585,7 +585,7 @@ async function pieceCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines, text: [first, BLOCK_LINES[1], BLOCK_LINES[2]].join('\n') }]),
+        ...blockEditOf([{ lines, soft: lines.map(() => false), text: [first, BLOCK_LINES[1], BLOCK_LINES[2]].join('\n') }]),
         fit: 'reflow',
         version: 1,
       }),
@@ -730,7 +730,7 @@ async function pieceCases() {
         command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
           kind: 'editTextBlock',
           page: 0,
-          ...blockEditOf([{ lines: narrowedLines, text: [BLOCK_LINES[0], accented, BLOCK_LINES[2]].join('\n') }]),
+          ...blockEditOf([{ lines: narrowedLines, soft: narrowedLines.map(() => false), text: [BLOCK_LINES[0], accented, BLOCK_LINES[2]].join('\n') }]),
           fit: 'reflow',
           version: 1,
         }),
@@ -864,7 +864,7 @@ async function pastThePageCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines, text: typed.join('\n') }]),
+        ...blockEditOf([{ lines, soft: lines.map(() => false), text: typed.join('\n') }]),
         fit: 'reflow',
         version: 1,
       }),
@@ -1175,7 +1175,7 @@ async function siblingCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text }]),
+        ...blockEditOf([{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), soft: block.lines.map(() => false), text }]),
         fit: 'reflow',
         version: 1,
       }),
@@ -1284,7 +1284,7 @@ async function runFontCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines, text: [`${BLOCK_LINES[0] ?? ''} Привет`, BLOCK_LINES[1], BLOCK_LINES[2]].join('\n') }]),
+        ...blockEditOf([{ lines, soft: lines.map(() => false), text: [`${BLOCK_LINES[0] ?? ''} Привет`, BLOCK_LINES[1], BLOCK_LINES[2]].join('\n') }]),
         fit: 'reflow',
         version: 1,
       }),
@@ -1957,7 +1957,7 @@ async function glyphLineCases() {
       kind: 'editTextBlock',
       page: 0,
       // THE JOINED RUN, by its first object alone: the edit expands it through the same join.
-      ...blockEditOf([{ lines: [[run.index]], text: 'Drawn as one line and edited whole' }]),
+      ...blockEditOf([{ lines: [[run.index]], soft: [false], text: 'Drawn as one line and edited whole' }]),
       fit: 'reflow',
       version: 1,
     }),
@@ -2267,7 +2267,7 @@ async function blockEditCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines, text }]),
+        ...blockEditOf([{ lines, soft: lines.map(() => false), text }]),
         fit: 'reflow',
         version: 1,
       }),
@@ -2278,7 +2278,7 @@ async function blockEditCases() {
   const refusedCapture = await localPdfiumExecution.capture(original, {
     kind: 'editTextBlock',
     page: 0,
-    ...blockEditOf([{ lines, text: 'x' }]),
+    ...blockEditOf([{ lines, soft: lines.map(() => false), text: 'x' }]),
     fit: 'reflow',
     version: /** @type {never} */ (1),
   });
@@ -2393,7 +2393,7 @@ async function blockEditCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines: headingLines, text: 'Les plantations de printemps commencent la semaine prochaine' }]),
+        ...blockEditOf([{ lines: headingLines, soft: headingLines.map(() => false), text: 'Les plantations de printemps commencent la semaine prochaine' }]),
         fit: 'reflow',
         version: 1,
       }),
@@ -2421,7 +2421,7 @@ async function blockEditCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines: target, text }]),
+        ...blockEditOf([{ lines: target, soft: target.map(() => false), text }]),
         fit,
         version: 1,
       }),
@@ -2491,7 +2491,7 @@ async function blockEditCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines: twoRunLines, text: replacedWhole }]),
+        ...blockEditOf([{ lines: twoRunLines, soft: twoRunLines.map(() => false), text: replacedWhole }]),
         fit: 'reflow',
         version: 1,
       }),
@@ -2522,9 +2522,10 @@ async function blockEditCases() {
       kind: 'editTextBlock',
       page: 0,
       ...blockEditOf([
-        { lines, text: [BLOCK_LINES[0], 'a second line, rewritten', BLOCK_LINES[2]].join('\n') },
+        { lines, soft: lines.map(() => false), text: [BLOCK_LINES[0], 'a second line, rewritten', BLOCK_LINES[2]].join('\n') },
         {
           lines: separate.lines.map((line) => line.runs.map((run) => run.index)),
+          soft: separate.lines.map(() => false),
           text: 'The block below, rewritten',
         },
       ]),
@@ -2561,7 +2562,7 @@ async function blockEditCases() {
         command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
           kind: 'editTextBlock',
           page: 0,
-          ...blockEditOf([{ lines: narrowedLines, text: [BLOCK_LINES[0], accented, BLOCK_LINES[2]].join('\n') }]),
+          ...blockEditOf([{ lines: narrowedLines, soft: narrowedLines.map(() => false), text: [BLOCK_LINES[0], accented, BLOCK_LINES[2]].join('\n') }]),
           fit: 'reflow',
           version: 1,
         }),

@@ -63,7 +63,6 @@ import {
   type IdentityReader,
   StaleTargetError,
   type WriteTargetVerdict,
-  paragraphText,
   readDocumentRange,
   readTranslation,
   translationInstruction,
@@ -72,7 +71,7 @@ import {
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute } from 'node:path';
 
-import { type DocId, type FileHandle, err, lineText, ok } from '@monstera/shared';
+import { type DocId, type FileHandle, err, lineText, ok, paragraphsOfLines } from '@monstera/shared';
 
 import { executeCommandHandler } from './commandHandlers.js';
 import { editRefusalOf, rewriteRefusalOf } from './editRefusals.js';
@@ -2770,12 +2769,13 @@ function textBlocksHandler(commands: DocumentCommands): ContractHandlers['docume
  * A page's translation (ADR-0097): read the page's blocks as `document.textBlocks` reads them, ask
  * once, answer the blocks that changed as `editTextBlock` names them.
  *
- * ## Each block's text is a PARAGRAPH: `lineText` per line, soft wraps joined
+ * ## Each block's text is its PARAGRAPHS: `lineText` per line, soft wraps joined
  *
- * Lines are read with `lineText`, the rule the kernel diffs with, and joined by `paragraphText`:
- * where the next line's first word would not have fitted, the break was the typesetter's and becomes
- * a space; otherwise it stays a line break (ADR-0097 4c). The kernel then writes the translation's
- * lines over the block's and re-wraps what no longer fits. An unchanged block is not answered:
+ * Lines are read with `lineText`, the rule the kernel diffs with, and joined by `paragraphsOfLines` on the
+ * `soft` the read answered for each: where the next line's first word would not have fitted, the break was the
+ * typesetter's and becomes a space; otherwise it stays a line break (ADR-0097 4c, ADR-0179). The words are the
+ * editor's own words for the same block, from the same join, and the answer carries the same soft ends, so
+ * the kernel writes each translated paragraph over its own and re-wraps what no longer fits. An unchanged block is not answered:
  * rewriting it would regenerate content for nothing, and a translation that changed nothing is
  * `nothing-to-translate`.
  *
@@ -2802,10 +2802,7 @@ function translatePageHandler(deps: {
     // A PARAGRAPH, not its lines (ADR-0097 4c): soft wraps joined, hard breaks kept, so the kernel
     // re-wraps the translation as one paragraph instead of keeping each old line's break.
     const texts = read.blocks.map((block) =>
-      paragraphText(
-        block.lines.map((line) => ({ text: lineText(line.runs), box: line.box })),
-        block.box.x1,
-      ),
+      paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft }))),
     );
     if (texts.every((text) => text.trim() === '')) return ok({ kind: 'nothing-to-translate' } as const);
 
@@ -2829,7 +2826,7 @@ function translatePageHandler(deps: {
       const text = translated[at];
       return text === undefined || text === texts[at]
         ? []
-        : [{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text }];
+        : [{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), soft: block.lines.map((line) => line.soft), text }];
     });
     if (blocks.length === 0) return ok({ kind: 'nothing-to-translate' } as const);
     // A BLOCK'S WORDS ARE BOUNDED ONLY BY THE PAGE'S (ADR-0142): a translated paragraph past 4,096 characters was

@@ -35,7 +35,7 @@ function headingRuns(content: Uint8Array): PageRuns {
 const command = (index: number, text: string): CommandOfKind<'editTextOperators'> => ({
   kind: 'editTextOperators',
   page: 0,
-  ...blockEditOf([{ lines: [[index]], text }]),
+  ...blockEditOf([{ lines: [[index]], soft: [false], text }]),
   fit: 'reflow',
   version: asDocVersion(1),
 });

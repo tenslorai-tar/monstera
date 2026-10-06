@@ -68,14 +68,20 @@ const STYLE = { size: 11, colour: { r: 20, g: 40, b: 60 }, serif: true, mono: fa
 /** A run set apart inside its line: smaller, grey, upright, sans. */
 const OTHER = { size: 9, colour: { r: 64, g: 64, b: 64 }, serif: false, mono: false, italic: true, bold: false };
 
+/** A left-aligned block with no first-line indent, which is what a block no case is about reads as. */
+const LEFT = { align: 'left', firstIndent: 0 } as const;
+
 /** Two blocks: a paragraph of two lines, and a heading far above it. */
 const BLOCKS: PageBlocks = {
   version: asDocVersion(7),
   blocks: [
     {
       box: { x0: 72, y0: 700, x1: 300, y1: 740 },
-      lines: [{ runs: [{ index: 5, text: 'WORK EXPERIENCE', style: STYLE }], box: { x0: 72, y0: 700, x1: 300, y1: 740 } }],
+      lines: [
+        { runs: [{ index: 5, text: 'WORK EXPERIENCE', style: STYLE }], box: { x0: 72, y0: 700, x1: 300, y1: 740 }, soft: false },
+      ],
       style: STYLE,
+      shape: LEFT,
     },
     {
       box: { x0: 72, y0: 600, x1: 400, y1: 650 },
@@ -86,10 +92,16 @@ const BLOCKS: PageBlocks = {
             { index: 9, text: 'and support', style: OTHER },
           ],
           box: { x0: 72, y0: 636, x1: 400, y1: 650 },
+          soft: false,
         },
-        { runs: [{ index: 11, text: 'at every stage.', style: STYLE }], box: { x0: 72, y0: 622, x1: 260, y1: 636 } },
+        {
+          runs: [{ index: 11, text: 'at every stage.', style: STYLE }],
+          box: { x0: 72, y0: 622, x1: 260, y1: 636 },
+          soft: false,
+        },
       ],
       style: STYLE,
+      shape: LEFT,
     },
   ],
   truncated: false,
@@ -165,6 +177,33 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(view.container.querySelectorAll('.m-text-editor-handle')).toHaveLength(8);
     // The other block stays an outline.
     expect(view.container.querySelectorAll('[data-text-block]')).toHaveLength(1);
+  });
+
+  it('a soft-wrapped line runs on into the next in ONE paragraph, with a space in the style of the run before it (ADR-0179)', () => {
+    const [heading, paragraph] = BLOCKS.blocks;
+    if (heading === undefined || paragraph === undefined) throw new Error('the fixture lost a block');
+    const [first, second] = paragraph.lines;
+    if (first === undefined || second === undefined) throw new Error('the fixture lost a line');
+    const soft: PageBlocks = {
+      ...BLOCKS,
+      blocks: [heading, { ...paragraph, lines: [{ ...first, soft: true }, second] }],
+    };
+    const { view } = mount({ blocks: soft });
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    const editor = editorIn(view.container);
+    // ONE PARAGRAPH: one line element, the two lines' words joined by the space the soft wrap stands for.
+    expect(editor.querySelectorAll('.m-text-editor__line')).toHaveLength(1);
+    expect(editor.innerText).toBe('Helps with care and support at every stage.');
+    // THE SPACE IS THE PREVIOUS RUN'S, so it measures as it was set: the run before it is `and support`, in OTHER.
+    const spans = [...editor.querySelectorAll<HTMLElement>('.m-text-editor__run')];
+    expect(spans.map((span) => span.textContent)).toStrictEqual(['Helps with care ', 'and support', ' ', 'at every stage.']);
+    expect(spans[2]?.style.color).toBe('rgb(64, 64, 64)');
+  });
+
+  it('CONTROL: lines the read found HARD stay two paragraphs, which is what the same words read as before ADR-0179', () => {
+    const { view } = mount();
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    expect(editorIn(view.container).querySelectorAll('.m-text-editor__line')).toHaveLength(2);
   });
 
   it('EACH RUN is drawn in its own style, at the zoom — not the block’s one (ADR-0145)', () => {
@@ -351,8 +390,10 @@ describe('Edit text on the page (ADR-0096)', () => {
           lines: typed.map((text, at) => ({
             runs: [{ index: 20 + at, text, style: STYLE }],
             box: { x0: 72, y0: 636 - at * pitch, x1: 300, y1: 650 - at * pitch },
+            soft: false,
           })),
           style: STYLE,
+          shape: LEFT,
         },
       ],
     };

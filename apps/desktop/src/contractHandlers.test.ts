@@ -1941,7 +1941,7 @@ settings: createEphemeralSettings(),
 
     expect(result).toStrictEqual({
       ok: true,
-      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], text: 'Facture' }]) },
+      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], soft: [false], text: 'Facture' }]) },
     });
     expect(asked).toHaveLength(1);
     // THE BLOCKS AS THE KERNEL WILL DIFF THEM: runs joined as they are, lines by a line break.
@@ -1957,7 +1957,7 @@ settings: createEphemeralSettings(),
     const { handlers } = translating(BLOCKS, JSON.stringify([long, 'Payment is due\nwithin 30 days.']));
     expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
       ok: true,
-      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], text: long }]) },
+      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], soft: [false], text: long }]) },
     });
   });
 
@@ -1975,7 +1975,7 @@ settings: createEphemeralSettings(),
     const { handlers, asked } = translating(BLOCKS, ['not an array', JSON.stringify(['Facture', 'Payment is due\nwithin 30 days.'])]);
     expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
       ok: true,
-      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], text: 'Facture' }]) },
+      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], soft: [false], text: 'Facture' }]) },
     });
     expect(asked).toHaveLength(2);
   });
@@ -2351,8 +2351,9 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
   const cell = { size: 9, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
   const blocks = Array.from({ length: 600 }, (_, at) => ({
     box,
-    lines: [{ runs: [{ index: at, text: `cell ${String(at)}`, style: cell }], box }],
+    lines: [{ runs: [{ index: at, text: `cell ${String(at)}`, style: cell }], box, soft: false }],
     style: cell,
+    shape: { align: 'left', firstIndent: 0 },
   }));
   const objects = Array.from({ length: 8400 }, (_, at) => ({
     index: at,

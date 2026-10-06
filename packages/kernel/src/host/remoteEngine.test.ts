@@ -1184,7 +1184,7 @@ describe('an operator edit over engine/apply-file answers its boxes (ADR-0177 De
         command: {
           kind: 'editTextOperators',
           page: 0,
-          ...blockEditOf([{ lines: [[runs.runs[0]?.index ?? 0]], text }]),
+          ...blockEditOf([{ lines: [[runs.runs[0]?.index ?? 0]], soft: [false], text }]),
           fit: 'reflow',
           version: asDocVersion(1),
         },

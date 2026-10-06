@@ -361,6 +361,8 @@ for (const look of LOOKS) {
 
 /** A text block's body run and a run set apart inside its line — larger, bold, blue — as `document.textBlocks` answers. */
 const BODY_RUN = { size: 12, colour: { r: 30, g: 30, b: 30 }, serif: false, mono: false, italic: false, bold: false };
+/** A block no case here is about the shape of: left-aligned with no first-line indent (ADR-0179). */
+const LEFT_SHAPE = { align: 'left', firstIndent: 0 } as const;
 const SET_APART_RUN = { size: 16, colour: { r: 66, g: 83, b: 149 }, serif: false, mono: false, italic: false, bold: true };
 
 /** A one-page document built here, so the case needs no fixture from the corpus (B10). */
@@ -4363,7 +4365,7 @@ for (const look of LOOKS) {
       // A STORED KEY IS WHAT OFFERS A PROVIDER; the value is a fixture no provider sees.
       secrets: { 'ai.openai-key': 'a-fixture-key' },
       aiModels: { source: 'fetched', models: [{ id: 'fixture-model', label: 'Fixture', capabilities: { vision: null, streaming: null } }] },
-      translation: { kind: 'translated', version: asDocVersion(1), edit: blockEditOf([{ lines: [[3]], text: 'Bonjour' }]) },
+      translation: { kind: 'translated', version: asDocVersion(1), edit: blockEditOf([{ lines: [[3]], soft: [false], text: 'Bonjour' }]) },
     });
     await page.goto('/');
     await page.getByRole('button', { name: 'Open PDF…' }).click();
@@ -4757,9 +4759,14 @@ for (const look of LOOKS) {
         {
           box: { x0: 100, y0: 600, x1: 400, y1: 700 },
           lines: [
-            { runs: [{ index: 3, text: 'A paragraph of words', style: BODY_RUN }], box: { x0: 100, y0: 686, x1: 400, y1: 700 } },
+            {
+              runs: [{ index: 3, text: 'A paragraph of words', style: BODY_RUN }],
+              box: { x0: 100, y0: 686, x1: 400, y1: 700 },
+              soft: false,
+            },
           ],
           style: BODY_RUN,
+          shape: LEFT_SHAPE,
         },
       ],
     });
@@ -4838,10 +4845,16 @@ for (const look of LOOKS) {
                 { index: 5, text: 'set on the page', style: SET_APART_RUN },
               ],
               box: { x0: 100, y0: 686, x1: 400, y1: 700 },
+              soft: false,
             },
-            { runs: [{ index: 8, text: 'and a second line.', style: BODY_RUN }], box: { x0: 100, y0: 600, x1: 260, y1: 614 } },
+            {
+              runs: [{ index: 8, text: 'and a second line.', style: BODY_RUN }],
+              box: { x0: 100, y0: 600, x1: 260, y1: 614 },
+              soft: false,
+            },
           ],
           style: BODY_RUN,
+          shape: LEFT_SHAPE,
         },
       ],
     });
@@ -4956,16 +4969,25 @@ for (const look of LOOKS) {
       textBlocks: [
         {
           box: { x0: 100, y0: 600, x1: 400, y1: 700 },
-          lines: [{ runs: [{ index: 1, text: 'A block that fits', style: BODY_RUN }], box: { x0: 100, y0: 600, x1: 400, y1: 700 } }],
+          lines: [
+            {
+              runs: [{ index: 1, text: 'A block that fits', style: BODY_RUN }],
+              box: { x0: 100, y0: 600, x1: 400, y1: 700 },
+              soft: false,
+            },
+          ],
           style: BODY_RUN,
+          shape: LEFT_SHAPE,
         },
         {
           box,
           lines: lines.map((text, at) => ({
             runs: [{ index: 10 + at, text, style: BODY_RUN }],
             box: { x0: 100, y0: 46 - at * 23, x1: 340, y1: 60 - at * 23 },
+            soft: false,
           })),
           style: BODY_RUN,
+          shape: LEFT_SHAPE,
         },
       ],
     });
@@ -5057,10 +5079,11 @@ for (const look of LOOKS) {
         {
           box: { x0: 100, y0: 600, x1: 400, y1: 700 },
           lines: [
-            { runs: [{ index: 1, text: words, style: MONO_RUN }], box: { x0: 100, y0: 680, x1: 400, y1: 700 } },
-            { runs: [{ index: 2, text: words, style: MONO_RUN }], box: { x0: 100, y0: 650, x1: 400, y1: 670 } },
+            { runs: [{ index: 1, text: words, style: MONO_RUN }], box: { x0: 100, y0: 680, x1: 400, y1: 700 }, soft: false },
+            { runs: [{ index: 2, text: words, style: MONO_RUN }], box: { x0: 100, y0: 650, x1: 400, y1: 670 }, soft: false },
           ],
           style: MONO_RUN,
+          shape: LEFT_SHAPE,
         },
       ],
       runFonts: { fonts: [RUN_FONT], runs: new Map([[1, 0]]) },

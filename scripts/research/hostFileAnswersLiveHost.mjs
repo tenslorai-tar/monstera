@@ -417,6 +417,7 @@ async function main() {
               ...blockEditOf([
                 {
                   lines: first.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                  soft: first.lines.map(() => false),
                   text: EDITED,
                 },
               ]),
@@ -446,6 +447,7 @@ async function main() {
                   ...blockEditOf([
                     {
                       lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                      soft: block.lines.map(() => false),
                       text: `${EDITED} ${INSTALLED_ONLY}`,
                     },
                   ]),
@@ -472,6 +474,7 @@ async function main() {
                   ...blockEditOf([
                     {
                       lines: target.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                      soft: target.lines.map(() => false),
                       text: `${EDITED} ${String.fromCodePoint(0x378)}`,
                     },
                   ]),
@@ -567,6 +570,7 @@ async function main() {
               ...blockEditOf([
                 {
                   lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                  soft: block.lines.map(() => false),
                   text: 'Edited',
                 },
               ]),
@@ -643,6 +647,7 @@ async function main() {
               ...blockEditOf([
                 {
                   lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                  soft: block.lines.map(() => false),
                   text: `${EDITED} ${String.fromCodePoint(0x378)}`,
                 },
               ]),
@@ -683,6 +688,7 @@ async function main() {
               ...blockEditOf([
                 {
                   lines: heading.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                  soft: heading.lines.map(() => false),
                   text: `Monstera fixture zap ${String.fromCodePoint(0x378)}.`,
                 },
               ]),

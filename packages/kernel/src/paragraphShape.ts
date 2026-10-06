@@ -106,6 +106,27 @@ export function paragraphShape(lines: readonly LineExtent[]): ParagraphShape {
 }
 
 /**
+ * The shape of a BLOCK, which may hold several paragraphs (a list, an address): the shape of its first paragraph of two
+ * lines or more, since that is the first place a first-line indent and a rag can be told apart, and where no paragraph
+ * has two lines, of all the lines together, which is how stacked centred or right-aligned lines are told from a column
+ * of left-aligned ones. The ONE function the read (`document.textBlocks`, for the editor to draw) and the writer (over
+ * the objects' bounds, to lay out) both take, so a block is never one shape on screen and another on the page.
+ *
+ * @param lines the block's lines, top to bottom
+ * @param soft whether each line's end is soft; the last is never read
+ */
+export function blockShape(lines: readonly LineExtent[], soft: readonly boolean[]): ParagraphShape {
+  let start = 0;
+  for (let at = 0; at < lines.length; at += 1) {
+    const ends = at === lines.length - 1 || soft[at] !== true;
+    if (!ends) continue;
+    if (at - start >= 1) return paragraphShape(lines.slice(start, at + 1));
+    start = at + 1;
+  }
+  return paragraphShape(lines);
+}
+
+/**
  * The extra space a paragraph's end leaves, beyond the pitch inside a paragraph: what a paragraph typed below takes
  * ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)
  * Decision 6). The largest amount by which the gap at a hard break exceeds the smallest gap in the block, or `0` for a

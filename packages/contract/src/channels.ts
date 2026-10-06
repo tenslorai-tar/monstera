@@ -5048,6 +5048,14 @@ export const channels = {
                         .max(MAX_EDIT_RUNS)
                         .readonly(),
                       box: pdfBoxSchema,
+                      /**
+                       * Whether this line ENDS in a soft wrap: the typesetter broke it because the next line's first
+                       * word would not have fitted, so the editor shows it joined to the next
+                       * ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)
+                       * Decision 2). REQUIRED: an editor that never read it would send lines as paragraphs. The last
+                       * line of a block is never soft.
+                       */
+                      soft: z.boolean(),
                     })
                     .strict(),
                 )
@@ -5056,6 +5064,17 @@ export const channels = {
                 .readonly(),
               /** The block's base: its first line's longest run's style, for a paste and a line typed below. */
               style: textBlockStyleSchema,
+              /**
+               * How the block is set (ADR-0179 Decision 5), for the editor to draw: the edge its lines keep and how far
+               * its first line stands from the rest, in points, negative for a hanging indent. Read by one function over
+               * the same lines the writer reads again at the write, which decides what is written.
+               */
+              shape: z
+                .object({
+                  align: z.enum(['left', 'center', 'right']),
+                  firstIndent: z.number(),
+                })
+                .strict(),
             })
             .strict(),
         )

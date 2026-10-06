@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import { type DocVersion, lineText, pdfPoint, toViewport } from '@monstera/shared';
+import { type DocVersion, joinAfterLine, lineText, paragraphsOfLines, pdfPoint, toViewport } from '@monstera/shared';
 import type React from 'react';
 import { type ReactElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
@@ -187,9 +187,27 @@ function paperAround(
   return best;
 }
 
-/** A block's words as the person is shown them: each line by `lineText`, lines by a break. */
+/**
+ * A block's words as the person is shown them: its PARAGRAPHS, each line by `lineText`, a soft wrap one space and a hard
+ * break a line break, by the one join the kernel diffs them against
+ * ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)).
+ */
 function wordsOf(block: TextBlock): string {
-  return block.lines.map((line) => lineText(line.runs)).join('\n');
+  return paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+}
+
+/** A block's lines grouped into the paragraphs the editor draws: a line that ends soft continues in the next. */
+function paragraphsOf(block: TextBlock): TextBlock['lines'][number][][] {
+  const paragraphs: TextBlock['lines'][number][][] = [];
+  let open: TextBlock['lines'][number][] = [];
+  for (const [at, line] of block.lines.entries()) {
+    open.push(line);
+    if (!line.soft || at === block.lines.length - 1) {
+      paragraphs.push(open);
+      open = [];
+    }
+  }
+  return paragraphs;
 }
 
 /**
@@ -561,16 +579,30 @@ function BlockEditor({
     if (element === null) return;
     const owner = element.ownerDocument;
     element.replaceChildren(
-      ...block.lines.map((line) => {
+      // A PARAGRAPH A `div`, its soft-wrapped lines run together, so the browser wraps it at the block's width and the
+      // words read back are the paragraphs the kernel is sent (ADR-0179).
+      ...paragraphsOf(block).map((lines) => {
         const row = owner.createElement('div');
         row.className = 'm-text-editor__line';
-        for (const run of line.runs) {
-          const span = owner.createElement('span');
-          span.textContent = run.text;
-          drawRun(span, run.style, 1);
-          // THE RUN'S FIRST OBJECT, which its font is answered by (`useRunFonts`).
-          span.dataset['run'] = String(run.index);
-          row.append(span);
+        for (const line of lines) {
+          for (const run of line.runs) {
+            const span = owner.createElement('span');
+            span.textContent = run.text;
+            drawRun(span, run.style, 1);
+            // THE RUN'S FIRST OBJECT, which its font is answered by (`useRunFonts`).
+            span.dataset['run'] = String(run.index);
+            row.append(span);
+          }
+          // THE SPACE A SOFT WRAP STANDS FOR, in the style of the run before it, so a paragraph reads and measures as it
+          // was set. None where the line already ends in white space: it is in the run.
+          const last = line.runs.at(-1);
+          if (line.soft && last !== undefined && joinAfterLine(lineText(line.runs), true) === ' ') {
+            const join = owner.createElement('span');
+            join.textContent = ' ';
+            drawRun(join, last.style, 1);
+            join.dataset['run'] = String(last.index);
+            row.append(join);
+          }
         }
         return row;
       }),

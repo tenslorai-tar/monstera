@@ -108,9 +108,10 @@ describe('the in-place text edit payload', () => {
 
 describe('the block edit payload (ADR-0142)', () => {
   const blocks = [
-    { lines: [[3, 4], [7]], text: 'First block\nsecond line' },
-    { lines: [[9]], text: '' },
-    { lines: [[12, 11, 10]], text: 'Third' },
+    // THE FIRST BLOCK'S FIRST LINE ENDS SOFT: it and the second are one paragraph (ADR-0179).
+    { lines: [[3, 4], [7]], soft: [true, false], text: 'First block second line' },
+    { lines: [[9]], soft: [false], text: '' },
+    { lines: [[12, 11, 10]], soft: [false], text: 'Third' },
   ];
   const command = { kind: 'editTextBlock' as const, page: 2, ...blockEditOf(blocks), fit: 'reflow' as const, version };
 
@@ -124,16 +125,44 @@ describe('the block edit payload (ADR-0142)', () => {
   it('takes a translated paragraph past the 4,096 characters one text once had (table A row 10)', () => {
     const long = 'Une phrase traduite qui continue. '.repeat(160);
     expect(long.length).toBeGreaterThan(4096);
-    const edit = { ...command, ...blockEditOf([{ lines: [[1]], text: long }]) };
+    const edit = { ...command, ...blockEditOf([{ lines: [[1]], soft: [false], text: long }]) };
     expect(editTextBlockSchema.safeParse(edit).success).toBe(true);
     // CONTROL: the bound is still there, at the page's text.
-    const past = { ...command, ...blockEditOf([{ lines: [[1]], text: 'x'.repeat(MAX_EDIT_TEXT + 1) }]) };
+    const past = { ...command, ...blockEditOf([{ lines: [[1]], soft: [false], text: 'x'.repeat(MAX_EDIT_TEXT + 1) }]) };
     expect(editTextBlockSchema.safeParse(past).success).toBe(false);
   });
 
   it('REFUSES a run named in two blocks, which would be written twice', () => {
-    const twice = { ...command, ...blockEditOf([{ lines: [[1]], text: 'a' }, { lines: [[1]], text: 'b' }]) };
+    const twice = {
+      ...command,
+      ...blockEditOf([
+        { lines: [[1]], soft: [false], text: 'a' },
+        { lines: [[1]], soft: [false], text: 'b' },
+      ]),
+    };
     expect(editTextBlockSchema.safeParse(twice).success).toBe(false);
+  });
+
+  it('carries where the read found soft wraps, and the decoder gives them back to the line they belong to', () => {
+    expect(command.softLines).toStrictEqual([0]);
+    const decoded = blocksOfEdit(command);
+    expect(decoded.map((block) => block.soft)).toStrictEqual([[true, false], [false], [false]]);
+  });
+
+  it('REFUSES a soft end on a block’s last line, a line that is not there, and soft lines out of order', () => {
+    // THE LAST LINE OF A BLOCK ENDS NOTHING: a soft end on it would join the next block's first line to it. Line 1 is
+    // the first block's last, line 2 the second block's only line.
+    expect(editTextBlockSchema.safeParse({ ...command, softLines: [1] }).success).toBe(false);
+    expect(editTextBlockSchema.safeParse({ ...command, softLines: [2] }).success).toBe(false);
+    expect(editTextBlockSchema.safeParse({ ...command, softLines: [9] }).success).toBe(false);
+    expect(editTextBlockSchema.safeParse({ ...command, softLines: [0, 0] }).success).toBe(false);
+    // CONTROL: the soft end the encoder wrote is accepted, so the refusals above are the soft lines' and not the block's.
+    expect(editTextBlockSchema.safeParse({ ...command, softLines: [0] }).success).toBe(true);
+  });
+
+  it('REFUSES a command with no `softLines` at all, so a caller cannot satisfy it by not reading it', () => {
+    const { softLines: _omitted, ...without } = command;
+    expect(editTextBlockSchema.safeParse(without).success).toBe(false);
   });
 
   it('REFUSES starts that leave a line with no run or a block with no line', () => {

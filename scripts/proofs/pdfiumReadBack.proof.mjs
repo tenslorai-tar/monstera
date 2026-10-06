@@ -174,7 +174,7 @@ function commandsFor(runs, objects, target) {
       {
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines: block.lines.map((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)), text: `${target} edited` }]),
+        ...blockEditOf([{ lines: block.lines.map((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)), soft: block.lines.map(() => false), text: `${target} edited` }]),
         fit: 'reflow',
         version: 1,
       },
@@ -310,7 +310,7 @@ async function main() {
           applied(type3, {
             kind: 'editTextBlock',
             page: 0,
-            ...blockEditOf([{ lines: lineA.lines.map((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)), text: `${LINES.a} edited` }]),
+            ...blockEditOf([{ lines: lineA.lines.map((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)), soft: lineA.lines.map(() => false), text: `${LINES.a} edited` }]),
             fit: 'reflow',
             version: 1,
           }),

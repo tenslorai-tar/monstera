@@ -92,7 +92,7 @@ describe('editOperators on the Chromium print', () => {
       const page = runsOf(content, fonts);
       const heading = page.runs[0];
       expect(heading?.text).toBe('Monstera fixture heading.');
-      const result = editOperators(content, fonts, page, [{ lines: [[heading?.index ?? -1]], text: 'Monstera fixture reading.' }]);
+      const result = editOperators(content, fonts, page, [{ lines: [[heading?.index ?? -1]], soft: [false], text: 'Monstera fixture reading.' }]);
       if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
       const edit = result.value;
       expect(checkOperatorEdit(content, edit, fonts)).toStrictEqual({ ok: true, value: undefined });
@@ -115,7 +115,7 @@ describe('editOperators on the Chromium print', () => {
       const holds = (name: string, character: string) => [...(fonts.get(name)?.toUnicode?.text.values() ?? [])].includes(character);
       expect([holds('F4', 'l'), holds('F5', 'l'), fonts.get('F5')?.weight, fonts.get('F4')?.weight]).toStrictEqual([false, true, null, 400]);
       const page = runsOf(content, fonts);
-      const result = editOperators(content, fonts, page, [{ lines: [[page.runs[0]?.index ?? -1]], text: 'Monstera fixture really.' }]);
+      const result = editOperators(content, fonts, page, [{ lines: [[page.runs[0]?.index ?? -1]], soft: [false], text: 'Monstera fixture really.' }]);
       if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
       expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
       const [object] = inserted(result.value);
@@ -151,7 +151,7 @@ describe('editOperators on the Chromium print', () => {
           return Array.from(word, (character) => own(character) ?? { font: face, codes: [codeFor(character)] });
         },
       };
-      const result = editOperators(content, fonts, page, [{ lines: [[page.runs[0]?.index ?? -1]], text: 'Monstera fixture zap.' }], faces);
+      const result = editOperators(content, fonts, page, [{ lines: [[page.runs[0]?.index ?? -1]], soft: [false], text: 'Monstera fixture zap.' }], faces);
       if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
       // ONLY THE WORD THE PAGE CANNOT CARRY was asked for; the rest of the line stayed in the run's font.
       expect(asked).toStrictEqual(['zap.']);
@@ -167,7 +167,7 @@ describe('editOperators on the Chromium print', () => {
   it('refuses a word no font of the page carries, naming its characters, and writes nothing', async () => {
     await chromium((content, fonts) => {
       const page = runsOf(content, fonts);
-      const result = editOperators(content, fonts, page, [{ lines: [[page.runs[0]?.index ?? -1]], text: 'Monstera fixture zap.' }]);
+      const result = editOperators(content, fonts, page, [{ lines: [[page.runs[0]?.index ?? -1]], soft: [false], text: 'Monstera fixture zap.' }]);
       expect(result).toStrictEqual({ ok: false, error: { reason: 'needs-a-face', characters: ['z', 'p'] } });
     });
   });
@@ -176,7 +176,7 @@ describe('editOperators on the Chromium print', () => {
     await chromium((content, fonts) => {
       const page = runsOf(content, fonts);
       const result = editOperators(content, fonts, page, [
-        { lines: [[page.runs[0]?.index ?? -1]], text: 'Monstera fixture heading reads the same reading' },
+        { lines: [[page.runs[0]?.index ?? -1]], soft: [false], text: 'Monstera fixture heading reads the same reading' },
       ]);
       if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
       expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
@@ -202,7 +202,7 @@ describe('editOperators on a page of lines', () => {
   const content = bytes(THREE_LINES);
   const fonts = new Map([['F1', LETTERS]]);
   const page = runsOf(content, fonts);
-  const block = (text: string) => [{ lines: [[0], [1], [2]], text }];
+  const block = (text: string) => [{ lines: [[0], [1], [2]], soft: [false, false, false], text }];
 
   it('leaves the lines an edit did not reach byte for byte, and empties only the line it did', () => {
     const result = editOperators(content, fonts, page, block('abc\ndef\nghx'));
@@ -254,12 +254,12 @@ describe('editOperators on a page of lines', () => {
   it('finds a run by its PAGE object index where a rule between the lines is an object too', () => {
     // A RULE DRAWN BEFORE EACH LINE: PDFium's objects are rule 0, line 1, rule 2, line 3, rule 4, line 5.
     const ruled = runsOf(content, fonts, (text) => 2 * text + 1);
-    const result = editOperators(content, fonts, ruled, [{ lines: [[1], [3], [5]], text: 'abc\ndef\nghx' }]);
+    const result = editOperators(content, fonts, ruled, [{ lines: [[1], [3], [5]], soft: [false, false, false], text: 'abc\ndef\nghx' }]);
     if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
     // THE THIRD LINE'S OPERATOR, text object 2, page object 5.
     expect(result.value.emptied).toStrictEqual([2]);
     // CONTROL: named by text ordinal instead, object 2 is a rule and no run begins there.
-    expect(editOperators(content, fonts, ruled, [{ lines: [[0], [1], [2]], text: 'abc\ndef\nghx' }])).toMatchObject({
+    expect(editOperators(content, fonts, ruled, [{ lines: [[0], [1], [2]], soft: [false, false, false], text: 'abc\ndef\nghx' }])).toMatchObject({
       ok: false,
       error: { reason: 'numbering' },
     });
@@ -288,7 +288,7 @@ describe('an emptied operator keeps its advance only where a later one is placed
   };
 
   it('writes a TJ of spacing alone, the same advance as the glyphs it held', () => {
-    const result = editOperators(content, fonts, page, [{ lines: [[0, 1]], text: 'abcx' }]);
+    const result = editOperators(content, fonts, page, [{ lines: [[0, 1]], soft: [false], text: 'abcx' }]);
     if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
     // `cd` at 10 points, 0.5 em each: 10 units, which is -1000 thousandths of a 10-point em.
     expect(latin1(result.value.content)).toContain('(ab) Tj [-1000] TJ (ef) Tj');
@@ -300,17 +300,17 @@ describe('an emptied operator keeps its advance only where a later one is placed
     const moved = bytes('BT /F1 10 Tf 0 0 Td (ab) Tj 20 0 Td (cd) Tj (ef) Tj ET');
     const letters = font('F1', 'abcdefghijklmnopqrstuvwxyz');
     const noD: PageFont = { ...letters, width: (code) => (code === 0x64 ? null : letters.width(code)) };
-    expect(editOperators(moved, new Map([['F1', noD]]), page, [{ lines: [[1]], text: 'cx' }])).toStrictEqual({
+    expect(editOperators(moved, new Map([['F1', noD]]), page, [{ lines: [[1]], soft: [false], text: 'cx' }])).toStrictEqual({
       ok: false,
       error: { reason: 'unknown-width', font: 'F1' },
     });
     // CONTROL: with `ef` given its own move too, nothing is placed by `cd`'s advance and the edit is made.
     const alone = bytes('BT /F1 10 Tf 0 0 Td (ab) Tj 20 0 Td (cd) Tj 20 0 Td (ef) Tj ET');
-    expect(editOperators(alone, new Map([['F1', noD]]), page, [{ lines: [[1]], text: 'cx' }]).ok).toBe(true);
+    expect(editOperators(alone, new Map([['F1', noD]]), page, [{ lines: [[1]], soft: [false], text: 'cx' }]).ok).toBe(true);
   });
 
   it('writes no spacing where nothing after it is placed by it (the control)', () => {
-    const last = editOperators(content, fonts, page, [{ lines: [[2]], text: 'ex' }]);
+    const last = editOperators(content, fonts, page, [{ lines: [[2]], soft: [false], text: 'ex' }]);
     if (!last.ok) throw new Error(`refused: ${JSON.stringify(last.error)}`);
     expect(latin1(last.value.content)).toContain('(cd) Tj [] TJ ET');
   });
@@ -319,7 +319,7 @@ describe('an emptied operator keeps its advance only where a later one is placed
 describe('checkOperatorEdit', () => {
   const content = bytes(THREE_LINES);
   const fonts = new Map([['F1', LETTERS]]);
-  const made = editOperators(content, fonts, runsOf(content, fonts), [{ lines: [[0], [1], [2]], text: 'abc\ndef\nghx' }]);
+  const made = editOperators(content, fonts, runsOf(content, fonts), [{ lines: [[0], [1], [2]], soft: [false, false, false], text: 'abc\ndef\nghx' }]);
   if (!made.ok) throw new Error('the case’s own edit was refused');
   const edit = made.value;
 

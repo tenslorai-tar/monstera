@@ -1453,7 +1453,7 @@ describe('the composition root, with BOTH engine hosts', () => {
         command: {
           kind: 'editTextBlock',
           page: 0,
-          ...blockEditOf([{ lines: [[2, 4], [7]], text: 'new words' }]),
+          ...blockEditOf([{ lines: [[2, 4], [7]], soft: [false, false], text: 'new words' }]),
           fit: 'reflow',
           version: opened.value.version,
         },
@@ -1520,7 +1520,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       command: {
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines: [[2, 4], [7]], text: 'new words' }]),
+        ...blockEditOf([{ lines: [[2, 4], [7]], soft: [false, false], text: 'new words' }]),
         fit: 'reflow',
         version: opened.value.version,
       },

@@ -5030,9 +5030,15 @@ export const replaceTextAtSchema = z
 /** How a block edit takes words that no longer fit its box (ADR-0097 4b). */
 export const TEXT_FIT_MODES = ['reflow', 'shrink'] as const;
 
-/** One block as an edit names it before it is put in its wire form: its lines' runs, and its words after the edit. */
+/**
+ * One block as an edit names it before it is put in its wire form: its lines' runs, whether each line ENDED in a soft
+ * wrap when the block was read, and its words after the edit
+ * ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)).
+ */
 export interface EditedBlock {
   readonly lines: readonly (readonly number[])[];
+  /** Per line: whether its end was a soft wrap. The last line's is `false`: it ends nothing. */
+  readonly soft: readonly boolean[];
   readonly text: string;
 }
 
@@ -5052,8 +5058,18 @@ export const blockEditSchema = z
     lineStarts: z.array(z.number().int().min(0).max(MAX_EDIT_RUNS)).min(1).max(MAX_EDIT_RUNS),
     /** Where each block begins in `lineStarts`. */
     blockStarts: z.array(z.number().int().min(0).max(MAX_EDIT_RUNS)).min(1).max(MAX_EDIT_RUNS),
-    /** Every block's words after the edit, each block's lines separated by line breaks, blocks joined. */
+    /**
+     * Every block's words after the edit, blocks joined: each block's PARAGRAPHS, a hard break a line break and a soft
+     * wrap one space (ADR-0179 Decision 1), so the words are what the block says and not how the page happened to break
+     * them.
+     */
     text: z.string().max(MAX_EDIT_TEXT),
+    /**
+     * The lines, in `lineStarts`' numbering, whose end was a soft wrap when the blocks were read. REQUIRED, and empty for
+     * blocks with none: a writer that was never told would take every line break for a paragraph's, and the words would
+     * be diffed against the wrong lines. Never a block's last line.
+     */
+    softLines: z.array(z.number().int().min(0).max(MAX_EDIT_RUNS)).max(MAX_EDIT_RUNS),
     /** Where each block's words begin in `text`. */
     textStarts: z.array(z.number().int().min(0).max(MAX_EDIT_TEXT)).min(1).max(MAX_EDIT_RUNS),
   })
@@ -5068,16 +5084,23 @@ export type BlockEdit = z.infer<typeof blockEditSchema>;
  * written twice. Order and agreement only; no size depends on them.
  */
 export function blockEditAgrees(edit: BlockEdit): boolean {
-  const { runs, lineStarts, blockStarts, text, textStarts } = edit;
+  const { runs, lineStarts, blockStarts, text, textStarts, softLines } = edit;
   const strictlyInside = (starts: readonly number[], length: number): boolean =>
     startsAscendFrom0(starts) && starts.every((start, at) => start < (starts[at + 1] ?? length));
+  // A SOFT LINE IS A LINE OF THE LIST THAT DOES NOT END ITS BLOCK: a block's last line ends nothing, and a soft end on it
+  // would join the next block's first line to it.
+  const lastLines = new Set([...blockStarts.slice(1).map((start) => start - 1), lineStarts.length - 1]);
+  const softAgrees = softLines.every(
+    (line, at) => line < lineStarts.length && !lastLines.has(line) && (at === 0 || line > (softLines[at - 1] ?? -1)),
+  );
   return (
     strictlyInside(lineStarts, runs.length) &&
     strictlyInside(blockStarts, lineStarts.length) &&
     textStarts.length === blockStarts.length &&
     startsAscendFrom0(textStarts) &&
     (textStarts.at(-1) ?? 0) <= text.length &&
-    new Set(runs).size === runs.length
+    new Set(runs).size === runs.length &&
+    softAgrees
   );
 }
 
@@ -5087,27 +5110,31 @@ export function blockEditOf(blocks: readonly EditedBlock[]): BlockEdit {
   const lineStarts: number[] = [];
   const blockStarts: number[] = [];
   const textStarts: number[] = [];
+  const softLines: number[] = [];
   let text = '';
   for (const block of blocks) {
     blockStarts.push(lineStarts.length);
     textStarts.push(text.length);
     text += block.text;
-    for (const line of block.lines) {
+    for (const [at, line] of block.lines.entries()) {
+      if (block.soft[at] === true && at < block.lines.length - 1) softLines.push(lineStarts.length);
       lineStarts.push(runs.length);
       runs.push(...line);
     }
   }
-  return { runs, lineStarts, blockStarts, text, textStarts };
+  return { runs, lineStarts, blockStarts, text, textStarts, softLines };
 }
 
 /** The blocks again, for the writer that lays them out — {@link blockEditOf}'s inverse. */
 export function blocksOfEdit(edit: BlockEdit): EditedBlock[] {
   const lineOf = (line: number): number[] =>
     edit.runs.slice(edit.lineStarts[line] ?? 0, edit.lineStarts[line + 1] ?? edit.runs.length);
+  const soft = new Set(edit.softLines);
   return edit.blockStarts.map((first, block) => {
     const end = edit.blockStarts[block + 1] ?? edit.lineStarts.length;
     return {
       lines: Array.from({ length: end - first }, (_, at) => lineOf(first + at)),
+      soft: Array.from({ length: end - first }, (_, at) => soft.has(first + at)),
       text: edit.text.slice(edit.textStarts[block] ?? 0, edit.textStarts[block + 1] ?? edit.text.length),
     };
   });

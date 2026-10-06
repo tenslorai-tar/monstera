@@ -50,6 +50,8 @@
  * 238.0**, so equality splits the very case the grouping exists for.
  */
 
+import { blockShape } from './paragraphShape.js';
+
 /** One text run as the line grouping needs it. `pdfiumFfi.ts`'s `TextRun`, structurally. */
 export interface GroupableRun {
   readonly index: number;
@@ -189,9 +191,13 @@ export interface EditableBlock<S> {
   readonly lines: readonly {
     readonly runs: readonly { readonly index: number; readonly text: string; readonly style: S }[];
     readonly box: BlockBox;
+    /** Whether the line ENDS in a soft wrap ({@link softEnds}); never the block's last line. */
+    readonly soft: boolean;
   }[];
   /** How the block's first line's longest run is set — what the editor over it is set in. */
   readonly style: S;
+  /** How the block is set, for the editor to draw (ADR-0179 Decision 5). */
+  readonly shape: { readonly align: 'left' | 'center' | 'right'; readonly firstIndent: number };
 }
 
 interface Piece<S> {
@@ -324,59 +330,47 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
     // by that same reading. Its first run was a list entry's bold lead word.
     const setBy = first === undefined ? undefined : longestRun(first);
     if (first === undefined || setBy === undefined) return [];
+    const box = {
+      x0: Math.min(...block.map((piece) => piece.left)),
+      y0: Math.min(...block.map((piece) => piece.bottom)),
+      x1: Math.max(...block.map((piece) => piece.right)),
+      y1: Math.max(...block.map((piece) => piece.top)),
+    };
+    const texts = block.map((piece) => piece.runs.map((run) => run.text).join(''));
+    const soft = softEnds(
+      block.map((piece, at) => ({ text: texts[at] ?? '', box: { x0: piece.left, x1: piece.right } })),
+      box.x1,
+    );
+    const { align, firstIndent } = blockShape(
+      block.map((piece, at) => ({ x0: piece.left, x1: piece.right, characters: (texts[at] ?? '').length })),
+      soft,
+    );
     return [
       {
-        box: {
-          x0: Math.min(...block.map((piece) => piece.left)),
-          y0: Math.min(...block.map((piece) => piece.bottom)),
-          x1: Math.max(...block.map((piece) => piece.right)),
-          y1: Math.max(...block.map((piece) => piece.top)),
-        },
-        lines: block.map((piece) => ({
+        box,
+        lines: block.map((piece, at) => ({
           runs: piece.runs.map((run) => ({ index: run.index, text: run.text, style: run.style })),
           box: { x0: piece.left, y0: piece.bottom, x1: piece.right, y1: piece.top },
+          soft: soft[at] === true,
         })),
         style: setBy.style,
+        shape: { align, firstIndent },
       },
     ];
   });
 }
 
 /**
- * A block's text as a paragraph: its SOFT-wrapped lines joined by a space, its hard breaks kept as
- * line breaks — what a translation is sent, so the paragraph re-wraps as one (ADR-0097 4c).
+ * Whether each line of a block ENDS in a soft wrap, by the typesetter's own test and no constant: a line was soft-wrapped
+ * when **the next line's first word would not have fitted at its end**, which is the only reason a typesetter breaks a
+ * line inside a paragraph ([ADR-0097](../../../docs/DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md)
+ * 4c). The first word's width is the next line's width in proportion to its characters, a space included. A line that
+ * ends short of where that word would have reached (an address line, a list entry, a paragraph's last line) was broken on
+ * purpose, and its break is kept.
  *
- * ## The typesetter's own test, and no constant
- *
- * A line was soft-wrapped when **the next line's first word would not have fitted at its end**:
- * that is the only reason a typesetter breaks a line inside a paragraph. The first word's width is
- * the next line's width in proportion to its characters, a space included. A line that ends short
- * of where that word would have reached — an address line, a list entry, a paragraph's last line —
- * was broken on purpose, and the break is kept.
- *
- * @param lines the block's lines, top to bottom, each its text and its box
- * @param right the block's right edge
- */
-export function paragraphText(
-  lines: readonly { readonly text: string; readonly box: { readonly x0: number; readonly x1: number } }[],
-  right: number,
-): string {
-  const soft = softEnds(lines, right);
-  let text = '';
-  for (const [at, line] of lines.entries()) {
-    text += line.text;
-    if (at === lines.length - 1) break;
-    text = soft[at] === true ? `${text.trimEnd()} ` : `${text}\n`;
-  }
-  return text;
-}
-
-/**
- * Whether each line of a block ENDS in a soft wrap, by the typesetter's own test: the next line's first word would not
- * have fitted at this line's end ([ADR-0097](../../../docs/DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md)
- * 4c). The ONE place a soft end is decided: {@link paragraphText}, the reading `document.textBlocks` answers and the
- * translation all take it from here, and a block's writer takes it from the wire rather than deciding again
- * ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)
+ * The ONE place a soft end is decided: the reading `document.textBlocks` answers is built from it, the translation and
+ * the editor take their paragraphs from that reading, and a block's writer takes it from the wire rather than deciding
+ * again ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)
  * Decision 2). The last line ends nothing, so it is never soft.
  *
  * @param lines the block's lines, top to bottom, each its text and its box

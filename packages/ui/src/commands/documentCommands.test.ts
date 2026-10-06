@@ -1573,10 +1573,13 @@ describe('delete pages — the mutation-dialog gate', () => {
           { index: 9, text: 'brown fox', style: PLAIN },
         ],
         box: { x0: 72, y0: 700, x1: 300, y1: 711 },
+        // THE FIRST LINE ENDS SOFT: the block is one paragraph, "The quick brown fox jumps over" (ADR-0179).
+        soft: true,
       },
-      { runs: [{ index: 2, text: 'jumps over', style: PLAIN }], box: { x0: 72, y0: 686, x1: 190, y1: 697 } },
+      { runs: [{ index: 2, text: 'jumps over', style: PLAIN }], box: { x0: 72, y0: 686, x1: 190, y1: 697 }, soft: false },
     ],
     style: PLAIN,
+    shape: { align: 'left', firstIndent: 0 },
   };
 
   it('A BLOCK EDIT SENDS the block’s own indices, the words typed, and the version the BLOCKS were read at', async () => {
@@ -1596,7 +1599,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       DOC,
       3,
       BLOCK,
-      'The quick brown dog\njumps over',
+      'The quick brown dog jumps over',
       { version: asDocVersion(7), rewrite: 'objects' },
     );
     expect(outcome).toBe('written');
@@ -1609,12 +1612,14 @@ describe('delete pages — the mutation-dialog gate', () => {
             kind: 'editTextBlock',
             page: 3,
             // THE WIRE FORM WRITTEN OUT, not built by the encoder under test (ADR-0142): two lines, of runs 4 and 9
-            // and of run 2, one block, its words.
+            // and of run 2, one block, its words as ONE paragraph with the first line's soft end where the read found
+            // it (ADR-0179).
             runs: [4, 9, 2],
             lineStarts: [0, 2],
             blockStarts: [0],
-            text: 'The quick brown dog\njumps over',
+            text: 'The quick brown dog jumps over',
             textStarts: [0],
+            softLines: [0],
             fit: 'reflow',
             version: 7,
           },
@@ -1638,7 +1643,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       DOC,
       3,
       BLOCK,
-      'The quick brown dog\njumps over',
+      'The quick brown dog jumps over',
       { version: asDocVersion(7), rewrite: 'operators' },
     );
     expect(outcome).toBe('written');
@@ -1653,8 +1658,9 @@ describe('delete pages — the mutation-dialog gate', () => {
             runs: [4, 9, 2],
             lineStarts: [0, 2],
             blockStarts: [0],
-            text: 'The quick brown dog\njumps over',
+            text: 'The quick brown dog jumps over',
             textStarts: [0],
+            softLines: [0],
             fit: 'reflow',
             version: 7,
           },
@@ -1664,7 +1670,7 @@ describe('delete pages — the mutation-dialog gate', () => {
   });
 
   it('CONTROL: a block whose words did not change SENDS NOTHING', async () => {
-    // The words are compared by `lineText`, the rule the kernel diffs with. A
+    // The words are compared by the one join the kernel diffs with (`paragraphsOfLines`: a soft wrap is a space). A
     // commit that sent anyway would regenerate the page for no change — which
     // the kernel refuses, so the person would meet a problem for clicking away.
     const sent: string[] = [];
@@ -1677,11 +1683,22 @@ describe('delete pages — the mutation-dialog gate', () => {
       DOC,
       3,
       BLOCK,
-      'The quick brown fox\njumps over',
+      'The quick brown fox jumps over',
       { version: asDocVersion(7), rewrite: 'objects' },
     );
     expect(outcome).toBe('unchanged');
     expect(sent).toStrictEqual([]);
+    // AND THE LINES AS THEY WERE JOINED BEFORE ARE NOT THE WORDS: the first line ends soft, so a line break there is a
+    // new paragraph, which is a change and is sent.
+    const split = await commitTextBlock(
+      { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown fox\njumps over',
+      { version: asDocVersion(7), rewrite: 'objects' },
+    );
+    expect(split).toBe('written');
   });
 
   it('A FONT THAT CANNOT CARRY THE WORDS is the editor’s to say — no dialog opens for it', async () => {
@@ -6102,7 +6119,15 @@ describe('readRunFonts', () => {
    */
   function blockOf(count: number): TextBlock {
     const runs = Array.from({ length: count }, (_, index) => ({ index, text: 'w', style: STYLE }));
-    return { box, lines: [{ runs: runs.slice(0, 1), box }, { runs, box }], style: STYLE };
+    return {
+      box,
+      lines: [
+        { runs: runs.slice(0, 1), box, soft: false },
+        { runs, box, soft: false },
+      ],
+      style: STYLE,
+      shape: { align: 'left', firstIndent: 0 },
+    };
   }
 
   it('names each run ONCE and maps every place to its run, by its first object', async () => {

@@ -101,7 +101,7 @@ async function edit(image, text) {
   const command = {
     kind: 'editTextBlock',
     page: 0,
-    ...blockEditOf([{ lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)), text }]),
+    ...blockEditOf([{ lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)), soft: block.lines.map(() => false), text }]),
     fit: 'reflow',
     version: 1,
   };
