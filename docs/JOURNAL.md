@@ -892,6 +892,138 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-06 — Stage audit of `974df9f5..83751d8b` — finding TTTTTTT-1
+
+77 commits, 291 files (`npm run audit:scope`). Owed because the merge commit plus the visual-baseline
+regeneration that follows it would take the range to 294 files. Label T: the next free after Q, with R and S
+both taken on work/cloud-5-text-edit's own unmerged tip (`974df9f5..389cc010` and `389cc010..f278ec74`, read
+from that branch's JOURNAL) — neither of those two ranges is in this history, since this merge stops at
+`dbff98b2` and does not take the font work after it.
+
+**What this entry covers.** `83751d8b` merges `dbff98b2` (the end of Part B Phase 0 on work/cloud-5-text-edit,
+which already carries all of work/cloud-4) into main's own 35 commits since the branch point `54ea19e7` — the
+menu row, high contrast, the new logo, and the Type 3 research done directly on main while the cloud branch
+was still working. The two sides touched the same spot eleven times; each was resolved by combining both
+sides' intent rather than picking one, and is named in the merge commit's own message. Two of those eleven
+turned out to hide a second kind of defect, caught by `npm run typecheck` rather than by git: `composition.ts`
+and `engineSessions.ts`/`.test.ts` each had **both sides independently land the identical ADR-0023 P3 fix**
+(a host's ending counts against the one document whose call the host was running) at different lines of the
+same interface or object literal, so git's line-based merge saw two non-overlapping insertions and merged them
+cleanly into a duplicate `hostEnded` property and a duplicate runtime check — a `TS1117`/`TS2300` compile
+error, not a silent duplicate, so it could not have reached CI. One test file (`engineSessions.test.ts`) also
+called a method, `recordFailure`, that no longer exists under either side's naming (the real method is
+`recordEnding`), and one `HostEnding` literal was missing its `termination`/`during`/`last` shape — both fixed
+to match the surrounding file's own convention, not patched around. No ADR renumbering was needed: main gained
+zero new ADR numbers since `54ea19e7` (144 before, 144 after), so none of the branch's numbers up to 0171
+collided.
+
+**Proofs modified, read for loosening** (five readers, each given a disjoint slice of the touched test/proof
+files — the full scope is in `docs/audit-watermark.json`'s history and `npm run audit:scope`'s own output —
+every deleted or changed line read, findings checked against the cited commit before being recorded here).
+Nothing loosened. Every removed or changed assertion in the range is one of: a rename to a strictly more
+specific shape (`backedUp: boolean` → `previousKeptAt: string | null` in `atomicWrite.test.ts` and
+`savePipeline.test.ts`; a bare string → a structured `{code, detail}` or `FailureDetails` object in several
+`apps/desktop` and `packages/ui` command tests), a documented behaviour change with the commit stating the old
+guard is retained and simply unreachable under a new invariant (`client.test.ts`'s duplicate-correlation-id
+case, superseded by the one-call-at-a-time ordering ADR-0023's correction adds), or a genuine tightening
+(ADR-0169 Decision 6 makes a no-op replace-all a refusal, `NothingToReplaceError`, where it used to save
+silently; `redactionLeaks.test.ts`'s scan now reads `PDFName`s and dictionary keys, not only strings).
+`pdfiumCommand.proof.mjs`'s `cases: 87` literal (up from 76, the largest churn in the range) is not
+self-deriving, but `createRoster`'s own `format()` throws if the recorded pass/skip count disagrees with the
+literal in either direction, so a dropped or uncounted case cannot pass silently — read and confirmed present.
+`electronImports.proof.mjs`'s three new `ACCOUNTED_COMPUTED` entries each carry a comment justifying the import
+and are cross-checked against a computed site count at runtime, the same way.
+
+**TTTTTTT-1** (low, open): `packages/kernel/src/replaceLineRule.test.ts` has no case at
+`LINE_EDGE_TOLERANCE`'s own boundary (`replaceLineRule.ts:40`, 0.25pt) — its no-move case sits well inside it
+(0.2) and its move cases sit far outside it (10–30), so the test proves the function works away from the
+threshold without proving the threshold itself is where the function draws the line (item 4a). Not fixed here;
+recorded for whoever next touches that file.
+
+**A correction to the pre-commit hook's own report, read and checked rather than taken on its word.** The hook
+that blocked this commit's first attempt also reported three files with fewer cases than at HEAD
+(`pointTools.test.ts` 14→13, `checkSpelling.test.ts` 12→4, `checker.test.ts` 11→7). All three diffs against
+`974df9f5` are empty: the changes are at `9a6e4c81` and `e1ade294`, both ancestors of `8f322ba7` — inside
+QQQQQQQ's own already-closed range, not this one. Checked anyway: `e1ade294`'s own message states the split
+(the dialog-walk cases moved into `reviewRun.test.ts`, the `collectMisspellings` cases into `review.test.ts`,
+both new files in the same commit, 702 lines), and the removed subjects reappear as equivalent or more
+specific cases there; `9a6e4c81`'s two dialog-shape cases merged into one case because the tool stopped using
+a separate dialog. Both legitimate, both out of this audit's scope by date, mentioned so the hook's own output
+is not left looking unanswered in this record.
+
+**Would CI see it (item 3).** `npm run typecheck` and `npm run build` were run locally against the merged tree
+before this commit and are clean — the two `TS1117`/`TS2300` duplicates above were caught exactly this way,
+before any push. CI has not yet seen `83751d8b`; the board is read once after this push, per the standing
+rule, and any red there is fixed at its cause rather than retried.
+
+### 1. Root cause or workaround?
+
+Both merge-induced defects (the duplicate `hostEnded` declarations, the stale `recordFailure` call, the
+underspecified `HostEnding` literal) were fixed by matching the surviving side's own naming and shape, not by
+casting, widening a type, or silencing the compiler. The `NothingToReplaceError` and `replaceLineRule`
+findings above are the two sides' own commits, not this one's.
+
+### 2. Verified against the easy shape only?
+
+The merge conflicts were resolved by reading each side's full diff against the common ancestor (`54ea19e7`)
+rather than by trusting git's own three-way merge text, which is exactly what surfaced the two duplicate-
+property defects git's merge did not flag as conflicts at all — the hard shape here was two correct,
+independent fixes to the same bug, not one side being wrong.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+No coverage was narrowed to a derived claim in this range; `pdfiumCommand.proof.mjs`'s roster moved the other
+way (a hand-typed count that cannot silently drift, per its own enforcement) and `electronImports.proof.mjs`'s
+allowlist stayed a cross-checked one.
+
+### 3. Would CI have caught it?
+
+Answered above: typecheck would have, and did, locally.
+
+### 4. Are the proofs non-vacuous?
+
+Spot-checked by the five readers: the P3 attribution cases in `engineSessions.test.ts` and
+`engineHostConnection.test.ts` each carry a stated control (the pre-ADR-0023-correction behaviour, which the
+case says would read `poisoned: 2` on the innocent document); the redaction corpus cases carry an explicit
+"secret present when nothing is burned" control; the new refusal-detail cases in `contractHandlers.test.ts`
+and `commandProblem.test.ts` each pair a refused case with an accepted one.
+
+### 4a. Resolution test before measuring?
+
+One gap found and recorded as TTTTTTT-1 above (`replaceLineRule.test.ts`). Everywhere else checked —
+`credentialFields.test.ts`, `stylesheetMotion.test.ts`, `forcedColors.pw.ts`, `pressAnchor.pw.ts` among
+them — the new instrument's own positive control or boundary case was present and read.
+
+### 4b. A search with a positive control?
+
+`credentialFields.test.ts` and `stylesheetMotion.test.ts` were read in full against this item specifically:
+both carry an explicit positive control (a planted field, a known set of three stylesheets) and both refuse to
+report success on an empty result. No new search-shaped instrument in this range was found without one.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+`pdfiumCommand.proof.mjs`'s `cases: 87` is a literal, read above; it is anchored by `createRoster`'s own
+runtime count rather than left to drift. `packageMsix.proof.mjs`'s `RUNTIME_CASES.length` is derived directly.
+
+### 5. Executed, or asserted?
+
+Executed: `npm run typecheck`, `npm run build`, and `npm run test:visual:regenerate` (all 72 baselines, viewed
+before this commit). Asserted: the five readers' diff reading was not independently re-run by a sixth; each
+reader's file list was disjoint, so none overlapped another's claim.
+
+### 6. Architecture before the feature, or underneath it?
+
+No seam moved in this merge; every ADR cited above (0146 through 0171) was already committed on its own branch
+before this merge combined the histories.
+
+### 7. Do the documents still match the code?
+
+`docs/ARCHITECTURE.md`'s amendment log and `docs/FEATURES.md`'s two rows this merge touched were combined
+(both sides' clauses kept) rather than overwritten, in the merge commit itself. `docs/audit-watermark.json`
+advances with this entry, to `83751d8b`.
+
+---
+
 ## 2026-10-05 — Stage audit of `8f322ba7..974df9f5` — findings QQQQQQQ-1 to QQQQQQQ-22
 
 66 commits, 200 files: the end of work/cloud-4 (11-MEDIUM's CR-COR, CR-SEC, CR-DOC and CR-NAT items, Group 10 and
