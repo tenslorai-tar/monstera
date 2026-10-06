@@ -607,7 +607,20 @@ test('at its MINIMUM width the right contextual panel still holds every Properti
     // in FRACTIONAL pixels — the text's laid-out width (an ellipsis is painted, so the line keeps the whole word's
     // width) against its box — because `scrollWidth` and `clientWidth` round, and a 71.3 px word in a 71 px box reads
     // as fitting while it draws an ellipsis.
+    //
+    // FOUR TABS SINCE ADR-0183, and at this width the words cannot all fit: a tab that is not the selected one shows its
+    // glyph alone (its label clipped to a point and its name kept in `title`), so only the labels that ARE shown are
+    // held to be whole, and each tab that hides its word is asserted to show a glyph and carry its name instead.
+    const tabs = [...(header?.querySelectorAll<HTMLElement>('.m-context-panel__tab') ?? [])];
+    const labelOf = (tab: HTMLElement): HTMLElement | null => tab.querySelector<HTMLElement>('.m-context-panel__tab-label');
+    const hidden = tabs.filter((tab) => (labelOf(tab)?.getBoundingClientRect().width ?? 0) <= 2);
+    const glyphless = hidden.filter((tab) => {
+      const glyph = tab.querySelector('svg');
+      return glyph === null || glyph.getBoundingClientRect().width === 0 || (tab.getAttribute('title') ?? '') === '';
+    });
+    const shown = tabs.filter((tab) => !hidden.includes(tab)).map((tab) => labelOf(tab)?.textContent ?? '');
     const cut = [...(header?.querySelectorAll<HTMLElement>('.m-context-panel__tab-label') ?? [])]
+      .filter((label) => label.getBoundingClientRect().width > 2)
       .filter((label) => {
         const text = document.createRange();
         text.selectNodeContents(label);
@@ -615,7 +628,7 @@ test('at its MINIMUM width the right contextual panel still holds every Properti
       })
       .map((label) => label.textContent);
     const labels = header?.querySelectorAll('.m-context-panel__tab-label').length ?? 0;
-    return { overflow, minContent, headerFits, chevronPast, cut, labels };
+    return { overflow, minContent, headerFits, chevronPast, cut, labels, shown, hiddenCount: hidden.length, glyphless: glyphless.length };
   });
   expect(measured).not.toBeNull();
   console.log(`Properties tab min-content width: ${String(measured?.minContent)} px`);
@@ -625,9 +638,14 @@ test('at its MINIMUM width the right contextual panel still holds every Properti
   expect(measured?.headerFits).toBe(true);
   expect(measured?.chevronPast).not.toBeNull();
   expect(measured?.chevronPast ?? Infinity).toBeLessThanOrEqual(0.5);
-  // THE LABELS WERE FOUND, all three, or the empty list below is the reassuring answer from a lookup that saw nothing.
-  expect(measured?.labels).toBe(3);
+  // THE LABELS WERE FOUND, all four, or the empty list below is the reassuring answer from a lookup that saw nothing.
+  expect(measured?.labels).toBe(4);
   expect(measured?.cut).toStrictEqual([]);
+  // THE SELECTED TAB KEEPS ITS WORD, WHOLE, and the three others show a glyph and carry their name: a header that fits by
+  // hiding what the tabs are called, with nothing left to find them by, is the defect the whole-word rule above exists for.
+  expect(measured?.shown).toStrictEqual(['Properties']);
+  expect(measured?.hiddenCount).toBe(3);
+  expect(measured?.glyphless).toBe(0);
 });
 
 test('the ASSISTANT fits its panel: the message box is inside it and nothing scrolls', async ({ page }) => {
