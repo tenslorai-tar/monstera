@@ -4,6 +4,7 @@ import { HeldPassword } from '@monstera/shared';
 
 import type { CommandExecution } from '../commandRouting.js';
 import type { ImageSession } from '../engineSeam.js';
+import type { PageRuns } from '../operatorEdit.js';
 import type { TextRun } from '../pdfiumFfi.js';
 import {
   EditRefusedError,
@@ -121,6 +122,12 @@ export type HostRunFontsReader = (
   indices: readonly number[],
 ) => Promise<{ readonly fonts: readonly Uint8Array[]; readonly runs: readonly (number | null)[] }>;
 
+/**
+ * How this process reads a page's joined runs with their members and its text objects' page indices (ADR-0176's
+ * `pageRuns`). Injected for {@link HostTextRunsReader}'s reason.
+ */
+export type HostPageRunsReader = (image: ImageSession, page: number) => Promise<PageRuns>;
+
 export type HostPageObjectsReader = (
   image: ImageSession,
   page: number,
@@ -160,6 +167,8 @@ export interface PdfiumHandlerParts {
   readonly renderPage: HostPageRasteriser;
   /** How this process rebuilds a block's run fonts. `engine/run-fonts`. */
   readonly runFonts: HostRunFontsReader;
+  /** How this process reads a page's runs with their members. `engine/page-runs`. */
+  readonly pageRuns: HostPageRunsReader;
 }
 
 export function createPdfiumHandlers({
@@ -167,6 +176,7 @@ export function createPdfiumHandlers({
   execution,
   files,
   pageObjects,
+  pageRuns,
   probe,
   renderPage,
   runFonts,
@@ -489,6 +499,26 @@ export function createPdfiumHandlers({
         await files.writeOutput(held.outputDirectory, into, all);
       }
       return { ok: true, value: { sizes, runs: [...read.runs] } };
+    },
+
+    'engine/page-runs': async ({ session, from, password, page }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      let image: ImageSession;
+      try {
+        image = await imageFor(held, from, password);
+      } catch {
+        return failed('asset-missing');
+      }
+      try {
+        const read = await pageRuns(image, page);
+        // NO SLICE, unlike `engine/text-runs`: part of a page would number the rest wrongly, so a page past the bound
+        // fails the schema and the edit is refused rather than written against a partial reading.
+        return { ok: true, value: { textObjects: [...read.textObjects], runs: read.runs.map((run) => ({ ...run, members: [...run.members] })) } };
+      } catch {
+        // `engine/text-runs`' reason: a page this document does not have is the request's, not a sick host.
+        return failed('engine-refused');
+      }
     },
   };
 }

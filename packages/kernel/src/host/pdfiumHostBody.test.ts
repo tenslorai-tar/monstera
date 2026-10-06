@@ -276,6 +276,16 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9]), dra
       const runs = indices.map(place);
       return Promise.resolve({ fonts: runs.some((at) => at !== null) ? fonts : [], runs });
     },
+    pageRuns: (image, page) => {
+      calls.push(`page-runs:${String(page)}:${seen(image)}`);
+      if (image.bytes.length === 1 && image.bytes[0] === 0) throw new Error('PDFium refused the document');
+      // A RULE IS OBJECT 1, so text objects 0, 2, 3 and a run whose members skip it: the answer must cross as the reader
+      // gave it, members and all.
+      return Promise.resolve({
+        textObjects: [0, 2, 3],
+        runs: [{ index: 0, members: [0, 2], text: 'ab', left: 1, right: 9, bottom: 2, top: 8 }],
+      });
+    },
     pageObjects: (image, page) => {
       calls.push(`page-objects:${String(page)}:${seen(image)}`);
       return Promise.resolve({
@@ -868,6 +878,32 @@ describe('the PDFium host body', () => {
     expect(files.written.size).toBe(0);
     // THE PAGE AND THE RUNS REACHED THE READER, each time, as one read per block.
     expect(calls).toStrictEqual(['run-fonts:1:4,5,8,6:9', 'run-fonts:1:5,7:9']);
+  });
+
+  it('answers a page’s runs with their members and its text objects, from the named file, never truncated', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([7]));
+    stream.feed(request('p1', 'engine/page-runs', { session, from: IN, password: null, page: 2 }, ANSWER));
+    await stream.whenSent(2);
+    const written = files.written.get(`${AREA.outputDirectory}|${ANSWER}`);
+    expect(answerIn(stream.sent[1])).toStrictEqual({ id: 'p1', answerFile: { bytes: written?.length, credentials: [] } });
+    expect(JSON.parse(new TextDecoder().decode(written))).toStrictEqual({
+      ok: true,
+      value: { textObjects: [0, 2, 3], runs: [{ index: 0, members: [0, 2], text: 'ab', left: 1, right: 9, bottom: 2, top: 8 }] },
+    });
+    expect(calls).toStrictEqual(['page-runs:2:7']);
+  });
+
+  it('refuses the runs of a page the document cannot answer', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([0]));
+    stream.feed(request('p1', 'engine/page-runs', { session, from: IN, password: null, page: 0 }, ANSWER));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'engine-refused' } } });
   });
 
   it('refuses a block’s fonts the document cannot answer, writing nothing', async () => {

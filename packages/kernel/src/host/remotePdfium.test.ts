@@ -12,6 +12,7 @@ import { pdfiumChannels } from './pdfiumChannels.js';
 import {
   type PdfiumInputKeeper,
   type PdfiumTransfer,
+  remotePdfiumPageRuns,
   remotePdfiumRunFonts,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
@@ -105,6 +106,7 @@ function harness(peer: Peer, transfer: PdfiumTransfer, keep?: PdfiumInputKeeper)
     writer: remotePdfiumWriter(client, held, transfer, keep),
     textRuns: remotePdfiumTextRuns(client, held, transfer),
     runFonts: remotePdfiumRunFonts(client, held, transfer),
+    pageRuns: remotePdfiumPageRuns(client, held, transfer),
   };
 }
 
@@ -482,6 +484,40 @@ describe('main’s PDFium writer', () => {
     expect(await runFonts(imageOf(new Uint8Array([5])), 2, [6, 7, 9])).toStrictEqual({ fonts: [], runs: [null, null, null] });
     expect(transfer.log.some((entry) => entry.startsWith('take:'))).toBe(false);
     expect(transfer.log.at(-1)?.startsWith('remove:')).toBe(true);
+  });
+
+  describe('a page’s runs with their members (ADR-0176’s pageRuns)', () => {
+    const asking = (runs: unknown[]) => {
+      const transfer = stubTransfer();
+      const peer: Peer = {
+        asked: [],
+        answer: (channel, params) => {
+          expect(channel).toBe('engine/page-runs');
+          expect(params).toMatchObject({ page: 4 });
+          return { ok: true, value: { textObjects: [0, 2, 3], runs } };
+        },
+      };
+      return { transfer, pageRuns: harness(peer, transfer).pageRuns };
+    };
+    const run = (index: number, members: number[]) => ({ index, members, text: 'x', left: 0, right: 1, bottom: 0, top: 1 });
+
+    it('answers the host’s reading, and removes the input it wrote whatever happened', async () => {
+      const { transfer, pageRuns } = asking([run(0, [0, 2]), run(3, [3])]);
+      expect(await pageRuns(imageOf(new Uint8Array([5])), 4)).toStrictEqual({
+        textObjects: [0, 2, 3],
+        runs: [run(0, [0, 2]), run(3, [3])],
+      });
+      expect(transfer.log.at(-1)?.startsWith('remove:')).toBe(true);
+    });
+
+    it('refuses a member that is not one of the text objects the same answer names', async () => {
+      // OBJECT 1 IS NOT TEXT here: a host naming it would have the writer set a rule as a glyph.
+      await expect(asking([run(0, [0, 1])]).pageRuns(imageOf(new Uint8Array([5])), 4)).rejects.toThrow(/object 1 in a run/u);
+    });
+
+    it('refuses an object named in two runs', async () => {
+      await expect(asking([run(0, [0, 2]), run(2, [2, 3])]).pageRuns(imageOf(new Uint8Array([5])), 4)).rejects.toThrow(/two runs/u);
+    });
   });
 
   it('refuses a block’s fonts whose sizes disagree with the file that arrived', async () => {

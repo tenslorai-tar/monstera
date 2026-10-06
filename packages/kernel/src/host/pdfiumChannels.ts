@@ -143,6 +143,14 @@ export const ENGINE_TEXT_OBJECTS_MAX = 43_400;
 export const SMALLEST_RUN_BYTES = 192;
 
 /**
+ * How many text objects, or one run's members, `engine/page-runs` may name: the most single-digit indices with their
+ * commas an answer within `ENGINE_ANSWER_FILE_MAX_BYTES` (8 MiB) could hold, 8,388,608 / 2. A bound against a hostile
+ * host, as {@link ENGINE_TEXT_OBJECTS_MAX} is; a literal held to the division by `pdfiumChannels.test.ts`, for that
+ * constant's reason.
+ */
+export const PAGE_TEXT_OBJECTS_MAX = 4_194_304;
+
+/**
  * How long a captured run's text may be on this wire.
  *
  * **Deliberately larger than `MAX_REPLACED_TEXT`, and the asymmetry is the
@@ -688,6 +696,42 @@ export const pdfiumChannels = {
         sizes: z.array(z.number().int().min(1).max(MAX_RUN_FONT_BYTES)).max(MAX_BLOCK_FONTS),
         /** For each run asked about, in the order asked, its font's place in `sizes`, or `null` for none. */
         runs: z.array(z.number().int().min(0).max(MAX_BLOCK_FONTS - 1).nullable()).max(MAX_FONT_RUNS),
+      })
+      .strict(),
+    ['no-such-session', 'asset-missing', 'engine-refused'],
+  ),
+
+  /**
+   * The page's joined runs WITH their members, and its text objects' page indices: the `pageRuns` pre-read of ADR-0176's
+   * writer (its 2026-10-06 correction), which finds the objects a run is among a content stream's operators.
+   *
+   * File-answered for `engine/text-runs`' reason, and larger: a page drawn a glyph per object answers one member per
+   * glyph. Never truncated, unlike that read: a writer handed part of a page would number the rest wrongly, so a page
+   * past the bound is refused by the schema and the edit with it.
+   */
+  'engine/page-runs': fileAnswered(
+    'Answers a page’s joined text runs with the objects each is, and the page indices of its text objects.',
+    z.object({ session: sessionSchema, ...byteImageWire.read, page: z.number().int().nonnegative() }).strict(),
+    z
+      .object({
+        textObjects: z.array(z.number().int().nonnegative()).max(PAGE_TEXT_OBJECTS_MAX),
+        runs: z
+          .array(
+            z
+              .object({
+                index: z.number().int().nonnegative(),
+                members: z.array(z.number().int().nonnegative()).min(1).max(PAGE_TEXT_OBJECTS_MAX),
+                text: z.string().max(PDFIUM_PRIOR_TEXT_MAX),
+                left: z.number(),
+                right: z.number(),
+                bottom: z.number(),
+                top: z.number(),
+              })
+              .strict()
+              // A RUN IS NAMED BY ITS FIRST OBJECT, which is how the editor's wire names it.
+              .refine((run) => run.members[0] === run.index, { message: 'a run is named by its first object' }),
+          )
+          .max(ENGINE_TEXT_OBJECTS_MAX),
       })
       .strict(),
     ['no-such-session', 'asset-missing', 'engine-refused'],

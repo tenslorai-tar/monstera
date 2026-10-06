@@ -8,6 +8,7 @@ export {
   editTextBlocks,
   pageText,
   pageObjects,
+  pageRuns,
   placeObject,
   renderPageBitmap,
   objectMatrix,

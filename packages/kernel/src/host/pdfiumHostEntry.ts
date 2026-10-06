@@ -5,6 +5,7 @@ import {
   onImage,
   openPdfium,
   pageObjects,
+  pageRuns,
   renderPageBitmap,
   runFonts,
   textRuns,
@@ -159,6 +160,7 @@ const handlers = createPdfiumHandlers({
     }),
   // REBUILT HERE, in the contained process, from the runs' own programs (ADR-0175): the document's program never leaves.
   runFonts: (image, page, indices) => onImage(image, (session) => runFonts(session, page, indices)),
+  pageRuns: (image, page) => onImage(image, (session) => pageRuns(session, page)),
 });
 
 startEngineHost(

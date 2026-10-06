@@ -35,30 +35,16 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { inflateSync } from 'node:zlib';
 
-import { PDFArray, PDFDocument, PDFName, PDFRawStream, PDFRef } from '@cantoo/pdf-lib';
+import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 
+import { pageStreams as streamsOf } from '../lib/pageStreams.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 import { CHROMIUM_FIXTURE } from './chromiumType3Fixture.mjs';
 import { buildFixture } from './fontKindFixtures.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const built = (/** @type {string} */ relative) => import(pathToFileURL(join(ROOT, relative)).href);
-
-/** The page's content streams, each decoded. */
-async function streamsOf(/** @type {Uint8Array} */ bytes, /** @type {number} */ page) {
-  const doc = await PDFDocument.load(bytes, { updateMetadata: false });
-  const contents = doc.getPage(page).node.get(PDFName.of('Contents'));
-  /** @type {unknown[]} */
-  const refs = contents instanceof PDFArray ? contents.asArray() : [contents];
-  return refs.map((ref) => {
-    const stream = ref instanceof PDFRef ? doc.context.lookup(ref) : ref;
-    if (!(stream instanceof PDFRawStream)) throw new Error(`page ${String(page)}'s content is not a raw stream`);
-    const filter = stream.dict.get(PDFName.of('Filter'));
-    return filter === undefined ? stream.contents : new Uint8Array(inflateSync(stream.contents));
-  });
-}
 
 /**
  * @param {string} label

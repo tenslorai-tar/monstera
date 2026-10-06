@@ -11,6 +11,7 @@ import type {
 import { serialiseIntoFile } from '../checkpointFile.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { AppliedImage, ByteImage, DrawnBoxes, ImageSession } from '../engineSeam.js';
+import type { PageRuns } from '../operatorEdit.js';
 import type { TextRun } from '../pdfiumFfi.js';
 import {
   EditRefusedError,
@@ -546,6 +547,43 @@ export function remotePdfiumRunFonts(
         return font;
       });
       return { fonts, runs };
+    } finally {
+      await transfer.removeSnapshot(area, from);
+    }
+  };
+}
+
+/**
+ * A page's runs with their members and its text objects' page indices, over the boundary: ADR-0176's `pageRuns`
+ * pre-read. {@link remotePdfiumTextRuns}' round trip, file-answered by the channel.
+ *
+ * THE ANSWER IS CHECKED AGAINST ITSELF, for {@link remotePdfiumRunFonts}' reason, the host being hostile: every member
+ * is one of the text objects the same answer names, and no object is in two runs. The writer finds operators through
+ * exactly these numbers, so a member that is not a text object would name a rule or an image as a run's glyph.
+ */
+export function remotePdfiumPageRuns(
+  client: ClientApi<PdfiumChannels>,
+  held: () => PdfiumArea,
+  transfer: PdfiumTransfer,
+): (image: ImageSession, page: number) => Promise<PageRuns> {
+  return async (image, page) => {
+    const { session, area } = held();
+    const from = transfer.mintName();
+    await transfer.writeSnapshot(area, from, image.bytes);
+    try {
+      const read = answered('engine/page-runs', await client['engine/page-runs']({ session, from, password: frameKey(image), page }));
+      const text = new Set(read.textObjects);
+      const seen = new Set<number>();
+      for (const run of read.runs) {
+        for (const member of run.members) {
+          if (!text.has(member)) {
+            throw new EngineCallFailed('engine/page-runs', `named object ${String(member)} in a run, which is not a text object it answered`);
+          }
+          if (seen.has(member)) throw new EngineCallFailed('engine/page-runs', `named object ${String(member)} in two runs`);
+          seen.add(member);
+        }
+      }
+      return read;
     } finally {
       await transfer.removeSnapshot(area, from);
     }

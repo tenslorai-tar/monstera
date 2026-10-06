@@ -84,6 +84,7 @@ import {
 } from '@cantoo/pdf-lib';
 
 import { PDFIUM_COMMAND, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { pageStreams } from '../lib/pageStreams.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { withNoPassword } from '../lib/pdfiumNoPassword.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
@@ -113,6 +114,7 @@ const {
   objectRuns,
   openPdfium,
   pdfiumWriter,
+  pageRuns,
   pageText,
   renderPageBitmap,
   replaceTextObjects,
@@ -120,6 +122,8 @@ const {
   textObjectIndices,
   textRuns,
 } = await import('../../packages/kernel/dist/pdfiumFfi.js');
+// THE KERNEL'S OWN NUMBERING of a page's text operators (ADR-0176 Decision 3), which `pageRuns` is joined against.
+const { joinedContent, showOperators, textObjectCount } = await import('../../packages/kernel/dist/textOperators.js');
 // THE ONE HARFBUZZ READER, to read a rebuilt run font back (ADR-0175).
 const { ShapingFace } = await import('../../packages/kernel/dist/textShaping.js');
 const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
@@ -251,8 +255,9 @@ const failures = [];
 // ADR-0171's addendum: an edit of a document opened with either password, and its control with none, and 95 from
 // ADR-0173's pieces: a word saved in a bundled face, its object, its wrap, the word the twin refused, an unreadable
 // catalogue either way, and a control either side, and 97 from its correction: a character past the BMP and its premise,
-// and 100 from the box: its premise, its reading, and its answer (ADR-0174).
-const roster = createRoster(failures, { cases: 115 });
+// and 100 from the box: its premise, its reading, and its answer (ADR-0174), and 117 from ADR-0176's pageRuns: the
+// Chromium print's members against the kernel's own numbering, and the ruled page's object indices as the control.
+const roster = createRoster(failures, { cases: 117 });
 
 /**
  * @param {string} name
@@ -534,6 +539,7 @@ async function main() {
   await glyphLineCases();
   await settingCases();
   await passwordCases();
+  await pageRunsCases();
   // LAST, because they bind the process's catalogue, and unbind it before returning.
   await pieceCases();
   await replacePieceCases();
@@ -1098,6 +1104,53 @@ async function replacePieceCases() {
  * replacement on the document before S2 existed, which must load a face of its own: so the reuse is the sibling's
  * doing, and not every replacement landing in an Arimo font whatever the document holds.
  */
+/**
+ * ADR-0176's `pageRuns`, through this PDFium, joined against the kernel's own numbering of the same content
+ * (`textOperators.ts`): what the operator writer finds a run's glyphs by. On the committed Chromium print every member of
+ * every run is an operator that shows a code, and the inkless spaces between glyphs are members of none. CONTROL: a page
+ * that draws a rule between two lines, where PDFium's text objects are 0 and 2, so a list that answered text ordinals
+ * would read [0, 1] and name the rule.
+ */
+async function pageRunsCases() {
+  const chromium = new Uint8Array(readFileSync(resolve(root, 'packages', 'testing', 'fixtures', 'text-edit', 'chromium-type3.pdf')));
+  const read = async (/** @type {Uint8Array} */ bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      return await pageRuns(session, 0);
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const runs = await read(chromium);
+  const ops = showOperators(joinedContent(await pageStreams(chromium, 0)));
+  const opOf = (/** @type {number} */ member) => ops.find((op) => op.object === runs.textObjects.indexOf(member));
+  const members = runs.runs.flatMap((run) => [...run.members]);
+  const spaces = ops.filter((op) => op.codes.length === 1 && op.codes[0] === 3 && op.state.font === 'F4');
+  record(
+    'pageRuns names the Chromium print’s glyph objects: every member an operator that shows a code, no space glyph a member',
+    runs.textObjects.length === textObjectCount(ops) &&
+      members.length > 0 &&
+      members.every((member) => (opOf(member)?.codes.length ?? 0) > 0) &&
+      spaces.length > 0 &&
+      spaces.every((space) => !members.includes(runs.textObjects[space.object ?? -1] ?? -1)) &&
+      runs.runs[0]?.text.startsWith('Monstera') === true,
+    `${String(runs.textObjects.length)} text objects for ${String(textObjectCount(ops))} operators; ${String(members.length)} members; ${String(spaces.length)} spaces; first ${JSON.stringify(runs.runs[0]?.text)}`,
+  );
+
+  const document = await PDFDocument.create();
+  const page = document.addPage([300, 300]);
+  const helvetica = await document.embedFont(StandardFonts.Helvetica);
+  page.drawText('Above the rule', { x: 20, y: 250, size: 12, font: helvetica });
+  page.drawRectangle({ x: 20, y: 240, width: 200, height: 1, color: rgb(0, 0, 0) });
+  page.drawText('Below the rule', { x: 20, y: 220, size: 12, font: helvetica });
+  const ruled = await read(await document.save());
+  record(
+    'CONTROL: on a page with a rule between two lines, the text objects are 0 and 2 and the runs are named by them',
+    JSON.stringify(ruled.textObjects) === '[0,2]' && JSON.stringify(ruled.runs.map((run) => run.members)) === '[[0],[2]]',
+    JSON.stringify({ textObjects: ruled.textObjects, members: ruled.runs.map((run) => run.members) }),
+  );
+}
+
 async function siblingCases() {
   const fonts = fontsDirectory(root);
   if (!existsSync(fonts)) {

@@ -301,6 +301,7 @@ export {
   type PdfiumTransfer,
   regeneratedBy,
   remotePdfiumPageObjects,
+  remotePdfiumPageRuns,
   remotePdfiumRenderPage,
   remotePdfiumRunFonts,
   type RunFonts,

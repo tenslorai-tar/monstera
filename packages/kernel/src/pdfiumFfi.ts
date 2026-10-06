@@ -6,6 +6,7 @@ import { editFaces, editFacesBound } from './editFaces.js';
 import { editPieces } from './editPieces.js';
 import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
+import type { PageRuns } from './operatorEdit.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { readFace } from './fontFaces.js';
 import { BOX, boxFont } from './boxFont.js';
@@ -622,23 +623,20 @@ export function countObjects(session: PdfiumSession, page: number): Promise<numb
  * caller here re-loads the page anyway.
  */
 export function textObjectIndices(session: PdfiumSession, page: number): Promise<number[]> {
-  return promised(() =>
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
-      const found: number[] = [];
-      for (let index = 0; index < total; index += 1) {
-        const object: unknown = bindings.getObject(handle, index);
-        if (
-          object !== null &&
-          numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') === TEXT_OBJECT
-        ) {
-          found.push(index);
-        }
-      }
-      return found;
-    }),
-  );
+  return promised(() => onPage(session, page, (handle) => textObjectsOn(api(), handle)));
+}
+
+/** The page object indices of a loaded page's text objects, in order: {@link textObjectIndices}' walk, once. */
+function textObjectsOn(bindings: Bound, handle: unknown): number[] {
+  const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  const found: number[] = [];
+  for (let index = 0; index < total; index += 1) {
+    const object: unknown = bindings.getObject(handle, index);
+    if (object !== null && numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') === TEXT_OBJECT) {
+      found.push(index);
+    }
+  }
+  return found;
 }
 
 /**
@@ -989,6 +987,26 @@ export function textRuns(session: PdfiumSession, page: number): Promise<PageText
       // THE MEMBERS STAY HERE: the wire names a run by its first and last object, and the edit recomputes the rest.
       const runs = joinedWalk(bindings, handle, walked).map(({ members: _members, ...run }) => run);
       return { runs, unaddressable: walked.unaddressable };
+    }),
+  );
+}
+
+/**
+ * The page's joined runs WITH their members, and its text objects' page indices: what ADR-0176's writer needs to find
+ * in a content stream the objects a run is (its 2026-10-06 correction, the `pageRuns` pre-read).
+ *
+ * {@link textRuns}' walk and join, the same calls, so the runs the writer is handed are the runs the editor named
+ * (B3a); only the members, which the editor's wire leaves here, and the text object list are added. No style: the
+ * writer reads each run's state from its own operators.
+ */
+export function pageRuns(session: PdfiumSession, page: number): Promise<PageRuns> {
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const runs = joinedWalk(bindings, handle, walkRuns(bindings, handle)).map(
+        ({ index, members, text, left, right, bottom, top }) => ({ index, members, text, left, right, bottom, top }),
+      );
+      return { textObjects: textObjectsOn(bindings, handle), runs };
     }),
   );
 }
