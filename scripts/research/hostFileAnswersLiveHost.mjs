@@ -615,7 +615,50 @@ async function main() {
       }
     }
 
+    // THE BOX AS THE FIRST EDIT OF A FRESH OPEN (SSSSSSS-1): cases 17 and 18 both edit the document reopened after a
+    // save, and the one PDFium-host edit that saves is the first edit of a fresh open in the page's own font, so two
+    // things vary at once. This edit holds the fresh open and changes only the added font: the untouched page, opened
+    // anew, its first edit adding the code point no font carries. Saved here is a host that misreads a reopened
+    // document; refused here is a host that misreads a font it adds, wherever the document came from.
+    const freshPath = join(scratch, 'fresh-box.pdf');
+    writeFileSync(freshPath, bytes);
+    picked.path = freshPath;
+    const freshOpened = await observed(() => handlers['document.open']({}));
+    /** @type {any} */
+    let freshBoxes = null;
+    if (freshOpened?.ok === true && freshOpened.value.kind === 'opened') {
+      const docId = freshOpened.value.docId;
+      const freshBlocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0, from: 0 }));
+      const block = freshBlocks?.ok === true ? freshBlocks.value.blocks[0] : undefined;
+      if (block !== undefined) {
+        const answered = await observed(() =>
+          handlers['document.execute']({
+            docId,
+            command: {
+              kind: 'editTextBlock',
+              page: 0,
+              ...blockEditOf([
+                {
+                  lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                  text: `${EDITED} ${String.fromCodePoint(0x378)}`,
+                },
+              ]),
+              fit: 'reflow',
+              version: freshBlocks.value.version,
+            },
+          }),
+        );
+        freshBoxes = answered?.ok === true ? { boxed: answered.value.boxed, more: answered.value.more } : answered;
+      } else {
+        freshBoxes = freshBlocks;
+      }
+      await observed(() => handlers['document.close']({ docId }));
+    } else {
+      freshBoxes = freshOpened;
+    }
+
     const report = {
+      freshBoxes,
       wordExported: wordExported?.ok === true ? wordExported.value.kind : wordExported,
       wordPictures,
       wordInOrder,

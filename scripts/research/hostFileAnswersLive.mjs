@@ -83,12 +83,13 @@ const CASES = [
   'the Word export, composed in the real MuPDF host and moved by main, carries both pictures, the first between its paragraphs',
   'the real PDFium host set the ideograph in an installed face, and boxed only the code point no font carries',
   'the real PDFium host boxed the code point no font carries in a bundled face, in the same container',
+  'the real PDFium host boxed it as the FIRST edit of a fresh open, in the same container',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 18 });
-if (CASES.length !== 18) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 18`);
+const roster = createRoster(failures, { cases: 19 });
+if (CASES.length !== 19) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 19`);
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -275,8 +276,16 @@ if (!runnable) {
     JSON.stringify(seen.bundledBoxes) ===
       JSON.stringify({ boxed: [{ character: String.fromCodePoint(0x378), page: 0 }], more: 0 }),
     `the third edit, the box alone, answered ${JSON.stringify(seen.bundledBoxes)}. Saved here while the case above is ` +
-      'refused is a host that misreads what it sets in an installed face; refused here too is a host that misreads any ' +
-      'face it loads, bundled ones included (SSSSSSS-1).',
+      'refused is a host that misreads what it sets in an installed face. Refused here too says it is not installed ' +
+      'faces only, and the next case says whether it is the reopened document (SSSSSSS-1).',
+  );
+  check(
+    CASES[18] ?? '',
+    JSON.stringify(seen.freshBoxes) ===
+      JSON.stringify({ boxed: [{ character: String.fromCodePoint(0x378), page: 0 }], more: 0 }),
+    `the fresh open's first edit, the box alone, answered ${JSON.stringify(seen.freshBoxes)}. Refused here, as the two ` +
+      'cases above on the reopened document are, is a host that misreads a font it adds; saved here is one that misreads ' +
+      'the document reopened after a save (SSSSSSS-1).',
   );
 
   process.stdout.write(
