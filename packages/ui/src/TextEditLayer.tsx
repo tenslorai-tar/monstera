@@ -20,6 +20,7 @@ import {
   TEXT_EDIT_ROTATED,
   TEXT_EDIT_TRUNCATED,
   TEXT_EDIT_UNADDRESSABLE,
+  TEXT_EDIT_UNREADABLE,
 } from './messages/en.js';
 import { composing } from './surfaces/shortcuts.js';
 import { TextFormatBar } from './TextFormatBar.js';
@@ -68,8 +69,10 @@ export interface TextEditLayerProps {
   readonly page: number;
   /** The page as drawn, for the transform. */
   readonly geometry: OverlayPage;
-  /** The page's blocks, or `undefined` while they are being read. */
+  /** The page's blocks, or `undefined` while they are being read or where the read was refused. */
   readonly blocks: PageBlocks | undefined;
+  /** Whether the read of this page was REFUSED: the page says so, and the mode stays on for the others. */
+  readonly unreadable?: boolean;
   /** Writes one block's new words, at the version the blocks were read at and by the writer that read named. */
   readonly onCommit: (block: TextBlock, text: string, read: BlocksRead, formatting?: BlockFormatting) => Promise<BlockCommit>;
   /** The fonts the open block's runs are drawn in, rebuilt by the host, at the version it was read at (ADR-0175). */
@@ -295,6 +298,7 @@ export function TextEditLayer({
   page,
   geometry,
   blocks,
+  unreadable = false,
   onCommit,
   runFonts,
   onPromote,
@@ -340,6 +344,7 @@ export function TextEditLayer({
   );
 
   const notes: ReactElement[] = [];
+  if (unreadable && blocks === undefined) notes.push(<p key="unreadable">{_(TEXT_EDIT_UNREADABLE)}</p>);
   if (blocks !== undefined) {
     if (blocks.blocks.length === 0 && blocks.unaddressable === 0 && blocks.rotated === 0) {
       notes.push(<p key="none">{_(TEXT_EDIT_NONE)}</p>);
@@ -500,6 +505,9 @@ export function TextEditPage({
   return (
     <TextEditLayer
       blocks={answer?.version === version ? answer.blocks : undefined}
+      // AN ANSWER AT THIS VERSION WITH NO BLOCKS is a refused read (the read answers `undefined` for one), as against no
+      // answer yet.
+      unreadable={answer?.version === version && answer.blocks === undefined}
       geometry={geometry}
       onCommit={(block, text, read, formatting) => editing.onCommit(page, block, text, read, formatting)}
       onLeave={editing.onLeave}

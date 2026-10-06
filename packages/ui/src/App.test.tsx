@@ -2539,6 +2539,43 @@ describe('App', () => {
       });
       expect(blockReads.length).toBeGreaterThan(before);
     });
+
+    it('EDIT TEXT: a page whose read is refused for any OTHER reason says so on that page and the mode STAYS on', async () => {
+      vi.mocked(reportProblem).mockClear();
+      const blockReads: string[] = [];
+      const client = createClient(channels, (id) => {
+        if (id === 'document.textBlocks') {
+          blockReads.push(id);
+          return Promise.resolve(err({ code: 'document-poisoned' as const }));
+        }
+        const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
+        const answer = answers[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+      await pressCommand('Edit text', 'Edit');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(vi.mocked(reportProblem)).toHaveBeenCalledTimes(1);
+      // THE PAGE SAYS IT, in its own words, where the engine-unavailable sentence ends the mode instead.
+      expect(await screen.findByText(/text could not be read/u)).toBeDefined();
+      // STILL ON, asserted by the next press: a mode that was left is turned on again and asks again, and one still on is
+      // turned OFF by it and reads nothing.
+      const before = blockReads.length;
+      // THE SENTENCE'S DIALOG answered by its own button, since Escape would also be the mode's own way out.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+        await Promise.resolve();
+      });
+      await pressCommand('Edit text', 'Edit');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(blockReads.length).toBe(before);
+    });
   });
 
   it('the start screen names no command itself — it renders what the registry holds', () => {

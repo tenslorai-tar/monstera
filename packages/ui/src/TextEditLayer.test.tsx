@@ -639,6 +639,15 @@ describe('Edit text on the page (ADR-0096)', () => {
     });
   });
 
+  it('a page whose read was REFUSED says so on that page, and a page still being read says nothing', () => {
+    const refused = mount({ blocks: undefined, unreadable: true });
+    expect(refused.view.container.textContent).toContain('text could not be read');
+    refused.view.unmount();
+    // CONTROL: no blocks and no refusal is a read in flight, which is not a sentence.
+    const reading = mount({ blocks: undefined });
+    expect(reading.view.container.textContent).not.toContain('could not be read');
+  });
+
   it('ESCAPE WITH NO BLOCK OPEN leaves the mode', () => {
     const { view, onLeave } = mount();
     fireEvent.keyDown(find(view.container, '[data-text-edit-layer]'), { key: 'Escape' });

@@ -3377,7 +3377,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         if (!refusal.reported) {
           refusal.reported = true;
           reportProblem(deps, answer.error);
-          setToolId(undefined);
+          // A MACHINE THAT HAS NO EDITING ENGINE refuses every page, so the mode ends with its one sentence; ANY OTHER
+          // REFUSAL is one page's, and the mode stays on for the pages that read: the refused page says so itself
+          // (`TextEditLayer`'s note), where leaving would take every other page's editing away with it.
+          if (answer.error.code === 'engine-unavailable') setToolId(undefined);
         }
         return undefined;
       },
