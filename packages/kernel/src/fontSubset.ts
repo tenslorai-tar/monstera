@@ -190,6 +190,47 @@ export function withPostScriptName(font: Uint8Array, postscript: string, kept: r
   if (!/^[\x21-\x7e]{1,63}$/u.test(postscript) || /[[\](){}<>/%]/u.test(postscript)) {
     throw new Error(`"${postscript}" is not a PostScript name`);
   }
+  return withTable(font, 'name', nameTable(postscript, kept));
+}
+
+/**
+ * `font` with its `cmap` replaced by one Windows Unicode full-repertoire subtable (platform 3, encoding 10, format 12)
+ * mapping each `[codePoint, glyph]` — the box font's cmap (ADR-0173 Decision 7 as corrected): the REAL character maps to
+ * the box glyph, so PDFium's ToUnicode, which it builds from the cmap, names the character the box stands for. Measured
+ * 2026-10-05 on PDFium 155's Linux build: read back as itself by PDFium, MuPDF and pdf.js, BMP and past it.
+ *
+ * @throws where a code point is out of Unicode's range or repeats, or the font has no `head` table
+ */
+export function withCmap(font: Uint8Array, pairs: readonly (readonly [number, number])[]): Uint8Array {
+  const sorted = [...pairs].sort((left, right) => left[0] - right[0]);
+  for (const [at, [point]] of sorted.entries()) {
+    if (!Number.isInteger(point) || point < 0 || point > 0x10ffff) throw new Error(`${String(point)} is not a code point`);
+    if (at > 0 && sorted[at - 1]?.[0] === point) throw new Error(`U+${point.toString(16)} is mapped twice`);
+  }
+  const cmap = new Uint8Array(12 + 16 + 12 * sorted.length);
+  const writer = new DataView(cmap.buffer);
+  // THE HEADER, one encoding record, at offset 12.
+  writer.setUint16(2, 1);
+  writer.setUint16(4, 3);
+  writer.setUint16(6, 10);
+  writer.setUint32(8, 12);
+  // FORMAT 12: format, reserved, length, language, then one group per code point.
+  writer.setUint16(12, 12);
+  writer.setUint32(16, 16 + 12 * sorted.length);
+  writer.setUint32(24, sorted.length);
+  sorted.forEach(([point, glyph], at) => {
+    writer.setUint32(28 + 12 * at, point);
+    writer.setUint32(32 + 12 * at, point);
+    writer.setUint32(36 + 12 * at, glyph);
+  });
+  return withTable(font, 'cmap', cmap);
+}
+
+/**
+ * `font` with its `tag` table replaced by `data` (or added), its table checksums and `head`'s `checkSumAdjustment`
+ * recomputed — THE ONE ASSEMBLER of a font this module writes, so a renamed font and a re-mapped one are laid out alike.
+ */
+function withTable(font: Uint8Array, replaced: string, data: Uint8Array): Uint8Array {
   const view = new DataView(font.buffer, font.byteOffset, font.byteLength);
   const count = view.getUint16(4);
   const tables: { tag: string; data: Uint8Array }[] = [];
@@ -199,12 +240,12 @@ export function withPostScriptName(font: Uint8Array, postscript: string, kept: r
     const offset = view.getUint32(at + 8);
     const length = view.getUint32(at + 12);
     if (offset + length > font.length) throw new Error(`the font's ${tag} table runs past its end`);
-    if (tag !== 'name') tables.push({ tag, data: font.slice(offset, offset + length) });
+    if (tag !== replaced) tables.push({ tag, data: font.slice(offset, offset + length) });
   }
   const head = tables.find((table) => table.tag === 'head');
   if (head === undefined || head.data.length < 12) throw new Error('the font has no head table');
   head.data.fill(0, 8, 12);
-  tables.push({ tag: 'name', data: nameTable(postscript, kept) });
+  tables.push({ tag: replaced, data });
   tables.sort((left, right) => (left.tag < right.tag ? -1 : left.tag > right.tag ? 1 : 0));
 
   const directory = 12 + 16 * tables.length;

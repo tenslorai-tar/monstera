@@ -227,8 +227,9 @@ export async function applyEditTextBlock(
   return onImage(image, async (session) => {
     // ONE FIT FOR THE COMMAND, laid out per block as before (ADR-0142).
     const blocks = blocksOfEdit(command).map((block) => ({ ...block, fit: command.fit }));
-    await editTextBlocks(session, command.page, blocks);
-    return imageAlone(await pdfiumWriter.serialise(session));
+    const boxed = await editTextBlocks(session, command.page, blocks);
+    // THE IMAGE AND WHAT IT DREW AS BOXES (ADR-0174), every one, since this is the process that drew them.
+    return { image: await pdfiumWriter.serialise(session), boxed, more: 0 };
   });
 }
 

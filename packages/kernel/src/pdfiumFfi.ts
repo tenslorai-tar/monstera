@@ -3,10 +3,11 @@ import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
 import { editFaces, editFacesBound } from './editFaces.js';
 import { editPieces } from './editPieces.js';
-import type { ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
+import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { readFace } from './fontFaces.js';
+import { BOX, boxFont } from './boxFont.js';
 import { namedSubset } from './fontSubset.js';
 import { ShapingFace } from './textShaping.js';
 import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
@@ -1643,9 +1644,13 @@ export async function editTextBlocks(
   session: PdfiumSession,
   page: number,
   edits: readonly BlockEdit[],
-): Promise<void> {
+): Promise<readonly BoxedInEdit[]> {
   const scales = await fitScales(session, page, edits);
-  await promised(() => onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, scales, 'write')));
+  // THE CHARACTERS IT DREW AS BOXES (ADR-0174): the write pass's, never a trial's, which draws on a page thrown away.
+  const { boxed } = await promised(() =>
+    onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, scales, 'write')),
+  );
+  return boxed;
 }
 
 /**
@@ -1701,7 +1706,7 @@ function layOutBlocks(
   edits: readonly BlockEdit[],
   scales: readonly number[],
   mode: 'write' | 'trial',
-): { readonly fits: readonly boolean[] } {
+): { readonly fits: readonly boolean[]; readonly boxed: readonly BoxedInEdit[] } {
       const bindings = api();
       const document = documentFor(session);
       const walked = walkRuns(bindings, handle);
@@ -2004,6 +2009,36 @@ function layOutBlocks(
       };
 
       /**
+       * The box font for `character` (ADR-0173 Decision 7 as corrected, `boxFont.ts`): the box of the piece's own face
+       * where it has one, else of the first catalogue face that does, in the catalogue's order — so the box sits in the
+       * face beside it where it can. Loaded once per character and command; `null` where no face has a box.
+       */
+      const boxFontLike = (face: CatalogueFace | null, weight: number, character: string): unknown => {
+        const point = character.codePointAt(0) ?? 0;
+        const candidates = [...(face === null ? [] : [face]), ...faces().faces].filter((each) => each.unicodes.has(BOX));
+        for (const candidate of candidates) {
+          const pin = candidate.weights === null ? candidate.weight : weight;
+          const key = `box|${candidate.id}|${String(pin)}|${String(point)}`;
+          const loaded = faceFonts.get(key);
+          if (loaded !== undefined) return loaded;
+          const whole = faces().read(candidate.path);
+          const named = readFace(whole, candidate.faceIndex).postscript;
+          const postscript = candidate.weights === null ? named : `${named === '' ? 'Font' : named}-wght${String(pin)}`;
+          const made = boxFont(whole, candidate.faceIndex, candidate.weights === null ? {} : { wght: pin }, postscript, point);
+          if (made === null) continue;
+          const font: unknown = bindings.loadFont(document, made.bytes, made.bytes.length, FONT_TRUETYPE, 1);
+          if (font === null) continue;
+          facePrograms.push(made.bytes);
+          faceFonts.set(key, font);
+          faceGlyphs.set(String(koffi.address(font)), new ShapingFace(made.bytes, 0, {}));
+          return font;
+        }
+        return null;
+      };
+      /** Each box this edit drew and the character it stands for, read at the end against what was removed. */
+      const boxObjects = new Map<unknown, string>();
+
+      /**
        * Writes `text` as the run `object` heads and answers the objects that now say it, in order: `object` alone where
        * its own font carries the text, and otherwise its PIECES (ADR-0173 Decisions 1 to 3) — each word its font cannot
        * carry in the resolver's face, the rest in its own, each placed at the measured right edge of the one before
@@ -2034,22 +2069,34 @@ function layOutBlocks(
         };
         const style = styleOf(bindings, object, programs);
         const pieces = editPieces(text, ownCarries, { family: style.font, bold: style.bold, italic: style.italic, own: [] }, faces().faces);
-        const boxed = pieces.flatMap((piece) => piece.boxed);
-        if (boxed.length > 0) throw new TextNotWritableError(boxed.join(''));
+        // A BOXED PIECE IS ONE OBJECT PER CHARACTER, each in a box font of its own (Decision 7): one glyph has one code,
+        // and one code reads as one text.
+        const units = pieces.flatMap((piece) => {
+          const { face, weight } = piece;
+          if (piece.boxed.length > 0) {
+            return Array.from(piece.text, (character) => ({
+              text: character,
+              font: (): unknown => boxFontLike(face, weight, character),
+              box: true,
+            }));
+          }
+          return [{ text: piece.text, font: face === null ? null : (): unknown => faceFont(face, weight), box: false }];
+        });
         const objects: unknown[] = [];
         let left = matrixOn(bindings, object).e;
-        for (const piece of pieces) {
-          const reuse = piece.face === null && objects.length === 0;
-          const pieceFont = piece.face === null ? bindings.textFont(object) : faceFont(piece.face, piece.weight);
-          if (pieceFont === null) throw new TextNotWritableError(piece.text.trim());
-          const made = reuse ? object : makeTextLike(bindings, document, object, left, pieceFont);
-          if (!setOn(made, piece.text) || (mode === 'write' && !carries(made, piece.text))) {
+        for (const unit of units) {
+          const reuse = unit.font === null && objects.length === 0;
+          const unitFont = unit.font === null ? bindings.textFont(object) : unit.font();
+          if (unitFont === null) throw new TextNotWritableError(unit.text.trim());
+          const made = reuse ? object : makeTextLike(bindings, document, object, left, unitFont);
+          if (!setOn(made, unit.text) || (mode === 'write' && !carries(made, unit.text))) {
             if (!reuse) bindings.destroyObject(made);
-            throw new TextNotWritableError(piece.text.trim());
+            throw new TextNotWritableError(unit.text.trim());
           }
           if (!reuse) insertAfter(made, objects.at(-1) ?? object);
-          if (mode === 'write') record(made, piece.text);
-          pieceTexts.set(made, piece.text);
+          if (mode === 'write') record(made, unit.text);
+          pieceTexts.set(made, unit.text);
+          if (unit.box) boxObjects.set(made, unit.text);
           objects.push(made);
           left = boundsOf(bindings, made).right;
         }
@@ -2338,7 +2385,7 @@ function layOutBlocks(
 
         // A TRIAL ENDS HERE: nothing removed, nothing read back, nothing generated — the page is
         // closed and its changes go with it.
-        if (mode === 'trial') return { fits };
+        if (mode === 'trial') return { fits, boxed: [] };
 
         if (written.length === 0 && removed.length === 0) {
           throw new Error(
@@ -2384,7 +2431,11 @@ function layOutBlocks(
           handle,
           written.map((write) => write.object),
         );
-        return { fits };
+        // THE BOXES STILL ON THE PAGE, in the order they were drawn: a box a wrap trimmed off one line was drawn again on
+        // the next, and is told once, where it is (ADR-0174).
+        const gone = new Set(removed);
+        const boxed = [...boxObjects].flatMap(([object, character]) => (gone.has(object) ? [] : [{ character, page }]));
+        return { fits, boxed };
       } finally {
         // OURS TO CLOSE, and only ours: each object holds its own reference to
         // the font it was made in, so closing the caller's handle frees nothing

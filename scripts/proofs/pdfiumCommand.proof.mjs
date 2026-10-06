@@ -105,7 +105,7 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 12);
+refuseStaleBuild(root, PDFIUM_COMMAND, 13);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
@@ -239,8 +239,9 @@ const failures = [];
 // holds (the identity replace-all case became the nothing-matched one), and 84 from the line rule's two, and 87 from
 // ADR-0171's addendum: an edit of a document opened with either password, and its control with none, and 95 from
 // ADR-0173's pieces: a word saved in a bundled face, its object, its wrap, the word the twin refused, an unreadable
-// catalogue either way, and a control either side, and 97 from its correction: a character past the BMP and its premise.
-const roster = createRoster(failures, { cases: 97 });
+// catalogue either way, and a control either side, and 97 from its correction: a character past the BMP and its premise,
+// and 100 from the box: its premise, its reading, and its answer (ADR-0174).
+const roster = createRoster(failures, { cases: 100 });
 
 /**
  * @param {string} name
@@ -556,9 +557,9 @@ async function pieceCases() {
     return;
   }
   const lines = block.lines.map((line) => line.runs.map((run) => run.index));
-  /** @param {string} first the block's first line as typed; the other two are kept */
-  const edit = (first) =>
-    localPdfiumExecution.apply({
+  /** The whole answer, image and boxes (ADR-0174). @param {string} first the block's first line as typed; the other two are kept */
+  const editDrawing = (first) =>
+    localPdfiumExecution.applyDrawing({
       session: original,
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
@@ -570,6 +571,8 @@ async function pieceCases() {
       sources: [],
       reads: undefined,
     });
+  /** The image alone. @param {string} first */
+  const edit = async (first) => (await editDrawing(first)).image;
   const WORD = 'Привет';
   const TYPED = `The first ${WORD} line of the block`;
   /** The lines a reading holds before the block's unedited second line, as one line: what the first line became. */
@@ -752,20 +755,66 @@ async function pieceCases() {
       `${JSON.stringify(astralText.slice(0, 120))}; ${JSON.stringify(astralPiece === undefined ? null : [astralPiece.text, astralPiece.style.font])}`,
     );
 
+    // A CHARACTER NO FACE CARRIES IS THE BOX (ADR-0173 Decision 7 as corrected), drawn in a box font of its own whose
+    // cmap names the real character, so the reopened page READS the character; and the apply ANSWERS it with its page
+    // (ADR-0174), which is how the person is told. The premise is that no bundled face carries it, or the case would be
+    // asking the resolver rather than the box.
+    const NONE_CARRY = String.fromCodePoint(0x4e2d);
+    const catalogue = faceSourceOf([{ path: fonts, origin: 'bundled' }]).faces;
+    record(
+      'PREMISE: no bundled face carries U+4E2D, and one carries the box U+25A1',
+      !catalogue.some((face) => face.unicodes.has(0x4e2d)) && catalogue.some((face) => face.unicodes.has(0x25a1)),
+      `${String(catalogue.filter((face) => face.unicodes.has(0x4e2d)).length)} carry U+4E2D; ` +
+        `${String(catalogue.filter((face) => face.unicodes.has(0x25a1)).length)} carry U+25A1`,
+    );
+    const boxTyped = `The first ${NONE_CARRY} line of the block`;
+    let boxText = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let boxObjects = [];
+    /** @type {unknown} */
+    let boxAnswer = null;
+    try {
+      const drawn = await editDrawing(boxTyped);
+      boxAnswer = { boxed: drawn.boxed, more: drawn.more };
+      boxText = await textOf(drawn.image);
+      boxObjects = await objectRunsOf(drawn.image);
+    } catch (error) {
+      boxText = `refused: ${error instanceof Error ? `${error.name} ${'characters' in error ? String(error.characters) : error.message}` : String(error)}`;
+    }
+    const boxPiece = boxObjects.find((run) => run.text === NONE_CARRY);
+    record(
+      'a character no face carries is saved as a box in a font of its own, and the reopened page reads the character',
+      firstLineOf(boxText) === boxTyped && boxPiece !== undefined && /^[A-Z]{6}\+.*-Box$/u.test(boxPiece.style.font),
+      `${JSON.stringify(boxText.slice(0, 100))}; ${JSON.stringify(boxPiece === undefined ? null : [boxPiece.text, boxPiece.style.font])}`,
+    );
+    record(
+      'and the apply answers it, with the page it is on, so the person is told (ADR-0174)',
+      JSON.stringify(boxAnswer) === JSON.stringify({ boxed: [{ character: NONE_CARRY, page: 0 }], more: 0 }),
+      JSON.stringify(boxAnswer),
+    );
+
     // CONTROL: a Latin edit with the catalogue bound makes no piece — the same objects, and no new font in the file.
     let latin = 'it was refused';
     let latinObjects = -1;
+    /** @type {unknown} */
+    let latinBoxes = null;
     try {
-      const bytes = await edit('The first line of a block');
-      latinObjects = (await textIndicesOf(bytes)).length;
-      latin = JSON.stringify((await objectRunsOf(bytes)).map((run) => run.style.font));
+      const drawn = await editDrawing('The first line of a block');
+      latinObjects = (await textIndicesOf(drawn.image)).length;
+      latin = JSON.stringify((await objectRunsOf(drawn.image)).map((run) => run.style.font));
+      latinBoxes = { boxed: drawn.boxed, more: drawn.more };
     } catch (error) {
       latin = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
     }
+    // AND IT ANSWERS NO BOX, the control for the box case's answer: an apply that answered every character it wrote
+    // would pass that case and fail here.
     record(
-      'CONTROL: a Latin edit with the catalogue bound stays in its own objects and font',
-      latinObjects === (await textIndicesOf(original)).length && !latin.includes('Arimo') && latin.includes('Helvetica'),
-      `${String(latinObjects)} text object(s); fonts ${latin}`,
+      'CONTROL: a Latin edit with the catalogue bound stays in its own objects and font, and answers no box',
+      latinObjects === (await textIndicesOf(original)).length &&
+        !latin.includes('Arimo') &&
+        latin.includes('Helvetica') &&
+        JSON.stringify(latinBoxes) === JSON.stringify({ boxed: [], more: 0 }),
+      `${String(latinObjects)} text object(s); fonts ${latin}; boxes ${JSON.stringify(latinBoxes)}`,
     );
   } finally {
     bindEditFaces(null);
