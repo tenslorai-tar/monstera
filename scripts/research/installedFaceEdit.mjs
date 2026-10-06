@@ -58,7 +58,7 @@ refuseStaleBuild(
     ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
     ...NATIVE_ENGINE,
   ],
-  22,
+  26,
 );
 
 // LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads: none of it may reach Electron.
