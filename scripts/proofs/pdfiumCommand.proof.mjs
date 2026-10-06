@@ -111,7 +111,7 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 23);
+refuseStaleBuild(root, PDFIUM_COMMAND, 24);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
@@ -269,7 +269,7 @@ const failures = [];
 // edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
 // marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
 // with the control that separates the mark from the fixture.
-const roster = createRoster(failures, { cases: 186 });
+const roster = createRoster(failures, { cases: 198 });
 
 /**
  * @param {string} name
@@ -3384,19 +3384,168 @@ async function directionCases() {
       );
     }
 
-    // THE ONE OBJECT: a line one face carries is written as one object, so a text page cannot read its parts in the order
-    // they stand. The control is the line no face carries whole, which is written as two and reads in drawing order.
+    // THE ONE OBJECT: a line one face carries is written as one object.
     const mixed = await type('שלום Hello').then(lineOf, () => undefined);
     record(
       'a line that runs both ways and one face carries is ONE object',
       mixed !== undefined && mixed.runs.length === 1,
       `${String(mixed?.runs.length)} run(s)`,
     );
-    const split = await type('مرحبا World').then(lineOf, () => undefined);
+
+    // A LINE NO ONE FACE CARRIES, IN OBJECTS OF ITS OWN (ADR-0185): written as several, read back as typed, drawn in the
+    // order it is seen, and an edit of one word moves nothing. `typeMarked` colours one word, which makes a second run.
+    const typeMarked = (/** @type {string} */ text, /** @type {string | undefined} */ word) => {
+      const from = word === undefined ? -1 : text.indexOf(word);
+      const marks = from < 0 ? [] : [{ from, to: from + (word?.length ?? 0), set: { colour: { r: 200, g: 0, b: 0 } } }];
+      return localPdfiumExecution.apply({
+        session: original,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+          kind: 'editTextBlock',
+          page: 0,
+          ...blockEditOf([{ lines, soft: lines.map(() => false), text, ...(marks.length > 0 ? { marks } : {}) }]),
+          fit: 'reflow',
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      });
+    };
+    const withSession = async (/** @type {Uint8Array} */ bytes, /** @type {(session: Awaited<ReturnType<typeof pdfiumWriter.open>>) => Promise<any>} */ use) => {
+      const session = await pdfiumWriter.open(bytes);
+      try {
+        return await use(session);
+      } finally {
+        await pdfiumWriter.close(session);
+      }
+    };
+    /** The page's own reading, which is by position and so is the order the page is DRAWN in. */
+    const visualOf = async (/** @type {Uint8Array} */ bytes) => (await withSession(bytes, (session) => pageText(session, 0))).trim();
+    const kinds = /** @type {[string, string | undefined][]} */ ([
+      ['Hello مرحبا العالم', undefined],
+      ['العالم Hello مرحبا', undefined],
+      ['مرحبا بالعالم Hello world', 'Hello'],
+      ['שלום Hello עולם בוקר', 'Hello'],
+      ['مرحبا (Hello) العالم', 'Hello'],
+      ['السعر 123 دولار', '123'],
+    ]);
+    /** @type {Map<string, Uint8Array>} */
+    const written = new Map();
+    for (const [typed, word] of kinds) {
+      const bytes = await typeMarked(typed, word).then(
+        (done) => done,
+        () => undefined,
+      );
+      const read = bytes === undefined ? undefined : await lineOf(bytes);
+      if (bytes !== undefined) written.set(typed, bytes);
+      record(
+        `the line “${typed}” in objects of its own is read back as typed${word === undefined ? '' : `, with “${word}” a run of its own`}`,
+        read !== undefined && read.text.trim() === typed && (word === undefined || read.runs.length >= 2),
+        `${JSON.stringify(read?.text)} in ${String(read?.runs.length)} run(s): ${JSON.stringify(read?.runs.map((run) => [run.text, Math.round(run.left)]))}`,
+      );
+    }
+    // THE PREMISE of the control below: this line really is several objects, so no object read alone can be the line.
+    const several = written.get('Hello مرحبا العالم');
+    const objects = several === undefined ? undefined : await withSession(several, (session) => objectRuns(session, 0));
     record(
-      'CONTROL: a line no one face carries is written as separate objects, and its parts read in the order they stand — the limit the decision records',
-      split !== undefined && split.text.trim() !== 'مرحبا World',
-      JSON.stringify(split?.text),
+      'PREMISE: a line no one face carries is written as several objects',
+      objects !== undefined && objects.runs.length >= 2,
+      `${String(objects?.runs.length)} object(s)`,
+    );
+    // THE MECHANISM, as the control: each object read alone and put in the order the page gives them is NOT the line (a
+    // space at the edge of a right-to-left word is on the wrong side of it, and the words come back in the order drawn),
+    // and the line read as a whole is. Without the line reading, the editor shows the first.
+    const alone = (objects?.runs ?? []).map((/** @type {{ text: string }} */ run) => run.text).join('');
+    const asLine = several === undefined ? undefined : await lineOf(several);
+    record(
+      'CONTROL: the objects of the line, each read alone, are not the line; read as one line they are',
+      alone !== 'Hello مرحبا العالم' && asLine !== undefined && asLine.text.trim() === 'Hello مرحبا العالم',
+      `alone ${JSON.stringify(alone)}, as a line ${JSON.stringify(asLine?.text)}`,
+    );
+
+    // THE ORDER IT IS SEEN: in a line that runs mostly right to left the first word typed is at the right, so a coloured
+    // Latin word typed first stands to the RIGHT of the Arabic after it; in a line that runs mostly left to right it is
+    // at the left. The same two objects either way, so the order is the line's direction and no constant.
+    const rightward = written.get('مرحبا بالعالم Hello world');
+    const leftward = await typeMarked('Hello world مرحبا', 'Hello').then(lineOf, () => undefined);
+    const rightRuns = rightward === undefined ? undefined : (await lineOf(rightward)).runs;
+    const helloRight = rightRuns?.find((run) => run.text.includes('Hello'));
+    const arabicRight = rightRuns?.find((run) => /[؀-ۿ]/u.test(run.text));
+    record(
+      'in a line that runs right to left, the Latin words typed after the Arabic stand to the LEFT of it, and the Arabic is at the right',
+      helloRight !== undefined && arabicRight !== undefined && helloRight.right <= arabicRight.left + 1,
+      JSON.stringify(rightRuns?.map((run) => [run.text, Math.round(run.left), Math.round(run.right)])),
+    );
+    const helloLeft = leftward?.runs.find((run) => run.text.includes('Hello'));
+    const arabicLeft = leftward?.runs.find((run) => /[؀-ۿ]/u.test(run.text));
+    record(
+      'CONTROL: in a line that runs left to right, the same coloured word stands to the LEFT of the Arabic',
+      helloLeft !== undefined && arabicLeft !== undefined && helloLeft.right <= arabicLeft.left + 1,
+      JSON.stringify(leftward?.runs.map((run) => [run.text, Math.round(run.left), Math.round(run.right)])),
+    );
+
+    // AN EDIT OF ONE WORD MOVES NOTHING: the line is read, one Latin word changed for another of the same length and
+    // written back through the same command, and the page's own reading by position is the first's with that word
+    // changed. A line that was written back in the order typed, and not the order seen, reads otherwise.
+    for (const typed of ['مرحبا (Hello) العالم', 'مرحبا بالعالم Hello world']) {
+      const first = written.get(typed);
+      const readFirst = first === undefined ? undefined : await lineOf(first);
+      const [firstBlock] = first === undefined ? [] : (await blocksOf(first)).blocks;
+      const next = (readFirst?.text.trim() ?? '').replace('Hello', 'Jello');
+      const second =
+        first === undefined || firstBlock === undefined
+          ? undefined
+          : await localPdfiumExecution
+              .apply({
+                session: first,
+                command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+                  kind: 'editTextBlock',
+                  page: 0,
+                  ...blockEditOf([
+                    {
+                      lines: firstBlock.lines.map((line) => line.runs.map((run) => run.index)),
+                      soft: firstBlock.lines.map((line) => line.soft),
+                      text: next,
+                    },
+                  ]),
+                  fit: 'reflow',
+                  version: 1,
+                }),
+                sources: [],
+                reads: undefined,
+              })
+              .then(
+                (done) => done,
+                () => undefined,
+              );
+      const visualBefore = first === undefined ? undefined : (await visualOf(first)).replace('Hello', 'Jello');
+      const visualAfter = second === undefined ? undefined : await visualOf(second);
+      const readSecond = second === undefined ? undefined : await lineOf(second);
+      record(
+        `an edit of one word of “${typed}” leaves the rest where it stood, and reads back as typed`,
+        visualBefore !== undefined && visualBefore === visualAfter && readSecond?.text.trim() === next,
+        `before ${JSON.stringify(visualBefore)}, after ${JSON.stringify(visualAfter)}, read ${JSON.stringify(readSecond?.text)}, wanted ${JSON.stringify(next)}`,
+      );
+    }
+
+    // A LINE WITH NO MAJORITY has no direction in what a page stores, and is read in the direction of its first letter
+    // as drawn: typed right to left, it comes back with its words in the order they stand, which is the same page. The
+    // page is the point, and editing it keeps it.
+    const tie = await typeMarked('مرحبا World', undefined).then((bytes) => bytes, () => undefined);
+    const tieRead = tie === undefined ? undefined : await lineOf(tie);
+    const tieTwice =
+      tie === undefined || tieRead === undefined
+        ? undefined
+        : await type(tieRead.text.trim().replace('World', 'Worlx')).then(
+            (bytes) => bytes,
+            () => undefined,
+          );
+    record(
+      'a line of as many letters one way as the other reads back with its words as seen, and editing that keeps the page as it was',
+      tie !== undefined &&
+        tieRead?.text.trim() === 'World مرحبا' &&
+        tieTwice !== undefined &&
+        (await visualOf(tie)).replace('World', 'Worlx') === (await visualOf(tieTwice)),
+      `${JSON.stringify(tieRead?.text)}; visual ${JSON.stringify(tie === undefined ? undefined : await visualOf(tie))}`,
     );
 
     // ARABIC IS JOINED: the same letters set isolated are 40% wider, so a line written as bare letters fails this.

@@ -21,6 +21,7 @@
  * wider than the letters' size on one baseline in one face is a word or a space between words.
  */
 
+import { LEFT_TO_RIGHT, RIGHT_TO_LEFT, hasRightToLeftLetter, logicalOfDrawn, strongDirections } from './bidiOrder.js';
 import { type Orientation, isEditedInPlace } from './textLines.js';
 
 /** How a run is set, compared field by field — `pdfiumFfi.ts`' `RunStyle`. */
@@ -38,6 +39,12 @@ export interface JoinStyle {
 export interface ObjectRun<Style extends JoinStyle = JoinStyle> {
   readonly index: number;
   readonly text: string;
+  /**
+   * The object's glyphs in the order they are drawn, left to right: what the text page read, undone
+   * (`readBackOf`). The text of a line that runs both ways is a property of the whole line, which is found from these
+   * (`bidiLine.ts`, ADR-0185); `text` is what the object says read alone.
+   */
+  readonly drawn: string;
   readonly left: number;
   readonly right: number;
   readonly bottom: number;
@@ -116,13 +123,24 @@ function continues(run: JoinedRun, next: ObjectRun): boolean {
 export function joinRuns<Style extends JoinStyle>(runs: readonly ObjectRun<Style>[]): JoinedRun<Style>[] {
   const ordered = [...runs].sort((a, b) => a.index - b.index);
   const joined: JoinedRun<Style>[] = [];
+  /** Which ways the strong letters of the run being held run, so a run is never asked again for what it holds. */
+  let heldKinds = 0;
   for (const run of ordered) {
     const held = joined.at(-1);
-    if (held !== undefined && continues(held, run)) {
+    const kinds = strongDirections(run.drawn);
+    // OBJECTS THAT RUN OPPOSITE WAYS ARE TWO RUNS, however they abut: a run is a stretch of one direction, so that the
+    // line it is in can be read as typed by whole runs (`bidiLine.ts`, ADR-0185). A line in objects of its own
+    // directions is how a producer writes it, and how this editor writes it; a word of one way with the other's words
+    // joined to it would be named by neither's words. Digits, spaces and punctuation have no direction and join either.
+    if (held !== undefined && (heldKinds | kinds) !== (LEFT_TO_RIGHT | RIGHT_TO_LEFT) && continues(held, run)) {
+      heldKinds |= kinds;
       joined[joined.length - 1] = {
         ...held,
         last: run.index,
         members: [...held.members, run.index],
+        // THE GLYPHS ARE JOINED AS DRAWN. Objects of one run abut left to right in the page's order, so the order they
+        // are drawn in is the order they are joined in.
+        drawn: held.drawn + run.drawn,
         text: held.text + run.text,
         left: Math.min(held.left, run.left),
         right: Math.max(held.right, run.right),
@@ -130,10 +148,16 @@ export function joinRuns<Style extends JoinStyle>(runs: readonly ObjectRun<Style
         top: Math.max(held.top, run.top),
       };
     } else {
+      heldKinds = kinds;
       joined.push({ ...run, last: run.index, members: [run.index] });
     }
   }
-  return joined;
+  // WHAT A RUN OF SEVERAL OBJECTS SAYS is the reordering of its glyphs as one line, once the run is whole: joined text
+  // that holds a right-to-left letter was read object by object, which puts a space at the wrong side of a word and the
+  // words of a line in the order drawn (`bidiLine.ts`). A run of one object, or with no such letter, says what it said.
+  return joined.map((run) =>
+    run.members.length > 1 && hasRightToLeftLetter(run.drawn) ? { ...run, text: logicalOfDrawn(run.drawn) } : run,
+  );
 }
 
 /**

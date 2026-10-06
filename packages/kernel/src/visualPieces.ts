@@ -1,4 +1,4 @@
-import { isNeutralOnly, lineDirection, lineSpans, paragraphLevels } from './bidiOrder.js';
+import { isBidirectional, isNeutralOnly, lineDirection, lineSpans, paragraphLevels } from './bidiOrder.js';
 import type { EditPiece } from './editPieces.js';
 
 /**
@@ -42,7 +42,15 @@ export function inDrawingOrder(
   text: string,
   pieces: readonly EditPiece[],
   carried: (piece: EditPiece, text: string) => boolean,
+  forced?: boolean,
 ): DrawnPiece[] {
+  // A SPAN OF ONE DIRECTION, cut out of a longer line by the caller (`visualUnits`): its direction is the line's, not
+  // what its own letters say, so a span of digits or of marks and neutrals alone is drawn the way the line runs there.
+  // Its pieces are in the order typed and are drawn the other way round where the span runs right to left.
+  if (forced !== undefined) {
+    const joined = joinNeutrals(pieces.map((piece) => ({ ...piece, rtl: forced })), carried);
+    return forced ? joined.reverse() : joined;
+  }
   // ONE PIECE IS THE WHOLE LINE and is ordered as a whole, which a line in one object can be.
   if (pieces.length === 1) return pieces.map((piece) => ({ ...piece, rtl: undefined }));
   const spans = lineSpans(paragraphLevels(text, lineDirection(text)), 0, text.length);
@@ -68,6 +76,83 @@ export function inDrawingOrder(
     drawn.push(...(span.rtl ? joined.reverse() : joined));
   }
   return drawn;
+}
+
+/** One stretch of a row set in one direction: the piece it is cut from, its words, and the way they run. */
+export interface RowUnit {
+  /** The place of the piece it is cut from, among the row's pieces. */
+  readonly piece: number;
+  readonly text: string;
+  readonly rtl: boolean;
+}
+
+/**
+ * A row's pieces as the stretches it is DRAWN in, left to right, when it runs both ways
+ * ([ADR-0185](../../../docs/DECISIONS/0185-a-line-of-several-objects-is-read-and-written-as-one-line.md)): the row's words
+ * (the pieces' texts, one after another, in the order typed) cut at every change of level the algorithm makes and at every
+ * piece boundary, the stretches of a level in the order a reader sees them, and the stretches of a right-to-left level
+ * last typed first. `undefined` where the row has one piece (which is ordered inside the one that writes it) or does not
+ * run both ways, and is written as it stands.
+ *
+ * Pieces are cut by the style a person set, and a piece written alone is ordered by its own letters. For a line whose
+ * pieces are the words of two runs, that is the line written the wrong way round: an Arabic sentence with a coloured Latin
+ * word in it was drawn as Arabic, then Latin, left to right, which is the order typed and not the order seen.
+ */
+export function visualUnits(texts: readonly string[]): RowUnit[] | undefined {
+  if (texts.length < 2) return undefined;
+  const line = texts.join('');
+  if (!isBidirectional(line)) return undefined;
+  const starts: number[] = [];
+  let at = 0;
+  for (const text of texts) {
+    starts.push(at);
+    at += text.length;
+  }
+  const units: RowUnit[] = [];
+  for (const span of lineSpans(paragraphLevels(line, lineDirection(line)), 0, line.length)) {
+    const within: RowUnit[] = [];
+    texts.forEach((text, piece) => {
+      const start = starts[piece] ?? 0;
+      const from = Math.max(span.start, start);
+      const to = Math.min(span.end, start + text.length);
+      if (from < to) within.push({ piece, text: line.slice(from, to), rtl: span.rtl });
+    });
+    units.push(...(span.rtl ? within.reverse() : within));
+  }
+  return withoutLoneSpaces(units);
+}
+
+/**
+ * The stretches with each one of white space alone taken into the stretch beside it that is cut from the same piece (the
+ * next in the order drawn, else the one before): a text page reads an object of spaces alone as nothing, so the space
+ * would be gone when the line is read. A stretch that runs right to left holds its words in the order typed and is drawn
+ * reversed, so a space drawn before it is typed after it. A space whose neighbours are other pieces' stays an object.
+ */
+function withoutLoneSpaces(units: readonly RowUnit[]): RowUnit[] {
+  const out: RowUnit[] = [];
+  let before: RowUnit | undefined;
+  units.forEach((unit, at) => {
+    if (!/^\s+$/u.test(unit.text)) {
+      // A SPACE BEFORE IT IN THE ORDER DRAWN: first typed where it runs left to right, last where it runs right to left.
+      const joined = before === undefined ? unit : { ...unit, text: unit.rtl ? unit.text + before.text : before.text + unit.text };
+      before = undefined;
+      out.push(joined);
+      return;
+    }
+    const next = units[at + 1];
+    if (next?.piece === unit.piece && !/^\s+$/u.test(next.text)) {
+      before = unit;
+      return;
+    }
+    const last = out.at(-1);
+    if (last?.piece === unit.piece) {
+      // A SPACE AFTER IT IN THE ORDER DRAWN: last typed where it runs left to right, first where it runs right to left.
+      out[out.length - 1] = { ...last, text: last.rtl ? unit.text + last.text : last.text + unit.text };
+      return;
+    }
+    out.push(unit);
+  });
+  return out;
 }
 
 /** The pieces of one span, in logical order, with each piece of neutrals alone joined to its neighbour where that carries it. */

@@ -58,7 +58,7 @@ if (!existsSync(library)) {
 }
 
 // THE BUILT MODULES are what this reads, so a stale build would prove the previous read-back.
-refuseStaleBuild(root, PDFIUM_READ_BACK, 27);
+refuseStaleBuild(root, PDFIUM_READ_BACK, 28);
 
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
 const { objectRuns, openPdfium, pdfiumWriter, textRuns } = await import('../../packages/kernel/dist/pdfiumFfi.js');

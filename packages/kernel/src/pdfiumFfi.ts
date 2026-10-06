@@ -15,7 +15,7 @@ import { drawnOrder, drawnRightToLeft, drewTheGlyphs, isBidirectional, logicalOf
 import { paperColourAround } from './paperColour.js';
 import { resolveRuns } from './fontResolver.js';
 import { type EditPiece, editPieces } from './editPieces.js';
-import { inDrawingOrder } from './visualPieces.js';
+import { inDrawingOrder, visualUnits } from './visualPieces.js';
 import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import type { PageRuns } from './operatorEdit.js';
@@ -31,7 +31,7 @@ import { ShapingFace } from './textShaping.js';
 import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
 import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
 import { EditRefusedError, ReplaceMovesLineError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
-import type { Orientation } from './textLines.js';
+import { type Orientation, isEditedInPlace, readInLineOrder } from './textLines.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
 /**
@@ -1105,8 +1105,9 @@ export function textRuns(session: PdfiumSession, page: number): Promise<PageText
     onPage(session, page, (handle) => {
       const bindings = api();
       const walked = walkRuns(bindings, handle);
-      // THE MEMBERS STAY HERE: the wire names a run by its first and last object, and the edit recomputes the rest.
-      const runs = joinedWalk(bindings, handle, walked).map(({ members: _members, ...run }) => run);
+      // THE MEMBERS STAY HERE: the wire names a run by its first and last object, and the edit recomputes the rest. So
+      // do the glyphs as drawn: they are what a line's order is found from, and the line is read here, once.
+      const runs = readWalk(bindings, handle, walked).map(({ members: _members, drawn: _drawn, ...run }) => run);
       return { runs, unaddressable: walked.unaddressable };
     }),
   );
@@ -1148,7 +1149,7 @@ export function objectRuns(session: PdfiumSession, page: number): Promise<PageTe
       const walked = walkRuns(bindings, handle);
       const programs = new Map<string, ProgramFace | undefined>();
       return {
-        runs: [...walked.runs.entries()].map(([index, run]) => ({
+        runs: [...walked.runs.entries()].map(([index, { drawn: _drawn, ...run }]) => ({
           index,
           last: index,
           ...run,
@@ -1158,6 +1159,19 @@ export function objectRuns(session: PdfiumSession, page: number): Promise<PageTe
       };
     }),
   );
+}
+
+/**
+ * {@link joinedWalk}'s runs with each line that runs both ways READ AS IT WAS TYPED (`readInLineOrder`, ADR-0185): the
+ * answer {@link textRuns} gives and an edit's layout takes, so that the words a person is shown for a line and the words
+ * the edit diffs what they typed against are one reading's (B3a).
+ */
+function readWalk(
+  bindings: Bound,
+  handle: unknown,
+  walked: { readonly runs: ReadonlyMap<number, WalkedRun> },
+): JoinedRun<RunStyle>[] {
+  return readInLineOrder(joinedWalk(bindings, handle, walked), (run) => isEditedInPlace(run.style));
 }
 
 /**
@@ -1182,6 +1196,8 @@ function joinedWalk(
 /** One run as the walk accumulates it: text and the union of its characters' boxes. */
 interface WalkedRun {
   text: string;
+  /** The glyphs in the order drawn, which `ObjectRun.drawn` says; empty while the walk reads, set when it ends. */
+  drawn: string;
   left: number;
   right: number;
   bottom: number;
@@ -1270,6 +1286,7 @@ function walkRuns(
       if (held === undefined) {
         held = {
           text: '',
+          drawn: '',
           left: Number.POSITIVE_INFINITY,
           right: Number.NEGATIVE_INFINITY,
           bottom: Number.POSITIVE_INFINITY,
@@ -1299,12 +1316,13 @@ function walkRuns(
       // leaving it out keeps an infinite extent from reaching a grouping whose
       // every comparison it would answer falsely.
       // AND IN THE ORDER TYPED: a text page reads each word of a right-to-left object reversed in place and leaves the
-      // words in the order they are drawn, so the reading is turned back into the line as it was typed here, once, and
-      // every reader of a run's text sees that (`logicalOf`, ADR-0181).
+      // words in the order they are drawn, so the reading is turned back into what the object says (`logicalOf`,
+      // ADR-0181) and the glyphs it draws are kept beside it, since the order a LINE was typed in is the reordering of
+      // all of its objects' glyphs together (`bidiLine.ts`, ADR-0185).
       runs: new Map(
         [...runs.entries()]
           .filter(([, run]) => Number.isFinite(run.left))
-          .map(([index, run]) => [index, { ...run, text: logicalOf(run.text) }] as const),
+          .map(([index, run]) => [index, { ...run, drawn: readBackOf(run.text), text: logicalOf(run.text) }] as const),
       ),
       unaddressable,
       ends,
@@ -2100,7 +2118,13 @@ interface PieceWriter {
   readonly removed: unknown[];
   readonly insertAfter: (object: unknown, anchor: unknown) => void;
   readonly write: (object: unknown, text: string) => unknown;
-  readonly writePieces: (object: unknown, text: string, restyle?: Restyle) => unknown[];
+  /**
+   * `forced` says the text is one stretch of a line that runs both ways, in the direction the line runs there, which
+   * its own letters do not decide (`visualUnits`); absent, the text is ordered as its own line is.
+   */
+  readonly writePieces: (object: unknown, text: string, restyle?: Restyle, forced?: boolean) => unknown[];
+  /** Where the pen stands after the last of these objects, where it was set in a face this edit loaded. */
+  readonly endOf: (objects: readonly unknown[]) => number | undefined;
   /** The standard font a restyled word is set in where no catalogue is bound. */
   readonly standardFontRestyled: (object: unknown, restyle: Restyle) => unknown;
   /** A new text object appended to the page for an added box, in the standard face its family names. */
@@ -2183,6 +2207,55 @@ function pieceWriter(
           numberFrom(bindings.setCharcodes(object, Uint32Array.from(codes), codes.length), 'FPDFText_SetCharcodes') === 1
         );
       };
+      /**
+       * Where the pen stands after `objects`, in page units: the furthest right edge of their characters' LOOSE boxes on
+       * the page as it is now, which is where text after them starts (`walkRuns`' `ends`). No ink box says it: a space at
+       * an end has none, and a joined letter's ink is not its advance. And not the plan's width, which adds the advance of
+       * each letter drawn alone: for joined Arabic that is wider than the joined letters are, and a stretch placed by it
+       * left a gap wide enough to end the line (measured 2026-10-06, 29 pt, then 135 against 64 on a second edit).
+       */
+      const endOf = (objects: readonly unknown[]): number | undefined => {
+        const last = objects.at(-1);
+        const said = last === undefined ? undefined : setBy.get(last);
+        if (last === undefined || said === undefined) return undefined;
+        // A COPY OF THE LAST OBJECT ON THE SCRATCH PAGE, alone: on the page the object stands among the ones it replaces,
+        // and a text page leaves out a character that lies exactly over another, so the new object's characters are not
+        // read at all while the old line is still there. The copy has the object's font, size, scale and text.
+        const font: unknown = bindings.textFont(last);
+        if (font === null) return undefined;
+        const probe = makeTextLike(bindings, document, last, 0, font);
+        if (!setOn(probe, said.text, said.rtl)) {
+          bindings.destroyObject(probe);
+          return undefined;
+        }
+        const matrix = matrixOn(bindings, probe);
+        setMatrixOn(bindings, probe, { ...matrix, e: 72, f: 396 });
+        const sheet = scratchPage();
+        if (numberFrom(bindings.insertObject(sheet, probe), 'FPDFPage_InsertObject') !== 1) {
+          throw refusedAt('object', 'FPDFPage_InsertObject refused a probe on the scratch page');
+        }
+        try {
+          const textPage: unknown = bindings.loadTextPage(sheet);
+          if (textPage === null) throw refusedAt('page', 'PDFium could not load the scratch page to measure a stretch');
+          try {
+            const chars = numberFrom(bindings.countChars(textPage), 'FPDFText_CountChars');
+            let right: number | undefined;
+            for (let at = 0; at < chars; at += 1) {
+              if (numberFrom(bindings.charGenerated(textPage, at), 'FPDFText_IsGenerated') === 1) continue;
+              const loose: Record<string, number> = {};
+              if (numberFrom(bindings.looseCharBox(textPage, at, loose), 'FPDFText_GetLooseCharBox') !== 1) continue;
+              right = Math.max(right ?? Number.NEGATIVE_INFINITY, loose['right'] ?? Number.NEGATIVE_INFINITY);
+            }
+            return right === undefined ? undefined : matrixOn(bindings, last).e + (right - 72);
+          } finally {
+            bindings.closeTextPage(textPage);
+          }
+        } finally {
+          if (numberFrom(bindings.removeObject(sheet, probe), 'FPDFPage_RemoveObject') === 1) bindings.destroyObject(probe);
+        }
+      };
+      /** What each object of a piece was set to say, and the direction it was drawn in, for {@link endOf}. */
+      const setBy = new Map<unknown, { readonly text: string; readonly rtl: boolean | undefined }>();
 
       /**
        * Inserts `object` right after `anchor` in the page's order — the line it continues, or the
@@ -2530,14 +2603,15 @@ function pieceWriter(
        * A TRIAL PROBES TOO, unlike `write`'s: which words become pieces decides the line's width, and a trial that
        * measured the run's own font where the write sets another would fit a block to text that is not drawn.
        */
-      const writePieces = (object: unknown, text: string, restyle?: Restyle): unknown[] => {
+      const writePieces = (object: unknown, text: string, restyle?: Restyle, forced?: boolean): unknown[] => {
         // A WORD THE PERSON MADE BOLD, ITALIC OR ANOTHER FAMILY is set in a face that is that, whichever font the run is
         // in (ADR-0180 Decision 4): the run's own font is not preferred, because it is the wrong one by definition.
         if (restyle !== undefined && !inPiecesHere) return [writeRestyledTwin(object, text, restyle)];
         if (!inPiecesHere) return [write(object, text)];
-        if (restyle === undefined && setOn(object, text) && keepsItsObject(object, text)) {
-          if (mode === 'write') record(object, text);
+        if (restyle === undefined && setOn(object, text, forced) && carries(object, text, undefined, forced)) {
+          if (mode === 'write') record(object, text, forced);
           pieceTexts.set(object, text);
+          setBy.set(object, { text, rtl: forced });
           return [object];
         }
         const font = String(koffi.address(bindings.textFont(object)));
@@ -2579,7 +2653,8 @@ function pieceWriter(
         // back with its parts in drawing order (measured 2026-10-06: `Hello שלום` drawn as two objects reads back as
         // `Helloשלום`), where one object is read back as typed. The cost is that the line's Latin words are not in the
         // document's own font, which only a line with right-to-left letters in it pays (ADR-0181 Decision 5).
-        const whole = split.length > 1 && isBidirectional(text) ? resolveRuns(text, request, faces().faces) : [];
+        // A STRETCH OF ONE DIRECTION cut out of a line (`forced`) has no direction change in it for the rule to be about.
+        const whole = split.length > 1 && forced === undefined && isBidirectional(text) ? resolveRuns(text, request, faces().faces) : [];
         const only = whole.length === 1 && whole[0]?.face != null && whole[0].missing.length === 0 ? whole[0] : undefined;
         const onlyFace = only === undefined ? undefined : faces().faces.find((each) => each.id === only.face?.id);
         const pieces: EditPiece[] =
@@ -2594,7 +2669,7 @@ function pieceWriter(
             : piece.sibling !== null
               ? (siblings[piece.sibling]?.carries(said) ?? false)
               : ownCarries(said);
-        const units = inDrawingOrder(text, pieces, carried).flatMap((piece) => {
+        const units = inDrawingOrder(text, pieces, carried, forced).flatMap((piece) => {
           const { face, weight, rtl } = piece;
           if (piece.boxed.length > 0) {
             // ONE GLYPH EACH IN DRAWING ORDER: a right-to-left piece's characters are placed last typed first.
@@ -2625,6 +2700,7 @@ function pieceWriter(
           if (!reuse) insertAfter(made, objects.at(-1) ?? object);
           if (mode === 'write') record(made, unit.text, unit.rtl);
           pieceTexts.set(made, unit.text);
+          setBy.set(made, { text: unit.text, rtl: unit.rtl });
           if (unit.box) boxObjects.set(made, unit.text);
           objects.push(made);
           left = boundsOf(bindings, made).right;
@@ -2672,6 +2748,7 @@ function pieceWriter(
         insertAfter,
         write,
         writePieces,
+        endOf,
         trimPieces,
         record,
         standardFontLike,
@@ -2769,7 +2846,10 @@ function layOutBlocks(
       // indices are the page's own, not whatever an earlier block left behind.
       // A NAMED RUN IS ITS OBJECTS: the same join the read answered (`joinedWalk`, ADR-0130) expands each run an edit
       // names into the objects it is, in order — so a line drawn one glyph per object is written as the person saw it.
-      const joined = joinedWalk(bindings, handle, walked);
+      // AND A LINE THAT RUNS BOTH WAYS IS READ AS IT WAS TYPED, by the reading `textRuns` answers (`readWalk`): the words
+      // each named run holds here are the words the editor showed for it, so the edit diffs what a person typed against
+      // what they were shown, and a line they left alone is not set again.
+      const joined = readWalk(bindings, handle, walked);
       const blocks = edits.map((edit) => ({
         text: edit.text,
         soft: edit.soft,
@@ -2780,7 +2860,8 @@ function layOutBlocks(
         lines: edit.lines.map((line) =>
           line.map((named): HeldRun => {
             const members = membersOf(joined, named);
-            if (members === undefined) {
+            const joinedRun = joined.find((candidate) => candidate.index === named);
+            if (members === undefined || joinedRun === undefined) {
               throw refusedAt(
                 'object',
                 `Object ${String(named)} on page ${String(page)} begins no run this page's reading answered`,
@@ -2801,7 +2882,7 @@ function layOutBlocks(
             return {
               index: named,
               object: first.object,
-              text: held.map((member) => member.run.text).join(''),
+              text: joinedRun.text,
               extras: rest.map((member) => member.object),
               span: {
                 left: Math.min(...held.map((member) => member.run.left)),
@@ -2972,9 +3053,13 @@ function layOutBlocks(
           // WHERE A LINE SET AFRESH STARTS, as an object's own origin: the line that keeps the paragraph's left edge, read
           // off its first object, since the shape's edge is where ink begins and an origin is where the glyph is drawn from.
           const lefts = lines.map((line) => Math.min(...line.map((run) => run.span.left)));
+          // THE LEFTMOST RUN OF A LINE is where its first glyph is drawn from: a line read as it was typed (ADR-0185) has its
+          // right-to-left runs first, so the first run of a line is not the one at its left edge.
+          const leftmostOf = (line: readonly HeldRun[] | undefined): HeldRun =>
+            (line ?? []).reduce((best, run) => (run.span.left < best.span.left ? run : best), line?.[0] ?? firstRun);
           const restLines = lines.length > 1 ? lines.slice(1).map((_, at) => at + 1) : [0];
           const restAt = restLines.reduce((best, at) => ((lefts[at] ?? 0) < (lefts[best] ?? 0) ? at : best), restLines[0] ?? 0);
-          const restOrigin = matrixOn(bindings, (lines[restAt]?.[0] ?? firstRun).object).e;
+          const restOrigin = matrixOn(bindings, leftmostOf(lines[restAt]).object).e;
           // WHAT A MARK MAKES OF A RUN'S WORDS (ADR-0180 Decision 4), read from the run's own object: the face it asks, the
           // size it ends at against the size the run is, and where it rises to.
           const markStyle = (run: HeldRun, mark: number) => {
@@ -3062,18 +3147,35 @@ function layOutBlocks(
                 : set.align === 'right'
                   ? blockRight - row.width
                   : keepsItsLine
-                    ? matrixOn(bindings, (replaced[0] ?? firstRun).object).e
+                    ? matrixOn(bindings, leftmostOf(replaced).object).e
                     : restOrigin + (set.leftEdge - shape.left) * scale + (row.first ? set.first * scale : 0);
             const objects: { object: unknown; rise: number }[] = [];
             let left = x;
             let after = replaced === undefined ? anchor : (objectsOf(replaced).at(-1) ?? anchor);
-            for (const piece of row.pieces) {
+            // A ROW THAT RUNS BOTH WAYS IS DRAWN IN THE ORDER IT IS SEEN, not the order typed (ADR-0185): its pieces, the
+            // words of one run and one mark each, are cut where the line changes direction and set left to right as a
+            // reader sees them, each stretch in the direction the line runs there. A row of one piece, or of one
+            // direction, is written as it stands: the piece is ordered by its own letters, inside the writer.
+            const stretches = visualUnits(row.pieces.map((piece) => piece.text));
+            const units = (stretches ?? row.pieces.map((piece, at) => ({ piece: at, text: piece.text, rtl: undefined }))).map(
+              (stretch) => {
+                const piece = row.pieces[stretch.piece];
+                if (piece === undefined) throw new Error('A row stretch names a piece the row does not have.');
+                return {
+                  piece,
+                  text: stretch.text,
+                  rtl: stretch.rtl,
+                  width: stretches === undefined ? piece.width : measure(piece.run, piece.mark, stretch.text),
+                };
+              },
+            );
+            for (const { piece, text: stretchText, rtl: forced, width: stretchWidth } of units) {
               const source = runsById.get(piece.run) ?? firstRun;
               const made = makeTextLike(bindings, document, source.object, left);
               insertAfter(made, after);
               let rise = matrixOn(bindings, source.object).f - (baselines[lineOfRun.get(source) ?? 0] ?? 0);
               const marked = piece.mark === NO_MARK ? undefined : markStyle(source, piece.mark);
-              const laid = writePieces(made, piece.text, marked?.restyle);
+              const laid = writePieces(made, stretchText, marked?.restyle, forced);
               if (marked !== undefined) {
                 // THE SIZE AND THE COLOUR the mark gives, on every object the piece became, about the first one's origin so
                 // the pieces of one word keep their places.
@@ -3100,7 +3202,7 @@ function layOutBlocks(
                   const colour = marked.set.colour ?? marked.style.colour;
                   underlines.push({
                     left,
-                    width: piece.width,
+                    width: stretchWidth,
                     size: marked.size * (marked.set.rise === undefined ? 1 : RISE_SCALE),
                     colour: [colour.r, colour.g, colour.b],
                     first: laid[0] ?? made,
@@ -3110,7 +3212,10 @@ function layOutBlocks(
               }
               for (const object of laid) objects.push({ object, rise });
               after = laid.at(-1) ?? made;
-              left += piece.width;
+              // A ROW DRAWN IN THE ORDER IT IS SEEN goes on from where the pen stands, not from where the plan measured it
+              // would: the plan adds the advance of each letter alone, which for joined Arabic is wider than the joined
+              // letters are, and a stretch placed by it left a gap wide enough to end the line (measured 2026-10-06, 29 pt).
+              left = (stretches === undefined ? undefined : pen.endOf(laid)) ?? left + stretchWidth;
             }
             anchor = after;
             // THE GAP ABOVE THIS LINE: the person's own where they set the paragraph's spacing, else the gap the line it

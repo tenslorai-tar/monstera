@@ -301,18 +301,76 @@ function reversedByCodePoint(span: string): string {
  */
 export function logicalOf(read: string): string {
   if (!Array.from(read).some(isRightToLeftLetter)) return read;
-  const drawn = readBackOf(read);
+  return logicalOfDrawn(readBackOf(read));
+}
+
+/**
+ * A line as it was typed, from the glyphs in the order they are drawn, left to right: the line's majority direction
+ * ({@link lineDirection}) and the algorithm's reordering, the inverse of {@link drawnOrder}. What {@link logicalOf} does
+ * once the text page's reading is undone, and what a LINE of several objects needs, because the reordering is a
+ * property of the whole line: applied to each object alone, a space joined to the edge of a right-to-left word goes to
+ * the wrong side of it, and the words of a line in two objects come back in the order drawn.
+ */
+export function logicalOfDrawn(drawn: string): string {
   return reordered(drawn, lineDirection(drawn));
 }
 
+/** The text a line's glyphs say in the order drawn, with where each unit of the line as typed came from; see {@link logicalOfDrawn}. */
+export function logicalFromDrawn(drawn: string): { readonly text: string; readonly from: readonly number[] } {
+  return reorderedFrom(drawn, lineDirection(drawn));
+}
+
+/** Whether `text` has a character the algorithm takes as a right-to-left letter. */
+export function hasRightToLeftLetter(text: string): boolean {
+  return Array.from(text).some(isRightToLeftLetter);
+}
+
+/** The bit {@link strongDirections} sets for a left-to-right letter. */
+export const LEFT_TO_RIGHT = 1;
+/** The bit {@link strongDirections} sets for a right-to-left letter. */
+export const RIGHT_TO_LEFT = 2;
+
+/**
+ * Which ways the strong letters of `text` run: {@link LEFT_TO_RIGHT}, {@link RIGHT_TO_LEFT}, both added, or 0 where it has
+ * none (digits, spaces and punctuation take their direction from what is beside them).
+ */
+export function strongDirections(text: string): number {
+  let kinds = 0;
+  for (const character of text) {
+    const kind = BIDI.getBidiCharTypeName(character);
+    if (kind === 'L') kinds |= LEFT_TO_RIGHT;
+    else if (kind === 'R' || kind === 'AL') kinds |= RIGHT_TO_LEFT;
+    if (kinds === (LEFT_TO_RIGHT | RIGHT_TO_LEFT)) break;
+  }
+  return kinds;
+}
+
 function reordered(text: string, direction: TextDirection): string {
+  return reorderedFrom(text, direction).text;
+}
+
+/**
+ * {@link reordered}'s answer and where each of its UTF-16 units came from: `from[k]` is the index in `text` of the unit at
+ * `k` in the result. The one implementation of the reordering, so the text and the permutation cannot be two readings of
+ * it (B3a): a line made of several objects asks which object each character of the line as typed came from.
+ */
+export function reorderedFrom(text: string, direction: TextDirection): { readonly text: string; readonly from: readonly number[] } {
   const paragraph = paragraphLevels(text, direction);
   // THE ALGORITHM SAYS WHETHER ANYTHING IS RIGHT TO LEFT, not a range of code points listed here: text with no odd
   // level is returned as it came.
-  if (!paragraph.levels.levels.some((level) => level % 2 === 1)) return text;
-  return lineSpans(paragraph, 0, text.length)
-    .map(({ start, end, rtl }) => (rtl ? drawnRightToLeft(text.slice(start, end)) : text.slice(start, end)))
-    .join('');
+  if (!paragraph.levels.levels.some((level) => level % 2 === 1)) {
+    return { text, from: Array.from({ length: text.length }, (_, at) => at) };
+  }
+  let out = '';
+  const from: number[] = [];
+  for (const { start, end, rtl } of lineSpans(paragraph, 0, text.length)) {
+    const units = rtl ? rightToLeftUnits(text.slice(start, end)) : [{ text: text.slice(start, end), at: 0 }];
+    for (const unit of units) {
+      out += unit.text;
+      for (let offset = 0; offset < unit.text.length; offset += 1) from.push(start + unit.at + offset);
+    }
+  }
+  return { text: out, from };
 }
 
 /**
@@ -321,14 +379,18 @@ function reordered(text: string, direction: TextDirection): string {
  * facing the phrase it opens.
  */
 export function drawnRightToLeft(span: string): string {
+  return rightToLeftUnits(span)
+    .map((unit) => unit.text)
+    .join('');
+}
+
+/** The units of a right-to-left span in drawing order: each cluster, mirrored where it has a mirror image, and where it stood. */
+function rightToLeftUnits(span: string): { readonly text: string; readonly at: number }[] {
   // A LETTER AND ITS MARKS ARE ONE UNIT, marks after the letter as typed: a mark is drawn at the pen where the letter
   // ended and sits over it through its own offset, so a mark set BEFORE its letter in the drawn order would stand over
   // the letter beside it. A text page reverses by character, which {@link readBackOf} models separately.
-  const clusters = span.match(/\P{M}\p{M}*|\p{M}+/gu) ?? [];
-  return clusters
-    .reverse()
-    .map((cluster) => BIDI.getMirroredCharacter(cluster) ?? cluster)
-    .join('');
+  const clusters = [...span.matchAll(/\P{M}\p{M}*|\p{M}+/gu)].map((match) => ({ text: match[0], at: match.index }));
+  return clusters.reverse().map(({ text, at }) => ({ text: BIDI.getMirroredCharacter(text) ?? text, at }));
 }
 
 /**

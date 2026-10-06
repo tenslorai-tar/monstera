@@ -50,6 +50,7 @@
  * 238.0**, so equality splits the very case the grouping exists for.
  */
 
+import { type DrawnRun, logicalLine } from './bidiLine.js';
 import { blockShape } from './paragraphShape.js';
 
 /** How a text object's matrix sets it (`orientationOf`, `pdfiumFfi.ts`): `upright` is the only one an editor is placed along. */
@@ -214,6 +215,12 @@ export interface EditableBlock<S> {
   readonly shape: { readonly align: 'left' | 'center' | 'right'; readonly firstIndent: number };
 }
 
+/** A run as the pieces of a line need it: its place on the page. */
+export interface LineableRun extends GroupableRun {
+  readonly left: number;
+  readonly right: number;
+}
+
 interface Piece<S> {
   runs: BlockableRun<S>[];
   /** Where the piece came in reading order, which is the order blocks are answered in. */
@@ -222,6 +229,96 @@ interface Piece<S> {
   right: number;
   bottom: number;
   top: number;
+}
+
+/**
+ * The pieces of a page's runs: each line split where the gap between the piece so far and the next run is wider than the
+ * line is tall (step 2 of {@link groupIntoBlocks}), in the order the runs came. The ONE place a piece is decided, which
+ * the block grouping and the line reading ({@link readInLineOrder}) both take (B3a): two readings of which runs are one
+ * line would put a run's words in one and its place in the other.
+ */
+function piecesOf<T extends LineableRun>(
+  runs: readonly T[],
+): { runs: T[]; order: number; left: number; right: number; bottom: number; top: number }[] {
+  const pieces: { runs: T[]; order: number; left: number; right: number; bottom: number; top: number }[] = [];
+  for (const line of overlapLines(runs)) {
+    const height = line.top - line.bottom;
+    let piece: (typeof pieces)[number] | undefined;
+    // SWEPT LEFT TO RIGHT, whatever order the runs came in: a gap is between two neighbours, and a line read in the order
+    // it was typed visits a right-to-left phrase before the words beside it, which a sweep in that order measures from
+    // the wrong side. The runs of a piece keep the order they came in.
+    const given = new Map(line.runs.map((run, at) => [run, at] as const));
+    const swept = [...line.runs].sort((a, b) => a.left - b.left || (given.get(a) ?? 0) - (given.get(b) ?? 0));
+    const first = pieces.length;
+    for (const run of swept) {
+      const gap =
+        piece === undefined ? 0 : Math.max(0, run.left - piece.right, piece.left - run.right);
+      if (piece === undefined || gap > height) {
+        piece = {
+          runs: [run],
+          order: pieces.length,
+          left: run.left,
+          right: run.right,
+          bottom: run.bottom,
+          top: run.top,
+        };
+        pieces.push(piece);
+        continue;
+      }
+      piece.runs.push(run);
+      piece.left = Math.min(piece.left, run.left);
+      piece.right = Math.max(piece.right, run.right);
+      piece.bottom = Math.min(piece.bottom, run.bottom);
+      piece.top = Math.max(piece.top, run.top);
+    }
+    // THE PIECES KEEP THE ORDER THEIR FIRST RUN CAME IN, which is the order a person Tabs through them, and each keeps its
+    // runs in the order they came.
+    const at = (run: T): number => given.get(run) ?? 0;
+    const made = pieces.splice(first);
+    for (const each of made) each.runs.sort((a, b) => at(a) - at(b));
+    const firstAt = (each: { runs: T[] }): number => {
+      const [head] = each.runs;
+      return head === undefined ? 0 : at(head);
+    };
+    made.sort((a, b) => firstAt(a) - firstAt(b));
+    made.forEach((each, rank) => {
+      each.order = first + rank;
+    });
+    pieces.push(...made);
+  }
+  return pieces;
+}
+
+/**
+ * The page's runs with each LINE that runs both ways read as it was typed
+ * ([ADR-0185](../../../docs/DECISIONS/0185-a-line-of-several-objects-is-read-and-written-as-one-line.md)): the runs of a
+ * piece in the order of the words they hold, and each run's text the line's own words over its glyphs
+ * ({@link logicalLine}). A run with no right-to-left letter in its line is returned exactly as it came, and every run
+ * keeps its place in the list, so a piece's runs are rearranged among the slots they already filled.
+ *
+ * The pieces are the grouping's ({@link piecesOf}) over the runs the grouping is given: the runs a person can edit in
+ * place, which is why `editable` names them. Text set at an angle has no line in this sense and is left as it stands.
+ *
+ * @param runs the page's runs, in reading order
+ * @param editable whether a run is one the grouping is given (`isEditedInPlace`)
+ */
+export function readInLineOrder<T extends LineableRun & DrawnRun>(
+  runs: readonly T[],
+  editable: (run: T) => boolean,
+): T[] {
+  const out = [...runs];
+  const slots = new Map<T, number>(runs.map((run, at) => [run, at]));
+  for (const piece of piecesOf(runs.filter(editable))) {
+    if (piece.runs.length === 0) continue;
+    const { runs: ordered, texts } = logicalLine(piece.runs);
+    // A LINE READ AS IT CAME is left as it came: the same runs, the same words.
+    if (ordered === piece.runs) continue;
+    const where = piece.runs.map((run) => slots.get(run) ?? 0).sort((a, b) => a - b);
+    ordered.forEach((run, at) => {
+      out[where[at] ?? 0] = { ...run, text: texts[at] ?? run.text };
+    });
+  }
+  return out;
 }
 
 /**
@@ -277,32 +374,7 @@ function longestRun<S>(piece: Piece<S>): BlockableRun<S> | undefined {
  * @param runs the page's text runs, in reading order
  */
 export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly EditableBlock<S>[] {
-  const pieces: Piece<S>[] = [];
-  for (const line of overlapLines(runs)) {
-    const height = line.top - line.bottom;
-    let piece: Piece<S> | undefined;
-    for (const run of line.runs) {
-      const gap =
-        piece === undefined ? 0 : Math.max(0, run.left - piece.right, piece.left - run.right);
-      if (piece === undefined || gap > height) {
-        piece = {
-          runs: [run],
-          order: pieces.length,
-          left: run.left,
-          right: run.right,
-          bottom: run.bottom,
-          top: run.top,
-        };
-        pieces.push(piece);
-        continue;
-      }
-      piece.runs.push(run);
-      piece.left = Math.min(piece.left, run.left);
-      piece.right = Math.max(piece.right, run.right);
-      piece.bottom = Math.min(piece.bottom, run.bottom);
-      piece.top = Math.max(piece.top, run.top);
-    }
-  }
+  const pieces = piecesOf(runs);
 
   // TOP TO BOTTOM, not reading order, for the BLOCK pass only. A block's lines
   // are top to bottom by what a block is, and reading order is the content

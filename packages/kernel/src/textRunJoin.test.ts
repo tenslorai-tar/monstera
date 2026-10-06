@@ -14,7 +14,7 @@ const STYLE: JoinStyle = {
 
 /** A glyph object at `x` on the baseline `y`, five points wide. */
 function glyph(index: number, text: string, x: number, y = 700, style = STYLE): ObjectRun {
-  return { index, text, left: x, right: x + 5, bottom: y, top: y + 7, style };
+  return { index, text, drawn: text, left: x, right: x + 5, bottom: y, top: y + 7, style };
 }
 
 /** A word drawn one glyph per object, from object `first`, starting at `x`. */
