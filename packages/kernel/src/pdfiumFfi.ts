@@ -12,7 +12,7 @@ import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 import { editFaces, editFacesBound } from './editFaces.js';
 import { arabicForms, lettersOfForms } from './arabicForms.js';
 import { drawnOrder, drawnRightToLeft, drewTheGlyphs, isBidirectional, logicalOf, readBackOf } from './bidiOrder.js';
-import { paperColourAround } from './paperColour.js';
+import { paperCoverFor, type PixelBox, type Rgb } from './paperColour.js';
 import { resolveRuns } from './fontResolver.js';
 import { type EditPiece, editPieces } from './editPieces.js';
 import { inDrawingOrder, visualUnits } from './visualPieces.js';
@@ -2925,7 +2925,7 @@ function layOutBlocks(
           };
         }),
       );
-      const papers = coverBoxes.length === 0 ? [] : paperRoundBoxes(bindings, handle, coverBoxes);
+      const papers = coverBoxes.length === 0 ? [] : coversRoundBoxes(bindings, handle, coverBoxes);
       let coverAt = 0;
 
         for (const [blockAt, block] of blocks.entries()) {
@@ -3285,7 +3285,6 @@ function layOutBlocks(
           // words they replace are covered with the paper round them, above the picture and below the new words. The
           // picture itself is not changed, so nothing is dropped, and the page is as it was after one Undo.
           const onScan = scanned[blockAt] ?? [];
-          const covers = coverBoxes.slice(coverAt, coverAt + onScan.length);
           const papersHere = papers.slice(coverAt, coverAt + onScan.length);
           coverAt += onScan.length;
           if (onScan.length > 0) {
@@ -3303,17 +3302,18 @@ function layOutBlocks(
               const indices = objectIndices(bindings, handle);
               const lowest = Math.min(...onScan.map((object) => indices.get(address(object)) ?? Number.POSITIVE_INFINITY));
               for (const at of touched) {
-                const box = covers[at];
-                const paper = papersHere[at];
-                if (box === undefined || paper === undefined || !Number.isFinite(lowest)) continue;
-                const cover: unknown = bindings.newRect(box.left, box.bottom, box.right - box.left, box.top - box.bottom);
-                if (cover === null) throw refusedAt('object', 'FPDFPageObj_CreateNewRect refused the paper over a scanned word');
-                bindings.setFillColour(cover, paper.r, paper.g, paper.b, 255);
-                if (numberFrom(bindings.setDrawMode(cover, 1, 0), 'FPDFPath_SetDrawMode') !== 1) {
-                  throw refusedAt('object', 'FPDFPath_SetDrawMode refused the paper over a scanned word');
-                }
-                if (numberFrom(bindings.insertObjectAt(handle, cover, lowest), 'FPDFPage_InsertObjectAtIndex') !== 1) {
-                  throw refusedAt('object', `FPDFPage_InsertObjectAtIndex refused the paper over a scanned word on page ${String(page)}`);
+                // ONE RECTANGLE WHERE THE PAPER IS ONE COLOUR, a grid of them where it shades (ADR-0187).
+                for (const { box, colour: paper } of papersHere[at] ?? []) {
+                  if (!Number.isFinite(lowest)) continue;
+                  const cover: unknown = bindings.newRect(box.left, box.bottom, box.right - box.left, box.top - box.bottom);
+                  if (cover === null) throw refusedAt('object', 'FPDFPageObj_CreateNewRect refused the paper over a scanned word');
+                  bindings.setFillColour(cover, paper.r, paper.g, paper.b, 255);
+                  if (numberFrom(bindings.setDrawMode(cover, 1, 0), 'FPDFPath_SetDrawMode') !== 1) {
+                    throw refusedAt('object', 'FPDFPath_SetDrawMode refused the paper over a scanned word');
+                  }
+                  if (numberFrom(bindings.insertObjectAt(handle, cover, lowest), 'FPDFPage_InsertObjectAtIndex') !== 1) {
+                    throw refusedAt('object', `FPDFPage_InsertObjectAtIndex refused the paper over a scanned word on page ${String(page)}`);
+                  }
                 }
               }
             }
@@ -3791,18 +3791,51 @@ function recognisedOverPictures(bindings: Bound, handle: unknown, objects: reado
   });
 }
 
+/** One rectangle of a scan's cover, in page space, and the paper colour it is filled with. */
+interface PageCoverCell {
+  readonly box: Bounds;
+  readonly colour: Rgb;
+}
+
 /**
- * The paper round each of `boxes` on the page as it is drawn now, read once from one raster
- * (`paperColourAround`), in the order the boxes were given.
+ * The cover for each of `boxes` on the page as it is drawn now, read once from one raster, in the order the boxes were
+ * given ([ADR-0187](../../../docs/DECISIONS/0187-a-scans-edited-words-are-covered-where-the-ink-is-with-the-paper-that-is-there.md)):
+ * each box grown through the ink that touches it, in cells filled with the paper that is there (`paperCoverFor`).
+ *
+ * The cover is worked out on the raster and written in page space, so the page's own mapping stands between the two, and
+ * a mapping is read from the page rather than assumed: where the page is rotated or its box does not start at the origin
+ * a device pixel is not a page unit away.
  */
-function paperRoundBoxes(
-  bindings: Bound,
-  handle: unknown,
-  boxes: readonly Bounds[],
-): { readonly r: number; readonly g: number; readonly b: number }[] {
-  const width = Math.max(1, Math.round(numberFrom(bindings.pageWidth(handle), 'FPDF_GetPageWidthF') * PAPER_PIXELS_PER_POINT));
-  const height = Math.max(1, Math.round(numberFrom(bindings.pageHeight(handle), 'FPDF_GetPageHeightF') * PAPER_PIXELS_PER_POINT));
+function coversRoundBoxes(bindings: Bound, handle: unknown, boxes: readonly Bounds[]): PageCoverCell[][] {
+  const pageWidth = numberFrom(bindings.pageWidth(handle), 'FPDF_GetPageWidthF');
+  const pageHeight = numberFrom(bindings.pageHeight(handle), 'FPDF_GetPageHeightF');
+  const width = Math.max(1, Math.round(pageWidth * PAPER_PIXELS_PER_POINT));
+  const height = Math.max(1, Math.round(pageHeight * PAPER_PIXELS_PER_POINT));
   const raster = rasteriseOn(bindings, handle, width, height);
+  const deviceOf = (x: number, y: number): readonly [number, number] | undefined => {
+    const deviceX = [0];
+    const deviceY = [0];
+    if (numberFrom(bindings.pageToDevice(handle, 0, 0, width, height, 0, x, y, deviceX, deviceY), 'FPDF_PageToDevice') !== 1) return undefined;
+    return [deviceX[0] ?? 0, deviceY[0] ?? 0];
+  };
+  // THE MAPPING BACK, from three corners of the page: the page's own mapping is affine (a scale, a quarter turn at most,
+  // a shift), so where the page's width and height are carried to the device gives its inverse, to the pixel over the
+  // whole page and not to a pixel over a point.
+  const origin = deviceOf(0, 0);
+  const alongX = deviceOf(pageWidth, 0);
+  const alongY = deviceOf(0, pageHeight);
+  if (origin === undefined || alongX === undefined || alongY === undefined) {
+    return boxes.map((box) => [{ box, colour: { r: 255, g: 255, b: 255 } }]);
+  }
+  const a = (alongX[0] - origin[0]) / pageWidth;
+  const b = (alongX[1] - origin[1]) / pageWidth;
+  const c = (alongY[0] - origin[0]) / pageHeight;
+  const d = (alongY[1] - origin[1]) / pageHeight;
+  const determinant = a * d - b * c;
+  const pageOf = (x: number, y: number): readonly [number, number] => [
+    (d * (x - origin[0]) - c * (y - origin[1])) / determinant,
+    (-b * (x - origin[0]) + a * (y - origin[1])) / determinant,
+  ];
   return boxes.map((box) => {
     // THE PAGE'S OWN MAPPING, rotation included: the four corners of the box, where they fall on this raster.
     const xs: number[] = [];
@@ -3813,19 +3846,28 @@ function paperRoundBoxes(
       [box.right, box.bottom],
       [box.right, box.top],
     ] as const) {
-      const deviceX = [0];
-      const deviceY = [0];
-      if (numberFrom(bindings.pageToDevice(handle, 0, 0, width, height, 0, x, y, deviceX, deviceY), 'FPDF_PageToDevice') !== 1) {
-        return { r: 255, g: 255, b: 255 };
-      }
-      xs.push(deviceX[0] ?? 0);
-      ys.push(deviceY[0] ?? 0);
+      const device = deviceOf(x, y);
+      if (device === undefined || !Number.isFinite(determinant) || determinant === 0) return [{ box, colour: { r: 255, g: 255, b: 255 } }];
+      xs.push(device[0]);
+      ys.push(device[1]);
     }
-    return paperColourAround(raster.bgra, width, height, {
-      x0: Math.min(...xs),
-      y0: Math.min(...ys),
-      x1: Math.max(...xs),
-      y1: Math.max(...ys),
+    const seed: PixelBox = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+    return paperCoverFor(raster.bgra, width, height, seed, PAPER_PIXELS_PER_POINT).map((cell) => {
+      const corners = [
+        pageOf(cell.box.x0, cell.box.y0),
+        pageOf(cell.box.x1, cell.box.y0),
+        pageOf(cell.box.x0, cell.box.y1),
+        pageOf(cell.box.x1, cell.box.y1),
+      ];
+      return {
+        box: {
+          left: Math.min(...corners.map((corner) => corner[0])),
+          bottom: Math.min(...corners.map((corner) => corner[1])),
+          right: Math.max(...corners.map((corner) => corner[0])),
+          top: Math.max(...corners.map((corner) => corner[1])),
+        },
+        colour: cell.colour,
+      };
     });
   });
 }

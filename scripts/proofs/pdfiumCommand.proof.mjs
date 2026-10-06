@@ -76,6 +76,7 @@ import {
   StandardFonts,
   beginText,
   concatTransformationMatrix,
+  degrees,
   endMarkedContent,
   endText,
   popGraphicsState,
@@ -269,7 +270,7 @@ const failures = [];
 // edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
 // marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
 // with the control that separates the mark from the fixture.
-const roster = createRoster(failures, { cases: 213 });
+const roster = createRoster(failures, { cases: 222 });
 
 /**
  * @param {string} name
@@ -3182,17 +3183,29 @@ const SCAN_LINES = [
   { text: 'Recognised first line', baseline: 300 },
   { text: 'Recognised second line', baseline: 286 },
 ];
+/** Where a scan's ink runs past what a recogniser read, in points: the bar's far end, a stub under it, and a mark apart from it. */
+const OVERSHOOT = { across: 4, stubAt: 20, stubWidth: 6, stubDepth: 6, neighbourAt: 6, neighbourWidth: 6 };
+/** The scan's paper at a pixel: one colour, or a gradient that darkens to the right and down, steeply enough to show in one word. */
+function scanPaperAt(/** @type {number} */ x, /** @type {number} */ y, /** @type {boolean} */ gradient) {
+  if (!gradient) return PAPER;
+  /** @type {readonly [number, number, number]} */
+  const shaded = [Math.round(PAPER[0] - 0.45 * x - 0.1 * y), Math.round(PAPER[1] - 0.45 * x - 0.1 * y), Math.round(PAPER[2] - 0.35 * x - 0.1 * y)];
+  return shaded;
+}
 
 /**
  * A SCANNED PAGE: a cream picture of the whole page with a bar of ink where each line's words are, and over it the text a
  * recogniser read, painted invisibly (render mode 3) at the same places. The bars are exactly as wide as their words, so
  * what a cover leaves of the ink is known to the pixel.
  *
- * @param {{ picture?: boolean }} [options] `picture: false` leaves the picture out: invisible text over nothing
+ * @param {{ picture?: boolean, overshoot?: boolean, gradient?: boolean, turned?: boolean }} [options] `picture: false` leaves the picture out:
+ * invisible text over nothing. `overshoot` runs the ink past the recogniser's words (OVERSHOOT) and `gradient` shades the
+ * paper (scanPaperAt); `turned` sets the page's /Rotate to 90, which a cover is drawn through.
  */
-async function aScan({ picture = true } = {}) {
+async function aScan({ picture = true, overshoot = false, gradient = false, turned = false } = {}) {
   const document = await PDFDocument.create();
   const page = document.addPage([400, 400]);
+  if (turned) page.setRotation(degrees(90));
   const font = await document.embedFont(StandardFonts.Helvetica);
   const widths = SCAN_LINES.map((line) => font.widthOfTextAtSize(line.text, 11));
   if (picture) {
@@ -3202,9 +3215,15 @@ async function aScan({ picture = true } = {}) {
           // THE INK: the glyphs' own extent, a baseline up to its x-height and cap, as a solid bar.
           const top = 400 - (line.baseline + 7);
           const bottom = 400 - (line.baseline - 1);
-          if (y >= top && y <= bottom && x >= 72 && x < 72 + (widths[at] ?? 0)) return INK;
+          const width = widths[at] ?? 0;
+          if (y >= top && y <= bottom && x >= 72 && x < 72 + width + (overshoot ? OVERSHOOT.across : 0)) return INK;
+          if (overshoot) {
+            // A DESCENDER-LIKE STUB under the bar, which touches it, and a separate mark past the word's gap, which does not.
+            if (at === SCAN_LINES.length - 1 && y > bottom && y <= bottom + OVERSHOOT.stubDepth && x >= 72 + OVERSHOOT.stubAt && x < 72 + OVERSHOOT.stubAt + OVERSHOOT.stubWidth) return INK;
+            if (y >= top && y <= bottom && x >= 72 + width + OVERSHOOT.neighbourAt && x < 72 + width + OVERSHOOT.neighbourAt + OVERSHOOT.neighbourWidth) return INK;
+          }
         }
-        return PAPER;
+        return scanPaperAt(x, y, gradient);
       }),
     );
     page.drawImage(image, { x: 0, y: 0, width: 400, height: 400 });
@@ -3320,6 +3339,106 @@ async function scanCases() {
     'CONTROL: the same edit of invisible text over NO picture draws nothing and covers nothing, so it is the picture that makes it a scan',
     (await dark(bareEdited, { x0: 0, y0: 0, x1: 400, y1: 400 })) === 0 && (await textOf(bareEdited)).includes('Edited'),
     `${String(await dark(bareEdited, { x0: 0, y0: 0, x1: 400, y1: 400 }))} dark pixel(s)`,
+  );
+
+  // THE COVER IS WHERE THE INK IS (ADR-0187): a scanned letter runs past the recogniser's box, and the paper behind a word
+  // is not always one colour. Each case edits the second line to a shorter one and reads pixels of the reopened bytes.
+  const editedSecond = async (/** @type {{ overshoot?: boolean, gradient?: boolean, turned?: boolean }} */ options) => {
+    const scan = await aScan(options);
+    const read = await blocksOf(scan.bytes);
+    const target = read.blocks[0];
+    const targetLines = target?.lines.map((line) => line.runs.map((run) => run.index)) ?? [];
+    const done = await localPdfiumExecution.apply({
+      session: scan.bytes,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines: targetLines, soft: targetLines.map(() => false), text: `${SCAN_LINES[0]?.text ?? ''}\nEdited` }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+    return { scan, read, edited: done };
+  };
+  const second = SCAN_LINES[1];
+  const secondRow = rowOf(1);
+  const barBottom = 400 - ((second?.baseline ?? 0) - 1);
+
+  const over = await editedSecond({ overshoot: true });
+  const recognised = over.read.runs.find((run) => run.text.startsWith('Recognised second'));
+  const marginPoints = 1.5;
+  const pastColumn = Math.floor(72 + (over.scan.widths[1] ?? 0) + OVERSHOOT.across - 1.8);
+  const stubColumn = 72 + OVERSHOOT.stubAt + 3;
+  const stubRow = barBottom + OVERSHOOT.stubDepth - 1;
+  const outsideMargin = recognised !== undefined && pastColumn + 0.5 > recognised.right + marginPoints + 0.4 && 400 - (stubRow + 0.5) < recognised.bottom - marginPoints - 0.4;
+  record(
+    'PREMISE: the ink’s far end and the stub under it lie beyond the recogniser’s box and the old margin, and are ink before the edit',
+    outsideMargin && isInk(await pixel(over.scan.bytes, pastColumn, secondRow)) && isInk(await pixel(over.scan.bytes, stubColumn, stubRow)),
+    `box right ${String(recognised?.right)}, bottom ${String(recognised?.bottom)}; probes (${String(pastColumn)}, ${String(secondRow)}) and (${String(stubColumn)}, ${String(stubRow)})`,
+  );
+  record(
+    'ink that runs past the recogniser’s box is covered too: the far end of the bar and the stub under it read as paper',
+    isPaper(await pixel(over.edited, pastColumn, secondRow)) && isPaper(await pixel(over.edited, stubColumn, stubRow)),
+    `far end ${JSON.stringify(await pixel(over.edited, pastColumn, secondRow))}, stub ${JSON.stringify(await pixel(over.edited, stubColumn, stubRow))}; the row after the edit, from ${String(pastColumn - 3)}: ${JSON.stringify(await Promise.all([0, 1, 2, 3, 4, 5, 6].map(async (step) => (await pixel(over.edited, pastColumn - 3 + step, secondRow))[0])))}; bar ends at ${(72 + (over.scan.widths[1] ?? 0) + OVERSHOOT.across).toFixed(2)}, box right ${String(recognised?.right)}`,
+  );
+  const apartColumn = Math.floor(72 + (over.scan.widths[1] ?? 0) + OVERSHOOT.neighbourAt + 2);
+  record(
+    'CONTROL: a mark that is not touching the ink is not covered, so the cover grows through ink that touches and no further',
+    isInk(await pixel(over.scan.bytes, apartColumn, secondRow)) && isInk(await pixel(over.edited, apartColumn, secondRow)),
+    `apart mark before ${JSON.stringify(await pixel(over.scan.bytes, apartColumn, secondRow))}, after ${JSON.stringify(await pixel(over.edited, apartColumn, secondRow))}`,
+  );
+
+  // A GRADIENT: the paper at the two ends of the old ink differs by more than one colour can match, and each end is covered
+  // with the paper that is THERE.
+  const shaded = await editedSecond({ gradient: true });
+  const nearX = 72 + 60;
+  const farX = Math.floor(72 + (shaded.scan.widths[1] ?? 0) - 6);
+  const near = scanPaperAt(nearX, secondRow, true);
+  const far = scanPaperAt(farX, secondRow, true);
+  const closeTo = (/** @type {readonly number[]} */ got, /** @type {readonly number[]} */ want) => got.every((value, at) => Math.abs(value - (want[at] ?? 0)) <= 10);
+  record(
+    'PREMISE: the paper behind the old ink shades by more than one flat colour could match at both ends of it',
+    near.some((value, at) => Math.abs(value - (far[at] ?? 0)) > 20),
+    `near ${JSON.stringify(near)}, far ${JSON.stringify(far)}`,
+  );
+  const nearGot = await pixel(shaded.edited, nearX, secondRow);
+  const farGot = await pixel(shaded.edited, farX, secondRow);
+  record(
+    'a word on shaded paper is covered with the paper at each place: both ends of the old ink read as the gradient',
+    closeTo(nearGot, near) && closeTo(farGot, far),
+    `near ${JSON.stringify(nearGot)} for ${JSON.stringify(near)}, far ${JSON.stringify(farGot)} for ${JSON.stringify(far)}`,
+  );
+  // A TURNED PAGE: the cover is worked out on the raster and written in page space, so a page turned a quarter is where an
+  // inverse that assumed the page upright puts the paper beside the ink instead of over it. The page turned clockwise
+  // carries a user-space point (x, y) to the device point (y, x) on a square page.
+  const turned = await editedSecond({ overshoot: true, turned: true });
+  const turnedRead = turned.read.runs.find((run) => run.text.startsWith('Recognised second'));
+  const turnedFar = [400 - secondRow,Math.floor(72 + (turned.scan.widths[1] ?? 0) + OVERSHOOT.across - 1.8)];
+  const turnedStub = [400 - stubRow, stubColumn];
+  const turnedMid = [400 - secondRow, Math.floor(72 + (turned.scan.widths[1] ?? 0) - 6)];
+  record(
+    'PREMISE: on the page turned a quarter the old ink is where the turn puts it, and is ink before the edit',
+    turnedRead !== undefined && isInk(await pixel(turned.scan.bytes, turnedMid[0] ?? 0, turnedMid[1] ?? 0)) && isInk(await pixel(turned.scan.bytes, turnedStub[0] ?? 0, turnedStub[1] ?? 0)),
+    `mid ${JSON.stringify(await pixel(turned.scan.bytes, turnedMid[0] ?? 0, turnedMid[1] ?? 0))}, stub ${JSON.stringify(await pixel(turned.scan.bytes, turnedStub[0] ?? 0, turnedStub[1] ?? 0))}`,
+  );
+  record(
+    'a scan on a turned page is covered where its ink is: the old ink, its far end and the stub under it read as paper',
+    isPaper(await pixel(turned.edited, turnedMid[0] ?? 0, turnedMid[1] ?? 0)) &&
+      isPaper(await pixel(turned.edited, turnedStub[0] ?? 0, turnedStub[1] ?? 0)) &&
+      isPaper(await pixel(turned.edited, turnedFar[0] ?? 0, turnedFar[1] ?? 0)),
+    `mid ${JSON.stringify(await pixel(turned.edited, turnedMid[0] ?? 0, turnedMid[1] ?? 0))}, stub ${JSON.stringify(await pixel(turned.edited, turnedStub[0] ?? 0, turnedStub[1] ?? 0))}, far ${JSON.stringify(await pixel(turned.edited, turnedFar[0] ?? 0, turnedFar[1] ?? 0))}`,
+  );
+  record(
+    'CONTROL: on the turned page the line not edited keeps its ink, so the cover did not land on the wrong line',
+    isInk(await pixel(turned.edited, 400 - rowOf(0), farEnd(0))),
+    `${JSON.stringify(await pixel(turned.edited, 400 - rowOf(0), farEnd(0)))}`,
+  );
+  record(
+    'CONTROL: the shaded line that was not edited keeps its ink, so it is the cover and not the page that changed',
+    isInk(await pixel(shaded.edited, farEnd(0), rowOf(0))),
+    `${JSON.stringify(await pixel(shaded.edited, farEnd(0), rowOf(0)))}`,
   );
 }
 

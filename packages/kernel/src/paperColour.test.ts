@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PAPER_RING, paperColourAround } from './paperColour.js';
+import { PAPER_RING, paperColourAround, paperCoverFor } from './paperColour.js';
 
 /** A raster of `width` by `height` in one colour, BGRA. */
 function raster(width: number, height: number, colour: readonly [number, number, number]): Uint8Array {
@@ -62,5 +62,98 @@ describe('paperColourAround', () => {
   it('reads a box at the raster’s edge from the side that is on it', () => {
     const bgra = raster(30, 30, CREAM);
     expect(paperColourAround(bgra, 30, 30, { x0: 0, y0: 0, x1: 10, y1: 10 })).toStrictEqual({ r: 250, g: 240, b: 200 });
+  });
+});
+
+/** A raster whose paper darkens to the right by `perPixel` a pixel, in every channel. */
+function shaded(width: number, height: number, perPixel: number): Uint8Array {
+  const bgra = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const value = Math.round(250 - perPixel * x);
+      const at = (y * width + x) * 4;
+      bgra[at] = value;
+      bgra[at + 1] = value;
+      bgra[at + 2] = value;
+      bgra[at + 3] = 255;
+    }
+  }
+  return bgra;
+}
+
+describe('paperCoverFor', () => {
+  const CREAM = [250, 240, 200] as const;
+  const BOX = { x0: 40, y0: 30, x1: 100, y1: 46 };
+
+  it('is one cell, the paper’s colour, over a box on flat paper with no ink outside it', () => {
+    const bgra = raster(160, 80, CREAM);
+    paint(bgra, 160, BOX, [20, 20, 20]);
+    const cover = paperCoverFor(bgra, 160, 80, BOX, 2);
+    expect(cover).toHaveLength(1);
+    expect(cover[0]?.colour).toStrictEqual({ r: 250, g: 240, b: 200 });
+    // ONE PIXEL PAST THE INK, which is the box itself here: a stroke's soft edge is not ink by the threshold
+    expect(cover[0]?.box).toStrictEqual({ x0: 39, y0: 29, x1: 101, y1: 47 });
+  });
+
+  it('grows through the ink that touches the box, past where the recogniser said the word ends', () => {
+    const bgra = raster(160, 80, CREAM);
+    paint(bgra, 160, BOX, [20, 20, 20]);
+    // a letter's end running 6 px right of the box and a stroke 5 px below it, both touching the ink
+    paint(bgra, 160, { x0: 100, y0: 34, x1: 106, y1: 42 }, [20, 20, 20]);
+    paint(bgra, 160, { x0: 60, y0: 46, x1: 66, y1: 51 }, [20, 20, 20]);
+    const [cell] = paperCoverFor(bgra, 160, 80, BOX, 2);
+    expect(cell?.box.x1).toBeGreaterThanOrEqual(106);
+    expect(cell?.box.y1).toBeGreaterThanOrEqual(51);
+  });
+
+  // THE CONTROL: ink that does not touch it, a word's width away, is not the word's, so it must not be reached.
+  it('does not grow across a gap to ink that is not touching, as a neighbouring word is', () => {
+    const bgra = raster(160, 80, CREAM);
+    paint(bgra, 160, BOX, [20, 20, 20]);
+    paint(bgra, 160, { x0: 105, y0: 30, x1: 125, y1: 46 }, [20, 20, 20]);
+    const [cell] = paperCoverFor(bgra, 160, 80, BOX, 2);
+    expect(cell?.box.x1).toBeLessThan(105);
+  });
+
+  it('is a grid of cells on shaded paper, each the colour the paper has there', () => {
+    const bgra = shaded(200, 80, 0.6);
+    paint(bgra, 200, BOX, [20, 20, 20]);
+    const cover = paperCoverFor(bgra, 200, 80, BOX, 2);
+    expect(cover.length).toBeGreaterThan(1);
+    const first = cover[0];
+    const last = cover.at(-1);
+    // the paper darkens to the right, so the cell at the right is darker than the one at the left, by about the gradient
+    expect(first?.colour.r).toBeGreaterThan((last?.colour.r ?? 255) + 20);
+    for (const cell of cover) {
+      const centre = (cell.box.x0 + cell.box.x1) / 2;
+      expect(Math.abs(cell.colour.r - (250 - 0.6 * centre))).toBeLessThanOrEqual(6);
+    }
+  });
+
+  // THE CONTROL: the same paper read as one colour would be wrong at an end of the box by more than the tolerance.
+  it('would be wrong at one end of the box as one flat colour', () => {
+    const bgra = shaded(200, 80, 0.6);
+    paint(bgra, 200, BOX, [20, 20, 20]);
+    const flat = paperColourAround(bgra, 200, 80, BOX);
+    expect(Math.abs(flat.r - (250 - 0.6 * BOX.x0))).toBeGreaterThan(14 / 2);
+    expect(Math.abs(flat.r - (250 - 0.6 * BOX.x1))).toBeGreaterThan(14 / 2);
+  });
+
+  it('is not tilted by a neighbour’s ink crossing the ring', () => {
+    const bgra = raster(160, 80, CREAM);
+    paint(bgra, 160, BOX, [20, 20, 20]);
+    // the next line's ink along most of the ring's top, apart from the box's own ink
+    paint(bgra, 160, { x0: 30, y0: 22, x1: 110, y1: 27 }, [20, 20, 20]);
+    const cover = paperCoverFor(bgra, 160, 80, BOX, 2);
+    expect(cover).toHaveLength(1);
+    expect(cover[0]?.colour).toStrictEqual({ r: 250, g: 240, b: 200 });
+  });
+
+  it('overlaps a cell with its right and lower neighbour by a pixel, so no seam shows what is under it', () => {
+    const bgra = shaded(200, 80, 0.6);
+    paint(bgra, 200, BOX, [20, 20, 20]);
+    const cover = paperCoverFor(bgra, 200, 80, BOX, 2);
+    const [a, b] = cover;
+    expect(a !== undefined && b !== undefined && a.box.x1 > b.box.x0).toBe(true);
   });
 });
