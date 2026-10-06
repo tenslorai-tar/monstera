@@ -38,8 +38,8 @@ import { codesFor } from './toUnicode.js';
  * - `transformed`: the block's operators draw under different CTMs, or set text other than upright and left to right.
  *   One inserted object has one CTM, and the wrap measures along x.
  * - `unknown-width`: an advance the layout needs is one the font does not state.
- * - `needs-a-face`: a word neither the run's font nor a sibling carries. The resolver's face and the box are a later
- *   piece of the same decision; until then the edit is refused and nothing is written.
+ * - `needs-a-face`: a word neither the run's font nor a sibling carries, and the caller's {@link OperatorFaces} set
+ *   nothing for, or the caller gave none. Nothing is written.
  */
 
 /** One of PDFium's joined runs on the page, as the `pageRuns` pre-read answers it (ADR-0176's correction). */
@@ -167,6 +167,26 @@ function hexOf(font: PageFont, codes: readonly number[]): string {
 }
 
 /** A piece of a laid-out line: codes in one font, at a point, set in one operator's state. */
+/** A stretch of a word set in one font: the font it is shown in and the codes that show it. */
+export interface FacePiece {
+  readonly font: PageFont;
+  readonly codes: readonly number[];
+}
+
+/**
+ * What a word goes to when neither its run's font nor a sibling carries it
+ * ([ADR-0177](../../../docs/DECISIONS/0177-a-word-a-type-3-page-cannot-draw-is-set-in-the-resolvers-face-or-the-box-by-the-mupdf-host.md)):
+ * the resolver's face and the box, as fonts the caller adds to the page. Pure here: this module asks for the pieces and
+ * lays them out, and the caller, which holds the document, decides and embeds them.
+ */
+export interface OperatorFaces {
+  /**
+   * `word`, set in `source`'s state, as the pieces that draw it in order, or `null` where nothing can. `own` sets a
+   * stretch in the run's own font or a sibling as this module would, so a word partly carried keeps that part there.
+   */
+  set(word: string, source: ShowOperator, own: (stretch: string) => FacePiece | null): readonly FacePiece[] | null;
+}
+
 interface Segment {
   readonly source: ShowOperator;
   readonly font: PageFont;
@@ -179,6 +199,19 @@ interface Segment {
 interface VisualLine {
   readonly baseline: number;
   readonly segments: Segment[];
+}
+
+/**
+ * The characters each piece of `word` shows, through its font's own `ToUnicode`. A piece whose font names none, which
+ * no font the caller adds is, is given the rest of the word, so the pieces still spell it.
+ */
+function pieceTexts(pieces: readonly FacePiece[], word: string): string[] {
+  const texts = pieces.map((piece) => {
+    const map = piece.font.toUnicode;
+    return map === null ? null : piece.codes.map((code) => map.text.get(code) ?? '').join('');
+  });
+  const known = texts.reduce<number>((total, text) => total + (text?.length ?? 0), 0);
+  return texts.map((text) => text ?? word.slice(known));
 }
 
 /** Each typed line split into words and the spaces between them, one space a token. */
@@ -203,9 +236,10 @@ export function editOperators(
   fonts: ReadonlyMap<string, PageFont>,
   page: PageRuns,
   blocks: readonly EditedBlock[],
+  faces: OperatorFaces | null = null,
 ): Result<OperatorEdit, OperatorRefusal> {
   try {
-    return ok(write(content, fonts, page, blocks));
+    return ok(write(content, fonts, page, blocks, faces));
   } catch (error) {
     if (error instanceof Refused) return err(error.refusal);
     throw error;
@@ -217,6 +251,7 @@ function write(
   fonts: ReadonlyMap<string, PageFont>,
   page: PageRuns,
   blocks: readonly EditedBlock[],
+  faces: OperatorFaces | null,
 ): OperatorEdit {
   const ops = showOperators(content);
   const indexOf = new Map(ops.map((op, at) => [op, at]));
@@ -399,29 +434,40 @@ function write(
         let line = visual.at(-1);
         if (line === undefined) throw new Error('an operator edit laid out words before any line');
         const found = carrier(font, token);
-        if (found === null && token !== ' ') {
+        // A WORD THE PAGE CANNOT CARRY goes to the resolver's face or the box, where the caller gave faces (ADR-0177);
+        // without them, or where they set nothing, its letters are named and the edit is refused.
+        const pieces: readonly FacePiece[] | null =
+          found !== null ? [found] : token === ' ' ? [] : (faces?.set(token, source, (stretch) => carrier(font, stretch)) ?? null);
+        if (pieces === null) {
           for (const character of token) if (carrier(font, character) === null) uncarried.add(character);
           continue;
         }
+        const widths = pieces.map((piece) => (advanceOf(piece.font, piece.codes, source.state) ?? 0) * unit);
+        // A SPACE NO FONT CARRIES moves the pen by a nominal space; anything carried moves it by what draws it.
         const width =
-          found === null
+          pieces.length === 0
             ? (SPACE_EM * source.state.size + source.state.charSpacing + source.state.wordSpacing) * source.state.scale * unit
-            : (advanceOf(found.font, found.codes, source.state) ?? 0) * unit;
+            : widths.reduce((total, each) => total + each, 0);
         if (token !== ' ' && wraps && line.segments.length > 0 && cursor + width > blockRight + SAME) {
           visual.push({ baseline: line.baseline - pitch, segments: [] });
           line = visual.at(-1);
           cursor = left;
           if (line === undefined) throw new Error('an operator edit lost the line it wrapped to');
         }
-        if (found !== null) {
+        // EACH PIECE'S TEXT, the word's characters its codes show, so the segments still spell the word.
+        const texts = pieces.length === 1 ? [token] : pieceTexts(pieces, token);
+        let at = cursor;
+        for (const [k, piece] of pieces.entries()) {
+          const text = texts[k] ?? '';
           const last = line.segments.at(-1);
           // ONE SEGMENT for words that follow on in one font and state: a glyph's advance places the next exactly there.
-          if (last?.source === source && last.font === found.font && Math.abs(last.x + segmentWidth(last) - cursor) <= SAME) {
-            last.codes.push(...found.codes);
-            line.segments[line.segments.length - 1] = { ...last, text: last.text + token };
+          if (last?.source === source && last.font === piece.font && Math.abs(last.x + segmentWidth(last) - at) <= SAME) {
+            last.codes.push(...piece.codes);
+            line.segments[line.segments.length - 1] = { ...last, text: last.text + text };
           } else {
-            line.segments.push({ source, font: found.font, codes: [...found.codes], text: token, x: cursor });
+            line.segments.push({ source, font: piece.font, codes: [...piece.codes], text, x: at });
           }
+          at += widths[k] ?? 0;
         }
         cursor += width;
       }

@@ -4,7 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
-import { type OperatorEdit, type PageRun, type PageRuns, checkOperatorEdit, editOperators } from './operatorEdit.js';
+import {
+  type OperatorEdit,
+  type OperatorFaces,
+  type PageRun,
+  type PageRuns,
+  checkOperatorEdit,
+  editOperators,
+} from './operatorEdit.js';
 import { pageContentStreams } from './pageContent.js';
 import { type PageFont, pageFonts } from './pageFonts.js';
 import { type ShowOperator, joinedContent, showOperators, textObjectCount } from './textOperators.js';
@@ -114,6 +121,46 @@ describe('editOperators on the Chromium print', () => {
       const [object] = inserted(result.value);
       expect(object).toContain('/F5 28 Tf');
       expect(result.value.drawn).toStrictEqual(['Monstera fixture really.']);
+    });
+  });
+
+  it('sets a word the page cannot carry in the fonts the caller adds, keeping the letters the page does carry in its own (ADR-0177)', async () => {
+    await chromium((content, fonts) => {
+      const page = runsOf(content, fonts);
+      // THE CALLER'S ADDED FONT, a two-byte font as `cidFont.ts` writes one: a code per letter it is asked for.
+      const added = new Map<number, string>();
+      const face: PageFont = {
+        resource: 'MonsteraFace1',
+        subtype: 'Type0',
+        toUnicode: { text: added, bytes: 2 },
+        codeBytes: 2,
+        width: (code) => (added.has(code) ? 0.5 : null),
+        draws: (code) => added.has(code),
+        face: 'Resolver',
+        weight: 400,
+      };
+      const codeFor = (character: string): number => {
+        for (const [code, text] of added) if (text === character) return code;
+        added.set(added.size + 1, character);
+        return added.size;
+      };
+      const asked: string[] = [];
+      const faces: OperatorFaces = {
+        set: (word, _source, own) => {
+          asked.push(word);
+          return Array.from(word, (character) => own(character) ?? { font: face, codes: [codeFor(character)] });
+        },
+      };
+      const result = editOperators(content, fonts, page, [{ lines: [[page.runs[0]?.index ?? -1]], text: 'Monstera fixture zap.' }], faces);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      // ONLY THE WORD THE PAGE CANNOT CARRY was asked for; the rest of the line stayed in the run's font.
+      expect(asked).toStrictEqual(['zap.']);
+      const [object] = inserted(result.value);
+      expect(object).toContain('/MonsteraFace1 28 Tf');
+      expect(object).toContain('/F4 28 Tf');
+      expect(result.value.drawn).toStrictEqual(['Monstera fixture zap.']);
+      // AND IT READS BACK, through the added font as the page will hold it.
+      expect(checkOperatorEdit(content, result.value, new Map([...fonts, ['MonsteraFace1', face]])).ok).toBe(true);
     });
   });
 
