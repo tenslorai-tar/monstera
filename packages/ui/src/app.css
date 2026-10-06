@@ -1109,6 +1109,26 @@ optgroup {
   text-wrap: balance;
 }
 
+/* SEVERAL FILES THAT DID NOT OPEN: each by name, then what happened to it. Shared by the start screen's line and the
+   dialog over a document, so the two read alike (OpenProblemLines). */
+.m-open-problem-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.m-open-problem-list > li {
+  display: flex;
+  flex-direction: column;
+}
+
+.m-open-problem-name {
+  overflow-wrap: anywhere;
+}
+
 /* ROOM UNDER THE CARDS (the owner's item 19b): the list follows the start screen in the scroll rather than sitting in it,
    so neither the screen's padding nor its gap reaches below the last card, and scrolled to the end the cards met the
    footer with nothing between them (−0.3 px at 1280 × 800, 1600 × 852 and 1280 × 960, measured 2026-10-04). */

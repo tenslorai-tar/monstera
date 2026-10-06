@@ -18,6 +18,8 @@ import {
   askShareOf,
   CLOUD_PROVIDER_IDS,
   MAX_ASK_ATTACHMENTS,
+  MAX_DOCUMENT_NAME_LENGTH,
+  MAX_PICKED_DOCUMENTS,
   servesVision,
   MAX_LIBRARY_ENTRIES,
   MAX_IMAGE_BYTES,
@@ -70,7 +72,7 @@ import {
   translationRequest,
 } from '@monstera/kernel';
 import { readFile, stat, writeFile } from 'node:fs/promises';
-import { basename, isAbsolute } from 'node:path';
+import { basename, isAbsolute, win32 } from 'node:path';
 
 import { type DocId, type FileHandle, err, lineText, ok } from '@monstera/shared';
 
@@ -127,6 +129,13 @@ import { toldBlocks } from './officeConversion.js';
  * no parameters at all.
  */
 export type PickDocument = () => Promise<string | null>;
+
+/**
+ * {@link PickDocument}'s several-files form: the same dialog with a multiple selection, answering every path chosen in
+ * the order the dialog listed them, and an empty list for a dismissal. The paths stay on main's side exactly as
+ * `PickDocument`'s does.
+ */
+export type PickDocuments = () => Promise<readonly string[]>;
 
 // `PickDestination` is `PickDocument`'s mirror and lives in
 // `documentCommands.ts`, NOT here, and the asymmetry is the module graph rather
@@ -250,6 +259,11 @@ export function createContractHandlers(deps: {
   /** One password attempt against an open encrypted document (ADR-0055). */
   readonly unlockDocument: UnlockDocument;
   readonly pickDocument: PickDocument;
+  /**
+   * The Open dialog with a multiple selection. Optional: a harness that supplies only `pickDocument` is offered one
+   * file at a time, which is what its one-file picker can answer — see {@link severalPickerOf}.
+   */
+  readonly pickDocuments?: PickDocuments;
   /** The recent-files list, which is also where the clean-exit marker lives. */
   readonly recent: RecentFiles;
   /**
@@ -405,11 +419,8 @@ export function createContractHandlers(deps: {
     'document.openDropped': openDroppedHandler(deps),
     // THE COMMAND LINE'S DOCUMENTS, held since their launch and opened here in the order given, each through the same
     // `openPath` a drop takes — so a file association mints its handle, dedupes, and is recorded exactly as a drop is.
-    'document.openWaiting': async () => {
-      const opened = [];
-      for (const path of deps.launchDocuments?.take() ?? []) opened.push((await openPath(deps, path)).outcome);
-      return ok({ opened });
-    },
+    'document.openWaiting': async () => ok({ opened: await openNamed(deps, deps.launchDocuments?.take() ?? []) }),
+    'document.openSeveral': openSeveralHandler(deps),
     // `Promise.resolve`, not `async`: nothing here awaits, and the contract's
     // handler type is asynchronous because the real document channels are.
     'app.info': () => Promise.resolve(ok({ ...deps.appInfo })),
@@ -3139,6 +3150,54 @@ function openDocumentHandler(deps: OpenPathParts & { readonly pickDocument: Pick
     const picked = await deps.pickDocument();
     if (picked === null) return ok({ kind: 'cancelled' } as const);
     return ok((await openPath(deps, picked)).outcome);
+  };
+}
+
+/**
+ * The several-files picker a harness without one is offered: its one-file picker, read as a list of at most one.
+ * The shipped build supplies the real multiple-selection dialog, so this is the one place the two shapes meet.
+ */
+function severalPickerOf(deps: { readonly pickDocument: PickDocument; readonly pickDocuments?: PickDocuments }): PickDocuments {
+  if (deps.pickDocuments !== undefined) return deps.pickDocuments;
+  return async () => {
+    const one = await deps.pickDocument();
+    return one === null ? [] : [one];
+  };
+}
+
+/**
+ * Opens each path through {@link openPath}, in the order given, and answers one outcome per file BY NAME.
+ *
+ * ## ONE FILE'S FAILURE IS THAT FILE'S
+ *
+ * Each open is its own awaited call, and an outcome that is not `opened` — `absent`, `denied`, `busy`, `at-capacity` —
+ * is an entry like any other, so the files after it still open. The paths are main's own — a dialog's, or
+ * `documentPathsIn`'s, which has already kept only absolute ones — so none is checked again here. **One at a time**, as
+ * a drop is: each open takes the byte ceiling the next one is measured against, and the tabs arrive in the order the
+ * files were listed.
+ *
+ * The name is the file's own, never its path (L2), cut to the contract's bound.
+ */
+async function openNamed(
+  deps: OpenPathParts,
+  paths: readonly string[],
+): Promise<ChannelResult<'document.openSeveral'>['opened']> {
+  const opened: ChannelResult<'document.openSeveral'>['opened'] = [];
+  for (const path of paths) {
+    const name = win32.basename(path).slice(0, MAX_DOCUMENT_NAME_LENGTH) || 'a file';
+    opened.push({ name, outcome: (await openPath(deps, path)).outcome });
+  }
+  return opened;
+}
+
+/** The Open dialog with a multiple selection: main picks, and each file opens as its own document. */
+function openSeveralHandler(
+  deps: OpenPathParts & { readonly pickDocument: PickDocument; readonly pickDocuments?: PickDocuments },
+): ContractHandlers['document.openSeveral'] {
+  const pick = severalPickerOf(deps);
+  return async (): Promise<Awaited<ReturnType<ContractHandlers['document.openSeveral']>>> => {
+    const picked = await pick();
+    return ok({ opened: await openNamed(deps, picked.slice(0, MAX_PICKED_DOCUMENTS)) });
   };
 }
 

@@ -414,6 +414,7 @@ const handlers: ContractHandlers = {
   'app.openStore': () => Promise.resolve(ok({ opened: true })),
   'app.updateStatus': () => Promise.resolve(ok({ status: { kind: 'dormant' as const } })),
   'document.openWaiting': () => Promise.resolve(ok({ opened: [] })),
+  'document.openSeveral': () => Promise.resolve(ok({ opened: [] })),
   'app.acknowledgeSecurityUpdate': () => Promise.resolve(ok({ acknowledged: false })),
   'settings.export': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'settings.import': () => Promise.resolve(ok({ kind: 'cancelled' as const })),

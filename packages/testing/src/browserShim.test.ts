@@ -260,6 +260,7 @@ describe('browser shim', () => {
       'document.openFromUrl',
       'document.openLink',
       'document.openRecent',
+      'document.openSeveral',
       'document.openWaiting',
       'document.optimize',
       'document.optimizeMeasure',

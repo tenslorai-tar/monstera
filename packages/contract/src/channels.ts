@@ -1174,6 +1174,13 @@ const cloudDoneSchema = z.discriminatedUnion('kind', [
 export const MAX_LAUNCH_DOCUMENTS = 32;
 
 /**
+ * The most files one pick in the Open dialog may answer for. A bound so the answer has one, not a measurement: a
+ * selection past it is not cut — `document.openSeveral` answers every file the person chose up to this, and the
+ * documents the shell cannot hold say so by name (`at-capacity`).
+ */
+export const MAX_PICKED_DOCUMENTS = 256;
+
+/**
  * The most undo copies of one document a save can report: each is a terminal entry's checkpoint, and the log sheds
  * them to a byte ceiling long before this — a bound so the answer has one, not a measurement.
  */
@@ -1259,6 +1266,20 @@ const openOutcomeSchema = z.discriminatedUnion('kind', [
   openReadRefusedSchema,
   z.object({ kind: z.literal('cancelled') }),
 ]);
+
+/**
+ * One file of several that were opened together, with the NAME it is reported by.
+ *
+ * `document.openSeveral` and `document.openWaiting` open a list of files and answer one entry each, in the order
+ * given. The name is the file's own (`report.pdf`, never its path, L2), stated by main, because an open that refused
+ * one of five must say WHICH — the renderer holds no path to name it by, and `absent` and `denied` carry no document.
+ * An opened document's own `name` is the same string; the entry carries it for every outcome so a surface has one place
+ * to read it from rather than one per variant.
+ */
+const namedOpenOutcomeSchema = z.object({
+  name: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH),
+  outcome: openOutcomeSchema,
+});
 
 /**
  * What an import that composes a new document answers — one union for every source
@@ -1666,7 +1687,27 @@ export const channels = {
   'document.openWaiting': channel(
     'Opens the documents a launch named on its command line.',
     z.object({}).strict(),
-    z.object({ opened: z.array(openOutcomeSchema).max(MAX_LAUNCH_DOCUMENTS) }),
+    z.object({ opened: z.array(namedOpenOutcomeSchema).max(MAX_LAUNCH_DOCUMENTS) }),
+  ),
+
+  /**
+   * Opens SEVERAL documents chosen in a picker main owns, each as its own tab — the Open dialog with a multiple
+   * selection.
+   *
+   * ## It asks what `document.open` asks, which is nothing
+   *
+   * Main picks, mints a `FileHandle` per file and opens each through the one `openPath` a pick, a drop and a launch
+   * all take, in the order the dialog listed them; **a file that does not open is answered by name and does not stop
+   * the rest**. Dismissing the dialog is an empty list — a person changing their mind, not an outcome per file.
+   *
+   * `document.open` stays as it was, for the callers that need exactly one file (a second document for a merge, a
+   * half of side by side): they take one pick, and a surface that took three would be offering a shape nothing there
+   * can use.
+   */
+  'document.openSeveral': channel(
+    'Opens several documents chosen in a picker main owns.',
+    z.object({}).strict(),
+    z.object({ opened: z.array(namedOpenOutcomeSchema).max(MAX_PICKED_DOCUMENTS) }),
   ),
 
   'document.openFromUrl': channel(

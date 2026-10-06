@@ -1,3 +1,4 @@
+import { MAX_DOCUMENT_NAME_LENGTH, MAX_PICKED_DOCUMENTS } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -12,7 +13,12 @@ export const OPEN_PROBLEM_DIALOG_ID = 'dialog.open-problem';
  * What a person is told when an open did not happen and the start screen, which says it with no document in front,
  * is not on screen.
  */
-const openProblemSchema = z.object({ reason: z.enum(OPEN_PROBLEMS) });
+const openProblemSchema = z.object({
+  problems: z
+    .array(z.object({ reason: z.enum(OPEN_PROBLEMS), name: z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH).optional() }))
+    .min(1)
+    .max(MAX_PICKED_DOCUMENTS),
+});
 
 /** The props the dialog takes. Inferred from the schema, for `markdownImportProblem.ts`' reason. */
 export type OpenProblemProps = z.infer<typeof openProblemSchema>;

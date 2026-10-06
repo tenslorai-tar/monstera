@@ -160,6 +160,8 @@ export {
   MAX_DROPPED_PATH_LENGTH,
   // How many documents one launch may name on its command line; main's reader takes no more.
   MAX_LAUNCH_DOCUMENTS,
+  // How many files one pick in the Open dialog answers for.
+  MAX_PICKED_DOCUMENTS,
   // How many blocks of a workbook an Office import may name as not converted.
   MAX_OFFICE_MISSING_BLOCKS,
   type PreloadChannels,

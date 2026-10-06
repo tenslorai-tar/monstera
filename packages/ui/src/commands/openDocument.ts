@@ -2,7 +2,7 @@ import type { ChannelResult, ContractClient, DroppedOpenOutcome } from '@monster
 import { type DocId, type DocVersion, type Failure, type FileHandle, type Result, ok } from '@monstera/shared';
 
 import type { DropOpener } from '../bridge.js';
-import type { OpenProblem } from '../dialogs/openProblemReasons.js';
+import type { OpenProblem, OpenProblemReport } from '../dialogs/openProblemReasons.js';
 import { GROUP_FILE, OPEN_DOCUMENT_TITLE, RIBBON_OPEN } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
 
@@ -31,7 +31,7 @@ import { type UiCommand, VISIBLE } from '../registries/commands.js';
  * surface's decision and the strings are i18n keys, so a command producing a
  * sentence here would put user-facing text in the layer that dispatches.
  */
-export type { OpenProblem };
+export type { OpenProblem, OpenProblemReport };
 
 /** What opening needs from the shell: the client, and where each outcome goes. */
 export interface OpenDocumentDeps {
@@ -71,7 +71,7 @@ export interface OpenDocumentDeps {
    * feedback of any kind** — a control that appears to do nothing, which is the
    * defect the wired-tools rule is about wearing a successful dispatch.
    */
-  readonly onProblem: (problem: OpenProblem) => void;
+  readonly onProblem: (problems: readonly OpenProblemReport[]) => void;
   /**
    * Called when the picked file is a document this build already holds.
    *
@@ -116,8 +116,9 @@ export function openDocumentCommand(deps: OpenDocumentDeps): UiCommand {
       { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 10 },
       { surface: 'menu-bar', menu: 'file', group: 0, order: 10 },
     ],
+    // SEVERAL FILES AT ONCE: the dialog takes a multiple selection and each file is its own tab.
     run: async (): Promise<void> => {
-      await openDocument(deps);
+      await openSeveralDocuments(deps);
     },
   };
 }
@@ -137,6 +138,24 @@ export async function openDocument(deps: OpenDocumentDeps): Promise<OpenOutcome>
 }
 
 /**
+ * Opens the files a person chose in the Open dialog with a multiple selection, each as its own tab, in the order the
+ * dialog listed them — and says which ones did not open, BY NAME, without that stopping the rest.
+ *
+ * What the Open command runs. {@link openDocument} stays for the callers that need exactly one file. Both reach the
+ * document through main's one `openPath`, and what crosses is nothing: main picks, mints a `FileHandle` per file and
+ * answers a name and an outcome each (L2).
+ */
+export async function openSeveralDocuments(deps: OpenDocumentDeps): Promise<OpenOutcome> {
+  const answer = await deps.client['document.openSeveral']({});
+  // THE CHANNEL FAILING is one problem with no file to name: no file was opened, and none can be said to have failed.
+  if (!answer.ok) return settleBatch(deps, [{ answer }]);
+  return settleBatch(
+    deps,
+    answer.value.opened.map(({ name, outcome }) => ({ answer: ok(outcome), name })),
+  );
+}
+
+/**
  * Opens the files a person dropped, in the order the drop listed them, each as its own tab
  * ([ADR-0099](../../../../docs/DECISIONS/0099-a-dropped-file-is-opened-by-the-preload-and-its-path-never-reaches-the-page.md)).
  *
@@ -148,7 +167,13 @@ export async function openDroppedFiles(
   files: readonly File[],
   open: DropOpener,
 ): Promise<void> {
-  for (const file of files) settleOpen(deps, await open(file));
+  // EACH TAB APPEARS AS ITS FILE OPENS, and the failures are said together at the end (`settleBatch`'s reason).
+  const problems: OpenProblemReport[] = [];
+  for (const file of files) {
+    const settled = settleQuietly(deps, await open(file), file.name);
+    if (settled.problem !== undefined) problems.push(settled.problem);
+  }
+  if (problems.length > 0) deps.onProblem(problems);
 }
 
 /**
@@ -159,7 +184,10 @@ export async function openDroppedFiles(
 export async function openWaitingDocuments(deps: OpenDocumentDeps): Promise<void> {
   const answer = await deps.client['document.openWaiting']({});
   if (!answer.ok) return;
-  for (const outcome of answer.value.opened) settleOpen(deps, ok(outcome));
+  settleBatch(
+    deps,
+    answer.value.opened.map(({ name, outcome }) => ({ answer: ok(outcome), name })),
+  );
 }
 
 /**
@@ -202,14 +230,56 @@ export async function openRecentDocument(deps: OpenDocumentDeps, handle: FileHan
 function settleOpen(
   deps: OpenDocumentDeps,
   answer: Result<ChannelResult<'document.open'> | DroppedOpenOutcome, Failure>,
+  name?: string,
 ): OpenOutcome {
+  const settled = settleQuietly(deps, answer, name);
+  if (settled.problem !== undefined) deps.onProblem([settled.problem]);
+  return settled.shown;
+}
+
+/** One file of several, as the page names it: its answer, and the name it is reported by (when one is known). */
+interface NamedAnswer {
+  readonly answer: Result<ChannelResult<'document.open'> | DroppedOpenOutcome, Failure>;
+  readonly name?: string;
+}
+
+/**
+ * Settles every file of a batch, then reports the ones that did not open — TOGETHER, in the order given, by name.
+ *
+ * ## Why the problems wait until the end
+ *
+ * Each file settles as a single open does, so a document that opened is shown and an already-open one is brought
+ * forward. A problem raised as it happened would be answered by the next file's `onOpened` (which clears the last
+ * problem so a later screen never says something about an open the person has since made), and a person who chose
+ * five files would be told only about whichever failed last. So the failures are collected and said once, after the
+ * last file — and a failed file never stops the ones after it.
+ */
+function settleBatch(deps: OpenDocumentDeps, answers: readonly NamedAnswer[]): OpenOutcome {
+  const problems: OpenProblemReport[] = [];
+  let shown: OpenOutcome = 'none';
+  for (const { answer, name } of answers) {
+    const settled = settleQuietly(deps, answer, name);
+    if (settled.shown === 'shown') shown = 'shown';
+    if (settled.problem !== undefined) problems.push(settled.problem);
+  }
+  if (problems.length > 0) deps.onProblem(problems);
+  return shown;
+}
+
+/** What one open's answer left on screen, and the problem it has to say — which the caller says, alone or in a batch. */
+function settleQuietly(
+  deps: OpenDocumentDeps,
+  answer: Result<ChannelResult<'document.open'> | DroppedOpenOutcome, Failure>,
+  name: string | undefined,
+): { readonly shown: OpenOutcome; readonly problem: OpenProblemReport | undefined } {
+  const none = (reason: OpenProblem): { shown: OpenOutcome; problem: OpenProblemReport } => ({
+    shown: 'none',
+    problem: name === undefined ? { reason } : { reason, name },
+  });
   // A failure here is `internal` — the channel declares no codes, because
   // every way this ends that a user can cause is a variant of the result. It is
   // still said: the person asked for a document and none came.
-  if (!answer.ok) {
-    deps.onProblem('failed');
-    return 'none';
-  }
+  if (!answer.ok) return none('failed');
   const outcome = answer.value;
   // EVERY KIND NAMED, so a kind the channel gains is a compile error here
   // rather than an open that ends in silence — which is how `busy` and
@@ -220,11 +290,10 @@ function settleOpen(
     case 'no-path':
     case 'busy':
     case 'denied':
-      deps.onProblem(outcome.kind);
-      return 'none';
+      return none(outcome.kind);
     // A person changing their mind needs no message.
     case 'cancelled':
-      return 'none';
+      return { shown: 'none', problem: undefined };
     // THE READER PICKED A FILE THEY ALREADY HAVE OPEN, and with tabs there
     // is now somewhere to send them. `already-open` carries only a `docId`
     // by design (ADR-0009 §2) — no version, no byte length, nothing to
@@ -235,7 +304,7 @@ function settleOpen(
     // for a document and the document is on screen.
     case 'already-open':
       deps.onAlreadyOpen(outcome.docId);
-      return 'shown';
+      return { shown: 'shown', problem: undefined };
     case 'opened':
       deps.onOpened({
         docId: outcome.docId,
@@ -246,6 +315,6 @@ function settleOpen(
         // because main is the only side that can.
         name: outcome.name,
       });
-      return 'shown';
+      return { shown: 'shown', problem: undefined };
   }
 }

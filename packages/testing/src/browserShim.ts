@@ -122,6 +122,18 @@ import {
  */
 export type OpenAnswer = ChannelResult<'document.open'>;
 
+/** One file of a `document.openSeveral` answer: the name it is reported by, and its outcome. */
+export type NamedOpenAnswer = ChannelResult<'document.openSeveral'>['opened'][number];
+
+/**
+ * A one-file pick read as a list — what `document.openSeveral` answers when no list was queued: the single answer
+ * the one-file picker would have given, an empty list for `cancelled`, and the document's own name for the file.
+ */
+function singleBatch(answer: OpenAnswer | undefined): readonly NamedOpenAnswer[] {
+  if (answer === undefined || answer.kind === 'cancelled') return [];
+  return [{ name: answer.kind === 'opened' ? answer.name || 'document.pdf' : 'document.pdf', outcome: answer }];
+}
+
 /**
  * What one `document.unlock` answers — {@link OpenAnswer}'s sibling, derived
  * from the channel for the same reason: a variant added there makes every
@@ -694,6 +706,14 @@ export interface BrowserShimOptions {
    */
   readonly opens?: readonly OpenAnswer[];
   /**
+   * What `document.openSeveral` answers, one list per call — the Open command's multiple selection. Each entry is a
+   * file with the name it is reported by and its outcome, exactly the channel's.
+   *
+   * Unset or exhausted, a call is answered as the real picker without a multiple selection answers it: from `opens`,
+   * one file or none (`cancelled` is an empty list), so every case written against a one-file Open is unchanged.
+   */
+  readonly openBatches?: readonly (readonly NamedOpenAnswer[])[];
+  /**
    * What `document.newFromMarkdown` answers, in order — `opens`' queue and its
    * default, for its reason: unset or exhausted is `cancelled`, the outcome that
    * changes nothing. An `opened` answer seeds the document as `document.open`'s does.
@@ -887,6 +907,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // Copied, not aliased: `options` is the caller's, and a handler that shifted
   // entries off it would mutate a value the caller may still be reading.
   const queuedOpens: OpenAnswer[] = [...(options.opens ?? [])];
+  const queuedOpenBatches: (readonly NamedOpenAnswer[])[] = [...(options.openBatches ?? [])];
   const queuedMarkdownNews = [...(options.markdownNews ?? [])];
   const queuedEditCopies = [...(options.editCopies ?? [])];
   const queuedWorkOnCopies = [...(options.workOnCopies ?? [])];
@@ -1043,6 +1064,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // would assert on a shape nothing ships.
       if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
       return Promise.resolve(ok(answer));
+    },
+
+    // SEVERAL FILES, each seeded as `document.open`'s answer is, so every opened id is one the shim accepts commands for.
+    'document.openSeveral': () => {
+      const batch = queuedOpenBatches.shift() ?? singleBatch(queuedOpens.shift());
+      for (const { outcome } of batch) if (outcome.kind === 'opened') versions.set(outcome.docId, outcome.version);
+      return Promise.resolve(ok({ opened: [...batch] }));
     },
 
     // `document.open`'s seeding, for its reason: a composed document reported open

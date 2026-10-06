@@ -26,7 +26,7 @@ import {
   createSettingsPicker,
   createTextPicker,
 } from './destinationPicker.js';
-import { createDocumentPicker } from './documentPicker.js';
+import { createDocumentPicker, createDocumentsPicker } from './documentPicker.js';
 import { createDirectoryPicker } from './directoryPicker.js';
 import {
   createAnnotationDataOpenPicker,
@@ -264,6 +264,8 @@ startShell(() => {
     // an edit here, in `composition.ts` and in `harnessComposition.ts` — never
     // in `pickerProbe.ts`, whose bytes certify what a person saw.
     pickDocument: createDocumentPicker(),
+    // The same dialog with a multiple selection, for the Open command (ADR-0182).
+    pickDocuments: createDocumentsPicker(),
     // Its mirror, built here for the same reason and on the line after it, so
     // the Electron dialogs this application opens are visible together.
     pickDestination: createDestinationPicker(),

@@ -1,6 +1,6 @@
 import { dialog } from 'electron';
 
-import type { PickDocument } from './contractHandlers.js';
+import type { PickDocument, PickDocuments } from './contractHandlers.js';
 
 /**
  * The real picker: Electron's open dialog, narrowed to one PDF.
@@ -16,9 +16,11 @@ import type { PickDocument } from './contractHandlers.js';
  *
  * ## The dialog's own properties are the security-relevant part
  *
- * `openFile` and not `openDirectory` or `multiSelections`: `DocumentService`
- * opens one document from one path, so a picker that could return three would
- * be offering a shape nothing downstream can take. `dontAddToRecent` keeps the
+ * `openFile` and not `openDirectory`, and no `multiSelections` HERE: this picker
+ * answers ONE path, for the callers that take exactly one file (a second document
+ * for a merge, a half of side by side). {@link createDocumentsPicker} is the same
+ * dialog with the multiple selection, for the Open command, which opens each file
+ * as its own tab. `dontAddToRecent` keeps the
  * operating system's recent-documents list out of it — a list this application
  * did not ask for and cannot clear, holding the names of files a user opened.
  *
@@ -43,5 +45,21 @@ export function createDocumentPicker(): PickDocument {
     });
     if (result.canceled) return null;
     return result.filePaths[0] ?? null;
+  };
+}
+
+/**
+ * The same dialog with a multiple selection: every file the person chose, in the order the dialog lists them, and an
+ * empty list for a dismissal. The properties are {@link createDocumentPicker}'s with `multiSelections` added — the
+ * filter is still a hint and not a check, and what refuses a file that is not a PDF is the engine failing to parse it,
+ * which is then reported under that file's name and does not stop the others.
+ */
+export function createDocumentsPicker(): PickDocuments {
+  return async (): Promise<readonly string[]> => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections', 'dontAddToRecent'],
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    return result.canceled ? [] : result.filePaths;
   };
 }

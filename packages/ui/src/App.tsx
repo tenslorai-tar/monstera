@@ -185,7 +185,7 @@ import {
 } from './commands/recogniseText.js';
 import { featureShortcutCommands } from './commands/featureShortcuts.js';
 import {
-  type OpenProblem,
+  type OpenProblemReport,
   openDocument,
   openDocumentCommand,
   openDroppedFiles,
@@ -749,7 +749,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * it and the command is registered here — a surface that owned this would
    * have to be reachable from the registry, which is the second wiring place.
    */
-  const [openProblem, setOpenProblem] = useState<{ readonly reason: OpenProblem } | undefined>(undefined);
+  const [openProblem, setOpenProblem] = useState<readonly OpenProblemReport[] | undefined>(undefined);
   /**
    * WHERE that problem is said (cloud-4 7a), decided in the first render after it arrives from what is on screen
    * then: the start screen's line with no document in front, and a dialog with the same sentence over one, because
@@ -759,7 +759,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * rebuilt whenever it changes. Each arrival is a new object, so the same problem twice is said twice.
    */
   const [placedProblem, setPlacedProblem] = useState<
-    { readonly problem: { readonly reason: OpenProblem }; readonly onStart: boolean } | undefined
+    { readonly problem: readonly OpenProblemReport[]; readonly onStart: boolean } | undefined
   >(undefined);
   if (openProblem !== placedProblem?.problem) {
     setPlacedProblem(openProblem === undefined ? undefined : { problem: openProblem, onStart: open === undefined });
@@ -2551,8 +2551,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       client,
       onOpened: shown,
       // SAID WHERE THE PERSON IS LOOKING, which `placedProblem` decides.
-      onProblem: (reason: OpenProblem): void => {
-        setOpenProblem({ reason });
+      // EACH ARRIVAL IS A NEW ARRAY, so the same problem twice is said twice (`placedProblem`'s reason).
+      onProblem: (problems: readonly OpenProblemReport[]): void => {
+        setOpenProblem([...problems]);
       },
       onAlreadyOpen: (docId: DocId): void => {
         setOpenProblem(undefined);
@@ -2563,7 +2564,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   // THE DIALOG, once per problem placed over a document.
   useEffect(() => {
     if (placedProblem === undefined || placedProblem.onStart) return;
-    void ask(OPEN_PROBLEM_DIALOG_ID, { reason: placedProblem.problem.reason });
+    void ask(OPEN_PROBLEM_DIALOG_ID, { problems: [...placedProblem.problem] });
   }, [ask, placedProblem]);
   const openCommand = useMemo(() => openDocumentCommand(openDeps), [openDeps]);
   // THE ONE RECENT-OPEN ROUTE (ADR-0143), for the start screen's cards and File › Recent alike.
@@ -2639,8 +2640,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           const tab = tabsNow.current.find((each) => each.docId === docId);
           if (tab !== undefined) outcome = { kind: 'opened', docId, name: tab.name };
         },
-        onProblem: (reason) => {
-          outcome = { kind: 'problem', reason };
+        // ONE FILE WAS ASKED FOR, so there is one problem to say.
+        onProblem: ([problem]) => {
+          outcome = { kind: 'problem', reason: problem?.reason ?? 'failed' };
         },
       });
       return outcome;
@@ -3649,7 +3651,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           <StartScreen
             registry={registry}
             context={context}
-            problem={placedProblem?.onStart === true ? placedProblem.problem : undefined}
+            problems={placedProblem?.onStart === true ? placedProblem.problem : undefined}
           />
           {/* THE CRASH REPORT OFFER (ADR-0109), above the recent list and its reopen offer: data with its own
               controls, which draws nothing unless the last run left a report not yet offered. */}

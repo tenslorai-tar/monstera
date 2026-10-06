@@ -4,7 +4,8 @@ import { type ReactElement, useEffect, useId, useRef } from 'react';
 
 import heroLogo from '../../../../assets/brand/logo-hero.png';
 import heroLogo2x from '../../../../assets/brand/logo-hero@2x.png';
-import { OPEN_PROBLEM_SENTENCE, type OpenProblem } from '../dialogs/openProblemReasons.js';
+import { OpenProblemLines } from '../dialogs/OpenProblemLines.js';
+import type { OpenProblemReport } from '../dialogs/openProblemReasons.js';
 import {
   START_DROP_HINT,
   START_PRODUCT,
@@ -71,10 +72,10 @@ export interface StartScreenProps {
    * The last open that ended with no document, or none. An ARRIVAL, a new object each time one lands, so the same
    * problem twice is brought into view twice.
    */
-  readonly problem: { readonly reason: OpenProblem } | undefined;
+  readonly problems: readonly OpenProblemReport[] | undefined;
 }
 
-export function StartScreen({ registry, context, problem }: StartScreenProps): ReactElement {
+export function StartScreen({ registry, context, problems }: StartScreenProps): ReactElement {
   const { _ } = useLingui();
   const { primary, shortcut } = startScreenModel(registry, context);
 
@@ -84,15 +85,15 @@ export function StartScreen({ registry, context, problem }: StartScreenProps): R
   // ONLY WHEN IT IS NOT SEEN, asked of the page: the topmost element at its first and last line is the line itself, or
   // something covers it or it is off screen. A line already in view moves nothing. To the CENTRE, because the footer
   // stuck over the area's foot is one line or two depending on the width, so an edge alignment can leave it under it.
-  const problemLine = useRef<HTMLParagraphElement>(null);
+  const problemLine = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const line = problemLine.current;
-    if (problem === undefined || line === null) return;
+    if (problems === undefined || line === null) return;
     const box = line.getBoundingClientRect();
     const across = box.left + box.width / 2;
     const seen = [box.top + 1, box.bottom - 1].every((down) => line.contains(document.elementFromPoint(across, down)));
     if (!seen) line.scrollIntoView({ block: 'center' });
-  }, [problem]);
+  }, [problems]);
 
   return (
     <div className="m-start-screen">
@@ -126,14 +127,14 @@ export function StartScreen({ registry, context, problem }: StartScreenProps): R
         ))}
         <p className="m-start-drop-hint">{_(START_DROP_HINT)}</p>
       </div>
-      {problem === undefined ? null : (
+      {problems === undefined ? null : (
         // `role="alert"`, not the polite region the status bar uses: this
         // appears in response to something the reader just did and there is
         // nothing else on screen that answers them. A polite region would queue
         // behind whatever a screen reader was saying about the button.
-        <p ref={problemLine} className="m-start-problem" role="alert">
-          {_(OPEN_PROBLEM_SENTENCE[problem.reason])}
-        </p>
+        <div ref={problemLine} className="m-start-problem" role="alert">
+          <OpenProblemLines problems={problems} />
+        </div>
       )}
       {shortcut.length === 0 ? null : (
         <div className="m-start-shortcuts">

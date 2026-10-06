@@ -157,7 +157,7 @@ import {
   type HostMemorySampling,
   MAIN_DOCUMENT_BYTES_CEILING,
 } from './budget.js';
-import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
+import { type AppInfo, type PickDocument, type PickDocuments, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, type PictureFiles, type RecentPictures, createRecentPictures } from './recentPictures.js';
 import { NO_REQUEST_LOG, createRequestLog, observedHandlers } from './requestLog.js';
@@ -452,6 +452,8 @@ export interface ShellComposition {
   readonly checkpointDirectory: string;
   /** Which document to open. Electron's open dialog, in the shipped build. */
   readonly pickDocument: PickDocument;
+  /** Which documents to open, several at once. The same dialog with a multiple selection, in the shipped build. */
+  readonly pickDocuments?: PickDocuments;
   /** Where a copy goes. Electron's save dialog, in the shipped build. */
   readonly pickDestination: PickDestination;
   /** Where a snapshot goes. The same dialog narrowed to a PNG. */
@@ -790,6 +792,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   const {
     appInfo,
     pickDocument,
+    pickDocuments,
     pickDestination,
     pickSnapshot,
     pickFormData,
@@ -1709,6 +1712,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       openedDocument,
       unlockDocument,
       pickDocument,
+      // ABSENT ONLY IN A HARNESS: `exactOptionalPropertyTypes` is why this is a spread and not `pickDocuments,`.
+      ...(pickDocuments === undefined ? {} : { pickDocuments }),
       recent,
       recentRoots,
       recentPictures,

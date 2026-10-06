@@ -190,10 +190,16 @@ describe('the command line’s documents, through the assembled handlers', () =>
       appInfo,
       launchDocuments: [first],
     });
-    expect(await deps.handlers['document.openWaiting']({})).toStrictEqual({ ok: true, value: { opened: [{ kind: 'absent' }] } });
+    expect(await deps.handlers['document.openWaiting']({})).toStrictEqual({
+      ok: true,
+      value: { opened: [{ name: 'missing-one.pdf', outcome: { kind: 'absent' } }] },
+    });
 
     deps.documentsLaunched([later]);
-    expect(await deps.handlers['document.openWaiting']({})).toStrictEqual({ ok: true, value: { opened: [{ kind: 'absent' }] } });
+    expect(await deps.handlers['document.openWaiting']({})).toStrictEqual({
+      ok: true,
+      value: { opened: [{ name: 'missing-two.pdf', outcome: { kind: 'absent' } }] },
+    });
 
     // CONTROL: nothing left, so nothing is opened again.
     expect(await deps.handlers['document.openWaiting']({})).toStrictEqual({ ok: true, value: { opened: [] } });

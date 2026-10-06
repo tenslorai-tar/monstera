@@ -25,6 +25,18 @@ export const OPEN_PROBLEMS = ['absent', 'at-capacity', 'no-path', 'busy', 'denie
 export type OpenProblem = (typeof OPEN_PROBLEMS)[number];
 
 /**
+ * One open that ended with no document, and the file it was for when the page knows one.
+ *
+ * `name` is the file's own name, never a path (L2): a drop knows it from the `File`, and main states it for a pick and
+ * a launch. It is what lets a person who opened five files be told WHICH one did not open. A single open that has no
+ * name to give (a handle from the recent list, say) carries none.
+ */
+export interface OpenProblemReport {
+  readonly reason: OpenProblem;
+  readonly name?: string | undefined;
+}
+
+/**
  * What each problem says, for the start screen's line and the dialog alike: ONE sentence per problem, wherever it is
  * shown (B3a). A `Record`, so a problem added to the list is a compile error here until it has a sentence.
  */

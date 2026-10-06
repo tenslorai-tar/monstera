@@ -283,6 +283,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.open': 'drives a picker; its answer is measured through the service below',
   'document.openRecent': "same answer as document.open, by a handle rather than a picker",
   'document.openWaiting': 'carries nothing, and answers document.open\'s outcomes, at most MAX_LAUNCH_DOCUMENTS of them',
+  'document.openSeveral': 'drives a picker and answers document.open\'s outcomes by file name, at most MAX_PICKED_DOCUMENTS of them',
   'document.recent': 'answers a bounded list of files the user opened, not about a document',
   // ONE PAGE, AT ONE PIXEL PER POINT, and refused past `MAX_RECENT_PREVIEW_BYTES` by the schema's own refine:
   // a thousand-page document's picture is the same size as a one-page one's.

@@ -210,7 +210,19 @@ const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
   // THE COMMAND LINE'S DOCUMENTS are asked for once per mount. None is every case's position: a document here would
   // open a tab in front of cases that are about something else.
   'document.openWaiting': { opened: [] },
+  // THE OPEN COMMAND'S DIALOG answers a dismissal — the same default `document.open` has: nothing chosen, nothing opened.
+  'document.openSeveral': { opened: [] },
 };
+
+/**
+ * What `document.openSeveral` answers for ONE file the dialog returned with this outcome — the Open command is the
+ * several-files channel now, and a case that is about one file's outcome says it as a list of one. `cancelled` is a
+ * dismissed dialog: an empty list, as the channel answers it.
+ */
+function severalOf(outcome: unknown, name = 'picked.pdf'): { readonly opened: readonly unknown[] } {
+  const cancelled = (outcome as { readonly kind?: unknown }).kind === 'cancelled';
+  return { opened: cancelled ? [] : [{ name, outcome }] };
+}
 
 function recordingClient(answer: unknown): {
   readonly client: ContractClient;
@@ -323,6 +335,15 @@ const OPEN_DOCUMENT_ANSWERS = {
     version: asDocVersion(1),
     byteLength: 1024,
     name: 'annual.pdf',
+  },
+  // THE OPEN COMMAND'S CHANNEL (several files), answering the same one document.
+  'document.openSeveral': {
+    opened: [
+      {
+        name: 'annual.pdf',
+        outcome: { kind: 'opened' as const, docId: DOC, version: asDocVersion(1), byteLength: 1024, name: 'annual.pdf' },
+      },
+    ],
   },
   // A parse never completes under happy-dom — no canvas, no worker — so the
   // range answer only has to be well formed. What these cases are about is the
@@ -590,10 +611,10 @@ describe('App', () => {
     expect(described?.textContent).toBe('Export to Word, Excel, PowerPoint, images and PDF/A.');
   });
 
-  it('the control DISPATCHES document.open, and nothing else', async () => {
+  it('the control DISPATCHES document.openSeveral, and nothing else', async () => {
     // The wired-tools requirement, and the second half of the assertion is the
     // one that stops it being vacuous: a component that called every channel it
-    // could reach would satisfy "document.open was called".
+    // could reach would satisfy "document.openSeveral was called".
     const { client, calls } = recordingClient({ kind: 'cancelled' });
     render(<App client={client} settings={freshSettings()} />);
 
@@ -602,7 +623,7 @@ describe('App', () => {
       await Promise.resolve();
     });
 
-    expect(commandCalls(calls)).toStrictEqual(['document.open']);
+    expect(commandCalls(calls)).toStrictEqual(['document.openSeveral']);
   });
 
   it('CONTROL: nothing is dispatched until the control is used', async () => {
@@ -772,7 +793,7 @@ describe('App', () => {
       await Promise.resolve();
     });
 
-    expect(commandCalls(calls)).toStrictEqual(['document.open']);
+    expect(commandCalls(calls)).toStrictEqual(['document.openSeveral']);
   });
 
   it('CONTROL: an UNREGISTERED chord dispatches nothing and is left to the browser', async () => {
@@ -811,7 +832,7 @@ describe('App', () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'O', ctrlKey: true, shiftKey: true, cancelable: true }));
       await Promise.resolve();
     });
-    expect(commandCalls(calls)).toStrictEqual(['document.open']);
+    expect(commandCalls(calls)).toStrictEqual(['document.openSeveral']);
   });
 
   it('while a dialog is open the page’s shortcuts do nothing — the key is the dialog’s (ADR-0111)', async () => {
@@ -829,7 +850,7 @@ describe('App', () => {
       await Promise.resolve();
     });
     // THE SAME KEY the cases above show opening a document, with nothing sent and the key left alone.
-    expect(commandCalls(calls).filter((id) => id === 'document.open')).toStrictEqual([]);
+    expect(commandCalls(calls).filter((id) => id === 'document.openSeveral')).toStrictEqual([]);
     expect(event.defaultPrevented).toBe(false);
   });
 
@@ -2874,7 +2895,7 @@ describe('App', () => {
     /** A client whose `document.open` answers one outcome. */
     function openAnswering(outcome: unknown): ContractClient {
       return createClient(channels, (id) => {
-        if (id === 'document.open') return Promise.resolve(ok(outcome));
+        if (id === 'document.openSeveral') return Promise.resolve(ok(severalOf(outcome)));
         const answer = OTHER_ANSWERS[id];
         if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
         return Promise.resolve(ok(answer));
@@ -2901,6 +2922,67 @@ describe('App', () => {
       ).toBeDefined();
     });
 
+    /** A client whose Open dialog returns these files, each with the outcome main opened it with. */
+    function pickingSeveral(files: readonly { readonly name: string; readonly outcome: unknown }[]): ContractClient {
+      return createClient(channels, (id) => {
+        if (id === 'document.openSeveral') return Promise.resolve(ok({ opened: files }));
+        const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id] ?? OTHER_ANSWERS[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+    }
+
+    const OPENED = (name: string, docId: string): { name: string; outcome: unknown } => ({
+      name,
+      outcome: { kind: 'opened', docId, version: 1, byteLength: 1024, name },
+    });
+
+    it('SEVERAL files chosen in the Open dialog each open as their own tab', async () => {
+      const files = [
+        OPENED('first.pdf', '00000000-0000-4000-8000-000000000001'),
+        OPENED('second.pdf', '00000000-0000-4000-8000-000000000002'),
+        OPENED('third.pdf', '00000000-0000-4000-8000-000000000003'),
+      ];
+      render(<App client={pickingSeveral(files)} settings={freshSettings()} />);
+      await pick();
+
+      const strip = within(screen.getByRole('navigation', { name: 'Open documents' }));
+      for (const { name } of files) expect(strip.getByRole('button', { name: `Close ${name}` })).toBeDefined();
+      // CONTROL: nothing was said, because every file opened.
+      expect(screen.queryByRole('dialog', { name: 'The document could not be opened' })).toBeNull();
+    });
+
+    it('a file of several that does not open is named, and the others still open as tabs', async () => {
+      const files = [
+        OPENED('first.pdf', '00000000-0000-4000-8000-000000000001'),
+        { name: 'gone.pdf', outcome: { kind: 'absent' } },
+        { name: 'locked.pdf', outcome: { kind: 'busy' } },
+        OPENED('last.pdf', '00000000-0000-4000-8000-000000000004'),
+      ];
+      render(<App client={pickingSeveral(files)} settings={freshSettings()} />);
+      await pick();
+
+      // `hidden`: the dialog over the strip is modal, so the page behind it is out of the accessibility tree.
+      const strip = within(screen.getByRole('navigation', { name: 'Open documents', hidden: true }));
+      expect(strip.getByRole('button', { name: 'Close first.pdf', hidden: true })).toBeDefined();
+      // THE FILE AFTER THE FAILURES opened: a list that ended at the first one never reaches it.
+      expect(strip.getByRole('button', { name: 'Close last.pdf', hidden: true })).toBeDefined();
+      // EVERY FAILURE IS SAID, each with its own file and its own sentence — not only the last one.
+      const dialog = await screen.findByRole('dialog', { name: 'The document could not be opened' });
+      expect(within(dialog).getByText('gone.pdf')).toBeDefined();
+      expect(
+        within(dialog).getByText('That file could not be opened. It may have been moved, renamed or deleted.'),
+      ).toBeDefined();
+      expect(within(dialog).getByText('locked.pdf')).toBeDefined();
+      expect(
+        within(dialog).getByText(
+          'That file is open in another program that does not let others read it. Close it there, then open it again.',
+        ),
+      ).toBeDefined();
+      // AND THE FILES THAT OPENED ARE NOT LISTED AS PROBLEMS.
+      expect(within(dialog).queryByText('first.pdf')).toBeNull();
+    });
+
     it('says something DIFFERENT when there is no room, because the answer is different', async () => {
       // Two outcomes, two next actions: one is *find the file*, the other is
       // *close a document*. One message for both would be a sentence that helps
@@ -2923,11 +3005,14 @@ describe('App', () => {
       // service threw, which reached here as a failure and was settled as nothing at all.
       const busy = render(<App client={openAnswering({ kind: 'busy' })} settings={freshSettings()} />);
       await pick();
-      const line = screen.getByText(
-        'That file is open in another program that does not let others read it. Close it there, then open it again.',
-      );
-      // AND BROUGHT INTO VIEW, centred: in a short window the line is below the fold, under the footer.
-      expect(scrolled).toStrictEqual([{ element: line, options: { block: 'center' } }]);
+      expect(
+        screen.getByText(
+          'That file is open in another program that does not let others read it. Close it there, then open it again.',
+        ),
+      ).toBeDefined();
+      // AND BROUGHT INTO VIEW, centred: in a short window the line is below the fold, under the footer. What is scrolled
+      // to is the whole problem — the file's name and what happened to it — and not the sentence inside it.
+      expect(scrolled).toStrictEqual([{ element: document.querySelector('.m-start-problem'), options: { block: 'center' } }]);
       busy.unmount();
 
       render(<App client={openAnswering({ kind: 'denied' })} settings={freshSettings()} />);
@@ -2950,7 +3035,7 @@ describe('App', () => {
 
     it('SAYS SO when main answered the open with a failure, where it used to say nothing', async () => {
       const client = createClient(channels, (id) => {
-        if (id === 'document.open') return Promise.resolve(err({ code: 'internal' as const, incident: 'incident-1' }));
+        if (id === 'document.openSeveral') return Promise.resolve(err({ code: 'internal' as const, incident: 'incident-1' }));
         const answer = OTHER_ANSWERS[id];
         if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
         return Promise.resolve(ok(answer));
@@ -2967,7 +3052,7 @@ describe('App', () => {
     function openAnsweringInTurn(outcomes: readonly unknown[]): ContractClient {
       let asked = 0;
       return createClient(channels, (id) => {
-        if (id === 'document.open') return Promise.resolve(ok(outcomes[asked++]));
+        if (id === 'document.openSeveral') return Promise.resolve(ok(severalOf(outcomes[asked++])));
         const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id] ?? OTHER_ANSWERS[id];
         if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
         return Promise.resolve(ok(answer));
@@ -3089,6 +3174,33 @@ describe('App', () => {
       const strip = within(screen.getByRole('navigation', { name: 'Open documents' }));
       expect(strip.getByRole('button', { name: 'Close first.pdf' })).toBeDefined();
       expect(strip.getByRole('button', { name: 'Close second.pdf' })).toBeDefined();
+    });
+
+    it('a dropped file that does not open is reported BY NAME and does not stop the files after it', async () => {
+      const THIRD = new File(['%PDF-1.7'], 'third.pdf');
+      let opening = 0;
+      const dropOpener: DropOpener = (file) => {
+        opening += 1;
+        // THE MIDDLE ONE IS GONE.
+        if (file === SECOND) return Promise.resolve(ok({ kind: 'absent' as const }));
+        const docId = asDocId(`00000000-0000-4000-8000-00000000000${String(opening)}`);
+        return Promise.resolve(ok({ kind: 'opened' as const, docId, version: asDocVersion(1), byteLength: 1024, name: file.name }));
+      };
+      const { client } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS });
+      render(<App client={client} settings={freshSettings()} dropOpener={dropOpener} />);
+
+      await dropOn([FIRST, SECOND, THIRD]);
+
+      // THE THIRD OPENED, which a drop that ended at the failure never reaches.
+      expect(opening).toBe(3);
+      const strip = within(screen.getByRole('navigation', { name: 'Open documents', hidden: true }));
+      expect(strip.getByRole('button', { name: 'Close first.pdf', hidden: true })).toBeDefined();
+      expect(strip.getByRole('button', { name: 'Close third.pdf', hidden: true })).toBeDefined();
+      // AND THE ONE THAT FAILED IS NAMED, in the dialog over the documents that did open.
+      const dialog = await screen.findByRole('dialog', { name: 'The document could not be opened' });
+      expect(within(dialog).getByText('second.pdf')).toBeDefined();
+      expect(within(dialog).queryByText('first.pdf')).toBeNull();
+      expect(within(dialog).getByRole('list')).toBeDefined();
     });
 
     it('SAYS SO when the dropped item is not a file on this computer', async () => {
@@ -3854,7 +3966,7 @@ describe('App', () => {
     // perfectly — and dispatching twice is what a reveal wired into a render
     // rather than a click would do.
     expect(calls.filter((call) => call === 'log.reveal')).toEqual(['log.reveal']);
-    expect(calls).not.toContain('document.open');
+    expect(calls).not.toContain('document.openSeveral');
   });
 });
 
@@ -4085,7 +4197,10 @@ describe('the command line’s documents (a file association, Open with)', () =>
         const docId = asks === 1 ? DOC : LATER;
         const name = asks === 1 ? 'launched.pdf' : 'later.pdf';
         return Promise.resolve(
-          ok({ opened: asks > 2 ? [] : [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: 1024, name }] }),
+          ok({
+            opened:
+              asks > 2 ? [] : [{ name, outcome: { kind: 'opened', docId, version: asDocVersion(1), byteLength: 1024, name } }],
+          }),
         );
       }
       return Promise.resolve(ok((OPEN_DOCUMENT_ANSWERS as Record<string, unknown>)[id] ?? OTHER_ANSWERS[id] ?? { kind: 'cancelled' }));

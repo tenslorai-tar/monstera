@@ -43,7 +43,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CloudOutcomeRefused, type CloudStorage, unconfiguredCloud } from './cloudSession.js';
 import { type AttachmentReaders, NO_ATTACHMENTS } from './askAttachments.js';
-import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
+import { type AppInfo, type PickDocument, type PickDocuments, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
 import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
 import { createHeldPicture } from './heldPicture.js';
@@ -87,7 +87,7 @@ type OpenOutcome = Awaited<ReturnType<DocumentService['open']>>;
  * mint, the handle's lifetime — and none is about how a real service decides
  * which outcome to produce. That question has its own tests, in the kernel.
  */
-function serviceAnswering(outcome: OpenOutcome): {
+function serviceAnswering(outcome: OpenOutcome | readonly OpenOutcome[]): {
   documents: DocumentService;
   opened: FileHandle[];
   closed: DocId[];
@@ -95,9 +95,12 @@ function serviceAnswering(outcome: OpenOutcome): {
   const opened: FileHandle[] = [];
   const closed: DocId[] = [];
   const documents = {
+    // A LIST ANSWERS THE OPENS IN THE ORDER THEY ARE MADE, for the cases about several files at once: the second file
+    // can be the one that is absent, which a single fixed answer cannot say.
     open: (handle: FileHandle) => {
       opened.push(handle);
-      return Promise.resolve(outcome);
+      if ('kind' in outcome) return Promise.resolve(outcome);
+      return Promise.resolve(outcome[opened.length - 1] ?? { kind: 'absent' as const });
     },
     close: (docId: DocId) => {
       closed.push(docId);
@@ -125,11 +128,13 @@ const OPENED_AT = new Date('2026-09-25T08:00:00.000Z');
 const RECENT_ROOTS: readonly KnownRoot[] = [{ within: 'documents', path: resolve('home', 'Documents'), showsFolder: true }];
 
 function harness(
-  outcome: OpenOutcome,
+  outcome: OpenOutcome | readonly OpenOutcome[],
   pickDocument: PickDocument,
   launchDocuments?: LaunchDocuments,
   /** The library surface and the document commands, for the cases about them; the unused ones otherwise. */
   overrides: {
+    /** The Open dialog with a multiple selection, for the cases about several files; the one-file picker's otherwise. */
+    readonly pickDocuments?: PickDocuments;
     readonly library?: ReturnType<typeof unusedLibrarySurface>;
     readonly commands?: DocumentCommands;
     /** The settings file to import, for the import's cases; a dismissed picker otherwise. */
@@ -210,6 +215,7 @@ function harness(
     // mention encryption get the state every fixture here is in.
     unlockDocument: () => Promise.resolve({ kind: 'not-locked' as const }),
     pickDocument,
+    ...(overrides.pickDocuments === undefined ? {} : { pickDocuments: overrides.pickDocuments }),
     recent,
     recentRoots: RECENT_ROOTS,
     recentPictures: pictures,
@@ -1280,7 +1286,7 @@ describe('document.openWaiting — the command line’s documents', () => {
 
     expect(await handlers['document.openWaiting']({})).toStrictEqual({
       ok: true,
-      value: { opened: [{ kind: 'opened', docId: A_DOC, version: 1, byteLength: 1024, name: 'a.pdf' }] },
+      value: { opened: [{ name: 'a.pdf', outcome: { kind: 'opened', docId: A_DOC, version: 1, byteLength: 1024, name: 'a.pdf' } }] },
     });
     // THE HANDLE RESOLVES TO THE LAUNCHED PATH, and it went where a drop's goes.
     expect(capabilities.resolve(handleOpened(opened))).toBe(LAUNCHED);
@@ -1296,6 +1302,112 @@ describe('document.openWaiting — the command line’s documents', () => {
     const { handlers, opened } = harness(OPENED, NO_PICKER);
     expect(await handlers['document.openWaiting']({})).toStrictEqual({ ok: true, value: { opened: [] } });
     expect(opened).toStrictEqual([]);
+  });
+
+  it('a launch that names several documents opens each, and a missing one is reported by name without stopping the rest', async () => {
+    const first = resolve('launched', 'one.pdf');
+    const missing = resolve('launched', 'gone.pdf');
+    const last = resolve('launched', 'three.pdf');
+    const B_DOC = asDocId('doc-b');
+    const { handlers, opened, sessioned } = harness(
+      [
+        { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 10, name: 'one.pdf' },
+        { kind: 'absent' },
+        { kind: 'opened', docId: B_DOC, version: asDocVersion(1), byteLength: 12, name: 'three.pdf' },
+      ],
+      NO_PICKER,
+      createLaunchDocuments([first, missing, last]),
+    );
+
+    const answer = await handlers['document.openWaiting']({});
+
+    expect(answer).toStrictEqual({
+      ok: true,
+      value: {
+        opened: [
+          { name: 'one.pdf', outcome: { kind: 'opened', docId: A_DOC, version: 1, byteLength: 10, name: 'one.pdf' } },
+          { name: 'gone.pdf', outcome: { kind: 'absent' } },
+          { name: 'three.pdf', outcome: { kind: 'opened', docId: B_DOC, version: 1, byteLength: 12, name: 'three.pdf' } },
+        ],
+      },
+    });
+    // THE CALL THAT WOULD NOT BE MADE if the second failure ended the list: a third open, and a session for it.
+    expect(opened).toHaveLength(3);
+    expect(sessioned).toStrictEqual([A_DOC, B_DOC]);
+  });
+});
+
+describe('document.openSeveral — the Open dialog with a multiple selection', () => {
+  const ONE = resolve('picked', 'one.pdf');
+  const TWO = resolve('picked', 'two.pdf');
+  const THREE = resolve('picked', 'three.pdf');
+  const B_DOC = asDocId('doc-b');
+  const C_DOC = asDocId('doc-c');
+  const OPENED_A: OpenOutcome = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 10, name: 'one.pdf' };
+  const OPENED_C: OpenOutcome = { kind: 'opened', docId: C_DOC, version: asDocVersion(1), byteLength: 12, name: 'three.pdf' };
+  const NO_ONE_FILE_PICKER: PickDocument = () => Promise.reject(new Error('several files never run the one-file picker'));
+
+  it('opens EVERY picked path, in the order listed, each by the one route — its own handle, recent entry and session', async () => {
+    const { capabilities, handlers, opened, recent, sessioned } = harness(
+      [OPENED_A, { kind: 'opened', docId: B_DOC, version: asDocVersion(1), byteLength: 11, name: 'two.pdf' }, OPENED_C],
+      NO_ONE_FILE_PICKER,
+      undefined,
+      { pickDocuments: () => Promise.resolve([ONE, TWO, THREE]) },
+    );
+
+    const answer = await handlers['document.openSeveral']({});
+
+    expect(answer.ok).toBe(true);
+    if (!answer.ok) throw new Error('unreachable: asserted above');
+    expect(answer.value.opened.map((each) => each.name)).toStrictEqual(['one.pdf', 'two.pdf', 'three.pdf']);
+    // ONE HANDLE PER PATH and each resolves to its own file: a handler that minted one and reused it would open one
+    // document three times, and the three answers above would not say so.
+    expect(opened.map((handle) => capabilities.resolve(handle))).toStrictEqual([ONE, TWO, THREE]);
+    expect(sessioned).toStrictEqual([A_DOC, B_DOC, C_DOC]);
+    expect(recent.list().map((entry) => entry.name).sort()).toStrictEqual(['one.pdf', 'three.pdf', 'two.pdf']);
+  });
+
+  it('a file that does not open is answered BY NAME and does not stop the files after it', async () => {
+    const { capabilities, handlers, opened, sessioned } = harness([OPENED_A, { kind: 'absent' }, OPENED_C], NO_ONE_FILE_PICKER, undefined, {
+      pickDocuments: () => Promise.resolve([ONE, TWO, THREE]),
+    });
+
+    const answer = await handlers['document.openSeveral']({});
+
+    expect(answer).toStrictEqual({
+      ok: true,
+      value: {
+        opened: [
+          { name: 'one.pdf', outcome: { kind: 'opened', docId: A_DOC, version: 1, byteLength: 10, name: 'one.pdf' } },
+          // THE NAME OF THE FILE THAT FAILED, which no field of an `absent` outcome carries.
+          { name: 'two.pdf', outcome: { kind: 'absent' } },
+          { name: 'three.pdf', outcome: { kind: 'opened', docId: C_DOC, version: 1, byteLength: 12, name: 'three.pdf' } },
+        ],
+      },
+    });
+    // CONTROL: the third was opened and given a session, which a list that ended at the first failure never reaches.
+    expect(opened).toHaveLength(3);
+    expect(sessioned).toStrictEqual([A_DOC, C_DOC]);
+    // AND THE MISSING FILE'S HANDLE IS REVOKED, as a single open's is, so a repeated miss cannot grow the registry.
+    const missing = opened[1];
+    if (missing === undefined) throw new Error('unreachable: three opens were asserted above');
+    expect(capabilities.has(missing)).toBe(false);
+  });
+
+  it('a dismissed dialog answers an empty list and opens nothing', async () => {
+    const { handlers, opened } = harness(OPENED_A, NO_ONE_FILE_PICKER, undefined, { pickDocuments: () => Promise.resolve([]) });
+    expect(await handlers['document.openSeveral']({})).toStrictEqual({ ok: true, value: { opened: [] } });
+    expect(opened).toStrictEqual([]);
+  });
+
+  it('a graph with only the one-file picker is offered one file at a time', async () => {
+    const { handlers, opened } = harness(OPENED_A, () => Promise.resolve(ONE));
+    const answer = await handlers['document.openSeveral']({});
+    expect(answer).toStrictEqual({
+      ok: true,
+      value: { opened: [{ name: 'one.pdf', outcome: { kind: 'opened', docId: A_DOC, version: 1, byteLength: 10, name: 'one.pdf' } }] },
+    });
+    expect(opened).toHaveLength(1);
   });
 });
 
