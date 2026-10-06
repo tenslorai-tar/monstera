@@ -90,6 +90,13 @@ async function run(command: DispatchableCommand, walk: unknown): Promise<Run> {
       client,
       ask: () => Promise.resolve(undefined),
       stamp: () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' }),
+      // NOT SIGNED (ADR-0149): a copy opened for an edit is a defect of the case.
+      signatures: {
+        warn: () => true,
+        onOpened: () => {
+          throw new Error('a case opened a copy for an edit without asking for one');
+        },
+      },
       onApplied: (answer) => {
         record.calls.push('onApplied');
         record.applied.push(answer);

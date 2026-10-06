@@ -3,6 +3,7 @@ import { type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
+import { settled } from './settled.js';
 
 /**
  * FIT PAGE shows exactly one page and Page Down moves exactly one (the owner's review of 0.1.8.0: at 1600 × 852 and 63%,
@@ -60,9 +61,13 @@ for (const size of [
     page,
   }) => {
     await open(page, size);
+    // THE FIT APPLIED, not a page in view: at the opening 100% only the first page is in view too, so that wait passed
+    // before the shortcut did anything. The zoom readout moving off its opening value is the fit taking effect.
+    const zoom = page.locator('.m-status-bar .m-status-zoom');
+    const opening = await zoom.textContent();
     await page.keyboard.press('Control+0');
-    await expect.poll(async () => (await shown(page)).pages).toStrictEqual([0]);
-    const first = await shown(page);
+    await expect.poll(() => zoom.textContent()).not.toBe(opening);
+    const first = await settled(page, () => shown(page), (now) => now.pages.length === 1 && now.pages[0] === 0, 'Fit page');
     // CENTRED: the room above and below the page agree to a pixel.
     expect(Math.abs(first.above - first.below), JSON.stringify(first)).toBeLessThanOrEqual(1);
     expect(first.above).toBeGreaterThan(0);
@@ -84,10 +89,12 @@ for (const size of [
 ]) {
   test(`FIT WIDTH at ${String(size.width)} × ${String(size.height)} fills the width and never scrolls sideways`, async ({ page }) => {
     await open(page, size);
+    // THE FIT APPLIED AND STILL, in place of a width that was already over 300 px at 100% and a 400 ms sleep.
+    const zoom = page.locator('.m-status-bar .m-status-zoom');
+    const opening = await zoom.textContent();
     await page.keyboard.press('Control+1');
-    await expect.poll(async () => (await shown(page)).pageWidth).toBeGreaterThan(300);
-    await page.waitForTimeout(400);
-    const fit = await shown(page);
+    await expect.poll(() => zoom.textContent()).not.toBe(opening);
+    const fit = await settled(page, () => shown(page), () => true, 'Fit width');
     expect(fit.scrollWidth, JSON.stringify(fit)).toBeLessThanOrEqual(fit.clientWidth);
     expect(fit.pageWidth).toBeGreaterThan(fit.clientWidth - 40);
   });

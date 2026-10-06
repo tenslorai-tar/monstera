@@ -1,8 +1,7 @@
-import { pdfPoint, toViewport } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
-import { overlayTransform } from './annotations/annotationSpace.js';
+import { pdfRectOnScreen } from './annotations/annotationSpace.js';
 import { type AnnotationSelection, CORNER_REACH } from './annotations/selectTool.js';
 
 /**
@@ -53,8 +52,6 @@ export function SelectionLayer({
   // page's*, and only the second is about this component.
   if (selection.page !== page) return null;
 
-  const transform = overlayTransform(geometry);
-
   return (
     <svg
       aria-hidden="true"
@@ -62,12 +59,11 @@ export function SelectionLayer({
       data-selection-layer={String(page)}
     >
       {selection.items.map((item) => {
-        const a = toViewport(pdfPoint(item.rect.x0, item.rect.y0), transform);
-        const b = toViewport(pdfPoint(item.rect.x1, item.rect.y1), transform);
-        const left = Math.min(a.x, b.x);
-        const top = Math.min(a.y, b.y);
-        const right = Math.max(a.x, b.x);
-        const bottom = Math.max(a.y, b.y);
+        const box = pdfRectOnScreen(item.rect, geometry);
+        const left = box.left;
+        const top = box.top;
+        const right = box.left + box.width;
+        const bottom = box.top + box.height;
         return (
           // THE WALK INDEX IS THE KEY, and here it is the right one: the items are a set of handles at one version, so
           // an index identifies a row across a re-render in a way its position in the array does not once a marquee

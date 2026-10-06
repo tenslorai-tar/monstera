@@ -136,7 +136,7 @@ describe('the distance tool', () => {
   it('previews the line it would draw', () => {
     const started = distanceTool.controller.begin(viewportPoint(20, 20));
     const moved = distanceTool.controller.update(started, viewportPoint(120, 80));
-    expect(distanceTool.controller.preview(moved)).toStrictEqual({
+    expect(distanceTool.controller.preview(moved, 3, overlayTransform(PAGE))).toStrictEqual({
       shape: 'line',
       x1: 20,
       y1: 20,

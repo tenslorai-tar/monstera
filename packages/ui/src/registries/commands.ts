@@ -210,6 +210,13 @@ export interface UiCommand {
    * the first, so a conflict among them is refused the same way.
    */
   readonly alsoShortcuts?: readonly string[];
+  /**
+   * `true` where a HELD key runs the command again on each of the keyboard's repeats — a step that is meant to be
+   * taken many times: a page on, a zoom step, an undo, a nudge. Absent, a held key runs it ONCE (`dispatchChord`):
+   * holding Delete in Organize deleted a page per repeat with nothing asked, and a held Ctrl+W closed a tab per repeat
+   * (code review CR-COR-06). Absent is the safe reading, so a command that forgets to say runs once.
+   */
+  readonly repeats?: true;
   /** Where this appears. Empty means palette-only, which is legitimate. */
   readonly placements: readonly Placement[];
   /**
@@ -432,14 +439,19 @@ export class CommandRegistry {
     // only). The menu bar draws each item's icon in one column so the titles align, and a command with none would be
     // the one row whose title sits in the icon's place. Which menu a placement lands in is `menuOf`'s, the rule the bar
     // draws by, so a ribbon command in Organize is held as well as an explicit menu-bar placement. Every offender is
-    // named at once, because the fix for one is the fix for all.
+    // named at once, because the fix for one is the fix for all. A RIGHT-CLICK MENU IS A MENU TOO (the owner's item 9b):
+    // it draws the glyph in the same column by the same rule, so a context-menu placement is held here as well.
     const iconless = [...this.#byId.values()]
-      .filter((command) => command.icon === undefined && command.placements.some((placement) => menuOf(placement) !== undefined))
+      .filter(
+        (command) =>
+          command.icon === undefined &&
+          command.placements.some((placement) => menuOf(placement) !== undefined || placement.surface === 'context-menu'),
+      )
       .map((command) => command.id);
     if (iconless.length > 0) {
       throw new Error(
         `${iconless.map((id) => `"${id}"`).join(', ')} ${iconless.length === 1 ? 'is in a menu and names' : 'are in a menu and name'} ` +
-          `no icon. The menu bar draws every item's glyph in one column; give each an \`icon\` from primitives/icons.ts.`,
+          `no icon. Every menu draws its items' glyphs in one column; give each an \`icon\` from primitives/icons.ts.`,
       );
     }
     // EVERY RIBBON COMMAND IS IN SOME MENU (ADR-0107 Decision 3 and its correction). Every section but Home is a menu

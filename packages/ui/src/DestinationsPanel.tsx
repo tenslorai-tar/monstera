@@ -27,11 +27,12 @@ import { readWholeList } from './readWholeList.js';
  *
  * ## An entry with NO PAGE is still shown
  *
- * `page: null` means the destination resolves nowhere — an external URI, or one
- * the document does not define. It is rendered without a control, the way an
- * external link is: a gap in a table of contents is more confusing than an
- * entry that cannot be followed, and a button that did nothing would be the
- * display-only defect.
+ * `page: null` means the entry names no page here — an external URI, one the
+ * document does not define, or none at all. It is rendered without a control,
+ * the way an external link is: a gap in a table of contents is more confusing
+ * than an entry that cannot be followed, and a button that did nothing would be
+ * the display-only defect. One with entries under it is a heading and reads as
+ * one; only a leaf is marked as going nowhere.
  *
  * ## The depth is INDENTATION and nothing else
  *
@@ -109,13 +110,19 @@ export function DestinationsPanel({
             // written between the check and the call. A `const` cannot be, so
             // the click handler below holds a number rather than a maybe.
             const page = entry.page;
+            // A HEADING OVER CHILDREN: no page of its own, and the entry after it sits under it. It is the outline's
+            // structure, not an entry going nowhere — a delete keeps one this way when the page it named goes and its
+            // children stay (ADR-0155), and drawing it as unresolved would put back the dead entry the delete removed.
+            const heading = page === null && (state.destinations[at + 1]?.depth ?? -1) > entry.depth;
             return (
               // THE INDEX IS THE KEY, and it is right here for the links
               // panel's reason: outline entries have no identity of their own,
               // the list is replaced whole, and two headings may legitimately
               // share a title at the same depth.
               <li key={at} style={{ paddingInlineStart: `${String(entry.depth * INDENT)}px` }}>
-                {page === null ? (
+                {heading ? (
+                  <span className="m-destination-heading">{entry.title}</span>
+                ) : page === null ? (
                   <span className="m-destination-unresolved">
                     {i18n._(DESTINATION_UNRESOLVED, { title: entry.title })}
                   </span>

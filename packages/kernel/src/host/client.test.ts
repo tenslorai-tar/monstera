@@ -187,6 +187,22 @@ describe('createHostClient', () => {
     await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
   });
 
+  it('names WHY a response was refused in its own words, never the text the host put in it (CR-SEC-13)', async () => {
+    const h = harness({ ids: ['a'] });
+    const call = h.client.invoke('one', {});
+    const chosen = 'host-chosen-key-name-x7';
+
+    h.sendRaw(new TextEncoder().encode(JSON.stringify({ id: 'a', body: 1, [chosen]: true })));
+
+    const detail = h.terminations[0]?.detail ?? '';
+    // ZOD'S OWN MESSAGE NAMES THE UNRECOGNISED KEY, so a client that forwarded it fails here.
+    expect(detail).not.toContain(chosen);
+    // CONTROL: the detail still says what was wrong — the wire is a union of two strict shapes — so an empty or
+    // constant one cannot pass.
+    expect(detail).toContain('invalid_union at depth 0');
+    await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
+  });
+
   it('ENDS on a frame that is not UTF-8 JSON', async () => {
     const h = harness({ ids: ['a'] });
     const call = h.client.invoke('one', {});
@@ -557,6 +573,36 @@ describe('a file-routed answer on the client (ADR-0125)', () => {
     h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength } });
     await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
     expect(h.terminations.map((reason) => reason.code)).toStrictEqual(['malformed-response']);
+  });
+
+  /**
+   * THE ANSWER HAS ARRIVED AND ITS FILE IS STILL BEING TAKEN when the connection ends, so the call has already left
+   * the map `stop` settles. It is rejected with the ending rather than left waiting: a command's caller holds its
+   * document's lane, and a call settled by nothing held every later command on that document and its recovery.
+   * Asserted as SETTLED BEFORE THE NEXT TASK, because the defect is a promise that never settles and no wait can
+   * observe that; the take resolves in a microtask, so a settled call has settled by then.
+   */
+  it('settles a call whose file was still being taken when the connection ended', async () => {
+    const h = fileHarness(bytes);
+    const call = h.client.invoke('doc:big', { session: 's1' });
+    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength } });
+    h.client.fail({ code: 'connection-lost', detail: 'the pipe closed' });
+
+    const outcome = await Promise.race([
+      call.then(
+        () => 'resolved',
+        (error: unknown) => error,
+      ),
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve('unsettled');
+        }, 0);
+      }),
+    ]);
+    expect(outcome).toBeInstanceOf(HostConnectionLost);
+    expect((outcome as HostConnectionLost).termination.code).toBe('connection-lost');
+    // The take did run: the file was read, and only the delivery was refused.
+    expect(h.taken).toHaveLength(1);
   });
 
   it('ends the connection when the file cannot be taken', async () => {

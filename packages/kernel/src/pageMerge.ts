@@ -1,10 +1,13 @@
 import type { CommandOfKind } from '@monstera/contract';
-import type { PDFDocument, PDFGraftMap } from './mupdfRaw.js';
+import type { PDFDocument, PDFGraftMap, PDFObject } from './mupdfRaw.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
-import { withDocuments } from './mupdfWriter.js';
+import { removeFieldsOnPages } from './formFields.js';
+import { withDocumentList, withDocuments } from './mupdfWriter.js';
 import { graftingWithoutPageTree } from './pageGraft.js';
+import { releasePagesOutsideTree } from './pageReferences.js';
+import { pagesOf } from './pageScope.js';
 
 /**
  * Another document's pages, copied into this one
@@ -68,7 +71,7 @@ import { graftingWithoutPageTree } from './pageGraft.js';
  */
 
 /**
- * Grafts every page of `from` at `at`, with the annotations `graftPage` leaves behind, and answers how many.
+ * Grafts `pages` of `from`, in their order, from `at` onwards, with the annotations `graftPage` leaves behind.
  *
  * ## `graftPage` DOES NOT CARRY `/Annots`, measured 2026-09-06
  *
@@ -111,32 +114,50 @@ function graftPagesWithAnnotations(
   target: PDFDocument,
   from: PDFDocument,
   at: number,
-): number {
-  const pages = from.countPages();
-  for (let page = 0; page < pages; page += 1) map.graftPage(at + page, from, page);
+  pages: readonly number[],
+  successors: Map<number, PDFObject>,
+): void {
+  pages.forEach((page, offset) => {
+    map.graftPage(at + offset, from, page);
+  });
 
   // THE ANNOTATIONS WITH THE SOURCE'S TREE DETACHED, after every page is placed: `graftPage` reads inherited
   // attributes up `/Parent`, and an annotation's `/P` names a source leaf whose `/Parent` reaches every page of the
   // source (`pageGraft.ts`) — measured as a second copy of each page's dictionary and of the tree above it.
   graftingWithoutPageTree(from, () => {
-    for (let page = 0; page < pages; page += 1) {
+    pages.forEach((page, offset) => {
       // `findPage` walks `/Kids` and reads no `/Parent`; `loadPage` would build a page from an inheritance it cannot see.
       const annots = from.findPage(page).get('Annots');
-      if (annots.isNull()) continue;
+      if (annots.isNull()) return;
 
-      const onto = target.loadPage(at + page).getObject();
+      const onto = target.loadPage(at + offset).getObject();
       const grafted = map.graftObject(annots);
       onto.put('Annots', grafted);
       for (let index = 0; index < grafted.length; index += 1) {
         grafted.get(index).put('P', onto);
       }
-    }
+    });
+    // EACH PAGE'S OTHER COPY. `graftPage` builds a new page dictionary and maps the source page to nothing, so a link
+    // grafted above that names another page taken arrived naming a second copy of it, outside the tree, and went
+    // nowhere — measured 2026-10-04, a link between two pages inserted together. Grafting the page through the same
+    // map answers that copy, and the release points every destination naming it at the page placed (ADR-0155).
+    pages.forEach((page, offset) => {
+      successors.set(map.graftObject(from.findPage(page)).asIndirect(), target.findPage(at + offset));
+    });
   });
-  return pages;
 }
 
 /**
- * Copies every page of `source` into the target, starting at `command.at`.
+ * The target's pages a replace names, ascending and each once: the set is the pages being replaced, so a page named
+ * twice is still one page and the pairing reads them in document order.
+ */
+function replacedPages(command: CommandOfKind<'replacePage'>, total: number): readonly number[] {
+  return [...new Set(pagesOf(command.pages, total))].sort((a, b) => a - b);
+}
+
+/**
+ * Copies the chosen pages of `source` (`sourcePages`, every page for `'all'`) into the target, starting at
+ * `command.at`. A source page the source does not have is refused, by `pageScope.ts`' one refusal.
  *
  * ## Pages are grafted in order, each one index further along
  *
@@ -171,28 +192,49 @@ function graftPagesWithAnnotations(
  * writable. Writing a merge case against a fixture that secretly has a page
  * would be coverage of a branch nothing reached.
  */
-export const applyMergeDocument: Apply<'mupdf', 'mergeDocument', 'one'> = (
+export const applyMergeDocument: Apply<'mupdf', 'mergeDocument', 'several'> = (
   session: MupdfSession,
   command: CommandOfKind<'mergeDocument'>,
-  source: MupdfSession,
+  sources: readonly [MupdfSession, ...MupdfSession[]],
 ): Promise<void> =>
-  withDocuments(session, source, (target, from) => {
-    const count = target.countPages();
-    const at = Math.min(command.at, count);
+  withDocumentList(session, sources, (target, documents) => {
+    // EVERY PART'S PAGES ARE CHECKED BEFORE ANY IS GRAFTED (ADR-0152): an index a later document does not have refuses
+    // the merge with nothing placed, never after the documents before it went in.
+    const parts = command.documents.map((part, index) => {
+      const from = documents[index];
+      const token = sources[index];
+      if (from === undefined || token === undefined) {
+        throw new Error('unreachable: the bus resolves one session for each document the merge names');
+      }
+      return { from, token, pages: pagesOf(part.sourcePages, from.countPages()) };
+    });
 
-    // ONE MAP FOR THE WHOLE MERGE. See `graftPagesWithAnnotations`: it keeps a
-    // source's shared objects shared across the pages that reference them, and
-    // it is what puts the annotations in the same identity space as their page.
-    //
-    // READ FROM `from` AND WRITTEN INTO `target`, which is the one line where
-    // a transposition would be silent: both are `PDFDocument` and both are
-    // `MupdfSession` upstream, so nothing in the type system separates them.
-    // `withDocuments` names its parameters for this reason.
-    graftPagesWithAnnotations(target.newGraftMap(), target, from, at);
+    // ONE MAP PER SOURCE DOCUMENT FOR THE WHOLE MERGE. See `graftPagesWithAnnotations`: a map keeps a source's shared
+    // objects shared across the pages that reference them, and puts the annotations in the same identity space as
+    // their page. It is keyed by its source because a map belongs to ONE: MuPDF binds it to the document of the first
+    // indirect object it grafts and refuses any other (`pdf-graft.c`, *"grafted objects must all belong to the same
+    // source document"*, MuPDF 1.28.0). A document named twice reuses its map, so its shared objects are copied once.
+    const maps = new Map<MupdfSession, PDFGraftMap>();
+    const successors = new Map<number, PDFObject>();
+    let at = Math.min(command.at, target.countPages());
+    for (const { from, token, pages } of parts) {
+      const map = maps.get(token) ?? target.newGraftMap();
+      maps.set(token, map);
+      // READ FROM `from` AND WRITTEN INTO `target`, which is the one line where
+      // a transposition would be silent: both are `PDFDocument` and both are
+      // `MupdfSession` upstream, so nothing in the type system separates them.
+      // `withDocumentList` names its parameters for this reason.
+      graftPagesWithAnnotations(map, target, from, at, pages, successors);
+      at += pages.length;
+    }
+    // A GRAFTED LINK BRINGS ITS TARGET: a link on a page taken that names a page not taken grafts that page in, content
+    // and all, as an object outside the tree — measured 2026-10-04, five page objects in a four-page document
+    // (ADR-0155). Released, that link goes and so does the copy; a link to a page taken names its placed page.
+    releasePagesOutsideTree(target, successors);
   });
 
 /**
- * Replaces one target page with every page of `source`.
+ * Replaces target pages with chosen pages of `source`, by the pairing the contract states (`replacePageSchema`).
  *
  * ## INSERT FIRST, THEN DELETE, and the order is the whole of it
  *
@@ -201,10 +243,17 @@ export const applyMergeDocument: Apply<'mupdf', 'mergeDocument', 'one'> = (
  * PDF a reader can open, reached here through a different door. Inserting
  * first means the document is never shorter than it started.
  *
- * The consequence is that the page being replaced has MOVED by the time it is
- * deleted: it sits at `at + pages`, because `pages` new pages were placed in
- * front of it. Computing that index from the count rather than re-finding the
- * page is what keeps the two halves in step.
+ * The consequence is that a page being replaced has MOVED by the time it is
+ * deleted: it sits after the pages just placed in front of it. Computing that
+ * index from the count placed rather than re-finding the page is what keeps
+ * the two halves in step.
+ *
+ * ## The same number of each pairs IN PLACE, one page at a time
+ *
+ * Each pair inserts one page and deletes one, so the document's length never
+ * changes between pairs and the next pair's index is still the one the person
+ * chose — which is what lets pages that are not next to each other be replaced
+ * at all.
  *
  * ## MuPDF's own `deletePage`, for `graftPage`'s reason
  *
@@ -216,22 +265,52 @@ export const applyMergeDocument: Apply<'mupdf', 'mergeDocument', 'one'> = (
 export const applyReplacePage: Apply<'mupdf', 'replacePage', 'one'> = (
   session: MupdfSession,
   command: CommandOfKind<'replacePage'>,
-  source: MupdfSession,
+  [source]: readonly [MupdfSession],
 ): Promise<void> =>
   withDocuments(session, source, (target, from) => {
-    const count = target.countPages();
-    if (command.at >= count) {
-      throw new RangeError(
-        `Page ${String(command.at)} is outside this document, which has ${String(count)} ` +
-          'page(s). Page indices are zero-based. A replace names a page that EXISTS, unlike an ' +
-          'insert, whose index may be one past the end.',
-      );
+    // EACH REPLACED PAGE MUST EXIST, unlike an insert's index, which may be one past the end: clamping would replace the
+    // last page for a caller who asked for one past it.
+    const replaced = replacedPages(command, target.countPages());
+    const taken = pagesOf(command.sourcePages, from.countPages());
+    const map = target.newGraftMap();
+    // WHAT FOLLOWS EACH REPLACED PAGE (ADR-0155 decision 3): its destinations name the page that took its place.
+    const successors = new Map<number, PDFObject>();
+    // A REPLACED PAGE'S FIELDS LEAVE WITH IT, as every page that leaves takes them (ADR-0151).
+    const remove = (page: number, successor: number): void => {
+      successors.set(target.findPage(page).asIndirect(), target.findPage(successor));
+      removeFieldsOnPages(target, [page]);
+      target.deletePage(page);
+    };
+
+    if (taken.length === replaced.length) {
+      replaced.forEach((page, index) => {
+        const sourcePage = taken[index];
+        if (sourcePage === undefined) throw new Error('unreachable: the two lists have the same length');
+        graftPagesWithAnnotations(map, target, from, page, [sourcePage], successors);
+        // SHIFTED BY THE ONE PAGE JUST PLACED IN FRONT OF IT.
+        remove(page + 1, page);
+      });
+      // AND EVERYTHING ELSE THAT NAMED A REPLACED PAGE, cleared as a delete clears it, along with any page a grafted
+      // link brought in.
+      releasePagesOutsideTree(target, successors);
+      return;
     }
 
-    const pages = graftPagesWithAnnotations(target.newGraftMap(), target, from, command.at);
-    // SHIFTED BY WHAT WAS JUST INSERTED. See the module note: the replaced page
-    // is no longer at `command.at`.
-    target.deletePage(command.at + pages);
+    const first = replaced[0] ?? 0;
+    if (replaced.some((page, index) => page !== first + index)) {
+      throw new RangeError(
+        `Replacing ${String(replaced.length)} pages that are not next to each other needs as many pages to put in ` +
+          `their place; ${String(taken.length)} were chosen. Choose ${String(replaced.length)} pages, or replace ` +
+          'pages that are next to each other.',
+      );
+    }
+    graftPagesWithAnnotations(map, target, from, first, taken, successors);
+    // THE RUN NOW STARTS after the pages just placed, and closes up as each is deleted, so each deletion is at the same
+    // index. The n-th replaced page is followed by the n-th page placed, or by the last one placed.
+    replaced.forEach((_page, index) => {
+      remove(first + taken.length, first + Math.min(index, taken.length - 1));
+    });
+    releasePagesOutsideTree(target, successors);
   });
 
 /**

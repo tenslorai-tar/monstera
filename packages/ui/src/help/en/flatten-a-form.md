@@ -12,6 +12,7 @@ Flattening turns a filled form into ordinary page content. What is in the fields
 
 1. Fill in the form.
 2. In the rail, choose **Forms**, then **Flatten** in the **Manage** group (its full name is **Flatten form**).
+3. Monstera says what flattening removes. Choose **Flatten form** to go ahead, or close the window to keep the form. A message at the bottom of the window says when it is done.
 
 ![The Manage group with Flatten](screenshot:flatten-a-form-1)
 

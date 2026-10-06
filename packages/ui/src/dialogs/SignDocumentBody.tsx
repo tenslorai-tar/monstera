@@ -1,11 +1,6 @@
 import { useLingui } from '@lingui/react';
-import type { RequestedSignatureMark } from '@monstera/contract';
-import {
-  DOCUMENT_PASSWORD_MAX_CHARS,
-  MAX_SIGNATURE_FIELD,
-  SIGNATURE_FONTS,
-  TIMESTAMP_AUTHORITY_IDS,
-} from '@monstera/contract';
+import type { ChosenSignatureMark, SignatureFont } from '@monstera/contract';
+import { DOCUMENT_PASSWORD_MAX_CHARS, MAX_SIGNATURE_FIELD, TIMESTAMP_AUTHORITY_IDS } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 import { useId, useState } from 'react';
@@ -26,11 +21,6 @@ import {
   SIGN_DOCUMENT_CLEAR,
   SIGN_DOCUMENT_CONTACT,
   SIGN_DOCUMENT_EXPLAINS,
-  SIGN_DOCUMENT_FONT,
-  SIGN_DOCUMENT_FONT_COURIER,
-  SIGN_DOCUMENT_FONT_HELVETICA,
-  SIGN_DOCUMENT_FONT_TIMES,
-  SIGN_DOCUMENT_FONT_TIMES_ITALIC,
   SIGN_DOCUMENT_IMAGE_NOTE,
   SIGN_DOCUMENT_LOCATION,
   SIGN_DOCUMENT_LOOK,
@@ -49,11 +39,14 @@ import {
   SIGN_DOCUMENT_TEXT,
   SIGN_DOCUMENT_TOO_LONG,
 } from '../messages/en.js';
+import { useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
+import { DEFAULT_SIGNATURE_FONT } from '../signatureFaces.js';
 import { KeptSignatureLook } from './KeptSignatureLook.js';
+import { TypedSignatureFields, typedNameProblem, useSignatureFaces, useTypedName } from './TypedSignature.js';
 import type { KeptSignature, SignDocumentAnswers } from './signDocument.js';
 import type { PadStroke } from './SignaturePad.js';
 import { SignaturePad } from './SignaturePad.js';
@@ -111,7 +104,7 @@ const TIMESTAMP_TITLES: Readonly<Record<TimestampChoice, MessageKey>> = {
  * **Typed first**, because it is the one a person can complete from the
  * keyboard alone; the pad has no keyboard equivalent.
  */
-const LOOKS = ['typed', 'drawn', 'image', 'saved'] as const satisfies readonly RequestedSignatureMark['kind'][];
+const LOOKS = ['typed', 'drawn', 'image', 'saved'] as const satisfies readonly ChosenSignatureMark['kind'][];
 
 type Look = (typeof LOOKS)[number];
 
@@ -120,14 +113,6 @@ const LOOK_TITLES: Readonly<Record<Look, MessageKey>> = {
   drawn: SIGN_DOCUMENT_LOOK_DRAWN,
   image: SIGN_DOCUMENT_LOOK_IMAGE,
   saved: SIGN_DOCUMENT_LOOK_KEPT,
-};
-
-/** Each face's name, keyed on the contract's own list. */
-const FONT_TITLES: Readonly<Record<(typeof SIGNATURE_FONTS)[number], MessageKey>> = {
-  helvetica: SIGN_DOCUMENT_FONT_HELVETICA,
-  'times-roman': SIGN_DOCUMENT_FONT_TIMES,
-  'times-italic': SIGN_DOCUMENT_FONT_TIMES_ITALIC,
-  courier: SIGN_DOCUMENT_FONT_COURIER,
 };
 
 /**
@@ -141,13 +126,14 @@ const FONT_TITLES: Readonly<Record<(typeof SIGNATURE_FONTS)[number], MessageKey>
  * A picture of a signature is the same — main picks it — and gets its own
  * sentence for the same reason.
  *
- * ## `Sign` is disabled for exactly one reason besides length
+ * ## `Sign` refuses for exactly one reason besides length
  *
  * An invisible signature has no required field — the passphrase may be empty,
  * because many certificates have none. A VISIBLE one needs something to draw:
  * a placement answered with no text and no strokes would put a blank box on the
- * page, so *Sign* waits until the chosen look has content, and the status line
- * says so rather than leaving a disabled control to explain itself.
+ * page, so *Sign* signs nothing until the chosen look has content. It stays
+ * pressable, and the status line says what is missing once it has been pressed
+ * (`attempt.ts`); a field typed past its bound is said at once and disables it.
  *
  * A default export because `declareDialog` takes a `lazy()` component.
  */
@@ -170,7 +156,8 @@ export default function SignDocumentBody({
   // A KEPT SIGNATURE FIRST when there is one: a person who kept one kept it to use it.
   const [look, setLook] = useState<Look>(kept.length > 0 ? 'saved' : 'typed');
   const [text, setText] = useState('');
-  const [font, setFont] = useState<(typeof SIGNATURE_FONTS)[number]>('times-italic');
+  const [font, setFont] = useState<SignatureFont>(DEFAULT_SIGNATURE_FONT);
+  const faces = useSignatureFaces();
   const [strokes, setStrokes] = useState<readonly PadStroke[]>([]);
   const [chosenKept, setChosenKept] = useState<string | undefined>(kept[0]?.id);
   const [keep, setKeep] = useState(false);
@@ -190,8 +177,12 @@ export default function SignDocumentBody({
   ).find(([, long]) => long)?.[0];
   const over = tooLong !== undefined;
 
-  /** The look as the channel carries it, or `undefined` when it has nothing to draw. */
-  const mark = ((): RequestedSignatureMark | undefined => {
+  // THE NAME SET IN THE CHOSEN FACE, as the plain Signature's dialog sets it (ADR-0150).
+  const typed = useTypedName(faces, font, text.trim());
+  const facing = placed && look === 'typed' && text.trim() !== '' && typed !== undefined ? typedNameProblem(typed) : undefined;
+
+  /** The look as the person chose it, or `undefined` when it has nothing to draw. */
+  const mark = ((): ChosenSignatureMark | undefined => {
     if (look === 'image') return { kind: 'image' };
     if (look === 'saved') return chosenKept === undefined ? undefined : { kind: 'saved', id: chosenKept };
     if (look === 'drawn') {
@@ -202,9 +193,10 @@ export default function SignDocumentBody({
           }
         : undefined;
     }
-    return text.trim().length > 0 ? { kind: 'typed', text: text.trim(), font } : undefined;
+    return text.trim().length > 0 && typed?.kind === 'outline' ? { kind: 'typed', text: text.trim(), font } : undefined;
   })();
   const missing = placed && mark === undefined;
+  const attempt = useAttempt();
 
   /** A trimmed field, or `undefined` when it holds nothing a reader would show. */
   const stated = (value: string): { readonly value: string } | undefined =>
@@ -222,6 +214,7 @@ export default function SignDocumentBody({
               data-sign-look=""
               onChange={(event) => {
                 setLook(event.target.value as Look);
+                attempt.forget();
               }}
               value={look}
             >
@@ -234,27 +227,15 @@ export default function SignDocumentBody({
           </DialogRow>
 
           {look === 'typed' ? (
-            <>
-              <DialogRow label={SIGN_DOCUMENT_TEXT}>
-                <Input invalid={tooLong === SIGN_DOCUMENT_TEXT} label={SIGN_DOCUMENT_TEXT} labelShownBeside onValueChange={setText} value={text} />
-              </DialogRow>
-              <DialogRow label={SIGN_DOCUMENT_FONT}>
-                <select
-                  aria-label={_(SIGN_DOCUMENT_FONT)}
-                  data-sign-font=""
-                  onChange={(event) => {
-                    setFont(event.target.value as (typeof SIGNATURE_FONTS)[number]);
-                  }}
-                  value={font}
-                >
-                  {SIGNATURE_FONTS.map((face) => (
-                    <option key={face} value={face}>
-                      {_(FONT_TITLES[face])}
-                    </option>
-                  ))}
-                </select>
-              </DialogRow>
-            </>
+            <TypedSignatureFields
+              face={font}
+              faces={faces}
+              invalid={tooLong === SIGN_DOCUMENT_TEXT || facing !== undefined}
+              label={SIGN_DOCUMENT_TEXT}
+              onFaceChange={setFont}
+              onTextChange={setText}
+              text={text}
+            />
           ) : null}
 
           {look === 'drawn' ? (
@@ -411,15 +392,18 @@ export default function SignDocumentBody({
       <p className="m-sign-document__problem" role="status">
         {tooLong !== undefined
           ? _(SIGN_DOCUMENT_TOO_LONG, { field: _(tooLong) })
-          : missing
-            ? _(SIGN_DOCUMENT_MARK_MISSING)
-            : ''}
+          : facing !== undefined
+            ? _(facing.message, facing.values)
+            : missing && attempt.tried
+              ? _(SIGN_DOCUMENT_MARK_MISSING)
+              : ''}
       </p>
       <DialogFooter>
         <Button
-          disabled={over || missing}
+          disabled={over}
           label={SIGN_DOCUMENT_APPLY}
           onClick={() => {
+            attempt.attempt();
             if (over || missing) return;
             const named = stated(name);
             const why = stated(reason);

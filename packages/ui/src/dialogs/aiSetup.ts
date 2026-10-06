@@ -1,4 +1,4 @@
-import { AI_PROVIDER_IDS } from '@monstera/contract';
+import { AI_LIST_PROBLEMS, AI_PROVIDER_IDS } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -10,9 +10,10 @@ export const AI_SETUP_DIALOG_ID = 'dialog.ai-setup';
 
 /**
  * Why the last attempt did not keep the key, said on the next showing of the dialog — the
- * provider's own answer through `ai.models`, or this machine refusing to store a secret.
+ * provider's own answer through `ai.checkKey`, or this machine refusing to store a secret. The check's kinds are the
+ * contract's, so a kind the check gains is one this dialog must say.
  */
-export const AI_SETUP_PROBLEMS = ['unauthorised', 'unreachable', 'rejected', 'unreadable', 'not-stored'] as const;
+export const AI_SETUP_PROBLEMS = [...AI_LIST_PROBLEMS, 'not-stored'] as const;
 
 export type AiSetupProblem = (typeof AI_SETUP_PROBLEMS)[number];
 

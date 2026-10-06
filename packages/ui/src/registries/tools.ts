@@ -1,5 +1,5 @@
 import type { DispatchableCommand } from '@monstera/contract';
-import type { PageTransform, ViewportPoint } from '@monstera/shared';
+import type { MessageKey, PageTransform, ViewportPoint } from '@monstera/shared';
 
 import type { TextSelection } from '../TextLayer.js';
 
@@ -175,16 +175,23 @@ const MAX_GESTURE_POINTS = 4096;
  * decimated. Without that a rectangle's corner would snap to the nearest two
  * pixels, and a tool that reads only two points would be paying for a
  * simplification it does not use.
+ *
+ * **Except the FIRST point, which is never replaced**: it is where the press
+ * was, and {@link startOf} reads it. While a gesture held one point, that point
+ * was also the last, so the first move under two pixels overwrote the press —
+ * every drag began up to two pixels from where it was pressed, and a
+ * typewriter's click landed half a point off at zoom 2 (measured 2026-10-03).
  */
-export const pointerPath: Pick<ToolController, 'begin' | 'update' | 'complete'> = {
+export const pointerPath: Pick<ToolController, 'begin' | 'update' | 'complete' | 'reopen'> = {
   begin: (at: ViewportPoint): Gesture => ({ points: [at], presses: [at], done: false }),
   update: (gesture: Gesture, at: ViewportPoint): Gesture => {
     const last = endOf(gesture);
     const far = Math.hypot(at.x - last.x, at.y - last.y) >= KEEP_APART;
     if (far && gesture.points.length >= MAX_GESTURE_POINTS) return gesture;
+    const keepsLast = far || gesture.points.length === 1;
     return {
       ...gesture,
-      points: far ? [...gesture.points, at] : [...gesture.points.slice(0, -1), at],
+      points: keepsLast ? [...gesture.points, at] : [...gesture.points.slice(0, -1), at],
     };
   },
   // A RELEASE ENDS THE GESTURE, which is what every gesture has done until now
@@ -197,6 +204,9 @@ export const pointerPath: Pick<ToolController, 'begin' | 'update' | 'complete'> 
   // they already spread, that a multi-press tool overrides when it means
   // something else.
   complete: (): boolean => true,
+  // A DOUBLE-CLICK REOPENS NOTHING, which is what every tool but the ones that edit words in a mark mean
+  // (ADR-0154 Decision 3) — `complete`'s reason for living here.
+  reopen: (): undefined => undefined,
 };
 
 /**
@@ -261,8 +271,13 @@ export interface ToolController {
    * so a controller returning markup would put two components in charge of one
    * drawing. It also keeps this module free of React, which is what lets a case
    * assert a preview's geometry by reading four numbers.
+   *
+   * **Given what {@link commit} is given**, the page and its transform, read at the same moment
+   * ([ADR-0166](../../../../docs/DECISIONS/0166-a-tools-preview-is-placed-as-its-commit-is.md)): a preview that could
+   * see only the gesture could draw a move of a selected mark only as the box from the press to the pointer, which is
+   * neither the mark nor where it goes. A tool whose preview needs neither ignores them.
    */
-  readonly preview: (gesture: Gesture) => ToolPreview | undefined;
+  readonly preview: (gesture: Gesture, page: number, transform: PageTransform) => ToolPreview | undefined;
   /**
    * Whether the gesture is over at this pointer-up.
    *
@@ -288,6 +303,18 @@ export interface ToolController {
    * there too. That tool is the trigger for adding those call sites.
    */
   readonly complete: (gesture: Gesture) => boolean;
+  /**
+   * What a double-click with NO gesture in flight makes: a command, or nothing (ADR-0154 Decision 3). The select tool,
+   * Text box and Typewriter reopen a text mark under the point, its words in its own box; {@link pointerPath} answers
+   * nothing, so every other tool says nothing. It may answer later, as {@link commit} may, because the words come from
+   * a person. Required with a default, for `complete`'s reason: an optional member would let a misspelt one take the
+   * default in silence.
+   */
+  readonly reopen: (
+    at: ViewportPoint,
+    page: number,
+    transform: PageTransform,
+  ) => DispatchableCommand | undefined | Promise<DispatchableCommand | undefined>;
 }
 
 /**
@@ -321,6 +348,16 @@ export type ToolPreview =
       readonly shape: 'path';
       /** Every kept point, as `[x, y]` pairs in order. */
       readonly points: readonly (readonly [number, number])[];
+    }
+  | {
+      /** Several rectangles drawn as one shape: a multi-selection moving together (ADR-0166). */
+      readonly shape: 'boxes';
+      readonly boxes: readonly {
+        readonly x: number;
+        readonly y: number;
+        readonly width: number;
+        readonly height: number;
+      }[];
     };
 
 /** One registered tool. */
@@ -340,11 +377,19 @@ export interface UiTool {
   /**
    * The pointer over the page while this tool is active (the owner's review of 0.1.6.0: the crosshair was every
    * tool's). ABSENT IS THE CROSSHAIR, the drawing tools' pointer — a shape is drawn from a corner and an arrow points
-   * at a spot — so the ~40 drawing tools say nothing and a tool that does not draw says what it is: `arrow` for one
-   * that picks or places (Select, the note), `text` for one that works on selected text. Read by `PageList`, which
+   * at a spot — so the drawing tools say nothing and a tool that does not draw says what it is: `arrow` for one that
+   * picks or places (Select, the note, the caret), `text` for one whose box the words are typed into (Text box,
+   * Typewriter), `eraser` for the eraser, whose pointer is its own picture (the owner's item 15d). The tools that work
+   * on selected text mount no surface, and the page list gives them its I-beam. Read by `AnnotationOverlay`, which
    * puts it on the surface as `data-cursor` for the stylesheet.
    */
-  readonly cursor?: 'arrow' | 'text';
+  readonly cursor?: 'arrow' | 'text' | 'eraser';
+  /**
+   * What the tool waits for, said in the status bar's start region while the tool is on (ADR-0154 Decision 4): *Click
+   * where the comment goes*. REQUIRED, so a tool cannot arrive waiting for a press nobody is told about: every tool
+   * waits for one, a drag, a click, corners or a text selection. The status bar adds that Escape leaves the tool.
+   */
+  readonly hint: MessageKey;
   /**
    * The command for a TEXT SELECTION, for a tool whose gesture is selecting text rather than dragging a shape — a
    * highlighter, Acrobat's way: the words light up as they are selected and the mark lands on release.

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import * as mupdf from './mupdfRaw.js';
 import { applyWatermarkPages } from './pageWatermark.js';
-import { appendRevision, openForWriting, openWhole } from './pdfLibSession.js';
+import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
  * A pdf-lib command writes its result as an APPENDED revision (ADR-0127): the input, byte for byte, then one update.
@@ -16,6 +16,14 @@ async function document(pages: number): Promise<Uint8Array> {
   const font = await created.embedFont(StandardFonts.Helvetica);
   for (let at = 0; at < pages; at += 1) created.addPage([612, 792]).drawText(`Page ${String(at + 1)}`, { x: 72, y: 700, font });
   return created.save();
+}
+
+/**
+ * A document loaded WHOLE, the route no command takes since the signer moved to the appended one (ADR-0149): the
+ * controls below need a load that is not for an incremental update, and pinning the flag is what the load rule asks.
+ */
+function loadedWhole(image: Uint8Array): Promise<PDFDocument> {
+  return PDFDocument.load(image, { updateMetadata: false });
 }
 
 /** MuPDF's reading: versions, and whether it had to repair. */
@@ -50,15 +58,15 @@ describe('a pdf-lib command appends its revision (ADR-0127)', () => {
 
   it('CONTROL: a whole save of the same edit is NOT its input with something appended, so the case can fail', async () => {
     const input = await document(3);
-    const whole = await openWhole(input);
+    const whole = await loadedWhole(input);
     whole.getPage(0).drawText('DRAFT', { x: 72, y: 72 });
     const rewritten = await whole.save();
 
     expect(startsWith(rewritten, input)).toBe(false);
   });
 
-  it('appendRevision refuses a document loaded whole — the two helpers are one route', async () => {
-    await expect(appendRevision(await openWhole(await document(1)))).rejects.toThrow(/forIncrementalUpdate/u);
+  it('appendRevision refuses a document loaded whole, and takes one opened for writing — CONTROL in the second line', async () => {
+    await expect(appendRevision(await loadedWhole(await document(1)))).rejects.toThrow(/forIncrementalUpdate/u);
     await expect(appendRevision(await openForWriting(await document(1)))).resolves.toBeInstanceOf(Uint8Array);
   });
 });

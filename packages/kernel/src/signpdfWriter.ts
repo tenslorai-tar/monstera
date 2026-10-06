@@ -1,47 +1,44 @@
-import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
+import type { CommandOfKind } from '@monstera/contract';
 
-import { serialiseIntoFile } from './checkpointFile.js';
-import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
-import type {
-  ApplyRequest,
-  CommandExecution,
-  KindsRoutedTo,
-  RegisteredWriter,
-} from './commandRouting.js';
-import type { Apply, ByteImage, Capture, EngineWriter, Invert } from './engineSeam.js';
 import {
-  applySignDocument,
   captureSignDocument,
   invertSignDocument,
+  NO_TIMESTAMPS,
   type RequestTimestamp,
-  signDocumentWith,
+  signPrepared,
 } from './documentSign.js';
+import type { Apply, ByteImage } from './engineSeam.js';
+import { placeholderRequestOf } from './signatureHole.js';
 
 /**
- * `@signpdf` as a writer of record — the seam's third byte-image adapter.
+ * `@signpdf` as a writer of record — hosted on the MuPDF host since
+ * [ADR-0148](../../../docs/DECISIONS/0148-signings-parse-runs-in-the-mupdf-host-and-main-keeps-only-the-key.md).
  *
- * ## It was DECLARED before it existed, and this is the thing arriving
+ * ## The spec's apply is the WHOLE signature, in one process
  *
- * `writerShapes` has carried `signpdf: 'byte-image'` since Stage 0, with
- * nothing behind it, because §3's matrix has named the writer since the
- * founding record. Nothing was wrong with that — a declaration ahead of its
- * first consumer is how this project keeps the seam honest — and it does mean
- * the shape was never exercised until now.
- *
- * ## `pdfLibWriter.ts`'s shape, deliberately
- *
- * A byte-image writer's `open` and `serialise` are the identity: its session IS
- * the document's bytes (ADR-0039), so there is nothing to parse and nothing to
- * release. Writing that a second way would be a second opinion about what a
- * byte-image session is; this file is the first one with the comment removed
- * rather than a variation on it.
+ * `pdfLibSpecs`' shape: a hosted writer's spec still takes the image, because the spec table is what a single process
+ * runs end to end — a unit case, and the probe that signs against a live authority. In the application the two halves
+ * run apart: the placeholder in the host (`signaturePlaceholder.ts`, loaded here on demand by a literal `import()`) and
+ * the signature in `main` (`documentSign.ts`' `signpdfExecutionWith`). Both compose the same two functions, so the cases
+ * that run this apply test the code the application runs.
  */
-export const signpdfWriter: EngineWriter<ByteImage> = {
-  open: (image) => Promise.resolve(image),
-  serialise: (session) => Promise.resolve(session),
-  close: () => Promise.resolve(),
-};
+
+/**
+ * The signing apply, over a timestamp port: the placeholder prepared and the signature made, in this process.
+ *
+ * `applySignDocument` is this with {@link NO_TIMESTAMPS}, so the spec table keeps one apply per kind and a caller with
+ * a real port passes it — one function, parameterised, rather than two bodies that could drift.
+ */
+export function signDocumentWith(requestTimestamp: RequestTimestamp): Apply<'signpdf', 'signDocument'> {
+  return async (image: ByteImage, command: CommandOfKind<'signDocument'>) => {
+    const { prepareSignature } = await import('./signaturePlaceholder.js');
+    return signPrepared(await prepareSignature(image, placeholderRequestOf(command)), command, requestTimestamp);
+  };
+}
+
+/** The spec table's apply, with no timestamp port: a command asking for one is refused as unreachable. */
+export const applySignDocument: Apply<'signpdf', 'signDocument'> = signDocumentWith(NO_TIMESTAMPS);
 
 /**
  * The signpdf half of the routing table.
@@ -61,90 +58,3 @@ export const signpdfSpecs = {
     invert: invertSignDocument,
   },
 };
-
-/** The one kind routed here. */
-type SignpdfKind = keyof typeof signpdfSpecs;
-
-/** Whether a kind is this writer's. */
-function routedHere(kind: CommandKind): kind is SignpdfKind {
-  return kind in signpdfSpecs;
-}
-
-/** The spec for a command routed here, or a named refusal. */
-function specFor(command: Command): (typeof signpdfSpecs)[SignpdfKind] {
-  if (!routedHere(command.kind)) {
-    // A ROUTING DEFECT, not a document problem. The bus dispatches on
-    // `declaredCommands[kind].writer`, so reaching here means the table and
-    // this file disagree — which is the state `commandSpecs.ts`' `satisfies`
-    // makes a compile error, and this is what says so if one ever slipped past.
-    throw new Error(`"${command.kind}" is not routed to the signpdf writer.`);
-  }
-  return signpdfSpecs[command.kind];
-}
-
-/**
- * The signpdf writer's execution half.
- *
- * `localPdfLibExecution`'s shape naming neither `source` nor `reads`: no
- * command routed here declares either, so a destructure that named them would
- * bind two values nothing here can use.
- */
-export const localSignpdfExecution: CommandExecution<'signpdf'> = {
-  apply<K extends KindsRoutedTo<'signpdf'>>({
-    session: image,
-    command,
-  }: ApplyRequest<'signpdf', K>): Promise<ByteImage> {
-    return (specFor(command).apply as Apply<'signpdf', K>)(image, command);
-  },
-  capture<K extends CommandKind>(
-    image: ByteImage,
-    command: CommandOfKind<K>,
-  ): Promise<CaptureResult<CommandPrior[K]>> {
-    return (specFor(command).capture as Capture<'signpdf', K>)(image, command);
-  },
-  invert<K extends CommandKind>(
-    image: ByteImage,
-    kind: K,
-    inverse: CommandPrior[K],
-  ): Promise<ByteImage> {
-    return (specFor({ kind } as Command).invert as Invert<'signpdf', K>)(image, inverse);
-  },
-};
-
-/**
- * The signpdf writer with NO timestamp transport.
- *
- * What a unit case registers. A command that asks for a timestamp through it is
- * refused as unreachable rather than signed without one (`documentSign.ts`'
- * `NO_TIMESTAMPS`).
- */
-export const localSignpdfWriter: RegisteredWriter<'signpdf'> = {
-  ...signpdfWriter,
-  serialiseInto: serialiseIntoFile((session: ByteImage) => signpdfWriter.serialise(session)),
-  ...localSignpdfExecution,
-};
-
-/**
- * The signpdf writer as the composition root registers it: over a timestamp port
- * the root builds from the contract's authority list (ADR-0058 Decision 4).
- *
- * **Only `apply` differs from {@link localSignpdfWriter}**, and it differs by the
- * port alone — `signDocumentWith` is the one signing body, and the spec table's
- * apply is the same function with no port. `specFor` still runs first, so a kind
- * routed here by mistake is refused by name exactly as the local writer refuses it.
- */
-export function signpdfWriterWith(requestTimestamp: RequestTimestamp): RegisteredWriter<'signpdf'> {
-  const signDocument = signDocumentWith(requestTimestamp);
-  return {
-    ...localSignpdfWriter,
-    apply<K extends KindsRoutedTo<'signpdf'>>({
-      session: image,
-      command,
-    }: ApplyRequest<'signpdf', K>): Promise<ByteImage> {
-      specFor(command);
-      // SOUND BY `routedHere`: `signDocument` is the one kind routed to this
-      // writer, so a command that passed `specFor` is one.
-      return (signDocument as Apply<'signpdf', K>)(image, command);
-    },
-  };
-}

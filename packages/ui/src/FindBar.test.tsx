@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import { type ContractClient, MAX_QUERY_LENGTH, channels, createClient } from '@monstera/contract';
-import { asDocId, asDocVersion, ok } from '@monstera/shared';
+import { type DocVersion, asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -12,6 +12,8 @@ import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000fd');
+/** The version every fixture answer is read from, and the one on screen unless a case moves it. */
+const V1 = asDocVersion(1);
 
 /**
  * Match navigation.
@@ -36,7 +38,7 @@ const MATCHED = [0, 2];
  * crosses the real schemas: a shape the channel cannot carry fails in this file
  * rather than in the product.
  */
-function clientAnswering(): { client: ContractClient; asked: number[] } {
+function clientAnswering(readFrom: (page: number) => DocVersion = () => V1): { client: ContractClient; asked: number[] } {
   const asked: number[] = [];
   const client = createClient(channels, (id, params) => {
     if (id !== 'document.searchPage') throw new Error(`unexpected channel ${id}`);
@@ -44,7 +46,7 @@ function clientAnswering(): { client: ContractClient; asked: number[] } {
     asked.push(page);
     return Promise.resolve(
       ok({
-        version: asDocVersion(1),
+        version: readFrom(page),
         matches: MATCHED.includes(page)
           ? [{ line: 0, offset: 0, endLine: 0, endOffset: 3, text: `hit on ${String(page)}` }]
           : [],
@@ -100,6 +102,7 @@ async function afterWalking(): Promise<{
       <FindBar
         client={client}
         docId={DOC}
+        version={V1}
         page={1}
         pageCount={PAGES}
         onJump={jumped}
@@ -186,6 +189,7 @@ describe('FindBar match navigation', () => {
         <FindBar
           client={client}
           docId={DOC}
+          version={V1}
           page={1}
           pageCount={PAGES}
           onJump={vi.fn()}
@@ -246,6 +250,7 @@ describe('FindBar match navigation', () => {
         <FindBar
           client={client}
           docId={DOC}
+          version={V1}
           page={0}
           pageCount={PAGES}
           onJump={jumped}
@@ -269,8 +274,8 @@ describe('FindBar match navigation', () => {
     });
 
     // The page search DID find something — without this the case passes for a
-    // bar that rendered no results at all, which is the vacuous version.
-    expect(container.textContent).toContain('1 matches on this page');
+    // bar that rendered no results at all, which is the vacuous version. ONE MATCH, in the singular (item 13i).
+    expect(container.textContent).toContain('1 match on this page');
     expect(container.querySelector('[data-find-next]')).toBeNull();
     expect(jumped).not.toHaveBeenCalled();
   });
@@ -289,8 +294,8 @@ describe('FindBar match navigation', () => {
  * bar that sent its own defaults would look correct in every screenshot.
  */
 describe('FindBar replace-all', () => {
-  /** Renders a bar with a dispatcher, and records what it sends. */
-  function withCommands(): {
+  /** Renders a bar with a dispatcher, and records what it sends; `refusing` is the code its execute answers with. */
+  function withCommands(refusing?: 'replace-moves-line'): {
     readonly container: HTMLElement;
     readonly sent: { id: string; params: unknown }[];
     readonly applied: ReturnType<typeof vi.fn>;
@@ -310,6 +315,7 @@ describe('FindBar replace-all', () => {
           }),
         );
       }
+      if (refusing !== undefined) return Promise.resolve(err({ code: refusing }));
       return Promise.resolve(
         ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0 }),
       );
@@ -319,6 +325,7 @@ describe('FindBar replace-all', () => {
         <FindBar
           client={client}
           docId={DOC}
+          version={V1}
           page={0}
           pageCount={PAGES}
           onJump={vi.fn()}
@@ -328,6 +335,13 @@ describe('FindBar replace-all', () => {
             onApplied: applied,
             ask: vi.fn(),
             stamp: () => ({ author: 'A. Tester', created: '2026-09-24T09:38:00.000Z' }),
+            // NOT SIGNED (ADR-0149): a copy opened for this replace is a defect of the case.
+            signatures: {
+              warn: () => true,
+              onOpened: () => {
+                throw new Error('the case opened a copy for an edit without asking for one');
+              },
+            },
           }}
         />
       </Wrapped>,
@@ -384,6 +398,30 @@ describe('FindBar replace-all', () => {
     });
   });
 
+  it('a Replace REFUSED as moving its line keeps both typed fields, says nothing was replaced, and redraws nothing', async () => {
+    const { container, applied } = withCommands('replace-moves-line');
+
+    await act(async () => {
+      fireEvent.change(only(container, '[data-find-input]', HTMLInputElement), { target: { value: 'narrow' } });
+      fireEvent.change(only(container, '[data-find-replacement]', HTMLInputElement), { target: { value: 'much wider' } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      only(container, '[data-find-replace-all]', HTMLButtonElement).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // THE TYPED WORDS STAY (the owner's answer of 2026-10-05): a person told why can change one word and send again.
+    expect(only(container, '[data-find-input]', HTMLInputElement).value).toBe('narrow');
+    expect(only(container, '[data-find-replacement]', HTMLInputElement).value).toBe('much wider');
+    // NOTHING MOVED: no "replaced" note and no version reported, against the case above where both happen.
+    expect(container.querySelector('.m-find-replaced')).toBeNull();
+    expect(applied).not.toHaveBeenCalled();
+    // AND THE CONTROL IS THE PERSON'S AGAIN.
+    expect(only(container, '[data-find-replace-all]', HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('CLEARS THE MATCHES afterwards, because the document moved under them', async () => {
     const { container, painted } = withCommands();
 
@@ -402,14 +440,14 @@ describe('FindBar replace-all', () => {
     });
     // THE SEARCH FOUND SOMETHING FIRST — without this the case passes on a bar
     // that never rendered a result, and *cleared* would mean nothing.
-    expect(container.textContent).toContain('1 matches on this page');
+    expect(container.textContent).toContain('1 match on this page');
 
     await act(async () => {
       only(container, '[data-find-replace-all]', HTMLButtonElement).click();
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain('1 matches on this page');
+    expect(container.textContent).not.toContain('1 match on this page');
     // AND THE HIGHLIGHTS WENT WITH THEM. A list cleared while the page kept its
     // boxes would put a rectangle around a word that is no longer there.
     expect(painted).toHaveBeenLastCalledWith(null);
@@ -425,6 +463,7 @@ describe('FindBar replace-all', () => {
         <FindBar
           client={client}
           docId={DOC}
+          version={V1}
           page={0}
           pageCount={PAGES}
           onJump={vi.fn()}
@@ -448,7 +487,16 @@ describe('a SEEDED search — the selected-text menu’s *Search for this*', () 
   function seeded(client: ContractClient, seed: { text: string; nonce: number }, page = 1): ReactElement {
     return (
       <Wrapped>
-        <FindBar client={client} docId={DOC} page={page} pageCount={PAGES} onJump={vi.fn()} onHighlight={vi.fn()} seed={seed} />
+        <FindBar
+          client={client}
+          docId={DOC}
+          version={V1}
+          page={page}
+          pageCount={PAGES}
+          onJump={vi.fn()}
+          onHighlight={vi.fn()}
+          seed={seed}
+        />
       </Wrapped>
     );
   }
@@ -494,5 +542,127 @@ describe('a SEEDED search — the selected-text menu’s *Search for this*', () 
     });
     expect(only(container, '[data-find-input]', HTMLInputElement).value).toHaveLength(MAX_QUERY_LENGTH);
     expect(asked).toStrictEqual([1]);
+  });
+});
+
+/**
+ * An answer belongs to the VERSION it was read from (CR-COR-09). Every match names a page, a line and an offset in that
+ * version, and after an edit those name other text: Next went to the old pages and the count stayed.
+ */
+describe('Find answers and the version on screen', () => {
+  function bar(client: ContractClient, version: DocVersion, painted: PaintSpy, jumped = vi.fn()): ReactElement {
+    return (
+      <Wrapped>
+        <FindBar
+          client={client}
+          docId={DOC}
+          version={version}
+          page={1}
+          pageCount={PAGES}
+          onJump={jumped}
+          onHighlight={painted}
+        />
+      </Wrapped>
+    );
+  }
+
+  async function type(container: HTMLElement, text: string): Promise<void> {
+    await act(async () => {
+      fireEvent.change(only(container, '[data-find-input]', HTMLInputElement), { target: { value: text } });
+      await Promise.resolve();
+    });
+  }
+
+  async function settle(): Promise<void> {
+    await act(async () => {
+      for (let turn = 0; turn <= PAGES + 1; turn += 1) await Promise.resolve();
+    });
+  }
+
+  it('an EDIT ends a document walk’s answer: the count, the list, Next and the marks go with the version', async () => {
+    const { client } = clientAnswering();
+    const painted: PaintSpy = vi.fn();
+    const { container, rerender } = render(bar(client, V1, painted));
+    await type(container, 'hit');
+    await act(async () => {
+      only(container, '[data-find-all]', HTMLButtonElement).click();
+      await Promise.resolve();
+    });
+    await settle();
+    expect(container.textContent).toContain('2 matches in this document');
+
+    // CONTROL: the same version drawn again keeps the answer, so what follows is the version and not a re-render.
+    rerender(bar(client, V1, painted));
+    expect(container.textContent).toContain('2 matches in this document');
+    expect(container.querySelector('[data-find-next]')).not.toBeNull();
+
+    rerender(bar(client, asDocVersion(2), painted));
+    await settle();
+    expect(container.textContent).not.toContain('matches in this document');
+    expect(container.querySelector('[data-find-next]')).toBeNull();
+    expect(painted).toHaveBeenLastCalledWith(null);
+  });
+
+  it('a page answer READ FROM ANOTHER VERSION is not shown — CONTROL: one read from the version on screen is', async () => {
+    const painted: PaintSpy = vi.fn();
+    // ON SCREEN IS 2, and main read the page from 1: the edit had not reached it, or it answered before the edit.
+    const stale = render(bar(clientAnswering(() => V1).client, asDocVersion(2), painted));
+    await type(stale.container, 'hit');
+    await act(async () => {
+      fireEvent.submit(only(stale.container, '.m-find-bar', HTMLFormElement));
+      await Promise.resolve();
+    });
+    await settle();
+    expect(stale.container.textContent).not.toContain('on this page');
+    expect(painted).toHaveBeenLastCalledWith(null);
+    stale.unmount();
+
+    const current = render(bar(clientAnswering(() => asDocVersion(2)).client, asDocVersion(2), painted));
+    await type(current.container, 'hit');
+    await act(async () => {
+      fireEvent.submit(only(current.container, '.m-find-bar', HTMLFormElement));
+      await Promise.resolve();
+    });
+    await settle();
+    expect(current.container.textContent).toContain('on this page');
+    expect(painted.mock.lastCall?.[0]?.query).toBe('hit');
+  });
+
+  it('a walk IN FLIGHT when the version moves asks for no more pages and shows no list', async () => {
+    // EACH PAGE ANSWERS WHEN THE CASE SAYS, so the version can move between two of them.
+    const asked: number[] = [];
+    const answers: (() => void)[] = [];
+    const client = createClient(channels, (id, params) => {
+      if (id !== 'document.searchPage') throw new Error(`unexpected channel ${id}`);
+      const page = (params as { page: number }).page;
+      asked.push(page);
+      return new Promise((answer) => {
+        answers.push(() => {
+          answer(ok({ version: V1, matches: [{ line: 0, offset: 0, endLine: 0, endOffset: 3, text: 'hit' }], truncated: false }));
+        });
+      });
+    });
+    const painted: PaintSpy = vi.fn();
+    const jumped = vi.fn();
+    const { container, rerender } = render(bar(client, V1, painted, jumped));
+    await type(container, 'hit');
+    await act(async () => {
+      only(container, '[data-find-all]', HTMLButtonElement).click();
+      await Promise.resolve();
+    });
+    expect(asked).toStrictEqual([0]);
+
+    rerender(bar(client, asDocVersion(2), painted, jumped));
+    await act(async () => {
+      answers[0]?.();
+      await Promise.resolve();
+    });
+    await settle();
+    // STOPPED AT THE PAGE IN FLIGHT, and nothing of it is drawn: no list, no jump, no cancelled message for a cancel
+    // nobody pressed.
+    expect(asked).toStrictEqual([0]);
+    expect(container.textContent).not.toContain('in this document');
+    expect(container.textContent).not.toContain('cancel');
+    expect(jumped).not.toHaveBeenCalled();
   });
 });

@@ -9,6 +9,7 @@ import {
   promoteFormObjectsSchema,
   recolorPageObjectsSchema,
   replaceAllTextSchema,
+  replaceTextAtSchema,
   replaceTextObjectSchema,
 } from '@monstera/contract/host';
 
@@ -19,7 +20,6 @@ import {
   ENGINE_CAPTURE_REASON_MAX,
   byteImageWire,
   coreEngineChannels,
-  outputNameSchema,
   sessionSchema,
 } from './engineChannels.js';
 
@@ -83,6 +83,7 @@ const pdfiumCommandSchema = z.discriminatedUnion('kind', [
   deletePageObjectsSchema,
   promoteFormObjectsSchema,
   replaceAllTextSchema,
+  replaceTextAtSchema,
   editTextBlockSchema,
 ]);
 
@@ -151,8 +152,10 @@ export const SMALLEST_RUN_BYTES = 192;
 export const PDFIUM_PRIOR_TEXT_MAX = 65_536;
 
 /**
- * How long a run's font name may be on this wire: the adapter reads it through a 128-byte buffer whose last byte is
- * the terminator (`baseNameOf` in `pdfiumFfi.ts`), so no name it answers is longer.
+ * How long a run's font name may be on this wire: ISO 32000's own limit on a name, 127 bytes. The adapter reads the
+ * whole name, whatever its length, and cuts a longer one to this at a whole character for the wire (`wireFontName` in
+ * `pdfiumFfi.ts`), so a document past the limit is still read. This said the bound followed from a 128-byte read
+ * buffer, which answered a longer name as 127 NULs (CR-NAT-12).
  */
 export const PDFIUM_FONT_NAME_MAX = 127;
 
@@ -168,6 +171,29 @@ export const PDFIUM_FONT_NAME_MAX = 127;
  * `mupdfCommandSchema`'s own note is about, on the inverse instead of the
  * command.
  */
+/** Text objects' strings as they were, and which objects put them back — `PriorTextObjects` on the wire. */
+const textObjectsPriorSchema = z
+  .object({
+    page: z.number().int().nonnegative(),
+    objects: z
+      .array(
+        z
+          .object({
+            index: z.number().int().nonnegative(),
+            text: z.string().max(PDFIUM_PRIOR_TEXT_MAX),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(ENGINE_TEXT_OBJECTS_MAX)
+      // `.readonly()` because `CommandPrior.replaceTextObject` is, and a
+      // wire type that inferred a mutable array would make main's own
+      // prior unassignable to the channel it travels on — which is the
+      // compile error that put this line here rather than a cast.
+      .readonly(),
+  })
+  .strict();
+
 const pdfiumPriorSchema = z.discriminatedUnion('kind', [
   z
     .object({
@@ -188,29 +214,12 @@ const pdfiumPriorSchema = z.discriminatedUnion('kind', [
        * answered a prior for objects it was not asked about would still restore
        * only what it named. What that could cost is bounded by the page.
        */
-      prior: z
-        .object({
-          page: z.number().int().nonnegative(),
-          objects: z
-            .array(
-              z
-                .object({
-                  index: z.number().int().nonnegative(),
-                  text: z.string().max(PDFIUM_PRIOR_TEXT_MAX),
-                })
-                .strict(),
-            )
-            .min(1)
-            .max(ENGINE_TEXT_OBJECTS_MAX)
-            // `.readonly()` because `CommandPrior.replaceTextObject` is, and a
-            // wire type that inferred a mutable array would make main's own
-            // prior unassignable to the channel it travels on — which is the
-            // compile error that put this line here rather than a cast.
-            .readonly(),
-        })
-        .strict(),
+      prior: textObjectsPriorSchema,
     })
     .strict(),
+  // `replaceTextAt`'s prior is `replaceTextObject`'s shape and restores through its inverse (ADR-0156): ONE schema for
+  // the two, so the restore cannot be handed a shape one of them would not write.
+  z.object({ kind: z.literal('replaceTextAt'), prior: textObjectsPriorSchema }).strict(),
   z
     .object({
       kind: z.literal('placePageObject'),
@@ -365,7 +374,16 @@ export const pdfiumChannels = {
     // PLUS ONE APPLY REFUSAL OF ITS OWN: an in-place edit whose typed text the
     // page's font cannot carry (ADR-0096). On the apply only — capture and invert
     // cannot produce it — and on this engine only.
-    wire: { ...byteImageWire, applyFailures: ['text-not-writable'] as const },
+    // AND A SECOND: one occurrence named by its point that no single text object holds there (ADR-0156).
+    // AND A THIRD: a replacement that matches nothing or changes nothing, which makes no version (ADR-0169 Decision 6).
+    //
+    // `edit-refused` ON ALL THREE, carrying the step and PDFium's number (ADR-0169 Decision 4): capture, apply and
+    // invert each open the image and run native calls, and any of them can refuse at a step a person is told about.
+    wire: {
+      ...byteImageWire,
+      transferFailures: [...byteImageWire.transferFailures, 'edit-refused'] as const,
+      applyFailures: ['text-not-writable', 'text-not-in-place', 'nothing-to-replace', 'replace-moves-line'] as const,
+    },
     // IN A FILE (ADR-0138): `replaceTextObject` and `editTextBlock` multiply per-entry text bounds past a frame.
     commandRoute: 'file',
   }),
@@ -428,7 +446,7 @@ export const pdfiumChannels = {
    */
   'engine/text-runs': fileAnswered(
     'Answers a page’s text runs: which object each is, what it says, where it is and how it is set.',
-    z.object({ session: sessionSchema, from: outputNameSchema, page: z.number().int().nonnegative() }).strict(),
+    z.object({ session: sessionSchema, ...byteImageWire.read, page: z.number().int().nonnegative() }).strict(),
     z
       .object({
         runs: z
@@ -546,7 +564,7 @@ export const pdfiumChannels = {
    */
   'engine/page-objects': fileAnswered(
     'Answers every object on a page: its kind, its box in page space, and its fill.',
-    z.object({ session: sessionSchema, from: outputNameSchema, page: z.number().int().nonnegative() }).strict(),
+    z.object({ session: sessionSchema, ...byteImageWire.read, page: z.number().int().nonnegative() }).strict(),
     z
       .object({
         objects: z
@@ -613,8 +631,9 @@ export const pdfiumChannels = {
     z
       .object({
         session: sessionSchema,
-        from: outputNameSchema,
-        into: outputNameSchema,
+        // `byteImageWire`'s two names, so this read carries the key the others do (ADR-0171's addendum).
+        ...byteImageWire.read,
+        ...byteImageWire.write,
         page: z.number().int().nonnegative(),
         width: z.number().int().positive(),
         height: z.number().int().positive(),

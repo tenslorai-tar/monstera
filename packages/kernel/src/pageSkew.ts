@@ -4,6 +4,7 @@ import type { PDFPage } from './mupdfRaw.js';
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { pageInDocument } from './pageScope.js';
+import { scaleWithinPixelBound } from './pageSnapshot.js';
 
 /**
  * How crooked a page is, measured in its own raster.
@@ -217,7 +218,10 @@ export function skewOfRaster(raster: GreyRaster): PageSkew {
  * argmax.
  */
 export function greyRasterOfPage(page: PDFPage): GreyRaster {
-  const scale = SKEW_DPI / 72;
+  // AT `SKEW_DPI`, OR LESS FOR A PAGE SO LARGE THAT IT WOULD PASS THE HOST'S PIXEL BOUND (CR-NAT-06): an angle reads
+  // the same from fewer pixels, and the page is straightened rather than refused.
+  const [x0, y0, x1, y1] = page.getBounds();
+  const scale = scaleWithinPixelBound(x1 - x0, y1 - y0, SKEW_DPI / 72);
   const pixmap = page.toPixmap(
     Matrix.scale(scale, scale),
     ColorSpace.DeviceGray,

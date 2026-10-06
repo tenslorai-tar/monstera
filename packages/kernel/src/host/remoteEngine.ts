@@ -16,21 +16,26 @@ import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { ReadSignature } from '../signatureRead.js';
 import type { PdfLibHost } from '../pdfLibWriter.js';
+import type { SignatureHost } from '../documentSign.js';
 import {
   type EngineChannels,
   type MupdfWireCommand,
   splitAsset,
   splitPdfLibAsset,
+  splitPlaceholderAsset,
   taggedPrior,
 } from './engineChannels.js';
-import { EngineSerialiseMismatch, type SessionAreaSurface } from './remoteLifecycle.js';
+import { hostRefusalFor } from './hostRefusals.js';
+import { EngineSerialiseMismatch, type SessionAreaSurface, takeAnnounced } from './remoteLifecycle.js';
 import type {
   HostDestinationsReader,
   HostAnnotationsReader,
   HostAnnotationRecordsReader,
+  HostAnnotationWordsReader,
   HostFlatFieldsReader,
   HostFormFieldsReader,
   HostLayersReader,
+  HostLinkAddressReader,
   HostOcrReader,
   HostPageFillsReader,
   HostPageLinksReader,
@@ -179,6 +184,23 @@ export class UnknownRemoteSession extends Error {
 }
 
 /**
+ * A handle the host issued while this registry already holds it (CR-SEC-10).
+ *
+ * The host mints the handle and is hostile by invariant 25, and the host's own `issue` refuses a collision
+ * (`hostSessions.ts`). A second document adopted under the first's handle would point the first's lookups at the
+ * second's directories — its prior-state parameters written where the other document's host reads, its answers read
+ * from the other's output — and releasing either would strand the other. So it is refused, and the caller ends the
+ * connection: a peer that issues one handle twice has stopped being one we understand.
+ */
+export class DuplicateRemoteSession extends Error {
+  override readonly name = 'DuplicateRemoteSession';
+
+  constructor() {
+    super('The engine host issued a session handle this registry already holds, so the host is not to be believed.');
+  }
+}
+
+/**
  * @returns a registry with no sessions in it.
  */
 export function createRemoteSessions(): RemoteSessions {
@@ -187,6 +209,8 @@ export function createRemoteSessions(): RemoteSessions {
   const byHandle = new Map<string, SessionArea>();
   return {
     adopt: (handle, area) => {
+      // A HANDLE ALREADY HELD IS REFUSED, before anything is set: overwriting `byHandle` is the aliasing itself.
+      if (byHandle.has(handle)) throw new DuplicateRemoteSession();
       // The same mint `mupdfWriter.open` makes, and the same reason it is a cast
       // rather than a constructor: the brand exists so nothing outside an
       // adapter can produce one, and an exported mint would be exactly that.
@@ -336,6 +360,22 @@ export function remoteMupdfPageLinks(
       'engine/page-links',
       await client['engine/page-links']({ session: sessions.handleFor(session), page }),
     );
+}
+
+/**
+ * One link's whole address, over the boundary (ADR-0167). The host's two refusals by name come back as the values
+ * the local reader answers, so main decides on one shape whichever side read it.
+ */
+export function remoteMupdfLinkAddress(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostLinkAddressReader {
+  return async (session, page, index) => {
+    const result = await client['engine/link-address']({ session: sessions.handleFor(session), page, index });
+    if (!result.ok && result.error.code === 'no-such-link') return { kind: 'no-such-link' };
+    if (!result.ok && result.error.code === 'address-too-long') return { kind: 'too-long' };
+    return { kind: 'address', uri: answered('engine/link-address', result).uri };
+  };
 }
 
 /**
@@ -514,6 +554,20 @@ export function remoteMupdfAnnotationRecords(
   };
 }
 
+/** One mark's whole words, over the boundary. {@link remoteMupdfAnnotationRecords}' `RangeError`, for its reason. */
+export function remoteMupdfAnnotationWords(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostAnnotationWordsReader {
+  return async (session, page, index) => {
+    const result = await client['engine/annotation-words']({ session: sessions.handleFor(session), page, index });
+    if (!result.ok && result.error.code === 'no-such-annotation') {
+      throw new RangeError(`Annotation ${String(index)} on page ${String(page)} is not in the walk any more.`);
+    }
+    return answered('engine/annotation-words', result);
+  };
+}
+
 /**
  * The document's form fields, over the boundary.
  *
@@ -660,16 +714,17 @@ export function remotePdfLibHost(
     }
     let byteLength: number;
     try {
-      byteLength = answered(
-        'engine/applyPdfLib',
-        await client['engine/applyPdfLib']({
-          session: sessions.handleFor(session),
-          command: split.command,
-          asset,
-          reads,
-          into,
-        }),
-      ).bytes;
+      const result = await client['engine/applyPdfLib']({
+        session: sessions.handleFor(session),
+        command: split.command,
+        asset,
+        reads,
+        into,
+      });
+      // A REFUSAL A PERSON CAN ACT ON comes back as the class it was thrown as (`hostRefusals.ts`).
+      const refusal = result.ok ? undefined : hostRefusalFor(result.error.code);
+      if (refusal !== undefined) throw refusal;
+      byteLength = answered('engine/applyPdfLib', result).bytes;
     } finally {
       if (asset !== undefined) await assets.remove(area.snapshotDirectory, asset);
     }
@@ -681,6 +736,50 @@ export function remotePdfLibHost(
       },
       discard: () => areas.removeOutput(area, into),
     };
+  };
+}
+
+/**
+ * A signature's placeholder, prepared by the MuPDF host that holds `session`, and taken into `main` to be signed
+ * ([ADR-0148](../../../../docs/DECISIONS/0148-signings-parse-runs-in-the-mupdf-host-and-main-keeps-only-the-key.md)).
+ *
+ * **TAKEN, never moved.** `main` signs these bytes, so they leave the host's area by the one taker before anything is
+ * done with them: a regular file of exactly the announced size, removed whatever happens. A host that writes to the
+ * name afterwards writes to nothing `main` reads. The request carries no credential, and the picture crosses as an
+ * asset by {@link remotePdfLibHost}'s rule. A refusal a person can act on comes back as the class it was thrown as.
+ */
+export function remoteSignatureHost(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+  areas: Pick<SessionAreaSurface, 'mintName' | 'takeOutput' | 'removeOutput'>,
+  assets: SessionAssets,
+): SignatureHost {
+  return async (session, request) => {
+    const area = sessions.areaFor(session);
+    const into = areas.mintName();
+    const split = splitPlaceholderAsset(request);
+    const asset = split.asset === undefined ? undefined : assets.name();
+    if (asset !== undefined && split.asset !== undefined) {
+      await assets.write(area.snapshotDirectory, asset, split.asset);
+    }
+    let answer: { readonly bytes: number; readonly byteRange: readonly [number, number, number, number] };
+    try {
+      const result = await client['engine/prepareSignature']({
+        session: sessions.handleFor(session),
+        request: split.request,
+        asset,
+        into,
+      });
+      const refusal = result.ok ? undefined : hostRefusalFor(result.error.code);
+      if (refusal !== undefined) throw refusal;
+      answer = answered('engine/prepareSignature', result);
+    } catch (error) {
+      await areas.removeOutput(area, into);
+      throw error;
+    } finally {
+      if (asset !== undefined) await assets.remove(area.snapshotDirectory, asset);
+    }
+    return { bytes: await takeAnnounced(areas, area, into, answer.bytes), byteRange: answer.byteRange };
   };
 }
 
@@ -725,7 +824,7 @@ export function remoteMupdfExecution(
     // command declares it, `engine/apply`'s schema is what has to grow — the
     // request makes that a visible edit here rather than a value that silently
     // fails to cross (ADR-0069).
-    apply: async ({ session, command, source }) => {
+    apply: async ({ session, command, sources }) => {
       await withAsset(session, command, async (wire, asset) => {
         answered(
           'engine/apply',
@@ -733,16 +832,12 @@ export function remoteMupdfExecution(
             session: sessions.handleFor(session),
             command: wire,
             asset,
-          // TRANSLATED TO A HANDLE HERE, exactly as the target is. `handleFor`
-          // is what turns main's session token into the host's, so a source
-          // that main holds but the host does not is refused at the registry
-          // rather than sent as a handle the peer would not recognise.
-          //
-            // `undefined` for every command but a merge, and the channel's
-            // schema makes that absence rather than a null — a message that
-            // omits the field, which is what eleven of the twelve MuPDF
-            // commands send.
-            source: source === undefined ? undefined : sessions.handleFor(source),
+            // TRANSLATED TO HANDLES HERE, exactly as the target is. `handleFor`
+            // is what turns main's session token into the host's, so a source
+            // that main holds but the host does not is refused at the registry
+            // rather than sent as a handle the peer would not recognise. Empty
+            // for every command naming no other document.
+            sources: sources.map((source) => sessions.handleFor(source)),
           }),
         );
       });

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import { messageKey } from '@monstera/shared';
-import { render as renderBare, screen, waitFor } from '@testing-library/react';
+import { act, render as renderBare, screen, waitFor } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +9,7 @@ import { activateCatalogue, i18n } from '../i18n.js';
 import { DIALOG_CANCEL } from '../messages/en.js';
 import { Button } from './Button.js';
 import { Dialog, DialogChoices, DialogFooter, DialogRow } from './Dialog.js';
+import { Input } from './Input.js';
 
 /**
  * `closeLabel` travels to `IconButton` as a KEY and is resolved there, so this
@@ -19,11 +20,13 @@ const TITLE = messageKey('dialog.rename.title');
 const CLOSE = messageKey('action.close.label');
 const CONFIRM = messageKey('action.confirm.label');
 const OUTSIDE = messageKey('action.outside.label');
+const WORDS = messageKey('dialog.rename.words');
 activateCatalogue('en', {
   [TITLE]: 'Rename document',
   [CLOSE]: 'Close',
   [CONFIRM]: 'Confirm',
   [OUTSIDE]: 'Outside',
+  [WORDS]: 'Words',
 });
 
 function Messages({ children }: { children: ReactNode }): ReactElement {
@@ -77,6 +80,82 @@ describe('Dialog', () => {
     // The ARGUMENT, not the call. A close control that reported `true` would
     // satisfy `toHaveBeenCalled` and leave the dialog open forever.
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('is NOT closed by the click that ends a press begun before it opened, and IS by a press begun after', async () => {
+    // A dialog opened on a pointer-up — a drawn text box — was closed by the `click` that ends that same press:
+    // Base UI's `intentional` dismissal asks only whether the press started inside the popup (measured 2026-10-03,
+    // reason `outside-press` on a `click` 1 ms after the `mouseup`).
+    const onOpenChange = vi.fn();
+    render(<Harness onOpenChange={onOpenChange} />);
+    await screen.findByRole('dialog', { name: 'Rename document' });
+    const outside = document.body;
+    outside.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
+    outside.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
+    await new Promise((settle) => setTimeout(settle, 0));
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+
+    // CONTROL: a whole press outside, begun while the dialog is open, still closes it.
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      outside.dispatchEvent(
+        type.startsWith('pointer')
+          ? new PointerEvent(type, { bubbles: true, button: 0, pointerType: 'mouse' })
+          : new MouseEvent(type, { bubbles: true, button: 0 }),
+      );
+    }
+    await waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it('opens ON THE FIELD ITS BODY NAMES, past an unnamed text field before it, in the commit that opens it', () => {
+    // A text box, a typewriter and a note opened with focus on the popup, so typing went nowhere (the owner's review).
+    render(
+      <Dialog closeLabel={CLOSE} onOpenChange={vi.fn()} open title={TITLE}>
+        <input aria-label="setting" type="text" />
+        <Input label={WORDS} onValueChange={vi.fn()} opensFocused value="" />
+      </Dialog>,
+    );
+    // NOT AFTER A FRAME: read synchronously after the render, where Base UI's own initial focus would come later.
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Words' }));
+  });
+
+  it('CONTROL: a text field its body does NOT name takes no focus — Settings and Help hold those', async () => {
+    // Taking the first text field put focus in some setting's box, where a stray key edits it.
+    render(
+      <Dialog closeLabel={CLOSE} onOpenChange={vi.fn()} open title={TITLE}>
+        <Input label={WORDS} onValueChange={vi.fn()} value="" />
+      </Dialog>,
+    );
+    const dialog = screen.getByRole('dialog');
+    await waitFor(() => {
+      expect(document.activeElement).toBe(dialog);
+    });
+  });
+
+  it('LEAVES FOCUS WHERE THE PERSON PUT IT when the dialog renders again', () => {
+    // The opening focus is a ref callback, and one whose identity changed would run on every render, pulling focus back
+    // to the first field from the second while the person typed there.
+    const dialog = (key: string): ReactElement => (
+      <Dialog closeLabel={CLOSE} onOpenChange={() => undefined} open title={TITLE}>
+        <Input label={WORDS} onValueChange={() => undefined} opensFocused value={key} />
+        <input aria-label="second" type="text" />
+      </Dialog>
+    );
+    const { rerender } = render(dialog('one'));
+    act(() => {
+      screen.getByRole('textbox', { name: 'second' }).focus();
+    });
+    rerender(dialog('two'));
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('second');
+  });
+
+  it('CONTROL: a dialog with no text field opens on the popup, not on its Close button', async () => {
+    render(<Harness />);
+    const dialog = screen.getByRole('dialog', { name: 'Rename document' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(dialog);
+    });
   });
 
   it('asks to close on Escape', () => {

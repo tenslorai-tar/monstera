@@ -17,6 +17,7 @@ import {
 import { kernelPageOf, pdfjsPageOf } from './pageNumbering.js';
 import { Icon } from './primitives/Icon.js';
 import { IconButton } from './primitives/IconButton.js';
+import { composing } from './surfaces/shortcuts.js';
 
 /**
  * Split view: ONE document, two pages side by side, each half chosen on its own — the owner's design from the old
@@ -172,6 +173,8 @@ function PageNumberField({
           event.target.select();
         }}
         onKeyDown={(event) => {
+          // A COMPOSITION'S ENTER AND ESCAPE are the input method's (`composing`).
+          if (composing(event)) return;
           if (event.key === 'Enter') {
             event.preventDefault();
             send();

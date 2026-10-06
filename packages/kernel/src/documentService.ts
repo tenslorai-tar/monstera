@@ -1,9 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { closeSync, openSync, readSync, readdirSync, rmSync } from 'node:fs';
-import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, open, readFile, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
+import type { FileAccess, SaveWriteCause } from '@monstera/contract';
 import {
   type Brand,
   type DocId,
@@ -13,6 +14,7 @@ import {
   asDocVersion,
 } from '@monstera/shared';
 
+import type { AtomicWriteFailure } from './atomicWrite.js';
 import type { CapabilityRegistry } from './capabilityRegistry.js';
 import {
   type Checkpoint,
@@ -382,8 +384,8 @@ export interface DocumentContext {
   bumpVersion(writer: CommandWriter): DocVersion;
 
   /**
-   * Records that a command declaring `purpose: 'removal'` was applied — a redaction, Sanitize, a flatten — so the file
-   * on disk may hold what it removed until the next save
+   * Records that a command declaring `purpose: 'removal'` was applied — a redaction, Sanitize, a flatten, a protection
+   * change — so the file on disk may hold what it removed until the next save
    * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)).
    *
    * **The document's fact, not the engine session's.** The session carries a mark of its own for the one question
@@ -403,6 +405,18 @@ export interface DocumentContext {
    * safe direction.
    */
   readonly removedSinceSave: boolean;
+
+  /**
+   * That the person agreed, for this open document, that an edit may break its signatures
+   * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)
+   * Decision 6). Recorded by {@link agreeToBreakSignatures} when they answer *edit this document*; read by the edit
+   * gate and by the save, so a removal's save does not ask the question a second time. It ends with the document: the
+   * record is dropped at close, and nothing clears it before then.
+   */
+  readonly signaturesBreakAgreed: boolean;
+
+  /** Records {@link signaturesBreakAgreed}. One-way for the life of the open document. */
+  agreeToBreakSignatures(): void;
 
   /**
    * This document's command log (ADR-0009 §4), for the bus to record into.
@@ -771,6 +785,8 @@ interface DocumentRecord {
   savedVersion: DocVersion;
   /** {@link DocumentContext.removedSinceSave}: set by the bus, cleared by a save, inside the lane. */
   removedSinceSave: boolean;
+  /** {@link DocumentContext.signaturesBreakAgreed}: set once, by the person's answer, for the life of the record. */
+  signaturesBreakAgreed: boolean;
   /**
    * ADR-0009 §7's lane, **living on the record**.
    *
@@ -821,8 +837,10 @@ interface DocumentRecord {
 }
 
 /**
- * Where a document's canonical image is: a buffer this service solely owns, or the file it is being read from
- * ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 2).
+ * Where a document's canonical image is: a buffer this service solely owns, or a file in the document's directory,
+ * either while it is being read into memory ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md)
+ * Decision 2) or for good, when memory may not hold it beside the others
+ * ([ADR-0165](../../../docs/DECISIONS/0165-a-document-past-mains-memory-ceiling-is-held-in-a-file.md)).
  *
  * The file state holds an open descriptor, because a range read is synchronous and must not open a file per call.
  *
@@ -909,17 +927,25 @@ export type OpenOutcome =
   | { readonly kind: 'already-open'; readonly docId: DocId }
   | { readonly kind: 'absent' }
   /**
-   * The canonical image would not fit under {@link DocumentServiceOptions.documentBytesCeiling}.
+   * The file is there and its read was refused: `busy` where another program holds it open and lets nobody else read
+   * it (`EBUSY` — Windows' sharing and lock violations), `denied` where this account may not read it (`EPERM` on
+   * Windows, `EACCES` elsewhere). Facts about the file a person can act on, so outcomes and not faults (cloud-4 7a).
+   */
+  | { readonly kind: 'busy' }
+  | { readonly kind: 'denied' }
+  /**
+   * There is no room for the canonical image: it is past what memory may hold beside the others, and the file it is
+   * held in instead could not be made because the disk is full
+   * ([ADR-0165](../../../docs/DECISIONS/0165-a-document-past-mains-memory-ceiling-is-held-in-a-file.md)). Until then a
+   * document past {@link DocumentServiceOptions.documentBytesCeiling} was refused for its size alone.
    *
-   * **An outcome, not a defect.** Opening a document larger than main may hold,
-   * or one more document than main may hold, is a thing a user can do and be
-   * told about — the same category as `absent`, and reported the same way.
+   * **An outcome, not a defect**: closing another document frees its file, which the words a person reads say.
    */
   | {
       readonly kind: 'at-capacity';
-      /** What the resident total would have become, in bytes. */
+      /** The bytes the image needs. */
       readonly wouldHold: number;
-      /** The ceiling it would have crossed. */
+      /** The bytes the volume reported free, or 0 where it could not be read. */
       readonly ceiling: number;
     };
 
@@ -1130,6 +1156,92 @@ function requireSoleOwnership(bytes: Uint8Array, path: string): void {
 const readFileBytes: BytesReader = (path) => readFile(path);
 
 /**
+ * Answers the contract's {@link FileAccess} for a path, throwing for any failure that is not one of its answers.
+ *
+ * A seam for {@link DocumentServiceOptions}' reason: `held` needs another process holding the file with a share mode
+ * nothing in a test can arrange.
+ */
+export type FileAccessProbe = (path: string) => Promise<FileAccess>;
+
+/**
+ * The default: the file OPENED FOR WRITING and closed at once, nothing written. The open is what Windows itself
+ * decides a write on — the read-only attribute and the file's permissions answer `EPERM`, a program holding it with a
+ * share mode that refuses writers answers `EBUSY` — which `fs.access` does not ask: on Windows it reads the read-only
+ * attribute alone.
+ */
+const probeFileAccess: FileAccessProbe = async (path) => {
+  try {
+    await (await open(path, 'r+')).close();
+    return 'writable';
+  } catch (error) {
+    return accessOfRefusedOpen(error);
+  }
+};
+
+/**
+ * What an open for writing that failed says about the file: `absent`, or `read-only` and `held` from
+ * {@link readRefusalOf}'s one mapping. Any other failure is a fault and is rethrown, never read as the file's state.
+ */
+export function accessOfRefusedOpen(error: unknown): Exclude<FileAccess, 'writable'> {
+  if ((error as { readonly code?: unknown } | null)?.code === 'ENOENT') return 'absent';
+  const refused = readRefusalOf(error);
+  if (refused === null) throw error;
+  return refused === 'busy' ? 'held' : 'read-only';
+}
+
+/**
+ * Why a save to a document's own file could not be written — THE ONE RESOLVER (B3a), from the failure and the file's
+ * access read just after it.
+ *
+ * The access decides first, because on Windows the failure alone cannot: a rename over a read-only file and over one
+ * another program holds both answer `EPERM`, which the rename ladder retries as a holder either way. Then the disk,
+ * then a refusal before the rename — the new contents go to a file beside the target first, so a refusal there is the
+ * folder's. A rename still refused over a file that can be written is a program holding it against being replaced.
+ */
+export function saveWriteCause(failure: AtomicWriteFailure, access: FileAccess): SaveWriteCause {
+  if (access === 'read-only' || access === 'held') return access;
+  if (failure.detail === 'ENOSPC') return 'disk-full';
+  const refused = readRefusalOf({ code: failure.detail });
+  if (refused !== null && failure.stage !== 'rename') return 'folder-read-only';
+  if (refused !== null) return 'held';
+  return 'unknown';
+}
+
+/**
+ * Which refusal a failed read of a person's file is, or `null` for a failure that is not one.
+ *
+ * libuv's own mapping decides, because it is what Node reports: Windows' `ERROR_SHARING_VIOLATION` and
+ * `ERROR_LOCK_VIOLATION` — another program holding the file and letting nobody else read it — arrive as `EBUSY`, and
+ * `ERROR_ACCESS_DENIED` arrives as `EPERM`, where POSIX says `EACCES`.
+ */
+export function readRefusalOf(error: unknown): 'busy' | 'denied' | null {
+  const code = (error as { readonly code?: unknown } | null)?.code;
+  if (code === 'EBUSY') return 'busy';
+  // `EROFS` too, which only a write meets: a read-only volume is this account not being let write the file.
+  if (code === 'EPERM' || code === 'EACCES' || code === 'EROFS') return 'denied';
+  return null;
+}
+
+/** Whether a write failed because the disk, or the account's share of it, is full: `ENOSPC` or `EDQUOT`. */
+function noSpaceIn(error: unknown): boolean {
+  const code = (error as { readonly code?: unknown } | null)?.code;
+  return code === 'ENOSPC' || code === 'EDQUOT';
+}
+
+/**
+ * The bytes the volume under `directory` reports free, for `at-capacity`'s figure. 0 where the volume cannot be asked:
+ * the figure describes a refusal already decided by the failed write, so reading it is never what decides.
+ */
+async function freeBytesUnder(directory: string): Promise<number> {
+  try {
+    const volume = await statfs(directory);
+    return volume.bavail * volume.bsize;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * How a canonical image reaches a destination this service was handed.
  *
  * The mirror of {@link BytesReader}, and injectable for the same reason: a case
@@ -1234,6 +1346,13 @@ export interface DocumentServiceOptions {
   readonly readIdentity?: IdentityReader;
   readonly readBytes?: BytesReader;
   readonly writeBytes?: BytesWriter;
+  /**
+   * How a document past the ceiling is copied to its image file (ADR-0165): `fs.copyFile` otherwise, which copies
+   * without the bytes passing through this process.
+   */
+  readonly copyImage?: (from: string, to: string) => Promise<void>;
+  /** How {@link DocumentService.fileAccess} asks the filesystem; {@link FileAccessProbe}'s default otherwise. */
+  readonly probeAccess?: FileAccessProbe;
 }
 
 export class DocumentService {
@@ -1245,6 +1364,8 @@ export class DocumentService {
   readonly #readIdentity: IdentityReader;
   readonly #readBytes: BytesReader;
   readonly #writeBytes: BytesWriter;
+  readonly #copyImage: (from: string, to: string) => Promise<void>;
+  readonly #probeAccess: FileAccessProbe;
   readonly #documentBytesCeiling: number;
   readonly #checkpointRoot: string;
 
@@ -1308,6 +1429,8 @@ export class DocumentService {
     this.#readIdentity = options.readIdentity ?? readFileIdentity;
     this.#readBytes = options.readBytes ?? readFileBytes;
     this.#writeBytes = options.writeBytes ?? writeFileBytes;
+    this.#copyImage = options.copyImage ?? ((from, to) => copyFile(from, to));
+    this.#probeAccess = options.probeAccess ?? probeFileAccess;
   }
 
   /**
@@ -1329,7 +1452,8 @@ export class DocumentService {
   residentDocumentBytes(): number {
     let total = 0;
     // A FILE-BACKED IMAGE HOLDS NOTHING HERE: between a replacement's swap and its read, the old buffer is gone and
-    // the new one not yet made (ADR-0121 Decision 2).
+    // the new one not yet made (ADR-0121 Decision 2), and a document past the ceiling is served from its file for as
+    // long as it is open (ADR-0165).
     for (const record of this.#records.values()) {
       if (record.image.kind === 'memory') total += record.image.bytes.byteLength;
     }
@@ -1462,6 +1586,13 @@ export class DocumentService {
    * is stated here rather than left to be re-derived from the absence of a
    * keyword.
    *
+   * **And it is only half the argument.** Reading both in one step makes them the
+   * record's at one moment; it does not make the record's version describe the
+   * record's image. That needs the image's replacement to move the version in the
+   * same step, which the lane's context does (CR-DOC-01). Until 2026-10-04 the bus
+   * moved it at the end of a command, several awaits after the swap, and a range
+   * at the old version in between was served from the new image.
+   *
    * ## The slice is COPIED
    *
    * `subarray` returns a view that keeps the whole canonical image reachable —
@@ -1536,14 +1667,56 @@ export class DocumentService {
   }
 
   /**
-   * The refusal, or `null` if `incoming` fits.
-   *
-   * @param incoming bytes the service would additionally hold
+   * Whether an image of `byteLength` bytes is held in memory: when it fits under the ceiling beside every image already
+   * resident, and otherwise in a file. The one rule, at open and at every replacement
+   * ([ADR-0165](../../../docs/DECISIONS/0165-a-document-past-mains-memory-ceiling-is-held-in-a-file.md)).
    */
-  #refuseIfOverCeiling(incoming: number): OpenOutcome | null {
-    const wouldHold = this.residentDocumentBytes() + incoming;
-    if (wouldHold <= this.#documentBytesCeiling) return null;
-    return { kind: 'at-capacity', wouldHold, ceiling: this.#documentBytesCeiling };
+  #heldInMemory(byteLength: number): boolean {
+    return this.residentDocumentBytes() + byteLength <= this.#documentBytesCeiling;
+  }
+
+  /**
+   * The person's file copied into a fresh document directory and held as the image, or why it could not be
+   * ([ADR-0165](../../../docs/DECISIONS/0165-a-document-past-mains-memory-ceiling-is-held-in-a-file.md)).
+   *
+   * **The filesystem copies**, so the bytes never pass through `main`'s memory, and the copy is the image: the person's
+   * own file can change while it is open, and a range answered from changed bytes is the two-document failure the
+   * one-version rule exists for.
+   */
+  async #imageFileOf(
+    path: string,
+    size: number,
+  ): Promise<{ readonly directory: string; readonly image: CanonicalImage } | OpenOutcome> {
+    const noRoom = async (): Promise<OpenOutcome> => ({
+      kind: 'at-capacity',
+      wouldHold: size,
+      ceiling: await freeBytesUnder(this.#checkpointRoot),
+    });
+    let directory: string;
+    try {
+      directory = await this.#newDirectory();
+    } catch (error) {
+      if (noSpaceIn(error)) return noRoom();
+      throw error;
+    }
+    // `image-0`, BELOW the serial every later file takes (it starts at 1), so nothing this directory holds reuses it.
+    const imagePath = join(directory, 'image-0.pdf');
+    try {
+      await this.#copyImage(path, imagePath);
+    } catch (error) {
+      await rm(directory, { recursive: true, force: true });
+      if (noSpaceIn(error)) return noRoom();
+      // A REFUSAL here is the person's file's: the destination is a directory this service made a moment ago, in
+      // storage no other program is granted, so busy or denied is the source being held or not readable.
+      const refused = readRefusalOf(error);
+      if (refused !== null) return { kind: refused };
+      throw error;
+    }
+    const byteLength = (await stat(imagePath)).size;
+    return {
+      directory,
+      image: { kind: 'file', path: imagePath, fd: openSync(imagePath, 'r'), byteLength, writes: 0, retired: false },
+    };
   }
 
   /**
@@ -1568,27 +1741,36 @@ export class DocumentService {
     const existing = (await this.#documentsAt(identity))[0];
     if (existing !== undefined) return { kind: 'already-open', docId: existing };
 
-    // CAPACITY IS CHECKED TWICE, and the first check is the one that matters for
-    // the failure everyone worries about.
+    // WHERE THE IMAGE IS HELD IS DECIDED TWICE, and the first decision is the one that matters (ADR-0165).
     //
-    // `identity.size` comes from the `stat` already performed, so a document
-    // larger than this service may hold is refused **without being read**.
-    // Checking only after the read would allocate the very image the refusal
-    // exists to prevent — a 2 GB file would have to be held in order to be told
-    // it is too big, which is the shape where a guard causes the condition it
-    // guards against.
-    const refusal = this.#refuseIfOverCeiling(identity.size);
-    if (refusal !== null) return refusal;
-
-    const bytes = await this.#readBytes(path);
-    requireSoleOwnership(bytes, path);
-
-    // The second check is the CORRECT one, and it is not redundant. `stat` and
-    // the read are two observations of a file that anything may write between
-    // them, so the size used above is evidence and the length read is fact. The
-    // bytes are dropped by returning without storing them.
-    const overshoot = this.#refuseIfOverCeiling(bytes.byteLength);
-    if (overshoot !== null) return overshoot;
+    // `identity.size` comes from the `stat` already performed, so a document past what memory may hold is copied to
+    // a file **without being read**. Reading first would allocate the very image the decision exists to keep out of
+    // memory: a 2 GB file would have to be held in order to be told where to go.
+    let image: CanonicalImage | null = null;
+    if (this.#heldInMemory(identity.size)) {
+      // A READ THE FILE REFUSED is an answer about the file — another program holding it, or no permission — and the
+      // person is told which. Any other failure is a fault and propagates.
+      let bytes: Uint8Array;
+      try {
+        bytes = await this.#readBytes(path);
+      } catch (error) {
+        const refused = readRefusalOf(error);
+        if (refused === null) throw error;
+        return { kind: refused };
+      }
+      requireSoleOwnership(bytes, path);
+      // The second decision is the CORRECT one, and it is not redundant. `stat` and the read are two observations of
+      // a file anything may write between them, so the size above is evidence and the length read is fact. A file
+      // that grew past what memory may hold is released and copied instead.
+      if (this.#heldInMemory(bytes.byteLength)) image = { kind: 'memory', bytes, writes: 0, retired: false };
+      else if (bytes.buffer instanceof ArrayBuffer) bytes.buffer.transfer(0);
+    }
+    let directory: string | null = null;
+    if (image === null) {
+      const filed = await this.#imageFileOf(path, identity.size);
+      if (!('image' in filed)) return filed;
+      ({ image, directory } = filed);
+    }
 
     // Minted, never derived. A hash of the path is the path in a lossy coat and
     // changes when the file is renamed; a counter gets reused after close, so a
@@ -1602,24 +1784,27 @@ export class DocumentService {
       handle,
       path,
       openedIdentity: identity,
-      image: { kind: 'memory', bytes, writes: 0, retired: false },
+      image,
       version,
       // §5: seeded from the initial version, never from 0. A freshly opened
       // document is clean.
       savedVersion: version,
       // NOTHING REMOVED YET: the file and the document hold the same content at open.
       removedSinceSave: false,
+      // NOTHING AGREED YET: a signed document's first breaking edit asks.
+      signaturesBreakAgreed: false,
       lane: Promise.resolve(),
       queued: 0,
       log: new CommandLog(),
-      checkpointDirectory: null,
+      // THE IMAGE FILE'S DIRECTORY when the image is a file, so its checkpoints share it and close removes both.
+      checkpointDirectory: directory,
       checkpointFiles: new Set(),
       fileSerial: 0,
     });
     // `basename`, and the ONE call site. Everything downstream of here holds a
     // name and no path, which is invariant L2 arriving as a value rather than
     // as a rule someone downstream has to remember.
-    return { kind: 'opened', docId, version, byteLength: bytes.byteLength, name: basename(path) };
+    return { kind: 'opened', docId, version, byteLength: lengthOf(image), name: basename(path) };
   }
 
   /**
@@ -1795,10 +1980,16 @@ export class DocumentService {
   /** `record`'s own directory under the root, made at the first file it needs. */
   async #documentDirectory(record: DocumentRecord): Promise<string> {
     if (record.checkpointDirectory !== null) return record.checkpointDirectory;
+    const directory = await this.#newDirectory();
+    record.checkpointDirectory = directory;
+    return directory;
+  }
+
+  /** A fresh document directory under the root. */
+  async #newDirectory(): Promise<string> {
     // FRESH HEX, never the DocId: a DocId is base64url, whose case matters, on a filesystem where it does not.
     const directory = join(this.#checkpointRoot, Buffer.from(this.#randomBytes(TOKEN_BYTES)).toString('hex'));
     await mkdir(directory, { recursive: true });
-    record.checkpointDirectory = directory;
     return directory;
   }
 
@@ -1808,7 +1999,11 @@ export class DocumentService {
    * A failed `fill` removes what it left and changes nothing. A failed read leaves the record serving from the file,
    * which is a correct state rather than a torn one: every range is answered and the next replacement retires it.
    */
-  async #replaceFromFile(record: DocumentRecord, fill: (destination: string) => Promise<number>): Promise<number> {
+  async #replaceFromFile(
+    record: DocumentRecord,
+    fill: (destination: string) => Promise<number>,
+    imageMoved: () => void,
+  ): Promise<number> {
     const directory = await this.#documentDirectory(record);
     record.fileSerial += 1;
     const path = join(directory, `image-${String(record.fileSerial)}.pdf`);
@@ -1828,7 +2023,8 @@ export class DocumentService {
     }
 
     // THE SWAP, with no await before the read begins: from here ranges come from the file and the old buffer is
-    // unreferenced, so `main` never holds both.
+    // unreferenced, so `main` never holds both. The version moves in the same step, so a range asked at the old one
+    // is answered stale rather than from these bytes; the swap back to memory below is the same bytes and moves nothing.
     this.#setImage(record, {
       kind: 'file',
       path,
@@ -1837,7 +2033,10 @@ export class DocumentService {
       writes: 0,
       retired: false,
     });
+    imageMoved();
 
+    // AND IT STAYS A FILE where memory may not hold it beside the others, by the rule open takes (ADR-0165).
+    if (!this.#heldInMemory(byteLength)) return byteLength;
     const bytes = await this.#readBytes(path);
     requireSoleOwnership(bytes, path);
     if (bytes.byteLength !== byteLength) {
@@ -1941,6 +2140,17 @@ export class DocumentService {
       this.#executingDocument.run(docId, async () => {
         // Read here, when the work actually runs — not when it was queued.
         const version = record.version;
+        // THE VERSION MOVES WITH THE IMAGE (CR-DOC-01). `readRange` answers whatever image the record holds at the
+        // version the record holds, and the bus bumps the version at the END of a command, after awaits that follow
+        // the replacement: the whole-file read below the swap, the log, the window's refresh. A range asked at the old
+        // version in between was served from the new image, a document made of two. So a replacement moves the
+        // version in the same synchronous step as the swap, and `bumpVersion` then reports that version rather than
+        // moving it again.
+        let movedSinceBump = false;
+        const imageMoved = (): void => {
+          record.version = asDocVersion(record.version + 1);
+          movedSinceBump = true;
+        };
         // RECONCILED AFTER EVERY ENTRY, whatever it did and whether it threw (ADR-0121): a checkpoint leaves the log
         // by a trim, by a redo tail a new command discarded, or by a command that failed after its checkpoint was
         // stored, and one rule here covers all three rather than a deletion at each place an entry can go.
@@ -1952,6 +2162,10 @@ export class DocumentService {
           // `commandBus.ts`, which is a compile-time property — checking it at
           // runtime would be the guard B5 says to prefer a type over.
           bumpVersion: () => {
+            if (movedSinceBump) {
+              movedSinceBump = false;
+              return record.version;
+            }
             record.version = asDocVersion(record.version + 1);
             return record.version;
           },
@@ -1961,6 +2175,12 @@ export class DocumentService {
           // A GETTER, for `byteLength`'s reason below: a save reads it after the bus has run in the same entry.
           get removedSinceSave() {
             return record.removedSinceSave;
+          },
+          get signaturesBreakAgreed() {
+            return record.signaturesBreakAgreed;
+          },
+          agreeToBreakSignatures: () => {
+            record.signaturesBreakAgreed = true;
           },
           // Same treatment, same reason: the token is not read, because being
           // unobtainable outside `commandBus.ts` is a compile-time property and
@@ -2010,9 +2230,10 @@ export class DocumentService {
           replaceCanonicalImage: (_writer, image) => {
             requireSoleOwnership(image, record.path);
             this.#setImage(record, { kind: 'memory', bytes: image, writes: 0, retired: false });
+            imageMoved();
             return image.byteLength;
           },
-          replaceCanonicalImageFrom: (_writer, fill) => this.#replaceFromFile(record, fill),
+          replaceCanonicalImageFrom: (_writer, fill) => this.#replaceFromFile(record, fill, imageMoved),
           log: record.log,
           // A GETTER, so it answers about the image the document has NOW rather
           // than the one it had when this entry started. A command rewrites the
@@ -2114,6 +2335,35 @@ export class DocumentService {
    */
   checkWriteTarget(docId: DocId): Promise<WriteTargetVerdict> {
     return this.#throughIndexLane(() => this.#checkWriteTargetNow(docId));
+  }
+
+  /**
+   * Which of two open documents' files was written later, by the last-write time each was opened from or last saved
+   * to — `neither` when the times are equal (cloud-4 8a, F-C3). An answer, never a time, so nothing about a file
+   * crosses but which of two the person has open is the later.
+   *
+   * @throws {DocumentNotOpenError} if either is not open.
+   */
+  newerOf(first: DocId, second: DocId): 'first' | 'second' | 'neither' {
+    const a = this.#records.get(first);
+    if (a === undefined) throw new DocumentNotOpenError(first, 'compare its file’s age');
+    const b = this.#records.get(second);
+    if (b === undefined) throw new DocumentNotOpenError(second, 'compare its file’s age');
+    const [was, is] = [a.openedIdentity.modifiedMs, b.openedIdentity.modifiedMs];
+    return was === is ? 'neither' : was > is ? 'first' : 'second';
+  }
+
+  /**
+   * Whether this document's own file could be written over NOW (cloud-4 7b) — asked of the file at each call and never
+   * kept, because the answer changes under the document: the person clears the read-only box, closes the program that
+   * held it. So it is something to TELL a person, never a reason to refuse a save, which tries the file itself.
+   *
+   * @throws {DocumentNotOpenError} if `docId` is not open.
+   */
+  fileAccess(docId: DocId): Promise<FileAccess> {
+    const record = this.#records.get(docId);
+    if (record === undefined) return Promise.reject(new DocumentNotOpenError(docId, 'read its file access'));
+    return this.#probeAccess(record.path);
   }
 
   async #checkWriteTargetNow(docId: DocId): Promise<WriteTargetVerdict> {

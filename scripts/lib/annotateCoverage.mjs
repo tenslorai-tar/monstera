@@ -115,10 +115,11 @@ const WRAPPER = 'scripts/ci/annotate.mjs';
 /**
  * The wrappable entry points, read out of `package.json` rather than listed.
  *
- * Required means a command that names a node script by path. `npm run lint` and
- * `npm run typecheck` run tools and name no path, so the rule does not reach
- * them — they CAN go through `annotate.mjs --npm` since 2026-09-14, and this scan
- * does not demand it. A chain like `npm run build` is outside because its own
+ * Required means a command that names a node script by path. `npm run typecheck`
+ * runs a tool and names no path, so the rule does not reach it — it CAN go
+ * through `annotate.mjs --npm` since 2026-09-14, and this scan does not demand
+ * it. `npm run lint` was the other example until 2026-10-05, when it became
+ * `scripts/lib/lintcheck.mjs` (ADR-0170) and so a script the rule reaches. A chain like `npm run build` is outside because its own
  * command names no path — each command is read as text and chains are not
  * followed.
  *

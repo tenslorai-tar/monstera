@@ -104,6 +104,16 @@ export interface DialogEntry<
 }
 
 /**
+ * Where an open dialog's reports go ([ADR-0094](../../../../docs/DECISIONS/0094-a-dialog-may-report-before-it-answers.md)),
+ * with the reply that answers one ([ADR-0158](../../../../docs/DECISIONS/0158-an-opener-may-reply-to-a-report-with-new-props.md)).
+ *
+ * `reply` gives the dialog that reported new props, validated by its own props schema exactly as an open's are, and
+ * the mounted body keeps its state. Once that dialog has closed or been replaced, a reply does nothing. **The one
+ * spelling** of the opener's side, so a command and the host cannot disagree about what a report carries.
+ */
+export type DialogReports = (result: unknown, reply: (props: unknown) => void) => void;
+
+/**
  * What every dialog body receives beside its props.
  *
  * One member, named rather than inlined, so the two type positions that must

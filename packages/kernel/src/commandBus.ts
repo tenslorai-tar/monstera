@@ -10,15 +10,17 @@ import {
   sourceIdsOf,
   targetVersionOf,
 } from '@monstera/contract';
-import type { DocId, DocVersion } from '@monstera/shared';
+import type { DocId, DocVersion, HeldPassword } from '@monstera/shared';
 
 import type {
   CaptureResult,
   Checkpoint,
   CheckpointFile,
   CommandPrior,
+  LogEntry,
   LogEntryFor,
   LogTrim,
+  RecordedCommand,
 } from './commandLog.js';
 // DECLARATIONS, not specs. The bus reads `writer` and `replay` and calls
 // nothing — `apply`, `capture` and `invert` go through the registered writer
@@ -54,6 +56,7 @@ import {
   type SessionsByWriter,
   type ExecutionSession,
   type HostedWriter,
+  type ImageSession,
   type SavePurpose,
   type WriterSession,
   hostedOn,
@@ -117,6 +120,74 @@ export type WriterRegistry = {
  */
 function asCheckpoint(file: CheckpointFile): Checkpoint {
   return file as Checkpoint;
+}
+
+/**
+ * The command an entry re-applies, for a redo or a replay that re-runs it.
+ *
+ * An entry redone from its RESULT keeps only its command's kind
+ * ([ADR-0162](../../../docs/DECISIONS/0162-a-command-whose-effect-is-its-result-is-redone-from-that-result.md)), so
+ * there is nothing to re-run, and asking is refused rather than answered with half a command. `redo` takes the result
+ * branch first; a replay never meets one, since a `stored-result` command's writer replaces the image and moves the
+ * base past it.
+ *
+ * An entry whose intent is HELD keeps only its kind too, and is re-run from {@link HeldIntents}, the one source of
+ * its command.
+ */
+function reapplicable(entry: LogEntry, held: HeldIntents): CommandOfKind<CommandKind> {
+  if (entry.kind === 'terminal' && entry.result !== null) {
+    throw new Error(
+      `${entry.command.kind} is redone from the image it produced and keeps no command to re-run; ` +
+        'reaching for one is a defect in the caller.',
+    );
+  }
+  if (declaredCommands[entry.command.kind].replay !== 'reapply-held-intent') {
+    // NARROWED BY THE DECLARATION, which `RecordedCommand` reads: an entry whose kind is not held keeps its command
+    // whole. The checker cannot correlate the entry's kind with the table's value through the union, so this cast and
+    // `recordedOf`'s are the two places that say so, both reading the same `replay` value.
+    return entry.command as CommandOfKind<CommandKind>;
+  }
+  // HELD BESIDE THE ENTRY (ADR-0171 Decision 3), keyed by it, so it lives exactly as long as the entry does. Missing is
+  // unreachable while the entry lives, and re-running the kind alone would protect with no password, so it refuses.
+  const command = held.get(entry);
+  if (command === undefined) {
+    throw new Error(
+      `${entry.command.kind} keeps its command beside its log entry rather than in it, and none is held for this ` +
+        'entry. Nothing was re-applied.',
+    );
+  }
+  return command;
+}
+
+/** The other documents an entry names: none for one redone from its result, which keeps no command. */
+function sourcesOfEntry(entry: LogEntry, held: HeldIntents): readonly DocId[] {
+  if (entry.kind === 'terminal' && entry.result !== null) return [];
+  return sourceIdsOf(reapplicable(entry, held));
+}
+
+/**
+ * The commands whose intent is a password, held beside their log entries and never in them
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 3).
+ *
+ * A `WeakMap` keyed by the entry object, so an entry the log trims, a redo tail a new command truncates and a closed
+ * document's whole log take their commands with them, by the key, with nothing to remember to delete. In memory
+ * only: nothing serialises a `WeakMap`, and no reader of the log reaches this one.
+ *
+ * Keyed by `object` because the key is used for its identity alone: `execute` holds the entry as `LogEntryFor<K>` and
+ * `redo` reads it back as `LogEntry`, two spellings of one object the checker cannot unify for a generic `K`.
+ */
+type HeldIntents = WeakMap<object, CommandOfKind<CommandKind>>;
+
+/**
+ * What an entry keeps of the command it was made for: the kind alone where its declaration holds the intent, else the
+ * command whole ({@link RecordedCommand}).
+ *
+ * Cast, and sound by the declaration it reads: `RecordedCommand<K>` is decided by that same `replay` value, and the
+ * checker cannot evaluate the conditional for a generic `K`. {@link reapplicable} holds the reverse cast.
+ */
+function recordedOf<K extends CommandKind>(command: CommandOfKind<K>): RecordedCommand<K> {
+  const kept = declaredCommands[command.kind].replay === 'reapply-held-intent' ? { kind: command.kind } : command;
+  return kept as RecordedCommand<K>;
 }
 
 /**
@@ -253,8 +324,8 @@ export type CheckpointRestore = (write: SnapshotWrite) => Promise<void>;
  * ## Why a byte-image session is not in `SessionsByWriter`
  *
  * A live-session writer's session is a handle the supervisor holds between
- * commands. A byte-image writer's session **is the document's current bytes**,
- * which no component holds: `main`'s canonical image is what was opened —
+ * commands. A byte-image writer's session **is the document's current bytes**
+ * (with the key they open with, ADR-0171's addendum), which no component holds: `main`'s canonical image is what was opened —
  * finding OOOOO-1, measured 2026-08-30 — and the live engine's copy is behind a
  * pipe. So there is nothing for the supervisor to have put in the map, and a
  * map entry would have had to be refreshed after every live-session command,
@@ -284,6 +355,12 @@ export type CheckpointRestore = (write: SnapshotWrite) => Promise<void>;
 export interface ByteImageAccess {
   /** The document's current bytes. The live writer's `serialise`. */
   readonly current: () => Promise<ByteImage>;
+  /**
+   * The key those bytes open with: the document's held password, or `undefined` when it opens with none. Read beside
+   * {@link current} for every byte-image session, since a document opened with its password serialises to its own
+   * encrypted form (ADR-0171's addendum).
+   */
+  readonly opensWith: () => HeldPassword | undefined;
   /**
    * The document's current bytes, written at `destination` and never read by `main` — the live writer's
    * `serialiseInto`, which a host answers by moving its output there
@@ -547,6 +624,8 @@ export type Undone = Executed;
  */
 export class CommandBus {
   readonly #writers: WriterRegistry;
+  /** Commands held beside their entries rather than in them ({@link HeldIntents}). */
+  readonly #held: HeldIntents = new WeakMap();
 
   constructor(writers: WriterRegistry) {
     this.#writers = writers;
@@ -600,9 +679,10 @@ export class CommandBus {
     const shape = writerShapes[writer];
     if (shape === 'byte-image') {
       // The cast is the same correlation `#writerFor` asserts: `writerShapes`
-      // says this writer's session type IS `ByteImage`, and the checker cannot
-      // carry that through a generic index.
-      return (await bytes.current()) as ExecutionSession<WriterOf<K>>;
+      // says this writer's session type IS `ImageSession`, and the checker
+      // cannot carry that through a generic index.
+      const session: ImageSession = { bytes: await bytes.current(), opensWith: bytes.opensWith() };
+      return session as ExecutionSession<WriterOf<K>>;
     }
     // A HOSTED WRITER RUNS BESIDE ITS HOST'S SESSION, so that is the session it is handed — and `main` never
     // serialises the document for it (ADR-0121 Decision 3). `hostedOn` names the host; the cast is `#writerFor`'s.
@@ -634,6 +714,9 @@ export class CommandBus {
    * record it, the version would bump, and the bytes would never move. The
    * declaration says an image was owed, so its absence is named rather than
    * silently treated as *nothing to install*.
+   *
+   * @returns how to write the file it installed, byte for byte, which is what a `stored-result` entry keeps
+   *   (ADR-0162); `null` for a live-session writer, which installs nothing
    */
   async #install<K extends CommandKind>(
     kind: K,
@@ -641,9 +724,9 @@ export class CommandBus {
     applied: ByteImage | StagedImage | undefined,
     context: DocumentContext,
     bytes: ByteImageAccess,
-  ): Promise<void> {
+  ): Promise<((destination: string) => Promise<number>) | null> {
     const shape = writerShapes[writer];
-    if (shape === 'live-session') return;
+    if (shape === 'live-session') return null;
     if (applied === undefined) {
       throw new Error(
         `${kind} is routed to ${writer}, which \`writerShapes\` declares a ${shape} writer, ` +
@@ -657,7 +740,7 @@ export class CommandBus {
       const image = applied as ByteImage;
       await bytes.adopt((destination) => context.writeImage(COMMAND_WRITER, image, destination));
       context.replaceCanonicalImage(COMMAND_WRITER, image);
-      return;
+      return (destination) => context.writeImage(COMMAND_WRITER, image, destination);
     }
     const staged = applied as StagedImage;
     // A HOSTED RESULT IS A FILE THE HOST WROTE (ADR-0121 Decision 3), in the session's output directory — which the
@@ -670,6 +753,7 @@ export class CommandBus {
     await context.replaceCanonicalImageFrom(COMMAND_WRITER, (destination) =>
       context.writeHeld(COMMAND_WRITER, held, destination),
     );
+    return (destination) => context.writeHeld(COMMAND_WRITER, held, destination);
   }
 
   /**
@@ -755,12 +839,12 @@ export class CommandBus {
             `when it ran.`,
         );
       }
-      const writer = this.#writerFor(entry.command.kind, spec.writer);
-      const session = await this.#sessionFor(entry.command.kind, spec.writer, sessions, inputs);
-      const preRead =
-        spec.replay === 'stored-effect' ? entry.read : await this.#preReadFor(spec, entry.command, inputs);
-      const source = this.#sourceSessionFor(entry.command, inputs.sources);
-      await writer.apply({ session, command: entry.command, source, reads: preRead });
+      const command = reapplicable(entry, this.#held);
+      const writer = this.#writerFor(command.kind, spec.writer);
+      const session = await this.#sessionFor(command.kind, spec.writer, sessions, inputs);
+      const preRead = spec.replay === 'stored-effect' ? entry.read : await this.#preReadFor(spec, command, inputs);
+      const sources = this.#sourceSessionsFor(command, inputs.sources);
+      await writer.apply({ session, command, sources, reads: preRead });
     }
     return pending.length;
   }
@@ -818,8 +902,8 @@ export class CommandBus {
   }
 
   /**
-   * The session a command's `apply` receives for the OTHER document it names
-   * (ADR-0040 Decisions 3 and 4).
+   * The sessions a command's `apply` receives for the OTHER documents it names, in
+   * the payload's order (ADR-0040 Decisions 3 and 4, ADR-0152).
    *
    * ## It branches on the DECLARATION, never on the payload
    *
@@ -829,8 +913,9 @@ export class CommandBus {
    * inferring one from the other is the partial reimplementation B3a is about.
    *
    * So a `'none'` command resolves nothing even if its payload happens to carry
-   * an id, and a `'one'` command whose payload names none is a defect that
-   * surfaces here rather than as an `undefined` handed to an apply.
+   * an id, and a `'one'` command whose payload names none or two, or a
+   * `'several'` one naming none, is a defect that surfaces here rather than as
+   * a list of the wrong length handed to an apply.
    *
    * ## `sourceIdsOf` is the CONTRACT's answer
    *
@@ -843,7 +928,7 @@ export class CommandBus {
    *
    * ## It branches on the DECLARATION, never on the payload
    *
-   * `#sourceSessionFor`'s rule on the third axis, and the same argument:
+   * `#sourceSessionsFor`'s rule on the third axis, and the same argument:
    * `declaredCommands[kind].targets` is what says a command's meaning depends on
    * the document not having moved. A payload that happens to carry a field
    * called `version` is a different statement — one could carry a version it
@@ -879,30 +964,33 @@ export class CommandBus {
     if (named !== current) throw new StaleTargetError(command.kind, named, current);
   }
 
-  #sourceSessionFor<K extends CommandKind>(
+  #sourceSessionsFor<K extends CommandKind>(
     command: CommandOfKind<K>,
     sources: CommandSources,
-  ): WriterSession[WriterOf<K>] | undefined {
+  ): readonly WriterSession[WriterOf<K>][] {
     const kind: CommandKind = command.kind;
-    if (declaredCommands[kind].sources === 'none') return undefined;
+    const declared = declaredCommands[kind].sources;
+    if (declared === 'none') return [];
 
+    // HOW MANY is the declaration's, and the payload is held to it: `'one'` exactly one, `'several'` one or more
+    // (ADR-0152). A payload that disagrees is the same registration defect as one naming none.
     const named = sourceIdsOf(command);
-    const source = named[0];
-    if (source === undefined) {
+    if (named.length === 0 || (declared === 'one' && named.length !== 1)) {
       throw new Error(
-        `${kind} declares sources: 'one' and its payload names no document. The declaration and ` +
-          `the contract's sourceIdsOf disagree, which is a registration defect rather than a race.`,
+        `${kind} declares sources: '${declared}' and the documents its payload names number ${String(named.length)}. The ` +
+          `declaration and the contract's sourceIdsOf disagree, which is a registration defect rather than a race.`,
       );
     }
 
-    const held = sources.get(source);
-    const session = held?.[declaredCommands[kind].writer];
-    if (session === undefined) throw new MissingSourceSessionError(kind, source);
-
-    // The same correlation `#sessionFor` asserts and for the same reason: the
-    // session was looked up under this command's own declared writer, and the
-    // checker cannot carry that through a generic index.
-    return session as WriterSession[WriterOf<K>];
+    return named.map((source) => {
+      const held = sources.get(source);
+      const session = held?.[declaredCommands[kind].writer];
+      if (session === undefined) throw new MissingSourceSessionError(kind, source);
+      // The same correlation `#sessionFor` asserts and for the same reason: the
+      // session was looked up under this command's own declared writer, and the
+      // checker cannot carry that through a generic index.
+      return session as WriterSession[WriterOf<K>];
+    });
   }
 
   /**
@@ -985,11 +1073,14 @@ export class CommandBus {
     // a copy of every bookmark per entry for a value redo must re-read anyway is
     // the retention rule read backwards.
     const stored = spec.replay === 'stored-effect' ? preRead : undefined;
+    // WHAT THE ENTRY KEEPS OF THE COMMAND, which for a held intent is its kind alone (ADR-0171 Decision 3): the
+    // command itself goes into `#held` below, beside the entry and never in it.
+    const kept = recordedOf(command);
     const entry: LogEntryFor<K> = captured.captured
-      ? { kind: 'invertible', command, inverse: captured.prior, read: stored }
+      ? { kind: 'invertible', command: kept, inverse: captured.prior, read: stored }
       : {
           kind: 'terminal',
-          command,
+          command: kept,
           // THE ONLY Checkpoint MINT IN THE KERNEL. Taken because capture said
           // prior state could not be recorded — never speculatively. A FILE the
           // service names and the writer fills, so the bytes never pass through
@@ -1001,34 +1092,40 @@ export class CommandBus {
           ),
           reason: captured.reason,
           read: stored,
+          result: null,
         };
 
     // RESOLVED BEFORE THE APPLY AND AFTER THE CHECKPOINT, for the same reason
     // the pre-read is: the checkpoint has to be the target as it stands. It is
     // a map lookup rather than a read, so nothing about the source can change
     // between here and the call.
-    const source = this.#sourceSessionFor(command, inputs.sources);
+    const sources = this.#sourceSessionsFor(command, inputs.sources);
 
-    const applied = await writer.apply({ session, command, source, reads: preRead });
+    const applied = await writer.apply({ session, command, sources, reads: preRead });
     this.#recordIfRemoval(spec, context);
 
     // A BYTE-IMAGE WRITER'S RESULT IS THE DOCUMENT, so installing it is part of
     // applying rather than something a caller does afterwards — and it happens
     // BEFORE the entry is recorded, for the reason the next comment gives about
     // work that threw. A rebuild that fails must leave no log entry behind.
-    await this.#install(command.kind, spec.writer, applied, context, inputs);
+    const installed = await this.#install(command.kind, spec.writer, applied, context, inputs);
+
+    // A COMMAND REDONE FROM ITS RESULT KEEPS THAT RESULT AND ITS KIND, and nothing else of the command (ADR-0162): a
+    // copy of the very file just installed, so the redone document is this one byte for byte, and no credential the
+    // apply was handed outlives this call. The entry above, which holds the command whole, is never recorded for it.
+    const recorded: LogEntryFor<K> =
+      spec.replay === 'stored-result' ? await this.#withResult(command.kind, entry, installed, context) : entry;
 
     // Recorded and counted only after the document actually changed. An entry
     // for work that threw is worse than no entry — undo would reverse a change
-    // the document never received.
+    // the document never received. A replacement that matches nothing refuses
+    // here, after its capture ran, and makes no version by this ordering alone
+    // (ADR-0169 Decision 6) — the case that says so is the bus's
+    // *a refusing APPLY after a successful capture*.
     //
-    // NOT COVERED BY A TEST, and said here rather than left to be assumed: an
-    // `apply` that throws where `capture` succeeded is not constructible with
-    // the one command that exists, because both validate the same page indices.
-    // The reachable neighbour — a checkpoint that fails between them — is
-    // covered. Revisit when a second command has an `apply` that can fail on
-    // its own.
-    context.commandLog(COMMAND_WRITER).record(entry);
+    // HELD AT THE SAME MOMENT, keyed by the entry as recorded, so the two cannot exist apart.
+    if (spec.replay === 'reapply-held-intent') this.#held.set(recorded, command);
+    context.commandLog(COMMAND_WRITER).record(recorded);
 
     // THE WINDOW'S BYTES, after the entry and not before it: by here the session has changed,
     // so a serialise that fails must leave the change undoable rather than unlogged.
@@ -1047,7 +1144,37 @@ export class CommandBus {
     // The bus decides WHEN and never how much — the target is the service's,
     // computed from §9.17's ceiling.
     const trimmed = context.enforceRetention(COMMAND_WRITER);
-    return { entry, trimmed, version: context.bumpVersion(COMMAND_WRITER) };
+    return { entry: recorded, trimmed, version: context.bumpVersion(COMMAND_WRITER) };
+  }
+
+  /**
+   * A `stored-result` command's entry: its checkpoint and reason, its kind, and a copy of the file its apply installed
+   * ([ADR-0162](../../../docs/DECISIONS/0162-a-command-whose-effect-is-its-result-is-redone-from-that-result.md)).
+   *
+   * @throws for a declaration that cannot hold: an invertible command has no checkpoint to keep beside a result, and a
+   *   live-session writer installs no file to keep
+   */
+  async #withResult<K extends CommandKind>(
+    kind: K,
+    entry: LogEntryFor<K>,
+    installed: ((destination: string) => Promise<number>) | null,
+    context: DocumentContext,
+  ): Promise<LogEntryFor<K>> {
+    if (entry.kind !== 'terminal' || installed === null) {
+      throw new Error(
+        `${kind} declares replay: 'stored-result', which keeps the file its apply installed beside the checkpoint ` +
+          `taken before it, and this execution ${entry.kind === 'terminal' ? 'installed no file' : 'recorded an inverse'}. ` +
+          'The declaration is wrong, and the command has run.',
+      );
+    }
+    return {
+      kind: 'terminal',
+      command: { kind },
+      checkpoint: entry.checkpoint,
+      reason: entry.reason,
+      read: undefined,
+      result: asCheckpoint(await context.storeCheckpoint(COMMAND_WRITER, installed)),
+    };
   }
 
   /**
@@ -1147,21 +1274,6 @@ export class CommandBus {
   }
 
   /**
-   * Steps the cursor forward and re-applies.
-   *
-   * **Which path this takes is §3a's declaration doing work**, for the first
-   * time. `replay: 'reapply-intent'` re-runs the command, which is only sound
-   * because re-running produces the same bytes. A command declaring
-   * `replay: 'stored-effect'` — signing, OCR, anything minting random object
-   * identifiers — must have its recorded effect re-applied instead, and that
-   * path is refused by name rather than silently taking the wrong one.
-   *
-   * No such command exists yet. The refusal is here because the alternative is
-   * a `redo` that quietly re-runs a signature and produces a different
-   * document, which is exactly the failure §3a was added ahead of any command
-   * to prevent.
-   */
-  /**
    * Which documents the next redo would name, so its caller can resolve them.
    *
    * ## Why this exists, and why it is not the index ADR-0040 refuses
@@ -1192,7 +1304,8 @@ export class CommandBus {
   pendingRedoSources(context: DocumentContext): readonly DocId[] {
     const entry = context.commandLog(COMMAND_WRITER).peekRedo();
     if (entry === undefined) return [];
-    return sourceIdsOf(entry.command);
+    // ONCE EACH: a merge may name one document twice (ADR-0152), and a caller holds each document's session once.
+    return [...new Set(sourcesOfEntry(entry, this.#held))];
   }
 
   /**
@@ -1213,7 +1326,7 @@ export class CommandBus {
 
   /** The other documents {@link replayPastImage} will re-apply against — `pendingRedoSources`, for every pending entry. */
   pendingReplaySources(context: DocumentContext): readonly DocId[] {
-    return [...new Set(context.log.pastImage.flatMap((entry) => sourceIdsOf(entry.command)))];
+    return [...new Set(context.log.pastImage.flatMap((entry) => sourcesOfEntry(entry, this.#held)))];
   }
 
   async redo(
@@ -1227,10 +1340,27 @@ export class CommandBus {
 
     const spec = declaredCommands[entry.command.kind];
 
+    // AN ENTRY REDONE FROM ITS RESULT installs that result and runs nothing (ADR-0162): a signature is over an exact
+    // byte range of the file it is in, so signing again would redo a different document, and re-serialising the
+    // session would rewrite the signed file. So the result goes in as `#install` puts a hosted image in, the session
+    // rebuilt from the file and main's image replaced from it, and the image is current without a refresh.
+    if (entry.kind === 'terminal' && entry.result !== null) {
+      const result = entry.result;
+      await inputs.adopt((destination) => context.writeCheckpoint(COMMAND_WRITER, result, destination));
+      await context.replaceCanonicalImageFrom(COMMAND_WRITER, (destination) =>
+        context.writeCheckpoint(COMMAND_WRITER, result, destination),
+      );
+      this.#recordIfRemoval(spec, context);
+      log.redo();
+      await this.#show(entry.command.kind, context, inputs, true);
+      return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
+    }
+    const command = reapplicable(entry, this.#held);
+
     // PICKED HERE, for `undo`'s reason: the writer comes from the log entry, so
     // the caller could not have chosen a session for it.
-    const writer = this.#writerFor(entry.command.kind, spec.writer);
-    const session = await this.#sessionFor(entry.command.kind, spec.writer, sessions, inputs);
+    const writer = this.#writerFor(command.kind, spec.writer);
+    const session = await this.#sessionFor(command.kind, spec.writer, sessions, inputs);
 
     // §3a's DECLARATION DECIDING, and this is the branch that replaced the
     // compile-time trigger that produced it (ADR-0051 Decision 2).
@@ -1257,16 +1387,16 @@ export class CommandBus {
     const preRead =
       spec.replay === 'stored-effect'
         ? entry.read
-        : await this.#preReadFor(spec, entry.command, inputs);
+        : await this.#preReadFor(spec, command, inputs);
     // RE-RESOLVED like the pre-read, and for a sharper version of its reason:
     // the log entry holds the source's `DocId`, not its session, so a redo runs
     // against whatever session that document has NOW. A stored session handle
     // would be one for a document that may have been closed and reopened, which
     // is the stale-handle failure `documentCommands` resolves inside the lane
     // to avoid.
-    const source = this.#sourceSessionFor(entry.command, inputs.sources);
+    const sources = this.#sourceSessionsFor(command, inputs.sources);
 
-    const applied = await writer.apply({ session, command: entry.command, source, reads: preRead });
+    const applied = await writer.apply({ session, command, sources, reads: preRead });
     this.#recordIfRemoval(spec, context);
     // REACHABLE, unlike `undo`'s: redoing a watermark re-runs it — that is what
     // `replay: 'reapply-intent'` above has just been checked to mean — and the

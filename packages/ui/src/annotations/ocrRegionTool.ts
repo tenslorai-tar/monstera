@@ -2,6 +2,7 @@ import type { OcrEngine, OcrLanguages, DispatchableCommand } from '@monstera/con
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
+import { HINT_READ_REGION } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 
@@ -137,7 +138,7 @@ function regionTool(id: string, engine: OcrEngine, deps: OcrRegionDeps): UiTool 
     preview: regionOf,
   };
 
-  return { id, controller };
+  return { id, controller, hint: HINT_READ_REGION };
 }
 
 /** Drag a box; Tesseract reads it, in the languages the setting names. */

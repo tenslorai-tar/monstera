@@ -146,6 +146,9 @@ function start(stream: HostByteStream) {
     pageLinks: () => {
       throw new Error('no case here reads page links');
     },
+    linkAddress: () => {
+      throw new Error('no case here reads a link address');
+    },
     pageFills: () => {
       throw new Error('no case here reads page fills');
     },
@@ -176,6 +179,9 @@ function start(stream: HostByteStream) {
     applyPdfLib: () => {
       throw new Error('no case here runs pdf-lib');
     },
+    prepareSignature: () => {
+      throw new Error('no case here prepares a signature');
+    },
     snapshot: () => {
       throw new Error('no case here rasterises a page');
     },
@@ -203,6 +209,9 @@ function start(stream: HostByteStream) {
     signaturesKept: () => Promise.reject(new Error('this case asks nothing about keeping signatures')),
     annotationRecords: () => {
       throw new Error('no case here reads annotation records');
+    },
+    annotationWords: () => {
+      throw new Error('no case here reads annotation words');
     },
   });
 

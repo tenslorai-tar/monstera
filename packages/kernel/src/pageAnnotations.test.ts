@@ -22,6 +22,7 @@ import {
   BUILT_IN_STAMPS,
   type BuiltInStamp,
   type CommandOfKind,
+  MAX_ANNOTATION_TEXT,
 } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { ColorSpace, Matrix, PDFDocument as PDFDocumentRaw, Pixmap } from './mupdfRaw.js';
@@ -48,6 +49,7 @@ import {
   captureEditAnnotationText,
   invertEditAnnotationText,
   applyReplyToAnnotation,
+  readAnnotationWords,
   readAnnotations,
   redrawPage,
 } from './pageAnnotations.js';
@@ -108,6 +110,7 @@ async function fixture({
   crop,
   rotate,
   foreign,
+  note = 'written by another application',
   content,
   field,
   claimsAuthored,
@@ -117,6 +120,8 @@ async function fixture({
   readonly crop?: readonly number[];
   readonly rotate?: number;
   readonly foreign?: boolean;
+  /** The foreign annotation's `/Contents`, for a case about a long comment. */
+  readonly note?: string;
   readonly content?: boolean;
   readonly field?: boolean;
   /**
@@ -185,7 +190,7 @@ async function fixture({
     for (const value of [5, 5, 25, 25]) rect.push(PDFNumber.of(value));
     other.set(PDFName.of('Rect'), rect);
     other.set(PDFName.of('T'), PDFString.of('Someone Else'));
-    other.set(PDFName.of('Contents'), PDFString.of('written by another application'));
+    other.set(PDFName.of('Contents'), PDFString.of(note));
     other.set(PDFName.of('Sound'), PDFName.of('NotARealKeyForASquare'));
     if (claimsAuthored === true) {
       // THE MARK'S KEY WITH THE WRONG TYPE. `authoredHere` reads the value
@@ -535,6 +540,59 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
   it('CONTROL: LEFT TO RIGHT writes no /Q at all — MuPDF’s own default — so the case above is the direction’s doing', async () => {
     const dict = await firstAnnotation(await drawnOn(await fixture(), command({ annotation: TEXT_BOX })));
     expect(dict?.lookup(PDFName.of('Q'))).toBeUndefined();
+  });
+
+  it('the walk reads each text mark’s STYLE back as it was written — face, size, colour, side — for a reopen (ADR-0154)', async () => {
+    // EVERY VALUE MOVED from the draft above and from each other, so a reader answering a default, or one field from
+    // another, fails: three faces, three sizes, three colours, both sides, across the three kinds.
+    const marks: AnnotationDraft[] = [
+      { ...TEXT_BOX, font: 'serif', fontSize: 9, colour: [0.8, 0, 0], direction: 'right-to-left' },
+      { ...TEXT_BOX, type: 'typewriter', font: 'mono', fontSize: 15, colour: [0, 0.5, 0] },
+      { ...TEXT_BOX, type: 'callout', at: { x: 5, y: 5 }, font: 'sans', fontSize: 21, colour: [0, 0, 1] },
+    ];
+    for (const annotation of marks) {
+      if (annotation.type !== 'text-box' && annotation.type !== 'typewriter' && annotation.type !== 'callout') continue;
+      const bytes = await drawnOn(await fixture(), command({ annotation }));
+      const listed = await onSession(bytes, (session) => readAnnotations(session));
+      const typed = listed.annotations[0]?.typed;
+      expect(typed && { ...typed, colour: undefined }, annotation.type).toStrictEqual({
+        fontSize: annotation.fontSize,
+        colour: undefined,
+        font: annotation.font,
+        direction: annotation.direction,
+      });
+      // TO FLOAT32's PRECISION, which is what MuPDF parses a `/DA` colour into: 0.8 reads back as 0.800000011920929.
+      annotation.colour.forEach((channel, at) => {
+        expect(typed?.colour[at], `${annotation.type} channel ${String(at)}`).toBeCloseTo(channel, 6);
+      });
+    }
+  });
+
+  it('CONTROL: a mark whose words are not drawn carries no style, nor does a /DA this build cannot set back (auto size)', async () => {
+    const square = await onSession(await drawnOn(await fixture(), command()), (session) => readAnnotations(session));
+    expect(square.annotations[0] !== undefined && 'typed' in square.annotations[0]).toBe(false);
+    // `0 Tf` IS THE FORMAT'S AUTO SIZE, which no draft can write back; the mark is still listed, with no style, and a
+    // reopen types it on a card instead. The same mark with its size put back reads a style, so the absence is the
+    // size's doing.
+    const written = await drawnOn(await fixture(), command({ annotation: TEXT_BOX }));
+    const withSize = async (da: string): Promise<ListedAnnotation | undefined> => {
+      const loaded = await PDFDocument.load(written, { updateMetadata: false });
+      const annots = loaded.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+      const [first] = annots instanceof PDFArray ? annots.asArray() : [];
+      if (!(first instanceof PDFRef)) throw new Error('the fixture wrote no annotation');
+      loaded.context.lookup(first, PDFDict).set(PDFName.of('DA'), PDFString.of(da));
+      const bytes = await loaded.save();
+      return (await onSession(bytes, (session) => readAnnotations(session))).annotations[0];
+    };
+    const auto = await withSize('/Helv 0 Tf 0 g');
+    expect(auto?.kind).toBe('text-box');
+    expect(auto !== undefined && 'typed' in auto).toBe(false);
+    expect((await withSize('/Helv 10 Tf 0 g'))?.typed).toStrictEqual({
+      fontSize: 10,
+      colour: [0, 0, 0],
+      font: 'sans',
+      direction: 'left-to-right',
+    });
   });
 
   it('HEBREW AND ARABIC are drawn in the engine’s Noto faces, not as bytes in Helvetica (ADR-0128)', async () => {
@@ -1626,6 +1684,43 @@ describe('readAnnotations', () => {
   it('reports an empty document as empty rather than refusing', async () => {
     const listed = await onSession(await fixture(), (session) => readAnnotations(session));
     expect(listed).toStrictEqual({ annotations: [], truncated: false });
+  });
+
+  it('lists a LONG comment sliced and says it CUT it, and the mark’s own words read back WHOLE', async () => {
+    // An editor that started from the listing would save 512 characters over 600 and lose the end, so the walk says
+    // when it sliced and the words are read whole for the edit. The end is distinct so a read that sliced again, or
+    // answered the listing, cannot pass.
+    const note = `${'a'.repeat(600)} the end`;
+    const bytes = await fixture({ foreign: true, note });
+    const [listed, words] = await onSession(bytes, async (session) => [
+      await readAnnotations(session),
+      await readAnnotationWords(session, 0, 0),
+    ]);
+    expect(listed.annotations[0]?.contents).toBe('a'.repeat(512));
+    expect(listed.annotations[0]?.cut).toBe(true);
+    expect(words).toStrictEqual({ text: note, whole: true });
+  });
+
+  it('CONTROL: a comment the listing holds whole carries no `cut`, so no editor reads it again', async () => {
+    const listed = await onSession(await fixture({ foreign: true, note: 'a'.repeat(512) }), (session) =>
+      readAnnotations(session),
+    );
+    expect(listed.annotations[0]?.contents).toBe('a'.repeat(512));
+    expect(listed.annotations[0] !== undefined && 'cut' in listed.annotations[0]).toBe(false);
+  });
+
+  it('a comment longer than an edit can write back is read NOT WHOLE, so no editor starts from part of it', async () => {
+    const note = 'a'.repeat(MAX_ANNOTATION_TEXT + 1);
+    const words = await onSession(await fixture({ foreign: true, note }), (session) =>
+      readAnnotationWords(session, 0, 0),
+    );
+    expect([words.text.length, words.whole]).toStrictEqual([MAX_ANNOTATION_TEXT, false]);
+  });
+
+  it('a handle past the walk is a RangeError, which the host answers by name rather than another mark’s words', async () => {
+    await expect(
+      onSession(await fixture({ foreign: true }), (session) => readAnnotationWords(session, 0, 1)),
+    ).rejects.toBeInstanceOf(RangeError);
   });
 });
 
@@ -3059,6 +3154,80 @@ describe('applyAddAnnotation writes a measurement', () => {
     expect(content).toContain('50.0 mm');
   });
 
+  /** The text of an annotation's normal appearance, read with pdf-lib, a library other than the writer. */
+  async function appearanceOf(bytes: Uint8Array, at = 0): Promise<{ readonly content: string; readonly rect: number[] }> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('no /Annots');
+    const entry = annots.asArray()[at];
+    const dict = entry instanceof PDFRef ? document.context.lookup(entry, PDFDict) : undefined;
+    if (dict === undefined) throw new Error('the /Annots entry is not a dictionary');
+    const appearance = dict.lookup(PDFName.of('AP'));
+    const normal = appearance instanceof PDFDict ? appearance.get(PDFName.of('N')) : undefined;
+    const stream = normal instanceof PDFRef ? document.context.lookup(normal) : normal;
+    if (!(stream instanceof PDFStream)) throw new Error('the measurement has no appearance');
+    const rect = dict.lookup(PDFName.of('Rect'));
+    const numbers = rect instanceof PDFArray ? rect.asArray().map((value) => (value instanceof PDFNumber ? value.asNumber() : NaN)) : [];
+    return { content: Buffer.from(stream.getContents()).toString('latin1'), rect: numbers };
+  }
+
+  it('DRAWS an AREA’s and a PERIMETER’s reading on the shape, which MuPDF does not (the owner’s item 14a)', async () => {
+    // THE OWNER'S REPORT: area and perimeter showed no value. MuPDF draws `/Contents` only along a captioned line, so
+    // the two readings were in the dictionary and on no page. The label's characters, `²` as its WinAnsi byte, set in
+    // the appearance a viewer draws.
+    const area = await appearanceOf(await drawnOn(await fixture(), command({ annotation: AREA })));
+    expect(area.content).toContain('/MonsteraHelv 12 Tf');
+    expect(area.content).toContain('(2500.0 mm²) Tj');
+    const perimeter = await appearanceOf(await drawnOn(await fixture(), command({ annotation: PERIMETER })));
+    expect(perimeter.content).toContain('(150.0 mm) Tj');
+    // CONTROL: the distance's own caption is MuPDF's, and this build adds nothing to it.
+    const distance = await appearanceOf(await drawnOn(await fixture(), command({ annotation: DISTANCE })));
+    expect(distance.content).not.toContain('MonsteraMeasure');
+    expect(distance.content).toContain('50.0 mm');
+  });
+
+  it('places an AREA’s reading at the shape’s middle and grows /Rect to hold it, so a small shape does not cut it', async () => {
+    // A TEN-POINT SQUARE, far narrower than its reading, so a reading set without growing the box is clipped by every
+    // viewer that clips an appearance to its /BBox.
+    const small: AnnotationDraft = {
+      ...AREA,
+      points: [
+        { x: 50, y: 50 },
+        { x: 60, y: 50 },
+        { x: 60, y: 60 },
+        { x: 50, y: 60 },
+      ],
+    };
+    const { content, rect } = await appearanceOf(await drawnOn(await fixture(), command({ annotation: small })));
+    const [x0 = NaN, , x1 = NaN] = rect;
+    expect(x1 - x0).toBeGreaterThan(25);
+    // CENTRED on the square's middle (x = 55 in the fixture's space): the text starts left of it by half its width.
+    const placed = /([\d.]+) ([\d.]+) Td \(25\.0 mm²\)/u.exec(content);
+    expect(placed, content).not.toBeNull();
+    expect(Number(placed?.[1])).toBeLessThan(55);
+  });
+
+  it('sets the reading ONCE across a restyle, and again on the appearance the restyle drew', async () => {
+    // A REDRAW THAT REGENERATES the appearance loses the reading unless it is set again; one that does not would set it
+    // twice without the marker. Both halves: present after the restyle, and present once.
+    const drawn = await drawnOn(await fixture(), command({ annotation: AREA }));
+    const restyled = await onSession(drawn, async (session) => {
+      await applyStyleAnnotation(session, {
+        kind: 'styleAnnotation',
+        page: 0,
+        indices: [0],
+        colour: [0.8, 0.1, 0.1],
+        version: asDocVersion(1),
+      });
+      return mupdfWriter.serialise(session);
+    });
+    const { content } = await appearanceOf(restyled);
+    expect(content.split('MonsteraMeasure BMC').length - 1).toBe(1);
+    // ON THE APPEARANCE THE RESTYLE DREW, which strokes in the new colour, and still black, as MuPDF sets a caption.
+    expect(content).toContain('.8 .1 .1 RG');
+    expect(content).toContain('MonsteraMeasure BMC q 0 g BT');
+  });
+
   it('is LISTED apart from the plain shape it shares a subtype with', async () => {
     // `/Line`, `/Polygon` and `/PolyLine` are what the three measurements are
     // written as, so `getType()` cannot separate them from the line, polygon
@@ -3200,6 +3369,23 @@ describe('applyPlaceImage', () => {
     expect(await stampsOn(await placedOn(await fixture()), 0)).toEqual([
       { subtype: '/Stamp', images: ['7x3'] },
     ]);
+  });
+
+  it('the walk calls an image stamp PICTURED, and CONTROL: a built-in stamp, which draws words, is not (14g)', async () => {
+    // Edit object's *Images* finds a placed picture by this, since the page's object walk never sees an annotation.
+    // The control is the case the field could get wrong: the same subtype, an appearance with no picture in it.
+    const placed = await placedOn(await fixture());
+    const both = await drawnOn(
+      placed,
+      command({ annotation: { type: 'stamp', stamp: 'approved', rect: { x0: 20, y0: 200, x1: 260, y1: 260 }, colour: [0.8, 0.1, 0.1], opacity: 1 } }),
+    );
+    const listed = await onSession(both, (session) => readAnnotations(session));
+    expect(listed.annotations.map((entry) => [entry.kind, entry.pictured])).toStrictEqual([
+      ['stamp', true],
+      ['stamp', undefined],
+    ]);
+    // ABSENT, not false: the one spelling of *no* the schema accepts.
+    expect('pictured' in (listed.annotations[1] ?? {})).toBe(false);
   });
 
   it('A RESIZED image stamp still draws its image: placeAnnotation’s setRect and update() keep the appearance', async () => {
@@ -3911,4 +4097,53 @@ describe('an annotation carries its author, its creation time and its blend', ()
     if (stored === undefined) throw new Error('no annotation');
     expect(appearanceBlends(stored)).toContain('/Multiply');
   });
+});
+
+/**
+ * A line break typed in a text mark's words is drawn as a line break.
+ *
+ * The dialogs that ask for a text box's, a typewriter's or a callout's words take several lines (`TextArea`), so a
+ * newline reaches `/Contents`. What this pins is the page: MuPDF's appearance for a `/FreeText` must start a new line
+ * there, rather than drawing a missing-glyph box or running the words together.
+ *
+ * READ FROM THE APPEARANCE STREAM, with pdf-lib, for this file's reason. Not the page's structured text: measured
+ * 2026-10-03, MuPDF's `toStructuredText` on the page answers no blocks for a page whose only text is an annotation's,
+ * so it would report every case here as empty.
+ */
+describe('a line break in a text mark', () => {
+  /** Each string the first annotation's appearance shows, one per `Tj` — MuPDF sets each drawn line with its own. */
+  async function drawnLines(bytes: Uint8Array): Promise<readonly string[]> {
+    const loaded = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = loaded.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    const [first] = annots instanceof PDFArray ? annots.asArray() : [];
+    const dict = first instanceof PDFRef ? loaded.context.lookup(first, PDFDict) : undefined;
+    const normal = dict?.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
+    if (!(normal instanceof PDFRawStream)) throw new Error('the annotation has no normal appearance');
+    const shown = new TextDecoder().decode(decodePDFRawStream(normal).decode());
+    return [...shown.matchAll(/\(([^)]*)\)\s*Tj/gu)].map((match) => match[1] ?? '');
+  }
+
+  const draft = (type: 'text-box' | 'typewriter', text: string): AnnotationDraft => ({
+    type,
+    rect: { x0: 20, y0: 100, x1: 200, y1: 180 },
+    text,
+    colour: [0.1, 0.1, 0.1],
+    opacity: 1,
+    fontSize: 12,
+    font: 'sans',
+    direction: 'left-to-right',
+  });
+
+  for (const type of ['text-box', 'typewriter'] as const) {
+    it(`${type}: two typed lines are drawn as two lines`, async () => {
+      const lines = await drawnLines(await drawnOn(await fixture(), command({ annotation: draft(type, 'first\nsecond') })));
+      expect(lines).toStrictEqual(['first', 'second']);
+    });
+
+    it(`CONTROL ${type}: the same words with a space are drawn as one line`, async () => {
+      // Without this, a reader that split every word into its own string would pass the case above.
+      const lines = await drawnLines(await drawnOn(await fixture(), command({ annotation: draft(type, 'first second') })));
+      expect(lines).toStrictEqual(['first second']);
+    });
+  }
 });

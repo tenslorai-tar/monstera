@@ -12,6 +12,7 @@ import type { PageGeometryReader } from '../pageGeometry.js';
 import type { ListedDestinations } from '../destinations.js';
 import type { ListedLayers } from '../layers.js';
 import type { ReadSignature } from '../signatureRead.js';
+import type { PlaceholderRequest, PreparedSignature } from '../signatureHole.js';
 import type { FlatFieldCandidate } from '../flatFields.js';
 import type { ListedField } from '../formFields.js';
 import type { NextSave } from '../mupdfWriter.js';
@@ -29,7 +30,7 @@ import {
   type RecognisedPage,
 } from '../ocrRecognise.js';
 import type { PageFill } from '../cellFills.js';
-import type { ListedPageLinks } from '../pageLinks.js';
+import type { LinkAddress, ListedPageLinks } from '../pageLinks.js';
 import type { PageWordBoxes } from '../wordBoxes.js';
 import type { PageTextRead } from '../textStructure.js';
 import type { AccessibilityReport } from '../accessibilityRules.js';
@@ -47,8 +48,10 @@ import {
   type MupdfWireCommand,
   joinAsset,
   joinPdfLibAsset,
+  joinPlaceholderAsset,
   taggedPrior,
 } from './engineChannels.js';
+import { pictureRefusalCodeOf, placeholderRefusalCodeOf } from './hostRefusals.js';
 
 /**
  * Reads one page's structured text as MuPDF's own JSON.
@@ -91,6 +94,9 @@ export type HostPageLinksReader = (
   session: MupdfSession,
   page: number,
 ) => Promise<ListedPageLinks>;
+
+/** Reads one external link's address in full, by its place on its page (ADR-0167). */
+export type HostLinkAddressReader = (session: MupdfSession, page: number, index: number) => Promise<LinkAddress>;
 
 /** Reads one page's filled shapes — what a table cell's background is joined from. */
 export type HostPageFillsReader = (session: MupdfSession, page: number) => Promise<readonly PageFill[]>;
@@ -166,6 +172,16 @@ export type HostAnnotationRecordsReader = (
   page: number,
   indices: readonly number[],
 ) => Promise<{ readonly json: string; readonly copyable: readonly boolean[] }>;
+
+/**
+ * One mark's own words, whole — `readAnnotationWords`, for an editor whose listing was cut. Throws `RangeError` for a
+ * handle past the walk, which the handler answers as `no-such-annotation`, {@link HostAnnotationRecordsReader}'s rule.
+ */
+export type HostAnnotationWordsReader = (
+  session: MupdfSession,
+  page: number,
+  index: number,
+) => Promise<{ readonly text: string; readonly whole: boolean }>;
 
 /**
  * Lists every AcroForm field. {@link HostAnnotationsReader}'s shape and its
@@ -260,6 +276,7 @@ export type HostPageImage = (
 export type HostWordExport = (
   session: MupdfSession,
   mode: WordMode,
+  pages: PageSet,
 ) => { readonly chunks: AsyncIterable<Uint8Array>; readonly pictures: () => number };
 
 /**
@@ -452,6 +469,8 @@ export interface EngineHandlerParts {
   readonly geometry: PageGeometryReader;
   readonly pageText: HostPageTextReader;
   readonly pageLinks: HostPageLinksReader;
+  /** One link's whole address, for a person following it. `engine/link-address`. */
+  readonly linkAddress: HostLinkAddressReader;
   /** A page's filled shapes. `engine/page-fills`. */
   readonly pageFills: HostPageFillsReader;
   /** A page's word boxes (ADR-0137). `engine/word-boxes`. */
@@ -463,6 +482,8 @@ export interface EngineHandlerParts {
   readonly annotations: HostAnnotationsReader;
   /** How this process reads named marks for the clipboard. `engine/annotation-records`. */
   readonly annotationRecords: HostAnnotationRecordsReader;
+  /** How this process reads one mark's whole words. `engine/annotation-words`. */
+  readonly annotationWords: HostAnnotationWordsReader;
   readonly formFields: HostFormFieldsReader;
   readonly duplicates: HostDuplicatesReader;
   readonly extract: HostExtract;
@@ -475,6 +496,11 @@ export interface EngineHandlerParts {
     command: CommandOfKind<KindsRoutedTo<'pdf-lib'>>,
     reads: PreReadValue | undefined,
   ) => Promise<ByteImage>;
+  /**
+   * How this process writes a signature's placeholder and prepares its ranges. `prepareSignature` —
+   * `engine/prepareSignature` (ADR-0148).
+   */
+  readonly prepareSignature: (image: ByteImage, request: PlaceholderRequest) => Promise<PreparedSignature>;
   readonly snapshot: HostSnapshot;
   /** How this process writes the form's data out. `engine/exportFormData`. */
   readonly exportFormData: HostFormDataExport;
@@ -504,6 +530,7 @@ export function createEngineHandlers({
   geometry,
   pageText,
   pageLinks,
+  linkAddress,
   pageFills,
   wordBoxes,
   ocr,
@@ -511,10 +538,12 @@ export function createEngineHandlers({
   layers,
   annotations,
   annotationRecords,
+  annotationWords,
   formFields,
   duplicates,
   extract,
   applyPdfLib,
+  prepareSignature,
   snapshot,
   exportFormData,
   exportAnnotationData,
@@ -729,7 +758,44 @@ export function createEngineHandlers({
         const written = await files.writeOutput(held.outputDirectory, into, result);
         return { ok: true, value: { bytes: written } };
       } catch (error) {
-        return failed('apply-failed', error);
+        // A PICTURE PAST THE PIXEL BOUND keeps its name across the pipe, so Insert image says so rather than calling
+        // a valid picture unreadable; anything else is the document's failure.
+        return failed(pictureRefusalCodeOf(error) ?? 'apply-failed', error);
+      }
+    },
+
+    'engine/prepareSignature': async ({ session, request, asset, into }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // THE PICTURE, by `engine/applyPdfLib`'s door: a name inside this session's own snapshot directory.
+      let picture: Uint8Array | undefined;
+      if (asset !== undefined) {
+        try {
+          picture = await files.readSnapshot(held.snapshotDirectory, asset);
+        } catch (error) {
+          return failed('asset-missing', error);
+        }
+      }
+      const whole = joinPlaceholderAsset(request, picture);
+      if (whole === undefined) {
+        return failed(
+          'asset-missing',
+          new Error('the signature request and the picture sent with it disagree about whether it carries one'),
+        );
+      }
+      let image: ByteImage;
+      try {
+        image = await writer.serialise(held.session);
+      } catch (error) {
+        return failed('serialise-failed', error);
+      }
+      try {
+        const prepared = await prepareSignature(image, whole);
+        const written = await files.writeOutput(held.outputDirectory, into, prepared.bytes);
+        return { ok: true, value: { bytes: written, byteRange: [...prepared.byteRange] } };
+      } catch (error) {
+        // A REFUSAL A PERSON CAN ACT ON keeps its name across the pipe; anything else is the document's failure.
+        return failed(placeholderRefusalCodeOf(error) ?? 'apply-failed', error);
       }
     },
 
@@ -838,6 +904,16 @@ export function createEngineHandlers({
       return { ok: true, value: { links: [...listed.links], truncated: listed.truncated } };
     },
 
+    'engine/link-address': async ({ session, page, index }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the link read's reason: the two answers that are not an address are values, not throws.
+      const read = await linkAddress(held.session, page, index);
+      if (read.kind === 'no-such-link') return { ok: false, error: { code: 'no-such-link' } } as const;
+      if (read.kind === 'too-long') return { ok: false, error: { code: 'address-too-long' } } as const;
+      return { ok: true, value: { uri: read.uri } };
+    },
+
     'engine/page-fills': async ({ session, page }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
@@ -930,6 +1006,19 @@ export function createEngineHandlers({
       }
     },
 
+    'engine/annotation-words': async ({ session, page, index }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      try {
+        const words = await annotationWords(held.session, page, index);
+        return { ok: true, value: { text: words.text, whole: words.whole } };
+      } catch (thrown) {
+        // A HANDLE PAST THE WALK, by name, for `engine/annotation-records`' reason.
+        if (thrown instanceof RangeError) return { ok: false, error: { code: 'no-such-annotation' } } as const;
+        throw thrown;
+      }
+    },
+
     'engine/form-fields': async ({ session }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
@@ -1011,13 +1100,13 @@ export function createEngineHandlers({
       }
     },
 
-    'engine/word': async ({ session, mode, into }) => {
+    'engine/word': async ({ session, mode, into, pages }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       try {
         // STREAMED INTO THE GRANTED DIRECTORY, a page at a time, and main moves the file: the package is never
         // whole in this process and never read by main.
-        const composed = word(held.session, mode);
+        const composed = word(held.session, mode, pages);
         const written = await files.writeOutputStream(held.outputDirectory, into, composed.chunks);
         return { ok: true, value: { bytes: written, pictures: composed.pictures() } };
       } catch (error) {
@@ -1089,7 +1178,7 @@ export function createEngineHandlers({
       return { ok: true, value: { groups: kept, truncated } };
     },
 
-    'engine/apply': async ({ session, command, source, asset }) => {
+    'engine/apply': async ({ session, command, sources, asset }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
 
@@ -1108,12 +1197,14 @@ export function createEngineHandlers({
       //
       // Resolved BEFORE the apply, so a miss refuses without having touched the
       // target — a merge that failed halfway would leave the target holding
-      // some of the source's pages with no log entry describing it.
-      let from: MupdfSession | undefined;
-      if (source !== undefined) {
+      // some of the source's pages with no log entry describing it. EVERY ONE
+      // of a merge's sources (ADR-0152), so the third closed is refused before
+      // the first is read.
+      const from: MupdfSession[] = [];
+      for (const source of sources) {
         const heldSource = sessions.lookup(source);
         if (heldSource === undefined) return gone;
-        from = heldSource.session;
+        from.push(heldSource.session);
       }
 
       // `reads: undefined` IS WRITTEN RATHER THAN OMITTED, and that is the
@@ -1121,7 +1212,7 @@ export function createEngineHandlers({
       // pre-read field, because no MuPDF command declares `reads`. Before this
       // the same fact was expressed by a call that simply stopped at three
       // arguments — indistinguishable from the drop that cost four rows.
-      await execution.apply({ session: held.session, command: whole, source: from, reads: undefined });
+      await execution.apply({ session: held.session, command: whole, sources: from, reads: undefined });
       return { ok: true, value: {} };
     },
 

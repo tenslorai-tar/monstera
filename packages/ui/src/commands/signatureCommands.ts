@@ -5,6 +5,7 @@ import { SIGNATURE_TOOL_ID } from '../annotations/signatureTool.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { type HeldSignaturePicture, SIGNATURE_ANSWERS, SIGNATURE_DIALOG_ID, type SignatureLook } from '../dialogs/signature.js';
 import { SIGNATURE_PROBLEM_DIALOG_ID } from '../dialogs/signatureProblem.js';
+import { chosenOfKept, requestedMarkOf } from './signatureMarks.js';
 import { GROUP_QUICK_TOOLS, GROUP_STAMPS, SIGNATURE_TITLE, TOAST_SIGNATURE_LIBRARY_FULL, TOAST_SIGNATURE_NOT_KEEPABLE } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { confirmDone } from './confirmWritten.js';
@@ -47,7 +48,7 @@ export async function chooseSignature(
       const parsed = SIGNATURE_ANSWERS.safeParse(answered);
       // DISMISSED, or an answer of another shape — a registration defect rather than a person's doing — places nothing.
       if (!parsed.success) return undefined;
-      if ('mark' in parsed.data) return parsed.data;
+      if ('mark' in parsed.data) return { ...parsed.data, mark: chosenOfKept(parsed.data.mark, kept) };
       if ('upload' in parsed.data) {
         keep = parsed.data.keep;
         const answer = await deps.client['signature.pickPicture']({});
@@ -57,10 +58,13 @@ export async function chooseSignature(
           const { handle, name, mediaType, bytes } = answer.value;
           picked = { handle, name, src: urls.make(bytes, mediaType) };
         } else if (answer.value.kind !== 'cancelled') {
-          // REFUSED BY ITS BYTES OR ITS SIZE, said where the person is looking, before they are asked again.
+          // REFUSED BY ITS BYTES OR ITS SIZE, or a scanned PDF with no ink or a password, said where the person is
+          // looking, before they are asked again.
           await deps.ask(
             SIGNATURE_PROBLEM_DIALOG_ID,
-            answer.value.kind === 'too-large' ? { reason: 'too-large', limitBytes: answer.value.limitBytes } : { reason: 'unreadable' },
+            answer.value.kind === 'too-large'
+              ? { reason: 'too-large', limitBytes: answer.value.limitBytes }
+              : { reason: answer.value.kind },
           );
         }
         continue;
@@ -85,11 +89,16 @@ export async function placePlainSignature(
   rect: AnnotationRect,
   look: SignatureLook,
 ): Promise<DocVersion | undefined> {
+  const requested = await requestedMarkOf(look.mark);
+  if (requested.kind === 'problem') {
+    void deps.ask(SIGNATURE_PROBLEM_DIALOG_ID, requested.problem);
+    return undefined;
+  }
   const answer = await deps.client['document.placeSignature']({
     docId,
     page,
     rect,
-    mark: look.mark,
+    mark: requested.mark,
     keep: look.keep,
     stamp: deps.stamp(),
   });

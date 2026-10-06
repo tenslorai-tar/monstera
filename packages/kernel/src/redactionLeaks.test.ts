@@ -4,7 +4,10 @@ import {
   PDFDocument,
   PDFHexString,
   PDFName,
+  PDFOperator,
+  PDFOperatorNames,
   PDFRawStream,
+  PDFRef,
   PDFStream,
   PDFString,
   StandardFonts,
@@ -97,10 +100,16 @@ async function secretSites(bytes: Uint8Array): Promise<string[]> {
   const visit = (value: unknown, path: string): void => {
     if (value instanceof PDFString || value instanceof PDFHexString) {
       if (value.decodeText().includes(SECRET)) sites.push(`string ${path}`);
+    } else if (value instanceof PDFName) {
+      // A NAME SPELLS TEXT TOO, decoded from its `#20` escapes: a named destination is one, as a value and as a key.
+      if (value.decodeText().includes(SECRET)) sites.push(`name ${path}`);
     } else if (value instanceof PDFArray) {
       value.asArray().forEach((item, at) => { visit(item, `${path}[${String(at)}]`); });
     } else if (value instanceof PDFDict) {
-      for (const [key, item] of value.entries()) visit(item, `${path}${key.asString()}`);
+      for (const [key, item] of value.entries()) {
+        if (key.decodeText().includes(SECRET)) sites.push(`key ${path}${key.asString()}`);
+        visit(item, `${path}${key.asString()}`);
+      }
     }
   };
 
@@ -247,8 +256,38 @@ const metadata = () =>
     document.catalog.set(PDFName.of('Metadata'), stream);
   });
 
+/**
+ * AN ANNOTATION UNDER THE MARK THAT THE STRUCTURE TREE NAMES (ADR-0163). Deleting it from the page was not removing
+ * it: the element's object reference kept it alive through the collection, `/Contents` and all.
+ */
+const taggedAnnotation = () =>
+  fixture((document) => {
+    const { context } = document;
+    const page = onPage(document);
+    const note = context.register(
+      context.obj({
+        Type: 'Annot',
+        Subtype: 'Square',
+        Rect: [SECRET_BOX.x, SECRET_BOX.y, SECRET_BOX.x + SECRET_BOX.width, SECRET_BOX.y + SECRET_BOX.height],
+        Contents: PDFString.of(SECRET),
+        StructParent: 0,
+      }),
+    );
+    page.node.addAnnot(note);
+    const structure = context.nextRef();
+    const element = context.register(
+      context.obj({ Type: 'StructElem', S: 'Annot', P: structure, Pg: page.ref, K: { Type: 'OBJR', Obj: note } }),
+    );
+    context.assign(
+      structure,
+      context.obj({ Type: 'StructTreeRoot', K: [element], ParentTree: context.obj({ Nums: [0, element] }) }),
+    );
+    document.catalog.set(PDFName.of('StructTreeRoot'), structure);
+  });
+
 describe('the redaction leak corpus', () => {
   const textCases = [
+    ['an annotation under the mark that the structure tree names', taggedAnnotation],
     ['the text layer', textLayer],
     ['an OCR layer in render mode 3', ocrLayer],
     ['a form field value under the mark', formValue],
@@ -503,5 +542,472 @@ describe('the redaction leak corpus: an image under a vector cover', () => {
 
   it('a mark over it leaves none of the covered pixels', async () => {
     expect(await patternPixels(await burnIn(await coveredImage(), IMAGE_BOX))).toBe(0);
+  });
+});
+
+/** `text` drawn on `page` inside a marked-content sequence tagged `tag` with the property list `properties`. */
+function markedText(
+  page: ReturnType<PDFDocument['getPage']>,
+  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
+  text: string,
+  tag: string,
+  properties: PDFDict | PDFName,
+): void {
+  // A DICTIONARY AS ITS OWN SERIALISED FORM: pdf-lib's operand type has no dictionary, though `BDC` takes one, and a
+  // string operand is written verbatim.
+  const operand = properties instanceof PDFDict ? properties.toString() : properties;
+  page.pushOperators(PDFOperator.of(PDFOperatorNames.BeginMarkedContentSequence, [PDFName.of(tag), operand]));
+  page.drawText(text, { font, size: 18, x: 76, y: 698 });
+  page.pushOperators(PDFOperator.of(PDFOperatorNames.EndMarkedContent));
+}
+
+const KEPT_DESCRIPTION = 'A chart of the year';
+
+/**
+ * A TAGGED DOCUMENT OF TWO PAGES (ADR-0163). Page 1 carries the secret as tagged text whose element, and that
+ * element's section, restate it in `/Alt`, `/ActualText`, `/E` and `/T`, beside a named property list carrying it as
+ * `/ActualText`; page 2 carries a figure whose description has nothing to do with it. MuPDF edits the element's
+ * strings as it removes the text, and writes the edited `/ActualText` into `/Alt`, so the original stayed.
+ */
+const taggedText = () =>
+  fixture(async (document) => {
+    const { context } = document;
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const first = onPage(document);
+    const second = document.addPage([...PAGE]);
+    const secret = PDFString.of(SECRET);
+    markedText(first, font, SECRET, 'P', context.obj({ MCID: 0 }));
+    first.node.set(PDFName.of('Resources'), first.node.Resources() ?? context.obj({}));
+    first.node.Resources()?.set(PDFName.of('Properties'), context.obj({ MC0: { ActualText: secret } }));
+    markedText(first, font, 'x', 'Span', PDFName.of('MC0'));
+    markedText(second, font, 'Figure', 'Figure', context.obj({ MCID: 0 }));
+    first.node.set(PDFName.of('StructParents'), context.obj(0));
+    second.node.set(PDFName.of('StructParents'), context.obj(1));
+
+    const structure = context.nextRef();
+    const section = context.nextRef();
+    const paragraph = context.register(
+      context.obj({ Type: 'StructElem', S: 'P', P: section, Pg: first.ref, K: 0, Alt: secret, ActualText: secret, E: secret, T: secret }),
+    );
+    context.assign(section, context.obj({ Type: 'StructElem', S: 'Sect', P: structure, K: [paragraph], ActualText: secret }));
+    const figure = context.register(
+      context.obj({ Type: 'StructElem', S: 'Figure', P: structure, Pg: second.ref, K: 0, Alt: PDFString.of(KEPT_DESCRIPTION) }),
+    );
+    context.assign(
+      structure,
+      context.obj({ Type: 'StructTreeRoot', K: [section, figure], ParentTree: context.obj({ Nums: [0, [paragraph], 1, [figure]] }) }),
+    );
+    document.catalog.set(PDFName.of('StructTreeRoot'), structure);
+    document.catalog.set(PDFName.of('MarkInfo'), context.obj({ Marked: true }));
+  });
+
+/** The `/Alt` of every element whose role is `role`, read back by pdf-lib. */
+async function altsOf(bytes: Uint8Array, role: string): Promise<readonly string[]> {
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  const alts: string[] = [];
+  for (const [, object] of document.context.enumerateIndirectObjects()) {
+    if (!(object instanceof PDFDict) || object.get(PDFName.of('S'))?.toString() !== `/${role}`) continue;
+    const alt = object.get(PDFName.of('Alt'));
+    if (alt instanceof PDFString || alt instanceof PDFHexString) alts.push(alt.decodeText());
+  }
+  return alts;
+}
+
+/** Serialises `bytes` through MuPDF with nothing burned in: the control for a copy no region maps to. */
+async function untouched(bytes: Uint8Array): Promise<Uint8Array> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    return await mupdfWriter.serialise(session);
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+/**
+ * The secret drawn on page 1 inside a named property list carrying it as `/ActualText`, with page 2 drawing something
+ * else, and the resources then moved by `place`: the property list's dictionary is one page 1 READ, which MuPDF's
+ * filter replaces on page 1 with a dictionary of its own and leaves where it was for every other reader.
+ */
+const propertiesReadThrough = (place: (document: PDFDocument, resources: PDFDict) => void, outlined = false) => async () => {
+  const drawn = await fixture(async (document) => {
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const first = onPage(document);
+    first.node.set(PDFName.of('Resources'), first.node.Resources() ?? document.context.obj({}));
+    first.node.Resources()?.set(PDFName.of('Properties'), document.context.obj({ MC0: { ActualText: PDFString.of(SECRET) } }));
+    if (outlined) {
+      // TEXT DRAWN AS OUTLINES, its words carried by the list: the filter holds a tag until something inside it is
+      // written (`pdf_filter_EMC`, `pdf-op-filter.c` 1.28.0), and a painted path the mark covers never is, so the tag
+      // is dropped and its list is not copied into the page's new resources.
+      first.pushOperators(
+        PDFOperator.of(PDFOperatorNames.BeginMarkedContentSequence, [PDFName.of('Span'), PDFName.of('MC0')]),
+        PDFOperator.of(PDFOperatorNames.MoveTo, [76, 698].map((n) => document.context.obj(n))),
+        PDFOperator.of(PDFOperatorNames.LineTo, [360, 698].map((n) => document.context.obj(n))),
+        PDFOperator.of(PDFOperatorNames.LineTo, [360, 716].map((n) => document.context.obj(n))),
+        PDFOperator.of(PDFOperatorNames.FillNonZero),
+        PDFOperator.of(PDFOperatorNames.EndMarkedContent),
+      );
+    } else {
+      markedText(first, font, SECRET, 'Span', PDFName.of('MC0'));
+    }
+    document.addPage([...PAGE]).drawText('Payroll', { font, size: 18, x: 76, y: 698 });
+  });
+  const document = await PDFDocument.load(drawn, { updateMetadata: false });
+  const resources = document.getPage(0).node.Resources();
+  if (resources === undefined) throw new Error('the fixture drew page 1 with no resources');
+  place(document, resources);
+  return document.save({ useObjectStreams: false });
+};
+
+/** THE RESOURCES ON `/Pages`, inherited by both pages, neither holding any of its own (QQQQQQQ-9). */
+const inheritedProperties = propertiesReadThrough((document, resources) => {
+  document.catalog.Pages().set(PDFName.of('Resources'), resources);
+  for (const page of document.getPages()) page.node.delete(PDFName.of('Resources'));
+});
+
+/** THE SAME, around text drawn as outlines: a list the filter does not carry into the burned page's resources. */
+const inheritedOutlinedProperties = propertiesReadThrough((document, resources) => {
+  document.catalog.Pages().set(PDFName.of('Resources'), resources);
+  for (const page of document.getPages()) page.node.delete(PDFName.of('Resources'));
+}, true);
+
+/** ONE RESOURCES OBJECT, which both pages name: the shape a producer that shares its resources writes (QQQQQQQ-9). */
+const sharedResources = propertiesReadThrough((document, resources) => {
+  const shared = document.context.register(resources);
+  for (const page of document.getPages()) page.node.set(PDFName.of('Resources'), shared);
+});
+
+/**
+ * TAGGED TEXT INSIDE A FORM XOBJECT (QQQQQQQ-9). The form carries its own `/StructParents`, which is how the format maps
+ * marked content in a form to its elements, and a named property list; the element names the form as its content's
+ * stream (`/Stm`). Page 2 draws a form of its own, tagged as a figure with a description that is not the secret.
+ *
+ * Measured 2026-10-05 against MuPDF 1.28.0: the filter writes the burned page a filtered copy of the form, keeping its
+ * `/StructParents` and its marked-content operators, with the property list copied in unchanged; and the original form,
+ * secret and all, stays in the file, kept alive by the element's `/Stm`.
+ */
+const taggedForm = () =>
+  fixture(async (document) => {
+    const { context } = document;
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const secret = PDFString.of(SECRET);
+    const drawForm = (
+      page: ReturnType<PDFDocument['getPage']>,
+      parents: number,
+      content: string,
+      extra: Record<string, unknown>,
+    ): PDFRef => {
+      const form = context.register(
+        context.stream(content, {
+          Type: 'XObject',
+          Subtype: 'Form',
+          BBox: [0, 0, ...PAGE],
+          Resources: { Font: { F1: font.ref }, ...extra },
+          StructParents: parents,
+        }),
+      );
+      page.node.set(PDFName.of('Resources'), page.node.Resources() ?? context.obj({}));
+      page.node.Resources()?.set(PDFName.of('XObject'), context.obj({ Fm0: form }));
+      page.pushOperators(drawObject('Fm0'));
+      return form;
+    };
+    const text = (tag: string, words: string): string => `${tag} BDC BT /F1 18 Tf 76 698 Td (${words}) Tj ET EMC`;
+    const first = onPage(document);
+    const second = document.addPage([...PAGE]);
+    const firstForm = drawForm(first, 0, `${text('/P <</MCID 0>>', SECRET)} ${text('/Span /MC0', 'x')}`, {
+      Properties: { MC0: { ActualText: secret } },
+    });
+    const secondForm = drawForm(second, 1, text('/Figure <</MCID 0>>', 'Figure'), {});
+
+    const structure = context.nextRef();
+    const paragraph = context.register(
+      context.obj({ Type: 'StructElem', S: 'P', P: structure, Pg: first.ref, K: { Type: 'MCR', MCID: 0, Stm: firstForm }, Alt: secret, ActualText: secret }),
+    );
+    const figure = context.register(
+      context.obj({
+        Type: 'StructElem',
+        S: 'Figure',
+        P: structure,
+        Pg: second.ref,
+        K: { Type: 'MCR', MCID: 0, Stm: secondForm },
+        Alt: PDFString.of(KEPT_DESCRIPTION),
+      }),
+    );
+    context.assign(
+      structure,
+      context.obj({ Type: 'StructTreeRoot', K: [paragraph, figure], ParentTree: context.obj({ Nums: [0, [paragraph], 1, [figure]] }) }),
+    );
+    document.catalog.set(PDFName.of('StructTreeRoot'), structure);
+    document.catalog.set(PDFName.of('MarkInfo'), context.obj({ Marked: true }));
+  });
+
+/**
+ * ONE FORM DRAWN ON BOTH PAGES, tagged by one element with a content reference on each, and the secret drawn on page 1
+ * beside it. Burning page 1 gives it a filtered copy of the form; page 2 still draws the original.
+ */
+const formOnBothPages = () =>
+  fixture(async (document) => {
+    const { context } = document;
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const form = context.register(
+      context.stream('/Figure <</MCID 0>> BDC BT /F1 18 Tf 76 300 Td (Logo) Tj ET EMC', {
+        Type: 'XObject',
+        Subtype: 'Form',
+        BBox: [0, 0, ...PAGE],
+        Resources: { Font: { F1: font.ref } },
+        StructParents: 0,
+      }),
+    );
+    const pages = [onPage(document), document.addPage([...PAGE])];
+    for (const page of pages) {
+      page.node.set(PDFName.of('Resources'), page.node.Resources() ?? context.obj({}));
+      page.node.Resources()?.set(PDFName.of('XObject'), context.obj({ Fm0: form }));
+      page.pushOperators(drawObject('Fm0'));
+    }
+    onPage(document).drawText(SECRET, { font, size: 18, x: 76, y: 698 });
+    const structure = context.nextRef();
+    const logo = context.register(
+      context.obj({
+        Type: 'StructElem',
+        S: 'Figure',
+        P: structure,
+        K: pages.map((page) => ({ Type: 'MCR', Pg: page.ref, MCID: 0, Stm: form })),
+      }),
+    );
+    context.assign(structure, context.obj({ Type: 'StructTreeRoot', K: [logo], ParentTree: context.obj({ Nums: [0, [logo]] }) }));
+    document.catalog.set(PDFName.of('StructTreeRoot'), structure);
+  });
+
+/** The stream each of the element of role `role`'s content references names, in order. */
+async function referencedStreams(bytes: Uint8Array, role: string): Promise<string[]> {
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  for (const [, object] of document.context.enumerateIndirectObjects()) {
+    if (!(object instanceof PDFDict) || object.get(PDFName.of('S'))?.toString() !== `/${role}`) continue;
+    const kids = object.lookup(PDFName.of('K'), PDFArray);
+    return kids.asArray().map((kid) => String(document.context.lookup(kid, PDFDict).get(PDFName.of('Stm'))));
+  }
+  throw new Error(`no element of role ${role}`);
+}
+
+/** The form page `page` draws, by reference. */
+async function drawnForm(bytes: Uint8Array, page: number): Promise<string> {
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  const xobjects = document.getPage(page).node.Resources()?.lookup(PDFName.of('XObject'), PDFDict);
+  const [only, ...more] = xobjects?.values() ?? [];
+  if (only === undefined || more.length > 0) throw new Error(`page ${String(page)} draws ${String(more.length + 1)} forms, not one`);
+  return String(only);
+}
+
+/** The stream each structure element of role `role` names as its content's, and the form page `page` draws as `Fm*`. */
+async function streamsOf(bytes: Uint8Array, role: string, page: number): Promise<{ named: string[]; drawn: string[] }> {
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  const named: string[] = [];
+  for (const [, object] of document.context.enumerateIndirectObjects()) {
+    if (!(object instanceof PDFDict) || object.get(PDFName.of('S'))?.toString() !== `/${role}`) continue;
+    const kid = object.get(PDFName.of('K'));
+    if (kid instanceof PDFDict) named.push(String(kid.get(PDFName.of('Stm'))));
+  }
+  const xobjects = document.getPage(page).node.Resources()?.lookup(PDFName.of('XObject'), PDFDict);
+  const drawn = xobjects === undefined ? [] : xobjects.values().map(String);
+  return { named, drawn };
+}
+
+describe('the redaction leak corpus: the structure tree (ADR-0163)', () => {
+  it('CONTROL: a serialise that burns nothing in keeps every copy the tags carry', async () => {
+    const sites = await secretSites(await untouched(await taggedText()));
+    for (const key of ['/Alt', '/ActualText', '/E', '/T']) expect(sites.some((site) => site.endsWith(key)), key).toBe(true);
+    expect(sites.some((site) => site.includes('/Properties/MC0/ActualText'))).toBe(true);
+  });
+
+  it('a burn-in takes the text alternates of every element on the page, and of its ancestors', async () => {
+    expect(await secretSites(await burnIn(await taggedText(), SECRET_BOX))).toStrictEqual([]);
+  });
+
+  it('CONTROL: the figure on the page nothing was burned on keeps its description', async () => {
+    // Without this, the case above is satisfied by a burn-in that strips every element in the document — which is
+    // the removal of the tags' text a mark on one page does not ask for.
+    expect(await altsOf(await burnIn(await taggedText(), SECRET_BOX), 'Figure')).toStrictEqual([KEPT_DESCRIPTION]);
+  });
+
+  describe('the copies a burned page reads through somebody else’s dictionary (QQQQQQQ-9)', () => {
+    const cases = [
+      ['a property list in resources the page inherits from /Pages', inheritedProperties],
+      ['the list of text drawn as outlines, in resources the page inherits', inheritedOutlinedProperties],
+      ['a property list in one resources object two pages share', sharedResources],
+      ['tagged text in a Form XObject, its element, its property list and the form itself', taggedForm],
+    ] as const;
+    for (const [name, build] of cases) {
+      it(`CONTROL: a serialise that burns nothing in keeps ${name}`, async () => {
+        expect((await secretSites(await untouched(await build()))).length).toBeGreaterThan(0);
+      });
+
+      it(`a burn-in takes ${name}`, async () => {
+        expect(await secretSites(await burnIn(await build(), SECRET_BOX))).toStrictEqual([]);
+      });
+    }
+
+    it('the element of tagged text in a form NAMES THE FORM THE PAGE NOW DRAWS, so the tags still lead to content', async () => {
+      // THE DECISION, not the end state: dropping the element's content reference would also leave no secret, and would
+      // leave the paragraph pointing at nothing.
+      const burned = await burnIn(await taggedForm(), SECRET_BOX);
+      const { named, drawn } = await streamsOf(burned, 'P', 0);
+      expect(drawn).toHaveLength(1);
+      expect(named).toStrictEqual(drawn);
+    });
+
+    it('a form drawn on both pages: the burned page’s reference moves to its copy, and the other page’s stays', async () => {
+      // THE OTHER PAGE'S REFERENCE names a form the burned page no longer draws, as the burned page's does; only the page
+      // the reference is on tells them apart, so a burn-in that ignored it would point page 2's tags at page 1's copy.
+      const burned = await burnIn(await formOnBothPages(), SECRET_BOX);
+      const [first, second] = [await drawnForm(burned, 0), await drawnForm(burned, 1)];
+      expect(first).not.toBe(second);
+      expect(await referencedStreams(burned, 'Figure')).toStrictEqual([first, second]);
+    });
+
+    it('CONTROL: the figure in the form on the page nothing was burned on keeps its description and its stream', async () => {
+      const burned = await burnIn(await taggedForm(), SECRET_BOX);
+      expect(await altsOf(burned, 'Figure')).toStrictEqual([KEPT_DESCRIPTION]);
+      const { named, drawn } = await streamsOf(burned, 'Figure', 1);
+      expect(named).toStrictEqual(drawn);
+    });
+  });
+});
+
+/** AN OUTLINE whose title restates what is on the page. */
+const outline = () =>
+  fixture(async (document) => {
+    const { context } = document;
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const page = onPage(document);
+    page.drawText(SECRET, { font, size: 18, x: 76, y: 698 });
+    const outlines = context.nextRef();
+    const item = context.register(context.obj({ Title: PDFString.of(SECRET), Parent: outlines, Dest: [page.ref, 'Fit'] }));
+    context.assign(outlines, context.obj({ Type: 'Outlines', First: item, Last: item, Count: 1 }));
+    document.catalog.set(PDFName.of('Outlines'), outlines);
+    document.catalog.set(PDFName.of('PageMode'), PDFName.of('UseOutlines'));
+  });
+
+/** PRIVATE APPLICATION DATA, on the burned page, on the catalogue, and on a second page nothing is burned on. */
+const pieceInfo = () =>
+  fixture((document) => {
+    const { context } = document;
+    const data = (text: string) => context.obj({ Editor: { LastModified: PDFString.of('D:20261004'), Private: { Text: PDFString.of(text) } } });
+    onPage(document).node.set(PDFName.of('PieceInfo'), data(SECRET));
+    document.catalog.set(PDFName.of('PieceInfo'), data(SECRET));
+    document.addPage([...PAGE]).node.set(PDFName.of('PieceInfo'), data('kept'));
+  });
+
+describe('the redaction leak corpus: the outline and private data (ADR-0163)', () => {
+  // NO REGION MAPS TO EITHER, so a mark elsewhere is not a control: a serialise that burns nothing must keep them.
+  it('CONTROL: a serialise that burns nothing in keeps the outline title and both private copies', async () => {
+    const sites = await secretSites(await untouched(await outline()));
+    expect(sites.some((site) => site.endsWith('/Title'))).toBe(true);
+    expect((await secretSites(await untouched(await pieceInfo()))).filter((site) => site.includes('/PieceInfo'))).toHaveLength(2);
+  });
+
+  it('a burn-in removes the outline, and the page mode that opens it', async () => {
+    const burned = await burnIn(await outline(), SECRET_BOX);
+    expect(await secretSites(burned)).toStrictEqual([]);
+    const document = await PDFDocument.load(burned, { updateMetadata: false });
+    expect(document.catalog.has(PDFName.of('Outlines'))).toBe(false);
+    expect(document.catalog.has(PDFName.of('PageMode'))).toBe(false);
+  });
+
+  it('a burn-in removes the burned page’s and the catalogue’s private data, and keeps the other page’s', async () => {
+    const burned = await burnIn(await pieceInfo(), SECRET_BOX);
+    expect(await secretSites(burned)).toStrictEqual([]);
+    const document = await PDFDocument.load(burned, { updateMetadata: false });
+    // THE CONTROL INSIDE THE CASE: a burn-in that dropped every page's private data would pass the line above.
+    expect(document.getPage(1).node.has(PDFName.of('PieceInfo'))).toBe(true);
+  });
+});
+
+/**
+ * NAMED DESTINATIONS that spell the secret, aimed at page 2 and named from page 1 by a link's `/Dest`, a link's GoTo
+ * action and the document's open action. The links sit below the mark, so the burn-in does not remove them as covered
+ * objects.
+ *
+ * **One store per fixture.** `dictionary` is the catalogue's `/Dests`, keyed by names; `tree` is the `/Names` tree's,
+ * keyed by strings. MuPDF 1.28.0's `pdf_lookup_dest` reads `/Dests` alone whenever it exists and never falls back to
+ * the tree (measured 2026-10-05: in a document holding both, a tree name resolved to no page), so a fixture holding
+ * both could not show a tree name still landing.
+ */
+const namedDestinations = (store: 'dictionary' | 'tree') =>
+  fixture(async (document) => {
+    const { context } = document;
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const page = onPage(document);
+    page.drawText(SECRET, { font, size: 18, x: 76, y: 698 });
+    const target = document.addPage([...PAGE]);
+    const named = () => (store === 'dictionary' ? PDFName.of(SECRET) : PDFString.of(SECRET));
+    const link = (rect: number[], entries: Record<string, unknown>) =>
+      context.register(context.obj({ Type: 'Annot', Subtype: 'Link', Rect: rect, Border: [0, 0, 0], ...entries }));
+    page.node.set(
+      PDFName.of('Annots'),
+      context.obj([
+        link([72, 600, 200, 620], { Dest: named() }),
+        link([72, 560, 200, 580], { A: { S: 'GoTo', D: named() } }),
+      ]),
+    );
+    if (store === 'dictionary') {
+      const dests = context.obj({});
+      dests.set(PDFName.of(SECRET), context.obj([target.ref, 'Fit']));
+      document.catalog.set(PDFName.of('Dests'), dests);
+    } else {
+      document.catalog.set(PDFName.of('Names'), context.obj({ Dests: { Names: [named(), context.obj([target.ref, 'Fit'])] } }));
+    }
+    document.catalog.set(PDFName.of('OpenAction'), context.obj({ S: 'GoTo', D: named() }));
+  });
+
+/** Where each of page 1's links lands, and where the open action's name lands, by MuPDF's own resolution (B3a). */
+async function landings(bytes: Uint8Array): Promise<{ links: number[]; opens: number }> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    return await withDocument(session, (document) => {
+      const links = document
+        .loadPage(0)
+        .getLinks()
+        .map((each) => document.resolveLink(each));
+      const opened = document.getTrailer().get('Root').get('OpenAction').get('D');
+      const name = opened.isName() ? opened.asName() : opened.asString();
+      return { links, opens: document.resolveLink(`#nameddest=${encodeURIComponent(name)}`) };
+    });
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+describe('the redaction leak corpus: named destinations (ADR-0163, the owner’s answer)', () => {
+  for (const store of ['dictionary', 'tree'] as const) {
+    it(`CONTROL: a serialise that burns nothing in keeps the secret in every ${store} name, and every link lands on page 2`, async () => {
+      const kept = await untouched(await namedDestinations(store));
+      // THE SCAN SEES THE NAMES, or the case below would pass on a scan that cannot look: the link's `/Dest`, the
+      // action's `/D`, the open action's, and the store's own key.
+      const sites = await secretSites(kept);
+      expect(sites.filter((site) => /\/Dest$|\/A\/D$|\/OpenAction\/D$/u.test(site))).toHaveLength(3);
+      expect(sites.some((site) => (store === 'dictionary' ? site.startsWith('key ') : site.includes('/Names/Dests')))).toBe(true);
+      expect(await landings(kept)).toStrictEqual({ links: [1, 1], opens: 1 });
+    });
+
+    it(`a burn-in leaves the secret in no ${store} name, and every link still lands on page 2`, async () => {
+      const burned = await burnIn(await namedDestinations(store), SECRET_BOX);
+      expect(await secretSites(burned)).toStrictEqual([]);
+      // THE DECISION, not the end state: deleting the destinations would also leave no secret, and every link dead.
+      expect(await landings(burned)).toStrictEqual({ links: [1, 1], opens: 1 });
+    });
+  }
+});
+
+describe('the redaction leak corpus: what REMAINS, and is MuPDF’s (ADR-0163)', () => {
+  // PINNED, NOT SKIPPED. MuPDF 1.28.0 keeps an inline property list as it arrived, and this build's only parser of
+  // content streams is MuPDF's, so nothing here reaches it. The day this turns red, MuPDF or a shim export has closed
+  // it, and ADR-0163's last section and this case are owed a correction.
+  it('an inline /ActualText in the content stream survives a burn-in over the text it replaces', async () => {
+    const inline = await fixture(async (document) => {
+      const font = await document.embedFont(StandardFonts.Helvetica);
+      markedText(onPage(document), font, 'xxxx', 'Span', document.context.obj({ ActualText: PDFString.of(SECRET) }));
+    });
+    const sites = await secretSites(await burnIn(inline, SECRET_BOX));
+    expect(sites.length).toBe(1);
+    expect(sites[0]).toMatch(/^stream /u);
   });
 });

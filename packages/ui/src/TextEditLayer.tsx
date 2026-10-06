@@ -6,17 +6,20 @@ import { type ReactElement, useCallback, useEffect, useLayoutEffect, useRef, use
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform } from './annotations/annotationSpace.js';
 import type { BlockCommit, TextBlock } from './commands/documentCommands.js';
+import { problemMessage, problemParticulars } from './dialogs/problemMessages.js';
 import {
   TEXT_EDIT_BLOCK_LABEL,
   TEXT_EDIT_EDITOR_LABEL,
   TEXT_EDIT_LAYER_LABEL,
+  TEXT_EDIT_HELD,
   TEXT_EDIT_NONE,
-  TEXT_EDIT_NOT_WRITABLE,
   TEXT_EDIT_PROMOTE,
+  TEXT_EDIT_REFUSED_HINT,
   TEXT_EDIT_ROTATED,
   TEXT_EDIT_TRUNCATED,
   TEXT_EDIT_UNADDRESSABLE,
 } from './messages/en.js';
+import { composing } from './surfaces/shortcuts.js';
 
 /**
  * Text edited where it is on the page — Edit text's mode, drawn over one page
@@ -271,13 +274,15 @@ export function TextEditLayer({
           />
         );
       })}
-      {notes.length > 0 ? <div className="m-text-edit__notes">{notes}</div> : null}
+      {notes.length > 0 ? <div className="m-page-mode__notes">{notes}</div> : null}
     </div>
   );
 }
 
 /** What the mode hands each page: where blocks come from and where an edit goes. */
 export interface TextEditing {
+  /** Which of the page list's two modes this is (ADR-0153 Decision 1). */
+  readonly mode: 'text';
   /** The document version on screen; a new one is a new read. */
   readonly version: DocVersion;
   /** Reads one page's blocks, or `undefined` where the read was refused. */
@@ -386,7 +391,8 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
   const { _ } = useLingui();
   const original = wordsOf(block);
   const [text, setText] = useState(original);
-  const [problem, setProblem] = useState(false);
+  /** Why the words are still here after a commit wrote nothing: a signed document left as it was, or the refusal. */
+  const [problem, setProblem] = useState<Exclude<BlockCommit, 'written' | 'unchanged'> | undefined>(undefined);
   const area = useRef<HTMLDivElement>(null);
   /** Set while a write is in flight, so a blur during it does not write twice. */
   const writing = useRef(false);
@@ -434,10 +440,14 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
     writing.current = true;
     const outcome = await onCommit(text);
     writing.current = false;
-    if (outcome === 'not-writable') {
-      // THE EDITOR STAYS, with the words and the sentence beside them: the
-      // person can change the characters the font cannot show.
-      setProblem(true);
+    if (outcome !== 'written' && outcome !== 'unchanged') {
+      // THE EDITOR STAYS on EVERY refusal (ADR-0169 Decision 5), with the words
+      // and the sentence beside them: the person can change what was refused, or
+      // — on a signed document they chose to leave as it was (ADR-0149) — keep
+      // what they typed until they decide. A blur no longer writes until they type
+      // again, so a focus the closing dialog moves cannot ask the same question
+      // twice.
+      setProblem(outcome);
       area.current?.focus();
       return;
     }
@@ -445,13 +455,14 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
   }, [onClose, onCommit, text]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key !== 'Escape') return;
+    // A COMPOSITION'S ESCAPE cancels the candidate, and is not the editor's (`composing`).
+    if (event.key !== 'Escape' || composing(event)) return;
     event.preventDefault();
     event.stopPropagation();
     // AFTER A REFUSAL, Escape puts the text back rather than trying again: the
     // sentence says so, and a second Escape that re-sent the same words would
     // meet the same refusal.
-    if (problem) {
+    if (problem !== undefined) {
       onClose();
       return;
     }
@@ -472,11 +483,11 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
         contentEditable="plaintext-only"
         data-text-editor=""
         onBlur={() => {
-          if (!problem) void finish();
+          if (problem === undefined) void finish();
         }}
         onInput={(event) => {
           setText(event.currentTarget.innerText);
-          setProblem(false);
+          setProblem(undefined);
         }}
         onKeyDown={onKeyDown}
         ref={area}
@@ -497,11 +508,35 @@ function BlockEditor({ block, geometry, placed, paper, onCommit, onClose }: Bloc
       {(['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const).map((corner) => (
         <span aria-hidden className={`m-text-editor-handle m-text-editor-handle--${corner}`} key={corner} />
       ))}
-      {problem ? (
-        <p className="m-text-editor-problem" role="alert">
-          {_(TEXT_EDIT_NOT_WRITABLE)}
-        </p>
-      ) : null}
+      {problem === undefined ? null : <EditorProblem problem={problem} />}
+    </div>
+  );
+}
+
+/**
+ * What the editor says under the words it kept: the signed document's sentence, or the refusal's — the same sentence
+ * and particulars the problem dialog shows (`problemMessage`, `problemParticulars`), with the editor's own way out.
+ */
+function EditorProblem({ problem }: { readonly problem: Exclude<BlockCommit, 'written' | 'unchanged'> }): ReactElement {
+  const { _ } = useLingui();
+  if (problem === 'held') {
+    return (
+      <div className="m-text-editor-problem" role="alert">
+        <p>{_(TEXT_EDIT_HELD)}</p>
+      </div>
+    );
+  }
+  const particulars = problemParticulars(problem.refused);
+  return (
+    <div className="m-text-editor-problem" role="alert">
+      <p>{_(problemMessage(problem.refused))}</p>
+      {particulars === undefined ? null : (
+        <dl className="m-command-problem-reference">
+          <dt>{_(particulars.label)}</dt>
+          <dd>{particulars.value}</dd>
+        </dl>
+      )}
+      <p>{_(TEXT_EDIT_REFUSED_HINT)}</p>
     </div>
   );
 }

@@ -57,6 +57,8 @@ const MUPDF_READS = [
   // session's serialise, taken in the process that holds it, and the result goes to the output directory
   // (ADR-0121 Decision 3). A second engine holds no such session and owes none of it.
   'engine/applyPdfLib',
+  // A SIGNATURE'S PLACEHOLDER is MuPDF's for pdf-lib's reason: written on this session's serialise (ADR-0148).
+  'engine/prepareSignature',
   'engine/snapshotRegion',
   'engine/pageImage',
   // THE WORD EXPORT IS ONE OF MuPDF'S READS for `engine/pageImage`'s reason: it draws this session's pictures,
@@ -65,6 +67,9 @@ const MUPDF_READS = [
   'engine/page-geometry',
   'engine/page-text',
   'engine/page-links',
+  // ONE LINK'S WHOLE ADDRESS IS ONE OF MuPDF'S READS for `engine/page-links`' reason: the same walk, one entry of it,
+  // for a person following the link (ADR-0167).
+  'engine/link-address',
   // A PAGE'S FILLS ARE ONE OF MuPDF'S READS: drawing the page parses it, and a table cell's
   // background is joined from them in main (`cellFills.ts`).
   'engine/page-fills',
@@ -80,6 +85,8 @@ const MUPDF_READS = [
   // THE CLIPBOARD'S COPY IS ONE OF MuPDF'S READS for `engine/exportAnnotations`' reason: it walks
   // MuPDF's annotation dictionaries through the interchange's one reader of entries.
   'engine/annotation-records',
+  // ONE MARK'S WHOLE WORDS ARE ONE OF MuPDF'S READS for `engine/annotations`' reason: the same walk, one entry of it.
+  'engine/annotation-words',
   'engine/form-fields',
   'engine/exportFormData',
   // WRITING THE ANNOTATIONS OUT IS ONE OF MuPDF'S READS for `engine/exportFormData`'s reason: it
@@ -153,20 +160,26 @@ describe('the core channel set', () => {
     const command = { kind: 'replaceTextObject' };
 
     expect(
-      channels['engine/apply'].params.safeParse({ session, command, from: 'ab', into: 'cd' })
+      channels['engine/apply'].params.safeParse({ session, command, sources: [], from: 'ab', password: null, into: 'cd' })
         .success,
     ).toBe(true);
     expect(
-      channels['engine/apply'].params.safeParse({ session, command, from: 'ab' }).success,
+      channels['engine/apply'].params.safeParse({ session, command, sources: [], from: 'ab', password: null }).success,
       'an apply without `into` must be refused: a byte-image write with nowhere to land',
     ).toBe(false);
 
-    expect(channels['engine/capture'].params.safeParse({ session, command, from: 'ab' }).success)
+    expect(channels['engine/capture'].params.safeParse({ session, command, from: 'ab', password: null }).success)
       .toBe(true);
     expect(
-      channels['engine/capture'].params.safeParse({ session, command, from: 'ab', into: 'cd' })
+      channels['engine/capture'].params.safeParse({ session, command, from: 'ab', password: null, into: 'cd' })
         .success,
       'a capture must not carry `into`: it reads prior state and produces no bytes',
+    ).toBe(false);
+    // THE KEY IS PART OF THE READ (ADR-0171's addendum): required, so a frame that leaves it out is refused rather
+    // than an encrypted image opened without its password.
+    expect(
+      channels['engine/capture'].params.safeParse({ session, command, from: 'ab' }).success,
+      'a read without `password` must be refused: `null` says none, absence says nothing',
     ).toBe(false);
   });
 
@@ -266,7 +279,9 @@ describe('the core channel set', () => {
     const accepted = apply.safeParse({
       session: 'a'.repeat(43),
       command: { kind: 'replaceTextObject' },
+      sources: [],
       from: 'ab',
+      password: null,
       into: 'cd',
     });
     expect(accepted.success, JSON.stringify(accepted.error?.issues ?? [])).toBe(true);
@@ -278,7 +293,10 @@ describe('the core channel set', () => {
       apply.safeParse({
         session: 'a'.repeat(43),
         command: { kind: 'rotatePages' },
+        sources: [],
         from: 'ab',
+        // THE KEY IS GIVEN, so this frame is refused for its command and for nothing else.
+        password: null,
         into: 'cd',
       }).success,
     ).toBe(false);

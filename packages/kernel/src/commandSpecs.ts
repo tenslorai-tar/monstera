@@ -54,7 +54,8 @@ import { pdfiumSpecs } from './pdfiumSpecs.js';
  *
  * The union now runs over writers **and** {@link CommandSources}, so choosing
  * both `writer` and `sources` chooses the `apply` — a `sources: 'one'` command
- * must supply an apply taking a second session, and a `'none'` one must not.
+ * must supply an apply taking a one-tuple of sessions, a `'several'` one a
+ * non-empty list (ADR-0152), and a `'none'` one neither.
  *
  * This file is where that binding can happen and `engineSeam.ts` is not:
  * `commandDeclarations.ts` imports `WriterSession` from the seam, so the seam

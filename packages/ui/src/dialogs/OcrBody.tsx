@@ -68,19 +68,19 @@ export default function OcrBody({
   //
   // AND WHERE TO LEARN HOW: the Help centre's article on getting a key and what it costs, answered rather than opened
   // here (`ocrResult.ts`), offered only while no key is stored — the person it is for.
-  const handwriting = (
-    <div className="m-ocr__handwriting">
-      <p>{_(servicesReady ? OCR_HANDWRITING_READY : OCR_HANDWRITING)}</p>
-      {servicesReady ? null : (
-        <Button
-          label={OCR_KEYS_HELP}
-          variant="quiet"
-          onClick={() => {
-            resolve({ help: KEYS_ARTICLE });
-          }}
-        />
-      )}
-    </div>
+  //
+  // ABOVE THE FOOTER, and the link IN it, at its start: both were drawn under Cancel and Recognise, so the dialog
+  // ended in a sentence and an indented link after its answer (the gallery, 2026-10-03). The footer's aside is the
+  // place for an action about the window that is neither its answer nor its dismissal.
+  const handwriting = <p className="m-ocr__handwriting">{_(servicesReady ? OCR_HANDWRITING_READY : OCR_HANDWRITING)}</p>;
+  const keysHelp = servicesReady ? undefined : (
+    <Button
+      label={OCR_KEYS_HELP}
+      variant="quiet"
+      onClick={() => {
+        resolve({ help: KEYS_ARTICLE });
+      }}
+    />
   );
 
   // THE SCHEMA THE COMMAND ENFORCES decides which boxes may change — the last one ticked may not be cleared, and none
@@ -94,6 +94,8 @@ export default function OcrBody({
       <div className="m-ocr">
         <p className="m-ocr__unavailable">{_(OCR_UNAVAILABLE)}</p>
         {handwriting}
+        {/* A FOOTER HERE TOO, so this state is in the pattern like the other: nothing to run, so Close. */}
+        <DialogFooter aside={keysHelp} dismissal="close" />
       </div>
     );
   }
@@ -120,7 +122,8 @@ export default function OcrBody({
         </div>
       </DialogRow>
       <PageScopeChoice className="m-ocr__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
-      <DialogFooter>
+      {handwriting}
+      <DialogFooter aside={keysHelp}>
         <Button
           label={OCR_START}
           variant="primary"
@@ -129,7 +132,6 @@ export default function OcrBody({
           }}
         />
       </DialogFooter>
-      {handwriting}
     </div>
   );
 }

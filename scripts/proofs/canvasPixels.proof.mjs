@@ -177,6 +177,10 @@ const RUNTIME_CASES = [
   "the canvas is sized to the PAGE'S OWN box, which is renderPage reading a viewport",
   'the canvas CARRIES A DRAWN PAGE, which is what shows-page-1 means',
   'CONTROL: the same counter reports ZERO for a blank canvas of the same size',
+  'CONTROL: a canvas this renderer FILLS and copies, as renderPage presents, is counted WHOLE',
+  'CONTROL: a BITMAP made as PDF.js makes an image’s, drawn scaled across the page, is counted WHOLE',
+  'CONTROL: the same bitmap made in a WORKER and posted to the page, as PDF.js’s worker posts one, is counted WHOLE',
+  'CONTROL: that worker’s bitmap drawn AS PDF.JS DRAWS AN IMAGE — flipped, smoothing off — is counted WHOLE',
   'the shipped zoom-in control was found and clicked, so the zoom reading means something',
   'the canvas is EXACTLY the page at the zoom, which is the rasteriser honouring the scale',
   'the zoomed canvas CARRIES A DRAWN PAGE, so the bigger bitmap is not a stretched empty one',
@@ -210,6 +214,43 @@ function withinSpan(hex, span) {
     const value = Number.parseInt(pair ?? '', 16);
     return value >= (span.low[channel] ?? 256) && value <= (span.high[channel] ?? -1);
   });
+}
+
+/**
+ * What a canvas reading held and what the run's surroundings did, for a failure message.
+ *
+ * A page canvas at its page's size with no ink has drawn and presented, because `renderPage` sizes it only in the
+ * step that copies a finished drawing onto it. So the question a failure leaves is which of two things the copy
+ * held, and the tally answers it: WHITE is PDF.js having drawn the page's ground and not what is on it; TRANSPARENT
+ * is a copy or a readback holding nothing, which the ink control then says of this renderer's canvas in general.
+ * The two controls' readings go beside it, so the page's own line says which path held ink in the same run.
+ *
+ * @param {{ transparent: number, white: number, painted: number } | null} tally
+ * @param {ReturnType<typeof readback>['environment']} environment
+ * @param {Pick<ReturnType<typeof readback>, 'ink' | 'bitmapInk' | 'workerBitmapInk' | 'workerBitmapAsPdfjsInk' | 'pixels'>} controls
+ */
+function describeRun(tally, environment, controls) {
+  const counted =
+    tally === null
+      ? 'no canvas or no 2d context to tally'
+      : `${String(tally.transparent)} transparent, ${String(tally.white)} white, ${String(tally.painted)} inked`;
+  return (
+    `tally: ${counted}.\n      ` +
+    `controls of ${String(controls.pixels)}: copied ink ${String(controls.ink)}, bitmap ink ` +
+    `${String(controls.bitmapInk)}, worker bitmap ink ${String(controls.workerBitmapInk)}, drawn as PDF.js draws ` +
+    `${String(controls.workerBitmapAsPdfjsInk)}.\n      ` +
+    `renderer: visibility ${environment.visibility}; 2d_canvas ${environment.gpu.canvas2d}, gpu_compositing ` +
+    `${environment.gpu.gpuCompositing}, rasterization ${environment.gpu.rasterization}; processes gone ` +
+    `${JSON.stringify(environment.processesGone)}; render process gone ${JSON.stringify(environment.renderProcessGone)}.` +
+    `\n      ranges: ${String(environment.ranges.asked)} asked, ${String(environment.ranges.answered)} answered, ` +
+    `${String(environment.ranges.refused)} refused or stale; ${String(environment.ranges.bytes)} of ` +
+    `${String(environment.ranges.fileBytes)} bytes served, first at ${String(environment.ranges.firstMs)} ms and last ` +
+    `at ${String(environment.ranges.lastMs)} ms after the open. animation frames: ${String(environment.frames.ran)} ` +
+    `of ${String(environment.frames.asked)} ran.` +
+    `\n      renderer warnings and errors: ${JSON.stringify(environment.console)}.` +
+    `\n      workers attached: ${String(environment.workers.attached)}; their console: ` +
+    `${JSON.stringify(environment.workers.console)}.`
+  );
 }
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
@@ -336,13 +377,16 @@ try {
         `output.\n      ` +
         `\`settledBy\` says which failure it is: "failed" means \`PageCanvas\` set ` +
         `\`data-failed\`, so the parse threw and the defect is in the channel or the transport, ` +
-        `not in drawing; "bound" means the canvas never acquired a pixel within the harness's ` +
-        `liveness bound, which on Linux without a display is what a working renderer also ` +
-        `produces.\n      ` +
+        `not in drawing; "bound" means no ink arrived within the harness's liveness bound. A ` +
+        `"bound" canvas still at 300x150 never presented a drawing; one at the page's size did, ` +
+        `and the tally says what the drawing held.\n      ` +
         // EVERY PAGE CANVAS AT THE END OF THE WAIT, because a "bound" with no failure is otherwise silent about
         // which page was missing and whether any canvas existed at all (ubuntu, bf17dfc2, 2026-10-01: 0 pixels
-        // after 60 s, renderFailed false, and nothing to say why).
-        `page canvases ${JSON.stringify(seen.pageCanvases)}.`,
+        // after 60 s, renderFailed false, and nothing to say why). THE TALLY AND THE RENDERER'S SURROUNDINGS since
+        // the second (ubuntu, d6228f28, 2026-10-03): the page canvas was at 595x842, so it had presented, and a
+        // count of zero could not say whether what it presented was white or empty.
+        `page canvases ${JSON.stringify(seen.pageCanvases)}.\n      ` +
+        describeRun(seen.tally, seen.environment, seen),
     );
 
     check(
@@ -358,6 +402,59 @@ try {
         `produces.\n      ` +
         `-1 means the control canvas had no 2d context, or the page canvas was gone when the ` +
         `control was built; either is a broken probe rather than a failing measurement.`,
+    );
+
+    check(
+      'CONTROL: a canvas this renderer FILLS and copies, as renderPage presents, is counted WHOLE',
+      seen.ink === seen.pixels,
+      `the counter reported ${String(seen.ink)} inked pixel(s) of ${String(seen.pixels)} for a canvas filled ` +
+        `#3366cc on a scratch canvas and copied onto it with drawImage.\n      ` +
+        `THE BLANK CONTROL'S OTHER HALF. That one proves the counter can say zero; this one proves this ` +
+        `renderer's 2D canvas holds ink and gives it back, through the copy renderPage presents with. Red here ` +
+        `and on the page means this renderer's canvas held nothing in this run, so the page's zero is not about ` +
+        `the page; green here and red on the page means the page is what drew nothing.\n      ` +
+        describeRun(seen.tally, seen.environment, seen),
+    );
+
+    check(
+      'CONTROL: a BITMAP made as PDF.js makes an image’s, drawn scaled across the page, is counted WHOLE',
+      seen.bitmapInk === seen.pixels,
+      `the counter reported ${String(seen.bitmapInk)} inked pixel(s) of ${String(seen.pixels)} for a canvas a ` +
+        `144x144 bitmap was drawn across: ink put into an OffscreenCanvas with putImageData, ` +
+        `transferToImageBitmap, then drawImage scaled to the page.\n      ` +
+        `THE FIXTURE'S ONLY CONTENT TAKES THIS PATH, and the ink control above does not: when OffscreenCanvas ` +
+        `exists, PDF.js's worker hands the page a bitmap made this way for an image. Measured on ubuntu at ` +
+        `ce194428 (2026-10-03): the page read all white while the ink control counted whole, so the ground was ` +
+        `drawn and the image was not. Red here with the page red names the bitmap path; green here with the ` +
+        `page red leaves the one difference this page cannot reach, that PDF.js makes its bitmap in a worker. ` +
+        `-2 means no OffscreenCanvas, so PDF.js took its other path; -1 is a broken probe.\n      ` +
+        describeRun(seen.tally, seen.environment, seen),
+    );
+
+    check(
+      'CONTROL: the same bitmap made in a WORKER and posted to the page, as PDF.js’s worker posts one, is counted WHOLE',
+      seen.workerBitmapInk === seen.pixels,
+      `the counter reported ${String(seen.workerBitmapInk)} inked pixel(s) of ${String(seen.pixels)} for a canvas ` +
+        `a 144x144 bitmap was drawn across, the bitmap made in a worker exactly as the control above makes it and ` +
+        `transferred to the page with postMessage.\n      ` +
+        `THE LAST STEP OF THE IMAGE'S PATH the page can reach. Red here with the control above green names the ` +
+        `worker: a bitmap made off the page's thread arrives carrying nothing. Green here with the page red leaves ` +
+        `PDF.js itself. -3 means the worker would not start or answered nothing, so this reading says nothing about ` +
+        `the bitmap; -1 is a broken probe.\n      ` +
+        describeRun(seen.tally, seen.environment, seen),
+    );
+
+    check(
+      'CONTROL: that worker’s bitmap drawn AS PDF.JS DRAWS AN IMAGE — flipped, smoothing off — is counted WHOLE',
+      seen.workerBitmapAsPdfjsInk === seen.pixels,
+      `the counter reported ${String(seen.workerBitmapAsPdfjsInk)} inked pixel(s) of ${String(seen.pixels)} for ` +
+        `the worker's bitmap drawn with drawImageAtIntegerCoords' own steps: a y flip with its origin at the bottom ` +
+        `edge, and imageSmoothingEnabled false, as getImageSmoothingEnabled answers for an image drawn larger than it ` +
+        `is with no /Interpolate (pdf.mjs, 6.2.108).\n      ` +
+        `Measured on ubuntu at e1c0ef16 (2026-10-03): the worker's bitmap drawn upright counted 500990 of 500990 ` +
+        `while the page read all white. Red here with the control above green names PDF.js's draw; green here too ` +
+        `leaves what PDF.js does around the draw.\n      ` +
+        describeRun(seen.tally, seen.environment, seen),
     );
 
     // -------------------------------------------------------------------------
@@ -411,7 +508,8 @@ try {
         `THE SIZE CASE ALONE WOULD PASS FOR A RESIZED, BLANK CANVAS. Setting a canvas's width ` +
         `clears it, so a renderer that sized the backing store and then failed to draw ` +
         `produces exactly the dimensions asserted above — which is the display-only defect ` +
-        `arriving inside the mechanism that measures it.`,
+        `arriving inside the mechanism that measures it.\n      ` +
+        describeRun(zoomed.tally, seen.environment, seen),
     );
 
     // §10.3's WINDOW CONTROLS OVERLAY, on the window this harness created the shipped way — the attach included.
@@ -523,7 +621,11 @@ try {
             // here before a height reaches the bound.
             `  title bar overlay: ${String(overlay.painted.length)} report(s) at heights ` +
             `${overlay.painted.map((each) => String(each.height)).join(', ')}; the bar measures ` +
-            `${String(overlay.barHeight)} px, its area ${String(overlay.areaWidth)} of ${String(overlay.innerWidth)} px\n`,
+            `${String(overlay.barHeight)} px, its area ${String(overlay.areaWidth)} of ${String(overlay.innerWidth)} px\n` +
+            // REPORTED ON EVERY RUN, so the worker reading a failure would rest on is seen to reach PDF.js's worker on a
+            // run that passes: an attached count of 0 there says the reading cannot look.
+            `  workers attached: ${String(seen.environment.workers.attached)}, logging ` +
+            `${String(seen.environment.workers.console.length)} line(s)\n`,
     );
   }
 } catch (error) {

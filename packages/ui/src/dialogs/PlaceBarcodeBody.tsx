@@ -10,14 +10,17 @@ import {
   PLACE_BARCODE_CODE128,
   PLACE_BARCODE_DATA_MATRIX,
   PLACE_BARCODE_EAN13,
+  PLACE_BARCODE_EMPTY,
   PLACE_BARCODE_FORMAT,
   PLACE_BARCODE_PDF417,
   PLACE_BARCODE_QR,
   PLACE_BARCODE_REFUSED,
   PLACE_BARCODE_TEXT,
 } from '../messages/en.js';
+import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
+import { TextArea } from '../primitives/Input.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { PlaceBarcodeAnswer } from './placeBarcode.js';
 
@@ -41,8 +44,8 @@ const FORMATS: Readonly<Record<Format, MessageKey>> = {
  * The place-barcode dialog's body: the text, the type, and — when main refused the last try —
  * why nothing was added, with that try filled in.
  *
- * *Add* is disabled until there is text, because an empty barcode is no symbol at all and the
- * result schema refuses it.
+ * *Add* with no text adds nothing and says so, because an empty barcode is no symbol at all and
+ * the result schema refuses it (`attempt.ts`: said once pressed, not on opening).
  */
 export default function PlaceBarcodeBody({
   refused,
@@ -51,6 +54,10 @@ export default function PlaceBarcodeBody({
   const { _ } = useLingui();
   const [text, setText] = useState(refused?.text ?? '');
   const [format, setFormat] = useState<Format>(refused?.format ?? 'QRCode');
+  const attempt = useAttempt();
+  // NOTHING TYPED is said once Add is pressed (`attempt.ts`). Whether the text fits the type is main's to decide, and
+  // said by the refused state above.
+  const problem = attemptProblem(attempt, undefined, text.length === 0, PLACE_BARCODE_EMPTY);
 
   return (
     <div className="m-place-barcode">
@@ -59,15 +66,16 @@ export default function PlaceBarcodeBody({
           {_(PLACE_BARCODE_REFUSED)}
         </p>
       )}
-      <DialogRow label={PLACE_BARCODE_TEXT}>
-        <textarea
-          aria-label={_(PLACE_BARCODE_TEXT)}
-          className="m-place-barcode__text"
+      {/* THE PRIMITIVE'S MULTI-LINE FIELD, as every dialog's: a textarea of its own drew a resize corner, a thicker
+          border and cramped text beside the other fields (the gallery, 2026-10-03). */}
+      <DialogRow label={PLACE_BARCODE_TEXT} problem={problem === undefined ? undefined : _(problem)}>
+        <TextArea
+          invalid={problem !== undefined}
+          label={PLACE_BARCODE_TEXT}
+          labelShownBeside
+          onValueChange={setText}
+          opensFocused
           value={text}
-          rows={3}
-          onChange={(event) => {
-            setText(event.target.value);
-          }}
         />
       </DialogRow>
       {/* NATIVE RADIOS IN A NAMED GROUP, the row's words naming it: four formats, each a word. */}
@@ -92,8 +100,10 @@ export default function PlaceBarcodeBody({
         <Button
           label={PLACE_BARCODE_APPLY}
           variant="primary"
-          disabled={text.length === 0}
           onClick={() => {
+            attempt.attempt();
+            // GUARDED: the result schema refuses empty text, so a mismatch would throw `DialogResultRejected`.
+            if (text.length === 0) return;
             resolve({ text, format });
           }}
         />

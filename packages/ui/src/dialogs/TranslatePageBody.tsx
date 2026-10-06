@@ -48,6 +48,9 @@ export default function TranslatePageBody({
         <p className="m-translate__intro" data-translate-no-provider="">
           {_(TRANSLATE_PAGE_NO_PROVIDER)}
         </p>
+        {/* A FOOTER IN THIS STATE TOO: it had none, only the title bar's close, and sat outside the pattern's width
+            (the gallery, 2026-10-03). Nothing to translate with, so its one answer is Close. */}
+        <DialogFooter dismissal="close" />
       </div>
     );
   }

@@ -3,19 +3,26 @@ import {
   type AiModelListAnswer,
   type AiProviderId,
   type AnnotationKindName,
+  type AnnotationWordsStyle,
   CLOUD_PROVIDER_IDS,
   type ChannelResult,
   type ContractClient,
   type ContractHandlers,
+  type DeclaredOf,
+  type FileAccess,
   type FormFieldKind,
+  type SaveWriteCause,
   type Incident,
   type OcrLanguage,
   type UpdateStatus,
   type WindowEditAction,
+  MAX_ANNOTATION_CONTENTS,
+  MAX_ANNOTATION_TEXT,
   MAX_FORM_DATA_BYTES,
   ACCESSIBILITY_HUMAN_CHECKS,
   MAX_IMAGE_BYTES,
   MAX_LIBRARY_ENTRIES,
+  keptLookOf,
   LAYERS_PART,
   PAGE_LINKS_PART,
   PAGE_OBJECTS_PART,
@@ -25,9 +32,12 @@ import {
   SECRET_SETTING_IDS,
   channels,
   createClient,
+  isFollowable,
+  shownSchemeOf,
   wrapHandlers,
 } from '@monstera/contract';
 import {
+  type DeclaredFailure,
   type DocId,
   type DocVersion,
   type FileHandle,
@@ -223,7 +233,10 @@ export interface ShimFormField {
   readonly on: boolean | null;
   readonly options: readonly string[];
   readonly readOnly: boolean;
+  readonly multiline: boolean;
   readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
+  /** The channel's mark for a value listed as a slice of a longer one. */
+  readonly cut?: true;
 }
 
 export interface BrowserShimOptions {
@@ -264,8 +277,18 @@ export interface BrowserShimOptions {
    */
   readonly saveRefusals?: ReadonlyMap<
     string,
-    'contested' | 'replaced' | 'target-absent' | 'unverifiable' | 'write-failed'
+    // `'write-failed'` is a write refused for a cause nothing could tell; the object names the cause (cloud-4 7b).
+    'contested' | 'replaced' | 'target-absent' | 'unverifiable' | 'write-failed' | { readonly writeFailed: SaveWriteCause }
   >;
+  /**
+   * What `document.fileAccess` answers for a document, by its id: `writable` for any not named, which is what a file
+   * a person just opened usually is.
+   */
+  readonly fileAccess?: ReadonlyMap<string, FileAccess>;
+  /** Which of two documents' files is the newer, for `document.newerOf`; `neither` when a case does not say. */
+  readonly newerOf?: (first: string, second: string) => 'first' | 'second' | 'neither';
+  /** What `document.workOnCopy` answers, in turn; `cancelled` once these run out, the dismissed picker. */
+  readonly workOnCopies?: readonly ChannelResult<'document.workOnCopy'>[];
   /**
    * What `document.saveCopy` answers, for {@link saveRefusals}' reason.
    *
@@ -419,6 +442,14 @@ export interface BrowserShimOptions {
   readonly pageLinesPlaced?: readonly (readonly ShimPlacedLine[])[];
 
   /**
+   * Each page's word boxes as the engine would read them (`document.pageWordBoxes`): a line, its box, and `x0, y0,
+   * x1, y1` for each token `tokensOf` cuts from it. STATED BY THE TEST, never derived here — the shim has no engine,
+   * and boxes it divided out of a line's width would be a metric no engine answers. Absent, every page answers none,
+   * as before.
+   */
+  readonly pageWordBoxes?: readonly (readonly (ShimPlacedLine & { readonly boxes: readonly number[] })[])[];
+
+  /**
    * What `window.edit` runs through — main's attached window, for a shim that has a page. Absent,
    * the channel answers `done: false`, main's own answer with no window attached.
    */
@@ -468,6 +499,14 @@ export interface BrowserShimOptions {
    * which is a real state a panel must render rather than an empty fixture.
    */
   readonly destinations?: readonly ShimDestination[];
+
+  /**
+   * The outline from a given version on, for a case about what a command did to it (a delete takes the entries that
+   * named its pages, ADR-0155): the highest version listed at or below the document's current one answers, and
+   * {@link destinations} answers below them all. The kernel decides what an outline holds after a command; this only
+   * says what main answered, so the case can ask whether the panel shows THAT rather than what it read before.
+   */
+  readonly destinationsFrom?: Readonly<Record<number, readonly ShimDestination[]>>;
 
   /**
    * What `document.layers` answers, in order, across the whole shim.
@@ -532,6 +571,13 @@ export interface BrowserShimOptions {
     readonly created?: string | null;
     /** The blend its appearance is drawn in. Absent is `normal`, the format's own. */
     readonly blend?: 'multiply' | 'normal';
+    /**
+     * The mark's whole comment, for a case about editing one. The walk lists it sliced and says `cut`, as the
+     * kernel's does, and `document.annotationWords` answers it whole. Absent is no comment.
+     */
+    readonly contents?: string;
+    /** How a text mark's words are drawn, for a case about reopening them in their own box. Absent is none read. */
+    readonly typed?: AnnotationWordsStyle;
   }[];
 
   /**
@@ -569,6 +615,11 @@ export interface BrowserShimOptions {
   readonly delays?: Readonly<Partial<Record<keyof ContractHandlers, number>>>;
   /** What `ai.models` answers. Absent is an empty list, what a build with no provider offers. */
   readonly aiModels?: ChannelResult<'ai.models'>;
+  /**
+   * A refusal `ai.ask` answers by code, for a case about what the panel says of one. Absent is an ask that did not
+   * start, since no provider is reached from a browser.
+   */
+  readonly aiAskRefusal?: DeclaredOf<typeof channels, 'ai.ask'>;
   /**
    * What `ai.history.load` answers: a conversation saved for the document, so a rendered case can show one without a
    * provider to ask. Absent is nothing saved, the setting's default.
@@ -648,6 +699,23 @@ export interface BrowserShimOptions {
    * changes nothing. An `opened` answer seeds the document as `document.open`'s does.
    */
   readonly markdownNews?: readonly ChannelResult<'document.newFromMarkdown'>[];
+  /**
+   * Documents that carry signatures, by id: `document.execute` there answers `breaks-signatures` unless the request
+   * says the person agreed (ADR-0149). The shim models no engine, so it cannot tell which commands break one; a case
+   * that needs the question names the document, as `busy` names a saturated lane.
+   */
+  readonly signed?: ReadonlySet<string>;
+  /**
+   * A refusal `document.execute` answers for a document, by id, whole with any detail its code declares, for a case
+   * about what a person reads of one (ADR-0169's `edit-refused`). The shim models no engine, so a case names the
+   * document, as `busy` names a saturated lane.
+   */
+  readonly refusals?: ReadonlyMap<string, DeclaredFailure<DeclaredOf<typeof channels, 'document.execute'>>>;
+  /**
+   * What `document.editCopy` answers, in order — `markdownNews`' queue and default: unset or exhausted is `cancelled`.
+   * An `edited` or `edit-refused` answer seeds the copy, which is open either way.
+   */
+  readonly editCopies?: readonly ChannelResult<'document.editCopy'>[];
   /** What `document.newFromCsv` answers, in order — `markdownNews`' queue and default. */
   readonly csvNews?: readonly ChannelResult<'document.newFromCsv'>[];
   /** What `document.newFromOffice` answers, in order — `markdownNews`' queue and default. */
@@ -737,7 +805,7 @@ export interface BrowserShimOptions {
    * than the recording that replaced it. A case about recovery has to be able
    * to name two documents that are not the two most recently opened.
    */
-  readonly lastSession?: readonly { readonly handle: FileHandle; readonly name: string }[];
+  readonly lastSession?: ChannelResult<'document.recent'>['lastSession'];
 }
 
 /**
@@ -820,6 +888,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // entries off it would mutate a value the caller may still be reading.
   const queuedOpens: OpenAnswer[] = [...(options.opens ?? [])];
   const queuedMarkdownNews = [...(options.markdownNews ?? [])];
+  const queuedEditCopies = [...(options.editCopies ?? [])];
+  const queuedWorkOnCopies = [...(options.workOnCopies ?? [])];
   const queuedCsvNews = [...(options.csvNews ?? [])];
   const queuedOfficeNews = [...(options.officeNews ?? [])];
   const queuedImageNews = [...(options.imageNews ?? [])];
@@ -893,6 +963,14 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   const pageImages = options.pageImages ?? [];
   const pageLinks = options.pageLinks ?? [];
   const destinations = options.destinations ?? [];
+  /** The outline answered at `version`: the highest `destinationsFrom` entry at or below it, else `destinations`. */
+  const destinationsAt = (version: number): readonly ShimDestination[] => {
+    const from = Object.keys(options.destinationsFrom ?? {})
+      .map(Number)
+      .filter((listed) => listed <= version)
+      .sort((a, b) => b - a)[0];
+    return from === undefined ? destinations : (options.destinationsFrom?.[from] ?? destinations);
+  };
   // Copied and consumed, exactly like `viewModels`.
   const layerLists = [...(options.layers ?? [])];
   // The list the read in progress takes its parts from (`document.layers`).
@@ -1164,7 +1242,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(ok(answer));
     },
 
-    'document.execute': ({ docId }) => {
+    'document.execute': ({ docId, breakSignatures }) => {
+      // ASKED BEFORE ANYTHING CHANGES, as main asks (ADR-0149): no version moves for the question.
+      if (options.signed?.has(docId) === true && breakSignatures !== true) {
+        return Promise.resolve(err({ code: 'breaks-signatures' }));
+      }
       if (options.faulty?.has(docId) === true) {
         // Thrown, not returned. `wrapHandlers` records it and hands the client
         // `internal` plus an incident id — the same split the real boundary
@@ -1172,6 +1254,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
         throw new Error('shim: injected engine fault');
       }
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const refusal = options.refusals?.get(docId);
+      if (refusal !== undefined) return Promise.resolve(err(refusal));
 
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
@@ -1279,17 +1363,21 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (refusal !== undefined) {
         return Promise.resolve(
           refusal === 'write-failed'
-            ? ok({ kind: 'write-failed' as const })
-            : ok({ kind: 'refused' as const, reason: refusal }),
+            ? ok({ kind: 'write-failed' as const, cause: 'unknown' as const })
+            : typeof refusal === 'object'
+              ? ok({ kind: 'write-failed' as const, cause: refusal.writeFailed })
+              : ok({ kind: 'refused' as const, reason: refusal }),
         );
       }
 
       savedAt.set(docId, current);
       return Promise.resolve(
-        // THE SHIM RUNS NO REMOVAL, so no save of it deletes anything (ADR-0139).
-        ok({ kind: 'saved' as const, version: asDocVersion(current), cleared: null }),
+        // THE SHIM RUNS NO REMOVAL, so no save of it deletes anything (ADR-0139), and no copy is owed a deletion.
+        ok({ kind: 'saved' as const, version: asDocVersion(current), cleared: null, held: [] }),
       );
     },
+    'document.deleteHeldCopies': ({ docId }) =>
+      Promise.resolve(versions.has(docId) ? ok({ held: [] }) : err({ code: 'document-not-open' as const })),
 
     /**
      * Writing a copy, which in the shim is **the picker's outcome and nothing
@@ -1397,14 +1485,15 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const version = asDocVersion(current + 1);
       versions.set(docId, version);
       let kept: 'kept' | 'not-asked' | 'library-full' = 'not-asked';
-      if (keep && (mark.kind === 'typed' || mark.kind === 'drawn')) {
+      if (keep && (mark.kind === 'outlined' || mark.kind === 'drawn')) {
         if (libraryEntries.filter((entry) => entry.kind === 'signature').length >= MAX_LIBRARY_ENTRIES) {
           kept = 'library-full';
         } else {
           libraryMinted += 1;
           libraryEntries = [
             ...libraryEntries,
-            { id: `00000000-0000-4000-8000-${String(libraryMinted).padStart(12, '0')}`, kind: 'signature', look: mark },
+            // KEPT AS MAIN KEEPS IT: a typed name's name and face, its outline being derived (ADR-0150).
+            { id: `00000000-0000-4000-8000-${String(libraryMinted).padStart(12, '0')}`, kind: 'signature', look: keptLookOf(mark) },
           ];
           kept = 'kept';
         }
@@ -1618,6 +1707,22 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       clipboardCount = indices.length;
       return Promise.resolve(ok({ kind: 'copied' as const, copied: indices.length, skipped: 0 }));
     },
+    /** One seeded mark's whole comment, at the version the walk was read at, `copyAnnotations`' stale rule. */
+    'document.annotationWords': ({ docId, page, index, version }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      const mark = options.annotations?.find((seeded) => seeded.page === page && seeded.index === index);
+      if (version !== current || mark === undefined) return Promise.resolve(ok({ kind: 'stale' as const }));
+      const words = mark.contents ?? '';
+      return Promise.resolve(
+        ok({
+          kind: 'words' as const,
+          text: words.slice(0, MAX_ANNOTATION_TEXT),
+          whole: words.length <= MAX_ANNOTATION_TEXT,
+        }),
+      );
+    },
     'document.pasteAnnotations': ({ docId }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       const current = versions.get(docId);
@@ -1778,6 +1883,36 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       }
       return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote() }));
     },
+
+    // `document.open`'s seeding, for its reason: a copy reported open must be one the rest of the shim accepts.
+    'document.editCopy': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      const answer = queuedEditCopies.shift() ?? { kind: 'cancelled' as const };
+      if (answer.kind === 'edited' || answer.kind === 'edit-refused') versions.set(answer.docId, answer.version);
+      return Promise.resolve(ok(answer));
+    },
+    // `document.open`'s seeding, for its reason.
+    'document.workOnCopy': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+      const answer = queuedWorkOnCopies.shift() ?? { kind: 'cancelled' as const };
+      if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
+      return Promise.resolve(ok(answer));
+    },
+    // THE SHIM HOLDS NO FILES, so no file is newer: `neither`, and Compare keeps the document in front on the left.
+    'document.newerOf': ({ first, second }) =>
+      Promise.resolve(
+        versions.has(first) && versions.has(second)
+          ? ok({ newer: options.newerOf?.(first, second) ?? ('neither' as const) })
+          : err({ code: 'document-not-open' as const }),
+      ),
+    'document.fileAccess': ({ docId }) =>
+      Promise.resolve(
+        versions.has(docId)
+          ? ok({ access: options.fileAccess?.get(docId) ?? ('writable' as const) })
+          : err({ code: 'document-not-open' as const }),
+      ),
 
     // THE STALE RULE IS MODELLED, and it is the one behaviour here that is not
     // bookkeeping. A transport bound to a version that has moved must be told
@@ -1991,7 +2126,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // ONE PART, the LAST, for all three lists here: a seeded list is a handful of entries, and what a case about
       // reading in parts asserts is `readWholeList`'s, against a client that answers several.
       return Promise.resolve(
-        ok({ version: asDocVersion(current), destinations: destinations.slice(from), next: null, truncated: false }),
+        ok({ version: asDocVersion(current), destinations: destinationsAt(current).slice(from), next: null, truncated: false }),
       );
     },
 
@@ -2040,10 +2175,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          annotations: (options.annotations ?? []).slice(from).map((annotation) => ({
+          annotations: (options.annotations ?? []).slice(from).map(({ contents = '', ...annotation }) => ({
             ...annotation,
             style: { colour: [1, 0, 0], opacity: 1, borderWidth: null },
-            contents: '',
+            contents: contents.slice(0, MAX_ANNOTATION_CONTENTS),
+            ...(contents.length > MAX_ANNOTATION_CONTENTS ? { cut: true as const } : {}),
             authored: true,
             // SEEDABLE, unlike the three above it, because a thread is a
             // relationship BETWEEN two seeded marks — a case about a reply row
@@ -2169,11 +2305,25 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       );
     },
 
-    // NO ENGINE, SO NO WORD BOXES: every line keeps the estimate, which is what a read that boxed nothing means.
-    'document.pageWordBoxes': ({ docId }) => {
+    // A LINK FOLLOWED AS MAIN FOLLOWS ONE (ADR-0167), from the seeded links: by its place, at the version, through the
+    // contract's one scheme rule. No browser opens; a case reads what was asked through `bridge`'s observer.
+    'document.openLink': ({ docId, version, page, index }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
-      return Promise.resolve(ok({ version: asDocVersion(current), lines: [], truncated: false }));
+      if (version !== current) return Promise.resolve(ok({ kind: 'stale' as const }));
+      const link = pageLinks[page]?.[index];
+      if (link?.kind !== 'external') return Promise.resolve(ok({ kind: 'no-such-link' as const }));
+      if (!isFollowable(link.uri)) return Promise.resolve(ok({ kind: 'scheme-refused' as const, scheme: shownSchemeOf(link.uri) }));
+      return Promise.resolve(ok({ kind: 'opened' as const }));
+    },
+
+    // NO ENGINE, SO NO WORD BOXES unless a case states them: every line keeps the estimate, which is what a read that
+    // boxed nothing means.
+    'document.pageWordBoxes': ({ docId, page }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      const lines = (options.pageWordBoxes?.[page] ?? []).map((line) => ({ ...line, boxes: [...line.boxes] }));
+      return Promise.resolve(ok({ version: asDocVersion(current), lines, truncated: false }));
     },
 
     // SETTINGS SURVIVE WITHIN ONE SHIM, and do not survive constructing another.
@@ -2247,7 +2397,10 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'settings.export': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     // A BROWSER HAS NO FILE TO IMPORT, which is main's answer for a picker dismissed.
     'settings.import': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
-    'ai.ask': () => Promise.resolve(ok({ started: false, sent: null })),
+    'ai.ask': () =>
+      Promise.resolve(
+        options.aiAskRefusal === undefined ? ok({ started: false, sent: null }) : err({ code: options.aiAskRefusal }),
+      ),
     // NO FILE PICKER IN A BROWSER: what `main` answers a picker the person cancelled.
     'ai.attach': () => Promise.resolve(ok({ files: [], dropped: 0 })),
     'ai.stop': () => Promise.resolve(ok({ stopped: false })),

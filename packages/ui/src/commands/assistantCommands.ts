@@ -19,6 +19,7 @@ import {
   SUMMARISE_SELECTION_TITLE,
   TRANSLATE_SELECTION_TITLE,
 } from '../messages/en.js';
+import type { IconName } from '../primitives/icons.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 import type { TextSelection } from '../TextLayer.js';
@@ -80,22 +81,24 @@ export interface AssistantCommandDeps {
 const SELECTION_ITEMS: readonly {
   readonly id: string;
   readonly title: MessageKey;
+  readonly icon: IconName;
   readonly prompt: MessageKey | undefined;
   readonly order: number;
 }[] = [
-  { id: 'ai.ask-selection', title: ASK_AI_SELECTION_TITLE, prompt: undefined, order: 80 },
-  { id: 'ai.explain-selection', title: EXPLAIN_SELECTION_TITLE, prompt: ASSISTANT_PROMPT_EXPLAIN, order: 90 },
-  { id: 'ai.summarise-selection', title: SUMMARISE_SELECTION_TITLE, prompt: ASSISTANT_PROMPT_SUMMARISE, order: 100 },
-  { id: 'ai.translate-selection', title: TRANSLATE_SELECTION_TITLE, prompt: ASSISTANT_PROMPT_TRANSLATE, order: 110 },
+  { id: 'ai.ask-selection', title: ASK_AI_SELECTION_TITLE, icon: 'Sparkles', prompt: undefined, order: 80 },
+  { id: 'ai.explain-selection', title: EXPLAIN_SELECTION_TITLE, icon: 'Info', prompt: ASSISTANT_PROMPT_EXPLAIN, order: 90 },
+  { id: 'ai.summarise-selection', title: SUMMARISE_SELECTION_TITLE, icon: 'ScrollText', prompt: ASSISTANT_PROMPT_SUMMARISE, order: 100 },
+  { id: 'ai.translate-selection', title: TRANSLATE_SELECTION_TITLE, icon: 'Languages', prompt: ASSISTANT_PROMPT_TRANSLATE, order: 110 },
 ];
 
 /** *Ask AI · Explain · Summarise · Translate* on the selected text. */
 export function assistantSelectionCommands(deps: AssistantCommandDeps): readonly UiCommand[] {
-  return SELECTION_ITEMS.map(({ id, title, prompt, order }) => ({
+  return SELECTION_ITEMS.map(({ id, title, icon, prompt, order }) => ({
     id,
     // THE ANSWER IS WRITTEN IN THE ASSISTANT PANE, which the ask opens.
     feedback: VISIBLE,
     title,
+    icon,
     placements: [{ surface: 'context-menu', context: 'selection', order }] as const,
     when: () => deps.selection() !== undefined,
     run: (context): void => {
@@ -115,9 +118,10 @@ export function assistantSelectionCommands(deps: AssistantCommandDeps): readonly
  * list in the document's lane — so the summary is of the comments a person can see, and the
  * *Asking about* line says so before anything is sent a second time.
  *
- * Shown for any open document. A document with no comments is asked anyway and the window says
- * it carried nothing, which is a truthful answer; hiding the item would need a read on every
- * render to decide.
+ * Shown for any open document; hiding the item would need a read on every render to decide. A
+ * document with no comments is refused by `main` before any provider is reached, and the panel
+ * says so once and keeps nothing in the conversation (F-V1). With no key the panel does not ask at
+ * all, and its readiness line is the one sentence.
  */
 export function summariseCommentsCommand(deps: { readonly ask: AskAssistant }): UiCommand {
   return {
@@ -156,6 +160,7 @@ export function draftReplyCommand(deps: {
     id: 'ai.draft-reply',
     feedback: VISIBLE,
     title: DRAFT_REPLY_TITLE,
+    icon: 'PenLine',
     // AFTER *Reply*, which is the person's own: the owner's order for this menu puts reply second.
     placements: [{ surface: 'context-menu', context: 'annotation', order: 25 }],
     when: () => only() !== undefined,

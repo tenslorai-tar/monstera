@@ -1,19 +1,20 @@
 import { open, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import {
-  MAX_ANNOTATION_DATA_BYTES,
-  MAX_CSV_BYTES,
-  MAX_FORM_DATA_BYTES,
-  MAX_IMAGE_BYTES,
-  MAX_MARKDOWN_BYTES,
-  MAX_OFFICE_IMPORT_BYTES,
-} from '@monstera/contract';
+import { IncidentLog, isFollowable } from '@monstera/contract';
 import { sweepCheckpointDirectories } from '@monstera/kernel';
 import { BrowserWindow, app, clipboard, crashReporter, nativeImage, safeStorage, shell } from 'electron';
 
 import { HOST_CALL_DEADLINE, HOST_MEMORY_SAMPLING } from './budget.js';
 import { createShellDependencies } from './composition.js';
+import {
+  readAnnotationDataFile,
+  readCsvFile,
+  readFormDataFile,
+  readImageFile,
+  readMarkdownFile,
+  readOfficeFile,
+} from './pickedFileReads.js';
 import { setNativeSource } from './nativeComponents.js';
 import {
   createAnnotationDataPicker,
@@ -32,6 +33,7 @@ import {
   createCertificatePicker,
   createFormDataOpenPicker,
   createImagePicker,
+  createSignaturePicturePicker,
   createImagesPicker,
   createAttachmentPicker,
   createCsvPicker,
@@ -160,6 +162,17 @@ startShell(() => {
     return problem === '';
   });
 
+  // A REJECTION NOTHING HANDLED IS NAMED IN THE LOG (CR-COR-02). Each one is a defect in this build, and without a
+  // listener it is either a crash of `main` with every open document in it or a line on a stderr a packaged run does
+  // not have, depending on the runtime's default; neither says which promise it was. Registered as soon as there is
+  // a log to write to, so a rejection anywhere after this line lands there. RECORDED AS AN INCIDENT, through the one
+  // place a thrown value becomes a diagnostic (`IncidentLog`, ADR-0009 §9): the full value, its stack and its causes,
+  // in the log beside every other incident, and nothing in this package builds a diagnostic of its own.
+  const rejections = new IncidentLog(log.incidents);
+  process.on('unhandledRejection', (reason) => {
+    rejections.record('process:unhandledRejection', reason);
+  });
+
   // NAMED, BECAUSE PDFIUM'S PLATFORM IS DERIVED FROM IT. `createPdfiumHostPlatform`
   // takes MuPDF's rather than building a second one from scratch, so that the
   // session root, the directory surface and the containment negative are
@@ -276,6 +289,8 @@ startShell(() => {
     // together — and the first surface added since composition became an
     // object, which is why `pickerProbe.ts` is absent from this commit.
     pickImage: createImagePicker(),
+    // A SIGNATURE PICTURE, beside it: the same dialog with `.pdf` offered, a scanned signature.
+    pickSignaturePicture: createSignaturePicturePicker(),
     // A MARKDOWN FILE TO IMPORT, beside the image picker because both open a file a
     // person chose so that main can make pages of it (ADR-0060).
     pickMarkdown: createMarkdownPicker(),
@@ -326,27 +341,10 @@ startShell(() => {
       return true;
     },
     editWatch: nodeEditWatchSurface,
-    // THE BOUND IS CHECKED BEFORE THE READ, which is the whole reason this is a
-    // function here rather than a `readFile` at the call site: `stat` costs
-    // nothing and a 4 GB file a user picked by mistake is refused as a decided
-    // outcome instead of being loaded to find out.
-    //
-    // `readImage` is where Node's filesystem enters, for the same reason the
-    // pickers are where Electron does: `composition.ts` imports neither.
-    readImage: async (path: string) => {
-      try {
-        const { size } = await stat(path);
-        if (size > MAX_IMAGE_BYTES) return { kind: 'too-large' as const, byteLength: size };
-        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
-      } catch {
-        // A FILE THAT VANISHED OR CANNOT BE OPENED reads as unreadable, which is
-        // what the user sees either way. The distinction between *deleted since
-        // you picked it* and *permission denied* is one this build cannot act on
-        // differently, so inventing two outcomes would be two sentences for one
-        // situation.
-        return { kind: 'unreadable' as const };
-      }
-    },
+    // EVERY PICKED FILE IS SIZED BEFORE IT IS READ, in `pickedFileReads.ts`, where a case reaches it; each read names
+    // its own bound there. This is where Node's filesystem enters, for the same reason the pickers are where Electron
+    // does: `composition.ts` imports neither.
+    readImage: (path: string) => readImageFile(path),
     // NO BOUND, and that is the decision `composition.ts` records: a file
     // picked through a dialog filtered to `.p12` is a few kilobytes or it is
     // not a certificate, and the signer's own parse is what says so. A number
@@ -360,54 +358,11 @@ startShell(() => {
         return { kind: 'unreadable' as const };
       }
     },
-    // THE SAME SHAPE AGAINST A DIFFERENT BOUND, written out rather than shared
-    // with a size parameter: the two bounds are separate decisions about
-    // separate risks — an image is large because images are, a form-data file
-    // large enough to notice is one somebody built — and a helper taking a
-    // number would make them look like one rule with two settings.
-    readFormData: async (path: string) => {
-      try {
-        const { size } = await stat(path);
-        if (size > MAX_FORM_DATA_BYTES) return { kind: 'too-large' as const, byteLength: size };
-        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
-      } catch {
-        return { kind: 'unreadable' as const };
-      }
-    },
-    // `readFormData`'s shape against the annotation bound, written out for the reason above:
-    // `MAX_ANNOTATION_DATA_BYTES` is its own decision, equal today (ADR-0077).
-    readAnnotationData: async (path: string) => {
-      try {
-        const { size } = await stat(path);
-        if (size > MAX_ANNOTATION_DATA_BYTES) return { kind: 'too-large' as const, byteLength: size };
-        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
-      } catch {
-        return { kind: 'unreadable' as const };
-      }
-    },
-    // `readFormData`'s shape against the Markdown bound, and written out for its
-    // reason: `MAX_MARKDOWN_BYTES` was set from what composing costs in the host
-    // (ADR-0060), which is a different decision from either bound above.
-    readMarkdown: async (path: string) => {
-      try {
-        const { size } = await stat(path);
-        if (size > MAX_MARKDOWN_BYTES) return { kind: 'too-large' as const, byteLength: size };
-        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
-      } catch {
-        return { kind: 'unreadable' as const };
-      }
-    },
-    // THE SAME SHAPE AGAINST THE CSV BOUND, written out for `readFormData`'s reason:
-    // `MAX_CSV_BYTES` was measured on the CSV composer, not Markdown's.
-    readCsv: async (path: string) => {
-      try {
-        const { size } = await stat(path);
-        if (size > MAX_CSV_BYTES) return { kind: 'too-large' as const, byteLength: size };
-        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
-      } catch {
-        return { kind: 'unreadable' as const };
-      }
-    },
+    // `readImage`'s rule, each against its own bound (`pickedFileReads.ts` says why the bounds are five decisions).
+    readFormData: (path: string) => readFormDataFile(path),
+    readAnnotationData: (path: string) => readAnnotationDataFile(path),
+    readMarkdown: (path: string) => readMarkdownFile(path),
+    readCsv: (path: string) => readCsvFile(path),
     // A SIZE AND NOTHING READ, so an image import's bounds are decided before any
     // picked byte is in memory. `null` for a file that cannot be stated — `readImage`'s
     // reason: gone and forbidden are one situation from where the person stands.
@@ -491,6 +446,17 @@ startShell(() => {
       await shell.openExternal(STORE_URIS[page]);
       return true;
     },
+    // A DOCUMENT'S LINK, once the person asked for it (ADR-0167), and the scheme is checked AGAIN here, where the
+    // address leaves for the operating system: the only caller passes what `isFollowable` allowed, and a mistake
+    // upstream still cannot hand Windows a `file:` or a registered handler. A system with nothing to open the address
+    // rejects; that is the answer *not opened*, which the person is told, not a failure of this process.
+    openLink: async (address) => {
+      if (!isFollowable(address)) throw new Error('only an https, http or mailto address is opened from a document');
+      return shell.openExternal(address).then(
+        () => true,
+        () => false,
+      );
+    },
     // Same trade, one layer along. The platform's own module may not import
     // Electron either, so *where the app may write* — which is Electron's
     // question and nobody else's — is resolved above and handed down. Under
@@ -526,15 +492,7 @@ startShell(() => {
             platform: officePlatform,
             source: {
               pick: createOfficeImportPicker(OFFICE_IMPORT_FORMATS),
-              read: async (path: string) => {
-                try {
-                  const { size } = await stat(path);
-                  if (size > MAX_OFFICE_IMPORT_BYTES) return { kind: 'too-large' as const, byteLength: size };
-                  return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
-                } catch {
-                  return { kind: 'unreadable' as const };
-                }
-              },
+              read: (path: string) => readOfficeFile(path),
             },
           },
     // THE ENCODER, and it is here because `nativeImage` is Electron's.

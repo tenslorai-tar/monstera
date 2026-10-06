@@ -107,6 +107,7 @@ export function siblingNames(target: string, copies: number): ReturnType<SaveFil
   const kept = Math.max(0, Math.min(copies, MAX_BACKUP_COPIES));
   return {
     temp: unpredictableSibling(target),
+    previous: `${target}.monstera-previous`,
     backups: Array.from({ length: kept }, (_unused, index) => backup(index)),
     // THE ONES A SHORTER CHOICE NO LONGER KEEPS, up to the longest choice: a person who keeps three after keeping ten
     // is not left with seven copies nothing will ever update or remove.

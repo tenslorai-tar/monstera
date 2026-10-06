@@ -100,6 +100,12 @@ export const SETTINGS_RESULT = z
      * Privacy page.
      */
     action: z.enum(['reset', 'export', 'import', 'clear-chat-history', 'clear-recent']).optional(),
+    /**
+     * A provider whose STORED key the person asked to check (ADR-0158). Reported, never answered: the command asks
+     * `ai.models` for it and replies with that provider's list and one more answered check in {@link SETTINGS_DIALOG}'s
+     * `checked`. No key travels, here or in the reply.
+     */
+    check: z.enum(AI_PROVIDER_IDS).optional(),
   })
   .strict();
 
@@ -124,6 +130,12 @@ export const SETTINGS_DIALOG = declareDialog({
        * failed, and its row then says the list could not be read.
        */
       models: z.partialRecord(z.enum(AI_PROVIDER_IDS), aiModelListSchema),
+      /**
+       * How many of each provider's key checks have been answered since the dialog opened (ADR-0158), the answer being
+       * that provider's entry in `models`. A count rather than a flag, so the body can tell the answer to the check it
+       * last asked from an earlier one still arriving. Absent until a reply.
+       */
+      checked: z.partialRecord(z.enum(AI_PROVIDER_IDS), z.number().int().positive()).optional(),
     })
     .strict(),
   result: SETTINGS_RESULT,

@@ -527,6 +527,9 @@ describe('the engine host answers a containment probe', () => {
     pageLinks: () => {
       throw new Error('a containment probe must not read page links');
     },
+    linkAddress: () => {
+      throw new Error('a containment probe must not read a link address');
+    },
     pageFills: () => {
       throw new Error('a containment probe must not read page fills');
     },
@@ -560,6 +563,9 @@ describe('the engine host answers a containment probe', () => {
     applyPdfLib: () => {
       throw new Error('a containment probe must not run pdf-lib');
     },
+    prepareSignature: () => {
+      throw new Error('a containment probe must not prepare a signature');
+    },
     snapshot: () => {
       throw new Error('a containment probe must not rasterise a page');
     },
@@ -587,6 +593,9 @@ describe('the engine host answers a containment probe', () => {
     signaturesKept: () => Promise.reject(new Error('this case asks nothing about keeping signatures')),
     annotationRecords: () => {
       throw new Error('a containment probe must not read annotation records');
+    },
+    annotationWords: () => {
+      throw new Error('a containment probe must not read annotation words');
     },
   };
 

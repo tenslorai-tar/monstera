@@ -209,6 +209,8 @@ optgroup {
   min-block-size: max(var(--menu-bar), env(titlebar-area-height, 0px));
   padding-inline: var(--space-10);
   -webkit-app-region: drag;
+  /* THE RULER'S CONTAINING BLOCK (ADR-0146), so it is measured where the row is. */
+  position: relative;
 }
 
 .m-menu-bar__start {
@@ -228,6 +230,9 @@ optgroup {
   block-size: var(--title-control);
   padding-block: 0;
   font-size: var(--font-chrome-12);
+  /* ONE LINE (ADR-0146): a label that wraps draws a group narrower than its words, and the row's slack, read from that
+     width, was never negative — *Rate Us* went onto two lines at 960 with the row sure it fitted. */
+  white-space: nowrap;
   -webkit-app-region: no-drag;
 }
 
@@ -246,13 +251,34 @@ optgroup {
   inline-size: auto;
 }
 
-.m-menu-bar__menus {
+/* ONE RULE FOR THE MENUS AND THEIR RULER, so the gap the room is read with is the gap they are drawn with. */
+.m-menu-bar__menus,
+.m-menu-bar__ruler {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
-.m-menu-bar__trigger {
+/* THE RULER (ADR-0146): out of the row's flow, unseen and unreachable, and no wider than nothing, so it can never give
+   the window a scroll bar; its names keep their own widths, which is all that is read from it. */
+.m-menu-bar__ruler {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.m-menu-bar__ruler > * {
+  flex: none;
+}
+
+/* THE RULER'S NAMES TAKE THIS RULE TOO (ADR-0146), so what the room is read from is a trigger's box exactly; their own
+   class keeps every selector for a trigger to the triggers. */
+.m-menu-bar__trigger,
+.m-menu-bar__name {
   display: inline-flex;
   align-items: center;
   block-size: var(--menu-bar-item);
@@ -290,6 +316,34 @@ optgroup {
 
 .m-menu-bar__mark,
 .m-menu-bar__icon {
+  display: inline-flex;
+}
+
+/* A RIGHT-CLICK MENU'S ITEMS (the owner's item 9b): the command's glyph, the title, the chord, given through the
+   shared item's two properties as the menu bar's are, so its glyph column is the menu bar's own width and gap. */
+.m-area-menu {
+  --menu-item-columns: var(--icon-14) minmax(0, 1fr) auto;
+  --menu-item-gap: var(--space-8);
+}
+
+.m-context-menu__icon {
+  display: inline-flex;
+}
+
+/* A RIBBON MENU'S ITEMS — a group's More and a named menu: the command's glyph, the title, the chord, given through the
+   shared item's two properties as the menu bar's are. A menu with a checkable member (ADR-0153) puts the mark's column
+   first on every item, so the glyphs and titles of its plain members line up with the checkable ones. */
+.m-ribbon-menu {
+  --menu-item-columns: var(--icon-14) minmax(0, 1fr) auto;
+  --menu-item-gap: var(--space-8);
+}
+
+.m-ribbon-menu--marks {
+  --menu-item-columns: var(--icon-14) var(--icon-14) minmax(0, 1fr) auto;
+}
+
+.m-ribbon-menu__mark,
+.m-ribbon-menu__icon {
   display: inline-flex;
 }
 
@@ -442,6 +496,21 @@ optgroup {
   flex-direction: column;
   align-items: center;
   gap: var(--space-12);
+}
+
+/* A SHORT WINDOW TIGHTENS THE RHYTHM, so the footer is on the screen without scrolling: at 1280 × 800 it ended 48 px
+   below the window (measured 2026-10-03, the owner's item 1f), and these gaps are those 48 px. Above 880 px there is
+   room for the design's own spacing. A HEIGHT, unlike the menu row's measured widths (ADR-0113): what the start screen
+   holds is a fixed number of lines whatever the language, where a label's width is not. */
+@media (max-height: 880px) {
+  .m-start-screen {
+    gap: var(--space-12);
+    padding-block: var(--space-12) var(--space-8);
+  }
+
+  .m-start-hero {
+    gap: var(--space-8);
+  }
 }
 
 /* The heading holds only the artwork, so a text line box would add its height under the image. */
@@ -657,6 +726,18 @@ optgroup {
   border-block-start: 1px solid var(--border-soft); /* decorative: separates the footer bar from the screen above; its links carry their own focus rings */
   color: var(--muted);
   font-size: var(--font-chrome-11);
+  /* ALONG THE WINDOW'S FOOT ALWAYS, as the design draws it: with recent files under the tiles the screen is taller than
+     the window, and the footer followed them below its edge (the owner's item 1f). Stuck to the area's foot, it covers
+     what scrolls under it with the window's own ground — `.m-document-surface`'s colour with the ambient gradient over
+     it, laid against the viewport, so the bar is seamless with the ground behind it in every look. THE COLOUR TOO, not
+     the gradient alone: high contrast's `--ambient` is `none`, and the gradient alone painted nothing there, so what
+     scrolled under the bar showed through its text. */
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 1;
+  background-color: var(--app-bg);
+  background-image: var(--ambient);
+  background-attachment: fixed;
 }
 
 .m-start-footer__commands {
@@ -685,7 +766,9 @@ optgroup {
   margin: 0;
 }
 
-.m-start-footer__build > span + span::before {
+/* ON THE PIECE BEFORE, so a narrow window that wraps the line ends one line with the dot and starts the next with words:
+   on the piece after, the wrapped line began "· AGPL 3.0 or later" (the owner's item 1f, at 760 wide). */
+.m-start-footer__build > span:not(:last-child)::after {
   content: '·';
   padding-inline: var(--space-8);
 }
@@ -724,18 +807,25 @@ optgroup {
 }
 
 /* THE CHANGES AT THE ROW'S END, where a dialog row keeps its control, on one line: the column takes the least width
-   that holds them, and the command's name and keys wrap first. */
+   that holds them, and the command's name and keys wrap first. Scoped under the table, because `.m-shortcuts td`
+   above outranks a bare class: the buttons sat at the cell's start while the header, matched more strongly, sat at
+   its end (the gallery's reading, 2026-10-03). */
 .m-shortcuts thead th:last-child,
-.m-shortcuts__actions {
+.m-shortcuts .m-shortcuts__actions {
   text-align: end;
 }
 
-.m-shortcuts__actions {
+.m-shortcuts .m-shortcuts__actions {
   inline-size: 1%;
   white-space: nowrap;
 }
 
+/* EACH KEY ITS OWN CHIP: a command with two shortcuts drew them as plain words a gap apart, and "Ctrl+W Ctrl+F4" read
+   as one chord to press in turn (the gallery's reading, 2026-10-03). */
 .m-shortcuts kbd {
+  padding: var(--space-2) var(--space-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
   font-family: inherit;
   font-variant-numeric: tabular-nums;
 }
@@ -773,6 +863,9 @@ optgroup {
   background: var(--surface);
   color: var(--text);
   font: inherit;
+  /* ONE LINE, so the table gives its column the prompt's width: wrapping, it took the column's share and broke
+     "cancel" onto a line of its own (the gallery's reading, 2026-10-03). The names and the keys wrap instead. */
+  white-space: nowrap;
 }
 
 .m-shortcuts__capture:focus-visible {
@@ -790,16 +883,12 @@ optgroup {
   margin: 0;
 }
 
-/* THE OCR DIALOG'S HANDWRITING NOTE and, while no key is stored, the link to the article on getting one under it. */
+/* THE OCR DIALOG'S HANDWRITING NOTE, above the footer; the link to the article on getting a key is in the footer's
+   aside while no key is stored. */
 .m-ocr__handwriting {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-4);
-}
-
-.m-ocr__handwriting p {
   margin: 0;
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
 }
 
 /* THE LANGUAGES, read together: a box per provisioned model under a legend. The fieldset keeps its group semantics
@@ -881,6 +970,20 @@ optgroup {
   outline-offset: 2px;
 }
 
+/* READ AT THE CONTENT SIZE (the owner's item 19a): an article and the list that leads to one are text a person reads,
+   not chrome, so they take the content scale, measured 12 px before. The buttons among them follow, so a Show me
+   or Back to the list is not smaller than the sentence beside it. */
+.m-help__list,
+.m-help__article,
+.m-help__back {
+  font-size: var(--font-content-14);
+  line-height: 1.5;
+}
+
+:is(.m-help__show, .m-help__back) .m-button {
+  font-size: var(--font-content-14);
+}
+
 .m-help__item-title {
   font-weight: 600;
 }
@@ -899,6 +1002,29 @@ optgroup {
 
 .m-help__article :is(h3, h4, h5, p, ol, ul) {
   margin: 0;
+}
+
+/* A STEP BETWEEN EACH LEVEL, which the browser's defaults did not give: an h4 was 1em, the size of the text under it. */
+.m-help__article :is(h3, h4, h5) {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.m-help__article h3 {
+  font-size: var(--font-content-20);
+}
+
+/* A SECTION'S HEADING closer to its own text than to the text before it, so it reads as the start of what follows. */
+.m-help__article :is(h4, h5) {
+  margin-block-start: var(--space-8);
+}
+
+.m-help__article h4 {
+  font-size: var(--font-content-16);
+}
+
+.m-help__article h5 {
+  font-size: var(--font-content-14);
 }
 
 .m-help__article :is(ol, ul) {
@@ -977,14 +1103,21 @@ optgroup {
 .m-start-problem {
   margin: 0;
   color: var(--text);
-  max-inline-size: 40ch;
+  /* 60ch AND BALANCED: the longest sentences run past a hundred characters, which at 40ch took three lines and left
+     one word alone on the last; balanced, the lines it takes are even. */
+  max-inline-size: 60ch;
+  text-wrap: balance;
 }
 
+/* ROOM UNDER THE CARDS (the owner's item 19b): the list follows the start screen in the scroll rather than sitting in it,
+   so neither the screen's padding nor its gap reaches below the last card, and scrolled to the end the cards met the
+   footer with nothing between them (−0.3 px at 1280 × 800, 1600 × 852 and 1280 × 960, measured 2026-10-04). */
 .m-recent {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-8);
+  padding-block-end: var(--space-24);
   color: var(--muted);
 }
 
@@ -1093,19 +1226,20 @@ optgroup {
 /* A FILE THAT IS NOT THERE NOW (ADR-0143): listed, focusable and saying so in its line, and drawn as a disabled
    control — no pointer, no hover fill, the name in the muted text a disabled menu item takes, the kept picture
    faded. Focus still fills it, so a keyboard sees where it is. */
-.m-recent-item[data-unavailable='true'] {
+/* One STILL BEING LOOKED FOR is drawn the same way until main answers: it is not offered as one that opens either. */
+.m-recent-item:is([data-unavailable='true'], [data-checking='true']) {
   cursor: default;
 }
 
-.m-recent-item[data-unavailable='true']:hover:not(:focus-visible) {
+.m-recent-item:is([data-unavailable='true'], [data-checking='true']):hover:not(:focus-visible) {
   background: var(--bg);
 }
 
-.m-recent-item[data-unavailable='true'] .m-recent-item__name {
+.m-recent-item:is([data-unavailable='true'], [data-checking='true']) .m-recent-item__name {
   color: var(--muted);
 }
 
-.m-recent-item[data-unavailable='true'] .m-recent-item__picture {
+.m-recent-item:is([data-unavailable='true'], [data-checking='true']) .m-recent-item__picture {
   opacity: 0.45;
 }
 
@@ -1299,6 +1433,9 @@ optgroup {
  * at the foot of the tab.
  */
 .m-properties {
+  /* BORDER-BOX, so the full height INCLUDES the padding. Measured 2026-10-04: as a content-box the tab was its body's
+     height plus 32 px, and the foot's Reply and Delete sat below the panel's edge, cut off. */
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: var(--space-16);
@@ -1356,17 +1493,34 @@ optgroup {
 /* ONE ROW AT THE PANEL'S DEFAULT WIDTH, spread across it: fixed tracks that `auto-fit` counts from the
    width, spaced out between, so ten swatches fill the row and a narrower panel wraps them onto aligned
    columns rather than a ragged second line. */
-.m-properties__swatches {
+.m-colour-swatches {
   display: grid;
   grid-template-columns: repeat(auto-fit, var(--icon-16));
   justify-content: space-between;
   gap: var(--space-8) var(--space-4);
 }
 
+/* IN A DIALOG ROW the swatches stay together in one row: spread across a wide row they read as unrelated dots. A row
+   and not the grid above, because a dialog row's control cell takes its width from its content, and an auto-fit grid
+   with no definite width to fill resolves to one column. */
+.m-colour-swatches--start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+/* A dialog has the room a panel does not, and a pale tint is told from its neighbour by its area. */
+.m-colour-swatches--start > .m-colour-swatch,
+.m-colour-swatches--start > .m-colour-custom {
+  inline-size: var(--icon-20);
+  block-size: var(--icon-20);
+}
+
 /* A swatch is its colour, so its ring is the only chrome: a border to separate it from the panel, and
    the accent around the one in force. */
-.m-properties__swatch,
-.m-properties__custom {
+.m-colour-swatch,
+.m-colour-custom {
   position: relative;
   inline-size: var(--icon-16);
   block-size: var(--icon-16);
@@ -1378,13 +1532,13 @@ optgroup {
 
 /* THE CHOSEN SWATCH as a ring drawn with a box-shadow, and FOCUS as the outline every control has: both an outline,
    the chosen one's hid the focus ring on the one swatch a keyboard user most often lands on (WCAG 2.4.7). */
-.m-properties__swatch[aria-pressed='true'],
-.m-properties__custom[data-pressed='true'] {
+.m-colour-swatch[aria-pressed='true'],
+.m-colour-custom[data-pressed='true'] {
   box-shadow: 0 0 0 1px var(--surface), 0 0 0 3px var(--accent);
 }
 
-.m-properties__swatch:focus-visible,
-.m-properties__custom:focus-visible,
+.m-colour-swatch:focus-visible,
+.m-colour-custom:focus-visible,
 .m-properties__segment:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 4px;
@@ -1392,18 +1546,18 @@ optgroup {
 
 /* EACH TOOL'S OWN is no colour, so it is drawn as the absence of one: the panel's own ground, struck
    through once. */
-.m-properties__swatch--auto {
+.m-colour-swatch--auto {
   background: linear-gradient(135deg, transparent 45%, var(--muted) 45%, var(--muted) 55%, transparent 55%), var(--surface);
 }
 
-.m-properties__custom {
+.m-colour-custom {
   overflow: hidden;
   background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
 }
 
 /* The native colour input fills the ring and is invisible, so the ring is what is seen and the input
    is what is pressed — its picker is the platform's, labelled by the input's own name. */
-.m-properties__custom-input {
+.m-colour-custom__input {
   position: absolute;
   inset: 0;
   inline-size: 100%;
@@ -1412,7 +1566,7 @@ optgroup {
   cursor: pointer;
 }
 
-.m-properties__custom:focus-within {
+.m-colour-custom:focus-within {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -1459,7 +1613,10 @@ optgroup {
 .m-properties__stroke[data-width='3'] { block-size: 3px; }
 .m-properties__stroke[data-width='5'] { block-size: 5px; }
 
+/* ONE BOX MODEL for the tab's small fields, a number or a drop-down: a select sizes its border box and an input its
+   content box, so at one width the unit's drop-down stood 10 px narrower than the font size above it. */
 .m-properties__number {
+  box-sizing: border-box;
   inline-size: 6em;
   padding: var(--space-4);
   background: var(--surface);
@@ -1639,8 +1796,16 @@ optgroup {
  */
 .m-forms-text,
 .m-forms-choice {
+  /* BORDER-BOX, so a one-line input, a box for line breaks and a list share one width: the browser pads each
+     differently, and measured on content boxes the textarea sat 2px short of the input above it. */
+  box-sizing: border-box;
   inline-size: 100%;
   max-inline-size: 16rem;
+}
+
+/* A FIELD THAT TAKES LINE BREAKS grows downwards when a person wants more of it shown, never across the column. */
+.m-forms-text--lines {
+  resize: vertical;
 }
 
 /*
@@ -1740,12 +1905,6 @@ optgroup {
  * document's own caption hard against the derived name, so a reader cannot tell
  * where one ends.
  */
-.m-flat-fields__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
 .m-flat-fields__label {
   display: flex;
   align-items: center;
@@ -1754,18 +1913,118 @@ optgroup {
 }
 
 /*
- * The spell check review: one dialog-pattern row per word (`SpellCheckBody`), the word and where it is on the left
- * and its add at the row's end, in a `<ul>` that arrives with bullets and an indent the pattern did not ask for. The
- * word carries the weight as the row's name; the count, the page and the suggestions are its muted notes.
+ * The Spelling tab (ADR-0156): the word, where it is and the text around it, the field and the suggestions, then the
+ * actions, the options and the language, top to bottom in one column so the panel's width is the only width.
  */
-.m-spell-check__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.m-spelling {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  min-inline-size: 0;
 }
 
-.m-spell-check__list > .m-dialog-row:last-child {
-  border-block-end: 0;
+.m-spelling p {
+  margin: 0;
+}
+
+.m-spelling__current {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.m-spelling__label,
+.m-spelling__where,
+.m-spelling__language {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+/* THE WORD carries the weight; it is the document's own text and may be long, so it wraps rather than overflowing. */
+.m-spelling__word {
+  font-size: var(--font-chrome-13);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * THE WORD IN ITS SENTENCE is marked by weight and a wavy underline in the accent, never by a fill: a fill behind text
+ * is a contrast pair, and the underline is not.
+ */
+.m-spelling__context {
+  font-size: var(--font-chrome-12);
+  overflow-wrap: anywhere;
+}
+
+.m-spelling__context mark {
+  background: none;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline wavy var(--accent);
+  text-underline-offset: 3px;
+}
+
+.m-spelling__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.m-spelling__suggestion {
+  padding: var(--space-2) var(--space-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-chrome-12);
+  cursor: pointer;
+}
+
+.m-spelling__suggestion:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* THE CHOSEN SUGGESTION is the one in the field; the ring says so without a second colour pair. */
+.m-spelling__suggestion[aria-pressed='true'] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.m-spelling__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.m-spelling__notice {
+  font-size: var(--font-chrome-12);
+}
+
+.m-spelling__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-12);
+  margin: 0;
+  padding: var(--space-8) 0 0;
+  border: 0;
+  border-block-start: 1px solid var(--border-soft); /* decorative: separates the review from its options */
+}
+
+.m-spelling__options legend {
+  padding: 0;
+  margin-block-end: var(--space-4);
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+.m-spelling__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--font-chrome-12);
 }
 
 /*
@@ -1803,32 +2062,16 @@ optgroup {
  * The PDF/A removals notice: a list, so the list exception's two rules — no bullets or
  * indent the primitive did not ask for. Each line is the converter's own, quoted.
  */
-.m-pdfa-removals__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
+/* The converter's own words, quieter than the sentence that introduces them; the list itself is the pattern's. */
 .m-pdfa-removals__list li {
-  padding-block: var(--space-2);
   color: var(--muted);
 }
 
-/* The rows a workbook's PDF lacks. The sentence and the count sit outside the scroll, so their margins are the body's
-   gap alone; the row numbers line up by tabular figures. */
+/* The rows a workbook's PDF lacks, in the pattern's list. The sentence and the count sit outside the scroll, so their
+   margins are the body's gap alone. */
 .m-workbook-incomplete__said,
 .m-workbook-incomplete__more {
   margin: 0;
-}
-
-.m-workbook-incomplete__list {
-  margin: 0;
-  padding-inline-start: var(--space-16);
-  font-variant-numeric: tabular-nums;
-}
-
-.m-workbook-incomplete__list li {
-  padding-block: var(--space-2);
 }
 
 /*
@@ -1848,8 +2091,18 @@ optgroup {
   padding-block: var(--space-8);
 }
 
+/* THE PAGE'S TABLE AT THE DIALOG'S WIDTH, one grid of lines (the gallery's reading, 2026-10-03): each cell's field drew
+   its own box inside the cell's border, so the table read as a stack of separate boxes, narrower than the dialog, under
+   a caption centred over a table that was not. The cell's border is now the only line, and the field fills its cell. */
 .m-export-excel__table table {
+  inline-size: 100%;
   border-collapse: collapse;
+}
+
+.m-export-excel__table caption {
+  padding-block-end: var(--space-4);
+  color: var(--muted);
+  text-align: start;
 }
 
 .m-export-excel__table td {
@@ -1858,8 +2111,24 @@ optgroup {
 }
 
 .m-export-excel__table input {
-  width: 100%;
-  min-width: 8ch;
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 8ch;
+  padding: var(--space-4) var(--space-6);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.m-export-excel__table input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* A cell cut short is read-only, and says so in its tooltip; quieter, so it reads as not for editing. */
+.m-export-excel__table input[readonly] {
+  color: var(--muted);
 }
 
 /*
@@ -1884,26 +2153,22 @@ optgroup {
 }
 
 /*
- * The accessibility check's two lists: the list exception's rules, and each rule's verdict, words
- * and pages on one wrapping line so a long rule name does not push its verdict off the row.
+ * The accessibility check's two lists: the list exception's rules, and each rule's row in TWO COLUMNS, the verdict
+ * and what the rule says, with the pages under the rule's words. A wrapping row dropped the pages to the verdict's
+ * column, where they read as a verdict of their own (the owner's item 19d).
  */
-.m-accessibility-check__rules,
-.m-accessibility-check__human {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
 .m-accessibility-check__rules li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-  padding-block: var(--space-4);
+  display: grid;
+  grid-template-columns: 12ch minmax(0, 1fr);
+  column-gap: var(--space-8);
 }
 
 .m-accessibility-check__verdict {
   font-weight: 600;
-  min-width: 12ch;
+}
+
+.m-accessibility-check__pages {
+  grid-column: 2;
 }
 
 .m-accessibility-check__pages,
@@ -1911,15 +2176,18 @@ optgroup {
   color: var(--muted);
 }
 
+/* DOCUSIGN'S FIELDS hold a subject, names and email addresses, which run past the default field's twenty characters:
+   about thirty-two show whole, and the field never outgrows its row. */
+.m-docusign-send .m-input {
+  inline-size: 32ch;
+  max-inline-size: 100%;
+}
+
 /* The barcode form: the field fills the dialog's width, so a pasted link is readable whole. */
 .m-place-barcode {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
-}
-
-.m-place-barcode__text {
-  width: 100%;
 }
 
 /* THE FORMATS, a row's control: each radio beside its word, wrapping inside the control. */
@@ -2048,11 +2316,12 @@ optgroup {
  * a question and these are an action on the answer, and a person scanning for
  * *Replace everywhere* should not have to read past the search box to find it.
  */
+/* THE FIND HALF'S COLUMN: a label, the box across the panel, then its action row. It was one wrapping row of label, box
+   and button, so the two boxes in one panel were laid out two ways (F-E1). */
 .m-find-replace {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--space-8);
-  flex-wrap: wrap;
 }
 
 /*
@@ -2063,65 +2332,18 @@ optgroup {
  * track back from.
  */
 .m-find-replaced {
-  flex: 1 0 100%;
   max-width: 60ch;
-  color: var(--muted);
-}
-
-/*
- * The object chooser in the edit-object dialog.
- *
- * A column for the line chooser's reason — each row is a phrase and a pair of
- * coordinates, not a digit — and the fieldset reset is the same one, because
- * this is the second body in the application that groups radios.
- */
-.m-edit-page-object__choice {
-  border: none;
   margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.m-edit-page-object__legend {
-  flex: 1 0 100%;
-  padding: 0;
-}
-
-.m-edit-page-object__option {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-/*
- * The box. TABULAR FIGURES, which is the one rule this row needs: four numbers
- * per row down a column, and proportional digits make 11 narrower than 88 so
- * nothing lines up and no two rows can be compared at a glance.
- */
-.m-edit-page-object__box {
-  font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
 
 /*
- * The four placement fields, in a row that wraps.
- *
- * Move and scale are two pairs, and a pair that wrapped between its own members
- * would read as four unrelated fields. The minimum width is what keeps x beside
- * y until the dialog is too narrow for either pair.
+ * The edit-object dialog's choice of object, in the pattern's choice rows: each object's box is its note, in TABULAR
+ * FIGURES — four numbers per row down a column, and proportional digits make 11 narrower than 88, so nothing lines up
+ * and no two rows can be compared at a glance.
  */
-.m-edit-page-object__numbers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-}
-
-.m-edit-page-object__colour {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+.m-edit-page-object .m-dialog-choice .m-dialog-row__note {
+  font-variant-numeric: tabular-nums;
 }
 
 /*
@@ -2209,15 +2431,28 @@ optgroup {
 }
 
 /*
- * An entry that goes nowhere, and an external link: shown, not offered.
+ * An entry that goes nowhere: shown, not offered.
  * `--muted` rather than a disabled control, because there is no control — a
  * button that did nothing would be the display-only defect these rows avoid.
+ * A web link is a control since ADR-0167 (it asks, then opens), so it is not here.
  */
-.m-destination-unresolved,
-.m-links-external {
+.m-destination-unresolved {
   display: block;
   padding: var(--space-2) var(--space-4);
   color: var(--muted);
+}
+
+/*
+ * A heading over children: an entry with no page of its own, kept for the entries under it. It is the outline's
+ * structure rather than an entry that goes nowhere, so it reads in the text colour and carries no mark.
+ */
+.m-destination-heading {
+  display: block;
+  /* MARGIN ABOVE AND BELOW, not padding: the clamp below hides lines past the third only outside the padding box, so
+     padding would show the top of the fourth. The heading draws no background, so the two lay out alike. */
+  margin-block: var(--space-2);
+  padding-inline: var(--space-4);
+  color: var(--text);
 }
 
 /*
@@ -2243,7 +2478,8 @@ optgroup {
  * anywhere and shows three lines at most; the checkbox's label, and so its accessible name, keeps the whole text. */
 .m-layer-name,
 .m-destination-title,
-.m-links-external {
+.m-destination-heading,
+.m-links-address {
   min-inline-size: 0;
   overflow-wrap: anywhere;
   display: -webkit-box;
@@ -2253,9 +2489,18 @@ optgroup {
 }
 
 /* A SIGNATURE'S STRINGS are the document's too, shortened to 256 characters by the reader, and one unbroken name ran
- * past the dialog's edge. They break anywhere and are not clamped: this dialog is where a person reads them whole. */
-.m-signatures__item > p {
+ * past the dialog's edge. They break anywhere and are not clamped: this dialog is where a person reads them whole.
+ * Its facts are the pattern's (`.m-dialog-facts`), which break the same way. */
+[data-signature] .m-dialog-section__title {
+  min-inline-size: 0;
   overflow-wrap: anywhere;
+}
+
+/* WHERE A WEB LINK GOES (ADR-0167), read whole before it is opened: it breaks anywhere and is not clamped, since a
+ * person deciding whether to follow it must be able to read all of it, and it is text to copy. */
+.m-follow-link__address {
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 .m-destinations-empty,
@@ -2513,9 +2758,10 @@ optgroup {
 }
 
 /* THE PANEL'S CONTENT IS TEXT, its labels are not (`.m-document-surface`): an answer, what a person sent, a comment's
-   note, a link's address. A field needs no rule, being editable. The whole panel as text put a drag off the page into
-   Properties' labels, where the page's selection collapsed (measured 2026-10-03). */
-:is(.m-assistant__text, .m-assistant__sent, .m-annotations-note, .m-links-external) {
+   note. A field needs no rule, being editable. The whole panel as text put a drag off the page into Properties' labels,
+   where the page's selection collapsed (measured 2026-10-03). A link's address is a control since ADR-0167, and is
+   copied from the dialog that names it (`.m-follow-link__address`). */
+:is(.m-assistant__text, .m-assistant__sent, .m-annotations-note) {
   user-select: text;
 }
 
@@ -2807,17 +3053,14 @@ optgroup {
   max-inline-size: 85%;
   padding: var(--space-6) var(--space-10);
   border-radius: var(--radius-12);
-  /* THE ACCENT (the owner, 2026-10-02), so a person's message follows the colour they chose. Its text is SOLVED
-     against the accent where it is drawn (`Turn` in `AssistantPanel.tsx`, `useOnColor`), never stored; `--text` stands
-     only until the solve has run. Never `--accent-soft`, the selected state, which carries no text. */
+  /* A FAINT WASH OF THE ACCENT over the panel, edged in the accent (the owner's item 17c): the colour a person chose,
+     with the pane's own text colours on it. `--bubble-wash` is a light the accent turns (`ACCENT_LIGHTS`), so it is
+     derived where it is drawn and never stored, and `check:tokencontrast` holds `--text` and `--muted` on it for every
+     accent. It replaced a solid accent fill whose text was solved per accent, which read as a button. The edge is
+     decoration: the bubble is not a control, and its words say what it is. */
+  border: 1px solid var(--accent);
   color: var(--text);
-  background: var(--accent);
-}
-
-/* WHAT WENT, inside a person's bubble, takes the bubble's solved text: `--muted` is declared on the pane's surfaces,
-   and over the accent it is a pair nobody checked. */
-.m-assistant__turn[data-assistant-role='user'] .m-assistant__sent {
-  color: inherit;
+  background: var(--bubble-wash);
 }
 
 .m-assistant__turn[data-assistant-role='assistant'] {
@@ -3043,6 +3286,41 @@ optgroup {
   border-inline-start: 1px solid var(--border-soft); /* decorative: the handle's seam against the page area */
 }
 
+/* A SIDE THAT GAVE WAY, OPENED (ADR-0146): a sheet over the page's edge, drawn from inside its handle so it starts at
+   the handle's inner edge and spans the row's height. Over the page area and its floating toolbar; menus and dialogs
+   portal above everything and stay above it. Its width is the panel's minimum, set where it is drawn. */
+.m-document-panel-handle,
+.m-context-panel-handle {
+  position: relative;
+}
+
+.m-panel-sheet {
+  position: absolute;
+  inset-block: 0;
+  z-index: 2;
+  display: flex;
+  border-radius: var(--radius-14);
+  /* THE WINDOW'S GROUND UNDER IT, laid against the viewport as `.m-document-surface` lays it: a panel is glass, and in
+     the row what shows through is the ground. Over the page it was the page's text, so the sheet carries the ground. */
+  background-color: var(--app-bg);
+  background-image: var(--ambient);
+  background-attachment: fixed;
+  box-shadow: var(--float-shadow);
+}
+
+.m-panel-sheet--start {
+  inset-inline-start: 100%;
+}
+
+.m-panel-sheet--end {
+  inset-inline-end: 100%;
+}
+
+/* The sheet itself takes the focus only when it holds nothing that can; the panel's own controls draw their rings. */
+.m-panel-sheet:focus {
+  outline: none;
+}
+
 .m-thumbnails {
   flex: 0 0 auto;
   display: flex;
@@ -3106,8 +3384,9 @@ optgroup {
  * flips is lightness and the page keeps its colours recognisable. The two are
  * one effect rather than two decisions, which is why they are on one line.
  *
- * Scoped to the CANVASES, so the rulers, the grid and the strip's own chrome
- * are untouched — they belong to the shell, and the shell has a theme.
+ * Scoped to the CANVASES, so the rulers and the strip's own chrome are
+ * untouched — they belong to the shell, and the shell has a theme. The grid,
+ * drawn over the paper, takes the same filter (`.m-paper-grid`).
  */
 [data-dark-page='true'] canvas.m-page,
 [data-dark-page='true'] canvas.m-page-tile,
@@ -3350,25 +3629,35 @@ optgroup {
   border-inline-start: 1px solid var(--border); /* decorative: separates two scrollable regions of one document and bounds neither; each pane's own controls carry their focus rings */
 }
 
-.m-page-list-grid {
+/*
+ * THE GRID, over each page (Part A3).
+ *
+ * One box at the slot's inset 0, so the lines start at the page's own corner — the zero the rulers read from — and
+ * no reading has to follow a scroll. It takes no pointer, so what is under it is reached as if it were not there.
+ * The colour is `--grid-on-paper`, solved against `--page` by `PageList` at the point of use; the soft border stands
+ * in only until the first solve. The spacing is `--m-grid`, the ruler's major interval, inherited from the list.
+ */
+.m-paper-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
   background-image:
     repeating-linear-gradient(
       to right,
-      var(--border-soft) 0 1px,
+      var(--grid-on-paper, var(--border-soft)) 0 1px,
       transparent 1px var(--m-grid, 72px)
     ),
     repeating-linear-gradient(
       to bottom,
-      var(--border-soft) 0 1px,
+      var(--grid-on-paper, var(--border-soft)) 0 1px,
       transparent 1px var(--m-grid, 72px)
     );
-  /*
-   * ANCHORED TO THE PAGE'S CORNER, not to the scroller's. `--m-grid-x` and
-   * `--m-grid-y` carry the page origin, so a grid line is a mark the reader can
-   * find on the ruler. Without this the two would be regular, aligned to
-   * different zeros, and silently disagree.
-   */
-  background-position: var(--m-grid-x, 0) var(--m-grid-y, 0);
+}
+
+/* WITH THE PAPER IT IS DRAWN ON: dark page mode inverts the page canvases, so the grid takes the same filter and keeps
+   its contrast against the paper as shown. Inverting a colour 3:1 on white gives one at least 3.8:1 on black. */
+[data-dark-page='true'] .m-paper-grid {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 .m-ruler {
@@ -3394,6 +3683,21 @@ optgroup {
   box-sizing: border-box;
   inline-size: var(--ruler);
   border-inline-end: 1px solid var(--border); /* decorative: as m-ruler-h above — a chrome/page divider on a strip with nothing to operate */
+}
+
+/* ONE PAGE'S RUN along a ruler, placed at the page's start and as long as the page (`Rulers.tsx`): the containing
+   block its marks are placed in, from the page's own zero, so a scroll moves the run and no mark. Across the ruler's
+   whole thickness, which is what a major mark's label is set in. */
+.m-ruler-run {
+  position: absolute;
+}
+
+.m-ruler-h .m-ruler-run {
+  inset-block: 0;
+}
+
+.m-ruler-v .m-ruler-run {
+  inset-inline: 0;
 }
 
 .m-tick {
@@ -3572,8 +3876,10 @@ optgroup {
 
 /* A LABELLED ICON (§10.3), the glyph at §10.4's primary-control size over a
    10 px caption, which is M2's floor. No fixed width: §10.3 names none, so the
-   rail is as wide as its longest label. */
-.m-ribbon__tab {
+   rail is as wide as its longest label. The rail's RULER takes every rule that sizes a button (ADR-0147), under its own
+   class so a selector for a rail button finds only the buttons. */
+.m-ribbon__tab,
+.m-ribbon__tab-ruler {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3604,6 +3910,9 @@ optgroup {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  /* IT SHRINKS AS THE SECTIONS DO, so its buttons give way to their content height like theirs: as a column of its
+     own it kept its buttons' full 48 as its minimum, and the rail's fold counts every button at the one height. */
+  min-block-size: 0;
   margin-block-start: auto;
 }
 
@@ -3889,11 +4198,12 @@ optgroup {
  * user-agent value this repository did not choose and it differs between them.
  */
 /* About: the build's facts as label and value, then two lines of prose, then the two pages. */
+/* NO WIDTH OF ITS OWN: the dialog pattern gives every body with a footer one width (`.m-dialog:has(.m-dialog-footer)`),
+   and a narrower cap here left the footer and its line short of the dialog's edge, an empty strip on the right. */
 .m-about {
   display: flex;
   flex-direction: column;
   gap: var(--space-16);
-  max-inline-size: 32rem;
 }
 
 /* ADR-0002: the brand's height and the width its own ratio gives it — never stretched. */
@@ -3903,24 +4213,32 @@ optgroup {
   inline-size: auto;
 }
 
-.m-about__facts {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--space-4) var(--space-16);
-  margin: 0;
-}
-
 .m-about__line {
   margin: 0;
   line-height: 1.5;
 }
 
-.m-about dt {
-  color: var(--muted);
+/* WORD COUNT: two columns, each measure's name and its number, the numbers at the end so their places line up. */
+.m-word-count__table {
+  border-collapse: collapse;
+  inline-size: 100%;
+  min-inline-size: 18rem;
 }
 
-.m-about dd {
-  margin: 0;
+.m-word-count__table th,
+.m-word-count__table td {
+  padding: var(--space-4) var(--space-8);
+  border-block-end: 1px solid var(--border-soft); /* decorative: separates rows; nothing in the table is operable */
+}
+
+.m-word-count__table th {
+  text-align: start;
+  font-weight: 400;
+}
+
+.m-word-count__table td {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
 }
 
 /* COMPONENTS (ADR-0122): a line, the table of components, then Verify. Status only: nothing here downloads. */
@@ -4021,16 +4339,126 @@ optgroup {
   font-size: var(--font-chrome-12);
 }
 
+/* THE SECOND-DOCUMENT ROW (`SourceDocumentRow`): the open documents and *Choose file…* side by side at the row's right,
+   the select giving way first, since its list shows a long name whole and the button's words must not be cut. */
+.m-source-document {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.m-source-document > select {
+  flex: 0 1 auto;
+}
+
+/* THE BUTTON KEEPS ITS WORDS ON ONE LINE: beside a long name it was squeezed onto two (the gallery's long state). */
+.m-source-document > .m-button {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* MERGE'S DOCUMENTS (ADR-0152): a numbered list, each row its number, the document, its page count and the arrows that
+   order it, with *Add a document* and *Choose file…* under the list. The select gives way first, as in a second-document
+   row, so a long name never pushes the arrows past the dialog's edge; the count and the arrows keep their size. */
+/* THE ROW'S WHOLE WIDTH under its name, so the arrows end where *Place*'s control does whatever the names' length:
+   shrink-wrapped, short names left the list ending a third of the way short of the dialog's edge. */
+.m-dialog-row__control:has(> .m-merge-list) {
+  flex-basis: 100%;
+}
+
+.m-merge-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-8);
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+/* THE LIST'S COLUMNS ARE SHARED BY EVERY ROW (a subgrid), so the selects, the counts and the arrows line up down the
+   list and the count's column is as wide as the widest count: as flex rows each select was as wide as its own name
+   and the arrows sat at a different place on every row (the gallery's *several* state, 2026-10-04). Each row stays a
+   list item, which `display: contents` would not reliably keep. */
+.m-merge-list__documents {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: var(--space-6) var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.m-merge-list__document {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+
+.m-merge-list__number {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.m-merge-list__document > select {
+  inline-size: 100%;
+}
+
+.m-merge-list__pages {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+  white-space: nowrap;
+}
+
+.m-merge-list__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.m-merge-list__add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.m-merge-list__add > .m-button {
+  white-space: nowrap;
+}
+
+/* A PAGE NUMBER beside the side it is on (Insert from PDF, Merge): as wide as one. */
+.m-page-number-field {
+  inline-size: 8ch;
+}
+
+.m-page-number-field .m-input {
+  inline-size: 100%;
+  box-sizing: border-box;
+}
+
+/* REPLACE'S PAIRING SENTENCE, `.m-dialog-row__problem`'s size and colour, under the rows it is about. */
+.m-replace-page__problem {
+  margin: var(--space-8) 0 0;
+  color: var(--text);
+  font-size: var(--font-chrome-12);
+}
+
 /* THE SETTINGS ROWS' DROP-DOWNS TOO (v5-10 draws them as fields): they were browser-default boxes beside styled segmented
    controls and text fields, so one dialog read as two families. A dialog row's (the dialog pattern, 2026-10-02) is the
    same field. */
 .m-document-choice select,
 .m-settings-row__control select,
 .m-dialog-row__control select {
-  padding: var(--space-8);
+  /* THE TEXT FIELD'S OWN MEASURES (`.m-input`): with 8 px padding, a 13 px face and a 4 px corner the drop-down stood
+     6 px taller than the field and the button beside it in the same row, so a row read as two families. */
+  padding: var(--space-6) var(--space-8);
   border: 1px solid var(--border-control);
-  border-radius: var(--radius-4);
-  font-size: var(--font-chrome-13);
+  border-radius: var(--radius-6);
+  font-size: var(--font-chrome-12);
 }
 
 .m-document-choice select:focus-visible,
@@ -4118,12 +4546,12 @@ optgroup {
 /* *Support Monstera*: two short paragraphs and two answers. The measure is held because the text is
    prose and a dialog as wide as the window is a dialog nobody reads to the end of. The security notice
    (ADR-0110) is the same shape — a sentence and two answers — so it takes the same rules. */
+/* No width of its own, for `.m-about`'s reason. */
 .m-donate,
 .m-security-update {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
-  max-inline-size: 34rem;
 }
 
 .m-donate__actions,
@@ -4365,11 +4793,16 @@ optgroup {
   visibility: hidden;
 }
 
-/* TWO EQUAL HALVES, and the summary list beside them once a comparison has run. */
+/* TWO EQUAL HALVES, and the summary list beside them once a comparison has run.
+   THE LINES BETWEEN THEM ARE THE GAP, the body's ground showing through one pixel that belongs to no column. A border
+   on the second half took that pixel from its content alone, so two copies of one document fitted to two widths and
+   read two zooms (F-C2: 622 and 621 pixels at 1280 wide, measured 2026-10-03). */
 .m-side__body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 1px;
   min-block-size: 0;
+  background: var(--border); /* decorative: the dividers between the columns; nothing is clicked on them */
 }
 
 .m-side__body--listed {
@@ -4381,10 +4814,7 @@ optgroup {
   grid-template-rows: auto minmax(0, 1fr);
   min-inline-size: 0;
   min-block-size: 0;
-}
-
-.m-side__half + .m-side__half {
-  border-inline-start: 1px solid var(--border); /* decorative: the divider between the halves; nothing is clicked on it */
+  background: var(--canvas);
 }
 
 .m-side__tools {
@@ -4417,7 +4847,6 @@ optgroup {
   overflow-y: auto;
   padding: var(--space-8);
   background: var(--bg2);
-  border-inline-start: 1px solid var(--border); /* decorative: the list's edge; its rows draw their own state */
   font-size: var(--font-chrome-12);
 }
 
@@ -4530,31 +4959,43 @@ optgroup {
 /*
  * The open documents' tab strip.
  *
- * A row that SCROLLS rather than wraps: a second line of tabs moves everything
- * below it down as documents open, and a document surface whose top edge
- * depends on how many files are open is one nothing can be measured against.
+ * ONE ROW, never wrapped: a second line of tabs moves everything below it down as documents open, and a document
+ * surface whose top edge depends on how many files are open is one nothing can be measured against. And never
+ * scrolled (Part A1): every tab shrinks alike to `--title-tab-min`, and past that `DocumentTabs` draws as many as fit,
+ * the current one always among them, and lists the rest from a button at the row's end.
  */
 /* Inside the title bar, which draws the surface and the seam: the strip takes the row's remaining
-   width and scrolls within it, so a seventh document never pushes the search off the end. */
+   width, so a seventh document never pushes the search off the end. */
 .m-tabs {
   display: flex;
   flex: 1 1 auto;
   gap: var(--space-2);
   align-items: center;
   min-inline-size: 0;
-  overflow-x: auto;
+  overflow: hidden;
 }
 
+/* MAY SHRINK below its tabs' widest, so they shrink with it; the end buttons never do. */
 .m-tab-list {
   display: flex;
+  flex: 0 1 auto;
   gap: var(--space-2);
+  min-inline-size: 0;
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
+.m-tab-open {
+  flex: none;
+}
+
 .m-tab {
   display: flex;
+  /* ALIKE: every tab shrinks from its widest by the same rule, so a long name does not hold its width while a short
+     one gives way. The narrowest is the token `DocumentTabs` counts with. */
+  flex: 0 1 var(--title-tab-max);
+  min-inline-size: var(--title-tab-min);
   align-items: center;
   gap: var(--space-2);
   padding-inline: var(--space-2);
@@ -4585,7 +5026,35 @@ optgroup {
    documents whose widths depend on their names is one where the tab under the
    pointer moves as another document opens. */
 .m-tab-name {
+  /* SHRINKS INSIDE ITS TAB, where a button would otherwise keep its content's width and push the close out. */
+  flex: 0 1 auto;
+  min-inline-size: 0;
   max-inline-size: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-tab-close {
+  flex: none;
+}
+
+/* THE LIST OF EVERY DOCUMENT: the tab's own glyph and unsaved dot before each name, the name ellipsed past the
+   widest a tab is drawn. */
+.m-tab-all__entry {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-inline-size: 0;
+}
+
+.m-tab-all__entry > .m-icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.m-tab-all__name {
+  max-inline-size: var(--title-tab-max);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4775,6 +5244,105 @@ optgroup {
   inset: 0;
 }
 
+/*
+ * A PAGE'S LINKS (ADR-0167), one button over each link's rectangle. The layer takes no pointer, so the text layer under
+ * it still selects between the links; a link takes the pointer as a hand. Its edge is drawn on hover, on focus, and for
+ * every link in the Comment section, where links are made: an outline rather than a tint, because a tint over the
+ * paper would cover the words the link is drawn on.
+ */
+.m-link-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.m-page-link {
+  position: absolute;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.m-page-link:hover,
+.m-link-layer--outlined .m-page-link {
+  outline: 1px solid var(--accent-on-paper, var(--accent));
+}
+
+.m-page-link:focus-visible {
+  outline: 2px solid var(--accent-on-paper, var(--accent));
+  outline-offset: 2px;
+}
+
+/*
+ * A PAGE'S FORM FIELDS (ADR-0168), one control over each fillable field. The layer takes no pointer; a field does.
+ * At rest a control draws nothing, because the field's value is the appearance the document draws under it; its edge
+ * shows on hover and on focus. A choice field is a list with its own text hidden, so the appearance shows through and
+ * the press opens its options at the field.
+ */
+.m-form-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.m-page-field {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.m-page-field--text {
+  cursor: text;
+}
+
+.m-page-field--choice {
+  appearance: none;
+  color: transparent;
+}
+
+.m-page-field:hover {
+  outline: 1px solid var(--accent-on-paper, var(--accent));
+}
+
+.m-page-field:focus-visible {
+  outline: 2px solid var(--accent-on-paper, var(--accent));
+  outline-offset: 2px;
+}
+
+/*
+ * A TEXT FIELD BEING TYPED IN, over the field on the page's paper in the field's own size, inside the accent outline
+ * every in-place editor draws, so what is typed stands where the field will draw it. Its size is the field's at the
+ * zoom on screen, so it is an inline value; the face is MuPDF's for a field with none of its own (`/Helv`).
+ */
+.m-page-field-editor {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: 0;
+  outline: 1px solid var(--accent-on-paper, var(--accent));
+  background: var(--page);
+  color: var(--field-ink);
+  caret-color: var(--accent-on-paper, var(--accent));
+  font-family: Helvetica, Arial, sans-serif;
+  line-height: 1.2;
+  pointer-events: auto;
+}
+
+.m-page-field-editor--lines {
+  resize: none;
+  overflow-y: auto;
+}
+
 .m-text-line {
   position: absolute;
   color: transparent;
@@ -4857,7 +5425,7 @@ optgroup {
   position: absolute;
   padding: 0;
   margin: 0;
-  border: 1px dashed var(--accent);
+  border: 1px dashed var(--accent-on-paper, var(--accent));
   border-radius: var(--radius-4);
   background: transparent;
   cursor: text;
@@ -4870,7 +5438,7 @@ optgroup {
 }
 
 .m-text-block:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-on-paper, var(--accent));
   outline-offset: 2px;
 }
 
@@ -4878,7 +5446,7 @@ optgroup {
   position: absolute;
   pointer-events: auto;
   transform-origin: top left;
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--accent-on-paper, var(--accent));
 }
 
 /*
@@ -4904,23 +5472,94 @@ optgroup {
   white-space: pre-wrap;
   overflow-wrap: break-word;
   background: var(--page);
-  caret-color: var(--accent);
+  caret-color: var(--accent-on-paper, var(--accent));
 }
 
 .m-text-editor:focus {
   outline: none;
 }
 
-.m-text-editor--sans {
+.m-text-editor--sans,
+.m-inline-writer__block--sans {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-.m-text-editor--serif {
+.m-text-editor--serif,
+.m-inline-writer__block--serif {
   font-family: 'Times New Roman', Times, serif;
 }
 
-.m-text-editor--mono {
+.m-text-editor--mono,
+.m-inline-writer__block--mono {
   font-family: Consolas, 'Courier New', monospace;
+}
+
+/*
+ * WORDS TYPED ON THE PAGE (`InlineWriter`, ADR-0154). A block sits where its words will be drawn, in their size,
+ * colour, face kind and direction, on the page's paper inside the accent outline the in-place editor draws, so what is
+ * typed reads as the page will draw it. `field-sizing: content`, the platform's own growing box, lengthens it with the
+ * words, and a click's box widens with them too, up to the page's edge; it scrolls only past the page's foot. Its sizes
+ * and its inset are the page's at the zoom on screen, so they are inline values. A line is the application's own text
+ * field beside what was drawn, with its refusal under it.
+ */
+.m-inline-writer {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.m-inline-writer__block {
+  display: block;
+  box-sizing: border-box;
+  field-sizing: content;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 1px solid var(--accent-on-paper, var(--accent));
+  overflow-x: hidden;
+  overflow-y: auto;
+  resize: none;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  /* MUPDF'S LINE SPACING for a FreeText: 14.4 for 12 points, measured in its appearance stream (`textTools.ts`). */
+  line-height: 1.2;
+  background: var(--page);
+  caret-color: var(--accent-on-paper, var(--accent));
+}
+
+.m-inline-writer__block:focus {
+  outline: 1px solid var(--accent-on-paper, var(--accent));
+}
+
+/* A BOX AT THE PAGE'S FOOT has no room under it, so its refusal is said above it (`InlineWriter` measures it). */
+.m-inline-writer[data-at-foot='true'] .m-inline-writer__problem {
+  inset-block-start: auto;
+  inset-block-end: calc(100% + var(--space-8));
+}
+
+.m-inline-writer--card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  inline-size: max-content;
+  margin-block: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.m-inline-writer__line {
+  inline-size: 24em;
+  max-inline-size: 60vw;
+}
+
+.m-inline-writer__message {
+  max-inline-size: 24em;
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--font-chrome-12);
 }
 
 /* THE SELECTION HANDLES: a mark that this block is open, never a control. */
@@ -4928,7 +5567,7 @@ optgroup {
   position: absolute;
   inline-size: var(--space-8);
   block-size: var(--space-8);
-  border: 1px solid var(--accent);
+  border: 1px solid var(--accent-on-paper, var(--accent));
   background: var(--surface);
   pointer-events: none;
   translate: -50% -50%;
@@ -4943,7 +5582,12 @@ optgroup {
 .m-text-editor-handle--sw { inset-block-start: 100%; inset-inline-start: 0; }
 .m-text-editor-handle--w { inset-block-start: 50%; inset-inline-start: 0; }
 
-.m-text-editor-problem {
+/* ON THE PAGE, so on the FLOAT, never the surface: dark's --surface is a 0.6 glass tint meant for the dark ground, and
+   over white paper it composites to a mid grey. Measured 2026-10-05 on Chromium 151 (`renderedScreen.pw.ts`' editor
+   refusal case, composited over --page): the Edit text refusal's reference line read 2.57:1 and its sentence 3.99:1 in
+   dark, the owner's faint line; on --float, 7.82:1 and 12.11:1. --float is the token for what floats over anything. */
+.m-text-editor-problem,
+.m-inline-writer__problem {
   position: absolute;
   inset-block-start: calc(100% + var(--space-8));
   inset-inline-start: 0;
@@ -4953,13 +5597,25 @@ optgroup {
   padding: var(--space-4) var(--space-8);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
-  background: var(--surface);
+  background: var(--float);
   color: var(--text);
   font-family: var(--font-ui);
   box-shadow: var(--shadow);
 }
 
-.m-text-edit__notes {
+/* THE EDITOR'S IS A SENTENCE, its particulars and its way out, one under another (ADR-0169 Decision 5). */
+.m-text-editor-problem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.m-text-editor-problem p {
+  margin: 0;
+}
+
+/* WHAT A MODE SAYS OF A PAGE — nothing to edit, or more than it can outline — for Edit text and Edit object alike. */
+.m-page-mode__notes {
   position: absolute;
   inset-block-start: var(--space-8);
   inset-inline: var(--space-8);
@@ -4969,12 +5625,13 @@ optgroup {
   pointer-events: auto;
 }
 
-.m-text-edit__notes > p {
+.m-page-mode__notes > p {
   margin: 0;
   padding: var(--space-4) var(--space-8);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
-  background: var(--surface);
+  /* ON THE PAGE, for the editor note's reason above. */
+  background: var(--float);
   color: var(--text);
   font-family: var(--font-ui);
 }
@@ -4987,6 +5644,65 @@ optgroup {
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/*
+ * EDIT OBJECT'S MODE (ADR-0153): every object of the chosen kind outlined where it is. Unlike Edit text's layer this
+ * one TAKES the pointer, because a press on blank paper means *select nothing*.
+ */
+.m-object-edit-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* Its notes say what a page holds and take no press: one over the page's top edge must not cover an outline there. */
+.m-object-edit-layer .m-page-mode__notes {
+  pointer-events: none;
+}
+
+.m-object {
+  position: absolute;
+  padding: 0;
+  margin: 0;
+  border: 1px dashed var(--accent-on-paper, var(--accent));
+  border-radius: var(--radius-4);
+  background: transparent;
+  cursor: pointer;
+}
+
+.m-object:hover {
+  background: var(--accent-soft);
+}
+
+.m-object:focus-visible {
+  outline: 2px solid var(--accent-on-paper, var(--accent));
+  outline-offset: 2px;
+}
+
+/* THE SELECTED ONE, solid and draggable: the dashed outlines say *this can be picked*, the solid one *this is picked*. */
+.m-object--selected {
+  border-style: solid;
+  cursor: move;
+}
+
+/* A CORNER HANDLE, the selection layer's square (ADR-0133): sized by `CORNER_REACH` where it is drawn. */
+.m-object-handle {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--accent-on-paper, var(--accent));
+  background: var(--page);
+}
+
+.m-object-handle--nw,
+.m-object-handle--se {
+  cursor: nwse-resize;
+}
+
+.m-object-handle--ne,
+.m-object-handle--sw {
+  cursor: nesw-resize;
 }
 
 .m-selection-layer {
@@ -5006,7 +5722,7 @@ optgroup {
  */
 .m-selection-box {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--accent-on-paper, var(--accent));
   stroke-width: 1;
   stroke-dasharray: 4 3;
   /* One pixel at every zoom: this is a screen affordance, not a border the
@@ -5019,7 +5735,7 @@ optgroup {
    within that reach and the two must be one number. */
 .m-selection-handle {
   fill: var(--page);
-  stroke: var(--accent);
+  stroke: var(--accent-on-paper, var(--accent));
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
@@ -5103,6 +5819,20 @@ optgroup {
   cursor: default;
 }
 
+/* A TOOL WHOSE BOX THE WORDS ARE TYPED INTO: the I-beam, which is what a press there is for. */
+.m-annotation-overlay[data-cursor='text'] {
+  cursor: text;
+}
+
+/* THE ERASER'S OWN POINTER, at one and two device pixels to the CSS pixel, its hotspot the middle of the rubbing edge.
+   One drawing for every theme: it is over the paper, which is white in all three. The crosshair if the image cannot
+   be used. */
+.m-annotation-overlay[data-cursor='eraser'] {
+  cursor:
+    image-set(url('./cursors/eraser.svg') 1x, url('./cursors/eraser@2x.svg') 2x) 6 19,
+    crosshair;
+}
+
 /* THE HIGHLIGHTER'S I-BEAM over the page, where the text layer takes the drag and the words are selected
    (`UiTool.fromSelection`). Over the whole page rather than over the words alone, so the pointer does not flicker
    between an I-beam and an arrow in the gaps between lines. */
@@ -5119,8 +5849,13 @@ optgroup {
  * page is still readable underneath while the drag is being placed.
  */
 .m-annotation-preview {
-  fill: var(--accent-soft);
-  stroke: var(--accent);
+  /* A TINT IN EVERY THEME, so what is under a shape being drawn or moved stays readable. This was `--accent-soft`,
+     a chrome token: translucent in light and dark, and in high contrast the opaque #0d3a22 a selected row is drawn
+     in, which over the paper hid the words beneath every preview (looked at 2026-10-05, item 14d). The accent as
+     solved against the paper, at a seventh. */
+  fill: var(--accent-on-paper, var(--accent));
+  fill-opacity: 0.14;
+  stroke: var(--accent-on-paper, var(--accent));
   stroke-width: 1;
   /* SCALES WITH NOTHING. A preview outline is a screen affordance, so it stays
      one pixel at every zoom, unlike the border the annotation will carry. */
@@ -5185,8 +5920,22 @@ optgroup {
 
 .m-sign-document__kept-drawn,
 .m-sign-document__kept-picture,
+/* THE PICTURE YIELDS, THE BUTTON DOES NOT: in a half-width cell a wide picture at its own width pushed *Remove* into two
+   lines and against its edge (the gallery's reading, 2026-10-03). The choice may shrink, the picture inside it is drawn
+   at its own ratio in what is left, and the button keeps its one line. */
+.m-stamp-chooser__mine > .m-stamp-chooser__choice {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.m-stamp-chooser__mine > .m-button {
+  flex: none;
+}
+
 .m-stamp-chooser__picture {
   block-size: calc(var(--space-32) * 1.5);
+  min-inline-size: 0;
+  object-fit: contain;
   max-inline-size: 100%;
   border: 1px solid var(--border-control);
   border-radius: var(--radius-4);
@@ -5208,27 +5957,121 @@ optgroup {
   stroke-linejoin: round;
 }
 
+/* A KEPT TYPED SIGNATURE as the outline it will be placed as (ADR-0150): ink on the page's white, a line tall. */
 .m-sign-document__kept-typed {
-  color: var(--text);
+  display: block;
+  block-size: calc(var(--space-32) * 1.25);
+  max-inline-size: calc(var(--space-32) * 7);
+  background: var(--page);
+  color: var(--signature-ink);
+}
+
+.m-sign-document__kept-typed path {
+  fill: currentColor;
+}
+
+/* Until its faces are read, or where its face cannot set it, a kept typed name is its words. */
+.m-sign-document__kept-text {
+  color: var(--signature-ink);
   font-size: var(--font-content-20);
 }
 
-/* A KEPT TYPED SIGNATURE in the face it will be drawn in: the four standard faces the signing look offers. */
-.m-sign-font--helvetica {
-  font-family: Helvetica, Arial, sans-serif;
+/* THE TYPE TAB (ADR-0150): the name across the dialog, the style chosen from a menu that shows the name in each face,
+   and the name large on the page's white, as it will be placed. */
+.m-typed-signature {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  padding-block: var(--space-10);
+  border-block-end: 1px solid var(--border-soft); /* decorative: as a row's */
 }
 
-.m-sign-font--times-roman {
-  font-family: 'Times New Roman', Times, serif;
+.m-typed-signature .m-input {
+  inline-size: 100%;
+  box-sizing: border-box;
 }
 
-.m-sign-font--times-italic {
-  font-family: 'Times New Roman', Times, serif;
-  font-style: italic;
+.m-typed-signature__style {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
 }
 
-.m-sign-font--courier {
-  font-family: 'Courier New', Courier, monospace;
+.m-typed-signature__preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: calc(var(--space-32) * 3);
+  padding: var(--space-10) var(--space-16);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--page);
+  color: var(--signature-ink);
+}
+
+.m-typed-signature__ink {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.m-typed-signature__ink path {
+  fill: currentColor;
+}
+
+/* NOTHING TYPED YET: the preview shows the style's own name, in faint ink, so it reads as an example. */
+.m-typed-signature__preview[data-signature-preview='face'] {
+  color: var(--faint);
+}
+
+/* THE STYLE MENU: each choice the name in that face on a strip of the page's white, its face's name beside it. Taller
+   than a menu of words, so it scrolls inside its own box rather than past the window. */
+.m-signature-faces {
+  /* THE CHOICE MENU'S COLUMNS with one more: the tick's fixed column, so every sample starts at one edge whichever is
+     chosen, then the sample, then the face's name. */
+  --menu-item-columns: var(--icon-16) auto minmax(0, 1fr);
+  --menu-item-gap: var(--space-8);
+  max-block-size: min(calc(var(--space-32) * 13), calc(100vh - var(--space-32) * 4));
+  overflow-y: auto;
+}
+
+.m-signature-faces__sample {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  inline-size: calc(var(--space-32) * 6);
+  block-size: calc(var(--space-32) * 1.25);
+  padding: var(--space-2) var(--space-6);
+  border-radius: var(--radius-4);
+  background: var(--page);
+  color: var(--signature-ink);
+}
+
+.m-signature-faces__ink {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+/* A FACE THAT CANNOT WRITE THE NAME shows its own name, faint, beside the note that says which letters it lacks. */
+.m-signature-faces__sample[data-faint] {
+  color: var(--faint);
+}
+
+.m-signature-faces__ink path {
+  fill: currentColor;
+}
+
+.m-signature-faces__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.m-signature-faces__cannot {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
 }
 
 .m-stamp-chooser__empty {
@@ -5250,6 +6093,9 @@ optgroup {
  */
 /* A WHITE PAD in every theme (the owner, 2 October): the ink is drawn as it will land, black on the page's paper. */
 .m-signature-pad {
+  /* BORDER-BOX, so its border is inside the 100%: under the default content box the pad was 2 px wider than the body
+     and the Signature dialog scrolled sideways by that much (the gallery's reading, 2026-10-03, 578 > 576). */
+  box-sizing: border-box;
   width: 100%;
   aspect-ratio: 3 / 1;
   border: 1px solid var(--border-control);
@@ -5318,10 +6164,6 @@ optgroup {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-8);
-}
-
-.m-signature__face {
-  font-size: var(--font-content-20);
 }
 
 .m-signature__upload {
@@ -5502,11 +6344,50 @@ optgroup {
   min-inline-size: 0;
 }
 
-.m-settings-row__colour,
-.m-settings-row__secret {
+.m-settings-row__colour {
   display: flex;
   align-items: center;
   gap: var(--space-8);
+}
+
+/* A KEY'S FIELD, AND UNDER IT the box that removes the stored one: the field runs long (ADR-0157), so it has the
+   column's whole width, and a box beside it would take that width back. */
+.m-settings-row__secret {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+/* A PROVIDER KEY'S CHECK, under the key: the button, then what the provider said. The answer wraps under the button
+   rather than pushing the row wider. */
+.m-key-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+}
+
+.m-key-check__answer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 1 1 24ch;
+  min-inline-size: 0;
+  color: var(--text);
+  font-size: var(--font-chrome-12);
+}
+
+/* THE TICK in the theme's text accent, as the application's other *done* signals are the accent; its words stay in the
+   text colour, so what the answer says never rests on a colour nothing here measures. */
+.m-key-check__answer[data-key-check='fetched'] {
+  font-weight: 600;
+}
+
+.m-key-check__answer[data-key-check='fetched'] svg {
+  color: var(--accent-text);
 }
 
 .m-settings-row__unset {
@@ -5553,7 +6434,7 @@ optgroup {
   font-size: var(--font-chrome-12);
 }
 
-/* `.m-properties__swatch`'s rule: the choice as a box-shadow ring, so the focus ring is never the same mark. */
+/* `.m-colour-swatch`'s rule: the choice as a box-shadow ring, so the focus ring is never the same mark. */
 .m-accent-swatch[aria-pressed='true'] {
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text);
 }
@@ -5658,7 +6539,11 @@ optgroup {
   border-block-start: 1px solid var(--border); /* decorative: closes the frame above the footer's own controls */
 }
 
+/* THE NOTE WRAPS, THE BUTTONS DO NOT: both shrank to share the row, so each button broke its label over two lines
+   ("Export / settings...") beside a note with room to spare (the gallery, 2026-10-03, every Settings page). */
 .m-settings__footer-note {
+  flex: 1 1 auto;
+  min-inline-size: 0;
   margin: 0;
   color: var(--muted);
   font-size: var(--font-chrome-12);
@@ -5666,6 +6551,7 @@ optgroup {
 
 .m-settings__footer-controls {
   display: flex;
+  flex: none;
   gap: var(--space-8);
 }
 
@@ -5960,9 +6846,15 @@ body {
 
 /* THE TABS (v5): 32 tall, rounded at the top only, standing on the title bar's bottom edge; the current one lifted
    onto a surface with an accent line along its top. The line is a border, so forced colours still say which. */
+/* OVER THE TITLE BAR'S EDGE BY ITS OWN BOX, so the current tab covers the bar's 1 px foot and joins the ribbon below.
+   The tab used to be moved there by a relative offset, which a scroller counts as overflow: the strip scrolled
+   sideways then (`overflow-x: auto`, which makes the other axis auto too), and that pixel drew a vertical scroll bar
+   beside the tabs whenever bars are drawn (measured 2026-10-04: content 1 px taller than the strip's 39). The strip
+   scrolls no more (Part A1), and the tab still stands on the edge by its own box. */
 .m-tabs {
   align-self: stretch;
   align-items: flex-end;
+  margin-block-end: -1px;
 }
 
 .m-tab-list {
@@ -5981,7 +6873,6 @@ body {
   border: 1px solid transparent;
   border-block-end: none;
   border-radius: var(--radius-8) var(--radius-8) 0 0;
-  inset-block-end: -1px;
 }
 
 .m-tab-current {
@@ -6055,7 +6946,8 @@ body {
   inline-size: var(--rail-studio);
 }
 
-.m-ribbon__tab {
+.m-ribbon__tab,
+.m-ribbon__tab-ruler {
   position: relative;
   justify-content: center;
   block-size: var(--rail-button);
@@ -6065,10 +6957,26 @@ body {
   line-height: 1;
 }
 
-.m-ribbon__tab .m-icon {
+.m-ribbon__tab .m-icon,
+.m-ribbon__tab-ruler .m-icon {
   inline-size: var(--icon-20);
   block-size: var(--icon-20);
   stroke-width: var(--icon-stroke);
+}
+
+/* THE RULER ITSELF (ADR-0147): a button at its CONTENT height — the height the rail's buttons shrink to before any
+   entry folds — out of the column's flow and unseen. Inside the rail's width, so its label lays out as theirs does. */
+.m-ribbon__rail {
+  position: relative;
+}
+
+.m-ribbon__tab-ruler {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: auto;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .m-document-surface[data-layout='studio'] .m-ribbon__tab {
@@ -6145,17 +7053,59 @@ body {
 
 .m-context-panel__tabs {
   align-self: stretch;
+  min-inline-size: 0; /* the header's rule below: the tabs give way before the chevron does */
 }
 
 .m-context-panel__tab {
   display: inline-flex;
   align-items: center;
   gap: var(--space-6);
+  min-inline-size: 0;
   padding-inline: var(--space-10);
   border-radius: 0;
   font-size: var(--font-chrome-12);
   font-weight: 600;
   color: var(--muted);
+}
+
+/* THE HEADER NEVER CLIPS ITS CHEVRON (2026-10-03): at 1024 x 720 the header's content was 256 px in a 238 px box and
+   the collapse control was the part cut off. `CONTEXT_PANEL_MIN_WIDTH` holds the English labels whole; a longer
+   language shortens a label here instead, its glyph and the chevron keeping their size. */
+.m-context-panel__header > :not(.m-context-panel__tabs),
+.m-context-panel__tab > svg {
+  flex: none;
+}
+
+.m-context-panel__tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * THREE TABS AND THEIR WORDS WHOLE (ADR-0156 added Spelling). Measured 2026-10-04 in Chromium 151 on the production
+ * build, English, in fractional pixels (a Range over each label): the words are 70.73, 62.95 and 54.84 px, 188.5 in
+ * all. Each tab adds its two 1 px borders, its padding and, with a glyph, 14 + 6 more; the strip's two 2 px gaps and the
+ * header's gap and chevron add 32. So with glyphs the header's content must be 346.5 px, with the words alone at
+ * 10 px padding 286.5, and at 2 px padding 238.5 — against 326 at the default panel and 250 at its 264 px minimum. The
+ * glyphs are decoration beside the name (`ContextPanel.tsx`), so they give way first and the padding next; each switch
+ * is set 16 px above its need, for a face drawn in another font. A longer language still shortens a label by the rule
+ * above, the last thing to give.
+ */
+.m-context-panel__header {
+  container: context-tabs / inline-size;
+}
+
+@container context-tabs (inline-size < 363px) {
+  .m-context-panel__tab > svg {
+    display: none;
+  }
+}
+
+@container context-tabs (inline-size < 303px) {
+  .m-context-panel__tab {
+    padding-inline: var(--space-2);
+  }
 }
 
 /* THE SELECTED TAB is Base UI's `data-active` (1.7's `TabsTabDataAttributes`) — `data-selected`, which this file
@@ -6220,6 +7170,30 @@ body {
   justify-content: flex-end;
 }
 
+/* A TIP in the start's free room (ADR-0159): one line, faded in and out, and HIDDEN WHOLE when it does not fit —
+   `StatusTip` writes `data-fits` from its own measure — since a cut sentence tells a person less than none. */
+.m-status-tip {
+  flex: 1 1 0;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity var(--motion-fade) ease;
+}
+
+.m-status-tip[data-shown='true'] {
+  opacity: 1;
+}
+
+.m-status-tip[data-fits='false'] {
+  visibility: hidden;
+}
+
+:root[data-motion='reduced'] .m-status-tip {
+  transition: none;
+}
+
 /* EVERY FLOATING SURFACE (v5): menus, the context menu, a group's More, the command palette — the float surface, its
    glass and its shadow, rounded 12; items 30 tall, rounded 6. */
 /* NEVER TALLER THAN HALF THE WINDOW, NOR THAN THE ROOM ITS SIDE OF THE TRIGGER HAS: `--available-height` is set by Base
@@ -6259,16 +7233,27 @@ body {
   font-size: var(--font-chrome-11);
 }
 
-/* THE SCROLLBARS (v5): 10 px, the thumb the gradient hairline's colour, rounded, inset by a transparent border. */
+/* THE SCROLLBARS (the owner's item 9a): a rounded thumb inset in the bar by a transparent border, in a control's colour,
+   wider and brighter under the pointer and while held. v5's 10 px bar with a 3 px inset left a 4 px thumb in the
+   gradient hairline's colour, which read as a line and was hard to grab. */
 ::-webkit-scrollbar {
   inline-size: var(--scrollbar);
   block-size: var(--scrollbar);
 }
 
 ::-webkit-scrollbar-thumb {
-  border: 3px solid transparent; /* decorative: the thumb's inset; a scrollbar is operated by the platform, not drawn as a control boundary */
+  min-block-size: var(--scrollbar-thumb-min);
+  min-inline-size: var(--scrollbar-thumb-min);
+  border: var(--scrollbar-inset) solid transparent; /* decorative: the thumb's inset; a scrollbar is operated by the platform, not drawn as a control boundary */
   border-radius: var(--scrollbar);
-  background: var(--border-grad);
+  background: var(--scroll-thumb);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  border-width: var(--scrollbar-inset-hover);
+  background: var(--scroll-thumb-hover);
   background-clip: padding-box;
 }
 
@@ -6295,7 +7280,10 @@ body {
 
 /* THE DOCUMENT'S LINE takes the free space before it in the end region, so it sits beside the zoom as the design
    draws it, and gives up its name first when the bar is narrow. The tool's words at the start ellipsise the same way. */
-.m-status-document {
+/* THE LINE AND ITS RULER under one rule, so the gap the room is read with is the gap the facts are drawn with; the ruler
+   keeps its own class so a selector for the line finds only the line. */
+.m-status-document,
+.m-status-document__ruler {
   display: flex;
   align-items: center;
   gap: var(--space-4);
@@ -6321,6 +7309,28 @@ body {
 
 .m-status-document > .m-status-name {
   flex: 1 1 0;
+}
+
+/* THE LINE'S RULER (`statusFacts.ts`): each fact whole, under the line's rule, out of the end region's flow, unseen and
+   no wider than nothing, so it never gives the bar a scroll bar. Its facts keep their own widths, which is all it is for. */
+.m-status-end {
+  position: relative;
+}
+
+.m-status-document__ruler {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 0;
+  margin: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.m-status-document__ruler > * {
+  flex: none;
+  overflow: visible;
 }
 
 /* THE HAND TOOL (§10.3's floating toolbar): a grab cursor over the page area, a grabbing one while a
@@ -6351,6 +7361,11 @@ body {
      in a grid that centres each card in its row instead — so a card of another height (a landscape page, or one not
      drawn yet) stood above or below its neighbours. */
   align-items: start;
+  /* EVERY ROW AS TALL AS ITS CARD. The strip is a scroll container of fixed height whose cards overflow it, and with
+     negative free space an `auto` row is sized by its card's MINIMUM contribution, which is the picture without the
+     card's padding and number: measured 2026-10-03 in Organize's Full page at 1280 × 800, rows of 613.4 px under cards
+     of 637, so each card ran 24 px into the gap and the page number above showed over the next card. */
+  grid-auto-rows: max-content;
   gap: var(--space-8);
   background: transparent;
   border-inline-end: none;
@@ -6421,24 +7436,63 @@ body {
   padding: var(--space-8) var(--space-16);
 }
 
+/* NO WRAPPED LINE STARTS WITH A SEPARATOR, at any width. Every item carries its dot as a `::before` one separator
+   wide, and the row starts that width before this box, which clips it: the item that begins a line (the first, or one
+   the row wrapped) has its dot in the clipped strip, and every other dot sits between two items. Each tip is a flex
+   item, so the row wraps between tips; NO `nowrap`, since a tip wider than the whole box would then be clipped rather
+   than wrapped. Measured 2026-10-05 on Chromium 151 at 1280 x 800, where the grid is about 575 px wide: with the dot
+   on the hint and the tips in one string, a line began with a dot and the last tip broke between its two words. */
 .m-page-grid__summary {
+  --summary-separator: var(--space-16);
+
+  overflow: hidden;
+  min-inline-size: 0;
+}
+
+.m-page-grid__items {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--space-8);
+  row-gap: var(--space-4);
   margin: 0;
+  margin-inline-start: calc(-1 * var(--summary-separator));
   font-size: var(--font-chrome-12);
 }
 
-.m-page-grid__summary > span + span::before,
-.m-page-grid__summary > strong + span::before {
-  content: '·';
-  padding-inline-end: var(--space-8);
+.m-page-grid__items > *::before {
+  display: inline-block;
+  inline-size: var(--summary-separator);
   color: var(--muted);
+  text-align: center;
+  /* Read as nothing: the dot is spacing, and a screen reader saying it between tips is noise. */
+  content: '·' / '';
 }
 
 .m-page-grid__hint {
   color: var(--muted);
+}
+
+/* THE CARDS' ROOM, holding the strip on show and, while a new size is drawn (`PageGrid`), the one being prepared over
+   it: laid out at the same box so it is measured and drawn at the width it will be shown at, and hidden until then. */
+.m-page-grid__pages {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-block-size: 0;
+}
+
+.m-page-grid__layer {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+.m-page-grid__layer[data-layer='pending'] {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
 }
 
 .m-thumbnails.m-thumbnails--grid {
@@ -6454,7 +7508,7 @@ body {
 /* FULL PAGE (the owner's review of 0.1.9.0): ONE page to a row at the grid's whole width, read top to bottom as the
    Home view reads, never two side by side. The gutter is kept whether or not the pages overflow, so the width
    `PageGrid` measures does not change when they first do. */
-.m-page-grid[data-page-view='full-page'] > .m-thumbnails--grid {
+.m-page-grid__layer[data-page-view='full-page'] > .m-thumbnails--grid {
   grid-template-columns: max-content;
   justify-content: center;
   scrollbar-gutter: stable;

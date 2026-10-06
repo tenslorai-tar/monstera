@@ -33,7 +33,12 @@ import {
 
 const DOC = asDocId('doc-under-save');
 const TARGET = '/docs/report.pdf';
-const NAMES = { temp: '/docs/report.pdf.tmp', backups: ['/docs/report.pdf.bak'], retired: [] as string[] };
+const NAMES = {
+  temp: '/docs/report.pdf.tmp',
+  previous: '/docs/report.pdf.previous',
+  backups: ['/docs/report.pdf.bak'],
+  retired: [] as string[],
+};
 const NEW_BYTES = new TextEncoder().encode('saved contents');
 
 /** A file the fake surface holds, so a case can assert what survived. */
@@ -110,6 +115,11 @@ function held(version: number): Held {
       },
       // The pipeline takes the backup choice as an argument; the caller reads this, so no case here does.
       removedSinceSave: false,
+      // Nor does it ask about signatures, which is the command layer's question (ADR-0149).
+      signaturesBreakAgreed: false,
+      agreeToBreakSignatures: (): never => {
+        throw new Error('saving does not agree to break signatures');
+      },
       commandLog: (_writer: CommandWriter): CommandLog => log,
       log,
       markSaved: (_writer: SaveWriter): Promise<DocVersion> => {
@@ -253,7 +263,7 @@ describe('saveDocument', () => {
     expect(outcome.kind).toBe('saved');
     if (outcome.kind === 'saved') {
       expect(outcome.bytes).toBe(NEW_BYTES.byteLength);
-      expect(outcome.backedUp).toBe(true);
+      expect(outcome.previousKeptAt).toBe('/docs/report.pdf.bak');
     }
     expect(flushes.count).toBe(1);
     expect(files.get(TARGET)).toBe('saved contents');
@@ -278,7 +288,7 @@ describe('saveDocument', () => {
     );
 
     expect(outcome.kind).toBe('saved');
-    if (outcome.kind === 'saved') expect(outcome.backedUp).toBe(false);
+    if (outcome.kind === 'saved') expect(outcome.previousKeptAt).toBeNull();
     expect(files.get(TARGET)).toBe('saved contents');
     expect(files.has('/docs/report.pdf.bak')).toBe(false);
 
@@ -475,6 +485,7 @@ describe('saveDocument', () => {
 const ELSEWHERE = '/elsewhere/report copy.pdf';
 const COPY_NAMES = {
   temp: '/elsewhere/report copy.pdf.tmp',
+  previous: '/elsewhere/report copy.pdf.previous',
   backups: ['/elsewhere/report copy.pdf.bak'],
   retired: [] as string[],
 };
@@ -587,6 +598,7 @@ describe('writeDocumentCopy', () => {
       () => Promise.resolve({ kind: 'writable' }),
       through(f.surface, NEW_BYTES),
       ELSEWHERE,
+      'keep',
     );
 
     expect(outcome).toStrictEqual({ kind: 'copied', bytes: NEW_BYTES.byteLength, destination: ELSEWHERE });
@@ -607,6 +619,7 @@ describe('writeDocumentCopy', () => {
       () => Promise.resolve({ kind: 'writable' }),
       through(f.surface, NEW_BYTES),
       ELSEWHERE,
+      'keep',
     );
 
     // A COPY THAT CLEARED THE DIRTY FLAG is invariant 18's loss with a friendly
@@ -631,6 +644,7 @@ describe('writeDocumentCopy', () => {
         return through(f.surface, NEW_BYTES)();
       },
       ELSEWHERE,
+      'keep',
     );
 
     expect(outcome).toStrictEqual({ kind: 'refused', others: [asDocId('other-tab')] });
@@ -655,6 +669,7 @@ describe('writeDocumentCopy', () => {
       () => Promise.resolve({ kind: 'writable' }),
       through(f.surface, NEW_BYTES),
       ELSEWHERE,
+      'keep',
     );
 
     expect(outcome.kind).toBe('write-failed');
@@ -672,8 +687,30 @@ describe('writeDocumentCopy', () => {
       () => Promise.resolve({ kind: 'writable' }),
       through(f.surface, NEW_BYTES),
       ELSEWHERE,
+      'keep',
     );
 
     expect(files.get(ELSEWHERE)).toBe('saved contents');
+  });
+
+  // A COPY WRITTEN WHILE A REMOVAL IS PENDING (ADR-0164): the file it replaces is the likeliest place an earlier copy of
+  // what was removed sits, so it keeps no backup of it. The pair asserts the choice reaches the write, in each direction.
+  it('keeps NO backup of the file it replaces when told none', async () => {
+    const files: Files = new Map([[ELSEWHERE, 'an earlier copy, before the redaction']]);
+    const f = fake(files);
+
+    await writeDocumentCopy(copyDeps(f.surface), () => Promise.resolve({ kind: 'writable' }), through(f.surface, NEW_BYTES), ELSEWHERE, 'none');
+
+    expect(files.get(ELSEWHERE)).toBe('saved contents');
+    expect(files.has('/elsewhere/report copy.pdf.bak')).toBe(false);
+  });
+
+  it('CONTROL: the same copy told keep leaves the backup a save would leave', async () => {
+    const files: Files = new Map([[ELSEWHERE, 'an earlier copy, before the redaction']]);
+    const f = fake(files);
+
+    await writeDocumentCopy(copyDeps(f.surface), () => Promise.resolve({ kind: 'writable' }), through(f.surface, NEW_BYTES), ELSEWHERE, 'keep');
+
+    expect(files.get('/elsewhere/report copy.pdf.bak')).toBe('an earlier copy, before the redaction');
   });
 });

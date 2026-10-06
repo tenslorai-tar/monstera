@@ -2,7 +2,7 @@ import { PDF_PERMISSIONS, type CommandOfKind, type PdfPermission } from '@monste
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, MupdfSession } from './engineSeam.js';
-import { protectSession, withDocument } from './mupdfWriter.js';
+import { protectSession, withDocument, withDocumentRemoving } from './mupdfWriter.js';
 
 /**
  * A document's protection — set, changed or removed.
@@ -76,6 +76,24 @@ export function permissionBits(granted: readonly PdfPermission[]): number {
 }
 
 /**
+ * A value a person typed, as MuPDF's option string carries it whole — the ONE spelling of that rule here, because a
+ * password is the only free text this kernel puts in an option string.
+ *
+ * The string is comma-separated `key=value` terms, so a bare password ended at its first comma: on MuPDF 1.28.0 `a,b`
+ * became `user-password=a` and a stray key `b`, and the save threw *Unused pdf arguments found*; a password whose
+ * second piece is a real option's name would save silently with the first piece alone. MuPDF's own rule, read from
+ * `source/fitz/options.c` (`fz_parse_options_csv`, 1.28.0): a value in double quotes runs to the closing quote, a
+ * quote inside it is written twice, and nothing else is special — no backslash, no other escape — so every character
+ * of the password, commas, equals signs and non-ASCII included, arrives as typed.
+ *
+ * Its JSON syntax is not used: `unescape_json` turns `\n` into a bare `n`, so a password a JSON encoder escaped would
+ * not arrive as typed.
+ */
+export function optionText(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+/**
  * The MuPDF save options for a protection command.
  *
  * Exported for its own case, and the case is the interesting one: the option
@@ -91,8 +109,8 @@ export function permissionBits(granted: readonly PdfPermission[]): number {
 export function protectionOptions(command: CommandOfKind<'setDocumentProtection'>): string {
   if (command.encryption === 'none') return 'encrypt=none';
   const terms = [`encrypt=${command.encryption}`];
-  if (command.userPassword !== undefined) terms.push(`user-password=${command.userPassword}`);
-  if (command.ownerPassword !== undefined) terms.push(`owner-password=${command.ownerPassword}`);
+  if (command.userPassword !== undefined) terms.push(`user-password=${optionText(command.userPassword)}`);
+  if (command.ownerPassword !== undefined) terms.push(`owner-password=${optionText(command.ownerPassword)}`);
   if (command.permissions !== undefined) {
     terms.push(`permissions=${String(permissionBits(command.permissions))}`);
   }
@@ -107,10 +125,12 @@ export function protectionOptions(command: CommandOfKind<'setDocumentProtection'
  * in-session encryption to set. The session's token is the key, so a forged one
  * is refused by `protectSession` before anything is recorded.
  */
-export const applySetDocumentProtection: Apply<'mupdf', 'setDocumentProtection'> = (
-  session,
-  command,
-) => protectSession(session, protectionOptions(command));
+export const applySetDocumentProtection: Apply<'mupdf', 'setDocumentProtection'> = async (session, command) => {
+  await protectSession(session, protectionOptions(command));
+  // ON THE REMOVAL AXIS LIKE ITS DECLARATION (CR-DOC-05): the session is marked as every removal's is, so its save
+  // collects (ADR-0045) and the axis keeps one meaning. What it removes is the readable form.
+  await withDocumentRemoving(session, () => undefined);
+};
 
 /**
  * Reports that a protection change's prior state is not recorded.

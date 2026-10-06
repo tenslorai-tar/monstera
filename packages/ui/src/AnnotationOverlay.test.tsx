@@ -1,17 +1,20 @@
 // @vitest-environment happy-dom
 import type { DispatchableCommand } from '@monstera/contract';
+import { asDocVersion, messageKey } from '@monstera/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { PLAIN_STYLE } from './annotations/annotationStyle.js';
+import { selectTool } from './annotations/selectTool.js';
 import { rectangleTool as buildRectangle } from './annotations/shapeTools.js';
 
 /** The two tools these cases drive, built with the style that chooses nothing. */
 const rectangleTool = buildRectangle(PLAIN_STYLE);
 const polygonTool = buildPolygon(PLAIN_STYLE);
-import { polygonTool as buildPolygon } from './annotations/vertexTools.js';
+const polylineTool = buildPolyline(PLAIN_STYLE);
+import { polygonTool as buildPolygon, polylineTool as buildPolyline } from './annotations/vertexTools.js';
 import type { UiTool } from './registries/tools.js';
 import { pointerPath } from './registries/tools.js';
 
@@ -105,39 +108,30 @@ function inFlightPreview(surface: Element): Element | null {
  * event — which shows up as *nothing was dispatched* and is really *nothing has
  * rendered yet*.
  */
-function pointer(
-  surface: Element,
-  type: string,
-  x: number,
-  y: number,
-  button = 0,
-  detail = 1,
-): void {
+function pointer(surface: Element, type: string, x: number, y: number, button = 0): void {
   fireEvent(
     surface,
-    new window.PointerEvent(type, {
-      bubbles: true,
-      clientX: x,
-      clientY: y,
-      button,
-      // THE CLICK COUNT, which is how the overlay learns a press was a double
-      // one. Defaulted to 1 so every existing case describes a single click
-      // without saying so — `PointerEvent`'s own default is 0, which would make
-      // the overlay's `detail >= 2` unreachable for a reason no case states.
-      detail,
-      pointerId: 1,
-    }),
+    // NO CLICK COUNT, as the platform sends none: measured on Chromium 151.0.7922.34, 2026-10-03, a double-click's
+    // `pointerdown`s both carry `detail` 0. This helper used to write 2 there, which proved the overlay read a number
+    // no real press carries, while the tools it was finishing could not be finished (F-C5).
+    new window.PointerEvent(type, { bubbles: true, clientX: x, clientY: y, button, pointerId: 1 }),
   );
 }
 
-/** One press: down then up at the same point, settled. */
+/**
+ * One press: down then up at the same point, settled. A DOUBLE is what the platform sends for one: two presses, then
+ * `dblclick` carrying the count.
+ */
 async function click(
   surface: Element,
   at: readonly [number, number],
   { double = false }: { double?: boolean } = {},
 ): Promise<void> {
-  pointer(surface, 'pointerdown', at[0], at[1], 0, double ? 2 : 1);
-  pointer(surface, 'pointerup', at[0], at[1]);
+  for (let press = 0; press < (double ? 2 : 1); press += 1) {
+    pointer(surface, 'pointerdown', at[0], at[1]);
+    pointer(surface, 'pointerup', at[0], at[1]);
+  }
+  if (double) fireEvent.dblClick(surface, { clientX: at[0], clientY: at[1], detail: 2 });
   await act(async () => {
     await Promise.resolve();
   });
@@ -222,6 +216,29 @@ describe('AnnotationOverlay', () => {
     expect(sent).toStrictEqual([]);
   });
 
+  it('the Escape that abandons a drag is SPENT there, so the document’s listener does not also leave Focus (CR-COR-11)', () => {
+    // THE APPLICATION'S SHORTCUTS LISTEN ON THE DOCUMENT, and in Focus mode Escape is `view.leave-focus`: one press would
+    // drop the shape and bring the ribbon back.
+    const heard: string[] = [];
+    const listen = (event: KeyboardEvent): void => {
+      heard.push(event.key);
+    };
+    document.addEventListener('keydown', listen);
+    try {
+      const { surface } = mounted();
+      pointer(surface, 'pointerdown', 20, 20);
+      pointer(surface, 'pointermove', 120, 80);
+      fireEvent.keyDown(surface, { key: 'Escape' });
+      expect(heard).toStrictEqual([]);
+      pointer(surface, 'pointerup', 120, 80);
+      // CONTROL: with nothing being drawn the overlay uses no key, and the same Escape reaches the document.
+      fireEvent.keyDown(surface, { key: 'Escape' });
+      expect(heard).toStrictEqual(['Escape']);
+    } finally {
+      document.removeEventListener('keydown', listen);
+    }
+  });
+
   it('abandons the drag when the pointer is cancelled', () => {
     const { surface, sent } = mounted();
     pointer(surface, 'pointerdown', 20, 20);
@@ -266,6 +283,57 @@ describe('AnnotationOverlay', () => {
     expect(surface.querySelector('[data-annotation-held]')).toBeNull();
   });
 
+  it('a MOVE of the selection is drawn where the mark goes, while dragged and once let go (ADR-0166, item 14d)', async () => {
+    // A selected mark at screen (20,20)–(100,100), dragged from inside it 20 px right. The in-flight shape and the
+    // shape held after the release are both the mark's box moved, (40,20)–(120,100): before ADR-0166 both were the
+    // box from the press to the pointer, (40,40)–(60,40), which is the ghost and then the jump the owner saw.
+    const rect = { x0: 60, y0: 350, x1: 100, y1: 390 };
+    const select = selectTool({
+      write: () => Promise.reject(new Error('this case types nothing')),
+      wordsOf: () => Promise.reject(new Error('this case reads no words')),
+      ask: () => Promise.reject(new Error('this case opens no dialog')),
+      annotations: () => Promise.resolve(undefined),
+      onSelect: () => undefined,
+      selected: () => ({
+        page: 3,
+        version: asDocVersion(7),
+        items: [
+          {
+            index: 1,
+            rect,
+            style: { colour: [1, 0, 0], opacity: 1, borderWidth: 2 },
+            kind: 'square',
+            contents: '',
+            author: '',
+            created: null,
+            blend: 'normal',
+          },
+        ],
+      }),
+    });
+    const { surface, sent } = mounted(select);
+    const boxOf = (element: Element | null | undefined): string[] =>
+      ['x', 'y', 'width', 'height'].map((name) => element?.querySelector('rect')?.getAttribute(name) ?? '');
+
+    pointer(surface, 'pointerdown', 40, 40);
+    pointer(surface, 'pointermove', 60, 40);
+    const flying = inFlightPreview(surface);
+    expect(flying?.getAttribute('data-annotation-preview')).toBe('boxes');
+    expect(boxOf(flying)).toStrictEqual(['40', '20', '80', '80']);
+
+    pointer(surface, 'pointerup', 60, 40);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent).toMatchObject([{ kind: 'placeAnnotation', placements: [{ index: 1, rect: { x0: 70, x1: 110 } }] }]);
+    expect(boxOf(surface.querySelector('[data-annotation-held] [data-annotation-preview]'))).toStrictEqual([
+      '40',
+      '20',
+      '80',
+      '80',
+    ]);
+  });
+
   it('CONTROL: the same drawing re-rendered does not drop it, so the drop is the redraw and not any render', async () => {
     const { surface, redraw } = mounted();
     await drag(surface, [20, 20], [120, 80]);
@@ -295,6 +363,7 @@ describe('AnnotationOverlay', () => {
     // comes back.
     const other: UiTool = {
       id: 'annotate.other',
+      hint: messageKey('test.hint.other'),
       controller: {
         ...pointerPath,
         commit: (_gesture, page) => Promise.resolve({ kind: 'duplicatePage', pages: [page] }),
@@ -347,7 +416,101 @@ describe('AnnotationOverlay', () => {
     expect(inFlightPreview(surface)).toBeNull();
   });
 
-  it('abandons a half-drawn multi-press gesture on Escape', async () => {
+  it('a double-click on a shape with TOO FEW corners keeps the drawing, and the shape goes on (F-C5)', async () => {
+    // A POLYGON NEEDS THREE. Two corners and a double-click used to finish it and commit nothing, which threw away
+    // what the person drew.
+    const { surface, sent } = mounted(polygonTool);
+    await click(surface, [20, 20]);
+    await click(surface, [120, 20], { double: true });
+
+    expect(sent).toStrictEqual([]);
+    expect(surface.querySelector('[data-annotation-preview="path"]')).not.toBeNull();
+
+    // AND THE DOUBLE-CLICK IS NOT CARRIED FORWARD: the next single press adds a corner and finishes nothing.
+    await click(surface, [120, 80]);
+    expect(sent).toStrictEqual([]);
+    await click(surface, [20, 80], { double: true });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'polygon' } });
+  });
+
+  it('ESCAPE FINISHES AND KEEPS a shape there is enough of (the owner’s item 14b)', async () => {
+    // THREE CORNERS, enough for a polygon: Escape used to drop them all, and the owner asked that it keep the shape.
+    const { surface, sent } = mounted(polygonTool);
+    await click(surface, [20, 20]);
+    await click(surface, [120, 20]);
+    await click(surface, [120, 80]);
+    fireEvent.keyDown(surface, { key: 'Escape' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'polygon' } });
+    expect(inFlightPreview(surface)).toBeNull();
+  });
+
+  it('ENTER FINISHES a shape there is enough of, and keeps drawing one there is not', async () => {
+    const { surface, sent } = mounted(polygonTool);
+    await click(surface, [20, 20]);
+    await click(surface, [120, 20]);
+    // TWO CORNERS: not yet a polygon, so Enter keeps the drawing, as a double-click does.
+    fireEvent.keyDown(surface, { key: 'Enter' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent).toStrictEqual([]);
+    expect(surface.querySelector('[data-annotation-preview="path"]')).not.toBeNull();
+    await click(surface, [120, 80]);
+    fireEvent.keyDown(surface, { key: 'Enter' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'polygon' } });
+  });
+
+  it('ENTER FINISHES CONNECTED LINES, which drew for ever in the owner’s recording', async () => {
+    // AN OPEN SHAPE has no first corner to come back to, so a key and a double-click are the only finishes it has.
+    const { surface, sent } = mounted(polylineTool);
+    await click(surface, [20, 20]);
+    await click(surface, [120, 40]);
+    await click(surface, [60, 90]);
+    fireEvent.keyDown(surface, { key: 'Enter' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'polyline' } });
+    expect((sent[0] as { annotation: { points: unknown[] } }).annotation.points).toHaveLength(3);
+  });
+
+  it('A DOUBLE-CLICK ON THE FIRST CORNER closes the shape and starts no other (the owner’s item 14b)', async () => {
+    // THE OWNER'S RECORDING: the area closed on its first point, and the double-click's second press began a new
+    // shape. The first press closes this one; the second press and the `dblclick` after it must leave nothing live.
+    const { surface, sent } = mounted(polygonTool);
+    await click(surface, [20, 20]);
+    await click(surface, [120, 20]);
+    await click(surface, [120, 80]);
+    await click(surface, [20, 20], { double: true });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'polygon' } });
+    // NO LIVE SHAPE: the committed one is held until the page redraws, which is not a gesture.
+    expect(inFlightPreview(surface)).toBeNull();
+    // AND THE NEXT SHAPE is a fresh one: three corners and Escape send a polygon of exactly those three. A corner the
+    // double-click left behind would be a fourth, so the count is what only the correct path produces.
+    await click(surface, [200, 200]);
+    await click(surface, [300, 200]);
+    await click(surface, [300, 300]);
+    fireEvent.keyDown(surface, { key: 'Escape' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent).toHaveLength(2);
+    const second = sent[1];
+    expect(second?.kind === 'addAnnotation' && second.annotation.type === 'polygon' ? second.annotation.points : []).toHaveLength(3);
+  });
+
+  it('abandons a half-drawn multi-press gesture on Escape when it is too few corners to keep', async () => {
     // CANCELLING IS STILL THE ABSENCE OF A MEMBER (ADR-0042 Decision 4), and a
     // half-drawn polygon is what makes that worth asserting rather than
     // assuming: it is the first gesture a person can be left holding, and the

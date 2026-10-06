@@ -1,6 +1,7 @@
 import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
 import { type PageTransform, toPdf, viewportPoint } from '@monstera/shared';
 
+import { HINT_SIGNATURE } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { pointerPath, startOf } from '../registries/tools.js';
 
@@ -61,5 +62,5 @@ function clickPlacement(onPlace: SignatureToolDeps['onPlacePlainSignature']): To
 
 export function signatureTool(deps: SignatureToolDeps): UiTool {
   // THE ARROW: a signature is placed at a point by a click, as the sticky note is.
-  return { id: SIGNATURE_TOOL_ID, controller: clickPlacement(deps.onPlacePlainSignature), cursor: 'arrow' };
+  return { id: SIGNATURE_TOOL_ID, controller: clickPlacement(deps.onPlacePlainSignature), cursor: 'arrow', hint: HINT_SIGNATURE };
 }

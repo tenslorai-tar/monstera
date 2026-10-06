@@ -2,7 +2,14 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 
-import type { CloudFile, CloudPickerProviderId, CloudProviderId, CloudRefusal, CloudState } from '@monstera/contract';
+import {
+  CLOUD_PROVIDER_IDS,
+  type CloudFile,
+  type CloudPickerProviderId,
+  type CloudProviderId,
+  type CloudRefusal,
+  type CloudState,
+} from '@monstera/contract';
 import {
   CLOUD_PROVIDERS,
   type CloudClient,
@@ -21,9 +28,11 @@ import {
   replaceCloudPdf,
 } from '@monstera/kernel';
 import type { DocId } from '@monstera/shared';
+import { z } from 'zod';
 
 import { type OpenInBrowser, SignInRefused, signInThroughLoopback } from './docusignSignIn.js';
 import type { SecretStoreSurface } from './secretStore.js';
+import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 
 /**
@@ -70,12 +79,22 @@ const EXPIRY_MARGIN_MS = 60_000;
 const REFUSED_IN_NAMES = '<>:"/\\|?*';
 
 /** A cloud file this session opened, the version it was at, and whether the person may change it there. */
-interface CloudOrigin {
-  readonly provider: CloudProviderId;
-  readonly fileId: string;
-  readonly version: string;
+const cloudOriginSchema = z.strictObject({
+  provider: z.enum(CLOUD_PROVIDER_IDS),
+  fileId: z.string().min(1),
+  version: z.string(),
   /** As the provider said when it was opened; `null` where it did not say. */
-  readonly canEdit: boolean | null;
+  canEdit: z.boolean().nullable(),
+});
+type CloudOrigin = z.infer<typeof cloudOriginSchema>;
+
+/** Where the working copies' origins are kept, in the working directory beside the copies they describe. */
+export const CLOUD_ORIGINS_FILE = 'origins.json';
+
+/** A document's link: its cloud file, and the working copy it was opened from, or `null` for a local file uploaded. */
+interface Linked {
+  readonly origin: CloudOrigin;
+  readonly path: string | null;
 }
 
 function refusalOfKernel(error: CloudStorageRefused): CloudRefusal {
@@ -202,6 +221,8 @@ export function unconfiguredCloud(): CloudStorage {
     clients: { onedrive: null, 'google-drive': null },
     openInBrowser: () => Promise.reject(new Error('an unconfigured cloud opens no browser')),
     workingDirectory: '',
+    // NO COPY, SO NO ORIGIN: nothing downloads here, so the record stays empty and every open links nothing.
+    origins: { read: () => ({}), write: () => undefined },
     writeWorkingCopy: () => Promise.reject(new Error('an unconfigured cloud writes no working copy')),
     maxBytes: 0,
     // NOWHERE TO WRITE, and nothing to say: every call here is refused `not-configured` before any provider is asked,
@@ -218,6 +239,12 @@ export function createCloudStorage(deps: {
   readonly openInBrowser: OpenInBrowser;
   /** This application's own directory for working copies. */
   readonly workingDirectory: string;
+  /**
+   * Each working copy's cloud origin, by path, kept for as long as the copy is (CR-DOC-02): a copy reopened from
+   * Recent, the last session or the picker, in this run or a later one, is the same cloud file, so its Save back goes
+   * there. Written only here.
+   */
+  readonly origins: SettingsSurface;
   readonly writeWorkingCopy: WriteWorkingCopy;
   /** The document ceiling a download is bounded by. */
   readonly maxBytes: number;
@@ -227,10 +254,23 @@ export function createCloudStorage(deps: {
 }): CloudStorage {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
-  /** Working copies downloaded this session, by path, until opened. */
-  const downloaded = new Map<string, CloudOrigin>();
-  /** Opened working copies, by document. */
-  const linked = new Map<DocId, CloudOrigin>();
+  /**
+   * Every working copy's origin, by path, read from where it was kept. ONE record per copy, which the document's link
+   * names rather than copies: a Save back moves the version here, so the copy reopened later saves back at the version
+   * the cloud file now has rather than the one it was downloaded at, which would be refused as changed elsewhere.
+   */
+  const origins = new Map<string, CloudOrigin>();
+  for (const [path, value] of Object.entries(deps.origins.read())) {
+    // A RECORD THAT DOES NOT PARSE IS DROPPED, never guessed at: the copy then opens as a local file, which is what it
+    // is without one, and the next download of that file writes a whole record again.
+    const parsed = cloudOriginSchema.safeParse(value);
+    if (parsed.success) origins.set(path, parsed.data);
+  }
+  const keepOrigins = (): void => {
+    deps.origins.write(Object.fromEntries(origins));
+  };
+  /** Opened documents' links, by document. */
+  const linked = new Map<DocId, Linked>();
 
   /**
    * Runs one cloud request, turning every refusal into the contract's name and writing every failure to the log — ONE
@@ -306,7 +346,8 @@ export function createCloudStorage(deps: {
     // this file open, and a fresh download would replace a document under them.
     if (written === 'contested') throw new CloudOutcomeRefused('changed-elsewhere');
     if (written === 'write-failed') throw new CloudOutcomeRefused('rejected');
-    downloaded.set(path, { provider, fileId, version, canEdit });
+    origins.set(path, { provider, fileId, version, canEdit });
+    keepOrigins();
     return path;
   }
 
@@ -361,21 +402,28 @@ export function createCloudStorage(deps: {
         return downloadInto(provider, picked, tokens.accessToken);
       }),
     link: (docId, path) => {
-      const origin = downloaded.get(path);
-      if (origin !== undefined) linked.set(docId, origin);
+      const origin = origins.get(path);
+      if (origin !== undefined) linked.set(docId, { origin, path });
     },
-    originOf: (docId) => linked.get(docId)?.provider ?? null,
-    canEdit: (docId) => linked.get(docId)?.canEdit,
+    originOf: (docId) => linked.get(docId)?.origin.provider ?? null,
+    canEdit: (docId) => linked.get(docId)?.origin.canEdit,
     saveBack: (docId, pdf) =>
-      named('save back', linked.get(docId)?.provider ?? null, async () => {
-        const origin = linked.get(docId);
-        if (origin === undefined) throw new Error('saveBack was asked for a document with no cloud origin');
+      named('save back', linked.get(docId)?.origin.provider ?? null, async () => {
+        const held = linked.get(docId);
+        if (held === undefined) throw new Error('saveBack was asked for a document with no cloud origin');
+        const { origin, path } = held;
         // THE PROVIDER ALREADY SAID NO, when the file was opened: nothing is sent, so a view-only file is never asked to
         // take an upload it will refuse. Unknown (`null`) is not no — the upload goes, and a refusal is named `forbidden`.
         if (origin.canEdit === false) throw new CloudOutcomeRefused('read-only');
         const access = await token(origin.provider);
         const version = await replaceCloudPdf(origin.provider, access, origin.fileId, origin.version, pdf, fetchImpl);
-        linked.set(docId, { ...origin, version });
+        const moved = { ...origin, version };
+        linked.set(docId, { origin: moved, path });
+        // THE COPY'S RECORD MOVES WITH IT, so the copy reopened saves back at the version it now matches.
+        if (path !== null) {
+          origins.set(path, moved);
+          keepOrigins();
+        }
       }),
     uploadCopy: (docId, provider, name, pdf) =>
       named('upload a copy', provider, async () => {
@@ -384,7 +432,7 @@ export function createCloudStorage(deps: {
         const { version, canEdit } = await describeCloudFile(provider, access, fileId, fetchImpl);
         // LINKED to the new file, so Save back goes there next; the local file stays where it was. Its edit access is
         // the provider's answer for the new file too, rather than assumed from having just made it.
-        linked.set(docId, { provider, fileId, version, canEdit });
+        linked.set(docId, { origin: { provider, fileId, version, canEdit }, path: null });
       }),
     forget: (docId) => {
       linked.delete(docId);

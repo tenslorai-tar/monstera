@@ -106,9 +106,9 @@ if (process.platform !== 'win32') {
   process.stdout.write('NOT RUN: the MuPDF shim is not built. Run `npm run provision:mupdf`.\n');
 } else {
   refuseStaleBuild(ROOT, WORD_PICTURES, 4);
-  /** @type {any} */
+  // TYPED BY THE BUILT DECLARATIONS, for `wordPictures.proof.mjs`' reason: a parameter the composer gains fails the
+  // typecheck rather than reaching the built module as `undefined`.
   const { composeWordDocument } = await import('../../packages/kernel/dist/wordPictures.js');
-  /** @type {any} */
   const { mupdfWriter } = await import('../../packages/kernel/dist/mupdfWriter.js');
   /** @type {any} */
   const mupdf = await import('../../packages/kernel/dist/mupdfRaw.js');
@@ -118,7 +118,8 @@ if (process.platform !== 'win32') {
   try {
     for (const mode of MODES) {
       const parts = [];
-      for await (const part of composeWordDocument(session, mode).chunks) parts.push(part);
+      // THE FIXTURE'S ONE PAGE, which is every page it has.
+      for await (const part of composeWordDocument(session, mode, [0]).chunks) parts.push(part);
       writeFileSync(join(scratch, `${mode}.docx`), Buffer.concat(parts));
     }
 

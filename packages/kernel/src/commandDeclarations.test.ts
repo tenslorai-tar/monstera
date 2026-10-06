@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import type {
-  CommandKind,
-  NamesAFormField,
-  NamesAPage,
-  NamesATextObject,
-  NamesAnAnnotation,
-  NamesASecondDocument,
+import {
+  type CommandKind,
+  type NamesAFormField,
+  type NamesAPage,
+  type NamesATextObject,
+  type NamesAnAnnotation,
+  type NamesASecondDocument,
+  commandSchema,
+  credentialFields,
 } from '@monstera/contract';
 
 import { type DeclaredCommands, declaredCommands } from './commandDeclarations.js';
@@ -43,7 +45,8 @@ import { writerShapes } from './engineSeam.js';
  * every kind.
  */
 type DeclaredSources = {
-  [K in CommandKind]: DeclaredCommands[K]['sources'] extends 'one' ? K : never;
+  // ANY VALUE BUT `'none'` names another document: `'one'`, and `'several'` since ADR-0152.
+  [K in CommandKind]: DeclaredCommands[K]['sources'] extends 'one' | 'several' ? K : never;
 }[CommandKind];
 
 /**
@@ -207,7 +210,10 @@ describe('the declaration table', () => {
       // Neither grows with the document, so both belong here. `deletePageObjects`
       // is deliberately absent: PDFium cannot rebuild a removed object, so it is
       // declared terminal and appears in the control below instead.
-    ).toStrictEqual(['replaceTextObject', 'placePageObject', 'recolorPageObjects']);
+      //
+      // - `replaceTextAt`'s (2026-10-04, ADR-0156) is `replaceTextObject`'s shape with ONE object: a page, an index and
+      //   the string it held, capped by `PDFIUM_PRIOR_TEXT_MAX` on the wire. Bounded by the contract.
+    ).toStrictEqual(['replaceTextObject', 'placePageObject', 'recolorPageObjects', 'replaceTextAt']);
   });
 
   it('CONTROL: some byte-image command is TERMINAL, so the case above is a property and not a description', () => {
@@ -231,8 +237,9 @@ describe('the declaration table', () => {
     // indistinguishable from a table carrying no cross-document command at all.
     // The compiler cannot tell those apart. This can: it reads the runtime
     // table and requires a member that is known to be there.
-    const declared = KINDS.filter((kind) => declaredCommands[kind].sources === 'one');
+    const declared = KINDS.filter((kind) => declaredCommands[kind].sources !== 'none');
     expect(declared).toContain('mergeDocument');
+    expect(declared).toContain('replacePage');
   });
 
   it('CONTROL: exactly fifteen kinds declare a target, and the rest answer none', () => {
@@ -280,6 +287,59 @@ describe('the declaration table', () => {
     expect(new Set(named.map((kind) => declaredCommands[kind].targets))).toStrictEqual(
       new Set(['page', 'annotation', 'field', 'text-object']),
     );
+  });
+});
+
+/**
+ * Every credential field of every command, keyed by the command's kind.
+ *
+ * Through the contract's one walk, which matches by NAME: a credential named as something else is out of its reach,
+ * and that is stated here so the case is not read as wider than it is.
+ */
+function credentialsByKind(): ReadonlyMap<CommandKind, readonly string[]> {
+  const found = new Map<CommandKind, readonly string[]>();
+  for (const option of commandSchema.options) {
+    const kind = option.shape.kind.value;
+    const fields = credentialFields(option, kind);
+    if (fields.length > 0) found.set(kind, fields);
+  }
+  return found;
+}
+
+/**
+ * The replay modes that keep no credential in the log: the intent held beside the entry (ADR-0171 Decision 3), or the
+ * result alone with the command's kind (ADR-0162).
+ */
+const KEEPS_NO_CREDENTIAL: ReadonlySet<string> = new Set(['reapply-held-intent', 'stored-result']);
+
+/** The kinds whose credential would be recorded in the log, by the replay they declare. */
+function recordingACredential(
+  credentials: ReadonlyMap<CommandKind, readonly string[]>,
+  replayOf: (kind: CommandKind) => string,
+): CommandKind[] {
+  return [...credentials.keys()].filter((kind) => !KEEPS_NO_CREDENTIAL.has(replayOf(kind)));
+}
+
+describe('a credential in a command never reaches the undo log', () => {
+  it('POSITIVE CONTROL: the walk finds the three credential fields known to exist', () => {
+    // EVERY RUN, inside the case that depends on it: a walk that could not see into a schema reports nothing, which
+    // is the answer the case below hopes for.
+    const found = credentialsByKind();
+    expect(found.get('setDocumentProtection')).toStrictEqual([
+      'setDocumentProtection.userPassword',
+      'setDocumentProtection.ownerPassword',
+    ]);
+    expect(found.get('signDocument')).toStrictEqual(['signDocument.passphrase']);
+  });
+
+  it('every command carrying one declares a replay that keeps it out of the log', () => {
+    expect(recordingACredential(credentialsByKind(), (kind) => declaredCommands[kind].replay)).toStrictEqual([]);
+  });
+
+  it('CONTROL: the same rule reports the protect declared reapply-intent, which keeps its command whole', () => {
+    const replayOf = (kind: CommandKind): string =>
+      kind === 'setDocumentProtection' ? 'reapply-intent' : declaredCommands[kind].replay;
+    expect(recordingACredential(credentialsByKind(), replayOf)).toStrictEqual(['setDocumentProtection']);
   });
 });
 

@@ -1,4 +1,4 @@
-import type { FileIdentity } from '@monstera/kernel';
+import { type FileIdentity, RENAME_BACKOFF_MS, isTransient } from '@monstera/kernel';
 
 import type { SettingsSurface } from './settingsFile.js';
 
@@ -26,35 +26,87 @@ export const MAX_LEDGER_ENTRIES = 4096;
  * A file with a backup's name that a person, a sync client or another editor made has another index. One that was
  * edited since has another size or time. A volume that reports no file index gives no identity at all. All three are
  * kept, which is the direction the rule asks for.
+ *
+ * ## A copy Monstera made and could not delete is OWED, and the debt is kept
+ *
+ * A delete can fail where the save did not: another program — a viewer, a sync client, a scanner — may hold the copy
+ * open. Thrown, that failure reached the person as a save that went wrong, when the save had written, and the copy was
+ * tried again only at the next removal's save, which may never come (CR-DOC-10). So the delete climbs the kernel's
+ * ladder for a held file, and a copy still held after it is **owed**: recorded with its path and identity, in this same
+ * `userData` document, so the debt outlives the session. A retry deletes it only while its identity is still the one
+ * owed, so a debt never licenses deleting a file somebody changed since.
  */
 export interface BackupProvenance {
   /** Records the backup a save made at `path`. A path with no usable identity records nothing. */
   made(path: string): Promise<void>;
   /**
    * Deletes `path` permanently when Monstera made it and it is unchanged since: `deleted`; `not-made` when a file is
-   * there that Monstera did not make, or changed; `absent` when nothing is there.
+   * there that Monstera did not make, or changed; `absent` when nothing is there; `held` when Monstera made it and the
+   * delete failed after the held-file ladder — the copy is then owed a deletion ({@link BackupProvenance.owed}).
    */
-  deleteIfMade(path: string): Promise<'deleted' | 'not-made' | 'absent'>;
+  deleteIfMade(path: string): Promise<'deleted' | 'not-made' | 'absent' | 'held'>;
+  /** Every path owed a deletion, oldest first. */
+  owed(): readonly string[];
+  /**
+   * Tries again to delete each of `paths` that is owed; answers those still held. A debt whose file is gone, or is no
+   * longer the file owed, is dropped — the second kept rather than deleted, as the rule asks.
+   */
+  retryOwed(paths: readonly string[]): Promise<readonly string[]>;
+}
+
+/** One copy owed a deletion: where it is, and the identity that licenses deleting it. */
+interface Owed {
+  readonly path: string;
+  readonly key: string;
 }
 
 /**
  * The provenance over a JSON document in `userData`.
  *
  * @param deps `identity` is the kernel's `readFileIdentity`, injected so a case can describe a volume; `remove`
- *   deletes a file permanently, never to the recycle bin, which would keep what was removed.
+ *   deletes a file permanently, never to the recycle bin, which would keep what was removed; `wait` takes the ladder's
+ *   delays, injected so a case does not spend them.
  */
 export function createBackupProvenance(
   file: SettingsSurface,
   deps: {
     readonly identity: (path: string) => Promise<FileIdentity | null>;
     readonly remove: (path: string) => Promise<void>;
+    readonly wait: (ms: number) => Promise<void>;
   },
 ): BackupProvenance {
-  const stored = file.read()['made'];
-  const made: string[] = Array.isArray(stored) ? stored.filter((entry): entry is string => typeof entry === 'string') : [];
+  const stored = file.read();
+  const made: string[] = Array.isArray(stored['made'])
+    ? stored['made'].filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  const owed: Owed[] = Array.isArray(stored['owed'])
+    ? stored['owed'].filter(
+        (entry): entry is Owed =>
+          typeof entry === 'object' &&
+          entry !== null &&
+          typeof (entry as Record<string, unknown>)['path'] === 'string' &&
+          typeof (entry as Record<string, unknown>)['key'] === 'string',
+      )
+    : [];
 
   const persist = (): void => {
-    file.write({ made: [...made] });
+    file.write({ made: [...made], owed: owed.map((entry) => ({ ...entry })) });
+  };
+
+  /** The delete, climbing the kernel's held-file ladder: `true` once it went, `false` while it is still held. */
+  const removed = async (path: string): Promise<boolean> => {
+    for (const delay of RENAME_BACKOFF_MS) {
+      if (delay > 0) await deps.wait(delay);
+      try {
+        await deps.remove(path);
+        return true;
+      } catch (cause) {
+        // ONLY A HOLDING ERROR IS WAITED ON, as for a held rename; a read-only volume or a denied permission is the
+        // same answer on every attempt, so it is held at once rather than slowly.
+        if (!isTransient(cause)) return false;
+      }
+    }
+    return false;
   };
 
   return {
@@ -71,11 +123,41 @@ export function createBackupProvenance(
       if (identity === null) return 'absent';
       const key = keyOf(identity);
       const at = key === null ? -1 : made.indexOf(key);
-      if (at < 0) return 'not-made';
-      await deps.remove(path);
-      made.splice(at, 1);
+      if (at < 0 || key === null) return 'not-made';
+      if (await removed(path)) {
+        made.splice(at, 1);
+        persist();
+        return 'deleted';
+      }
+      // OWED: still Monstera's and still held. It stays in `made` too, so a later removal's save finds it as well.
+      if (!owed.some((entry) => entry.path === path)) owed.push({ path, key });
       persist();
-      return 'deleted';
+      return 'held';
+    },
+    owed: () => owed.map((entry) => entry.path),
+    retryOwed: async (paths) => {
+      const still: string[] = [];
+      for (const path of paths) {
+        const debt = owed.findIndex((entry) => entry.path === path);
+        if (debt < 0) continue;
+        const key = keyOf(await deps.identity(path));
+        const owedKey = owed[debt]?.key;
+        // GONE, OR NOT THE FILE OWED: the debt is dropped and nothing is deleted.
+        if (key === null || key !== owedKey) {
+          owed.splice(debt, 1);
+          persist();
+          continue;
+        }
+        if (await removed(path)) {
+          owed.splice(debt, 1);
+          const at = made.indexOf(key);
+          if (at >= 0) made.splice(at, 1);
+          persist();
+        } else {
+          still.push(path);
+        }
+      }
+      return still;
     },
   };
 }

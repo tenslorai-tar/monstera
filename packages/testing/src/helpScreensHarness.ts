@@ -8,6 +8,7 @@ import { type Locator, type Page, expect } from '@playwright/test';
 
 import type { createBrowserShim } from './browserShim.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { pageShown, settled } from './settled.js';
 
 /**
  * What every Help centre screenshot scene shares (the Help centre row's *screenshots owed*; ADR-0112).
@@ -59,30 +60,52 @@ export async function samplePdf(): Promise<Uint8Array> {
   return document.save();
 }
 
+/** The id the shim gives the sample document, for an option keyed by document such as `saveRefusals`. */
+export const SAMPLE_DOC_ID = '00000000-0000-4000-8000-0000000000a1';
+
 /**
  * Loads the application in the light look at the set's size, with the sample document ready to open.
  *
  * @param shim anything a scene needs the shim to hold — merged over the document it opens
+ * @param observe `bridge`'s observer, passed through: what the page asked main
  */
-export async function openApp(page: Page, shim: SceneShim = {}): Promise<void> {
+export async function openApp(
+  page: Page,
+  shim: SceneShim = {},
+  observe?: (channel: string, params: unknown) => void,
+): Promise<void> {
   await page.setViewportSize({ width: 1280, height: 800 });
   const bytes = await samplePdf();
-  const docId = asDocId('00000000-0000-4000-8000-0000000000a1');
-  await bridgeUnder(page, LIGHT, {
-    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Annual report.pdf' }],
-    documentBytes: new Map([[docId, bytes]]),
-    // THE APPLICATION'S OWN VERSION, never the shim's marker: a picture in the Help centre is of the product.
-    version: APP_VERSION,
-    ...shim,
-  });
+  const docId = asDocId(SAMPLE_DOC_ID);
+  await bridgeUnder(
+    page,
+    LIGHT,
+    {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Annual report.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      // THE APPLICATION'S OWN VERSION, never the shim's marker: a picture in the Help centre is of the product.
+      version: APP_VERSION,
+      ...shim,
+    },
+    observe,
+  );
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 }
 
-/** Opens the sample document from the start screen and waits for its pages to draw. */
+/**
+ * Opens the sample document from the start screen and waits until its page pane is SHOWN, laid out at its zoom.
+ *
+ * Two drawn canvases are not that: the thumbnails draw too, and with the pane still `data-first-frame="pending"` its
+ * pages can be at the width they had before the zoom was fitted. Measured 2026-10-04 on Chromium 151, 40 runs of
+ * `areaMenus.pw.ts` on eight workers: 13 of 40 returned from the canvas wait with the pane pending, 2 of them before
+ * fit width (a 300 px page at x 495 where the fitted one is 612 at 367), and a right-click there scrolled against the
+ * old layout, so the line the case then dragged across was out of view in 5 of 40 runs.
+ */
 export async function openDocument(page: Page): Promise<void> {
   await page.getByRole('button', { name: /^Open PDF/u }).first().click();
   await expect.poll(() => page.locator('canvas:visible').count(), { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
+  await pageShown(page);
 }
 
 /** Brings a rail section to the front by its name — *Home*, *Comment*, *Organize* and so on. */
@@ -106,13 +129,16 @@ export async function runCommand(page: Page, title: string): Promise<void> {
 export async function shoot(page: Page, id: string, target: Locator | 'window', pad = 16): Promise<void> {
   mkdirSync(OUT, { recursive: true });
   await page.mouse.move(2, 2);
-  await page.waitForTimeout(300);
+  // THE FACES LOADED AND THE TARGET STILL, in place of a 300 ms sleep: a capture is of what a person sees once it has
+  // arrived, and a box read while a popup is placed or a toast slides in is a point on the way.
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
   const path = join(OUT, `${id}.png`);
   if (target === 'window') {
+    await settled(page, () => page.evaluate(() => document.body.getBoundingClientRect().height), () => true, id);
     await page.screenshot({ path });
     return;
   }
-  const box = await target.boundingBox();
+  const box = await settled(page, () => target.boundingBox(), (now) => now !== null, id);
   if (box === null) throw new Error(`screenshot ${id}: its target is not on screen`);
   const viewport = page.viewportSize() ?? { width: 1280, height: 800 };
   const x = Math.max(0, box.x - pad);

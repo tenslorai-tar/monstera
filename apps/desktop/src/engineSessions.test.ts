@@ -48,6 +48,9 @@ import type { ShellFailure } from './shellFailure.js';
  * service would prove the sequence and not the thing the sequence is for.
  */
 
+/** A password for the cases that hold one. Made up for this file; no document carries it. */
+const PASSWORD = 'sample-only-0171';
+
 /** Large enough that capacity is never what these tests are measuring. */
 const AMPLE_CEILING = 64 * 1024 * 1024;
 
@@ -266,6 +269,156 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     await engine.releaseOnClose(first);
     expect(ran).toEqual(['released']);
     expect(engine.held).toBe(0);
+  });
+
+  describe('whether a document’s file opens only with a password (CR-DOC-11)', () => {
+    it('is no for an open document, yes while locked, yes once a password unlocked it', () => {
+      const engine = new EngineSessions();
+      engine.begin(first);
+      expect(engine.opensOnlyWithPassword(first)).toBe(false);
+      engine.markLocked(first, 'needs-password');
+      expect(engine.opensOnlyWithPassword(first)).toBe(true);
+      // UNLOCKED, and still yes: the file is the protected one, whatever the session now holds.
+      engine.unlock(first, someSessions('a'), PASSWORD);
+      expect(engine.locked(first)).toBeUndefined();
+      expect(engine.opensOnlyWithPassword(first)).toBe(true);
+    });
+
+    it('follows what each removal’s save renewal found, so removing a password makes it no again', async () => {
+      const LOCKED = new Error('the saved file opens only with a password');
+      const lockedBy = (thrown: unknown): boolean => thrown === LOCKED;
+      const engine = new EngineSessions();
+      engine.hold(first, someSessions('a'));
+
+      // THE ANSWER AND THE RECORD ARE ONE STEP: a renewal the host refused on a password says so and is remembered.
+      expect(await engine.renew(first, () => Promise.reject(LOCKED), lockedBy)).toBe('locked');
+      expect(engine.opensOnlyWithPassword(first)).toBe(true);
+      expect(engine.sessions(first)).toStrictEqual(someSessions('a'));
+
+      expect(await engine.renew(first, () => Promise.resolve(someSessions('b')), lockedBy)).toBe('renewed');
+      expect(engine.opensOnlyWithPassword(first)).toBe(false);
+
+      // AND IT IS THIS DOCUMENT'S: another one's save says nothing about it.
+      engine.hold(second, someSessions('c'));
+      await engine.renew(second, () => Promise.reject(LOCKED), lockedBy);
+      expect(engine.opensOnlyWithPassword(first)).toBe(false);
+    });
+
+    it('CONTROL: any other refusal of the renewal is thrown, and records nothing', async () => {
+      const engine = new EngineSessions();
+      engine.hold(first, someSessions('a'));
+      const broken = new Error('the host is gone');
+      await expect(engine.renew(first, () => Promise.reject(broken), () => false)).rejects.toBe(broken);
+      expect(engine.opensOnlyWithPassword(first)).toBe(false);
+    });
+  });
+
+  describe('the password a document was unlocked with (ADR-0171)', () => {
+    it('is held from the unlock, read by every reopen, and wiped by the close', async () => {
+      const engine = new EngineSessions();
+      engine.begin(first);
+      engine.markLocked(first, 'needs-password');
+      engine.unlock(first, someSessions('a'), PASSWORD);
+      const held = engine.opensWith(first);
+      expect(held?.reveal()).toBe(PASSWORD);
+
+      // A RECYCLE REOPENS, which ADR-0055 refused for this document: the reopen runs, and the password it opens with
+      // is the one held. Read inside the reopen, which is where the opener reads it.
+      const offered: (string | undefined)[] = [];
+      await engine.recycle(first, (id) => {
+        offered.push(engine.opensWith(id)?.reveal());
+        return Promise.resolve(someSessions('b'));
+      });
+      expect(offered).toStrictEqual([PASSWORD]);
+      expect(engine.sessions(first)).toStrictEqual(someSessions('b'));
+
+      // CONTROL for the wipe below: the bytes are the password's until the close.
+      expect(held?.isWiped()).toBe(false);
+      await engine.releaseOnClose(first);
+      expect(held?.isWiped()).toBe(true);
+      expect(engine.opensWith(first)).toBeUndefined();
+    });
+
+    it('CONTROL: a document no password opened reopens with none, and another document’s is not its', async () => {
+      const engine = new EngineSessions();
+      engine.begin(first);
+      engine.markLocked(first, 'needs-password');
+      engine.unlock(first, someSessions('a'), PASSWORD);
+      engine.hold(second, someSessions('c'));
+
+      const offered: (string | undefined)[] = [];
+      await engine.recycle(second, (id) => {
+        offered.push(engine.opensWith(id)?.reveal());
+        return Promise.resolve(someSessions('d'));
+      });
+      expect(offered).toStrictEqual([undefined]);
+    });
+
+    it('a poisoned document is refused its sessions and keeps no password', () => {
+      const engine = new EngineSessions();
+      engine.begin(first);
+      engine.recordEnding([first], first);
+      engine.recordEnding([first], first);
+      expect(() => {
+        engine.unlock(first, someSessions('a'), PASSWORD);
+      }).toThrow(/poisoned/u);
+      expect(engine.opensWith(first)).toBeUndefined();
+    });
+  });
+
+  describe('renew opens before it releases (ADR-0164)', () => {
+    it('holds the new sessions, and the old release runs once the new open registers its own', async () => {
+      const engine = new EngineSessions();
+      engine.begin(first);
+      engine.hold(first, someSessions('a'));
+      const ran: string[] = [];
+      await engine.holdRelease(first, () => {
+        ran.push('old');
+        return Promise.resolve();
+      });
+
+      await engine.renew(first, async (id) => {
+        // THE OLD PAIR IS STILL HELD while the new one opens: that is the difference from `recycle`.
+        expect(ran).toStrictEqual([]);
+        await engine.holdRelease(id, () => Promise.resolve());
+        return someSessions('b');
+      }, () => false);
+
+      expect(engine.sessions(first)).toStrictEqual(someSessions('b'));
+      expect(ran).toStrictEqual(['old']);
+    });
+
+    it('an open that FAILS leaves the old sessions and their release exactly as they were', async () => {
+      const engine = new EngineSessions();
+      engine.begin(first);
+      engine.hold(first, someSessions('a'));
+      const ran: string[] = [];
+      await engine.holdRelease(first, () => {
+        ran.push('old');
+        return Promise.resolve();
+      });
+
+      // ANSWERED `locked` where the caller names the refusal, and the old sessions stay either way.
+      const refusal = new Error('needs a password');
+      expect(await engine.renew(first, () => Promise.reject(refusal), (thrown) => thrown === refusal)).toBe('locked');
+
+      expect(engine.sessions(first)).toStrictEqual(someSessions('a'));
+      expect(ran).toStrictEqual([]);
+      // AND THE RELEASE IS STILL THE DOCUMENT'S: a close runs it.
+      await engine.releaseOnClose(first);
+      expect(ran).toStrictEqual(['old']);
+    });
+
+    it('CONTROL: recycle, given the same failing open, leaves the document with no session', async () => {
+      // Why renew exists rather than a removal's save calling recycle: this is the state the protection case reached.
+      const engine = new EngineSessions();
+      engine.begin(first);
+      engine.hold(first, someSessions('a'));
+
+      await expect(engine.recycle(first, () => Promise.reject(new Error('needs a password')))).rejects.toThrow();
+
+      expect(engine.sessions(first)).toStrictEqual({});
+    });
   });
 
   it('a release that REJECTS still closes the document', async () => {
@@ -934,6 +1087,9 @@ describe('the SERVICE releases the entry, because nothing else is told a documen
  * attempt and by two; only the call count separates them.
  */
 describe('onDocumentOpened', () => {
+  /** What the composition root's `HostConnectionLost` is to this module: a class the `hostEnded` predicate names. */
+  class ConnectionEnded extends Error {}
+
   /** Fails `attempts` times, then succeeds. Records every call. */
   function openSurfaces(
     service: DocumentService,
@@ -954,7 +1110,7 @@ describe('onDocumentOpened', () => {
       documents: service,
       failures: (failure) => reported.push(failure),
       closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
-      hostEnded: (error) => error instanceof HostConnectionLost,
+      hostEnded: (error) => error instanceof HostConnectionLost || error instanceof ConnectionEnded,
       documentUnreadable: (error) => error instanceof EngineOpenFailed,
       documentLocked: (error) =>
         error instanceof EngineDocumentLocked ? error.reason : undefined,
@@ -1138,6 +1294,66 @@ describe('onDocumentOpened', () => {
         expect(sessioned !== poisoned).toBe(true);
       }
     }
+  });
+
+  it('leaves a death under its attempt to the ending: one death is one failure, and one session is made', async () => {
+    // THE HOST ENDS DURING THE OPEN-TIME ATTEMPT, as a host that issues a held handle is ended (CR-SEC-10) or one
+    // that crashes mid-open does. The ending raises the count of every document the supervisor holds, this one
+    // included, and queues its reopen behind this entry. Counting the attempt's failure as well spent the bound on
+    // ONE death: the document was poisoned, and the queued reopen made a session the supervisor then refused.
+    const engine = new EngineSessions();
+    const { service, docId } = await oneOpenDocument(engine);
+    const creations: DocId[] = [];
+    const reopened: DocId[] = [];
+    const ended: ShellFailure[] = [];
+    // THE ENDING RUNS OUTSIDE THE LANE, as the transport announces it (`hostTransport.ts`, detached from the async
+    // context of whoever ended the connection): its continuation is registered here, so it carries this context
+    // rather than the attempt's, and the reopen it queues is not refused as reentry.
+    let announce = (): void => undefined;
+    const announced = new Promise<void>((resolve) => {
+      announce = resolve;
+    });
+    const ending = announced.then(() =>
+      onEngineHostEnded(
+        engine,
+        {
+          termination: { code: 'malformed-response', detail: 'a handle this registry already holds' },
+          during: docId,
+          last: docId,
+        },
+        {
+          documents: service,
+          failures: (failure) => ended.push(failure),
+          closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
+          hostEnded: (error) => error instanceof HostConnectionLost,
+          rebuild: () => Promise.resolve(),
+          reopen: (reopening) => {
+            reopened.push(reopening);
+            return Promise.resolve(someSessions(`reopened-${reopening.slice(0, 4)}`));
+          },
+          replay: () => Promise.resolve(0),
+        },
+      ),
+    );
+    const s = openSurfaces(service, 0, {
+      create: (id) => {
+        creations.push(id);
+        announce();
+        return Promise.reject(new ConnectionEnded('the connection ended under the open'));
+      },
+    });
+
+    await onDocumentOpened(engine, docId, s);
+    await ending;
+
+    // ONE failure, so not poisoned, and sessioned by the reopen: the only session made after the death.
+    expect(engine.poisoned(docId)).toBeUndefined();
+    expect(engine.sessioned).toBe(1);
+    expect(reopened).toEqual([docId]);
+    // AND THE LOOP MADE NO SECOND ONE beside it, and reported nothing of its own: the death is the ending's alone.
+    expect(creations).toEqual([docId]);
+    expect(s.reported).toEqual([]);
+    expect(ended.map((failure) => failure.detail)).toEqual([expect.stringContaining('malformed-response')]);
   });
 
   it('is skipped for a document closed before the lane is entered, and reports nothing', async () => {

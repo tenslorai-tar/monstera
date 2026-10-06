@@ -94,6 +94,7 @@ function jpegOf(grey: Uint8Array): Uint8Array {
   for (let y = 0; y < PHOTO_HEIGHT; y += 1) {
     for (let x = 0; x < PHOTO_WIDTH; x += 1) pixels[y * stride + x] = grey[y * PHOTO_WIDTH + x] ?? 0;
   }
+  pixmap.setPixels(pixels);
   const jpeg = new Uint8Array(pixmap.asJPEG(95, false));
   pixmap.destroy();
   return jpeg;

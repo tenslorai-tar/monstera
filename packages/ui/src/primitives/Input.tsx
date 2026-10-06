@@ -75,7 +75,29 @@ export interface InputProps {
    * name is still one string for both populations and the screen shows it once.
    */
   labelShownBeside?: boolean;
+  /**
+   * Whether this is the field the dialog was opened to be typed into, which takes focus when it opens (`Dialog`'s
+   * `openingField`).
+   *
+   * **Said by the field, never guessed by the dialog.** A dialog that took its first text field would open Settings
+   * with focus in some setting's box, where a stray key edits it, and Help on its search instead of its articles. Only
+   * the body knows whether typing is the first thing a person does in it, so the body says so.
+   */
+  opensFocused?: boolean;
+  /**
+   * Whether the value is one a person reads whole and that runs past the browser's twenty characters: a key, a web
+   * address, an endpoint, a file path, an OAuth value, a timestamp ([ADR-0157](../../../../docs/DECISIONS/0157-a-field-whose-value-runs-long-takes-its-rows-width.md)).
+   * Such a field takes its own line and its row's whole width; every other field keeps the browser's width, since a
+   * page number or a name in a box the dialog's width reads as a request for a long answer.
+   *
+   * **Said by the caller, never guessed from `secret`**: a document's password is a secret and short, and an endpoint
+   * runs long and is not a secret.
+   */
+  runsLong?: boolean;
 }
+
+/** The mark {@link InputProps.opensFocused} writes, which `Dialog` looks for. One spelling for both. */
+export const OPENS_FOCUSED = 'data-opens-focused';
 
 export function Input({
   label,
@@ -87,14 +109,17 @@ export function Input({
   invalid,
   purpose,
   labelShownBeside = false,
+  opensFocused = false,
+  runsLong = false,
 }: InputProps): ReactElement {
   // Subscribed rather than resolved once — see `Button`.
   const { _ } = useLingui();
 
   return (
-    <Field.Root className="m-field" disabled={disabled} invalid={invalid}>
+    <Field.Root className={runsLong ? 'm-field m-field--long' : 'm-field'} disabled={disabled} invalid={invalid}>
       <Field.Label className={labelShownBeside ? 'm-visually-hidden' : 'm-field__label'}>{_(label)}</Field.Label>
       <BaseInput
+        {...(opensFocused ? { [OPENS_FOCUSED]: '' } : {})}
         autoComplete={purpose}
         className="m-input"
         // HTML'S OWN RULE FOR WHICH WAY TYPED TEXT RUNS: the first letter with a direction decides, so Hebrew or Arabic
@@ -108,6 +133,47 @@ export function Input({
         // different, and only one of them is a catalogue defect.
         placeholder={placeholder === undefined ? undefined : _(placeholder)}
         type={secret ? 'password' : 'text'}
+        value={value}
+      />
+    </Field.Root>
+  );
+}
+
+/**
+ * A field for text that runs to sentences — a note, a text box's words, a reply.
+ *
+ * **It grows with what is typed and then scrolls inside**: three lines to start, so it reads as a place to write
+ * rather than a one-line box (the owner's review: a note in a one-line field), and at most ten, past which it scrolls
+ * so the dialog's footer stays in the window. `field-sizing: content` is the platform's own growing box
+ * (`primitives.css`), so no script measures it.
+ *
+ * The same Base UI field as {@link Input}, so its label, its invalid state and its direction are one rule for both.
+ * Enter starts a new line, as it does in any multi-line box; the dialog's action is its button.
+ */
+export function TextArea({
+  label,
+  value,
+  onValueChange,
+  disabled = false,
+  invalid,
+  labelShownBeside = false,
+  opensFocused = false,
+}: Pick<
+  InputProps,
+  'label' | 'value' | 'onValueChange' | 'disabled' | 'invalid' | 'labelShownBeside' | 'opensFocused'
+>): ReactElement {
+  const { _ } = useLingui();
+  return (
+    <Field.Root className="m-field m-field--text" disabled={disabled} invalid={invalid}>
+      <Field.Label className={labelShownBeside ? 'm-visually-hidden' : 'm-field__label'}>{_(label)}</Field.Label>
+      <BaseInput
+        {...(opensFocused ? { [OPENS_FOCUSED]: '' } : {})}
+        className="m-input m-textarea"
+        dir="auto"
+        onValueChange={(next): void => {
+          onValueChange(next);
+        }}
+        render={<textarea rows={3} />}
         value={value}
       />
     </Field.Root>

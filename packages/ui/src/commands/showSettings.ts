@@ -1,6 +1,13 @@
-import { type ContractClient, SECRET_SETTING_IDS } from '@monstera/contract';
+import { type AiProviderId, type ContractClient, SECRET_SETTING_IDS } from '@monstera/contract';
+import type { z } from 'zod';
 
-import { SETTINGS_DIALOG_ID, type SettingsAnswer, DIALOG_SETTINGS, controlFor } from '../dialogs/settings.js';
+import {
+  SETTINGS_DIALOG,
+  SETTINGS_DIALOG_ID,
+  type SettingsAnswer,
+  DIALOG_SETTINGS,
+  controlFor,
+} from '../dialogs/settings.js';
 import { SETTINGS_PROBLEM_DIALOG_ID } from '../dialogs/settingsProblem.js';
 import {
   GROUP_APPLICATION,
@@ -12,10 +19,14 @@ import {
   TOAST_SETTINGS_UNREADABLE,
 } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
+import type { DialogReports } from '../registries/dialogs.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
 import { confirmDone, confirmWritten } from './confirmWritten.js';
 import { reportProblem } from './documentCommands.js';
+
+/** The props the Settings dialog opens with, and replies carry (ADR-0158). */
+type SettingsProps = z.infer<typeof SETTINGS_DIALOG.props>;
 
 /**
  * Opens the Settings dialog and writes what it reports
@@ -50,7 +61,7 @@ import { reportProblem } from './documentCommands.js';
 export function showSettingsCommand(deps: {
   readonly client: ContractClient;
   readonly settings: SettingsStore;
-  readonly ask: (id: string, props: unknown, onUpdate?: (result: unknown) => void) => Promise<unknown>;
+  readonly ask: (id: string, props: unknown, onUpdate?: DialogReports) => Promise<unknown>;
   readonly onSecretsChanged: () => void;
   /** Told when the Privacy page emptied the Recent list, so a start screen behind the dialog reads it again. */
   readonly onRecentCleared: () => void;
@@ -137,23 +148,55 @@ export function showSettingsCommand(deps: {
         }
       };
 
-      const answer = (await deps.ask(
-        SETTINGS_DIALOG_ID,
-        {
-          values,
-          storedSecrets: secrets.ok ? secrets.value.stored : [],
-          // A LOAD THAT FAILED IS NOT AVAILABLE STORAGE. Offering a field whose save cannot be known
-          // to work would be the control that looks saved.
-          secretsAvailable: secrets.ok && secrets.value.available,
-          // A QUERY THAT FAILED IS NO LIST, and the row says so rather than offering nothing as though it were one.
-          models: held.ok ? held.value : {},
-        },
-        (reported) => {
-          void apply(reported as SettingsAnswer);
-        },
-      )) as SettingsAnswer | undefined;
+      let shown: SettingsProps = {
+        values,
+        storedSecrets: secrets.ok ? secrets.value.stored : [],
+        // A LOAD THAT FAILED IS NOT AVAILABLE STORAGE. Offering a field whose save cannot be known
+        // to work would be the control that looks saved.
+        secretsAvailable: secrets.ok && secrets.value.available,
+        // A QUERY THAT FAILED IS NO LIST, and the row says so rather than offering nothing as though it were one.
+        models: held.ok ? held.value : {},
+      };
+
+      /**
+       * A KEY CHECK (ADR-0158): main asks the provider with the STORED key — Settings stores a key as it is typed — under
+       * CR-SEC-02's address rule, and the answer is that provider's list. The reply carries it as the provider's models
+       * and one more answered check, and the dialog stays open on the page it was on. Which secrets are stored is read
+       * again with it, since the check is of a key typed since the dialog opened.
+       */
+      const answered: Partial<Record<AiProviderId, number>> = {};
+      const check = async (provider: AiProviderId, reply: (props: unknown) => void): Promise<void> => {
+        const list = await deps.client['ai.models']({ provider });
+        const stored = await deps.client['settings.loadSecrets']({});
+        answered[provider] = (answered[provider] ?? 0) + 1;
+        // A QUERY THAT FAILED leaves the provider WITHOUT a list rather than with the one from before, so the answer
+        // drawn for this check is never an earlier check's.
+        const others: SettingsProps['models'] = Object.fromEntries(Object.entries(shown.models).filter(([held]) => held !== provider));
+        const models = list.ok ? { ...others, [provider]: list.value } : others;
+        shown = { ...shown, models, checked: { ...answered }, ...(stored.ok ? { storedSecrets: stored.value.stored } : {}) };
+        reply(shown);
+      };
+
+      // IN THE ORDER REPORTED: a key is saved as it is typed, and a Check pressed straight after the last keystroke must
+      // find that keystroke's save done, or main would ask the provider with the key before it. The chain goes on past
+      // a failed report, whose rejection is left unhandled so it surfaces where every other one does.
+      let queue: Promise<void> = Promise.resolve();
+      const answer = (await deps.ask(SETTINGS_DIALOG_ID, shown, (reported, reply) => {
+        const report = reported as SettingsAnswer;
+        const next = queue.then(async () => {
+          await apply(report);
+          if (report.check !== undefined) await check(report.check, reply);
+        });
+        queue = next.then(
+          () => undefined,
+          () => undefined,
+        );
+        void next;
+      })) as SettingsAnswer | undefined;
       // DONE, or dismissed. Everything has been applied as it was reported; the answer carries what
-      // a body reports at the moment it closes, which is nothing for this dialog.
+      // a body reports at the moment it closes, which is nothing for this dialog. AFTER the reports still queued, so
+      // the closing answer never overtakes a change made just before it.
+      await queue;
       if (answer !== undefined) await apply(answer);
       if (answer?.action !== 'import') return;
 

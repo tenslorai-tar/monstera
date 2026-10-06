@@ -1,13 +1,14 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { type Page, expect, test } from '@playwright/test';
+import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { samplePdf } from './helpScreensHarness.js';
 import { LOOKS, bridgeUnder } from './pageBridge.js';
+import { settled, startScreenListening } from './settled.js';
 
 /**
- * The five tool windows the owner had redrawn in the dialog pattern on 2 October — Cloud storage, Help, Keyboard
- * shortcuts, Spell check and Camera capture — in every look, at 1280 × 800 and in a window narrower than the
+ * The tool windows the owner had redrawn in the dialog pattern on 2 October — Cloud storage, Help, Keyboard
+ * shortcuts and Camera capture — in every look, at 1280 × 800 and in a window narrower than the
  * application's floor. What each case holds is what the owner's review of them named: nothing wraps out of or overflows
  * the window, the footer is inside it whatever the list's length, and the gate is clean with the window open. A real
  * browser lays these out; happy-dom lays nothing out.
@@ -23,11 +24,28 @@ async function palette(page: Page, title: string): Promise<void> {
   await page.getByRole('option', { name: title }).first().click();
 }
 
-const WINDOWS: readonly { readonly name: string; readonly title: string; readonly open: (page: Page) => Promise<void> }[] = [
-  { name: 'Cloud storage', title: 'Cloud storage', open: (page) => palette(page, 'Cloud storage…') },
+/**
+ * Each window, how a person opens it, and WHAT IT HOLDS ONCE ITS CONTENT HAS ARRIVED. The body's chunk arrives with
+ * the dialog; a provider's state arrives afterwards over IPC, so a window measured on its footer
+ * alone can be measured empty.
+ */
+const WINDOWS: readonly {
+  readonly name: string;
+  readonly title: string;
+  readonly open: (page: Page) => Promise<void>;
+  readonly arrived?: (dialog: Locator) => Promise<void>;
+}[] = [
+  {
+    name: 'Cloud storage',
+    title: 'Cloud storage',
+    open: (page) => palette(page, 'Cloud storage…'),
+    arrived: async (dialog) => {
+      await expect(dialog.getByText('OneDrive', { exact: true }).first()).toBeVisible();
+      await expect(dialog.getByText('Google Drive', { exact: true }).first()).toBeVisible();
+    },
+  },
   { name: 'Help', title: 'Help centre', open: (page) => page.keyboard.press('F1') },
   { name: 'Keyboard shortcuts', title: 'Keyboard shortcuts', open: (page) => page.keyboard.press('Control+Slash') },
-  { name: 'Spell check', title: 'Spell check', open: (page) => palette(page, 'Spell check') },
   { name: 'Camera capture', title: 'Take pictures', open: (page) => palette(page, 'New PDF from camera…') },
 ];
 
@@ -45,14 +63,13 @@ for (const tool of WINDOWS) {
         await bridgeUnder(page, look, {
           opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'report.pdf' }],
           documentBytes: new Map([[DOC, bytes]]),
-          // EACH WINDOW WITH SOMETHING IN IT: a provider signed in and one signed out, and misspelt words to list.
+          // EACH WINDOW WITH SOMETHING IN IT: a provider signed in and one signed out.
           cloudStatus: {
             providers: [
               { provider: 'onedrive', state: 'signed-out' },
               { provider: 'google-drive', state: 'signed-in' },
             ],
           },
-          pageLines: [['spelling page document', 'documnet page'], ['spelling speling page', 'documnet teh']],
         });
         await page.goto('/');
         await page.getByRole('button', { name: /^Open PDF/u }).first().click();
@@ -62,6 +79,8 @@ for (const tool of WINDOWS) {
         await expect(dialog).toBeVisible();
         const footer = dialog.locator('.m-dialog-footer');
         await expect(footer).toBeVisible();
+        await tool.arrived?.(dialog);
+        await settled(page, () => dialog.boundingBox(), (box) => box !== null, tool.name);
 
         const shape = await dialog.evaluate((popup) => {
           const box = popup.getBoundingClientRect();
@@ -79,15 +98,26 @@ for (const tool of WINDOWS) {
               );
             })
             .map((element) => `${element.tagName}.${element.className}`);
+          // NOTHING PASSES UNDER THE FOOTER: it is drawn after the scrolling body, not inside it, and on the dialog's own
+          // ground. Pinned inside the body it had to cover the rows, and an opaque cover drew a band the glass ground
+          // cannot match (the gallery's reading, 2026-10-03).
+          const body = popup.querySelector('.m-dialog__body');
+          const footer = popup.querySelector('.m-dialog-footer');
+          const bodyBox = body?.getBoundingClientRect();
           return {
             inWindow: box.left >= 0 && box.top >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight,
             footInPopup: foot !== undefined && foot.bottom <= box.bottom + 0.5 && foot.top >= box.top,
+            footBelowBody:
+              footer !== null && body !== null && !body.contains(footer) && foot !== undefined && bodyBox !== undefined && foot.top >= bodyBox.bottom - 0.5,
+            footGround: footer === null ? null : getComputedStyle(footer).backgroundColor,
             wide,
             sections: popup.querySelectorAll('.m-dialog-section, .m-dialog-row').length,
           };
         });
         expect(shape.inWindow).toBe(true);
         expect(shape.footInPopup).toBe(true);
+        expect(shape.footBelowBody, 'the footer is after the scrolling body, not in it').toBe(true);
+        expect(shape.footGround, 'the footer is drawn on the dialog’s ground').toBe('rgba(0, 0, 0, 0)');
         expect(shape.wide, JSON.stringify(shape.wide)).toStrictEqual([]);
         // IN THE PATTERN: the window is built of its sections or rows, not a layout of its own. Help and Shortcuts are
         // a list and a table inside the pattern's scroll, so the scroll is what is asked of them.
@@ -113,6 +143,7 @@ test('Help: Enter opens an article on its heading, and Back returns focus to the
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeUnder(page, LOOKS[0]);
   await page.goto('/');
+  await startScreenListening(page);
   await page.keyboard.press('F1');
   const dialog = page.getByRole('dialog', { name: 'Help centre' });
   await expect(dialog).toBeFocused();
@@ -130,6 +161,7 @@ test('a long list scrolls inside the window while its footer and title stay in v
   await page.setViewportSize({ width: 1280, height: 800 });
   await bridgeUnder(page, LOOKS[0]);
   await page.goto('/');
+  await startScreenListening(page);
   await page.keyboard.press('Control+Slash');
   const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
   await expect(dialog).toBeVisible();

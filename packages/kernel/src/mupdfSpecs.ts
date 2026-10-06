@@ -240,7 +240,8 @@ export const mupdfSpecs = {
     capture: captureStraightenScans,
     invert: invertStraightenScans,
   },
-  // THE FIRST `sources: 'one'` ENTRY. The spread carries that axis in, and
+  // THE FIRST ENTRY NAMING ANOTHER DOCUMENT, and the one `sources: 'several'`
+  // entry. The spread carries that axis in, and
   // `WriterBinding`'s cross product is what makes `apply` here obliged to be
   // the three-parameter shape — a two-parameter one would also satisfy it, by
   // the bivariance ADR-0040's correction records, which is why the guard is
@@ -452,18 +453,18 @@ function specFor(command: Command): (typeof mupdfSpecs)[MupdfKind] {
  * `pdfLibWriter.ts`' `PdfLibApply` on the other writer, and the difference
  * between the two is the seam's own asymmetry rather than a divergence: a
  * byte-image `Apply` has **no** source parameter at all — `Apply` resolves
- * byte-image × `sources: 'one'` to `never` — so that one's third parameter is
- * its outline, and this one's is its source.
+ * byte-image × any source to `never` — so that one's third parameter is
+ * its outline, and this one's is its sources.
  *
- * Optional here because one spec in this table declares `sources: 'one'`. A
- * two-parameter implementation is assignable and ignores what it is passed, which
- * is the bivariance ADR-0040's correction records; the guard that `mergeDocument`
- * actually reads its source is `packages/kernel/src/pageMerge.test.ts`.
+ * The plain list of every spec here: a spec declaring `'one'` takes a one-tuple and a `'several'` one a non-empty
+ * list, and the bus has already held the request to that count, so the list passes through unread. A two-parameter
+ * implementation is assignable and ignores what it is passed, which is the bivariance ADR-0040's correction records;
+ * the guard that `mergeDocument` actually reads its sources is `packages/kernel/src/pageMerge.test.ts`.
  */
 type MupdfApply<K extends CommandKind> = (
   session: MupdfSession,
   command: CommandOfKind<K>,
-  source?: MupdfSession,
+  sources: readonly MupdfSession[],
 ) => Promise<void>;
 
 /**
@@ -488,27 +489,19 @@ export const localMupdfExecution: CommandExecution<'mupdf'> = {
     // MuPDF apply that wanted one already holds the session `readDestinations`
     // takes. Under ADR-0069 the request still CARRIES the field — what it
     // cannot do is arrive without one.
-    source,
+    sources,
   }: ApplyRequest<'mupdf', K>): Promise<void> {
-    // THE CAST NAMES THE `sources: 'one'` INSTANTIATION, which is the widest of
-    // the two shapes this table holds, and the call passes `source` through
-    // whatever the command declared. `pdfLibWriter.ts` explains why this is not
-    // a guard: an apply that ignores the argument satisfies the signature, so
-    // what makes a merge actually use its source is `pageMerge.test.ts`.
+    // THE CAST NAMES THE PLAIN LIST, the widest of the three shapes this table
+    // holds, and the call passes `sources` through whatever the command
+    // declared. `pdfLibWriter.ts` explains why this is not a guard: an apply
+    // that ignores the argument satisfies the signature, so what makes a merge
+    // actually use its sources is `pageMerge.test.ts`.
     //
-    // THE CAST NAMES AN OPTIONAL THIRD PARAMETER, for `pdfLibWriter.ts`'
-    // reason: narrowing `source` from `MupdfSession | undefined` needs either
-    // `as MupdfSession` or `source!`, and lint bans both —
-    // `non-nullable-type-assertion-style` refuses the first and
-    // `no-non-null-assertion` the second. A runtime guard would be worse than
-    // either, turning a state the declaration table makes unreachable into a
-    // refusal.
-    //
-    // So this writer's view of an apply is *may be handed a source*, which is
-    // true of every spec here, and the obligation stays where the knowledge is:
-    // the bus reads `spec.sources` and refuses by name when the map does not
-    // carry the id.
-    return (specFor(command).apply as MupdfApply<K>)(session, command, source);
+    // A LIST NEEDS NO NARROWING, which an optional single session did: the
+    // count is the bus's obligation, where the knowledge is — it reads
+    // `spec.sources`, holds the payload to it, and refuses by name when the map
+    // does not carry an id (ADR-0152).
+    return (specFor(command).apply as MupdfApply<K>)(session, command, sources);
   },
   capture<K extends CommandKind>(
     session: MupdfSession,

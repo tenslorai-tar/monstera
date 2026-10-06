@@ -1,4 +1,6 @@
-import type { ClientApi, Command, CommandOfKind } from '@monstera/contract';
+import type { ClientApi, Command, CommandOfKind, FailureOf } from '@monstera/contract';
+import { blocksOfEdit, replacementsOf } from '@monstera/contract/host';
+import type { Failure } from '@monstera/shared';
 
 import type {
   ApplyRequest,
@@ -8,11 +10,17 @@ import type {
 } from '../commandRouting.js';
 import { serialiseIntoFile } from '../checkpointFile.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
-import type { ByteImage } from '../engineSeam.js';
+import type { ByteImage, ImageSession } from '../engineSeam.js';
 import type { TextRun } from '../pdfiumFfi.js';
-import { TextNotWritableError } from '../textEditRefusals.js';
+import {
+  EditRefusedError,
+  NothingToReplaceError,
+  ReplaceMovesLineError,
+  TextNotInPlaceError,
+  TextNotWritableError,
+} from '../textEditRefusals.js';
 import { EngineCallFailed, EngineSessionGone, type SessionArea, priorTooLargeToRecord } from './remoteEngine.js';
-import { EngineSerialiseMismatch, type SessionAreaSurface } from './remoteLifecycle.js';
+import { EngineSerialiseMismatch, type SessionAreaSurface, takeAnnounced } from './remoteLifecycle.js';
 import { type PdfiumChannels, pdfiumTaggedPrior } from './pdfiumChannels.js';
 
 /**
@@ -99,10 +107,16 @@ export interface PdfiumTransfer extends SessionAreaSurface {
  * snapshot directory, so `main` never holds it beside the image it already holds (ADR-0121).
  */
 export type PdfiumInputKeeper = (
-  image: ByteImage,
+  image: ImageSession,
   scope: 'all' | number,
   into: { readonly directory: string; readonly name: string },
 ) => Promise<boolean>;
+
+/**
+ * The key an image opens with, as a host frame carries it: the text, or `null` for none (ADR-0171's addendum). THE ONE
+ * PLACE this adapter reveals a held password, so every frame below takes it from here rather than spelling the reveal.
+ */
+const frameKey = (image: ImageSession): string | null => image.opensWith?.reveal() ?? null;
 
 /**
  * The pages a PDFium command regenerates — its `page`, or every page for `replaceAllText`, the one document-wide
@@ -126,14 +140,61 @@ export function regeneratedBy(command: CommandOfKind<KindsRoutedTo<'pdfium'>>): 
  */
 function answered<T>(
   channel: string,
-  result: { ok: true; value: T } | { ok: false; error: { code: string } },
+  result: { ok: true; value: T } | { ok: false; error: Failure<PdfiumWriteFailure> },
+  typed: () => string = () => '',
 ): T {
   if (result.ok) return result.value;
-  if (result.error.code === 'no-such-session') throw new EngineSessionGone(channel);
+  const { error } = result;
+  if (error.code === 'no-such-session') throw new EngineSessionGone(channel);
   // THE SAME CLASS THE LOCAL WRITER THROWS, so main's answer to a font that
   // cannot carry the typed text does not depend on which process applied it.
-  if (result.error.code === 'text-not-writable') throw new TextNotWritableError();
-  throw new EngineCallFailed(channel, result.error.code);
+  //
+  // ONLY CHARACTERS THAT WERE TYPED cross on from here (ADR-0169 Decision 4). The host is hostile by invariant 25's
+  // premise and its detail is bounded by the schema; this is the half the schema cannot see — that what the host named
+  // is something the person wrote, which `main` knows from the command and the host cannot change.
+  if (error.code === 'text-not-writable') {
+    const wrote = typed();
+    throw new TextNotWritableError(Array.from(error.detail.characters).filter((c) => wrote.includes(c)).join(''));
+  }
+  if (error.code === 'text-not-in-place') throw new TextNotInPlaceError();
+  if (error.code === 'nothing-to-replace') throw new NothingToReplaceError();
+  if (error.code === 'replace-moves-line') throw new ReplaceMovesLineError();
+  if (error.code === 'edit-refused') {
+    throw new EditRefusedError(error.detail.step, error.detail.engineError, `the PDFium host refused ${channel}`);
+  }
+  throw new EngineCallFailed(channel, error.code);
+}
+
+/** Every failure the PDFium host's three write channels can answer. */
+type PdfiumWriteFailure =
+  | FailureOf<PdfiumChannels, 'engine/apply'>
+  | FailureOf<PdfiumChannels, 'engine/capture'>
+  | FailureOf<PdfiumChannels, 'engine/invert'>;
+
+/**
+ * What the person typed into a PDFium command: the text a `text-not-writable` refusal's characters must come from.
+ * Exhaustive over the kinds routed here, so a command that writes text and is routed to PDFium without an answer here
+ * is a compile error rather than a refusal that names nothing.
+ */
+export function typedBy(command: CommandOfKind<KindsRoutedTo<'pdfium'>>): string {
+  switch (command.kind) {
+    case 'replaceTextObject':
+      return replacementsOf(command)
+        .map((replacement) => replacement.text)
+        .join('');
+    case 'editTextBlock':
+      return blocksOfEdit(command)
+        .map((block) => block.text)
+        .join('');
+    case 'replaceTextAt':
+    case 'replaceAllText':
+      return command.replace;
+    case 'placePageObject':
+    case 'recolorPageObjects':
+    case 'deletePageObjects':
+    case 'promoteFormObjects':
+      return '';
+  }
 }
 
 export function remotePdfiumExecution(
@@ -155,8 +216,8 @@ export function remotePdfiumExecution(
    * nothing, so it pays nothing for the keeper (ADR-0126).
    */
   const withImage = async <T>(
-    image: ByteImage,
-    call: (from: string, area: SessionArea, session: string) => Promise<T>,
+    image: ImageSession,
+    call: (from: string, area: SessionArea, session: string, password: string | null) => Promise<T>,
     regenerates?: 'all' | number,
   ): Promise<T> => {
     const { session, area } = held();
@@ -165,9 +226,9 @@ export function remotePdfiumExecution(
       regenerates !== undefined && keep !== undefined
         ? await keep(image, regenerates, { directory: area.snapshotDirectory, name: from })
         : false;
-    if (!placed) await transfer.writeSnapshot(area, from, image);
+    if (!placed) await transfer.writeSnapshot(area, from, image.bytes);
     try {
-      return await call(from, area, session);
+      return await call(from, area, session, frameKey(image));
     } finally {
       await transfer.removeSnapshot(area, from);
     }
@@ -185,43 +246,46 @@ export function remotePdfiumExecution(
    * buffer.
    */
   const wrote = (
-    image: ByteImage,
+    image: ImageSession,
     regenerates: 'all' | number,
-    send: (from: string, into: string, session: string) => Promise<{ bytes: number }>,
+    send: (from: string, into: string, session: string, password: string | null) => Promise<{ bytes: number }>,
   ): Promise<ByteImage> =>
     withImage(
       image,
-      async (from, area, session) => {
+      async (from, area, session, password) => {
         const into = transfer.mintName();
-        const answer = await send(from, into, session);
-        const bytes = await transfer.takeOutput(area, into);
-        if (bytes.length !== answer.bytes) {
-          throw new EngineSerialiseMismatch(answer.bytes, bytes.length);
-        }
-        return bytes;
+        const answer = await send(from, into, session, password);
+        return takeAnnounced(transfer, area, into, answer.bytes);
       },
       regenerates,
     );
 
   return {
-    // NEITHER `source` NOR `reads` IS NAMED, for `pdfiumSpecs.ts`' reason: no
+    // NEITHER `sources` NOR `reads` IS NAMED, for `pdfiumSpecs.ts`' reason: no
     // PDFium command can be handed a source, and none declares `reads`. The
     // remote half is where that mattered most — a value that never crossed the
-    // pipe fails in the host rather than at the call (ADR-0069).
+    // pipe fails in the host rather than at the call (ADR-0069). The channel's
+    // `sources` is written empty, which is that fact on the wire.
     apply: async <K extends KindsRoutedTo<'pdfium'>>({
       session: image,
       command,
     }: ApplyRequest<'pdfium', K>): Promise<ByteImage> =>
-      wrote(image, regeneratedBy(command), async (from, into, session) =>
-        answered('engine/apply', await client['engine/apply']({ session, command, from, into })),
+      wrote(image, regeneratedBy(command), async (from, into, session, password) =>
+        answered(
+          'engine/apply',
+          await client['engine/apply']({ session, command, sources: [], from, password, into }),
+          // ASKED ONLY OF A REFUSAL that names characters: decoding a block edit's wire form costs nothing a success
+          // should pay.
+          () => typedBy(command),
+        ),
       ),
 
     capture: async <K extends KindsRoutedTo<'pdfium'>>(
-      image: ByteImage,
+      image: ImageSession,
       command: CommandOfKind<K>,
     ): Promise<CaptureResult<CommandPrior[K]>> =>
-      withImage(image, async (from, _area, session) => {
-        const result = await client['engine/capture']({ session, command, from });
+      withImage(image, async (from, _area, session, password) => {
+        const result = await client['engine/capture']({ session, command, from, password });
         const answer = priorTooLargeToRecord(result) ?? answered('engine/capture', result);
         if (!answer.captured) return { captured: false, reason: answer.reason };
         // THE TAG IS CHECKED, AND TODAY THE BOUNDARY GETS THERE FIRST — which
@@ -268,13 +332,13 @@ export function remotePdfiumExecution(
       }),
 
     invert: async <K extends KindsRoutedTo<'pdfium'>>(
-      image: ByteImage,
+      image: ImageSession,
       kind: K,
       inverse: CommandPrior[K],
     ): Promise<ByteImage> =>
       // THE PAGE A PRIOR RESTORES, read through the same tagged prior the host is sent: every PDFium prior carries
       // the page its command touched, and restoring it regenerates that page as the command did.
-      wrote(image, pdfiumTaggedPrior(kind, inverse).prior.page, async (from, into, session) =>
+      wrote(image, pdfiumTaggedPrior(kind, inverse).prior.page, async (from, into, session, password) =>
         answered(
           'engine/invert',
           await client['engine/invert']({
@@ -292,6 +356,7 @@ export function remotePdfiumExecution(
             // as a cast whose reasoning lives in someone else's comment.
             inverse: pdfiumTaggedPrior(kind, inverse),
             from,
+            password,
             into,
           }),
         ),
@@ -304,8 +369,10 @@ export function remotePdfiumExecution(
  *
  * ## `serialise` IS THE IDENTITY, and makes no call at all
  *
- * `pdfLibWriter`'s, for exactly its reason: a byte-image writer's session **is**
- * the image, so producing the session's bytes is producing the argument. The
+ * `pdfLibWriter`'s, for exactly its reason: a byte-image writer's session
+ * **holds** the image (with the key it opens with, which a checkpoint does not
+ * need: it is restored through the document's own sessions, which hold it), so
+ * producing the session's bytes is reading the argument. The
  * host has no `engine/serialise` to ask — a host holding no parse has nothing
  * to hand back, which is ADR-0048's correction — and this member is where that
  * absence stops being visible to the bus.
@@ -320,7 +387,7 @@ export function remotePdfiumWriter(
   transfer: PdfiumTransfer,
   keep?: PdfiumInputKeeper,
 ): RegisteredWriter<'pdfium'> {
-  const serialise = (session: ByteImage): Promise<ByteImage> => Promise.resolve(session);
+  const serialise = (session: ImageSession): Promise<ByteImage> => Promise.resolve(session.bytes);
   return {
     serialise,
     // THE SESSION IS BYTES IN `main` for a byte-image writer, so a checkpoint writes them (ADR-0121).
@@ -349,7 +416,7 @@ export function remotePdfiumTextRuns(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
-): (image: ByteImage, page: number) => Promise<{
+): (image: ImageSession, page: number) => Promise<{
   readonly runs: readonly TextRun[];
   readonly truncated: boolean;
   readonly unaddressable: number;
@@ -357,11 +424,11 @@ export function remotePdfiumTextRuns(
   return async (image, page) => {
     const { session, area } = held();
     const from = transfer.mintName();
-    await transfer.writeSnapshot(area, from, image);
+    await transfer.writeSnapshot(area, from, image.bytes);
     try {
       return answered(
         'engine/text-runs',
-        await client['engine/text-runs']({ session, from, page }),
+        await client['engine/text-runs']({ session, from, password: frameKey(image), page }),
       );
     } finally {
       await transfer.removeSnapshot(area, from);
@@ -392,7 +459,7 @@ export function remotePdfiumRenderPage(
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
 ): (
-  image: ByteImage,
+  image: ImageSession,
   page: number,
   width: number,
   height: number,
@@ -401,16 +468,17 @@ export function remotePdfiumRenderPage(
     const { session, area } = held();
     const from = transfer.mintName();
     const into = transfer.mintName();
-    await transfer.writeSnapshot(area, from, image);
+    await transfer.writeSnapshot(area, from, image.bytes);
     try {
       const answer = answered(
         'engine/render-page',
-        await client['engine/render-page']({ session, from, into, page, width, height }),
+        await client['engine/render-page']({ session, from, password: frameKey(image), into, page, width, height }),
       );
-      const bgra = await transfer.takeOutput(area, into);
-      if (bgra.length !== answer.bytes || bgra.length !== width * height * 4) {
-        throw new EngineSerialiseMismatch(width * height * 4, bgra.length);
-      }
+      // THE SIZE IS KNOWN BEFORE THE HOST ANSWERS, so a count that is not the raster's is refused before anything is
+      // read, and the read is held to the raster's own size.
+      const expected = width * height * 4;
+      if (answer.bytes !== expected) throw new EngineSerialiseMismatch(expected, answer.bytes);
+      const bgra = await takeAnnounced(transfer, area, into, expected);
       return { width, height, bgra };
     } finally {
       await transfer.removeSnapshot(area, from);
@@ -434,7 +502,7 @@ export function remotePdfiumPageObjects(
   client: ClientApi<PdfiumChannels>,
   held: () => PdfiumArea,
   transfer: PdfiumTransfer,
-): (image: ByteImage, page: number) => Promise<{
+): (image: ImageSession, page: number) => Promise<{
   readonly objects: readonly {
     readonly index: number;
     readonly kind: 'unknown' | 'text' | 'path' | 'image' | 'shading' | 'form';
@@ -454,11 +522,11 @@ export function remotePdfiumPageObjects(
   return async (image, page) => {
     const { session, area } = held();
     const from = transfer.mintName();
-    await transfer.writeSnapshot(area, from, image);
+    await transfer.writeSnapshot(area, from, image.bytes);
     try {
       return answered(
         'engine/page-objects',
-        await client['engine/page-objects']({ session, from, page }),
+        await client['engine/page-objects']({ session, from, password: frameKey(image), page }),
       );
     } finally {
       await transfer.removeSnapshot(area, from);

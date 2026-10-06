@@ -6,6 +6,7 @@ import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
+import { imageWithinPixelBound } from './pageSnapshot.js';
 import { otsu } from './pageSkew.js';
 
 /**
@@ -124,22 +125,14 @@ export function roundTrippable(object: PDFObject): boolean {
 function level(object: PDFObject): boolean {
   if (!roundTrippable(object)) return false;
 
-  let pixmap;
-  try {
-    const raw = object.readRawStream();
-    const image = new mupdf.Image(raw);
-    pixmap = image.toPixmap();
-  } catch {
-    return false;
-  }
+  const pixmap = decodedForRewrite(object);
+  if (typeof pixmap === 'string') return false;
 
+  let grey: mupdf.Pixmap | null = null;
   try {
     // GREY FIRST, so the histogram is over one channel and the stretch cannot
     // shift a colour cast. A scan's information is its ink.
-    const grey =
-      pixmap.getNumberOfComponents() === 1
-        ? pixmap
-        : pixmap.convertToColorSpace(mupdf.ColorSpace.DeviceGray, true);
+    grey = greyOf(pixmap);
     const samples = grey.getPixels();
     const threshold = otsu(samples);
     const { dark, light } = classMeans(samples, threshold);
@@ -153,12 +146,56 @@ function level(object: PDFObject): boolean {
       const value = ((samples[index] ?? 0) - dark) * scale;
       samples[index] = value < 0 ? 0 : value > 255 ? 255 : Math.round(value);
     }
+    // `getPixels` is a copy (the native binding makes no view over engine memory), so the levelled samples go
+    // back into the pixmap before it is encoded.
+    grey.setPixels(samples);
 
     writeGreyJpeg(object, grey);
     return true;
   } finally {
+    if (grey !== null && grey !== pixmap) grey.destroy();
     pixmap.destroy();
   }
+}
+
+/**
+ * An image's samples, decoded for a command that re-encodes them as one grey JPEG, or why it may not be:
+ * levelling here and straightening in `pageScan.ts` ask it the same way (B3a).
+ *
+ * `unreadable` for a stream MuPDF does not recognise on its own (the throw `new Image` answers it with), `too-large`
+ * for one past the host's pixel bound, asked of the image's size before it is decoded (CR-NAT-06), and `has-alpha`
+ * for an image that **carries its own alpha** (CR-NAT-09): a JPX or a PNG stream can, with no `/SMask` for `roundTrippable` to see. A JPEG has no
+ * alpha, so re-encoding one would drop its transparency, and MuPDF refuses the write outright. It is kept as it is.
+ *
+ * The decoded `Image` is released here, once its pixmap exists, rather than left to a finaliser (CR-NAT-08's class):
+ * it holds the compressed stream, and a document of scans decodes one per page.
+ */
+export function decodedForRewrite(object: PDFObject): mupdf.Pixmap | 'unreadable' | 'too-large' | 'has-alpha' {
+  let image: mupdf.Image;
+  try {
+    image = new mupdf.Image(object.readRawStream());
+  } catch {
+    return 'unreadable';
+  }
+  try {
+    if (!imageWithinPixelBound(image)) return 'too-large';
+    const pixmap = image.toPixmap();
+    if (pixmap.getAlpha() === 0) return pixmap;
+    pixmap.destroy();
+    return 'has-alpha';
+  } catch {
+    return 'unreadable';
+  } finally {
+    image.destroy();
+  }
+}
+
+/**
+ * `pixmap` as one grey channel: itself when it already is one, otherwise a new pixmap the caller destroys
+ * (CR-NAT-08). With no alpha, which `decodedForRewrite` has refused, every sample is a pixel.
+ */
+export function greyOf(pixmap: mupdf.Pixmap): mupdf.Pixmap {
+  return pixmap.getNumberOfComponents() === 1 ? pixmap : pixmap.convertToColorSpace(mupdf.ColorSpace.DeviceGray, false);
 }
 
 /**

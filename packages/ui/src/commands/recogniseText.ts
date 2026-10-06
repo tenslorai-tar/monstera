@@ -44,7 +44,7 @@ import {
  * forbids a document's extracted text being resident in `main` — a scoped command
  * would hold every named page's recognition at once. So the scope the dialog
  * answers is walked **here**, one dispatch per page, which is the shape
- * `showWordCount` and `checkSpelling` already walk for the same ADR's reason.
+ * `showWordCount` and the spelling review (`reviewRun.ts`) already walk for the same ADR's reason.
  *
  * Three things fall out of that rather than being designed:
  *
@@ -53,7 +53,7 @@ import {
  *   an hour and a dialog that has not opened yet is not feedback.
  * - **A cancel that leaves correct work behind.** A recognised page carries real
  *   text; stopping after three of ten is three pages done, not a partial answer.
- *   That is the opposite of `checkSpelling`'s *a cancelled walk publishes nothing*,
+ *   That is the opposite of the spelling review's *a stopped walk shows nothing*,
  *   and the asymmetry is the noun: a list of misspellings from some of the pages
  *   reads as the document's whole answer, where a page's text layer is about that
  *   page and nothing else.

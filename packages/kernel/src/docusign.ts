@@ -1,4 +1,5 @@
 import type { DocusignEnvironment } from '@monstera/contract';
+import { hostWithin } from '@monstera/shared';
 
 import { readWithin } from './verifiedDownload.js';
 
@@ -378,9 +379,9 @@ export async function sendingAccount(
   } catch (cause) {
     throw new DocusignRefused('unreadable-answer', 'the base URI is not a URL', { cause });
   }
-  // THE HOST A TOKEN IS SENT TO, locked by suffix with the dot load-bearing.
-  const suffix = `.${DOCUSIGN_REST_DOMAIN}`;
-  if (host.protocol !== 'https:' || !host.hostname.endsWith(suffix)) {
+  // THE HOST A TOKEN IS SENT TO, locked to DocuSign's domain with the dot load-bearing — `hostWithin`, the one rule
+  // every address a key goes to is held by.
+  if (host.protocol !== 'https:' || !hostWithin(host.hostname, DOCUSIGN_REST_DOMAIN)) {
     throw new DocusignRefused('unlisted-host', 'the base URI is not an HTTPS host under DocuSign’s domain');
   }
   return { accountId, basePath: `${host.origin}/restapi` };

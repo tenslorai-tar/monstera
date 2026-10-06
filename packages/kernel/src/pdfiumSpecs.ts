@@ -3,7 +3,7 @@ import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
 import type { ApplyRequest, CommandExecution, KindsRoutedTo } from './commandRouting.js';
-import type { ByteImage, Capture, Invert } from './engineSeam.js';
+import type { ByteImage, Capture, ImageSession, Invert } from './engineSeam.js';
 import {
   applyDeletePageObjects,
   applyPlacePageObject,
@@ -25,6 +25,7 @@ import {
   captureReplaceAllText,
   invertReplaceAllText,
 } from './pdfiumReplaceAll.js';
+import { applyReplaceTextAt, captureReplaceTextAt } from './pdfiumReplaceAt.js';
 import {
   applyEditTextBlock,
   applyReplaceTextObject,
@@ -113,6 +114,14 @@ export const pdfiumSpecs = {
     capture: captureDeletePageObjects,
     invert: invertDeletePageObjects,
   },
+  replaceTextAt: {
+    ...declaredCommands.replaceTextAt,
+    apply: applyReplaceTextAt,
+    capture: captureReplaceTextAt,
+    // `replaceTextObject`'s inverse, given the prior `captureReplaceTextAt` records in its shape: the one object's
+    // string, put back. One restore, not a second spelling of it.
+    invert: invertReplaceTextObject,
+  },
   replaceAllText: {
     ...declaredCommands.replaceAllText,
     apply: applyReplaceAllText,
@@ -151,14 +160,14 @@ type PdfiumKind = keyof typeof pdfiumSpecs;
  * One PDFium `apply` **as this writer calls it**.
  *
  * Two parameters and no more, which is the seam's own shape rather than a
- * simplification: `Apply` resolves byte-image × `sources: 'one'` to `never`, so
+ * simplification: `Apply` resolves byte-image × any source to `never`, so
  * no PDFium command can be handed a source; and no PDFium command declares
  * `reads`, so there is no outline slot either. `pdfLibWriter.ts` carries a
  * third parameter because `generateToc` routes there — the difference between
  * the two files is a fact about their tables, not about their writers.
  */
 type PdfiumApply<K extends CommandKind> = (
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<K>,
 ) => Promise<ByteImage>;
 
@@ -197,7 +206,7 @@ function specFor(command: Command): (typeof pdfiumSpecs)[PdfiumKind] {
  * **The asymmetry with `localPdfLibExecution` is worth naming**, because both
  * are byte-image executions and only one of them has a remote half. A pdf-lib
  * session is bytes and pdf-lib is JavaScript, so *where the bytes are* is
- * `main`. A PDFium session is bytes and PDFium is native, so *where the bytes
+ * `main`. A PDFium session holds bytes and PDFium is native, so *where the bytes
  * are* has to be somewhere invariant 20 allows a native library — which is the
  * host. Byte-image says nothing about placement; ADR-0047 says so in as many
  * words.
@@ -206,8 +215,8 @@ export const localPdfiumExecution: CommandExecution<'pdfium'> = {
   // METHOD SYNTAX, so `K` is in scope for the assertion — an arrow would put
   // the cast at `CommandKind`, the whole union, which widens `capture`'s prior
   // state to a union too and stops it being assignable to `CommandPrior[K]`.
-  // NEITHER `source` NOR `reads` IS NAMED, and both facts are the table's
-  // rather than this writer's: `Apply` resolves byte-image × `sources: 'one'`
+  // NEITHER `sources` NOR `reads` IS NAMED, and both facts are the table's
+  // rather than this writer's: `Apply` resolves byte-image × any source
   // to `never`, and no PDFium command declares `reads`. The `_source?: never`
   // placeholder that stood here existed only because the bus passed
   // positionally, and went with it (ADR-0069).
@@ -218,13 +227,13 @@ export const localPdfiumExecution: CommandExecution<'pdfium'> = {
     return (specFor(command).apply as PdfiumApply<K>)(image, command);
   },
   capture<K extends CommandKind>(
-    image: ByteImage,
+    image: ImageSession,
     command: CommandOfKind<K>,
   ): Promise<CaptureResult<CommandPrior[K]>> {
     return (specFor(command).capture as Capture<'pdfium', K>)(image, command);
   },
   invert<K extends CommandKind>(
-    image: ByteImage,
+    image: ImageSession,
     kind: K,
     inverse: CommandPrior[K],
   ): Promise<ByteImage> {

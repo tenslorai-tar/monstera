@@ -5,9 +5,10 @@ import type {
   LineEnding,
   DispatchableCommand,
 } from '@monstera/contract';
-import type { PageTransform } from '@monstera/shared';
+import type { MessageKey, PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
+import { HINT_DRAG_LINE, HINT_DRAG_REDACT, HINT_DRAG_SHAPE, HINT_INK } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationStyle } from './annotationStyle.js';
@@ -142,6 +143,7 @@ function box(gesture: Gesture): { x: number; y: number; width: number; height: n
 function boxTool(
   id: string,
   shape: 'rect' | 'ellipse',
+  hint: MessageKey,
   draftOf: (rect: AnnotationRect) => AnnotationDraft,
 ): UiTool {
   const drawn = (gesture: Gesture): ToolPreview | undefined => {
@@ -180,7 +182,7 @@ function boxTool(
     preview: drawn,
   };
 
-  return { id, controller };
+  return { id, controller, hint };
 }
 
 /**
@@ -191,6 +193,7 @@ function boxTool(
  *   from an arrow, because that is what the format says separates them
  */
 function lineTool(id: string, ending: LineEnding, style: AnnotationStyle): UiTool {
+  const hint = HINT_DRAG_LINE;
   const drawn = (gesture: Gesture): ToolPreview | undefined => {
     const from = startOf(gesture);
     const to = endOf(gesture);
@@ -235,7 +238,7 @@ function lineTool(id: string, ending: LineEnding, style: AnnotationStyle): UiToo
     preview: drawn,
   };
 
-  return { id, controller };
+  return { id, controller, hint };
 }
 
 /**
@@ -250,6 +253,7 @@ function lineTool(id: string, ending: LineEnding, style: AnnotationStyle): UiToo
  * @param id the registry id, shared with the command that selects it
  */
 function inkTool(id: string, style: AnnotationStyle): UiTool {
+  const hint = HINT_INK;
   const drawn = (gesture: Gesture): ToolPreview | undefined => {
     // THE PATH'S OWN EXTENT, not its two ends: a scribble that returns to where
     // it started is a stroke, and the box tools' end-to-end test would call it
@@ -291,7 +295,7 @@ function inkTool(id: string, style: AnnotationStyle): UiTool {
     preview: drawn,
   };
 
-  return { id, controller };
+  return { id, controller, hint };
 }
 
 /**
@@ -309,11 +313,11 @@ export const INK_TOOL_ID = 'annotate.ink';
 export const REDACT_TOOL_ID = 'annotate.redact';
 
 export const rectangleTool = (style: AnnotationStyle): UiTool =>
-  boxTool(RECTANGLE_TOOL_ID, 'rect', (rect) => ({ type: 'square', rect, ...styled(style) }));
+  boxTool(RECTANGLE_TOOL_ID, 'rect', HINT_DRAG_SHAPE, (rect) => ({ type: 'square', rect, ...styled(style) }));
 export const ellipseTool = (style: AnnotationStyle): UiTool =>
-  boxTool(ELLIPSE_TOOL_ID, 'ellipse', (rect) => ({ type: 'circle', rect, ...styled(style) }));
+  boxTool(ELLIPSE_TOOL_ID, 'ellipse', HINT_DRAG_SHAPE, (rect) => ({ type: 'circle', rect, ...styled(style) }));
 export const redactTool = (style: AnnotationStyle): UiTool =>
-  boxTool(REDACT_TOOL_ID, 'rect', (rect) => {
+  boxTool(REDACT_TOOL_ID, 'rect', HINT_DRAG_REDACT, (rect) => {
     // NO BORDER WIDTH, and it is measured rather than forgotten: MuPDF refuses
     // `setBorderWidth` on a Redact. The schema has no field for one, so the
     // spread is taken apart here rather than dropping a field the type would

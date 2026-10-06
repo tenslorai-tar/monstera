@@ -57,15 +57,24 @@ const CONTRACT_ROOT = '@monstera/contract';
 /** Every engine host's entry, relative to the kernel's dist. */
 const HOSTS = ['host/hostEntry.js', 'host/pdfiumHostEntry.js', 'host/composeHostEntry.js'];
 
-/** The other writers' spec tables, which the MuPDF host must not reach. */
-const OTHER_WRITERS = ['pdfLibWriter.js', 'signpdfWriter.js', 'pdfiumSpecs.js'];
+/**
+ * The other writers' modules, which the MuPDF host must not reach — and `documentSign.js`, the signer's KEY half,
+ * which it must never reach at all: it parses the certificate, and a host is hostile (ADR-0148).
+ */
+const OTHER_WRITERS = ['pdfLibWriter.js', 'signpdfWriter.js', 'pdfiumSpecs.js', 'signaturePlaceholder.js', 'documentSign.js'];
 
-/** The one other writer the MuPDF host runs, on demand (ADR-0121 Decision 3). */
-const HOSTED_WRITER = 'pdfLibWriter.js';
+/**
+ * What the MuPDF host runs of other writers, on demand: pdf-lib's commands (ADR-0121 Decision 3) and the signature's
+ * placeholder (ADR-0148). Never at start.
+ */
+const HOSTED_WRITERS = ['pdfLibWriter.js', 'signaturePlaceholder.js'];
+
+/** The parser the signature's placeholder is written with, which `main`'s signer must not reach (ADR-0148). */
+const PDF_LIB = '@cantoo/pdf-lib';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 14 });
+const roster = createRoster(failures, { cases: 19 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -215,9 +224,10 @@ try {
   const mupdfAtStart = walk(KERNEL_DIST, 'host/hostEntry.js', { dynamic: false });
   const mupdfEver = walk(KERNEL_DIST, 'host/hostEntry.js');
   for (const writer of OTHER_WRITERS) {
-    const ever = writer === HOSTED_WRITER ? mupdfAtStart : mupdfEver;
+    const hosted = HOSTED_WRITERS.includes(writer);
+    const ever = hosted ? mupdfAtStart : mupdfEver;
     check(
-      `host/hostEntry.js does not reach ${writer}${writer === HOSTED_WRITER ? ' at start' : ''}`,
+      `host/hostEntry.js does not reach ${writer}${hosted ? ' at start' : ''}`,
       !ever.reached.has(writer),
       `reachable via ${(ever.reached.get(writer) ?? []).join(' -> ')}.\n` +
         `      The MuPDF host executes MuPDF's commands and, since ADR-0121 Decision 3, pdf-lib's — ` +
@@ -226,12 +236,34 @@ try {
         `or not. Take MuPDF's execution from mupdfSpecs.js, as the PDFium host takes pdfiumSpecs.js.`,
     );
   }
-  // CONTROL for the start-only case above: the whole-life walk DOES reach pdf-lib's writer, so
+  // CONTROL for each start-only case above: the whole-life walk DOES reach the hosted module, so
   // "not at start" is the dynamic edge being excluded, not a walk that cannot see the module.
+  for (const writer of HOSTED_WRITERS) {
+    check(
+      `CONTROL: host/hostEntry.js reaches ${writer} through its dynamic import`,
+      mupdfEver.reached.has(writer),
+      `the whole-life walk does not reach ${writer}, so the start-only case proves nothing.`,
+    );
+  }
+
+  // `main`'s SIGNER PARSES NOTHING (ADR-0148): the module that holds the key half reaches neither the placeholder
+  // writer nor the parser it is written with, over its whole life, so a signing in `main` cannot load the document.
+  const signer = walk(KERNEL_DIST, 'documentSign.js');
+  const signerParses = signer.reached.has('signaturePlaceholder.js') || (signer.bare.get(PDF_LIB) ?? []).length > 0;
   check(
-    `CONTROL: host/hostEntry.js reaches ${HOSTED_WRITER} through its dynamic import`,
-    mupdfEver.reached.has(HOSTED_WRITER),
-    `the whole-life walk does not reach ${HOSTED_WRITER}, so the start-only case proves nothing.`,
+    `documentSign.js, main's signer, reaches neither signaturePlaceholder.js nor ${PDF_LIB}`,
+    signer.edges > 0 && !signerParses,
+    `${String(signer.edges)} edges; ${PDF_LIB} named by ${(signer.bare.get(PDF_LIB) ?? []).join(', ') || 'nothing'}; ` +
+      `placeholder reachable via ${(signer.reached.get('signaturePlaceholder.js') ?? []).join(' -> ') || 'nothing'}.\n` +
+      `      Writing the placeholder parses the whole document, and that runs in the MuPDF host beside the session; ` +
+      `main signs over four numbers it checked against the hole.`,
+  );
+  // CONTROL: the placeholder writer DOES name the parser, so the case above can see the specifier it claims absent.
+  const placeholder = walk(KERNEL_DIST, 'signaturePlaceholder.js');
+  check(
+    `CONTROL: signaturePlaceholder.js names ${PDF_LIB}, so the walk sees the parser`,
+    (placeholder.bare.get(PDF_LIB) ?? []).length > 0,
+    `no module reached from signaturePlaceholder.js names ${PDF_LIB}; the case above cannot be trusted.`,
   );
 
   process.stdout.write(

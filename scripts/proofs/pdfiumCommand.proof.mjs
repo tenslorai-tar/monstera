@@ -85,6 +85,7 @@ import {
 
 import { PDFIUM_COMMAND, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
+import { withNoPassword } from '../lib/pdfiumNoPassword.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
 
@@ -103,15 +104,19 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 6);
+refuseStaleBuild(root, PDFIUM_COMMAND, 7);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
 const { openPdfium, pdfiumWriter, pageText, renderPageBitmap, replaceTextObjects, textObjectIndices, textRuns } =
   await import('../../packages/kernel/dist/pdfiumFfi.js');
 const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
-const { localPdfiumExecution } = await import('../../packages/kernel/dist/pdfiumSpecs.js');
+const specs = await import('../../packages/kernel/dist/pdfiumSpecs.js');
+// OVER BYTES THAT OPEN WITH NO PASSWORD, as every fixture here but the encrypted one does (`withNoPassword`).
+const localPdfiumExecution = withNoPassword(specs.localPdfiumExecution);
 const { declaredCommands } = await import('../../packages/kernel/dist/commandDeclarations.js');
+const { EditRefusedError } = await import('../../packages/kernel/dist/textEditRefusals.js');
+const { HeldPassword } = await import('../../packages/shared/dist/index.js');
 
 const FIRST = 'FIRST RUN stays exactly where it is';
 const SECOND = 'SECOND RUN is the one that changes';
@@ -134,18 +139,99 @@ async function threeRunsAndARectangle() {
   return document.save();
 }
 
+/** Made up for this proof; no document a person owns carries them. */
+const USER_PASSWORD = 'sample-user-0171';
+const OWNER_PASSWORD = 'sample-owner-0171';
+
+/**
+ * A document that opens only with a password reaches PDFium WITH it
+ * ([ADR-0171](../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md)'s addendum).
+ *
+ * `threeRunsAndARectangle` encrypted AES-256 by pdf-lib with a user and an owner password, edited through the very
+ * execution the host runs (`specs.localPdfiumExecution`, not the no-password wrapper), with the key the bus hands it.
+ * The saved bytes are read back here with PDFium's own open, so what is asserted is the file, not the session.
+ */
+async function passwordCases() {
+  const locked = await PDFDocument.load(await threeRunsAndARectangle());
+  locked.encrypt({ userPassword: USER_PASSWORD, ownerPassword: OWNER_PASSWORD, algorithm: 'AES-256' });
+  const bytes = await locked.save();
+  const command = /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceAllText'>} */ ({
+    kind: 'replaceAllText',
+    find: 'SECOND',
+    replace: 'LATTER',
+  });
+  /** What the saved bytes say, opened with `password` or none, or why PDFium refused them. @param {Uint8Array} saved @param {string | undefined} password */
+  const reading = async (saved, password) => {
+    let session;
+    try {
+      session = await pdfiumWriter.open(saved, password);
+    } catch (error) {
+      return `refused: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    try {
+      return await pageText(session, 0);
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+
+  /** @type {readonly (readonly [string, string])[]} */
+  const keys = [['USER', USER_PASSWORD], ['OWNER', OWNER_PASSWORD]];
+  for (const [which, password] of keys) {
+    let saved;
+    let answer = 'saved';
+    try {
+      saved = await specs.localPdfiumExecution.apply({
+        session: { bytes, opensWith: new HeldPassword(password) },
+        command,
+        sources: [],
+        reads: undefined,
+      });
+    } catch (error) {
+      answer = error instanceof Error ? error.message : String(error);
+    }
+    const withNone = saved === undefined ? 'nothing saved' : await reading(saved, undefined);
+    const withUser = saved === undefined ? 'nothing saved' : await reading(saved, USER_PASSWORD);
+    record(
+      `a document opened with its ${which} password is edited through PDFium with it, and the saved file still needs one`,
+      withNone.startsWith('refused') && withUser.includes('LATTER RUN') && !withUser.includes('SECOND RUN'),
+      `${answer}; the saved file opened with none: ${withNone.slice(0, 80)}; with the user password: ${JSON.stringify(withUser.slice(0, 120))}`,
+    );
+  }
+
+  // THE CONTROL, and the input is one the edit WOULD take with its key, measured just above: the same bytes and the
+  // same command with no key are refused at the open with PDFium's own number for a password, 4 (FPDF_ERR_PASSWORD).
+  let refusal;
+  try {
+    await specs.localPdfiumExecution.apply({ session: { bytes, opensWith: undefined }, command, sources: [], reads: undefined });
+  } catch (error) {
+    refusal = error;
+  }
+  record(
+    'CONTROL: the same edit with no key is refused at open with FPDF_ERR_PASSWORD, so nothing reaches a page',
+    refusal instanceof EditRefusedError && refusal.step === 'open' && refusal.engineError === 4,
+    refusal instanceof Error ? refusal.message : 'it was SAVED without a password',
+  );
+}
+
 /**
  * The case roster.
  *
  * `createRoster` rather than a total printed from what ran, because a total
  * computed over the cases that executed agrees with any collection, including
- * one that has quietly shrunk — audit item 4c. Twenty-nine is an independent
+ * one that has quietly shrunk — audit item 4c. The figure is an independent
  * claim about this file, not a count of it.
  *
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 69 });
+// 69 until 2026-10-04, when `replaceAtCases` added five (ADR-0156), and 75 from the stage audit of
+// cb62b976..33715f7c, which gave blank paper's refusal its control, and 77 from ADR-0169, which names the characters,
+// and 80 from its Decision 6's empty replacement: a word deleted, an object removed, and the checkpoint either takes,
+// and 82 from the same decision's *no version*: one occurrence for itself, and a word the page reads but no object
+// holds (the identity replace-all case became the nothing-matched one), and 84 from the line rule's two, and 87 from
+// ADR-0171's addendum: an edit of a document opened with either password, and its control with none.
+const roster = createRoster(failures, { cases: 87 });
 
 /**
  * @param {string} name
@@ -291,7 +377,7 @@ async function main() {
   const applied = await localPdfiumExecution.apply({
     session: original,
     command,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   record(
@@ -364,7 +450,7 @@ async function main() {
   const bothApplied = await localPdfiumExecution.apply({
     session: original,
     command: bothCommand,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const bothText = await textOf(bothApplied);
@@ -406,7 +492,7 @@ async function main() {
     await localPdfiumExecution.apply({
       session: original,
       command: /** @type {never} */ ({ kind: 'rotatePages' }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
   } catch (error) {
@@ -419,11 +505,13 @@ async function main() {
   );
 
   await replaceAllCases();
+  await replaceAtCases();
   await promotionCases();
   await nestedPromotionCases();
   await blockEditCases();
   await glyphLineCases();
   await settingCases();
+  await passwordCases();
 
   process.stdout.write(
     failures.length > 0
@@ -474,6 +562,150 @@ async function pageOf(bytes, page) {
 }
 
 /**
+ * One occurrence replaced by its point on the page (ADR-0156), through the same routing.
+ *
+ * Page 0 of {@link threePagesOfWidgets} holds WIDGET on two lines, each its own object, and once more split across two
+ * objects. A point on each line must change that line alone, and the split pair and blank paper must refuse and write
+ * nothing — the occurrence is named by where it is, never guessed.
+ */
+async function replaceAtCases() {
+  const original = await threePagesOfWidgets();
+  /**
+   * @param {{ x: number, y: number }} point
+   * @param {string} [find]
+   * @param {number} [page]
+   * @returns {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextAt'>}
+   */
+  const at = (point, find = 'WIDGET', page = 0) => ({ kind: 'replaceTextAt', page, find, replace: 'GADGET', at: point });
+  /** @param {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextAt'>} command */
+  const applied = (command) => localPdfiumExecution.apply({ session: original, command, sources: [], reads: undefined });
+  /** @param {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextAt'>} command */
+  const refusal = async (command) => {
+    try {
+      await applied(command);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.name : String(error);
+    }
+  };
+  const before = await pageOf(original, 0);
+
+  // ON THE FIRST LINE, baseline 230 at 11 points: the point is inside its object's bounds and outside the second's.
+  const first = await pageOf(await applied(at({ x: 80, y: 233 })), 0);
+  record(
+    'a point on the FIRST line replaces the word there and only there',
+    first.includes('The GADGET is on this page') && first.includes('and the WIDGET again below'),
+    `page 0 reads ${JSON.stringify(first)}`,
+  );
+  const second = await pageOf(await applied(at({ x: 80, y: 203 })), 0);
+  record(
+    'CONTROL: a point on the SECOND line replaces that one instead, so the point decides and not the order',
+    second.includes('The WIDGET is on this page') && second.includes('and the GADGET again below'),
+    `page 0 reads ${JSON.stringify(second)}`,
+  );
+  // BLANK PAPER asks for `below`, which ONE object on the page holds: with WIDGET, two objects hold the word and the
+  // refusal would be the two-runs rule's whatever the point did, so a pick that ignored the point would pass.
+  record(
+    'the word SPLIT ACROSS TWO OBJECTS is refused as not in place, and blank paper is too',
+    (await refusal(at({ x: 45, y: 173 }))) === 'TextNotInPlaceError' &&
+      (await refusal(at({ x: 300, y: 60 }, 'below'))) === 'TextNotInPlaceError',
+    'each must throw TextNotInPlaceError rather than write a guess',
+  );
+  const pointed = await pageOf(await applied(at({ x: 150, y: 203 }, 'below')), 0);
+  record(
+    'CONTROL: the same word at its own line IS replaced, so blank paper is refused for its point and not its word',
+    pointed.includes('and the WIDGET again GADGET'),
+    `page 0 reads ${JSON.stringify(pointed)}`,
+  );
+  record(
+    'the word is matched EXACTLY AS WRITTEN: an upper-case find does not take the lower-case word at its point',
+    (await refusal(at({ x: 80, y: 203 }, 'WIDGET', 2))) === 'TextNotInPlaceError',
+    'page 2 line 2 holds "widget" in lower case',
+  );
+
+  // THE WORD FOR ITSELF MAKES NO VERSION (ADR-0169 Decision 6), where a point and a word the page holds would otherwise
+  // be saved; the first case of this function is its control, the same point with a different word.
+  record(
+    'one occurrence replaced with ITSELF is refused as nothing to replace, so no version is made',
+    (await refusal({ ...at({ x: 80, y: 233 }), replace: 'WIDGET' })) === 'NothingToReplaceError',
+    'it must throw NothingToReplaceError rather than save the page unchanged',
+  );
+
+  // AN EMPTY REPLACEMENT DELETES THE WORD (ADR-0169 Decision 6), and the rest of its line stays.
+  const deleted = await pageOf(await applied({ ...at({ x: 80, y: 233 }), replace: '' }), 0);
+  record(
+    'an EMPTY replacement deletes the word, and the rest of its line and the page stay',
+    /The\s+is on this page/u.test(deleted) && !deleted.includes('The WIDGET') && deleted.includes('and the WIDGET again below'),
+    `page 0 reads ${JSON.stringify(deleted)}`,
+  );
+  // AND A WORD THAT WAS ITS OBJECT'S WHOLE TEXT REMOVES THE OBJECT. `GET` is the split pair's second object and ends
+  // its line: PDFium's set refuses an empty string, so without the removal this is refused at `set-text`.
+  const whole = { ...at({ x: 55, y: 173 }, 'GET'), replace: '' };
+  const removal = await refusal(whole);
+  const objectsBefore = (await textIndicesOf(original)).length;
+  const removed = removal === null ? await applied(whole) : null;
+  const objectsAfter = removed === null ? objectsBefore : (await textIndicesOf(removed)).length;
+  const afterRemoval = removed === null ? '' : await pageOf(removed, 0);
+  record(
+    'a word that was its object’s WHOLE text, at the END of its line, replaced with nothing, removes that object alone',
+    objectsAfter === objectsBefore - 1 && (afterRemoval.match(/WIDGET/gu) ?? []).length === 2 && afterRemoval.includes('WID'),
+    removal === null
+      ? `${String(objectsBefore)} text objects before, ${String(objectsAfter)} after; page 0 reads ${JSON.stringify(afterRemoval)}`
+      : `it was refused: ${removal}`,
+  );
+
+  // A REPLACE THAT WOULD MOVE THE TEXT AFTER IT IS REFUSED (`replaceLineRule.ts`, the owner's answer of 2026-10-05): a
+  // wider `WID` would draw into `GET`, and an emptied one would leave a gap before it. CONTROL: `WDI` is the same three
+  // letters, so the same width, and is written, so a rule refusing every edit on a line of two objects fails it.
+  const wider = await refusal({ ...at({ x: 35, y: 173 }, 'WID'), replace: 'WIDE' });
+  const emptied = await refusal({ ...at({ x: 35, y: 173 }, 'WID'), replace: '' });
+  const sameWidth = { ...at({ x: 35, y: 173 }, 'WID'), replace: 'WDI' };
+  const sameRefusal = await refusal(sameWidth);
+  const sameRead = sameRefusal === null ? await pageOf(await applied(sameWidth), 0) : '';
+  record(
+    'one occurrence that would MOVE the text after it on its line is refused, wider or emptied; the same width is written',
+    wider === 'ReplaceMovesLineError' && emptied === 'ReplaceMovesLineError' && sameRead.includes('WDIGET'),
+    `wider: ${String(wider)}; emptied: ${String(emptied)}; same width: ${sameRefusal ?? JSON.stringify(sameRead)}`,
+  );
+  // ITS UNDO IS A CHECKPOINT: a removed object has no constructor, so the one string it held cannot put it back. The
+  // same rule for the dialog's command, with a control that keeps an object and captures its string.
+  const wholeCapture = await localPdfiumExecution.capture(original, whole);
+  const lastObject = (await textIndicesOf(original)).at(-1) ?? -1;
+  // TYPED as the case above types its command, the branded `version` being the one field a `.mjs` cannot mint.
+  const replacing = (/** @type {string} */ text) =>
+    /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextObject'>} */ ({
+      kind: 'replaceTextObject',
+      page: 0,
+      ...replacementFieldsOf([{ index: lastObject, text }]),
+      version: 1,
+    });
+  const dialogEmptied = await localPdfiumExecution.capture(original, replacing(''));
+  const dialogKept = await localPdfiumExecution.capture(original, replacing('GOT'));
+  record(
+    'a replacement that empties an object takes a checkpoint, by either command, and one that keeps it captures',
+    !wholeCapture.captured &&
+      wholeCapture.reason.includes('cannot rebuild') &&
+      !dialogEmptied.captured &&
+      dialogEmptied.reason.includes('cannot rebuild') &&
+      dialogKept.captured,
+    `replaceTextAt ${wholeCapture.captured ? 'captured' : 'checkpoint'}; replaceTextObject emptied ` +
+      `${dialogEmptied.captured ? 'captured' : 'checkpoint'}, kept ${dialogKept.captured ? 'captured' : 'checkpoint'}`,
+  );
+
+  // UNDONE BY `replaceTextObject`'s INVERSE, given the prior the capture records: the page reads as it did.
+  const command = at({ x: 80, y: 233 });
+  const captured = await localPdfiumExecution.capture(original, command);
+  const restored = captured.captured
+    ? await pageOf(await localPdfiumExecution.invert(await applied(command), command.kind, captured.prior), 0)
+    : null;
+  record(
+    'the capture records the one object’s string, and the invert puts the page back as it was',
+    captured.captured && captured.prior.objects.length === 1 && restored === before,
+    captured.captured ? `restored ${JSON.stringify(restored)}` : `not captured: ${captured.reason}`,
+  );
+}
+
+/**
  * Document-wide replace-all, through the same routing every case above uses.
  *
  * Its own function for `pdfiumObject.proof.mjs`' reason one file along: these
@@ -496,7 +728,7 @@ async function replaceAllCases() {
   const applied = await localPdfiumExecution.apply({
     session: original,
     command,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const firstPage = await pageOf(applied, 0);
@@ -560,7 +792,7 @@ async function replaceAllCases() {
   const sensitive = await localPdfiumExecution.apply({
     session: original,
     command: replaceAll({ find: 'WIDGET', replace: 'GADGET', caseSensitive: true }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   record(
@@ -575,7 +807,7 @@ async function replaceAllCases() {
   const patterned = await localPdfiumExecution.apply({
     session: original,
     command: replaceAll({ find: 'W.DGET', replace: 'GADGET', regex: true }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   record(
@@ -592,7 +824,7 @@ async function replaceAllCases() {
     await localPdfiumExecution.apply({
       session: original,
       command: replaceAll({ find: '(', replace: 'x', regex: true }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
   } catch (error) {
@@ -604,19 +836,72 @@ async function replaceAllCases() {
     refused ?? 'it was accepted',
   );
 
-  // A REPLACEMENT THAT PRODUCES THE ORIGINAL CHANGES NOTHING. Replacing a word
-  // with itself matches everywhere, and regenerating every page for it would be
-  // the whole cost of an edit paid for no change.
-  const identity = await localPdfiumExecution.apply({
-    session: original,
-    command: replaceAll({ find: 'WIDGET', replace: 'WIDGET' }),
-    source: undefined,
-    reads: undefined,
-  });
+  // A REPLACEMENT THAT CHANGES NOTHING MAKES NO VERSION (ADR-0169 Decision 6): refused, so the bus records nothing.
+  // Replacing a word with itself matches everywhere, and a find that matches nothing matches nowhere; both serialised
+  // the document unchanged until 2026-10-05, a new version with an undo step that did nothing.
+  /** @param {Record<string, unknown>} rest */
+  const refusedAs = async (rest) => {
+    try {
+      await localPdfiumExecution.apply({ session: original, command: replaceAll(rest), sources: [], reads: undefined });
+      return 'it was SAVED';
+    } catch (error) {
+      return error instanceof Error ? error.name : String(error);
+    }
+  };
+  // CASE-SENSITIVE, because by default `WIDGET` also matches page 2's `widget`, and writing it as `WIDGET` changes it.
+  const identity = await refusedAs({ find: 'WIDGET', replace: 'WIDGET', caseSensitive: true });
+  const absent = await refusedAs({ find: 'GIZMO', replace: 'GADGET' });
   record(
-    'replacing a word with itself leaves every page’s text as it was',
-    (await pageOf(identity, 0)) === (await pageOf(original, 0)),
-    'the page reads as it did, so no object was rewritten with what it already held',
+    'a replacement that matches NOTHING, or replaces a word with ITSELF, is refused and saves nothing',
+    identity === 'NothingToReplaceError' && absent === 'NothingToReplaceError',
+    // ITS CONTROL IS THE FIRST CASE OF THIS FUNCTION: the same fixture with a find that matches is saved, so a rule that
+    // refused every replacement fails there and one that refused none fails here.
+    `itself: ${identity}; nothing matched: ${absent}`,
+  );
+  // AND THE CASE A PERSON MEETS: the page READS the word, as the find bar does, and no object holds it whole.
+  const split = await PDFDocument.create();
+  const splitFont = await split.embedFont(StandardFonts.Helvetica);
+  const splitPage = split.addPage([400, 300]);
+  splitPage.drawText('WID', { x: 30, y: 170, size: 11, font: splitFont });
+  splitPage.drawText('GET', { x: 49, y: 170, size: 11, font: splitFont });
+  const splitBytes = await split.save();
+  let splitAnswer = 'it was SAVED';
+  try {
+    await localPdfiumExecution.apply({
+      session: splitBytes,
+      command: replaceAll({ find: 'WIDGET', replace: 'GADGET' }),
+      sources: [],
+      reads: undefined,
+    });
+  } catch (error) {
+    splitAnswer = error instanceof Error ? error.name : String(error);
+  }
+  record(
+    'a word the page READS but no object holds whole is refused as nothing to replace, not saved unchanged',
+    (await pageOf(splitBytes, 0)).includes('WIDGET') && splitAnswer === 'NothingToReplaceError',
+    `page reads ${JSON.stringify(await pageOf(splitBytes, 0))}; ${splitAnswer}`,
+  );
+  // ONE REPLACEMENT THAT WOULD MOVE ITS LINE REFUSES THE WHOLE COMMAND (`replaceLineRule.ts`): `WID` matches on every
+  // line, inside the single-object lines where nothing follows and in the split pair where `GET` does, so a refusal
+  // that dropped only the offending one would save the rest. CONTROL: the same-width `WDI` is written everywhere.
+  const movesLine = await refusedAs({ find: 'WID', replace: 'WIDE', caseSensitive: true });
+  /** @type {string} */
+  let everywhere;
+  try {
+    const written = await localPdfiumExecution.apply({
+      session: original,
+      command: replaceAll({ find: 'WID', replace: 'WDI', caseSensitive: true }),
+      sources: [],
+      reads: undefined,
+    });
+    everywhere = `${await pageOf(written, 0)} | ${await pageOf(written, 2)}`;
+  } catch (error) {
+    everywhere = `refused: ${error instanceof Error ? error.name : String(error)}`;
+  }
+  record(
+    'a replace-all where ONE replacement would move its line is refused WHOLE; the same width is written on every page',
+    movesLine === 'ReplaceMovesLineError' && (everywhere.match(/WDIGET/gu) ?? []).length === 4,
+    `wider: ${movesLine}; same width: ${JSON.stringify(everywhere)}`,
   );
 
   // THE CAPTURE REFUSES, which is what makes the bus take a checkpoint — and
@@ -676,7 +961,7 @@ async function promotionCases() {
   const promoted = await localPdfiumExecution.apply({
     session: original,
     command,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const after = await textOf(promoted);
@@ -714,7 +999,7 @@ async function promotionCases() {
       ...replacementFieldsOf([{ index: target ?? -1, text: PROMOTED_EDIT }]),
       version: 1,
     }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   record(
@@ -731,7 +1016,7 @@ async function promotionCases() {
   const untouched = await localPdfiumExecution.apply({
     session: plain,
     command: /** @type {never} */ ({ kind: 'promoteFormObjects', page: 0 }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   record(
@@ -863,7 +1148,7 @@ async function glyphLineCases() {
       fit: 'reflow',
       version: 1,
     }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const after = (await textOf(edited)).replace(/\s+/gu, ' ');
@@ -927,7 +1212,7 @@ async function nestedPromotionCases() {
   const promoted = await localPdfiumExecution.apply({
     session: original,
     command: /** @type {never} */ ({ kind: 'promoteFormObjects', page: 0 }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const after = await blocksOf(promoted);
@@ -1173,7 +1458,7 @@ async function blockEditCases() {
         fit: 'reflow',
         version: 1,
       }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
 
@@ -1299,7 +1584,7 @@ async function blockEditCases() {
         fit: 'reflow',
         version: 1,
       }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
     const text = (await textOf(result)).replace(/\s+/gu, ' ');
@@ -1327,7 +1612,7 @@ async function blockEditCases() {
         fit,
         version: 1,
       }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
   // `, two more` takes the line past its old end (the old rule wrapped it there) and not past the
@@ -1397,7 +1682,7 @@ async function blockEditCases() {
         fit: 'reflow',
         version: 1,
       }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
     const text = (await textOf(result)).replace(/\s+/gu, ' ');
@@ -1433,7 +1718,7 @@ async function blockEditCases() {
       fit: 'reflow',
       version: 1,
     }),
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const bothText = await textOf(both);
@@ -1467,7 +1752,7 @@ async function blockEditCases() {
           fit: 'reflow',
           version: 1,
         }),
-        source: undefined,
+        sources: [],
         reads: undefined,
       });
     /** The saved page's text, or the refusal's name — so a case records a refusal rather than crashing on it. */
@@ -1482,26 +1767,33 @@ async function blockEditCases() {
   };
   const renamed = await narrowedFixture('MonsteraNarrowSans');
 
-  // THE PREMISE, asserted rather than assumed: the fixture's own font writes `é` and a reader of the
-  // SAVED file does not see it — the defect the reopened read exists for. Without it the case below
-  // passes for a build that never twins, on a font that could carry the word all along.
+  // THE PREMISE, asserted rather than assumed: the fixture's own font cannot carry `é`. Without it the
+  // case below passes for a build that never twins, on a font that could carry the word all along.
+  //
+  // TWO OBSERVATIONS ESTABLISH IT, and since CR-NAT-10 the first is the one this build makes: the raw
+  // write's read-back refuses the word before anything is generated (TextNotWritableError), and a
+  // write that got past it would save `é` where a reader of the file does not see it. A font that
+  // could carry the word fails both, since the write is then accepted and the saved text holds it.
   let premise = 'the page’s own font carried é';
   try {
     const session = await pdfiumWriter.open(renamed.bytes);
     try {
       const [object] = renamed.narrowedLines[1] ?? [];
       if (object !== undefined) {
-        await replaceTextObjects(session, 0, [{ index: object, text: accented }]);
+        await replaceTextObjects(session, 0, [{ index: object, text: accented }], 'as-written');
         const saved = await pdfiumWriter.serialise(session);
-        premise = (await textOf(saved)).includes('déjà') ? 'the page’s own font carried é' : 'held';
+        premise = (await textOf(saved)).includes('déjà') ? 'the page’s own font carried é' : 'held: written and unseen';
       }
     } finally {
       await pdfiumWriter.close(session);
     }
   } catch (error) {
-    premise = `the premise could not be read: ${error instanceof Error ? error.message : String(error)}`;
+    premise =
+      error instanceof Error && error.name === 'TextNotWritableError'
+        ? 'held: refused by the read-back'
+        : `the premise could not be read: ${error instanceof Error ? error.message : String(error)}`;
   }
-  record('PREMISE: a font in StandardEncoding writes é that a reader of the saved file does not see', premise === 'held', premise);
+  record('PREMISE: a font in StandardEncoding cannot carry é', premise.startsWith('held'), premise);
 
   const twinnedText = await renamed.written();
   record(
@@ -1534,20 +1826,54 @@ async function blockEditCases() {
     `page objects in the saved file ${String(pageObjects(probedSaved))}, before ${String(pageObjects(renamed.bytes))}`,
   );
 
+  // NOR A FONT NO PAGE USES (CR-NAT-16): a probe that needs a twin loads a standard font into the document, and
+  // PDFium's save writes every object the document holds. So every font object in the saved file must be one a
+  // page's resources name, counted from the parsed file rather than from its text.
+  const fontsOf = async (/** @type {Uint8Array} */ bytes) => {
+    const parsed = await PDFDocument.load(bytes);
+    const all = parsed.context
+      .enumerateIndirectObjects()
+      .filter(([, object]) => object instanceof PDFDict && object.get(PDFName.of('Type'))?.toString() === '/Font')
+      .map(([ref]) => ref.toString());
+    const named = parsed.getPages().flatMap((page) => {
+      const fonts = page.node.Resources()?.lookupMaybe(PDFName.of('Font'), PDFDict);
+      return fonts === undefined ? [] : fonts.values().map((value) => value.toString());
+    });
+    return { all, unnamed: all.filter((ref) => !named.includes(ref)) };
+  };
+  const probedFonts = await fontsOf(probedSaved);
+  record(
+    'a probed edit leaves NO font behind that no page names',
+    // THE POSITIVE CONTROL: the edit wrote through a twin, so the file holds more than the page's own font.
+    probedFonts.all.length >= 2 && probedFonts.unnamed.length === 0,
+    `${String(probedFonts.all.length)} font object(s); not named by a page: ${JSON.stringify(probedFonts.unnamed)}`,
+  );
+
   // AND WHERE NO TWIN CAN BE HAD, REFUSED — never saved as `Ø`. Helvetica itself in StandardEncoding:
   // the standard load returns this very font, so the retry reads wrong again.
   /** @type {string} */
   let helveticaRefusal;
+  /** The characters the refusal named, or `null` where it named none or did not refuse. */
+  let named = null;
   try {
     const result = await (await narrowedFixture('Helvetica')).apply();
     helveticaRefusal = `it was written, saying ${JSON.stringify((await textOf(result)).split(/\r?\n/u)[1] ?? '')}`;
   } catch (error) {
     helveticaRefusal = error instanceof Error ? error.name : String(error);
+    named = error instanceof Error && 'characters' in error ? String(error.characters) : null;
   }
   record(
     'where the twin would be the same font, the edit is REFUSED rather than saved as a different letter',
     helveticaRefusal === 'TextNotWritableError',
     helveticaRefusal,
+  );
+  // AND IT NAMES THE CHARACTERS (ADR-0169 Decision 4), and only those: the saved bytes read `déjà` back as `dØjà`
+  // (PDFium 155.0.8044.0, Linux build, 2026-10-05), so `é` is the one the font cannot show and `à` is carried. A
+  // refusal that compared nothing would name every letter of the line, and one that named `à` would be guessing.
+  record(
+    'and the refusal names exactly the characters the font cannot show',
+    named === 'é',
+    named === null ? 'it named nothing' : `it named ${JSON.stringify(named)}`,
   );
 }
 

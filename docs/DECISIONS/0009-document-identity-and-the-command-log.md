@@ -1365,3 +1365,14 @@ fire often, the answer is the toast and not a suppression rule.
 ordinary answer. An optional field is one a renderer satisfies by not reading it,
 and the obligation it carries — *the user must be told* — is exactly the kind
 that gets skipped by a caller writing `if (trimmed)`.
+
+## Amended 2026-10-05 by ADR-0169 — a declared code may carry a declared detail
+
+[ADR-0169](0169-a-pdfium-rewrite-is-saved-only-when-it-reads-back-as-edited.md) Decision 4.
+§9's 2026-08-19 decision above made a declared failure a code alone, on the ground that *a declared failure hides
+nothing — the code is the whole of what happened*. Two refusals a person must act on carry a fact the code cannot hold:
+which characters a font cannot show, and which step of a PDFium rewrite refused. So a code may carry one detail,
+declared once for the code on every boundary: its type in `@monstera/shared` beside `Failure`, its schema in
+`@monstera/contract`, checked against each other both ways, and validated at the boundary with the code. A detail is an
+enum member, a bounded number, or characters the person typed; never text a native library produced. The two shapes
+of this section become three, and *no free text crosses* holds as written.

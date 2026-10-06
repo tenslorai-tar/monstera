@@ -57,8 +57,11 @@ describe('CloudStorageBody', () => {
     ]);
     // THE NAMES are still both there and still the same — the line is what separates them.
     expect(rows.map((row) => row.querySelector('.m-cloud__file-name')?.textContent)).toStrictEqual(['lease.pdf', 'lease.pdf']);
-    // And each Open button is still named by its file.
-    expect(screen.getAllByRole('button', { name: /lease\.pdf/u })).toHaveLength(2);
+    // And each Open button is still named by its file — while it SHOWS only "Open", since the row beside it prints the
+    // name, and a long name drawn into the button made it wider than the row (the gallery, 2026-10-03).
+    const opens = screen.getAllByRole('button', { name: /lease\.pdf/u });
+    expect(opens).toHaveLength(2);
+    expect(opens.map((button) => button.querySelector('[aria-hidden]')?.textContent)).toStrictEqual(['Open', 'Open']);
   });
 
   it('GOOGLE’S PICKER is offered signed in and signed out, answers pick — and CONTROL: never for OneDrive or unconfigured', () => {

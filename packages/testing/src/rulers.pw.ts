@@ -3,6 +3,7 @@ import { type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
+import { settled } from './settled.js';
 
 /**
  * The rulers, and the loupe beside them, once the reader has scrolled (the owner's review of 0.1.6.0: the vertical
@@ -95,10 +96,12 @@ test('the LOUPE sits under the pointer once the pages are scrolled', async ({ pa
   await page.mouse.move(at.x, at.y, { steps: 4 });
   const loupe = page.locator('.m-loupe-at');
   await expect(loupe).toBeVisible();
-  const centre = await loupe.evaluate((element) => {
+  // ONCE IT HAS FOLLOWED THE LAST MOVE: the loupe is placed on a pointer move's render, which may land a frame after
+  // the move, and a read on appearance can be the step before.
+  const centre = await settled(page, () => loupe.evaluate((element) => {
     const rect = element.getBoundingClientRect();
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  });
+  }), () => true, 'the loupe');
   expect(Math.abs(centre.x - at.x)).toBeLessThanOrEqual(2);
   expect(Math.abs(centre.y - at.y)).toBeLessThanOrEqual(2);
 });

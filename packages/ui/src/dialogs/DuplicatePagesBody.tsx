@@ -51,15 +51,12 @@ export default function DuplicatePagesBody({
           headed *duplicates* with no such sentence is one a person acts on
           without asking what it means. */}
       <p className="m-duplicate-pages__compared">{_(DUPLICATE_PAGES_COMPARED)}</p>
-      {truncated ? (
-        <p className="m-duplicate-pages__truncated" role="status">
-          {_(DUPLICATE_PAGES_TRUNCATED)}
-        </p>
-      ) : null}
+      {/* A FACT ABOUT THE ANSWER, there from the moment the window opens, `FlatFieldsBody`'s reason: no live region. */}
+      {truncated ? <p className="m-duplicate-pages__truncated">{_(DUPLICATE_PAGES_TRUNCATED)}</p> : null}
       {groups.length === 0 ? (
         <p className="m-duplicate-pages__none">{_(DUPLICATE_PAGES_NONE)}</p>
       ) : (
-        <ul className="m-duplicate-pages__groups">
+        <ul className="m-dialog-list m-duplicate-pages__groups">
           {groups.map((group) => (
             <li key={group.pages.join(',')}>
               {_(DUPLICATE_PAGES_GROUP, {
@@ -69,22 +66,25 @@ export default function DuplicatePagesBody({
           ))}
         </ul>
       )}
-      <DialogFooter>
-        <Button
-          label={DUPLICATE_PAGES_REMOVE}
-          values={{ count: extras.length }}
-          variant="primary"
-          disabled={extras.length === 0}
-          onClick={() => {
-            // GUARDED AGAIN rather than trusting the disabled attribute, for
-            // `DeletePagesBody`'s reason: the result schema refuses an empty
-            // list, and a mismatch would be a thrown `DialogResultRejected` over
-            // the user's document.
-            if (extras.length === 0) return;
-            resolve({ pages: extras });
-          }}
-        />
-      </DialogFooter>
+      {/* NOTHING FOUND, NOTHING OFFERED: the footer is the report's Close. It offered *Remove 0 duplicate pages* (since *Delete*),
+          disabled, which is an action that does nothing drawn as though it were one (the gallery, 2026-10-03). */}
+      {extras.length === 0 ? (
+        <DialogFooter dismissal="close" />
+      ) : (
+        <DialogFooter>
+          <Button
+            label={DUPLICATE_PAGES_REMOVE}
+            values={{ count: extras.length }}
+            variant="primary"
+            onClick={() => {
+              // GUARDED, for `DeletePagesBody`'s reason: the result schema refuses an empty list, and a mismatch would
+              // be a thrown `DialogResultRejected` over the user's document.
+              if (extras.length === 0) return;
+              resolve({ pages: extras });
+            }}
+          />
+        </DialogFooter>
+      )}
     </div>
   );
 }

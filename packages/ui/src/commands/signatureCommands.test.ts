@@ -7,6 +7,7 @@ import { SIGNATURE_DIALOG_ID } from '../dialogs/signature.js';
 import { SIGNATURE_PROBLEM_DIALOG_ID } from '../dialogs/signatureProblem.js';
 import { TOAST_SIGNATURE_LIBRARY_FULL, TOAST_SIGNATURE_NOT_KEEPABLE } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
+import { outlinedMarkOf } from '../signatureFaces.js';
 import { chooseSignature, placePlainSignature, signatureCommand } from './signatureCommands.js';
 
 /**
@@ -18,7 +19,7 @@ import { chooseSignature, placePlainSignature, signatureCommand } from './signat
 const DOC = asDocId('00000000-0000-4000-8000-0000000000c1');
 const RECT = { x0: 100, y0: 100, x1: 250, y1: 150 } as const;
 const STAMP = { author: 'A. Tester', created: '2026-10-02T12:00:00Z' } as const;
-const TYPED = { mark: { kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' }, keep: true } as const;
+const TYPED = { mark: { kind: 'typed', text: 'Ada Lovelace', font: 'great-vibes' }, keep: true } as const;
 
 /** A client answering `document.placeSignature` with `answer`, recording every call and its params. */
 function answering(answer: unknown): { readonly client: ContractClient; readonly calls: [string, unknown][] } {
@@ -56,11 +57,29 @@ describe('placePlainSignature', () => {
       RECT,
       TYPED,
     );
+    // A TYPED NAME CROSSES AS ITS OUTLINE, made from its face by the one module that sets names (ADR-0150): the same
+    // outline that module answers, so what the dialog showed is what the page is sent.
+    const outlined = await outlinedMarkOf(TYPED.mark);
+    if (outlined.kind !== 'ready') throw new Error(outlined.kind);
     expect(calls).toStrictEqual([
-      ['document.placeSignature', { docId: DOC, page: 2, rect: RECT, mark: TYPED.mark, keep: true, stamp: STAMP }],
+      ['document.placeSignature', { docId: DOC, page: 2, rect: RECT, mark: outlined.mark, keep: true, stamp: STAMP }],
     ]);
+    expect(outlined.mark).toMatchObject({ kind: 'outlined', text: 'Ada Lovelace', font: 'great-vibes' });
     expect(onApplied).toHaveBeenCalledWith({ version: asDocVersion(5), byteLength: 1000 });
     expect(version).toBe(asDocVersion(5));
+  });
+
+  it('a typed name its face CANNOT WRITE sends nothing, and says which characters', async () => {
+    const { client, calls } = answering(PLACED);
+    const ask = vi.fn(() => Promise.resolve(undefined));
+    const version = await placePlainSignature({ client, ask, onApplied: vi.fn(), stamp: () => STAMP, toast: vi.fn() }, DOC, 0, RECT, {
+      mark: { kind: 'typed', text: 'Ада', font: 'sacramento' },
+      keep: true,
+    });
+    // SACRAMENTO'S FILES ARE LATIN ONLY, so each Cyrillic letter is named, once, in the order typed.
+    expect(ask).toHaveBeenCalledWith(SIGNATURE_PROBLEM_DIALOG_ID, { reason: 'cannot-write', characters: 'А д а' });
+    expect(calls).toStrictEqual([]);
+    expect(version).toBeUndefined();
   });
 
   it('a placement whose KEEP was refused for a full library is placed AND says so', async () => {
@@ -92,7 +111,8 @@ describe('placePlainSignature', () => {
       [{ kind: 'unreadable' }, { reason: 'unreadable' }],
       [{ kind: 'too-large', limitBytes: 67_108_864 }, { reason: 'too-large', limitBytes: 67_108_864 }],
       [{ kind: 'absent' }, { reason: 'absent' }],
-      [{ kind: 'unencodable-text' }, { reason: 'unencodable-text' }],
+      [{ kind: 'scan-blank' }, { reason: 'scan-blank' }],
+      [{ kind: 'scan-locked' }, { reason: 'scan-locked' }],
     ] as const) {
       const { client } = answering(answer);
       const ask = vi.fn(() => Promise.resolve(undefined));
@@ -179,6 +199,45 @@ describe('chooseSignature', () => {
     await chooseSignature({ client, ask: refusedAsk }, { make: () => 'blob:never', revoke: () => undefined });
     expect(refusedAsk).toHaveBeenNthCalledWith(2, SIGNATURE_PROBLEM_DIALOG_ID, { reason: 'unreadable' });
     expect(refusedAsk).toHaveBeenNthCalledWith(3, SIGNATURE_DIALOG_ID, { kept: [], keep: true });
+  });
+
+  it('a scanned PDF Upload could not use says WHY — no ink, or a password — and asks again (G3d)', async () => {
+    for (const kind of ['scan-blank', 'scan-locked'] as const) {
+      const client = createClient(channels, (id) => Promise.resolve(ok(id === 'library.list' ? { entries: [] } : { kind })));
+      const ask = vi
+        .fn()
+        .mockResolvedValueOnce({ upload: 'pick', keep: true })
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined);
+      await chooseSignature({ client, ask }, { make: () => 'blob:never', revoke: () => undefined });
+      // ITS OWN REASON, never `unreadable`: the file was read, and what it lacked is what the person can change.
+      expect(ask).toHaveBeenNthCalledWith(2, SIGNATURE_PROBLEM_DIALOG_ID, { reason: kind });
+      expect(ask).toHaveBeenNthCalledWith(3, SIGNATURE_DIALOG_ID, { kept: [], keep: true });
+    }
+  });
+
+  it('a KEPT TYPED signature chosen by its id answers its name and face, and CONTROL: a kept drawing stays its id', async () => {
+    const TYPED_ID = '00000000-0000-4000-8000-0000000000b1';
+    const DRAWN_ID = '00000000-0000-4000-8000-0000000000b2';
+    const client = createClient(channels, (id) =>
+      Promise.resolve(
+        ok(
+          id === 'library.list'
+            ? {
+                entries: [
+                  // KEPT BEFORE ADR-0150, in a retired face: read as its nearest.
+                  { id: TYPED_ID, kind: 'signature', look: { kind: 'typed', text: 'Ada', font: 'times-italic' } },
+                  { id: DRAWN_ID, kind: 'signature', look: { kind: 'drawn', strokes: [[[0, 0], [1, 1]]] } },
+                ],
+              }
+            : { removed: true },
+        ),
+      ),
+    );
+    const typed = await chooseSignature({ client, ask: vi.fn().mockResolvedValue({ mark: { kind: 'saved', id: TYPED_ID }, keep: false }) });
+    expect(typed).toStrictEqual({ mark: { kind: 'typed', text: 'Ada', font: 'garamond-italic' }, keep: false });
+    const drawn = await chooseSignature({ client, ask: vi.fn().mockResolvedValue({ mark: { kind: 'saved', id: DRAWN_ID }, keep: false }) });
+    expect(drawn).toStrictEqual({ mark: { kind: 'saved', id: DRAWN_ID }, keep: false });
   });
 
   it('a dismissed dialog answers nothing', async () => {

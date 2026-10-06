@@ -1,6 +1,8 @@
 import {
   PDFArray,
+  PDFDict,
   PDFDocument,
+  PDFHexString,
   PDFName,
   PDFNumber,
   PDFString,
@@ -282,6 +284,73 @@ describe('extractPages', () => {
     } finally {
       await mupdfWriter.close(session);
     }
+  });
+
+  describe('the new file carries only what the pages it takes hold (item 12b)', () => {
+    const KEPT = 'answer-on-the-taken-page';
+    const LEFT = 'answer-on-a-page-left-behind';
+
+    /** Four pages, each with its own text; a filled field on page 1 and another on page 4. */
+    async function filledForm(): Promise<Uint8Array> {
+      const document = await PDFDocument.create();
+      const font = await document.embedFont(StandardFonts.Helvetica);
+      const pages = [0, 1, 2, 3].map((index) => {
+        const page = document.addPage([WIDTH_BASE + index, 500]);
+        page.drawText(`body of page ${String(index + 1)}`, { x: 10, y: 400, size: 12, font });
+        return page;
+      });
+      const form = document.getForm();
+      for (const [name, page, answer] of [
+        ['kept.field', pages[0], KEPT],
+        ['left.field', pages[3], LEFT],
+      ] as const) {
+        if (page === undefined) throw new Error('the fixture should have four pages');
+        const field = form.createTextField(name);
+        field.addToPage(page, { x: 10, y: 10, width: 120, height: 16, font });
+        field.setText(answer);
+      }
+      return document.save({ useObjectStreams: false });
+    }
+
+    /** Every indirect object of the file, as pdf-lib walks them: which answers and how many page objects. */
+    async function everyObject(bytes: Uint8Array): Promise<{ readonly answers: string[]; readonly pages: number }> {
+      const document = await PDFDocument.load(bytes, { updateMetadata: false });
+      const answers: string[] = [];
+      let pages = 0;
+      for (const [, object] of document.context.enumerateIndirectObjects()) {
+        if (!(object instanceof PDFDict)) continue;
+        if (object.get(PDFName.of('Type')) === PDFName.of('Page')) pages += 1;
+        const value = object.get(PDFName.of('V'));
+        if (value instanceof PDFString || value instanceof PDFHexString) answers.push(value.decodeText());
+      }
+      return { answers: answers.sort(), pages };
+    }
+
+    it('CONTROL: the source holds both answers, so an absent one means something', async () => {
+      expect(await everyObject(await filledForm())).toStrictEqual({ answers: [LEFT, KEPT].sort(), pages: 4 });
+    });
+
+    it('EXTRACTING page 1 carries its field and answer, and no field, answer or page it did not take', async () => {
+      const written = await extracted(await filledForm(), [0]);
+      expect(await everyObject(written)).toStrictEqual({ answers: [KEPT], pages: 1 });
+      const reopened = await readBack(written);
+      expect(reopened.fields).toStrictEqual(['kept.field']);
+      expect(reopened.widgets).toStrictEqual([1]);
+    });
+
+    it('EXTRACTING a page with no field carries no form at all', async () => {
+      const written = await extracted(await filledForm(), [1, 2]);
+      expect(await everyObject(written)).toStrictEqual({ answers: [], pages: 2 });
+      expect((await readBack(written)).fields).toStrictEqual([]);
+      expect((await structureOf(written)).catalog).not.toContain('AcroForm');
+    });
+
+    it('A DESTINATION naming a page left behind does not bring that page into the file', async () => {
+      // `richDocument`'s named destination points at page 3. The outline and the names tree are grafted whole, and a
+      // graft follows a reference wherever it goes, so a page the extract did not take arrives as an object of its own.
+      const written = await extracted(await richDocument(), [0]);
+      expect((await everyObject(written)).pages).toBe(1);
+    });
   });
 
   it('CONTROL: the SOURCE still has all four pages afterwards', async () => {

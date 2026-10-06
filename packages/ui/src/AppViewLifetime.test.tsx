@@ -122,6 +122,8 @@ function answeringClient(model?: Readonly<Record<string, unknown>>): ContractCli
     },
     // The shell announces its close subscription on every mount (`windowClose.ts`).
     'window.closeListening': { acknowledged: true },
+    // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
+    'document.fileAccess': { access: 'writable' },
   };
   return createClient(channels, (id) => {
     const answer = answers[id];

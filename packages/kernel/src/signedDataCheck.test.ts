@@ -4,7 +4,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import forge from 'node-forge';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { applySignDocument } from './documentSign.js';
+import { applySignDocument } from './signpdfWriter.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { readSignatures } from './signatureRead.js';
 import { checkSigner, readContentInfo, type SignerCheck } from './signedDataCheck.js';

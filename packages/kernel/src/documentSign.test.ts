@@ -5,23 +5,26 @@ import {
   PDFDocument,
   PDFName,
   PDFNumber,
+  PDFRawStream,
   StandardFonts,
+  decodePDFRawStream,
 } from '@cantoo/pdf-lib';
-import { MAX_SIGNATURE_FIELD } from '@monstera/contract';
+import { MAX_SIGNATURE_FIELD, outlineOpCodes } from '@monstera/contract';
 import * as mupdf from './mupdfRaw.js';
 import forge from 'node-forge';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { applySignDocument, withSignaturePlaceholder } from './documentSign.js';
+import { applySignDocument } from './signpdfWriter.js';
+import { bytesToSign, fillSignature, NO_TIMESTAMPS, signPrepared } from './documentSign.js';
+import { preparePlaced, withSignaturePlaceholder } from './signaturePlaceholder.js';
+import { type PlaceholderRequest, placeholderRequestOf } from './signatureHole.js';
 import { engineChannels } from './host/engineChannels.js';
 import { signatureValues } from './signatureFields.js';
+import { breaksSignatures } from './signatureKeeping.js';
 import type { ByteImage } from './engineSeam.js';
 import { PngPixelsRefused } from './imageDimensions.js';
 import { mupdfWriter, signaturesKeptBySave, withDocument, withDocumentRemoving } from './mupdfWriter.js';
-import {
-  SignatureAppearanceRefusedError,
-  SignatureCredentialRefusedError,
-} from './signingRefusals.js';
+import { SignatureCredentialRefusedError } from './signingRefusals.js';
 import { pkcs7Asn1, rangeCoversWholeFile, readSignatures } from './signatureRead.js';
 import type { ReadSignature } from './signatureRead.js';
 
@@ -85,6 +88,9 @@ const command = {
   location: 'Arlington',
 };
 
+/** What the host is handed to write the same signature's placeholder: the command without its credential (ADR-0148). */
+const placeholder = placeholderRequestOf(command);
+
 describe('the placeholder this build writes', () => {
   it('carries the literal token shape `findByteRange` requires', async () => {
     // ADR-0054 Decision 3. Four NUMBERS is the obvious shape and is refused
@@ -100,7 +106,7 @@ describe('the placeholder this build writes', () => {
     // document. So what the ADR pins is the **token shape** (a number then
     // three names of ten asterisks) rather than a byte-exact string, and this
     // case asserts the tokens in the order they must appear.
-    const placed = await withSignaturePlaceholder(unsigned, { ...command, bytes: certificate });
+    const placed = await withSignaturePlaceholder(unsigned, placeholder);
     const text = Buffer.from(placed).toString('latin1');
     // The slot ESCAPED, one backslash per asterisk: `*` is a quantifier, and
     // the first draft interpolated ten of them unescaped and produced
@@ -117,7 +123,7 @@ describe('the placeholder this build writes', () => {
     // `/Contents` hole in the raw bytes. A compressed signature dictionary is
     // invisible to it, and the failure is *no byte range found* rather than
     // anything naming compression.
-    const placed = await withSignaturePlaceholder(unsigned, { ...command, bytes: certificate });
+    const placed = await withSignaturePlaceholder(unsigned, placeholder);
     const text = Buffer.from(placed).toString('latin1');
     expect(text).toContain('/Type /Sig');
     expect(text).toContain('/SubFilter /adbe.pkcs7.detached');
@@ -128,7 +134,7 @@ describe('the placeholder this build writes', () => {
     // not treat as a signature: `/SigFlags` without a field is a document that
     // announces a signature it does not have, and a field without the flag is
     // one some readers never look for.
-    const placed = await withSignaturePlaceholder(unsigned, { ...command, bytes: certificate });
+    const placed = await withSignaturePlaceholder(unsigned, placeholder);
     const back = await PDFDocument.load(placed, { updateMetadata: false });
     const acroForm = back.catalog.lookupMaybe(PDFName.of('AcroForm'), PDFDict);
     expect(acroForm).toBeDefined();
@@ -143,11 +149,7 @@ describe('a CERTIFYING signature', () => {
     // `/Perms` is a transform nothing points at, and `/Perms` without
     // `/Reference` names a signature that makes no claim. Either alone would
     // produce a document that opens, signs and verifies, and certifies nothing.
-    const placed = await withSignaturePlaceholder(unsigned, {
-      ...command,
-      bytes: certificate,
-      certify: 'form-fill',
-    });
+    const placed = await withSignaturePlaceholder(unsigned, { ...placeholder, certify: 'form-fill' });
     const text = Buffer.from(placed).toString('latin1');
     expect(text).toContain('/TransformMethod /DocMDP');
     expect(text).toContain('/Perms');
@@ -161,7 +163,7 @@ describe('a CERTIFYING signature', () => {
     // Without this, a placeholder that always certified would pass the case
     // above — and every approval signature in the product would silently claim
     // authorship and lock the document.
-    const placed = await withSignaturePlaceholder(unsigned, { ...command, bytes: certificate });
+    const placed = await withSignaturePlaceholder(unsigned, placeholder);
     const text = Buffer.from(placed).toString('latin1');
     expect(text).not.toContain('DocMDP');
     expect(text).not.toContain('/Perms');
@@ -173,11 +175,7 @@ describe('a CERTIFYING signature', () => {
     const levels = ['no-changes', 'form-fill', 'form-fill-and-annotate'] as const;
     const written = await Promise.all(
       levels.map(async (certify) => {
-        const placed = await withSignaturePlaceholder(unsigned, {
-          ...command,
-          bytes: certificate,
-          certify,
-        });
+        const placed = await withSignaturePlaceholder(unsigned, { ...placeholder, certify });
         return /\/P (\d)\b/u.exec(Buffer.from(placed).toString('latin1'))?.[1];
       }),
     );
@@ -185,11 +183,99 @@ describe('a CERTIFYING signature', () => {
   });
 });
 
+describe("main's half over the host's (ADR-0148)", () => {
+  /** A signature's bytes, fixed, so `@signpdf` and the fill can be handed the same one. */
+  const RAW = Uint8Array.from({ length: 1295 }, (_, at) => (at * 37 + 11) % 256);
+
+  /** A signer that answers {@link RAW} and records the bytes it was asked to sign. */
+  async function fixedSigner(): Promise<{ readonly signer: InstanceType<typeof import('@signpdf/utils').Signer>; readonly asked: Buffer[] }> {
+    const { Signer } = await import('@signpdf/utils');
+    const asked: Buffer[] = [];
+    class Fixed extends Signer {
+      override sign(pdf: Buffer): Promise<Buffer> {
+        asked.push(Buffer.from(pdf));
+        return Promise.resolve(Buffer.from(RAW));
+      }
+    }
+    return { signer: new Fixed(), asked };
+  }
+
+  it("FILLS byte for byte as @signpdf does, over the same placeholder and the same signature, and signs the bytes it would", async () => {
+    // THE ONE FILL HELD TO THE LIBRARY'S: `main` writes the signature itself, so this is what stops its half becoming a
+    // second opinion about where a signature goes.
+    const placed = await withSignaturePlaceholder(unsigned, placeholder);
+    const prepared = await preparePlaced(placed);
+    const { SignPdf } = await import('@signpdf/signpdf');
+    const { signer, asked } = await fixedSigner();
+    const theirs = await new SignPdf().sign(Buffer.from(placed), signer);
+
+    const toSign = bytesToSign(prepared);
+    const ours = fillSignature(prepared, RAW);
+    expect(Buffer.from(ours).equals(theirs)).toBe(true);
+    expect(asked).toHaveLength(1);
+    expect(toSign.equals(asked[0] ?? Buffer.alloc(0))).toBe(true);
+  });
+
+  it('the prepared hole is EMPTY and of the reserved size, and its ranges describe the file', async () => {
+    const prepared = await preparePlaced(await withSignaturePlaceholder(unsigned, placeholder));
+    const [start, holeStart, holeEnd, rest] = prepared.byteRange;
+    expect(start).toBe(0);
+    expect(holeEnd + rest).toBe(prepared.bytes.byteLength);
+    expect(holeEnd - holeStart).toBe(8192 * 2 + 2);
+    const hole = Buffer.from(prepared.bytes.subarray(holeStart, holeEnd)).toString('latin1');
+    expect(hole).toBe(`<${'0'.repeat(8192 * 2)}>`);
+  });
+
+  /** A prepared document with one of its numbers or bytes made wrong, as a hostile host could answer it. */
+  async function tampered(
+    change: (prepared: { bytes: Uint8Array; byteRange: [number, number, number, number] }) => void,
+  ): Promise<{ bytes: Uint8Array; byteRange: [number, number, number, number] }> {
+    const prepared = await preparePlaced(await withSignaturePlaceholder(unsigned, placeholder));
+    const copy = { bytes: Uint8Array.from(prepared.bytes), byteRange: [...prepared.byteRange] as [number, number, number, number] };
+    change(copy);
+    return copy;
+  }
+
+  it('REFUSES ranges that leave part of the file unsigned, and a hole the host wrote into — before the certificate is read', async () => {
+    // EACH BUILT FROM A PREPARATION THAT WOULD SIGN, so a refusal is the check's and not a document that could not
+    // be signed anyway: the CONTROL below signs the same preparation untouched.
+    const cases: [string, Parameters<typeof tampered>[0], RegExp][] = [
+      ['starts past zero', (p) => (p.byteRange[0] = 1), /do not start at the first byte/u],
+      ['stops short of the end', (p) => (p.byteRange[3] -= 1), /do not end at the file's last byte/u],
+      ['a hole of another size', (p) => (p.byteRange[1] += 2), /hold a hole of/u],
+      ['no brackets', (p) => (p.bytes[p.byteRange[1]] = 0x30), /do not bracket a hex string/u],
+      ['written into', (p) => (p.bytes[p.byteRange[1] + 5] = 0x41), /hole that is not empty at byte/u],
+    ];
+    for (const [name, change, refusal] of cases) {
+      await expect(signPrepared(await tampered(change), { ...command, bytes: certificate }, NO_TIMESTAMPS), name).rejects.toThrow(
+        refusal,
+      );
+    }
+    // A WRONG PASSPHRASE IS NOT ASKED ABOUT: the refusal comes before the credential is opened.
+    await expect(
+      signPrepared(await tampered((p) => (p.byteRange[0] = 1)), { ...command, bytes: certificate, passphrase: 'not-it' }, NO_TIMESTAMPS),
+    ).rejects.toThrow(/do not start at the first byte/u);
+    // CONTROL: the same preparation untouched signs, and keeps its length.
+    const untouched = await tampered(() => undefined);
+    const length = untouched.bytes.byteLength;
+    const signed = await signPrepared(untouched, { ...command, bytes: certificate }, NO_TIMESTAMPS);
+    expect(signed.byteLength).toBe(length);
+  }, 60_000);
+
+  it('a request type that holds a credential does not compile', () => {
+    // @ts-expect-error — the certificate's bytes and the passphrase are forbidden on what a host is handed (ADR-0148).
+    const refused: PlaceholderRequest = command;
+    expect(refused.kind).toBe('signDocument');
+    expect(Object.keys(placeholderRequestOf({ ...command, bytes: certificate }))).not.toContain('bytes');
+    expect(Object.keys(placeholderRequestOf(command))).not.toContain('passphrase');
+  });
+});
+
 describe('applySignDocument', () => {
   it('signs, and the signed file is EXACTLY as long as its placeholder', async () => {
     // The property the whole scheme rests on, and the apply asserts it too —
     // this is the case that says the assertion can be true.
-    const placed = await withSignaturePlaceholder(unsigned, { ...command, bytes: certificate });
+    const placed = await withSignaturePlaceholder(unsigned, placeholder);
     const signed = await applySignDocument(unsigned, { ...command, bytes: certificate });
     expect(signed.byteLength).toBe(placed.byteLength);
   }, 60_000);
@@ -286,6 +372,59 @@ describe('applySignDocument', () => {
  * signed document. What separates it is a document that was signed and then
  * **changed**, and the only honest way to make one is to sign and then edit.
  */
+describe('a SECOND signature (CR-DOC-07)', () => {
+  it('is APPENDED, and both signatures verify over the bytes each one covers', async () => {
+    const once = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const twice = await applySignDocument(once, { ...command, bytes: certificate, name: 'Second signer' });
+
+    // THE FIRST SIGNATURE'S FILE IS UNTOUCHED: the second arrives after it, as an incremental update.
+    expect(Buffer.from(twice.subarray(0, once.byteLength)).equals(Buffer.from(once))).toBe(true);
+
+    const session = await mupdfWriter.open(twice);
+    try {
+      const read = await readSignatures(session, twice);
+      expect(read.map((signature) => signature.signer)).toStrictEqual(['Grace Hopper', 'Second signer']);
+      expect(read.map((signature) => signature.coversDocument)).toStrictEqual([true, true]);
+      // The first covers the file as it was when it was signed; the second covers the whole file.
+      expect(read.map((signature) => signature.coversWholeFile)).toStrictEqual([false, true]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 120_000);
+
+  it('a signed file is counted as signed by the question main asks BEFORE a breaking edit (ADR-0149)', async () => {
+    // MAIN'S GATE asks `signaturesKept` of the document's session and refuses the edit when it counts one or more
+    // (`apps/desktop/src/documentCommands.test.ts`' *an edit that would break a signature*, over an injected count).
+    // This is the other end of that pair: the real count, over a really signed file — without it the gate could be
+    // proven against a number no signed document produces.
+    const once = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const signed = await mupdfWriter.open(once);
+    const plain = await mupdfWriter.open(unsigned);
+    try {
+      expect((await signaturesKeptBySave(signed)).signatures).toBe(1);
+      // CONTROL: the unsigned file the signature was added to counts none, so the gate lets every edit through.
+      expect((await signaturesKeptBySave(plain)).signatures).toBe(0);
+    } finally {
+      await mupdfWriter.close(signed);
+      await mupdfWriter.close(plain);
+    }
+    // AND THE KINDS THE GATE ASKS ABOUT: a removal does; a rotation, which MuPDF appends, does not.
+    expect(breaksSignatures('sanitizeDocument')).toBe(true);
+    expect(breaksSignatures('rotatePages')).toBe(false);
+  }, 60_000);
+
+  it('CONTROL: one signature covers the whole file it is in', async () => {
+    const once = await applySignDocument(unsigned, { ...command, bytes: certificate });
+    const session = await mupdfWriter.open(once);
+    try {
+      const read = await readSignatures(session, once);
+      expect(read.map((signature) => [signature.coversDocument, signature.coversWholeFile])).toStrictEqual([[true, true]]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }, 60_000);
+});
+
 describe('readSignatures', () => {
   it('CONTROL: an unsigned document reports no signatures', async () => {
     const session = await mupdfWriter.open(unsigned);
@@ -759,28 +898,35 @@ describe('a VISIBLE signature', () => {
     picture = pixmap.asPNG();
   });
 
+  /** A typed name as the renderer sends it (ADR-0150): an outline, a block and a curve under it, in its line box. */
+  const typedLook = {
+    kind: 'outlined',
+    text: 'Grace Hopper',
+    font: 'great-vibes',
+    outline: {
+      ops: outlineOpCodes('MLLLZMLQZ'),
+      points: [0, 100, 1000, 100, 1000, 400, 0, 400, 0, 440, 1000, 440, 500, 500, 0, 440],
+      frame: [0, 0, 1000, 500],
+    },
+  } satisfies NonNullable<Parameters<typeof withSignaturePlaceholder>[1]['appearance']>['mark'];
+
   it('writes the ordered rectangle and an /AP /N stream — and the invisible CONTROL writes neither', async () => {
     const visible = await widgetOf(
       await withSignaturePlaceholder(unsigned, {
-        ...command,
-        appearance: { page: 0, rect: RECT, mark: { kind: 'typed', text: 'Grace Hopper', font: 'times-italic' } },
+        ...placeholder,
+        appearance: { page: 0, rect: RECT, mark: typedLook },
       }),
     );
     const rect = visible.lookup(PDFName.of('Rect'), PDFArray).asArray();
     expect(rect.map((value) => (value as PDFNumber).asNumber())).toStrictEqual([100, 100, 300, 180]);
     expect(visible.lookupMaybe(PDFName.of('AP'), PDFDict)?.get(PDFName.of('N'))).toBeDefined();
 
-    const invisible = await widgetOf(await withSignaturePlaceholder(unsigned, command));
+    const invisible = await widgetOf(await withSignaturePlaceholder(unsigned, placeholder));
     const none = invisible.lookup(PDFName.of('Rect'), PDFArray).asArray();
     expect(none.map((value) => (value as PDFNumber).asNumber())).toStrictEqual([0, 0, 0, 0]);
     expect(invisible.lookupMaybe(PDFName.of('AP'), PDFDict)).toBeUndefined();
   });
 
-  const typedLook: { kind: 'typed'; text: string; font: 'helvetica' } = {
-    kind: 'typed',
-    text: 'Grace Hopper',
-    font: 'helvetica',
-  };
   const drawnLook: { kind: 'drawn'; strokes: [number, number][][] } = {
     kind: 'drawn',
     strokes: [
@@ -845,7 +991,7 @@ describe('a VISIBLE signature', () => {
     const turned = await document.save();
 
     const signed = await withSignaturePlaceholder(turned, {
-      ...command,
+      ...placeholder,
       appearance: {
         page: 0,
         rect: ORDERED,
@@ -886,14 +1032,16 @@ describe('a VISIBLE signature', () => {
     expect(Math.max(...(groups[1] ?? [across])) / across, 'the DOT is below it').toBeLessThan(0.2);
   });
 
-  it('REFUSES text the chosen font cannot encode, by name', async () => {
-    const refused = applySignDocument(unsigned, {
-      ...command,
-      bytes: certificate,
-      appearance: { page: 0, rect: RECT, mark: { kind: 'typed', text: 'Grace ✓', font: 'courier' } },
-    });
-    await expect(refused).rejects.toBeInstanceOf(SignatureAppearanceRefusedError);
-    await expect(refused).rejects.toMatchObject({ reason: 'unencodable-text' });
+  it('writes a typed name as a FILLED PATH and no font, so no font program reaches the document (ADR-0150)', async () => {
+    const visible = await widgetOf(
+      await withSignaturePlaceholder(unsigned, { ...placeholder, appearance: { page: 0, rect: RECT, mark: typedLook } }),
+    );
+    const form = visible.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
+    if (!(form instanceof PDFRawStream)) throw new Error('no appearance stream was written');
+    const content = Buffer.from(decodePDFRawStream(form).decode()).toString('latin1');
+    expect(content).toMatch(/[\d.]+ [\d.]+ c\n[\s\S]*\nf\nQ/u);
+    expect(content).not.toMatch(/\b(BT|Tf|Tj)\b/u);
+    expect(form.dict.lookupMaybe(PDFName.of('Resources'), PDFDict)?.get(PDFName.of('Font'))).toBeUndefined();
   });
 
   it.each(['image/png', 'image/jpeg'] as const)(
@@ -930,13 +1078,13 @@ describe('a VISIBLE signature', () => {
   });
 
   it('REFUSES a page the document does not have, and a rectangle with no area', async () => {
-    const typed = { kind: 'typed', text: 'Grace Hopper', font: 'courier' } as const;
+    const typed = typedLook;
     await expect(
-      withSignaturePlaceholder(unsigned, { ...command, appearance: { page: 1, rect: RECT, mark: typed } }),
+      withSignaturePlaceholder(unsigned, { ...placeholder, appearance: { page: 1, rect: RECT, mark: typed } }),
     ).rejects.toThrow(/outside this document/);
     await expect(
       withSignaturePlaceholder(unsigned, {
-        ...command,
+        ...placeholder,
         appearance: { page: 0, rect: { x0: 100, y0: 100, x1: 100, y1: 180 }, mark: typed },
       }),
     ).rejects.toThrow(/area/);

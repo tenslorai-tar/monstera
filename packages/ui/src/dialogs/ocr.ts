@@ -46,7 +46,7 @@ export const OCR_DIALOG_ID = 'dialog.ocr';
  *
  * ## An empty list is `available: false`, not an empty dropdown
  *
- * `spellCheck.ts`' shape and its reason. A dialog offering no languages is
+ * A dialog offering no languages is
  * indistinguishable from one whose list failed to load, and §10.5 requires the
  * no-binary state to be designed rather than arrived at — so the absent case is a
  * sentence that says what is missing and the control to start is not rendered at

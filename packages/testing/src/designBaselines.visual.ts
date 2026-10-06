@@ -6,6 +6,7 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Page, expect, test } from '@playwright/test';
 
 import { LOOKS, type Look, bridgeUnder } from './pageBridge.js';
+import { settled } from './settled.js';
 
 /**
  * §10.7's visual baselines: the start screen, each ribbon section, one dialog and
@@ -62,6 +63,40 @@ async function openedOn(page: Page, look: Look): Promise<void> {
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
   await expect(page.getByRole('button', { name: 'Open PDF…' })).toBeVisible();
+  await startDrawn(page);
+}
+
+/**
+ * Waits until the start screen is DRAWN: its faces loaded and its logo decoded. A screen still on a fallback face,
+ * or with the logo not yet decoded, is two identical frames too, which is all a screenshot's stability waits for.
+ */
+async function startDrawn(page: Page): Promise<void> {
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  await expect.poll(() => page.locator('.m-start-logo').evaluate((logo) => (logo as HTMLImageElement).complete && (logo as HTMLImageElement).naturalWidth > 0)).toBe(true);
+}
+
+/**
+ * Waits until `section` is the ribbon's active one and the window has stopped moving.
+ *
+ * A wait on the document being drawn was already true from the first section on, so it said nothing about the
+ * click; and a section's first appearance is drawn unfolded for a frame before the fold measures it (`useRibbonFold`),
+ * and a resize re-runs the menu row's fit and the page's fit-zoom through ResizeObservers.
+ */
+async function sectionDrawn(page: Page, section: string): Promise<void> {
+  await expect(page.locator('[data-ribbon-active]')).toHaveAttribute('data-ribbon-active', section);
+  await documentDrawn(page);
+  await settled(
+    page,
+    () =>
+      page.evaluate(() =>
+        ['.m-menu-bar', '[data-ribbon-active]', '.m-context-panel', '.m-page-slot', '.m-page-grid'].map((selector) => {
+          const box = document.querySelector(selector)?.getBoundingClientRect();
+          return box === undefined ? null : [Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)];
+        }),
+      ),
+    () => true,
+    `the ${section} section`,
+  );
 }
 
 /**
@@ -127,6 +162,7 @@ for (const look of LOOKS) {
     // THE BODY ARRIVES WITH ITS CHUNK, after the title: a registered dialog is `lazy`, so the
     // title alone is a dialog with an empty body — 0.41 of the window's pixels, measured.
     await expect(dialog.getByRole('row').nth(1)).toBeVisible();
+    await settled(page, async () => dialog.boundingBox(), (box) => box !== null && box.width > 0, 'the keyboard shortcuts dialog');
     await expect(page).toHaveScreenshot(`${look.name}-dialog-keyboard-shortcuts.png`);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
@@ -141,7 +177,7 @@ for (const look of LOOKS) {
     for (const section of SECTIONS) {
       await page.locator(`[data-ribbon-section="${section}"]`).click();
       await parkPointer(page);
-      await documentDrawn(page);
+      await sectionDrawn(page, section);
       await expect(page).toHaveScreenshot(`${look.name}-section-${section}.png`, { stylePath: RASTER_HIDDEN });
     }
 
@@ -157,7 +193,7 @@ for (const look of LOOKS) {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.locator('[data-ribbon-section="home"]').click();
     await parkPointer(page);
-    await documentDrawn(page);
+    await sectionDrawn(page, 'home');
     await expect(page).toHaveScreenshot(`${look.name}-document-open.png`, { stylePath: RASTER_HIDDEN });
   });
 }
@@ -218,7 +254,7 @@ test('CONTROL: a change in the Properties panel is reported where the page’s b
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   await page.locator('[data-ribbon-section="protect"]').click();
   await parkPointer(page);
-  await documentDrawn(page);
+  await sectionDrawn(page, 'protect');
 
   // THE HARD SHAPE, asserted rather than assumed: the planted change lies WHOLLY inside the page canvas's box, which is
   // what a mask painted over. A change reaching past that box would be reported under either mechanism, and so would

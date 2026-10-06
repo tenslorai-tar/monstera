@@ -1,4 +1,5 @@
 export {
+  onImage,
   openPdfium,
   pdfiumIsOpen,
   pdfiumWriter,
@@ -60,6 +61,7 @@ export {
   captureReplaceAllText,
   invertReplaceAllText,
 } from './pdfiumReplaceAll.js';
+export { applyReplaceTextAt, captureReplaceTextAt } from './pdfiumReplaceAt.js';
 export { localPdfiumExecution, pdfiumSpecs } from './pdfiumSpecs.js';
 
 /**

@@ -19,6 +19,7 @@ import {
   FORM_FIELD_TEXT_TOOL_ID,
 } from '../annotations/formFieldTools.js';
 import { LINK_ADDRESS_TOOL_ID, LINK_PAGE_TOOL_ID } from '../annotations/linkTools.js';
+import { type WordsOf, markOf } from '../annotations/markWords.js';
 import {
   MEASURE_AREA_TOOL_ID,
   MEASURE_DISTANCE_TOOL_ID,
@@ -26,11 +27,9 @@ import {
 } from '../annotations/measureTools.js';
 import type { AnnotationSelection, SelectedAnnotation } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
-import { ANNOTATION_EDIT_DIALOG_ID } from '../dialogs/annotationEdit.js';
-import { ANNOTATION_REPLY_DIALOG_ID } from '../dialogs/annotationReply.js';
-import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
 import { COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
-import { CONTEXT_PANEL_OPEN_SETTING, CONTEXT_PANEL_TAB_SETTING } from '../settings/layout.js';
+import type { PanelPresence } from '../panelPresence.js';
+import { CONTEXT_PANEL_TAB_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import {
   PLACE_BARCODE_TOOL_ID,
@@ -46,11 +45,12 @@ import { SNAPSHOT_TOOL_ID } from '../annotations/snapshotTool.js';
 import { STAMP_TOOL_ID } from '../annotations/stampTool.js';
 import {
   HIGHLIGHT_TOOL_ID,
+  REDACT_TEXT_TOOL_ID,
   STRIKEOUT_TOOL_ID,
   UNDERLINE_TOOL_ID,
 } from '../annotations/textMarkupTools.js';
 import { CARET_TOOL_ID, STICKY_NOTE_TOOL_ID } from '../annotations/pointTools.js';
-import { TEXT_BOX_TOOL_ID, TYPEWRITER_TOOL_ID } from '../annotations/textTools.js';
+import { TEXT_BOX_TOOL_ID, TYPEWRITER_TOOL_ID, writeMarkWords } from '../annotations/textTools.js';
 import {
   CLOUD_TOOL_ID,
   POLYGON_TOOL_ID,
@@ -63,6 +63,8 @@ import {
   DELETE_SELECTION_TITLE,
   EDIT_SELECTION_TITLE,
   REPLY_SELECTION_TITLE,
+  WRITE_EDIT_COMMENT_LABEL,
+  WRITE_REPLY_LABEL,
   COPY_ANNOTATIONS_TITLE,
   SELECTION_PROPERTIES_TITLE,
   ELLIPSE_TOOL_TITLE,
@@ -88,6 +90,7 @@ import {
   RIBBON_SNAPSHOT,
   RIBBON_STRIKEOUT,
   RIBBON_REDACT_MARK,
+  RIBBON_REDACT_TEXT,
   RIBBON_LINK_ADDRESS,
   RIBBON_LINK_PAGE,
   RIBBON_PLACE_IMAGE,
@@ -121,6 +124,7 @@ import {
   POLYLINE_TOOL_TITLE,
   RECTANGLE_TOOL_TITLE,
   REDACT_TOOL_TITLE,
+  REDACT_TEXT_TOOL_TITLE,
   SELECT_ALL_MARKS_TITLE,
   SELECT_TOOL_TITLE,
   PLACE_IMAGE_TOOL_TITLE,
@@ -136,6 +140,8 @@ import {
   TYPEWRITER_TOOL_TITLE,
   UNDERLINE_TOOL_TITLE,
 } from '../messages/en.js';
+import type { ObjectPick } from '../objectEditing.js';
+import type { Write } from '../pageWriting.js';
 import type { IconName } from '../primitives/icons.js';
 import { type CommandContext, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { SectionId } from '../registries/placement.js';
@@ -347,12 +353,28 @@ export function inkToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(INK_TOOL_ID, INK_TOOL_TITLE, 'Pencil', 44, deps);
 }
 
+/**
+ * The two redaction marks in the Comment tab (the owner's item 14e): **Redact text** first, which selects words the
+ * way Highlight does, and **Redact area** beside it, which sweeps a box — one tool for each thing a person means by
+ * *redact this*, named so neither is mistaken for the other. Both mark; *Apply redactions* removes.
+ */
+export function redactTextToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(
+    REDACT_TEXT_TOOL_ID,
+    { full: REDACT_TEXT_TOOL_TITLE, ribbon: RIBBON_REDACT_TEXT },
+    'TextSelect',
+    62,
+    deps,
+    REDACT_MARKS,
+  );
+}
+
 export function redactToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(
     REDACT_TOOL_ID,
     { full: REDACT_TOOL_TITLE, ribbon: RIBBON_REDACT_MARK },
     'RectangleHorizontal',
-    62,
+    63,
     deps,
     REDACT_MARKS,
   );
@@ -577,26 +599,44 @@ function alsoOnThePill(command: UiCommand, order: number): UiCommand {
  * selection does nothing because there is nothing registered, not because a
  * handler decided to return early.
  */
-export function deleteSelectionCommand(deps: SelectionCommandDeps): UiCommand {
+export function deleteSelectionCommand(deps: SelectionCommandDeps, objects: ObjectSelectionDeps): UiCommand {
   return {
     id: 'annotate.delete-selection',
     feedback: VISIBLE,
     title: DELETE_SELECTION_TITLE,
+    icon: 'Trash2',
     // LAST IN THE ANNOTATION MENU, which is the owner's order for it (§7's row, 2026-09-19):
     // edit, reply, properties, copy, delete. The numbers between are what the owed items take.
     // AND AT THE PROPERTIES TAB'S FOOT, after Reply, which is v5-02's order (ADR-0102).
+    // AND LAST IN THE OBJECT MENU, after Properties (ADR-0153 Decision 5).
     placements: [
       { surface: 'context-menu', context: 'annotation', order: 50 },
+      { surface: 'context-menu', context: 'object', order: 50 },
       { surface: 'properties', order: 20 },
     ],
     shortcut: 'Delete',
-    when: () => deps.selection() !== undefined,
+    when: () => deps.selection() !== undefined || objects.picked() !== undefined,
     run: (): void => {
+      // ONE DELETE FOR EITHER SELECTION (ADR-0153 Decision 5): the tool slot holds one of the two at a time, so
+      // there is never both — and a second command claiming the key would be refused by the shortcut map.
+      const picked = objects.picked();
+      if (picked !== undefined) {
+        objects.onRemove(picked);
+        return;
+      }
       const selection = deps.selection();
       if (selection === undefined) return;
       deps.onDelete(selection);
     },
   };
+}
+
+/** What the commands that act on a selection read of Edit object's (ADR-0153 Decision 5). */
+export interface ObjectSelectionDeps {
+  /** The object selected on the page now, read through a function for {@link SelectionCommandDeps.selection}'s reason. */
+  readonly picked: () => ObjectPick | undefined;
+  /** Removes it, by the writer that holds it. */
+  readonly onRemove: (pick: ObjectPick) => void;
 }
 
 /**
@@ -617,13 +657,22 @@ export function deleteSelectionCommand(deps: SelectionCommandDeps): UiCommand {
  * tab, which draws any selected mark's comment (ADR-0102). The list recorded that trigger as its own
  * expiry, and it fired.
  *
- * ## The text comes from the SELECTION, not from a read
+ * ## Typed on a card beside the mark (ADR-0154)
+ *
+ * The comment is typed where the mark is, on the application's own card under
+ * it, rather than in a dialog over the page that hides the mark being edited.
+ * Left empty or unchanged it sends nothing: a comment cannot be emptied (to
+ * remove it, delete the mark), and an edit that changes nothing would be an
+ * undo step that undoes nothing.
+ *
+ * ## The text comes from the SELECTION, and is read whole only where the walk cut it
  *
  * `selection.items[0].contents` was carried out of the walk that produced the
- * handles, so the dialog opens holding text from the same answer the index
- * points into. A command that fetched it when the item was clicked would be a
- * second reader of that walk (B3a) and could answer at a version the handle no
- * longer names.
+ * handles, so the card opens holding text from the same answer the index
+ * points into. The walk slices a long comment to one line and says so, and a
+ * card opened on that slice would save it over the whole; so a cut comment is
+ * read whole first (`wordsToEdit`), at the selection's version, and one past
+ * what an edit can write back is said rather than opened.
  *
  * ## The version travels with the command
  *
@@ -634,6 +683,8 @@ export function deleteSelectionCommand(deps: SelectionCommandDeps): UiCommand {
  */
 export function editSelectionCommand(
   deps: SelectionCommandDeps & {
+    readonly write: Write;
+    readonly wordsOf: WordsOf;
     readonly ask: (id: string, props: unknown) => Promise<unknown>;
   },
 ): UiCommand {
@@ -646,6 +697,7 @@ export function editSelectionCommand(
     id: 'annotate.edit-selection',
     feedback: VISIBLE,
     title: EDIT_SELECTION_TITLE,
+    icon: 'Pencil',
     // FIRST, which is the owner's order for this menu: edit, reply, properties,
     // copy, delete.
     placements: [{ surface: 'context-menu', context: 'annotation', order: 10 }],
@@ -654,18 +706,27 @@ export function editSelectionCommand(
       const selection = deps.selection();
       const item = only();
       if (selection === undefined || item === undefined) return;
-      const answered = ANNOTATION_TEXT_RESULT.safeParse(
-        await deps.ask(ANNOTATION_EDIT_DIALOG_ID, { text: item.contents }),
-      );
-      // A DISMISSED DIALOG AND A REFUSED ANSWER ARE BOTH NOTHING TO SEND, which
-      // is the platform's gate — and here it also covers the person who cleared
-      // the box, because the result schema refuses a blank string.
-      if (!answered.success) return;
+      const words = await deps.wordsOf(markOf(selection, item));
+      if (words.kind === 'too-long') {
+        void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: 'comment-too-long' });
+        return;
+      }
+      if (words.kind === 'problem') {
+        void deps.ask(COMMAND_PROBLEM_DIALOG_ID, words.problem);
+        return;
+      }
+      const text = await writeMarkWords(deps.write, {
+        page: selection.page,
+        beside: item.rect,
+        label: WRITE_EDIT_COMMENT_LABEL,
+        initial: words.text,
+      });
+      if (text === undefined || text === words.text) return;
       deps.onPlace({
         kind: 'editAnnotationText',
         page: selection.page,
         index: item.index,
-        text: answered.data.text,
+        text,
         version: selection.version,
       });
     },
@@ -675,14 +736,12 @@ export function editSelectionCommand(
 /**
  * Answers the selected mark — §7's *reply*, second in the annotation menu.
  *
- * ## Offered on EVERY subtype, where *Edit* is offered on four
+ * ## Offered on EVERY subtype
  *
- * The two look like a pair and their `when` predicates are deliberately not the
- * same. *Edit* is confined to the kinds this application DRAWS the text of,
- * because a change a person cannot see is worse than an absent control. A reply
- * is a mark of its own carrying its own text, so answering a highlight, an ink
- * stroke or a stranger's stamp all produce something visible — there is no kind
- * where the answer would go into the file and nowhere else.
+ * A reply is a mark of its own carrying its own text, so answering a highlight,
+ * an ink stroke or a stranger's stamp all produce something visible — there is
+ * no kind where the answer would go into the file and nowhere else. It is typed
+ * on a card beside the mark answered (ADR-0154), as *Edit* is.
  *
  * ## And it is offered on a mark this build did not write
  *
@@ -697,11 +756,7 @@ export function editSelectionCommand(
  * either four replies carrying one sentence, or a reply to whichever mark the
  * loop reached first. The control is hidden rather than guessing.
  */
-export function replySelectionCommand(
-  deps: SelectionCommandDeps & {
-    readonly ask: (id: string, props: unknown) => Promise<unknown>;
-  },
-): UiCommand {
+export function replySelectionCommand(deps: SelectionCommandDeps & { readonly write: Write }): UiCommand {
   const only = (): SelectedAnnotation | undefined => {
     const selection = deps.selection();
     if (selection?.items.length !== 1) return undefined;
@@ -711,6 +766,7 @@ export function replySelectionCommand(
     id: 'annotate.reply-selection',
     feedback: VISIBLE,
     title: REPLY_SELECTION_TITLE,
+    icon: 'CornerDownRight',
     // SECOND, which is the owner's order for this menu: edit, reply,
     // properties, copy, delete. And first at the Properties tab's foot (ADR-0102).
     placements: [
@@ -722,18 +778,20 @@ export function replySelectionCommand(
       const selection = deps.selection();
       const item = only();
       if (selection === undefined || item === undefined) return;
-      // THE DIALOG OPENS EMPTY, which is the difference from *Edit* at the call
-      // site rather than in the dialog: an edit starts from what the mark says,
-      // and a reply starts from nothing because it is not that mark's text.
-      const answered = ANNOTATION_TEXT_RESULT.safeParse(
-        await deps.ask(ANNOTATION_REPLY_DIALOG_ID, {}),
-      );
-      if (!answered.success) return;
+      // THE CARD OPENS EMPTY beside the mark answered, which is the difference from *Edit*: an edit starts from what
+      // the mark says, and a reply from nothing because it is not that mark's text.
+      const text = await writeMarkWords(deps.write, {
+        page: selection.page,
+        beside: item.rect,
+        label: WRITE_REPLY_LABEL,
+        initial: '',
+      });
+      if (text === undefined) return;
       deps.onPlace({
         kind: 'replyToAnnotation',
         page: selection.page,
         index: item.index,
-        text: answered.data.text,
+        text,
         version: selection.version,
       });
     },
@@ -774,6 +832,7 @@ export function copyAnnotationsCommand(
     id: 'annotate.copy-selection',
     feedback: TOASTS,
     title: COPY_ANNOTATIONS_TITLE,
+    icon: 'Copy',
     // FOURTH, the owner's order for this menu: edit, reply, properties, copy, delete.
     placements: [{ surface: 'context-menu', context: 'annotation', order: 40 }],
     when: () => deps.selection() !== undefined,
@@ -806,7 +865,8 @@ export async function copySelectedAnnotations(
     version: selection.version,
   });
   if (!answer.ok) {
-    void deps.ask(COMMAND_PROBLEM_DIALOG_ID, { code: answer.error.code });
+    // THE REFUSAL WHOLE, never its code alone: an `internal` one carries the incident id the dialog requires and shows.
+    void deps.ask(COMMAND_PROBLEM_DIALOG_ID, answer.error);
     return false;
   }
   if (answer.value.kind === 'stale') {
@@ -862,18 +922,26 @@ export function selectAllMarksCommand(deps: {
  * panel would be the second wiring place the registry exists to forbid.
  */
 export function selectionPropertiesCommand(
-  deps: SelectionCommandDeps & { readonly settings: SettingsStore },
+  deps: SelectionCommandDeps & { readonly settings: SettingsStore; readonly presence: PanelPresence },
+  objects: Pick<ObjectSelectionDeps, 'picked'>,
 ): UiCommand {
+  const anything = (): boolean => deps.selection() !== undefined || objects.picked() !== undefined;
   return {
     id: 'annotate.properties',
     feedback: VISIBLE,
     title: SELECTION_PROPERTIES_TITLE,
-    placements: [{ surface: 'context-menu', context: 'annotation', order: 30 }],
-    when: () => deps.selection() !== undefined,
+    icon: 'PaintBucket',
+    // AND FIRST IN THE OBJECT MENU, where the object's colour is chosen (ADR-0153 Decision 5).
+    placements: [
+      { surface: 'context-menu', context: 'annotation', order: 30 },
+      { surface: 'context-menu', context: 'object', order: 10 },
+    ],
+    when: anything,
     run: (): void => {
-      if (deps.selection() === undefined) return;
-      deps.settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
+      if (!anything()) return;
       deps.settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'properties');
+      // SHOWN, not only opened: in a narrow row the panel is a sheet, and a write of a setting already on draws nothing.
+      deps.presence.show('end');
     },
   };
 }
@@ -946,6 +1014,8 @@ export function nudgeSelectionCommand(
     // every registered command whether or not it is placed.
     placements: [],
     shortcut: `${far ? 'Shift+' : ''}${ARROW_KEYS[direction]}`,
+    // A HELD ARROW KEEPS MOVING the mark, a point (or ten) per repeat.
+    repeats: true,
     // WITHOUT A SELECTION THE ARROWS ARE NOT REGISTERED AT ALL, which is what
     // keeps them from taking the key away from the scroller. A handler that
     // returned early would still have swallowed the press.
@@ -1212,6 +1282,7 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     lineToolCommand(deps),
     arrowToolCommand(deps),
     inkToolCommand(deps),
+    redactTextToolCommand(deps),
     redactToolCommand(deps),
     textBoxToolCommand(deps),
     stickyNoteToolCommand(deps),

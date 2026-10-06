@@ -17,6 +17,8 @@ export const EXTERNAL_EDIT_PROBLEMS = [
   'open-elsewhere',
   'absent',
   'at-capacity',
+  'busy',
+  'denied',
 ] as const;
 
 /** One of {@link EXTERNAL_EDIT_PROBLEMS}. */

@@ -2,12 +2,13 @@
 /**
  * How an `&&`-composed `package.json` script is read.
  *
- * One module because it is one question, and two files now need the answer:
- * `typecheck.mjs` and `lintcheck.mjs` both take a manifest script as the
- * authority for what their gate IS, and both have to know how many things it
- * asked for. Two implementations of that would be a second opinion about a
- * question one manifest already answers, which is B3a's shape and the reason
- * `check:types` was written to read the script rather than restate its flags.
+ * One module because it is one question: `typecheck.mjs` takes a manifest
+ * script as the authority for what its gate IS, and has to know how many things
+ * it asked for. `lintcheck.mjs` read the lint script the same way until the lint
+ * became a runner of its own units (ADR-0170). A second implementation would be
+ * a second opinion about a question one manifest already answers, which is
+ * B3a's shape and the reason `check:types` reads the script rather than
+ * restating its flags.
  *
  * It is deliberately not a shell parser. `&&` inside quotes would be split
  * wrongly, and that is acceptable here for a stated reason: the callers require

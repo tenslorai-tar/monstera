@@ -14,7 +14,7 @@ import {
   type UpdateStatus,
   type WindowEditAction,
 } from '@monstera/contract';
-import type { DocId, DocVersion, FileHandle } from '@monstera/shared';
+import type { DocId, DocVersion, FileHandle, MessageKey } from '@monstera/shared';
 import { useLingui } from '@lingui/react';
 import {
   memo,
@@ -31,6 +31,7 @@ import {
 
 import {
   applyDocumentCommand,
+  askToDeletePages,
   imagePagesFor,
   placeImage,
   signDocument,
@@ -71,7 +72,9 @@ import {
   selectTextCommand,
   promoteTextOnPage,
   reportProblem,
-  editPageObjectCommand,
+  EDIT_OBJECTS_TOOL_ID,
+  editObjectsCommands,
+  readPageObjects,
   pageTransitionCommand,
   pageBackgroundCommand,
   resizePagesCommand,
@@ -111,7 +114,7 @@ import {
   actualSizeCommand,
 } from './commands/documentCommands.js';
 import { proceeds, settlePendingRedactions } from './commands/pendingRedactions.js';
-import { PENDING_REDACTIONS_DIALOG, type PendingRedactionOccasion } from './dialogs/pendingRedactions.js';
+import type { PendingRedactionOccasion } from './dialogs/pendingRedactions.js';
 import { confirmCopied } from './commands/confirmWritten.js';
 import { editCommands } from './commands/editCommands.js';
 import { exitCommand, startScreenCommand } from './commands/windowCommands.js';
@@ -140,7 +143,6 @@ import {
 } from './commands/chromeCommands.js';
 import { paneCommands } from './commands/paneCommands.js';
 import {
-  CONTEXT_PANEL_OPEN_SETTING,
   CONTEXT_PANEL_TAB_SETTING,
   LAYOUT_MODE_SETTING,
   RIBBON_SECTION_SETTING,
@@ -158,7 +160,11 @@ import { syncConversation } from './chatHistorySync.js';
 import { type DocumentStore, DocumentStores } from './documentStores.js';
 import { Thumbnails } from './Thumbnails.js';
 import { StatusBar } from './surfaces/StatusBar.js';
+import { StatusTip } from './surfaces/StatusTip.js';
+import { tipsOf } from './tips/tips.js';
 import { LinksPanel } from './LinksPanel.js';
+import type { FollowedLink } from './LinkLayer.js';
+import { followLink } from './commands/followLink.js';
 import { DestinationsPanel } from './DestinationsPanel.js';
 import { LayersPanel } from './LayersPanel.js';
 import { AnnotationsPanel } from './AnnotationsPanel.js';
@@ -187,6 +193,7 @@ import {
   openWaitingDocuments,
   restoreLastSession,
 } from './commands/openDocument.js';
+import type { SourceOpen } from './commands/sourceDocuments.js';
 import { clearRecentCommand } from './commands/recentCommands.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { donateCommand } from './commands/donate.js';
@@ -195,46 +202,18 @@ import { updateAvailableCommand } from './commands/updateAvailable.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { showComponentsCommand } from './commands/showComponents.js';
 import { showSettingsCommand } from './commands/showSettings.js';
-import { SETTINGS_DIALOG } from './dialogs/settings.js';
 import { showWordCountCommand } from './commands/showWordCount.js';
 import { inspectPageStructureCommand } from './commands/inspectPageStructure.js';
 import { accessibilityCheckCommand } from './commands/accessibilityCheck.js';
-import { ACCESSIBILITY_DIALOG } from './dialogs/accessibilityCheck.js';
 import { placeBarcode, readBarcodesCommand } from './commands/barcodes.js';
-import { ABOUT_DIALOG } from './dialogs/about.js';
-import { COMPONENTS_DIALOG } from './dialogs/components.js';
-import { DONATE_DIALOG } from './dialogs/donate.js';
-import { SECURITY_UPDATE_DIALOG } from './dialogs/securityUpdate.js';
-import { AI_SETUP_DIALOG } from './dialogs/aiSetup.js';
-import { CLOUD_DIALOG } from './dialogs/cloudStorage.js';
-import { CLOUD_OUTCOME_DIALOG } from './dialogs/cloudOutcome.js';
-import { CLOUD_VIEW_ONLY_DIALOG } from './dialogs/cloudViewOnly.js';
 import { cloudStorageCommand, saveBackCommand } from './commands/cloudStorage.js';
 import { aiSetupCommand } from './commands/aiSetup.js';
 import { AI_SETUP_AT_START_SETTING } from './settings/ai.js';
-import { KEYBOARD_SHORTCUTS_DIALOG } from './dialogs/keyboardShortcuts.js';
-import { WORD_COUNT_DIALOG } from './dialogs/wordCount.js';
-import { PAGE_STRUCTURE_DIALOG } from './dialogs/pageStructure.js';
-import { SPELL_CHECK_DIALOG } from './dialogs/spellCheck.js';
 import { compareDocumentsCommand } from './commands/compareDocuments.js';
-import { OCR_DIALOG } from './dialogs/ocr.js';
-import { TRANSLATE_PAGE_DIALOG } from './dialogs/translatePage.js';
 import { translatePageCommand } from './commands/translatePage.js';
-import { OCR_OUTCOME_DIALOG } from './dialogs/ocrOutcome.js';
-import { ENHANCE_OUTCOME_DIALOG } from './dialogs/enhanceOutcome.js';
-import { SCAN_OUTCOME_DIALOG } from './dialogs/scanOutcome.js';
-import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
-import { CROP_PAGES_DIALOG } from './dialogs/cropPages.js';
-import { WATERMARK_PAGES_DIALOG } from './dialogs/watermarkPages.js';
-import { HEADER_FOOTER_DIALOG } from './dialogs/headerFooter.js';
-import { BATES_NUMBER_DIALOG } from './dialogs/batesNumber.js';
-import { PAGE_TRANSITION_DIALOG } from './dialogs/pageTransition.js';
-import { RESIZE_PAGES_DIALOG } from './dialogs/resizePages.js';
-import { GENERATE_TOC_PROBLEM_DIALOG } from './dialogs/generateTocProblem.js';
-import { FLAT_FIELDS_DIALOG } from './dialogs/flatFields.js';
-import { EDIT_PAGE_OBJECT_DIALOG } from './dialogs/editPageObject.js';
-import { IMPORT_FORM_DATA_PROBLEM_DIALOG } from './dialogs/importFormDataProblem.js';
-import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG } from './dialogs/importAnnotationsProblem.js';
+import { COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
+import { OPEN_PROBLEM_DIALOG_ID } from './dialogs/openProblem.js';
+import { sayWhenUnwritable } from './commands/readOnlyFile.js';
 import {
   exportAnnotationsFdfCommand,
   exportAnnotationsJsonCommand,
@@ -244,12 +223,6 @@ import {
   importAnnotationsXfdfCommand,
   pasteAnnotationsCommand,
 } from './commands/annotationData.js';
-import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
-import { MARKDOWN_IMPORT_PROBLEM_DIALOG } from './dialogs/markdownImportProblem.js';
-import { WORKBOOK_INCOMPLETE_DIALOG } from './dialogs/workbookIncomplete.js';
-import { OPEN_FROM_URL_DIALOG } from './dialogs/openFromUrl.js';
-import { CAMERA_CAPTURE_DIALOG } from './dialogs/cameraCapture.js';
-import { URL_OPEN_PROBLEM_DIALOG } from './dialogs/urlOpenProblem.js';
 import { openFromUrlCommand } from './commands/openFromUrl.js';
 import { editPageExternallyCommand } from './commands/editPageExternally.js';
 import {
@@ -261,71 +234,40 @@ import {
   newFromOfficeCommand,
   newFromMarkdownCommand,
 } from './commands/importMarkdown.js';
-import { EXTRACT_PAGES_DIALOG } from './dialogs/extractPages.js';
-import { SPLIT_DOCUMENT_DIALOG } from './dialogs/splitDocument.js';
-import { EXPORT_PAGE_IMAGES_DIALOG } from './dialogs/exportPageImages.js';
-import { EXPORT_EXCEL_DIALOG } from './dialogs/exportExcel.js';
-import { SERVICE_REFUSED_DIALOG } from './dialogs/serviceRefused.js';
-import { OPTIMIZE_DIALOG } from './dialogs/optimize.js';
-import { PDFA_REMOVALS_DIALOG } from './dialogs/pdfaRemovals.js';
-import { PAGE_BARCODES_DIALOG } from './dialogs/pageBarcodes.js';
-import { PLACE_BARCODE_DIALOG } from './dialogs/placeBarcode.js';
-import { PRINT_DIALOG } from './dialogs/print.js';
-import { EXPORT_WORD_DIALOG } from './dialogs/exportWord.js';
-import { INSERT_FROM_PDF_DIALOG } from './dialogs/insertFromPdf.js';
-import { MERGE_DOCUMENT_DIALOG } from './dialogs/mergeDocument.js';
-import { REPLACE_PAGE_DIALOG } from './dialogs/replacePage.js';
-import { IMPORT_PAGE_AS_LAYER_DIALOG } from './dialogs/importPageAsLayer.js';
-import { REIMPORT_EXTERNAL_EDIT_DIALOG } from './dialogs/reimportExternalEdit.js';
-import { EXTERNAL_EDIT_PROBLEM_DIALOG } from './dialogs/externalEditProblem.js';
-import { MERGE_DOCUMENT_NONE_DIALOG } from './dialogs/mergeDocumentNone.js';
-import { LINK_ADDRESS_DIALOG, LINK_PAGE_DIALOG } from './dialogs/annotationLink.js';
 import {
-  DOCUMENT_PASSWORD_DIALOG,
   DOCUMENT_PASSWORD_DIALOG_ID,
   DOCUMENT_PASSWORD_RESULT,
 } from './dialogs/documentPassword.js';
-import { PROTECT_DOCUMENT_DIALOG } from './dialogs/protectDocument.js';
-import { APPLY_REDACTIONS_DIALOG } from './dialogs/applyRedactions.js';
-import { REDACT_MATCHES_DIALOG } from './dialogs/redactMatches.js';
-import { SANITIZE_DOCUMENT_DIALOG } from './dialogs/sanitizeDocument.js';
-import { SIGN_DOCUMENT_DIALOG } from './dialogs/signDocument.js';
-import { SIGN_PROBLEM_DIALOG } from './dialogs/signProblem.js';
-import { DOCUSIGN_NOTICE_DIALOG } from './dialogs/docusignNotice.js';
-import { DOCUSIGN_SEND_DIALOG } from './dialogs/docusignSend.js';
-import { SIGNATURES_DIALOG } from './dialogs/signatures.js';
-import { ANNOTATION_NOTE_DIALOG } from './dialogs/annotationNote.js';
-import { ANNOTATION_EDIT_DIALOG } from './dialogs/annotationEdit.js';
-import { ANNOTATION_REPLY_DIALOG } from './dialogs/annotationReply.js';
-import { CALLOUT_DIALOG } from './dialogs/callout.js';
-import { TYPEWRITER_DIALOG } from './dialogs/typewriter.js';
-import { ANNOTATION_TEXT_DIALOG } from './dialogs/annotationText.js';
-import { STAMP_DIALOG } from './dialogs/stamp.js';
 import { BLOB_URLS, stampLibrary } from './commands/stampLibrary.js';
-import { FORM_FIELD_DIALOGS } from './dialogs/formField.js';
-import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
-import { DUPLICATE_PAGES_DIALOG } from './dialogs/duplicatePages.js';
-import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
-import { SETTINGS_PROBLEM_DIALOG } from './dialogs/settingsProblem.js';
 import { persistSettings } from './settingsSync.js';
-import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
 import {
-  CLOSE_UNSAVED_DIALOG,
   CLOSE_UNSAVED_DIALOG_ID,
   CLOSE_UNSAVED_RESULT,
 } from './dialogs/closeUnsaved.js';
 import { useDocumentView } from './useDocumentView.js';
-import { CLOSE_LABEL, SPLIT_SECOND_LABEL, TOAST_DISMISS } from './messages/en.js';
+import {
+  CLOSE_LABEL,
+  HINT_EDIT_OBJECTS,
+  HINT_EDIT_TEXT,
+  HINT_HAND,
+  LINK_ADDED,
+  SPLIT_SECOND_LABEL,
+  TOAST_DISMISS,
+} from './messages/en.js';
 import { annotationTools } from './annotations/annotationTools.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
+import { MEASURE_TOOL_IDS } from './annotations/measureTools.js';
 import { stickyNoteCommand } from './annotations/pointTools.js';
+import { type WordsMark, type WordsToEdit, wordsToEdit } from './annotations/markWords.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID, selectionOfNewest, selectionOfPage } from './annotations/selectTool.js';
 import { SIGNATURE_TOOL_ID } from './annotations/signatureTool.js';
 import { chooseSignature, placePlainSignature, signatureCommand } from './commands/signatureCommands.js';
-import { SIGNATURE_DIALOG, type SignatureLook } from './dialogs/signature.js';
-import { SIGNATURE_PROBLEM_DIALOG } from './dialogs/signatureProblem.js';
+import { type ObjectFilter, type ObjectPick, carryPick, recolourCommand, removeCommand } from './objectEditing.js';
+import type { ObjectFill, PageObjects } from './objectEditing.js';
+import { usePageWriting } from './usePageWriting.js';
+import type { SignatureLook } from './dialogs/signature.js';
 import { applyCarrying } from './commands/applyCarrying.js';
 import {
   deleteSelectionCommand,
@@ -341,6 +283,7 @@ import {
 import { CommandRegistry, type CommandContext, type UiCommand } from './registries/commands.js';
 import { SHORTCUTS_SETTING } from './settings/keyboard.js';
 import { ToolRegistry } from './registries/tools.js';
+import { APPLICATION_DIALOGS } from './registries/applicationDialogs.js';
 import { DialogRegistry } from './registries/dialogs.js';
 import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
 import {
@@ -388,8 +331,9 @@ import {
   ANNOTATION_OPACITY_SETTING,
   TEXT_DIRECTION_SETTING,
   IMAGE_PAGES_SETTING,
-  MEASURE_SCALE_SETTING,
+  MEASURE_RATIO_SETTING,
   MEASURE_UNIT_SETTING,
+  measureScaleOf,
   AZURE_DI_ENDPOINT_SETTING,
   OCR_LANGUAGE_SETTING,
   RECOGNISE_ON_EXPORT_SETTING,
@@ -410,12 +354,12 @@ import { FocusHint } from './surfaces/FocusHint.js';
 import { isDirty, savedState, savedTick, windowTitle } from './savedState.js';
 import { autosaveEvery, createAutosave } from './autosave.js';
 import { AUTOSAVE_SETTING, CONFIRM_REDACTION_SETTING, WARN_SIGNATURE_BREAK_SETTING } from './settings/saving.js';
-import { SIGNATURE_BREAK_DIALOG } from './dialogs/signatureBreak.js';
-import { KEPT_BACKUPS_DIALOG } from './dialogs/keptBackups.js';
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { OpeningState, PageList, type PageListProps } from './PageList.js';
 import { type Side, SideBySide, type SidePreferences, drawForComparison } from './SideBySide.js';
 import { SplitView } from './SplitView.js';
+import { SpellingPanel, useSpellingReview } from './SpellingPanel.js';
+import { type SpellingDeps, startReview } from './spelling/reviewRun.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { type MenuAt, NO_MENU, menuGroups } from './surfaces/ContextMenu.js';
 import { type TextSelection, readTextSelection } from './TextLayer.js';
@@ -427,17 +371,17 @@ import {
   redactSelectionCommand,
   searchSelectionCommand,
 } from './commands/textSelectionCommands.js';
-import { Ribbon } from './surfaces/Ribbon.js';
+import { Ribbon, SECTION_TITLES } from './surfaces/Ribbon.js';
 import { ContextPanel } from './surfaces/ContextPanel.js';
 import { DocumentBody } from './surfaces/DocumentBody.js';
+import { PanelPresence } from './panelPresence.js';
 import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel.js';
-import { controlOwnsChord, dispatchChord, fieldOwnsChord, shortcutsFor } from './surfaces/shortcuts.js';
+import { composing, controlOwnsChord, dispatchChord, fieldOwnsChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { CrashReportOffer } from './CrashReportOffer.js';
 import { DocumentTabs } from './surfaces/DocumentTabs.js';
 import { keyboardShortcutsCommand } from './commands/keyboardShortcuts.js';
 import { helpCommand } from './commands/help.js';
-import { HELP_DIALOG } from './dialogs/help.js';
 import { showMeModel } from './surfaces/projections.js';
 import { shortcutRows, withChosenShortcuts } from './surfaces/shortcutChoice.js';
 import { StartFooter } from './surfaces/StartFooter.js';
@@ -574,6 +518,13 @@ const NO_PAGES: readonly number[] = [];
  * inch, which clears a note icon of either anchoring — its corner or its centre — inside the page.
  */
 const NOTE_MARGIN = 36;
+
+/** What the three modes that share the tool slot wait for, the drawing tools' `hint` for the status line. */
+const MODE_HINTS: ReadonlyMap<string, MessageKey> = new Map([
+  [HAND_TOOL_ID, HINT_HAND],
+  [EDIT_TEXT_TOOL_ID, HINT_EDIT_TEXT],
+  [EDIT_OBJECTS_TOOL_ID, HINT_EDIT_OBJECTS],
+]);
 
 export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onRegistries }: AppProps): ReactElement {
   /**
@@ -798,108 +749,114 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * it and the command is registered here — a surface that owned this would
    * have to be reachable from the registry, which is the second wiring place.
    */
-  const [openProblem, setOpenProblem] = useState<OpenProblem | undefined>(undefined);
+  const [openProblem, setOpenProblem] = useState<{ readonly reason: OpenProblem } | undefined>(undefined);
+  /**
+   * WHERE that problem is said (cloud-4 7a), decided in the first render after it arrives from what is on screen
+   * then: the start screen's line with no document in front, and a dialog with the same sentence over one, because
+   * the line is not on screen and an open that ends in nothing seen is the control that appears to do nothing.
+   *
+   * Decided here rather than in the open's callback, which would have to read what is on screen through a ref or be
+   * rebuilt whenever it changes. Each arrival is a new object, so the same problem twice is said twice.
+   */
+  const [placedProblem, setPlacedProblem] = useState<
+    { readonly problem: { readonly reason: OpenProblem }; readonly onStart: boolean } | undefined
+  >(undefined);
+  if (openProblem !== placedProblem?.problem) {
+    setPlacedProblem(openProblem === undefined ? undefined : { problem: openProblem, onStart: open === undefined });
+  }
 
   // ONE registry instance, and the dialog host's state feeds the command that
   // opens it. `useDialogHost` owns `ask`, so the command captures it the same
   // way it captures the client — composition, not a global.
-  const dialogs = useMemo(
-    () =>
-      new DialogRegistry([
-        ABOUT_DIALOG,
-        COMPONENTS_DIALOG,
-        AI_SETUP_DIALOG,
-        DONATE_DIALOG,
-        SECURITY_UPDATE_DIALOG,
-        CLOUD_DIALOG,
-        CLOUD_OUTCOME_DIALOG,
-        CLOUD_VIEW_ONLY_DIALOG,
-        KEYBOARD_SHORTCUTS_DIALOG,
-        HELP_DIALOG,
-        WORD_COUNT_DIALOG,
-        PAGE_STRUCTURE_DIALOG,
-        SPELL_CHECK_DIALOG,
-        OCR_DIALOG,
-        TRANSLATE_PAGE_DIALOG,
-        OCR_OUTCOME_DIALOG,
-        ENHANCE_OUTCOME_DIALOG,
-        SCAN_OUTCOME_DIALOG,
-        SAVE_PROBLEM_DIALOG,
-        CLOSE_UNSAVED_DIALOG,
-        COMMAND_PROBLEM_DIALOG,
-        HISTORY_TRIMMED_DIALOG,
-        DELETE_PAGES_DIALOG,
-        ANNOTATION_TEXT_DIALOG,
-        STAMP_DIALOG,
-        SIGNATURE_BREAK_DIALOG,
-        PENDING_REDACTIONS_DIALOG,
-        KEPT_BACKUPS_DIALOG,
-        ANNOTATION_NOTE_DIALOG,
-        ANNOTATION_EDIT_DIALOG,
-        ANNOTATION_REPLY_DIALOG,
-        DOCUMENT_PASSWORD_DIALOG,
-        PROTECT_DOCUMENT_DIALOG,
-        APPLY_REDACTIONS_DIALOG,
-        REDACT_MATCHES_DIALOG,
-        SANITIZE_DOCUMENT_DIALOG,
-        SIGN_DOCUMENT_DIALOG,
-        SIGNATURE_DIALOG,
-        SIGNATURE_PROBLEM_DIALOG,
-        SIGN_PROBLEM_DIALOG,
-        SIGNATURES_DIALOG,
-        DOCUSIGN_SEND_DIALOG,
-        DOCUSIGN_NOTICE_DIALOG,
-        LINK_ADDRESS_DIALOG,
-        LINK_PAGE_DIALOG,
-        CALLOUT_DIALOG,
-        TYPEWRITER_DIALOG,
-        CROP_PAGES_DIALOG,
-        WATERMARK_PAGES_DIALOG,
-        HEADER_FOOTER_DIALOG,
-        BATES_NUMBER_DIALOG,
-        PAGE_TRANSITION_DIALOG,
-        RESIZE_PAGES_DIALOG,
-        FLAT_FIELDS_DIALOG,
-        EDIT_PAGE_OBJECT_DIALOG,
-        IMPORT_FORM_DATA_PROBLEM_DIALOG,
-        IMPORT_ANNOTATIONS_PROBLEM_DIALOG,
-        INSERT_IMAGE_PROBLEM_DIALOG,
-        MARKDOWN_IMPORT_PROBLEM_DIALOG,
-        WORKBOOK_INCOMPLETE_DIALOG,
-        OPEN_FROM_URL_DIALOG,
-        URL_OPEN_PROBLEM_DIALOG,
-        CAMERA_CAPTURE_DIALOG,
-        GENERATE_TOC_PROBLEM_DIALOG,
-        MERGE_DOCUMENT_DIALOG,
-        MERGE_DOCUMENT_NONE_DIALOG,
-        INSERT_FROM_PDF_DIALOG,
-        REPLACE_PAGE_DIALOG,
-        IMPORT_PAGE_AS_LAYER_DIALOG,
-        REIMPORT_EXTERNAL_EDIT_DIALOG,
-        EXTERNAL_EDIT_PROBLEM_DIALOG,
-        EXTRACT_PAGES_DIALOG,
-        SPLIT_DOCUMENT_DIALOG,
-        EXPORT_PAGE_IMAGES_DIALOG,
-        EXPORT_WORD_DIALOG,
-        EXPORT_EXCEL_DIALOG,
-        SERVICE_REFUSED_DIALOG,
-        PRINT_DIALOG,
-        PDFA_REMOVALS_DIALOG,
-        OPTIMIZE_DIALOG,
-        PAGE_BARCODES_DIALOG,
-        ACCESSIBILITY_DIALOG,
-        PLACE_BARCODE_DIALOG,
-        DUPLICATE_PAGES_DIALOG,
-        SETTINGS_PROBLEM_DIALOG,
-        SETTINGS_DIALOG,
-        ...FORM_FIELD_DIALOGS,
-      ]),
-    [],
-  );
+  const dialogs = useMemo(() => new DialogRegistry(APPLICATION_DIALOGS), []);
   const { open: openDialog, ask, close, resolve: resolveDialog, report: reportDialog } = useDialogHost(dialogs);
+  // ONE PER WINDOW, as the side panels are the window's (ADR-0146): whether each is on screen, and the one writer of
+  // both open settings. Every control that shows or shuts a panel takes it.
+  const presence = useMemo(() => new PanelPresence(settings), [settings]);
   // WHETHER A SAVE THAT BREAKS SIGNATURES ASKS FIRST, read through the store at each save rather than captured, so a
   // change on the Saving page applies to the next save.
   const warnSignatureBreak = useCallback(() => settings.get(WARN_SIGNATURE_BREAK_SETTING.id) !== false, [settings]);
+
+  /**
+   * Brings a document to the front.
+   *
+   * ## Why activation is one callback rather than `setActiveId` in four places
+   *
+   * Every route that changes the active document comes through here rather than
+   * calling `setActiveId`, so there is one name for it.
+   *
+   * ## Every open document's view is mounted, and the active one is shown (ADR-0129)
+   *
+   * Until 2026-10-01 only the active document's view was mounted, as a budget
+   * decision: one set of page bitmaps rather than one per open document. Each
+   * switch then mounted a scroller from nothing, which re-parsed the document
+   * (against §6's *nothing is snapshotted, restored, or re-parsed*) and showed
+   * it building up in three stages. Each document now has a layer of its own,
+   * kept behind the active one (`DocumentLayer`), so activating changes which
+   * layer is shown and its scroll offset, zoom and drawn pages are already
+   * there. `startAt` and the scroller's own reveal (`PageList`'s
+   * `revealedStart`) still serve the mounts that remain: a document opening,
+   * and the error boundary's retry.
+   *
+   * The budget question did not go away; it moved. §9.17's renderer budget is
+   * still provisional, and ADR-0129 states the expected cost per kept tab and
+   * what to do if a measurement breaks it.
+   */
+  const activate = useCallback((docId: DocId): void => {
+    setActiveId(docId);
+  }, []);
+  /**
+   * *File › Start screen* (ADR-0107): no document in front, every tab kept — `activate`'s one other route, named beside
+   * it for the reason above. The start screen draws whenever nothing is active, so this is all it takes.
+   */
+  const showStart = useCallback((): void => {
+    setActiveId(undefined);
+  }, []);
+
+  // THE ZOOM A NEW DOCUMENT OPENS AT (Settings › Viewing › *Starting zoom*), read by the opener below.
+  const startingZoom = useSetting(settings, STARTING_ZOOM_SETTING);
+
+  /**
+   * A document main has opened, added as a tab and brought to the front.
+   *
+   * **Deduped by `docId`**, which is not defensiveness: `document.openRecent`
+   * can answer with a document that is already open, and appending would put a
+   * second tab in front of the reader for the file they asked to look at. The
+   * dedupe and the activation together are what make *open the thing I already
+   * have* mean *show it to me*.
+   *
+   * **Declared here, ahead of the document commands**, because the copy an edit of a signed document is made on
+   * opens through it (`signatures` below), and a callback's dependency list is read when it is declared.
+   */
+  const opened = useCallback(
+    // TAKES WHAT A COMMAND CAN REPORT — `OpenedDocument`, which is `main`'s answer — and seeds
+    // the saved state here. A command has nothing to say about it: opening a document is the one
+    // moment its content and its file are the same by construction, so the seed is a fact about
+    // the event and not a field anyone could get wrong at a call site.
+    (document: OpenedDocument): void => {
+      // THE STORE IS MINTED HERE, beside the tab, because the two have the same
+      // lifetime and `stores.open` refuses a second one for a document that
+      // already has it. Guarded by the same `get`-misses read the render uses,
+      // so re-opening an open document activates its tab rather than throwing.
+      if (stores.get(document.docId) === undefined) {
+        // AT THE ZOOM THE PERSON CHOSE TO START AT (Settings › Viewing); from here on the zoom is this document's.
+        stores.open(document.docId, document.version, startingZoomMode(startingZoom));
+      }
+      setTabs((current) =>
+        current.some((tab) => tab.docId === document.docId)
+          ? current
+          : // THE FILE HOLDS THIS VERSION, and `savedAt` stays undefined: this window has not
+            // watched a save, so the bar reads "Saved" with no time rather than claiming one.
+            [...current, { ...document, savedVersion: document.version, savedAt: undefined }],
+      );
+      activate(document.docId);
+    },
+    [activate, startingZoom, stores],
+  );
+
+  // AN EDIT THAT WOULD BREAK A SIGNATURE (ADR-0149): whether to ask, by the save's switch, and how the copy it can be
+  // made on opens. One object, stable while the store and the opener are, so every command bag takes the same one.
+  const signatures = useMemo(() => ({ warn: warnSignatureBreak, onOpened: opened }), [opened, warnSignatureBreak]);
 
   // AUTOSAVE (`autosave.ts`), off unless the Saving page turns it on. The pass reads the tabs through a ref, so a
   // version moving does not restart the timer; the ref is written in an effect, never during render.
@@ -1019,6 +976,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           client,
           ask,
           stamp,
+          signatures,
           onApplied: (next) => {
             appliedTo(docId, next);
           },
@@ -1027,7 +985,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         occasion,
         beforeAsking,
       ),
-    [appliedTo, ask, client, stamp],
+    [appliedTo, ask, client, signatures, stamp],
   );
   const settleMarks = useCallback(
     async (docId: DocId, occasion: PendingRedactionOccasion) => proceeds(await settleMarksOf(docId, occasion)),
@@ -1054,7 +1012,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     (from: number, to: number): void => {
       if (activeId === undefined) return;
       void applyDocumentCommand(
-        { client, onApplied: applied, ask, stamp },
+        { client, onApplied: applied, ask, stamp, signatures },
         activeId,
         { kind: 'movePage', from, to },
       ).then((moved) => {
@@ -1073,7 +1031,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         stores.get(activeId)?.getState().movedPages(count, { from, to });
       });
     },
-    [activeId, applied, ask, client, stamp, stores],
+    [activeId, applied, ask, client, signatures, stamp, stores],
   );
 
   /**
@@ -1098,7 +1056,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const removeAnnotation = useCallback(
     (handle: { page: number; index: number; version: DocVersion }): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
         kind: 'removeAnnotation',
         page: handle.page,
         // A ROW NAMES ONE. The payload is plural because a selection can be
@@ -1109,7 +1067,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         version: handle.version,
       });
     },
-    [activeId, applied, ask, client, stamp],
+    [activeId, applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -1121,13 +1079,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const setLayerVisibility = useCallback(
     (layer: number, visible: boolean): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
         kind: 'setLayerVisibility',
         layer,
         visible,
       });
     },
-    [activeId, applied, ask, client, stamp],
+    [activeId, applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -1150,7 +1108,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       value: FieldFill;
     }): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
         kind: 'fillFormField',
         page: handle.page,
         index: handle.index,
@@ -1158,7 +1116,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         version: handle.version,
       });
     },
-    [activeId, applied, ask, client, stamp],
+    [activeId, applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -1172,14 +1130,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const deleteFormField = useCallback(
     (handle: { page: number; index: number; version: DocVersion }): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
         kind: 'deleteFormFields',
         page: handle.page,
         indices: [handle.index],
         version: handle.version,
       });
     },
-    [activeId, applied, ask, client, stamp],
+    [activeId, applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -1188,8 +1146,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   const flattenActiveForm = useCallback((): void => {
     if (activeId === undefined) return;
-    void flattenForm({ client, onApplied: applied, ask, stamp }, activeId);
-  }, [activeId, applied, ask, client, stamp]);
+    void flattenForm({ client, onApplied: applied, ask, stamp, signatures, toast }, activeId);
+  }, [activeId, applied, ask, client, signatures, stamp, toast]);
 
   /**
    * Removing everything the select tool has picked.
@@ -1206,14 +1164,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const removeSelection = useCallback(
     (chosen: AnnotationSelection): void => {
       if (activeId === undefined) return;
-      void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
+      void applyDocumentCommand({ client, onApplied: applied, ask, stamp, signatures }, activeId, {
         kind: 'removeAnnotation',
         page: chosen.page,
         indices: chosen.items.map((item) => item.index),
         version: chosen.version,
       });
     },
-    [activeId, applied, ask, client, stamp],
+    [activeId, applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -1232,8 +1190,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     // WHETHER THE VERSION MOVED, handed back: the drawing overlay holds a committed shape until the
     // page redraws with it, and drops it at once when the command was refused.
     (docId: DocId, command: DispatchableCommand): Promise<boolean> =>
-      applyCarrying({ client, onApplied: applied, ask, stamp, carry: setPicked }, docId, command),
-    [applied, ask, client, stamp],
+      applyCarrying({ client, onApplied: applied, ask, stamp, signatures, carry: setPicked }, docId, command),
+    [applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -1263,12 +1221,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     (a: number, b: number): void => {
       if (activeId === undefined) return;
       void applyDocumentCommand(
-        { client, onApplied: applied, ask, stamp },
+        { client, onApplied: applied, ask, stamp, signatures },
         activeId,
         { kind: 'swapPages', a, b },
       );
     },
-    [activeId, applied, ask, client, stamp],
+    [activeId, applied, ask, client, signatures, stamp],
   );
 
   /**
@@ -1287,84 +1245,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   const [goTo, setGoTo] = useState<number | undefined>(undefined);
 
-  /**
-   * Brings a document to the front.
-   *
-   * ## Why activation is one callback rather than `setActiveId` in four places
-   *
-   * Every route that changes the active document comes through here rather than
-   * calling `setActiveId`, so there is one name for it.
-   *
-   * ## Every open document's view is mounted, and the active one is shown (ADR-0129)
-   *
-   * Until 2026-10-01 only the active document's view was mounted, as a budget
-   * decision: one set of page bitmaps rather than one per open document. Each
-   * switch then mounted a scroller from nothing, which re-parsed the document
-   * (against §6's *nothing is snapshotted, restored, or re-parsed*) and showed
-   * it building up in three stages. Each document now has a layer of its own,
-   * kept behind the active one (`DocumentLayer`), so activating changes which
-   * layer is shown and its scroll offset, zoom and drawn pages are already
-   * there. `startAt` and the scroller's own reveal (`PageList`'s
-   * `revealedStart`) still serve the mounts that remain: a document opening,
-   * and the error boundary's retry.
-   *
-   * The budget question did not go away; it moved. §9.17's renderer budget is
-   * still provisional, and ADR-0129 states the expected cost per kept tab and
-   * what to do if a measurement breaks it.
-   */
-  const activate = useCallback((docId: DocId): void => {
-    setActiveId(docId);
-  }, []);
-  /**
-   * *File › Start screen* (ADR-0107): no document in front, every tab kept — `activate`'s one other route, named beside
-   * it for the reason above. The start screen draws whenever nothing is active, so this is all it takes.
-   */
-  const showStart = useCallback((): void => {
-    setActiveId(undefined);
-  }, []);
-
-  // THE ZOOM A NEW DOCUMENT OPENS AT (Settings › Viewing › *Starting zoom*), read by the opener below.
-  const startingZoom = useSetting(settings, STARTING_ZOOM_SETTING);
   // THE KEYS A PERSON CHOSE in the shortcuts dialog (ADR-0111), applied when the command registry is built below.
   const chosenShortcuts = useSetting(settings, SHORTCUTS_SETTING);
 
   // HOW MANY TIMES THE RECENT LIST HAS BEEN EMPTIED FROM SETTINGS — its key, so each empty is a fresh read.
   const [recentReads, setRecentReads] = useState(0);
-
-  /**
-   * A document main has opened, added as a tab and brought to the front.
-   *
-   * **Deduped by `docId`**, which is not defensiveness: `document.openRecent`
-   * can answer with a document that is already open, and appending would put a
-   * second tab in front of the reader for the file they asked to look at. The
-   * dedupe and the activation together are what make *open the thing I already
-   * have* mean *show it to me*.
-   */
-  const opened = useCallback(
-    // TAKES WHAT A COMMAND CAN REPORT — `OpenedDocument`, which is `main`'s answer — and seeds
-    // the saved state here. A command has nothing to say about it: opening a document is the one
-    // moment its content and its file are the same by construction, so the seed is a fact about
-    // the event and not a field anyone could get wrong at a call site.
-    (document: OpenedDocument): void => {
-      // THE STORE IS MINTED HERE, beside the tab, because the two have the same
-      // lifetime and `stores.open` refuses a second one for a document that
-      // already has it. Guarded by the same `get`-misses read the render uses,
-      // so re-opening an open document activates its tab rather than throwing.
-      if (stores.get(document.docId) === undefined) {
-        // AT THE ZOOM THE PERSON CHOSE TO START AT (Settings › Viewing); from here on the zoom is this document's.
-        stores.open(document.docId, document.version, startingZoomMode(startingZoom));
-      }
-      setTabs((current) =>
-        current.some((tab) => tab.docId === document.docId)
-          ? current
-          : // THE FILE HOLDS THIS VERSION, and `savedAt` stays undefined: this window has not
-            // watched a save, so the bar reads "Saved" with no time rather than claiming one.
-            [...current, { ...document, savedVersion: document.version, savedAt: undefined }],
-      );
-      activate(document.docId);
-    },
-    [activate, startingZoom, stores],
-  );
 
   /**
    * The open document's own store, which is where the back-stack lives.
@@ -1649,6 +1534,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     () => ({
       jumpTo: (page: number): void => {
         store?.getState().jumpTo(page);
+        // IN ORGANIZE A ONE-PAGE SELECTION IS THE CURRENT PAGE (item 13a), so the status bar's buttons, the page keys
+        // and the side strip move the ticked card with the page they go to. Read at the call, so the navigator stays
+        // stable across a section change and the registry is not rebuilt.
+        if (settings.get(RIBBON_SECTION_SETTING.id) === 'organize') store?.getState().selectionFollows(page);
         setGoTo(page);
       },
       back: (): void => {
@@ -1660,7 +1549,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         if (target !== undefined) setGoTo(target);
       },
     }),
-    [store],
+    [settings, store],
   );
 
   /**
@@ -1680,10 +1569,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   /** The tabs as the assistant needs them: each document's id and the name its tab shows (ADR-0134). */
   const assistantDocuments = useMemo(() => tabs.map(({ docId, name }) => ({ docId, name })), [tabs]);
 
+  // Stable, so the scroller's consume-the-request effect does not re-run on
+  // every parent render and scroll again to a page it has already reached.
+  // Declared before `organize`, which hands it to the Organize grid as well.
+  const wentTo = useCallback(() => {
+    setGoTo(undefined);
+  }, []);
+
   /**
    * The Organize grid's gestures (ADR-0104), `undefined` outside Organize — which is what keeps the reading
-   * view on every other section. The selection is the document store's; Delete is `deletePages` through the
-   * one dispatcher, undone like any command, so it asks nothing first.
+   * view on every other section. The selection is the document store's; Delete ASKS FIRST, in the Delete pages
+   * dialog with the pages it names, and a Cancel deletes nothing (the owner, 2026-10-05, CR-COR-06). What it
+   * confirms is `deletePages` through the one dispatcher, undone like any command.
    */
   const organize = useMemo(() => {
     if (!organizing || store === undefined || activeId === undefined) return undefined;
@@ -1692,19 +1589,48 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       onSelect: (pages: readonly number[]) => {
         store.getState().selectPages(pages);
       },
+      // THE CARD A PERSON CLICKED IS THE CURRENT PAGE, so the status bar names it and a page command acts on it (item
+      // 13a). The store's own page, the one Home reads: there is one current page, not one per view.
+      onCurrent: (page: number) => {
+        store.getState().viewing(page);
+      },
+      // FULL PAGE'S SCROLLING moves the current page as Home's does, and a one-page selection with it.
+      onViewing: (page: number) => {
+        store.getState().viewing(page);
+        store.getState().selectionFollows(page);
+      },
+      // THE NAVIGATOR'S REQUEST, taken by the grid while Organize is the section: Home's scroller is not mounted then,
+      // so the request used to wait for it and the grid did not move.
+      goTo,
+      onWentTo: wentTo,
       onOpen: (page: number) => {
         // TO READ A PAGE IS TO CHOOSE A SECTION THAT READS: the section is the one value the canvas follows.
         navigator.jumpTo(page);
         settings.set(RIBBON_SECTION_SETTING.id, 'home');
       },
+      // THE VIEW MODEL'S COUNT, the one the grid draws its cards from: the store's is reported by the reading view's
+      // scroller, which a document opened straight into Organize has never mounted.
       onDelete: (pages: readonly number[]) => {
-        void applyDocumentCommand({ client, onApplied: applied, ask, stamp }, activeId, {
-          kind: 'deletePages',
-          pages: [...pages],
-        });
+        if (pageCount === undefined) return;
+        void askToDeletePages({ client, onApplied: applied, ask, stamp, signatures }, activeId, pageCount, pages);
       },
     };
-  }, [activeId, applied, ask, client, navigator, organizing, selectedPages, settings, stamp, store]);
+  }, [
+    activeId,
+    applied,
+    ask,
+    client,
+    goTo,
+    navigator,
+    organizing,
+    pageCount,
+    selectedPages,
+    settings,
+    signatures,
+    stamp,
+    store,
+    wentTo,
+  ]);
 
   /**
    * What a command last asked of the assistant (ADR-0088), and the one way to ask it.
@@ -1718,8 +1644,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const [assistantHandled, setAssistantHandled] = useState<number | undefined>(undefined);
   const askAssistant = useCallback<AskAssistant>(
     (about, next, replyTo) => {
-      settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
       settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
+      presence.show('end');
       setAssistantRequest((last) => ({
         serial: (last?.serial ?? 0) + 1,
         about,
@@ -1727,7 +1653,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         ...(replyTo === undefined ? {} : { replyTo }),
       }));
     },
-    [settings],
+    [presence, settings],
   );
 
   /**
@@ -1735,18 +1661,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * so focus is taken on the next frame rather than now.
    */
   const openAssistant = useCallback(() => {
-    settings.set(CONTEXT_PANEL_OPEN_SETTING.id, true);
     settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
+    presence.show('end');
     requestAnimationFrame(() => {
       document.querySelector<HTMLTextAreaElement>('[data-assistant-draft]')?.focus();
     });
-  }, [settings]);
-
-  // Stable, so the scroller's consume-the-request effect does not re-run on
-  // every parent render and scroll again to a page it has already reached.
-  const wentTo = useCallback(() => {
-    setGoTo(undefined);
-  }, []);
+  }, [presence, settings]);
 
   // THE READER'S OWN SCROLLING, told to the store so the history has a place to
   // return to. It does NOT push — see `DocumentState.history`.
@@ -1818,6 +1738,22 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    */
   const [toolId, setToolId] = useState<string | undefined>(undefined);
   const readTool = useCallback(() => toolId, [toolId]);
+  /**
+   * Edit object's filter (ADR-0153 Decision 2): a value BESIDE the tool slot, since the slot answers what a press on
+   * the page does — the same for all four filters — and this answers which objects are outlined.
+   */
+  const [objectFilter, setObjectFilter] = useState<ObjectFilter>('all');
+  const readObjectFilter = useCallback(() => objectFilter, [objectFilter]);
+  const enterObjects = useCallback((filter: ObjectFilter | undefined): void => {
+    if (filter === undefined) {
+      setToolId(undefined);
+      return;
+    }
+    setObjectFilter(filter);
+    setToolId(EDIT_OBJECTS_TOOL_ID);
+  }, []);
+  /** The object Edit object has selected, with the document it is in: a version alone is a number every tab has. */
+  const [objectPicked, setObjectPicked] = useState<{ readonly docId: DocId; readonly pick: ObjectPick } | undefined>();
   // THE CONTROL THE HELP CENTRE'S *SHOW ME* ASKED THE RIBBON TO RING (ADR-0112), stamped so asking twice rings twice.
   const [showing, setShowing] = useState<{ readonly id: string; readonly stamp: number } | undefined>(undefined);
   /**
@@ -1873,6 +1809,79 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [open?.version, picked, toolId],
   );
   const readSelection = useCallback(() => selection, [selection]);
+
+  /**
+   * Edit object's selected object as the page shows it (ADR-0153 Decision 4): in the document on show, at its version,
+   * while the mode is on. `selection`'s rule one walk along, and for its reasons — a pick read at another version names
+   * whatever is now at that index, and one left standing while somebody draws a rectangle is a selection nothing on
+   * screen belongs to, under a Delete key that is not tool-scoped.
+   */
+  const objectSelection = useMemo(
+    () =>
+      objectPicked !== undefined &&
+      objectPicked.docId === open?.docId &&
+      objectPicked.pick.version === open.version &&
+      toolId === EDIT_OBJECTS_TOOL_ID
+        ? objectPicked.pick
+        : undefined,
+    [objectPicked, open?.docId, open?.version, toolId],
+  );
+  const readObjectSelection = useCallback(() => objectSelection, [objectSelection]);
+
+  /**
+   * Sends a command built from the selected object, and carries the selection across it where it keeps the object's
+   * walk (`carryPick`): a move, a resize or a recolour leaves it selected at the version produced, and a removal drops
+   * it. A refused command leaves it as it was, since the document did not move.
+   */
+  const sendObject = useCallback(
+    async (docId: DocId, command: DispatchableCommand): Promise<void> => {
+      const held: { produced?: DocVersion } = {};
+      const moved = await applyDocumentCommand(
+        {
+          client,
+          onApplied: (answer) => {
+            held.produced = answer.version;
+            applied(answer);
+          },
+          ask,
+          stamp,
+          signatures,
+        },
+        docId,
+        command,
+      );
+      const { produced } = held;
+      if (!moved || produced === undefined) return;
+      setObjectPicked((current) => {
+        if (current?.docId !== docId) return current;
+        const pick = carryPick(current.pick, command, produced);
+        return pick === undefined ? undefined : { docId, pick };
+      });
+    },
+    [applied, ask, client, signatures, stamp],
+  );
+
+  /** What Delete and Properties read of the selected object, and how Delete removes it (ADR-0153 Decision 5). */
+  const objectDeps = useMemo(
+    () => ({
+      picked: readObjectSelection,
+      onRemove: (pick: ObjectPick): void => {
+        if (activeId === undefined) return;
+        void sendObject(activeId, removeCommand(pick));
+      },
+    }),
+    [activeId, readObjectSelection, sendObject],
+  );
+
+  /** Fills the selected object with `colour`, from the Properties tab. */
+  const recolourObject = useCallback(
+    (colour: ObjectFill): void => {
+      if (activeId === undefined || objectSelection === undefined) return;
+      const command = recolourCommand(objectSelection, colour);
+      if (command !== undefined) void sendObject(activeId, command);
+    },
+    [activeId, objectSelection, sendObject],
+  );
   /**
    * *Edit › Select all* on the page (ADR-0107): how many marks each page draws, from the layers' own read, so the item
    * is disabled on a page with none rather than a control that selects nothing — a THIRD reader of
@@ -1927,6 +1936,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * focused when that memo last ran.
    */
   const readActiveId = useCallback(() => activeId, [activeId]);
+
+  // THE ONE REQUEST FOR WORDS TYPED ON A PAGE (ADR-0154), and the means to make one: `usePageWriting` has the rules —
+  // a request belongs to its document, and only a second request finishes the first.
+  const { write, writingDocId, writing: pageWriting } = usePageWriting(activeId, tabs);
   /**
    * How many marks main's clipboard holds, as the last copy reported it — the COUNT and never the
    * marks, which stay in main because a paste is a command the renderer may not send.
@@ -2043,6 +2056,58 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   );
 
   /**
+   * What a spelling review needs (ADR-0156): the bag every document command is sent with, and the drawn pages' boxes
+   * the page list reported, through which a word's point is converted. A box is answered only for the document it was
+   * reported for.
+   */
+  const spellingDeps = useMemo<SpellingDeps>(
+    () => ({
+      client,
+      settings,
+      commands: { client, onApplied: applied, ask, stamp, signatures },
+      cropOf: (docId, page) => (pageBoxes.current.docId === docId ? pageBoxes.current.boxes.get(page) : undefined),
+    }),
+    [applied, ask, client, settings, signatures, stamp],
+  );
+
+  /** Spell check: the Spelling tab, shown, and a review of the document started (ADR-0156 Decision 1). */
+  const startSpelling = useCallback(
+    (docId: DocId, pages: number): void => {
+      settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'spelling');
+      presence.show('end');
+      const held = stores.get(docId);
+      if (held !== undefined) void startReview(spellingDeps, held, pages);
+    },
+    [presence, settings, spellingDeps, stores],
+  );
+
+  /**
+   * The review's word, painted on the page through the find highlight (ADR-0156's 2026-10-04 correction): the word as
+   * the query, exactly as written and whole, and the occurrence as the active match, by the text layer line and
+   * offset the review read it at. Only while the Spelling tab is the one shown, so the find bar's own matches come back
+   * when a person goes elsewhere.
+   */
+  const spellingReview = useSpellingReview(store);
+  const contextTab = useSetting(settings, CONTEXT_PANEL_TAB_SETTING);
+  const spellingWord =
+    contextTab === 'spelling' && spellingReview?.phase === 'reviewing' ? spellingReview.current : undefined;
+  const spellingHighlight = useMemo<SearchHighlight | undefined>(() => {
+    if (spellingWord?.place.kind !== 'text') return undefined;
+    const { page, line, offset } = spellingWord.place;
+    return {
+      query: spellingWord.word,
+      options: { caseSensitive: true, wholeWord: true, normalise: 'none' },
+      active: { page, line, offset },
+    };
+  }, [spellingWord]);
+  // THE PAGE THE WORD IS ON, shown when the review reaches a word on another page. Keyed on the page alone, so a word
+  // further down the same page does not pull the view back to its top, and a reader who scrolled away is not followed.
+  const spellingPage = spellingWord?.place.page;
+  useEffect(() => {
+    if (spellingPage !== undefined) navigator.jumpTo(spellingPage);
+  }, [navigator, spellingPage]);
+
+  /**
    * The assistant's *Add as note*: the answer as a sticky note on the page the reader is on, in the
    * page's top-right corner — the margin a note icon is looked for in, and inside the visible box
    * the page list drew, so it is never off the page. The note is an ordinary command: undoable, and
@@ -2068,7 +2133,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * and a tool reading the settings store itself would be the second reader of a
    * value this component already owns.
    */
-  const scalePerPoint = useSetting(settings, MEASURE_SCALE_SETTING);
+  const scaleRatio = useSetting(settings, MEASURE_RATIO_SETTING);
   const scaleUnit = useSetting(settings, MEASURE_UNIT_SETTING);
   const imagePages = useSetting(settings, IMAGE_PAGES_SETTING);
   // THE REGION TOOL'S LANGUAGES, read here because this is where settings are read
@@ -2140,10 +2205,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     };
   }, [client]);
   useEffect(() => refreshSecrets(), [refreshSecrets]);
-  const scale = useMemo<MeasureScale>(
-    () => ({ perPoint: scalePerPoint, unit: scaleUnit }),
-    [scalePerPoint, scaleUnit],
-  );
+  const scale = useMemo<MeasureScale>(() => measureScaleOf(scaleUnit, scaleRatio), [scaleRatio, scaleUnit]);
 
   /**
    * Where a dragged region goes.
@@ -2320,6 +2382,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [dispatch],
   );
 
+  /**
+   * The words every editor of a mark's words starts from, read whole where the walk cut them (`wordsToEdit`): Edit
+   * comment, the Properties field and a reopen on the page take this one function.
+   */
+  const wordsOf = useCallback(
+    (mark: WordsMark): Promise<WordsToEdit> =>
+      activeId === undefined
+        ? Promise.resolve({ kind: 'problem', problem: { code: 'document-not-open' } })
+        : wordsToEdit(client, activeId, mark),
+    [activeId, client],
+  );
+
   /** Rewriting the one selected mark's author, from the Properties tab (ADR-0103) — carried like a comment. */
   const authorSelection = useCallback(
     (chosen: AnnotationSelection, author: string): void => {
@@ -2351,7 +2425,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       new ToolRegistry(
         annotationTools({
           ask,
+          write,
           annotations: listAnnotations,
+          // A REOPEN'S WORDS, whole where the walk cut them: the function Edit comment and the Properties field take.
+          wordsOf,
           onSelect: setPicked,
           selected: readSelection,
           style,
@@ -2391,6 +2468,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       readSelection,
       scale,
       style,
+      wordsOf,
+      write,
     ],
   );
 
@@ -2458,10 +2537,34 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * document is opened.
    */
   // ONE SET OF OPEN DEPENDENCIES, for the Open command and the start screen's feature shortcuts, which run the same open.
-  const openDeps = useMemo(
-    () => ({ client, onOpened: opened, onProblem: setOpenProblem, onAlreadyOpen: activate }),
-    [activate, client, opened],
-  );
+  const openDeps = useMemo(() => {
+    const shown = (document: OpenedDocument): void => {
+      // A DOCUMENT SHOWN ANSWERS THE LAST PROBLEM, so returning to the start screen later never shows a sentence
+      // about an open the person has since made.
+      setOpenProblem(undefined);
+      opened(document);
+      // AND ITS FILE IS ASKED ABOUT as it appears (cloud-4 7b): one that cannot be saved over is said before any edit,
+      // with a copy to work on — which opens through here, so the copy is asked about too.
+      void sayWhenUnwritable({ client, ask, onOpened: shown }, document.docId);
+    };
+    return {
+      client,
+      onOpened: shown,
+      // SAID WHERE THE PERSON IS LOOKING, which `placedProblem` decides.
+      onProblem: (reason: OpenProblem): void => {
+        setOpenProblem({ reason });
+      },
+      onAlreadyOpen: (docId: DocId): void => {
+        setOpenProblem(undefined);
+        activate(docId);
+      },
+    };
+  }, [activate, ask, client, opened]);
+  // THE DIALOG, once per problem placed over a document.
+  useEffect(() => {
+    if (placedProblem === undefined || placedProblem.onStart) return;
+    void ask(OPEN_PROBLEM_DIALOG_ID, { reason: placedProblem.problem.reason });
+  }, [ask, placedProblem]);
   const openCommand = useMemo(() => openDocumentCommand(openDeps), [openDeps]);
   // THE ONE RECENT-OPEN ROUTE (ADR-0143), for the start screen's cards and File › Recent alike.
   const openRecent = useCallback((handle: FileHandle) => openRecentDocument(openDeps, handle), [openDeps]);
@@ -2517,6 +2620,32 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       });
     },
     [openDeps, opened],
+  );
+  // *CHOOSE FILE…* IN THE FOUR SECOND-DOCUMENT DIALOGS (`sourceDocuments.ts`) opens through the same dependencies once
+  // more, so the file arrives as a tab like any other — and the document being changed stays the one on show, since the
+  // person is changing it and not the file they picked. Not `shown`: a file only read from has no save to warn about.
+  // An open that failed comes back to the command, which says so before it asks again.
+  const openSource = useCallback(
+    async (keep: DocId): Promise<SourceOpen> => {
+      let outcome: SourceOpen = { kind: 'none' };
+      await openDocument({
+        client,
+        onOpened: (document) => {
+          opened(document);
+          activate(keep);
+          outcome = { kind: 'opened', docId: document.docId, name: document.name };
+        },
+        onAlreadyOpen: (docId) => {
+          const tab = tabsNow.current.find((each) => each.docId === docId);
+          if (tab !== undefined) outcome = { kind: 'opened', docId, name: tab.name };
+        },
+        onProblem: (reason) => {
+          outcome = { kind: 'problem', reason };
+        },
+      });
+      return outcome;
+    },
+    [activate, client, opened],
   );
   const pickBeside = useCallback((side: Side, docId: DocId): void => {
     setSideBySide((current) => (current === undefined ? current : { ...current, [side]: docId }));
@@ -2603,7 +2732,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         windowEdit('copy');
       },
       search: (text) => {
-        showSearchPanel(settings);
+        showSearchPanel(settings, presence);
         setFindSeed((previous) => ({ text, nonce: (previous?.nonce ?? 0) + 1 }));
       },
     };
@@ -2612,8 +2741,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     const textCopy = copySelectionCommand(textDeps);
     const marksCopyDeps = { ...selectionDeps, client, ask, onCopied: setCopiedCount, toast };
     const marksCopy = copyAnnotationsCommand(marksCopyDeps);
-    const marksDelete = deleteSelectionCommand(selectionDeps);
-    const marksPaste = pasteAnnotationsCommand({ client, onApplied: applied, ask, stamp, hasCopied: readHasCopied });
+    const marksDelete = deleteSelectionCommand(selectionDeps, objectDeps);
+    const marksPaste = pasteAnnotationsCommand({ client, onApplied: applied, ask, stamp, signatures, hasCopied: readHasCopied });
     const marksSelectAll = selectAllMarksCommand({ marksOn, selectAll: selectAllOn });
     // RECOGNISING FIRST, for the exports whose output is the text (ADR-0118): the searchable export's walk, composed
     // here because `recogniseText.ts` imports the module the exports live in. Both settings are read when an export
@@ -2623,6 +2752,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       onApplied: applied,
       ask,
       stamp,
+      signatures,
       // EVERY WRITE CONFIRMS through `confirmWritten`, which needs where the toast goes.
       toast,
       // THE UNAPPLIED-MARKS QUESTION, asked before any export writes (the owner's item N1).
@@ -2634,6 +2764,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             onApplied: applied,
             ask,
             stamp,
+            signatures,
             track,
             recogniseOnExport: () => settings.get(RECOGNISE_ON_EXPORT_SETTING.id) === true,
             ocrLanguages: storedOcrLanguages,
@@ -2662,12 +2793,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         exitCommand({ closeWindow }),
         checkForUpdatesCommand({ client }),
         ...themeCommands({ settings }),
-        showPropertiesCommand({ settings }),
+        showPropertiesCommand({ settings, presence }),
         actualSizeCommand({ onZoom: changeZoom }),
-        showPanelCommand({ settings }, 'pages'),
-        showPanelCommand({ settings }, 'bookmarks'),
-        showPanelCommand({ settings }, 'layers'),
-        showPanelCommand({ settings }, 'search'),
+        showPanelCommand({ settings, presence },'pages'),
+        showPanelCommand({ settings, presence },'bookmarks'),
+        showPanelCommand({ settings, presence },'layers'),
+        showPanelCommand({ settings, presence },'search'),
         keyboardShortcutsCommand({
           ask,
           rows: () =>
@@ -2718,45 +2849,42 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         }),
         aiSetup,
         showWordCountCommand({ client, ask, track }),
-        compareDocumentsCommand({ show: showSideBySide }),
-        translatePageCommand({ client, onApplied: applied, ask, stamp, toast, track, storedSecrets: () => storedSecrets }),
+        compareDocumentsCommand({ client, show: showSideBySide }),
+        translatePageCommand({ client, onApplied: applied, ask, stamp, signatures, toast, track, storedSecrets: () => storedSecrets }),
         inspectPageStructureCommand({ client, ask }),
         accessibilityCheckCommand({ client, ask }),
         readBarcodesCommand({ client, ask }),
-        // TAKES THE SETTINGS STORE, which no other command here does. The
-        // personal dictionary is what makes this feature manageable rather than
-        // fixed, and it is a preference rather than document state — so it
-        // lives in §10.4's registry, and the command that adds to it is the one
-        // that has to reach it.
-        checkSpellingCommand({ client, settings, ask, track }),
+        // THE REVIEW IS THE PANEL'S (ADR-0156): the command opens the Spelling tab and starts it.
+        checkSpellingCommand({ start: startSpelling }),
         revealLogCommand({ client }),
         // THREE ROTATIONS, one factory. D2's row is a surface over the command
         // Stage 0 already declared — `rotatePages` takes the quarter turns, so
         // 180 and 270 needed no new command and no new contract entry.
-        rotatePageCommand({ client, onApplied: applied, ask, stamp }, 1),
-        rotatePageCommand({ client, onApplied: applied, ask, stamp }, 2),
-        rotatePageCommand({ client, onApplied: applied, ask, stamp }, 3),
+        rotatePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 1),
+        rotatePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 2),
+        rotatePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 3),
         // THE FIRST DESTRUCTIVE COMMAND, and it registers exactly like the
         // three above it. What is different is invisible here and deliberately
         // so: its log entry is terminal, and undoing it restores the checkpoint
         // the bus took rather than an inverse (ADR-0037).
-        insertBlankPageCommand({ client, onApplied: applied, ask, stamp }),
-        duplicatePageCommand({ client, onApplied: applied, ask, stamp }),
-        deletePageCommand({ client, onApplied: applied, ask, stamp }),
+        insertBlankPageCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        duplicatePageCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        deletePageCommand({ client, onApplied: applied, ask, stamp, signatures }),
         // THE FIRST COMMAND WHOSE ARGUMENTS COME FROM A DIALOG. Its `run`
         // awaits an answer and dispatches only if there was one, which is the
         // whole of the mutation-dialog gate (ADR-0038).
-        deletePagesCommand({ client, onApplied: applied, ask, stamp }),
-        cropPagesCommand({ client, onApplied: applied, ask, stamp }),
-        protectDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
-        sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
-        signDocumentCommand({ client, onApplied: applied, ask, stamp, toast }),
-        signaturesCommand({ client, onApplied: applied, ask, stamp }),
+        deletePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        cropPagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        protectDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        sanitizeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        signDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        signaturesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         docusignSendCommand({
           client,
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           settleMarks,
           docusignReady: () => docusignKeyStored,
         }),
@@ -2765,25 +2893,28 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           toast,
           docusignReady: () => docusignKeyStored,
         }),
-        redactMatchesCommand({ client, onApplied: applied, ask, stamp }),
+        redactMatchesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         applyRedactionsCommand({
           client,
           onApplied: applied,
           ask,
           stamp,
+          signatures,
+          toast,
           // ANYTHING BUT AN EXPLICIT OFF ASKS: an unread or unexpected value lands on the safe side.
           confirm: () => settings.get(CONFIRM_REDACTION_SETTING.id) !== false,
         }),
-        watermarkPagesCommand({ client, onApplied: applied, ask, stamp }),
-        headerFooterCommand({ client, onApplied: applied, ask, stamp }),
-        batesNumberCommand({ client, onApplied: applied, ask, stamp }),
-        pageTransitionCommand({ client, onApplied: applied, ask, stamp, toast }),
-        pageBackgroundCommand({ client, onApplied: applied, ask, stamp }),
-        resizePagesCommand({ client, onApplied: applied, ask, stamp }),
-        deskewPagesCommand({ client, onApplied: applied, ask, stamp }),
+        watermarkPagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        headerFooterCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        batesNumberCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        pageTransitionCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        pageBackgroundCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        resizePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        deskewPagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         // TAKES `track` AS WELL AS THE THREE ABOVE, and it is the first mutating
         // command to: recognition is 3.8–4.4 s per page and this one dispatches
         // once per page, so the status bar is where a reader watches it and where
@@ -2795,6 +2926,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           track,
           servicesReady: () => azureReady || claudeKeyStored,
           ocrLanguages: storedOcrLanguages,
@@ -2808,6 +2940,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           toast,
           settleMarks,
           track,
@@ -2818,11 +2951,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // dialog — the levels come from each image's own histogram — and it reads the
         // page kinds for the same reason the OCR commands do: levelling is only
         // meaningful where the page's content is a raster.
-        enhanceScansCommand({ client, onApplied: applied, ask, stamp, track }),
+        enhanceScansCommand({ client, onApplied: applied, ask, stamp, signatures, track }),
         // D9's DOCUMENT SCAN ROW, enhance's shape and its walk: the image-only pages,
         // one command, one undo.
-        straightenScansCommand({ client, onApplied: applied, ask, stamp, track }),
-        insertImageCommand({ client, onApplied: applied, ask, stamp }),
+        straightenScansCommand({ client, onApplied: applied, ask, stamp, signatures, track }),
+        insertImageCommand({ client, onApplied: applied, ask, stamp, signatures }),
         // D9's MARKDOWN ROW. The new document arrives as a tab by `openCommand`'s
         // callbacks; the append also adds a tab, then returns to the document it
         // changed (ADR-0060's correction).
@@ -2845,13 +2978,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           onOpened: opened,
           onActivate: activate,
         }),
-        mergeDocumentCommand({ client, onApplied: applied, ask, stamp }),
-        insertFromPdfCommand({ client, onApplied: applied, ask, stamp }),
-        replacePageCommand({ client, onApplied: applied, ask, stamp }),
-        importPageAsLayerCommand({ client, onApplied: applied, ask, stamp }),
+        mergeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
+        insertFromPdfCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
+        replacePageCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
+        importPageAsLayerCommand({ client, onApplied: applied, ask, stamp, signatures, openSource, settings, presence }),
         // D9's EDIT PAGE IN ANOTHER APP: its reimport opens the edited page as a tab, so it takes
         // `appendMarkdownCommand`'s two callbacks as well as `replacePageCommand`'s (ADR-0062).
         editPageExternallyCommand({
@@ -2859,21 +2993,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           onOpened: opened,
           onActivate: activate,
         }),
-        extractPagesCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
-        splitDocumentCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
-        exportPageImagesCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
+        extractPagesCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
+        splitDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
+        exportPageImagesCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
         exportTextCommand(exportDeps),
         exportLayoutTextCommand(exportDeps),
         exportWordCommand(exportDeps),
-        exportPowerPointCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
+        exportPowerPointCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
         exportExcelCommand({
           client,
           onApplied: applied,
           ask,
           stamp,
+          signatures,
           toast,
           settleMarks,
           // THE SAME TWO FACTS the OCR tool's engines are offered on (`cloudReady`, `claudeReady`
@@ -2884,38 +3020,38 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             ...(claudeKeyStored ? (['claude'] as const) : []),
           ],
         }),
-        printCommand({ client, onApplied: applied, ask, stamp, settings, toast, settleMarks }),
-        emailCommand({ client, onApplied: applied, ask, stamp, settleMarks }),
+        printCommand({ client, onApplied: applied, ask, stamp, signatures, settings, toast, settleMarks }),
+        emailCommand({ client, onApplied: applied, ask, stamp, signatures, settleMarks }),
         exportPdfaCommand(exportDeps),
-        optimizeCommand({ client, onApplied: applied, ask, stamp, track, toast, settleMarks }),
-        generateTocCommand({ client, onApplied: applied, ask, stamp }),
-        findDuplicatePagesCommand({ client, onApplied: applied, ask, stamp }),
-        undoCommand({ client, onApplied: applied, ask, stamp }),
-        redoCommand({ client, onApplied: applied, ask, stamp }),
+        optimizeCommand({ client, onApplied: applied, ask, stamp, signatures, track, toast, settleMarks }),
+        generateTocCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        findDuplicatePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        undoCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        redoCommand({ client, onApplied: applied, ask, stamp, signatures }),
         saveCommand({ client, ask, toast, onSaved, warnSignatureBreak, settleMarks }),
         closeTabCommand({ close: (docId) => requestClose([docId]) }),
         closeOthersCommand({ close: requestClose }),
         // THE SHELL'S OWN `activeId` AND `showSideBySide`, which is what keeps this a second ROUTE
         // to Side by Side rather than a second owner of it: Review › Compare writes the same value.
         openSideBySideCommand({ focused: readActiveId, show: showSideBySide }),
-        saveCopyCommand({ client, onApplied: applied, ask, stamp, toast, settleMarks }),
-        exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
-        exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        importFormDataJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
-        importFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        importFormDataFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
+        saveCopyCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
+        exportFormDataJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        exportFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        exportFormDataFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        importFormDataJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        importFormDataXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        importFormDataFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         // THE COMMENTS' FILES, Review › Comment files (ADR-0077).
-        importAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        importAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        importAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
+        importAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        importAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        importAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         // THE CLIPBOARD'S PASTE, beside the import it is: main mints the same command.
         marksPaste,
-        exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, toast }),
-        exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, toast }),
-        detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp }),
-        flattenFormCommand({ client, onApplied: applied, ask, stamp }),
+        exportAnnotationsXfdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        flattenFormCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
         editTextCommand({ activeTool: readTool, onSelect: setToolId }),
@@ -2928,26 +3064,27 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         }),
         handToolCommand({ activeTool: readTool, onSelect: setToolId }),
         selectTextCommand({ onSelect: setToolId, activeTool: readTool }),
-        editPageObjectCommand({ client, onApplied: applied, ask, stamp }),
+        // EDIT OBJECT, a MODE in the tool slot with four filters in one ribbon menu (ADR-0153).
+        ...editObjectsCommands({ activeTool: readTool, filter: readObjectFilter, onEnter: enterObjects }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.
-        findCommand({ settings }),
+        findCommand({ settings, presence }),
         // THE TWO LISTS, from their own ribbon sections (the placement audit, 2026-09-23).
-        showPanelCommand({ settings }, 'comments'),
-        showPanelCommand({ settings }, 'forms'),
-        movePageCommand({ client, onApplied: applied, ask, stamp }, 'earlier'),
-        movePageCommand({ client, onApplied: applied, ask, stamp }, 'later'),
+        showPanelCommand({ settings, presence },'comments'),
+        showPanelCommand({ settings, presence },'forms'),
+        movePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 'earlier'),
+        movePageCommand({ client, onApplied: applied, ask, stamp, signatures }, 'later'),
         // §7's SELECTED-TEXT MENU. The markups dispatch through the one dispatcher, drawn in the
         // tools' own style; *Search* opens the Search panel and seeds the find field.
         ...(() => {
           return [
             textCopy,
             ...markupSelectionCommands(textDeps),
-            // ASK IS THIS COMMAND'S ALONE, not a member of `TextSelectionDeps`: it is the only
-            // item in this menu that opens a dialog, and widening the shared interface would
+            // WRITE IS THIS COMMAND'S ALONE, not a member of `TextSelectionDeps`: it is the only
+            // item in this menu that asks for words, and widening the shared interface would
             // hand five commands a capability none of them may use.
-            commentSelectionCommand({ ...textDeps, ask }),
+            commentSelectionCommand({ ...textDeps, write }),
             redactSelectionCommand(textDeps),
             searchSelectionCommand(textDeps),
             // THE ASSISTANT'S FOUR (ADR-0088), after the menu's own seven: each names the words
@@ -2973,19 +3110,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           claudeReady: () => claudeKeyStored,
         }),
         marksDelete,
-        // ASK IS PASSED PER COMMAND, `commentSelectionCommand`'s rule: only the
-        // annotation-menu items that open a dialog receive it, and widening
-        // `SelectionCommandDeps` would hand every selection command a
-        // capability none of the others may use. *Corrected 2026-09-21:* this
-        // said *this command's alone*, which stopped being true when *Reply*
-        // joined it — the rule was never about there being one.
-        editSelectionCommand({ ...selectionDeps, ask }),
-        replySelectionCommand({ ...selectionDeps, ask }),
+        // WRITE IS PASSED PER COMMAND: only the annotation-menu items that ask for words receive it, and widening
+        // `SelectionCommandDeps` would hand every selection command a capability none of the others may use.
+        editSelectionCommand({ ...selectionDeps, write, wordsOf, ask }),
+        replySelectionCommand({ ...selectionDeps, write }),
         draftReplyCommand({ selection: readSelection, ask: askAssistant }),
         summariseCommentsCommand({ ask: askAssistant }),
         openAssistantCommand({ open: openAssistant }),
         marksCopy,
-        selectionPropertiesCommand({ ...selectionDeps, settings }),
+        selectionPropertiesCommand({ ...selectionDeps, settings, presence }, objectDeps),
         ...nudgeSelectionCommands(selectionDeps),
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),
@@ -3000,8 +3133,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         resetFloatBarCommand({ settings }),
         // F6 AND SHIFT+F6 between the panes (WCAG 2.1.1, Windows' convention).
         ...paneCommands(),
-        togglePanelCommand({ settings }),
-        toggleContextPanelCommand({ settings }),
+        togglePanelCommand({ presence }),
+        toggleContextPanelCommand({ presence }),
         // §7'S LAYOUT-MODE SWITCH and §10.3's "Esc returns": one command per mode, and Leave Focus.
         ...layoutModeCommands({ settings }),
         pageMoveCommand('next', { navigator }),
@@ -3024,6 +3157,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // THE KEYS A PERSON CHOSE, so a change in the shortcuts dialog rebuilds the registry and the new key works at once.
       chosenShortcuts,
       startSignature,
+      startSpelling,
       // THE ZOOM STEP, through the function `+` and `−` ask: a changed step rebuilds them, or they would step by the old.
       stepZoomBy,
       activate,
@@ -3035,6 +3169,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // is the same cheap, deliberate cost the selection already pays.
       readActiveId,
       showSideBySide,
+      // *CHOOSE FILE…* in the four second-document dialogs, which closes over the open route.
+      openSource,
       // WHETHER *PASTE ANNOTATIONS* EXISTS, which changes when a copy succeeds.
       readHasCopied,
       // WHETHER *UPDATE AVAILABLE* EXISTS, which changes once, when main's answer arrives.
@@ -3048,6 +3184,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       docusignKeyStored,
       // *TRANSLATE THIS PAGE* offers the providers with a key, read from this list when it runs.
       storedSecrets,
+      // THE PANELS' ONE WRITER (ADR-0146), one per settings store: the commands that show a panel are built over it.
+      presence,
       changeZoom,
       client,
       navigator,
@@ -3071,7 +3209,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // entered in Settings is what the predicates above read next.
       refreshSecrets,
       selectionDeps,
+      // EDIT OBJECT'S: the filter its four commands check, the entry they share, and the pick Delete reads.
+      readObjectFilter,
+      enterObjects,
+      objectDeps,
       settings,
+      // THE SIGNATURES QUESTION'S TWO INPUTS (ADR-0149), stable while the store and the opener are.
+      signatures,
       track,
       // THE FILE-WRITING COMMANDS' TWO CALLBACKS. Both are stable — `useCallback` over a store
       // and over `setTabs` — so listing them rebuilds the registry never rather than on every
@@ -3080,11 +3224,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       onSaved,
       // Stable for the same reason: a memo over a state setter.
       busy,
-      // THE SELECTED-TEXT MENU reads these three: the selection its `when` asks about, the one
-      // dispatcher, and the style a markup is drawn in.
+      // THE SELECTED-TEXT MENU reads these four: the selection its `when` asks about, the one
+      // dispatcher, the style a markup is drawn in, and the page that *Comment* asks for words.
       textSelection,
       dispatch,
       style,
+      write,
+      // EDIT COMMENT'S STARTING WORDS, read whole where the walk cut them; bound to the document on screen.
+      wordsOf,
       // THE ASSISTANT'S ITEMS (ADR-0088): the one way to ask, and the annotation selection
       // *Draft a reply* reads.
       askAssistant,
@@ -3104,6 +3251,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   useEffect(() => {
     onRegistries?.({ commands: registry, dialogs });
   }, [onRegistries, registry, dialogs]);
+
+  // THE TIPS, resolved against THIS registry (ADR-0159): a renamed command or a rebound key rebuilds the registry, and
+  // the tips with it, so a tip says the title and key a person sees.
+  const tips = useMemo(
+    () =>
+      tipsOf(
+        registry.all(),
+        (key) => _(key),
+        (section) => SECTION_TITLES[section],
+      ),
+    [registry, _],
+  );
 
   /**
    * What the scroller needs to let a reader draw: the active tool, and where a
@@ -3128,13 +3287,39 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     const docId = open.docId;
     return {
       tool,
-      onCommand: (command: DispatchableCommand): Promise<boolean> =>
+      onCommand: async (command: DispatchableCommand): Promise<boolean> => {
         // A DRAG OF THE SELECTION is a `placeAnnotation`, which keeps the walk, so the marks stay
         // selected for the next drag — the same route an arrow key takes.
-        send(docId, command),
+        const moved = await send(docId, command);
+        // A LINK ADDED IS SAID (item 14c): PDF.js draws no mark for a link, and its outline is drawn only in the Comment
+        // section, while the command palette starts the two link tools from any. A refusal says its own problem.
+        if (moved && command.kind === 'addLink') toast('done', LINK_ADDED);
+        return moved;
+      },
       selection,
     };
-  }, [open, selection, send, toolId, tools]);
+  }, [open, selection, send, toast, toolId, tools]);
+
+  /**
+   * A link pressed on a page or in the Links panel, followed by the one route (ADR-0167): a page link jumps, a web link
+   * asks and then `main` opens it. At the version on show, which is the version the page's links were read at; one
+   * that moved in between is `main`'s to call stale.
+   */
+  const onFollowLink = useCallback(
+    (followed: FollowedLink): void => {
+      if (open === undefined) return;
+      void followLink({ client, ask, toast, jumpTo: navigator.jumpTo }, open.docId, open.version, followed);
+    },
+    [ask, client, navigator.jumpTo, open, toast],
+  );
+  // OUTLINED WHERE LINKS ARE MADE: the Comment section, whose ribbon holds the two link tools.
+  const linksOutlined = useSetting(settings, RIBBON_SECTION_SETTING) === 'comment';
+
+  /**
+   * What the tool that is on waits for, for the status bar's tool line (ADR-0154 Decision 4). A drawing tool's hint is
+   * its own; the three modes sharing the slot without being drawing tools say theirs in `MODE_HINTS`.
+   */
+  const toolHint = toolId === undefined ? undefined : (tools.get(toolId)?.hint ?? MODE_HINTS.get(toolId));
 
   /**
    * Edit text's mode on the document on show, or `undefined` when it is off
@@ -3157,8 +3342,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     const { docId } = open;
     /** Whether this mode has reported a refused read already — once per entry into it. */
     const refusal = { reported: false };
-    const deps = { client, onApplied: applied, ask, stamp };
+    const deps = { client, onApplied: applied, ask, stamp, signatures };
     return {
+      mode: 'text',
       version: open.version,
       read: async (page) => {
         // EVERY PART, read whole at one version (ADR-0130): a dense page is thousands of blocks.
@@ -3186,7 +3372,57 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setToolId(undefined);
       },
     };
-  }, [applied, ask, client, open, stamp, toolId]);
+  }, [applied, ask, client, open, signatures, stamp, toolId]);
+
+  /**
+   * Edit object's read of one page, for the document on show (ADR-0153 Decision 3). Its own memo rather than part of
+   * the mode's value, so selecting an object does not hand every page a new reader and read them all again.
+   *
+   * A refused read says so ONCE and leaves the mode, Edit text's rule and its reason. Two walks that answered at
+   * different versions are not a refusal: the document moved between them, and the next version reads again.
+   */
+  const shownDocId = open?.docId;
+  const readObjects = useMemo(() => {
+    if (toolId !== EDIT_OBJECTS_TOOL_ID || shownDocId === undefined) return undefined;
+    const docId = shownDocId;
+    const refusal = { reported: false };
+    const deps = { client, onApplied: applied, ask, stamp, signatures };
+    return async (page: number): Promise<PageObjects | undefined> => {
+      const answer = await readPageObjects(client, docId, page);
+      if (answer.ok) return answer.objects;
+      if (answer.refused !== undefined && !refusal.reported) {
+        refusal.reported = true;
+        reportProblem(deps, answer.refused);
+        setToolId(undefined);
+      }
+      return undefined;
+    };
+  }, [applied, ask, client, shownDocId, signatures, stamp, toolId]);
+
+  /** Edit object's mode on the document on show, or `undefined` when it is off — the slot's second value. */
+  const objectEditing = useMemo<PageListProps['editing']>(() => {
+    if (readObjects === undefined || open === undefined) return undefined;
+    const { docId } = open;
+    return {
+      mode: 'objects',
+      version: open.version,
+      filter: objectFilter,
+      read: readObjects,
+      pick: objectSelection,
+      onPick: (pick) => {
+        setObjectPicked(pick === undefined ? undefined : { docId, pick });
+      },
+      onCommand: (command) => {
+        void sendObject(docId, command);
+      },
+      onLeave: () => {
+        setToolId(undefined);
+      },
+    };
+  }, [objectFilter, objectSelection, open, readObjects, sendObject]);
+
+  /** The one mode the page lists draw: the tool slot holds at most one of the two, so at most one is defined. */
+  const pageEditing = editing ?? objectEditing;
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
   // are false because there is nothing to select in and nothing to dirty — not
@@ -3218,7 +3454,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [currentPage, open, pageCount, selectedPages, tabs, textSelection],
   );
 
-  useShortcuts(registry, context, openDialog !== undefined);
+  // ESCAPE STOPS the tool that is on (ADR-0154 Decision 4), innermost first, as Edit object's own layer does: marks or
+  // an object selected are let go before the tool is. A key pressed inside one of those layers, or in an open block's
+  // editor, is answered there and never reaches this.
+  const stopTool = useCallback((): boolean => {
+    if (toolId === undefined) return false;
+    if (selection !== undefined) {
+      setPicked(undefined);
+      return true;
+    }
+    if (objectSelection !== undefined) {
+      setObjectPicked(undefined);
+      return true;
+    }
+    setToolId(undefined);
+    return true;
+  }, [objectSelection, selection, toolId]);
+  useShortcuts(registry, context, openDialog !== undefined, stopTool);
   useTheme(settings);
 
   // THE FIRST-RUN AI SETUP (see `settingsLoaded` above), offered once per launch.
@@ -3248,12 +3500,12 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   }, [settings]);
 
   /**
-   * A version that moved underneath a BACKGROUND document's view, recorded without bringing it forward.
-   *
-   * `opened` is what the active layer is told, and it activates: right for the document on show, wrong for
-   * one behind it, whose parser noticing a moved version must not switch the reader's tab.
+   * A document's transport reported its version moved: the tab and the store take it, for the layer on show and every
+   * layer behind alike, and nothing is brought forward (CR-DOC-03). The layer on show was handed `opened`, which
+   * leaves an existing tab as it is, so the move was dropped and its view stayed bound to a version main answers every
+   * range stale at.
    */
-  const movedBehind = useCallback(
+  const versionMoved = useCallback(
     (next: OpenedDocument): void => {
       setTabs((current) => current.map((tab) => (tab.docId === next.docId ? { ...tab, ...next } : tab)));
       stores.get(next.docId)?.getState().observed(next.version);
@@ -3279,11 +3531,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       const groups = menuGroups(registry, at, [
         ...(textSelection?.page === page ? (['selection'] as const) : []),
         ...(selection?.page === page ? (['annotation'] as const) : []),
+        // THE SELECTED OBJECT'S MENU first on its own page (ADR-0153 Decision 5), the annotation menu's rule.
+        ...(objectSelection?.page === page ? (['object'] as const) : []),
         'page',
       ]);
       return groups.length === 0 ? undefined : { context: at, groups };
     },
-    [context, registry, selection?.page, textSelection?.page],
+    [context, objectSelection?.page, registry, selection?.page, textSelection?.page],
   );
 
   /**
@@ -3295,8 +3549,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     () => ({
       client,
       settings,
+      presence,
+      // A LAYER BEHIND READS THE ROW'S ANSWER AND NEVER WRITES IT: it is laid out in the same box (ADR-0146).
+      measuresRow: false,
       requestPassword,
-      onVersionMoved: movedBehind,
+      onVersionMoved: versionMoved,
       menuAt: NO_MENU,
       rulers,
       showGrid,
@@ -3310,7 +3567,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       layout,
       onFirstFrame: markFramed,
     }),
-    [client, layout, markFramed, movedBehind, pageBadges, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
+    [client, layout, markFramed, versionMoved, pageBadges, presence, quality, requestPassword, rulers, secondRenderer, settings, showGrid, smoothScroll, split, tileAbove, unit],
   );
 
   return (
@@ -3389,7 +3646,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // ONE GRID AREA for the start screen and its recent list, spanning the rail's
         // column: no rail is drawn with no document (`Ribbon` renders nothing).
         <div className="m-start-area">
-          <StartScreen registry={registry} context={context} problem={openProblem} />
+          <StartScreen
+            registry={registry}
+            context={context}
+            problem={placedProblem?.onStart === true ? placedProblem.problem : undefined}
+          />
           {/* THE CRASH REPORT OFFER (ADR-0109), above the recent list and its reopen offer: data with its own
               controls, which draws nothing unless the last run left a report not yet offered. */}
           <CrashReportOffer client={client} toast={toast} />
@@ -3452,7 +3713,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         <PageCanvas
           client={client}
           document={open}
-          onVersionMoved={opened}
+          onVersionMoved={versionMoved}
           onFirstFrame={markFramed}
           onCurrentPage={viewed}
           onPageBox={pageBoxed}
@@ -3470,12 +3731,19 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           loupe={loupe}
           rulers={rulers}
           showGrid={showGrid}
+          onFollowLink={onFollowLink}
+          linksOutlined={linksOutlined}
+          onFillField={fillFormField}
           unit={unit}
           split={split}
           drawing={drawing}
-          editing={editing}
+          editing={pageEditing}
+          // ONLY THE REQUEST'S OWN DOCUMENT draws it; another on show leaves it waiting with its draft.
+          writing={writingDocId === open.docId ? pageWriting : undefined}
           panning={toolId === HAND_TOOL_ID}
-          search={search ?? undefined}
+          // THE REVIEW'S WORD OVER THE FIND BAR'S MATCHES while a review shows one: one highlight on the page, and App
+          // its one writer (ADR-0156's correction). The find bar's own state is untouched.
+          search={spellingHighlight ?? search ?? undefined}
           secondRenderer={secondRenderer}
           tileAbove={tileAbove}
           quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
@@ -3483,6 +3751,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onAutoscrollEnd={stopAutoscroll}
           requestPassword={requestPassword}
           settings={settings}
+          presence={presence}
+          measuresRow
           // §10.3's RIGHT CONTEXTUAL PANEL, built here where its state lives, and hosted by
           // `PageCanvas`' row beside the page area (design pass D).
           // §10.3's FLOATING QUICK TOOLBAR, placed inside the page area it floats over (pass F).
@@ -3523,18 +3793,24 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                 />
                 )
               }
+              // THE SPELLING TAB (ADR-0156), over the focused document's review, which its store holds.
+              spelling={store === undefined ? null : <SpellingPanel deps={spellingDeps} store={store} settings={settings} />}
               settings={settings}
+              presence={presence}
             >
               {/* THE SELECTED MARKS' STYLE, changed as each control is used, or with nothing
                   selected the authoring settings (ADR-0102). */}
               <PropertiesPanel
+                measuring={toolId !== undefined && MEASURE_TOOL_IDS.has(toolId)}
                 context={context}
                 onComment={commentSelection}
+                wordsOf={wordsOf}
                 onAuthor={authorSelection}
                 onRestyle={restyleSelection}
                 registry={registry}
                 selection={selection}
                 settings={settings}
+                object={objectSelection === undefined ? undefined : { pick: objectSelection, onRecolour: recolourObject }}
               />
             </ContextPanel>
           }
@@ -3553,12 +3829,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                   version={open.version}
                   onJump={navigator.jumpTo}
                 />
-                <LinksPanel
-                  client={client}
-                  docId={open.docId}
-                  page={context.page}
-                  onJump={navigator.jumpTo}
-                />
+                <LinksPanel client={client} docId={open.docId} page={context.page} onFollow={onFollowLink} />
               </>
             ),
             // Keyed on the version: every drawing tool moves it, so the list is re-read
@@ -3595,12 +3866,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               <FindBar
                 client={client}
                 docId={open.docId}
+                version={open.version}
                 page={context.page}
                 pageCount={pageCount}
                 onJump={navigator.jumpTo}
                 onHighlight={setSearch}
                 seed={findSeed}
-                commands={{ client, onApplied: applied, ask, stamp }}
+                commands={{ client, onApplied: applied, ask, stamp, signatures }}
               />
             ),
           }}
@@ -3648,8 +3920,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           task={task}
           saved={saved}
           byteLength={open.byteLength}
-          // THE TOOL THAT IS ON, by its own command's title, so the bar names nothing itself.
-          mode={toolId === undefined ? undefined : registry.get(toolId)?.title}
+          // WHAT THE TOOL THAT IS ON WAITS FOR, by its own hint, so the bar names nothing itself.
+          toolHint={toolHint}
+          // A TIP from the tips registry, its titles and keys read from this registry (ADR-0159).
+          tip={<StatusTip settings={settings} tips={tips} />}
         />
       )}
       {/* ALWAYS MOUNTED, unlike the status bar above and deliberately so: a live region
@@ -3710,8 +3984,20 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
  * Bound to the document rather than to the surface: a shortcut is an application
  * affordance, and one that only worked while a particular element had focus
  * would be a shortcut users report as intermittent.
+ *
+ * ## Escape stops the tool before any command takes the key
+ *
+ * The innermost state a person is in goes first, as a dialog's, the palette's and Edit text's Escape already do, each
+ * before this handler: so in Focus a first Escape stops the tool and a second leaves Focus. A gesture in flight is
+ * nearer still, and the drawing surface stops that Escape before it reaches the document. Not a command, because a
+ * chord names one command and `view.leave-focus` holds Escape; `stopTool` answers whether there was a tool to stop.
  */
-function useShortcuts(registry: CommandRegistry, context: CommandContext, dialogOpen: boolean): void {
+function useShortcuts(
+  registry: CommandRegistry,
+  context: CommandContext,
+  dialogOpen: boolean,
+  stopTool: () => boolean,
+): void {
   const map = useMemo(() => shortcutsFor(registry), [registry]);
 
   useEffect(() => {
@@ -3720,12 +4006,20 @@ function useShortcuts(registry: CommandRegistry, context: CommandContext, dialog
       // list turned the page behind it, and the list could not capture a key without the old one running. Read from
       // the dialog host's own state — the command palette is not one of its dialogs, so its own Ctrl+K still closes it.
       if (dialogOpen) return;
+      // A KEY OF AN OPEN COMPOSITION is the input method's, Escape among them (`composing`).
+      if (composing(event)) return;
       // A KEY THE FOCUSED FIELD ANSWERS ITSELF is left to it — `fieldOwnsChord`
       // says which, once.
       if (fieldOwnsChord(event.target, event)) return;
       // AND ONE A FOCUSED CONTROL MOVES BY — a slider, a list, a menu.
       if (controlOwnsChord(event.target, event)) return;
-      if (dispatchChord(registry, map, event, context).kind === 'ran') {
+      const bare = !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey;
+      if (event.key === 'Escape' && bare && stopTool()) {
+        event.preventDefault();
+        return;
+      }
+      // CLAIMED EITHER WAY: a held key's repeat of a once-per-press command is still that command's chord.
+      if (dispatchChord(registry, map, event, context).kind !== 'unclaimed') {
         event.preventDefault();
       }
     };
@@ -3733,7 +4027,7 @@ function useShortcuts(registry: CommandRegistry, context: CommandContext, dialog
     return (): void => {
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [context, dialogOpen, map, registry]);
+  }, [context, dialogOpen, map, registry, stopTool]);
 }
 
 /**
@@ -3750,7 +4044,7 @@ function useShortcuts(registry: CommandRegistry, context: CommandContext, dialog
  * changed by a settings dialog would otherwise take effect on the next unrelated
  * render — which is the shape where a preference appears to work intermittently.
  */
-function useTheme(settings: SettingsStore): void {
+export function useTheme(settings: SettingsStore): void {
   // A LAYOUT effect, and the difference is a frame the user can see.
   //
   // Stored settings arrive one IPC round trip after the first paint — nothing
@@ -3818,6 +4112,8 @@ type BackgroundLayer = Pick<
   PageCanvasProps,
   | 'client'
   | 'settings'
+  | 'presence'
+  | 'measuresRow'
   | 'requestPassword'
   | 'onVersionMoved'
   | 'menuAt'
@@ -3923,13 +4219,20 @@ const DocumentLayer = memo(function DocumentLayer({
             organize={undefined}
             drawing={undefined}
             editing={undefined}
+            // NO LINKS BEHIND: a hidden page is pressed by nobody, so its links are not read (ADR-0167).
+            onFollowLink={undefined}
+            linksOutlined={false}
+            // NOR ITS FIELDS (ADR-0168), for the links' reason.
+            onFillField={undefined}
+            // NOT DRAWN BEHIND: a request is drawn only while its document is on show, from its draft.
+            writing={undefined}
             panning={false}
             search={undefined}
             autoscroll={undefined}
             onAutoscrollEnd={IGNORE}
             panels={NO_PANELS}
             contextPanel={
-              <ContextPanel settings={background.settings} assistant={null}>
+              <ContextPanel settings={background.settings} presence={background.presence} assistant={null} spelling={null}>
                 {null}
               </ContextPanel>
             }
@@ -3982,11 +4285,15 @@ function PageCanvas({
   onSwap,
   rulers,
   showGrid,
+  onFollowLink,
+  linksOutlined,
+  onFillField,
   unit,
   split,
   organize,
   drawing,
   editing,
+  writing,
   panning,
   search,
   secondRenderer,
@@ -3998,6 +4305,8 @@ function PageCanvas({
   autoscroll,
   onAutoscrollEnd,
   settings,
+  presence,
+  measuresRow,
   panels,
   contextPanel,
   quickToolbar,
@@ -4040,12 +4349,25 @@ function PageCanvas({
     | {
         readonly selected: readonly number[];
         readonly onSelect: (pages: readonly number[]) => void;
+        /** A clicked card becomes the current page. */
+        readonly onCurrent: (page: number) => void;
+        /** The page Full page shows most of, as it scrolls. */
+        readonly onViewing: (page: number) => void;
+        /** The navigator's request for a page, which the grid scrolls to and then reports taken. */
+        readonly goTo: number | undefined;
+        readonly onWentTo: () => void;
         readonly onOpen: (page: number) => void;
         readonly onDelete: (pages: readonly number[]) => void;
       }
     | undefined;
   readonly rulers: boolean;
   readonly showGrid: boolean;
+  /** Follows a link pressed on a page (ADR-0167); `undefined` behind, where nothing is pressed. Both panes take it. */
+  readonly onFollowLink: PageListProps['onFollowLink'];
+  /** Whether links are outlined: the Comment section is on show. */
+  readonly linksOutlined: boolean;
+  /** Fills a form field pressed on a page (ADR-0168); `undefined` behind. Both panes take it. */
+  readonly onFillField: PageListProps['onFillField'];
   readonly unit: RulerUnit;
   /** Whether a second viewport onto the same document is shown. */
   readonly split: boolean;
@@ -4053,6 +4375,8 @@ function PageCanvas({
   readonly drawing: PageListProps['drawing'];
   /** Edit text's mode, or `undefined` when it is off. Both panes take it. */
   readonly editing: PageListProps['editing'];
+  /** Words being typed on a page (ADR-0154). Both panes take it; each draws it over its own slot of that page. */
+  readonly writing: PageListProps['writing'];
   /** The hand tool is on: a drag moves the pages (§10.3). */
   readonly panning: boolean;
   /** What the find bar last answered, painted over both panes' text layers. */
@@ -4074,6 +4398,10 @@ function PageCanvas({
   readonly onAutoscrollEnd: () => void;
   /** The settings store, for the document panel's which-panel and open state. */
   readonly settings: SettingsStore;
+  /** Whether each side panel is on screen, shared by every layer so each lays out the same (ADR-0146). */
+  readonly presence: PanelPresence;
+  /** Whether this layer's row reports its width: only the document on show does (`DocumentBody`). */
+  readonly measuresRow: boolean;
   /** The document panels other than Pages, built by `App` where their state lives. */
   readonly panels: DocumentPanelProps['panels'];
   /** §10.3's right contextual panel, built by `App` where its state lives. */
@@ -4297,7 +4625,9 @@ function PageCanvas({
     return (
       <DocumentBody
         settings={settings}
-        panel={<DocumentPanel settings={settings} panels={panels} pages={null} />}
+        presence={presence}
+        measuresRow={measuresRow}
+        panel={<DocumentPanel settings={settings} presence={presence} panels={panels} pages={null} />}
         page={<canvas className="m-page" data-failed="true" />}
         contextPanel={contextPanel} quickToolbar={quickToolbar}
       />
@@ -4313,7 +4643,9 @@ function PageCanvas({
     return (
       <DocumentBody
         settings={settings}
-        panel={<DocumentPanel settings={settings} panels={panels} pages={null} />}
+        presence={presence}
+        measuresRow={measuresRow}
+        panel={<DocumentPanel settings={settings} presence={presence} panels={panels} pages={null} />}
         page={
           <div className="m-page-pane" data-first-frame="pending">
             <OpeningState />
@@ -4362,9 +4694,13 @@ function PageCanvas({
       loupe={loupe}
       rulers={rulers}
       showGrid={showGrid}
+      onFollowLink={onFollowLink}
+      linksOutlined={linksOutlined}
+      onFillField={onFillField}
       unit={unit}
       drawing={drawing}
       editing={editing}
+      writing={writing}
       panning={panning}
       search={search}
       // NO DIFFERENCES: a comparison's marks are Side by Side's, over its own halves.
@@ -4407,10 +4743,14 @@ function PageCanvas({
       loupe={loupe}
       rulers={rulers}
       showGrid={showGrid}
+      onFollowLink={onFollowLink}
+      linksOutlined={linksOutlined}
+      onFillField={onFillField}
       unit={unit}
       label={SPLIT_SECOND_LABEL}
       drawing={drawing}
       editing={editing}
+      writing={writing}
       panning={panning}
       search={search}
       // NO DIFFERENCES: a comparison's marks are Side by Side's, over its own halves.
@@ -4435,10 +4775,13 @@ function PageCanvas({
     // the row before.
     <DocumentBody
       settings={settings}
+      presence={presence}
+      measuresRow={measuresRow}
       contextPanel={contextPanel} quickToolbar={quickToolbar}
       panel={
       <DocumentPanel
         settings={settings}
+        presence={presence}
         panels={panels}
         pages={
           <Thumbnails
@@ -4474,6 +4817,10 @@ function PageCanvas({
           selected={organize.selected}
           settings={settings}
           onSelect={organize.onSelect}
+          onCurrent={organize.onCurrent}
+          onViewing={organize.onViewing}
+          goTo={organize.goTo}
+          onWentTo={organize.onWentTo}
           onOpen={organize.onOpen}
           onMove={onMove}
           onDelete={organize.onDelete}

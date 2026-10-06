@@ -8,7 +8,9 @@ import {
   JOB_LIMIT_KILL_ON_JOB_CLOSE,
   JOB_LIMIT_PROCESS_MEMORY,
   JOB_UI_RESTRICTIONS_ALL,
+  type PreparedSignature,
 } from '@monstera/kernel';
+import { prepareSignature } from '@monstera/kernel/engine';
 import { blockEditOf, replacementFieldsOf } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -320,6 +322,39 @@ describe('the composition root, with an engine host platform', () => {
     expect([...(held.get(pictureName(path)) ?? [])]).toStrictEqual([...PICTURE]);
   });
 
+  it('an open the host answers NEEDS A PASSWORD deletes the picture it had and draws none (CR-DOC-11)', async () => {
+    // THE PICTURE OF A FILE SINCE PROTECTED, here or by another program: the open's capture is the one chance to take
+    // it back, and a capture that failed for want of a session kept it. Through the root, so the supervisor's answer
+    // reaches `firstPagePicture` and the picture store by the joins the application uses.
+    const peer = picturingEngine();
+    const locked: FakePeer = (channel, params) =>
+      channel === 'engine/open' ? { ok: false, error: { code: 'needs-password' } } : peer.answer(channel, params);
+    const spy = platformAnswering(locked);
+    const path = aDocument('protected.pdf');
+    const held = new Map<string, Uint8Array>([[pictureName(path), PICTURE]]);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(path),
+      enginePlatform: spy.platform,
+      recentPictureFiles: {
+        write: (name, bytes) => held.set(name, bytes),
+        read: (name) => (held.has(name) ? new Uint8Array(held.get(name) ?? []) : null),
+        remove: (name) => held.delete(name),
+        names: () => [...held.keys()],
+      },
+    });
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+
+    await vi.waitFor(() => {
+      expect(held.size).toBe(0);
+    });
+    // NOTHING WAS DRAWN: the rule is asked before the session, and a locked document has none to draw from.
+    expect(peer.asked).toStrictEqual([]);
+  });
+
   it('undoes through the host, and answers nothing-to-undo when the log is spent', async () => {
     const spy = platformAnswering(ENGINE);
     const { handlers } = createShellDependencies({
@@ -485,6 +520,66 @@ describe('the composition root, with an engine host platform', () => {
     );
   });
 
+  describe('a document opened with its password (ADR-0171)', () => {
+    const PASSWORD = 'sample-only-0171';
+
+    /** A host whose document opens only with {@link PASSWORD}, taking a checkpoint per rotate, recording every open. */
+    function lockedHost(): { readonly spy: ReturnType<typeof platformAnswering>; readonly opens: unknown[] } {
+      const opens: unknown[] = [];
+      const spy = platformAnswering((channel, params) => {
+        if (channel === 'engine/open') {
+          const { password } = params as { password?: unknown };
+          opens.push(password);
+          // `access: 2`, what a user password buys, beside this file's `SESSION`, which no password opened.
+          if (password === PASSWORD) return { ok: true, value: { session: 'ab0f', access: 2 } };
+          return { ok: false, error: { code: password === undefined ? 'needs-password' : 'wrong-password' } };
+        }
+        if (channel === 'engine/capture') {
+          return { ok: true, value: { captured: false, reason: 'page 1 carries a non-numeric /Rotate (/Sideways)' } };
+        }
+        if (channel === 'engine/serialise') {
+          const { into } = params as { into: string };
+          writeFileSync(join(lastOutputDirectory(spy.directories), into), '%PDF-1.7 checkpoint\n');
+          return { ok: true, value: { bytes: 20 } };
+        }
+        return ENGINE(channel, params);
+      });
+      return { spy, opens };
+    }
+
+    it('an undo past a checkpoint reopens the session with the password the document was unlocked with', async () => {
+      const { spy, opens } = lockedHost();
+      const { handlers } = createShellDependencies({
+        ...harnessSurfaces('the composition-host test'),
+        appInfo,
+        pickDocument: () => Promise.resolve(aDocument('locked.pdf')),
+        enginePlatform: spy.platform,
+        checkpointDirectory: join(scratch, 'checkpoints-locked'),
+      });
+
+      const opened = await handlers['document.open']({});
+      if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+      const docId = opened.value.docId;
+      const unlocked = await handlers['document.unlock']({ docId, password: PASSWORD });
+      expect(unlocked.ok && unlocked.value.kind).toBe('unlocked');
+
+      const executed = await handlers['document.execute']({
+        docId,
+        command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+      });
+      expect(executed.ok).toBe(true);
+      const before = opens.length;
+
+      // THE RESTORE IS A RECYCLE, which ADR-0055 refused for this document: the undo failed. Now it reopens, and the
+      // open that rebuilt the session carried the password, asserted on what the host was sent.
+      const undone = await handlers['document.undo']({ docId });
+      expect(undone.ok && undone.value.kind).toBe('undone');
+      expect(opens.slice(before)).toStrictEqual([PASSWORD]);
+      // AND THE OPEN-TIME ATTEMPT CARRIED NONE: nothing is held before the unlock.
+      expect(opens[0]).toBeUndefined();
+    });
+  });
+
   it('CONTROL: a host that read the negative path is CLOSED, and no session is made', async () => {
     // The loudest case in ADR-0023's table: the host looks healthy and is not
     // contained, and every cheap containment question answers yes for it. The
@@ -631,13 +726,15 @@ describe('the composition root, with an engine host platform', () => {
   it('builds ONE host for two documents, which is what the held promise is for', async () => {
     const paths = [aDocument('first.pdf'), aDocument('second.pdf')];
     let next = 0;
-    const spy = platformAnswering((channel) =>
-      channel === 'engine/probe-containment'
-        ? CONTAINED
-        : channel === 'engine/open'
-          ? { ok: true, value: { session: `ab0${String(next)}`, access: 1 } }
-          : ENGINE(channel, null),
-    );
+    // A HANDLE PER OPEN, as a real host issues them. This read `next`, which the picks move before either open reaches
+    // the host, so both were issued the same handle — which main now refuses (CR-SEC-10), as the host's own `issue` does.
+    let issued = 0;
+    const spy = platformAnswering((channel) => {
+      if (channel === 'engine/probe-containment') return CONTAINED;
+      if (channel !== 'engine/open') return ENGINE(channel, null);
+      issued += 1;
+      return { ok: true, value: { session: `ab0${String(issued)}`, access: 1 } };
+    });
     const { handlers } = createShellDependencies({
       ...harnessSurfaces('the composition-host test'),
       appInfo,
@@ -680,6 +777,56 @@ describe('the composition root, with an engine host platform', () => {
     const opens = spy.harness.calls.filter((call) => call === 'peer.request:engine/open');
     expect(created).toHaveLength(1);
     expect(opens).toHaveLength(2);
+    // AND IT WAS NEVER ENDED: the control for the duplicate-handle case below, where the same two opens end the host.
+    expect(spy.harness.calls).not.toContain('host.terminate');
+  });
+
+  it('a host that issues ONE HANDLE FOR TWO DOCUMENTS is ended, never left aliasing them (CR-SEC-10)', async () => {
+    const paths = [aDocument('first.pdf'), aDocument('second.pdf')];
+    let next = 0;
+    // THE FIRST HOST ISSUES `ab0f` TO BOTH, so the second document would be adopted under the first's handle: its area
+    // overwriting the first's in main's table, the first's prior state written into the second's snapshot directory.
+    // The host built after it issues a handle per open, so the documents' recovery has somewhere to land.
+    let issued = 0;
+    const spy = platformAnswering((channel) => {
+      if (channel === 'engine/probe-containment') return CONTAINED;
+      if (channel !== 'engine/open') return ENGINE(channel, null);
+      issued += 1;
+      return { ok: true, value: { session: issued <= 2 ? 'ab0f' : `ab1${String(issued)}`, access: 1 } };
+    });
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(paths[next++] ?? null),
+      enginePlatform: spy.platform,
+    });
+
+    const first = await handlers['document.open']({});
+    const second = await handlers['document.open']({});
+    if (!first.ok || first.value.kind !== 'opened') throw new Error('the first did not open');
+    if (!second.ok || second.value.kind !== 'opened') throw new Error('the second did not open');
+
+    // THE COMMANDS GO IN AFTER THE ENDING, which is the event waited for. One sent before it can be in flight on the
+    // ended host, and an in-flight call fails with the connection by design; whether it was is the runner's choice.
+    // After it, each command queues behind its document's reopen, and succeeds only once that document has a session
+    // of its own again.
+    await vi.waitFor(() => {
+      expect(spy.harness.calls).toContain('host.terminate');
+    });
+    for (const opened of [first.value, second.value]) {
+      const executed = await handlers['document.execute']({
+        docId: opened.docId,
+        command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+      });
+      expect(executed.ok).toBe(true);
+    }
+
+    // THE DECISION: the host that issued the handle twice was ended, and a second built, in which each document was
+    // opened again under a handle of its own, ONCE. The second document's open met the duplicate and is not poisoned:
+    // one host's ending is one failure for it, as for the first, so its command above succeeded.
+    const built = spy.harness.calls.lastIndexOf('host.createSuspended');
+    expect(spy.harness.calls.filter((call) => call === 'host.createSuspended')).toHaveLength(2);
+    expect(spy.harness.calls.slice(built).filter((call) => call === 'peer.request:engine/open')).toHaveLength(2);
   });
 
   it('P3: a host that ends twice under ONE document’s command poisons that document, and the OTHER keeps working', async () => {
@@ -965,6 +1112,8 @@ interface PdfiumPeerLog {
   readonly inputs: string[];
   /** Whether each input file still existed at the moment the peer was called. */
   readonly inputsPresent: boolean[];
+  /** The `password` each of those frames carried (ADR-0171's addendum): the text, or `null` for none. */
+  readonly passwords: unknown[];
 }
 
 /**
@@ -982,12 +1131,14 @@ function pdfiumPeer(): PdfiumPeerLog {
   let area: { snapshot: string; output: string } | null = null;
   const inputs: string[] = [];
   const inputsPresent: boolean[] = [];
+  const passwords: unknown[] = [];
 
   const noteInput = (params: unknown): void => {
-    const { from } = params as { from: string };
+    const { from, password } = params as { from: string; password: unknown };
     if (area === null) throw new Error('a PDFium call arrived before engine/open');
     inputs.push(from);
     inputsPresent.push(existsSync(join(area.snapshot, from)));
+    passwords.push(password);
   };
 
   const answerWrite = (params: unknown): unknown => {
@@ -1002,6 +1153,7 @@ function pdfiumPeer(): PdfiumPeerLog {
   return {
     inputs,
     inputsPresent,
+    passwords,
     peer: (channel, params) => {
       switch (channel) {
         case 'engine/probe-containment':
@@ -1131,20 +1283,26 @@ describe('the composition root, a command that names a SECOND document', () => {
 
     const replaced = await handlers['document.execute']({
       docId: target.value.docId,
-      command: { kind: 'replacePage', source: source.value.docId, at: 0, version: target.value.version },
+      command: {
+        kind: 'replacePage',
+        source: source.value.docId,
+        pages: [0],
+        sourcePages: 'all',
+        version: target.value.version,
+      },
     });
     expect(replaced.ok).toBe(true);
 
     const replace = applyOf(engine.applies, 'replacePage');
-    expect(replace?.['source']).toBe(sourceHandle);
+    expect(replace?.['sources']).toStrictEqual([sourceHandle]);
     // AND NOT THE TARGET'S OWN, which is the transposition `Apply`'s note says no type can catch:
     // both are `MupdfSession`.
     expect(replace?.['session']).not.toBe(sourceHandle);
 
-    // CONTROL FOR THE RECORD: a command naming no second document crosses with no `source` at all,
-    // so a peer that stored every apply with some `source` could not pass the assertion above.
+    // CONTROL FOR THE RECORD: a command naming no second document crosses with an EMPTY list,
+    // so a peer that stored every apply with some source could not pass the assertion above.
     const rotate = applyOf(engine.applies, 'rotatePages');
-    expect(rotate !== undefined && 'source' in rotate).toBe(false);
+    expect(rotate?.['sources']).toStrictEqual([]);
   });
 });
 
@@ -1223,6 +1381,52 @@ describe('the composition root, with BOTH engine hosts', () => {
     // on the first host is what says the answer reached the canonical image
     // rather than being read and dropped.
     expect(spy(mupdf.harness.calls, 'peer.request:engine/open')).toBeGreaterThan(1);
+
+    // A DOCUMENT THAT OPENS WITH NO PASSWORD SENDS `null` on every frame: the control for the case below.
+    expect(pdfium.passwords).toStrictEqual(pdfium.inputs.map(() => null));
+  });
+
+  it('an UNLOCKED document’s PDFium command carries its password on every frame, and the rebuild opens with it (ADR-0171)', async () => {
+    const PASSWORD = 'sample-only-0171';
+    // THE MUPDF HOST OPENS THIS DOCUMENT ONLY WITH ITS PASSWORD, as for a file protected by one; every other answer
+    // is the routing case's.
+    const opens: unknown[] = [];
+    const inner = serialisingEngine();
+    const mupdf = platformAnswering((channel, params) => {
+      if (channel === 'engine/open') {
+        const { password } = params as { password?: unknown };
+        opens.push(password);
+        if (password !== PASSWORD) return { ok: false, error: { code: 'needs-password' } };
+      }
+      return inner(channel, params);
+    });
+    const pdfium = pdfiumPeer();
+    const second = platformAnswering(pdfium.peer);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('locked-edit.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+    });
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const unlocked = await handlers['document.unlock']({ docId: opened.value.docId, password: PASSWORD });
+    expect(unlocked.ok && unlocked.value.kind).toBe('unlocked');
+
+    const executed = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: opened.value.version },
+    });
+    expect(executed.ok, JSON.stringify(executed)).toBe(true);
+
+    // EVERY PDFIUM FRAME CARRIED THE KEY (a capture and an apply at least), and the session the edit's bytes were
+    // adopted into was opened with it too: the open after the unlock's, which the command's install made.
+    expect(pdfium.passwords.length).toBeGreaterThanOrEqual(2);
+    expect(pdfium.passwords.every((sent) => sent === PASSWORD)).toBe(true);
+    expect(opens.slice(2)).toStrictEqual(opens.slice(2).map(() => PASSWORD));
+    expect(opens.length).toBeGreaterThan(2);
   });
 
   it('routes editTextBlock to the PDFium host, and its "font cannot carry it" refusal reaches the renderer BY NAME', async () => {
@@ -1231,7 +1435,7 @@ describe('the composition root, with BOTH engine hosts', () => {
     // kernel. Between them sit the host's code, main's `answered`, and the
     // execute handler's mapping — and a break anywhere there turns a sentence a
     // person can act on into `internal` with an incident id.
-    const run = async (applyAnswer: 'bytes' | 'text-not-writable') => {
+    const run = async (applyAnswer: 'bytes' | 'text-not-writable' | 'edit-refused') => {
       const mupdf = platformAnswering(serialisingEngine());
       const base = pdfiumPeer();
       const pdfium: FakePeer = (channel, params) => {
@@ -1240,7 +1444,13 @@ describe('the composition root, with BOTH engine hosts', () => {
           return { ok: true, value: { captured: false, reason: 'a block edit has no prior' } };
         }
         if (channel === 'engine/apply' && applyAnswer === 'text-not-writable') {
-          return { ok: false, error: { code: 'text-not-writable' } };
+          // ONE CHARACTER TYPED AND ONE NOT: the host is hostile by invariant 25's premise, so `main` forwards only
+          // characters the command carries (ADR-0169 Decision 4), and the case asserts which one survived.
+          return { ok: false, error: { code: 'text-not-writable', detail: { characters: 'w中' } } };
+        }
+        if (channel === 'engine/apply' && applyAnswer === 'edit-refused') {
+          // THE STEP AND PDFIUM'S NUMBER (ADR-0169 Decision 3), which `main` forwards as they came.
+          return { ok: false, error: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } } };
         }
         return base.peer(channel, params);
       };
@@ -1273,8 +1483,66 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(written.mupdf.harness.calls).not.toContain('peer.request:engine/apply');
 
     const refused = await run('text-not-writable');
-    // BY NAME: not `internal`, which is what an unmapped engine refusal becomes.
-    expect(refused.executed).toStrictEqual({ ok: false, error: { code: 'text-not-writable' } });
+    // BY NAME: not `internal`, which is what an unmapped engine refusal becomes — and naming `w`, which `new words`
+    // holds, and not `中`, which the host named and nobody typed.
+    expect(refused.executed).toStrictEqual({
+      ok: false,
+      error: { code: 'text-not-writable', detail: { characters: 'w' } },
+    });
+
+    // A STEP THE HOST NAMED reaches the renderer as the same step and number, never as `internal`.
+    expect((await run('edit-refused')).executed).toStrictEqual({
+      ok: false,
+      error: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } },
+    });
+  });
+
+  it('a replacement the host found nothing to change in reaches the renderer BY NAME, and the version does not move', async () => {
+    // ADR-0169 Decision 6, across the stretch neither half crosses: the host's code, main's `answered` and the execute
+    // handler's mapping. The FIRST apply answers nothing-to-replace and every later one bytes, so an edit sent next at
+    // the version the document opened at is refused as stale if the refusal moved the version, and written if it did not.
+    const mupdf = platformAnswering(serialisingEngine());
+    const base = pdfiumPeer();
+    let applies = 0;
+    const pdfium: FakePeer = (channel, params) => {
+      if (channel === 'engine/capture') return { ok: true, value: { captured: false, reason: 'document-scaled' } };
+      if (channel === 'engine/apply') {
+        applies += 1;
+        if (applies === 1) return { ok: false, error: { code: 'nothing-to-replace' } };
+      }
+      return base.peer(channel, params);
+    };
+    const second = platformAnswering(pdfium);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('edited.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+    });
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+
+    const replaced = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'replaceAllText', find: 'absent', replace: 'present' },
+    });
+    // BY NAME: an unmapped host code becomes `internal` with an incident id, *Something went wrong* for a find that
+    // simply matched nothing.
+    expect(replaced).toStrictEqual({ ok: false, error: { code: 'nothing-to-replace' } });
+
+    const next = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: {
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines: [[2, 4], [7]], text: 'new words' }]),
+        fit: 'reflow',
+        version: opened.value.version,
+      },
+    });
+    expect(next.ok, JSON.stringify(next)).toBe(true);
+    expect(applies).toBe(2);
   });
 
   it('answers engine-unavailable when there is no PDFium platform', async () => {
@@ -1344,6 +1612,16 @@ function lastOutputDirectory(directories: readonly string[]): string {
   return last.slice('create:'.length);
 }
 
+/** What a signing host was asked and what it answered, so a case can hold both ends of a signature. */
+interface SigningLog {
+  /** Every `engine/prepareSignature` request, as it arrived. */
+  readonly requests: unknown[];
+  /** What the host answers with: `prepareSignature`'s output on the served document. */
+  readonly prepared: PreparedSignature;
+  /** The snapshot every `engine/open` was handed, in order. */
+  readonly opened: Uint8Array[];
+}
+
 /**
  * A host that serialises a REAL document.
  *
@@ -1352,12 +1630,26 @@ function lastOutputDirectory(directories: readonly string[]): string {
  * document pdf-lib can open — and the bytes come from the host, exactly as the
  * product's byte-image path takes them.
  */
-function documentServingEngine(document: Uint8Array): FakePeer {
+function documentServingEngine(document: Uint8Array, signing?: SigningLog): FakePeer {
   let output: string | null = null;
   return (channel, params) => {
     if (channel === 'engine/open') {
-      output = (params as { outputDirectory: string }).outputDirectory;
+      const sent = params as { snapshotDirectory: string; snapshotName: string; outputDirectory: string };
+      output = sent.outputDirectory;
+      signing?.opened.push(new Uint8Array(readFileSync(join(sent.snapshotDirectory, sent.snapshotName))));
       return SESSION;
+    }
+    // THE REAL PLACEHOLDER WRITER's output, made from the document this host serves before the case ran — a peer
+    // answers synchronously — and written where main takes it from, as the MuPDF host does (ADR-0148).
+    if (channel === 'engine/prepareSignature' && signing !== undefined) {
+      if (output === null) throw new Error('engine/prepareSignature before engine/open');
+      const { into } = params as { into: string };
+      signing.requests.push(params);
+      writeFileSync(join(output, into), signing.prepared.bytes);
+      return {
+        ok: true,
+        value: { bytes: signing.prepared.bytes.byteLength, byteRange: [...signing.prepared.byteRange] },
+      };
     }
     if (channel !== 'engine/serialise') return ENGINE(channel, params);
     if (output === null) throw new Error('engine/serialise before engine/open');
@@ -1417,6 +1709,37 @@ describe('the composition root, a HOSTED pdf-lib command (ADR-0121 Decision 3)',
     expect(rebuilt[1]).toStrictEqual(result);
     // AND MAIN'S IMAGE IS THE REBUILT SESSION'S BYTES, by length — the renderer's answer.
     expect(executed.value.byteLength).toBe(result.length);
+  });
+
+  it('a picture the host refuses past the PIXEL bound is answered as too many pixels, never as unreadable', async () => {
+    // THE CODE BETWEEN THE PAIR: `documentCommands.test.ts` inserts through pdf-lib in its own process, where the
+    // refusal keeps its class, and `remoteLifecycle.test.ts` crosses the pipe without the outcome a person reads.
+    // Here the host answers the way the real one does and the root decides the outcome.
+    const insertingWith = async (code: string): Promise<unknown> => {
+      // A HOST THAT SERIALISES, because the bus checkpoints before a terminal command and that is a real file.
+      const serving = documentServingEngine(new TextEncoder().encode('%PDF-1.7\n% a document to insert into\n'));
+      const spy = platformAnswering((channel, params) =>
+        channel === 'engine/applyPdfLib' ? { ok: false, error: { code } } : serving(channel, params),
+      );
+      const { handlers } = createShellDependencies({
+        ...harnessSurfaces('the composition-host test'),
+        appInfo,
+        pickDocument: () => Promise.resolve(aDocument(`pixels-${code}.pdf`)),
+        pickImage: () => Promise.resolve(join(scratch, 'a-large-picture.png')),
+        readImage: () => Promise.resolve({ kind: 'read', bytes: Uint8Array.of(0x89, 0x50, 0x4e, 0x47) }),
+        enginePlatform: spy.platform,
+        checkpointDirectory: join(scratch, `checkpoints-pixels-${code}`),
+      });
+      const opened = await handlers['document.open']({});
+      if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+      const inserted = await handlers['document.insertImage']({ docId: opened.value.docId, at: 0 });
+      if (!inserted.ok) throw new Error(JSON.stringify(inserted));
+      return inserted.value.kind;
+    };
+
+    expect(await insertingWith('picture-too-many-pixels')).toBe('too-many-pixels');
+    // CONTROL: the host's ordinary failure is still the picture being unreadable, so the outcome above is the code's.
+    expect(await insertingWith('apply-failed')).toBe('unreadable');
   });
 });
 
@@ -1481,7 +1804,14 @@ describe('the composition root, SIGNING', () => {
       .getBytes();
     const certificate = Uint8Array.from(p12, (character: string) => character.charCodeAt(0));
 
-    const mupdf = platformAnswering(documentServingEngine(document));
+    // THE HOST'S ANSWER, by the real placeholder writer: an invisible signature with no timestamp, which is what this
+    // case asks for, so the reserved hole matches the one main checks.
+    const signing: SigningLog = {
+      requests: [],
+      prepared: await prepareSignature(document, { kind: 'signDocument' }),
+      opened: [],
+    };
+    const mupdf = platformAnswering(documentServingEngine(document, signing));
     const { handlers } = createShellDependencies({
       ...harnessSurfaces('the composition-host test'),
       appInfo,
@@ -1509,11 +1839,28 @@ describe('the composition root, SIGNING', () => {
     if (signed.value.kind !== 'signed') throw new Error('unreachable');
     expect(signed.value.version).toBeGreaterThan(opened.value.version);
 
-    // AND THE SIGNED BYTES WERE INSTALLED: a byte-image command's result becomes
+    // AND THE SIGNED BYTES WERE INSTALLED: a hosted command's result becomes
     // the canonical image and rebuilds the live session, which is a further
     // `engine/open` on the host. A root that answered `signed` and dropped the
     // bytes would pass the lines above.
     expect(spy(mupdf.harness.calls, 'peer.request:engine/open')).toBeGreaterThan(opensBefore);
+
+    // THE HOST WAS ASKED, ONCE, AND HANDED NO CREDENTIAL (ADR-0148): neither the certificate's bytes nor the
+    // passphrase, by name or by value.
+    expect(signing.requests).toHaveLength(1);
+    const asked = JSON.stringify(signing.requests[0]);
+    expect(asked).not.toMatch(/"bytes"|passphrase/u);
+
+    // MAIN SIGNED WHAT THE HOST PREPARED, AND NOTHING ELSE: the session was rebuilt from the prepared file with only
+    // its hole changed, and the hole now holds a signature. A root that installed the host's file unsigned, or signed
+    // bytes of its own, fails one of the two.
+    const rebuilt = signing.opened.at(-1);
+    const [, holeStart, holeEnd] = signing.prepared.byteRange;
+    expect(rebuilt?.byteLength).toBe(signing.prepared.bytes.byteLength);
+    if (rebuilt === undefined) throw new Error('unreachable');
+    expect(Buffer.from(rebuilt.subarray(0, holeStart)).equals(Buffer.from(signing.prepared.bytes.subarray(0, holeStart)))).toBe(true);
+    expect(Buffer.from(rebuilt.subarray(holeEnd)).equals(Buffer.from(signing.prepared.bytes.subarray(holeEnd)))).toBe(true);
+    expect(Buffer.from(rebuilt.subarray(holeStart + 1, holeStart + 9)).toString('latin1')).not.toBe('00000000');
   }, 120_000);
 });
 

@@ -2,6 +2,7 @@ import type { AnnotationColour, MeasureScale, DispatchableCommand } from '@monst
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
+import { HINT_MEASURE_DISTANCE } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationStyle } from './annotationStyle.js';
@@ -28,10 +29,10 @@ import { vertexTool } from './vertexTools.js';
  *
  * ## The scale is a dependency, not a constant
  *
- * *One point is fifty millimetres* is a fact about the drawing, and it arrives
- * from `editing.measure-scale` and `editing.measure-unit` the way the style
- * does. Uncalibrated it is one point per point, and a distance then reads in
- * points — honest, because nothing has told this build what the drawing is.
+ * *One centimetre is fifty metres* is a fact about the drawing, and it arrives
+ * from `editing.measure-unit` and `editing.measure-ratio` the way the style
+ * does, joined once by `measureScaleOf`. Uncalibrated the ratio is 1, and a
+ * distance then reads as the page's own length in the unit chosen.
  */
 
 /** What a dimension is drawn in when the person has chosen nothing. */
@@ -40,6 +41,13 @@ const MEASURE_COLOUR: AnnotationColour = [0.1, 0.45, 0.9];
 export const MEASURE_DISTANCE_TOOL_ID = 'annotate.measure-distance';
 export const MEASURE_AREA_TOOL_ID = 'annotate.measure-area';
 export const MEASURE_PERIMETER_TOOL_ID = 'annotate.measure-perimeter';
+
+/** The three, as the Properties tab asks *is a measurement being drawn*, so it shows the unit and the scale. */
+export const MEASURE_TOOL_IDS: ReadonlySet<string> = new Set([
+  MEASURE_DISTANCE_TOOL_ID,
+  MEASURE_AREA_TOOL_ID,
+  MEASURE_PERIMETER_TOOL_ID,
+]);
 
 /** How far a distance drag must run before it is a measurement. */
 const MINIMUM_DRAG = 4;
@@ -106,7 +114,7 @@ function distanceTool(deps: MeasureDeps): UiTool {
     preview: drawn,
   };
 
-  return { id: MEASURE_DISTANCE_TOOL_ID, controller };
+  return { id: MEASURE_DISTANCE_TOOL_ID, controller, hint: HINT_MEASURE_DISTANCE };
 }
 
 /** All three, in the order their controls appear. */

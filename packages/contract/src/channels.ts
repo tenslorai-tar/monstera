@@ -24,6 +24,7 @@ import {
   cloudStateSchema,
 } from './cloudProviders.js';
 import type { PreloadChannelId } from './bridge.js';
+import { SHOWN_SCHEME_MAX } from './followedLinks.js';
 import { pageSetSchema } from './pageSet.js';
 import { channel, type Channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { AI_ANSWER_REFUSALS, MAX_WEB_SOURCES, answerIdSchema, subscriptionIdSchema } from './events.js';
@@ -32,6 +33,7 @@ import { WORD_MODES } from './wordModes.js';
 import {
   MAX_ANNOTATION_BORDER,
   MAX_REMOVED_ANNOTATIONS,
+  MAX_ANNOTATION_TEXT,
   MAX_IMAGE_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
@@ -47,6 +49,7 @@ import {
   annotationRectSchema,
   annotationAuthorSchema,
   annotationBlendSchema,
+  annotationWordsStyleSchema,
   annotationStampSchema,
   annotationInstantSchema,
   formDataFormatSchema,
@@ -84,11 +87,14 @@ import {
   COMPOSE_REFUSALS,
   OPTIMIZE_SETTING_NAMES,
   URL_FETCH_REFUSALS,
+  FILE_ACCESS,
+  SAVE_WRITE_CAUSES,
   PAGE_IMAGE_FORMATS,
   MIN_PAGE_IMAGE_DPI,
   MAX_PAGE_IMAGE_DPI,
   MIN_IMAGE_QUALITY,
   MAX_IMAGE_QUALITY,
+  FAILURE_DETAIL_SCHEMAS,
 } from './schemas.js';
 
 /**
@@ -283,6 +289,7 @@ export const TABLE_ENGINES = ['automatic', 'azure', 'claude'] as const;
 export const SERVICE_REFUSALS = [
   'no-key',
   'not-https',
+  'not-the-service',
   'unauthorised',
   'out-of-credit',
   'rejected',
@@ -302,13 +309,14 @@ export const SERVICE_REFUSALS = [
  * which reaches the service from a command's pre-read (ADR-0051, ADR-0057).
  *
  * **Codes and no sentence**, because that channel carries no free text (`commandHandlers.ts`), so
- * the reason is folded into the few a reader acts on differently: enter a key, fix the key, add
- * credit, try later — and everything else, which is *the service did not read it*. Until this
- * existed every one of them reached the renderer as `internal` with an incident id.
+ * the reason is folded into the few a reader acts on differently: enter a key, fix the key, fix the
+ * address, add credit, try later — and everything else, which is *the service did not read it*.
+ * Until this existed every one of them reached the renderer as `internal` with an incident id.
  */
 export const SERVICE_PROBLEMS = [
   'service-no-key',
   'service-unauthorised',
+  'service-address',
   'service-out-of-credit',
   'service-unavailable',
   'service-refused',
@@ -317,7 +325,9 @@ export const SERVICE_PROBLEMS = [
 /** Each refusal's code. A reason added above without a row here is a compile error. */
 export const SERVICE_PROBLEM_OF = {
   'no-key': 'service-no-key',
-  'not-https': 'service-refused',
+  // THE ADDRESS IN SETTINGS, either way it is wrong: nothing was sent, and it is the person's to fix.
+  'not-https': 'service-address',
+  'not-the-service': 'service-address',
   unauthorised: 'service-unauthorised',
   'out-of-credit': 'service-out-of-credit',
   rejected: 'service-refused',
@@ -457,13 +467,19 @@ export const MAX_CHAT_TEXT = 16_384;
 export const MAX_CHAT_TURNS = 64;
 
 /**
+ * Why asking a provider for its models did not answer a list — the one set a list and a key check both carry.
+ * `not-the-service` is an address that is not the provider's own, and nothing was sent to it.
+ */
+export const AI_LIST_PROBLEMS = ['unauthorised', 'unreachable', 'rejected', 'unreadable', 'not-the-service'] as const;
+
+/**
  * One provider's model list as it crosses: where it came from, what went wrong asking, and the models. The ONE
  * shape `ai.models` answers and the Settings dialog opens with (ADR-0117), so the two surfaces cannot disagree
  * about what a list is.
  */
 export const aiModelListSchema = z.object({
   source: z.enum(['fetched', 'fallback', 'no-list']),
-  problem: z.enum(['unauthorised', 'unreachable', 'rejected', 'unreadable']).optional(),
+  problem: z.enum(AI_LIST_PROBLEMS).optional(),
   models: z
     .array(
       z.object({
@@ -883,6 +899,24 @@ export type DisplayLocation = z.infer<typeof displayLocationSchema>;
 export const MAX_RECENT_ENTRIES = 10;
 
 /**
+ * Whether a recent file is there now: found, not found, or still being looked for when the list was due. ONE ENUM, not
+ * two booleans, so a file both found and still being looked for cannot be said (B5).
+ */
+export const RECENT_AVAILABILITY = ['available', 'unavailable', 'checking'] as const;
+
+/** One of {@link RECENT_AVAILABILITY}. */
+export type RecentAvailability = (typeof RECENT_AVAILABILITY)[number];
+
+const recentAvailabilitySchema = z.enum(RECENT_AVAILABILITY);
+
+/**
+ * How long main waits for the recent files' checks before it answers the list, in milliseconds: the owner's *"the list
+ * shows at once"*. Each check is a `stat` and a `realpath`, which answer in well under a millisecond on a local disk
+ * and can wait the operating system's own timeout on a network drive that has gone; one past this answers `checking`.
+ */
+export const RECENT_CHECK_CAP_MS = 200;
+
+/**
  * How many documents a recorded SESSION carries — what was open when a run ended, for the crash offer and
  * `viewing.restore-session`.
  *
@@ -1160,6 +1194,9 @@ const clearedCopiesSchema = z
   })
   .strict();
 
+/** The names of a document's older copies that are owed a deletion and still held by another program (CR-DOC-10). */
+const heldCopiesSchema = z.array(z.string().min(1).max(MAX_DOCUMENT_NAME_LENGTH)).max(MAX_BACKUP_COPIES);
+
 /** A document that opened — `document.open`'s success, and the base of an import that opened with a note. */
 const openedSchema = z.object({
     kind: z.literal('opened'),
@@ -1193,17 +1230,33 @@ const openedSchema = z.object({
     name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
   });
 
+/** The file is not where it was named — gone between being chosen and being read. */
+const openAbsentSchema = z.object({ kind: z.literal('absent') });
+
+/**
+ * There is no room on the disk for the document's image file. A document too large for memory is held in a file and
+ * opens (ADR-0165), so the room that ran out is the disk's.
+ */
+const openAtCapacitySchema = z.object({
+  kind: z.literal('at-capacity'),
+  /** The bytes the image file needed. */
+  wouldHold: z.number().int().nonnegative(),
+  /** The bytes the disk reported free, or 0 where it could not be asked. */
+  ceiling: z.number().int().nonnegative(),
+});
+
+/**
+ * The file is there and reading it was refused: `busy`, another program holds it open and lets nobody else read it;
+ * `denied`, this account may not read it. Each says what the person can do, so each is a kind of its own.
+ */
+const openReadRefusedSchema = z.object({ kind: z.enum(['busy', 'denied']) });
+
 const openOutcomeSchema = z.discriminatedUnion('kind', [
   openedSchema,
   z.object({ kind: z.literal('already-open'), docId: docIdSchema }),
-  z.object({ kind: z.literal('absent') }),
-  z.object({
-    kind: z.literal('at-capacity'),
-    /** What the resident total would have become, in bytes. */
-    wouldHold: z.number().int().nonnegative(),
-    /** The ceiling it would have crossed. */
-    ceiling: z.number().int().nonnegative(),
-  }),
+  openAbsentSchema,
+  openAtCapacitySchema,
+  openReadRefusedSchema,
   z.object({ kind: z.literal('cancelled') }),
 ]);
 
@@ -1784,10 +1837,12 @@ export const channels = {
             openedAt: annotationInstantSchema.nullable(),
             /**
              * Whether the file is there NOW, read by main as the list is asked for — by `readFileIdentity`, the rule
-             * an open answers `absent` by, so the list and the open agree (ADR-0143). `false` is listed and drawn
-             * disabled, never dropped: a file on a drive that is not connected is back when the drive is.
+             * an open answers `absent` by, so the list and the open agree (ADR-0143). `unavailable` is listed and
+             * drawn disabled, never dropped: a file on a drive that is not connected is back when the drive is.
+             * `checking` is a file whose check had not answered when the list was due (`RECENT_CHECK_CAP_MS`), so the
+             * list shows at once and a view asks again until it resolves.
              */
-            available: z.boolean(),
+            availability: recentAvailabilitySchema,
           }),
         )
         .max(MAX_RECENT_ENTRIES)
@@ -1823,6 +1878,8 @@ export const channels = {
           z.object({
             handle: fileHandleSchema,
             name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
+            /** The list's own reading, so the offer after a crash names no file that has gone. */
+            availability: recentAvailabilitySchema,
           }),
         )
         .max(MAX_SESSION_ENTRIES)
@@ -2024,7 +2081,19 @@ export const channels = {
     // image main reads from a picked file, so the one channel a renderer could
     // put a command on refuses it at the boundary — the capability is
     // unrepresentable rather than merely unused. See `commands.ts`.
-    z.object({ docId: docIdSchema, command: renderableCommandSchema }),
+    z.object({
+      docId: docIdSchema,
+      command: renderableCommandSchema,
+      /**
+       * That the person agreed this edit may break the document's signatures
+       * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)).
+       *
+       * **Optional, and absent is the direction that asks.** Elsewhere this contract makes a field required so a
+       * caller cannot satisfy it by not reading it; here not sending it gets the question, never a broken signature,
+       * so forgetting it is safe and only the answer to that question sends `true`.
+       */
+      breakSignatures: z.boolean().optional(),
+    }),
     z.object({
       version: docVersionSchema,
       byteLength: z.number().int().nonnegative(),
@@ -2063,6 +2132,16 @@ export const channels = {
     // `text-not-writable` IS AN IN-PLACE EDIT'S (ADR-0096): the page's font cannot carry what
     // was typed. It is the PERSON's to act on — type something else, or edit another way — so
     // it is a sentence and never `internal` with an incident id for a document working as made.
+    // `breaks-signatures` IS A QUESTION, NOT A FAULT (ADR-0149): the edit would rewrite a signed document whole, and
+    // nothing has changed. The dispatcher asks the person and sends the command again, agreed, or works on a copy.
+    // `text-not-in-place` IS `replaceTextAt`'s (ADR-0156): no single text object holds the word at that point, so it
+    // was not replaced there. The person's to act on, by editing the line, for `text-not-writable`'s reason.
+    // `edit-refused` IS A PDFIUM REWRITE'S (ADR-0169): a native step refused, or the saved page read back without text
+    // the edit did not touch, and nothing was saved. It carries the step and the number PDFium answered.
+    // `nothing-to-replace` IS A REPLACEMENT'S (ADR-0169 Decision 6): it matched nothing a text object holds, or changed
+    // nothing, so there is no new version. The person's to read, for `text-not-in-place`'s reason.
+    // `replace-moves-line` IS A REPLACEMENT'S TOO: it would change its text's width with more text after it on the line,
+    // which only an edit that knows the line can move, so nothing was written. The person's, for the same reason.
     [
       'document-not-open',
       'document-busy',
@@ -2070,6 +2149,11 @@ export const channels = {
       'stale-target',
       'engine-unavailable',
       'text-not-writable',
+      'text-not-in-place',
+      'nothing-to-replace',
+      'replace-moves-line',
+      'edit-refused',
+      'breaks-signatures',
       ...SERVICE_PROBLEMS,
     ],
   ),
@@ -2126,7 +2210,9 @@ export const channels = {
       // rebind. A version here would invite a caller to reopen for no reason.
       z.object({ kind: z.literal('nothing-to-undo') }),
     ]),
-    ['document-not-open', 'document-busy', 'document-poisoned'],
+    // `edit-refused` AND `text-not-writable` because an undo of a PDFium edit runs the same rewrite, read back the
+    // same way (ADR-0169), so it is refused the same way and says the same sentence.
+    ['document-not-open', 'document-busy', 'document-poisoned', 'edit-refused', 'text-not-writable'],
   ),
   /**
    * Steps one entry forward over what undo stepped back — {@link 'document.undo'}'s other half.
@@ -2153,7 +2239,7 @@ export const channels = {
       }),
       z.object({ kind: z.literal('nothing-to-redo') }),
     ]),
-    ['document-not-open', 'document-busy', 'document-poisoned'],
+    ['document-not-open', 'document-busy', 'document-poisoned', 'edit-refused', 'text-not-writable'],
   ),
   /**
    * Save, and every part of its shape is invariant 18 or ADR-0009 §9.
@@ -2187,6 +2273,19 @@ export const channels = {
    * PERMITS the write, so it cannot be a refusal reason. That is a state made
    * unrepresentable rather than a case nobody writes.
    */
+  /**
+   * Tries again to delete the older copies of this document that still hold what a removal took out (CR-DOC-10, the
+   * owner's decision of 2026-10-03): the ones a save could not delete because another program held them. Main deletes
+   * only the copies it recorded as owed, and only while each is still the file it made (ADR-0139), so nothing the
+   * renderer names is deleted: the request carries the document and nothing else.
+   */
+  'document.deleteHeldCopies': channel(
+    'Deletes the older copies of a document that a save could not delete, if nothing holds them now.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.object({ held: heldCopiesSchema }),
+    ['document-not-open', 'document-busy'],
+  ),
+
   'document.save': channel(
     'Writes an open document’s current content to the file it was opened from.',
     z.object({
@@ -2208,6 +2307,12 @@ export const channels = {
          * for every other save.
          */
         cleared: clearedCopiesSchema.nullable(),
+        /**
+         * The older copies of this document that still hold what a removal took out, by name, because another program
+         * held them when they were to be deleted (CR-DOC-10). Owed, kept in main across a restart, and tried again by
+         * every save of the document and by `document.deleteHeldCopies`. Empty when there is none. No path crosses.
+         */
+        held: heldCopiesSchema,
       }),
       /**
        * NOTHING WAS WRITTEN: the save would rewrite the file and so break this many signatures — a removal or a change
@@ -2220,9 +2325,35 @@ export const channels = {
         kind: z.literal('refused'),
         reason: z.enum(['contested', 'replaced', 'target-absent', 'unverifiable']),
       }),
-      z.object({ kind: z.literal('write-failed') }),
+      /** The filesystem refused, and why, so the person is told the remedy that fits (cloud-4 7b). */
+      z.object({ kind: z.literal('write-failed'), cause: z.enum(SAVE_WRITE_CAUSES) }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Whether an open document's own file could be written over NOW (cloud-4 7b): asked when a person has opened it, so
+   * a file that is read-only, or held by another program, is said before any edit rather than at the first Save.
+   *
+   * Asked of the file at each call and never kept, because the answer changes under the document. It is something to
+   * tell a person and never a reason to refuse a save, which tries the file itself. No path crosses.
+   */
+  /**
+   * Which of two open documents' files was written later (cloud-4 8a): what Compare asks so the newer file goes on the
+   * right, where the summary's *inserted* and *removed* read as what changed since the older. An answer, never a time.
+   */
+  'document.newerOf': channel(
+    'Answers which of two open documents’ files was written later.',
+    z.object({ first: docIdSchema, second: docIdSchema }).strict(),
+    z.object({ newer: z.enum(['first', 'second', 'neither']) }),
+    ['document-not-open'],
+  ),
+
+  'document.fileAccess': channel(
+    'Answers whether an open document’s own file could be written over now.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.object({ access: z.enum(FILE_ACCESS) }),
+    ['document-not-open'],
   ),
 
   /**
@@ -2389,7 +2520,7 @@ export const channels = {
        * come back.
        */
       z.object({ kind: z.literal('open-elsewhere') }),
-      /** The edited file would not fit under main's ceiling. */
+      /** The edited file could not be opened: no room on the disk for its image file, as `openAtCapacitySchema`. */
       z.object({
         kind: z.literal('at-capacity'),
         wouldHold: z.number().int().nonnegative(),
@@ -2397,6 +2528,11 @@ export const channels = {
       }),
       /** The edited file was gone before it could be opened. */
       z.object({ kind: z.literal('absent') }),
+      /**
+       * The edited file could not be read: the editor still holds it (`busy`), or this account may not read it
+       * (`denied`). Nothing was replaced; saving and closing it in the editor lets the edit come back.
+       */
+      openReadRefusedSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
   ),
@@ -2604,7 +2740,9 @@ export const channels = {
    */
   'document.exportText': channel(
     'Writes the document’s text to a plain-text file the user picks.',
-    z.object({ docId: docIdSchema, mode: z.enum(['plain', 'layout']) }).strict(),
+    // THE PAGES, REQUIRED here and on every export to another format and on Print (ADR-0161): a caller that forgot
+    // them would convert the whole document with nothing to say it did. *Every page* is the whole set.
+    z.object({ docId: docIdSchema, mode: z.enum(['plain', 'layout']), pages: pageSetSchema }).strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
@@ -2627,7 +2765,7 @@ export const channels = {
    */
   'document.exportWord': channel(
     'Writes the document as a Word file the user picks.',
-    z.object({ docId: docIdSchema, mode: z.enum(WORD_MODES) }).strict(),
+    z.object({ docId: docIdSchema, mode: z.enum(WORD_MODES), pages: pageSetSchema }).strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
@@ -2644,7 +2782,7 @@ export const channels = {
    */
   'document.exportPowerPoint': channel(
     'Writes the document as a PowerPoint deck the user picks.',
-    z.object({ docId: docIdSchema }).strict(),
+    z.object({ docId: docIdSchema, pages: pageSetSchema }).strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
       z.object({ kind: z.literal('cancelled') }),
@@ -2685,6 +2823,8 @@ export const channels = {
          */
         engine: z.enum(TABLE_ENGINES),
         version: docVersionSchema,
+        /** The pages whose tables are written (ADR-0161). The review still shows any page. */
+        pages: pageSetSchema,
         edits: z
           .array(
             z
@@ -2833,7 +2973,14 @@ export const channels = {
    */
   'document.print': channel(
     'Prints the document through the system print dialog, each page rasterised by MuPDF.',
-    z.object({ docId: docIdSchema, dpi: z.union([z.literal(150), z.literal(300), z.literal(600)]) }).strict(),
+    z
+      .object({
+        docId: docIdSchema,
+        dpi: z.union([z.literal(150), z.literal(300), z.literal(600)]),
+        // WHERE THE SYSTEM DIALOG'S OWN *PAGES* STARTS (ADR-0161 Decision 3): its answer is what prints.
+        pages: pageSetSchema,
+      })
+      .strict(),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('printed'), pages: z.number().int().nonnegative() }),
       z.object({ kind: z.literal('cancelled') }),
@@ -2869,6 +3016,73 @@ export const channels = {
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Makes an edit on a COPY of a signed document, so the original keeps its signatures
+   * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)
+   * Decision 5).
+   *
+   * `document.saveCopy`'s picker and write, then the open route a picked file takes, then the command applied to the
+   * copy with the version it names re-bound to the copy's. Asked for when an edit answered `breaks-signatures` and the
+   * person chose to work on a copy.
+   *
+   * ## The copy is opened whatever the edit does there
+   *
+   * Once the file is written it is a document the person chose to make, so it opens, and the answer says whether the
+   * edit applied: `edited`, or `edit-refused` with a reason the person can act on, beside the copy that is open either
+   * way. Any other failure is a defect: main closes the copy, whose file stays where it was put, and the boundary
+   * records it — an answer carrying no document must leave none open that no tab shows.
+   */
+  'document.editCopy': channel(
+    'Writes a copy of an open document where the user picks, opens it, and applies one command to the copy.',
+    z.object({ docId: docIdSchema, command: renderableCommandSchema }),
+    z.discriminatedUnion('kind', [
+      openedSchema.extend({ kind: z.literal('edited'), historyDropped: z.number().int().nonnegative() }),
+      openedSchema.extend({
+        kind: z.literal('edit-refused'),
+        // A FAILURE'S OWN SHAPE, so a refusal that carries a detail carries it here as on `document.execute`
+        // (ADR-0169): the copy route names the characters a font cannot show as the direct route does.
+        problem: z.union([
+          z
+            .object({
+              code: z.enum(['engine-unavailable', 'text-not-in-place', 'nothing-to-replace', 'replace-moves-line', 'document-poisoned']),
+            })
+            .strict(),
+          z.object({ code: z.literal('text-not-writable'), detail: FAILURE_DETAIL_SCHEMAS['text-not-writable'] }).strict(),
+          z.object({ code: z.literal('edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['edit-refused'] }).strict(),
+        ]),
+      }),
+      z.object({ kind: z.literal('cancelled') }),
+      importContestedSchema,
+      importWriteFailedSchema,
+      openAbsentSchema,
+      openAtCapacitySchema,
+      openReadRefusedSchema,
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned', 'stale-target'],
+  ),
+
+  /**
+   * Writes a copy of an open document where the person picks, and opens the copy to work on (cloud-4 7b): what a file
+   * that cannot be written over is offered, so the changes made from here on have a file they can be saved to.
+   *
+   * `document.editCopy`'s picker, write and open route, with no edit. The original stays open as it was; closing it
+   * is the person's.
+   */
+  'document.workOnCopy': channel(
+    'Writes a copy of an open document where the user picks, and opens the copy.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      openedSchema,
+      z.object({ kind: z.literal('cancelled') }),
+      importContestedSchema,
+      importWriteFailedSchema,
+      openAbsentSchema,
+      openAtCapacitySchema,
+      openReadRefusedSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -3045,7 +3259,7 @@ export const channels = {
       }),
       z.object({ kind: z.literal('destination-contested'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
-      /** The composed file was written and could not be opened within main's ceiling. */
+      /** The composed file was written and could not be opened: no room on the disk, as `openAtCapacitySchema`. */
       z.object({
         kind: z.literal('at-capacity'),
         wouldHold: z.number().int().nonnegative(),
@@ -3053,6 +3267,8 @@ export const channels = {
       }),
       /** The composed file was written and was gone before it could be opened. */
       z.object({ kind: z.literal('absent') }),
+      /** The composed file was written and its read was refused: another program holds it, or no permission. */
+      openReadRefusedSchema,
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned', 'engine-unavailable'],
   ),
@@ -3431,13 +3647,15 @@ export const channels = {
       }),
       /** The picture picker was closed. */
       z.object({ kind: z.literal('cancelled') }),
-      /** The picked file is not a PNG or a JPEG this build can decode. */
+      /** The picked file is not a PNG or a JPEG this build can decode, nor a PDF it can read. */
       z.object({ kind: z.literal('unreadable') }),
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
       /** The kept signature named is no longer kept — removed since the dialog opened. */
       z.object({ kind: z.literal('absent') }),
-      /** The typed name holds a character the chosen standard font cannot draw. */
-      z.object({ kind: z.literal('unencodable-text') }),
+      /** A scanned signature PDF picked at the click, whose first page carries no ink. */
+      z.object({ kind: z.literal('scan-blank') }),
+      /** A scanned signature PDF picked at the click, which needs a password to be read. */
+      z.object({ kind: z.literal('scan-locked') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -3509,9 +3727,13 @@ export const channels = {
         })
         .strict(),
       z.object({ kind: z.literal('cancelled') }).strict(),
-      /** Not a PNG or a JPEG by its bytes, or it could not be read. */
+      /** Not a PNG or a JPEG by its bytes, nor a PDF this build can read, or it could not be read. */
       z.object({ kind: z.literal('unreadable') }).strict(),
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }).strict(),
+      /** A scanned signature PDF whose first page carries no ink. */
+      z.object({ kind: z.literal('scan-blank') }).strict(),
+      /** A scanned signature PDF that needs a password to be read. */
+      z.object({ kind: z.literal('scan-locked') }).strict(),
     ]),
   ),
 
@@ -3623,6 +3845,61 @@ export const channels = {
       }),
       z.object({ kind: z.literal('nothing-copyable') }),
       z.object({ kind: z.literal('stale') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * ONE mark's own words, whole, for an editor whose listing was cut (`cut` on `document.annotations`' entry).
+   *
+   * The walk lists a note sliced, as one line in a panel, and an editor that started from that slice would save it
+   * over the whole. Named by the walk's handle at the version it was read at, `document.copyAnnotations`' rule: a
+   * document that has moved, or a handle past its walk, answers `stale`. `whole: false` is a note past
+   * `MAX_ANNOTATION_TEXT`, the most an edit can write back, which the editor says it cannot start from rather than
+   * editing a slice.
+   */
+  'document.annotationWords': channel(
+    'Reads one annotation’s own words whole, for editing.',
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+      index: z.number().int().nonnegative(),
+      version: docVersionSchema,
+    }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('words'), text: z.string().max(MAX_ANNOTATION_TEXT), whole: z.boolean() }),
+      z.object({ kind: z.literal('stale') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Opens one of a document's web links in the person's browser, once they have asked for it (ADR-0167).
+   *
+   * **The link is named, never its address**: by its place among `document.pageLinks`' answer for the page, at the
+   * version that answer carried. `main` reads the address from the document in full and opens it only when
+   * `isFollowable` allows its scheme, so the renderer can choose only among links the document already holds. The
+   * answers that are not `opened` are each a sentence the renderer says: the document moved, no web link is there,
+   * the address is too long to open as written, its scheme is not opened, or the system did not open it.
+   */
+  'document.openLink': channel(
+    'Opens one of a document’s web links in the person’s browser, read by main from the document.',
+    z
+      .object({
+        docId: docIdSchema,
+        version: docVersionSchema,
+        page: z.number().int().nonnegative(),
+        index: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('opened') }),
+      z.object({ kind: z.literal('stale') }),
+      z.object({ kind: z.literal('no-such-link') }),
+      z.object({ kind: z.literal('too-long') }),
+      /** The scheme as `shownSchemeOf` says it, or `null` for an address that begins with none. */
+      z.object({ kind: z.literal('scheme-refused'), scheme: z.string().max(SHOWN_SCHEME_MAX).nullable() }),
+      z.object({ kind: z.literal('not-opened') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -4091,6 +4368,10 @@ export const channels = {
       characters: z.number().int().nonnegative(),
       /** Characters excluding whitespace — the figure most editors show. */
       charactersNoSpaces: z.number().int().nonnegative(),
+      /** Lines that show something; a line holding only whitespace is not one. */
+      lines: z.number().int().nonnegative(),
+      /** Characters of Chinese, Japanese and Korean writing, by Unicode script (`countWords`). */
+      cjkCharacters: z.number().int().nonnegative(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -4409,6 +4690,26 @@ export const channels = {
              * stream rather than from the dictionary's `/BM` claim (ADR-0103).
              */
             blend: annotationBlendSchema,
+            /**
+             * Present and true on a STAMP WHOSE APPEARANCE DRAWS A PICTURE — what *Comment › Image* places. A picture
+             * a person put on a page is this, not page content, so `document.pageObjects` never lists it; Edit
+             * object's *Images* reads this to find it (the owner's item 14g). Absent on everything else, so a walk
+             * that predates it reads as it did.
+             */
+            pictured: z.literal(true).exactOptional(),
+            /**
+             * Present and true where `contents` is a SLICE of longer words. A panel shows the slice; an editor reads
+             * the mark's whole words through `document.annotationWords` before it starts, so no edit saves a slice
+             * over a long comment.
+             */
+            cut: z.literal(true).exactOptional(),
+            /**
+             * How a TEXT MARK'S WORDS are drawn — a text box's, a typewriter's or a callout's `/DA` and `/Q` — so a
+             * double-click edits them in their own box, in their own size and colour (ADR-0154 Decision 3). Absent on
+             * every other kind, and on a text mark whose `/DA` says something the bounds cannot hold (an auto size,
+             * for one): that one is edited on a card beside it instead, never refused.
+             */
+            typed: annotationWordsStyleSchema.exactOptional(),
           }),
         )
         .max(ANNOTATIONS_PART)
@@ -4517,6 +4818,11 @@ export const channels = {
             /** Whether the document forbids filling it. */
             readOnly: z.boolean(),
             /**
+             * Whether a TEXT field takes line breaks (`/Ff` bit 13); false for every other kind. A surface edits one
+             * in a control that keeps them, because a one-line input strips them from what it shows.
+             */
+            multiline: z.boolean(),
+            /**
              * Where it is, in **PDF user space** — the annotation list's frame,
              * so a surface converts it with the `PageTransform` it holds.
              *
@@ -4525,6 +4831,11 @@ export const channels = {
              * skips it rather than acting on an invented one.
              */
             rect: annotationRectSchema.nullable(),
+            /**
+             * Present and true where a value in `values` is a SLICE of a longer one. A fill writes its whole text over
+             * the field, so no surface may start an edit from a slice: it would save the slice over the rest.
+             */
+            cut: z.literal(true).exactOptional(),
           }),
         )
         .max(FORM_FIELDS_PART)
@@ -5200,7 +5511,7 @@ export const channels = {
       }),
       z.object({
         accepted: z.literal(false),
-        problem: z.enum(['unauthorised', 'unreachable', 'rejected', 'unreadable']),
+        problem: z.enum(AI_LIST_PROBLEMS),
       }),
     ]),
     ['secret-storage-unavailable'],
@@ -5314,7 +5625,9 @@ export const channels = {
     }),
     // THE DOCUMENT'S REFUSALS, because an ask about one reads it in its lane first — and a page
     // too large to draw within the image limits, which a picture ask refuses by name (ADR-0090).
-    ['subscription-in-use', 'document-not-open', 'document-busy', 'document-poisoned', 'page-too-large'],
+    // `no-comments` is an ask about the comments of a document that has none to send and no file beside them: a
+    // question about nothing, refused before any provider is reached (F-V1).
+    ['subscription-in-use', 'document-not-open', 'document-busy', 'document-poisoned', 'page-too-large', 'no-comments'],
   ),
 
   /**

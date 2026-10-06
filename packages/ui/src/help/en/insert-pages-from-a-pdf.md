@@ -1,29 +1,28 @@
 ---
 id: insert-pages-from-a-pdf
 title: Insert pages from another PDF
-summary: Put all the pages of another open document into this one, at the place you choose.
+summary: Put pages of another document into this one, before or after the page you choose.
 keywords: [insert pdf, insert pages, add pages, combine, from another pdf, import pages]
 commands: [document.insert-from-pdf]
-contexts: [dialog.insert-from-pdf, dialog.merge-document-none, organize]
+contexts: [dialog.insert-from-pdf, organize]
 ---
-Insert from PDF copies every page of another document into this one, before the page you choose.
+Insert from PDF copies pages of another document into this one, before or after the page you choose.
 
 ## Steps
 
-1. Open the document you want to take the pages from, so it has its own tab.
-2. Switch back to the document you want to add them to.
-3. In the rail, choose **Organize**, then **Insert PDF…** in the **Pages** group.
-4. In **Document to insert**, choose the other document.
-5. In **Insert before page**, type a page number. Use the number one past the last page to put them at the end.
-6. Choose **Insert**.
+1. In the rail, choose **Organize**, then **Insert PDF…** in the **Pages** group.
+2. In **Insert from**, choose another open document, or choose **Choose file…** to pick a PDF. A file you pick opens as its own tab. The number of pages it has is shown under the question.
+3. Under **Pages**, keep **Every page**, or choose **Select pages** and type the pages you want, such as 2-5.
+4. Under **Where**, choose **Before page** or **After page**, and type a page of this document. It starts after the page you are on.
+5. Choose **Insert**.
 
-![The Insert from PDF window with Document to insert and Insert before page](screenshot:insert-pages-from-a-pdf-1)
+![The Insert from PDF window with a document chosen and the place to insert](screenshot:insert-pages-from-a-pdf-1)
 
 ## Good to know
 
-- The other document must be open in a tab. If it is not, Monstera tells you to open it first.
-- All its pages are inserted, with their comments and marks. Choosing only some pages is not possible yet.
+- The pages arrive with their comments and marks.
 - The other document is not changed.
+- To put pages at the end, choose **After page** and type the last page's number.
 - Undo with **Ctrl+Z**.
 
 <!--

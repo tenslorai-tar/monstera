@@ -10,6 +10,9 @@ import {
   type FormDataImportFormat,
   type OptimizeSetting,
   type PageSet,
+  type SaveWriteCause,
+  type RenderableCommand,
+  type RequestedSignatureMark,
   type SignaturePlacement,
   blockEditOf,
   pageSetOf,
@@ -23,6 +26,7 @@ import type { z } from 'zod';
 import { BATES_NUMBER_DIALOG_ID } from '../dialogs/batesNumber.js';
 import type { BatesNumberAnswer } from '../dialogs/batesNumberResult.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
+import type { CommandProblem } from '../dialogs/problemMessages.js';
 import { CROP_PAGES_DIALOG_ID } from '../dialogs/cropPages.js';
 import { PROTECT_DOCUMENT_DIALOG_ID } from '../dialogs/protectDocument.js';
 import type { ProtectDocumentAnswer } from '../dialogs/protectDocument.js';
@@ -36,7 +40,9 @@ import type { RedactMatchesAnswer } from '../dialogs/redactMatches.js';
 import { SANITIZE_DOCUMENT_DIALOG_ID } from '../dialogs/sanitizeDocument.js';
 import type { SanitizeDocumentAnswer } from '../dialogs/sanitizeDocument.js';
 import { SIGN_DOCUMENT_DIALOG_ID } from '../dialogs/signDocument.js';
-import type { SignDocumentAnswer, SignDocumentAnswers } from '../dialogs/signDocument.js';
+import type { KeptSignature, SignDocumentAnswer, SignDocumentAnswers } from '../dialogs/signDocument.js';
+import { SIGNATURE_PROBLEM_DIALOG_ID } from '../dialogs/signatureProblem.js';
+import { chosenOfKept, requestedMarkOf } from './signatureMarks.js';
 import { BLOB_URLS, type LibraryPageDeps, keepPicture, keptEntries } from './stampLibrary.js';
 import { SIGN_PROBLEM_DIALOG_ID } from '../dialogs/signProblem.js';
 import { DOCUSIGN_NOTICE_DIALOG_ID } from '../dialogs/docusignNotice.js';
@@ -53,21 +59,19 @@ import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { FLAT_FIELDS_DIALOG_ID } from '../dialogs/flatFields.js';
 import type { FlatFieldsAnswer } from '../dialogs/flatFieldsResult.js';
-import { EDIT_PAGE_OBJECT_DIALOG_ID } from '../dialogs/editPageObject.js';
-import type { EditPageObjectAnswer } from '../dialogs/editPageObjectResult.js';
+import { type EditableObject, OBJECT_FILTERS, type ObjectFilter, type PageObjects } from '../objectEditing.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG_ID } from '../dialogs/importFormDataProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
 import { EXTRACT_PAGES_DIALOG_ID } from '../dialogs/extractPages.js';
 import type { ExtractPagesAnswer } from '../dialogs/extractPagesResult.js';
 import { INSERT_FROM_PDF_DIALOG_ID } from '../dialogs/insertFromPdf.js';
-import type { InsertFromPdfAnswer } from '../dialogs/insertFromPdfResult.js';
+import { INSERT_FROM_PDF_RESULT } from '../dialogs/insertFromPdfResult.js';
 import { MERGE_DOCUMENT_DIALOG_ID } from '../dialogs/mergeDocument.js';
-import { MERGE_DOCUMENT_NONE_DIALOG_ID } from '../dialogs/mergeDocumentNone.js';
-import type { MergeDocumentAnswer } from '../dialogs/mergeDocumentResult.js';
+import { MERGE_DOCUMENT_RESULT } from '../dialogs/mergeDocumentResult.js';
 import { REPLACE_PAGE_DIALOG_ID } from '../dialogs/replacePage.js';
 import { IMPORT_PAGE_AS_LAYER_DIALOG_ID } from '../dialogs/importPageAsLayer.js';
-import type { ImportPageAsLayerAnswer } from '../dialogs/importPageAsLayerResult.js';
+import { IMPORT_PAGE_AS_LAYER_RESULT } from '../dialogs/importPageAsLayerResult.js';
 import { SPLIT_DOCUMENT_DIALOG_ID } from '../dialogs/splitDocument.js';
 import type { SplitDocumentAnswer } from '../dialogs/splitDocumentResult.js';
 import { EXPORT_PAGE_IMAGES_DIALOG_ID } from '../dialogs/exportPageImages.js';
@@ -82,14 +86,27 @@ import { PRINT_DIALOG_ID, type PrintAnswer } from '../dialogs/print.js';
 import { PRINT_QUALITY_DPI, PRINT_QUALITY_SETTING } from '../settings/rendering.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { EXPORT_WORD_DIALOG_ID, type ExportWordAnswer } from '../dialogs/exportWord.js';
-import type { ReplacePageAnswer } from '../dialogs/replacePageResult.js';
+import {
+  EXPORT_LAYOUT_TEXT_DIALOG_ID,
+  EXPORT_POWERPOINT_DIALOG_ID,
+  EXPORT_TEXT_DIALOG_ID,
+  type ExportPagesAnswer,
+} from '../dialogs/exportPages.js';
+import type { PageRangeStart } from '../dialogs/PageRangeChoice.js';
+import { REPLACE_PAGE_RESULT } from '../dialogs/replacePageResult.js';
+import { type SourceCommandDeps, askAboutSource } from './sourceDocuments.js';
 import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
 import type { PageTransitionAnswer } from '../dialogs/pageTransitionResult.js';
 import { RESIZE_PAGES_DIALOG_ID } from '../dialogs/resizePages.js';
 import type { ResizePagesAnswer } from '../dialogs/resizePagesResult.js';
+import { HELD_COPIES_DIALOG_ID, HELD_COPIES_RESULT } from '../dialogs/heldCopies.js';
 import { KEPT_BACKUPS_DIALOG_ID } from '../dialogs/keptBackups.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
+import { FLATTEN_FORM_DIALOG_ID, FLATTEN_FORM_RESULT } from '../dialogs/flattenForm.js';
+import { PAGE_BACKGROUND_DIALOG_ID, PAGE_BACKGROUND_RESULT } from '../dialogs/pageBackground.js';
+import { SIGNED_EDIT_DIALOG_ID, SIGNED_EDIT_RESULT } from '../dialogs/signedEdit.js';
+import type { OpenedDocument } from './importMarkdown.js';
 import type { PendingRedactionOccasion } from '../dialogs/pendingRedactions.js';
 import { WATERMARK_PAGES_DIALOG_ID } from '../dialogs/watermarkPages.js';
 import type { WatermarkPagesAnswer } from '../dialogs/watermarkPagesResult.js';
@@ -115,6 +132,7 @@ import {
   GROUP_COMBINE,
   GROUP_MARKS,
   GROUP_PAGES,
+  GROUP_ROTATE,
   GROUP_TEXT,
   EDIT_TEXT_COMMAND_TITLE,
   GROUP_MARKUP,
@@ -127,7 +145,10 @@ import {
   MENU_GROUP_PANELS,
   MOVE_PAGE_EARLIER_TITLE,
   MOVE_PAGE_LATER_TITLE,
-  EDIT_PAGE_OBJECT_COMMAND_TITLE,
+  EDIT_OBJECTS_ALL_TITLE,
+  EDIT_OBJECTS_IMAGES_TITLE,
+  EDIT_OBJECTS_SHAPES_TITLE,
+  EDIT_OBJECTS_TEXT_TITLE,
   PROTECT_DOCUMENT_COMMAND_TITLE,
   APPLY_REDACTIONS_COMMAND_TITLE,
   REDACT_MATCHES_COMMAND_TITLE,
@@ -182,6 +203,7 @@ import {
   RIBBON_EXPORT_POWERPOINT,
   RIBBON_EXPORT_EXCEL,
   RIBBON_EXPORT_PDFA,
+  RIBBON_ROTATE_90,
   RIBBON_ROTATE_180,
   RIBBON_ROTATE_270,
   RIBBON_DESKEW,
@@ -205,6 +227,7 @@ import {
   GROUP_QUICK_TOOLS,
   RIBBON_FLATTEN_FORM,
   RIBBON_FORM_DATA_EXPORT,
+  RIBBON_EXPORT_OFFICE,
   RIBBON_FORM_DATA_IMPORT,
   FORMS_FLATTEN,
   RIBBON_FORM_EXPORT_JSON,
@@ -233,6 +256,7 @@ import {
   TOAST_SIGNED_COPY_SAVED,
   TOAST_SNAPSHOT_SAVED,
   TOAST_ACTIVE_CONTENT_REMOVED,
+  TOAST_FORM_FLATTENED,
   TOAST_DOCUMENT_SIGNED,
   TOAST_SENT_TO_PRINTER,
   TOAST_TRANSITION_SET,
@@ -243,6 +267,8 @@ import {
   TOAST_SAVED,
   TOAST_SAVED_CLEARED,
   TOAST_SAVED_CLEARED_BACKUPS,
+  TOAST_HELD_COPIES_DELETED,
+  TOAST_NOTHING_MARKED,
   TOAST_SMALLER_COPY_SAVED,
   UNDO_TITLE,
   REDO_TITLE,
@@ -253,9 +279,11 @@ import {
 import type { IconName } from '../primitives/icons.js';
 import { type CommandContext, RESULT_DIALOG, targetPages, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { Placement } from '../registries/placement.js';
-import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
+import type { PanelPresence } from '../panelPresence.js';
+import { DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShowToast } from '../toasts.js';
+import { countPendingRedactions } from './redactionMarks.js';
 import { readWholeList } from '../readWholeList.js';
 import { confirmDone, confirmWritten } from './confirmWritten.js';
 import type { ZoomDirection, ZoomMode } from '../zoom.js';
@@ -360,6 +388,21 @@ export interface DocumentCommandDeps {
    * the send's and not the moment this bag was built.
    */
   readonly stamp: () => AnnotationStamp;
+  /**
+   * What an edit that would break the document's signatures needs
+   * ([ADR-0149](../../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)).
+   * REQUIRED, because every command goes through {@link applyDocumentCommand} and any of them may be the one: a bag
+   * built without it would turn *Work on a copy* into a choice that opens nothing.
+   */
+  readonly signatures: SignedEditing;
+}
+
+/** See {@link DocumentCommandDeps.signatures}. */
+export interface SignedEditing {
+  /** Whether a change that would break a signature asks first: the save's switch, `saving.warn-signature-break`. */
+  readonly warn: () => boolean;
+  /** Adds the copy an edit was made on as a tab, as an open does. */
+  readonly onOpened: (document: OpenedDocument) => void;
 }
 
 /**
@@ -566,13 +609,38 @@ export async function applyDocumentCommand(
 ): Promise<boolean> {
   // PAGES AS RUNS (decision D), here where every command leaves the renderer, so no surface has to remember: a
   // selection of ten thousand pages in one stretch crosses as one entry, and every command fits a host's frame.
-  const answer = await deps.client['document.execute']({ docId, command: withPageRuns(withStamp(command, deps.stamp())) });
+  const sent = withPageRuns(withStamp(command, deps.stamp()));
+  let answer = await deps.client['document.execute']({ docId, command: sent });
+
+  // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE IT CHANGES (ADR-0149): main answered without touching it. *Change this
+  // document* sends the same command again, stamp and all, agreed; *Work on a copy* sends it to a copy; Cancel, or a
+  // dismissed picker on the way to a copy, leaves the document as it was and lets the caller keep what was typed.
+  if (!answer.ok && answer.error.code === 'breaks-signatures') {
+    const asked = deps.signatures.warn()
+      ? SIGNED_EDIT_RESULT.safeParse(await deps.ask(SIGNED_EDIT_DIALOG_ID, {}))
+      : ({ success: true, data: 'this' } as const);
+    if (asked.success && asked.data === 'this') {
+      answer = await deps.client['document.execute']({ docId, command: sent, breakSignatures: true });
+    } else {
+      if (!asked.success || !(await editOnCopy(deps, docId, sent))) options.keep?.(answer.error);
+      return false;
+    }
+  }
 
   // A DECLARED FAILURE IS AN OUTCOME AND CHANGES NOTHING — see
   // `rotatePageCommand`, whose comment this behaviour was extracted from. It is
   // still REPORTED: a refusal nobody renders is a control that did nothing.
   if (!answer.ok) {
-    if (options.keep?.(answer.error) !== true) reportProblem(deps, answer.error);
+    // AGREED, main applies rather than asking (`DocumentCommands.execute`), so a second question is a defect of main's
+    // and not a refusal a person could act on.
+    const failure = answer.error;
+    if (failure.code === 'breaks-signatures') throw new Error('main asked again about an edit sent agreed');
+    // REBUILT ONLY TO DROP THAT CODE FROM THE TYPE, and a failure that carries something passes whole so it reaches the
+    // dialog: `internal` its incident, a code with a declared detail its detail (ADR-0169). Asked of the failure rather
+    // than by naming the codes, so a code that gains a detail needs no edit here.
+    if (options.keep?.(failure) !== true) {
+      reportProblem(deps, 'detail' in failure || failure.code === 'internal' ? failure : { code: failure.code });
+    }
     return false;
   }
   deps.onApplied(answer.value);
@@ -583,6 +651,58 @@ export async function applyDocumentCommand(
     void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
   }
   return true;
+}
+
+/**
+ * *Work on a copy*: main writes a copy where the person chooses, opens it and makes the edit there, and the signed
+ * document is not touched (ADR-0149 Decision 5).
+ *
+ * @returns whether a copy is open for the edit. `false` is none — the picker dismissed, or the write or the open
+ * refused, each said here but the dismissal — so the caller may keep what the person typed, which went nowhere.
+ */
+async function editOnCopy(deps: DocumentCommandDeps, docId: DocId, command: RenderableCommand): Promise<boolean> {
+  const answer = await deps.client['document.editCopy']({ docId, command });
+  if (!answer.ok) {
+    reportProblem(deps, answer.error);
+    return false;
+  }
+  const outcome = answer.value;
+  switch (outcome.kind) {
+    case 'edited':
+    case 'edit-refused': {
+      deps.signatures.onOpened({
+        docId: outcome.docId,
+        version: outcome.version,
+        byteLength: outcome.byteLength,
+        name: outcome.name,
+      });
+      // THE COPY IS OPEN EITHER WAY, and a refusal of the edit there is said over it: the file is where the person
+      // put it, unchanged, and closing its tab is theirs.
+      if (outcome.kind === 'edit-refused') reportProblem(deps, outcome.problem);
+      else if (outcome.historyDropped > 0) void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: outcome.historyDropped });
+      return true;
+    }
+    case 'cancelled':
+      return false;
+    case 'destination-contested':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'contested' });
+      return false;
+    case 'write-failed':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
+      return false;
+    case 'absent':
+      reportProblem(deps, { code: 'copy-absent' });
+      return false;
+    case 'at-capacity':
+      reportProblem(deps, { code: 'copy-at-capacity' });
+      return false;
+    case 'busy':
+      reportProblem(deps, { code: 'copy-busy' });
+      return false;
+    case 'denied':
+      reportProblem(deps, { code: 'copy-denied' });
+      return false;
+  }
 }
 
 /**
@@ -820,6 +940,8 @@ export function zoomCommand(direction: 'in' | 'out', deps: StepDeps): UiCommand 
     // THE PLUS KEY TOO (ADR-0111): Ctrl+plus sign on a US keyboard is Ctrl+Shift+=, and on a German or Nordic one the
     // plus key is its own key, as the numpad's is. Zoom out needs no second chord — minus is minus on every layout.
     ...(direction === 'in' ? { alsoShortcuts: ['Ctrl+Plus', 'Ctrl+Shift+Plus'] } : {}),
+    // A STEP, so a held key zooms on.
+    repeats: true,
     placements: [
       // ON BOTH, and this is one of the six §10.3 names for the floating pill —
       // "the always-needed tools (select, hand, text selection, zoom in/out,
@@ -912,11 +1034,12 @@ export function actualSizeCommand(deps: ZoomDeps): UiCommand {
 /**
  * Shows §10.3's Search panel — the one route to it, taken by *Find* and by the selected-text menu's
  * *Search*. The panel settings are the one owner of which panel shows, so a second spelling of
- * these two lines would be a second opinion about how the Search panel is opened.
+ * these two lines would be a second opinion about how the Search panel is opened. The panel is
+ * SHOWN rather than its setting written, so a narrow row draws it as a sheet (ADR-0146).
  */
-export function showSearchPanel(settings: SettingsStore): void {
-  settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, true);
+export function showSearchPanel(settings: SettingsStore, presence: PanelPresence): void {
   settings.set(DOCUMENT_PANEL_SETTING.id, 'search');
+  presence.show('start');
 }
 
 /**
@@ -929,7 +1052,7 @@ export function showSearchPanel(settings: SettingsStore): void {
  * only from the panel's own tabs: a person on the Comment or Forms ribbon had no control there
  * that led to them. The setting is the one owner of which panel shows, as `showSearchPanel`'s is.
  */
-export function showPanelCommand(deps: { readonly settings: SettingsStore }, panel: DocumentPanelTab): UiCommand {
+export function showPanelCommand(deps: PanelDeps, panel: DocumentPanelTab): UiCommand {
   const shown = SHOWN_PANELS[panel];
   return {
     id: shown.id,
@@ -942,14 +1065,27 @@ export function showPanelCommand(deps: { readonly settings: SettingsStore }, pan
       { surface: 'menu-bar', menu: 'window', group: 0, order: shown.order, caption: MENU_GROUP_PANELS },
     ],
     when: hasDocument,
-    // ON while the panel is open ON this tab — the two settings together are what is on screen.
-    checked: () =>
-      deps.settings.get(DOCUMENT_PANEL_OPEN_SETTING.id) === true && deps.settings.get(DOCUMENT_PANEL_SETTING.id) === panel,
+    // ON while the panel is ON SCREEN on this tab — in the row or as its sheet (ADR-0146), with this tab chosen.
+    checked: () => deps.presence.shown('start') && deps.settings.get(DOCUMENT_PANEL_SETTING.id) === panel,
     run: (): void => {
-      deps.settings.set(DOCUMENT_PANEL_OPEN_SETTING.id, true);
-      deps.settings.set(DOCUMENT_PANEL_SETTING.id, panel);
+      showDocumentPanel(deps, panel);
     },
   };
+}
+
+/** What showing a document-panel tab needs: the setting naming the tab, and the panel's presence. */
+export interface PanelDeps {
+  readonly settings: SettingsStore;
+  readonly presence: PanelPresence;
+}
+
+/**
+ * Shows one tab of the document panel: chosen, and the panel on screen. The one way it is done, for the tab commands and
+ * for a command whose result is read in a tab — Import page as layer opens Layers.
+ */
+export function showDocumentPanel(deps: PanelDeps, panel: DocumentPanelTab): void {
+  deps.settings.set(DOCUMENT_PANEL_SETTING.id, panel);
+  deps.presence.show('start');
 }
 
 /** Which tab of the document panel a command shows — the setting's own values. */
@@ -1030,7 +1166,7 @@ export function movePageCommand(deps: DocumentCommandDeps, direction: 'earlier' 
   };
 }
 
-export function findCommand(deps: { readonly settings: SettingsStore }): UiCommand {
+export function findCommand(deps: { readonly settings: SettingsStore; readonly presence: PanelPresence }): UiCommand {
   return {
     id: 'document.find',
     feedback: VISIBLE,
@@ -1049,7 +1185,7 @@ export function findCommand(deps: { readonly settings: SettingsStore }): UiComma
       // THE SEARCH PANEL FIRST. Since design pass C the find field lives in §10.3's
       // Search panel, one panel at a time, so with another panel showing there is no
       // field to focus. The setting is the one owner of which panel shows.
-      showSearchPanel(deps.settings);
+      showSearchPanel(deps.settings, deps.presence);
       // AFTER THE RENDER the setting causes: `set` notifies synchronously and React
       // renders the panel on its next commit, so the field exists one frame later.
       requestAnimationFrame(() => {
@@ -1080,10 +1216,10 @@ export function findCommand(deps: { readonly settings: SettingsStore }): UiComma
  * together where the single one was.
  */
 const ROTATIONS = {
-  // ONE QUARTER TURN KEEPS ITS TITLE on the ribbon: *Rotate page* is already two
-  // words, and a caption of *Rotate* beside *Rotate 180°* would read as the
-  // general case rather than as the third member of a set.
-  1: { id: 'document.rotate-page', title: ROTATE_PAGE_TITLE, icon: 'RotateCw', order: 10 },
+  // THE THREE TURNS SIDE BY SIDE, each named by its angle on the ribbon (the owner's item 13f: *Rotate 90°, 180°,
+  // 270°*). The quarter turn keeps *Rotate page* everywhere else — the page menu, the palette, the menu row — where it
+  // stands alone and the angle would be a detail.
+  1: { id: 'document.rotate-page', title: ROTATE_PAGE_TITLE, ribbonTitle: RIBBON_ROTATE_90, icon: 'RotateCw', order: 10 },
   2: {
     id: 'document.rotate-page-180',
     title: ROTATE_PAGE_180_TITLE,
@@ -1113,9 +1249,8 @@ export function rotatePageCommand(
     id,
     feedback: VISIBLE,
     title,
-    // ONE OF THE THREE HAS NO SHORT FORM, so this reads it off the table rather
-    // than spelling it — `in` narrows where a property access on the union does
-    // not, and `exactOptionalPropertyTypes` refuses a bare `undefined` here.
+    // READ OFF THE TABLE rather than spelt here — `in` narrows where a property access on the union does
+    // not, and `exactOptionalPropertyTypes` refuses a bare `undefined`.
     ...('ribbonTitle' in spec ? { ribbonTitle: spec.ribbonTitle } : {}),
     icon,
     // THE TABLE'S OWN `order`, so the three rotations sit in the ribbon in the
@@ -1124,16 +1259,15 @@ export function rotatePageCommand(
     // (the owner's list, 2026-09-19: *rotate*), and the page it rotates is the
     // one right-clicked, because the menu hands that page in as `context.page`.
     //
-    // ORGANIZE › PAGES since the owner's v5 design, where *Rotate* is the second tool. The quarter turn
-    // is that primary; the half and three-quarter turns follow it in its group's More, in the table's
-    // sequence, by an offset from the quarter turn's own number (ADR-0098).
+    // ORGANIZE › ROTATE, a group of its own after Pages (the owner's item 13f): the three turns side by side, all
+    // primary, where they were one primary and two in Pages' More. 24 puts the group after Pages and before Combine at
+    // 30, since a group sits where its earliest member does.
     placements: [
       {
         surface: 'ribbon',
         section: 'organize',
-        group: GROUP_PAGES,
-        order: 12 + (order - ROTATIONS[1].order) / 10,
-        ...(quarterTurns === 1 ? {} : { prominence: 'secondary' as const }),
+        group: GROUP_ROTATE,
+        order: 24 + (order - ROTATIONS[1].order),
       },
       ...(quarterTurns === 1 ? [{ surface: 'context-menu', context: 'page', order: 10 } as const] : []),
     ],
@@ -1181,7 +1315,7 @@ export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
     title: INSERT_BLANK_PAGE_TITLE,
     ribbonTitle: RIBBON_INSERT_BLANK,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 22, prominence: 'secondary' },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 14 },
       { surface: 'context-menu', context: 'page', order: 20 },
     ],
     when: hasDocument,
@@ -1214,7 +1348,7 @@ export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'CopyPlus',
     title: DUPLICATE_PAGE_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 20 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 22 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1264,7 +1398,7 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
     title: DELETE_PAGE_TITLE,
     placements: [
       // SECONDARY: v5-09's *Delete* is the range dialog, which deletes this page too.
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 21, prominence: 'secondary' },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 24, prominence: 'secondary' },
       { surface: 'context-menu', context: 'page', order: 40 },
     ],
     when: hasDocument,
@@ -1321,22 +1455,35 @@ export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
       // THE FIELD STARTS WITH `targetPages` (ADR-0104): the ticked ones in the grid, else the page on show.
       const pages = targetPages(context);
       if (context.docId === undefined || context.pageCount === undefined || pages.length === 0) return;
-      const answer = (await deps.ask(DELETE_PAGES_DIALOG_ID, {
-        pageCount: context.pageCount,
-        pages: [...pages],
-      })) as DeletePagesAnswer | undefined;
-
-      // DISMISSED. Nothing was collected, so nothing is dispatched — and the
-      // document has not been touched, which is why the case that holds this
-      // asserts the CALL that was not made rather than the state.
-      if (answer === undefined) return;
-
-      await applyDocumentCommand(deps, context.docId, {
-        kind: 'deletePages',
-        pages: [...answer.pages],
-      });
+      await askToDeletePages(deps, context.docId, context.pageCount, pages);
     },
   };
+}
+
+/**
+ * Opens the Delete pages dialog with `pages` in its field, and deletes what it answers — or nothing, when it is
+ * dismissed. The one way a page is deleted after asking: this command's, and the page grid's Delete key, which asks
+ * first by the owner's ruling (2026-10-05, CR-COR-06), so a key pressed by mistake costs a Cancel and never a page.
+ */
+export async function askToDeletePages(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  pageCount: number,
+  pages: readonly number[],
+): Promise<void> {
+  const answer = (await deps.ask(DELETE_PAGES_DIALOG_ID, { pageCount, pages: [...pages] })) as
+    | DeletePagesAnswer
+    | undefined;
+
+  // DISMISSED. Nothing was collected, so nothing is dispatched — and the
+  // document has not been touched, which is why the case that holds this
+  // asserts the CALL that was not made rather than the state.
+  if (answer === undefined) return;
+
+  await applyDocumentCommand(deps, docId, {
+    kind: 'deletePages',
+    pages: [...answer.pages],
+  });
 }
 
 /**
@@ -1623,7 +1770,7 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'ImagePlus',
     title: INSERT_IMAGE_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 23, prominence: 'secondary' },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 16 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -1698,8 +1845,7 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
  * one. `insertBlankPageCommand`'s *after the page being read* is the right rule
  * for a page a person is adding to what they are reading, and the wrong one
  * here: a table of contents in the middle of a document is not a placement
- * anybody chose. `pageBackgroundCommand` carries the same shape of decision —
- * a named default now, a control later.
+ * anybody chose.
  */
 export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
   return {
@@ -1733,20 +1879,20 @@ export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
 }
 
 /**
- * Copies another open document's pages into this one.
+ * Copies every page of another document — open, or a file picked from the dialog — into this one, at the start, at
+ * the end, or after a page.
  *
- * ## It APPENDS, and that is what separates this row from *insert from PDF*
+ * ## Every page, and that is what separates this row from *insert from PDF*
  *
- * `at` is the target's page count, so the source's pages land after everything
- * the reader already has. Where they land is not a question this dialog asks —
- * *insert from PDF* is the row whose whole point is an index, and giving both
- * commands a position control would make them the same feature twice.
+ * *Combine these documents* takes each whole; *put these pages here* is the
+ * row that chooses pages. Both are `mergeDocument`. The position the owner asked
+ * for (item 13d) is the three places a whole document goes, *at the end* first.
  *
- * ## The choices come from the CONTEXT, filtered here
+ * ## The choices come from the CONTEXT, filtered by `askAboutSource`
  *
  * `context.openDocuments` is `App.tsx`'s `tabs`, the list the compare picker
  * already takes. It includes the focused document by design, so the filter is
- * this command's — the dialog receives a list that never contains the target,
+ * the command's — the dialog receives a list that never contains the target,
  * which is what makes *merge a document into itself* unrepresentable rather
  * than refused.
  *
@@ -1754,11 +1900,10 @@ export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
  *
  * `when` is `hasDocument` rather than *has a second document*. Hiding merge
  * whenever one document is open makes it undiscoverable in exactly the state a
- * reader is in when they want it, and ADR-0040 Decision 2 means they have to
- * learn that the other file is opened first. A control that is not there
- * teaches nothing.
+ * reader is in when they want it; the dialog opens and says so beside
+ * *Choose file…*.
  */
-export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
+export function mergeDocumentCommand(deps: SourceCommandDeps): UiCommand {
   return {
     id: 'document.merge',
     feedback: VISIBLE,
@@ -1770,59 +1915,51 @@ export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.pageCount === undefined) return;
+      const target = context.docId;
+      const { pageCount } = context;
+      if (target === undefined || pageCount === undefined) return;
 
-      const choices = context.openDocuments
-        .filter((document) => document.docId !== context.docId)
-        // NO CAST ON THE WAY OUT. `DocId` is a branded string, so it satisfies
-        // the dialog's `z.string()` props without one — the brand is only in
-        // the way coming back, where `mergeDocumentSchema` re-applies it.
-        .map((document) => ({ docId: document.docId, name: document.name }));
+      // NO CAST ON THE WAY OUT. `DocId` is a branded string, so it satisfies
+      // the dialog's `z.string()` props without one — the brand is only in
+      // the way coming back, where `mergeDocumentSchema` re-applies it.
+      const asked = await askAboutSource(
+        deps,
+        context,
+        target,
+        (choices, source, draft) => deps.ask(MERGE_DOCUMENT_DIALOG_ID, { choices, source, pageCount, draft }),
+        (answered) => MERGE_DOCUMENT_RESULT.safeParse(answered).data,
+      );
+      if (asked === undefined) return;
 
-      if (choices.length === 0) {
-        void deps.ask(MERGE_DOCUMENT_NONE_DIALOG_ID, {});
-        return;
-      }
-
-      const answer = (await deps.ask(MERGE_DOCUMENT_DIALOG_ID, { choices })) as
-        | MergeDocumentAnswer
-        | undefined;
-      if (answer === undefined) return;
-
-      await applyDocumentCommand(deps, context.docId, {
+      await applyDocumentCommand(deps, target, {
         kind: 'mergeDocument',
-        // THE SCHEMA BRANDS IT. The dialog answers a plain string because a
-        // dialog result is renderer-side text until a command builds a payload,
-        // and `mergeDocumentSchema`'s `docIdSchema` is the one place that
-        // transform happens (B3a).
-        source: answer.source as DocId,
-        // APPENDS. See the note above — the position is the target's own
-        // length, read from the context rather than fetched, for the reason
-        // `pageCount` is in the context at all.
-        at: context.pageCount,
+        // ONE COMMAND FOR EVERY DOCUMENT, in the person's order (ADR-0152), and EVERY PAGE of each: choosing some is
+        // Insert from PDF's question. THE SCHEMA BRANDS EACH ID. The dialog answers plain strings because a dialog
+        // result is renderer-side text until a command builds a payload, and `mergeDocumentSchema`'s `docIdSchema` is
+        // the one place that transform happens (B3a).
+        documents: asked.answer.documents.map((source) => ({ source: source as DocId, sourcePages: 'all' as const })),
+        // ALREADY ZERO-BASED, converted once in the dialog.
+        at: asked.answer.at,
       });
     },
   };
 }
 
 /**
- * Inserts another open document's pages at a chosen position.
+ * Inserts chosen pages of another document — open, or a file picked from the dialog — before or after a page.
  *
  * ## The SAME command as merge, and that is the point
  *
- * `mergeDocument` with a position the reader picks instead of the target's
- * length. A second command kind would be one operation declared twice, with two
- * grafts to keep in step; `openDocument.ts` states the shape — *"one
- * implementation with two triggers, which is not a second wiring place."*
+ * `mergeDocument` with a position the reader picks. A second command kind would
+ * be one operation declared twice, with two grafts to keep in step;
+ * `openDocument.ts` states the shape — *"one implementation with two triggers,
+ * which is not a second wiring place."* The source's pages are the same field
+ * on both (`sourcePagesSchema`).
  *
  * The two surfaces exist because the intents differ: *combine these* and *put
- * this here* are different things to ask for, and collapsing them into one
- * control with a position field would make the common case cost a decision.
- *
- * What is NOT built and would earn its own kind is *insert selected pages* —
- * see the dialog's header for why the renderer cannot bound that today.
+ * these pages here* are different things to ask for.
  */
-export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
+export function insertFromPdfCommand(deps: SourceCommandDeps): UiCommand {
   return {
     id: 'document.insert-from-pdf',
     feedback: VISIBLE,
@@ -1831,92 +1968,85 @@ export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
     ribbonTitle: RIBBON_INSERT_FROM_PDF,
     placements: [
       // v5-09's *Insert*: pages from another PDF. A blank page and an image are its secondaries.
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 14 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 12 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.pageCount === undefined) return;
+      const target = context.docId;
+      const { pageCount, page } = context;
+      if (target === undefined || pageCount === undefined || page === undefined) return;
 
-      const choices = context.openDocuments
-        .filter((document) => document.docId !== context.docId)
-        .map((document) => ({ docId: document.docId, name: document.name }));
+      const asked = await askAboutSource(
+        deps,
+        context,
+        target,
+        (choices, source, draft) => deps.ask(INSERT_FROM_PDF_DIALOG_ID, { choices, source, pageCount, page, draft }),
+        (answered) => INSERT_FROM_PDF_RESULT.safeParse(answered).data,
+      );
+      if (asked === undefined) return;
 
-      if (choices.length === 0) {
-        void deps.ask(MERGE_DOCUMENT_NONE_DIALOG_ID, {});
-        return;
-      }
-
-      const answer = (await deps.ask(INSERT_FROM_PDF_DIALOG_ID, {
-        choices,
-        pageCount: context.pageCount,
-      })) as InsertFromPdfAnswer | undefined;
-      if (answer === undefined) return;
-
-      await applyDocumentCommand(deps, context.docId, {
+      await applyDocumentCommand(deps, target, {
         kind: 'mergeDocument',
-        source: answer.source as DocId,
+        documents: [{ source: asked.answer.source as DocId, sourcePages: asked.answer.sourcePages }],
         // ALREADY ZERO-BASED. The dialog performed the one conversion, which is
         // `pageNumbering.ts`' rule — a command that subtracted one here would be
         // the second place that arithmetic lives.
-        at: answer.at,
+        at: asked.answer.at,
       });
     },
   };
 }
 
 /**
- * Replaces the page on screen with another open document's pages.
+ * Replaces the pages it acts on with chosen pages of another document — open, or a file picked from the dialog.
  *
  * ## Its OWN command kind, where insert-from-PDF is a second surface
  *
  * The distinction is what the operation does rather than what it is called: a
- * replace **destroys a page**, and merge does not. Composing it from
+ * replace **destroys pages**, and merge does not. Composing it from
  * `deletePages` plus `mergeDocument` would put two entries in the log, so one
  * action would take two undos and the document could rest between them with a
  * page gone and nothing in its place.
  *
- * ## The page is `context.page`, not a field
+ * ## The pages are `targetPages`', not a field
  *
- * `duplicatePageCommand`'s position — *the page on screen* is what a toolbar
- * control means. The dialog states which page rather than asking, because a
- * control that destroys a page must let the reader check it is the right one.
+ * The ticked pages, else the page on show (ADR-0104). The dialog states which
+ * rather than asking, because a control that destroys pages must let the reader
+ * check they are the right ones.
  */
-export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
+export function replacePageCommand(deps: SourceCommandDeps): UiCommand {
   return {
     id: 'document.replace-page',
     feedback: VISIBLE,
     icon: 'Replace',
     title: REPLACE_PAGE_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 18 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 20 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
-
-      const choices = context.openDocuments
-        .filter((document) => document.docId !== context.docId)
-        .map((document) => ({ docId: document.docId, name: document.name }));
-
-      if (choices.length === 0) {
-        void deps.ask(MERGE_DOCUMENT_NONE_DIALOG_ID, {});
-        return;
-      }
-
-      const answer = (await deps.ask(REPLACE_PAGE_DIALOG_ID, {
-        choices,
-        page: context.page,
-      })) as ReplacePageAnswer | undefined;
-      if (answer === undefined) return;
-
-      // THE VERSION `context.page` WAS READ AT, so a page inserted or moved while the
+      const target = context.docId;
+      const pages = targetPages(context);
+      // THE VERSION THE PAGES WERE READ AT, so a page inserted or moved while the
       // dialog was up is refused by the bus rather than replacing the page that took
-      // this index. Present exactly when `docId` is.
-      if (context.version === undefined) return;
-      await applyDocumentCommand(deps, context.docId, {
+      // its index. Present exactly when `docId` is.
+      if (target === undefined || context.version === undefined || pages.length === 0) return;
+
+      const asked = await askAboutSource(
+        deps,
+        context,
+        target,
+        (choices, source, draft) => deps.ask(REPLACE_PAGE_DIALOG_ID, { choices, source, pages: [...pages], draft }),
+        (answered) => REPLACE_PAGE_RESULT.safeParse(answered).data,
+      );
+      if (asked === undefined) return;
+
+      await applyDocumentCommand(deps, target, {
         kind: 'replacePage',
-        source: answer.source as DocId,
-        at: context.page,
+        // THE SCHEMA BRANDS IT, `mergeDocumentCommand`'s note.
+        source: asked.answer.source as DocId,
+        pages: [...pages],
+        sourcePages: asked.answer.sourcePages,
         version: context.version,
       });
     },
@@ -1924,8 +2054,9 @@ export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
 }
 
 /**
- * Places another open document's first page on the page on screen, as a layer
- * ([ADR-0064](../../../../docs/DECISIONS/0064-a-page-imported-as-a-layer-is-mupdfs-because-the-layer-is.md)).
+ * Lays a chosen page of another document — open, or a file picked from the dialog — over a page of this one, as a
+ * layer ([ADR-0064](../../../../docs/DECISIONS/0064-a-page-imported-as-a-layer-is-mupdfs-because-the-layer-is.md)),
+ * then shows the Layers tab, where the new layer is the row a person hides it by.
  *
  * ## The layer's NAME is the chosen tab's, read from the choice offered
  *
@@ -1933,12 +2064,14 @@ export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
  * tab names. It is looked up from `choices` by the id the dialog answered, never taken
  * from the dialog, so a name that was not a tab's cannot reach the payload.
  *
- * ## The page is `context.page`, and its version travels with it
+ * ## The page is `targetPages`' first, and its version travels with it
  *
- * `replacePageCommand`'s reason: a page inserted or moved while the dialog is up would put
- * the layer on another page, so the bus refuses a stale version.
+ * The selected page, else the page on show (ADR-0104); a layer goes on one page, so of
+ * several ticked the first is the one, and the dialog's sentence names it.
+ * `replacePageCommand`'s reason for the version: a page inserted or moved while the dialog
+ * is up would put the layer on another page, so the bus refuses a stale version.
  */
-export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
+export function importPageAsLayerCommand(deps: SourceCommandDeps & PanelDeps): UiCommand {
   return {
     id: 'document.import-page-as-layer',
     feedback: VISIBLE,
@@ -1950,44 +2083,41 @@ export function importPageAsLayerCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
+      const target = context.docId;
+      const [page] = [...targetPages(context)].sort((a, b) => a - b);
+      if (target === undefined || page === undefined || context.version === undefined) return;
 
-      const choices = context.openDocuments
-        .filter((document) => document.docId !== context.docId)
-        .map((document) => ({ docId: document.docId, name: document.name }));
+      const asked = await askAboutSource(
+        deps,
+        context,
+        target,
+        (choices, source, draft) => deps.ask(IMPORT_PAGE_AS_LAYER_DIALOG_ID, { choices, source, page, draft }),
+        (answered) => IMPORT_PAGE_AS_LAYER_RESULT.safeParse(answered).data,
+      );
+      if (asked === undefined) return;
 
-      if (choices.length === 0) {
-        void deps.ask(MERGE_DOCUMENT_NONE_DIALOG_ID, {});
-        return;
-      }
-
-      const answer = (await deps.ask(IMPORT_PAGE_AS_LAYER_DIALOG_ID, {
-        choices,
-        page: context.page,
-      })) as ImportPageAsLayerAnswer | undefined;
-      if (answer === undefined) return;
-
-      const chosen = choices.find((choice) => choice.docId === answer.source);
-      if (chosen === undefined || context.version === undefined) return;
-      await applyDocumentCommand(deps, context.docId, {
+      const chosen = asked.choices.find((choice) => choice.docId === asked.answer.source);
+      if (chosen === undefined) return;
+      const applied = await applyDocumentCommand(deps, target, {
         kind: 'importPageAsLayer',
-        source: chosen.docId,
+        source: chosen.docId as DocId,
+        sourcePage: asked.answer.sourcePage,
         name: chosen.name,
-        at: context.page,
+        at: page,
         version: context.version,
       });
+      // THE LAYER IS READ IN ITS TAB: shown once it exists, and not for a refusal, which says itself.
+      if (applied) showDocumentPanel(deps, 'layers');
     },
   };
 }
 
 /**
- * Fills pages with a background colour.
+ * Fills pages with a background colour the person chose.
  *
- * No dialog of its own yet: the colour is the one the style controls will own
- * (Stage 3), so this command carries the neutral page tint every application
- * offers as its default and the picker arrives with the shared surface. That is
- * the same reason `watermarkPages` carries no colour — one place decides what a
- * colour control looks like, rather than four dialogs each inventing one.
+ * The dialog offers paper tints through the application's one colour control (`ColourChoice.tsx`, the Properties
+ * tab's too) and the shared page scope. It starts on a cream strong enough to see on a white page, because a default
+ * nobody can see on screen reads as a command that did nothing. A dismissal sends nothing.
  */
 export function pageBackgroundCommand(deps: DocumentCommandDeps): UiCommand {
   return {
@@ -2001,27 +2131,22 @@ export function pageBackgroundCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
+      // THE PAGES ARE `targetPages`' (ADR-0104), for the scope's first choice: the ticked ones, else the page on show.
+      const pages = targetPages(context);
+      if (context.docId === undefined || pages.length === 0) return;
+      const answer = PAGE_BACKGROUND_RESULT.safeParse(await deps.ask(PAGE_BACKGROUND_DIALOG_ID, { pages: [...pages] }));
+      if (!answer.success) return;
+      const { pages: chosen, red, green, blue } = answer.data;
       await applyDocumentCommand(deps, context.docId, {
         kind: 'setPageBackground',
-        pages: 'all',
-        // THE VALUES ARE NAMED, not spelt at the call site, so the day the
-        // style controls supply a colour there is one thing to replace rather
-        // than three numbers to find.
-        ...DEFAULT_PAGE_BACKGROUND,
+        pages: chosen === 'all' ? 'all' : [...chosen],
+        red,
+        green,
+        blue,
       });
     },
   };
 }
-
-/**
- * The tint a background is filled with until Stage 3's style controls exist.
- *
- * A warm off-white, which is what every reader offers as its paper default —
- * and **not** a design token: §10.2's rule is about components, and this is
- * content written into a document another application will open.
- */
-const DEFAULT_PAGE_BACKGROUND = { red: 0.98, green: 0.97, blue: 0.94 } as const;
 
 export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
@@ -2126,6 +2251,8 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
     icon: 'Undo2',
     title: UNDO_TITLE,
     shortcut: 'Ctrl+Z',
+    // ONE STEP BACK per repeat, as every editor's held Ctrl+Z.
+    repeats: true,
     placements: [
       // IN FILE, as v5-02 draws Open · Save · Print · Undo · Redo in one group.
       { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 24 },
@@ -2165,6 +2292,7 @@ export function redoCommand(deps: DocumentCommandDeps): UiCommand {
     shortcut: 'Ctrl+Y',
     // THE OTHER REDO a person's hands know (ADR-0111), from nearly every editor that is not Windows' own.
     alsoShortcuts: ['Ctrl+Shift+Z'],
+    repeats: true,
     placements: [
       { surface: 'ribbon', section: 'home', group: GROUP_FILE, order: 26 },
       { surface: 'menu-bar', menu: 'edit', group: 0, order: 20 },
@@ -2329,6 +2457,7 @@ export function openSideBySideCommand(deps: {
     id: 'document.open-side-by-side',
     feedback: VISIBLE,
     title: OPEN_SIDE_BY_SIDE_TITLE,
+    icon: 'Columns2',
     placements: [{ surface: 'context-menu', context: 'tab', order: 30 }],
     when: (context) => context.docId !== undefined && context.docId !== deps.focused(),
     run: (context): void => {
@@ -2433,6 +2562,9 @@ export async function saveDocument(
     if (attendance === 'attended' && cleared !== null && cleared.kept.length > 0) {
       await deps.ask(KEPT_BACKUPS_DIALOG_ID, { kept: cleared.kept });
     }
+    // A COPY ANOTHER PROGRAM HELD still holds what was removed (CR-DOC-10). Asked of a person only: an autosave says
+    // nothing, and the next save tries the copy again on its own.
+    if (attendance === 'attended' && answer.value.held.length > 0) await askAboutHeldCopies(deps, docId, answer.value.held);
     return true;
   }
   // NOT REACHABLE from a save that said `breakSignatures: true`, and narrowed rather than cast: an answer this
@@ -2443,9 +2575,50 @@ export async function saveDocument(
   // takes one enum, so its body switches once and a sixth outcome is a
   // compile error rather than a branch that renders nothing.
   void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
-    outcome: answer.value.kind === 'write-failed' ? 'write-failed' : answer.value.reason,
+    outcome: answer.value.kind === 'write-failed' ? SAVE_WRITE_OUTCOME[answer.value.cause] : answer.value.reason,
   });
   return false;
+}
+
+/**
+ * The save-problem outcome for each cause a save to the document's own file was not written (cloud-4 7b). A `Record`,
+ * so a cause the contract gains is a compile error here until it has a sentence.
+ */
+const SAVE_WRITE_OUTCOME = {
+  'read-only': 'write-read-only',
+  held: 'write-held',
+  'folder-read-only': 'write-folder-read-only',
+  'disk-full': 'write-disk-full',
+  unknown: 'write-failed',
+} as const satisfies Readonly<Record<SaveWriteCause, string>>;
+
+/**
+ * Names the older copies a save could not delete and offers to try again (CR-DOC-10): `main` deletes, on
+ * `document.deleteHeldCopies`, only the copies it owes, so the dialog sends nothing but the document. A copy still held
+ * opens the same dialog saying so; none left ends in a toast. Closing keeps them, and the next save tries again.
+ */
+async function askAboutHeldCopies(
+  deps: Pick<DocumentCommandDeps, 'ask' | 'client'> & { readonly toast: ShowToast },
+  docId: DocId,
+  first: readonly string[],
+): Promise<void> {
+  let held = first;
+  let still = false;
+  for (;;) {
+    const asked = HELD_COPIES_RESULT.safeParse(await deps.ask(HELD_COPIES_DIALOG_ID, { held, still }));
+    if (!asked.success) return;
+    const retried = await deps.client['document.deleteHeldCopies']({ docId });
+    if (!retried.ok) {
+      reportProblem(deps, retried.error);
+      return;
+    }
+    if (retried.value.held.length === 0) {
+      deps.toast('done', TOAST_HELD_COPIES_DELETED);
+      return;
+    }
+    held = retried.value.held;
+    still = true;
+  }
 }
 
 /**
@@ -2500,7 +2673,7 @@ export function extractPagesCommand(deps: DocumentCommandDeps & WritesAFile & Se
     icon: 'FileOutput',
     title: EXTRACT_PAGES_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 16 },
+      { surface: 'ribbon', section: 'organize', group: GROUP_PAGES, order: 18 },
       { surface: 'context-menu', context: 'page', order: 30 },
     ],
     when: hasDocument,
@@ -2601,10 +2774,8 @@ export function splitDocumentCommand(deps: DocumentCommandDeps & WritesAFile & S
 }
 
 /**
- * Writes the document's text to a plain-text file the user picks.
- *
- * **No dialog of its own**: there is nothing to choose before the save dialog,
- * which main runs. `saveCopyCommand`'s outcomes, because it is the same
+ * Writes the chosen pages' text to a plain-text file the user picks: the pages dialog (ADR-0161), then the save
+ * dialog, which main runs. `saveCopyCommand`'s outcomes, because it is the same
  * single-file destination path — `copied` confirms, `cancelled` says nothing,
  * and the two failures reach the save problem dialog.
  */
@@ -2665,21 +2836,29 @@ export function exportWordCommand(
     title: EXPORT_WORD_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_WORD,
     placements: [
-      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 302 },
+      // ONE "EXPORT" BUTTON ON HOME for the three Office formats (the owner's answer, cloud-4 item 9c), so at 1280 the
+      // Quick tools keep Comment and Signature on show; Tools › Convert keeps a button each.
+      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 302, menu: RIBBON_EXPORT_OFFICE },
       { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 110 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
+      if (context.docId === undefined || context.pageCount === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
-      const chosen = (await deps.ask(EXPORT_WORD_DIALOG_ID, {})) as ExportWordAnswer | undefined;
+      const chosen = (await deps.ask(EXPORT_WORD_DIALOG_ID, { pageCount: context.pageCount })) as
+        | ExportWordAnswer
+        | undefined;
       if (chosen === undefined) return;
 
       // AFTER THE MODE, so a dismissed mode dialog recognises nothing (ADR-0118).
       const walked = await recognisedBeforeExport(deps, context);
       if (walked === false) return;
-      const answer = await deps.client['document.exportWord']({ docId: context.docId, mode: chosen.mode });
+      const answer = await deps.client['document.exportWord']({
+        docId: context.docId,
+        mode: chosen.mode,
+        pages: pageSetOf(chosen.pages),
+      });
       await reportRecognisedBeforeExport(deps, walked);
       if (!answer.ok) {
         reportProblem(deps, answer.error);
@@ -2698,10 +2877,8 @@ export function exportWordCommand(
 }
 
 /**
- * Writes the document as a PowerPoint deck, a slide per page (ADR-0072).
- *
- * **No dialog of its own**, `exportTextCommand`'s reason: there is nothing to
- * choose before the save dialog, which main runs.
+ * Writes the chosen pages as a PowerPoint deck, a slide per page (ADR-0072): the pages dialog (ADR-0161), then main's
+ * save dialog and write. A dismissed pages dialog dispatches nothing.
  */
 export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
   return {
@@ -2714,15 +2891,24 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile 
     // BESIDE WORD AND EXCEL, as the owner's review of 0.1.9.0 asked: Home › Export straight after Excel, and Tools ›
     // Convert straight after Excel at the same prominence, which is also its place in the Tools menu.
     placements: [
-      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 305 },
+      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 305, menu: RIBBON_EXPORT_OFFICE },
       { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 125 },
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
+      if (context.docId === undefined || context.pageCount === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
-      const answer = await deps.client['document.exportPowerPoint']({ docId: context.docId });
+      const chosen = (await deps.ask(EXPORT_POWERPOINT_DIALOG_ID, {
+        pageCount: context.pageCount,
+        becomes: 'slides',
+      })) as ExportPagesAnswer | undefined;
+      if (chosen === undefined) return;
+
+      const answer = await deps.client['document.exportPowerPoint']({
+        docId: context.docId,
+        pages: pageSetOf(chosen.pages),
+      });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -2773,7 +2959,7 @@ export function exportExcelCommand(
     title: EXPORT_EXCEL_COMMAND_TITLE,
     ribbonTitle: RIBBON_EXPORT_EXCEL,
     placements: [
-      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 304 },
+      { surface: 'ribbon', section: 'home', group: GROUP_EXPORT, order: 304, menu: RIBBON_EXPORT_OFFICE },
       { surface: 'ribbon', section: 'tools', group: GROUP_CONVERT, order: 120 },
     ],
     when: hasDocument,
@@ -2788,6 +2974,9 @@ export function exportExcelCommand(
       let index = context.page ?? 0;
       let layout: ExportExcelAnswer['layout'] = 'sheet-per-page';
       let engine: ExportExcelAnswer['engine'] = 'automatic';
+      let range: PageRangeStart = { every: true, text: '' };
+      // ASSIGNED ONLY BY THE EXPORT ANSWER, the one way out of the loop that reaches the request.
+      let pages: readonly number[];
       const engines = deps.tableEngines();
       let reviewed: DocVersion | undefined;
       for (;;) {
@@ -2812,13 +3001,18 @@ export function exportExcelCommand(
           engines,
           engine,
           edits: edits.get(index) ?? [],
+          range,
         })) as ExportExcelAnswer | undefined;
         if (chosen === undefined) return;
 
         edits.set(index, chosen.edits);
         layout = chosen.layout;
         engine = chosen.engine;
-        if (chosen.kind === 'export') break;
+        if (chosen.kind === 'export') {
+          pages = chosen.pages;
+          break;
+        }
+        range = chosen.range;
         index = chosen.to;
       }
 
@@ -2827,6 +3021,7 @@ export function exportExcelCommand(
         layout,
         engine,
         version: reviewed,
+        pages: pageSetOf(pages),
         // THE GRID'S EDITS ARE MUPDF'S TABLES', and only the automatic engine writes them.
         edits:
           engine === 'automatic'
@@ -2872,7 +3067,8 @@ export function exportExcelCommand(
  * Writes the document as PDF/A-2b (ADR-0075): main's save dialog and conversion, then —
  * when something was removed to conform — the removals notice, in the converter's words.
  *
- * **No dialog of its own before the save dialog**, `exportPowerPointCommand`'s reason.
+ * **No dialog of its own before the save dialog**: PDF/A is the whole document in an archival form, so there is
+ * nothing to choose before the file.
  */
 export function exportPdfaCommand(
   deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
@@ -3054,14 +3250,21 @@ export function printCommand(
     shortcut: 'Ctrl+P',
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
+      if (context.docId === undefined || context.pageCount === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'print'))) return;
 
       const quality = PRINT_QUALITY_SETTING.schema.parse(deps.settings.get(PRINT_QUALITY_SETTING.id));
-      const chosen = (await deps.ask(PRINT_DIALOG_ID, { dpi: PRINT_QUALITY_DPI[quality] })) as PrintAnswer | undefined;
+      const chosen = (await deps.ask(PRINT_DIALOG_ID, {
+        dpi: PRINT_QUALITY_DPI[quality],
+        pageCount: context.pageCount,
+      })) as PrintAnswer | undefined;
       if (chosen === undefined) return;
 
-      const answer = await deps.client['document.print']({ docId: context.docId, dpi: chosen.dpi });
+      const answer = await deps.client['document.print']({
+        docId: context.docId,
+        dpi: chosen.dpi,
+        pages: pageSetOf(chosen.pages),
+      });
       if (!answer.ok) {
         reportProblem(deps, answer.error);
         return;
@@ -3122,12 +3325,19 @@ async function runTextExport(
   context: CommandContext,
   mode: 'plain' | 'layout',
 ): Promise<void> {
-  if (context.docId === undefined) return;
+  if (context.docId === undefined || context.pageCount === undefined) return;
   if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
+  const chosen = (await deps.ask(mode === 'plain' ? EXPORT_TEXT_DIALOG_ID : EXPORT_LAYOUT_TEXT_DIALOG_ID, {
+    pageCount: context.pageCount,
+    becomes: 'text',
+  })) as ExportPagesAnswer | undefined;
+  if (chosen === undefined) return;
+
+  // AFTER THE PAGES, so a dismissed pages dialog recognises nothing (ADR-0118).
   const walked = await recognisedBeforeExport(deps, context);
   if (walked === false) return;
-  const answer = await deps.client['document.exportText']({ docId: context.docId, mode });
+  const answer = await deps.client['document.exportText']({ docId: context.docId, mode, pages: pageSetOf(chosen.pages) });
   await reportRecognisedBeforeExport(deps, walked);
   if (!answer.ok) {
     reportProblem(deps, answer.error);
@@ -3433,15 +3643,22 @@ export const importFormDataFdfCommand = importFormDataCommand(
  * **Takes no handle**: MuPDF's `bake` acts on the document and names neither a page nor a field, so
  * there is no answer this could be composed against and therefore no version to be refused on.
  * `targets: 'none'` says the same thing from the declaration side. It is one command and one undo.
+ *
+ * **Asked first and confirmed after** (the owner's F-F1). The undo is a checkpoint, which closing the document drops,
+ * and a flatten changes nothing the page shows: each field's appearance is what gets drawn. So the dialog is the only
+ * place a person learns what the control removes, and the toast is the only sign that it ran. Dismissing dispatches
+ * nothing, and a refused flatten says its own problem through {@link applyDocumentCommand} rather than the toast.
  */
-export async function flattenForm(deps: DocumentCommandDeps, docId: DocId): Promise<void> {
-  await applyDocumentCommand(deps, docId, { kind: 'flattenFormFields' });
+export async function flattenForm(deps: DocumentCommandDeps & WritesAFile, docId: DocId): Promise<void> {
+  if (!FLATTEN_FORM_RESULT.safeParse(await deps.ask(FLATTEN_FORM_DIALOG_ID, {})).success) return;
+  if (await applyDocumentCommand(deps, docId, { kind: 'flattenFormFields' })) confirmDone(deps, TOAST_FORM_FLATTENED);
 }
 
-export function flattenFormCommand(deps: DocumentCommandDeps): UiCommand {
+export function flattenFormCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
   return {
     id: 'document.flatten-form',
-    feedback: VISIBLE,
+    // OUT OF SIGHT: a flattened field is drawn from its own appearance, so the page shows nothing new.
+    feedback: TOASTS,
     icon: 'Layers',
     title: FORMS_FLATTEN,
     ribbonTitle: RIBBON_FLATTEN_FORM,
@@ -3677,8 +3894,11 @@ export async function promoteTextOnPage(deps: DocumentCommandDeps, docId: DocId,
 /** One block as `document.textBlocks` answers it. */
 export type TextBlock = ChannelResult<'document.textBlocks'>['blocks'][number];
 
-/** How writing one block ended, as far as the editor over it has to act. */
-export type BlockCommit = 'written' | 'unchanged' | 'not-writable' | 'refused';
+/**
+ * How writing one block ended, as far as the editor over it has to act: written, nothing to write, a signed document
+ * the person chose to leave as it is, or refused with the problem the editor says beside the words.
+ */
+export type BlockCommit = 'written' | 'unchanged' | 'held' | { readonly refused: CommandProblem };
 
 /**
  * Writes one block's new words: `editTextBlock`, through the one dispatcher.
@@ -3697,11 +3917,19 @@ export type BlockCommit = 'written' | 'unchanged' | 'not-writable' | 'refused';
  * `lineText` — the rule the kernel diffs with — so *unchanged* here and there
  * are one opinion.
  *
- * ## `text-not-writable` is the EDITOR's to say
+ * ## EVERY refusal is the EDITOR's to say (ADR-0169 Decision 5)
  *
- * Neither the page's font nor a standard one can carry what was typed (ADR-0097);
- * the editor stays open with the words and says so beside them, where the person
- * can change them. Every other refusal goes where every refusal goes.
+ * The words were typed into the editor, and a dialog over it, closing it as it
+ * went, threw them away: the owner's *preserve, never drop* broken by the one
+ * surface built for typing. So no refusal opens a dialog here. The editor stays
+ * open with the words and says the problem beside them, its characters or its
+ * reference with it; the person changes the words, or Escape puts the page's
+ * text back.
+ *
+ * ## `held`: a signed document the person chose to leave as it is
+ *
+ * The words went nowhere — Cancel on the signatures question, or no copy made
+ * (ADR-0149) — so the editor keeps them rather than closing over what was typed.
  */
 export async function commitTextBlock(
   deps: DocumentCommandDeps,
@@ -3713,8 +3941,8 @@ export async function commitTextBlock(
 ): Promise<BlockCommit> {
   const before = block.lines.map((line) => lineText(line.runs)).join('\n');
   if (text === before) return 'unchanged';
-  /** Set by the hook below when the refusal kept was the font's. */
-  const kept: { unwritable: boolean } = { unwritable: false };
+  /** Set by the hook below to what the editor says: the signatures question left unanswered, or the refusal. */
+  const kept: { outcome: Exclude<BlockCommit, 'written' | 'unchanged'> | undefined } = { outcome: undefined };
   const applied = await applyDocumentCommand(
     deps,
     docId,
@@ -3729,112 +3957,117 @@ export async function commitTextBlock(
     },
     {
       keep: (error) => {
-        kept.unwritable = error.code === 'text-not-writable';
-        return kept.unwritable;
+        // A FAILURE THAT CARRIES SOMETHING passes whole, so the editor can name the characters or show the reference.
+        kept.outcome =
+          error.code === 'breaks-signatures'
+            ? 'held'
+            : { refused: 'detail' in error || error.code === 'internal' ? error : { code: error.code } };
+        return true;
       },
     },
   );
   if (applied) return 'written';
-  return kept.unwritable ? 'not-writable' : 'refused';
+  // UNREACHABLE BY `applyDocumentCommand`'s OWN RULE: a command not applied answered a failure, and the hook kept it.
+  if (kept.outcome === undefined) throw new Error('a block edit was neither applied nor refused');
+  return kept.outcome;
+}
+
+/** Edit object's mode in the tool slot (ADR-0153 Decision 1), Edit text's slot and its reason. */
+export const EDIT_OBJECTS_TOOL_ID = 'edit.objects';
+
+/** Each filter's title — one, since a ribbon menu draws its members by title, as the palette does. */
+const OBJECT_FILTER_TITLES: Readonly<Record<ObjectFilter, MessageKey>> = {
+  all: EDIT_OBJECTS_ALL_TITLE,
+  text: EDIT_OBJECTS_TEXT_TITLE,
+  images: EDIT_OBJECTS_IMAGES_TITLE,
+  shapes: EDIT_OBJECTS_SHAPES_TITLE,
+};
+
+/**
+ * Each filter's glyph, which its menu item draws: one each, since four of one glyph in a menu say nothing about which
+ * objects each outlines. *All* keeps the pencil the menu's button draws, its first member's.
+ */
+const OBJECT_FILTER_ICONS: Readonly<Record<ObjectFilter, IconName>> = {
+  all: 'SquarePen',
+  text: 'Type',
+  images: 'Image',
+  shapes: 'Spline',
+};
+
+/**
+ * Edit object's four filters, one ribbon menu (ADR-0153 Decision 2; ADR-0101).
+ *
+ * Each turns the mode on with its filter, and off again when it is the one already on — Edit text's toggle, per
+ * filter. **The filter is a value beside the slot, not four slot ids**: the slot answers *what does a press on the
+ * page do*, which is the same for all four, and the filter answers *which objects are outlined*.
+ *
+ * The index is never derived in the renderer: `document.pageObjects` answers it, the mode offers it, and a command
+ * sends it at the version the read answered, so `#refuseIfStale` asks whether the document is still the one the
+ * outlines described.
+ */
+export function editObjectsCommands(deps: {
+  readonly activeTool: () => string | undefined;
+  readonly filter: () => ObjectFilter;
+  readonly onEnter: (filter: ObjectFilter | undefined) => void;
+}): readonly UiCommand[] {
+  const on = (filter: ObjectFilter): boolean => deps.activeTool() === EDIT_OBJECTS_TOOL_ID && deps.filter() === filter;
+  return OBJECT_FILTERS.map((filter, at) => ({
+    id: `edit.objects-${filter}`,
+    feedback: VISIBLE,
+    icon: OBJECT_FILTER_ICONS[filter],
+    title: OBJECT_FILTER_TITLES[filter],
+    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 20 + at, menu: RIBBON_EDIT_OBJECT }],
+    when: hasDocument,
+    checked: () => on(filter),
+    run: (): void => {
+      // READ THROUGH THE FUNCTIONS at the press, `editTextCommand`'s rule.
+      deps.onEnter(on(filter) ? undefined : filter);
+    },
+  }));
 }
 
 /**
- * Moves, resizes, recolours or removes one of the page's objects.
- *
- * ## ONE registered command dispatching one of THREE, which is not a second
- * wiring place
- *
- * The three kernel commands have three undo shapes and could not be one; the
- * question they share is *which object*, and asking it once is what stops a
- * person picking the same thing three times. So there is one entry in the
- * registry, one ribbon control, and a dialog whose answer is a discriminated
- * union the `switch` below reads once.
- *
- * Three ribbon buttons would be the alternative, and the registry would accept
- * them — this is a design call rather than a rule, and it is recorded because
- * the opposite call is defensible the day a surface can select an object by
- * clicking it, at which point *which object* is already answered and three
- * verbs on a context menu is the better shape.
- *
- * ## THE INDEX IS NEVER DERIVED HERE
- *
- * `commitTextBlock`'s rule and its reason unchanged: the channel answers the
- * index, the dialog offers it, the dialog returns it, and it is sent. `document.pageObjects` is one of the only two sources of a PDFium index
- * a renderer may use, and the page's structured text is not one of them.
- *
- * ## The VERSION is the READ's
- *
- * All three declare `targets: 'text-object'`, so `#refuseIfStale` asks *is this
- * the document the list described*. A command carrying the shell's current
- * version would answer that question with itself.
+ * One page's objects for Edit object's mode: PDFium's walk of the page's content and the annotation walk's pictures on
+ * that page, at ONE version (ADR-0153 Decision 3). `undefined` when either read was refused, or when the two answered
+ * at different versions — a document that moved between them is read again at the next version, rather than outlined
+ * from two documents at once.
  */
-export function editPageObjectCommand(deps: DocumentCommandDeps): UiCommand {
-  return {
-    id: 'document.edit-page-object',
-    feedback: VISIBLE,
-    icon: 'SquarePen',
-    title: EDIT_PAGE_OBJECT_COMMAND_TITLE,
-    ribbonTitle: RIBBON_EDIT_OBJECT,
-    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 20 }],
-    when: hasDocument,
-    run: async (context): Promise<void> => {
-      if (context.docId === undefined || context.page === undefined) return;
-
-      const { docId, page: shown } = context;
-      // EVERY PART, read whole at one version (ADR-0130): a page drawn one glyph per object is thousands of objects,
-      // and the indices the dialog answers must all belong to one walk of the page.
-      const found = await readWholeList(
-        (from) => deps.client['document.pageObjects']({ docId, page: shown, from }),
-        (part) => part.objects,
-      );
-      if (!found.ok) {
-        reportProblem(deps, found.error);
-        return;
-      }
-
-      const chosen = (await deps.ask(EDIT_PAGE_OBJECT_DIALOG_ID, {
-        objects: found.value.items.map((object) => ({ ...object })),
-        truncated: found.value.last.truncated,
-      })) as EditPageObjectAnswer | undefined;
-      // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate.
-      if (chosen === undefined) return;
-
-      // THE PAGE IS `context.page` AND IS ALREADY ZERO-BASED. `pageNumbering.ts`
-      // is the only place that converts, and there is nothing to convert here.
-      const page = context.page;
-      const version = found.value.version;
-      const command =
-        chosen.action === 'place'
-          ? {
-              kind: 'placePageObject' as const,
-              page,
-              index: chosen.index,
-              moveBy: chosen.moveBy,
-              scaleBy: chosen.scaleBy,
-              version,
-            }
-          : chosen.action === 'recolor'
-            ? {
-                kind: 'recolorPageObjects' as const,
-                page,
-                // ONE ENTRY, because this chooser names one object. The command
-                // carries a list so a person recolouring several things is one
-                // regeneration and one undo; a surface naming one sends a list
-                // of one rather than a different command.
-                indices: [chosen.index],
-                colour: chosen.colour,
-                version,
-              }
-            : {
-                kind: 'deletePageObjects' as const,
-                page,
-                indices: [chosen.index],
-                version,
-              };
-
-      await applyDocumentCommand(deps, context.docId, command);
-    },
-  };
+export async function readPageObjects(
+  client: DocumentCommandDeps['client'],
+  docId: DocId,
+  page: number,
+): Promise<
+  | { readonly ok: true; readonly objects: PageObjects }
+  /** `refused` is the read's own failure, or `undefined` where the document only moved between the two reads. */
+  | { readonly ok: false; readonly refused: Parameters<typeof reportProblem>[1] | undefined }
+> {
+  // EVERY PART, read whole at one version (ADR-0130): a page drawn one glyph per object is thousands of objects.
+  const [content, marks] = await Promise.all([
+    readWholeList(
+      (from) => client['document.pageObjects']({ docId, page, from }),
+      (part) => part.objects,
+    ),
+    readWholeList(
+      (from) => client['document.annotations']({ docId, from }),
+      (part) => part.annotations,
+    ),
+  ]);
+  if (!content.ok) return { ok: false, refused: content.error };
+  if (!marks.ok) return { ok: false, refused: marks.error };
+  if (content.value.version !== marks.value.version) return { ok: false, refused: undefined };
+  const objects: EditableObject[] = content.value.items.map((object) => ({
+    source: 'content',
+    index: object.index,
+    kind: object.kind,
+    box: { x0: object.left, y0: object.bottom, x1: object.right, y1: object.top },
+    fill: object.fill,
+  }));
+  for (const mark of marks.value.items) {
+    // A PICTURE A PERSON PLACED, on this page and drawn in a region: what the content walk cannot see.
+    if (mark.page !== page || mark.pictured !== true || mark.rect === null) continue;
+    objects.push({ source: 'stamp', index: mark.index, kind: 'picture', box: mark.rect, fill: null });
+  }
+  return { ok: true, objects: { version: content.value.version, objects, truncated: content.value.last.truncated || marks.value.last.truncated } };
 }
 
 /**
@@ -3929,9 +4162,11 @@ export async function signDocument(
   // THE SIGNATURE LIBRARY, offered only where a signature is SEEN — a placement. Adding or removing a kept one is an
   // answer, after which the library is read again and the dialog asked again (`SIGN_DOCUMENT_ANSWERS`).
   let answer: SignDocumentAnswer | undefined;
+  let offered: readonly KeptSignature[];
   for (;;) {
     const { kept, release } =
       placement === undefined ? { kept: [], release: (): void => undefined } : await keptEntries(library, 'signature');
+    offered = kept;
     let answered: SignDocumentAnswers | undefined;
     try {
       answered = (await deps.ask(SIGN_DOCUMENT_DIALOG_ID, { placed: placement !== undefined, kept })) as
@@ -3949,6 +4184,18 @@ export async function signDocument(
     else await deps.client['library.remove']({ id: answered.id });
   }
   if (placement !== undefined && answer.mark === undefined) return;
+  // THE LOOK AS IT IS SENT: a kept typed one by its name and face, and a typed name as its outline (ADR-0150). Refused
+  // here, before the certificate is asked for, so a name its face cannot write never costs a passphrase.
+  const chosen = answer.mark === undefined ? undefined : chosenOfKept(answer.mark, offered);
+  let mark: RequestedSignatureMark | undefined;
+  if (chosen !== undefined) {
+    const requested = await requestedMarkOf(chosen);
+    if (requested.kind === 'problem') {
+      void deps.ask(SIGNATURE_PROBLEM_DIALOG_ID, requested.problem);
+      return;
+    }
+    mark = requested.mark;
+  }
 
   const signed = await deps.client['document.sign']({
     docId,
@@ -3959,9 +4206,9 @@ export async function signDocument(
     ...(answer.contactInfo === undefined ? {} : { contactInfo: answer.contactInfo }),
     ...(answer.certify === undefined ? {} : { certify: answer.certify }),
     ...(answer.timestamp === undefined ? {} : { timestamp: answer.timestamp }),
-    ...(placement === undefined || answer.mark === undefined
+    ...(placement === undefined || mark === undefined
       ? {}
-      : { appearance: { page: placement.page, rect: placement.rect, mark: answer.mark } }),
+      : { appearance: { page: placement.page, rect: placement.rect, mark } }),
   });
   if (!signed.ok) {
     reportProblem(deps, signed.error);
@@ -3972,8 +4219,8 @@ export async function signDocument(
     deps.onApplied({ version: signed.value.version, byteLength: signed.value.byteLength });
     // KEPT ONCE IT HAS SIGNED, so a look that failed to sign is not kept as though it had worked. Only a typed or drawn
     // look is kept here; a picture is kept through the library's own picker, and a kept one already is.
-    if (answer.keep === true && (answer.mark?.kind === 'typed' || answer.mark?.kind === 'drawn')) {
-      await deps.client['library.keepSignature']({ mark: answer.mark });
+    if (answer.keep === true && (chosen?.kind === 'typed' || chosen?.kind === 'drawn')) {
+      await deps.client['library.keepSignature']({ mark: chosen });
     }
     // THE TRIM IS TOLD, exactly as `applyDocumentCommand` tells it: the log
     // has a ceiling, and a person whose earliest undo went away finds out
@@ -4184,6 +4431,8 @@ export function applyRedactionsCommand(
      * the next burn-in. Required: a burn-in that skipped the dialog by default would be the unsafe side.
      */
     readonly confirm: () => boolean;
+    /** Where *Nothing is marked for redaction* is said. */
+    readonly toast: ShowToast;
   },
 ): UiCommand {
   return {
@@ -4195,6 +4444,13 @@ export function applyRedactionsCommand(
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;
+      // NOTHING MARKED IS SAID, never offered (F-P1): an Apply with no marks to burn in is a control that does nothing.
+      // Counted from main's own list of the document's annotations, which is what the marks on the pages are drawn
+      // from. A refused read counts nothing and goes on: the burn-in meets the same refusal and reports it.
+      if ((await countPendingRedactions(deps.client, context.docId)) === 0) {
+        deps.toast('problem', TOAST_NOTHING_MARKED);
+        return;
+      }
       // UNASKED ONLY WHEN THE PERSON TURNED THE CONFIRMATION OFF, and then with exactly what the dialog would have
       // started on — this page, never the whole document (`applyRedactionsDefaults`).
       const answer = deps.confirm()

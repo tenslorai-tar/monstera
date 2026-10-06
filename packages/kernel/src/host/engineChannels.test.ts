@@ -1,6 +1,8 @@
-import { ENGINE_ANSWER_FILE_MAX_BYTES, channels } from '@monstera/contract';
+import { ENGINE_ANSWER_FILE_MAX_BYTES, FAILURE_CODE_MAX_CHARS, channels } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
+import { composeChannels } from './composeChannels.js';
+import { pdfiumChannels } from './pdfiumChannels.js';
 import {
   ENGINE_ANNOTATIONS_MAX,
   ENGINE_DESTINATIONS_MAX,
@@ -25,6 +27,17 @@ import {
  */
 const derived = (smallest: number): number => Math.floor(ENGINE_ANSWER_FILE_MAX_BYTES / (smallest + 1) / 100) * 100;
 
+describe('every code a host channel declares fits the wire’s bound (CR-SEC-13)', () => {
+  it('MuPDF’s, PDFium’s and the import host’s, so the bound never refuses a real answer', () => {
+    const failuresOf = (map: Readonly<Record<string, { readonly failures: readonly string[] }>>): string[] =>
+      Object.values(map).flatMap((definition) => [...definition.failures]);
+    const codes = [...failuresOf(engineChannels), ...failuresOf(pdfiumChannels), ...failuresOf(composeChannels)];
+    // THE POSITIVE CONTROL: codes were found, so an empty walk cannot read as "none too long".
+    expect(codes.length).toBeGreaterThan(10);
+    expect(codes.filter((code) => code.length > FAILURE_CODE_MAX_CHARS)).toStrictEqual([]);
+  });
+});
+
 describe('the document-wide lists’ hostile-host bounds', () => {
   it('annotations: the smallest annotation the schema accepts, and the bound it derives', () => {
     // The shortest kind name and blend, every list empty, every nullable null, the one flag `true`.
@@ -47,6 +60,29 @@ describe('the document-wide lists’ hostile-host bounds', () => {
     expect(ENGINE_ANNOTATIONS_MAX).toBe(derived(SMALLEST_ANNOTATION_BYTES));
   });
 
+  it('a PICTURED stamp crosses, and the flag has ONE spelling of no: absent, never false or a key with no value (14g)', () => {
+    const entry = {
+      page: 0,
+      index: 0,
+      rect: null,
+      style: { colour: [], opacity: 1, borderWidth: null },
+      kind: 'stamp',
+      contents: '',
+      authored: true,
+      inReplyTo: null,
+      author: '',
+      created: null,
+      blend: 'normal',
+    };
+    const parses = (annotation: object): boolean =>
+      engineChannels['engine/annotations'].result.safeParse({ annotations: [annotation], truncated: false }).success;
+    expect(parses({ ...entry, pictured: true })).toBe(true);
+    // CONTROL: the strict schema refuses what it does not name, so the acceptance above is the field's own.
+    expect(parses({ ...entry, picture: true })).toBe(false);
+    expect(parses({ ...entry, pictured: false })).toBe(false);
+    expect(parses({ ...entry, pictured: undefined })).toBe(false);
+  });
+
   it('form fields: the smallest field the schema accepts, and the bound it derives', () => {
     const smallest = {
       page: 0,
@@ -57,6 +93,7 @@ describe('the document-wide lists’ hostile-host bounds', () => {
       on: null,
       options: [],
       readOnly: true,
+      multiline: false,
       rect: null,
     };
     const answer = { fields: [smallest], truncated: false };
@@ -124,7 +161,10 @@ describe('a save of a document with more signatures than a list carries', () => 
     expect(300).toBeGreaterThan(ENGINE_SIGNATURES_MAX);
     expect(engineChannels['engine/signatures-kept'].result.safeParse({ signatures: 300, kept: false }).success).toBe(true);
     expect(channels['document.save'].result.safeParse({ kind: 'breaks-signatures', signatures: 300 }).success).toBe(true);
-    // CONTROL: the count is still a count — a fraction or a negative is refused.
-    expect(engineChannels['engine/signatures-kept'].result.safeParse({ signatures: -1, kept: false }).success).toBe(false);
+    // CONTROL: the count is still a count — a fraction or a negative is refused, on both channels.
+    for (const signatures of [-1, 2.5]) {
+      expect(engineChannels['engine/signatures-kept'].result.safeParse({ signatures, kept: false }).success).toBe(false);
+      expect(channels['document.save'].result.safeParse({ kind: 'breaks-signatures', signatures }).success).toBe(false);
+    }
   });
 });

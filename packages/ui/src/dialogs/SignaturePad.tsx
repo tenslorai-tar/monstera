@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { MAX_SIGNATURE_STROKE_POINTS, MAX_SIGNATURE_STROKES } from '@monstera/contract';
-import type { PointerEvent, ReactElement } from 'react';
-import { useRef } from 'react';
+import type { ReactElement } from 'react';
+import { useRef, useState } from 'react';
 
 import { SIGN_DOCUMENT_PAD } from '../messages/en.js';
 
@@ -56,19 +56,35 @@ export function SignaturePad({
   // gesture: pointer moves arrive faster than renders, and a state update per
   // move would read the previous render's array and drop points.
   const drawing = useRef<[number, number][] | null>(null);
+  // AND DRAWN AS IT GROWS (3a, F-S1): the live line is mounted for the gesture and its points written straight onto it
+  // on each move, so what is on screen follows the pointer without a render per move. `livePoints` is the same
+  // stroke in the SVG's own numbers, appended to rather than rebuilt.
+  const [gesture, setGesture] = useState(false);
+  const liveLine = useRef<SVGPolylineElement | null>(null);
+  const livePoints = useRef('');
 
   /** A pointer position in the pad's unit, or `null` when the pad has no width. */
-  const pointOf = (event: PointerEvent<SVGSVGElement>): [number, number] | null => {
-    const box = event.currentTarget.getBoundingClientRect();
+  const pointAt = (box: DOMRect, clientX: number, clientY: number): [number, number] | null => {
     if (box.width <= 0) return null;
-    const across = (event.clientX - box.left) / box.width;
-    const down = (event.clientY - box.top) / box.width;
+    const across = (clientX - box.left) / box.width;
+    const down = (clientY - box.top) / box.width;
     return [Math.min(1, Math.max(0, across)), Math.min(1, Math.max(0, down))];
+  };
+
+  const add = (point: [number, number]): void => {
+    const stroke = drawing.current;
+    if (stroke === null || stroke.length >= MAX_SIGNATURE_STROKE_POINTS) return;
+    stroke.push(point);
+    const shown = `${String(point[0] * VIEW_WIDTH)},${String(point[1] * VIEW_WIDTH)}`;
+    livePoints.current = livePoints.current === '' ? shown : `${livePoints.current} ${shown}`;
+    liveLine.current?.setAttribute('points', livePoints.current);
   };
 
   const finish = (): void => {
     const stroke = drawing.current;
     drawing.current = null;
+    livePoints.current = '';
+    setGesture(false);
     if (stroke === null || stroke.length === 0) return;
     const [first] = stroke;
     const kept: PadStroke = stroke.length === 1 && first !== undefined ? [first, first] : stroke;
@@ -82,16 +98,24 @@ export function SignaturePad({
       data-signature-pad=""
       onPointerDown={(event) => {
         if (strokes.length >= MAX_SIGNATURE_STROKES) return;
-        const point = pointOf(event);
+        const point = pointAt(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY);
         if (point === null) return;
-        drawing.current = [point];
+        drawing.current = [];
+        add(point);
+        setGesture(true);
       }}
       onPointerLeave={finish}
       onPointerMove={(event) => {
-        const stroke = drawing.current;
-        if (stroke === null || stroke.length >= MAX_SIGNATURE_STROKE_POINTS) return;
-        const point = pointOf(event);
-        if (point !== null) stroke.push(point);
+        if (drawing.current === null) return;
+        const box = event.currentTarget.getBoundingClientRect();
+        // EVERY POSITION THE BROWSER SAW since the last event, where it reports them: a fast stroke is then the curve
+        // the hand made rather than the corners between the moves that were dispatched.
+        // A FEATURE, not assumed: Pointer Events level 3, which an engine without it answers with one event per move.
+        const coalesced = 'getCoalescedEvents' in event.nativeEvent ? event.nativeEvent.getCoalescedEvents() : [];
+        for (const one of coalesced.length > 0 ? coalesced : [event]) {
+          const point = pointAt(box, one.clientX, one.clientY);
+          if (point !== null) add(point);
+        }
       }}
       onPointerUp={finish}
       role="img"
@@ -107,6 +131,17 @@ export function SignaturePad({
             .join(' ')}
         />
       ))}
+      {gesture ? (
+        <polyline
+          data-signature-live=""
+          // THE POINTS SO FAR, written when it mounts, which can be after the first moves; every later one is written
+          // on by `add`.
+          ref={(node) => {
+            liveLine.current = node;
+            node?.setAttribute('points', livePoints.current);
+          }}
+        />
+      ) : null}
     </svg>
   );
 }

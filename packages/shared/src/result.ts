@@ -65,14 +65,49 @@ export interface StructuredError {
  * `incident` joins this to the full diagnostic in the main-side log. Opaque by
  * construction — it identifies a log entry, not a file.
  *
- * ## Typed fields
+ * ## Typed fields: a code's DETAIL
  *
- * There are none yet, and that is deliberate rather than unfinished. A code
- * needing a field gets one when a caller needs it; what the type forbids either
- * way is free text. Fields it may carry are ones that cannot express a path —
- * a `DocId`, a count, an enum member — which inherits invariant L2 rather than
- * restating it.
+ * A code needing a field gets one when a caller needs it, and two now do
+ * ([ADR-0169](../../../docs/DECISIONS/0169-a-pdfium-rewrite-is-saved-only-when-it-reads-back-as-edited.md)
+ * Decision 4): {@link FailureDetails} declares it once per code, for every
+ * boundary the code crosses. What the type forbids is still free text. A detail
+ * is an enum member, a bounded number, or characters the person typed, and never
+ * text a native library produced.
  */
+
+/** The step of a PDFium rewrite that refused, from ADR-0169 Decision 3's fixed set. */
+export const EDIT_STEPS = ['open', 'page', 'object', 'set-text', 'matrix', 'generate', 'save', 'read-back'] as const;
+export type EditStep = (typeof EDIT_STEPS)[number];
+
+/**
+ * The number `FPDF_GetLastError` answers when a document needs a password: `FPDF_ERR_PASSWORD`, read from PDFium
+ * 155.0.8044.0's `fpdfview.h` (line 609, `.tools/pdfium/155.0.8044.0/include`) on 2026-10-05. At step `open` it means
+ * the document is protected, which the person is told as such (ADR-0169 Decision 7).
+ */
+export const PDFIUM_PASSWORD_ERROR = 4;
+
+/**
+ * The codes that carry a detail, and the detail each carries.
+ *
+ * The TYPE is here and the schema is `@monstera/contract`'s `FAILURE_DETAIL_SCHEMAS`, which is checked against this
+ * in both directions, so the two cannot differ. A code absent from this table carries nothing beside it.
+ */
+export interface FailureDetails {
+  /** The distinct characters, in the order typed, that the font the edit was written in cannot show. */
+  readonly 'text-not-writable': { readonly characters: string };
+  /** Which step of a PDFium rewrite refused, and what `FPDF_GetLastError` answered at that moment. */
+  readonly 'edit-refused': { readonly step: EditStep; readonly engineError: number };
+}
+
+/** The codes of `C` that carry no detail, as one member — or nothing, when every code of `C` carries one. */
+type PlainFailure<C extends string> = [Exclude<C, keyof FailureDetails>] extends [never]
+  ? never
+  : { readonly code: Exclude<C, keyof FailureDetails> };
+
+/** One member per code of `C` that carries a detail, the detail required. */
+type DetailedFailure<C extends string> = {
+  readonly [K in Extract<C, keyof FailureDetails>]: { readonly code: K; readonly detail: FailureDetails[K] };
+}[Extract<C, keyof FailureDetails>];
 
 /**
  * The code that means *"this was not a planned failure"*.
@@ -107,7 +142,8 @@ export type InternalFailure = typeof INTERNAL_FAILURE;
  * are different failures wearing one id, which is the state
  * `boundary.ts` keeps one log per registry to prevent.
  *
- * A declared failure hides nothing — the code is the whole of what happened —
+ * A declared failure hides nothing — the code, with the detail its code declares
+ * where it declares one ({@link FailureDetails}), is the whole of what happened —
  * so there is no entry for an id to point at.
  *
  * ## The limit of the unparameterised form, stated rather than left to be found
@@ -129,9 +165,11 @@ export type Failure<C extends string = string> =
   // a discrimination it had already made. `[X] extends [never]` is the
   // non-distributive form; the bare `X extends never` distributes and answers
   // for each member instead of for the union.
-  | ([Exclude<C, InternalFailure>] extends [never]
-      ? never
-      : { readonly code: Exclude<C, InternalFailure> })
+  //
+  // A code with a declared detail is its own member carrying it (ADR-0169), so narrowing on that code reaches the
+  // detail and a failure of it without one does not type.
+  | PlainFailure<Exclude<C, InternalFailure>>
+  | DetailedFailure<Exclude<C, InternalFailure>>
   | {
       readonly code: InternalFailure;
       /** Opaque id of the full diagnostic in the main-side log. Never a path. */
@@ -147,13 +185,14 @@ export type Failure<C extends string = string> =
  * demanded an id the handler could not reach. The rule and the type disagreed,
  * and the type was the one being compiled.
  *
- * A channel declaring no failures gives `{ code: never }`, which is uninhabited:
- * its handler can only succeed. That is the mapped type doing the work rather
- * than a comment asking for it.
+ * A channel declaring no failures gives `never`: its handler can only succeed.
+ * That is the mapped type doing the work rather than a comment asking for it.
+ *
+ * A code with a declared detail must carry it, and a code without one must not
+ * (ADR-0169): a handler cannot forget the characters a refusal names, and cannot
+ * attach a field nothing declared.
  */
-export interface DeclaredFailure<C extends string> {
-  readonly code: C;
-}
+export type DeclaredFailure<C extends string> = PlainFailure<C> | DetailedFailure<C>;
 
 export function ok<T>(value: T): Result<T, never> {
   return { ok: true, value };

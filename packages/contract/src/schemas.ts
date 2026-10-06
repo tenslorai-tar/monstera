@@ -1,4 +1,6 @@
 import {
+  EDIT_STEPS,
+  type FailureDetails,
   INTERNAL_FAILURE,
   asDocId,
   asDocVersion,
@@ -28,7 +30,13 @@ export const DOC_ID_MAX_CHARS = 64;
 
 export const docIdSchema = z.string().min(1).max(DOC_ID_MAX_CHARS).transform(asDocId);
 export const docVersionSchema = z.number().int().nonnegative().transform(asDocVersion);
-export const fileHandleSchema = z.string().min(1).transform(asFileHandle);
+
+/**
+ * How long a `FileHandle` may be: minted as a `DocId` is, 32 random bytes in base64url (`capabilityRegistry.ts`), so
+ * the same bound and for the same reason (CR-SEC-06). Unbounded, a renderer chose how much `main` allocated per call.
+ */
+export const FILE_HANDLE_MAX_CHARS = DOC_ID_MAX_CHARS;
+export const fileHandleSchema = z.string().min(1).max(FILE_HANDLE_MAX_CHARS).transform(asFileHandle);
 
 /**
  * How an error crosses a process or worker boundary (C5).
@@ -65,6 +73,51 @@ export function envelopeSchema<T extends z.ZodType>(value: T) {
 }
 
 /**
+ * How long a declared failure code may be: kebab-case words, the longest declared 26 characters on 2026-10-04
+ * (`secret-storage-unavailable`, read from the built `channels`), so 64 leaves room and bounds a peer's choice.
+ * `channels.test.ts` holds every declared code under it, so a longer one fails there rather than at a refused answer.
+ */
+export const FAILURE_CODE_MAX_CHARS = 64;
+
+/** How long an incident id may be: `IncidentLog` mints `i` and a counter. */
+export const INCIDENT_ID_MAX_CHARS = 32;
+
+/**
+ * How many characters a `text-not-writable` refusal names at most, and how long they may be in UTF-16 units: a
+ * grapheme can be several code points, so the second bound is the one the wire checks. A refusal over more characters
+ * than this names the first ones typed.
+ */
+export const UNWRITABLE_CHARACTERS_MAX = 32;
+export const UNWRITABLE_CHARACTERS_MAX_UNITS = 128;
+
+/** The largest number `FPDF_GetLastError` can answer: it returns a C `unsigned long`, and Windows' is 32 bits. */
+export const ENGINE_ERROR_MAX = 0xffff_ffff;
+
+/**
+ * The schema of each code's declared detail (ADR-0169 Decision 4) — the runtime half of `@monstera/shared`'s
+ * `FailureDetails`, which the `satisfies` below holds it to, and {@link FailureDetailSchemasMatch} holds the other way.
+ */
+export const FAILURE_DETAIL_SCHEMAS = {
+  'text-not-writable': z.object({ characters: z.string().max(UNWRITABLE_CHARACTERS_MAX_UNITS) }).strict(),
+  'edit-refused': z
+    .object({ step: z.enum(EDIT_STEPS), engineError: z.number().int().min(0).max(ENGINE_ERROR_MAX) })
+    .strict(),
+} as const satisfies { readonly [C in keyof FailureDetails]: z.ZodType<FailureDetails[C]> };
+
+/** Compiles only when `Listed` is assignable to `Whole`: `engineChannels.ts`' `Covers`, for one check here. */
+type Covers<Whole, Listed extends Whole> = Listed;
+
+/**
+ * The other direction of the `satisfies` above: it holds each schema's output to its declared type, and this holds the
+ * type to the schema's output, so a field the type declares and the schema omits is a compile error rather than a
+ * refusal at the first failure that carries it.
+ */
+export type FailureDetailSchemasCoverTheirTypes = Covers<
+  { readonly [C in keyof FailureDetails]: z.infer<(typeof FAILURE_DETAIL_SCHEMAS)[C]> },
+  FailureDetails
+>;
+
+/**
  * What a failure looks like on the wire (ADR-0009 §9, and its 2026-08-19
  * decision).
  *
@@ -86,25 +139,47 @@ export function envelopeSchema<T extends z.ZodType>(value: T) {
  * `structuredErrorSchema` above is unchanged and still describes the diagnostic
  * that stays main-side. Two schemas for two objects: one crosses and one does
  * not.
+ *
+ * **Both strings are bounded** (CR-SEC-13): a host is hostile by invariant 25's premise, and an unbounded `code` was
+ * text of its choosing, up to a whole frame, carried into `main`'s diagnostics.
+ *
+ * **A code with a declared detail is a third shape** (ADR-0169 Decision 4): its own member, the detail required and
+ * `.strict()`, and excluded from the plain member by the same refinement that excludes `internal`, so a detailed code
+ * cannot arrive without its detail and a plain one cannot arrive with one.
  */
 export const failureSchema = z.union([
   z
     .object({
       code: z.literal(INTERNAL_FAILURE),
-      incident: z.string().min(1),
+      incident: z.string().min(1).max(INCIDENT_ID_MAX_CHARS),
     })
     .strict(),
+  ...detailedFailureSchemas(),
   z
     .object({
       code: z
         .string()
         .min(1)
+        .max(FAILURE_CODE_MAX_CHARS)
         .refine((code) => code !== INTERNAL_FAILURE, {
           message: `"${INTERNAL_FAILURE}" must carry an incident id; a declared code must not.`,
+        })
+        .refine((code) => !Object.hasOwn(FAILURE_DETAIL_SCHEMAS, code), {
+          message: 'this code carries a declared detail, and arrived without it.',
         }),
     })
     .strict(),
 ]);
+
+/**
+ * One `{ code, detail }` member per code in {@link FAILURE_DETAIL_SCHEMAS}, for {@link failureSchema}: derived from the
+ * table, so a code given a detail there is a member here with nothing else to edit.
+ */
+function detailedFailureSchemas() {
+  return Object.entries(FAILURE_DETAIL_SCHEMAS).map(([code, detail]) =>
+    z.object({ code: z.literal(code), detail }).strict(),
+  );
+}
 
 /**
  * The languages this build can RECOGNISE — Stage 6's set, and a decision.
@@ -455,11 +530,6 @@ export const COMPOSE_REFUSALS = [
    */
   'malformed-csv',
   /**
-   * A table has more columns than the page gives a cell room for three digits, so it
-   * would be drawn one character per line. The refusal names the table's line.
-   */
-  'too-many-columns',
-  /**
    * A picked image the decoder refused, or a PNG whose header states no size. The
    * refusal names which image, by its position among the files picked.
    */
@@ -470,6 +540,37 @@ export const COMPOSE_REFUSALS = [
    * the bound was crossed.
    */
   'too-many-pixels',
+] as const;
+
+/**
+ * Whether an open document's own file could be written over now (cloud-4 7b) — the kernel's probe answers exactly these.
+ */
+export const FILE_ACCESS = [
+  /** This account may write it, and nothing holds it against writers. */
+  'writable',
+  /** This account may not write it: its read-only attribute, its permissions, or a read-only volume. */
+  'read-only',
+  /** Another program has it open and lets nobody else write it. */
+  'held',
+  /** Nothing is at its path any more. */
+  'absent',
+] as const;
+
+/**
+ * Why a save of a document to its own file could not be written (cloud-4 7b), each with its own remedy — the kernel's
+ * one resolver (`saveWriteCause`) answers exactly these.
+ */
+export const SAVE_WRITE_CAUSES = [
+  /** The file is read-only to this account. */
+  'read-only',
+  /** Another program holds the file. */
+  'held',
+  /** The file's folder cannot be written by this account, so the new contents had nowhere to go first. */
+  'folder-read-only',
+  /** The disk is full. */
+  'disk-full',
+  /** None of these could be told. */
+  'unknown',
 ] as const;
 
 /**
@@ -501,6 +602,12 @@ export const URL_FETCH_REFUSALS = [
 ] as const;
 
 export type UrlFetchRefusal = (typeof URL_FETCH_REFUSALS)[number];
+
+/** One of {@link FILE_ACCESS}. */
+export type FileAccess = (typeof FILE_ACCESS)[number];
+
+/** One of {@link SAVE_WRITE_CAUSES}. */
+export type SaveWriteCause = (typeof SAVE_WRITE_CAUSES)[number];
 
 /** One of {@link COMPOSE_REFUSALS}. */
 export type ComposeRefusal = (typeof COMPOSE_REFUSALS)[number];

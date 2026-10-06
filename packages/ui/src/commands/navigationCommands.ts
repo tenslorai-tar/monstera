@@ -104,6 +104,8 @@ export function pageMoveCommand(
     icon: icons[move],
     title: titles[move],
     shortcut: shortcuts[move],
+    // A HELD PAGE KEY PAGES ON, as a held key does in any reader.
+    repeats: true,
     placements: [
       { surface: 'status-bar', cluster: 'navigation', side: slots[move].side, order: slots[move].order },
     ],
@@ -182,6 +184,7 @@ export function historyCommand(
     feedback: VISIBLE,
     title: direction === 'back' ? GO_BACK_TITLE : GO_FORWARD_TITLE,
     shortcut: direction === 'back' ? 'Alt+ArrowLeft' : 'Alt+ArrowRight',
+    repeats: true,
     placements: [],
     when: hasDocument,
     run: (): void => {

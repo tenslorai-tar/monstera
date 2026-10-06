@@ -16,7 +16,7 @@ import { readLayers } from '../layers.js';
 import { detectFlatFields } from '../flatFields.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
-import { readAnnotations } from '../pageAnnotations.js';
+import { readAnnotationWords, readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { extractPages } from '../pageExtract.js';
 import { rasterisePageImage } from '../pageImages.js';
@@ -24,7 +24,7 @@ import { snapshotRegion } from '../pageSnapshot.js';
 import { recognisePage } from '../ocrRecognise.js';
 import { readPageFills } from '../pageFills.js';
 import { readPageWordBoxes } from '../wordBoxes.js';
-import { readPageLinks } from '../pageLinks.js';
+import { readLinkAddress, readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
 import { openMupdfShim } from '../mupdfRaw.js';
 import { cryptoBytes } from '../token.js';
@@ -145,6 +145,7 @@ const engineHandlers = createEngineHandlers({
   // the same answer. The Word export below calls that same reader in this process.
   pageText: readPageTextJson,
   pageLinks: readPageLinks,
+  linkAddress: readLinkAddress,
   pageFills: readPageFills,
   wordBoxes: readPageWordBoxes,
   // RUNS HERE, and that is §3's matrix rather than a placement. Recognition
@@ -170,6 +171,12 @@ const engineHandlers = createEngineHandlers({
     const { applyPdfLibImage } = await import('../pdfLibWriter.js');
     return applyPdfLibImage(image, command, reads);
   },
+  // A SIGNATURE'S PLACEHOLDER, here for the same reason and loaded the same way (ADR-0148): it parses the whole
+  // document and decodes the picture. The key half is `main`'s and this process never loads it.
+  prepareSignature: async (image, request) => {
+    const { prepareSignature } = await import('../signaturePlaceholder.js');
+    return prepareSignature(image, request);
+  },
   // AND FOR THE SAME REASON, with a second one on top: a raster is the one
   // payload that scales with what the user dragged, so it is built here and
   // written into the granted directory rather than crossing the pipe.
@@ -187,11 +194,11 @@ const engineHandlers = createEngineHandlers({
   pageImage: rasterisePageImage,
   // AND THE WORD EXPORT, which draws the page's pictures (ADR-0072's amendment of 2026-10-01). LOADED ON FIRST USE,
   // pdf-lib's reason above: the composer and its zip library are a cost only a Word export should pay.
-  word: (session, mode) => {
+  word: (session, mode, pages) => {
     let pictures = (): number => 0;
     async function* chunks(): AsyncIterable<Uint8Array> {
       const { composeWordDocument } = await import('../wordPictures.js');
-      const composed = composeWordDocument(session, mode);
+      const composed = composeWordDocument(session, mode, pages);
       pictures = composed.pictures;
       yield* composed.chunks;
     }
@@ -208,6 +215,8 @@ const engineHandlers = createEngineHandlers({
   // AND THE CLIPBOARD'S COPY, through the interchange's one reader of entries: the records go to
   // main and stay there, so a paste can be minted where the importer is allowed to be.
   annotationRecords: copyAnnotationData,
+  // AND ONE MARK'S WHOLE WORDS, for an editor whose listing was cut: read where the mark is, beside the walk.
+  annotationWords: readAnnotationWords,
 });
 
 startEngineHost(

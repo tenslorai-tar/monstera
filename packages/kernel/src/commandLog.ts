@@ -13,6 +13,7 @@ import type { Brand } from '@monstera/shared';
 // through a type-only import of a type.
 //
 // Same mechanism as the Electron download one file over, with a different bill.
+import type { DeclaredCommands } from './commandDeclarations.js';
 import type { PreReadValue } from './engineSeam.js';
 import type { PriorFieldValue } from './formFields.js';
 import type { PriorAnnotationAuthor, PriorAnnotationText } from './pageAnnotations.js';
@@ -707,6 +708,8 @@ export interface CommandPrior {
    * it held — which is exactly what an invertible entry may not retain.
    */
   readonly replaceAllText: never;
+  /** The one object `replaceTextAt` picked, with the string it held: `replaceTextObject`'s prior, for its reason. */
+  readonly replaceTextAt: PriorTextObjects;
   /**
    * `never`, and it is the FIRST reason on this type reached from the far end.
    *
@@ -773,20 +776,64 @@ export type CaptureResult<T> =
 export type LogEntryFor<K extends CommandKind> =
   | {
       readonly kind: 'invertible';
-      readonly command: CommandOfKind<K>;
+      /** The command whole, or its kind alone where the bus holds it ({@link RecordedCommand}). */
+      readonly command: RecordedCommand<K>;
       readonly inverse: CommandPrior[K];
       /** What the apply was handed, where replay may not read it again. */
       readonly read: PreReadValue | undefined;
     }
   | {
       readonly kind: 'terminal';
-      readonly command: CommandOfKind<K>;
+      /**
+       * The command whole, or its kind alone for a command whose intent the bus holds beside the entry
+       * ({@link RecordedCommand}).
+       */
+      readonly command: RecordedCommand<K>;
       readonly checkpoint: Checkpoint;
       /** Why no inverse could be recorded. Carried so undo can explain itself. */
       readonly reason: string;
       /** What the apply was handed, where replay may not read it again. */
       readonly read: PreReadValue | undefined;
+      /** Redo re-runs the command: this entry's effect is not its result. */
+      readonly result: null;
+    }
+  | {
+      readonly kind: 'terminal';
+      /**
+       * THE KIND AND NOTHING ELSE (ADR-0162): a command declared `stored-result` is redone from {@link result}, so
+       * nothing re-runs it, and a credential it was applied with has no field to be recorded in. A redo or a replay
+       * that reached for the command to re-apply does not compile.
+       */
+      readonly command: { readonly kind: K };
+      readonly checkpoint: Checkpoint;
+      /** Why no inverse could be recorded. Carried so undo can explain itself. */
+      readonly reason: string;
+      /** Nothing is re-applied, so nothing the apply was handed is kept. */
+      readonly read: undefined;
+      /** The image the apply produced, which redo installs: a whole document on disk, as the checkpoint is. */
+      readonly result: Checkpoint;
     };
+
+/**
+ * What a re-runnable terminal entry keeps of its command: the command whole, or **the kind alone** for a command
+ * declaring `replay: 'reapply-held-intent'`
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 3).
+ *
+ * The kind alone, not the command with its passwords taken out: a protect without them is still a valid protect, one
+ * that writes no password, so a redo that re-ran it would compile and weaken the document. `{ kind }` is not a
+ * command, so a caller reaching for it to re-run does not compile, and the bus's held table is the only source.
+ *
+ * On BOTH re-runnable shapes, though the one command declaring it today is terminal: which shape an entry takes is
+ * decided by its capture at run time, and where the intent is kept is decided by the declaration, so neither may
+ * assume the other.
+ */
+export type RecordedCommand<K extends CommandKind> = K extends CommandKind
+  ? // DISTRIBUTED over `K` by the outer test, so `RecordedCommand<CommandKind>` is each kind's answer united rather
+    // than one answer for the whole union, which would be `CommandOfKind` for every kind.
+    DeclaredCommands[K]['replay'] extends 'reapply-held-intent'
+    ? { readonly kind: K }
+    : CommandOfKind<K>
+  : never;
 
 /**
  * Any entry, as the log holds them.
@@ -796,6 +843,18 @@ export type LogEntryFor<K extends CommandKind> =
  * prior state, because the two type arguments would be resolved independently.
  */
 export type LogEntry = { readonly [K in CommandKind]: LogEntryFor<K> }[CommandKind];
+
+/**
+ * The document-scaled files an entry holds: none for an invertible entry, its checkpoint for a terminal one, and its
+ * result beside it where it was redone from one (ADR-0162).
+ *
+ * ONE RULE for every reader that counts or keeps them, `retainedBytes`, `checkpointPaths` and `trimTo`, so a file a
+ * new shape adds cannot be retained by one and missed by another.
+ */
+export function filesOf(entry: LogEntry): readonly Checkpoint[] {
+  if (entry.kind !== 'terminal') return [];
+  return entry.result === null ? [entry.checkpoint] : [entry.checkpoint, entry.result];
+}
 
 /**
  * What a lane entry may ask of the log without holding the bus's capability.
@@ -913,7 +972,7 @@ export class CommandLog implements ReadonlyCommandLog {
   retainedBytes(): number {
     let total = 0;
     for (const entry of this.#entries) {
-      if (entry.kind === 'terminal') total += entry.checkpoint.byteLength;
+      for (const file of filesOf(entry)) total += file.byteLength;
     }
     return total;
   }
@@ -929,7 +988,7 @@ export class CommandLog implements ReadonlyCommandLog {
   checkpointPaths(): ReadonlySet<string> {
     const paths = new Set<string>();
     for (const entry of this.#entries) {
-      if (entry.kind === 'terminal') paths.add(entry.checkpoint.path);
+      for (const file of filesOf(entry)) paths.add(file.path);
     }
     return paths;
   }
@@ -995,7 +1054,7 @@ export class CommandLog implements ReadonlyCommandLog {
     const shed = (entries: readonly LogEntry[]): void => {
       droppedEntries += entries.length;
       for (const entry of entries) {
-        if (entry.kind === 'terminal') droppedBytes += entry.checkpoint.byteLength;
+        for (const file of filesOf(entry)) droppedBytes += file.byteLength;
       }
     };
 

@@ -120,7 +120,7 @@ export default function AccessibilityCheckBody(props: AccessibilityProps): React
       <p>{_(ACCESSIBILITY_SUMMARY, { failed, undetermined })}</p>
       <p>{_(ACCESSIBILITY_NOT_CONFORMANCE)}</p>
       <h3>{_(ACCESSIBILITY_MACHINE_HEADING)}</h3>
-      <ul className="m-accessibility-check__rules">
+      <ul className="m-dialog-list m-accessibility-check__rules">
         {ordered.map((rule) => {
           const words = RULE_WORDS[`${rule.clause}-${String(rule.test)}`];
           return (
@@ -133,7 +133,10 @@ export default function AccessibilityCheckBody(props: AccessibilityProps): React
               </span>
               {rule.pages.length > 0 ? (
                 <span className="m-accessibility-check__pages">
-                  {_(ACCESSIBILITY_PAGES, { pages: rule.pages.map((page) => number.format(page)).join(', ') })}
+                  {_(ACCESSIBILITY_PAGES, {
+                    count: rule.pages.length,
+                    pages: rule.pages.map((page) => number.format(page)).join(', '),
+                  })}
                 </span>
               ) : null}
             </li>
@@ -141,7 +144,7 @@ export default function AccessibilityCheckBody(props: AccessibilityProps): React
         })}
       </ul>
       <h3>{_(ACCESSIBILITY_PERSON_HEADING)}</h3>
-      <ul className="m-accessibility-check__human">
+      <ul className="m-dialog-list m-accessibility-check__human">
         {props.humanChecks.map((check) => (
           <li key={check}>{_(HUMAN_WORDS[check])}</li>
         ))}

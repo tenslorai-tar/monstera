@@ -5,8 +5,10 @@ import {
   type AnnotationStamp,
   type LibraryEntry,
   MAX_ANNOTATION_DATA_BYTES,
+  type Command,
   type CommandKind,
   type CommandOfKind,
+  targetVersionOf,
   type FormDataFormat,
   type FormDataImportFormat,
   MAX_FORM_DATA_BYTES,
@@ -43,6 +45,9 @@ import {
   type TimestampAuthority,
   type TextBlockStyle,
   type WordMode,
+  type SaveWriteCause,
+  type FileAccess,
+  keptLookOf,
   placedMarkOf,
   sourceIdsOf,
 } from '@monstera/contract';
@@ -67,6 +72,7 @@ import {
   type ByteImage,
   type AccessibilityReportOnWire,
   barcodeRect,
+  copyNames,
   type CommandBus,
   type FlatFieldCandidate,
   type FoundBarcode,
@@ -81,6 +87,7 @@ import {
   type ListedField,
   type Layer,
   type ListedLayers,
+  type LinkAddress,
   type ListedPageLinks,
   type PageLink,
   type PageStructure,
@@ -119,7 +126,6 @@ import {
   type MupdfSession,
   type NextSave,
   type ReadSignature,
-  drawsInStandardFont,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
   SignatureTooLargeError,
@@ -141,11 +147,16 @@ import {
   RecognisedTableRefused,
   type PageWordBoxes,
   pagesOf,
+  breaksSignatures,
+  StaleTargetError,
+  saveWriteCause,
+  type SaveBackups,
 } from '@monstera/kernel';
 import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
 import {
   type DocId,
   type DocVersion,
+  type HeldPassword,
   type QueryProblem,
   type WordCount,
   compileQuery,
@@ -175,8 +186,10 @@ import {
 } from './officeConversion.js';
 import { type PdfaSource, PdfaFailedError } from './pdfaConversion.js';
 import type { HeldPicture } from './heldPicture.js';
-import { type PersonalLibrary, pictureTypeOf } from './personalLibrary.js';
+import { type SignaturePictureSource, pickSignaturePicture } from './signaturePicture.js';
+import type { PersonalLibrary } from './personalLibrary.js';
 import { type PrintDestination, PrintFailedError } from './printing.js';
+import type { RecentPictures } from './recentPictures.js';
 import { type ShareDestination, ShareFailedError, shareTitle } from './sharing.js';
 import { type OpenExternalEditor, isPdfPath } from './openExternalEditor.js';
 
@@ -312,6 +325,16 @@ export interface EngineSessionSource {
    * somebody recalled (B6).
    */
   readonly poisoned: (docId: DocId) => number | undefined;
+  /**
+   * Whether this document's file opens only with a password — the supervisor's one answer, read before anything is
+   * kept of the document that anyone could open (`EngineSessions.opensOnlyWithPassword`).
+   */
+  readonly opensOnlyWithPassword: (docId: DocId) => boolean;
+  /**
+   * The key this document's file opens with, unrevealed, or `undefined` when it needs none (`EngineSessions.opensWith`,
+   * ADR-0171). Read by everything that opens the document's bytes in a host of its own: a PDFium command and Optimize.
+   */
+  readonly opensWith: (docId: DocId) => HeldPassword | undefined;
 }
 
 /**
@@ -335,6 +358,14 @@ export interface EngineSessionSource {
  * ([ADR-0037](../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
  */
 export type DocumentRestore = (docId: DocId, write: SnapshotWrite) => Promise<void>;
+
+/**
+ * Opens one document's sessions again from the bytes `write` puts down, keeping the old ones until the new exist
+ * (`EngineSessions.renew`), and answers `locked` when those bytes open only with a password, the old sessions kept.
+ * Composed at the root for {@link DocumentRestore}'s reason, and because the class a locked open throws is the host
+ * opener's, in scope there and nowhere here.
+ */
+export type DocumentRenew = (docId: DocId, write: SnapshotWrite) => Promise<'renewed' | 'locked'>;
 
 /**
  * What a save needs that the engine session source does not provide.
@@ -438,6 +469,17 @@ export type PickImage = () => Promise<string | null>;
  */
 export function suggestedCopyName(name: string): string {
   return suffixed(name, 'copy');
+}
+
+/**
+ * Whether a write of this document's content backs up the file it replaces: `none` while a removal is pending, for the
+ * document's own save ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md))
+ * and for every copy or export to a file a person picked
+ * ([ADR-0164](../../../docs/DECISIONS/0164-a-removals-save-also-renews-the-hosts-copy-and-the-recent-picture.md)) —
+ * one rule, read from the document's fact, so no writer spells its own.
+ */
+function backupsFor(context: DocumentContext): SaveBackups {
+  return context.removedSinceSave ? 'none' : 'keep';
 }
 
 /**
@@ -679,9 +721,17 @@ export type PlaceImageOutcome =
 
 /** What a save came to: the pipeline's outcomes, or a save held back because it would break signatures. */
 export type SaveRequestOutcome =
-  /** Saved — and, where the save was a removal's, which older copies it deleted and which it kept. */
-  | (Extract<SaveOutcome, { kind: 'saved' }> & { readonly cleared: ClearedCopies | null })
-  | Exclude<SaveOutcome, { kind: 'saved' }>
+  /**
+   * Saved — and, where the save was a removal's, which older copies it deleted and which it kept; and, for every save,
+   * the older copies still owed a deletion because another program holds them (CR-DOC-10).
+   */
+  | (Extract<SaveOutcome, { kind: 'saved' }> & {
+      readonly cleared: ClearedCopies | null;
+      readonly held: readonly string[];
+    })
+  | Exclude<SaveOutcome, { kind: 'saved' | 'write-failed' }>
+  /** Not written, and why, from the failure and the file's access read just after it (`saveWriteCause`). */
+  | (Extract<SaveOutcome, { kind: 'write-failed' }> & { readonly cause: SaveWriteCause })
   | { readonly kind: 'breaks-signatures'; readonly signatures: number };
 
 /**
@@ -719,8 +769,17 @@ export type PlaceSignatureOutcome =
   | { readonly kind: 'too-large'; readonly limitBytes: number }
   /** The kept signature named is no longer kept. */
   | { readonly kind: 'absent' }
-  /** The typed name holds a character the chosen standard font cannot draw. */
-  | { readonly kind: 'unencodable-text' };
+  /** A scanned signature PDF picked at the click: its first page carries no ink, or it needs a password. */
+  | { readonly kind: 'scan-blank' | 'scan-locked' };
+
+/** Why a requested signature look did not resolve to a mark: the outcomes both routes share, named once. */
+type NoSignatureMark =
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'image-unreadable' }
+  | { readonly kind: 'image-too-large' }
+  | { readonly kind: 'saved-signature-missing' }
+  | { readonly kind: 'scan-blank' }
+  | { readonly kind: 'scan-locked' };
 
 /**
  * Which decoder an extension routes to, or `null` for one this build has none for.
@@ -1048,7 +1107,12 @@ export type DocumentStage = (docId: DocId, sessions: DocumentSessions) => Promis
  * read into `main` ([ADR-0072](../../../docs/DECISIONS/0072-office-open-xml-exports-are-written-by-this-build-over-fflate.md)'s
  * amendment of 2026-10-01). {@link DocumentStage}'s shape with a mode.
  */
-export type DocumentWordExport = (docId: DocId, sessions: DocumentSessions, mode: WordMode) => Promise<StagedImage>;
+export type DocumentWordExport = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  mode: WordMode,
+  pages: PageSet,
+) => Promise<StagedImage>;
 
 /**
  * The query itself could not be compiled.
@@ -1106,6 +1170,24 @@ export class DocumentPoisonedError extends Error {
         'canonical bytes and the command log stay in main, intact and unappliable — refusing ' +
         'STRANDS the work where closing would destroy it, which is the whole of why this is a ' +
         `refusal. (document ${docId.slice(0, 8)}…)`,
+    );
+  }
+}
+
+/**
+ * An edit that would break a signed document's signatures, refused before anything changed
+ * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)).
+ *
+ * Not a fault: it is the question the person is asked, and the handler answers it as the declared
+ * `breaks-signatures`. The count is a main-side diagnostic.
+ */
+export class SignaturesWouldBreakError extends Error {
+  override readonly name = 'SignaturesWouldBreakError';
+
+  constructor(kind: CommandKind, signatures: number) {
+    super(
+      `${kind} would rewrite a document carrying ${String(signatures)} signature(s) whole, which breaks them; ` +
+        'nothing was changed, and the person is asked first (ADR-0149).',
     );
   }
 }
@@ -1377,6 +1459,8 @@ export type PrintOutcome =
 export interface ExcelReview {
   readonly version: DocVersion;
   readonly edits: readonly (TableEdit & { readonly page: number })[];
+  /** The pages whose tables are written (ADR-0161); the review itself may have looked at any. */
+  readonly pages: PageSet;
 }
 
 /**
@@ -1394,6 +1478,17 @@ export type DocumentPageLinksReader = (
   sessions: DocumentSessions,
   page: number,
 ) => Promise<ListedPageLinks>;
+
+/** One link's whole address, read in the engine host by its place on its page (ADR-0167). */
+export type DocumentLinkAddressReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+  index: number,
+) => Promise<LinkAddress>;
+
+/** What {@link DocumentCommands.linkAddress} answers: the link's address, why there is none, or that it moved. */
+export type LinkAddressOutcome = LinkAddress | { readonly kind: 'stale' };
 
 /** One page's links, stamped with the version the lane read them at, and whether the walk stopped at its bound. */
 export interface DocumentPageLinks {
@@ -1861,6 +1956,19 @@ export type DocumentAnnotationCopyReader = (
   indices: readonly number[],
 ) => Promise<{ readonly json: string; readonly copyable: readonly boolean[] }>;
 
+/** One mark's whole words, read in the host. Throws `RangeError` for a handle past the walk. */
+export type DocumentAnnotationWordsReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+  index: number,
+) => Promise<{ readonly text: string; readonly whole: boolean }>;
+
+/** What {@link DocumentCommands.annotationWords} answers. */
+export type AnnotationWordsOutcome =
+  | { readonly kind: 'words'; readonly text: string; readonly whole: boolean }
+  | { readonly kind: 'stale' };
+
 /** What {@link DocumentCommands.copyAnnotations} answers. */
 export type CopyAnnotationsOutcome =
   /** The clipboard now holds `copied` marks; `skipped` were of kinds this build does not exchange. */
@@ -2056,6 +2164,10 @@ export interface DocumentCommandsParts {
   /** How many signatures, and whether the next save keeps them — the writer's own decision. See {@link save}. */
   readonly signaturesKept: (session: MupdfSession) => Promise<NextSave>;
   readonly restore: DocumentRestore;
+  /** How a removal's save opens the document's sessions again from the file it wrote (ADR-0164). */
+  readonly renew: DocumentRenew;
+  /** The Recent card's picture of a document, which a removal's save takes again (ADR-0164). */
+  readonly recentPicture: Pick<RecentPictures, 'retake'>;
   /**
    * THE SIXTEENTH DEPENDENCY, and the first added since this became an options
    * object — which is what the move was for: a named key, in one place, with
@@ -2064,6 +2176,9 @@ export interface DocumentCommandsParts {
   readonly annotations: DocumentAnnotationsReader;
   /** Named marks serialised for the clipboard, in the engine host. */
   readonly annotationCopy: DocumentAnnotationCopyReader;
+  readonly annotationWords: DocumentAnnotationWordsReader;
+  /** One link's whole address, for a person following it (ADR-0167). */
+  readonly linkAddress: DocumentLinkAddressReader;
   readonly formFields: DocumentFormFieldsReader;
   readonly flatFields: DocumentFlatFieldsReader;
   /** One page's barcodes, read in the engine host (ADR-0076). */
@@ -2096,6 +2211,8 @@ export interface DocumentCommandsParts {
   readonly library: LibraryReader & LibraryKeeper;
   /** The picture the plain Signature's dialog previewed, placed from here and released once it is (ADR-0133). */
   readonly heldPicture: HeldPicture;
+  /** Where a signature picture is picked from at the click: a PNG, a JPEG or a scanned PDF. See {@link SignaturePictureSource}. */
+  readonly signaturePicture: SignaturePictureSource;
   /** Each import format's picker and bounded read. See {@link ImportSource}. */
   readonly imports: Readonly<Record<ImportFormat, ImportSource>>;
   /**
@@ -2192,6 +2309,9 @@ export type ExportTextOutcome =
 export type OptimizeSource = (
   pdf: Uint8Array,
   setting: OptimizeSetting,
+  // THE KEY `pdf` OPENS WITH, required so no caller leaves it out: without it the rewriter read an encrypted document
+  // undecrypted and wrote a copy with no page (ADR-0171's addendum, measured 2026-10-05).
+  opensWith: HeldPassword | undefined,
 ) => Promise<
   | {
       readonly kind: 'optimized';
@@ -2269,8 +2389,12 @@ export class DocumentCommands {
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   readonly #signaturesKept: (session: MupdfSession) => Promise<NextSave>;
   readonly #restore: DocumentRestore;
+  readonly #renew: DocumentRenew;
+  readonly #recentPicture: Pick<RecentPictures, 'retake'>;
   readonly #annotations: DocumentAnnotationsReader;
   readonly #annotationCopy: DocumentAnnotationCopyReader;
+  readonly #annotationWords: DocumentAnnotationWordsReader;
+  readonly #linkAddress: DocumentLinkAddressReader;
   /**
    * The annotation clipboard: interchange JSON, held here and never sent to the renderer.
    *
@@ -2298,6 +2422,7 @@ export class DocumentCommands {
   readonly #image: ImageSource;
   readonly #library: LibraryReader & LibraryKeeper;
   readonly #heldPicture: HeldPicture;
+  readonly #signaturePicture: SignaturePictureSource;
   readonly #imports: Readonly<Record<ImportFormat, ImportSource>>;
   readonly #compose: ComposeImport;
   readonly #imageFiles: ImageFilesSource;
@@ -2354,8 +2479,12 @@ export class DocumentCommands {
     this.#signatures = parts.signatures;
     this.#signaturesKept = parts.signaturesKept;
     this.#restore = parts.restore;
+    this.#renew = parts.renew;
+    this.#recentPicture = parts.recentPicture;
     this.#annotations = parts.annotations;
     this.#annotationCopy = parts.annotationCopy;
+    this.#annotationWords = parts.annotationWords;
+    this.#linkAddress = parts.linkAddress;
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
     this.#barcodes = parts.barcodes;
@@ -2369,6 +2498,7 @@ export class DocumentCommands {
     this.#image = parts.image;
     this.#library = parts.library;
     this.#heldPicture = parts.heldPicture;
+    this.#signaturePicture = parts.signaturePicture;
     this.#imports = parts.imports;
     this.#compose = parts.compose;
     this.#imageFiles = parts.imageFiles;
@@ -2708,8 +2838,11 @@ export class DocumentCommands {
    *
    * @throws the set `askPicture` throws when the document has no usable session
    */
-  async firstPagePicture(docId: DocId): Promise<Uint8Array> {
-    const { value } = await this.#documents.run(docId, async () => {
+  async firstPagePicture(docId: DocId): Promise<Uint8Array | 'none'> {
+    const { value } = await this.#documents.run(docId, async (): Promise<Uint8Array | 'none'> => {
+      // A FILE THAT OPENS ONLY WITH A PASSWORD KEEPS NO PICTURE of its page, which would be a copy anyone can open of
+      // what the password protects (the owner, CR-DOC-11). Asked before the session, since a locked document has none.
+      if (this.#engine.opensOnlyWithPassword(docId)) return 'none';
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3192,6 +3325,11 @@ export class DocumentCommands {
   async execute<K extends CommandKind>(
     docId: DocId,
     command: CommandOfKind<K>,
+    /**
+     * `breakSignatures`: the person agreed this edit may break the document's signatures (ADR-0149). Absent is not
+     * agreed, so a command `main` mints itself is asked about like any other — none of them breaks one today.
+     */
+    options: { readonly breakSignatures?: boolean } = {},
   ): Promise<Applied> {
     // THE ROUTING TABLE IS NO LONGER READ HERE, and the note that used to stand
     // in its place is worth keeping because it was half right. It read: *the
@@ -3217,6 +3355,21 @@ export class DocumentCommands {
       // from *this writer has no session*, and only the bus can tell the second
       // one apart from a byte-image writer that never has a stored session.
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE THE EDIT, never at the save after it (ADR-0149). A command that
+      // rewrites the document whole breaks every signature in it, and by the save the image is already rewritten —
+      // MuPDF then reopens it, finds the signature dictionaries, will append, and answers *kept*. So the question is
+      // asked here, inside the lane, before the bus has touched anything, of the document's own session.
+      if (breaksSignatures(command.kind) && !context.signaturesBreakAgreed) {
+        if (options.breakSignatures === true) {
+          context.agreeToBreakSignatures();
+        } else {
+          const session = sessions.mupdf;
+          if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+          const { signatures } = await this.#signaturesKept(session);
+          if (signatures > 0) throw new SignaturesWouldBreakError(command.kind, signatures);
+        }
+      }
 
       const { trimmed } = await this.#bus.execute<K>(
         sessions,
@@ -3485,6 +3638,9 @@ export class DocumentCommands {
     };
     return {
       current: () => this.#save.flush(docId, live()),
+      // THE KEY THOSE BYTES OPEN WITH (ADR-0171's addendum): a document opened with its password flushes to its own
+      // encrypted form, which a byte-image writer cannot open without it.
+      opensWith: () => this.#engine.opensWith(docId),
       // THE REFRESH'S ROUTE (ADR-0121 Decision 2): the session's bytes placed in the file the service names.
       currentInto: async (destination) => placeStaged(await this.#save.stage(docId, live()), destination),
       adopt: (write) => this.#restore(docId, write),
@@ -3594,6 +3750,47 @@ export class DocumentCommands {
   }
 
   async saveCopy(docId: DocId): Promise<CopyOutcome | undefined> {
+    return (await this.#writeCopy(docId, () => undefined))?.outcome;
+  }
+
+  /**
+   * A copy of the document to make an edit on, written where the person chooses, so the original keeps the
+   * signatures that edit would break
+   * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)
+   * Decision 5). {@link saveCopy}'s picker and write exactly, and the path the copy went to, which the handler opens.
+   *
+   * **A command composed against a version the document has moved past is stale here too**, checked inside the lane
+   * against the version the copy is written at: the copy holds the document as it is now, so an edit named against an
+   * older one would land on content it was not composed for, as it would on the original.
+   */
+  /**
+   * A copy of the document to WORK ON, written where the person chooses (cloud-4 7b): {@link saveCopy}'s picker and
+   * write exactly, and the path the copy went to, which the handler opens.
+   */
+  async copyToWorkOn(docId: DocId): Promise<{ readonly outcome: CopyOutcome; readonly destination: string } | undefined> {
+    return this.#writeCopy(docId, () => undefined);
+  }
+
+  /** Whether the document's own file could be written over now — the service's answer, asked at each call. */
+  fileAccess(docId: DocId): Promise<FileAccess> {
+    return this.#documents.fileAccess(docId);
+  }
+
+  async copyForEditing(
+    docId: DocId,
+    command: Command,
+  ): Promise<{ readonly outcome: CopyOutcome; readonly destination: string } | undefined> {
+    return this.#writeCopy(docId, (version) => {
+      const named = targetVersionOf(command);
+      if (named !== undefined && named !== version) throw new StaleTargetError(command.kind, named, version);
+    });
+  }
+
+  /** {@link saveCopy}'s pick and write, with `inLane` run first inside the lane against the version being copied. */
+  async #writeCopy(
+    docId: DocId,
+    inLane: (version: DocVersion) => void,
+  ): Promise<{ readonly outcome: CopyOutcome; readonly destination: string } | undefined> {
     // THE NAME IS READ BEFORE THE LANE and the document may close while the
     // dialog is up — which is fine, because a filename is all that was taken
     // and the guards inside the lane below refuse a closed document anyway. A
@@ -3606,17 +3803,19 @@ export class DocumentCommands {
     const destination = await this.#copy.pick(suggestedCopyName(suggest));
     if (destination === null) return undefined;
 
-    // THE LANE ENTRY TAKES NO CONTEXT, and that is `writeDocumentCopy`'s own
-    // argument arriving one layer out: a context is what a stamp is made
-    // through, this must not stamp, so it is not given one. The lane is still
-    // entered — the flush must be serialised against every other operation on
-    // this document — and what it cannot do is mark the document clean.
-    const { value } = await this.#documents.run(docId, async () => {
+    // THE CONTEXT IS READ FOR ITS VERSION AND NOTHING ELSE, and the write is
+    // never handed it: a context is what a stamp is made through, and a copy
+    // must not stamp. The lane is entered so the flush is serialised against
+    // every other operation on this document, and so the version `inLane`
+    // checks is the version the copy is written at.
+    const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      inLane(context.version);
 
       // THE SAME FLUSH A SAVE USES, so a copy and a save cannot disagree about
       // what this document currently is (B3a). `writeDocumentCopy` is handed no
@@ -3626,10 +3825,11 @@ export class DocumentCommands {
         this.#copy.checkTarget,
         () => this.#save.stage(docId, sessions),
         destination,
+        backupsFor(context),
       );
     });
 
-    return value;
+    return { outcome: value, destination };
   }
 
   /**
@@ -3720,12 +3920,13 @@ export class DocumentCommands {
     const destination = await this.#copy.pick(suggestedCopyName(documentName));
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () =>
+    const { value } = await this.#documents.run(docId, async (context) =>
       writeDocumentCopy(
         this.#save.deps,
         this.#copy.checkTarget,
         () => Promise.resolve(stagedBytes(signed)),
         destination,
+        backupsFor(context),
       ),
     );
     return value;
@@ -3767,7 +3968,7 @@ export class DocumentCommands {
     const destination = await this.#copy.pick(suggestedExtractName(suggest));
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3782,6 +3983,7 @@ export class DocumentCommands {
         // atomic write — is the same code on the same terms.
         async () => stagedBytes(await this.#extract(docId, sessions, pages)),
         destination,
+        backupsFor(context),
       );
     });
 
@@ -3831,7 +4033,7 @@ export class DocumentCommands {
     if (destination === null) return { kind: 'cancelled' };
     if (!isPdfPath(destination)) return { kind: 'not-pdf' };
 
-    const { value: written } = await this.#documents.run(docId, async () => {
+    const { value: written } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
       const sessions = this.#engine.sessions(docId);
@@ -3841,6 +4043,7 @@ export class DocumentCommands {
         this.#copy.checkTarget,
         async () => stagedBytes(await this.#extract(docId, sessions, [page])),
         destination,
+        backupsFor(context),
       );
     });
     if (written.kind !== 'copied') return written;
@@ -3913,7 +4116,10 @@ export class DocumentCommands {
     const applied = await this.execute(docId, {
       kind: 'replacePage',
       source,
-      at: out.page,
+      // THE PAGE THAT WENT OUT, replaced by everything the other application saved: an edit that split it into two
+      // pages comes back as two.
+      pages: [out.page],
+      sourcePages: 'all',
       version: out.version,
     });
     out.watch.accept();
@@ -3972,7 +4178,7 @@ export class DocumentCommands {
     const destination = await this.#snapshot.pick(suggestedSnapshotName(suggest));
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -3984,6 +4190,7 @@ export class DocumentCommands {
         this.#copy.checkTarget,
         async () => stagedBytes(await this.#snapshot.region(docId, sessions, request)),
         destination,
+        backupsFor(context),
       );
     });
 
@@ -4018,7 +4225,7 @@ export class DocumentCommands {
     const destination = await this.#formData.pick(suggest, format);
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -4030,6 +4237,7 @@ export class DocumentCommands {
         this.#copy.checkTarget,
         async () => stagedBytes(await this.#formData.encode(docId, sessions, format)),
         destination,
+        backupsFor(context),
       );
     });
 
@@ -4107,7 +4315,7 @@ export class DocumentCommands {
     const destination = await this.#annotationData.pick(suggest, format);
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -4119,6 +4327,7 @@ export class DocumentCommands {
         this.#copy.checkTarget,
         async () => stagedBytes(await this.#annotationData.encode(docId, sessions, format)),
         destination,
+        backupsFor(context),
       );
     });
 
@@ -4197,6 +4406,48 @@ export class DocumentCommands {
     if (copied === 0) return { kind: 'nothing-copyable' };
     this.#clipboard = { json: value.json, from: { docId, page } };
     return { kind: 'copied', copied, skipped: value.copyable.length - copied };
+  }
+
+  /**
+   * One mark's own words, whole, for an editor whose listing was cut.
+   *
+   * {@link copyAnnotations}' version rule and its reason: the handle is a position in the walk read at `version`, so
+   * the read happens inside the lane and the lane's version is compared afterwards; a moved document or a handle past
+   * the walk answers `stale` rather than another mark's words.
+   */
+  async annotationWords(docId: DocId, page: number, index: number, version: DocVersion): Promise<AnnotationWordsOutcome> {
+    const { version: ranAt, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+      try {
+        return await this.#annotationWords(docId, sessions, page, index);
+      } catch (thrown) {
+        if (!(thrown instanceof RangeError)) throw thrown;
+        return undefined;
+      }
+    });
+    if (value === undefined || ranAt !== version) return { kind: 'stale' };
+    return { kind: 'words', text: value.text, whole: value.whole };
+  }
+
+  /**
+   * One link's whole address, for a person who asked to follow it (ADR-0167 Decision 3).
+   *
+   * {@link annotationWords}' version rule and its reason: the place is a position in the page's links at `version`,
+   * so the read happens inside the lane and the lane's version is compared afterwards; a moved document answers
+   * `stale` rather than another link's address.
+   */
+  async linkAddress(docId: DocId, page: number, index: number, version: DocVersion): Promise<LinkAddressOutcome> {
+    const { version: ranAt, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return this.#linkAddress(docId, sessions, page, index);
+    });
+    return ranAt === version ? value : { kind: 'stale' };
   }
 
   /**
@@ -4321,7 +4572,7 @@ export class DocumentCommands {
    * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
    *   reason.
    */
-  async exportText(docId: DocId, mode: 'plain' | 'layout'): Promise<ExportTextOutcome | undefined> {
+  async exportText(docId: DocId, mode: 'plain' | 'layout', pages: PageSet): Promise<ExportTextOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export text');
 
@@ -4340,16 +4591,20 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
+      // THE CHOSEN PAGES (ADR-0161), listed against this version before any file is written.
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      const chosen = pagesOf(pages, pageCount);
+
       // `open` is called only once the destination is known to be free, so a
       // contested file reads no page and runs no converter.
       const open =
         mode === 'plain' || layoutText === null
-          ? (): Promise<AsyncIterable<Uint8Array>> => Promise.resolve(this.#textChunks(docId, sessions))
+          ? (): Promise<AsyncIterable<Uint8Array>> => Promise.resolve(this.#textChunks(docId, sessions, chosen))
           : // THE SAVE'S OWN FLUSH, `saveCopy`'s reason: the converter reads what
             // this document currently is, and a copy, a save and a layout export
             // cannot disagree about that (B3a).
             async (): Promise<AsyncIterable<Uint8Array>> =>
-              await layoutText(await this.#save.flush(docId, sessions));
+              await layoutText(await this.#save.flush(docId, sessions), chosen);
 
       try {
         return await writeStreamedDocument(this.#save.deps, this.#copy.checkTarget, open, destination);
@@ -4434,7 +4689,7 @@ export class DocumentCommands {
 
     const { value } = await this.#documents.run(docId, async (context): Promise<OptimizeMeasurement> => {
       const pdf = await this.#currentBytes(docId);
-      const copy = await optimizer(pdf, setting);
+      const copy = await optimizer(pdf, setting, this.#engine.opensWith(docId));
       if (copy.kind !== 'optimized') return copy;
       await copy.discard();
       return { kind: 'measured', version: context.version, before: pdf.length, after: copy.bytes };
@@ -4471,7 +4726,7 @@ export class DocumentCommands {
     const { value } = await this.#documents.run(docId, async (context): Promise<OptimizeOutcome> => {
       if (context.version !== version) return { kind: 'changed' };
       const pdf = await this.#currentBytes(docId);
-      const copy = await optimizer(pdf, setting);
+      const copy = await optimizer(pdf, setting, this.#engine.opensWith(docId));
       if (copy.kind !== 'optimized') return copy;
       // DISCARDED WHATEVER HAPPENS, not only on the not-smaller branch: a contested destination
       // answers before the stream is opened, and a copy of the person's document would otherwise
@@ -4530,26 +4785,32 @@ export class DocumentCommands {
    *
    * It does NOT touch the document: no command, no log entry, no version bump.
    */
-  async exportWord(docId: DocId, mode: WordMode): Promise<CopyOutcome | undefined> {
+  async exportWord(docId: DocId, mode: WordMode, pages: PageSet): Promise<CopyOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to Word');
 
     const destination = await this.#pickOffice(suggest, 'docx');
     if (destination === null) return undefined;
 
-    const { value } = await this.#documents.run(docId, async () => {
+    const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
+      // LISTED AGAINST THIS VERSION, `exportPageImages`' rule: a page past the document is refused before any file
+      // is written. The host walks the same set (ADR-0161).
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      pagesOf(pages, pageCount);
+
       return await writeDocumentCopy(
         this.#save.deps,
         this.#copy.checkTarget,
         // Called only once the destination is free, so a contested file composes nothing.
-        () => this.#word(docId, sessions, mode),
+        () => this.#word(docId, sessions, mode, pages),
         destination,
+        backupsFor(context),
       );
     });
 
@@ -4564,7 +4825,7 @@ export class DocumentCommands {
    * image export already makes, one page at a time as the zip pulls it, so `main`
    * holds one page's picture. It does NOT touch the document.
    */
-  async exportPowerPoint(docId: DocId): Promise<CopyOutcome | undefined> {
+  async exportPowerPoint(docId: DocId, pages: PageSet): Promise<CopyOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to PowerPoint');
 
@@ -4582,10 +4843,15 @@ export class DocumentCommands {
         this.#save.deps,
         this.#copy.checkTarget,
         async () => {
+          // THE CHOSEN PAGES (ADR-0161), listed against this version; the deck takes the first chosen page's size.
           const { pageCount } = await this.#geometry(docId, sessions, []);
+          const chosen = pagesOf(pages, pageCount);
+          const [lead] = chosen;
           const first =
-            pageCount === 0 ? { width: 612, height: 792 } : ((await this.#geometry(docId, sessions, [0])).sizes[0] ?? { width: 612, height: 792 });
-          return ooxmlPackage(presentationParts(this.#slidePages(docId, sessions, pageCount), first, pageCount));
+            lead === undefined
+              ? { width: 612, height: 792 }
+              : ((await this.#geometry(docId, sessions, [lead])).sizes[0] ?? { width: 612, height: 792 });
+          return ooxmlPackage(presentationParts(this.#slidePages(docId, sessions, chosen), first, chosen.length));
         },
         destination,
       );
@@ -4626,7 +4892,9 @@ export class DocumentCommands {
   ): Promise<ExcelOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to Excel');
-    if (engine !== 'automatic') return this.#exportExcelThroughService(docId, suggest, layout, review.version, engine);
+    if (engine !== 'automatic') {
+      return this.#exportExcelThroughService(docId, suggest, layout, review.version, engine, review.pages);
+    }
 
     const byPage = new Map<number, TableEdit[]>();
     for (const { page, ...edit } of review.edits) byPage.set(page, [...(byPage.get(page) ?? []), edit]);
@@ -4645,7 +4913,8 @@ export class DocumentCommands {
         if (!editsFit(tables, edits, MAX_TABLE_CELL_TEXT)) return { kind: 'changed' as const };
       }
       let picturePages = 0;
-      for (let page = 0; page < pageCount; page += 1) {
+      // THE CHOSEN PAGES only (ADR-0161): a table on a page not chosen is not one this export writes.
+      for (const page of pagesOf(review.pages, pageCount)) {
         const tables = await this.#pageTables(docId, sessions, page);
         if (tables.tables.length > 0) return { kind: 'found' as const };
         // A PICTURE AND NO TEXT, not merely no text: a blank page is not one that
@@ -4670,7 +4939,7 @@ export class DocumentCommands {
       return await writeStreamedDocument(
         this.#save.deps,
         this.#copy.checkTarget,
-        () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#tablePages(docId, sessions, byPage), layout))),
+        () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#tablePages(docId, sessions, byPage, review.pages), layout))),
         destination,
       );
     });
@@ -4701,6 +4970,7 @@ export class DocumentCommands {
     layout: SheetLayout,
     version: DocVersion,
     engine: NetworkTableEngine,
+    pages: PageSet,
   ): Promise<ExcelOutcome | undefined> {
     const current = await this.#documents.run(docId, (context) => Promise.resolve(context.version));
     if (current.value !== version) return { kind: 'changed' };
@@ -4719,7 +4989,7 @@ export class DocumentCommands {
         return await writeStreamedDocument(
           this.#save.deps,
           this.#copy.checkTarget,
-          () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#servicePages(docId, sessions, engine), layout))),
+          () => Promise.resolve(ooxmlPackage(spreadsheetParts(this.#servicePages(docId, sessions, engine, pages), layout))),
           destination,
         );
       } catch (thrown) {
@@ -4736,9 +5006,10 @@ export class DocumentCommands {
     docId: DocId,
     sessions: DocumentSessions,
     engine: NetworkTableEngine,
+    pages: PageSet,
   ): AsyncIterable<SpreadsheetPage> {
     const { pageCount } = await this.#geometry(docId, sessions, []);
-    for (let page = 0; page < pageCount; page += 1) {
+    for (const page of pagesOf(pages, pageCount)) {
       let tables: readonly RecognisedTable[];
       try {
         tables = await this.#networkTables(docId, sessions, page, engine);
@@ -4754,9 +5025,10 @@ export class DocumentCommands {
     docId: DocId,
     sessions: DocumentSessions,
     edits: ReadonlyMap<number, readonly TableEdit[]>,
+    pages: PageSet,
   ): AsyncIterable<SpreadsheetPage> {
     const { pageCount } = await this.#geometry(docId, sessions, []);
-    for (let page = 0; page < pageCount; page += 1) {
+    for (const page of pagesOf(pages, pageCount)) {
       yield { page, tables: (await this.#pageTables(docId, sessions, page)).tables, edits: edits.get(page) ?? [] };
     }
   }
@@ -4846,20 +5118,22 @@ export class DocumentCommands {
    *
    * It does NOT touch the document.
    */
-  async print(docId: DocId, dpi: PrintDpi): Promise<PrintOutcome | undefined> {
+  async print(docId: DocId, dpi: PrintDpi, pages: PageSet): Promise<PrintOutcome | undefined> {
     const name = this.#documents.nameOf(docId);
     if (name === undefined) throw new DocumentNotOpenError(docId, 'print');
     if (this.#print === null) return { kind: 'unavailable' };
 
-    const { value: pageCount } = await this.#documents.run(docId, async () => {
+    const { value: listed } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return (await this.#geometry(docId, sessions, [])).pageCount;
+      const { pageCount } = await this.#geometry(docId, sessions, []);
+      // THE ROW'S PAGES, listed against this version: where the system dialog's own *Pages* starts (ADR-0161).
+      return { pageCount, start: pagesOf(pages, pageCount) };
     });
 
-    const choice = this.#print.choose(pageCount);
+    const choice = this.#print.choose(listed.pageCount, listed.start);
     if (choice === null) return undefined;
     try {
       const { value } = await this.#documents.run(docId, async (): Promise<PrintOutcome> => {
@@ -4902,9 +5176,9 @@ export class DocumentCommands {
     }
   }
 
-  /** Each page as a slide picture, rendered as the zip pulls it. */
-  async *#slidePages(docId: DocId, sessions: DocumentSessions, pageCount: number): AsyncIterable<PresentationPage> {
-    for (let page = 0; page < pageCount; page += 1) {
+  /** Each chosen page as a slide picture, rendered as the zip pulls it. */
+  async *#slidePages(docId: DocId, sessions: DocumentSessions, chosen: readonly number[]): AsyncIterable<PresentationPage> {
+    for (const page of chosen) {
       const [size] = (await this.#geometry(docId, sessions, [page])).sizes;
       if (size === undefined) throw new Error(`the geometry read named no size for page ${String(page)}`);
       const png = await this.#pageImage(docId, sessions, {
@@ -4925,16 +5199,15 @@ export class DocumentCommands {
    * needs none, and one is a stray character at the head of the file for every
    * tool that reads it as text.
    *
-   * The page count comes from the geometry read with NO pages named, which
-   * answers the count and loads nothing — so an empty document writes an empty
-   * file rather than asking for a page 0 it does not have.
+   * The pages are the caller's, listed against the document's count by `pagesOf`, so a page past the document is
+   * refused before any is read.
    */
-  async *#textChunks(docId: DocId, sessions: DocumentSessions): AsyncIterable<Uint8Array> {
-    const { pageCount } = await this.#geometry(docId, sessions, []);
+  async *#textChunks(docId: DocId, sessions: DocumentSessions, chosen: readonly number[]): AsyncIterable<Uint8Array> {
     const encoder = new TextEncoder();
-    for (let page = 0; page < pageCount; page += 1) {
+    // THE CHOSEN PAGES (ADR-0161), a form feed between each and the next, so the file's pages are the ones chosen.
+    for (const [at, page] of chosen.entries()) {
       const text = plainTextOf(await this.#pageText(docId, sessions, page));
-      yield encoder.encode(page === 0 ? text : `\f${text}`);
+      yield encoder.encode(at === 0 ? text : `\f${text}`);
     }
   }
 
@@ -5361,6 +5634,8 @@ export class DocumentCommands {
       this.#copy.checkTarget,
       () => Promise.resolve(stagedBytes(pdf)),
       destination,
+      // A NEW DOCUMENT, composed from a picked file: no open document's removal can be pending in it.
+      'keep',
     );
     if (written.kind === 'refused') {
       return { kind: 'destination-contested', openElsewhere: written.others.length };
@@ -5463,9 +5738,13 @@ export class DocumentCommands {
    *
    * ## The bytes and the passphrase end with this frame
    *
-   * Both are locals. Nothing on this class holds either, no log entry carries
-   * the key — `CommandPrior['signDocument']` is `never` — and the command's own
-   * payload is the only place they exist, for the length of one `execute`.
+   * Both are locals. Nothing on this class holds either, and the command's own
+   * payload is the only place they exist, for the length of one `execute`: the
+   * entry the bus records for a `stored-result` command keeps its kind and the
+   * signed file, and has no field a credential could be put in (ADR-0162). Until
+   * 2026-10-04 this said `CommandPrior['signDocument']` being `never` was why,
+   * which named the inverse and not the entry, and the entry kept the command
+   * whole (CR-SEC-19).
    */
   async sign(
     docId: DocId,
@@ -5521,14 +5800,13 @@ export class DocumentCommands {
       // refusal and the appearance's where each happens; anything else is not a
       // person's mistake, and propagates to the handler, which turns an
       // unmapped class into `internal` with the diagnostic kept main-side.
-      if (error instanceof SignatureAppearanceRefusedError) {
-        return {
-          kind: error.reason === 'unencodable-text' ? 'unencodable-text' : 'image-unreadable',
-        };
-      }
+      // THE APPEARANCE'S ONE REFUSAL is a picture its decoder would not read: a typed name arrives as its outline, so
+      // which characters it can draw was answered in the renderer (ADR-0150).
+      if (error instanceof SignatureAppearanceRefusedError) return { kind: 'image-unreadable' };
       // A SIGNATURE PICTURE PAST THE PIXEL BOUND, refused before `embedPng` decodes it
-      // in this process. `image-too-large` is the sentence a picture past the byte
-      // bound already gets, and both mean *choose a smaller picture*.
+      // in the MuPDF host, which answers it under its own code so it arrives here as
+      // this class (ADR-0148). `image-too-large` is the sentence a picture past the
+      // byte bound already gets, and both mean *choose a smaller picture*.
       if (error instanceof PngPixelsRefused && error.reason === 'too-many-pixels') {
         return { kind: 'image-too-large' };
       }
@@ -5558,10 +5836,7 @@ export class DocumentCommands {
         readonly kind: 'ready';
         readonly value: CommandOfKind<'signDocument'>['appearance'];
       }
-    | { readonly kind: 'cancelled' }
-    | { readonly kind: 'image-unreadable' }
-    | { readonly kind: 'image-too-large' }
-    | { readonly kind: 'saved-signature-missing' }
+    | NoSignatureMark
   > {
     if (requested === undefined) return { kind: 'ready', value: undefined };
     const { mark, page, rect } = requested;
@@ -5574,11 +5849,9 @@ export class DocumentCommands {
    * A requested signature look as a command carries it — **the one resolver for both routes** (ADR-0133 Decision 3):
    * *Sign with certificate* and the plain *Signature* ask the same question and take this answer.
    *
-   * **A picked picture is typed by its BYTES**, with the library's `pictureTypeOf` (B3a), as `signature.pickPicture`
-   * types the picture the dialog previews: the extension still decides whether the file is read at all, the read is
-   * bounded, and the type the command carries is what the picture is, which *Sign with certificate*'s decoder is chosen
-   * by — so a PNG named `.jpg` is a PNG here. A picked picture answers its file's own name too, which is what the library
-   * names a kept picture by — never its folder.
+   * **A picture picked at the click is `pickSignaturePicture`'s**, the resolver `signature.pickPicture` takes too
+   * (B3a): a PNG or a JPEG typed by its bytes, or a scanned PDF made a picture in the compose host — so what *Sign with
+   * certificate* places from a file is what the Signature dialog would have previewed from it.
    */
   async #markFor(mark: RequestedSignatureMark): Promise<
     | {
@@ -5586,10 +5859,7 @@ export class DocumentCommands {
         readonly mark: NonNullable<CommandOfKind<'signDocument'>['appearance']>['mark'];
         readonly picked: string | undefined;
       }
-    | { readonly kind: 'cancelled' }
-    | { readonly kind: 'image-unreadable' }
-    | { readonly kind: 'image-too-large' }
-    | { readonly kind: 'saved-signature-missing' }
+    | NoSignatureMark
   > {
     if (mark.kind === 'saved') {
       // A KEPT SIGNATURE, looked up by id: a typed or drawn one is its own look, and a picture's bytes come from the
@@ -5597,7 +5867,13 @@ export class DocumentCommands {
       // refusal rather than a picture that would not decode.
       const entry = this.#library.lookup(mark.id);
       if (entry?.kind !== 'signature') return { kind: 'saved-signature-missing' };
-      if (entry.look.kind !== 'picture') return { kind: 'ready', mark: entry.look, picked: undefined };
+      // A KEPT TYPED NAME IS NEVER NAMED BY ITS ID: main holds its name and face and no outline to draw, so the renderer
+      // sends it as the outline it makes (ADR-0150). Reaching here is the renderer's defect, not a person's doing, and
+      // the handler answers it as `internal`.
+      if (entry.look.kind === 'typed') {
+        throw new Error('a kept typed signature is placed by its outline, which the renderer makes, never by its id');
+      }
+      if (entry.look.kind === 'drawn') return { kind: 'ready', mark: entry.look, picked: undefined };
       const kept = this.#library.picture(mark.id);
       if (kept === null) return { kind: 'saved-signature-missing' };
       return { kind: 'ready', mark: { kind: 'image', bytes: kept.bytes, mediaType: kept.mediaType }, picked: undefined };
@@ -5611,29 +5887,32 @@ export class DocumentCommands {
       return { kind: 'ready', mark: { kind: 'image', bytes: held.bytes, mediaType: held.mediaType }, picked: held.name };
     }
 
-    const picked = await this.#image.pick();
-    if (picked === null) return { kind: 'cancelled' };
-    // AN EXTENSION WITH NO DECODER IS NOT READ, `insertImage`'s rule; it routes and never types.
-    if (imageMediaType(picked) === null) return { kind: 'image-unreadable' };
-    const read = await this.#image.read(picked);
-    if (read.kind === 'too-large') return { kind: 'image-too-large' };
-    if (read.kind === 'unreadable') return { kind: 'image-unreadable' };
-    const mediaType = pictureTypeOf(read.bytes);
-    if (mediaType === null) return { kind: 'image-unreadable' };
-    return { kind: 'ready', mark: { kind: 'image', bytes: read.bytes, mediaType }, picked: basename(picked) };
+    const picked = await pickSignaturePicture(this.#signaturePicture);
+    switch (picked.kind) {
+      case 'picture':
+        return { kind: 'ready', mark: { kind: 'image', bytes: picked.bytes, mediaType: picked.mediaType }, picked: picked.name };
+      case 'unreadable':
+        return { kind: 'image-unreadable' };
+      case 'too-large':
+        return { kind: 'image-too-large' };
+      case 'cancelled':
+      case 'scan-blank':
+      case 'scan-locked':
+        return { kind: picked.kind };
+    }
   }
 
   /**
    * Places a plain signature, with no certificate, and keeps it when asked (ADR-0133).
    *
    * The look is resolved by {@link #markFor}, as a certificate signature's is, so a kept look and a picked picture mean
-   * exactly what they mean there. **A typed name is checked BEFORE the host** by the drawing module's own rule
-   * (`drawsInStandardFont`): the engine host would refuse it too, but its refusal reaches main as a host failure rather
-   * than as the named class, and a person deserves the sentence that says which character.
+   * exactly what they mean there. A typed name arrives as its outline (ADR-0150), so whether its face can draw it was
+   * answered in the renderer, where the person can still change it, and nothing here asks again.
    *
    * ## Keeping comes after the mark is on the page
    *
-   * A placement the engine refused keeps nothing. A typed or drawn mark is kept as it was made; a picked picture as a
+   * A placement the engine refused keeps nothing. A typed mark is kept as its name and face, its outline being derived
+   * (`keptLookOf`), and a drawn one as it was made; a picked picture as a
    * signature picture, with the bytes this call already read — bounded by the library's own bound, which is smaller than
    * a placed picture's, so a larger one is placed and answered `not-keepable`. A full library is a placed mark that was
    * not kept, never a refused placement.
@@ -5651,14 +5930,12 @@ export class DocumentCommands {
     if (this.#documents.nameOf(docId) === undefined) {
       throw new DocumentNotOpenError(docId, 'place a signature');
     }
-    if (request.mark.kind === 'typed' && !(await drawsInStandardFont(request.mark.text))) {
-      return { kind: 'unencodable-text' };
-    }
     const resolved = await this.#markFor(request.mark);
     if (resolved.kind === 'cancelled') return { kind: 'cancelled' };
     if (resolved.kind === 'image-unreadable') return { kind: 'unreadable' };
     if (resolved.kind === 'image-too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES };
     if (resolved.kind === 'saved-signature-missing') return { kind: 'absent' };
+    if (resolved.kind === 'scan-blank' || resolved.kind === 'scan-locked') return { kind: resolved.kind };
 
     const { page, rect, stamp } = request;
     const { mark } = resolved;
@@ -5686,7 +5963,7 @@ export class DocumentCommands {
 
     if (!request.keep || request.mark.kind === 'saved') return { kind: 'placed', ...applied, kept: 'not-asked' };
     if (mark.kind !== 'image') {
-      const kept = this.#library.keepSignature(mark);
+      const kept = this.#library.keepSignature(keptLookOf(mark));
       return { kind: 'placed', ...applied, kept: kept.kind === 'added' ? 'kept' : 'library-full' };
     }
     if (mark.bytes.byteLength > MAX_LIBRARY_PICTURE_BYTES || resolved.picked === undefined) {
@@ -5709,6 +5986,29 @@ export class DocumentCommands {
    * `breaks-signatures` with nothing written. In the lane, so no command can land between the question and the write.
    */
   async save(docId: DocId, request: { readonly breakSignatures: boolean }): Promise<SaveRequestOutcome> {
+    return (await this.#saveThen(docId, request, false)).outcome;
+  }
+
+  /**
+   * Saves as {@link save} does and, where the save landed, answers the document's image TAKEN IN THE SAME LANE ENTRY:
+   * what a cloud save-back uploads (CR-DOC-04). Taken as a second lane entry it was whatever the document held when
+   * that entry ran, so a command landing between the two was uploaded under the version the save answered.
+   */
+  async saveAndTake(
+    docId: DocId,
+    request: { readonly breakSignatures: boolean },
+  ): Promise<{ readonly outcome: SaveRequestOutcome; readonly image: Uint8Array | null }> {
+    return this.#saveThen(docId, request, true);
+  }
+
+  async #saveThen(
+    docId: DocId,
+    request: { readonly breakSignatures: boolean },
+    take: boolean,
+  ): Promise<{ readonly outcome: SaveRequestOutcome; readonly image: Uint8Array | null }> {
+    // LISTS AND NOT NULLABLE LOCALS: the lane writes them from a closure, which control-flow analysis cannot see.
+    const removalSavedAt: string[] = [];
+    const taken: Uint8Array[] = [];
     const { value } = await this.#documents.run(docId, async (context): Promise<SaveRequestOutcome> => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -5720,7 +6020,11 @@ export class DocumentCommands {
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       const next = await this.#signaturesKept(session);
-      if (!request.breakSignatures && !next.kept) return { kind: 'breaks-signatures', signatures: next.signatures };
+      // ASKED ONCE PER DOCUMENT: a person who answered *edit this document* before a breaking edit has given this
+      // document's signatures up, and its save would otherwise ask the same question again (ADR-0149 Decision 6).
+      if (!request.breakSignatures && !next.kept && !context.signaturesBreakAgreed) {
+        return { kind: 'breaks-signatures', signatures: next.signatures };
+      }
 
       // THE DOCUMENT'S FACT, read before the save clears it: whether a removal ran since the file was written
       // (ADR-0139). Never the engine session's mark, which an undo's restore, an adopt or a host restart drops — the
@@ -5728,41 +6032,100 @@ export class DocumentCommands {
       const removal = context.removedSinceSave;
       // STAGED, so the document's bytes go from the host to the temporary file and never through `main`
       // (ADR-0121's addendum).
-      const names = this.#save.deps.names(context.path);
       const saved = await saveDocument(
         this.#save.deps,
         context,
         () => this.#save.stage(docId, sessions),
-        removal ? 'none' : 'keep',
+        backupsFor(context),
       );
+      // WHY IT WAS NOT WRITTEN, asked of the file now, inside the lane, so the person is told the remedy that fits.
+      if (saved.kind === 'write-failed') {
+        return { ...saved, cause: saveWriteCause(saved.failure, await this.#documents.fileAccess(docId)) };
+      }
       if (saved.kind !== 'saved') return saved;
-      // THE BACKUP THIS SAVE MADE is the newest name, `atomicWrite`'s own reading of the same list.
-      const [newest] = names.backups;
-      if (saved.backedUp && newest !== undefined) await this.#save.provenance.made(newest);
-      return { ...saved, cleared: removal ? await this.#clearCopies(context) : null };
+      // THE COPY THIS SAVE MADE, wherever `atomicWrite` left it: the newest backup, or the copy-aside where moving it into
+      // the backups was refused, which is still a copy of the person's document a removal's save must find (QQQQQQQ-8).
+      if (saved.previousKeptAt !== null) await this.#save.provenance.made(saved.previousKeptAt);
+      // A REMOVAL'S SAVE has just tried each copy, so what it could not delete is its answer; any other save tries the
+      // copies this document still owes again, which is what keeps a held copy from being kept for ever.
+      let outcome: SaveRequestOutcome;
+      if (removal) {
+        const cleared = await this.#clearCopies(context);
+        await this.#renewSessions(docId, context.path, saved.bytes);
+        removalSavedAt.push(context.path);
+        outcome = { ...saved, cleared: cleared.copies, held: cleared.held };
+      } else {
+        outcome = { ...saved, cleared: null, held: await this.#retryHeld(context) };
+      }
+      // THE IMAGE OF THE VERSION JUST SAVED, before this entry ends and the next command can run. From the sessions
+      // as they are now: a removal's save has just renewed them from the file it wrote.
+      if (take) taken.push(await this.#save.flush(docId, this.#engine.sessions(docId) ?? sessions));
+      return outcome;
     });
 
+    // THE RECENT PICTURE IS RETAKEN after the lane, which drawing page 1 needs (ADR-0164): the one kept at open shows
+    // the page as it was. Not awaited, as at open: the save has answered, and a retake reports its own failure.
+    for (const path of removalSavedAt) void this.#recentPicture.retake(docId, path);
+    return { outcome: value, image: taken[0] ?? null };
+  }
+
+  /**
+   * Rebuilds the document's engine sessions from the file a removal's save just wrote
+   * ([ADR-0164](../../../docs/DECISIONS/0164-a-removals-save-also-renews-the-hosts-copy-and-the-recent-picture.md)):
+   * a session is opened from a snapshot of the document as it was opened, and that file, beside the host, still held
+   * what the removal took out. The new sessions are opened BEFORE the old pair is released, so a file that cannot be
+   * opened leaves the document as it was rather than with no session.
+   *
+   * **A saved file that opens only with a password keeps the old session**, the renewal answering `locked`: protecting
+   * a document is a removal, a document a password opened is saved encrypted, and the password is not kept
+   * (ADR-0055). Its snapshot stays until the document closes, which ADR-0164's correction names as the case this
+   * does not reach.
+   */
+  async #renewSessions(docId: DocId, path: string, bytes: number): Promise<void> {
+    await this.#renew(docId, async (destination) => {
+      await this.#save.deps.surface.copy(path, destination);
+      return bytes;
+    });
+  }
+
+  /**
+   * Tries again to delete the older copies of this document that a save could not delete because another program held
+   * them (CR-DOC-10), and answers the names of those still held. In the document's lane, so no save lands between.
+   */
+  async deleteHeldCopies(docId: DocId): Promise<readonly string[]> {
+    const { value } = await this.#documents.run(docId, (context) => this.#retryHeld(context));
     return value;
+  }
+
+  /** The owed copies among this document's backup names, tried again; the names still held. */
+  async #retryHeld(context: DocumentContext): Promise<readonly string[]> {
+    const mine = new Set(copyNames(this.#save.deps.names(context.path)));
+    const owed = this.#save.provenance.owed().filter((path) => mine.has(path));
+    if (owed.length === 0) return [];
+    return (await this.#save.provenance.retryOwed(owed)).map((path) => basename(path));
   }
 
   /**
    * Deletes, PERMANENTLY and unasked, every older copy Monstera made that may still hold what a removal took out
-   * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)): each backup beside
-   * the file — every name a backup of it can have, kept or retired — that the ledger shows Monstera wrote and nothing
-   * has changed since, and every undo copy of the document with the history that needs them. A file with a backup's
-   * name that Monstera did not make is kept and named. In the save's own lane entry, so nothing lands between.
+   * ([ADR-0139](../../../docs/DECISIONS/0139-a-removals-save-deletes-the-backups-monstera-made.md)): each copy beside
+   * the file — every name one can have, a backup kept or retired or the copy-aside (`copyNames`) — that the ledger shows
+   * Monstera wrote and nothing has changed since, and every undo copy of the document with the history that needs them.
+   * A file with one of those names that Monstera did not make is kept and named. One Monstera made that another program holds is **held**: owed a
+   * deletion and named, never thrown past a save that has written (CR-DOC-10). In the save's own lane entry, so
+   * nothing lands between.
    */
-  async #clearCopies(context: DocumentContext): Promise<ClearedCopies> {
-    const names = this.#save.deps.names(context.path);
+  async #clearCopies(context: DocumentContext): Promise<{ readonly copies: ClearedCopies; readonly held: readonly string[] }> {
     let backups = 0;
     const kept: string[] = [];
-    for (const path of [...names.backups, ...names.retired]) {
+    const held: string[] = [];
+    for (const path of copyNames(this.#save.deps.names(context.path))) {
       const outcome = await this.#save.provenance.deleteIfMade(path);
       if (outcome === 'deleted') backups += 1;
       else if (outcome === 'not-made') kept.push(basename(path));
+      else if (outcome === 'held') held.push(basename(path));
     }
     const before = this.#bus.undoCopies(context);
     this.#bus.forgetUndoCopies(context);
-    return { backups, undoCopies: before - this.#bus.undoCopies(context), kept };
+    return { copies: { backups, undoCopies: before - this.#bus.undoCopies(context), kept }, held };
   }
 }

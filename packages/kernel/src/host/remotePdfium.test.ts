@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { createClient } from '@monstera/contract';
 
-import type { ByteImage } from '../engineSeam.js';
+import { HeldPassword } from '@monstera/shared';
+
+import type { ByteImage, ImageSession } from '../engineSeam.js';
+import { NothingToReplaceError, ReplaceMovesLineError, TextNotInPlaceError } from '../textEditRefusals.js';
 import { EngineCallFailed, EngineSessionGone, type SessionArea } from './remoteEngine.js';
 import { EngineSerialiseMismatch } from './remoteLifecycle.js';
 import { pdfiumChannels } from './pdfiumChannels.js';
@@ -36,6 +39,9 @@ const AREA: SessionArea = {
   snapshotDirectory: 'C:\\snap',
   outputDirectory: 'C:\\out',
 };
+
+/** A byte-image session over `bytes`, opening with `opensWith` or, as every fixture but one here, with none. */
+const imageOf = (bytes: ByteImage, opensWith?: HeldPassword): ImageSession => ({ bytes, opensWith });
 
 /** A transfer that records every file it is asked to write, take or remove. */
 function stubTransfer(): PdfiumTransfer & {
@@ -75,7 +81,7 @@ function stubTransfer(): PdfiumTransfer & {
       outputs.delete(name);
       return Promise.resolve(found);
     },
-    // THROWS: PDFium's session is bytes in `main`, so its checkpoint is written there and nothing moves (ADR-0121).
+    // THROWS: PDFium's session holds its bytes in `main`, so its checkpoint is written there and nothing moves (ADR-0121).
     moveOutput: () => Promise.reject(new Error('a PDFium checkpoint is written in main, never moved from a host')),
     removeOutput: () => Promise.reject(new Error('PDFium stages nothing in a host, so nothing is discarded there')),
     remove: () => Promise.resolve(),
@@ -112,8 +118,10 @@ function recordingKeeper(
   const asked: string[] = [];
   return {
     asked,
-    keep: (_image, scope, into) => {
-      asked.push(`${String(scope)}@${into.directory}|${into.name}`);
+    keep: (image, scope, into) => {
+      // THE KEY ONLY WHEN ONE CAME, so the cases that send none read as they always did.
+      const key = image.opensWith === undefined ? '' : ` key:${image.opensWith.reveal()}`;
+      asked.push(`${String(scope)}@${into.directory}|${into.name}${key}`);
       if (places) transfer.snapshots.set(into.name, kept);
       return Promise.resolve(places);
     },
@@ -139,7 +147,7 @@ describe('main’s PDFium writer', () => {
     const { writer } = harness(peer, transfer);
     const image = new Uint8Array([1, 2, 3]);
 
-    expect(await writer.serialise(image)).toBe(image);
+    expect(await writer.serialise(imageOf(image))).toBe(image);
     // BOTH HALVES. The same array is what `pdfLibWriter` promises, and the
     // empty ask list is what says this host has no `engine/serialise` to reach
     // — a member that called and returned its argument would satisfy the first.
@@ -167,9 +175,9 @@ describe('main’s PDFium writer', () => {
 
     expect(
       await writer.apply({
-        session: new Uint8Array([1, 2]),
+        session: imageOf(new Uint8Array([1, 2])),
         command: COMMAND,
-        source: undefined,
+        sources: [],
         reads: undefined,
       }),
     ).toStrictEqual(result);
@@ -197,9 +205,32 @@ describe('main’s PDFium writer', () => {
       },
     };
     const { writer } = harness(peer, transfer, keep);
-    await writer.apply({ session: new Uint8Array([1, 2]), command: COMMAND, source: undefined, reads: undefined });
+    await writer.apply({ session: imageOf(new Uint8Array([1, 2])), command: COMMAND, sources: [], reads: undefined });
     expect(asked).toStrictEqual(['0@C:\\snap|001']);
     expect(transfer.log).toStrictEqual(['take:002', 'remove:001']);
+  });
+
+  it('sends the key the session carries on the frame, and hands the keeper the key too (ADR-0171)', async () => {
+    const transfer = stubTransfer();
+    const { keep, asked } = recordingKeeper(transfer, true);
+    const sent: unknown[] = [];
+    const peer: Peer = {
+      asked: [],
+      answer: (_channel, params) => {
+        const frame = params as { into: string; password: unknown };
+        sent.push(frame.password);
+        transfer.outputs.set(frame.into, new Uint8Array([9]));
+        return { ok: true, value: { bytes: 1 } };
+      },
+    };
+    const { writer } = harness(peer, transfer, keep);
+    const key = new HeldPassword('sample-only-0171');
+    await writer.apply({ session: imageOf(new Uint8Array([1, 2]), key), command: COMMAND, sources: [], reads: undefined });
+    // CONTROL: the same apply with none sends `null`, the field's own word for none, never an absent field.
+    await writer.apply({ session: imageOf(new Uint8Array([1, 2])), command: COMMAND, sources: [], reads: undefined });
+
+    expect(sent).toStrictEqual(['sample-only-0171', null]);
+    expect(asked).toStrictEqual(['0@C:\\snap|001 key:sample-only-0171', '0@C:\\snap|003']);
   });
 
   it('CONTROL: a keeper that placed nothing leaves the ordinary write, of the image as it was', async () => {
@@ -215,7 +246,7 @@ describe('main’s PDFium writer', () => {
       },
     };
     const { writer } = harness(peer, transfer, keep);
-    await writer.apply({ session: new Uint8Array([1, 2]), command: COMMAND, source: undefined, reads: undefined });
+    await writer.apply({ session: imageOf(new Uint8Array([1, 2])), command: COMMAND, sources: [], reads: undefined });
     expect(asked).toStrictEqual(['0@C:\\snap|001']);
     expect(transfer.log).toStrictEqual(['write:001', 'take:002', 'remove:001']);
   });
@@ -234,9 +265,9 @@ describe('main’s PDFium writer', () => {
       },
     };
     const { writer } = harness(peer, transfer, keep);
-    await writer.capture(new Uint8Array([1]), COMMAND);
+    await writer.capture(imageOf(new Uint8Array([1])), COMMAND);
     expect(asked).toStrictEqual([]);
-    await writer.invert(new Uint8Array([1]), 'replaceTextObject', { page: 5, objects: [{ index: 2, text: 'WAS' }] });
+    await writer.invert(imageOf(new Uint8Array([1])), 'replaceTextObject', { page: 5, objects: [{ index: 2, text: 'WAS' }] });
     expect(asked).toHaveLength(1);
     expect(asked[0]).toMatch(/^5@/u);
   });
@@ -251,9 +282,9 @@ describe('main’s PDFium writer', () => {
 
     await expect(
       writer.apply({
-        session: new Uint8Array([1, 2]),
+        session: imageOf(new Uint8Array([1, 2])),
         command: COMMAND,
-        source: undefined,
+        sources: [],
         reads: undefined,
       }),
     ).rejects.toBeInstanceOf(EngineCallFailed);
@@ -272,9 +303,9 @@ describe('main’s PDFium writer', () => {
 
     await expect(
       writer.apply({
-        session: new Uint8Array([1]),
+        session: imageOf(new Uint8Array([1])),
         command: COMMAND,
-        source: undefined,
+        sources: [],
         reads: undefined,
       }),
     ).rejects.toBeInstanceOf(EngineSessionGone);
@@ -284,13 +315,35 @@ describe('main’s PDFium writer', () => {
     // runaway ADR-0023 Decision 9a bounds.
     code = 'engine-refused';
     const refused = writer.apply({
-      session: new Uint8Array([1]),
+      session: imageOf(new Uint8Array([1])),
       command: COMMAND,
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
     await expect(refused).rejects.toBeInstanceOf(EngineCallFailed);
     await expect(refused).rejects.not.toBeInstanceOf(EngineSessionGone);
+  });
+
+  it('turns nothing-to-replace into the class the local writer throws, and text-not-in-place into its own (ADR-0169)', async () => {
+    const transfer = stubTransfer();
+    let code = 'nothing-to-replace';
+    const peer: Peer = { asked: [], answer: () => ({ ok: false, error: { code } }) };
+    const { writer } = harness(peer, transfer);
+    const apply = () => writer.apply({ session: imageOf(new Uint8Array([1])), command: COMMAND, sources: [], reads: undefined });
+
+    // THE SAME CLASS IN EITHER PROCESS, so main says *nothing matched* whichever applied it, never *Something went wrong*.
+    await expect(apply()).rejects.toBeInstanceOf(NothingToReplaceError);
+    // AND ITS NEIGHBOUR STAYS ITS OWN: a mapping that answered every person's refusal with one class passes the line
+    // above and fails this one.
+    code = 'text-not-in-place';
+    const misplaced = apply();
+    await expect(misplaced).rejects.toBeInstanceOf(TextNotInPlaceError);
+    await expect(misplaced).rejects.not.toBeInstanceOf(NothingToReplaceError);
+    // AND A REPLACEMENT THAT WOULD MOVE ITS LINE is its own class too, for the same reason.
+    code = 'replace-moves-line';
+    const moving = apply();
+    await expect(moving).rejects.toBeInstanceOf(ReplaceMovesLineError);
+    await expect(moving).rejects.not.toBeInstanceOf(NothingToReplaceError);
   });
 
   it('refuses an answer whose count disagrees with the file that arrived', async () => {
@@ -310,9 +363,9 @@ describe('main’s PDFium writer', () => {
 
     await expect(
       writer.apply({
-        session: new Uint8Array([1]),
+        session: imageOf(new Uint8Array([1])),
         command: COMMAND,
-        source: undefined,
+        sources: [],
         reads: undefined,
       }),
     ).rejects.toBeInstanceOf(EngineSerialiseMismatch);
@@ -333,7 +386,7 @@ describe('main’s PDFium writer', () => {
     };
     const { writer } = harness(peer, transfer);
 
-    const captured = await writer.capture(new Uint8Array([1]), COMMAND);
+    const captured = await writer.capture(imageOf(new Uint8Array([1])), COMMAND);
     expect(captured).toStrictEqual({
       captured: true,
       prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] },
@@ -356,7 +409,7 @@ describe('main’s PDFium writer', () => {
     // Asserting `EngineCallFailed` here would have pinned the layer and gone
     // red on the day the union grew, for a change that fixes nothing.
     kind = 'rotatePages';
-    await expect(writer.capture(new Uint8Array([1]), COMMAND)).rejects.toThrow();
+    await expect(writer.capture(imageOf(new Uint8Array([1])), COMMAND)).rejects.toThrow();
     // AND THE INPUT IS STILL REMOVED, which is the half a refusal at the
     // boundary could plausibly skip: the throw comes from inside `withImage`'s
     // `call`, so only a `finally` cleans up after it.
@@ -373,7 +426,7 @@ describe('main’s PDFium writer', () => {
 
     // The bus answers `captured: false` by taking a checkpoint and applying
     // anyway (ADR-0009's 2026-08-19 decision), so it must arrive as a value.
-    expect(await writer.capture(new Uint8Array([1]), COMMAND)).toStrictEqual({
+    expect(await writer.capture(imageOf(new Uint8Array([1])), COMMAND)).toStrictEqual({
       captured: false,
       reason: 'no such object',
     });
@@ -389,7 +442,7 @@ describe('main’s PDFium writer', () => {
     const peer: Peer = { asked: [], answer: () => ({ ok: false, error: { code } }) };
     const { writer } = harness(peer, stubTransfer());
 
-    expect(await writer.capture(new Uint8Array([1]), COMMAND)).toMatchObject({
+    expect(await writer.capture(imageOf(new Uint8Array([1])), COMMAND)).toMatchObject({
       captured: false,
       reason: expect.stringMatching(/larger than the \d+-byte ceiling/u) as unknown,
     });
@@ -397,7 +450,7 @@ describe('main’s PDFium writer', () => {
     // A DECLARED code, so the boundary passes it and the refusal is the writer's rule — an undeclared one would be
     // refused as a malformed envelope first, and this control would pass for that reason.
     code = 'asset-missing';
-    await expect(writer.capture(new Uint8Array([1]), COMMAND)).rejects.toThrow(/asset-missing/u);
+    await expect(writer.capture(imageOf(new Uint8Array([1])), COMMAND)).rejects.toThrow(/asset-missing/u);
   });
 
   it('reads a page’s text runs through the same input write', async () => {
@@ -457,7 +510,7 @@ describe('main’s PDFium writer', () => {
     // what the host said: a `toMatchObject` on the indices would pass against
     // one that dropped the text and the extent, and both are what the grouping
     // and the chooser above it are made of.
-    expect(await textRuns(new Uint8Array([5]), 4)).toStrictEqual({ runs, truncated: false, unaddressable: 9 });
+    expect(await textRuns(imageOf(new Uint8Array([5])), 4)).toStrictEqual({ runs, truncated: false, unaddressable: 9 });
     expect(transfer.log).toStrictEqual(['write:001', 'remove:001']);
   });
 });

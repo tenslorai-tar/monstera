@@ -67,7 +67,7 @@ describe('protectionOptions — the option string is the whole observable', () =
         ownerPassword: 'own-me',
         permissions: ['print'],
       }),
-    ).toBe('encrypt=aes-256,user-password=open-me,owner-password=own-me,permissions=-3385');
+    ).toBe('encrypt=aes-256,user-password="open-me",owner-password="own-me",permissions=-3385');
   });
 
   it('CONTROL: `none` carries NO other term, whatever it was given', () => {
@@ -152,6 +152,52 @@ describe('a protection round trip, through the writer', () => {
         expect(await mupdfWriter.serialise(reopened)).toBeInstanceOf(Uint8Array);
       } finally {
         await mupdfWriter.close(reopened);
+      }
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('a password is the WHOLE password, whatever it holds: commas, equals signs, quotes, non-ASCII', async () => {
+    // CR-DOC-06: the option string is comma-separated, so `a,b` was written as `a` and the person who typed `a,b` was
+    // locked out. Each password below opens the document, and the separating half: its first piece alone does not.
+    for (const password of ['a,b', 'k=v', 'a,user-password=x', 'say "hi"', '"', '""', 'trailing,', 'pässwörd ✓', 'a\\b']) {
+      const session = await mupdfWriter.open(written);
+      try {
+        await applySetDocumentProtection(session, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: password });
+        const bytes = await mupdfWriter.serialise(session);
+        const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+        try {
+          expect({ password, empty: document.authenticatePassword('') }).toStrictEqual({ password, empty: 0 });
+          const piece = password.split(/[,=]/u)[0] ?? '';
+          if (piece !== password && piece !== '') {
+            expect({ password, piece: document.authenticatePassword(piece) }).toStrictEqual({ password, piece: 0 });
+          }
+          expect({ password, whole: document.authenticatePassword(password) > 0 }).toStrictEqual({ password, whole: true });
+        } finally {
+          document.destroy();
+        }
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    }
+  });
+
+  it('the OWNER password is held whole too, beside a user password that has a comma', async () => {
+    const session = await mupdfWriter.open(written);
+    try {
+      await applySetDocumentProtection(session, {
+        kind: 'setDocumentProtection',
+        encryption: 'aes-256',
+        userPassword: 'open,me',
+        ownerPassword: 'own,me',
+      });
+      const document = mupdf.PDFDocument.openDocument(await mupdfWriter.serialise(session), 'application/pdf');
+      try {
+        // MuPDF answers 4 for the owner password and 2 for the user one (`pdf_authenticate_password`).
+        expect([document.authenticatePassword('own'), document.authenticatePassword('own,me')]).toStrictEqual([0, 4]);
+      } finally {
+        document.destroy();
       }
     } finally {
       await mupdfWriter.close(session);

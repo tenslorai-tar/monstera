@@ -1,5 +1,6 @@
 import { useLingui } from '@lingui/react';
 import {
+  type AI_LIST_PROBLEMS,
   AI_PROVIDERS,
   AI_PROVIDER_IDS,
   type AiModelListAnswer,
@@ -30,6 +31,7 @@ import {
   SETTINGS_AI_MODELS_FALLBACK,
   SETTINGS_AI_MODELS_FETCHED,
   SETTINGS_AI_MODELS_NO_LIST,
+  SETTINGS_AI_MODELS_NOT_LISTED,
   SETTINGS_AI_MODELS_UNREAD,
   SETTINGS_AI_NOTE,
   SETTINGS_AI_PROVIDER_STORED,
@@ -41,6 +43,16 @@ import {
   SETTINGS_IMPORT,
   SETTINGS_INTEGRATIONS_NOTE,
   SETTINGS_INVALID,
+  SETTINGS_KEY_CHECK,
+  SETTINGS_KEY_CHECKING,
+  SETTINGS_KEY_NONE,
+  SETTINGS_KEY_NOT_THE_SERVICE,
+  SETTINGS_KEY_REJECTED,
+  SETTINGS_KEY_UNAUTHORISED,
+  SETTINGS_KEY_UNCHECKED,
+  SETTINGS_KEY_UNREACHABLE,
+  SETTINGS_KEY_UNREADABLE,
+  SETTINGS_KEY_WORKS,
   SETTINGS_KEYBOARD_NOTE,
   SETTINGS_NO_MATCH,
   SETTINGS_OCR_NOTE,
@@ -174,10 +186,13 @@ function SettingControl({
   secret,
   onSecret,
   labelledBy,
+  keyCheck,
 }: {
   readonly setting: SettingDefinition;
   readonly draft: unknown;
   readonly onDraft: (value: unknown) => void;
+  /** A provider key's Check and its answer (ADR-0158), drawn under the key; absent for every other secret. */
+  readonly keyCheck?: ReactElement | undefined;
   readonly stored: boolean;
   readonly available: boolean;
   readonly secret: SecretDraft;
@@ -344,6 +359,8 @@ function SettingControl({
         labelShownBeside
         // THE SETTING'S OWN PURPOSE (ADR-0116), never decided here from its id.
         purpose={setting.purpose}
+        // AND WHETHER IT RUNS LONG, which every text setting declares (ADR-0157).
+        runsLong={setting.runsLong === true}
         onValueChange={(value) => {
           onDraft(value);
         }}
@@ -366,6 +383,8 @@ function SettingControl({
             onSecret({ ...secret, replace: value });
           }}
           placeholder={stored ? SETTINGS_SECRET_PLACEHOLDER : undefined}
+          // A KEY OR A TOKEN, which every secret setting is: it runs long (ADR-0157).
+          runsLong
           secret
           value={secret.replace}
         />
@@ -383,6 +402,7 @@ function SettingControl({
             {_(SETTINGS_SECRET_REMOVE)}
           </label>
         ) : null}
+        {keyCheck}
       </div>
     );
   }
@@ -399,6 +419,7 @@ function SettingRow(props: {
   readonly available: boolean;
   readonly secret: SecretDraft;
   readonly onSecret: (next: SecretDraft) => void;
+  readonly keyCheck?: ReactElement | undefined;
 }): ReactElement {
   const { _ } = useLingui();
   const labelId = useId();
@@ -468,6 +489,65 @@ function ProviderRow({
   );
 }
 
+/** A key check's answer that is not a tick, one sentence per problem `listModels` can report. */
+const KEY_PROBLEM_WORDS: Readonly<Record<(typeof AI_LIST_PROBLEMS)[number], MessageKey>> = {
+  unauthorised: SETTINGS_KEY_UNAUTHORISED,
+  unreachable: SETTINGS_KEY_UNREACHABLE,
+  rejected: SETTINGS_KEY_REJECTED,
+  unreadable: SETTINGS_KEY_UNREADABLE,
+  'not-the-service': SETTINGS_KEY_NOT_THE_SERVICE,
+};
+
+/**
+ * What a provider's key check says, from the list `ai.models` answered (ADR-0158).
+ *
+ * **The tick is main's own rule**: *Key works* only where the provider answered a list, which is `ai.checkKey`'s
+ * `checked`. A provider with no list keeps its key unchecked and says so; a list that came back with a problem says
+ * which; one with neither had no key to ask with.
+ */
+function keyCheckWords(answer: AiModelListAnswer | undefined): MessageKey {
+  if (answer === undefined) return SETTINGS_AI_MODELS_UNREAD;
+  if (answer.source === 'fetched') return SETTINGS_KEY_WORKS;
+  if (answer.source === 'no-list') return SETTINGS_KEY_UNCHECKED;
+  return answer.problem === undefined ? SETTINGS_KEY_NONE : KEY_PROBLEM_WORDS[answer.problem];
+}
+
+/**
+ * A provider key's Check, and the answer to the last one asked while the key has not changed since. The key is never
+ * here: the check is of the stored one, and the answer is the provider's list.
+ */
+function KeyCheck({
+  provider,
+  state,
+  canCheck,
+  onCheck,
+}: {
+  readonly provider: AiProviderId;
+  /** Nothing to show, a check on its way, or the answer to the one last asked. */
+  readonly state: { readonly kind: 'none' } | { readonly kind: 'checking' } | { readonly kind: 'answered'; readonly answer: AiModelListAnswer | undefined };
+  readonly canCheck: boolean;
+  readonly onCheck: () => void;
+}): ReactElement {
+  const { _, i18n } = useLingui();
+  const name = _(AI_PROVIDER_NAMES[provider]);
+  const words = state.kind === 'answered' ? keyCheckWords(state.answer) : undefined;
+  return (
+    <div className="m-key-check">
+      <Button
+        disabled={!canCheck || state.kind === 'checking'}
+        label={SETTINGS_KEY_CHECK}
+        onClick={onCheck}
+      />
+      {/* SAID WHERE IT IS ASKED, and announced: a status, since the answer arrives while the person waits. */}
+      <span className="m-key-check__answer" data-key-check={state.kind === 'answered' ? (state.answer?.source ?? 'unread') : state.kind} role="status">
+        {state.kind === 'checking' ? i18n._(SETTINGS_KEY_CHECKING, { provider: name }) : null}
+        {words === SETTINGS_KEY_WORKS ? <Icon name="CircleCheck" size="dense" /> : null}
+        {words === undefined ? null : i18n._(words, { provider: name })}
+      </span>
+    </div>
+  );
+}
+
 /** Where a held list came from, in words — ADR-0117 Decision 3's *"with the source said"*. */
 const LIST_SOURCE_WORDS: Readonly<Record<AiModelListAnswer['source'], MessageKey>> = {
   fetched: SETTINGS_AI_MODELS_FETCHED,
@@ -513,7 +593,11 @@ function ModelRow({
           <span className="m-settings-row__note">{_(AI_MODELS_SETTING.description)}</span>
         )}
         <span className="m-settings-row__note" data-model-source={list?.source ?? 'unread'}>
-          {list === undefined ? _(SETTINGS_AI_MODELS_UNREAD) : i18n._(LIST_SOURCE_WORDS[list.source], { provider: name })}
+          {list === undefined
+            ? _(SETTINGS_AI_MODELS_UNREAD)
+            : // ASKED AND REFUSED is not *not asked*: a key check's answer carries its problem (ADR-0158), and the
+              // fallback's own sentence would then say the provider was never asked.
+              i18n._(list.problem === undefined ? LIST_SOURCE_WORDS[list.source] : SETTINGS_AI_MODELS_NOT_LISTED, { provider: name })}
         </span>
       </div>
       <div className="m-settings-row__control">
@@ -635,6 +719,7 @@ export default function SettingsBody({
   storedSecrets,
   secretsAvailable,
   models,
+  checked = {},
   resolve,
   update,
 }: {
@@ -642,6 +727,7 @@ export default function SettingsBody({
   readonly storedSecrets: readonly SecretSettingId[];
   readonly secretsAvailable: boolean;
   readonly models: Readonly<Partial<Record<AiProviderId, AiModelListAnswer>>>;
+  readonly checked?: Readonly<Partial<Record<AiProviderId, number>>> | undefined;
 } & DialogAnswering<SettingsAnswer>): ReactElement {
   const { _ } = useLingui();
   const [drafts, setDrafts] = useState<Readonly<Record<string, unknown>>>(() =>
@@ -695,7 +781,25 @@ export default function SettingsBody({
     if (parsed.success) report({ values: { [setting.id]: parsed.data } });
   };
 
+  /**
+   * KEY CHECKS (ADR-0158): how many each provider's key has been asked, and which keys changed since. An answer is the
+   * one to the LAST check asked only when the reply's count reaches it, and editing or removing the key takes the
+   * answer away, since it was about a key that is no longer there.
+   */
+  const [asked, setAsked] = useState<Readonly<Partial<Record<AiProviderId, number>>>>({});
+  const [changedSince, setChangedSince] = useState<Readonly<Partial<Record<AiProviderId, true>>>>({});
+  const providerOfKey = (setting: SettingDefinition): AiProviderId | undefined =>
+    AI_PROVIDER_IDS.find((id) => AI_PROVIDERS[id].keySetting === setting.id);
+  const checkState = (id: AiProviderId): Parameters<typeof KeyCheck>[0]['state'] => {
+    const times = asked[id] ?? 0;
+    if (times === 0 || changedSince[id] === true) return { kind: 'none' };
+    if ((checked[id] ?? 0) < times) return { kind: 'checking' };
+    return { kind: 'answered', answer: models[id] };
+  };
+
   const changeSecret = (setting: SettingDefinition, next: SecretDraft): void => {
+    const keyOf = providerOfKey(setting);
+    if (keyOf !== undefined) setChangedSince((current) => ({ ...current, [keyOf]: true }));
     setSecrets((current) => ({ ...current, [setting.id]: next }));
     const id = storedSecrets.find((held) => held === setting.id) ?? (setting.id as SecretSettingId);
     if (next.remove) report({ secrets: { [id]: '' } });
@@ -751,8 +855,29 @@ export default function SettingsBody({
       secret={secrets[setting.id] ?? UNTOUCHED}
       setting={setting}
       stored={storedSecrets.some((id) => id === setting.id)}
+      keyCheck={keyCheckFor(setting)}
     />
     );
+
+  /** A provider key's Check, which needs a key stored or typed and not being removed, and a store to keep it in. */
+  function keyCheckFor(setting: SettingDefinition): ReactElement | undefined {
+    const id = providerOfKey(setting);
+    if (id === undefined) return undefined;
+    const draft = secrets[setting.id] ?? UNTOUCHED;
+    const hasKey = !draft.remove && (draft.replace !== '' || storedSecrets.some((held) => held === setting.id));
+    return (
+      <KeyCheck
+        canCheck={secretsAvailable && hasKey}
+        onCheck={() => {
+          setAsked((current) => ({ ...current, [id]: (current[id] ?? 0) + 1 }));
+          setChangedSince((current) => Object.fromEntries(Object.entries(current).filter(([held]) => held !== id)));
+          report({ check: id });
+        }}
+        provider={id}
+        state={checkState(id)}
+      />
+    );
+  }
 
   const page = pages.find((entry) => entry.id === chosen) ?? pages[0];
   const note = page === undefined ? undefined : PAGE_NOTES[page.id];

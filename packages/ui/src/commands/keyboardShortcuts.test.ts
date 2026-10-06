@@ -27,7 +27,12 @@ function harness(reports: readonly unknown[], rows: () => readonly ShortcutRow[]
   const command = keyboardShortcutsCommand({
     ask: (id, props, onUpdate) => {
       opened.push({ id, props });
-      for (const report of reports) onUpdate?.(report);
+      // NO REPLY IS EXPECTED of this command: a reply would throw here, which the cases would show.
+      for (const report of reports) {
+        onUpdate?.(report, () => {
+          throw new Error('the shortcuts command replied to a report');
+        });
+      }
       return Promise.resolve(undefined);
     },
     rows,

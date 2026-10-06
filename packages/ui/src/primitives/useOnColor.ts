@@ -1,5 +1,5 @@
 import { type Rgb, channels, onColorRounded, textContrastFloor } from '@monstera/shared';
-import { type RefObject, useEffect } from 'react';
+import { type RefObject, useLayoutEffect } from 'react';
 
 /**
  * Solves a contrast-bearing colour against the tokens actually in effect and
@@ -109,7 +109,11 @@ export function useOnColor(
   // caller re-renders, which is what the dependency list is asking about.
   const backgroundKey = backgroundTokens.join(' ');
 
-  useEffect(() => {
+  // A LAYOUT EFFECT, so the solved colour is on the element before the browser paints. A passive effect runs after
+  // the first paint, so every surface that takes its ink from here was drawn once in the stylesheet's colour — the
+  // unchecked one — and then corrected: an unfinished frame a person can see, and the frame a rendered case reads
+  // when it measures the moment the element appears (the bubble and the redaction label, both found that way).
+  useLayoutEffect(() => {
     const apply = (): void => {
       const element = target.current;
       if (element === null) return;
@@ -136,7 +140,6 @@ export function useOnColor(
         return;
       }
 
-      const wanted = read(wantedToken);
       const backgrounds: Rgb[] = [];
       for (const name of names) {
         const background = read(name);
@@ -146,6 +149,10 @@ export function useOnColor(
         }
         backgrounds.push(background);
       }
+      // A TRANSLUCENT COLOUR AS DRAWN, laid over the first surface it sits on. Read bare, its alpha was dropped and
+      // its channels solved as an opaque colour: the light theme's soft border, `rgba(15, 30, 22, 0.06)`, came out
+      // as rgb(15, 30, 22), near-black, because that already passes 3:1 (measured 2026-10-04 on the page grid).
+      const wanted = channels(style.getPropertyValue(wantedToken).trim(), backgrounds[0] ?? null);
       if (wanted === null) {
         element.style.removeProperty(property);
         return;

@@ -16,6 +16,8 @@ import { type PageScope, pagesOf } from './pageScope.js';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
+import { removeFieldsOnPages } from './formFields.js';
+import { releasePagesOutsideTree } from './pageReferences.js';
 import { withDocument } from './mupdfWriter.js';
 
 /**
@@ -138,7 +140,12 @@ function leavesWithInheritables(document: PDFDocument): PDFObject[] {
  * flatten, the `/Count` and the reparenting in one place (B3a).
  */
 function setKids(document: PDFDocument, leaves: readonly PDFObject[]): void {
-  const root = deref(document.getTrailer().get('Root', 'Pages'));
+  // THE REFERENCE, kept apart from the dictionary it resolves to. Each leaf's `/Parent` is written from it: a resolved
+  // dictionary put as a value is written INLINE, so every page carried the whole root, its `/Kids` included —
+  // measured 2026-10-04, one move took a 1,000-page document's saved file from 110,562 to 8,038,564 bytes, growing as
+  // the square of the page count, where the format requires `/Parent` to be an indirect reference.
+  const pages = document.getTrailer().get('Root', 'Pages');
+  const root = deref(pages);
   const kids = document.newArray();
   for (const leaf of leaves) kids.push(leaf);
 
@@ -149,7 +156,7 @@ function setKids(document: PDFDocument, leaves: readonly PDFObject[]): void {
   // a removed leaf given a `/Parent` pointing at the root is a page that claims
   // to be in a tree whose `/Kids` does not list it, which is the inconsistent
   // half of a page tree that some readers repair by trusting `/Parent`.
-  for (const leaf of leaves) leaf.put('Parent', root);
+  for (const leaf of leaves) leaf.put('Parent', pages);
 
   document.setPageTreeCache(true);
 }
@@ -373,8 +380,8 @@ export const invertDuplicatePage: Invert<'mupdf', 'duplicatePage'> = (
   inverse: PriorPageCopy,
 ): Promise<void> =>
   withDocument(session, (document) => {
-    const count = document.countPages();
-    rewriteKids(document, keptPermutation(count, inverse.at));
+    // A DUPLICATE CARRIES ITS WIDGETS, so taking it away takes them too, as a delete does (ADR-0151).
+    takePagesOut(document, inverse.at);
   });
 
 /**
@@ -485,7 +492,8 @@ export const invertInsertBlankPage: Invert<'mupdf', 'insertBlankPage'> = (
   inverse: PriorPageInsert,
 ): Promise<void> =>
   withDocument(session, (document) => {
-    rewriteKids(document, keptPermutation(document.countPages(), [inverse.at]));
+    // THE SAME RULE AS EVERY OTHER PAGE THAT LEAVES (ADR-0151): a field drawn on the inserted page since goes with it.
+    takePagesOut(document, [inverse.at]);
   });
 
 /**
@@ -581,9 +589,25 @@ export const applyDeletePages: Apply<'mupdf', 'deletePages'> = (
   command: CommandOfKind<'deletePages'>,
 ): Promise<void> =>
   withDocument(session, (document) => {
-    const gone = removableOrThrow(document, command.pages);
-    rewriteKids(document, keptPermutation(document.countPages(), gone));
+    takePagesOut(document, removableOrThrow(document, command.pages));
   });
+
+/**
+ * Takes pages out of the document, and everything that named them: the one way a page leaves through the tree rewrite.
+ *
+ * Three steps in this order. The fields go first, while the indices still name the pages (ADR-0151): otherwise
+ * `/AcroForm` keeps the widgets, their `/P` keeps the page, and the saved file still holds every answer. The tree is
+ * rewritten. Then every other reference to a page now outside the tree is cleared by its own structure
+ * ([ADR-0155](../../../docs/DECISIONS/0155-a-page-that-leaves-takes-every-reference-to-it.md)), since twenty-two kinds
+ * were each measured to keep a deleted page and its text in the saved file. A delete, and the undo of an insert or a
+ * duplicate, all take this; `pageMerge.ts`' replace removes through MuPDF's own `deletePage` and releases the same way.
+ */
+function takePagesOut(document: PDFDocument, pages: Iterable<number>): void {
+  const gone = [...pages];
+  removeFieldsOnPages(document, gone);
+  rewriteKids(document, keptPermutation(document.countPages(), gone));
+  releasePagesOutsideTree(document);
+}
 
 /**
  * Records where the page was, before it moves.

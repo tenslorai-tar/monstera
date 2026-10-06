@@ -6,6 +6,7 @@ import {
   ANTHROPIC_OUT_OF_CREDIT,
   ASSISTANT_SEARCHES_THE_WEB,
   ASSISTANT_NO_KEY,
+  ASSISTANT_PROBLEM_NOT_THE_SERVICE,
   ASSISTANT_PROBLEM_UNAUTHORISED,
   ASSISTANT_PROBLEM_UNREACHABLE,
   GROUP_LANGUAGE,
@@ -33,6 +34,7 @@ const REFUSALS = {
   'out-of-credit': ANTHROPIC_OUT_OF_CREDIT,
   rejected: TOAST_TRANSLATE_REJECTED,
   unreadable: TOAST_TRANSLATE_UNREADABLE,
+  'not-the-service': ASSISTANT_PROBLEM_NOT_THE_SERVICE,
   // A translation never uses the web, so a model that always searches is refused before the page is sent (ADR-0108).
   'searches-the-web': ASSISTANT_SEARCHES_THE_WEB,
 } as const satisfies Record<Extract<ChannelResult<'ai.translatePage'>, { kind: 'refused' }>['problem'], MessageKey>;

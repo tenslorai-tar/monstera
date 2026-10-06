@@ -2,17 +2,17 @@ import type { CreatedField, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 
 import {
-  FORM_FIELD_CHECKBOX_DIALOG_ID,
   FORM_FIELD_DROPDOWN_DIALOG_ID,
   FORM_FIELD_LISTBOX_DIALOG_ID,
   FORM_FIELD_RADIO_DIALOG_ID,
-  FORM_FIELD_TEXT_DIALOG_ID,
 } from '../dialogs/formField.js';
 import { FORM_FIELD_RESULT } from '../dialogs/formFieldResult.js';
+import { FORM_FIELD_NAME_LABEL, HINT_FORM_FIELD } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
 import type { TextToolDeps } from './textTools.js';
+import { fieldNameProblem } from './typedRules.js';
 
 /**
  * The five create-field tools — Stage 4's *create fields by drawing*.
@@ -22,7 +22,8 @@ import type { TextToolDeps } from './textTools.js';
  * *By drawing* is the row's own wording, and it is the right one: a field's
  * rectangle is the whole of what a person is deciding, and there is no honest
  * way to type one. So this is `shapeTools`' gesture — one drag, two points —
- * with a dialog after it, which is `textTools`' shape.
+ * with the name typed after it: on the page beside the box for a text field or
+ * a checkbox, in a dialog for a field that needs options too.
  *
  * ## FIVE, and the sixth is a measurement rather than a scoping choice
  *
@@ -39,7 +40,7 @@ import type { TextToolDeps } from './textTools.js';
  * `shapeTools`' rule about when a second factory is warranted: a box tool and a
  * line tool differ in what counts as *too small to be meant*, and these five do
  * not — every one of them is a box, and a box 3 pixels across is a click
- * whichever field it was going to be. What differs is the dialog opened and the
+ * whichever field it was going to be. What differs is what is asked and the
  * `field` member built from its answer.
  *
  * ## The gesture is a rectangle and the payload is a rectangle, with nothing between
@@ -66,8 +67,13 @@ const MINIMUM_BOX = 4;
 /** What each tool asks for and builds, keyed by nothing — read at construction. */
 interface FieldToolShape {
   readonly id: string;
-  readonly dialog: string;
-  /** Turns the dialog's answer into the payload's discriminated member. */
+  /**
+   * What the tool asks once the box is drawn. A field that needs only a NAME has it typed on the page, in a line beside
+   * the box (ADR-0154, the owner's Group 15); one that needs an option or a list of options keeps its dialog, which
+   * asks for the name with them.
+   */
+  readonly asks: { readonly kind: 'name' } | { readonly kind: 'dialog'; readonly dialog: string };
+  /** Turns the answer into the payload's discriminated member. */
   readonly build: (answer: {
     readonly option?: string | undefined;
     readonly options?: readonly string[] | undefined;
@@ -88,27 +94,27 @@ export const FORM_FIELD_LISTBOX_TOOL_ID = 'forms.field-listbox';
 const SHAPES: readonly FieldToolShape[] = [
   {
     id: FORM_FIELD_TEXT_TOOL_ID,
-    dialog: FORM_FIELD_TEXT_DIALOG_ID,
+    asks: { kind: 'name' },
     build: () => ({ type: 'text' }),
   },
   {
     id: FORM_FIELD_CHECKBOX_TOOL_ID,
-    dialog: FORM_FIELD_CHECKBOX_DIALOG_ID,
+    asks: { kind: 'name' },
     build: () => ({ type: 'checkbox' }),
   },
   {
     id: FORM_FIELD_RADIO_TOOL_ID,
-    dialog: FORM_FIELD_RADIO_DIALOG_ID,
+    asks: { kind: 'dialog', dialog: FORM_FIELD_RADIO_DIALOG_ID },
     // `undefined` WHEN THE ANSWER LACKS WHAT THIS KIND NEEDS, which is the same
-    // outcome a dismissed dialog produces. One result schema serves five
-    // dialogs, so `option` is optional there and it is the tool — the one thing
+    // outcome a dismissed dialog produces. One result schema serves every way a
+    // field is named, so `option` is optional there and it is the tool — the one thing
     // that knows which kind it is creating — that narrows it. A cast would make
     // a dialog answering the wrong shape into a command carrying `undefined`.
     build: (answer) => (answer.option === undefined ? undefined : { type: 'radio', option: answer.option }),
   },
   {
     id: FORM_FIELD_DROPDOWN_TOOL_ID,
-    dialog: FORM_FIELD_DROPDOWN_DIALOG_ID,
+    asks: { kind: 'dialog', dialog: FORM_FIELD_DROPDOWN_DIALOG_ID },
     build: (answer) =>
       answer.options === undefined || answer.options.length === 0
         ? undefined
@@ -116,7 +122,7 @@ const SHAPES: readonly FieldToolShape[] = [
   },
   {
     id: FORM_FIELD_LISTBOX_TOOL_ID,
-    dialog: FORM_FIELD_LISTBOX_DIALOG_ID,
+    asks: { kind: 'dialog', dialog: FORM_FIELD_LISTBOX_DIALOG_ID },
     build: (answer) =>
       answer.options === undefined || answer.options.length === 0
         ? undefined
@@ -142,8 +148,8 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
       transform: PageTransform,
     ): Promise<DispatchableCommand | undefined> => {
       // THE SAME THRESHOLD AS THE PREVIEW, read from it rather than restated —
-      // here it also decides whether a modal opens at all, so the two coming
-      // apart would be a dialog appearing for a drag that showed no box.
+      // here it also decides whether anything is asked at all, so the two coming
+      // apart would be a name field or a dialog appearing for a drag that showed no box.
       if (drawn(gesture) === undefined) return undefined;
 
       // THE RECTANGLE IS BUILT BEFORE THE ASK, from the transform the overlay
@@ -151,10 +157,25 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
       // whatever zoom the page is at when the person finishes typing.
       const rect = draggedRect(startOf(gesture), endOf(gesture), transform);
 
-      const answered = FORM_FIELD_RESULT.safeParse(await deps.ask(shape.dialog, {}));
-      // A DISMISSED DIALOG IS `undefined` AND SO IS A REFUSED ANSWER — the same
-      // outcome a drag too small to see already produces. The gate is the
-      // absence of a value rather than a flag.
+      // THE NAME TYPED ON THE PAGE, by the rule the field dialogs take too, and parsed by the same result schema those
+      // answer with, so a name reaches the command one way whichever asked for it.
+      let asked: unknown;
+      if (shape.asks.kind === 'name') {
+        const name = await deps.write({
+          page,
+          box: rect,
+          shape: 'line',
+          initial: '',
+          label: FORM_FIELD_NAME_LABEL,
+          check: fieldNameProblem,
+        });
+        asked = name === undefined ? undefined : { name };
+      } else {
+        asked = await deps.ask(shape.asks.dialog, {});
+      }
+      const answered = FORM_FIELD_RESULT.safeParse(asked);
+      // NOTHING TYPED, A DISMISSED DIALOG AND A REFUSED ANSWER are all `undefined` — the same outcome a drag too small to
+      // see already produces. The gate is the absence of a value rather than a flag.
       if (!answered.success) return undefined;
 
       const field = shape.build(answered.data);
@@ -173,7 +194,7 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
     preview: drawn,
   };
 
-  return { id: shape.id, controller };
+  return { id: shape.id, controller, hint: HINT_FORM_FIELD };
 }
 
 /** The five, for the composition root. */

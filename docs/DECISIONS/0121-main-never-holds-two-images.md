@@ -100,3 +100,11 @@ than `main`'s own storage; a move there is a copy and a delete, which is what a 
 
 Also found, and the same class: `takeOutput` returned `new Uint8Array(bytes)` of a buffer the read already owned — a
 second whole image for as long as both lived.
+
+## Addition, 2026-10-03 — the signing trade is taken
+
+*What stays in `main`, said so* left signing there as the owner's trade. The owner took it on 2026-10-03 (CR-SEC-16),
+and [ADR-0148](0148-signings-parse-runs-in-the-mupdf-host-and-main-keeps-only-the-key.md) records it: the placeholder,
+the appearance and `@signpdf`'s placeholder scan run in the MuPDF host beside the session, and `main` keeps the key and
+signs over four checked numbers. The section above is kept as what was decided on 2026-09-29; the budget clause stands,
+because `main` still reads the prepared bytes for the length of one signature.

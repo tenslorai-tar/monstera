@@ -6,8 +6,10 @@ import type { UiTool } from '../registries/tools.js';
 import { overlayTransform } from './annotationSpace.js';
 import {
   HIGHLIGHT_TOOL_ID,
+  REDACT_TEXT_TOOL_ID,
   STRIKEOUT_TOOL_ID,
   UNDERLINE_TOOL_ID,
+  redactTextCommand,
   textMarkupTools as buildMarkupTools,
 } from './textMarkupTools.js';
 import { PLAIN_STYLE } from './annotationStyle.js';
@@ -83,11 +85,11 @@ describe('textMarkupTools', () => {
   it('previews a LINE, and only once the drag is one', () => {
     const { controller } = toolFor(HIGHLIGHT_TOOL_ID);
     const started = controller.begin(viewportPoint(20, 20));
-    expect(controller.preview(controller.update(started, viewportPoint(21, 20)))).toBeUndefined();
+    expect(controller.preview(controller.update(started, viewportPoint(21, 20)), 3, overlayTransform(PAGE))).toBeUndefined();
     // A LINE RATHER THAN A RECTANGLE, because the annotation is not a region:
     // the box a person sweeps and the runs they get are different shapes, and a
     // rectangle would promise the one the kernel will not produce.
-    expect(controller.preview(controller.update(started, viewportPoint(100, 30)))).toStrictEqual({
+    expect(controller.preview(controller.update(started, viewportPoint(100, 30)), 3, overlayTransform(PAGE))).toStrictEqual({
       shape: 'line',
       x1: 20,
       y1: 20,
@@ -96,11 +98,22 @@ describe('textMarkupTools', () => {
     });
   });
 
-  it('registers three tools with three ids', () => {
+  it('registers the three markups and Redact text, with four ids', () => {
     expect(textMarkupTools.map((tool) => tool.id)).toStrictEqual([
       HIGHLIGHT_TOOL_ID,
       UNDERLINE_TOOL_ID,
       STRIKEOUT_TOOL_ID,
+      REDACT_TEXT_TOOL_ID,
     ]);
+  });
+
+  it('REDACT TEXT marks the selected run for redaction, by the selected-text menu’s own builder (14e)', () => {
+    // THE SAME WORDS A HIGHLIGHT WOULD NAME: an I-beam, the page's selection, and its two ends, never a box.
+    const redact = textMarkupTools.find((tool) => tool.id === REDACT_TEXT_TOOL_ID);
+    expect(redact?.cursor).toBe('text');
+    const selection = { page: 2, from: { x: 10, y: 700 }, to: { x: 220, y: 680 }, text: 'Revenue grew' };
+    const command = redact?.fromSelection?.(selection);
+    expect(command).toStrictEqual(redactTextCommand(2, selection.from, selection.to, PLAIN_STYLE));
+    expect(command).toMatchObject({ kind: 'addAnnotation', page: 2, annotation: { type: 'redact', over: 'text' } });
   });
 });

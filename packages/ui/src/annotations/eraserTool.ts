@@ -1,7 +1,8 @@
-import type { AnnotationBlend, AnnotationKindName, DispatchableCommand } from '@monstera/contract';
+import type { AnnotationBlend, AnnotationKindName, AnnotationWordsStyle, DispatchableCommand } from '@monstera/contract';
 import type { DocVersion, PageTransform } from '@monstera/shared';
 import { pdfPoint, toViewport } from '@monstera/shared';
 
+import { HINT_ERASER } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { pointerPath, startOf } from '../registries/tools.js';
 
@@ -96,12 +97,23 @@ export interface ErasableAnnotation {
    * later would describe a document those handles may no longer name.
    */
   readonly contents: string;
+  /**
+   * Present when the walk sliced {@link contents}: a long comment is listed as one line, so an editor reads the mark's
+   * whole words (`document.annotationWords`) rather than saving the slice over them.
+   */
+  readonly cut?: true;
   /** `/T`, or empty — the Properties tab's author, carried for `contents`' reason (ADR-0103). */
   readonly author: string;
   /** `/CreationDate` as a UTC instant, or `null` where the mark carries none. */
   readonly created: string | null;
   /** The blend its appearance is drawn in. */
   readonly blend: AnnotationBlend;
+  /**
+   * How a text mark's words are drawn, where the file says it in a way this build can set back: a reopen types them in
+   * the mark's own box in this style (ADR-0154 Decision 3). Absent on every other kind and on a text mark whose style
+   * cannot be read, which is reopened on a card beside it instead.
+   */
+  readonly typed?: AnnotationWordsStyle;
 }
 
 /** What the walk answered, and the version it answered at. */
@@ -145,6 +157,22 @@ function covers(
   );
 }
 
+/**
+ * The mark a click at `at` lands on: the topmost on `page` whose box holds the point, which is the LAST in the walk.
+ *
+ * ONE RULE for every tool that picks a mark by a click — the eraser, the select tool's click and a reopen (ADR-0154
+ * Decision 3) — so clicking to select, to erase and to edit cannot pick different marks from the same pixel. `findLast`
+ * rather than a reversed copy, so the index in the handle is the index in the walk.
+ */
+export function markAt<T extends ErasableAnnotation>(
+  annotations: readonly T[],
+  page: number,
+  at: { readonly x: number; readonly y: number },
+  transform: PageTransform,
+): T | undefined {
+  return annotations.findLast((annotation) => annotation.page === page && covers(annotation, at, transform));
+}
+
 export function eraserTool(deps: EraserDeps): UiTool {
   const controller: ToolController = {
     ...pointerPath,
@@ -161,13 +189,7 @@ export function eraserTool(deps: EraserDeps): UiTool {
       const snapshot = await deps.annotations();
       if (snapshot === undefined) return undefined;
 
-      // THE LAST MATCH, which is the topmost. `findLast` rather than a reversed
-      // copy so the index in the handle is the index in the walk — reversing
-      // the array and taking `findIndex` would give a position in a list nobody
-      // else has.
-      const hit = snapshot.annotations.findLast(
-        (annotation) => annotation.page === page && covers(annotation, at, transform),
-      );
+      const hit = markAt(snapshot.annotations, page, at, transform);
       // NOTHING UNDER THE POINTER IS AN ORDINARY OUTCOME, and `undefined` is
       // what the platform already means by it. A click on blank paper erases
       // nothing and says nothing, which is what an eraser does.
@@ -190,5 +212,5 @@ export function eraserTool(deps: EraserDeps): UiTool {
     preview: (): ToolPreview | undefined => undefined,
   };
 
-  return { id: ERASER_TOOL_ID, controller };
+  return { id: ERASER_TOOL_ID, controller, hint: HINT_ERASER, cursor: 'eraser' };
 }

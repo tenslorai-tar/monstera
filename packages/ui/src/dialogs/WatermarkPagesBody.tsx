@@ -14,6 +14,7 @@ import {
   WATERMARK_PAGES_SIZE_RANGE,
   WATERMARK_PAGES_TEXT,
 } from '../messages/en.js';
+import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
@@ -88,7 +89,10 @@ export default function WatermarkPagesBody({
 
   const trimmed = text.trim();
   const parsed = readAppearance(appearance);
-  const ready = trimmed.length > 0 && parsed !== null;
+  const attempt = useAttempt();
+  // A WRONG APPEARANCE is said as typed and disables the action; NO TEXT only once the action is pressed (`attempt.ts`).
+  const invalid = parsed === null ? appearanceProblem(appearance) : undefined;
+  const problem = attemptProblem(attempt, invalid, trimmed.length === 0, WATERMARK_PAGES_NO_TEXT);
 
   return (
     <div className="m-watermark-pages">
@@ -96,6 +100,7 @@ export default function WatermarkPagesBody({
         <Input
           label={WATERMARK_PAGES_TEXT}
           labelShownBeside
+          opensFocused
           value={text}
           onValueChange={(next) => {
             setText(next);
@@ -134,18 +139,18 @@ export default function WatermarkPagesBody({
       </DialogRow>
       <PageScopeChoice className="m-watermark-pages__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
       <p className="m-watermark-pages__problem" role="status">
-        {ready ? '' : _(problemOf(trimmed, appearance))}
+        {problem === undefined ? '' : _(problem)}
       </p>
       <DialogFooter>
         <Button
           label={WATERMARK_PAGES_APPLY}
           variant="primary"
-          disabled={!ready}
+          disabled={invalid !== undefined}
           onClick={() => {
-            // GUARDED AGAIN rather than trusting the disabled attribute, for
-            // `CropPagesBody`'s reason: the schema behind `resolve` refuses an
-            // opacity above 1, and a mismatch would be a thrown
-            // `DialogResultRejected` over the user's document.
+            attempt.attempt();
+            // GUARDED, for `CropPagesBody`'s reason: the schema behind `resolve`
+            // refuses an opacity above 1 and empty text, and a mismatch would be
+            // a thrown `DialogResultRejected` over the user's document.
             if (parsed === null || trimmed.length === 0) return;
             resolve({ pages: everyPage ? 'all' : [...pages], text: trimmed, ...parsed });
           }}
@@ -208,15 +213,14 @@ function readNumber(
 }
 
 /**
- * Which sentence a refusal deserves.
+ * Which sentence a wrong appearance deserves.
  *
- * Four states rather than one, because *that is not a number* is unhelpful
- * about an opacity of `150`, which plainly is one. The order is the order a
- * person fills the form, so the message names the first thing that is wrong
- * rather than the last.
+ * Three states rather than one, because *that is not a number* is unhelpful
+ * about an opacity of `150`, which plainly is one. No text is not among them:
+ * it is a missing entry, said only once the person presses the action
+ * (`attempt.ts`), where these are said as they are typed.
  */
-function problemOf(text: string, appearance: Appearance): MessageKey {
-  if (text.length === 0) return WATERMARK_PAGES_NO_TEXT;
+function appearanceProblem(appearance: Appearance): MessageKey {
   const opacity = readNumber(appearance.opacity, DEFAULT_OPACITY);
   if (opacity !== null && opacity > 100) return WATERMARK_PAGES_OPACITY_RANGE;
   const size = readNumber(appearance.fontSize, DEFAULT_SIZE);

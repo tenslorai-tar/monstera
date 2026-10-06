@@ -56,7 +56,7 @@ import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import forge from 'node-forge';
 
 import { TIMESTAMP_AUTHORITY_IDS } from '../../packages/contract/dist/index.js';
-import { signDocumentWith } from '../../packages/kernel/dist/documentSign.js';
+import { signDocumentWith } from '../../packages/kernel/dist/signpdfWriter.js';
 import { mupdfWriter } from '../../packages/kernel/dist/mupdfWriter.js';
 import { pkcs7Asn1, readSignatures } from '../../packages/kernel/dist/signatureRead.js';
 import { acceptTimestampReply } from '../../packages/kernel/dist/timestampToken.js';
@@ -76,12 +76,15 @@ refuseStaleBuild(
   ROOT,
   [
     ['packages/kernel/src/documentSign.ts', 'packages/kernel/dist/documentSign.js', 'tsc'],
+    // THE SPEC'S APPLY AND THE PLACEHOLDER, since ADR-0148 split the signature into a host half and main's.
+    ['packages/kernel/src/signpdfWriter.ts', 'packages/kernel/dist/signpdfWriter.js', 'tsc'],
+    ['packages/kernel/src/signaturePlaceholder.ts', 'packages/kernel/dist/signaturePlaceholder.js', 'tsc'],
     ['packages/kernel/src/timestampToken.ts', 'packages/kernel/dist/timestampToken.js', 'tsc'],
     ['packages/kernel/src/signedDataCheck.ts', 'packages/kernel/dist/signedDataCheck.js', 'tsc'],
     ['packages/kernel/src/signatureRead.ts', 'packages/kernel/dist/signatureRead.js', 'tsc'],
     ['apps/desktop/src/timestampTransport.ts', 'apps/desktop/dist/timestampTransport.js', 'tsc'],
   ],
-  5,
+  7,
 );
 
 const { asn1 } = forge;

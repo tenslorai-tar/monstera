@@ -274,7 +274,7 @@ const pdfLibImageExecution = {
   // are called with `undefined` and never look.
   // NO SOURCE IN THIS DESTRUCTURE, and the `_source: never` placeholder that
   // used to sit here is gone with the positional call (ADR-0069). `Apply`
-  // resolves byte-image × `sources: 'one'` to `never`, so no pdf-lib command
+  // resolves byte-image × any source to `never`, so no pdf-lib command
   // can be handed one; the request still carries the field, because the bus
   // must decide it rather than omit it, and this writer simply does not name it.
   apply<K extends KindsRoutedTo<'pdf-lib'>>(
@@ -302,9 +302,9 @@ const pdfLibImageExecution = {
     // says to.
     // THE OUTLINE IS THIRD HERE AND NAMED ON THE REQUEST, and that is not an
     // inconsistency — it is the byte-image branch of `Apply` having no source
-    // parameter AT ALL. `Apply` resolves byte-image × `sources: 'one'` to
+    // parameter AT ALL. `Apply` resolves byte-image × any source to
     // `never`, so a pdf-lib apply's third parameter is its outline, while the
-    // request carries a `source` field for writers that do take one. This is
+    // request carries a `sources` field for writers that do take them. This is
     // the one place the two shapes meet.
     //
     // THIS LINE WAS WRONG FOR ONE RUN, and it is the same class ADR-0069 closed

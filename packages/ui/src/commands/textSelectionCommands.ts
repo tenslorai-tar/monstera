@@ -1,11 +1,9 @@
 import type { DispatchableCommand } from '@monstera/contract';
 
 import { stickyNoteCommand } from '../annotations/pointTools.js';
-import { STROKE } from '../annotations/shapeTools.js';
-import { type MarkupType, markupCommand } from '../annotations/textMarkupTools.js';
+import { type MarkupType, markupCommand, redactTextCommand } from '../annotations/textMarkupTools.js';
 import type { AnnotationStyle } from '../annotations/annotationStyle.js';
-import { ANNOTATION_NOTE_DIALOG_ID } from '../dialogs/annotationNote.js';
-import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
+import { writeAnnotationWords } from '../annotations/textTools.js';
 import {
   COMMENT_SELECTION_TITLE,
   COPY_SELECTION_TITLE,
@@ -14,7 +12,10 @@ import {
   SEARCH_SELECTION_TITLE,
   STRIKEOUT_SELECTION_TITLE,
   UNDERLINE_SELECTION_TITLE,
+  WRITE_NOTE_LABEL,
 } from '../messages/en.js';
+import type { Write } from '../pageWriting.js';
+import type { IconName } from '../primitives/icons.js';
 import { TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { TextSelection } from '../TextLayer.js';
 
@@ -73,18 +74,26 @@ export function copySelectionCommand(deps: TextSelectionDeps): UiCommand {
   };
 }
 
-const MARKUPS: readonly { readonly type: MarkupType; readonly id: string; readonly order: number; readonly title: typeof HIGHLIGHT_SELECTION_TITLE }[] = [
-  { type: 'highlight', id: 'text.highlight', order: 20, title: HIGHLIGHT_SELECTION_TITLE },
-  { type: 'underline', id: 'text.underline', order: 30, title: UNDERLINE_SELECTION_TITLE },
-  { type: 'strikeout', id: 'text.strikeout', order: 40, title: STRIKEOUT_SELECTION_TITLE },
+/** Each with the glyph its tool draws on the ribbon, so the menu and the ribbon show one picture for one effect. */
+const MARKUPS: readonly {
+  readonly type: MarkupType;
+  readonly id: string;
+  readonly order: number;
+  readonly title: typeof HIGHLIGHT_SELECTION_TITLE;
+  readonly icon: IconName;
+}[] = [
+  { type: 'highlight', id: 'text.highlight', order: 20, title: HIGHLIGHT_SELECTION_TITLE, icon: 'Highlighter' },
+  { type: 'underline', id: 'text.underline', order: 30, title: UNDERLINE_SELECTION_TITLE, icon: 'Underline' },
+  { type: 'strikeout', id: 'text.strikeout', order: 40, title: STRIKEOUT_SELECTION_TITLE, icon: 'Strikethrough' },
 ];
 
 /** Highlight, underline and strikethrough of the selected text, one command each. */
 export function markupSelectionCommands(deps: TextSelectionDeps): readonly UiCommand[] {
-  return MARKUPS.map(({ type, id, order, title }) => ({
+  return MARKUPS.map(({ type, id, order, title, icon }) => ({
     id,
     feedback: VISIBLE,
     title,
+    icon,
     placements: [{ surface: 'context-menu', context: 'selection', order }] as const,
     when: selected(deps),
     run: (context): void => {
@@ -100,7 +109,7 @@ export function markupSelectionCommands(deps: TextSelectionDeps): readonly UiCom
  *
  * ## It is the note tool's feature reached a second way, not a second feature
  *
- * The same dialog collects the text, and {@link stickyNoteCommand} builds the same draft, so a note
+ * The same box on the page collects the text, and {@link stickyNoteCommand} builds the same draft, so a note
  * written from the menu and one placed with the tool are one command with one colour rule. The
  * markups' arrangement exactly — a menu item that decided what a note was would be the second
  * wiring place the registry exists to forbid.
@@ -119,34 +128,40 @@ export function markupSelectionCommands(deps: TextSelectionDeps): readonly UiCom
  * no text field, so that is a contract change with no row asking for one. This row asked for
  * *comment*, and a note at the selection is the feature this platform already has.
  *
- * ## Asked, then placed, and a dismissal leaves nothing
+ * ## Asked, then placed, and nothing typed leaves nothing
  *
- * The selection is read BEFORE the dialog opens, which is `stickyNoteTool`'s rule about the
- * transform arriving one gesture earlier: a person who dismisses the dialog has changed nothing,
- * and a person who selects something else while it is open still gets the note they asked for.
+ * The selection is read BEFORE the box opens, which is `stickyNoteTool`'s rule about the
+ * transform arriving one gesture earlier: a person who types nothing has changed nothing, and a
+ * person who selects something else while it is open still gets the note they asked for.
  */
-export function commentSelectionCommand(
-  deps: TextSelectionDeps & { readonly ask: (id: string, props: unknown) => Promise<unknown> },
-): UiCommand {
+export function commentSelectionCommand(deps: TextSelectionDeps & { readonly write: Write }): UiCommand {
   return {
     id: 'text.comment',
     feedback: VISIBLE,
     title: COMMENT_SELECTION_TITLE,
+    icon: 'MessageSquare',
     placements: [{ surface: 'context-menu', context: 'selection', order: 50 }],
     when: selected(deps),
     run: async (context): Promise<void> => {
       const selection = deps.selection();
       if (context.docId === undefined || selection === undefined) return;
       const style = deps.style();
-      const answered = ANNOTATION_TEXT_RESULT.safeParse(
-        await deps.ask(ANNOTATION_NOTE_DIALOG_ID, {}),
+      const at = selection.from;
+      // THE NOTE TOOL'S REQUEST, through the one helper that asks for an annotation's words: a card at
+      // the point the note will sit, in the application's face, since a comment is not drawn there.
+      const text = await writeAnnotationWords(
+        { write: deps.write, style },
+        {
+          page: selection.page,
+          box: { x0: at.x, y0: at.y, x1: at.x, y1: at.y },
+          label: WRITE_NOTE_LABEL,
+          colour: undefined,
+          grows: false,
+        },
       );
-      // A DISMISSED DIALOG AND A REFUSED ANSWER ARE BOTH NOTHING TO BUILD FROM, which is the
-      // platform's gate and `stickyNoteTool`'s comment on it: a parse failure here means the id
-      // resolved to a dialog answering another shape, a registration defect rather than a person's
-      // doing, and the page is unchanged either way.
-      if (!answered.success) return;
-      deps.place(stickyNoteCommand(selection.page, selection.from, answered.data.text, style));
+      // NOTHING TYPED IS NOTHING TO BUILD FROM, which is the platform's gate and `stickyNoteTool`'s.
+      if (text === undefined) return;
+      deps.place(stickyNoteCommand(selection.page, at, text, style));
     },
   };
 }
@@ -171,27 +186,15 @@ export function redactSelectionCommand(deps: TextSelectionDeps): UiCommand {
     id: 'text.redact',
     feedback: VISIBLE,
     title: REDACT_SELECTION_TITLE,
+    // THE REDACTION MARK TOOLS' GLYPH, the bar a mark draws.
+    icon: 'RectangleHorizontal',
     placements: [{ surface: 'context-menu', context: 'selection', order: 60 }],
     when: selected(deps),
     run: (context): void => {
       const selection = deps.selection();
       if (context.docId === undefined || selection === undefined) return;
-      const style = deps.style();
-      deps.place({
-        kind: 'addAnnotation',
-        page: selection.page,
-        annotation: {
-          type: 'redact',
-          over: 'text',
-          from: selection.from,
-          to: selection.to,
-          // THE DRAG TOOL'S OWN DEFAULT, resolved through the style exactly as `redactTool` does,
-          // so a mark made from the menu and one swept with the tool are the same colour. No border
-          // width: MuPDF refuses one on a Redact, and the draft has no field for it.
-          colour: style.colour(STROKE),
-          opacity: style.opacity,
-        },
-      });
+      // THE REDACT TEXT TOOL'S OWN BUILDER, so a mark made from the menu and one made with the tool are one command.
+      deps.place(redactTextCommand(selection.page, selection.from, selection.to, deps.style()));
     },
   };
 }
@@ -202,6 +205,7 @@ export function searchSelectionCommand(deps: TextSelectionDeps): UiCommand {
     id: 'text.search',
     feedback: VISIBLE,
     title: SEARCH_SELECTION_TITLE,
+    icon: 'Search',
     placements: [{ surface: 'context-menu', context: 'selection', order: 70 }],
     when: selected(deps),
     run: (): void => {

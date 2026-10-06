@@ -18,11 +18,12 @@
 /**
  * Why a visible signature's appearance could not be drawn.
  *
- * - `unencodable-text` — the typed text holds a character the chosen standard
- *   font cannot encode. The font's own character set decides (B3a).
  * - `unreadable-image` — the picture's decoder refused its bytes.
+ *
+ * A typed name has no refusal here: it arrives as the outline the renderer made, and which characters a face can draw
+ * is decided there, where the person can still change what they typed (ADR-0150 Decision 5).
  */
-export type SignatureAppearanceRefusal = 'unencodable-text' | 'unreadable-image';
+export type SignatureAppearanceRefusal = 'unreadable-image';
 
 /** The appearance was refused before anything was signed. */
 export class SignatureAppearanceRefusedError extends Error {

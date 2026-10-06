@@ -7,9 +7,13 @@ import {
   type AnnotationPoint,
   type AnnotationRect,
   type AnnotationStamp,
+  type AnnotationWordsStyle,
   type CommandOfKind,
   type LineEnding,
   MAX_ANNOTATION_AUTHOR,
+  MAX_ANNOTATION_FONT,
+  MAX_ANNOTATION_TEXT,
+  MIN_ANNOTATION_FONT,
   type TextDirection,
   strokesOfPlaced,
 } from '@monstera/contract/host';
@@ -39,6 +43,7 @@ import { decodedImage, withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { snapRotation } from './rotatePages.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
+import { glyphLinesOf, heldToTheirLines } from './redactionQuads.js';
 import { type SignatureBox, type SignatureDrawing, drawSignature, signatureBox } from './signatureDrawing.js';
 
 /**
@@ -717,6 +722,48 @@ function writeDirection(annotation: PDFAnnotation, direction: TextDirection): vo
   if (direction === 'right-to-left') annotation.setQuadding(2);
 }
 
+/** The face each of {@link BASE14_FACE}'s names reads back as: the writer's table turned round, so the two are one. */
+const FACE_OF: ReadonlyMap<string, AnnotationFont> = new Map(
+  (Object.entries(BASE14_FACE) as [AnnotationFont, string][]).map(([face, name]) => [name, face]),
+);
+
+/**
+ * How a text mark's words are drawn, read as the writers above write it — `/DA` through MuPDF's own reader, `/Q` as
+ * {@link writeDirection} writes it — or nothing (ADR-0154 Decision 3).
+ *
+ * NOTHING, RATHER THAN A GUESS, for a `/DA` this build cannot set back: a face that is not one of the three, or a size
+ * outside the drafts' bounds (`0`, the format's *auto size*, among them). The mark is still listed whole; it is edited
+ * on a card beside it instead of in its box. A colour in gray or CMYK is converted to the RGB every draft holds, the
+ * format's own conversions (PDF 32000 §10.4.2), since that is a statement of the same colour rather than a guess.
+ */
+function wordsStyleOf(annotation: PDFAnnotation): { readonly typed?: AnnotationWordsStyle } {
+  if (annotation.getType() !== 'FreeText') return {};
+  const { font, size, color } = annotation.getDefaultAppearance();
+  const face = FACE_OF.get(font);
+  if (face === undefined || !(size >= MIN_ANNOTATION_FONT && size <= MAX_ANNOTATION_FONT)) return {};
+  const colour = rgbOf(color);
+  if (colour === undefined) return {};
+  return {
+    typed: {
+      fontSize: size,
+      colour,
+      font: face,
+      direction: annotation.getQuadding() === 2 ? 'right-to-left' : 'left-to-right',
+    },
+  };
+}
+
+/** A `/DA` colour as RGB: none is black, the format's default; gray and CMYK by §10.4.2; anything else is not one. */
+function rgbOf(color: readonly number[]): AnnotationWordsStyle['colour'] | undefined {
+  const unit = (value: number): number => Math.min(1, Math.max(0, value));
+  const [a = 0, b = 0, c = 0, d = 0] = color.map(unit);
+  if (color.length === 0) return [0, 0, 0];
+  if (color.length === 1) return [a, a, a];
+  if (color.length === 3) return [a, b, c];
+  if (color.length === 4) return [(1 - a) * (1 - d), (1 - b) * (1 - d), (1 - c) * (1 - d)];
+  return undefined;
+}
+
 /**
  * Each built-in stamp's `/Name`. Five are the format's standard names (PDF 32000 §12.5.6.12), which MuPDF draws in
  * capitals — `NotApproved` as NOT APPROVED; the other three have none, and MuPDF draws a non-standard name as its own
@@ -787,7 +834,10 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
         // rect with no quads takes all three. So the quads are what `applyRedactions` acts on.
         const [from, to] = placedPoints([draft.from, draft.to], transform);
         if (from === undefined || to === undefined) throw new Error('a selection has two ends');
-        const quads = on.page.toStructuredText().highlight(from, to, MAX_MARKUP_QUADS);
+        // HELD TO THEIR LINES (2a): MuPDF's quads are each line's full font box, which on closely set text reaches
+        // the boxes of the lines beside it, and the burn-in removes any glyph whose box a quad touches.
+        const text = on.page.toStructuredText();
+        const quads = heldToTheirLines(text.highlight(from, to, MAX_MARKUP_QUADS), glyphLinesOf(text));
         if (quads.length === 0) {
           throw new RangeError(
             'that selection caught no text, so there is nothing to redact. A text redaction names ' +
@@ -1228,7 +1278,7 @@ const BLEND_STATE = 'MonsteraBlend';
  */
 export function redrawPage(page: PDFPage, annotations: readonly PDFAnnotation[], document: PDFDocument): void {
   page.update();
-  for (const annotation of annotations) reblend(annotation, document);
+  for (const annotation of annotations) redrawn(annotation, document);
 }
 
 /**
@@ -1243,7 +1293,13 @@ export function redrawPage(page: PDFPage, annotations: readonly PDFAnnotation[],
  */
 export function redraw(annotation: PDFAnnotation, document: PDFDocument): void {
   annotation.update();
+  redrawn(annotation, document);
+}
+
+/** What both redraws add to the appearance MuPDF just drew: the blend, and a measurement's reading. */
+function redrawn(annotation: PDFAnnotation, document: PDFDocument): void {
   reblend(annotation, document);
+  relabel(annotation, document);
 }
 
 /** What both redraws do after `update()`: the dictionary's `/BM` written back into the appearance MuPDF just drew. */
@@ -1281,6 +1337,40 @@ function blendOf(annotation: PDFAnnotation): AnnotationBlend {
     if (mode?.isName() === true) modes.push(mode.asName());
   });
   return modes.includes(BLEND_NAMES.multiply) ? 'multiply' : 'normal';
+}
+
+/**
+ * Whether a stamp's appearance DRAWS A PICTURE — an image XObject in its normal appearance's resources, or in a form
+ * those resources name, a level down, which is how another producer's image stamp usually wraps one.
+ *
+ * A picture a person places is a `/Stamp` (`applyPlaceImage`), not page content, so the page's object walk never sees
+ * it: Edit object's *Images* listed none on a page holding two photos (the owner's item 14g). This is what lets that
+ * mode find them. Stamps only, because a stamp is the one annotation this build places a picture as; a widget's icon
+ * is a form field's, and is edited as one.
+ */
+function picturedStamp(annotation: PDFAnnotation): boolean {
+  if (kindOf(annotation) !== 'stamp') return false;
+  // EACH STEP CHECKED, `blendOf`'s reason: `get` on MuPDF's null object throws rather than answering null.
+  const appearances = annotation.getObject().get('AP');
+  if (!appearances.isDictionary()) return false;
+  const normal = appearances.get('N');
+  return normal.isStream() && drawsImage(normal, 2);
+}
+
+/** Whether a content stream's resources name an image, looking `depth` forms down. */
+function drawsImage(stream: PDFObject, depth: number): boolean {
+  const resources = stream.get('Resources');
+  if (!resources.isDictionary()) return false;
+  const objects = resources.get('XObject');
+  if (!objects.isDictionary()) return false;
+  let found = false;
+  objects.forEach((object) => {
+    if (found || !object.isStream()) return;
+    const subtype = object.get('Subtype');
+    if (subtype.isName() && subtype.asName() === 'Image') found = true;
+    else if (depth > 1 && subtype.isName() && subtype.asName() === 'Form') found = drawsImage(object, depth - 1);
+  });
+  return found;
 }
 
 /**
@@ -1330,6 +1420,203 @@ function blendStream(stream: PDFObject, document: PDFDocument, mode: string): vo
   joined.set(prefix, 0);
   joined.set(content, prefix.length);
   stream.writeStream(joined);
+}
+
+/** The two dimensions MuPDF draws no text for, by their `/IT`: an area is a Polygon, a perimeter a PolyLine. */
+const UNCAPTIONED_DIMENSIONS = new Set(['PolygonDimension', 'PolyLineDimension']);
+
+/** The font the reading is set in, named in the appearance's own resources. */
+const LABEL_FONT = 'MonsteraHelv';
+
+/**
+ * The reading's size, in points: the size MuPDF sets a distance's caption in (`pdf_write_line_caption`, MuPDF 1.28.0),
+ * so the three readings are one family on the page. Black for the same reason, and MuPDF's own: *"Acrobat always draws
+ * captions in black"*.
+ */
+const LABEL_SIZE = 12;
+
+/** The marked content around the reading, so a redraw that did not regenerate the appearance does not set it twice. */
+const LABEL_TAG = 'MonsteraMeasure';
+
+/**
+ * Helvetica's advance widths, in thousandths of the size, for the characters a reading is made of (Adobe's
+ * `Helvetica.afm`). Any other character takes a digit's width, which is the widest a reading's characters run.
+ */
+const HELVETICA_WIDTHS: Readonly<Record<string, number>> = {
+  ' ': 278, '.': 278, ',': 278, '-': 333, '²': 333,
+  '0': 556, '1': 556, '2': 556, '3': 556, '4': 556, '5': 556, '6': 556, '7': 556, '8': 556, '9': 556,
+  c: 500, f: 278, i: 222, m: 833, n: 556, p: 556, t: 278,
+};
+
+/**
+ * Sets a measurement's reading on the shape, for the two dimensions MuPDF draws without one (the owner's item 14a).
+ *
+ * A distance shows its value because `setLineCaption(true)` makes MuPDF draw `/Contents` along the line. An area is a
+ * Polygon and a perimeter a PolyLine, and MuPDF's appearance for those draws the outline and no text
+ * (`pdf_write_polygon_appearance`, MuPDF 1.28.0), so their reading was in `/Contents` and nowhere on the page — the
+ * owner's *"area and perimeter show no value"*.
+ *
+ * So the reading is set into the appearance MuPDF just drew, in the space MuPDF drew it in: page space, from the same
+ * `/Vertices`, with `/BBox` the annotation's `/Rect` and no matrix (`pdf-appearance.c`'s polygon case). An area's
+ * reading sits at the shape's centroid, a perimeter's above the middle of its longest segment, where a line's caption
+ * would sit and never on a corner. `/Rect` and `/BBox` grow to
+ * hold the text, so a viewer that clips to either shows it whole. Called only from the redraws, after `update()`, so
+ * every move, restyle and text edit sets it again on the appearance it replaced — the blend's rule beside it.
+ */
+function relabel(annotation: PDFAnnotation, document: PDFDocument): void {
+  const object = annotation.getObject();
+  const intent = object.get('IT');
+  if (!intent.isName() || !UNCAPTIONED_DIMENSIONS.has(intent.asName())) return;
+  const reading = annotation.getContents();
+  const points = numbersOf(object.get('Vertices'));
+  if (reading === '' || points.length < 4) return;
+  const appearance = object.get('AP').get('N');
+  if (!appearance.isStream()) return;
+  const content = appearance.readStream().asUint8Array();
+  const opening = new TextEncoder().encode(`/${LABEL_TAG} BMC`);
+  if (contains(content, opening)) return;
+
+  // BY CODE POINT, which is what one WinAnsi byte stands for: `²` is one, and nothing a reading holds is a cluster.
+  let advance = 0;
+  for (const character of reading) advance += HELVETICA_WIDTHS[character] ?? 556;
+  const width = (LABEL_SIZE / 1000) * advance;
+  const anchor = intent.asName() === 'PolygonDimension' ? centroidOf(points) : besideLongestSegment(points, width);
+  const x = anchor.x - width / 2;
+  const y = anchor.y - LABEL_SIZE / 3;
+
+  const before = new TextEncoder().encode(
+    `\n/${LABEL_TAG} BMC q 0 g BT /${LABEL_FONT} ${String(LABEL_SIZE)} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (`,
+  );
+  const after = new TextEncoder().encode(') Tj ET Q EMC\n');
+  const text = winAnsiLiteral(reading);
+  const joined = new Uint8Array(content.length + before.length + text.length + after.length);
+  joined.set(content, 0);
+  joined.set(before, content.length);
+  joined.set(text, content.length + before.length);
+  joined.set(after, content.length + before.length + text.length);
+  appearance.writeStream(joined);
+
+  let resources = appearance.get('Resources');
+  if (!resources.isDictionary()) {
+    resources = document.newDictionary();
+    appearance.put('Resources', resources);
+  }
+  let fonts = resources.get('Font');
+  if (!fonts.isDictionary()) {
+    fonts = document.newDictionary();
+    resources.put('Font', fonts);
+  }
+  const font = document.newDictionary();
+  font.put('Type', document.newName('Font'));
+  font.put('Subtype', document.newName('Type1'));
+  font.put('BaseFont', document.newName('Helvetica'));
+  font.put('Encoding', document.newName('WinAnsiEncoding'));
+  fonts.put(LABEL_FONT, font);
+
+  // THE TEXT'S BOX, with a point's margin, joined to the box MuPDF drew.
+  const box = { x0: x - 1, y0: y - LABEL_SIZE / 3, x1: x + width + 1, y1: y + LABEL_SIZE };
+  for (const key of ['Rect', 'BBox'] as const) {
+    const holder = key === 'Rect' ? object : appearance;
+    const [x0 = box.x0, y0 = box.y0, x1 = box.x1, y1 = box.y1] = numbersOf(holder.get(key));
+    const joinedBox = document.newArray();
+    for (const value of [Math.min(x0, box.x0), Math.min(y0, box.y0), Math.max(x1, box.x1), Math.max(y1, box.y1)]) {
+      joinedBox.push(document.newReal(value));
+    }
+    holder.put(key, joinedBox);
+  }
+}
+
+/** A PDF array's numbers, or none where it is not an array of numbers. */
+function numbersOf(array: PDFObject): readonly number[] {
+  if (!array.isArray()) return [];
+  const numbers: number[] = [];
+  for (let at = 0; at < array.length; at += 1) {
+    const value = array.get(at);
+    if (!value.isNumber()) return [];
+    numbers.push(value.asNumber());
+  }
+  return numbers;
+}
+
+/** Whether `needle` occurs in `haystack`. */
+function contains(haystack: Uint8Array, needle: Uint8Array): boolean {
+  outer: for (let at = 0; at + needle.length <= haystack.length; at += 1) {
+    for (let offset = 0; offset < needle.length; offset += 1) {
+      if (haystack[at + offset] !== needle[offset]) continue outer;
+    }
+    return true;
+  }
+  return false;
+}
+
+/** The area-weighted centroid of a closed run of points given as `[x0, y0, x1, y1, …]`, or their mean when it has none. */
+function centroidOf(flat: readonly number[]): { readonly x: number; readonly y: number } {
+  let twice = 0;
+  let cx = 0;
+  let cy = 0;
+  const count = Math.floor(flat.length / 2);
+  for (let at = 0; at < count; at += 1) {
+    const x0 = flat[at * 2] ?? 0;
+    const y0 = flat[at * 2 + 1] ?? 0;
+    const x1 = flat[((at + 1) % count) * 2] ?? 0;
+    const y1 = flat[((at + 1) % count) * 2 + 1] ?? 0;
+    const cross = x0 * y1 - x1 * y0;
+    twice += cross;
+    cx += (x0 + x1) * cross;
+    cy += (y0 + y1) * cross;
+  }
+  if (Math.abs(twice) < 1e-9) {
+    let sx = 0;
+    let sy = 0;
+    for (let at = 0; at < count; at += 1) {
+      sx += flat[at * 2] ?? 0;
+      sy += flat[at * 2 + 1] ?? 0;
+    }
+    return { x: sx / count, y: sy / count };
+  }
+  return { x: cx / (3 * twice), y: cy / (3 * twice) };
+}
+
+/**
+ * Where the middle of a reading `width` wide goes beside the longest segment of an open run of points given as
+ * `[x0, y0, x1, y1, …]`, as a line's caption sits over its line: at the segment's middle, moved along its normal
+ * (the side above, or left of a vertical one) until the text's box clears the stroke. Moving straight up clears a level
+ * segment and lands the text on a sloped one.
+ */
+function besideLongestSegment(flat: readonly number[], width: number): { readonly x: number; readonly y: number } {
+  const count = Math.floor(flat.length / 2);
+  let best = { x: flat[0] ?? 0, y: flat[1] ?? 0, dx: 1, dy: 0, length: -1 };
+  for (let at = 1; at < count; at += 1) {
+    const x0 = flat[(at - 1) * 2] ?? 0;
+    const y0 = flat[(at - 1) * 2 + 1] ?? 0;
+    const x1 = flat[at * 2] ?? 0;
+    const y1 = flat[at * 2 + 1] ?? 0;
+    const length = Math.hypot(x1 - x0, y1 - y0);
+    if (length > best.length && length > 0) {
+      best = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, dx: (x1 - x0) / length, dy: (y1 - y0) / length, length };
+    }
+  }
+  let normal = { x: -best.dy, y: best.dx };
+  if (normal.y < 0 || (normal.y === 0 && normal.x > 0)) normal = { x: -normal.x, y: -normal.y };
+  // THE BOX'S REACH along the normal is half its width times the normal's x and half its height times its y, plus a gap.
+  const clearance = (Math.abs(normal.x) * width) / 2 + (Math.abs(normal.y) * LABEL_SIZE) / 2 + LABEL_SIZE / 4;
+  return { x: best.x + normal.x * clearance, y: best.y + normal.y * clearance };
+}
+
+/**
+ * A reading as the bytes of a PDF literal string in WinAnsiEncoding: the delimiters and the backslash escaped, `²` as
+ * its WinAnsi byte, and a character the encoding has no byte for as `?`, so the reading is set rather than dropped.
+ */
+function winAnsiLiteral(text: string): Uint8Array {
+  const bytes: number[] = [];
+  for (const character of text) {
+    const point = character.codePointAt(0) ?? 0x3f;
+    if (character === '(' || character === ')' || character === '\\') bytes.push(0x5c, point);
+    else if (point >= 0x20 && point <= 0x7e) bytes.push(point);
+    else if (point >= 0xa0 && point <= 0xff) bytes.push(point);
+    else bytes.push(0x3f);
+  }
+  return Uint8Array.from(bytes);
 }
 
 /**
@@ -1654,6 +1941,12 @@ export interface ListedAnnotation {
   readonly created: string | null;
   /** The blend its appearance is drawn in — {@link blendOf}. */
   readonly blend: AnnotationBlend;
+  /** Present and true on a stamp whose appearance draws a picture — {@link picturedStamp}. */
+  readonly pictured?: true;
+  /** Present and true where {@link contents} is a slice of longer words — {@link readAnnotationWords} reads them. */
+  readonly cut?: true;
+  /** How a text mark's words are drawn, where this build could set it back — {@link wordsStyleOf}. */
+  readonly typed?: AnnotationWordsStyle;
 }
 
 /** MuPDF's subtype back to the name a surface may use. */
@@ -1823,6 +2116,7 @@ export function readAnnotations(
       }
       for (const annotation of marks) {
         if (!found.room()) return listedOf(found);
+        const contents = annotation.getContents();
         found.add({
           page,
           index: index++,
@@ -1834,11 +2128,16 @@ export function readAnnotations(
           // one that names them vaguely.
           kind: kindOf(annotation),
           style: styleOf(annotation),
-          contents: annotation.getContents().slice(0, MAX_LISTED_CONTENTS),
+          contents: contents.slice(0, MAX_LISTED_CONTENTS),
+          // SAID WHEN THE SLICE CUT THEM, so an editor reads the mark's own words (`readAnnotationWords`) rather than
+          // saving the slice over the whole.
+          ...(contents.length > MAX_LISTED_CONTENTS ? { cut: true as const } : {}),
           authored: authoredHere(annotation),
           author: authorOf(annotation),
           created: createdOf(annotation),
           blend: blendOf(annotation),
+          ...(picturedStamp(annotation) ? { pictured: true as const } : {}),
+          ...wordsStyleOf(annotation),
         });
       }
     }
@@ -1850,6 +2149,26 @@ export function readAnnotations(
 function listedOf(found: BoundedList<ListedAnnotation>): { readonly annotations: readonly ListedAnnotation[]; readonly truncated: boolean } {
   const { items, truncated } = found.answer();
   return { annotations: items, truncated };
+}
+
+/**
+ * ONE mark's own words, whole, for an editor to start from — the walk lists them sliced, and says so with `cut`.
+ *
+ * Named by the walk's handle, page and index, through {@link annotationAt} as the edit that follows is, so the words
+ * read and the mark an edit then writes are one mark. A handle past the walk throws its `RangeError`, which the host
+ * answers by name. Words past `MAX_ANNOTATION_TEXT`, the most an edit can write back, are answered `whole: false` and
+ * sliced to it, so the editor can say it cannot start from them rather than saving a slice over them.
+ */
+export function readAnnotationWords(
+  session: MupdfSession,
+  page: number,
+  index: number,
+): Promise<{ readonly text: string; readonly whole: boolean }> {
+  return withDocument(session, (document) => {
+    const loaded = pageAt(document, page, document.countPages());
+    const words = annotationAt(loaded, index).getContents();
+    return { text: words.slice(0, MAX_ANNOTATION_TEXT), whole: words.length <= MAX_ANNOTATION_TEXT };
+  });
 }
 
 /**
@@ -2078,16 +2397,6 @@ function writeSignatureStamp(
   stamp: AnnotationStamp,
 ): void {
   const resources = document.newDictionary();
-  if (drawing.font !== undefined) {
-    const font = document.newDictionary();
-    font.put('Type', document.newName('Font'));
-    font.put('Subtype', document.newName('Type1'));
-    font.put('BaseFont', document.newName(drawing.font.baseFont));
-    font.put('Encoding', document.newName('WinAnsiEncoding'));
-    const fonts = document.newDictionary();
-    fonts.put(drawing.font.name, document.addObject(font));
-    resources.put('Font', fonts);
-  }
   if (drawing.picture !== undefined && picture !== undefined) {
     resources.put('XObject', pictureThroughForm(document, drawing.picture.name, picture));
   }
@@ -2110,22 +2419,20 @@ function writeSignatureStamp(
  * Places a plain signature, typed or drawn, on one page (ADR-0133).
  *
  * **Three steps, and only the last writes.** The page is resolved and the box checked first, so a page the document
- * does not have or a box off the page refuses before anything is drawn; the mark is drawn next, outside the document,
- * because its only wait is the font tables loading; then the stamp is written in one synchronous pass.
+ * does not have or a box off the page refuses before anything is drawn; the mark is drawn next; then the stamp is
+ * written. A typed name arrives as its outline (ADR-0150), so drawing it reads nothing and the three are one pass.
  */
-export const applyPlaceSignatureMark: Apply<'mupdf', 'placeSignatureMark'> = async (
+export const applyPlaceSignatureMark: Apply<'mupdf', 'placeSignatureMark'> = (
   session: MupdfSession,
   command: CommandOfKind<'placeSignatureMark'>,
-): Promise<void> => {
-  const { box } = await withDocument(session, (document) => signaturePlacement(document, command.page, command.rect));
-  // A DRAWING CROSSES FLATTENED, so the command fits the host's frame (`placedMarkOf`); the strokes are taken back here,
-  // at the one step that draws them.
-  const mark = command.mark.kind === 'drawn' ? { kind: 'drawn' as const, strokes: strokesOfPlaced(command.mark) } : command.mark;
-  const drawing = await drawSignature(mark, box.seenWide, box.seenTall);
-  await withDocument(session, (document) => {
-    writeSignatureStamp(document, signaturePlacement(document, command.page, command.rect), drawing, undefined, command.stamp);
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const target = signaturePlacement(document, command.page, command.rect);
+    // A DRAWING CROSSES FLATTENED, so the command fits the host's frame (`placedMarkOf`); the strokes are taken back
+    // here, at the one step that draws them.
+    const mark = command.mark.kind === 'drawn' ? { kind: 'drawn' as const, strokes: strokesOfPlaced(command.mark) } : command.mark;
+    writeSignatureStamp(document, target, drawSignature(mark, target.box.seenWide, target.box.seenTall), undefined, command.stamp);
   });
-};
 
 /**
  * Places a plain signature that is a picture, as {@link applyPlaceSignatureMark} places a typed one.
@@ -2140,7 +2447,7 @@ export const applyPlaceSignaturePicture: Apply<'mupdf', 'placeSignaturePicture'>
 ): Promise<void> => {
   const { box } = await withDocument(session, (document) => signaturePlacement(document, command.page, command.rect));
   const image = decodedImage(command.bytes);
-  const drawing = await drawSignature(
+  const drawing = drawSignature(
     { kind: 'picture', width: image.getWidth(), height: image.getHeight() },
     box.seenWide,
     box.seenTall,

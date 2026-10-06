@@ -8,6 +8,7 @@ import {
   MAX_CLOUD_FILE_NAME,
   MAX_CLOUD_FILES,
 } from '@monstera/contract';
+import { hostWithin } from '@monstera/shared';
 
 import { pdfBody } from './guardedFetch.js';
 import { readWithin } from './verifiedDownload.js';
@@ -480,8 +481,7 @@ export async function describeCloudFile(
 
 /** Whether a host is one of the provider's declared download hosts. */
 export function downloadHostDeclared(spec: CloudProviderSpec, host: string): boolean {
-  const lower = host.toLowerCase();
-  return spec.downloadHostSuffixes.some((suffix) => lower === suffix || lower.endsWith(`.${suffix}`));
+  return spec.downloadHostSuffixes.some((suffix) => hostWithin(host, suffix));
 }
 
 /**

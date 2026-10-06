@@ -5,7 +5,7 @@ import type { CommandOfKind } from '@monstera/contract';
 
 import { mupdfWriter } from './mupdfWriter.js';
 import { readAnnotations } from './pageAnnotations.js';
-import { applyAddLink, captureAddLink, readPageLinks } from './pageLinks.js';
+import { applyAddLink, captureAddLink, readLinkAddress, readPageLinks } from './pageLinks.js';
 
 /** Applies one `addLink` to a link-free three-page document and serialises. */
 async function written(command: CommandOfKind<'addLink'>): Promise<Uint8Array> {
@@ -406,6 +406,63 @@ describe('readPageLinks', () => {
     try {
       await expect(readPageLinks(session, 3)).rejects.toBeInstanceOf(RangeError);
       await expect(readPageLinks(session, -1)).rejects.toBeInstanceOf(RangeError);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+describe('readLinkAddress (ADR-0167)', () => {
+  /** One page whose links are, in order: a tracking link past the shown bound, one past the followed bound, a short one. */
+  async function addresses(tracking: string, overlong: string): Promise<Uint8Array> {
+    const document = await PDFDocument.create();
+    const page = document.addPage([600, 800]);
+    const context = document.context;
+    const annots = context.obj(
+      [tracking, overlong, 'https://example.org/short'].map((uri, index) =>
+        context.register(
+          context.obj({
+            Type: 'Annot',
+            Subtype: 'Link',
+            Rect: [10 + index * 40, 10, 40 + index * 40, 30],
+            A: { S: 'URI', URI: PDFString.of(uri) },
+          }),
+        ),
+      ),
+    );
+    page.node.set(PDFName.of('Annots'), annots);
+    return document.save({ useObjectStreams: false });
+  }
+
+  it('answers a link’s address WHOLE, by the place the listing gives it, where the listing shows it cut', async () => {
+    const tracking = `https://example.org/track?id=${'a'.repeat(5000)}`;
+    const session = await mupdfWriter.open(await addresses(tracking, `https://example.org/${'b'.repeat(40_000)}`));
+    try {
+      // THE SAME PLACE NAMES THE SAME LINK in both reads: the listing shows the first cut, and the address read
+      // answers it as the document holds it.
+      const { links } = await readPageLinks(session, 0);
+      expect(links[0]).toMatchObject({ kind: 'external' });
+      if (links[0]?.kind !== 'external') throw new Error('the first link is external');
+      expect(links[0].uri.endsWith('…')).toBe(true);
+      expect(await readLinkAddress(session, 0, 0)).toStrictEqual({ kind: 'address', uri: tracking });
+      // CONTROL: the third, short, comes back as it is; a different place is a different link.
+      expect(await readLinkAddress(session, 0, 2)).toStrictEqual({ kind: 'address', uri: 'https://example.org/short' });
+      // PAST THE FOLLOWED BOUND it is not opened cut: it is refused by name.
+      expect(await readLinkAddress(session, 0, 1)).toStrictEqual({ kind: 'too-long' });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('answers NO SUCH LINK for a place past the page’s links and for a link inside the document', async () => {
+    const session = await mupdfWriter.open(await documentWithLinks());
+    try {
+      // The fixture's page 0: an internal link, then an external one.
+      expect(await readLinkAddress(session, 0, 0)).toStrictEqual({ kind: 'no-such-link' });
+      expect(await readLinkAddress(session, 0, 2)).toStrictEqual({ kind: 'no-such-link' });
+      // CONTROL: the external one at place 1 is an address.
+      expect(await readLinkAddress(session, 0, 1)).toStrictEqual({ kind: 'address', uri: 'https://example.org/thing' });
+      await expect(readLinkAddress(session, 3, 0)).rejects.toBeInstanceOf(RangeError);
     } finally {
       await mupdfWriter.close(session);
     }

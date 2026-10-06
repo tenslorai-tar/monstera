@@ -1,9 +1,9 @@
 import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   MAX_SIGNATURE_FIELD,
+  chosenSignatureMarkSchema,
   keepableSignatureSchema,
   libraryIdSchema,
-  requestedSignatureMarkSchema,
   TIMESTAMP_AUTHORITY_IDS,
 } from '@monstera/contract';
 import { lazy } from 'react';
@@ -68,11 +68,12 @@ export const SIGN_DOCUMENT_RESULT = z
      * How a VISIBLE signature looks — present exactly when the dialog was
      * opened for a placement.
      *
-     * The contract's own mark schema rather than a copy of it, so the dialog
-     * cannot answer a look the channel refuses. The typed text is trimmed by the
-     * body before it gets here, for the descriptive fields' reason.
+     * The contract's own CHOSEN mark rather than a copy of it: the look as the
+     * person chose it, a typed name as typed, whose outline the opener makes
+     * before it asks main (ADR-0150). The typed text is trimmed by the body
+     * before it gets here, for the descriptive fields' reason.
      */
-    mark: requestedSignatureMarkSchema.optional(),
+    mark: chosenSignatureMarkSchema.optional(),
     /**
      * Keep the typed or drawn look in the signature library once the document is signed — the library's route in
      * for a signature made here. Absent keeps nothing; a kept or picture look has nothing to keep.

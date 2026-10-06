@@ -152,6 +152,9 @@ async function joined(): Promise<{
       pageLinks: () => {
         throw new Error('unused');
       },
+      linkAddress: () => {
+        throw new Error('unused');
+      },
       pageFills: () => {
         throw new Error('unused');
       },
@@ -180,6 +183,9 @@ async function joined(): Promise<{
       applyPdfLib: () => {
         throw new Error('unused');
       },
+      prepareSignature: () => {
+        throw new Error('unused');
+      },
       snapshot: () => {
         throw new Error('unused');
       },
@@ -206,6 +212,9 @@ async function joined(): Promise<{
       },
       signaturesKept: () => Promise.reject(new Error('this case asks nothing about keeping signatures')),
       annotationRecords: () => {
+        throw new Error('unused');
+      },
+      annotationWords: () => {
         throw new Error('unused');
       },
     }),
@@ -266,7 +275,7 @@ describe('a command whose bytes cannot cross the wire', () => {
   it('REACHES THE APPLY ANYWAY, having travelled the granted directory', async () => {
     const { remote, token, session, written, incidents } = await joined();
 
-    await remote.apply({ session: token, command: placement(png), source: undefined, reads: undefined });
+    await remote.apply({ session: token, command: placement(png), sources: [], reads: undefined });
 
     // THE EFFECT, at the far end of a real JSON round trip.
     expect(await stampsOnFirstPage(session)).toBe(1);
@@ -295,7 +304,7 @@ describe('a command whose bytes cannot cross the wire', () => {
 
   it('REMOVES THE ASSET when the call returns', async () => {
     const { remote, token, directory, written } = await joined();
-    await remote.apply({ session: token, command: placement(png), source: undefined, reads: undefined });
+    await remote.apply({ session: token, command: placement(png), sources: [], reads: undefined });
     // THE PAIR, and the second half is what makes the first mean anything:
     // an empty directory is also what *never wrote it* produces.
     expect(written.length).toBeGreaterThan(0);
@@ -310,7 +319,7 @@ describe('a command whose bytes cannot cross the wire', () => {
       remote.apply({
         session: token,
         command: { ...placement(png), pages: [0, 9] },
-        source: undefined,
+        sources: [],
         reads: undefined,
       }),
     ).rejects.toThrow();
@@ -325,7 +334,7 @@ describe('a command whose bytes cannot cross the wire', () => {
     await remote.apply({
       session: token,
       command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
     expect(written).toStrictEqual([]);
@@ -339,13 +348,21 @@ describe('a command whose bytes cannot cross the wire', () => {
     //
     // So this puts the image back into the command and sends it the way the
     // transport does not, straight at the handler. The refusal is the SCHEMA's:
-    // what arrives is an object of numeric keys, and `placeImageSchema`'s
-    // `instanceof` refines it away.
-    const { call, session } = await joined();
+    // the wire's placement is the command with `bytes` omitted (`engineChannels`,
+    // the asset crossing in its place), so a strict object refuses the key.
+    const { call, session, incidents } = await joined();
 
-    const answer = await call('engine/apply', { session: 'h1', command: placement(png) });
+    // `sources` IS WRITTEN, so the bytes are the one thing that can refuse this — the control below is the same call.
+    const answer = await call('engine/apply', { session: 'h1', command: placement(png), sources: [] });
 
-    expect(answer).toMatchObject({ ok: false });
+    expect(answer).toMatchObject({ ok: false, error: { code: 'internal' } });
+    // REFUSED FOR THE BYTES AND NOTHING ELSE, read from the incident the wire answers with: every refusal of a call
+    // reads `internal` to the caller, so `ok: false` alone would pass for a call refused for a field it lacked.
+    expect(incidents).toHaveLength(1);
+    const issues = JSON.parse((incidents[0]?.diagnostic as { cause: { message: string } }).cause.message) as unknown;
+    expect(issues).toStrictEqual([
+      { code: 'unrecognized_keys', keys: ['bytes'], path: ['command'], message: 'Unrecognized key: "bytes"' },
+    ]);
     // AND NOTHING HAPPENED TO THE DOCUMENT, which is the half a refusal alone
     // does not give: an implementation that applied the command and then
     // reported a failure would satisfy the line above.
@@ -364,6 +381,7 @@ describe('a command whose bytes cannot cross the wire', () => {
     const answer = await call('engine/apply', {
       session: 'h1',
       command: wire,
+      sources: [],
       asset: 'abcd',
     });
 

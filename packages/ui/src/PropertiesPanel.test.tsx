@@ -6,10 +6,12 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import type { WordsToEdit } from './annotations/markWords.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { STYLE_PRESETS } from './annotations/stylePresets.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { DELETE_SELECTION_TITLE, EN, REPLY_SELECTION_TITLE } from './messages/en.js';
+import type { ObjectPick } from './objectEditing.js';
 import { PropertiesPanel, type StyleChange } from './PropertiesPanel.js';
 import { CommandRegistry, type CommandContext, type UiCommand } from './registries/commands.js';
 import { SettingsRegistry } from './registries/settings.js';
@@ -81,14 +83,23 @@ interface Mounted {
   readonly commented: string[];
   readonly authors: string[];
   readonly ran: string[];
+  /** Every whole-words read the comment field asked for, by the mark's index. */
+  readonly read: number[];
 }
 
-function mounted(selection: AnnotationSelection | undefined, foot: readonly UiCommand[] = []): Mounted {
+function mounted(
+  selection: AnnotationSelection | undefined,
+  foot: readonly UiCommand[] = [],
+  measuring = false,
+  // REFUSED BY NAME where a case reads nothing: an uncut comment's field must start from the walk's own text.
+  words: WordsToEdit = { kind: 'problem', problem: { code: 'document-not-open' } },
+): Mounted {
   const store = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
   const restyled: StyleChange[] = [];
   const commented: string[] = [];
   const authors: string[] = [];
   const ran: string[] = [];
+  const read: number[] = [];
   render(
     <Wrapped>
       <PropertiesPanel
@@ -96,6 +107,12 @@ function mounted(selection: AnnotationSelection | undefined, foot: readonly UiCo
         onComment={(chosen, text) => {
           expect(chosen).toBe(selection);
           commented.push(text);
+        }}
+        wordsOf={(mark) => {
+          // THE SELECTION'S PAGE AND VERSION, the walk's handle and its cut — what main reads the words by.
+          expect([mark.page, mark.version]).toStrictEqual([selection?.page, selection?.version]);
+          read.push(mark.index);
+          return Promise.resolve(words);
         }}
         onAuthor={(chosen, author) => {
           expect(chosen).toBe(selection);
@@ -108,11 +125,38 @@ function mounted(selection: AnnotationSelection | undefined, foot: readonly UiCo
         registry={new CommandRegistry(foot.map((command) => ({ ...command, run: () => void ran.push(command.id) })))}
         selection={selection}
         settings={store}
+        measuring={measuring}
       />
     </Wrapped>,
   );
-  return { store, restyled, commented, authors, ran };
+  return { store, restyled, commented, authors, ran, read };
 }
+
+describe('PropertiesPanel while a measurement is drawn (the owner’s item 14a)', () => {
+  it('shows the unit, inches as the rulers are, and the drawing’s scale — and neither for any other tool', () => {
+    mounted(undefined, [], true);
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: 'Measurement unit' }).value).toBe('in');
+    expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Drawing scale, 1 to' }).value).toBe('1');
+    cleanup();
+    // CONTROL: the same panel with no measurement tool has neither row.
+    mounted(undefined);
+    expect(screen.queryByRole('combobox', { name: 'Measurement unit' })).toBeNull();
+    expect(screen.queryByRole('spinbutton', { name: 'Drawing scale, 1 to' })).toBeNull();
+  });
+
+  it('writes the unit chosen and the scale typed, and leaves the scale while the field is empty', () => {
+    const { store } = mounted(undefined, [], true);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Measurement unit' }), { target: { value: 'cm' } });
+    expect(store.get('editing.measure-unit')).toBe('cm');
+    const scale = screen.getByRole('spinbutton', { name: 'Drawing scale, 1 to' });
+    fireEvent.change(scale, { target: { value: '' } });
+    // MID-TYPING: the field is empty and the scale is what it was.
+    expect((scale as HTMLInputElement).value).toBe('');
+    expect(store.get('editing.measure-ratio')).toBe(1);
+    fireEvent.change(scale, { target: { value: '100' } });
+    expect(store.get('editing.measure-ratio')).toBe(100);
+  });
+});
 
 describe('PropertiesPanel with marks selected', () => {
   it('names the kind and the page a person reads, 1-based', () => {
@@ -205,7 +249,7 @@ describe('PropertiesPanel with marks selected', () => {
   });
 
   it('the comment is sent when focus leaves it changed, and not when unchanged', () => {
-    const { commented } = mounted(ONE);
+    const { commented, read } = mounted(ONE);
     const field = screen.getByRole('textbox', { name: 'Comment' });
     expect((field as HTMLTextAreaElement).value).toBe('check the figure');
     fireEvent.blur(field);
@@ -213,6 +257,40 @@ describe('PropertiesPanel with marks selected', () => {
     fireEvent.change(field, { target: { value: 'confirm the rate' } });
     fireEvent.blur(field);
     expect(commented).toStrictEqual(['confirm the rate']);
+    // AN UNCUT COMMENT IS NOT READ AGAIN: the walk's text is whole and from the walk the handle points into.
+    expect(read).toStrictEqual([]);
+  });
+
+  /** The square, listed by a walk that sliced its comment to the listing's 512 characters. */
+  const CUT: AnnotationSelection = { ...ONE, items: [{ ...SQUARE, contents: 'a'.repeat(512), cut: true }] };
+
+  it('a CUT comment’s field starts from the WHOLE words, and is read only until they arrive', async () => {
+    // Opened on the slice, the first blur after any change would save 512 characters over 600 and lose the end.
+    const whole = `${'a'.repeat(600)} the end`;
+    const { commented, read } = mounted(CUT, [], false, { kind: 'words', text: whole });
+    const field = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Comment' });
+    // MEANWHILE the walk's own start of the comment, which a blur cannot send.
+    expect([field.readOnly, field.value]).toStrictEqual([true, 'a'.repeat(512)]);
+    fireEvent.blur(field);
+    await screen.findByDisplayValue(whole);
+    expect([field.readOnly, read]).toStrictEqual([false, [SQUARE.index]]);
+    fireEvent.blur(field);
+    expect(commented).toStrictEqual([]);
+    fireEvent.change(field, { target: { value: `b${whole.slice(1)}` } });
+    fireEvent.blur(field);
+    expect(commented).toStrictEqual([`b${whole.slice(1)}`]);
+  });
+
+  it('a comment TOO LONG to write back stays read only and says so, and nothing is sent', async () => {
+    const { commented } = mounted(CUT, [], false, { kind: 'too-long' });
+    await screen.findByText(
+      'This comment is too long to edit here, so it has been kept as it is. You can still reply to it, copy it or delete it.',
+    );
+    const field = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Comment' });
+    expect([field.readOnly, field.value]).toStrictEqual([true, 'a'.repeat(512)]);
+    fireEvent.change(field, { target: { value: 'typed anyway' } });
+    fireEvent.blur(field);
+    expect(commented).toStrictEqual([]);
   });
 
   it('the AUTHOR is sent when focus leaves it changed, and not when unchanged (ADR-0103)', () => {
@@ -268,8 +346,8 @@ describe('PropertiesPanel with marks selected', () => {
     const { ran } = mounted(ONE, [placed('t.delete', DELETE_SELECTION_TITLE, 20), placed('t.reply', REPLY_SELECTION_TITLE, 10)]);
     const foot = screen.getByRole('group', { name: 'Selected annotation' });
     const names = Array.from(foot.querySelectorAll('button')).map((button) => button.textContent);
-    expect(names).toStrictEqual(['Reply…', 'Delete selected annotations']);
-    fireEvent.click(screen.getByRole('button', { name: 'Delete selected annotations' }));
+    expect(names).toStrictEqual(['Reply…', 'Delete selection']);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete selection' }));
     expect(ran).toStrictEqual(['t.delete']);
   });
 
@@ -317,5 +395,54 @@ describe('PropertiesPanel with nothing selected', () => {
     ]);
     expect(screen.queryByRole('textbox', { name: 'Comment' })).toBeNull();
     expect(screen.queryByRole('group', { name: 'Selected annotation' })).toBeNull();
+  });
+});
+
+describe('PropertiesPanel with an object selected on the page (ADR-0153 Decision 5)', () => {
+  const RULE: ObjectPick = {
+    page: 2,
+    version: asDocVersion(4),
+    object: { source: 'content', index: 1, kind: 'path', box: { x0: 0, y0: 0, x1: 10, y1: 1 }, fill: { red: 0, green: 0, blue: 0, alpha: 128 } },
+  };
+
+  function shown(pick: ObjectPick): string[] {
+    const colours: string[] = [];
+    render(
+      <Wrapped>
+        <PropertiesPanel
+          context={CONTEXT}
+          object={{ pick, onRecolour: (colour) => colours.push(JSON.stringify(colour)) }}
+          onAuthor={() => undefined}
+          onComment={() => undefined}
+          wordsOf={() => Promise.reject(new Error('an object has no comment to read'))}
+          onRestyle={() => undefined}
+          registry={new CommandRegistry([])}
+          selection={undefined}
+          settings={new SettingsStore(new SettingsRegistry(ALL_SETTINGS))}
+        />
+      </Wrapped>,
+    );
+    return colours;
+  }
+
+  it('names the object and FILLS it with the swatch picked, its own transparency kept', () => {
+    const colours = shown(RULE);
+    expect(screen.getByRole('heading', { name: 'Object' })).toBeDefined();
+    expect(screen.getByText('Kind: Shape')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Yellow' }));
+    // #ffd400 in PDFium's 0–255, and the 128 the shape was drawn at rather than an opaque 255.
+    expect(colours).toStrictEqual([JSON.stringify({ red: 255, green: 212, blue: 0, alpha: 128 })]);
+  });
+
+  it('offers NO colour for a picture, which has no fill, and says why for a shape whose colour cannot be read', () => {
+    shown({ ...RULE, object: { ...RULE.object, kind: 'picture', source: 'stamp', fill: null } });
+    expect(screen.getByText('Kind: Image')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Yellow' })).toBeNull();
+    expect(screen.queryByText('Monstera cannot read a colour for this object, so it cannot change it.')).toBeNull();
+    cleanup();
+    // CONTROL: a shape with no readable fill is told, since it is the kind a person expects a colour on.
+    shown({ ...RULE, object: { ...RULE.object, fill: null } });
+    expect(screen.queryByRole('button', { name: 'Yellow' })).toBeNull();
+    expect(screen.getByText('Monstera cannot read a colour for this object, so it cannot change it.')).toBeDefined();
   });
 });

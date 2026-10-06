@@ -24,7 +24,7 @@ export default function PdfaRemovalsBody({
       {removed.length > 0 ? (
         <>
           <p>{_(PDFA_REMOVALS_CONVERTER_WORDS)}</p>
-          <ul className="m-pdfa-removals__list">
+          <ul className="m-dialog-list m-pdfa-removals__list">
             {removed.map((line) => (
               <li key={line} lang="en">
                 {line}

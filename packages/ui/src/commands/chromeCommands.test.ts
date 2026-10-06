@@ -12,6 +12,7 @@ import {
   FLOAT_BAR_POSITION_SETTING,
   QUICK_TOOLBAR_OPEN_SETTING,
 } from '../settings/layout.js';
+import { PanelPresence } from '../panelPresence.js';
 import { SettingsStore } from '../settingsStore.js';
 import { paletteModel, shortcutMapOf, statusBarModel } from '../surfaces/projections.js';
 import {
@@ -55,6 +56,12 @@ function store(): SettingsStore {
   return new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
 }
 
+/** A store and the window's presence over it — what every chrome command is built with. */
+function chrome(): { readonly settings: SettingsStore; readonly presence: PanelPresence } {
+  const settings = store();
+  return { settings, presence: new PanelPresence(settings) };
+}
+
 const cases = [
   { make: toggleQuickToolbarCommand, owns: QUICK_TOOLBAR_OPEN_SETTING.id },
   { make: togglePanelCommand, owns: DOCUMENT_PANEL_OPEN_SETTING.id },
@@ -64,9 +71,10 @@ const OPEN_IDS = cases.map((each) => each.owns);
 
 describe('the chrome visibility commands', () => {
   for (const { make, owns } of cases) {
-    it(`${make({ settings: store() }).id} hides and RESTORES exactly ${owns}, and nothing else`, () => {
-      const settings = store();
-      const command = make({ settings });
+    it(`${make(chrome()).id} hides and RESTORES exactly ${owns}, and nothing else`, () => {
+      const built = chrome();
+      const { settings } = built;
+      const command = make(built);
       for (const id of OPEN_IDS) expect(settings.get(id)).toBe(true);
 
       void command.run(withDocument);
@@ -79,8 +87,8 @@ describe('the chrome visibility commands', () => {
   }
 
   it('each is reachable from the PALETTE and a CHORD with a document open, and the chords do not collide', () => {
-    const settings = store();
-    const registry = new CommandRegistry(cases.map(({ make }) => make({ settings })));
+    const built = chrome();
+    const registry = new CommandRegistry(cases.map(({ make }) => make(built)));
     const ids = ['view.toggle-context-panel', 'view.toggle-panel', 'view.toggle-quick-toolbar'];
     expect(paletteModel(registry, withDocument).map((command) => command.id)).toStrictEqual(ids);
     // `shortcutMapOf` throws on a collision, so building it is the no-collision assertion.
@@ -94,9 +102,35 @@ describe('the chrome visibility commands', () => {
     expect(paletteModel(registry, noDocument)).toStrictEqual([]);
   });
 
+  for (const { make, side, owns } of [
+    { make: togglePanelCommand, side: 'start', owns: DOCUMENT_PANEL_OPEN_SETTING.id },
+    { make: toggleContextPanelCommand, side: 'end', owns: CONTEXT_PANEL_OPEN_SETTING.id },
+  ] as const) {
+    it(`${make(chrome()).id} in a NARROW ROW ticks what is on screen and opens a sheet, never a dead write (ADR-0146)`, () => {
+      const built = chrome();
+      const command = make(built);
+      built.presence.measure(600);
+      // THE SETTING IS ON AND THE PANEL IS NOT ON SCREEN, so the tick says off. Ticked from the setting it said on, and a
+      // press then shut a panel nobody could see — the dead control this replaces.
+      expect(built.settings.get(owns)).toBe(true);
+      expect(command.checked?.(withDocument)).toBe(false);
+
+      void command.run(withDocument);
+      expect(built.presence.form(side)).toBe('sheet');
+      expect(command.checked?.(withDocument)).toBe(true);
+
+      // CLOSING THE SHEET leaves the person's choice as it was, so a wider window draws the panel again.
+      void command.run(withDocument);
+      expect(built.presence.form(side)).toBe('handle');
+      expect(built.settings.get(owns)).toBe(true);
+      built.presence.measure(1600);
+      expect(built.presence.form(side)).toBe('row');
+    });
+  }
+
   it('the quick-toolbar toggle is §10.3\'s STATUS-BAR toggle, in the chrome group', () => {
-    const settings = store();
-    const registry = new CommandRegistry(cases.map(({ make }) => make({ settings })));
+    const built = chrome();
+    const registry = new CommandRegistry(cases.map(({ make }) => make(built)));
     expect(statusBarModel(registry, withDocument).chrome.map((entry) => entry.command.id)).toStrictEqual([
       'view.toggle-quick-toolbar',
     ]);
@@ -124,10 +158,11 @@ describe('View › Theme (ADR-0107)', () => {
 
 describe('Window › Properties panel (ADR-0107)', () => {
   it('opens the right panel ON its Properties tab, and is checked only while both hold', () => {
-    const settings = store();
+    const built = chrome();
+    const { settings } = built;
     settings.set(CONTEXT_PANEL_OPEN_SETTING.id, false);
     settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'assistant');
-    const command = showPropertiesCommand({ settings });
+    const command = showPropertiesCommand(built);
     expect(command.checked?.(withDocument)).toBe(false);
 
     void command.run(withDocument);

@@ -344,12 +344,13 @@ const TOC_SPEC = `  generateToc: {
   },`;
 
 /**
- * The first spec declaring `sources: 'one'`, kept separate for
+ * The first spec naming another document, and the one declaring `sources: 'several'`
+ * since ADR-0152, kept separate for
  * {@link MOVE_SPEC}'s reason — the missing-a-kind case omits the newest kind,
  * which is now this one.
  *
- * **Its `apply` takes three parameters** and the third is a second
- * `MupdfSession`, which is what makes this filler more than bookkeeping:
+ * **Its `apply` takes three parameters** and the third is a non-empty list of
+ * `MupdfSession`s, the documents merged, which is what makes this filler more than bookkeeping:
  * `WriterBinding` resolves the entry's `apply` from the spread declaration's
  * `writer` AND its `sources`, so a table accepting `applyMergeDocument` beside
  * `sources: 'none'` would mean that axis binds nothing. The reject case below
@@ -366,12 +367,12 @@ const MERGE_SPEC = `  mergeDocument: {
     undo: 'checkpoint',
     reproducible: true,
     replay: 'reapply-intent',
-    sources: 'one',
+    sources: 'several',
     reads: 'none',
   },`;
 
 /**
- * The second spec declaring `sources: 'one'`, kept separate for
+ * The first spec declaring `sources: 'one'`, kept separate for
  * {@link MOVE_SPEC}'s reason — the missing-a-kind case omits the newest kind,
  * which is now this one.
  */
@@ -731,6 +732,24 @@ const REPLACE_ALL_SPEC = `  replaceAllText: {
   },`;
 
 /**
+ * One occurrence replaced by its point (ADR-0156): invertible through the text-object inverse, its prior being one
+ * object's string.
+ */
+const REPLACE_AT_SPEC = `  replaceTextAt: {
+    kind: 'replaceTextAt',
+    writer: 'pdfium',
+    apply: applyReplaceTextAt,
+    capture: captureReplaceTextAt,
+    invert: invertReplaceTextObject,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
+/**
  * Terminal for a FOURTH reason, and it is the first one reached from the far
  * end: PDFium can take a Form XObject apart and offers nothing that builds one,
  * so every piece survives on the page and the container is what has no inverse.
@@ -792,7 +811,7 @@ const SCAN_SPEC = `  straightenScans: {
  * Filler, kept separate for {@link MOVE_SPEC}'s reason; it was the newest kind until
  * `importAnnotations`.
  *
- * The third spec declaring `sources: 'one'`, and `replacePage`'s shape exactly — MuPDF,
+ * The second spec declaring `sources: 'one'` (merge declares `'several'` since ADR-0152), and `replacePage`'s shape exactly — MuPDF,
  * checkpoint, reapply-intent — because it reads another open document's page into this one.
  * Its three functions are `layers.ts`', not `pageMerge.ts`', because the command writes
  * `/OCProperties` and that module is its one writer (ADR-0064).
@@ -1020,9 +1039,10 @@ const SANITIZE_SPEC = `  sanitizeDocument: {
 /**
  * Filler, and the only spec here routed to a THIRD writer.
  *
- * `signpdf` is byte-image like `pdf-lib`, so the shape is the same; what makes
- * it worth a fixture of its own is that `commandSpecs.ts` spreads three writers'
- * tables now, and a table missing one is the failure this file exists for.
+ * `signpdf` is hosted like `pdf-lib`, so its spec has the same image-in, image-out
+ * shape; what makes it worth a fixture of its own is that `commandSpecs.ts`
+ * spreads three writers' tables now, and a table missing one is the failure this
+ * file exists for.
  */
 const SIGN_SPEC = `  signDocument: {
     kind: 'signDocument',
@@ -1262,6 +1282,8 @@ import {
   applyReplaceAllText,
   captureReplaceAllText,
   invertReplaceAllText,
+  applyReplaceTextAt,
+  captureReplaceTextAt,
   applyPromoteFormObjects,
   capturePromoteFormObjects,
   invertPromoteFormObjects,
@@ -1325,7 +1347,8 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
-  'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), cleared: null })),
+  'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), cleared: null, held: [] })),
+  'document.deleteHeldCopies': () => Promise.resolve(ok({ held: [] })),
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'docusign.send': () => Promise.resolve(ok({ kind: 'no-integration-key' as const })),
   'docusign.retrieve': () => Promise.resolve(ok({ kind: 'nothing-sent' as const })),
@@ -1354,6 +1377,10 @@ export const handlers: ContractHandlers = {
   'document.optimizeMeasure': () => Promise.resolve(ok({ kind: 'unavailable' as const })),
   'document.optimize': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.editCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.workOnCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.fileAccess': () => Promise.resolve(ok({ access: 'writable' as const })),
+  'document.newerOf': () => Promise.resolve(ok({ newer: 'neither' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromCsv': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -1380,6 +1407,8 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), rules: [], humanChecks: [] })),
   'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.copyAnnotations': () => Promise.resolve(ok({ kind: 'nothing-copyable' as const })),
+  'document.annotationWords': () => Promise.resolve(ok({ kind: 'stale' as const })),
+  'document.openLink': () => Promise.resolve(ok({ kind: 'stale' as const })),
   'document.pasteAnnotations': () => Promise.resolve(ok({ kind: 'empty' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
@@ -1393,7 +1422,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false, kind: 'empty' })),
   'document.pageWordCount': () =>
     Promise.resolve(
-      ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0 }),
+      ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0, lines: 0, cjkCharacters: 0 }),
     ),
   'document.pageStructure': () =>
     Promise.resolve(
@@ -1513,7 +1542,8 @@ export const handlers: ContractHandlers = {
   'document.signatures': () => Promise.resolve(ok({ signatures: [], unreadable: false })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
-  'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
+  'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const, cause: 'unknown' as const })),
+  'document.deleteHeldCopies': () => Promise.resolve(ok({ held: [] })),
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'docusign.send': () => Promise.resolve(ok({ kind: 'no-integration-key' as const })),
   'docusign.retrieve': () => Promise.resolve(ok({ kind: 'nothing-sent' as const })),
@@ -1542,6 +1572,10 @@ export const handlers: ContractHandlers = {
   'document.optimizeMeasure': () => Promise.resolve(ok({ kind: 'unavailable' as const })),
   'document.optimize': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.editCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.workOnCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.fileAccess': () => Promise.resolve(ok({ access: 'writable' as const })),
+  'document.newerOf': () => Promise.resolve(ok({ newer: 'neither' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromCsv': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -1568,6 +1602,8 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), rules: [], humanChecks: [] })),
   'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.copyAnnotations': () => Promise.resolve(ok({ kind: 'nothing-copyable' as const })),
+  'document.annotationWords': () => Promise.resolve(ok({ kind: 'stale' as const })),
+  'document.openLink': () => Promise.resolve(ok({ kind: 'stale' as const })),
   'document.pasteAnnotations': () => Promise.resolve(ok({ kind: 'empty' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
@@ -1581,7 +1617,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false, kind: 'empty' })),
   'document.pageWordCount': () =>
     Promise.resolve(
-      ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0 }),
+      ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0, lines: 0, cjkCharacters: 0 }),
     ),
   'document.pageStructure': () =>
     Promise.resolve(
@@ -1714,7 +1750,13 @@ export const handlers: ContractHandlers = {
     // thing to try here: it is the one code that exists on every channel, and a
     // handler still may not produce it — it means "a diagnostic was withheld",
     // and a handler has nowhere to withhold one to (ADR-0009, 2026-08-19).
-    because: /Type 'string' is not assignable to type 'never'/u,
+    //
+    // THE ERROR, not its code, is what meets `never` since ADR-0169: a failure
+    // type became a union of members (a detailed code is one), so a channel
+    // declaring none gives `never` for the whole error where it gave
+    // `{ code: never }`. Anchored on `error` so this cannot be the delete case's
+    // reason below, which is an object meeting `never` at the top level.
+    because: /Types of property 'error' are incompatible\.\s+Type '\{…\}' is not assignable to type 'never'/u,
     notBecause: null,
     source: `
 import type { ContractHandlers } from '@monstera/contract';
@@ -1776,7 +1818,8 @@ export const shim: ContractClient = {
   'document.signatures': () => Promise.resolve(ok({ signatures: [], unreadable: false })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
-  'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
+  'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const, cause: 'unknown' as const })),
+  'document.deleteHeldCopies': () => Promise.resolve(ok({ held: [] })),
   'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'docusign.send': () => Promise.resolve(ok({ kind: 'no-integration-key' as const })),
   'docusign.retrieve': () => Promise.resolve(ok({ kind: 'nothing-sent' as const })),
@@ -1805,6 +1848,10 @@ export const shim: ContractClient = {
   'document.optimizeMeasure': () => Promise.resolve(ok({ kind: 'unavailable' as const })),
   'document.optimize': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.editCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.workOnCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.fileAccess': () => Promise.resolve(ok({ access: 'writable' as const })),
+  'document.newerOf': () => Promise.resolve(ok({ newer: 'neither' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromCsv': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -1831,6 +1878,8 @@ export const shim: ContractClient = {
     Promise.resolve(ok({ version: asDocVersion(1), rules: [], humanChecks: [] })),
   'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.copyAnnotations': () => Promise.resolve(ok({ kind: 'nothing-copyable' as const })),
+  'document.annotationWords': () => Promise.resolve(ok({ kind: 'stale' as const })),
+  'document.openLink': () => Promise.resolve(ok({ kind: 'stale' as const })),
   'document.pasteAnnotations': () => Promise.resolve(ok({ kind: 'empty' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
@@ -1844,7 +1893,7 @@ export const shim: ContractClient = {
     Promise.resolve(ok({ version: asDocVersion(1), lines: [], truncated: false, kind: 'empty' })),
   'document.pageWordCount': () =>
     Promise.resolve(
-      ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0 }),
+      ok({ version: asDocVersion(1), words: 0, characters: 0, charactersNoSpaces: 0, lines: 0, cjkCharacters: 0 }),
     ),
   'document.pageStructure': () =>
     Promise.resolve(
@@ -2060,6 +2109,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
@@ -2184,6 +2234,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
@@ -2323,6 +2374,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
@@ -2392,6 +2444,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
@@ -2470,6 +2523,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
@@ -2544,6 +2598,7 @@ ${PLACE_OBJECT_SPEC}
 ${RECOLOR_OBJECTS_SPEC}
 ${DELETE_OBJECTS_SPEC}
 ${REPLACE_ALL_SPEC}
+${REPLACE_AT_SPEC}
 ${PROMOTE_SPEC}
 ${SCAN_SPEC}
 ${IMPORT_LAYER_SPEC}
@@ -2624,7 +2679,67 @@ export const spec: CommandSpec<'rotatePages'> = {
   apply: (
     _target: MupdfSession,
     _command: CommandOfKind<'rotatePages'>,
-    _source: MupdfSession,
+    _sources: readonly [MupdfSession],
+  ) => Promise.resolve(),
+  capture: captureRotatePages,
+  invert: invertRotatePages,
+  invertible: true,
+  undo: 'inverse',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
+    name: 'A SOURCES-SEVERAL SPEC TAKES A NON-EMPTY LIST OF SESSIONS, and that compiles',
+    expect: 'allow',
+    // ADR-0152's capability, in the direction that must SUCCEED, for the case above's reason: the reject case below
+    // is satisfied by an axis that refuses every `'several'` apply.
+    source: `
+import type { CommandOfKind } from '@monstera/contract';
+import type { CommandSpec, MupdfSession } from '@monstera/kernel';
+import { captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+export const spec: CommandSpec<'rotatePages'> = {
+  kind: 'rotatePages',
+  writer: 'mupdf',
+  sources: 'several',
+  reads: 'none',
+  apply: (
+    _target: MupdfSession,
+    _command: CommandOfKind<'rotatePages'>,
+    _sources: readonly [MupdfSession, ...MupdfSession[]],
+  ) => Promise.resolve(),
+  capture: captureRotatePages,
+  invert: invertRotatePages,
+  invertible: true,
+  undo: 'inverse',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
+    name: 'but a spec declaring sources SEVERAL may not supply an apply that takes exactly ONE',
+    expect: 'reject',
+    code: 'TS2322',
+    // THE TUPLE IS WHAT HOLDS THE COUNT (ADR-0152 Decision 2). An apply written for one source and declared for several
+    // would read the first document and drop the rest, which is a merge of one file reading as a merge of three. The
+    // fixture is the allow case above with the third parameter narrowed, so only the count can refuse it.
+    because: /_sources: readonly \[MupdfSession\]\) => Promise<void>/u,
+    notBecause: null,
+    source: `
+import type { CommandOfKind } from '@monstera/contract';
+import type { CommandSpec, MupdfSession } from '@monstera/kernel';
+import { captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+export const spec: CommandSpec<'rotatePages'> = {
+  kind: 'rotatePages',
+  writer: 'mupdf',
+  sources: 'several',
+  reads: 'none',
+  apply: (
+    _target: MupdfSession,
+    _command: CommandOfKind<'rotatePages'>,
+    _sources: readonly [MupdfSession],
   ) => Promise.resolve(),
   capture: captureRotatePages,
   invert: invertRotatePages,
@@ -2652,14 +2767,18 @@ export const spec: CommandSpec<'rotatePages'> = {
     // of 2026-09-05.** This comment named "the row's own kernel proof" while no
     // row declared `sources: 'one'`, so it pointed at a guard in the future
     // tense — an allowance vouched for by something that had not been written.
-    // `mergeDocument` is that row, and the case is
+    // `mergeDocument` was that row until ADR-0152 made it `'several'`, where an
+    // apply ignoring its list type-checks the same way, and its case is
     // `THE CASE: every merged page names the node that lists it as its parent`,
-    // which fails if the apply does not read its source because there is then
-    // nothing grafted to check.
+    // which fails if the apply does not read its sources because there is then
+    // nothing grafted to check. Two rows declare `'one'` now: `replacePage`,
+    // whose cases in the same file assert the source's page widths in the
+    // target, and `importPageAsLayer`, whose guard is
+    // `packages/kernel/src/pageLayerImport.test.ts`.
     //
-    // That file also measures why a weaker guard would not do: replacing the
-    // engine call with the rejected one left ELEVEN of its thirteen cases
-    // green, including the rotation case. A document effect is where the
+    // That file also measured why a weaker guard would not do: on 2026-09-05
+    // (238cf2f1), replacing the engine call with the rejected one left ELEVEN
+    // of its then thirteen cases green, including the rotation case. A document effect is where the
     // wired-tools rule puts the burden, and *which* effect you assert is the
     // whole question.
     //
@@ -2717,7 +2836,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   apply: (
     _session: MupdfSession,
     _command: CommandOfKind<'rotatePages'>,
-    _source: MupdfSession,
+    _sources: readonly [MupdfSession],
     _outline: readonly OutlineEntry[],
   ) => Promise.resolve(),
   capture: captureRotatePages,
@@ -2943,7 +3062,7 @@ export const outer: CommandExecution<'mupdf'> = {
     // Anchored on the two missing property NAMES, which is text no other case
     // in this file produces — the byte-image and axis cases below and above are
     // TS2322 on an `Apply` instantiation.
-    because: /missing the following properties[^\n]*source, reads/u,
+    because: /missing the following properties[^\n]*sources, reads/u,
     notBecause: null,
     source: `
 import type { CommandExecution } from '@monstera/kernel';
@@ -2960,8 +3079,8 @@ export const outer: CommandExecution<'mupdf'> = {
     expect: 'allow',
     // THE HALF ADR-0069 DOES NOT CLOSE, recorded here rather than left for a
     // reader to assume closed. A delegate may still destructure the request and
-    // hand the inner writer `source: undefined` — and a literal that names both
-    // `session` and `source` may swap them, since both are `MupdfSession`.
+    // hand the inner writer `sources: []` — and a literal that names both
+    // `session` and a source may swap them, since both are `MupdfSession`.
     //
     // What changed is that either is now an edit somebody had to write down: a
     // dropped field was the ABSENCE of an edit, which is what made it invisible
@@ -2976,7 +3095,7 @@ export const outer: CommandExecution<'mupdf'> = {
 import type { CommandExecution } from '@monstera/kernel';
 declare const inner: CommandExecution<'mupdf'>;
 export const outer: CommandExecution<'mupdf'> = {
-  apply: ({ session, command, reads }) => inner.apply({ session, command, source: undefined, reads }),
+  apply: ({ session, command, reads }) => inner.apply({ session, command, sources: [], reads }),
   capture: (session, command) => inner.capture(session, command),
   invert: (session, kind, inverse) => inner.invert(session, kind, inverse),
 };
@@ -3163,9 +3282,9 @@ import type { ByteImage, CommandExecution } from '@monstera/kernel';
 
 // A byte-image writer's execution: apply and invert CONSUME an image and
 // PRODUCE a new one. Capture is the same shape for both kinds, because
-// capture only ever reads. THE SIGNER since ADR-0121 Decision 3 hosted pdf-lib:
-// it is the byte-image writer that stays in main.
-export const execution: CommandExecution<'signpdf'> = {
+// capture only ever reads. PDFIUM since ADR-0148 hosted the signer as
+// ADR-0121 Decision 3 hosted pdf-lib: it is the byte-image writer left.
+export const execution: CommandExecution<'pdfium'> = {
   // THE COMMAND IS NOT READ AT ALL, and the history is the interesting part.
   // This read the rotation's own pages while one command kind existed, then
   // narrowed to the DISCRIMINANT when a second kind arrived, and now reads
@@ -3178,10 +3297,11 @@ export const execution: CommandExecution<'signpdf'> = {
   // byte-image apply CONSUMES an image and PRODUCES one, with no assertion.
   //
   // THE IMAGE ARRIVES AS THE REQUEST'S session FIELD SINCE ADR-0069: the
-  // execution takes one named request, and this writer's session IS the bytes.
-  apply: ({ session }) => Promise.resolve(new Uint8Array(session)),
+  // execution takes one named request, and this writer's session HOLDS the
+  // bytes, beside the key that opens them since ADR-0171's addendum.
+  apply: ({ session }) => Promise.resolve(new Uint8Array(session.bytes)),
   capture: (_image, _command) => Promise.resolve({ captured: false, reason: 'none' }),
-  invert: (image, _kind, _inverse) => Promise.resolve(new Uint8Array(image)),
+  invert: (image, _kind, _inverse) => Promise.resolve(new Uint8Array(image.bytes)),
 };
 `,
   },
@@ -3207,12 +3327,12 @@ export const execution: CommandExecution<'signpdf'> = {
     // `(image: ByteImage, command:` — the two diagnostics agree line for line
     // otherwise, and the harness refuses to certify either verdict while one
     // matcher accepts the other's reason.
-    because: /request: ApplyRequest<"signpdf", K>\)[\s\S]*Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
+    because: /request: ApplyRequest<"pdfium", K>\)[\s\S]*Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
     notBecause: null,
     source: `
 import type { CommandExecution } from '@monstera/kernel';
 
-export const execution: Pick<CommandExecution<'signpdf'>, 'apply'> = {
+export const execution: Pick<CommandExecution<'pdfium'>, 'apply'> = {
   apply: () => {},
 };
 `,
@@ -3429,7 +3549,10 @@ export const entry: LogEntry = {
     // `never` to something serialisable would put unbudgeted document-scaled
     // bytes in the log, where `retainedBytes` counts checkpoints only and would
     // under-report by exactly that amount — in the direction nobody notices.
-    because: /Type '\{…\}' is not assignable to type 'never'/u,
+    //
+    // ANCHORED AT THE START OF THE REASON: the object meets `never` at the top level here, where the handler case
+    // above meets it inside a `Result`'s `error`, and an unanchored pattern accepted both (ADR-0169).
+    because: /^Type '\{…\}' is not assignable to type 'never'/u,
     notBecause: null,
     // `LogEntryFor<'deletePages'>` and NOT the collapsed `LogEntry`. Against
     // the union TypeScript reports an excess-property mismatch on `inverse`
@@ -3459,7 +3582,10 @@ export const entry: LogEntryFor<'deletePages'> = {
     // A terminal entry has carried what the apply was handed since ADR-0051, so
     // omitting it too makes the reason *checkpoint, read* — a true diagnostic
     // about two things, where this case is about one. Isolating the property
-    // under test is what keeps the reason regex above meaningful.
+    // under test is what keeps the reason regex above meaningful. `result: null`
+    // is the fixture for the same reason since ADR-0162: a terminal entry says
+    // whether it is redone from a result, and leaving that out too made the
+    // reason *checkpoint, result*.
     source: `
 import type { LogEntry } from '@monstera/kernel';
 export const entry: LogEntry = {
@@ -3467,6 +3593,85 @@ export const entry: LogEntry = {
   command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
   reason: 'no prior state',
   read: undefined,
+  result: null,
+};
+`,
+  },
+  {
+    name: 'an entry REDONE FROM ITS RESULT may not carry the credential it was signed with',
+    expect: 'reject',
+    // TS2322 with the excess property nested under it, which is how the checker reports one inside a union member.
+    code: 'TS2322',
+    // ADR-0162's whole claim: such an entry keeps its command's KIND and nothing else, so a P12 and a passphrase have
+    // no field to be recorded in. The control below is the same entry without them.
+    because: /Object literal may only specify known properties, and 'bytes' does not exist in type/u,
+    notBecause: null,
+    source: `
+import type { Checkpoint, LogEntry } from '@monstera/kernel';
+declare const file: Checkpoint;
+export const entry: LogEntry = {
+  kind: 'terminal',
+  command: { kind: 'signDocument', bytes: new Uint8Array(), passphrase: 'kept' },
+  checkpoint: file,
+  reason: 'no prior state',
+  read: undefined,
+  result: file,
+};
+`,
+  },
+  {
+    name: 'CONTROL: the same entry, keeping only the kind, compiles',
+    expect: 'allow',
+    source: `
+import type { Checkpoint, LogEntry } from '@monstera/kernel';
+declare const file: Checkpoint;
+export const entry: LogEntry = {
+  kind: 'terminal',
+  command: { kind: 'signDocument' },
+  checkpoint: file,
+  reason: 'no prior state',
+  read: undefined,
+  result: file,
+};
+`,
+  },
+  {
+    name: 'an entry whose intent is HELD may not carry the passwords it was applied with',
+    expect: 'reject',
+    // TS2353 and not the signing case's TS2322: both terminal shapes resolve to the kind alone for this command, so
+    // the checker reports the excess property directly rather than under a union member it failed to match.
+    code: 'TS2353',
+    // ADR-0171 Decision 3: a command declaring `reapply-held-intent` keeps its KIND in the entry and nothing else, and
+    // the bus holds the command beside it. So the protect's passwords have no field here, and neither has the rest of
+    // the command, since a protect with its passwords taken out is still one a redo could re-run with no password.
+    because: /Object literal may only specify known properties, and 'encryption' does not exist in type/u,
+    notBecause: null,
+    source: `
+import type { Checkpoint, LogEntry } from '@monstera/kernel';
+declare const file: Checkpoint;
+export const entry: LogEntry = {
+  kind: 'terminal',
+  command: { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: 'kept' },
+  checkpoint: file,
+  reason: 'no prior state',
+  read: undefined,
+  result: null,
+};
+`,
+  },
+  {
+    name: 'CONTROL: the same held entry, keeping only the kind, compiles',
+    expect: 'allow',
+    source: `
+import type { Checkpoint, LogEntry } from '@monstera/kernel';
+declare const file: Checkpoint;
+export const entry: LogEntry = {
+  kind: 'terminal',
+  command: { kind: 'setDocumentProtection' },
+  checkpoint: file,
+  reason: 'no prior state',
+  read: undefined,
+  result: null,
 };
 `,
   },
@@ -3574,8 +3779,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // spelt four and counted 45. 3 + 46 + 1 is still the union's 50.
     //
     // 52 since `placeSignatureMark` and `placeSignaturePicture` (2026-10-02, ADR-0133): three spelt, 48 counted, one.
+    // 53 since `replaceTextAt` (2026-10-04, ADR-0156): three spelt, 49 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 48 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 49 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

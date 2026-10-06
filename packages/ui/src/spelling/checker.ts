@@ -1,5 +1,4 @@
 import type { ContractClient, SpellingLanguage } from '@monstera/contract';
-import { wordsOf } from '@monstera/shared';
 
 /**
  * The spelling checker, built once per language and held while it is wanted.
@@ -39,17 +38,6 @@ export interface SpellChecker {
   readonly suggest: (word: string) => readonly string[];
 }
 
-/** One misspelling, and where in the document it was seen. */
-export interface Misspelling {
-  readonly word: string;
-  /** How many times it appears across the pages that were checked. */
-  readonly occurrences: number;
-  /** The first page it appears on, zero-based. */
-  readonly firstPage: number;
-  /** Replacements, best first, computed once for the first occurrence. */
-  readonly suggestions: readonly string[];
-}
-
 /**
  * Builds a checker for one language.
  *
@@ -65,6 +53,46 @@ export async function buildChecker(
   language: SpellingLanguage,
   personal: readonly string[],
 ): Promise<SpellChecker | null> {
+  const spell = await dictionaryFor(client, language);
+  if (spell === null) return null;
+
+  // ADDED AS A SET, so a personal dictionary with a duplicate costs nothing and
+  // the caller need not deduplicate before handing it over.
+  const added = new Set(personal.map((word) => word.toLowerCase()));
+
+  return {
+    correct: (word) => added.has(word.toLowerCase()) || spell.correct(word),
+    suggest: (word) => spell.suggest(word),
+  };
+}
+
+/**
+ * Each client's built dictionaries, by language — the 401 ms built ONCE and held, as this module's header says.
+ *
+ * Keyed by the client as well, because a client is a source of dictionaries: two test shims answer two dictionaries,
+ * and a dictionary held for the first would answer for the second. The personal words are not part of what is held,
+ * since they change while it is held; {@link buildChecker} applies them over it. A dictionary that would not load is
+ * not held, so the next check asks again.
+ */
+const DICTIONARIES = new WeakMap<ContractClient, Map<SpellingLanguage, Promise<SpellChecker | null>>>();
+
+function dictionaryFor(client: ContractClient, language: SpellingLanguage): Promise<SpellChecker | null> {
+  let held = DICTIONARIES.get(client);
+  if (held === undefined) {
+    held = new Map();
+    DICTIONARIES.set(client, held);
+  }
+  const built = held.get(language);
+  if (built !== undefined) return built;
+  const building = loadDictionary(client, language);
+  held.set(language, building);
+  void building.then((spell) => {
+    if (spell === null) held.delete(language);
+  });
+  return building;
+}
+
+async function loadDictionary(client: ContractClient, language: SpellingLanguage): Promise<SpellChecker | null> {
   const answer = await client['spelling.dictionary']({ language });
   if (!answer.ok || answer.value.kind !== 'dictionary') return null;
 
@@ -78,15 +106,7 @@ export async function buildChecker(
   // declaration rather than an exemption.
   const { default: nspell } = await import('nspell');
   const spell = nspell(affix, words);
-
-  // ADDED AS A SET, so a personal dictionary with a duplicate costs nothing and
-  // the caller need not deduplicate before handing it over.
-  const added = new Set(personal.map((word) => word.toLowerCase()));
-
-  return {
-    correct: (word) => added.has(word.toLowerCase()) || spell.correct(word),
-    suggest: (word) => spell.suggest(word),
-  };
+  return { correct: (word) => spell.correct(word), suggest: (word) => spell.suggest(word) };
 }
 
 /**
@@ -105,45 +125,8 @@ export async function buildChecker(
  * answers *is this word one a spelling dictionary can judge*, which is a
  * different question and this feature's own.
  */
-function worthChecking(word: string): boolean {
+export function worthChecking(word: string): boolean {
   if (word.length < 2) return false;
   // ANY digit, not all: `3rd` and `H2O` are as unjudgeable as `2026`.
   return !/\d/u.test(word);
-}
-
-/**
- * Finds the misspellings in one page's lines.
- *
- * ## Occurrences are counted CASE-INSENSITIVELY and reported as first seen
- *
- * `Teh` and `teh` are one problem with one fix, and listing them separately
- * doubles the length of every list for no information. The word shown is the
- * first spelling encountered, because that is the one the reader will find when
- * they go looking.
- *
- * @param checker the built checker
- * @param lines the page's lines, in reading order
- * @param page which page these lines are, zero-based
- * @param into accumulated across pages, keyed by the lower-cased word
- */
-export function collectMisspellings(
-  checker: SpellChecker,
-  lines: readonly string[],
-  page: number,
-  into: Map<string, Misspelling>,
-): void {
-  for (const word of wordsOf(lines)) {
-    if (!worthChecking(word) || checker.correct(word)) continue;
-
-    const key = word.toLowerCase();
-    const seen = into.get(key);
-    if (seen === undefined) {
-      // SUGGESTED ONCE, for the first occurrence. `suggest` is the expensive
-      // half of the library and the answer does not depend on where the word
-      // was found, so asking again per occurrence buys nothing.
-      into.set(key, { word, occurrences: 1, firstPage: page, suggestions: checker.suggest(word) });
-      continue;
-    }
-    into.set(key, { ...seen, occurrences: seen.occurrences + 1 });
-  }
 }

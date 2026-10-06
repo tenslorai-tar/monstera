@@ -3,6 +3,8 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { styleFrom } from '../annotations/annotationStyle.js';
+import { WRITE_NOTE_LABEL } from '../messages/en.js';
+import type { WriteRequest } from '../pageWriting.js';
 import type { CommandContext } from '../registries/commands.js';
 import type { TextSelection } from '../TextLayer.js';
 import { STROKE } from '../annotations/shapeTools.js';
@@ -83,7 +85,7 @@ describe('the selected-text commands', () => {
     const all = [
       copySelectionCommand(deps),
       ...markupSelectionCommands(deps),
-      commentSelectionCommand({ ...deps, ask: () => Promise.resolve({ text: 'never asked for' }) }),
+      commentSelectionCommand({ ...deps, write: () => Promise.resolve('never asked for') }),
       redactSelectionCommand(deps),
       searchSelectionCommand(deps),
     ];
@@ -120,22 +122,31 @@ describe('the selected-text commands', () => {
     expect(first?.kind === 'addAnnotation' ? first.page : undefined).toBe(2);
   });
 
-  it('COMMENT asks for the note, then places it at the selection’s START', async () => {
+  it('COMMENT asks the PAGE for the note at the selection’s START, then places it there', async () => {
     // The point is the whole question: a note is an icon at a point and the selection is a run, so
     // the command has to reduce one to the other. `from` is where the gesture began — the same
     // rule `stickyNoteTool` applies to a click that slid — and the selection above has two
     // different ends so a command that took `to` is red rather than indistinguishable.
     const { deps, placed } = recording(SELECTION);
-    const asked: { id: string; props: unknown }[] = [];
+    const asked: WriteRequest[] = [];
     await commentSelectionCommand({
       ...deps,
-      ask: (id, props) => {
-        asked.push({ id, props });
-        return Promise.resolve({ text: 'check this against Q3' });
+      write: (request) => {
+        asked.push(request);
+        return Promise.resolve(' check this against Q3 ');
       },
     }).run(CONTEXT);
 
-    expect(asked).toStrictEqual([{ id: 'dialog.annotation-note', props: {} }]);
+    // ITS BOX OPENS AT THE POINT THE NOTE WILL SIT, on the selection's page, as a card: a comment
+    // is not drawn on the page, so the request carries no page style.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({
+      page: 2,
+      box: { x0: 72, y0: 700, x1: 72, y1: 700 },
+      shape: 'block',
+      label: WRITE_NOTE_LABEL,
+    });
+    expect(asked[0]?.style).toBeUndefined();
     const first = placed[0];
     expect(first?.kind === 'addAnnotation' ? first.annotation : undefined).toStrictEqual({
       type: 'sticky-note',
@@ -150,15 +161,15 @@ describe('the selected-text commands', () => {
     expect(first?.kind === 'addAnnotation' ? first.page : undefined).toBe(2);
   });
 
-  it('CONTROL: a DISMISSED note dialog places nothing, and the dialog was still opened', async () => {
-    // Without this, the case above passes for a command that places a note whatever the dialog
-    // answers — and *dismissed* and *never asked* are the same observation unless the ask is
-    // counted, so both are asserted here.
+  it('CONTROL: a note left BLANK places nothing, and the page was still asked', async () => {
+    // Without this, the case above passes for a command that places a note whatever the page
+    // answers — and *nothing typed* and *never asked* are the same observation unless the request
+    // is counted, so both are asserted here.
     const { deps, placed } = recording(SELECTION);
     let opened = 0;
     await commentSelectionCommand({
       ...deps,
-      ask: () => {
+      write: () => {
         opened += 1;
         return Promise.resolve(undefined);
       },
@@ -173,7 +184,7 @@ describe('the selected-text commands', () => {
     const all = [
       copySelectionCommand(deps),
       ...markupSelectionCommands(deps),
-      commentSelectionCommand({ ...deps, ask: () => Promise.resolve(undefined) }),
+      commentSelectionCommand({ ...deps, write: () => Promise.resolve(undefined) }),
       redactSelectionCommand(deps),
       searchSelectionCommand(deps),
     ];

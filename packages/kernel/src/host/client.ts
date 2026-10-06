@@ -183,6 +183,15 @@ export interface HostClient {
    * went away, the host died. Settles every outstanding call.
    */
   readonly fail: (termination: HostTermination) => void;
+  /**
+   * The peer broke the protocol in an answer this client delivered intact: a well-formed `engine/open` whose session
+   * handle is one already held (CR-SEC-10). Ends the connection as the client's own violations do, the transport
+   * terminated and every outstanding call settled, so the ending is a failure recovery acts on and not the `shutdown`
+   * a deliberate close reports.
+   *
+   * @returns the termination this client stopped with: this violation, or the earlier cause if it had already stopped.
+   */
+  readonly violated: (detail: string) => HostTermination;
   /** How many calls are waiting for an answer. */
   readonly inFlight: () => number;
   /** Why this client stopped, or `null` while it is running. */
@@ -198,6 +207,19 @@ export interface HostClient {
    * 2026-10-03).
    */
   readonly last: () => DocId | undefined;
+}
+
+/**
+ * Why a response did not match the wire, in words this build chose: each issue's zod code and its path's length.
+ *
+ * NEVER zod's own message (CR-SEC-13). A strict object's refusal names the keys it did not recognise, and a record's
+ * path names the peer's keys, so either one carries text the host chose — up to a frame of it — into the termination
+ * `main` writes to its diagnostics.
+ */
+function issuesOf(error: { readonly issues: readonly { readonly code: string; readonly path: readonly PropertyKey[] }[] }): string {
+  const named = error.issues.slice(0, 8).map((issue) => `${issue.code} at depth ${String(issue.path.length)}`);
+  const more = error.issues.length > named.length ? `, and ${String(error.issues.length - named.length)} more` : '';
+  return `the response did not match the host wire: ${named.join(', ')}${more}`;
 }
 
 export function createHostClient({
@@ -456,7 +478,7 @@ export function createHostClient({
         }
         const response = hostResponseSchema.safeParse(parsed);
         if (!response.success) {
-          stop({ code: 'malformed-response', detail: response.error.message }, true);
+          stop({ code: 'malformed-response', detail: issuesOf(response.error) }, true);
           return;
         }
         const call = pending.get(response.data.id);
@@ -495,12 +517,13 @@ export function createHostClient({
         const { bytes } = answered.answerFile;
         fileAnswers.take(call.params, into, bytes).then(
           (raw) => {
-            // SETTLED WITH THE ENDING, not dropped: this call left `pending` when its frame arrived, so the `stop` that
-            // ended the connection while its file was being read rejected every other call and not this one, and
-            // returning here left its caller waiting for ever.
-            const ended = state.stopped;
-            if (ended !== null) {
-              call.reject(new HostConnectionLost(ended));
+            // A CALL WHOSE FILE WAS STILL BEING TAKEN WHEN THIS CLIENT STOPPED IS SETTLED HERE, because nothing else
+            // can: it left `pending` when its answer arrived, so `stop` never saw it. Returning without settling held
+            // the caller for ever, and a command's caller holds its document's lane, so every later command on that
+            // document waited behind it and its recovery never entered.
+            const stopped = state.stopped;
+            if (stopped !== null) {
+              call.reject(new HostConnectionLost(stopped));
               return;
             }
             let body: unknown;
@@ -536,6 +559,13 @@ export function createHostClient({
       // `ours` false: the transport is already gone, and telling it to terminate
       // would be a call made to look symmetrical.
       stop(termination, false);
+    },
+
+    violated: (detail: string): HostTermination => {
+      // `ours` true, as for every violation this client raises: the peer is alive and is told to go.
+      const reason: HostTermination = { code: 'malformed-response', detail };
+      stop(reason, true);
+      return state.stopped ?? reason;
     },
 
     inFlight: (): number => pending.size,

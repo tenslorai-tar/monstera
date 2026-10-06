@@ -1,4 +1,4 @@
-import { type RefCallback, useCallback, useEffect, useRef, useState } from 'react';
+import { type RefCallback, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 
 import { FIRST_PAGE } from './pageNumbering.js';
 
@@ -63,6 +63,14 @@ export function useVisiblePages(
   margin: string,
   /** The page this scroller is mounting at, seeded visible. */
   seed: number = FIRST_PAGE.kernel,
+  /**
+   * The scroller, as the observer's root. THE MARGIN COUNTS ONLY AGAINST THE ROOT: with none, the root is the window,
+   * and a page inside a scroll box is clipped by that box before the margin is applied — so nothing beyond its edge
+   * is ever *near*, whatever the margin says. Measured 2026-10-04 in Organize's Full page on Chromium 151 (the browser
+   * shim, reads slowed to 150 ms): a card 180 px below the strip's edge undrawn after 2.5 s under a 50% margin, then
+   * blank as a scroll brought it in.
+   */
+  root?: RefObject<HTMLElement | null>,
 ): {
   /** The pages currently within `margin` of the container's viewport. */
   readonly visible: ReadonlySet<number>;
@@ -113,6 +121,20 @@ export function useVisiblePages(
       if (known !== undefined && observer.current !== null) observer.current.unobserve(known);
       if (element === null) {
         slots.current.delete(page);
+        // A SLOT THAT WENT IS NOT VISIBLE (CR-COR-10). The observer reports nothing for an element removed from the
+        // page, so a delete that shortened the document left the last index here, and the next view-model read asked
+        // main for a page that is gone; its refusal marked every page in that batch as having no answer. Read after
+        // the commit, because a slot that is REPLACED is told null and then its new element in one commit, and that
+        // page never left.
+        queueMicrotask(() => {
+          if (slots.current.has(page)) return;
+          setVisible((current) => {
+            if (!current.has(page)) return current;
+            const next = new Set(current);
+            next.delete(page);
+            return next;
+          });
+        });
         return;
       }
       slots.current.set(page, element);
@@ -144,7 +166,7 @@ export function useVisiblePages(
           return moved ? next : current;
         });
       },
-      { rootMargin: margin },
+      { root: root?.current ?? null, rootMargin: margin },
     );
     observer.current = seen;
     // ELEMENTS THAT ALREADY EXIST, because the refs run before this effect on
@@ -156,7 +178,7 @@ export function useVisiblePages(
       seen.disconnect();
       observer.current = null;
     };
-  }, [margin]);
+  }, [margin, root]);
 
   const slotFor = useCallback((page: number): HTMLElement | undefined => {
     return slots.current.get(page);

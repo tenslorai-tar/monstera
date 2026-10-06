@@ -2,9 +2,12 @@ import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
 import type { DocVersion, PageTransform, ViewportPoint } from '@monstera/shared';
 import { pdfPoint, toPdf, toViewport, viewportPoint } from '@monstera/shared';
 
+import { HINT_SELECT } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationSnapshot, ErasableAnnotation } from './eraserTool.js';
+import { markAt } from './eraserTool.js';
+import { type ReopenDeps, reopenWords } from './textTools.js';
 
 
 /**
@@ -83,6 +86,8 @@ export interface SelectedAnnotation {
   readonly kind: ErasableAnnotation['kind'];
   /** What it says now, carried from the walk for {@link style}'s reason. */
   readonly contents: ErasableAnnotation['contents'];
+  /** Whether the walk cut {@link contents}, carried for {@link style}'s reason; an editor reads the whole words. */
+  readonly cut?: ErasableAnnotation['cut'];
   /** Who it names, carried from the walk for {@link style}'s reason (ADR-0103). */
   readonly author: ErasableAnnotation['author'];
   /** When it was made, or `null`, carried for the same reason. */
@@ -124,6 +129,7 @@ function selectedFrom(entry: ErasableAnnotation): SelectedAnnotation | undefined
     style: entry.style,
     kind: entry.kind,
     contents: entry.contents,
+    ...(entry.cut === true ? { cut: true as const } : {}),
     author: entry.author,
     created: entry.created,
     blend: entry.blend,
@@ -191,7 +197,7 @@ export function selectionOfNewest(walk: AnnotationSnapshot, page: number): Annot
   return item === undefined ? undefined : { page, version: walk.version, items: [item] };
 }
 
-export interface SelectDeps {
+export interface SelectDeps extends ReopenDeps {
   /** The same read the eraser holds. */
   readonly annotations: () => Promise<AnnotationSnapshot | undefined>;
   /** Where the selection goes. `undefined` is *nothing is selected*. */
@@ -293,9 +299,19 @@ function pdfBox(
   };
 }
 
+/** Where a drag on the selection puts each mark, at the selection's version. */
+interface Placement {
+  readonly version: AnnotationSelection['version'];
+  readonly placements: readonly { readonly index: number; readonly rect: AnnotationRect }[];
+}
+
 /**
- * The command a drag on the existing selection produces, or `undefined` when
+ * Where a drag on the existing selection puts its marks, or `undefined` when
  * the gesture did not start on it.
+ *
+ * **The one answer the command and the preview both take** (ADR-0166): what is
+ * drawn while the drag is in flight is what a release would send, so the two
+ * cannot disagree about where a mark goes.
  *
  * Two cases and they are told apart by where the press landed:
  *
@@ -316,7 +332,7 @@ function placementFor(
   marquee: ReturnType<typeof marqueeOf>,
   page: number,
   transform: PageTransform,
-): DispatchableCommand | undefined {
+): Placement | undefined {
   if (selection === undefined) return undefined;
   // A SELECTION BELONGS TO ONE PAGE, so a gesture on any other is a pick.
   if (selection.page !== page) return undefined;
@@ -334,8 +350,6 @@ function placementFor(
     for (const [cx, cy, ox, oy] of cornersOf(box)) {
       if (Math.hypot(from.x - cx, from.y - cy) > CORNER_REACH) continue;
       return {
-        kind: 'placeAnnotation',
-        page,
         placements: [{ index: item.index, rect: pdfBox([ox, oy], [to.x, to.y], transform) }],
         version: selection.version,
       };
@@ -359,8 +373,6 @@ function placementFor(
   const dx = moved.x - origin.x;
   const dy = moved.y - origin.y;
   return {
-    kind: 'placeAnnotation',
-    page,
     placements: selection.items.map((item) => ({
       index: item.index,
       rect: {
@@ -391,7 +403,7 @@ export function selectTool(deps: SelectDeps): UiTool {
       // replace the selection with that annotation, which is the interaction
       // every editor gets right by asking this question first.
       const moved = placementFor(deps.selected(), gesture, marquee, page, transform);
-      if (moved !== undefined) return moved;
+      if (moved !== undefined) return { kind: 'placeAnnotation', page, ...moved };
 
       const snapshot = await deps.annotations();
       if (snapshot === undefined) {
@@ -406,22 +418,9 @@ export function selectTool(deps: SelectDeps): UiTool {
       const onPage = snapshot.annotations.filter((entry) => entry.page === page);
       const picked =
         marquee.travelled < MINIMUM_MARQUEE
-          ? // A CLICK: the topmost containing the point, which is the last in
-            // the walk — `eraserTool.ts` has the argument, and both tools must
-            // agree or clicking to select and clicking to erase would pick
-            // different marks from the same pixel.
-            [
-              onPage.findLast((entry) => {
-                const box = boxOf(entry.rect, transform);
-                return (
-                  box !== null &&
-                  marquee.x0 >= box.x0 &&
-                  marquee.x0 <= box.x1 &&
-                  marquee.y0 >= box.y0 &&
-                  marquee.y0 <= box.y1
-                );
-              }),
-            ].filter((entry) => entry !== undefined)
+          ? // A CLICK: `markAt`, the one rule the eraser and a reopen take too, at the point pressed — so clicking to
+            // select, to erase and to edit pick the same mark from the same pixel.
+            [markAt(onPage, page, startOf(gesture), transform)].filter((entry) => entry !== undefined)
           : // A MARQUEE: everything it touches, in walk order, so the payload a
             // removal is built from is ordered the way the document is.
             onPage.filter((entry) => {
@@ -447,12 +446,25 @@ export function selectTool(deps: SelectDeps): UiTool {
       // that was only meant to point at something.
       return undefined;
     },
-    preview: (gesture: Gesture): ToolPreview | undefined => {
+    preview: (gesture: Gesture, page: number, transform: PageTransform): ToolPreview | undefined => {
       const marquee = marqueeOf(gesture);
       // NO MARQUEE UNTIL IT IS ONE. Below the threshold the gesture is still a
       // click, and drawing a one-pixel rectangle under the pointer would show a
       // region that is about to be ignored.
       if (marquee.travelled < MINIMUM_MARQUEE) return undefined;
+      // A DRAG ON THE SELECTION IS DRAWN WHERE IT PUTS THE MARKS (ADR-0166), each one's box as the release would
+      // place it. The box from the press to the pointer is a marquee's, and drawn for a move it was a ghost that
+      // matched neither the mark nor where it went — and then was held there after the release.
+      const moved = placementFor(deps.selected(), gesture, marquee, page, transform);
+      if (moved !== undefined) {
+        return {
+          shape: 'boxes',
+          boxes: moved.placements.flatMap(({ rect }) => {
+            const box = boxOf(rect, transform);
+            return box === null ? [] : [{ x: box.x0, y: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0 }];
+          }),
+        };
+      }
       return {
         shape: 'rect',
         x: marquee.x0,
@@ -461,8 +473,11 @@ export function selectTool(deps: SelectDeps): UiTool {
         height: marquee.y1 - marquee.y0,
       };
     },
+    // A DOUBLE-CLICK ON A TEXT MARK EDITS ITS WORDS where they are (ADR-0154 Decision 3): the first click has selected
+    // it, and the second opens it. A double-click on any other mark reopens nothing.
+    reopen: async (at, page, transform) => (await reopenWords(deps, at, page, transform)).command,
   };
 
   // THE ARROW: this tool picks what is there rather than drawing something new (the owner's review of 0.1.6.0).
-  return { id: SELECT_TOOL_ID, controller, cursor: 'arrow' };
+  return { id: SELECT_TOOL_ID, controller, cursor: 'arrow', hint: HINT_SELECT };
 }

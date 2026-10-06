@@ -6,10 +6,9 @@ import {
   ComposeRefused,
   PageWriter,
   type Run,
-  type TableRow,
-  drawTable,
   embedFaces,
 } from './composeLayout.js';
+import { type TableRow, drawTable } from './composeTable.js';
 import { readCsv } from './csvRead.js';
 
 /**
@@ -45,8 +44,8 @@ const TAB_SPACES = 4;
  * @param source the file's bytes, exactly as picked
  * @param page the size every page is set at
  * @throws ComposeRefused for a source that is not UTF-8, breaks RFC 4180, holds a
- *   character the standard faces cannot draw, has more columns than a page holds, or
- *   has no field with anything in it
+ *   character the standard faces cannot draw, or has no field with anything in it — never
+ *   for its width, which `composeTable.ts` fits
  */
 export async function composeCsv(source: Uint8Array, page: ComposePageSize): Promise<Uint8Array> {
   let text: string;

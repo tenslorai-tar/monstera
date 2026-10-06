@@ -22,8 +22,9 @@ import type {
   MupdfSession,
   SnapshotWrite,
 } from '@monstera/kernel';
-import type { DocId } from '@monstera/shared';
+import type { DocId, HeldPassword } from '@monstera/shared';
 
+import { DocumentPasswords } from './documentPasswords.js';
 import { describeEngineHostGone, type ShellFailureSink } from './shellFailure.js';
 
 // `import type`, and the header above says why in 38.1 MB. This one is the
@@ -385,7 +386,12 @@ export async function onDocumentOpened(
         return;
       } catch (error) {
         if (surfaces.closedMeanwhile(error)) return;
-        // THE ENDING'S, NOT THIS ENTRY'S: counted where it happened and reopened behind this entry (see above).
+
+        // THE DEATH IS THE ENDING'S, counted and rebuilt once. `onEngineHostEnded` raised this document's count when
+        // the connection ended and queued its reopen behind this entry, so counting here as well spent the bound on
+        // ONE death, poisoning the document, and a retry here made a second session beside the reopen's: the
+        // supervisor then refused the reopen's as offered for a poisoned document, a session made for nothing. On a
+        // deliberate close nothing is queued, and nothing should be: the application is quitting.
         if (surfaces.hostEnded(error)) return;
 
         // THE PASSWORD EXIT, and it is ABOVE the deterministic one because it
@@ -653,15 +659,21 @@ interface DocumentEntry {
    *
    * **Not the negation of {@link locked}**, and not derivable from the access
    * either: an owner-only document opens for everybody with `access: 2` and no
-   * password at all, and recycling that is fine. What this records is the one
-   * fact that makes a rebuild impossible — a session nothing can re-create,
-   * because the password that made it is not kept anywhere (ADR-0055).
+   * password at all. What this records is that the document's file opens only
+   * with the password {@link EngineSessions.unlock} was given, which every later
+   * open of its sessions reads back ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md)).
    *
    * Set on a successful unlock and never cleared: the document is the same
    * document for the rest of its life, and close-and-reopen is what starts
    * over.
    */
   unlockedByPassword: boolean;
+  /**
+   * Whether the file this document last saved opens only with a password: a removal's save renews the sessions from
+   * the file it wrote, and the renewal answers `locked` for exactly that file (ADR-0164). Set by every renewal, either
+   * way, so removing a password makes it false again.
+   */
+  savedLocked: boolean;
 }
 
 /**
@@ -703,6 +715,20 @@ export class EngineSessions implements EngineSessionSource {
   readonly #entries = new Map<DocId, DocumentEntry>();
 
   /**
+   * The passwords the open documents' files open with (ADR-0171 Decision 1). HERE, beside the entries, so the close
+   * that drops a document's entry is the close that wipes its password: one teardown registration, not a second one a
+   * close path has to remember (finding FFFF-1).
+   */
+  readonly #passwords = new DocumentPasswords();
+
+  /**
+   * The key `docId`'s file opens with, unrevealed, or `undefined` when it needs none. Read by every open of the
+   * document's bytes in a host: its sessions' (the first after an unlock, a recycle, a checkpoint's restore, a removal's
+   * save renewal, a host death's rebuild), every PDFium call's and Optimize's (ADR-0171 Decision 4 and its addendum).
+   */
+  readonly opensWith = (docId: DocId): HeldPassword | undefined => this.#passwords.opensWith(docId);
+
+  /**
    * Get-or-miss, never get-or-create. Arrow-bound because this is handed over
    * as {@link EngineSessionSource}'s member and a method would lose its
    * receiver on the way.
@@ -739,12 +765,29 @@ export class EngineSessions implements EngineSessionSource {
       release: null,
       locked: null,
       unlockedByPassword: false,
+      savedLocked: false,
     });
   }
 
   /** Why this document has no session, when the reason is a password. */
   readonly locked = (docId: DocId): LockedReason | undefined =>
     this.#entries.get(docId)?.locked ?? undefined;
+
+  /**
+   * Whether this document's file opens only with a password: it is locked now, a password unlocked it, or the file it
+   * last saved needs one. THE ONE ANSWER to that question, so a reader that keeps nothing of a protected document — the
+   * Recent picture (ADR-0164's 2026-10-05 correction) — cannot ask it a second way.
+   */
+  readonly opensOnlyWithPassword = (docId: DocId): boolean => {
+    const entry = this.#entries.get(docId);
+    return entry !== undefined && (entry.locked !== null || entry.unlockedByPassword || entry.savedLocked);
+  };
+
+  /** Records what a removal's save renewal found: whether the file it wrote opens only with a password. {@link renew}'s. */
+  #savedFileLocked(docId: DocId, locked: boolean): void {
+    const entry = this.#entries.get(docId);
+    if (entry !== undefined) entry.savedLocked = locked;
+  }
 
   /**
    * Records that the host answered an open with a password refusal.
@@ -785,6 +828,7 @@ export class EngineSessions implements EngineSessionSource {
         release: null,
         locked: null,
         unlockedByPassword: false,
+        savedLocked: false,
       });
       return;
     }
@@ -800,6 +844,19 @@ export class EngineSessions implements EngineSessionSource {
     // rather than at the unlock call site is what stops the two answers
     // disagreeing (B3).
     entry.locked = null;
+  }
+
+  /**
+   * Records the sessions a password gave a locked document, and the password, in one step: the sessions are held first,
+   * since {@link hold} refuses a poisoned document and a password kept for one would outlive its use.
+   *
+   * @param docId the document `document.unlock` named
+   * @param sessions what the engine opened with `password`
+   * @param password the password it accepted
+   */
+  unlock(docId: DocId, sessions: DocumentSessions, password: string): void {
+    this.hold(docId, sessions);
+    this.#passwords.hold(docId, password);
   }
 
   /**
@@ -840,6 +897,8 @@ export class EngineSessions implements EngineSessionSource {
     // window unrepresentable rather than unlikely, and it matches what
     // `DocumentService.close` already does with the record.
     this.#entries.delete(docId);
+    // THE PASSWORD IS WIPED WITH THE ENTRY, before the await, so a release that throws or hangs cannot leave it held.
+    this.#passwords.forget(docId);
     if (entry?.release == null) return;
 
     // FAILURE IS SWALLOWED HERE, DELIBERATELY, and this is the one place in
@@ -855,6 +914,101 @@ export class EngineSessions implements EngineSessionSource {
       /* the sweep at next launch is the backstop, and it is a real one */
     }
   };
+
+  /**
+   * Opens one document's sessions again and lets the old ones go only once the new ones exist — `recycle` with the
+   * order reversed, for a caller that must not leave the document without a session
+   * ([ADR-0164](../../../docs/DECISIONS/0164-a-removals-save-also-renews-the-hosts-copy-and-the-recent-picture.md)).
+   *
+   * **The release is the new open's to run**: the entry keeps the old one, and `holdRelease`, which the open calls
+   * once its session exists, runs it. So an open that fails — a saved file that opens only with a password — leaves
+   * the old session and its release exactly as they were, and the failure is the caller's to classify.
+   *
+   * **It answers whether the file opens only with a password, and records it in the same step**, so the answer the
+   * save acts on and the one {@link opensOnlyWithPassword} later gives cannot disagree. The refusal is named by the
+   * caller (`lockedBy`), since this module takes no value from the kernel's barrel (the header's reason).
+   *
+   * @param docId the open document
+   * @param reopen builds its sessions again, inside its lane
+   * @param lockedBy whether a thrown value is the host's refusal of a file that opens only with a password
+   */
+  async renew(
+    docId: DocId,
+    reopen: (docId: DocId) => Promise<DocumentSessions>,
+    lockedBy: (thrown: unknown) => boolean,
+  ): Promise<'renewed' | 'locked'> {
+    if (!this.#entries.has(docId)) return 'renewed';
+    let sessions: DocumentSessions;
+    try {
+      sessions = await reopen(docId);
+    } catch (thrown) {
+      if (!lockedBy(thrown)) throw thrown;
+      this.#savedFileLocked(docId, true);
+      return 'locked';
+    }
+    const entry = this.#entries.get(docId);
+    if (entry !== undefined) entry.sessions = sessions;
+    this.#savedFileLocked(docId, false);
+    return 'renewed';
+  }
+
+  /**
+   * Drops one document's sessions and opens them again — invariant 22's
+   * *"dropped and rebuilt at any point between commands"*, from the side that
+   * owns the sessions.
+   *
+   * ## Why this is not `releaseOnClose` followed by `reopen`
+   *
+   * It nearly is, and the difference is the entry. `releaseOnClose` **deletes**
+   * it, because a closing document must stop being findable before anything is
+   * awaited. A recycled document is still open, so its entry stays — deleting
+   * it would make the failure count and the poisoned state vanish along with
+   * the session, and a document that had failed once would come back looking
+   * fresh.
+   *
+   * ## The release runs BEFORE the reopen, and that ordering is the operation
+   *
+   * The whole point is the interval in which the memory is back. Reopening
+   * first and releasing after would hold two sessions at once — briefly more
+   * than before recycling, which is the opposite of what a caller asked for.
+   *
+   * A failure to release is swallowed for `releaseOnClose`'s reason and the
+   * reopen still happens: the document must end this call with a session, and
+   * a pair left on disk is what the startup sweep is for. A failure to
+   * **reopen** is not swallowed — that leaves the document sessionless, which
+   * the caller has to know about.
+   *
+   * @param docId the open document
+   * @param reopen builds its sessions again, inside its lane
+   */
+  async recycle(docId: DocId, reopen: (docId: DocId) => Promise<DocumentSessions>): Promise<void> {
+    const entry = this.#entries.get(docId);
+    if (entry === undefined) return;
+
+    // A DOCUMENT A PASSWORD OPENED IS RECYCLED LIKE ANY OTHER: `reopen` opens with {@link opensWith}, which this
+    // class holds until the close (ADR-0171). Refused until then, and that refusal also failed every undo past a
+    // checkpoint of such a document, since a checkpoint's restore is a recycle.
+    const release = entry.release;
+    // CLEARED BEFORE THE AWAIT, like `holdRelease` does and for the same
+    // reason: an entry still holding the old release across it is one a close
+    // arriving meanwhile would run twice.
+    entry.release = null;
+    // `{}` and not a deleted entry: the same state a just-opened document is in
+    // before `create` runs, so the interval is one this class already has a
+    // meaning for. A command arriving inside it finds no writer session, which
+    // is `MissingSessionError` — and cannot happen, because the caller holds
+    // the document's lane for the whole of this.
+    entry.sessions = {};
+    if (release !== null) {
+      try {
+        await release();
+      } catch {
+        /* the sweep at next launch is the backstop, and it is a real one */
+      }
+    }
+
+    entry.sessions = await reopen(docId);
+  }
 
   /**
    * Records how to end what a document holds outside the index.
@@ -893,81 +1047,6 @@ export class EngineSessions implements EngineSessionSource {
    * A rebuild is the only way here, which is why nothing distinguishes it from
    * a first registration: the entry either holds a release or it does not.
    */
-  /**
-   * Drops one document's sessions and opens them again — invariant 22's
-   * *"dropped and rebuilt at any point between commands"*, from the side that
-   * owns the sessions.
-   *
-   * ## Why this is not `releaseOnClose` followed by `reopen`
-   *
-   * It nearly is, and the difference is the entry. `releaseOnClose` **deletes**
-   * it, because a closing document must stop being findable before anything is
-   * awaited. A recycled document is still open, so its entry stays — deleting
-   * it would make the failure count and the poisoned state vanish along with
-   * the session, and a document that had failed once would come back looking
-   * fresh.
-   *
-   * ## The release runs BEFORE the reopen, and that ordering is the operation
-   *
-   * The whole point is the interval in which the memory is back. Reopening
-   * first and releasing after would hold two sessions at once — briefly more
-   * than before recycling, which is the opposite of what a caller asked for.
-   *
-   * A failure to release is swallowed for `releaseOnClose`'s reason and the
-   * reopen still happens: the document must end this call with a session, and
-   * a pair left on disk is what the startup sweep is for. A failure to
-   * **reopen** is not swallowed — that leaves the document sessionless, which
-   * the caller has to know about.
-   *
-   * @param docId the open document
-   * @param reopen builds its sessions again, inside its lane
-   */
-  async recycle(docId: DocId, reopen: (docId: DocId) => Promise<DocumentSessions>): Promise<void> {
-    const entry = this.#entries.get(docId);
-    if (entry === undefined) return;
-
-    // REFUSED FOR A DOCUMENT A PASSWORD OPENED, and this is ADR-0055's rule
-    // arriving as a mechanism rather than a note. Nothing here holds the
-    // password — main does not keep it, the entry does not carry it — so a
-    // rebuild would ask the engine to open the same encrypted bytes with
-    // nothing, and the session it got back would be a locked one held for a
-    // document the supervisor believes is unlocked.
-    //
-    // A throw rather than a silent skip. Invariant 22 offers recycling and
-    // nothing schedules it, so every caller is deliberate and is entitled to
-    // know the capability does not apply here. Caching the password to make it
-    // work was the alternative and it keeps a user's secret in main's memory
-    // for the life of the document, to serve a capability nothing calls.
-    if (entry.unlockedByPassword) {
-      throw new Error(
-        `Document ${docId.slice(0, 8)}… was opened with a password, which this build does not ` +
-          `keep, so its engine session cannot be rebuilt without asking for it again. ` +
-          `Close and reopen is what re-establishes it.`,
-      );
-    }
-
-    const release = entry.release;
-    // CLEARED BEFORE THE AWAIT, like `holdRelease` does and for the same
-    // reason: an entry still holding the old release across it is one a close
-    // arriving meanwhile would run twice.
-    entry.release = null;
-    // `{}` and not a deleted entry: the same state a just-opened document is in
-    // before `create` runs, so the interval is one this class already has a
-    // meaning for. A command arriving inside it finds no writer session, which
-    // is `MissingSessionError` — and cannot happen, because the caller holds
-    // the document's lane for the whole of this.
-    entry.sessions = {};
-    if (release !== null) {
-      try {
-        await release();
-      } catch {
-        /* the sweep at next launch is the backstop, and it is a real one */
-      }
-    }
-
-    entry.sessions = await reopen(docId);
-  }
-
   async holdRelease(docId: DocId, release: () => Promise<void>): Promise<void> {
     const entry = this.#entries.get(docId);
     // NOT AN ERROR. The document closed while its session was opening, which is

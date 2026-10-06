@@ -2,6 +2,7 @@ import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
+import { HINT_BARCODE, HINT_IMAGE, HINT_SIGNATURE_FIELD } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 
@@ -104,7 +105,7 @@ function boxPlacement(onPlace: (page: number, rect: AnnotationRect) => void): To
 }
 
 export function placeImageTool(deps: PlaceImageDeps): UiTool {
-  return { id: PLACE_IMAGE_TOOL_ID, controller: boxPlacement(deps.onPlaceImage) };
+  return { id: PLACE_IMAGE_TOOL_ID, controller: boxPlacement(deps.onPlaceImage), hint: HINT_IMAGE };
 }
 
 /**
@@ -125,7 +126,7 @@ export interface PlaceSignatureDeps {
 }
 
 export function placeSignatureTool(deps: PlaceSignatureDeps): UiTool {
-  return { id: PLACE_SIGNATURE_TOOL_ID, controller: boxPlacement(deps.onPlaceSignature) };
+  return { id: PLACE_SIGNATURE_TOOL_ID, controller: boxPlacement(deps.onPlaceSignature), hint: HINT_SIGNATURE_FIELD };
 }
 
 /**
@@ -142,7 +143,7 @@ export interface PlaceBarcodeDeps {
 }
 
 export function placeBarcodeTool(deps: PlaceBarcodeDeps): UiTool {
-  return { id: PLACE_BARCODE_TOOL_ID, controller: boxPlacement(deps.onPlaceBarcode) };
+  return { id: PLACE_BARCODE_TOOL_ID, controller: boxPlacement(deps.onPlaceBarcode), hint: HINT_BARCODE };
 }
 
 /** Exported so the cases assert against the tool's own number. */

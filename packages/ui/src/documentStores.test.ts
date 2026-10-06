@@ -54,6 +54,26 @@ describe('the Organize grid’s page selection (ADR-0104)', () => {
     expect(store.getState().observed(asDocVersion(2))).toBe(true);
     expect(store.getState().selectedPages).toStrictEqual([]);
   });
+
+  it('a selection of ONE page, or none, follows the current page (item 13a)', () => {
+    const store = createDocumentStore(ONE, asDocVersion(1));
+    store.getState().counted(5);
+    store.getState().selectionFollows(2);
+    expect(store.getState().selectedPages).toStrictEqual([2]);
+    store.getState().selectionFollows(4);
+    expect(store.getState().selectedPages).toStrictEqual([4]);
+    // A PAGE PAST THE END IS NO PAGE, the one rule `selectPages` keeps, so it follows nowhere.
+    store.getState().selectionFollows(9);
+    expect(store.getState().selectedPages).toStrictEqual([]);
+  });
+
+  it('CONTROL: a selection of SEVERAL pages is kept, because it was made card by card', () => {
+    const store = createDocumentStore(ONE, asDocVersion(1));
+    store.getState().counted(5);
+    store.getState().selectPages([0, 3]);
+    store.getState().selectionFollows(2);
+    expect(store.getState().selectedPages).toStrictEqual([0, 3]);
+  });
 });
 
 describe('DocumentStores', () => {

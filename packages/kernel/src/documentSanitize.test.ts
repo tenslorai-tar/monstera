@@ -229,6 +229,187 @@ describe('sanitizeDocument', () => {
     }
   });
 
+  describe('the places an action hides (CR-DOC-13)', () => {
+    /** One action dictionary, indirect so a chain can loop back to it. */
+    function action(document: mupdf.PDFDocument, type: string, entries: Record<string, string> = {}): mupdf.PDFObject {
+      const made = document.addObject(document.newDictionary());
+      made.put('S', document.newName(type));
+      // `newString`, because the binding reads a bare JavaScript string as a NAME.
+      for (const [key, value] of Object.entries(entries)) made.put(key, document.newString(value));
+      return made;
+    }
+
+    /** A link on page 1 whose `/A` is `head`, read back from `/Annots` by its `/Contents`. */
+    function link(document: mupdf.PDFDocument, name: string, head: mupdf.PDFObject): void {
+      const annotation = document.loadPage(0).createAnnotation('Link');
+      const object = annotation.getObject();
+      object.put('Rect', document.newArray());
+      for (const value of [20, 60, 120, 80]) object.get('Rect').push(value);
+      object.put('Contents', document.newString(name));
+      object.put('A', head);
+      annotation.update();
+    }
+
+    /**
+     * Each place the walk used to miss, with something a person would keep beside each: a `/GoTo` whose `/Next` runs
+     * JavaScript; a JavaScript head whose `/Next` is a `/URI`; a `/Rendition`; a `/Next` loop through JavaScript; a
+     * `/GoToE`; a parent field's keystroke script; an outline item's script beside an outline item's `/GoTo`; and a
+     * file attachment annotation.
+     */
+    async function hiding(): Promise<ByteImage> {
+      const session = await mupdfWriter.open(plain);
+      try {
+        await withDocument(session, (document) => {
+          const root = document.getTrailer().get('Root');
+
+          const goTo = action(document, 'GoTo', { D: 'chapter' });
+          goTo.put('Next', action(document, 'JavaScript', { JS: 'app.alert(1);' }));
+          link(document, 'goto-then-script', goTo);
+
+          const script = action(document, 'JavaScript', { JS: 'app.alert(2);' });
+          script.put('Next', action(document, 'URI', { URI: 'https://example.org/next' }));
+          link(document, 'script-then-uri', script);
+
+          link(document, 'rendition', action(document, 'Rendition', { JS: 'app.alert(3);' }));
+
+          const looping = action(document, 'GoTo', { D: 'loop' });
+          const inLoop = action(document, 'JavaScript', { JS: 'app.alert(4);' });
+          looping.put('Next', inLoop);
+          inLoop.put('Next', looping);
+          link(document, 'loop', looping);
+
+          link(document, 'embedded', action(document, 'GoToE', { D: 'inside' }));
+
+          const triggers = document.newDictionary();
+          triggers.put('K', action(document, 'JavaScript', { JS: 'AFNumber_Keystroke();' }));
+          const parent = document.addObject(document.newDictionary());
+          parent.put('T', 'total');
+          parent.put('FT', document.newName('Tx'));
+          parent.put('AA', triggers);
+          const child = document.addObject(document.newDictionary());
+          child.put('T', 'part');
+          child.put('Parent', parent);
+          parent.put('Kids', document.newArray());
+          parent.get('Kids').push(child);
+          const acroForm = document.newDictionary();
+          acroForm.put('Fields', document.newArray());
+          acroForm.get('Fields').push(parent);
+          root.put('AcroForm', acroForm);
+
+          const outlines = document.addObject(document.newDictionary());
+          const scripted = document.addObject(document.newDictionary());
+          const kept = document.addObject(document.newDictionary());
+          scripted.put('Title', 'scripted');
+          scripted.put('Parent', outlines);
+          scripted.put('A', action(document, 'JavaScript', { JS: 'app.alert(5);' }));
+          scripted.put('Next', kept);
+          kept.put('Title', 'kept');
+          kept.put('Parent', outlines);
+          kept.put('Prev', scripted);
+          kept.put('A', action(document, 'GoTo', { D: 'kept' }));
+          outlines.put('First', scripted);
+          outlines.put('Last', kept);
+          root.put('Outlines', outlines);
+
+          const attachment = document.loadPage(0).createAnnotation('FileAttachment');
+          attachment.setRect([300, 300, 320, 320]);
+          attachment.update();
+        });
+        return await mupdfWriter.serialise(session);
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    }
+
+    /** What a saved session holds at each planted place, read from the object model and from nothing this module exports. */
+    async function places(session: MupdfSession): Promise<Record<string, string>> {
+      const bytes = await mupdfWriter.serialise(session);
+      const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+      if (!(document instanceof mupdf.PDFDocument)) throw new Error('the output is not a PDF');
+      try {
+        /** A chain's types in order, as far as six steps: enough to see a loop without following it. */
+        const chain = (head: mupdf.PDFObject): string => {
+          const types: string[] = [];
+          for (let at = head; at.isDictionary() && types.length < 6; at = at.get('Next')) types.push(String(at.get('S')));
+          return types.join(' ');
+        };
+        const found: Record<string, string> = {};
+        let attachments = 0;
+        document.loadPage(0).getObject().get('Annots').forEach((value) => {
+          if (String(value.get('Subtype')) === '/FileAttachment') attachments += 1;
+          const name = value.get('Contents');
+          if (name.isString()) found[name.asString()] = chain(value.get('A'));
+        });
+        found['attachments'] = String(attachments);
+        const root = document.getTrailer().get('Root');
+        // A PATH, which the binding walks natively and answers null for a missing step: a flatten removes the form.
+        found['field triggers'] = String(!root.get('AcroForm', 'Fields', 0, 'AA').isNull());
+        found['outline scripted'] = chain(root.get('Outlines', 'First', 'A'));
+        found['outline kept'] = chain(root.get('Outlines', 'First', 'Next', 'A'));
+        return found;
+      } finally {
+        document.destroy();
+      }
+    }
+
+    it('CONTROL: the fixture carries each hidden action, and the counter sees every one', async () => {
+      const session = await mupdfWriter.open(await hiding());
+      try {
+        expect(await places(session)).toStrictEqual({
+          'goto-then-script': '/GoTo /JavaScript',
+          'script-then-uri': '/JavaScript /URI',
+          rendition: '/Rendition',
+          loop: '/GoTo /JavaScript /GoTo /JavaScript /GoTo /JavaScript',
+          embedded: '/GoToE',
+          attachments: '1',
+          'field triggers': 'true',
+          'outline scripted': '/JavaScript',
+          'outline kept': '/GoTo',
+        });
+        // FIVE running actions, one of them inside a loop that is counted once, and the parent field's `/AA`.
+        expect(await savedContent(session)).toMatchObject({ javascript: 6, embeddedFiles: 2, external: 0 });
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+
+    it('takes out every running action and trigger, and keeps each link and the order it ran in', async () => {
+      const session = await mupdfWriter.open(await hiding());
+      try {
+        await applySanitizeDocument(session, { kind: 'sanitizeDocument', parts: ['javascript'] });
+        expect(await places(session)).toStrictEqual({
+          'goto-then-script': '/GoTo',
+          // THE FOLLOWER TAKES THE REMOVED HEAD'S PLACE: the link still opens its address.
+          'script-then-uri': '/URI',
+          rendition: '',
+          // THE LOOP ENDS rather than closing on the action it came back to.
+          loop: '/GoTo',
+          // An attached file is the next part's, and the JavaScript part leaves it.
+          embedded: '/GoToE',
+          attachments: '1',
+          'field triggers': 'false',
+          'outline scripted': '',
+          'outline kept': '/GoTo',
+        });
+        expect((await savedContent(session)).javascript).toBe(0);
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+
+    it('takes out the attachment annotation and the action that opens one', async () => {
+      const session = await mupdfWriter.open(await hiding());
+      try {
+        await applySanitizeDocument(session, { kind: 'sanitizeDocument', parts: ['embedded-files', 'flatten'] });
+        const after = await places(session);
+        expect(after).toMatchObject({ embedded: '', attachments: '0', 'goto-then-script': '/GoTo /JavaScript' });
+        expect((await savedContent(session)).embeddedFiles).toBe(0);
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+  });
+
   it('refuses to record prior state', async () => {
     const session = await mupdfWriter.open(await loaded());
     try {

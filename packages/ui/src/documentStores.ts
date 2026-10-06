@@ -9,6 +9,7 @@ import {
 import { type StoreApi, createStore } from 'zustand/vanilla';
 
 import type { ReplyTarget } from './assistantRequest.js';
+import type { SpellingReview } from './spelling/review.js';
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
 
 /** The documents an *All Open Docs* ask named, and the open tabs past its bound that did not go (ADR-0134). */
@@ -221,6 +222,12 @@ export interface DocumentState {
    * as every other piece of state here is; emptied whenever the version moves.
    */
   readonly selectedPages: readonly number[];
+  /**
+   * This document's spelling review (ADR-0156), or `undefined` with none. Per document for {@link conversation}'s
+   * reason: a review that outlived its document, or followed a tab switch, would offer one file's words to change in
+   * another.
+   */
+  readonly spelling: SpellingReview | undefined;
 }
 
 export interface DocumentActions {
@@ -307,11 +314,26 @@ export interface DocumentActions {
   /** Replaces the Organize grid's page selection (ADR-0104). Sorted, de-duplicated and bounded by the count. */
   readonly selectPages: (pages: readonly number[]) => void;
 
+  /**
+   * Moves a selection of AT MOST ONE page to `page`, and keeps a selection of several as it is (the owner's item
+   * 13a). In Organize the current page and a one-page selection are the same page to a person — the card the status
+   * bar names is the card a page command acts on — so moving one moves the other. A selection of several was made on
+   * purpose, card by card, and moving between pages must not throw it away.
+   *
+   * **The one statement of that rule**, called by every Organize path that moves the current page: the status bar and
+   * the page keys through the navigator, and Full page's scrolling. It does not move {@link DocumentState.page}; the
+   * caller has already, by the action that says how (a jump or a scroll).
+   */
+  readonly selectionFollows: (page: number) => void;
+
   /** Replaces this document's conversation — the panel holds the turns it is assembling. */
   readonly converse: (turns: readonly ConversationTurn[]) => void;
 
   /** Records the Left · Right · Both choice for this conversation. */
   readonly choseSides: (sides: AskSides) => void;
+
+  /** Replaces this document's spelling review — `reviewRun.ts` is its one writer. */
+  readonly reviewSpelling: (review: SpellingReview | undefined) => void;
 
   /**
    * Records how many pages the parser found.
@@ -366,6 +388,7 @@ export function createDocumentStore(
     conversation: [],
     sides: undefined,
     selectedPages: [],
+    spelling: undefined,
     observed: (next) => {
       if (next <= get().version) return false;
       // THE SELECTION GOES WITH THE VERSION IT WAS MADE AT (ADR-0104): a page number means nothing across a
@@ -380,6 +403,12 @@ export function createDocumentStore(
         .filter((page) => Number.isInteger(page) && page >= 0 && (count === undefined || page < count))
         .sort((a, b) => a - b);
       set({ selectedPages: next });
+    },
+    selectionFollows: (page) => {
+      const state = get();
+      if (state.selectedPages.length > 1) return;
+      if (state.selectedPages.length === 1 && state.selectedPages[0] === page) return;
+      state.selectPages([page]);
     },
     viewing: (next) => {
       if (next === get().page) return;
@@ -446,6 +475,9 @@ export function createDocumentStore(
     },
     converse: (turns) => {
       set({ conversation: turns });
+    },
+    reviewSpelling: (review) => {
+      set({ spelling: review });
     },
     choseSides: (sides) => {
       set({ sides });

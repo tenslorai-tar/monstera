@@ -3,6 +3,7 @@ import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { blockedPages } from './blockedPages.js';
 import { bridge } from './pageBridge.js';
+import { focusSettled, popupPlaced, settled } from './settled.js';
 
 /**
  * The menus, in a real browser: every popup can be used where it overlaps the window's drag rows, and a disabled
@@ -67,9 +68,10 @@ test('HELP › HELP CENTRE, lying over the title bar, is a no-drag region, and o
   expect(await appRegion(titleBar)).toBe('drag');
   await page.getByRole('menuitem', { name: 'Help', exact: true }).click();
   await expect(item).toBeVisible();
+  // PLACED, not only visible: an unplaced menu sits at the window's origin, over the title bar whatever is wrong.
+  const box = await popupPlaced(page, item, 'the Help menu’s item');
   const bar = await titleBar.boundingBox();
-  const box = await item.boundingBox();
-  if (bar === null || box === null) throw new Error('the title bar and the item have boxes');
+  if (bar === null) throw new Error('the title bar has a box');
   expect(box.y < bar.y + bar.height && box.y + box.height > bar.y).toBe(true);
 
   // WHAT DECIDES IT: the item lies in a no-drag region, its popup's.
@@ -361,6 +363,8 @@ test('every MENU draws a glyph for every item in one column, titles aligned, and
     await page.getByRole('menubar').getByRole('menuitem', { name, exact: true }).click();
     const popup = page.locator('.m-menu-bar__popup');
     await expect(popup).toBeVisible();
+    // PLACED: an unplaced popup sits at the window's top, which passes "inside the window" whatever is wrong.
+    await popupPlaced(page, popup, `the ${name} menu`);
     const read = await popup.evaluate((menu) => {
       const items = [...menu.querySelectorAll<HTMLElement>('.m-menu-bar__item')];
       const box = menu.getBoundingClientRect();
@@ -401,15 +405,43 @@ for (const size of [
   }) => {
     await openDocument(page);
     await page.setViewportSize(size);
-    const triggers = page.locator('.m-menu-bar__trigger');
-    const names = await triggers.allTextContents();
-    expect(names.length).toBeGreaterThan(8);
-    const popup = page.locator('.m-menu-bar__popup');
+    // EVERY MENU, FROM THE RULER, which holds each menu's name whatever the row has folded (ADR-0146): read off the row
+    // at 760 the list was the frame before the fold, and its Tools was not on the row by the time it was clicked.
+    const menuNames = await page.locator('[data-ruler-menu]').allTextContents();
+    expect(menuNames.length).toBeGreaterThan(8);
+    /** The menus on the row once its fold has settled, *More* among them when it folded any. */
+    const onRow = (): Promise<string[]> =>
+      settled(page, () => page.locator('.m-menu-bar__menus .m-menu-bar__trigger').allTextContents(), () => true, 'the menu row');
+    const rowNow = await onRow();
+    const names = [...menuNames, ...(rowNow.includes('More') ? ['More'] : [])];
+    // A FOLDED MENU IS STILL A MENU: at 760 Tools, Window and Help are submenus of More, and each is held to the same cap.
+    if (size.width === 760) expect(rowNow).toContain('More');
+    const anyPopup = page.locator('.m-menu-bar__popup:visible');
+    /** Opens a menu the way a person reaches it — on the row, or through More — and answers the popup it opened. */
+    const open = async (name: string): Promise<Locator> => {
+      if ((await onRow()).includes(name)) {
+        await page.getByRole('menubar').getByRole('menuitem', { name, exact: true }).click();
+        return page.locator('.m-menu-bar__popup:not(.m-menu-bar__submenu)');
+      }
+      await page.getByRole('menubar').getByRole('menuitem', { name: 'More', exact: true }).click();
+      const entry = page.locator('[data-folded-menu]').filter({ hasText: new RegExp(`^${name}$`, 'u') });
+      await entry.focus();
+      // THE FOCUS LEFT MORE'S TRIGGER, and the menu decides on a timer whether that closes it (`focusSettled`).
+      await focusSettled(page);
+      await page.keyboard.press('ArrowRight');
+      return page.locator('[data-folded-popup]');
+    };
+    /** Closes every menu it opened, a folded one's submenu and More both. */
+    const close = async (): Promise<void> => {
+      for (let press = 0; press < 2 && (await anyPopup.count()) > 0; press += 1) await page.keyboard.press('Escape');
+      await expect(anyPopup).toHaveCount(0);
+    };
     const report: Record<string, unknown> = {};
     const long: string[] = [];
     for (const name of names) {
-      await page.getByRole('menubar').getByRole('menuitem', { name, exact: true }).click();
+      const popup = await open(name);
       await expect(popup).toBeVisible();
+      await popupPlaced(page, popup, `the ${name} menu`);
       const read = await popup.evaluate((menu) => {
         const box = menu.getBoundingClientRect();
         return {
@@ -427,8 +459,7 @@ for (const size of [
         // IT SCROLLS WITH A SCROLLBAR the platform draws, not a clipped box: `auto` draws one exactly when it overflows.
         if (read.overflow !== 'auto') report[`${name} overflow`] = read.overflow;
       }
-      await page.keyboard.press('Escape');
-      await expect(popup).toBeHidden();
+      await close();
     }
     expect(report).toStrictEqual({});
 
@@ -437,16 +468,25 @@ for (const size of [
     expect(long.length, 'a menu longer than half the window').toBeGreaterThan(0);
 
     for (const name of long) {
-      await page.getByRole('menubar').getByRole('menuitem', { name, exact: true }).click();
+      const popup = await open(name);
       await expect(popup).toBeVisible();
       // ARROWDOWN TO THE LAST ITEM the keyboard can reach — a disabled item is passed over — and no further.
+      const items = popup.locator('[role="menuitem"], [role="menuitemcheckbox"]');
       const last = popup.locator('[role="menuitem"]:not([data-disabled]), [role="menuitemcheckbox"]:not([data-disabled])').last();
-      const count = await popup.locator('[role="menuitem"], [role="menuitemcheckbox"]').count();
-      for (let press = 0; press <= count && (await last.getAttribute('data-highlighted')) === null; press += 1) {
-        await page.keyboard.press('ArrowDown');
-      }
+      const count = await items.count();
+      // A MENU THAT CLOSED UNDER THE KEYS fails here, naming itself, rather than as a read of its last item that waits
+      // out the case's whole budget. Measured once on Windows at 32c3faee and not reproduced in 200 rounds on the
+      // pinned Chromium here, throttled and not; this is what makes the next one say which menu and when.
+      await test.step(`ArrowDown through ${name}`, async () => {
+        for (let press = 0; press <= count; press += 1) {
+          await expect(items.first(), `the ${name} menu is still open after ${String(press)} ArrowDown`).toBeVisible();
+          if ((await last.getAttribute('data-highlighted')) !== null) break;
+          await page.keyboard.press('ArrowDown');
+        }
+      });
       await expect(last, name).toHaveAttribute('data-highlighted', '');
-      const seen = await popup.evaluate((menu) => {
+      // READ ONCE THE SCROLL HAS STOPPED: the highlight is set before the item is scrolled into view.
+      const seen = await settled(page, () => popup.evaluate((menu) => {
         const items = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]')].filter(
           (item) => !item.hasAttribute('data-disabled'),
         );
@@ -457,11 +497,10 @@ for (const size of [
         const bottom = top + menu.clientHeight;
         const box = item?.getBoundingClientRect();
         return { scrolled: menu.scrollTop, inside: box !== undefined && box.top >= top - 0.5 && box.bottom <= bottom + 0.5 };
-      });
+      }), () => true, `the ${name} menu after ArrowDown`);
       expect(seen.scrolled, `${name} scrolled`).toBeGreaterThan(0);
       expect(seen.inside, `${name}: the last item is inside the menu's visible box`).toBe(true);
-      await page.keyboard.press('Escape');
-      await expect(popup).toBeHidden();
+      await close();
     }
   });
 }

@@ -892,6 +892,1031 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-05 — Stage audit of `8f322ba7..974df9f5` — findings QQQQQQQ-1 to QQQQQQQ-22
+
+66 commits, 200 files: the end of work/cloud-4 (11-MEDIUM's CR-COR, CR-SEC, CR-DOC and CR-NAT items, Group 10 and
+ADR-0165, Part A's A1 to A3, 14c, 14d and 14h with ADR-0166 to ADR-0168) and the start of work/cloud-5-text-edit (the
+Type 3 research unit, ADR-0169 and its correction). Owed because Part B Phase 0's commit would take the range to 218
+files. Label Q: P is the highest on main and on every branch, read from each branch's JOURNAL. The commits were read
+one by one through `git show` by four readers, each given a quarter of the range, and every finding below was checked at
+its file by me before it was recorded; none was taken on a reader's word. Behaviour findings were confirmed by reading
+the code path, and are marked *read* where no run was made.
+
+**QQQQQQQ-1** (medium, closed in this commit): the amendment log in `docs/ARCHITECTURE.md` has not been a table since
+`aff65993`. Each new row went between the header and its `|---|` separator, so the header was followed by a row rather
+than a delimiter, and the whole log rendered as text. Four rows did it, the last of them ADR-0169's, all mine. The
+separator follows the header again. No check reads the table's form; the proposal is that `documentConsistency.mjs`
+require the separator on the line after the header, which is the owner's because it is that hook's rule.
+
+**QQQQQQQ-2** (medium, closed in this commit): ADR-0169's correction (`974df9f5`) went in without its index row naming
+it, the rule `documentConsistency.mjs` enforces and PPPPPPP-10 recorded for the fourth range running; Guards would have
+been red on the push. ADR-0009 §9, which ADR-0169 amends, said nothing of it. The row names the correction, ADR-0009
+carries an *Amended by ADR-0169* section, and its row says so.
+
+**QQQQQQQ-3** (medium, closed in this commit): §3.2's paragraph for ADR-0169 still read as a comparison by position after
+the correction made it a multiset. It is the living law, so its body is edited to say how the read-back compares.
+
+**QQQQQQQ-4** (medium, closed in this commit): `03c06040` and `3c07b811` removed the too-many-columns refusal, and the two
+help articles still told a person a wide table stops the import (`pdf-table-from-csv.md`, `pdf-from-markdown.md`).
+Both say what the table does now.
+
+**QQQQQQQ-5** (low, closed in this commit): three doc blocks above the wrong declaration, the shape CLAUDE.md names.
+`engine/link-address` carried `engine/page-fills`' (`61b7e6d2`); `errorCode` sat under `NO_RECENT_PICTURES`' (`0af4d721`);
+and `renew` (`668aee16`) sat under `recycle`'s, whose release-before-reopen paragraph says the opposite of what `renew`
+does, with `holdRelease`'s block stranded above both since before this range. Each is above its own declaration.
+
+**QQQQQQQ-6** (low, closed in this commit): two comments the range made false. `pageLinks.ts` said nothing follows a
+link's text and the Links panel offers nothing to press (`c02267ff` made both untrue); `App.tsx`'s `versionMoved` kept a
+JSDoc about background documents only, with the correction left as a line comment under it (`c05ebbeb`).
+
+**QQQQQQQ-7** (low, closed here and in the next commit): `3a98b7a1` labelled its cases *audit P-1* to *P-8*, and from
+P-3 on each named the next finding of PPPPPPP's numbering, so six cross-references resolved to the wrong finding. Each
+now carries the full label; the UI `documentCommands.test.ts` holds a staged change of the next commit, so its two lines
+land there.
+
+**QQQQQQQ-8** (high, open, fixed next): a copy of a document's previous version survives a removal's save.
+`cf51bac4` copies the replaced file to `<file>.monstera-previous` and leaves it there when the backup rotation is
+refused after the save has landed (`atomicWrite.ts`), and nothing records it in the backup ledger. A removal's save
+keeps no backup and `#clearCopies` (`documentCommands.ts`) walks only the backup and retired names, so a redaction or
+Sanitize saved after such a refusal leaves Monstera's copy of the unredacted file beside it, against ADR-0139 and
+ADR-0164. Read, both halves. It is in work/cloud-4's final sha.
+
+**QQQQQQQ-9** (high, open, fixed next): a burn-in misses copies of a burned page's text in two places ADR-0163 promises
+to reach. `removeOtherCopies` (`pageRedact.ts`, `8f399989`) reads the property lists from the page's own `/Resources`
+only, so a page inheriting them from `/Pages` keeps their alternates, and it finds tagged content by the page's
+`/StructParents`, so content inside a Form XObject, which has its own, keeps its element's `/ActualText` and `/Alt`. Read.
+It is in work/cloud-4's final sha.
+
+**QQQQQQQ-10** (medium-high, open, fixed next): a value typed into a form field can be dropped. `FieldTextBox`
+(`FieldControls.tsx`, `ce905de2` and `a5639911`) records what it showed through an inline `ref` callback, which React
+calls again on every commit, so a re-render while the person types records the typed value as shown, and the blur
+compares it with itself and sends no fill. Read. It is in work/cloud-4's final sha.
+
+**QQQQQQQ-11** (medium, open): a byte-image command makes a document held in a file resident in `main`, past the
+ceiling. `commandBus.ts`' byte-image path installs through `replaceCanonicalImage`, which writes memory without asking
+`#heldInMemory` (`documentService.ts`), whose comment says it is the rule at every replacement; ADR-0165's *not reached*
+list does not name PDFium or pdf-lib commands. Read. The root is that a byte-image result arrives in `main` as bytes, so
+the full fix is the hosted result ADR-0121 Decision 3 gives MuPDF; the replacement keeping the rule is the first half.
+
+**QQQQQQQ-12** (medium, open): CR-SEC-13 was closed at one of its two sites. `acceptAnswer` (`boundary.ts`) throws with
+zod's message, which names any key a strict schema refused, so a host's chosen key names reach `main`'s diagnostics by
+the client's envelope parse (`132d8b69` fixed the frame parse). Read.
+
+**QQQQQQQ-13** (medium, open): `at-capacity` now means the disk is full (`cc276f43`), and five strings and *Open a PDF*
+still tell a person to close a document, which frees no disk when that document is held in memory.
+
+**QQQQQQQ-14 to -18** (low to medium, open, read, recorded for their rows): a host ending announced before a document's
+`begin`, or a `shutdown` ending, leaves it neither sessioned nor poisoned (`b8d5e683`); a take failing after the client
+stopped is reported as the peer's malformed answer rather than the lost connection (`7c9109e5`); an `already-open` link
+puts back a working copy's original cloud origin over the one an upload gave it (`1c6484f2`); the form editor is sized
+from the screen box, so on a turned page its text is the field's width tall (`a5639911`); and the tab row falls back to
+every tab when its token cannot be read, then clips (`82344ac6`).
+
+**QQQQQQQ-19** (the owner's): Sanitize removes an action inside an `/AA` only whole, by its JavaScript part, so a
+`/SubmitForm` or `/GoToE` there survives a Sanitize of external actions or embedded files alone; and the outline walk is
+proven flat (`1fa294bc`). Whether `/AA` belongs to the external-actions part is a decision about what Sanitize means.
+
+**QQQQQQQ-20** (low, recorded): cases that cannot fail on their stated property, or reach the easy shape only, not
+closed here. `diagnosticHead.test.ts` cannot tell a reader that reads the whole file and cuts it (`744b043f`); the
+machine witness's `ambientHeld` assumes load moves smoothly, and its new skip route has no case and no cap
+(`8e4a1843`); `removeWorkingFile`'s two call sites and the unhandled-rejection listener have no case (`0af4d721`); the
+contained program's allowlist was proven as a function, and real hosts ran with it only on CI's Windows leg, green at
+`8e4a1843` (`aacf254b`); the composition root's `renew` is reached by no case, the harness writing its own
+(`668aee16`); a Sanitize case's flatten removes the attachment the case credits to `embedded-files` (`1fa294bc`); the
+credential claim rests on `#withResult` at run time, not on the type its comment names (`0113b321`); the pixel bound
+counts from a zero origin (`eb6bb633`); a font name is cut at 127 UTF-16 units under a comment saying bytes
+(`0991b99c`); the dense-text case passes a duplicated chunk unit (`>=`, `c9247456`); the StandardEncoding premise now
+leans on the read-back it precedes (`198c690a`); the levelling release case never checks the colour pixmap
+(`b5c6cd70`); the no-font-left case pins a twin that is used, not CR-NAT-16's unused one (`7a84b01e`); *no provider's
+URL carries the key* covers model listing only (`76334fb5`); the host-runtime diagnostic's two searches have no control
+(`a36e1f80`); the form Escape case blurs a detached node (`a5639911`); the turned-link control holds by construction
+and nothing reads MuPDF's link bounds on a `/Rotate 90` page (`c02267ff`); two compose cases match substrings
+(`03c06040`); the preview wash reads `fill: none` as drawn (`da2b4072`); `useOnColor` composites over the first of
+several backgrounds (`ef473273`); and the Forms panel's line-break control may be blind in happy-dom, which neither
+converts (`ce905de2`).
+
+**QQQQQQQ-21** (process, recorded): the tests of a changed file were not run before two commits, both reddening CI
+(`61b7e6d2`'s shim roster, `a5639911`'s token role); a lint run piped through `tail` lost its exit code once more
+(`ea16fcf7`), which the sealed last line does not cover outside `npm run local`; and three commits say a screen was
+looked at on pinned Chromium without naming the run (`82344ac6`, `b3b77c09`, `fe8da87b`).
+
+**QQQQQQQ-22** (low, recorded): a print that cannot happen is titled *The document was not saved*
+(`SAVE_PRINT_UNAVAILABLE`, pinned by `333fcbba`'s case).
+
+### 1. Root cause or workaround?
+
+Each fix in the range states a mechanism, and two say plainly that they are diagnostics rather than fixes: the
+host-runtime proof naming a whole-file failure (`a36e1f80`) and the machine witness's bracket (`8e4a1843`, QQQQQQQ-20).
+CR-SEC-13 is a half fix by class (QQQQQQQ-12). No timeout raised, no check loosened.
+
+### 2. Verified against the easy shape only?
+
+Yes, several times: the burn-in's resources and tagged content (QQQQQQQ-9), the form editor on a turned page
+(QQQQQQQ-17), the pixel bound's origin, the flat outline and the one background (QQQQQQQ-20).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Away, twice: the machine witness gained a skip route, and the StandardEncoding premise now reads the guard under test
+(QQQQQQQ-20). Towards: the read-back makes every PDFium save checked, with a case per command (`proof:pdfiumreadback`,
+next commit).
+
+### 3. Would CI have caught it?
+
+It did, from the runs read once per sha: the machine witness (`0af4d721`), the ubuntu accessibility gate (`333fcbba`),
+ADR-0164's heading (`668aee16`), the PDFium adapter's fixture flush (`6d47c11b`), the host-runtime whole-file failure
+(`198c690a`), the shim roster (`c02267ff`) and the token role (`369e738f`). QQQQQQQ-1, -2 and -4 to -6 are invisible to
+every check, and -2 would have been red on Guards. The behaviour findings -8 to -10 are cases nobody wrote, which no run
+can show.
+
+### 4, 4a, 4b. Are the proofs non-vacuous, and do the instruments see?
+
+QQQQQQQ-20 is this item's list. The range's new searches carry controls where they decide anything; the host-runtime
+diagnostic's do not, and say so.
+
+### 4c. Does a count derive from the set it governs?
+
+No roster in the range does; the machine witness's count is a literal and matches its two new checks.
+
+### 5. Executed, or asserted?
+
+Asserted and stated as such: the koffi wrap and the Windows DLL's 64-bit load (`8caaa3b3`), the range cost read on
+Linux only (`6e2d5ae9`), and the contained program's allowlist outside CI's Windows leg.
+
+### 6. Did architecture change before the feature?
+
+Yes, each time: ADR-0162 to ADR-0168 each precede their code, and ADR-0169 precedes Phase 0's.
+
+### 7. Do the documents still match the code?
+
+Not in seven places, all closed here (QQQQQQQ-1 to -7). The cross-document sweep for ADR-0169's amendment of ADR-0009
+§9 found two comments that restate *a failure is a code alone* (`result.ts`, `channel.ts`), both in the next commit's
+files, which carries them.
+
+**Correction, 2026-10-05.** Items 4, 4a and 4b above were answered under one heading, which `check:docs` reads as
+three items unanswered, and Guards was red on it at `361684e2` and `30891a0a`. The answers, one per item, from what
+QQQQQQQ-20 already records:
+
+### 4. Are the proofs non-vacuous?
+
+Not all. QQQQQQQ-20 names the cases that cannot fail on their stated property: `diagnosticHead.test.ts`, the Sanitize
+case crediting `embedded-files` with what the flatten removed, the form Escape case on a detached node, the turned-link
+control that holds by construction, and the two compose cases that match substrings.
+
+### 4a. Has every instrument passed a resolution test?
+
+No. The range's one measuring instrument is the machine witness, and its `ambientHeld` assumes load moves smoothly,
+with a skip route no case reaches (`8e4a1843`, QQQQQQQ-20). It was not resolution tested against a load that steps.
+
+### 4b. Does every search carry a positive control?
+
+All but one pair: the host-runtime diagnostic's two searches have none (`a36e1f80`, QQQQQQQ-20), and say so. The
+range's other new searches carry one where they decide anything.
+
+## 2026-10-04 — Stage audit of `33715f7c..8f322ba7` — findings PPPPPPP-1 to PPPPPPP-14
+
+35 commits, 198 files, all work/cloud-4: Groups 16a (ADR-0156), 17a to 17c (ADR-0157, ADR-0158), 18 (ADR-0159,
+ADR-0160), 19a, 19b and 9a to 9f (ADR-0161), then 11-MEDIUM's CR-COR-06 to CR-COR-11 and CR-COR-01. Owed because
+CR-COR-02's commit would take the range past one batch (204 files). Label P: O is the highest on main and on every
+branch, read from each branch's JOURNAL. The modified tests and proofs were read commit by commit through `git log -p`
+by three readers and by me, and each reader's finding was checked at its file before it was recorded. Each finding
+closed here was run red against its mutation, except PPPPPPP-7, which says why not.
+
+**PPPPPPP-1** (medium, closed in this commit): `8f322ba7`'s page frame was proven on one shape: `/Rotate 90` over a
+MediaBox at 36,36. The module's own header names a crop box inset and a box from -9,-9, and the watermark's comment
+says a slant of 0 cannot tell a frame that drops the page's turn from one that keeps it, while the case used 0.
+`pdfLibFrame.test.ts` now holds a half turn, the other quarter turn, a crop box inset, a box from -9,-9 and an inset on
+a turned page against the upright control, the background on the negative box, and a slanted watermark on a turned page
+by its first glyph's origin, since a box cannot say which way a line runs. The fallback fixture was Letter, which is
+the default too; it is 400 by 500 now. Two figures in comments without a source were reworded. Red 13 of 14 against
+the old five sites; the slant case alone red with the frame dropping the page's turn from a slant.
+
+**PPPPPPP-2** (medium, closed in this commit): `16ef13c4`'s *a page past the document is refused* in main's
+`documentCommands.test.ts` asserted any throw and no file, which a walk that failed at page 5 also produces. It now
+asserts the refusal's words and that no page was read; red on `reads` with the check removed. Its kernel twin in
+`wordPictures.test.ts` now names the refusal too, but the page read refuses in the same words, so that case cannot say
+which check spoke: *before any is read* holds because `pagesOf` returns the whole checked list before the walk starts,
+which is structural and stated as such.
+
+**PPPPPPP-3** (medium, closed in this commit): `58da1417`'s *no key travels in a reply* had no key anywhere in its
+input, so its absence could not fail. A key is typed and reported with the second check now; red with the reply
+carrying the report's secrets.
+
+**PPPPPPP-4** (medium, closed in this commit): `e1ade294` removed the personal dictionary's round trip with the old
+dialog, and no case after the rebuild put a personal word on a page. With `startReview` handing the checker an empty
+list, every case stayed green. A case now does; with that mutation it is the only one that goes red.
+
+**PPPPPPP-5** (low, closed in this commit): `16ef13c4` loosened two whole-list assertions on the dialogs asked to the
+last entry (print's outcomes and the contested text export), so a dialog between the two passed. Both assert the
+whole list again; red with an extra problem dialog.
+
+**PPPPPPP-6** (medium, closed in this commit): `rulerScroll.pw.ts` (`e4893d46`) settled with a fixed 300 ms wait. It
+settles on the labelled marks' places at scroll 400 now. The first version required the ruler's runs, which the old
+ruler does not have, so against the old build it failed for that reason rather than for the defect; reading what a
+person sees fixed that. Against a build of the old ruler it is red at the load-bearing line (712 inserted, 711
+removed); green now.
+
+**PPPPPPP-7** (low, closed in this commit, not run red): `longFields.ts` (`60f853ae`) counted a long field as seen before
+finding its row, so one outside both row kinds was counted and never measured, and `seen` is the control its callers
+assert. It reports such a field now. No screen has one, so there is no fixture to run red; the 13 layout review cases
+pass.
+
+**PPPPPPP-8** (low, closed in this commit): two help sentences. *Print* said the Windows window always shows the
+chosen pages, and past the ranges that window can list it offers none (`16ef13c4`). *Spell check* said the tab shows
+the sentence around a word, and it shows the line.
+
+**PPPPPPP-9** (medium, closed in `23076e18`): CI's *Prove the Word export carries the page's pictures* was red on both
+legs at `16ef13c4`, `e4893d46` and `56da2237`: 9d gave the composer a page set and the proof passed none. The scripts
+typecheck could not see it because the proof imported the built kernel under `@type {any}`. It takes the built
+declarations now, and TS2554 refuses the old call. Two such `any` imports remain in `scripts/`, both of the sanctioned
+adapter modules (`pdfiumFfi`, `mupdfRaw`), so the class is closed apart from its deliberate boundary.
+
+**PPPPPPP-10** (medium, open, proposed): an ADR corrected without its index row for the fourth range running; Guards
+was red for ADR-0161 at `16ef13c4`, closed in `f531af51`. OOOOOOO-2's proposal stands: the index row check joins the
+pre-commit set. It is the owner's, because it touches the hook.
+
+**PPPPPPP-11** (low, closed in their commits): three slips. `16ef13c4`'s lint error was committed because a piped
+`eslint | tail` dropped the exit code (`a8ca3cc0`). 9c was run against its own case only and broke two rendered cases
+(`bac9862a`). The growing caption case could pass with the fold removed, since an early render measured again
+(`08c60a72`).
+
+**PPPPPPP-12** (medium, open, the owner's): after `8f322ba7`, one page that displays no region makes a header and
+footer, Bates, watermark or background refuse the whole command, as `pageCrop.ts` and the annotation writer already do
+for their pages. The owner's rule is that a person is never refused because of their document. The alternative is to
+stamp every page that shows a region and say which did not; it is a decision about refusal, so it is not taken here.
+
+**PPPPPPP-13** (low, recorded): weak cases and gaps not closed here. From 16a: a refused page or list read has no case
+in `reviewRun`; nothing counts that a suggestion is asked for the one word shown; the review's progress is asserted
+nowhere; *merged and once* never exercises the dedupe; `SpellingPanel` has no case pressing Add to dictionary, Stop or
+the coverage options. From 17b: `SettingsBody.test.tsx`'s control comment describes navigation, not a changed setting;
+`settingsKeyCheck.pw.ts`' *asked of main by the provider and no key* reads the channel name only, and the shim answers
+a check whatever is stored. From 9b: `ContextMenu.test.tsx` derives the expected title through `i18n` as the component
+does, so a missing key passes on both sides. From 9f: no unit case says the ruler clips its marks at its end. From 18:
+one `tips.test.ts` case is satisfied by a defect another case catches; *a tip stays its time* reads the stored round
+once. From 9d: no main case chooses fewer pages for Excel or its service route; `exportPages.pw.ts` has no Excel case;
+the printing case past the limit uses pages already in order; layout text's pages come out in order with repeats
+removed while plain text and Word keep the set's order, and nothing says so. From captures and 9a: `spell-check-1` does
+not wait for the mark on the page, and the scroll bar scan reads straight after a resize.
+
+**PPPPPPP-14** (recorded, closes in the commit after this): CR-COR-02's unhandled-rejection listener was first written
+in `entry.ts` with `toStructuredError`, and the pre-push advisory check refused the push: INVARIANT-2 and ADR-0009 §9
+rest on no code under `apps/` building a diagnostic. It records through `IncidentLog`, the one place a thrown value
+becomes one, instead. The mechanism worked as designed, on a change made an hour after the rule's own reason was read.
+
+**Process, recorded.** CR-COR-07's App control was first read as passing against the old code, from a stash that did
+not hold what I believed; run again, it was red. Boards were read once each, at `56da2237` after its runs had
+finished. Guard denials, each with nothing run: a `node -p` typed by reflex while looking up a package path.
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism: the dialog host's latest-wins slot (`56da2237`), find answers keyed by document and not
+version (`19e2edc0`), an observer that cannot report a removed element (`d5535f29`), `getSize()` being an extent and
+not a frame (`8f322ba7`), the untyped import (`23076e18`). CR-COR-11 did not reproduce; its commit adds the two proofs it
+lacked and changes no code. No workaround-shaped change.
+
+### 2. Verified against the easy shape only?
+
+Once, by me, and closed: PPPPPPP-1. The Excel page row is held on the renderer side and not in main (PPPPPPP-13).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Towards, twice: the Word proof's import is typed (PPPPPPP-9), and the ruler case settles on a condition (PPPPPPP-6).
+Away, once and restored: the two whole-list assertions (PPPPPPP-5).
+
+### 3. Would CI have caught it?
+
+It did, from runs: PPPPPPP-9 on both legs at three shas, PPPPPPP-10 on Guards, the two rendered cases 9c broke on
+ubuntu's accessibility gate at `2485608e`. PPPPPPP-14 was caught before CI, by the pre-push hook. The cases that could
+not fail (PPPPPPP-2 to -4) are invisible to CI by their nature, and were found by reading.
+
+### 4. Are the proofs non-vacuous?
+
+The controls the range's commits name were recorded there as run red. Reading found PPPPPPP-2 to -7, each closed and
+run red as stated, and the cases in PPPPPPP-13, recorded.
+
+### 4a. Has every instrument passed a resolution test?
+
+`rulerScroll.pw.ts`' mutation count separates 0 from 712 against the old ruler. `dialogQueue.pw.ts`' wait for the
+refused save is a round trip behind the save's answer, and its control is a build of the old host failing at the line
+that reads Delete pages still showing. `pdfLibFrame.test.ts`' readings are held to an upright control on every shape.
+
+### 4b. Is the instrument a search, with a positive control?
+
+`longFields.ts` is one, and its control counted what it did not measure (PPPPPPP-7). `pdfLibFrame.test.ts`' first case
+asserts the fixture shows nothing before a command and is the size it should be, so its *no line* readings mean
+something.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+`longFields.ts`' `seen` is derived from the fields it walks, and the failure that shrinks it (a field it cannot place)
+now reports instead of shrinking it. No other count arrived.
+
+### 5. Executed, or asserted?
+
+Executed: every rendered case named here on Chromium 151, and the kernel's MuPDF reads. Asserted and not executed:
+whether Electron's main keeps Node's throw on an unhandled rejection (the binary is not installed in this container),
+Print with a page range on a printer, and the Windows high contrast themes over the new menus.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before, in each ADR's own commit: ADR-0156 to ADR-0161, with ADR-0161's correction in its own commit. The dialog queue
+(`56da2237`) changes how the one host behaves within its seam and adds no seam. The page frame (`8f322ba7`) is an
+adapter over two rules that already existed.
+
+### 7. Do the documents still match the code?
+
+The FEATURES rows the range touched were read against the code. Three documents did not match: the two help articles
+(PPPPPPP-8) and the ADR index (PPPPPPP-10). No document stated the dialog host's old latest-wins rule: swept with
+`sweep:prose` for *dismisses the first* and *second open*, with its control found.
+
+---
+
+## 2026-10-04 — Stage audit of `cb62b976..33715f7c` — findings OOOOOOO-1 to OOOOOOO-12
+
+35 commits, 192 files, all work/cloud-4: the previous audit's corrections, ADR-0155 and the 12a follow-up, the marks on
+the paper solved against it (NNNNNNN-2), Group 15's remaining parts (ADR-0154), Group 16b, Group 19d, ADR-0156 with
+`replaceTextAt`, the field value fix and the red checks between them. Owed because Group 16a's commit would take the
+range past one batch (221 files). Label O: N is the highest on main and on every branch, read from each branch's JOURNAL.
+The modified tests and proofs were read commit by commit through `git log -p` by three readers and by me. No assertion
+was loosened outright. Each finding closed here was run red against its mutation before it was recorded.
+
+**OOOOOOO-1** (medium, closed in `161ff757`): `fc74ae2a` edited `docs/manual-test-checklist.md` by hand, and that file
+is generated by the test that owns it, so CI's unit tests were red on all three legs at `73940ed9`. It was regenerated
+by its owner. A generated file is changed only through what generates it.
+
+**OOOOOOO-2** (medium, open, proposed): an ADR corrected without its index row, for the third range running. Guards was
+red for it at `44fef778` (ADR-0151, closed in `cadd75fe`) and at `32c3faee` (ADR-0156, closed in `1da25e32`). The rule
+lives in `check:docs` alone, which runs on Guards after the push, so each instance is public before it is caught.
+MMMMMMM-2 and the correction to NNNNNNN's item 6 are the same shape. Proposed: the index row check joins the pre-commit
+set against the index, as `check:emittedtemplates` did (WW-4). It is the owner's to take, because it touches the hook.
+
+**OOOOOOO-3** (medium, closed in `699b22b6`, one part owed): a form field's value was read cut to the listing's 512
+characters, and an edit built from that reading would have written the slice back over the whole value. The value is
+now read whole; only the listing cuts it and marks the field `cut`; the Forms panel says the field holds more than can
+be changed there and leaves it as it is; and the capture refuses a prior longer than `MAX_FIELD_VALUE`. Owed: a way to
+edit a value longer than the listing, through a whole value read. Nothing is lost meanwhile, and nothing is offered.
+
+**OOOOOOO-4** (medium, closed in the commit after this one): ADR-0155 and ADR-0156 were each recorded in their own
+commit ahead of the feature, and neither amended `docs/ARCHITECTURE.md`. §4 did not say that a page leaving takes every
+reference to it, and §10.3's context panel tabs did not name Spelling. B4 puts the amendment in the law, and the ADR
+alone is the record of a decision, not the law. The amendment is its own commit, and its log rows say it followed the
+ADRs.
+
+**OOOOOOO-5** (low, closed in this commit): `commandBus.test.ts`' delete half (`44fef778`) asserted a state the delete
+produces whether or not any reference was cleared. It now walks the saved file for references to pages the tree no
+longer holds, with a positive control that tears a page out with pdf-lib and finds every reference to it. Red with
+`releasePagesOutsideTree` returning early.
+
+**OOOOOOO-6** (low, closed in this commit): `replaceTextAt`'s point probes (`463dc4ae`) were answered by a different
+rule. The unit case's point outside every run asked for a word two runs hold, so the two-runs refusal answered whatever
+the point did; it now asks for a word one run holds. Overlapping runs had no case; two runs at one point now refuse.
+`pdfiumCommand.proof.mjs`' blank paper had the same masking and asks for `below` now, with a control replacing that word
+at its own line. The proof was run against the Linux build of PDFium 155.0.8044.0 (75 passed), and a pick that falls
+back to any run holding the word turned the blank paper case red, where the old probe stayed green.
+
+**OOOOOOO-7** (low, closed in this commit): five weak or stale texts. `pageOrder.test.ts`' *every /Parent* filter read
+no page count, so an empty page list passed; each command now names the count it leaves. `calloutTool.test.ts`' two
+growing box cases lost *asked once* when they moved; both assert it. `pageReferences.pw.ts` matched any execute carrying
+`"pages":[1]` and now matches `deletePages` with those pages. `pageReferences.test.ts`' field case named `/CO` and never
+read it; it does, red with the calculation order left whole. `typedRules.ts` listed a spaced number among what
+`Number(...)` takes wrongly, when the rule trims first; `textTools.test.ts` named a dialog that no longer exists; and
+`contract.proof.mjs` named one `'one'` row where two exist, and a case count from 2026-09-05 as if current.
+
+**OOOOOOO-8** (low, open, the owner's): a comment emptied on its card and left sends nothing and says nothing. The
+*cannot be empty* message left with the dialog in `a57c4aa9`, and `pageWriting.ts` documents the silence. Whether an
+emptied comment should be refused with a message on the card, or delete the comment, is the owner's decision.
+
+**OOOOOOO-9** (low, open): `againstPaper`'s outline colour falls back to `currentcolor` where the solved colour is
+missing, so a mark could lose its contrast quietly; and `d81a6a5b` says the caret, the selection handles and the drawing
+preview are solved, while nothing measures the caret or the stroke. The rendered case that would hold both is in
+`renderedScreen.pw.ts`, which is in `2bc38402`'s files; owed after the keep-out.
+
+**OOOOOOO-10** (low, recorded): weak controls not closed here. *A closed document's request* in `pageWriting.pw.ts`
+would pass with the request left waiting, since the next request replaces it; the unit case holds *answers at once*. Its
+*asks for nothing* cannot fail. `linkTools`' page link case is weaker than the address case beside it. `247d8ec6`'s
+fixture builds `wordsOf` itself, so the document id in its read assertion comes from the test, and App's binding is
+held by no unit case. `PropertiesPanel.test.tsx`'s *a blur cannot send* comment describes a blur on an unchanged value,
+which sends nothing either way; the read only assertion is the check. `pageMemory.pw.ts`'s *page 1's images decoded a
+second time* counts every draw, so it rests on its commit's measured control rather than its own shape. And
+`canvasPixels.proof.mjs` prints `workers.attached` and asserts nothing on it; that file is in the keep-out.
+
+**OOOOOOO-11** (recorded, unexplained): Windows' rendered `menus.pw.ts` at 760 hung to its budget at `32c3faee`. It was
+not reproduced in 200 rounds here, and `33715f7c` makes the case say which menu closed under its keys rather than wait
+the budget out. Windows was green at `33715f7c`. No mechanism is claimed; the diagnostics are what the next red will
+carry.
+
+**OOOOOOO-12** (recorded, the keep-out's): ubuntu's canvas proof was red at `44fef778`, `632f7852`, `32c3faee` and
+`33715f7c` and green at `b1d569ca` and `d67f0214`. `632f7852` and `87a12db1` made its report carry the worker's log and
+whether the white page's bytes arrived; the mechanism is in the startup and rendering files the local agent holds.
+
+**Process, recorded.** Twice a board was read before its runs had finished (`d67f0214`, `33715f7c`) and read again,
+against the read once rule. A stash was made that duplicated one already held, and dropped. Guard denials in this
+range, each with nothing run: an `awk` redirect (correct), a `node -e` typed by reflex during this audit (correct), and a
+`grep` with `$'` and a redirect, the second time that false positive was recorded.
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit: the page memory case waits for page 1 decoded again rather than a canvas
+width (`d67f0214`); a long comment's edit starts from its whole words (`e46b1a05`); a field value is read whole
+(`699b22b6`). `33715f7c` is diagnostics and says so; no mechanism is claimed for the hang. No workaround-shaped change.
+
+### 2. Verified against the easy shape only?
+
+The hard shapes were taken for page references: nested page trees (`ca4589d3`), MuPDF-saved bytes beside pdf-lib's, and
+a field value at 512, 600, 4096 and 4097 characters, either side of both limits. `replaceTextAt` takes its point in PDF user space, so rotation
+and the CropBox origin belong to the renderer's conversion, which Group 16a builds; that conversion's cases are at
+rotation 0 on a zero-origin box, and 16a is owed a rotated, offset page before it lands.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Once, towards: the PDFium blank paper probe and the unit point probe now separate the point rule from the two-runs rule
+(OOOOOOO-6). Nothing moved away.
+
+### 3. Would CI have caught it?
+
+It did, from runs: OOOOOOO-1 on all three unit legs at `73940ed9`, OOOOOOO-2 on Guards twice, the accessibility gate at
+`b1d569ca`. `proof:pdfiumcommand` runs on Windows only; CI's Windows leg ran it green at `33715f7c`, and it was run here
+against PDFium's Linux build. What CI cannot see is OOOOOOO-4, a law that does not mention a decision, which no check
+reads for.
+
+### 4. Are the proofs non-vacuous?
+
+The controls the range's commits name are recorded there as run red. Reading the diffs found the cases that could not
+fail: OOOOOOO-5 to -7, each now red against its mutation, and OOOOOOO-10's, recorded.
+
+### 4a. Has every instrument passed a resolution test?
+
+Three instruments arrived, all reports rather than deciders: the canvas proof's worker log and white page report
+(`632f7852`, `87a12db1`), and the menu case's naming of the menu that closed (`33715f7c`). None decides a verdict, so
+none was resolution tested, and OOOOOOO-10 records that `workers.attached` is printed and asserted nowhere.
+
+### 4b. Is the instrument a search, with a positive control?
+
+One search arrived, in this commit: `commandBus.test.ts`' walk for references to pages outside the tree. Its positive
+control tears a page out and must find every reference to it, every run, so its *found nothing* after the delete means
+something.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+`pdfiumCommand.proof.mjs`' roster is a literal, 69 to 74 to 75 in this range, each raise in the edit that added the
+cases. No derived count arrived.
+
+### 5. Executed, or asserted?
+
+Executed: the PDFium proofs on Windows in CI and on Linux here. Asserted and not executed: the Windows contrast themes
+over the marks on the paper, the packaged application, and any mechanism for OOOOOOO-11.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before, in the ADR: ADR-0155 and ADR-0156 each came in its own commit ahead of its feature, and each correction while
+building in its own commit. The law lagged both (OOOOOOO-4).
+
+### 7. Do the documents still match the code?
+
+The FEATURES rows each commit touched were read against the code. Three documents did not: the generated checklist
+(OOOOOOO-1), the ADR index twice (OOOOOOO-2) and `docs/ARCHITECTURE.md` (OOOOOOO-4).
+
+---
+
+## 2026-10-04 — Stage audit of `5da42ae3..cb62b976` — findings NNNNNNN-1 to NNNNNNN-10
+
+37 commits, 198 files, all work/cloud-4: item 8 (8a to 8e), and the 0.1.10.0 addition's Groups 12 (ADR-0151), 13
+(ADR-0152) and 14 (14a to 14g, ADR-0153) with ADR-0154 for Group 15. Owed because Group 15's commit would take the range
+past one batch. Label N: K is the highest on main and on every other branch, M on this one (read from each branch's
+JOURNAL). The 57 modified tests and proofs were read commit by commit through `git log -p`, the hidden deletions
+included, by three readers: no assertion was loosened outright, and every removal was a stronger replacement, a contract
+shape followed, or moved with its assertion named, except what 6bc9cd61 lost with its dialog (NNNNNNN-3). Each finding
+closed here was run red against its mutation before it was recorded.
+
+**NNNNNNN-1** (medium, closed in this commit): `6bc9cd61` reddened CI's accessibility gate on both platforms in two
+rendered cases (run 37178574067). `layoutReview.pw.ts` still opened the Edit page object dialog the commit deleted, and
+`signature.pw.ts` pressed a command in a group's More as a `menuitem`, where the same commit made a More draw a command
+that says whether it is on as a checkable item. The scene went with its dialog, and the helper takes either role. Third
+range running: LLLLLLL-3 and MMMMMMM-3 are this shape, a renderer change pushed without the rendered cases that read
+it, and LLLLLLL-3's proposal (name the rendered cases a renderer change reaches) stands. Group 15's own commit carries
+the same class one step earlier: a font case in `renderedScreen.pw.ts` typed through a dialog that change removes.
+
+**NNNNNNN-2** (medium, open, the next item): an accent mark drawn on the paper is solved against nothing. `--accent` on
+the page's white is 3.30:1 in light, 2.54:1 in dark and 1.49:1 in high contrast (measured 2026-10-04 with `contrast`),
+under the 3:1 a boundary needs in two of the three. Edit object's outlines and handles (`6bc9cd61`) are one instance and
+Edit text's block outlines, frame and handles, older than this range, the same class. Group 15's editor solves its own
+at the point of use with `useOnColor`, a rendered case per look red at 2.54 and 1.49 without it. The class wants one
+accent solved against `--page` for everything drawn on the paper, at the page list, rather than a hook per outline.
+
+**NNNNNNN-3** (medium, closed in this commit): `6bc9cd61` removed Edit page object's dialog cases and three things they
+held went with them. The read's refusal was asserted as `ok: false` only, while App reports a problem and leaves the mode
+only when `refused` is set, so a read answering `refused: undefined` for an engine failure left a person outlining
+nothing, unreported, with every case green. The page asked for was asserted nowhere, and the shim's answer ignores it.
+And the fixtures put every object at an index equal to its place in the answer, the stamp included, so a read naming an
+object by position passed. Each now has a case: the refusal of either walk carries its code and a moved version
+carries none; the page is `3` on both parts; indices differ from positions in both walks. The menu check, *one menu*,
+was also true of four commands with no menu, and names the menu now. Recorded as owed: no case joins Properties'
+recolour to what App sends (`onRecolour` to `sendObject`), and App's report-once on a refused read is held by the
+read's half alone.
+
+**NNNNNNN-4** (low, closed in this commit): two controls in `documentCommands.test.ts` could not fail. Page
+background's dialog answered the very pages the command derives itself (`97072680`), so a command sending its own
+passed; it answers others now. Import as layer's *then shows Layers* (`04b87545`) asserted a panel the default leaves
+shown; it starts hidden.
+
+**NNNNNNN-5** (low, closed in this commit): `engineAsset.test.ts`' *bytes LEFT in the payload are refused* asserted
+`ok: false`, which every refused call answers, so removing the `sources` the commit added to isolate the bytes left it
+green. Its comment also named the wrong mechanism: the refusal is the strict wire schema's `unrecognized_keys: bytes`,
+the placement crossing with its bytes omitted, not `placeImageSchema`'s `instanceof`. It asserts that one issue now, red
+with `sources` removed.
+
+**NNNNNNN-6** (low, closed in this commit): ADR-0152's *every part's pages are checked before any is grafted* had no
+case; the only out-of-range merge had one part. A later document's missing page now refuses with the target unchanged,
+red when the pages are resolved inside the graft loop (the first document's page left placed).
+
+**NNNNNNN-7** (low, closed in this commit): the double-click case's last line (`307a91b4`) could not fail: a corner the
+double-click left behind plus one click is two corners, which commits nothing either way. Three corners and Escape now
+send a polygon of exactly three, red at four with the double-click's finish removed. And Insert from PDF's row case
+names all three controls, not two of them.
+
+**NNNNNNN-8** (low, open, proposed): weak controls recorded rather than closed. *Summarise comments* is refused on a
+document with no comments, and its control changes the scope rather than the count, so refusing every comments ask
+passes both (`f80960a0`); a commented document is owed in the ask harness. `pdfiumObject`'s walk control is a removal,
+so a reorder of the same objects is unseen. Merge's *sharing its one graft map* asserts widths, which a map per pass
+also gives. `toolCursors.pw.ts`' *starts no second shape* waits 300 ms for an absence. `Thumbnails.test.tsx`' *before
+the grid paints* cannot tell a layout effect from a passive one under `render`. And the source-document cases record
+params and not the channel.
+
+**NNNNNNN-9** (low, open, owed after the keep-out): the browser shim's annotation seed carries no `pictured`, so the
+rendered Edit object case covers page content only, and a placed picture is held by the unit cases. The shim is in
+`2bc38402`'s files.
+
+**NNNNNNN-10** (recorded): ubuntu's rendered `menus.pw.ts` at 760 x 560 (*Window menu never settled*) was red at
+`37feb99f` and is intermittent, one run in five here; it is the local agent's menu area. `pageMemory.pw.ts` (*drawn 79
+not > 79*) was red once and not reproduced in six runs. The native *killed engine host recovers* step found two
+children at `76e16d7b` and passed at `b2c84e36`, a Windows harness in the local agent's area; not reproduced, nothing
+changed.
+
+**Stale comments, corrected here.** `pdfiumObject.proof.mjs` said nineteen of twenty-two; `contract.proof.mjs` called
+merge's third parameter a second session, Import as layer the third `'one'` spec, and merge the `'one'` guard row, all
+three before ADR-0152; `emptyReports.test.tsx` still listed the Edit object dialog.
+
+**Process, recorded.** Two of my checks in this range had no positive control and are named in their commits:
+`b2c84e36` counted *error TS* in coloured output, where an escape sits between the words, and `37feb99f` linted the
+source files and not the test. Guard denials in this session, each with nothing run: a heredoc into `/dev/null`, and a
+`grep` with `$'` and a redirect.
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit. On-page writing (in progress at this audit) dropped a guard of its own
+rather than keep one nothing could make fire: removing a focused field does fire a blur in Chromium 151, measured, and
+React 19.2.8 never delivers it, because its event dispatch is off from `commitBeforeMutationEffects` until the
+mutations are done; a rendered case holds that, with a control that sees an answer. No workaround-shaped change.
+
+### 2. Verified against the easy shape only?
+
+The hard shapes were taken where they existed: nested page trees for the field removal (12a), several documents with
+forms and outlines merged (13d), a citation in fourteen bracketings and in prose (14f), a stamp whose picture sits one
+Form deep (14g). The easy one stands for Edit object and the on-page editor on a ROTATED page: every case is at
+rotation 0, and the editor's box is placed through the page's transform while its words are set upright. Stated, not
+yet tried.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Once, against: 14g's dialog cases went with the dialog, NNNNNNN-3.
+
+### 3. Would CI have caught it?
+
+It did, NNNNNNN-1, and lint and types at `b2c84e36`. Every case added runs in CI. `proof:pdfiumobject` runs on Windows
+only and was run here against PDFium 155.0.8044.0's Linux build (22 passed).
+
+### 4. Are the proofs non-vacuous?
+
+The controls this range's commits name are recorded there as run red; that was not re-run here. What reading the diffs
+found is the cases that could not fail whatever the commits said: NNNNNNN-3 to -7, each now red against its mutation,
+and NNNNNNN-8's, recorded.
+
+### 4a, 4b, 4c
+
+The contrast reading separates the three looks (3.30, 2.54, 1.49). The blur-on-removal probe carries its control, an
+ordinary blur seen by the same listeners. No search instrument or derived roster was added.
+
+### 5. Executed, or asserted?
+
+Asserted and not executed: PDFium's object walk on Windows' own build, the Windows contrast themes (forced colours) over
+the new on-page surfaces, and the packaged application.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before: ADR-0151, ADR-0152, ADR-0153 and ADR-0154 each came in its own commit ahead of its feature, with its index row
+(MMMMMMM-2 did not recur), and ADR-0152 and ADR-0154 were corrected before building, each in its own commit.
+
+### 7. Do the documents still match the code?
+
+The FEATURES rows each commit touched were read against the code. The sweep for the removed dialog found it named in no
+live document; the journal's mention is a record.
+
+**Correction, 2026-10-04, the commit after this entry.** Item 6 says MMMMMMM-2 did not recur, and it did: `cb62b976`
+corrected ADR-0154 and left its index row as it was, and so did `ce646435`, the correction made the commit after this
+audit. That is the third range with this shape. Found by reading ADR-0152's row, which carries its correction, beside
+0154's, which carried neither; the row now names both. The claim was checked against the wrong set: I read which ADR
+commits touched `README.md`, and the correction commits are the ones that did not.
+
+**Correction, 2026-10-04, two commits after this entry: NNNNNNN-6 is withdrawn.** Its case built a payload that cannot
+exist. `mergeDocument.documents` is a union, one document with chosen pages or several each taken whole, in the type and
+in the wire schema alike (`commands.ts`), so a later document's missing page is unrepresentable, and the mutation that
+reddened the case proved nothing reachable. The case is removed. It reached the audit commit because I ran its tests
+and not the typecheck after adding it, and vitest compiles without checking types: `tsc` refused the fixture
+(TS2322), first seen at the next commit's typecheck. The loop's *checked before any is grafted* stays, true of a
+rule the union keeps, and the reader's gap was a true reading of the code that the schema answers.
+
+**Correction, 2026-10-04: items 4a, 4b and 4c were answered under one heading, and each is owed its own.** Guards
+refused this entry at `9a6e4c81` (*answers 8 of 11 checklist items*), rightly: a merged answer reads as three items
+asked and lets one of them go unanswered unseen. The answers, one per item:
+
+#### 4a. Has every instrument passed a resolution test?
+
+Two instruments arrived. The contrast reading on the paper separates the three looks it decides between (3.30, 2.54 and
+1.49 against a bound of 3), and its case is red at 2.54 and at 1.49 with the solved colour taken out. The
+blur-on-removal probe separates a removal from an ordinary blur, which the same listeners see in the same run.
+
+#### 4b. Is the instrument a search, with a positive control?
+
+No search arrived in this range: no scan, grep-shaped check or reachability walk was added or changed.
+
+#### 4c. Does a check derive its extent from the set it governs?
+
+No roster or derived count arrived in this range. The case counts the range's commits name are literals in their own
+files.
+
+---
+
+## 2026-10-03 — Stage audit of `de106c45..5da42ae3` — findings MMMMMMM-1 to MMMMMMM-11
+
+33 commits, 199 files, all work/cloud-4: CR-DOC-10, CR-NAT-01, CR-SEC-16, CR-DOC-07 (ADR-0148, ADR-0149), Groups 2,
+3 and 4a (ADR-0150), the canvas proof's controls, and Group 7 (7a to 7d). Owed because 8a's commit would take the
+range past one batch (206 files). Label M: K is the highest on main, L on this branch (read from each branch's
+JOURNAL). The 62 modified tests were read diff by diff for removed lines, the two whose deletions the net diff hides
+through `git log -p`; every removal was a stronger replacement, a contract shape followed, or moved with its
+assertion named, except the four loosenings below, each checked against the code and, for MMMMMMM-10, by mutation
+before it was recorded.
+
+**MMMMMMM-1** (medium, closed in this commit): three of `docs/FEATURES.md`'s compound claims went half true in this
+range, in commits that touched none of them. Row 63 said *"`absent` and `at-capacity` now report"* and row 337 that
+the handle *"is revoked on `absent` and `at-capacity`"*, after `761f0a25` added `busy`, `denied` and `failed` to the
+first and `busy` and `denied` to the second; row 342 said nothing of the save's causes (`5da42ae3`). All three bodies
+now say what the code does. Item 7's own shape: the live clause vouched for the dead one beside it.
+
+**MMMMMMM-2** (medium, open, proposed): an ADR correction landed without its index row twice in this range, ADR-0148's
+and ADR-0150's (`070e21cb`), each caught only by Guards' document check after the push and closed in `ec61fd9a` and
+`57ae2d5e`. IIIIIII recorded the same shape twice. A rule that has failed in three ranges is not a habit to form, and
+`check:docs` by hand is ruled out by the owner for its cost. Proposed: the pre-commit hook runs only the document
+rule that pairs an ADR with its index row, which reads two files.
+
+**MMMMMMM-3** (medium, open, recurrence of LLLLLLL-3): `515b410e` made the signature's styles a menu and went out
+without `layoutReview.pw.ts`, which still asked that dialog for its column of choices and was red on windows-latest
+(fixed in `37a14f01`). LLLLLLL-3's proposal stands: nothing names the rendered cases a renderer change reaches.
+
+**MMMMMMM-4** (medium, open, the owner's): opening the same path a second time hands back the live document's handle,
+because `mint` is idempotent per path. So when the file at an open document's path has been deleted or replaced, the
+second open answers `absent` (since `761f0a25` also `busy` or `denied`) and the revoke strips the handle from the
+document that is still open. What then fails is the handle's other readers (*Show in folder*, the recent list), not
+the save, which reads the record's path. Found reading `openPath` for 7a; it predates this range, and 7a kept the new
+outcomes consistent with the old. Proposed: revoke only a handle no open document holds.
+
+**MMMMMMM-5** (low, open, the owner's): 144 of 233 gallery states draw a paragraph with the browser's own 12 px block
+margin (measured 2026-10-03 across every registered dialog state, light, 1280 x 800, with the open-problem dialog as
+the sweep's positive control), so about eighty dialogs space a sentence by the user-agent stylesheet rather than by a
+token. Two zero it (`.m-command-problem`, `.m-save-problem`), so one-sentence problem dialogs read differently from
+each other. A design-wide change with a baseline per dialog, and the owner's to take; the new open-problem dialog
+matches its siblings until then.
+
+**MMMMMMM-6** (low, open, proposed): the browser shim places every line of `documentPageLines` at an invented box,
+(10, 20) to (110, 32), not where the PDF draws its words, so no rendered case can test Compare's text-against-picture
+rule: in the built page a one-word edit is boxed at the top left and its drawn change reads as a picture (measured in
+the work after this range, 8a). Proposed: the shim takes each document's placed lines, as `pageLinesPlaced` already
+does for one.
+
+**MMMMMMM-7** (recorded): the ubuntu canvas proof is intermittent across this range, red at `515b410e` and `11d6b03e`
+and green at `37a14f01` and `5da42ae3`, with the same image and Electron each time. The red runs read alike: all four
+controls fully inked, the page white, settled by the 60 s bound, the 2D canvas in software. Its next instrument, the
+worker's console over CDP, is the local agent's, because the startup and engine-connection code it would touch is held
+for finding 1.
+
+**MMMMMMM-8** (medium, closed in this commit): `702f1c39` removed `signature.pickPicture`'s own size check as a second
+opinion about `readImage`'s bound, and its case's *past the bound, unread* assertion with it. The bound then lived only
+in `entry.ts`, the composition root, which no case reaches, and so did five siblings of the same shape: form data,
+annotation data, Markdown, CSV and Office, none ever tested. All six now live in `pickedFileReads.ts`, each a function
+naming its own bound and sharing one sized-then-read rule, and `pickedFileReads.test.ts` makes a sparse file one byte
+past each bound on the real disk and asserts the read refused it with nothing read. Control: CSV wired to Markdown's
+bound is red. Stated limit: form data and annotation data are both 8 MiB, so a swap between those two is invisible
+there, and changes nothing a person sees while they are equal.
+
+**MMMMMMM-9** (low, closed in this commit): `d0c2afa1` made two of Apply redactions' cases filter every
+`document.annotations` read out before asserting, so a second read, or a read in the wrong place, passed. They assert
+the whole sequence of channels now.
+
+**MMMMMMM-10** (low, closed in this commit): two of the signature's drawing rules had no case that could fail. A scale
+per axis in place of one passed all 28 drawing and placing cases (mutation run 2026-10-03), because every fixture's box
+had its line box's 2:1 shape; and pair kerning, applied since `515b410e`, had no case at all. A 2:1 name in a square box
+now asserts its proportions kept, and a kerned pair found in the bundled faces is framed at its advances plus the
+face's own kerning, with a positive control that one was found. Each was run red against its mutation.
+
+**MMMMMMM-11** (low, closed in this commit): a kept typed signature named by id was asserted refused with
+`rejects.toThrow(/outline/u)`, which any error mentioning an outline satisfies. It names the whole sentence.
+
+**Loosened by design, recorded.** `signature.pw.ts` compares the typed mark with `toMatchObject` plus a lower bound on
+its points, since a face's outline cannot be pinned by hand (`515b410e`). `calloutTool.test.ts`' *asks nothing* became
+*places the note there* by F-C7's own reversal (`a621db9b`). `commandProblem.test.ts` excludes `breaks-signatures` from
+the codes the dialog accepts, and pins the exclusion. Two cases compare a command's mark with the output of
+`outlinedMarkOf`, the module they forward, which proves the forwarding and not the outline; the outline is
+`signatureFaces.test.ts`' subject. One case name no longer described its file (`pdfLibSession.test.ts`) and now does.
+
+**Process, recorded rather than a finding.** One commit (`4a6a046a`) was made with the previous message reused
+(`git commit -F .git/COMMIT_EDITMSG`); it was never pushed, and was reset and made again as `702f1c39`. Guard denials
+in this session, each with nothing run: `node -e` inside a pipeline, a heredoc into `/dev/null`, a heredoc fed to
+`python3`, and `node -e 0` twice, the second while writing this entry. Two shell writes the guard does not cover, by its design since `cat` resolves no escape: an
+empty scratch file made with `cat >` (deleted at once) and `cat >> /dev/null`.
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit. 7c's two-hundred-millisecond cap on the recent list's check is the
+owner's answer (*"cap the wait so the list shows at once"*), not a timeout raised to pass. No workaround-shaped change.
+
+### 2. Verified against the easy shape only?
+
+The hard shapes were taken where they existed: a redaction of one line among tightly leaded neighbours (2a), a scanned
+signature with a printed line through it and specks beside it (3d), a recent file whose check never answers (7c), one
+refused rename that reads as two causes for two files (7b). The easy one stands for 7a and 7b's Windows codes, which no
+Linux run can produce: item 5. And the signature's fit was verified on one box shape only, MMMMMMM-10.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Once, against: `702f1c39` moved the image bound's proof onto a stub that answers *too large* itself, which left the
+bound unproven, MMMMMMM-8. Once, stronger: the save's write failure carries its cause, so its one case became five.
+
+### 3. Would CI have caught it?
+
+It did, twice: the ADR index rows (MMMMMMM-2) and the layout review (MMMMMMM-3). Every case added runs in CI except the
+scratch captures, which are not committed.
+
+### 4. Are the proofs non-vacuous?
+
+Each item's control was run against the old code and named in its commit, red. Four were not, MMMMMMM-8 to -11, each
+now with one.
+
+### 4a. Has every instrument passed a resolution test?
+
+The canvas readback's controls separate a drawn page from a blank one by the whole page (500,990 pixels against 0). The
+signature scan's thresholds are tested at their edges (a 36 px fleck, a piece of nine pixels).
+
+### 4b. Is the instrument a search, with a positive control?
+
+The dialog-margin sweep (MMMMMMM-5) refused to report unless it found the open-problem dialog, known to carry a bare
+paragraph, and the kerning case (MMMMMMM-10) refuses to pass unless it found a kerned pair. No search instrument was
+added to the repository.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+None added does. `pickedFileReads.test.ts` names its six reads and their bounds by hand, an independent anchor, and the
+shim's channel list stays a literal.
+
+### 5. Executed, or asserted?
+
+Asserted and not executed: the Windows codes for a sharing violation and the read-only attribute on a read and on an
+open for writing (libuv's mapping), that the open for writing leaves an NTFS file's last-write time alone, the packaged
+Electron 43.7.7, and 5c's `CREATE_NO_WINDOW` (Group 5 is the local agent's).
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before: ADR-0148, ADR-0149 and ADR-0150 came before their features. The new channels (`document.fileAccess`,
+`document.workOnCopy`) register into the contract's seam and add no concept the architecture lacks.
+
+### 7. Do the documents still match the code?
+
+Three rows did not, MMMMMMM-1, corrected in this commit.
+
+---
+
+## 2026-10-03 — Stage audit of `54ea19e7..de106c45` — findings LLLLLLL-1 to LLLLLLL-5
+
+62 commits, all work/cloud-4: the JJJJJJJ follow-ups, Group 1 (every dialog by eye, 1c to 1f), ADR-0146 and ADR-0147
+with their folds, and the first 11-HIGH items (CR-SEC-01, -02, -08, CR-DOC-05, -06). Owed because the next commit,
+CR-DOC-10's, would take the range past one batch (208 files). Labels L: K is taken on `work/2026-10-01` (read from
+each branch's JOURNAL). The 40 modified tests and the 12 rendered files were read diff by diff for removed lines; each
+was a stronger replacement or followed a deliberate change (the attempt rule, the renamed messages), with the one
+loosening recorded as LLLLLLL-5.
+
+**LLLLLLL-1** (medium, closed in `f2bfeb16`): `39118641` kept a dialog's footer in view by making it sticky inside the
+scrolling body, so the rows passed under it and had to be covered, and the dialog's ground is glass no colour can
+match: an opaque white band across about thirty dialog states at 760 x 560 in light, a lighter one in dark. Its
+evidence, the gallery's footer-in-view reading, measured position and could not see colour; the full sheets read by
+eye found it. The footer is now drawn in the popup's foot, outside the scroll, so nothing passes under it; the
+tool-window case asserts that on every window (red in 30 of 30 on the old primitive).
+
+**LLLLLLL-2** (medium, closed in `de106c45`): the audit scope's `isProof` did not match `*.pw.ts` or `*.visual.ts`,
+so this range's rendered suite, `renderedScreen.pw.ts` at +486/-38 among twelve files, sat in the source column,
+outside the instruction to read each diff for a loosened check. W-1's shape for the next test runner. Fixed with a
+control that is red on the old rule.
+
+**LLLLLLL-3** (medium, open, proposed): nothing names the rendered cases a renderer change reaches. `a2ef0bc0` folded
+the menu row and was pushed without `menus.pw.ts`, which read the row and went red on both CI legs (run
+37114204045); `vitest related` does not reach Playwright, and `affectedProofs.mjs` reaches only `scripts/` imports, by
+its own stated limit. Proposed: name the Playwright configs whose renderer bundle contains a changed module, read from
+that build's module graph, so the tests a change reaches include them. The whole rendered set costs 5.3 minutes here
+(271 cases, 2026-10-03), which is the comparison for the cost.
+
+**LLLLLLL-4** (low, open, proposed): the gallery's *warning before any step* flag counts every non-empty
+`role="status"` line, so seventeen states per look were flagged where the line informs (Insert from PDF's page range,
+Split's file count, Settings' footer, Cloud storage's *Signed in.*). Each was read by eye and is correct, which is the
+cost: a flag that is mostly right reads as noise. Proposed: the line `attempt.ts` renders after a refused attempt
+carries a mark, and the flag reads the mark rather than the role.
+
+**LLLLLLL-5** (recorded, not a defect): one loosened check. `assistantPane.pw.ts` compared the pane's width exactly and
+now within a pixel (`9625e67e`), with the mechanism measured: the splitter rounds a pane's share, and at 264 the
+rounded width read 263 for 262.
+
+**JJJJJJJ-5 recurred twice** in this range's last two commits. Staging CR-SEC-08 beside CR-DOC-10's unstaged work, the
+pre-commit hook compiled the working tree and refused a commit whose index was sound; it went through only once the
+other work was set aside (`git stash --keep-index`), the discipline that finding says is not a mechanism. Still open,
+with its proposal unchanged. **JJJJJJJ-6** is closed by `20bf7ee2` (the start footer at the window's foot, which
+paints the window's own opaque ground, so it covers without a band).
+
+**Items without a finding.** 1: each fix states its mechanism in its commit; the workaround-shaped one was LLLLLLL-1.
+2: the hard shapes were taken where the easy one would pass: Azure's sovereign and regional hosts and a look-alike
+suffix, nine password shapes, a file that grows after it is sized, a directory under an output's name. 3: every case
+added runs in CI; the gallery capture does not, by design. 4: each item's control was run against the old code, and
+each named in its commit went red. 5, asserted and not executed: Azure's 21Vianet hosts (no primary source was
+reachable, so they are not accepted), the packaged Electron 43.7.7 (the local agent's), and a bound on a host's
+announced count (none exists). 6: ADR-0146 and ADR-0147 came before their features; the footer's move is inside the
+one primitive; CR-DOC-05 conforms to invariant 19, which already named an encryption change a removal. 7: ADR-0139
+carries two additions; the sticky footer was described only in the code it lived in.
+
+**Correction, 2026-10-03 — the checklist under its headings.** The paragraph above answered the items in one place and
+left 2a, 4a, 4b and 4c unanswered; Guards' document check refused it on `ceb977d1` (run 37127717707). The paragraph
+stands as written; the answers, each under its item:
+
+### 1. Root cause or workaround?
+
+Each fix states its mechanism in its commit. The one workaround-shaped change was `39118641`'s sticky footer, which
+LLLLLLL-1 replaced with the footer drawn outside the scroll.
+
+### 2. Verified against the easy shape only?
+
+No, for the items named above: Azure's sovereign and regional hosts and a look-alike suffix (CR-SEC-02), nine password
+shapes (CR-DOC-06), a file that grows after it is sized and a directory under an output's name (CR-SEC-08).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Twice, both stronger: the rendered files moved into the proof columns (LLLLLLL-2), and the footer's case now reads the
+foot's own box against the body's rather than a position inside the scroll (LLLLLLL-1). One check loosened, recorded
+as LLLLLLL-5.
+
+### 3. Would CI have caught it?
+
+Every case added runs in CI; the gallery capture does not, by design. `menus.pw.ts` was not run locally after the menu
+row's fold and CI caught it on both legs (run 37114204045), which is LLLLLLL-3.
+
+### 4. Are the proofs non-vacuous?
+
+Each item's control was run against the old code, and each named in its commit went red.
+
+### 4a. Has every instrument passed a resolution test?
+
+One failed it, and that is LLLLLLL-1: the gallery's footer-in-view reading measured position and could not tell a
+footer over glass from one over a white band. The keyboard-shortcuts case's controls separate by 48.4 px and 2.05
+lines.
+
+### 4b. Is the instrument a search, with a positive control?
+
+The sibling searches in CR-SEC-02 and CR-SEC-08 were greps, each naming the known sites it found as its control. No
+search instrument was added to the repository.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+No check added in this range does: `auditScope.proof.mjs` names its rendered and visual fixtures by hand, an
+independent anchor.
+
+### 5. Executed, or asserted?
+
+Asserted and not executed: Azure's 21Vianet hosts (no primary source was reachable, so they are not accepted), the
+packaged Electron 43.7.7 (the local agent's), and a bound on a host's announced count (none exists).
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before: ADR-0146 and ADR-0147 came before their features; the footer's move is inside the one primitive; CR-DOC-05
+conforms to invariant 19.
+
+### 7. Do the documents still match the code?
+
+ADR-0139 carries two additions; the sticky footer was described only in the code it lived in, and left with it.
+
+---
+
+## 2026-10-03 — Stage audit of `fcb1adac..54ea19e7` — findings JJJJJJJ-1 to JJJJJJJ-6
+
+27 commits, 127 files, all work/cloud-3: the IIIIIII follow-ups, J, K, N1 to N7 and F row 14 (ADR-0143, ADR-0145).
+Written on work/cloud-4 before new work piled on the range (the owner's 0c). Labels J, the next free after IIIIIII on
+main and every work branch (read from each branch's JOURNAL). The range was read commit by commit, and its 43 modified
+and 6 added test files diff by diff; every finding below was checked against the code or the axe-core source before it
+was recorded, and one candidate was withdrawn (below).
+
+**JJJJJJJ-1** (medium, closed in `8c488cb`): `d8f1d02d` made the recovery-offer case's second card unavailable and
+said its contrast was *"measured with the rest"*. Axe-core 4.13.0's colour-contrast rule skips any node under
+`aria-disabled="true"` (`isDisabled` walks the ancestors), so nothing measured it, and the card the fixture existed for
+(a cloud with no date) stopped rendering. `recentMenu.pw.ts` claimed the same of the disabled card and menu item. Both
+now measure that text themselves against the pixels behind it (`inkOnScreen.ts`; the card is translucent), with the
+cloud card restored. Mutation: the name painted a pale grey turns it red.
+
+**JJJJJJJ-2** (low, closed in `8c488cb`): `98712352`'s *typed words land in the last run* was asserted by the caret's
+colour, which the last run shares with the block's base on the editor and each line. It asserts the caret's run span.
+
+**JJJJJJJ-3** (low, closed in `8c488cb`): after `bd23ed13` recorded the 4,100-page split's writes, no split reached a
+disk anywhere, while its comment cited *"this file's real-disk splits"*. A three-page split through the production
+surface is read back from its folder.
+
+**JJJJJJJ-4** (low, closed in `8c488cb`): four controls weaker than their names: a fraction claimed refused and never
+sent (`engineChannels.test.ts`), a re-read counted with no count before the click (`App.test.tsx`), a disabled Clear
+list asserted by its look and not by its effect (`MenuBar.test.tsx`), and a throwing availability check on a path that
+did not exist, so a handler ignoring the check passed too (`contractHandlers.test.ts`).
+
+**JJJJJJJ-5** (medium, open, proposed): `823ab2be` records that `98712352` committed an index that never compiled,
+because the pre-commit hook typechecks and builds the WORKING TREE, and its remedy is a discipline (*"staging out of a
+shared tree uses patches with context"*). A discipline is not a mechanism, and the range's own first CI reds were
+shapes no local subset runs. Proposed: when the tree has unstaged changes to files the compiler reads, the hook
+typechecks a checkout of the index in a scratch directory, and refuses the commit on a failure there.
+
+**JJJJJJJ-6** (low, open, the owner's 1f, Group 1): `ccc11c76`'s start-screen case proves the last tile ends inside
+the start area at 1280 x 800, and no case asks about the footer, which follows the content and falls below the
+window's edge there (seen in this branch's capture of the recent list).
+
+**Withdrawn, with the reason.** `4c399ac2`'s held-drag case can end its hold at once when the drag's own moves have
+already scrolled a page. Not a defect: what the case is about, the view moving a page under a selection the button
+still holds, is measured from the press and sampled at every step either way, and its control fails 5 of 6 runs.
+
+**Would CI see it (item 3), from the runs.** `35b020d`: Windows unit tests red, the 4,100-page split past 120 s,
+closed by `bd23ed13`. `62d0238`: Windows axe gate red, the held drag, closed by `4c399ac2`. `6c0ad1e`: both legs red on
+*Every var() names a custom property something declares*, closed by `54ea19e7`. Visual baselines red throughout, as
+on every branch that changes a screen. Guards green from `b9be9f5`. JJJJJJJ-1 to -4 were invisible to every run,
+because each check was green for the wrong reason; that is item 4's shape, found only by reading.
+
+### 1. Root cause or workaround?
+
+Each fix in the range names a mechanism: the split's per-file `FileHandle.sync()` cost (recorded writes, not a
+timeout), the held drag measured from the press (not a longer wait), the label ink read from the solved layer, the
+staging defect named. None was a retry or a raised limit.
+
+### 2. Verified against the easy shape only?
+
+JJJJJJJ-1 is the easy shape: a disabled card checked by a tool that does not look at disabled cards.
+
+### 3. Would CI have caught it?
+
+Answered above from the runs.
+
+### 4. Are the proofs non-vacuous?
+
+JJJJJJJ-1 to -4 are this item's findings. Each new check was mutated and went red.
+
+### 4a, 4b, 4c
+
+`BoundedList`'s cases (`35b020dd`) assert a stop one under each walk's count, with the count as the control.
+`inkOnScreen.ts` is a search over text nodes and refuses an empty one, and refuses a box outside the photograph.
+
+### 5. Executed, or asserted?
+
+Executed: every case named, on Chromium 151 for the rendered ones, and the CI runs read. Asserted: nothing new.
+
+### 6. Architecture before the feature, or underneath it?
+
+ADR-0143 (`1cac2761`) and ADR-0145 (`c118781d`) precede their features, in their own commits.
+
+### 7. Do the documents still match the code?
+
+The comments JJJJJJJ-1 and -3 name were false and are corrected. JJJJJJJ-6 is the owner's 1f.
+
+**Correction, 2026-10-03, appended after Guards refused `e6c25dbe`.** This entry answered 4a, 4b and 4c under one
+heading and left 2a out, so the checklist read as answered while four items had no answer of their own. The four,
+read from `git diff fcb1adac 54ea19e7`:
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Once, and it widened. The start screen's artwork check asserted *"natural width at least twice the drawn height"* on a
+1x page, which is a 2x display's need tested where no 2x file is chosen. It now asserts the drawn height at 1x, and a new
+case opens a 2x context and reads which file was **decoded**, since a `srcset` choice is the browser's. Nothing that was
+checked before is unchecked now.
+
+### 4a. Resolution test before measuring?
+
+`BoundedList`'s cases (`35b020dd`) set the stop one under each walk's count, with the count itself as the control, so
+the smallest difference that changes the answer is the one tested.
+
+### 4b. A search with a positive control?
+
+No search arrived in the range. The one written for it, `inkOnScreen.ts` in `8c488cba`, is after the range; it refuses
+an empty set of text nodes and a box outside its photograph.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+One roster changed, `pdfiumCommand.proof.mjs`, and it declares `cases: 69` as a literal, which is an anchor the shrinker
+has to touch separately. No count in the range is computed from the collection it counts.
+
+---
+
 ## 2026-10-03 — Stage audit of `fcb1adac..024602b2` — findings KKKKKKK-1 to KKKKKKK-6
 
 40 commits, 198 files (`npm run audit:scope`). Written because CR-SEC-11's commit would take the range to 207 files
@@ -1019,6 +2044,7 @@ rewritten with their changes; no document names the temp's old fixed name (searc
 corrected on work/cloud-4 only.
 
 ---
+
 
 ## 2026-10-02 — Stage audit of `cc6305d3..fcb1adac` — findings IIIIIII-1 to IIIIIII-8
 

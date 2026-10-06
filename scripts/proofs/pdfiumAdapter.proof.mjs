@@ -73,7 +73,7 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFName, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
 import { PDFIUM_ADAPTER, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
@@ -154,7 +154,7 @@ async function threeRunsAndARectangle() {
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 48 });
+const roster = createRoster(failures, { cases: 54 });
 
 /**
  * @param {string} name
@@ -280,7 +280,7 @@ async function main() {
   // is whichever one is not in `texts`.
   const rectangle = [0, 1, 2, 3].find((index) => !texts.includes(index)) ?? -1;
   const nonText = await refusal(() =>
-    replaceTextObjects(session, 0, [{ index: rectangle, text: 'nope' }]),
+    replaceTextObjects(session, 0, [{ index: rectangle, text: 'nope' }], 'as-written'),
   );
   record(
     'replacing a non-text object is refused as a non-text object',
@@ -288,14 +288,36 @@ async function main() {
     nonText ?? 'it was accepted',
   );
   const outOfRange = await refusal(() =>
-    replaceTextObjects(session, 0, [{ index: 99, text: 'nope' }]),
+    replaceTextObjects(session, 0, [{ index: 99, text: 'nope' }], 'as-written'),
   );
   record(
     'an out-of-range index is refused as an index, not as a type',
     outOfRange !== null && outOfRange.includes('names none'),
     outOfRange ?? 'it was accepted',
   );
-  const named = await refusal(() => replaceTextObjects(session, 0, []));
+  // A REPLACEMENT THE RUN'S FONT CANNOT DRAW (CR-NAT-10): FPDFText_SetText answers 1 for a string the font has no
+  // code for, and Replace All reported success over text drawn as nothing. The fixture's Helvetica is WinAnsi, which
+  // has no code for a Han character. CONTROL: the writable replacement below passes the same read-back.
+  const unwritable = await refusal(() =>
+    replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: 'SECOND 漢' }], 'as-written'),
+  );
+  record(
+    'a replacement its font cannot draw is refused by the read-back, before anything is generated',
+    unwritable !== null && unwritable.includes('cannot carry the text'),
+    unwritable ?? 'it was accepted, on FPDFText_SetText answering 1',
+  );
+  // A NUL INSIDE THE REPLACEMENT (CR-NAT-18): FPDF_WIDESTRING is terminated, so PDFium sets the words before it and
+  // drops the rest. The read-back sees the drawn text end short of what was written and refuses, so nothing truncated
+  // is ever generated. The page-unchanged case below covers this refusal too.
+  const truncated = await refusal(() =>
+    replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: 'SECOND\u0000 the rest' }], 'as-written'),
+  );
+  record(
+    'a replacement carrying a NUL is refused by the read-back, never saved cut at the terminator',
+    truncated !== null && truncated.includes('cannot carry the text'),
+    truncated ?? 'it was accepted, and saved as far as the NUL',
+  );
+  const named = await refusal(() => replaceTextObjects(session, 0, [], 'as-written'));
   record(
     'a replacement naming no object is refused rather than regenerating for nothing',
     named !== null && named.includes('named no text object'),
@@ -329,7 +351,7 @@ async function main() {
   record(
     'a refused edit changed nothing',
     afterRefusals === before,
-    'the page reads exactly as it did before the two refusals',
+    'the page reads exactly as it did before the refusals above, the unwritable and the NUL-bearing replacements among them',
   );
 
   // THE PRIOR, read before the edit that replaces it. This is what makes the
@@ -348,7 +370,7 @@ async function main() {
     priorOfNonText ?? "it answered a string for something that has no text",
   );
 
-  await replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: REPLACEMENT }]);
+  await replaceTextObjects(session, 0, [{ index: texts[1] ?? -1, text: REPLACEMENT }], 'as-written');
   const saved = await pdfiumWriter.serialise(session);
 
   // READ BACK FROM A REOPENED DOCUMENT. A setter agreeing with itself proves
@@ -399,7 +421,7 @@ async function main() {
   await replaceTextObjects(both, 0, [
     { index: bothTexts[0] ?? -1, text: 'FIRST REPLACED IN THE SAME CALL' },
     { index: bothTexts[2] ?? -1, text: 'THIRD REPLACED IN THE SAME CALL' },
-  ]);
+  ], 'as-written');
   const bothReopened = await pdfiumWriter.open(await pdfiumWriter.serialise(both));
   const bothText = await pageText(bothReopened, 0);
   record(
@@ -452,6 +474,8 @@ async function main() {
     reclosed ?? 'it was accepted',
   );
 
+  await fontNameCases();
+  await denseTextCases();
   await objectCases();
 
   process.stdout.write(
@@ -460,6 +484,85 @@ async function main() {
       : roster.format('PDFium adapter case'),
   );
   process.exitCode = failures.length === 0 ? 0 : 1;
+}
+
+/**
+ * The font name a run is read with, for a page whose one font's `/BaseFont` is `baseFont`.
+ *
+ * `baseFont` is a string of BYTES, one character each, which pdf-lib writes into the name as `#xx` escapes, so a
+ * UTF-8 name is passed as its UTF-8 bytes.
+ *
+ * @param {string} baseFont
+ * @returns {Promise<string | undefined>}
+ */
+async function fontNameOfRun(baseFont) {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  document.addPage([300, 100]).drawText('Named', { x: 20, y: 50, size: 11, font });
+  // FLUSHED FIRST: pdf-lib writes a font's dictionary at its reference only when the document is flushed, so before
+  // this the reference names nothing. `save` flushes again and leaves an embedded font as it is.
+  await document.flush();
+  const dictionary = document.context.lookup(font.ref, PDFDict);
+  dictionary.set(PDFName.of('BaseFont'), PDFName.of(baseFont));
+  const session = await pdfiumWriter.open(await document.save());
+  try {
+    return (await textRuns(session, 0)).runs[0]?.style.font;
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+}
+
+/**
+ * CR-NAT-14: a page's text past V8's argument limit is read whole. A spread over its units threw `RangeError: Maximum
+ * call stack size exceeded` from about 150 000 units (measured on Node 22.22), so this page carries more than that.
+ */
+async function denseTextCases() {
+  const LINES = 400;
+  const PER_LINE = 'x'.repeat(400);
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const page = document.addPage([2000, 2000]);
+  for (let line = 0; line < LINES; line += 1) {
+    page.drawText(line === LINES - 1 ? `${PER_LINE}END` : PER_LINE, { x: 4, y: 1996 - line * 4.9, size: 2, font });
+  }
+  const session = await pdfiumWriter.open(await document.save());
+  /** @type {string} */
+  let read;
+  try {
+    read = await pageText(session, 0);
+  } catch (error) {
+    read = `threw ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`;
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+  const inked = read.replace(/\s+/gu, '').length;
+  record(
+    'a page of 160 000 characters is read whole, past the argument limit a spread meets',
+    // THE LAST LINE'S MARKER, so a read that stopped part way cannot pass on its length alone.
+    inked >= LINES * PER_LINE.length && read.trimEnd().endsWith('END'),
+    read.startsWith('threw') ? read : `${String(inked)} characters read, ending ${JSON.stringify(read.trimEnd().slice(-6))}`,
+  );
+}
+
+/** CR-NAT-12: a base name read whole, in UTF-8, and cut to the wire's bound at a whole character. */
+async function fontNameCases() {
+  const long = `Helvetica${'X'.repeat(141)}`;
+  const read = await fontNameOfRun(long);
+  record(
+    'a base name past the wire bound is read, and cut to 127 characters of itself',
+    read === long.slice(0, 127),
+    // A 128-BYTE BUFFER answered this as 127 NULs: PDFium leaves a buffer shorter than the name untouched and still
+    // answers the full length.
+    `read ${JSON.stringify(read?.slice(0, 20))}… of ${String(read?.length)} characters`,
+  );
+  const utf8 = await fontNameOfRun('CafÃ©');
+  record(
+    'a base name is read as UTF-8, as fpdf_edit.h says the buffer is',
+    utf8 === 'Café',
+    `read ${JSON.stringify(utf8)}; decoded byte by byte it would be "CafÃ©"`,
+  );
+  const short = await fontNameOfRun('Helvetica');
+  record('CONTROL: a short base name is read whole', short === 'Helvetica', `read ${JSON.stringify(short)}`);
 }
 
 /**

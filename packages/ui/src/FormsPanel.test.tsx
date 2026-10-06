@@ -158,6 +158,7 @@ function field(over: Partial<ChannelField>): ChannelField {
     on: null,
     options: [],
     readOnly: false,
+    multiline: false,
     rect: null,
     ...over,
   };
@@ -203,6 +204,19 @@ describe('FormsPanel', () => {
     ]);
   });
 
+  it('Enter commits a text field, and the Enter that CONFIRMS A COMPOSITION does not (CR-COR-07)', async () => {
+    const { fills } = await panel([field({ name: 'first', values: ['Ada'] })]);
+    const input = screen.getByLabelText<HTMLInputElement>('first');
+    input.focus();
+    fireEvent.change(input, { target: { value: 'にほんご' } });
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(fills).toStrictEqual([]);
+    expect(document.activeElement).toBe(input);
+    // CONTROL: the Enter after it commits — the field gives up the focus, and the fill is sent.
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(fills).toMatchObject([{ value: { set: 'text', text: 'にほんご' } }]);
+  });
+
   it('SENDS NOTHING when a text field is left as it was', async () => {
     // A blur is not an edit. Without this the case above passes for a panel
     // that dispatches on every blur, which would be a command and a log entry
@@ -211,6 +225,28 @@ describe('FormsPanel', () => {
     fireEvent.blur(screen.getByLabelText('first'));
     expect(fills).toStrictEqual([]);
   });
+
+  it('SENDS NOTHING when a field holding LINE BREAKS is left as it was, and keeps them in an edit', async () => {
+    // A one-line `<input>` strips line breaks from its value (HTML's value sanitisation), so its value differs from
+    // the document's the moment it is shown. A blur compared against the document then sent the stripped text: tabbing
+    // through a form rewrote every multi-line answer as one run-on line.
+    const { fills } = await panel([field({ name: 'address', values: ['1 High Street\nLeeds'] })]);
+    const box = screen.getByLabelText('address');
+    fireEvent.blur(box);
+    expect(fills).toStrictEqual([]);
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: '2 High Street\nLeeds' } });
+    fireEvent.blur(box);
+    expect(fills).toMatchObject([{ value: { set: 'text', text: '2 High Street\nLeeds' } }]);
+  });
+
+  it('a field that TAKES line breaks is a box for them even while empty', async () => {
+    await panel([field({ name: 'notes', multiline: true }), field({ name: 'surname', index: 1 })]);
+    expect(screen.getByLabelText('notes').tagName).toBe('TEXTAREA');
+    // CONTROL: a one-line field stays a one-line input, so the case above reads the flag rather than every field.
+    expect(screen.getByLabelText('surname').tagName).toBe('INPUT');
+  });
+
 
   it('DISPATCHES A BUTTON FILL as a STATE, not as a toggle', async () => {
     // `on: true`, not *flip it*. MuPDF's toggle is keyed on `/AS` — measured —
@@ -226,17 +262,54 @@ describe('FormsPanel', () => {
     ]);
   });
 
-  it('OFFERS A RADIO AS A BOX THAT CAN BE CLEARED, because the format allows it', async () => {
+  it('DRAWS A RADIO OPTION AS A RADIO, its group as one group, and a tick box as a tick box (F-F2)', async () => {
+    await panel([
+      field({ name: 'applicant.post', kind: 'radio', on: true, index: 1 }),
+      field({ name: 'applicant.post', kind: 'radio', on: false, index: 2 }),
+      field({ name: 'applicant.agrees', kind: 'checkbox', on: false, index: 3 }),
+    ]);
+    const options = screen.getAllByRole<HTMLInputElement>('radio');
+    expect(options.map((option) => option.checked)).toStrictEqual([true, false]);
+    // ONE GROUP, so the keyboard and a screen reader treat the two as one question.
+    const [first, second] = options;
+    expect(first?.name).not.toBe('');
+    expect(second?.name).toBe(first?.name);
+    // CONTROL: the tick box is still a tick box, so the radio above is chosen by kind and not drawn for every button.
+    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+  });
+
+  it('CHOOSES an option that is off, with the handle from its own row', async () => {
+    const { fills } = await panel([
+      field({ name: 'applicant.post', kind: 'radio', on: true, index: 1 }),
+      field({ name: 'applicant.post', kind: 'radio', on: false, index: 2 }),
+    ]);
+    fireEvent.click(screen.getByRole('radio', { checked: false }));
+    expect(fills).toStrictEqual([
+      { page: 0, index: 2, version: asDocVersion(1), value: { set: 'button', on: true } },
+    ]);
+  });
+
+  it('CLEARS the chosen option when it is clicked, because the format allows it', async () => {
     // Measured: toggling a PDF radio group's lit widget deselects the whole
-    // group. An HTML radio cannot express that — clicking a chosen one does
-    // nothing — so rendering it as one would hide a state the document has.
+    // group, and a browser fires no change for a radio already on — so without
+    // the click this state could not be reached from the panel.
     const { fills } = await panel([
       field({ name: 'applicant.post', kind: 'radio', on: true, index: 1 }),
     ]);
-    fireEvent.click(screen.getByLabelText('applicant.post'));
+    fireEvent.click(screen.getByRole('radio'));
     expect(fills).toStrictEqual([
       { page: 0, index: 1, version: asDocVersion(1), value: { set: 'button', on: false } },
     ]);
+  });
+
+  it('CONTROL: two different radio fields are two groups', async () => {
+    await panel([
+      field({ name: 'applicant.post', kind: 'radio', on: true, index: 1 }),
+      field({ name: 'applicant.shift', kind: 'radio', on: true, index: 2 }),
+    ]);
+    const [first, second] = screen.getAllByRole<HTMLInputElement>('radio');
+    expect(second?.name).not.toBe(first?.name);
+    expect([first?.checked, second?.checked]).toStrictEqual([true, true]);
   });
 
   it('DISPATCHES A CHOICE, and offers the empty option as a real value', async () => {
@@ -313,6 +386,20 @@ describe('FormsPanel', () => {
     expect(screen.queryByLabelText('applicant.reference')).toBeNull();
     expect(screen.getByText('The document marks this field read-only.')).toBeTruthy();
     expect(fills).toStrictEqual([]);
+  });
+
+  it('OPENS NO BOX ON A VALUE THE LISTING CUT, so a fill cannot save the slice over the rest', async () => {
+    const { fills } = await panel([
+      field({ name: 'long', values: ['a'.repeat(512)], cut: true }),
+      field({ name: 'short', values: ['a'.repeat(512)] }),
+    ]);
+    expect(screen.queryByLabelText('long')).toBeNull();
+    expect(screen.getByText('This field holds more text than can be changed here, so it is kept as it is.')).toBeTruthy();
+    // CONTROL, in the same panel: the same slice with no cut is a whole value, and its box opens and fills.
+    const input = screen.getByLabelText('short');
+    fireEvent.change(input, { target: { value: 'b' } });
+    fireEvent.blur(input);
+    expect(fills).toStrictEqual([{ page: 0, index: 0, version: asDocVersion(1), value: { set: 'text', text: 'b' } }]);
   });
 
   it('SEPARATES read-only from not-fillable, which are different absences', async () => {

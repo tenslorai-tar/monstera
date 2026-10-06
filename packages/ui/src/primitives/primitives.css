@@ -388,6 +388,10 @@
 /* A FLOAT (v5): the floating surface, its glass and its shadow, like a menu. The edge is `--border-control` still, so
    the tooltip reads in forced colours where the background is discarded. */
 .m-tooltip {
+  /* NEVER WIDER THAN THE WINDOW, breaking anywhere: a tooltip that says a document's own text (a link's address) can be
+     one unbroken word of any length. Every tooltip written for the chrome is far narrower, so none of them moves. */
+  max-inline-size: calc(100vw - 2 * var(--space-8));
+  overflow-wrap: anywhere;
   padding: var(--space-4) var(--space-8);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-6);
@@ -512,6 +516,44 @@
 
 .m-input::placeholder {
   color: var(--faint);
+}
+
+/* A MULTI-LINE FIELD (`TextArea`): it grows with what is typed, from three lines to ten, and scrolls inside past that,
+   so a long note never pushes the dialog's footer out of the window. `field-sizing: content` is the platform's own
+   growing box; the bounds are in lines of the field's own text. */
+.m-textarea {
+  field-sizing: content;
+  inline-size: 100%;
+  min-block-size: calc(3lh + 2 * var(--space-6) + 2px);
+  max-block-size: calc(10lh + 2 * var(--space-6) + 2px);
+  overflow-y: auto;
+  resize: none;
+  font: inherit;
+  font-size: var(--font-chrome-13);
+  line-height: 1.45;
+}
+
+/* IN A DIALOG ROW, a multi-line field takes the row's whole width, under the row's name: a box to write sentences in
+   beside a 22-character label is a narrow column of three words a line. */
+.m-dialog-row__control:has(> .m-field--text) {
+  flex-basis: 100%;
+}
+
+.m-field--text {
+  flex: 1 1 auto;
+}
+
+/* A VALUE THAT RUNS LONG — a key, an address, an endpoint (`Input`'s `runsLong`, ADR-0157) — takes its own line and the
+   row's whole width, in a dialog row and a Settings row alike. At the browser's own twenty characters a key showed
+   about a fifth of itself (168 px in rows of 488 to 672, measured 2026-10-04). */
+.m-dialog-row__control:has(> .m-field--long),
+.m-settings-row__control:has(.m-field--long) {
+  flex-basis: 100%;
+}
+
+.m-field--long {
+  flex: 1 1 auto;
+  min-inline-size: 0;
 }
 
 .m-input:focus-visible {
@@ -657,6 +699,17 @@
   align-items: center;
   gap: var(--space-8);
   min-inline-size: 0;
+  /* NEVER WIDER THAN THE ROW, and a drop-down in it may be narrower than its longest option. A select is as wide as
+     its longest option and a flex item does not shrink below its content, so a document named at length drew Merge,
+     Insert from PDF, Replace page and Import as layer 745 px wider than the dialog, with a sideways scroll (the
+     gallery's reading, 2026-10-03). The select draws the chosen name cut at its edge, and its list shows it whole. */
+  max-inline-size: 100%;
+}
+
+.m-dialog-row__control select {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  text-overflow: ellipsis;
 }
 
 /* A ROW'S REFUSAL (`DialogRow`'s `problem`): a line of its own across the row, under its name and its control, so it
@@ -684,6 +737,60 @@
   display: flex;
   gap: var(--space-6);
   min-inline-size: 0;
+}
+
+/* FACTS, EACH NAMED BESIDE ITS VALUE (a `dl`): the name muted in a column of its own, the value beside it. One rule for
+   every dialog that reports facts (About's version, Word count's totals, a signature's reason and place). Word count
+   drew the browser's own list, each number indented under its name, and About and Signatures had each written this
+   grid for themselves (the gallery, 2026-10-03). */
+.m-dialog-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-4) var(--space-16);
+  margin: 0;
+  font-size: var(--font-chrome-13);
+}
+
+.m-dialog-facts > dt {
+  color: var(--muted);
+}
+
+.m-dialog-facts > dd {
+  min-inline-size: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* THE PATTERN'S LIST (the gallery's reading, 2026-10-03): what a command found, kept or removed — the backups it could
+   not delete, the duplicate pages, the fields flattened, what PDF/A removed, the rows a workbook lacks — as rows in one
+   box with a hairline between them, never the browser's bullets. One rule, where five bodies kept four of their own and
+   one kept none. Tabular figures, because these rows are page numbers and counts read down a column. */
+.m-dialog-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border); /* decorative: the list's edge; a control in a row draws its own focus ring */
+  border-radius: var(--radius-8);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.m-dialog-list > li {
+  padding: var(--space-6) var(--space-10);
+}
+
+.m-dialog-list > li + li {
+  border-block-start: 1px solid var(--border-soft); /* decorative: the seam between two rows */
+}
+
+/* THE ROW'S WHOLE WIDTH, under its name: three fields sized to their content stopped short of the row's end, so a
+   header's Right field did not line up with the controls below it (the gallery's reading, 2026-10-03). */
+.m-dialog-row__control:has(> .m-dialog-row__fields) {
+  flex: 1 1 100%;
+}
+
+.m-dialog-row__control > .m-dialog-row__fields {
+  flex: 1 1 auto;
 }
 
 .m-dialog-row__fields > * {
@@ -736,12 +843,44 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--space-8);
-  margin-block-start: var(--space-8);
-  padding-block-start: var(--space-12);
-  border-block-start: 1px solid var(--border-soft); /* decorative: separates the questions from the answer */
+  padding: var(--space-12) var(--space-24) var(--space-24);
+  /* decorative: separates the questions from the answer */
+  background-image: linear-gradient(var(--border-soft), var(--border-soft));
+  background-position: top center;
+  background-repeat: no-repeat;
+  background-size: calc(100% - 2 * var(--space-24)) 1px;
 }
 
-:is(.m-dialog-row, .m-dialog-choices):has(+ .m-dialog-footer) {
+/* ALWAYS IN VIEW, BY PLACE: the footer is drawn in the popup's foot, after the body and outside its scroll (`FooterSlot`
+   in `Dialog.tsx`), so a long body scrolls above it and nothing passes under it. The gap above its line is the body's
+   own inset (below) and none of the popup's: the column's gap is given back. A popup with no footer has an empty foot,
+   which takes no place. */
+.m-dialog__foot {
+  margin-block-start: calc(-1 * var(--space-16));
+}
+
+.m-dialog__foot:empty {
+  display: none;
+}
+
+/* THE LAST ROW DRAWS NO LINE of its own, because the footer's line follows it. The body's last row, or its last
+   wrapper's: the footer is no longer the rows' sibling, so the rule names where the rows end. */
+:is(.m-dialog__body, .m-dialog__body > :last-child) > :is(.m-dialog-row, .m-dialog-choices):last-child {
+  border-block-end: 0;
+}
+
+/* A STATUS LINE WITH NOTHING TO SAY TAKES NO ROOM. Twenty-two bodies end in a `role="status"` line that says what is
+   missing once the person tries to go on, and each reserved a line of its own for it, so with nothing said the last
+   row drew its line, then an empty band, then the footer drew its own (the Signature dialog, 2026-10-03: 40 px).
+   Empty, it is no taller than nothing and gives back the column's gap above it, and stays a live region, so a message
+   that arrives is announced; the row before it is then the last row. With a message, both let go: the row keeps its
+   line and the message sits between it and the footer. */
+:is(.m-dialog__body, .m-dialog__body > :only-child) > [role='status']:empty:last-child {
+  min-block-size: 0;
+  margin-block-start: calc(-1 * var(--space-8));
+}
+
+:is(.m-dialog__body, .m-dialog__body > :last-child) > :is(.m-dialog-row, .m-dialog-choices):has(+ [role='status']:empty:last-child) {
   border-block-end: 0;
 }
 
@@ -762,7 +901,7 @@
   border-block-end: 1px solid var(--border-soft); /* decorative: separates one section from the next */
 }
 
-:is(.m-dialog-section:has(+ .m-dialog-footer), .m-dialog-scroll > .m-dialog-section:last-child) {
+:is(.m-dialog__body, .m-dialog__body > :last-child, .m-dialog-scroll) > .m-dialog-section:last-child {
   border-block-end: 0;
 }
 
@@ -838,7 +977,23 @@
    footer is in the pattern by construction, so the rule keys on that rather than on a class each dialog must
    remember. */
 .m-dialog:has(.m-dialog-footer) {
-  inline-size: 36rem;
+  /* 36rem of ROWS, and the inset either side of them, which the body holds now (below). */
+  inline-size: calc(36rem + 2 * var(--space-24));
+  /* THE BODY HOLDS THE INSET, not the popup, in the pattern: the body is the part that scrolls, so its scroll bar
+     sits at the dialog's edge, and the footer below it holds its own. Where the rows sit is unchanged. A popup outside
+     the pattern (the command palette) keeps its own padding. */
+  padding-inline: 0;
+  padding-block-end: 0;
+}
+
+.m-dialog:has(.m-dialog-footer) > .m-dialog__header {
+  margin-inline: 0;
+}
+
+/* ITS FOOT INSET IS THE GAP ABOVE THE FOOTER'S LINE, and room inside the scroll's clip for a focus ring on the last
+   control. 16, the pattern's: inside the body the footer had the column's 8 and its own margin's 8 above its line. */
+.m-dialog:has(.m-dialog-footer) > .m-dialog__body {
+  padding: 0 var(--space-24) var(--space-16);
 }
 
 .m-dialog__body {

@@ -192,3 +192,12 @@ The rule is the same in both directions: **it is used and not kept.** The
 renderer holds it for the life of the view its PDF.js instance needs it for, and
 the one thing it must never do is put it anywhere a version bump would carry it
 — not in a store, not in a recent-files entry, not in a setting.
+
+## Superseded in part, 2026-10-05 — main now holds the password while the document is open
+
+[ADR-0171](0171-the-password-is-held-in-main-while-the-document-is-open.md), the owner's answer to CR-DOC-11,
+supersedes Decision 3's *"It does not survive the call. Main does not keep it"* and the rejected alternative
+*"Caching the password to make `recycle` work"*. Main holds it, in one holder that no serialisation can write, for
+the life of the open document, and wipes it at close; `recycle` reopens with it. Decisions 1, 2 and 4, the password
+crossing into the host, and this correction's renderer flow stand. What the renderer holds is put to the owner in
+ADR-0171 Decision 7.

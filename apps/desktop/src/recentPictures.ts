@@ -23,6 +23,12 @@ export interface RecentPictures {
    * the card shows the placeholder.
    */
   capture(docId: DocId, path: string): Promise<void>;
+  /**
+   * A removal's save has written the document: its kept picture shows the page as it was, so it is deleted FIRST and
+   * then captured again, so a picture that cannot be made leaves the placeholder rather than the old one (ADR-0164).
+   * Never throws, as {@link capture}.
+   */
+  retake(docId: DocId, path: string): Promise<void>;
   /** The kept picture of a listed path, or `null` — always `null` while the setting is off. */
   read(path: string): Uint8Array<ArrayBuffer> | null;
   /** Deletes the pictures of entries that left the list. */
@@ -62,32 +68,57 @@ export function pictureName(path: string): string {
  */
 export function createRecentPictures(deps: {
   readonly files: PictureFiles;
-  /** Page 1 of an open document as a JPEG: `DocumentCommands.firstPagePicture`. */
-  readonly picture: (docId: DocId) => Promise<Uint8Array>;
+  /**
+   * Page 1 of an open document as a JPEG: `DocumentCommands.firstPagePicture`. `none` for a document that keeps no
+   * picture — a file that opens only with a password — whose kept picture is then deleted.
+   */
+  readonly picture: (docId: DocId) => Promise<Uint8Array | 'none'>;
   /** Whether the Privacy setting allows pictures, read from the settings file each time. */
   readonly enabled: () => boolean;
   /** Whether a path is on the recent list now. */
   readonly listed: (path: string) => boolean;
   /**
-   * Where a picture that was not kept is reported: the shell log. The detail is an error's NAME or a byte
-   * count — never a message, which may carry the path this module exists to keep off the page.
+   * Where a picture that was not kept is reported: the shell log. The detail is a system error's CODE, an
+   * error's NAME or a byte count — never a message, which may carry the path this module exists to keep off
+   * the page.
    */
   readonly notKept: (reason: 'too-large' | 'failed', detail: string) => void;
 }): RecentPictures {
   const dropAll = (): void => {
     for (const name of deps.files.names()) if (name.endsWith(SUFFIX)) deps.files.remove(name);
   };
-  return {
+  const pictures: RecentPictures = {
+    retake: async (docId, path) => {
+      try {
+        deps.files.remove(pictureName(path));
+      } catch (cause) {
+        // THE OLD PICTURE COULD NOT BE DELETED, so nothing is drawn over it either: a write would meet the same
+        // refusal, and the log says which. Reported, never thrown, for `capture`'s reason.
+        deps.notKept('failed', errorCode(cause));
+        return;
+      }
+      await pictures.capture(docId, path);
+    },
     capture: async (docId, path) => {
       if (!deps.enabled()) return;
-      let jpeg: Uint8Array;
+      let jpeg: Uint8Array | 'none';
       try {
         jpeg = await deps.picture(docId);
       } catch (cause) {
         // AN OUTCOME, not a fault this build can repair: a poisoned document, a host that died, a page that
         // draws nothing. The card shows the placeholder, which is what a failed picture means to a person,
         // and the log says which of those it was.
-        deps.notKept('failed', cause instanceof Error ? cause.name : typeof cause);
+        deps.notKept('failed', errorCode(cause));
+        return;
+      }
+      // A DOCUMENT THAT KEEPS NO PICTURE loses the one it had, where a failed picture keeps it: a file protected since its
+      // picture was taken, here or by another program, must not go on showing its page (CR-DOC-11).
+      if (jpeg === 'none') {
+        try {
+          deps.files.remove(pictureName(path));
+        } catch (cause) {
+          deps.notKept('failed', errorCode(cause));
+        }
         return;
       }
       if (jpeg.length > MAX_RECENT_PREVIEW_BYTES) {
@@ -97,7 +128,14 @@ export function createRecentPictures(deps: {
       // CHECKED AGAIN AFTER THE AWAIT: the entry may have been cleared, or the setting turned off, while the
       // page was drawing — and a picture written then is one nothing would ever delete.
       if (!deps.enabled() || !deps.listed(path)) return;
-      deps.files.write(pictureName(path), jpeg);
+      // A WRITE THAT FAILS IS REPORTED HERE TOO (CR-COR-02): a full disk or a locked folder, and the card shows the
+      // placeholder. The caller does not await a capture and is told it reports its own failure, so a throw from here
+      // was a rejection nothing handled.
+      try {
+        deps.files.write(pictureName(path), jpeg);
+      } catch (cause) {
+        deps.notKept('failed', errorCode(cause));
+      }
     },
     read: (path) => (deps.enabled() ? deps.files.read(pictureName(path)) : null),
     drop: (paths) => {
@@ -107,6 +145,14 @@ export function createRecentPictures(deps: {
       if (!deps.enabled()) dropAll();
     },
   };
+  return pictures;
+}
+
+/** What a failure is called in the log: a system error's code (`ENOSPC`), else its name. Never its message. */
+function errorCode(cause: unknown): string {
+  if (!(cause instanceof Error)) return typeof cause;
+  const { code } = cause as NodeJS.ErrnoException;
+  return typeof code === 'string' ? code : cause.name;
 }
 
 /**
@@ -116,6 +162,7 @@ export function createRecentPictures(deps: {
  */
 export const NO_RECENT_PICTURES: RecentPictures = {
   capture: () => Promise.resolve(),
+  retake: () => Promise.resolve(),
   read: () => null,
   drop: () => undefined,
   settingsWritten: () => undefined,

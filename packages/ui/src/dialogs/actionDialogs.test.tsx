@@ -6,15 +6,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import AboutBody from './AboutBody.js';
 import AiSetupBody from './AiSetupBody.js';
 import ComponentsBody from './ComponentsBody.js';
-import AnnotationNoteBody from './AnnotationNoteBody.js';
 import CloseUnsavedBody from './CloseUnsavedBody.js';
 import CloudViewOnlyBody from './CloudViewOnlyBody.js';
 import DocusignSendBody from './DocusignSendBody.js';
 import DonateBody from './DonateBody.js';
-import EditPageObjectBody from './EditPageObjectBody.js';
 import FormFieldListboxBody from './FormFieldListboxBody.js';
-import FormFieldTextBody from './FormFieldTextBody.js';
-import LinkAddressBody from './LinkAddressBody.js';
+import FormFieldRadioBody from './FormFieldRadioBody.js';
 import OpenFromUrlBody from './OpenFromUrlBody.js';
 import ReimportExternalEditBody from './ReimportExternalEditBody.js';
 import SecurityUpdateBody from './SecurityUpdateBody.js';
@@ -66,24 +63,10 @@ const BODIES: readonly { readonly name: string; readonly body: ReactNode; readon
 
 /** Group 3: the shared text forms and the dialogs whose answers are buttons. Same shape, same assertion. */
 const GROUP_3: readonly { readonly name: string; readonly body: ReactNode; readonly firstRow: string | null }[] = [
-  { name: 'Sticky note', body: <AnnotationNoteBody resolve={ignore} update={ignore} />, firstRow: '' },
-  { name: 'Text field', body: <FormFieldTextBody resolve={ignore} update={ignore} />, firstRow: '' },
+  { name: 'Radio button', body: <FormFieldRadioBody resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'List box', body: <FormFieldListboxBody resolve={ignore} update={ignore} />, firstRow: '' },
-  { name: 'Link to an address', body: <LinkAddressBody resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'Open from a URL', body: <OpenFromUrlBody resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'Send to DocuSign', body: <DocusignSendBody resolve={ignore} update={ignore} />, firstRow: 'Email subject' },
-  {
-    name: 'Edit a page object',
-    body: (
-      <EditPageObjectBody
-        objects={[{ index: 0, kind: 'path', left: 0, bottom: 0, right: 10, top: 10, fill: { red: 0, green: 0, blue: 0, alpha: 255 } }]}
-        truncated={false}
-        resolve={ignore}
-        update={ignore}
-      />
-    ),
-    firstRow: '',
-  },
   { name: 'Close with changes', body: <CloseUnsavedBody name="a.pdf" resolve={ignore} update={ignore} />, firstRow: null },
   { name: 'Re-import an edit', body: <ReimportExternalEditBody page={0} resolve={ignore} update={ignore} />, firstRow: null },
   { name: 'Signature will break', body: <SignatureBreakBody signatures={1} resolve={ignore} update={ignore} />, firstRow: null },
@@ -145,7 +128,9 @@ describe('the text forms and button dialogs in the dialog pattern', () => {
           />
         </InDialog>,
       );
-      expect(document.body.textContent).toContain('3 redactions are marked but not applied. Apply them now?');
+      expect(document.body.textContent).toContain(
+        '3 parts of this document are marked for redaction, but they have not been removed yet.',
+      );
       const buttons = [...(document.querySelector('.m-dialog-footer')?.querySelectorAll('button') ?? [])];
       expect(buttons.map((button) => button.textContent)).toStrictEqual(['Cancel', middle[occasion], 'Apply']);
       // EACH BUTTON ANSWERS WHAT IT SAYS — the two that go ahead are not interchangeable.
@@ -155,7 +140,9 @@ describe('the text forms and button dialogs in the dialog pattern', () => {
     }
     cleanup();
     render(<InDialog><PendingRedactionsBody count={1} occasion="save" resolve={ignore} update={ignore} /></InDialog>);
-    expect(document.body.textContent).toContain('1 redaction is marked but not applied. Apply it now?');
+    expect(document.body.textContent).toContain(
+      'One part of this document is marked for redaction, but it has not been removed yet.',
+    );
   });
 
   it('a notice whose own button IS its dismissal draws no Cancel beside it — and CONTROL: one without does', () => {
@@ -208,4 +195,15 @@ describe('the action dialogs in the dialog pattern', () => {
       expect(buttons.at(-1)?.classList.contains('m-button--primary')).toBe(true);
     });
   }
+});
+
+describe('Apply redactions says the bookmarks go, and offers no keeping them (the owner, 2026-10-05)', () => {
+  it('names the bookmarks among what is removed, and the one thing a person may keep is the title', () => {
+    render(<InDialog><ApplyRedactionsBody page={0} resolve={ignore} update={ignore} /></InDialog>);
+    expect(document.body.textContent).toContain('The document’s bookmarks, author, subject and other properties are removed too.');
+    // NO OPTION, by the owner's ruling: the title's box is the dialog's only one. A box added for the bookmarks fails
+    // here, where a case reading the sentence alone would not see it.
+    const boxes = [...document.querySelectorAll('input[type="checkbox"]')].map((box) => box.getAttribute('aria-label'));
+    expect(boxes).toStrictEqual(['Keep the document’s title']);
+  });
 });

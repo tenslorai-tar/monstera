@@ -1,6 +1,6 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import * as mupdf from './mupdfRaw.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { applyEnhancePages, captureEnhancePages, enhancedPages } from './pageEnhance.js';
@@ -44,6 +44,7 @@ function flatJpeg(spacing = 40): Uint8Array {
   for (let y = 20; y < HEIGHT; y += spacing) {
     for (let x = 0; x < WIDTH; x += 1) pixels[y * stride + x] = 90;
   }
+  pixmap.setPixels(pixels);
   const jpeg = new Uint8Array(pixmap.asJPEG(90, false));
   pixmap.destroy();
   return jpeg;
@@ -189,6 +190,85 @@ describe('enhancePages', () => {
       // is an answer about the document, and the surface says it; a throw would make
       // it an incident with an id.
       expect(report).toStrictEqual([{ page: 0, enhanced: 0, skipped: 1 }]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('RELEASES the grey it converts to and the image it decoded, for a colour scan (CR-NAT-08)', async () => {
+    // A COLOUR SCAN, so levelling converts: the grey pixmap is a second object, which only `pixmap.destroy()` was
+    // releasing before — and the decoded image none at all.
+    const colour = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 64, 64], false);
+    colour.clear(200);
+    const samples = colour.getPixels();
+    for (let at = 0; at < samples.length / 2; at += 1) samples[at] = 90;
+    colour.setPixels(samples);
+    const jpeg = new Uint8Array(colour.asJPEG(90, false));
+    colour.destroy();
+    const document = await PDFDocument.create();
+    const page = document.addPage([612, 792]);
+    page.drawImage(await document.embedJpg(jpeg), { x: 0, y: 0, width: 612, height: 792 });
+    const session = await mupdfWriter.open(await document.save());
+
+    // SPIES THAT CALL THROUGH, recording what each call returned and what it was called on.
+    const convertSpy = vi.spyOn(mupdf.Pixmap.prototype, 'convertToColorSpace');
+    const toPixmapSpy = vi.spyOn(mupdf.Image.prototype, 'toPixmap');
+    const pixmapDestroy = vi.spyOn(mupdf.Pixmap.prototype, 'destroy');
+    const imageDestroy = vi.spyOn(mupdf.Image.prototype, 'destroy');
+    try {
+      const report = await enhancedPages(session, { kind: 'enhancePages', pages: [0] });
+      expect(report).toStrictEqual([{ page: 0, enhanced: 1, skipped: 0 }]);
+      const converted = convertSpy.mock.results.map((result) => result.value as mupdf.Pixmap);
+      const decoded = toPixmapSpy.mock.contexts;
+      // THE POSITIVE CONTROL: the conversion and the decode happened, so "all released" is a reading.
+      expect([converted.length, decoded.length]).toStrictEqual([1, 1]);
+      const destroyed = new Set<unknown>([...pixmapDestroy.mock.contexts, ...imageDestroy.mock.contexts]);
+      expect([...converted, ...decoded].filter((made) => !destroyed.has(made))).toStrictEqual([]);
+    } finally {
+      convertSpy.mockRestore();
+      toPixmapSpy.mockRestore();
+      pixmapDestroy.mockRestore();
+      imageDestroy.mockRestore();
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('KEEPS AN IMAGE THAT CARRIES ITS OWN ALPHA as it is, rather than levelling a channel it misreads (CR-NAT-09)', async () => {
+    // AN ALPHA THE STREAM ITSELF CARRIES, with no `/SMask` for `roundTrippable` to see: a PNG decodes with one, as a
+    // JPX can. Half the pixels are transparent ink, so a grey channel read one byte per pixel takes alpha for grey.
+    const rgba = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 16, 16], true);
+    rgba.clear(200);
+    const samples = rgba.getPixels();
+    for (let at = 0; at < samples.length; at += 8) samples[at + 3] = 0;
+    rgba.setPixels(samples);
+    const png = new Uint8Array(rgba.asPNG());
+    rgba.destroy();
+
+    const document = await PDFDocument.create();
+    document.addPage([612, 792]);
+    const session = await mupdfWriter.open(await document.save());
+    try {
+      const before = await withDocument(session, (pdf) => {
+        const page = pdf.loadPage(0).getObject();
+        const image = pdf.addStream(png, { Type: 'XObject', Subtype: 'Image', Width: 16, Height: 16 });
+        const resources = pdf.newDictionary();
+        const xobjects = pdf.newDictionary();
+        xobjects.put('Alpha', image);
+        resources.put('XObject', xobjects);
+        page.put('Resources', resources);
+        return Array.from(image.readRawStream().asUint8Array());
+      });
+
+      const report = await enhancedPages(session, { kind: 'enhancePages', pages: [0] });
+
+      // SKIPPED AND COUNTED, and the bytes are the ones that went in: levelling would re-encode as a grey JPEG,
+      // which has no alpha to keep.
+      expect(report).toStrictEqual([{ page: 0, enhanced: 0, skipped: 1 }]);
+      const after = await withDocument(session, (pdf) => {
+        const xobjects = pdf.loadPage(0).getObject().get('Resources').get('XObject');
+        return Array.from(xobjects.get('Alpha').readRawStream().asUint8Array());
+      });
+      expect(after).toStrictEqual(before);
     } finally {
       await mupdfWriter.close(session);
     }

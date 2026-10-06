@@ -175,6 +175,7 @@ function handlers(): ReturnType<typeof createContractHandlers> {
     edit: () => false,
     copyText: () => false,
     openWebPage: () => Promise.resolve(false),
+    openLink: () => Promise.reject(new Error('no case here follows a link')),
     openStore: () => Promise.resolve(false),
     closeListening: () => false,
     cloud: unconfiguredCloud(),
@@ -341,10 +342,19 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.undo': 'needs an engine session',
   'document.redo': 'needs an engine session',
   'document.save': 'needs an engine session',
+  // A `DocId` in and a list of copy names out, bounded by the backup copies a save can make (CR-DOC-10).
+  'document.deleteHeldCopies': 'takes a DocId and answers names bounded by MAX_BACKUP_COPIES',
   // Needs an engine session for the flush, and a DIALOG besides — its whole
   // request is a `DocId` and its whole answer is a byte count and three
   // outcomes, so there is no payload here that could scale with anything.
   'document.saveCopy': 'needs an engine session and a save dialog',
+  // `saveCopy`'s dialog and flush, then an open and a command: its request is a `DocId` and a renderable command, whose
+  // bounds are the command's own, and its answer is the open's fields and a reason (ADR-0149).
+  'document.editCopy': 'needs an engine session, a save dialog and an open',
+  // `editCopy`'s dialog, flush and open with no command (cloud-4 7b): a `DocId` in, the open's fields or a reason out.
+  'document.workOnCopy': 'needs an engine session, a save dialog and an open',
+  'document.fileAccess': 'one DocId in, one of four words out',
+  'document.newerOf': 'two DocIds in, one of three words out',
   // `saveCopy`'s answer exactly — a byte count and three outcomes — and a
   // REQUEST that is the one thing here worth a second look: it names pages. It
   // is a page set, where *every page* is one run, so an extract of any length
@@ -457,6 +467,12 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // THE CLIPBOARD ANSWERS COUNTS, never marks — the records stay in main — so neither answer can
   // scale with anything: a copy is three numbers at most, a paste is a version and two counts.
   'document.copyAnnotations': 'needs an engine session',
+  // ONE MARK'S WORDS, BOUNDED AT `MAX_ANNOTATION_TEXT` — the most an edit can write back — so the answer is a
+  // function of one comment's bound, never of the document or how many marks it carries.
+  'document.annotationWords': 'needs an engine session',
+  // A LINK NAMED BY ITS PLACE, never its address, and an answer that is a kind and at most a bounded scheme (ADR-0167):
+  // nothing a document contributes reaches the renderer through it.
+  'document.openLink': 'needs an engine session',
   'document.pasteAnnotations': 'needs an engine session and a copy made first',
   // BOUNDED AT 64 BARCODES OF 7,089 CHARACTERS, per PAGE — `document.flatFieldCandidates`' shape.
   'document.pageBarcodes': 'needs an engine session',

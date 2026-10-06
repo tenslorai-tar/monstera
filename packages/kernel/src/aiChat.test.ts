@@ -73,7 +73,7 @@ describe('streamChat', () => {
     expect(answer.text).toBe('Yes');
   });
 
-  it('asks Gemini with the key in the query, `model` as the role, and reads its parts', async () => {
+  it('asks Gemini with the key in a header, `model` as the role, and reads its parts', async () => {
     const { fetchImpl, sent } = streaming([
       'data: {"candidates":[{"content":{"parts":[{"text":"A"},{"text":"B"}]}}]}\n\n',
     ]);
@@ -87,7 +87,9 @@ describe('streamChat', () => {
       fetchImpl,
     });
 
-    expect(sent[0]?.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-x:streamGenerateContent?alt=sse&key=k');
+    // THE KEY RIDES IN A HEADER, and the URL a proxy logs carries none of it (CR-SEC-03).
+    expect(sent[0]?.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-x:streamGenerateContent?alt=sse');
+    expect(sent[0]?.headers['x-goog-api-key']).toBe('k');
     expect(sent[0]?.body).toMatchObject({ contents: [{ role: 'user' }, { role: 'model' }] });
     expect(answer.text).toBe('AB');
   });
@@ -507,6 +509,37 @@ describe('the web, each provider’s own search (ADR-0108)', () => {
     expect(sent[0]?.url).toBe('https://mine.openai.azure.com/openai/v1/responses');
     expect(sent[0]?.headers['api-key']).toBe('k');
     expect(sent[0]?.body).toMatchObject({ model: 'my-deployment', store: false, tools: [{ type: 'web_search' }] });
+  });
+
+  it('AZURE OPENAI sends the key and the conversation to no address but an Azure OpenAI resource, on either shape', async () => {
+    // EACH PARSES AS A URL, so without the check each would be sent the key, the system text and the document window.
+    for (const web of [false, true]) {
+      for (const endpoint of ['http://mine.openai.azure.com', 'https://example.test', 'https://mine.openai.azure.com.example.test']) {
+        const { fetchImpl, sent } = streaming([event({ type: 'response.output_text.delta', delta: 'x' })]);
+        const answer = await streamChat({ provider: 'azure-openai', model: 'my-deployment', key: 'k', endpoint, messages: ASK, web, fetchImpl });
+        expect({ web, endpoint, sent }).toStrictEqual({ web, endpoint, sent: [] });
+        expect(answer).toMatchObject({ refusal: 'not-the-service' });
+      }
+    }
+  });
+
+  it('CONTROL: an address pasted with Azure’s own /openai/v1/ path is asked at the resource’s origin, on either shape', async () => {
+    for (const [web, url] of [
+      [false, 'https://mine.services.ai.azure.com/openai/deployments/my-deployment/chat/completions?api-version=2024-10-21'],
+      [true, 'https://mine.services.ai.azure.com/openai/v1/responses'],
+    ] as const) {
+      const { fetchImpl, sent } = streaming([event({ type: 'response.output_text.delta', delta: 'x' })]);
+      await streamChat({
+        provider: 'azure-openai',
+        model: 'my-deployment',
+        key: 'k',
+        endpoint: 'https://mine.services.ai.azure.com/openai/v1/',
+        messages: ASK,
+        web,
+        fetchImpl,
+      });
+      expect(sent.map((each) => each.url)).toStrictEqual([url]);
+    }
   });
 
   it('MISTRAL searches through CONVERSATIONS, stores nothing there, and reads a tool reference as a citation', async () => {

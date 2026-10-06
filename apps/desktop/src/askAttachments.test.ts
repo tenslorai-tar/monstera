@@ -126,7 +126,8 @@ describe('reading attached files (ADR-0135)', () => {
   it('a PDF goes to pdftotext and its pages are split at the form feed, marked with the file', async () => {
     const { readers, pdfText } = readersOver({ '/contract.pdf': PDF_BYTES });
     const read = await readAttachments([{ name: 'contract.pdf', path: '/contract.pdf' }], readers, SHARE, true);
-    expect(pdfText).toHaveBeenCalledWith(PDF_BYTES);
+    // EVERY PAGE of an attached file, said rather than defaulted (ADR-0161).
+    expect(pdfText).toHaveBeenCalledWith(PDF_BYTES, 'all');
     const listed = read.listed[0];
     const text = listed !== undefined && 'window' in listed ? listed.window.text : '';
     expect(text).toContain('[File 1 page 1]\nFirst page words.');

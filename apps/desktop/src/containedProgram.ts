@@ -180,18 +180,67 @@ export function commandLineFor(program: ContainedProgram): string {
 }
 
 /**
+ * The variables a contained program is handed: the ones WINDOWS defines for every process, upper-cased as the
+ * comparison is.
+ *
+ * Every other inherited variable is one a shell, an installer or a person added, and those are where a secret lives:
+ * `MONSTERA_GOOGLE_CLIENT_SECRET` (`cloudClients.ts`), an API key, a token. The AppContainer bounds what the child can
+ * OPEN; the environment block is copied into the child's own memory, so a hostile host reads whatever it was handed
+ * (CR-SEC-18). `NODE_OPTIONS` is the same class from the other side: inherited, it would tell the host's runtime to
+ * load code nobody chose.
+ *
+ * The set is Windows' rather than one derived from what each program reads, because nothing here can observe what x2t
+ * or pdftotext reads, and CI runs neither on Windows: a program relying on a variable Windows defines keeps it, and no
+ * program of ours relies on one somebody added. None of these is a secret; the paths name places the token cannot
+ * open.
+ */
+const WINDOWS_DEFINED = new Set([
+  'ALLUSERSPROFILE',
+  'APPDATA',
+  'COMMONPROGRAMFILES',
+  'COMMONPROGRAMFILES(X86)',
+  'COMMONPROGRAMW6432',
+  'COMPUTERNAME',
+  'COMSPEC',
+  'DRIVERDATA',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'LOCALAPPDATA',
+  'LOGONSERVER',
+  'NUMBER_OF_PROCESSORS',
+  'OS',
+  'PATH',
+  'PATHEXT',
+  'PROCESSOR_ARCHITECTURE',
+  'PROCESSOR_IDENTIFIER',
+  'PROCESSOR_LEVEL',
+  'PROCESSOR_REVISION',
+  'PROGRAMDATA',
+  'PROGRAMFILES',
+  'PROGRAMFILES(X86)',
+  'PROGRAMW6432',
+  'PUBLIC',
+  'SESSIONNAME',
+  'SYSTEMDRIVE',
+  'SYSTEMROOT',
+  'TEMP',
+  'TMP',
+  'USERDOMAIN',
+  'USERDOMAIN_ROAMINGPROFILE',
+  'USERNAME',
+  'USERPROFILE',
+  'WINDIR',
+]);
+
+/**
  * The child's environment entries, `KEY=value`, in the parent's order.
  *
- * **`ELECTRON_RUN_AS_NODE` is removed from the inherited set on BOTH branches**,
- * and set again on the Node one. An inherited value is one the caller's
- * environment decides: under Electron it is absent and the binary would start
- * Chromium; for a converter it means nothing, and passing our runtime's mode to a
- * program we did not write is a variable nobody chose.
+ * **Only {@link WINDOWS_DEFINED} variables are inherited**, compared case-insensitively as Windows compares environment
+ * names; see that set for why.
  *
- * The rest is inherited as the engine hosts inherit it. The container, not the
- * environment, is what bounds the filesystem — `TEMP` and `APPDATA` name places
- * the token cannot open — so trimming variables here would be a second
- * containment opinion with no kernel behind it.
+ * **`ELECTRON_RUN_AS_NODE` is not among them on EITHER branch**, and is set on the Node one. An inherited value is one
+ * the caller's environment decides: under Electron it is absent and the binary would start Chromium; for a converter
+ * it means nothing, and passing our runtime's mode to a program we did not write is a variable nobody chose.
  */
 export function environmentFor(
   program: ContainedProgram,
@@ -199,7 +248,7 @@ export function environmentFor(
 ): string[] {
   const entries: string[] = [];
   for (const [key, value] of Object.entries(inherited)) {
-    if (key.toUpperCase() === RUN_AS_NODE) continue;
+    if (!WINDOWS_DEFINED.has(key.toUpperCase())) continue;
     if (value === undefined) continue;
     entries.push(`${key}=${value}`);
   }

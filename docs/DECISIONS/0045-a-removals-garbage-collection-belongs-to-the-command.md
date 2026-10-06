@@ -225,3 +225,18 @@ absent transition is the one whose bug is a leak.
 leaving visible.** Each was found by executing rather than by re-reading, and
 each moved the mechanism while the decision — *the command that removes produces
 removed bytes, once* — has not moved at all.
+
+---
+
+## Correction, 2026-10-03 — the rejected alternative *Garbage-collect every save* is adopted
+
+By [ADR-0151](0151-every-full-save-collects-and-a-deleted-page-takes-its-fields.md). This ADR's body stands as the
+record of what was believed on 2026-09-07. Two things changed it.
+
+- **The class was wider than removals.** A page delete and `deleteFormFields` are ordinary commands, and their plain
+  saves wrote the deleted page, its widgets and the answers back out (measured 2026-10-03, the owner's item 12a).
+- **The objection was measured, and it does not hold.** A collecting save re-encodes `foreignAnnotations.test.ts`'
+  fixture exactly as a plain one does, the same two entries and no others, and it was no slower on a 400-page
+  document.
+
+So `'ordinary'` maps to `garbage` too. A removal still forbids an appended save and still keeps no backup.

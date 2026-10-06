@@ -241,12 +241,28 @@ export type Invertibility =
  * A command that is not reproducible **records its effect rather than its
  * intent**, and replay re-applies the stored effect instead of re-running the
  * operation. That sentence is the type: `reproducible: false` cannot be written
- * without `replay: 'stored-effect'`, so the consequence travels with the
- * declaration rather than living in a comment somebody has to find.
+ * without a stored replay, so the consequence travels with the declaration
+ * rather than living in a comment somebody has to find.
+ *
+ * **Which effect is stored is the second half of the choice**
+ * ([ADR-0162](../../../docs/DECISIONS/0162-a-command-whose-effect-is-its-result-is-redone-from-that-result.md)).
+ * `stored-effect` stores the pre-read value the apply was handed, and redo
+ * re-applies the command with it (OCR). `stored-result` stores the image the
+ * apply produced, and redo installs it: the effect of a signature is the signed
+ * file, and the entry keeps only the command's kind, so the credential it was
+ * applied with is never recorded.
+ *
+ * **Where a reproducible intent is kept is the third half**
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md)'s
+ * Decision 3 addendum). `reapply-intent` keeps it in the entry. `reapply-held-intent`
+ * keeps the kind alone in the entry and the whole command in the bus, in memory,
+ * for a command whose intent IS a password: a protect with its passwords taken
+ * out is still a valid protect, one that writes no password, so the entry holds
+ * nothing a redo could re-run by mistake.
  */
 export type Reproducibility =
-  | { readonly reproducible: true; readonly replay: 'reapply-intent' }
-  | { readonly reproducible: false; readonly replay: 'stored-effect' };
+  | { readonly reproducible: true; readonly replay: 'reapply-intent' | 'reapply-held-intent' }
+  | { readonly reproducible: false; readonly replay: 'stored-effect' | 'stored-result' };
 
 /**
  * What are this command's bytes for?
@@ -1065,8 +1081,9 @@ const declarations = {
     // argument it cannot be called without — and note what the type does NOT
     // do: an apply that ignored that argument would still compile, which
     // ADR-0040's correction records as the axis's stated limit. What guards it
-    // is `pageMerge.test.ts`, named in the proof's own allow case.
-    sources: 'one',
+    // is `pageMerge.test.ts`, named in the proof's own allow case. SEVERAL since
+    // ADR-0152: the person's files in their order, one intent and one entry.
+    sources: 'several',
     // Self-contained: it names another DOCUMENT, which is a different axis, and
     // nothing in its payload points into an answer this document gave.
     targets: 'none',
@@ -1087,16 +1104,17 @@ const declarations = {
     // arrived. Neither has a serialisable form.
     invertible: false,
     undo: 'checkpoint',
-    // The same source into the same target at the same index produces the same
-    // tree. Nothing is read from a clock and nothing is minted.
+    // The same source pages onto the same target pages produce the same tree.
+    // Nothing is read from a clock and nothing is minted.
     reproducible: true,
     replay: 'reapply-intent',
     // ADR-0040's axis, second command to declare it.
     sources: 'one',
-    // ITS INDEX POINTS INTO THIS DOCUMENT'S PAGE TREE, read at a version. This read
+    // ITS PAGES POINT INTO THIS DOCUMENT'S PAGE TREE, read at a version. This read
     // `'none'` until 2026-09-14 on the ground that it named another document — true of
-    // `source` and false of `at`, and the index is the half a replace can destroy the
-    // wrong page through (ADR-0062's correction).
+    // `source` and false of the target index it carried then (`pages` since 2026-10-04),
+    // and the target pages are the half a replace can destroy the wrong page through
+    // (ADR-0062's correction).
     targets: 'page',
     // Nothing read through another engine.
     reads: 'none',
@@ -1560,11 +1578,12 @@ const declarations = {
     // main already had.
     //
     // **The stated limit that follows**: a checkpoint taken on a document that
-    // was ALREADY protected is encrypted, so undoing a second protection change
-    // needs the first password. Nothing keeps it, so that undo refuses rather
-    // than producing a session that cannot read its own document. Recorded here
-    // and in the FEATURES row, because a limit nobody wrote down is one the
-    // next reader treats as a bug.
+    // was ALREADY protected is encrypted, so undoing a protection change needs
+    // the password that opens it. For a document opened with its password, main
+    // holds that one until close (ADR-0171 Decision 1). A password a protect set
+    // in this session is held by nothing yet, which is ADR-0171 Decision 8, put
+    // to the owner. Recorded here and in the FEATURES row, because a limit
+    // nobody wrote down is one the next reader treats as a bug.
     invertible: false,
     undo: 'checkpoint',
     // REPRODUCIBLE, and the axis is about the APPLY rather than about the
@@ -1578,17 +1597,23 @@ const declarations = {
     // ever ran, and it is not this command's effect. Declaring
     // `reproducible: false` here would force `replay: 'stored-effect'`, whose
     // stored effect is the whole encrypted document.
+    //
+    // HELD, because its intent IS the passwords (ADR-0171 Decision 3): the log
+    // entry keeps the kind alone and the bus keeps the command beside it, in
+    // memory, for redo and for a replay past the image.
     reproducible: true,
-    replay: 'reapply-intent',
+    replay: 'reapply-held-intent',
     sources: 'none',
     targets: 'none',
     reads: 'none',
     asset: 'none',
-    // ORDINARY. Protection changes how the document is WRITTEN and removes no
-    // object, so there is nothing for a collection to reclaim — and asking for
-    // one would rewrite every object in a document whose bytes are about to be
-    // re-encrypted anyway.
-    purpose: 'ordinary',
+    // A REMOVAL (CR-DOC-05, the owner's decision of 2026-10-03): what it removes is
+    // the READABLE form. Declared ordinary, its save backed up the file as it was —
+    // a copy without the password beside the document just protected — so it takes
+    // a removal's save: no backup, and the copies Monstera made deleted
+    // (ADR-0139). The collection that also comes with the axis costs nothing here,
+    // since a change of encryption rewrites every object anyway (`saveTermsOf`).
+    purpose: 'removal',
   },
   applyRedactions: {
     kind: 'applyRedactions',
@@ -1690,7 +1715,9 @@ const declarations = {
     // the PKCS#7 itself carries a signing-time attribute. Two runs of the same
     // intent produce different bytes by design, which is what a signature IS.
     reproducible: false,
-    replay: 'stored-effect',
+    // ITS EFFECT IS THE SIGNED FILE (ADR-0162): it reads nothing, so there is no pre-read to keep, and redo installs
+    // the image the apply produced rather than signing again. The entry keeps only the kind, never the P12.
+    replay: 'stored-result',
     sources: 'none',
     targets: 'none',
     reads: 'none',
@@ -1967,6 +1994,26 @@ const declarations = {
     asset: 'none',
     // IT REMOVES NOTHING. Every write replaces an object's string in place and
     // the page's content stream is regenerated whole; no object is unlinked.
+    purpose: 'ordinary',
+  },
+  replaceTextAt: {
+    kind: 'replaceTextAt',
+    display: 'image',
+    writer: 'pdfium',
+    // INVERTIBLE, `replaceTextObject`'s prior exactly: the one object's string as it was, put back into that object.
+    // A spelling review is many single replacements against one document, and a checkpoint each would be a whole
+    // document image per word.
+    invertible: true,
+    undo: 'inverse',
+    // The same word at the same point on the same bytes picks the same object and writes the same string.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // NAMES NOTHING A WALK NUMBERS: the point and the word are the occurrence's name, so there is no version for it to
+    // be stale against (ADR-0156 Decision 4) — `replaceAllText`'s shape, one occurrence wide.
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
     purpose: 'ordinary',
   },
   promoteFormObjects: {

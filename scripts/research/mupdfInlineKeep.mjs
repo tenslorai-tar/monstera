@@ -94,7 +94,7 @@ async function pictureDrawn(bytes) {
 async function after(commands) {
   const session = await mupdfWriter.open(inlinePicturePage());
   try {
-    for (const command of commands) await localMupdfExecution.apply({ session, command, source: undefined, reads: undefined });
+    for (const command of commands) await localMupdfExecution.apply({ session, command, sources: [], reads: undefined });
     return await mupdfWriter.serialise(session);
   } finally {
     await mupdfWriter.close(session);

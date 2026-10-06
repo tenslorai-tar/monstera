@@ -785,8 +785,11 @@ function buildScope({ commit, range, commits, root, churn = true }) {
   //
   // `scripts/` keeps a second door because a proof there need not be named
   // `.proof.mjs` if it sits under `proofs/`.
+  // THE RENDERED CASES TOO (`*.pw.ts`, `*.visual.ts`): they hold the controls for what a person sees and run in CI,
+  // and matching neither listed a range's whole rendered suite as changed source (the audit of 54ea19e7..6cf88324).
+  // A capture (`*.capture.ts`) is a review instrument, not a check, and stays in the source column.
   const isProof = (/** @type {string} */ path) =>
-    /\.proof\.mjs$|proofs\/|\.test\.[cm]?tsx?$|\.test\.[cm]?jsx?$/u.test(path);
+    /\.proof\.mjs$|proofs\/|\.test\.[cm]?tsx?$|\.test\.[cm]?jsx?$|\.(pw|visual)\.[cm]?tsx?$/u.test(path);
 
   /** Where source that can be an instrument lives. */
   const isSource = (/** @type {string} */ path) =>

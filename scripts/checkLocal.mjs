@@ -149,8 +149,8 @@ const FLOOR = 30;
 const NOT_RUN_BY_CI = new Map([
   [
     'check:lint',
-    'CI runs `npm run lint` directly; this is the sweep-side wrapper that gives lint a ' +
-      'check-shaped exit and a diagnostic line.',
+    'CI runs `npm run lint`, which is the same runner under its own name (ADR-0170); this ' +
+      'name is how the sweep reaches it.',
   ],
   [
     'check:types',

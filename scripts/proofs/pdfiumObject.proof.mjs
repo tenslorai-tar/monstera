@@ -38,6 +38,7 @@ import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
 import { PDFIUM_COMMAND, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
+import { withNoPassword } from '../lib/pdfiumNoPassword.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
 
@@ -54,13 +55,15 @@ if (!existsSync(library)) {
   });
 }
 
-refuseStaleBuild(root, PDFIUM_COMMAND, 6);
+refuseStaleBuild(root, PDFIUM_COMMAND, 7);
 
 const { openPdfium, pdfiumWriter, pageObjects, pageText } = await import(
   '../../packages/kernel/dist/pdfiumFfi.js'
 );
-const { localPdfiumExecution } = await import('../../packages/kernel/dist/pdfiumSpecs.js');
+// OVER BYTES THAT OPEN WITH NO PASSWORD, as every fixture here does (`withNoPassword`).
+const localPdfiumExecution = withNoPassword((await import('../../packages/kernel/dist/pdfiumSpecs.js')).localPdfiumExecution);
 const { declaredCommands } = await import('../../packages/kernel/dist/commandDeclarations.js');
+const { KEEPS_THE_OBJECT_WALK } = await import('../../packages/contract/dist/index.js');
 
 const FIRST = 'FIRST RUN stays exactly where it is';
 const SECOND = 'SECOND RUN is the one that changes';
@@ -93,14 +96,14 @@ async function twoRunsAndARectangle() {
  *
  * `createRoster` rather than a total printed from what ran, because a total
  * computed over the cases that executed agrees with any collection, including
- * one that has quietly shrunk — audit item 4c. Nineteen is an independent
+ * one that has quietly shrunk — audit item 4c. Twenty-two is an independent
  * claim about this file, not a count of it — three of them come from the loop
  * over the routing, which is why counting `record` calls by eye undercounts.
  *
  * @type {string[]}
  */
 const failures = [];
-const roster = createRoster(failures, { cases: 19 });
+const roster = createRoster(failures, { cases: 22 });
 
 /**
  * @param {string} name
@@ -225,7 +228,7 @@ async function main() {
   const placed = await localPdfiumExecution.apply({
     session: original,
     command: place,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const placedBox = (await objectsOf(placed))[box.index] ?? box;
@@ -278,7 +281,7 @@ async function main() {
   const recoloured = await localPdfiumExecution.apply({
     session: original,
     command: recolor,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const recolouredObjects = await objectsOf(recoloured);
@@ -334,7 +337,7 @@ async function main() {
   const removed = await localPdfiumExecution.apply({
     session: original,
     command: remove,
-    source: undefined,
+    sources: [],
     reads: undefined,
   });
   const removedObjects = await objectsOf(removed);
@@ -348,6 +351,29 @@ async function main() {
     'and the run it removed is the one that is gone, not a neighbour that slid down',
     !removedText.includes(FIRST) && removedText.includes(SECOND),
     `the page now reads ${JSON.stringify(removedText)}`,
+  );
+
+  // ── THE WALK A SELECTION RESTS ON (ADR-0153 Decision 4) ─────────────────────
+  // Edit object keeps an object selected across a move or a recolour by naming the SAME INDEX at the version the
+  // command produced, so the walk must come back the same: the same objects, in the same order. `KEEPS_THE_OBJECT_WALK`
+  // in the contract states it; this is where it is measured, on the real library, every run.
+  /** @param {readonly { index: number, kind: string }[]} objects */
+  const walkOf = (objects) => objects.map((object) => `${String(object.index)}:${object.kind}`).join(' ');
+  const placedObjects = await objectsOf(placed);
+  record(
+    'a placement and a recolour KEEP the walk: the same objects, in the same order, at the same indices',
+    walkOf(placedObjects) === walkOf(before) && walkOf(recolouredObjects) === walkOf(before),
+    `before ${walkOf(before)}; placed ${walkOf(placedObjects)}; recoloured ${walkOf(recolouredObjects)}`,
+  );
+  record(
+    'CONTROL: a removal does NOT keep it, so the comparison above can tell a kept walk from a changed one',
+    walkOf(removedObjects) !== walkOf(before),
+    `before ${walkOf(before)}; after the removal ${walkOf(removedObjects)}`,
+  );
+  record(
+    'the contract names exactly the two commands measured to keep it, and not the removal',
+    [...KEEPS_THE_OBJECT_WALK].sort().join(',') === 'placePageObject,recolorPageObjects',
+    [...KEEPS_THE_OBJECT_WALK].join(', '),
   );
 
   // WHAT A REMOVAL LEAVES BEHIND, and it is measured here because
@@ -397,7 +423,7 @@ async function main() {
     await localPdfiumExecution.apply({
       session: original,
       command: /** @type {never} */ ({ kind: 'rotatePages' }),
-      source: undefined,
+      sources: [],
       reads: undefined,
     });
   } catch (error) {

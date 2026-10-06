@@ -93,6 +93,7 @@ import {
   ASSISTANT_MODEL_LABEL,
   ASSISTANT_MODEL_NOT_OFFERED,
   ASSISTANT_MODEL_NO_VISION,
+  ASSISTANT_NO_COMMENTS,
   ASSISTANT_NO_KEY,
   ASSISTANT_SEARCHES_THE_WEB,
   ASSISTANT_WEB_ALWAYS,
@@ -111,6 +112,7 @@ import {
   ASSISTANT_PROBLEM_REJECTED,
   ASSISTANT_PROBLEM_UNAUTHORISED,
   ASSISTANT_PROBLEM_UNREACHABLE,
+  ASSISTANT_PROBLEM_NOT_THE_SERVICE,
   ASSISTANT_PROBLEM_UNREADABLE,
   ASSISTANT_PROVIDER_LABEL,
   ASSISTANT_SEND,
@@ -155,9 +157,9 @@ import type { ShowToast } from './toasts.js';
 import { Button } from './primitives/Button.js';
 import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
-import { useOnColor } from './primitives/useOnColor.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
 import type { SettingsStore } from './settingsStore.js';
+import { composing } from './surfaces/shortcuts.js';
 import { useSetting } from './useSetting.js';
 
 /**
@@ -316,9 +318,11 @@ const PROBLEMS = {
   rejected: ASSISTANT_PROBLEM_REJECTED,
   'out-of-credit': ANTHROPIC_OUT_OF_CREDIT,
   unreadable: ASSISTANT_PROBLEM_UNREADABLE,
+  'not-the-service': ASSISTANT_PROBLEM_NOT_THE_SERVICE,
   'no-key': ASSISTANT_NO_KEY,
   'page-too-large': ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
   'searches-the-web': ASSISTANT_SEARCHES_THE_WEB,
+  'no-comments': ASSISTANT_NO_COMMENTS,
 } as const;
 
 /** Why *Document + web* is off, as the sentence beside the disabled choice (ADR-0108). */
@@ -366,15 +370,13 @@ function useConversation(store: DocumentStore | undefined): readonly Conversatio
 }
 
 /**
- * One turn of the conversation. A person's sits in a bubble filled with the ACCENT (the owner, 2 October), so its text
- * is solved against the accent in effect where it is drawn, never stored: the accent is the person's choice and the
- * theme the window's, and a fixed text colour is right for one pair of them (ADR-0003, `useOnColor`).
+ * One turn of the conversation. A person's sits in a bubble washed with the accent (the owner's item 17c), whose text
+ * is the pane's own `--text` and `--muted`: the wash is one of the accent's lights, held to those colours' floors for
+ * every accent by `check:tokencontrast`, so nothing is solved here.
  */
 function Turn({ role, children }: { readonly role: ConversationTurn['role']; readonly children: ReactNode }): ReactElement {
-  const element = useRef<HTMLLIElement>(null);
-  useOnColor(element, 'color', '--text', role === 'user' ? ['--accent'] : [], 'text');
   return (
-    <li ref={element} className="m-assistant__turn" data-assistant-role={role}>
+    <li className="m-assistant__turn" data-assistant-role={role}>
       {children}
     </li>
   );
@@ -630,7 +632,11 @@ export function AssistantPanel({
       { about, alongside, sides: asked, documents, attachments, web = false }: AskRequest,
       replyTo?: ReplyTarget,
     ): boolean => {
-      if (text === '' || model === '' || live.current !== null) return false;
+      // NO KEY FOR THE CHOSEN PROVIDER IS AN ASK THAT CANNOT BEGIN, here where every route asks: the Send button, a
+      // command's request and Regenerate. A model can be chosen without a key, since the list answers without one,
+      // so the model was never the gate: a request went to main, which refused it after the turn was written, and
+      // the panel said the missing key twice and *no text was found* once (F-V1). The readiness line says it once.
+      if (text === '' || model === '' || !hasKey || live.current !== null) return false;
       const store = focused.store;
       const read = (): readonly ConversationTurn[] => store.getState().conversation;
       const write = (next: readonly ConversationTurn[]): void => {
@@ -704,12 +710,19 @@ export function AssistantPanel({
         }
         live.current = null;
         setStreaming(null);
+        // NO COMMENTS TO ASK ABOUT sent nothing, so the question it would have asked is taken back off the conversation
+        // and the one sentence says what is missing (F-V1). The draft was never cleared, so typed words stay.
+        if (!result.ok && result.error.code === 'no-comments') {
+          write(read().filter((each) => each !== turn));
+          setProblem('no-comments');
+          return;
+        }
         // A PAGE TOO LARGE TO PICTURE is its own sentence: the person can ask about its text.
         setProblem(!result.ok && result.error.code === 'page-too-large' ? 'page-too-large' : 'rejected');
       });
       return true;
     },
-    [client, focused, model, models, provider],
+    [client, focused, hasKey, model, models, provider],
   );
 
   /** Replaces the conversation the panel shows, the focused document's. */
@@ -827,7 +840,8 @@ export function AssistantPanel({
             count: sent.pageCount,
           });
     return sent.truncated
-      ? `${pages} ${i18n._(ASSISTANT_SENT_CUT, { characters: number.format(sent.characters) })}`
+      ? // A NUMBER, never `number.format`'s string: the plural formats it, and a string renders as "NaN".
+        `${pages} ${i18n._(ASSISTANT_SENT_CUT, { characters: sent.characters })}`
       : pages;
   };
 
@@ -871,7 +885,7 @@ export function AssistantPanel({
     const share =
       turn.share === undefined || turn.documents !== undefined
         ? []
-        : [i18n._(ASSISTANT_SENT_SHARE_EACH, { characters: number.format(turn.share) })];
+        : [i18n._(ASSISTANT_SENT_SHARE_EACH, { characters: turn.share })];
     return [...share, ...contextLines(turn), ...files];
   };
 
@@ -886,7 +900,7 @@ export function AssistantPanel({
           count: turn.documents.asked.length,
           // MAIN'S NUMBER where it answered one — with files beside the documents it is smaller than the documents'
           // count alone gives — and the same rule's answer otherwise.
-          characters: number.format(turn.share ?? askShareOf(turn.documents.asked.length)),
+          characters: turn.share ?? askShareOf(turn.documents.asked.length),
         }),
         ...turn.among.map((each) =>
           'sent' in each
@@ -925,7 +939,7 @@ export function AssistantPanel({
   };
 
   /**
-   * A run of an answer's plain text, with each `[p. N]` citation a link to that page. The
+   * A run of an answer's plain text, with each page citation `citationsIn` reads a link to that page. The
    * Markdown around it is {@link answerElements}'; this is only ever handed text, never code.
    */
   const answerTextFor =
@@ -1278,8 +1292,8 @@ export function AssistantPanel({
           // content that moved by itself (WCAG 2.2.2) and needed a timer, a focus state and a reduced-motion test.
           placeholder={i18n._(ASSISTANT_PLACEHOLDER)}
           onKeyDown={(event) => {
-            // ENTER SENDS, SHIFT+ENTER STARTS A LINE — the owner's design.
-            if (event.key === 'Enter' && !event.shiftKey) {
+            // ENTER SENDS, SHIFT+ENTER STARTS A LINE — the owner's design. Not the Enter that confirms a composition.
+            if (event.key === 'Enter' && !event.shiftKey && !composing(event)) {
               event.preventDefault();
               send();
             }

@@ -6,6 +6,7 @@ import type { CommandKind, Command } from '@monstera/contract';
 import { commandSpecs } from './commandSpecs.js';
 import { declaredCommands } from './commandDeclarations.js';
 import type { MupdfSession } from './engineSeam.js';
+import * as mupdf from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 
 /**
@@ -52,6 +53,8 @@ const EXPECTED: readonly CommandKind[] = [
   'flattenFormFields',
   'applyRedactions',
   'sanitizeDocument',
+  // CR-DOC-05: what protection removes is the readable form.
+  'setDocumentProtection',
 ];
 
 /** The kinds the declaration table actually puts on the removal axis. */
@@ -296,6 +299,21 @@ const REMOVAL_CASES: Readonly<Record<string, RemovalCase>> = {
     fixture: scripted,
     payload: { kind: 'sanitizeDocument', parts: ['javascript'] },
     residue: javascriptActions,
+    before: 1,
+  },
+  // WHAT PROTECTION REMOVES IS THE READABLE FORM, so its residue is whether the bytes open with no password: 1 for the
+  // fixture and for its plain serialise, 0 once a password is set.
+  setDocumentProtection: {
+    fixture: scripted,
+    payload: { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: 'open-me' },
+    residue: (bytes) => {
+      const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+      try {
+        return Promise.resolve(document.authenticatePassword('') > 0 ? 1 : 0);
+      } finally {
+        document.destroy();
+      }
+    },
     before: 1,
   },
 };

@@ -1,4 +1,5 @@
 import { AI_PROVIDERS, type AiProviderId, MAX_WEB_SOURCES, webSearchOf } from '@monstera/contract';
+import { serviceOrigin } from '@monstera/shared';
 
 import { anthropicErrorMessage, isAnthropicOutOfCredit } from './anthropicCredit.js';
 
@@ -71,7 +72,20 @@ export type ChatRefusal =
   | 'unreachable'
   | 'unreadable'
   // A *Document only* ask to a model that searches before every answer (ADR-0108), refused before anything is sent.
-  | 'searches-the-web';
+  | 'searches-the-web'
+  // An Azure OpenAI address that is not one of Azure's own (`serviceOrigin`), refused before anything is sent.
+  | 'not-the-service';
+
+/**
+ * Where an Azure OpenAI request goes: the resource's origin, `null` where no address is set, or `not-the-service`
+ * where the address is not Azure OpenAI's own. The one reading for both of the chat's Azure shapes and for the
+ * refusal `streamChat` answers, so the three cannot disagree about which addresses are asked.
+ */
+function azureOrigin(endpoint: string): { readonly origin: string } | null | 'not-the-service' {
+  if (endpoint === '') return null;
+  const origin = serviceOrigin('azure-openai', endpoint);
+  return origin === null ? 'not-the-service' : { origin };
+}
 
 /** A page the provider's web search cited or found (ADR-0108). HTTPS only: the one route that opens it refuses others. */
 export interface WebSource {
@@ -185,8 +199,9 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
   if (searching && (provider === 'openai' || provider === 'xai' || provider === 'azure-openai')) {
     // THE RESPONSES API, one body for the three (the Azure page's wire format is OpenAI's). A deployment's name is
     // Azure's `model`, as on its chat path.
-    const base = endpoint.replace(/\/+$/u, '');
-    const url = provider === 'azure-openai' ? (base === '' ? null : `${base}/openai/v1/responses`) : RESPONSES_URLS[provider];
+    const resource = provider === 'azure-openai' ? azureOrigin(endpoint) : null;
+    const azure = resource === null || resource === 'not-the-service' ? null : `${resource.origin}/openai/v1/responses`;
+    const url = provider === 'azure-openai' ? azure : RESPONSES_URLS[provider];
     if (url === null || url === undefined) return null;
     return {
       url,
@@ -289,8 +304,9 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
 
   if (adapter === 'gemini') {
     return {
-      url: `${GEMINI_BASE}/${model.replace(/^models\//u, 'models/')}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,
-      headers: { 'content-type': 'application/json' },
+      // THE KEY IS A HEADER, never the query string, which proxies and gateways log (CR-SEC-03, `aiModels.ts`).
+      url: `${GEMINI_BASE}/${model.replace(/^models\//u, 'models/')}:streamGenerateContent?alt=sse`,
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
       shape: 'gemini',
       body: JSON.stringify({
         ...(instruction === null ? {} : { systemInstruction: { parts: [{ text: instruction }] } }),
@@ -346,12 +362,12 @@ export function prepareChat(request: Omit<ChatRequest, 'onDelta' | 'signal' | 'f
     ],
   });
   if (provider === 'azure-openai') {
-    const base = endpoint.replace(/\/+$/u, '');
-    if (base === '') return null;
+    const resource = azureOrigin(endpoint);
+    if (resource === null || resource === 'not-the-service') return null;
     // AZURE NAMES A DEPLOYMENT WHERE THE OTHERS NAME A MODEL, and the deployment's name is
     // what its list answers, so `model` carries it here.
     return {
-      url: `${base}/openai/deployments/${encodeURIComponent(model)}/chat/completions?api-version=${AZURE_API_VERSION}`,
+      url: `${resource.origin}/openai/deployments/${encodeURIComponent(model)}/chat/completions?api-version=${AZURE_API_VERSION}`,
       headers: { 'api-key': key, 'content-type': 'application/json' },
       shape: 'openai-chat',
       body: openAiBody,
@@ -636,6 +652,11 @@ export async function streamChat(request: ChatRequest): Promise<ChatAnswer> {
   // riding with it — would go to a search engine the person chose not to use. Refused before anything is sent.
   if (!web && webSearchOf(provider, model).kind === 'always') {
     return { text: '', stopped: false, refusal: 'searches-the-web', ...unsearched };
+  }
+  // AN ADDRESS THAT IS NOT AZURE'S OWN is told apart from *no key*: the person has a key and an address, and the
+  // address is what to fix.
+  if (provider === 'azure-openai' && azureOrigin(request.endpoint ?? '') === 'not-the-service') {
+    return { text: '', stopped: false, refusal: 'not-the-service', ...unsearched };
   }
   const prepared = prepareChat(request);
   if (prepared === null) return { text: '', stopped: false, refusal: 'no-key', ...unsearched };

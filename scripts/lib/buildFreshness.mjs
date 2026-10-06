@@ -114,6 +114,8 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/pdfiumFfi.ts', 'packages/kernel/dist/pdfiumFfi.js', 'tsc'],
   ['packages/kernel/src/pdfiumSpecs.ts', 'packages/kernel/dist/pdfiumSpecs.js', 'tsc'],
   ['packages/kernel/src/pdfiumTextEdit.ts', 'packages/kernel/dist/pdfiumTextEdit.js', 'tsc'],
+  // ONE OCCURRENCE REPLACED BY ITS POINT (ADR-0156), which the spec table routes `replaceTextAt` to.
+  ['packages/kernel/src/pdfiumReplaceAt.ts', 'packages/kernel/dist/pdfiumReplaceAt.js', 'tsc'],
   // THE BLOCK GROUPING, which the block-edit cases read through to name what they edit.
   ['packages/kernel/src/textLines.ts', 'packages/kernel/dist/textLines.js', 'tsc'],
   [
@@ -123,6 +125,20 @@ export const PDFIUM_COMMAND = [
   ],
   // THE COMMANDS' WIRE FORM, whose encoders the proofs build each edit through (ADR-0142).
   ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
+];
+
+/**
+ * The read-back proof's edges: {@link PDFIUM_COMMAND}'s, and every module the other PDFium commands' specs live in,
+ * since its subject is that ALL eight reach the read-back (ADR-0169) — plus the refusals it classifies by class.
+ *
+ * @type {BuildEdge[]}
+ */
+export const PDFIUM_READ_BACK = [
+  ...PDFIUM_COMMAND,
+  ['packages/kernel/src/pdfiumObjectEdit.ts', 'packages/kernel/dist/pdfiumObjectEdit.js', 'tsc'],
+  ['packages/kernel/src/pdfiumReplaceAll.ts', 'packages/kernel/dist/pdfiumReplaceAll.js', 'tsc'],
+  ['packages/kernel/src/pdfiumPromote.ts', 'packages/kernel/dist/pdfiumPromote.js', 'tsc'],
+  ['packages/kernel/src/textEditRefusals.ts', 'packages/kernel/dist/textEditRefusals.js', 'tsc'],
 ];
 
 /**
@@ -244,6 +260,17 @@ export const HOST_FILE_ANSWERS_LIVE = [['apps/desktop/src', 'apps/desktop/dist/e
  * @type {readonly BuildEdge[]}
  */
 export const INLINE_IMAGES = [...PDFIUM_ADAPTER, ...NATIVE_ENGINE];
+
+/**
+ * What `shimPassword.proof.mjs` runs: the shim's authenticated open through the built native binding, and the writer
+ * that builds and serialises its encrypted fixtures (ADR-0171).
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const SHIM_PASSWORD = [
+  ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
+  ...NATIVE_ENGINE,
+];
 
 /**
  * What `rtlText.proof.mjs` draws through: the annotation writer, the executor and the writer that serialises, over the
@@ -403,6 +430,7 @@ export const ARTEFACT_EDGES = {
   // are the adapter's plus the two modules that dispatch to it and the table
   // that says they should.
   'proof:pdfiumcommand': PDFIUM_COMMAND,
+  'proof:pdfiumreadback': PDFIUM_READ_BACK,
   // The object commands read the same built modules through the same routing,
   // so the same edges: the adapter, the two that dispatch to it, and the table
   // that says they should.
@@ -445,6 +473,7 @@ export const ARTEFACT_EDGES = {
   // ADR-0126's proof, which reads two built engines. It called the guard from its first commit and had no entry here
   // until `proof:buildfreshness` named it — the anchor working, one range late.
   'proof:inlineimages': INLINE_IMAGES,
+  'proof:shimpassword': SHIM_PASSWORD,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,
   // HEBREW AND ARABIC IN TEXT MARKS, read back by pdf.js after MuPDF's bake (ADR-0128).

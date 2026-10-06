@@ -3,8 +3,10 @@ import type { PageSet } from '@monstera/contract/host';
 import type { PDFDocument, PDFGraftMap, PDFObject } from './mupdfRaw.js';
 
 import type { ByteImage, MupdfSession } from './engineSeam.js';
+import { keepFieldsOnPages } from './formFields.js';
 import { bufferBytes, newDocument, withDocument } from './mupdfWriter.js';
 import { graftingWithoutPageTree } from './pageGraft.js';
+import { releasePagesOutsideTree } from './pageReferences.js';
 import { pagesOf } from './pageScope.js';
 
 /**
@@ -41,14 +43,19 @@ import { pagesOf } from './pageScope.js';
  * have left three of the four axes assumed**, so the probe's fixture carries
  * all four.
  *
- * ## What is NOT established, and it belongs to the remap contract
+ * ## What the new file holds of the pages it did NOT take: nothing (item 12b, 2026-10-03)
  *
- * `/Names` and `/Outlines` are grafted **whole**, and the probe's fixture had
- * its one named destination pointing at a page the extract kept. A destination
- * naming a page the extract dropped is therefore unmeasured — it is a dangling
- * reference, and *what a page operation does to a reference that no longer
- * resolves* is the remap contract's question rather than this module's. Stated
- * here so the gap is not rediscovered as a bug.
+ * `/AcroForm`, `/Names` and `/Outlines` are grafted **whole**, and a graft
+ * follows every reference. Measured 2026-10-03: extracting page 1 of a filled
+ * four-page form wrote the answer from page 4 and page 4 itself, pulled in by
+ * that widget's `/P`; and a named destination naming a page left behind
+ * brought that page in too. So after the graft, `keepFieldsOnPages` keeps only
+ * the fields whose widgets sit on the new file's pages,
+ * `releasePagesOutsideTree` clears every reference to a page outside its tree,
+ * and the file is saved collecting (ADR-0151). A bookmark to a page not taken
+ * goes, or stays as a heading over its children, and a link to one goes
+ * ([ADR-0155](../../../docs/DECISIONS/0155-a-page-that-leaves-takes-every-reference-to-it.md)):
+ * its target is not in this file, and one left drawn would go nowhere.
  */
 
 /**
@@ -124,10 +131,17 @@ export function extractPages(session: MupdfSession, set: PageSet): Promise<ByteI
     });
     out.setPageTreeCache(true);
 
+    // THE NEW FILE HOLDS WHAT ITS PAGES HOLD, and nothing of the pages left behind (the owner's item 12b). The
+    // catalog was grafted whole, so the form held every field and answer of the source, and a widget's `/P` or a
+    // destination naming a page not taken grafted that page in as an object of its own, content and all.
+    keepFieldsOnPages(out);
+    releasePagesOutsideTree(out);
+    // COLLECTED, as every full save is (ADR-0151): what the two steps above unlinked is not written.
+    //
     // THE CALLER'S BYTES, never MuPDF's buffer, whose native memory this function
     // is about to drop: `mupdfWriter.ts`' `bufferBytes` says where the one copy is
     // made and which case asserts it.
-    return bufferBytes(out.saveToBuffer());
+    return bufferBytes(out.saveToBuffer('garbage'));
   });
 }
 

@@ -99,19 +99,18 @@ describe('composeMarkdown', () => {
     expect(await pageCount(await composeMarkdown(bytesOf('x\n'), LETTER))).toBe(1);
   });
 
-  it('refuses a Markdown table too wide for the page, naming its line — CONTROL: a narrow one draws', async () => {
-    // THE SHARED LAYOUT'S RULE, reached through the Markdown composer too: a table
-    // that would be drawn one character per line is refused by name.
+  it('SETS a Markdown table wider than any page rather than refusing it — CONTROL: a narrow one draws on one page', async () => {
+    // THE SHARED LAYOUT'S RULE, reached through the Markdown composer too (`composeTable.test.ts` has the layout).
     const wide = (cells: number): string => {
       const header = `|${Array.from({ length: cells }, (_, at) => ` c${String(at)} `).join('|')}|`;
       const rule = `|${Array.from({ length: cells }, () => '---').join('|')}|`;
       return `${header}\n${rule}\n`;
     };
-    await expect(composeMarkdown(bytesOf(`Intro.\n\n${wide(60)}`), LETTER)).rejects.toMatchObject({
-      reason: 'too-many-columns',
-      line: 3,
-    });
-    expect((await shownText(await composeMarkdown(bytesOf(wide(3)), LETTER)))[0]).toContain('c2');
+    const shown = (await shownText(await composeMarkdown(bytesOf(`Intro.\n\n${wide(60)}`), LETTER))).join('');
+    for (let at = 0; at < 60; at += 1) expect(shown).toContain(`c${String(at)}`);
+    const narrow = await shownText(await composeMarkdown(bytesOf(wide(3)), LETTER));
+    expect(narrow).toHaveLength(1);
+    expect(narrow[0]).toContain('c2');
   });
 
   it('continues onto new pages, and the last paragraph is on the last page', async () => {

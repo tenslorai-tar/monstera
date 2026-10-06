@@ -62,6 +62,8 @@ function recording(
     readonly files?: readonly AskFile[];
     readonly share?: number;
   } = {},
+  /** A refusal `main` answers every ask with, by code, in place of starting it. */
+  refusal?: 'no-comments',
 ): {
   readonly client: ContractClient;
   readonly sent: { id: string; params: unknown }[];
@@ -83,6 +85,7 @@ function recording(
       });
     }
     if (id === 'ai.ask') {
+      if (refusal !== undefined) return Promise.resolve({ ok: false, error: { code: refusal } });
       // THE SECOND WINDOW ONLY WHEN THE ASK HAD A SECOND DOCUMENT, as `main` answers it.
       const paired = (params as { alongside?: unknown }).alongside !== undefined;
       const several = (params as { about?: { scope?: unknown } }).about?.scope === 'documents';
@@ -168,6 +171,7 @@ async function drawn(options: {
   readonly openDocuments?: AssistantPanelProps['openDocuments'];
   readonly onGoToDocument?: AssistantPanelProps['onGoToDocument'];
   readonly attaching?: Parameters<typeof recording>[6];
+  readonly refusal?: Parameters<typeof recording>[7];
 } = {}) {
   const wire = events();
   const settings = options.settings ?? new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
@@ -179,6 +183,7 @@ async function drawn(options: {
     options.copied ?? true,
     options.among,
     options.attaching,
+    options.refusal,
   );
   // EVERY TOAST THE PANEL RAISES, in order: a copy's confirmation goes through the window's toast.
   const toasts: unknown[][] = [];
@@ -463,6 +468,23 @@ describe('the assistant tab', () => {
     });
     expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(true);
   });
+
+  it('the Enter that CONFIRMS A COMPOSITION does not send (CR-COR-07)', async () => {
+    const { sent } = await drawn();
+    const composer = screen.getByLabelText('Ask about this document');
+    type('にほんご');
+    fireEvent.keyDown(composer, { key: 'Enter', isComposing: true });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(false);
+    // CONTROL: the Enter after it, with the composition closed, sends.
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sent.some((entry) => entry.id === 'ai.ask')).toBe(true);
+  });
 });
 
 describe('the assistant about a document (ADR-0088)', () => {
@@ -645,6 +667,21 @@ describe('the assistant about a document (ADR-0088)', () => {
       push('ai.done', { subscription, stopped: false, web: NO_WEB });
       expect(screen.queryByText('No page cited — check this against the document.')).toBeNull();
     });
+
+    it('an answer that opens with the window’s own marker, [Page 2], cites page 2 and is NOT marked uncited (14f)', async () => {
+      // The answer the owner saw marked *No page cited*, as it was written. The mark and the link read one parser, so
+      // both are asserted: a citation the link reads and the mark does not would be the same defect the other way round.
+      const went: number[] = [];
+      const { sent, push } = await drawn({ focused: focusedOn(), onGoTo: (page) => went.push(page) });
+      type('What does it say?');
+      await send();
+      const subscription = lastSubscription(sent);
+      push('ai.delta', { subscription, text: '[Page 2] Revenue grew across all three regions.' });
+      push('ai.done', { subscription, stopped: false, web: NO_WEB });
+      expect(screen.queryByText('No page cited — check this against the document.')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Go to page 2' }));
+      expect(went).toStrictEqual([1]);
+    });
   });
 
   it('CONTROL: an ask about nothing carries no scope at all', async () => {
@@ -754,6 +791,77 @@ describe('the assistant about a document (ADR-0088)', () => {
     expect(lastAbout(sent)).toStrictEqual(request.about);
     expect(screen.getByText('Explain the selected text in plain language.')).toBeTruthy();
     expect(chosenIn('Context')).toBe('Selection');
+  });
+
+  it('WITH NO KEY a command’s request says once what is missing and sends nothing (F-V1)', async () => {
+    // A MODEL REMEMBERED for the provider, as a person who removed a key has: the model list is not what stops this.
+    const request: AssistantRequest = {
+      serial: 1,
+      about: { scope: 'comments', docId: DOC_A },
+      prompt: ASSISTANT_PROMPT_SUMMARISE_COMMENTS,
+    };
+    const focused = focusedOn();
+    const { sent } = await drawn({ focused, request, stored: [] });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toStrictEqual([]);
+    expect(focused.store.getState().conversation).toStrictEqual([]);
+    const lines = [...document.querySelectorAll('.m-assistant__state, .m-assistant__problem')].map((line) => line.textContent);
+    expect(lines).toStrictEqual([
+      'No provider key is stored yet. Add one in Settings › AI and the assistant can start answering.',
+    ]);
+  });
+
+  it('a request held for want of a key is asked once the key is stored, and only once', async () => {
+    const request: AssistantRequest = {
+      serial: 1,
+      about: { scope: 'comments', docId: DOC_A },
+      prompt: ASSISTANT_PROMPT_SUMMARISE_COMMENTS,
+    };
+    const { sent, redraw } = await drawn({ focused: focusedOn(), request, stored: [] });
+    expect(sent.filter((entry) => entry.id === 'ai.ask')).toStrictEqual([]);
+    // THE PERSON ADDS THE KEY the line asked for: what they asked is what arrives.
+    await redraw({ storedSecrets: [ANTHROPIC_KEY] });
+    await redraw({ storedSecrets: [ANTHROPIC_KEY] });
+    expect(sent.filter((entry) => entry.id === 'ai.ask').map((entry) => (entry.params as { about: unknown }).about)).toStrictEqual([
+      request.about,
+    ]);
+  });
+
+  it('NO COMMENTS, refused by main, takes the question back off and says once that nothing was sent (F-V1)', async () => {
+    const request: AssistantRequest = {
+      serial: 1,
+      about: { scope: 'comments', docId: DOC_A },
+      prompt: ASSISTANT_PROMPT_SUMMARISE_COMMENTS,
+    };
+    const focused = focusedOn();
+    const { sent } = await drawn({ focused, request, refusal: 'no-comments' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // ASKED, and main's word decided it: the panel does not count comments of its own (B3a).
+    expect(lastAbout(sent)).toStrictEqual(request.about);
+    expect(focused.store.getState().conversation).toStrictEqual([]);
+    const lines = [...document.querySelectorAll('.m-assistant__state, .m-assistant__problem')].map((line) => line.textContent);
+    expect(lines).toStrictEqual(['This document has no comments to ask about, so nothing was sent.']);
+    // CONTROL: not the line for a refused request, which would read as the provider's doing.
+    expect(screen.queryByText(/refused the request/u)).toBeNull();
+  });
+
+  it('CONTROL: the same request WITH a key asks at once', async () => {
+    const request: AssistantRequest = {
+      serial: 1,
+      about: { scope: 'comments', docId: DOC_A },
+      prompt: ASSISTANT_PROMPT_SUMMARISE_COMMENTS,
+    };
+    const { sent } = await drawn({ focused: focusedOn(), request });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(lastAbout(sent)).toStrictEqual(request.about);
   });
 
   it('CONTROL: a selection from ANOTHER document is not offered, so the menu never offers words not on show', async () => {
@@ -999,16 +1107,28 @@ describe('the assistant about a document (ADR-0088)', () => {
       return sent.filter((entry) => entry.id === 'ai.ask').at(-1)?.params ?? {};
     }
 
-    function pick(name: 'Left' | 'Right' | 'Both'): void {
+    function pick(name: 'Left document' | 'Right document' | 'Both'): void {
       fireEvent.click(screen.getByRole('radio', { name }));
     }
+
+    it('asks in the owner’s words: Ask about, Left document · Right document · Both (item J)', async () => {
+      await drawn({ focused: focusedOn(), beside: BESIDE });
+      const group = screen.getByRole('group', { name: 'Ask about' });
+      expect(within(group).getAllByRole('radio').map((radio) => radio.parentElement?.textContent)).toStrictEqual([
+        'Left document',
+        'Right document',
+        'Both',
+      ]);
+    });
 
     it('asks BEFORE sending: nothing chosen, Send waits, and pressing Send sends nothing', async () => {
       const { sent } = await drawn({ focused: focusedOn(), beside: BESIDE });
 
       const radios = screen.getAllByRole('radio');
       expect(radios.map((radio) => (radio as HTMLInputElement).checked)).toStrictEqual([false, false, false]);
-      expect(screen.getByText('Two documents are side by side. Choose Left, Right or Both, then send.')).toBeTruthy();
+      expect(
+        screen.getByText('Two documents are side by side. Choose Left document, Right document or Both, then send.'),
+      ).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
 
       type('Which is later?');
@@ -1032,7 +1152,7 @@ describe('the assistant about a document (ADR-0088)', () => {
     it('RIGHT sends the right document alone, and the Context menu names the right pane’s page', async () => {
       const { sent } = await drawn({ focused: focusedOn(), beside: BESIDE });
 
-      pick('Right');
+      pick('Right document');
       expect(chosenIn('Context')).toBe('Page 3');
       type('What is on the right page?');
       await send();
@@ -1043,9 +1163,9 @@ describe('the assistant about a document (ADR-0088)', () => {
     it('REMEMBERS the choice for the conversation: a remount of the panel still holds it', async () => {
       const focused = focusedOn();
       const { redraw } = await drawn({ focused, beside: BESIDE });
-      pick('Right');
+      pick('Right document');
       await redraw({ mount: 1 });
-      const right = screen.getByRole('radio', { name: 'Right' });
+      const right = screen.getByRole('radio', { name: 'Right document' });
       expect(right instanceof HTMLInputElement && right.checked).toBe(true);
       expect(focused.store.getState().sides).toBe('right');
     });
@@ -1103,7 +1223,7 @@ describe('the assistant about a document (ADR-0088)', () => {
         beside: BESIDE,
         onGoToBeside: () => undefined,
       });
-      pick('Right');
+      pick('Right document');
       type('Where?');
       await send();
       const subscription = (sent.find((entry) => entry.id === 'ai.ask')?.params as { subscription: string }).subscription;

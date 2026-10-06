@@ -14,6 +14,7 @@ import { z } from 'zod';
 
 import { type HeldPicture, NO_HELD_PICTURE } from './heldPicture.js';
 import type { PictureFiles } from './recentPictures.js';
+import type { SignaturePictureSource } from './signaturePicture.js';
 
 /**
  * A library folder held in memory — for a graph built with no folder, every unit test's — so the library works for the
@@ -40,6 +41,7 @@ export function unusedLibrarySurface(): {
   readonly size: (path: string) => Promise<number | null>;
   readonly read: (path: string) => Promise<{ readonly kind: 'unreadable' }>;
   readonly held: HeldPicture;
+  readonly signaturePicture: SignaturePictureSource;
 } {
   return {
     store: createPersonalLibrary({ files: memoryPictureFiles(), unreadable: () => undefined }),
@@ -47,6 +49,7 @@ export function unusedLibrarySurface(): {
     size: () => Promise.resolve(null),
     read: () => Promise.resolve({ kind: 'unreadable' }),
     held: NO_HELD_PICTURE,
+    signaturePicture: { pick: () => Promise.resolve(null), read: () => Promise.resolve({ kind: 'unreadable' }), scan: null },
   };
 }
 

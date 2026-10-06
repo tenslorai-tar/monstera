@@ -96,6 +96,8 @@ const ANSWERS: Readonly<Record<string, unknown>> = {
   // The shell announces its close subscription at mount (`windowClose.ts`); a fixture with no
   // answer for it makes every case here carry an unhandled rejection.
   'window.closeListening': { acknowledged: true },
+  // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
+  'document.fileAccess': { access: 'writable' },
   // AN UNDO MOVES THE VERSION, which reopens the view under the same scroller — and moves no page,
   // so the reader's page is the same number afterwards (a move would remap it, correctly).
   'document.undo': { kind: 'undone' as const, version: asDocVersion(2), byteLength: 2048 },

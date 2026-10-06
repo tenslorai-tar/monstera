@@ -26,7 +26,7 @@ function pictures(options: {
   readonly files?: ReturnType<typeof folder>;
   readonly enabled?: () => boolean;
   readonly listed?: () => boolean;
-  readonly picture?: () => Promise<Uint8Array>;
+  readonly picture?: () => Promise<Uint8Array | 'none'>;
 }) {
   const files = options.files ?? folder();
   const reported: string[] = [];
@@ -48,6 +48,26 @@ describe('recent pictures (ADR-0100)', () => {
 
     expect(files.held.get(pictureName(PATH))).toStrictEqual(JPEG);
     expect(store.read(PATH)).toStrictEqual(JPEG);
+  });
+
+  it('a WRITE THAT FAILS is reported by the capture, which still resolves (CR-COR-02) — CONTROL: one that works reports nothing', async () => {
+    // THE CALLER DOES NOT AWAIT A CAPTURE, so a throw from the write was a rejection nothing handled.
+    const full = folder();
+    const failing = pictures({
+      files: {
+        ...full,
+        write: () => {
+          throw Object.assign(new Error(`ENOSPC: no space left on device, open '${PATH}'`), { code: 'ENOSPC' });
+        },
+      },
+    });
+    await expect(failing.store.capture(DOC, PATH)).resolves.toBeUndefined();
+    // THE CODE, never the message, which carries the path.
+    expect(failing.reported).toStrictEqual(['failed:ENOSPC']);
+
+    const working = pictures({});
+    await working.store.capture(DOC, PATH);
+    expect(working.reported).toStrictEqual([]);
   });
 
   it('names the file by a DIGEST, so the folder says nothing about the files it pictures', () => {
@@ -172,5 +192,87 @@ describe('recent pictures (ADR-0100)', () => {
     enabled = false;
     store.settingsWritten();
     expect([...files.held.keys()]).toStrictEqual(['desktop.ini']);
+  });
+
+  describe('a removal’s save retakes the picture (ADR-0164)', () => {
+    const BEFORE = Uint8Array.of(0xff, 0xd8, 0x01);
+
+    it('a file that opens only with a password keeps NO picture: a capture deletes the one it had (CR-DOC-11)', async () => {
+      // THE PICTURE OF A PAGE A PASSWORD NOW PROTECTS, taken while the file was open to anyone: a capture that kept it,
+      // as a failed one does (the control below), would go on showing the page beside a file nobody can open.
+      const { store, files, reported } = pictures({
+        files: folder({ [pictureName(PATH)]: BEFORE }),
+        picture: () => Promise.resolve('none'),
+      });
+
+      await store.capture(DOC, PATH);
+
+      expect(files.held.has(pictureName(PATH))).toBe(false);
+      expect(store.read(PATH)).toBeNull();
+      expect(reported).toStrictEqual([]);
+    });
+
+    it('and a retake after a save that protected it draws nothing in its place', async () => {
+      const { store, files } = pictures({
+        files: folder({ [pictureName(PATH)]: BEFORE }),
+        picture: () => Promise.resolve('none'),
+      });
+
+      await store.retake(DOC, PATH);
+
+      expect(files.held.has(pictureName(PATH))).toBe(false);
+    });
+
+    it('replaces the picture of the page as it was with one of the page as saved', async () => {
+      const { store, files } = pictures({ files: folder({ [pictureName(PATH)]: BEFORE }) });
+
+      await store.retake(DOC, PATH);
+
+      expect(files.held.get(pictureName(PATH))).toStrictEqual(JPEG);
+    });
+
+    it('DELETES FIRST, so a picture that cannot be drawn leaves the placeholder, never the old one', async () => {
+      const { store, files, reported } = pictures({
+        files: folder({ [pictureName(PATH)]: BEFORE }),
+        picture: () => Promise.reject(new Error('the host is gone')),
+      });
+
+      await store.retake(DOC, PATH);
+
+      expect(files.held.has(pictureName(PATH))).toBe(false);
+      expect(reported).toStrictEqual(['failed:Error']);
+    });
+
+    it('CONTROL: a capture that cannot draw leaves the old picture, which is why the retake deletes first', async () => {
+      const { store, files } = pictures({
+        files: folder({ [pictureName(PATH)]: BEFORE }),
+        picture: () => Promise.reject(new Error('the host is gone')),
+      });
+
+      await store.capture(DOC, PATH);
+
+      expect(files.held.get(pictureName(PATH))).toStrictEqual(BEFORE);
+    });
+
+    it('a picture that could not be deleted is reported and nothing is drawn over it; the retake still resolves', async () => {
+      let drawn = 0;
+      const held = folder({ [pictureName(PATH)]: BEFORE });
+      const { store, reported } = pictures({
+        files: {
+          ...held,
+          remove: () => {
+            throw Object.assign(new Error(`EBUSY: resource busy or locked, unlink '${PATH}'`), { code: 'EBUSY' });
+          },
+        },
+        picture: () => {
+          drawn += 1;
+          return Promise.resolve(JPEG);
+        },
+      });
+
+      await expect(store.retake(DOC, PATH)).resolves.toBeUndefined();
+      expect(reported).toStrictEqual(['failed:EBUSY']);
+      expect(drawn).toBe(0);
+    });
   });
 });

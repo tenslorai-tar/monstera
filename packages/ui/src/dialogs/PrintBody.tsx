@@ -1,59 +1,79 @@
-import { useLingui } from '@lingui/react';
-import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 import { useState } from 'react';
 
-import { PRINT_APPLY, PRINT_DPI, PRINT_DPI_150, PRINT_DPI_300, PRINT_DPI_600 } from '../messages/en.js';
+import {
+  PRINT_APPLY,
+  PRINT_DPI,
+  PRINT_DPI_150,
+  PRINT_DPI_150_NOTE,
+  PRINT_DPI_300,
+  PRINT_DPI_300_NOTE,
+  PRINT_DPI_600,
+  PRINT_DPI_600_NOTE,
+  PRINT_PAGES_NOTE,
+  PAGE_RANGE_PRINT_EMPTY,
+} from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
-import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
+import { DialogChoices, DialogFooter, type DialogChoice } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
+import { PageRangeChoice, usePageRange } from './PageRangeChoice.js';
 import type { PrintAnswer } from './print.js';
 
 type Dpi = PrintAnswer['dpi'];
 
-/** Each resolution and the words a person reads for it, as a record so a fourth arrives owing its words. */
-const RESOLUTIONS: Readonly<Record<Dpi, MessageKey>> = {
-  150: PRINT_DPI_150,
-  300: PRINT_DPI_300,
-  600: PRINT_DPI_600,
-};
+/**
+ * Each resolution as a choice of the pattern: a short name and, under it, how many dots it is and what it is for. One
+ * list holds the answer's dpi beside the choice's words, so a fourth resolution cannot arrive without them.
+ *
+ * NAME AND NOTE APART: each option was one line, *"High — up to 600 dots per inch, lower on a large page"*, set in a
+ * narrow group at the row's right where it wrapped (the owner's review, item 1c). The same names are the Rendering
+ * setting's, which a segmented control shows, and there a sentence cannot fit at all.
+ */
+const RESOLUTIONS = [
+  { dpi: 150, value: 'draft', label: PRINT_DPI_150, note: PRINT_DPI_150_NOTE },
+  { dpi: 300, value: 'standard', label: PRINT_DPI_300, note: PRINT_DPI_300_NOTE },
+  { dpi: 600, value: 'high', label: PRINT_DPI_600, note: PRINT_DPI_600_NOTE },
+] as const satisfies readonly (DialogChoice<string> & { readonly dpi: Dpi })[];
+
+type Quality = (typeof RESOLUTIONS)[number]['value'];
 
 /**
- * The print dialog's body: the resolution pages are drawn at.
+ * The print dialog's body: the pages, and the resolution they are drawn at.
+ *
+ * **The pages are where the operating system's dialog starts**, not a second choice beside it (ADR-0161): main fills
+ * that dialog's own *Pages* with these, and what the person leaves there is what prints.
  *
  * **It starts on the quality Settings › Rendering chose**, Standard (300) unless a person chose otherwise: sharp text
  * on an ordinary printer, and a quarter of 600's pixels a page, which is what a person waits for. The button names
  * the next step, the operating system's print dialog, as the exports' buttons name theirs.
  */
-export default function PrintBody({ dpi: starting, resolve }: { readonly dpi: Dpi } & DialogAnswering<PrintAnswer>): ReactElement {
-  const { _ } = useLingui();
+export default function PrintBody({
+  dpi: starting,
+  pageCount,
+  resolve,
+}: { readonly dpi: Dpi; readonly pageCount: number } & DialogAnswering<PrintAnswer>): ReactElement {
+  const range = usePageRange(pageCount);
   const [dpi, setDpi] = useState<Dpi>(starting);
 
   return (
     <div className="m-print">
-      <DialogRow label={PRINT_DPI}>
-        <div aria-label={_(PRINT_DPI)} className="m-print__dpi" role="radiogroup">
-          {([150, 300, 600] as const).map((each) => (
-            <label key={each}>
-              <input
-                type="radio"
-                name="print-dpi"
-                checked={dpi === each}
-                onChange={() => {
-                  setDpi(each);
-                }}
-              />
-              {_(RESOLUTIONS[each])}
-            </label>
-          ))}
-        </div>
-      </DialogRow>
+      <PageRangeChoice empty={PAGE_RANGE_PRINT_EMPTY} note={PRINT_PAGES_NOTE} range={range} />
+      <DialogChoices<Quality>
+        label={PRINT_DPI}
+        options={RESOLUTIONS}
+        value={RESOLUTIONS.find((each) => each.dpi === dpi)?.value ?? 'standard'}
+        onChange={(chosen) => {
+          setDpi(RESOLUTIONS.find((each) => each.value === chosen)?.dpi ?? starting);
+        }}
+      />
       <DialogFooter>
         <Button
           label={PRINT_APPLY}
           variant="primary"
           onClick={() => {
-            resolve({ dpi });
+            const pages = range.proceed();
+            if (pages === undefined) return;
+            resolve({ dpi, pages: [...pages] });
           }}
         />
       </DialogFooter>

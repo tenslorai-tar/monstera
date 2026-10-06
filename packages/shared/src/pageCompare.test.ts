@@ -36,6 +36,22 @@ function raster(squares: readonly { x: number; y: number; size: number }[] = [])
   return { width: SIZE.width, height: SIZE.height, pixelsPerPoint: 1, luminance };
 }
 
+/** {@link raster} with every word of `lines` inked over its own box, five points a character, as a page draws it. */
+function inked(lines: readonly CompareLine[], squares: readonly { x: number; y: number; size: number }[] = []): CompareRaster {
+  const drawn = raster(squares);
+  for (const each of lines) {
+    let at = 0;
+    for (const word of each.text.split(' ')) {
+      const x0 = each.box.x0 + at * 5;
+      for (let row = each.box.y0 + 2; row < each.box.y1 - 2; row += 1) {
+        for (let column = x0; column < x0 + word.length * 5; column += 1) drawn.luminance[row * SIZE.width + column] = 0;
+      }
+      at += word.length + 1;
+    }
+  }
+  return drawn;
+}
+
 function page(lines: readonly CompareLine[], extra: Partial<ComparePage> = {}): ComparePage {
   return { size: SIZE, lines, annotations: [], raster: raster(), ...extra };
 }
@@ -119,6 +135,29 @@ describe('a matched pair — each kind of change, boxed on both pages', () => {
     // "brown" starts at character 10 and "red" at character 10, five points a character from x = 10.
     expect(change?.left).toStrictEqual([{ x0: 60, y0: 10, x1: 85, y1: 20 }]);
     expect(change?.right).toStrictEqual([{ x0: 60, y0: 10, x1: 75, y1: 20 }]);
+  });
+
+  it('A ONE-WORD EDIT IS ONE CHANGE, and the words it slides along the line are not a picture change (F-C1)', () => {
+    // THE PIXELS FOLLOW THE WORDS, which a blank raster does not: every word is inked where it stands, so the words
+    // after a shorter replacement move ten points left in the picture as they do in the text. The case above draws no
+    // ink, and so passes whether or not those moved pixels are explained.
+    const before = [line('The quick brown fox jumps', 10, 10)];
+    const after = [line('The quick red fox jumps', 10, 10)];
+    const changes = comparePair(page(before, { raster: inked(before) }), page(after, { raster: inked(after) }));
+
+    expect(changes.map((change) => [change.kind, change.removed, change.inserted])).toStrictEqual([['text', 'brown', 'red']]);
+  });
+
+  it('CONTROL: a picture beside an edited line is still a picture change', () => {
+    // THE LINE EXPLAINS ITS OWN PIXELS AND NOTHING ELSE: a mark drawn below it is reported.
+    const before = [line('The quick brown fox jumps', 10, 10)];
+    const after = [line('The quick red fox jumps', 10, 10)];
+    const changes = comparePair(
+      page(before, { raster: inked(before) }),
+      page(after, { raster: inked(after, [{ x: 60, y: 60, size: 20 }]) }),
+    );
+
+    expect(changes.map((change) => change.kind)).toStrictEqual(['text', 'graphics']);
   });
 
   it('WORD BY WORD: two changed words side by side are two boxes, never one across the phrase', () => {

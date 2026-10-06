@@ -12,6 +12,7 @@ export type {
   ByteImage,
   DocumentAccess,
   EngineWriter,
+  ImageSession,
   Invert,
   LockedReason,
   MupdfSession,
@@ -116,6 +117,7 @@ export {
   type EngineHandlerParts,
   type HostAnnotationsReader,
   type HostAnnotationRecordsReader,
+  type HostAnnotationWordsReader,
   type HostBarcodesReader,
   type HostContainmentProbe,
   type HostFilesystem,
@@ -128,6 +130,7 @@ export {
   type HostAccessibilityCheck,
   type HostFormFieldsReader,
   type HostLayersReader,
+  type HostLinkAddressReader,
   type HostOcrReader,
   type HostPageImage,
   type HostPageFillsReader,
@@ -151,7 +154,11 @@ export {
   type RemoteMupdfLifecycle,
   type SessionAreaSurface,
   remoteMupdfLifecycle,
+  takeAnnounced,
 } from './host/remoteLifecycle.js';
+// THE ONE READ OF A HOST'S OUTPUT, held to its announced count before anything is read (CR-SEC-08): main's session
+// areas are this, and the kernel's adapters take it through `takeAnnounced`.
+export { readAnnounced } from './host/announcedOutput.js';
 // A TYPE ONLY, for `FlatFieldCandidate`'s reason below: `pageImages.ts` binds the
 // native library, and main names the request without ever rasterising.
 export type { PageImageRequest } from './pageImages.js';
@@ -313,9 +320,16 @@ export {
 } from './textLines.js';
 // THE REFUSAL, from a module that imports nothing, so main can name it without
 // loading the engine that throws it (`signingRefusals.ts`' shape).
-export { TextNotWritableError } from './textEditRefusals.js';
+export {
+  EditRefusedError,
+  NothingToReplaceError,
+  ReplaceMovesLineError,
+  TextNotInPlaceError,
+  TextNotWritableError,
+} from './textEditRefusals.js';
 export type { RegionRequest } from './pageSnapshot.js';
 export {
+  DuplicateRemoteSession,
   EngineCallFailed,
   EngineSessionGone,
   type RemoteSessions,
@@ -327,6 +341,7 @@ export {
   remoteMupdfAccessibility,
   remoteMupdfAnnotations,
   remoteMupdfAnnotationRecords,
+  remoteMupdfAnnotationWords,
   remoteMupdfBarcodes,
   remoteMupdfExecution,
   remoteMupdfGeometry,
@@ -335,6 +350,7 @@ export {
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfLayers,
+  remoteMupdfLinkAddress,
   remoteMupdfSignatures,
   remoteMupdfSignaturesKept,
   remoteMupdfOcr,
@@ -360,9 +376,6 @@ export {
   TimestampRefusedError,
   TimestampUnreachableError,
 } from './signingRefusals.js';
-// THE TYPED-SIGNATURE RULE, for main to answer before a placed signature crosses to the host (ADR-0133). The module
-// loads its font tables on demand and imports no engine, so the barrel stays free of both (ADR-0026).
-export { drawsInStandardFont } from './signatureDrawing.js';
 export {
   DocumentBusyError,
   type DocumentContext,
@@ -380,14 +393,18 @@ export {
   type Versioned,
   type WriteTargetVerdict,
   type CopyTargetVerdict,
+  type FileAccessProbe,
+  saveWriteCause,
   sweepCheckpointDirectories,
 } from './documentService.js';
 export { readDocumentRange } from './documentRanges.js';
 export {
+  type AtomicWriteDone,
   type AtomicWriteFailure,
   type AtomicWriteSurface,
   RENAME_BACKOFF_MS,
   atomicWrite,
+  isTransient,
 } from './atomicWrite.js';
 export { nodeFileSurface, siblingNames } from './fileSurface.js';
 export {
@@ -395,8 +412,10 @@ export {
   type StagedImage,
   placeStaged,
   stagedBytes,
+  type SaveBackups,
   type SaveDependencies,
   type SaveFileNames,
+  copyNames,
   type CopyOutcome,
   type SaveOutcome,
   type WriteTargetCheck,
@@ -514,7 +533,7 @@ export {
 export { type TextAccuracy, scoreAgainstTruth } from './textAccuracy.js';
 // THE TYPES ONLY, for the reason above: a shape a consumer holds needs no
 // engine, and `readPageLinks` — which does — stays behind `/engine`.
-export type { LinkBounds, ListedPageLinks, PageLink } from './pageLinks.js';
+export type { LinkAddress, LinkBounds, ListedPageLinks, PageLink } from './pageLinks.js';
 export type { Destination, ListedDestinations } from './destinations.js';
 // TYPE ONLY, for the reason above. `readAnnotations` reaches MuPDF and is on
 // `@monstera/kernel/engine`; the listed shape is a plain object.
@@ -544,15 +563,15 @@ export {
   hostedPdfLibExecution,
   pdfLibWriter,
 } from './pdfLibWriter.js';
-// ON THE MAIN BARREL, for `localPdfLibWriter`'s reason: pdf-lib and `@signpdf` are
-// plain JavaScript, so nothing native enters the graph of the composition root
-// that imports this. Until 2026-09-13 it was exported nowhere a composition could
-// reach, and the root registered no signer — so signing, certifying and visible
-// signatures were refused as an unregistered writer in the running application
-// while every test that built its own bus passed.
-export { localSignpdfWriter, signpdfWriterWith } from './signpdfWriter.js';
+// ON THE MAIN BARREL, because the composition root registers it: the signing writer's execution, whose placeholder is
+// prepared in the MuPDF host and whose signature is made in `main` (ADR-0148). Until 2026-09-13 the signer was exported
+// nowhere a composition could reach, and the root registered none — so signing, certifying and visible signatures were
+// refused as an unregistered writer in the running application while every test that built its own bus passed.
+export { NO_TIMESTAMPS, signpdfExecutionWith } from './documentSign.js';
+export { breaksSignatures } from './signatureKeeping.js';
+export type { RequestTimestamp, SignatureHost } from './documentSign.js';
+export type { PlaceholderRequest, PreparedSignature } from './signatureHole.js';
 export { serialiseIntoFile } from './checkpointFile.js';
-export type { RequestTimestamp } from './documentSign.js';
 export {
   applyWatermarkPages,
   captureWatermarkPages,

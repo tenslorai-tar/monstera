@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 
 import { strFromU8, unzipSync } from 'fflate';
@@ -36,6 +36,8 @@ import {
   MAX_LIBRARY_PICTURE_BYTES,
   MAX_IMPORT_IMAGES,
   MAX_IMPORT_IMAGE_BYTES,
+  type OutlinedSignatureMark,
+  outlineOpCodes,
   type PageSet,
   type WordMode,
 } from '@monstera/contract';
@@ -51,6 +53,7 @@ import {
   DocumentService,
   EngineCallFailed,
   EngineSessionGone,
+  type FileAccessProbe,
   type MupdfSession,
   nodeFileSurface,
   parsePageStructure,
@@ -76,6 +79,7 @@ import {
 import {
   copyAnnotationData,
   findDuplicatePages,
+  readAnnotationWords,
   readAnnotations,
   readFormFields,
   localMupdfWriter,
@@ -85,6 +89,7 @@ import {
   readDestinations,
   extractPages,
   readLayers,
+  readLinkAddress,
   readPageLinks,
   readPageText,
   readPageTextJson,
@@ -101,6 +106,7 @@ import {
   signaturesKeptBySave,
   withDocument,
   composeWordDocument,
+  DocumentLocked,
 } from '@monstera/kernel/engine';
 import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 
@@ -119,6 +125,7 @@ import { createContractHandlers } from './contractHandlers.js';
 import { createRecentFiles } from './recentFiles.js';
 import { NO_RECENT_PICTURES } from './recentPictures.js';
 import { type HeldPicture, NO_HELD_PICTURE, createHeldPicture } from './heldPicture.js';
+import type { ScanSignature, SignaturePictureSource } from './signaturePicture.js';
 import { createPersonalLibrary, memoryPictureFiles, unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT } from './engagement.js';
 import { type BackupProvenance, createBackupProvenance } from './backupLedger.js';
@@ -147,6 +154,8 @@ import {
   type ImportSource,
   type DocumentAnnotationsReader,
   type DocumentAnnotationCopyReader,
+  type DocumentAnnotationWordsReader,
+  type DocumentLinkAddressReader,
   type DocumentFlatFieldsReader,
   type DocumentBarcodesReader,
   type AnnotationDataSource,
@@ -175,6 +184,7 @@ import {
   type FormDataSource,
   type SaveSource,
   type SnapshotSource,
+  SignaturesWouldBreakError,
 } from './documentCommands.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import { EngineSessions } from './engineSessions.js';
@@ -295,7 +305,7 @@ const noSaving: SaveSource = {
       remove: () => Promise.reject(new Error('this case does not save')),
       exists: () => Promise.reject(new Error('this case does not save')),
     },
-    names: (target) => ({ temp: `${target}.tmp`, backups: [`${target}.bak`], retired: [] }),
+    names: (target) => ({ temp: `${target}.tmp`, previous: `${target}.previous`, backups: [`${target}.bak`], retired: [] }),
     wait: () => Promise.resolve(),
   },
   flush: () => Promise.reject(new Error('this case does not save')),
@@ -303,6 +313,8 @@ const noSaving: SaveSource = {
   provenance: {
     made: () => Promise.reject(new Error('this case does not save')),
     deleteIfMade: () => Promise.reject(new Error('this case does not save')),
+    owed: () => [],
+    retryOwed: () => Promise.reject(new Error('this case does not save')),
   },
 };
 
@@ -315,6 +327,7 @@ function ledger(): BackupProvenance {
   return createBackupProvenance(createEphemeralSettings(), {
     identity: readFileIdentity,
     remove: (path) => rm(path, { force: true }),
+    wait: () => Promise.resolve(),
   });
 }
 
@@ -429,6 +442,13 @@ const noImages: ImageSource = {
   read: () => Promise.reject(new Error('this case does not read an image')),
 };
 
+/** A signature picture source no member of which a case reaches unless it supplies its own. */
+const noSignaturePicture: SignaturePictureSource = {
+  pick: () => Promise.reject(new Error('this case picks no signature picture')),
+  read: () => Promise.reject(new Error('this case reads no signature picture')),
+  scan: () => Promise.reject(new Error('this case reads no signature PDF')),
+};
+
 /** An import source neither member of which a case reaches unless it supplies its own. */
 const noImportFile: ImportSource = {
   pick: () => Promise.reject(new Error('this case does not import a file')),
@@ -533,13 +553,17 @@ const localPageImage: DocumentPageImageReader = (id, sessions, request) => {
  * The Word export composed the way the MuPDF host composes it — the real composer, run in this process — and staged
  * as bytes in hand, which is what `stagedBytes` is for a session held in `main`.
  */
-const localWord: DocumentWordExport = async (id, sessions, mode) => {
+const localWord: DocumentWordExport = async (id, sessions, mode, pages) => {
   const held = sessions.mupdf;
   if (held === undefined) throw new MissingSessionError(id, 'mupdf');
   const parts: Uint8Array[] = [];
-  for await (const chunk of composeWordDocument(held, mode).chunks) parts.push(chunk);
+  for await (const chunk of composeWordDocument(held, mode, pages).chunks) parts.push(chunk);
   return stagedBytes(Buffer.concat(parts));
 };
+
+/** Every page of the two-page text fixture and the three-page tables fixture, as a person's *Every page* sends it. */
+const TWO_PAGES: PageSet = [[0, 1]];
+const THREE_PAGES: PageSet = [[0, 2]];
 
 /**
  * The production composition of the duplicate report, the way `composition.ts`
@@ -578,6 +602,25 @@ const localAnnotationCopy: DocumentAnnotationCopyReader = (id, sessions, page, i
   const held = sessions.mupdf;
   if (held === undefined) throw new MissingSessionError(id, 'mupdf');
   return copyAnnotationData(held, page, indices);
+};
+
+const noAnnotationWords: DocumentAnnotationWordsReader = () =>
+  Promise.reject(new Error('this case reads no mark’s words'));
+
+/** `localAnnotationCopy`'s composition and its reason, for one mark's whole words. */
+const localAnnotationWords: DocumentAnnotationWordsReader = (id, sessions, page, index) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return readAnnotationWords(held, page, index);
+};
+
+const noLinkAddress: DocumentLinkAddressReader = () => Promise.reject(new Error('this case follows no link'));
+
+/** `localAnnotationWords`' composition and its reason, for one link's whole address (ADR-0167). */
+const localLinkAddress: DocumentLinkAddressReader = (id, sessions, page, index) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return readLinkAddress(held, page, index);
 };
 
 const noFormFields: DocumentFormFieldsReader = () =>
@@ -719,6 +762,19 @@ const localLayers: DocumentLayersReader = (id, sessions) => {
 /** Every page of the three-page fixture, in order. */
 const ALL_PAGES = [0, 1, 2];
 
+/**
+ * A typed name as the renderer sends it (ADR-0150): its outline, here one filled block in its line box. Main does not
+ * read the outline; it carries it to the writer and keeps the name and the face.
+ */
+function outlined(text: string): OutlinedSignatureMark {
+  return {
+    kind: 'outlined',
+    text,
+    font: 'courier-prime',
+    outline: { ops: outlineOpCodes('MLLLZ'), points: [0, 100, 1000, 100, 1000, 400, 0, 400], frame: [0, 0, 1000, 500] },
+  };
+}
+
 /** What a case supplies for itself: the three that vary between them. */
 type Varying = Pick<DocumentCommandsParts, 'documents' | 'bus' | 'engine'>;
 
@@ -756,6 +812,7 @@ const INERT = {
     },
   },
   heldPicture: NO_HELD_PICTURE,
+  signaturePicture: noSignaturePicture,
   // DOCUSIGN REFUSES BY NAME here, like every inert surface: a case that reached it
   // without meaning to fails at the call rather than sending anything anywhere.
   docusign: {
@@ -781,8 +838,14 @@ const INERT = {
   // ordinary one: an unsigned document, and not a removal.
   signaturesKept: () => Promise.resolve({ signatures: 0, kept: true }),
   restore: noRestore,
+  renew: () => Promise.reject(new Error('INERT: this case saves no removal and must not renew a session')),
+  // RESOLVES, unlike the refusing surfaces: a removal's save retakes the picture after its lane and does not await it,
+  // so a refusal here would be a rejection nothing handles. The cases about the retake record their own.
+  recentPicture: { retake: () => Promise.resolve() },
   annotations: noAnnotations,
   annotationCopy: noAnnotationCopy,
+  annotationWords: noAnnotationWords,
+  linkAddress: noLinkAddress,
   formFields: noFormFields,
   flatFields: noFlatFields,
   barcodes: noBarcodes,
@@ -860,6 +923,8 @@ const LOCAL_READS = {
   layers: localLayers,
   annotations: localAnnotations,
   annotationCopy: localAnnotationCopy,
+  annotationWords: localAnnotationWords,
+  linkAddress: localLinkAddress,
   formFields: localFormFields,
   flatFields: localFlatFields,
   barcodes: localBarcodes,
@@ -992,6 +1057,49 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
 
     const applied = await commands.execute(docId, rotateOnce);
     expect(applied.version).toBeGreaterThan(0);
+  });
+});
+
+describe('a link’s whole address, through the lane (ADR-0167)', () => {
+  const address = `https://example.org/track?id=${'a'.repeat(3000)}`;
+  let linked: DocId;
+  let linkedSession: MupdfSession;
+  let linkedService: DocumentService;
+
+  // A DOCUMENT THAT ALREADY HOLDS THE LINK, on its second page: adding one is terminal, so it checkpoints, and this
+  // case is about reading, not about the save path.
+  beforeAll(async () => {
+    const pdf = await PDFDocument.create();
+    pdf.addPage([612, 792]);
+    const page = pdf.addPage([612, 792]);
+    const link = pdf.context.register(
+      pdf.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [72, 600, 200, 640], A: { S: 'URI', URI: PDFString.of(address) } }),
+    );
+    page.node.set(PDFName.of('Annots'), pdf.context.obj([link]));
+    const bytes = await pdf.save();
+    const path = join(directory, 'linked.pdf');
+    writeFileSync(path, bytes);
+    const registry = new CapabilityRegistry();
+    linkedService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
+    const outcome = await linkedService.open(registry.mint(path));
+    if (outcome.kind !== 'opened') throw new Error('the linked fixture did not open');
+    linked = outcome.docId;
+    linkedSession = await mupdfWriter.open(bytes);
+  });
+
+  it('answers the address WHOLE, at the version the link list was read at — STALE at any other', async () => {
+    const held = new EngineSessions();
+    held.hold(linked, { mupdf: linkedSession });
+    const commands = new DocumentCommands({ ...LOCAL_READS, documents: linkedService, bus: bus(), engine: held });
+    const { version } = await commands.pageLinks(linked, 1);
+
+    // WHOLE, past the listing's 2,048: the listing shows it cut, and following it opens what the document holds.
+    expect(await commands.linkAddress(linked, 1, 0, version)).toStrictEqual({ kind: 'address', uri: address });
+    // A MOVED DOCUMENT is stale rather than another link's address, and a place with no link is said by name.
+    expect(await commands.linkAddress(linked, 1, 0, asDocVersion(Number(version) + 1))).toStrictEqual({ kind: 'stale' });
+    expect(await commands.linkAddress(linked, 1, 5, version)).toStrictEqual({ kind: 'no-such-link' });
+    // CONTROL: the page without the link has none at that place.
+    expect(await commands.linkAddress(linked, 0, 0, version)).toStrictEqual({ kind: 'no-such-link' });
   });
 });
 
@@ -1226,6 +1334,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           edit: () => false,
         copyText: () => false,
         openWebPage: () => Promise.resolve(false),
+        openLink: () => Promise.reject(new Error('this case follows no link')),
         openStore: () => Promise.resolve(false),
           closeListening: () => false,
         cloud: unconfiguredCloud(),
@@ -1308,6 +1417,8 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         bus: bus(),
         engine: {
           poisoned: () => undefined,
+          opensOnlyWithPassword: () => false,
+          opensWith: () => undefined,
           sessions: () => {
             const cause = new Error(`EPERM: operation not permitted, stat '${SECRET}'`);
             cause.stack = `Error: EPERM: operation not permitted, stat '${SECRET}'\n    at readFileIdentity (${SECRET}:1:1)`;
@@ -1392,6 +1503,12 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     async function aSavableDocument(
       /** What the writer says about the next save and the signatures — the real decision unless a case says otherwise. */
       signaturesKept: DocumentCommandsParts['signaturesKept'] = signaturesKeptBySave,
+      /** Which backups Monstera made — the product's ledger on the real disk unless a case holds a file. */
+      provenance: BackupProvenance = ledger(),
+      /** Where *Save a copy*'s picker answers, for the cases that write one; a dismissed picker otherwise. */
+      copyTo: string | null = null,
+      /** The file's access and the save's filesystem, for the cases about a save that is not written (7b). */
+      file: { readonly probeAccess?: FileAccessProbe; readonly surface?: AtomicWriteSurface } = {},
     ): Promise<{
       commands: DocumentCommands;
       saved: DocId;
@@ -1399,6 +1516,14 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       before: Uint8Array;
       /** Rebuilds the document's session from its own bytes and holds the new one — the supervisor's restore, adopt and restart. */
       rebuild: () => Promise<void>;
+      /** The document's version, read through its lane as every command reads it. */
+      version: () => Promise<DocVersion>;
+      /** The bytes the document's session holds now. */
+      serialised: () => Promise<Uint8Array>;
+      /** Each snapshot a restore wrote, with the bytes the session was then rebuilt from: the supervisor's restore. */
+      restored: { readonly snapshot: string; readonly bytes: Uint8Array }[];
+      /** Each path whose Recent picture was retaken. */
+      retaken: string[];
     }> {
       savables += 1;
       const path = join(directory, `save-${String(savables)}.pdf`);
@@ -1406,20 +1531,34 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       writeFileSync(path, before);
 
       const registry = new CapabilityRegistry();
-      const own = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
+      const own = new DocumentService(registry, {
+        documentBytesCeiling: AMPLE_CEILING,
+        checkpointDirectory: CHECKPOINTS,
+        ...(file.probeAccess === undefined ? {} : { probeAccess: file.probeAccess }),
+      });
       const outcome = await own.open(registry.mint(path));
       if (outcome.kind !== 'opened') throw new Error(`fixture did not open: ${outcome.kind}`);
 
       const held = new EngineSessions();
       let current = await mupdfWriter.open(before);
       held.hold(outcome.docId, { mupdf: current });
+      const restored: { readonly snapshot: string; readonly bytes: Uint8Array }[] = [];
+      const retaken: string[] = [];
 
       return {
         path,
         before,
+        restored,
+        retaken,
         rebuild: async () => {
           current = await mupdfWriter.open(await mupdfWriter.serialise(current));
           held.hold(outcome.docId, { mupdf: current });
+        },
+        version: async () => (await own.run(outcome.docId, (context) => Promise.resolve(context.version))).value,
+        serialised: () => {
+          const now = held.sessions(outcome.docId)?.mupdf;
+          if (now === undefined) throw new Error('the fixture holds a session');
+          return mupdfWriter.serialise(now);
         },
         saved: outcome.docId,
         commands: new DocumentCommands({
@@ -1428,8 +1567,32 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           documents: own,
           bus: bus(),
           engine: held,
+          // THE SUPERVISOR'S RENEWAL, as the composition root composes it: the write puts the bytes in a snapshot, the
+          // session is opened from that file and only then held, and a file that needs a password answers `locked`
+          // with the old session kept.
+          renew: async (id, write) => {
+            const snapshot = join(directory, `save-${String(savables)}-snapshot-${String(restored.length)}.pdf`);
+            await write(snapshot);
+            const bytes = new Uint8Array(readFileSync(snapshot));
+            try {
+              current = await mupdfWriter.open(bytes);
+            } catch (thrown) {
+              if (thrown instanceof DocumentLocked) return 'locked';
+              throw thrown;
+            }
+            held.hold(id, { mupdf: current });
+            restored.push({ snapshot, bytes });
+            return 'renewed';
+          },
+          recentPicture: {
+            retake: (_id, picturePath) => {
+              retaken.push(picturePath);
+              return Promise.resolve();
+            },
+          },
+          copy: { pick: () => Promise.resolve(copyTo), checkTarget: (target) => own.checkCopyTarget(target) },
           save: {
-            provenance: ledger(),
+            provenance,
             // THE REAL SURFACE AND THE REAL CHECK. Every other case in this
             // file is about a decision; this one is the first caller, and a
             // seam whose every test injects its surfaces is unproven against a
@@ -1437,7 +1600,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
             // Windows.
             deps: {
               checkWriteTarget: (id) => own.checkWriteTarget(id),
-              surface: nodeFileSurface,
+              surface: file.surface ?? nodeFileSurface,
               names: (target) => siblingNames(target, 1),
               wait: () => Promise.resolve(),
             },
@@ -1455,6 +1618,62 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         }),
       };
     }
+
+    it('A SAVE NOT WRITTEN says why, from the file asked AFTER the failure: the same refused rename is read-only or held (7b)', async () => {
+      // A RENAME WINDOWS REFUSES WITH `EPERM`, which is what a read-only target and a held one both answer there.
+      const refusingRename: AtomicWriteSurface = {
+        ...nodeFileSurface,
+        rename: () => Promise.reject(Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' })),
+      };
+      const answers: string[] = [];
+      for (const access of ['read-only', 'writable'] as const) {
+        const probed: string[] = [];
+        const t = await aSavableDocument(undefined, ledger(), null, {
+          surface: refusingRename,
+          probeAccess: (path) => {
+            probed.push(path);
+            return Promise.resolve(access);
+          },
+        });
+        await t.commands.execute(t.saved, rotateOnce);
+
+        const outcome = await t.commands.save(t.saved, { breakSignatures: false });
+
+        expect(outcome).toMatchObject({ kind: 'write-failed', failure: { stage: 'rename', detail: 'EPERM' } });
+        if (outcome.kind === 'write-failed') answers.push(outcome.cause);
+        // THE DOCUMENT'S OWN FILE was asked, and it is as it was: invariant 18.
+        expect(probed).toStrictEqual([t.path]);
+        expect(Buffer.from(readFileSync(t.path)).equals(Buffer.from(t.before))).toBe(true);
+      }
+      // CONTROL, the pair: one failure, two files, two causes — so the cause is the file's answer and not the code's.
+      expect(answers).toStrictEqual(['read-only', 'held']);
+    });
+
+    it('SAVE AND TAKE answers the image of the version it saved, though a command is queued right behind it (CR-DOC-04)', async () => {
+      const rotationIn = async (bytes: Uint8Array): Promise<number> => {
+        const opened = await mupdfWriter.open(bytes);
+        try {
+          return await withDocument(opened, (document) => document.loadPage(0).getObject().get('Rotate').asNumber());
+        } finally {
+          await mupdfWriter.close(opened);
+        }
+      };
+      const t = await aSavableDocument();
+      await t.commands.execute(t.saved, rotateOnce);
+
+      // QUEUED BEFORE EITHER IS AWAITED, so the second rotation is next in the lane after the save's entry: the
+      // interleaving the old order lost, where the image was asked for as an entry of its own after this one.
+      const taking = t.commands.saveAndTake(t.saved, { breakSignatures: false });
+      const later = t.commands.execute(t.saved, rotateOnce);
+      const [{ outcome, image }] = await Promise.all([taking, later]);
+
+      expect(outcome.kind).toBe('saved');
+      if (image === null) throw new Error('a save that landed took no image');
+      // THE SAVED VERSION'S, as the file on disk holds it: one quarter turn.
+      expect([await rotationIn(image), await rotationIn(new Uint8Array(readFileSync(t.path)))]).toStrictEqual([90, 90]);
+      // CONTROL: the document moved on behind it, so an image asked for now — the old second entry — would not match.
+      expect(await rotationIn(await t.commands.currentImage(t.saved))).toBe(180);
+    });
 
     it('HOLDS BACK a save that would break signatures — the file untouched — and writes it once the person agreed', async () => {
       const asked: unknown[] = [];
@@ -1494,22 +1713,111 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       await removal.commands.execute(removal.saved, sanitize);
       await removal.rebuild();
       const removed = await removal.commands.save(removal.saved, { breakSignatures: false });
-      expect(removed).toMatchObject({ kind: 'saved', backedUp: false, cleared: { backups: 0, kept: [] } });
+      expect(removed).toMatchObject({ kind: 'saved', previousKeptAt: null, cleared: { backups: 0, kept: [] } });
       expect(holdsReplaced(removal.path, removal.before)).toStrictEqual([]);
 
       const ordinary = await aSavableDocument();
       await ordinary.commands.execute(ordinary.saved, rotateOnce);
       await ordinary.rebuild();
       const kept = await ordinary.commands.save(ordinary.saved, { breakSignatures: false });
-      expect(kept).toMatchObject({ kind: 'saved', backedUp: true, cleared: null });
+      expect(kept).toMatchObject({ kind: 'saved', previousKeptAt: `${ordinary.path}.bak`, cleared: null });
       expect(holdsReplaced(ordinary.path, ordinary.before)).toStrictEqual([`${basename(ordinary.path)}.bak`]);
+    });
+
+    /**
+     * ADR-0149 (CR-DOC-07): an edit that rewrites a signed document whole is asked about BEFORE it is made. The writer's
+     * answer is the one a removal's save gets — signatures present, not kept — so the save's own question would also
+     * fire, which is what lets the third assertion separate *agreed once* from *never asked*.
+     */
+    describe('an edit that would break a signature (ADR-0149)', () => {
+      const signedAndBroken: DocumentCommandsParts['signaturesKept'] = () => Promise.resolve({ signatures: 1, kept: false });
+
+      it('is REFUSED before any byte changes: the same version, the same session bytes, no history', async () => {
+        const t = await aSavableDocument(signedAndBroken);
+        const version = await t.version();
+        const bytes = await t.serialised();
+
+        await expect(t.commands.execute(t.saved, sanitize)).rejects.toBeInstanceOf(SignaturesWouldBreakError);
+
+        expect(await t.version()).toBe(version);
+        expect(Buffer.from(await t.serialised()).equals(Buffer.from(bytes))).toBe(true);
+        // NOTHING TO UNDO: the bus never ran, so the log holds no entry the refusal could have left.
+        expect(await t.commands.undo(t.saved)).toBeUndefined();
+      });
+
+      it('AGREED, it is applied, and the save after it does not ask the same question again', async () => {
+        const t = await aSavableDocument(signedAndBroken);
+        const version = await t.version();
+
+        await t.commands.execute(t.saved, sanitize, { breakSignatures: true });
+        expect(await t.version()).not.toBe(version);
+        // A SECOND BREAKING EDIT IS NOT ASKED either: the person gave this document's signatures up once.
+        await t.commands.execute(t.saved, { kind: 'sanitizeDocument', parts: ['embedded-files'] });
+
+        expect((await t.commands.save(t.saved, { breakSignatures: false })).kind).toBe('saved');
+      });
+
+      it('CONTROL: an edit that appends — a rotation — is never asked, on the same signed document', async () => {
+        const t = await aSavableDocument(signedAndBroken);
+        const version = await t.version();
+
+        await t.commands.execute(t.saved, rotateOnce);
+
+        expect(await t.version()).not.toBe(version);
+        // AND THE SAVE STILL ASKS, since nobody agreed to anything: the rotation was not an agreement.
+        expect(await t.commands.save(t.saved, { breakSignatures: false })).toStrictEqual({
+          kind: 'breaks-signatures',
+          signatures: 1,
+        });
+      });
+
+      it('WORK ON A COPY writes the document as it is where the person chose, and leaves the original untouched', async () => {
+        const destination = join(directory, `copy-for-editing-${String(savables + 1)}.pdf`);
+        const t = await aSavableDocument(signedAndBroken, ledger(), destination);
+        const version = await t.version();
+        const bytes = await t.serialised();
+
+        const copied = await t.commands.copyForEditing(t.saved, sanitize);
+
+        expect(copied).toMatchObject({ outcome: { kind: 'copied' }, destination });
+        expect(Buffer.from(readFileSync(destination)).equals(Buffer.from(bytes))).toBe(true);
+        // THE ORIGINAL: its file, its version and its session are as they were.
+        expect(Buffer.from(readFileSync(t.path)).equals(Buffer.from(t.before))).toBe(true);
+        expect(await t.version()).toBe(version);
+        expect(Buffer.from(await t.serialised()).equals(Buffer.from(bytes))).toBe(true);
+      });
+
+      it('a command composed against an EARLIER version is stale for the copy too, and nothing is written', async () => {
+        const destination = join(directory, `copy-for-editing-stale-${String(savables + 1)}.pdf`);
+        const t = await aSavableDocument(signedAndBroken, ledger(), destination);
+        const composedAt = await t.version();
+        await t.commands.execute(t.saved, rotateOnce);
+        const named: Command = { kind: 'removeAnnotation', page: 0, indices: [0], version: composedAt };
+
+        await expect(t.commands.copyForEditing(t.saved, named)).rejects.toBeInstanceOf(StaleTargetError);
+        expect(existsSync(destination)).toBe(false);
+
+        // CONTROL: the same command named at the version the document is at now is written.
+        const current: Command = { ...named, version: await t.version() };
+        expect((await t.commands.copyForEditing(t.saved, current))?.outcome.kind).toBe('copied');
+        expect(existsSync(destination)).toBe(true);
+      });
+
+      it('CONTROL: an unsigned document is not asked about the same removal', async () => {
+        const t = await aSavableDocument(() => Promise.resolve({ signatures: 0, kept: true }));
+        const version = await t.version();
+
+        await t.commands.execute(t.saved, sanitize);
+
+        expect(await t.version()).not.toBe(version);
+      });
     });
 
     it('a removal’s save DELETES the backup Monstera made, and the undo copies, unasked; the next save backs up again', async () => {
       const { commands, saved, path, before } = await aSavableDocument();
       // AN ORDINARY SAVE FIRST, which makes the `.bak` holding the original — the copy a later redaction must not leave.
       await commands.execute(saved, rotateOnce);
-      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true });
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ previousKeptAt: `${path}.bak` });
       expect(holdsReplaced(path, before)).toStrictEqual([`${basename(path)}.bak`]);
 
       await commands.execute(saved, sanitize);
@@ -1519,7 +1827,172 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
       // THE FACT CLEARS WITH THE SAVE: the file holds the removal now, so an ordinary save after it backs up again.
       await commands.execute(saved, rotateOnce);
-      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ backedUp: true, cleared: null });
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ previousKeptAt: `${path}.bak`, cleared: null });
+    });
+
+    it('a removal’s save DELETES the copy an earlier save left aside when its backup was held (QQQQQQQ-8)', async () => {
+      // THE DEFECT: a save whose backup could not be moved into place left the replaced version at its copy-aside name
+      // and answered no backup, so the ledger never recorded it and a removal's save, which walked the backup names
+      // only, left the unredacted file beside the redacted one.
+      const holdingBackup: AtomicWriteSurface = {
+        ...nodeFileSurface,
+        rename: (from, to) =>
+          from.endsWith('.monstera-previous')
+            ? Promise.reject(Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' }))
+            : nodeFileSurface.rename(from, to),
+      };
+      const { commands, saved, path, before } = await aSavableDocument(signaturesKeptBySave, ledger(), null, {
+        surface: holdingBackup,
+      });
+      const aside = `${path}.monstera-previous`;
+      await commands.execute(saved, rotateOnce);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ kind: 'saved', previousKeptAt: aside });
+      expect(holdsReplaced(path, before)).toStrictEqual([basename(aside)]);
+
+      await commands.execute(saved, sanitize);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({
+        kind: 'saved',
+        cleared: { backups: 1, kept: [] },
+        held: [],
+      });
+      // NO COPY OF THE FILE AS IT WAS, under any name beside it.
+      expect([existsSync(aside), holdsReplaced(path, before)]).toStrictEqual([false, []]);
+    });
+
+    it('CONTROL: a file at the copy-aside name that Monstera did not make is kept and named', async () => {
+      const { commands, saved, path } = await aSavableDocument();
+      const handMade = `${path}.monstera-previous`;
+      writeFileSync(handMade, 'a file somebody else put there');
+      await commands.execute(saved, sanitize);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({
+        cleared: { backups: 0, kept: [basename(handMade)] },
+      });
+      expect(readFileSync(handMade, 'utf8')).toBe('a file somebody else put there');
+    });
+
+    describe('the copies of the open document a removal’s save renews (ADR-0164)', () => {
+      it('REBUILDS the session from the file the save wrote, and retakes the Recent picture', async () => {
+        // THE SNAPSHOT the session was opened from is the document as it was opened; the rebuild is what replaces it.
+        const t = await aSavableDocument();
+        await t.commands.execute(t.saved, sanitize);
+        await t.commands.save(t.saved, { breakSignatures: false });
+
+        expect(t.restored).toHaveLength(1);
+        // FROM THE SAVED FILE, byte for byte, never from the session's own bytes or the file as it was opened.
+        expect(Buffer.from(t.restored[0]?.bytes ?? []).equals(readFileSync(t.path))).toBe(true);
+        expect(Buffer.from(t.restored[0]?.bytes ?? []).equals(Buffer.from(t.before))).toBe(false);
+        expect(t.retaken).toStrictEqual([t.path]);
+      });
+
+      it('CONTROL: an ordinary save rebuilds nothing and retakes nothing', async () => {
+        const t = await aSavableDocument();
+        await t.commands.execute(t.saved, rotateOnce);
+        expect(await t.commands.save(t.saved, { breakSignatures: false })).toMatchObject({ kind: 'saved', cleared: null });
+
+        expect(t.restored).toStrictEqual([]);
+        expect(t.retaken).toStrictEqual([]);
+      });
+
+      it('KEEPS the session of a document the save PROTECTED, whose file opens only with a password, and it still works', async () => {
+        // FOUND BY THE PROTECTION CASE BELOW, against the first version of this: protecting is a removal, the file it
+        // writes is encrypted, and a rebuild that released the old session first left the document with none, the
+        // save thrown past a file that had been written.
+        const t = await aSavableDocument();
+        await t.commands.execute(t.saved, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: 'open-me' });
+        expect(await t.commands.save(t.saved, { breakSignatures: false })).toMatchObject({ kind: 'saved' });
+
+        expect(t.restored).toStrictEqual([]);
+        expect(t.retaken).toStrictEqual([t.path]);
+        // THE OLD SESSION ANSWERS: a command after the save lands on it.
+        await expect(t.commands.execute(t.saved, rotateOnce)).resolves.toBeDefined();
+      });
+
+      it('a copy written while the removal is pending keeps no backup of the file it replaces', async () => {
+        const destination = join(directory, 'redacted copy.pdf');
+        writeFileSync(destination, 'an earlier copy, made before the redaction');
+        const t = await aSavableDocument(signaturesKeptBySave, ledger(), destination);
+        await t.commands.execute(t.saved, sanitize);
+
+        expect(await t.commands.saveCopy(t.saved)).toMatchObject({ kind: 'copied' });
+        expect(existsSync(`${destination}.bak`)).toBe(false);
+      });
+
+      it('CONTROL: the same copy with no removal pending leaves the backup a save would', async () => {
+        const destination = join(directory, 'ordinary copy.pdf');
+        writeFileSync(destination, 'an earlier copy');
+        const t = await aSavableDocument(signaturesKeptBySave, ledger(), destination);
+        await t.commands.execute(t.saved, rotateOnce);
+
+        expect(await t.commands.saveCopy(t.saved)).toMatchObject({ kind: 'copied' });
+        expect(readFileSync(`${destination}.bak`, 'utf8')).toBe('an earlier copy');
+      });
+    });
+
+    it('a copy ANOTHER PROGRAM HOLDS does not fail the save: it is named, owed, retried, and deleted once let go', async () => {
+      // CR-DOC-10: the delete threw past a save that had written, so the person saw a failed save, and the copy — the
+      // unredacted file — stayed with nothing ever trying it again.
+      let holding = true;
+      const held = createBackupProvenance(createEphemeralSettings(), {
+        identity: readFileIdentity,
+        remove: (path) =>
+          holding ? Promise.reject(Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' })) : rm(path, { force: true }),
+        wait: () => Promise.resolve(),
+      });
+      const { commands, saved, path, before } = await aSavableDocument(signaturesKeptBySave, held);
+      await commands.execute(saved, rotateOnce);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ previousKeptAt: `${path}.bak`, held: [] });
+      expect(holdsReplaced(path, before)).toStrictEqual([`${basename(path)}.bak`]);
+
+      await commands.execute(saved, sanitize);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({
+        kind: 'saved',
+        cleared: { backups: 0, kept: [] },
+        held: [`${basename(path)}.bak`],
+      });
+      // STILL THERE, and still owed: the next save of any kind tries it again, and so does the person's own ask.
+      expect(existsSync(`${path}.bak`)).toBe(true);
+      expect(await commands.deleteHeldCopies(saved)).toStrictEqual([`${basename(path)}.bak`]);
+
+      holding = false;
+      expect(await commands.deleteHeldCopies(saved)).toStrictEqual([]);
+      expect(existsSync(`${path}.bak`)).toBe(false);
+    });
+
+    it('an ORDINARY save after it tries the held copy again, unasked', async () => {
+      let holding = true;
+      const held = createBackupProvenance(createEphemeralSettings(), {
+        identity: readFileIdentity,
+        remove: (path) =>
+          holding ? Promise.reject(Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' })) : rm(path, { force: true }),
+        wait: () => Promise.resolve(),
+      });
+      const { commands, saved, path } = await aSavableDocument(signaturesKeptBySave, held);
+      await commands.execute(saved, rotateOnce);
+      await commands.save(saved, { breakSignatures: false });
+      await commands.execute(saved, sanitize);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ held: [`${basename(path)}.bak`] });
+
+      // LET GO, and the next ordinary save — which keeps its own backup of the redacted file — deletes the owed one
+      // first. Its answer owes nothing.
+      holding = false;
+      await commands.execute(saved, rotateOnce);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ kind: 'saved', held: [] });
+    });
+
+    it('PROTECTING a document keeps no readable copy: the save deletes the backup Monstera made and writes none', async () => {
+      // CR-DOC-05: the copy beside a newly protected file is the document WITHOUT its password, which is what the
+      // person just asked nobody may read. So a protection change takes a removal's save (ADR-0139).
+      const { commands, saved, path, before } = await aSavableDocument();
+      await commands.execute(saved, rotateOnce);
+      expect(await commands.save(saved, { breakSignatures: false })).toMatchObject({ previousKeptAt: `${path}.bak` });
+      expect(holdsReplaced(path, before)).toStrictEqual([`${basename(path)}.bak`]);
+
+      await commands.execute(saved, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: 'open-me' });
+      const outcome = await commands.save(saved, { breakSignatures: false });
+      expect(outcome).toMatchObject({ kind: 'saved', previousKeptAt: null, cleared: { backups: 1, kept: [] } });
+      expect(existsSync(`${path}.bak`)).toBe(false);
+      // AND THE FILE IS THE PROTECTED ONE: a removal's save still writes the encryption the command asked for.
+      expect(Buffer.from(readFileSync(path)).includes('/Encrypt')).toBe(true);
     });
 
     it('NEVER deletes a file Monstera did not make, or one changed since — it keeps and names them; nor any other file', async () => {
@@ -1559,7 +2032,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
       expect(outcome.kind).toBe('saved');
       if (outcome.kind !== 'saved') throw new Error('the save did not happen');
-      expect(outcome.backedUp).toBe(true);
+      expect(outcome.previousKeptAt).toBe(`${path}.bak`);
 
       // THE BYTES ON DISK ARE THE ENGINE'S, not the ones the fixture wrote.
       // Asserting only that the file still exists would pass for a pipeline
@@ -1845,6 +2318,38 @@ describe('search is E2s first consumer, through the composition point', () => {
       });
       expect(answer.ok ? null : answer.error.code).toBe('document-not-open');
       expect(bodies).toStrictEqual([]);
+    });
+
+    it('SUMMARISE COMMENTS on a document with NO comments is refused by name, and nothing reaches the provider (F-V1)', async () => {
+      // A DOCUMENT WITH TEXT AND A KEY: absent the refusal this ask starts, carrying an empty window, so the probe is
+      // one the guard alone stops.
+      const { bodies, handlers } = askHandlers();
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-c0',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'Summarise the comments.' }],
+        about: { scope: 'comments', docId: searchable },
+        web: false,
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+      expect(answer.ok ? null : answer.error.code).toBe('no-comments');
+      expect(bodies).toStrictEqual([]);
+    });
+
+    it('CONTROL: the same document asked about its TEXT still goes, so the refusal is the comments’ and not the document’s', async () => {
+      const { bodies, handlers } = askHandlers();
+      const answer = await handlers['ai.ask']({
+        subscription: 'ask-c1',
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', text: 'What does it say?' }],
+        about: { scope: 'document', docId: searchable },
+        web: false,
+      });
+      await new Promise((settle) => setTimeout(settle, 0));
+      expect(answer.ok).toBe(true);
+      expect(bodies).toHaveLength(1);
     });
 
     it('A PICTURE ASK through the handler: the drawn page reaches the provider with the last turn, and a picture is what went (ADR-0090)', async () => {
@@ -2136,6 +2641,7 @@ describe('search is E2s first consumer, through the composition point', () => {
         edit: () => false,
         copyText: () => false,
         openWebPage: () => Promise.resolve(false),
+        openLink: () => Promise.reject(new Error('this case follows no link')),
         openStore: () => Promise.resolve(false),
         closeListening: () => false,
         cloud: unconfiguredCloud(),
@@ -2704,6 +3210,26 @@ describe('annotations exported to a file and imported from it, through the lane 
     expect(await commands.pasteAnnotations(blankDoc, 0)).toStrictEqual({ kind: 'empty' });
   });
 
+  it('a mark’s WORDS are read whole at the version the walk was read at', async () => {
+    const commands = commandsWith(refuseData);
+    const { version } = await commands.annotations(annotatedDoc);
+    expect(await commands.annotationWords(annotatedDoc, 0, 0, version)).toStrictEqual({
+      kind: 'words',
+      text: 'Check this (twice)',
+      whole: true,
+    });
+  });
+
+  it('a mark’s words at a version the document has left are STALE, and so is a handle past the walk', async () => {
+    // `copyAnnotations`' reason: the handle is a position in the walk, so a moved document would
+    // answer another mark's words into the editor the person opened on this one.
+    const commands = commandsWith(refuseData);
+    const { version } = await commands.annotations(annotatedDoc);
+    const moved = asDocVersion(Number(version) + 1);
+    expect(await commands.annotationWords(annotatedDoc, 0, 0, moved)).toStrictEqual({ kind: 'stale' });
+    expect(await commands.annotationWords(annotatedDoc, 0, 99, version)).toStrictEqual({ kind: 'stale' });
+  });
+
   it('COPIES a mark and PASTES it into ANOTHER document, where it lands un-nudged', async () => {
     const commands = commandsWith(refuseData);
     const { version } = await commands.annotations(annotatedDoc);
@@ -2830,8 +3356,9 @@ describe('a document past 4,096 pages is extracted and split whole', () => {
 
     // AND THE WRITES ARE RECORDED, for the same reason. Each part is written durably, a `FileHandle.sync()` per file,
     // whose cost is the runner's disk: on the Windows CI image this case took 39.8 s on one run (job 111087637711,
-    // 2026-10-03) and passed 120 s on another (job 111076780068, 2026-10-02), the same code. The durable write is
-    // `atomicWrite`'s, proven in its own cases and by this file's real-disk splits; here it is the lane's file count.
+    // 2026-10-03) and ran past its 120 s limit on another (job 111076780068, 2026-10-02), the same code. The durable
+    // write is `atomicWrite`'s, proven in its own cases, and a split's parts reach a real disk in the case after this
+    // one; here it is the lane's file count.
     const files = new Map<string, Uint8Array>();
     const take = (path: string): Uint8Array => {
       const bytes = files.get(path);
@@ -2874,6 +3401,27 @@ describe('a document past 4,096 pages is extracted and split whole', () => {
     // number of files from a different list.
     expect(asked).toStrictEqual(Array.from({ length: PAGES }, (_, index) => [index]));
   }, 120_000);
+
+  it('SPLITS to a REAL DISK: each part is a file there, whole, and no temporary is left', async () => {
+    // THE CASE ABOVE RECORDS ITS WRITES, so without this one no split here reaches a disk: three parts through the
+    // production surface, read back from the folder.
+    const parts: PageSet[] = [];
+    const page = await PDFDocument.create();
+    page.addPage([100, 100]);
+    const onePage = await page.save();
+    const recording: DocumentExtractReader = (_id, _sessions, pages) => {
+      parts.push(pages);
+      return Promise.resolve(onePage);
+    };
+    const folder = mkdtempSync(join(directory, 'disk-split-'));
+    const outcome = await writingTo(join(directory, 'unused.pdf'), folder, recording).split(longDoc, { each: [[0, 2]] });
+    expect(outcome).toEqual({ kind: 'split', files: 3, destination: folder });
+    const written = readdirSync(folder);
+    expect(written.filter((name) => name.endsWith('.pdf'))).toHaveLength(3);
+    expect(written.filter((name) => name.endsWith('.monstera-tmp'))).toStrictEqual([]);
+    for (const name of written) expect((await PDFDocument.load(readFileSync(join(folder, name)))).getPageCount()).toBe(1);
+    expect(parts).toStrictEqual([[0], [1], [2]]);
+  });
 
   it('CONTROL: a run past the document is refused before anything is written', async () => {
     const file = join(mkdtempSync(join(directory, 'long-past-')), 'past.pdf');
@@ -3067,9 +3615,16 @@ describe('exportText — the document’s words, streamed one page at a time', (
     textSession = await mupdfWriter.open(bytes);
   });
 
-  function textEngine(): EngineSessions {
+  /** @param unlockedWith a password the document was unlocked with, as `document.unlock` holds it (ADR-0171) */
+  function textEngine(unlockedWith?: string): EngineSessions {
     const held = new EngineSessions();
-    held.hold(textDoc, { mupdf: textSession });
+    if (unlockedWith === undefined) {
+      held.hold(textDoc, { mupdf: textSession });
+      return held;
+    }
+    held.begin(textDoc);
+    held.markLocked(textDoc, 'needs-password');
+    held.unlock(textDoc, { mupdf: textSession }, unlockedWith);
     return held;
   }
 
@@ -3088,8 +3643,12 @@ describe('exportText — the document’s words, streamed one page at a time', (
       readonly print?: PrintDestination | null;
       readonly share?: ShareDestination | null;
       readonly images?: PageImageRequest[];
+      /** The page set each Word export handed the host (ADR-0161). */
+      readonly wordPages?: PageSet[];
       readonly pdfa?: PdfaSource | null;
       readonly optimizer?: OptimizeSource | null;
+      /** The password the document was unlocked with; absent, it opened with none. */
+      readonly unlockedWith?: string;
       /** Where the copy picker answers; absent, it refuses, for an export that uses its own. */
       readonly copyTo?: string | null;
       /** A page's structure nodes in place of the real read; absent, the real read. */
@@ -3102,7 +3661,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       ...LOCAL_READS,
       documents: textService,
       bus: bus(),
-      engine: textEngine(),
+      engine: textEngine(options.unlockedWith),
       print: options.print ?? null,
       share: options.share ?? null,
       pdfa: options.pdfa ?? null,
@@ -3121,9 +3680,10 @@ describe('exportText — the document’s words, streamed one page at a time', (
         reads.push(page);
         return await LOCAL_READS.pageText(id, sessions, page);
       },
-      word: async (id, sessions, mode) => {
+      word: async (id, sessions, mode, pages) => {
         words.push(mode);
-        return await LOCAL_READS.word(id, sessions, mode);
+        options.wordPages?.push(pages);
+        return await LOCAL_READS.word(id, sessions, mode, pages);
       },
       save: {
         provenance: ledger(),
@@ -3163,7 +3723,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     const destination = join(mkdtempSync(join(directory, 'text-')), 'words.txt');
     const { commands, reads } = exportingTo(destination);
 
-    const outcome = await commands.exportText(textDoc, 'plain');
+    const outcome = await commands.exportText(textDoc, 'plain', TWO_PAGES);
 
     const written = readFileSync(destination, 'utf8');
     expect(outcome).toEqual({ kind: 'copied', bytes: Buffer.byteLength(written, 'utf8'), destination });
@@ -3193,7 +3753,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     });
     reads = built.reads;
 
-    await built.commands.exportText(textDoc, 'plain');
+    await built.commands.exportText(textDoc, 'plain', TWO_PAGES);
 
     // Chunk 1 arrived after ONE read and chunk 2 after TWO. Reading everything
     // first answers [2, 2].
@@ -3203,7 +3763,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
   it('CONTROL: a dismissed picker returns nothing and reads no page', async () => {
     const { commands, reads } = exportingTo(null);
 
-    expect(await commands.exportText(textDoc, 'plain')).toBeUndefined();
+    expect(await commands.exportText(textDoc, 'plain', TWO_PAGES)).toBeUndefined();
     expect(reads).toEqual([]);
   });
 
@@ -3214,7 +3774,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         Promise.resolve({ kind: 'contested' as const, others: [asDocId('other')] }),
     });
 
-    expect((await commands.exportText(textDoc, 'plain'))?.kind).toBe('refused');
+    expect((await commands.exportText(textDoc, 'plain', TWO_PAGES))?.kind).toBe('refused');
     // THE DECISION, not the end state: no file either way, but a refusal that came
     // after extracting the document would still have read both pages.
     expect(reads).toEqual([]);
@@ -3226,7 +3786,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const destination = join(mkdtempSync(join(directory, 'word-')), 'words.docx');
       const { commands, reads, words } = exportingTo(destination);
 
-      const outcome = await commands.exportWord(textDoc, 'text');
+      const outcome = await commands.exportWord(textDoc, 'text', TWO_PAGES);
 
       expect(outcome?.kind).toBe('copied');
       const files = unzipSync(readFileSync(destination));
@@ -3246,7 +3806,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
     it('CONTROL: a dismissed picker returns nothing and composes nothing', async () => {
       const { commands, reads, words } = exportingTo(null);
 
-      expect(await commands.exportWord(textDoc, 'layout')).toBeUndefined();
+      expect(await commands.exportWord(textDoc, 'layout', TWO_PAGES)).toBeUndefined();
       expect(reads).toEqual([]);
       expect(words).toEqual([]);
     });
@@ -3257,7 +3817,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         checkTarget: () => Promise.resolve({ kind: 'contested' as const, others: [asDocId('other')] }),
       });
 
-      expect((await commands.exportWord(textDoc, 'rich'))?.kind).toBe('refused');
+      expect((await commands.exportWord(textDoc, 'rich', TWO_PAGES))?.kind).toBe('refused');
       // The decision, not the end state: a refusal after composing leaves no file either.
       expect(words).toEqual([]);
       expect(existsSync(destination)).toBe(false);
@@ -3269,7 +3829,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const destination = join(mkdtempSync(join(directory, 'deck-')), 'deck.pptx');
       const { commands } = exportingTo(destination);
 
-      const outcome = await commands.exportPowerPoint(textDoc);
+      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES);
 
       expect(outcome?.kind).toBe('copied');
       const files = unzipSync(readFileSync(destination));
@@ -3281,6 +3841,72 @@ describe('exportText — the document’s words, streamed one page at a time', (
       expect(second?.subarray(1, 4)).toStrictEqual(Uint8Array.of(0x50, 0x4e, 0x47));
       expect(Buffer.from(first ?? []).equals(Buffer.from(second ?? []))).toBe(false);
       expect(files['ppt/media/image3.png']).toBeUndefined();
+    });
+  });
+
+  describe('the CHOSEN PAGES only (ADR-0161)', () => {
+    it('plain text reads and writes page 2 alone when page 2 alone is chosen', async () => {
+      const destination = join(mkdtempSync(join(directory, 'text-')), 'second.txt');
+      const { commands, reads } = exportingTo(destination);
+
+      expect((await commands.exportText(textDoc, 'plain', [1]))?.kind).toBe('copied');
+      expect(readFileSync(destination, 'utf8')).toBe('second page words');
+      // THE DECISION: page 1 was never read, so it was not merely trimmed after reading the document.
+      expect(reads).toEqual([1]);
+    });
+
+    it('Word hands the host the set, and the package holds page 2’s words and not page 1’s', async () => {
+      const destination = join(mkdtempSync(join(directory, 'word-')), 'second.docx');
+      const wordPages: PageSet[] = [];
+      const { commands } = exportingTo(destination, { wordPages });
+
+      expect((await commands.exportWord(textDoc, 'text', [1]))?.kind).toBe('copied');
+      expect(wordPages).toStrictEqual([[1]]);
+      const xml = strFromU8(unzipSync(readFileSync(destination))['word/document.xml'] ?? new Uint8Array());
+      expect(xml).toContain('second page words');
+      expect(xml).not.toContain('first page words');
+    });
+
+    it('PowerPoint writes one slide for one chosen page', async () => {
+      const destination = join(mkdtempSync(join(directory, 'deck-')), 'second.pptx');
+      const images: PageImageRequest[] = [];
+      const { commands } = exportingTo(destination, { images });
+
+      expect((await commands.exportPowerPoint(textDoc, [1]))?.kind).toBe('copied');
+      const files = unzipSync(readFileSync(destination));
+      expect(files['ppt/media/image1.png']).toBeDefined();
+      expect(files['ppt/media/image2.png']).toBeUndefined();
+      expect(images.map((request) => request.page)).toStrictEqual([1]);
+    });
+
+    it('layout text hands the converter the chosen pages', async () => {
+      const destination = join(mkdtempSync(join(directory, 'text-')), 'second-layout.txt');
+      const asked: (readonly number[] | 'all')[] = [];
+      const { commands } = exportingTo(destination, {
+        flush: () => Promise.resolve(Uint8Array.of(0x25, 0x50, 0x44, 0x46)),
+        layoutText: (_pdf, pages) => {
+          asked.push(pages);
+          return Promise.resolve(
+            (async function* () {
+              yield await Promise.resolve(new TextEncoder().encode('page two\f'));
+            })(),
+          );
+        },
+      });
+
+      expect((await commands.exportText(textDoc, 'layout', [1]))?.kind).toBe('copied');
+      expect(asked).toStrictEqual([[1]]);
+    });
+
+    it('a page PAST the document is refused before any file is written', async () => {
+      const destination = join(mkdtempSync(join(directory, 'text-')), 'past.txt');
+      const { commands, reads } = exportingTo(destination);
+
+      // THE DECISION, not only the end state (audit PPPPPPP-2): the page set is refused by its own rule, by name, and no page
+      // is read — a walk that reached page 5 and failed there would also leave no file behind.
+      await expect(commands.exportText(textDoc, 'plain', [5])).rejects.toThrow(/Page 5 is outside this document/u);
+      expect(reads).toStrictEqual([]);
+      expect(existsSync(destination)).toBe(false);
     });
   });
 
@@ -3306,7 +3932,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         },
       });
 
-      const outcome = await commands.exportText(textDoc, 'layout');
+      const outcome = await commands.exportText(textDoc, 'layout', TWO_PAGES);
 
       expect(outcome).toEqual({ kind: 'copied', bytes: 22, destination });
       expect(readFileSync(destination, 'utf8')).toBe('col one      col two\n\f');
@@ -3320,7 +3946,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const picked: string[] = [];
       const { commands } = exportingTo('unused.txt', { layoutText: null, picked });
 
-      expect(await commands.exportText(textDoc, 'layout')).toEqual({ kind: 'unavailable' });
+      expect(await commands.exportText(textDoc, 'layout', TWO_PAGES)).toEqual({ kind: 'unavailable' });
       expect(picked).toEqual([]);
     });
 
@@ -3332,7 +3958,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
           Promise.reject(new LayoutTextFailedError({ stage: 'exit-code', code: 1, said: 'Syntax Error' })),
       });
 
-      const outcome = await commands.exportText(textDoc, 'layout');
+      const outcome = await commands.exportText(textDoc, 'layout', TWO_PAGES);
 
       expect(outcome?.kind).toBe('failed');
       expect(existsSync(destination)).toBe(false);
@@ -3350,7 +3976,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         },
       });
 
-      expect((await commands.exportText(textDoc, 'layout'))?.kind).toBe('refused');
+      expect((await commands.exportText(textDoc, 'layout', TWO_PAGES))?.kind).toBe('refused');
       expect(ran).toBe(0);
     });
   });
@@ -3439,9 +4065,11 @@ describe('exportText — the document’s words, streamed one page at a time', (
     /** A rewriter answering `bytes`, recording what it was given and every discard. */
     function rewriter(answer: 'optimized' | 'unreadable' | 'unavailable', bytes = COPY.length) {
       const given: { pdf: Uint8Array; setting: string }[] = [];
+      const passwords: (string | undefined)[] = [];
       let discards = 0;
-      const source: OptimizeSource = (pdf, setting) => {
+      const source: OptimizeSource = (pdf, setting, opensWith) => {
         given.push({ pdf, setting });
+        passwords.push(opensWith?.reveal());
         if (answer !== 'optimized') return Promise.resolve({ kind: answer });
         return Promise.resolve({
           kind: 'optimized',
@@ -3455,8 +4083,32 @@ describe('exportText — the document’s words, streamed one page at a time', (
           },
         });
       };
-      return { source, given, discards: () => discards };
+      return { source, given, passwords, discards: () => discards };
     }
+
+    it('hands the rewriter the password the document was unlocked with, measuring and writing (ADR-0171)', async () => {
+      const destination = join(mkdtempSync(join(directory, 'optimize-')), 'locked.pdf');
+      const { source, passwords } = rewriter('optimized');
+      const { commands } = exportingTo(null, {
+        optimizer: source,
+        flush: () => Promise.resolve(FLUSHED),
+        copyTo: destination,
+        unlockedWith: 'sample-only-0171',
+      });
+
+      await commands.optimizeMeasure(textDoc, 'medium');
+      await commands.optimize(textDoc, 'medium', await versionOf(commands));
+
+      // BOTH CALLS, since a copy is rewritten again at the write: either one without it read the pages undecrypted.
+      expect(passwords).toStrictEqual(['sample-only-0171', 'sample-only-0171']);
+    });
+
+    it('CONTROL: a document no password opened hands the rewriter none', async () => {
+      const { source, passwords } = rewriter('optimized', 600);
+      const { commands } = exportingTo(null, { optimizer: source, flush: () => Promise.resolve(FLUSHED) });
+      await commands.optimizeMeasure(textDoc, 'medium');
+      expect(passwords).toStrictEqual([undefined]);
+    });
 
     const versionOf = async (commands: DocumentCommands): Promise<DocVersion> =>
       (await commands.pageTables(textDoc, 0)).version;
@@ -3537,15 +4189,24 @@ describe('exportText — the document’s words, streamed one page at a time', (
     function recordingPrinter(
       pages: readonly number[] | null,
       refuse: { readonly start?: boolean; readonly page?: boolean } = {},
-    ): { readonly destination: PrintDestination; readonly log: string[]; readonly drawn: Uint8Array[] } {
+    ): {
+      readonly destination: PrintDestination;
+      readonly log: string[];
+      readonly drawn: Uint8Array[];
+      /** The pages each dialog was told to start on (ADR-0161 Decision 3). */
+      readonly starts: (readonly number[])[];
+    } {
       const log: string[] = [];
       const drawn: Uint8Array[] = [];
+      const starts: (readonly number[])[] = [];
       return {
         log,
         drawn,
+        starts,
         destination: {
-          choose: (pageCount) => {
+          choose: (pageCount, start) => {
             log.push(`dialog for ${String(pageCount)} page(s)`);
+            starts.push(start);
             if (pages === null) return null;
             return {
               pages,
@@ -3569,12 +4230,23 @@ describe('exportText — the document’s words, streamed one page at a time', (
       };
     }
 
+    it('tells the system dialog to START on the row’s pages, and prints what the DIALOG answered (ADR-0161)', async () => {
+      // THE DIALOG ANSWERS PAGE 1 although the row chose page 2: the person changed it there, and theirs prints.
+      const printer = recordingPrinter([0]);
+      const images: PageImageRequest[] = [];
+      const { commands } = exportingTo(null, { print: printer.destination, images });
+
+      expect(await commands.print(textDoc, 150, [1])).toStrictEqual({ kind: 'printed', pages: 1 });
+      expect(printer.starts).toStrictEqual([[1]]);
+      expect(images.map((request) => request.page)).toStrictEqual([0]);
+    });
+
     it('rasterises EACH page the dialog chose, in its order, at the DPI asked, and finishes the document', async () => {
       const printer = recordingPrinter([1, 0]);
       const images: PageImageRequest[] = [];
       const { commands } = exportingTo(null, { print: printer.destination, images });
 
-      expect(await commands.print(textDoc, 150)).toStrictEqual({ kind: 'printed', pages: 2 });
+      expect(await commands.print(textDoc, 150, TWO_PAGES)).toStrictEqual({ kind: 'printed', pages: 2 });
 
       expect(printer.log).toStrictEqual(['dialog for 2 page(s)', 'start words.pdf', 'page', 'page', 'finish', 'release']);
       expect(images).toStrictEqual([
@@ -3591,7 +4263,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const images: PageImageRequest[] = [];
       const { commands } = exportingTo(null, { print: printer.destination, images });
 
-      expect(await commands.print(textDoc, 300)).toBeUndefined();
+      expect(await commands.print(textDoc, 300, TWO_PAGES)).toBeUndefined();
       expect(printer.log).toStrictEqual(['dialog for 2 page(s)']);
       expect(images).toStrictEqual([]);
     });
@@ -3600,7 +4272,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const printer = recordingPrinter([0, 1], { page: true });
       const { commands } = exportingTo(null, { print: printer.destination });
 
-      expect(await commands.print(textDoc, 300)).toStrictEqual({ kind: 'failed' });
+      expect(await commands.print(textDoc, 300, TWO_PAGES)).toStrictEqual({ kind: 'failed' });
       expect(printer.log).toStrictEqual(['dialog for 2 page(s)', 'start words.pdf', 'abort', 'release']);
     });
 
@@ -3608,7 +4280,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const printer = recordingPrinter([0], { start: true });
       const { commands } = exportingTo(null, { print: printer.destination });
 
-      expect(await commands.print(textDoc, 300)).toStrictEqual({ kind: 'failed' });
+      expect(await commands.print(textDoc, 300, TWO_PAGES)).toStrictEqual({ kind: 'failed' });
       expect(printer.log).toStrictEqual(['dialog for 2 page(s)', 'start words.pdf', 'release']);
     });
 
@@ -3616,7 +4288,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const images: PageImageRequest[] = [];
       const { commands } = exportingTo(null, { print: null, images });
 
-      expect(await commands.print(textDoc, 300)).toStrictEqual({ kind: 'unavailable' });
+      expect(await commands.print(textDoc, 300, TWO_PAGES)).toStrictEqual({ kind: 'unavailable' });
       expect(images).toStrictEqual([]);
     });
   });
@@ -3808,7 +4480,9 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
 
   /** No edits, at the version the review grid's first read answers — the export a person makes without correcting anything. */
   async function unreviewed(commands: DocumentCommands, doc: DocId): Promise<ExcelReview> {
-    return { version: (await commands.pageTables(doc, 0)).version, edits: [] };
+    const { version, pageCount } = await commands.pageTables(doc, 0);
+    // EVERY PAGE of THIS document, as *Every page* sends it.
+    return { version, edits: [], pages: [[0, pageCount - 1]] };
   }
 
   it('the review grid reads a page’s cells, and an EDIT replaces that cell’s text in the workbook', async () => {
@@ -3827,6 +4501,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
     const outcome = await commands.exportExcel(tablesDoc, 'sheet-per-page', {
       version: grid.version,
       edits: [{ page: 1, table: 0, row: 1, column: 0, text: 'Hex bolt' }],
+      pages: THREE_PAGES,
     });
 
     expect(outcome?.kind).toBe('copied');
@@ -3847,6 +4522,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       await commands.exportExcel(tablesDoc, 'sheet-per-page', {
         version,
         edits: [{ page: 1, table: 0, row: 1, column: 3, text: 'no such cell' }],
+        pages: THREE_PAGES,
       }),
     ).toStrictEqual({ kind: 'changed' });
     expect(picked).toStrictEqual([]);
@@ -3860,6 +4536,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       await commands.exportExcel(tablesDoc, 'sheet-per-page', {
         version: asDocVersion(Number(version) + 1),
         edits: [],
+        pages: THREE_PAGES,
       }),
     ).toStrictEqual({ kind: 'changed' });
     expect(picked).toStrictEqual([]);
@@ -3951,7 +4628,7 @@ describe('exportExcel — the tables MuPDF finds, as a workbook (ADR-0073)', () 
       const { version } = await commands.pageTables(tablesDoc, 0);
 
       expect(
-        await commands.exportExcel(tablesDoc, 'sheet-per-page', { version: asDocVersion(Number(version) + 1), edits: [] }, 'azure'),
+        await commands.exportExcel(tablesDoc, 'sheet-per-page', { version: asDocVersion(Number(version) + 1), edits: [], pages: THREE_PAGES }, 'azure'),
       ).toStrictEqual({ kind: 'changed' });
       expect(picked).toStrictEqual([]);
       expect(asked).toStrictEqual([]);
@@ -4143,8 +4820,9 @@ describe('sign — a visible signature', () => {
    */
   function refusingSigner(error: Error): RegisteredWriter<'signpdf'> {
     return {
-      serialise: (session) => Promise.resolve(session),
-      serialiseInto: serialiseIntoFile((session: Uint8Array) => Promise.resolve(session)),
+      // HOSTED ON THE MuPDF SESSION since ADR-0148, so its checkpoint is that session's serialise.
+      serialise: (held) => mupdfWriter.serialise(held),
+      serialiseInto: serialiseIntoFile((held: MupdfSession) => mupdfWriter.serialise(held)),
       apply: () => Promise.reject(error),
       capture: () =>
         Promise.resolve({ captured: false as const, reason: 'the refusing signer records nothing' }),
@@ -4165,7 +4843,8 @@ describe('sign — a visible signature', () => {
       documents: service,
       bus: bus(),
       engine: engine(),
-      image: {
+      signaturePicture: {
+        ...noSignaturePicture,
         pick: () => Promise.resolve('signature.gif'),
         read: () => Promise.reject(new Error('an extension with no decoder must not be read')),
       },
@@ -4181,6 +4860,28 @@ describe('sign — a visible signature', () => {
     expect(certificate.asked).toStrictEqual([]);
   });
 
+  it('a SCANNED PDF that needs a password is said before any credential is asked for (G3d)', async () => {
+    const certificate = recordingCertificate();
+    const pdf = new TextEncoder().encode('%PDF-1.7 locked');
+    const commands = new DocumentCommands({
+      ...INERT,
+      documents: service,
+      bus: bus(),
+      engine: engine(),
+      signaturePicture: {
+        pick: () => Promise.resolve('signature.pdf'),
+        read: () => Promise.resolve({ kind: 'read', bytes: pdf }),
+        scan: () => Promise.resolve({ kind: 'locked' }),
+      },
+      certificate: certificate.source,
+    });
+
+    expect(
+      await commands.sign(docId, { passphrase: '', appearance: { ...placement, mark: { kind: 'image' } } }),
+    ).toStrictEqual({ kind: 'scan-locked' });
+    expect(certificate.asked).toStrictEqual([]);
+  });
+
   it('a CANCELLED picture asks for no credential either', async () => {
     const certificate = recordingCertificate();
     const commands = new DocumentCommands({
@@ -4188,7 +4889,8 @@ describe('sign — a visible signature', () => {
       documents: service,
       bus: bus(),
       engine: engine(),
-      image: {
+      signaturePicture: {
+        ...noSignaturePicture,
         pick: () => Promise.resolve(null),
         read: () => Promise.reject(new Error('a cancelled picker must not read')),
       },
@@ -4227,7 +4929,7 @@ describe('sign — a visible signature', () => {
         passphrase: '',
         appearance: {
           ...placement,
-          mark: { kind: 'typed', text: 'Grace Hopper', font: 'courier' },
+          mark: outlined('Grace Hopper'),
         },
       }),
     ).toStrictEqual({ kind: 'cancelled' });
@@ -4242,7 +4944,7 @@ describe('sign — a visible signature', () => {
     const library: LibraryReader = {
       lookup: (id) =>
         id === KEPT_TYPED
-          ? { id, kind: 'signature', look: { kind: 'typed', text: 'Grace Hopper', font: 'courier' } }
+          ? { id, kind: 'signature', look: { kind: 'typed', text: 'Grace Hopper', font: 'courier-prime' } }
           : id === KEPT_PICTURE
             ? { id, kind: 'signature', look: { kind: 'picture', name: 'ink' } }
             : id === KEPT_STAMP
@@ -4256,8 +4958,8 @@ describe('sign — a visible signature', () => {
       const certificate = recordingCertificate();
       let mark: unknown;
       const recording: RegisteredWriter<'signpdf'> = {
-        serialise: (session) => Promise.resolve(session),
-        serialiseInto: serialiseIntoFile((session: Uint8Array) => Promise.resolve(session)),
+        serialise: (held) => mupdfWriter.serialise(held),
+        serialiseInto: serialiseIntoFile((held: MupdfSession) => mupdfWriter.serialise(held)),
         apply: (request) => {
           const command: unknown = request.command;
           mark = (command as { readonly appearance?: { readonly mark?: unknown } }).appearance?.mark;
@@ -4273,27 +4975,25 @@ describe('sign — a visible signature', () => {
         bus: new CommandBus({ mupdf: localMupdfWriter, signpdf: recording }),
         engine: engine(),
         // NO PICTURE IS PICKED for a kept one: the picker refusing makes reaching it a failure of the case.
-        image: {
+        signaturePicture: {
           pick: () => Promise.reject(new Error('a kept signature opens no picture picker')),
           read: () => Promise.reject(new Error('a kept signature reads no picked file')),
+          scan: () => Promise.reject(new Error('a kept signature reads no signature PDF')),
         },
         certificate: certificate.source,
-        save: {
-          ...noSaving,
-          flush: (_docId, sessions) => {
-            const held = sessions.mupdf;
-            if (held === undefined) throw new Error('the fixture holds a session');
-            return mupdfWriter.serialise(held);
-          },
-        },
+        save: noSaving,
       });
       const outcome = await commands.sign(docId, { passphrase: '', appearance: { ...placement, mark: { kind: 'saved', id } } });
       return { outcome, mark, certificate: certificate.asked };
     };
 
-    it('a kept TYPED signature signs as itself', async () => {
-      const signed = await signingWith(KEPT_TYPED);
-      expect(signed.mark).toStrictEqual({ kind: 'typed', text: 'Grace Hopper', font: 'courier' });
+    it('a kept TYPED signature named only by its id is REFUSED: main has no outline to draw (ADR-0150)', async () => {
+      // THE RENDERER SENDS A KEPT TYPED NAME AS ITS OUTLINE (`chosenOfKept`), so this is its defect, answered as one —
+      // never drawn as nothing, and never set in some face main would have to choose.
+      // THE WHOLE SENTENCE, so a different failure that happens to mention an outline cannot stand in for this one.
+      await expect(signingWith(KEPT_TYPED)).rejects.toThrow(
+        'a kept typed signature is placed by its outline, which the renderer makes, never by its id',
+      );
     });
 
     it('a kept PICTURE signs with the library’s bytes, and no picker opens', async () => {
@@ -4313,11 +5013,11 @@ describe('sign — a visible signature', () => {
 
   it('names each refusal by its CLASS, and CONTROL: an unnamed failure is not called a wrong password', async () => {
     // THE FIXTURE REACHES THE SIGNER, which the first draft of this case did
-    // not: a byte-image command's bytes come from the save source's `flush`,
-    // `INERT`'s refuses, and that refusal arrived at the catch and was answered
-    // `wrong-passphrase` — for all three inputs, so the control passed by the
-    // same route as the defect. The flush below serialises the held session,
-    // exactly as the save cases' real one does.
+    // not: while the signer was a byte-image writer its bytes came from the
+    // save source's `flush`, `INERT`'s refused, and that refusal arrived at the
+    // catch and was answered `wrong-passphrase` — for all three inputs, so the
+    // control passed by the same route as the defect. Since ADR-0148 the signer
+    // is hosted on the MuPDF session and is handed it, so no flush is asked.
     const signing = (error: Error): Promise<unknown> => {
       const commands = new DocumentCommands({
         ...INERT,
@@ -4325,27 +5025,17 @@ describe('sign — a visible signature', () => {
         bus: new CommandBus({ mupdf: localMupdfWriter, signpdf: refusingSigner(error) }),
         engine: engine(),
         certificate: recordingCertificate().source,
-        save: {
-          ...noSaving,
-          flush: (_docId, sessions) => {
-            const held = sessions.mupdf;
-            if (held === undefined) throw new Error('the fixture holds a session');
-            return mupdfWriter.serialise(held);
-          },
-        },
+        save: noSaving,
       });
       return commands.sign(docId, {
         passphrase: '',
         appearance: {
           ...placement,
-          mark: { kind: 'typed', text: 'Grace Hopper', font: 'courier' },
+          mark: outlined('Grace Hopper'),
         },
       });
     };
 
-    expect(
-      await signing(new SignatureAppearanceRefusedError('unencodable-text', 'refused by the case')),
-    ).toStrictEqual({ kind: 'unencodable-text' });
     expect(
       await signing(new SignatureAppearanceRefusedError('unreadable-image', 'refused by the case')),
     ).toStrictEqual({ kind: 'image-unreadable' });
@@ -4476,6 +5166,7 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     keep: boolean,
     picked: { readonly path: string; readonly bytes: Uint8Array } | null = null,
     heldPicture: HeldPicture = NO_HELD_PICTURE,
+    scan: ScanSignature | null = null,
   ): Promise<{ outcome: unknown; kinds: string[]; types: (string | undefined)[]; library: ReturnType<typeof createPersonalLibrary> }> => {
     const kinds: string[] = [];
     // THE MEDIA TYPE each command carried — *Sign with certificate*'s decoder is chosen by it.
@@ -4499,26 +5190,29 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
       documents: service,
       bus: new CommandBus({ mupdf: recording }),
       engine: engine(),
-      image: {
+      signaturePicture: {
         pick: () => Promise.resolve(picked?.path ?? null),
         read: () =>
           Promise.resolve(picked === null ? { kind: 'unreadable' as const } : { kind: 'read' as const, bytes: picked.bytes }),
+        scan,
       },
     });
     const outcome = await commands.placeSignature(docId, { page: 0, rect: RECT, mark, keep, stamp: STAMP });
     return { outcome, kinds, types, library };
   };
 
-  it('a TYPED mark reaches the engine as placeSignatureMark, and Save for reuse KEEPS it as it was made', async () => {
-    const mark = { kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' } as const;
-    const placed = await placing(mark, true);
+  it('a TYPED mark reaches the engine as placeSignatureMark, and Save for reuse KEEPS its name and face', async () => {
+    const placed = await placing(outlined('Ada Lovelace'), true);
     expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'kept' });
     expect(placed.kinds).toStrictEqual(['placeSignatureMark']);
-    expect(placed.library.list('signature').map((entry) => entry.look)).toStrictEqual([mark]);
+    // THE OUTLINE IS NOT KEPT: it is derived from the name and the face, and storing a derived value goes stale.
+    expect(placed.library.list('signature').map((entry) => entry.look)).toStrictEqual([
+      { kind: 'typed', text: 'Ada Lovelace', font: 'courier-prime' },
+    ]);
   });
 
   it('CONTROL: with Save for reuse off, the same mark is placed and the library is left empty', async () => {
-    const placed = await placing({ kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' }, false);
+    const placed = await placing(outlined('Ada Lovelace'), false);
     expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'not-asked' });
     expect(placed.library.list('signature')).toStrictEqual([]);
   });
@@ -4539,6 +5233,43 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     expect(placed.types).toStrictEqual(['image/png']);
   });
 
+  it('a SCANNED PDF picked at the click goes to the compose host, and the PNG it answers is placed and kept (G3d)', async () => {
+    const pdf = new TextEncoder().encode('%PDF-1.7 a scanned signature');
+    const scanned: Uint8Array[] = [];
+    const scan: ScanSignature = (bytes) => {
+      scanned.push(bytes);
+      return Promise.resolve({ kind: 'drawn', png: PICTURE });
+    };
+    const placed = await placing({ kind: 'image' }, true, { path: '/scans/My signature.pdf', bytes: pdf }, NO_HELD_PICTURE, scan);
+    // THE PDF'S OWN BYTES reached the host, and main placed what came back — never the PDF.
+    expect(scanned).toStrictEqual([pdf]);
+    expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'kept' });
+    expect(placed.kinds).toStrictEqual(['placeSignaturePicture']);
+    expect(placed.types).toStrictEqual(['image/png']);
+    const [entry] = placed.library.list('signature');
+    expect(entry?.look).toStrictEqual({ kind: 'picture', name: 'My signature' });
+    expect(placed.library.picture(entry?.id ?? '')?.bytes).toStrictEqual(PICTURE);
+  });
+
+  it('a scanned PDF with no ink, or a password, is said, and nothing reaches the engine', async () => {
+    const pdf = new TextEncoder().encode('%PDF-1.7');
+    for (const kind of ['blank', 'locked'] as const) {
+      const placed = await placing({ kind: 'image' }, true, { path: 'scan.pdf', bytes: pdf }, NO_HELD_PICTURE, () =>
+        Promise.resolve({ kind }),
+      );
+      expect(placed.outcome).toStrictEqual({ kind: `scan-${kind}` });
+      expect(placed.kinds).toStrictEqual([]);
+      expect(placed.library.list('signature')).toStrictEqual([]);
+    }
+  });
+
+  it('CONTROL: a PNG is never sent to the compose host, and a PDF with none to read it is a fault, not the file’s', async () => {
+    const scan: ScanSignature = () => Promise.reject(new Error('a picture must not be sent to the compose host'));
+    const placed = await placing({ kind: 'image' }, false, { path: 'signature.png', bytes: PICTURE }, NO_HELD_PICTURE, scan);
+    expect(placed.outcome).toMatchObject({ kind: 'placed' });
+    await expect(placing({ kind: 'image' }, false, { path: 'scan.pdf', bytes: PICTURE })).rejects.toThrow(/no compose host/u);
+  });
+
   it('CONTROL: bytes that are no picture, named .png, are unreadable BEFORE any command reaches the engine', async () => {
     const placed = await placing({ kind: 'image' }, false, { path: 'not-a-picture.png', bytes: Uint8Array.of(1, 2, 3, 4) });
     expect(placed.outcome).toStrictEqual({ kind: 'unreadable' });
@@ -4553,12 +5284,6 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     const placed = await placing({ kind: 'image' }, true, { path: 'big.png', bytes: large });
     expect(placed.outcome).toMatchObject({ kind: 'placed', kept: 'not-keepable' });
     expect(placed.library.list('signature')).toStrictEqual([]);
-  });
-
-  it('a typed name the font cannot draw is refused BEFORE any command reaches the engine', async () => {
-    const placed = await placing({ kind: 'typed', text: 'Ada ✓', font: 'courier' }, true);
-    expect(placed.outcome).toStrictEqual({ kind: 'unencodable-text' });
-    expect(placed.kinds).toStrictEqual([]);
   });
 
   it('a PREVIEWED picture is placed from the bytes main HOLDS, no picker opens, and the handle is released once placed', async () => {
@@ -4668,7 +5393,7 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     const outcome = await commands.placeSignature(docId, {
       page: 0,
       rect: RECT,
-      mark: { kind: 'typed', text: 'Grace Hopper', font: 'helvetica' },
+      mark: outlined('Grace Hopper'),
       keep: false,
       stamp: STAMP,
     });
@@ -5466,6 +6191,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     await t.commands.execute(t.target, {
       kind: 'importPageAsLayer',
       source: t.source,
+      sourcePage: 0,
       name: 'Letterhead',
       at: 1,
       version: t.version,
@@ -5498,6 +6224,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     await t.commands.execute(t.target, {
       kind: 'importPageAsLayer',
       source: t.source,
+      sourcePage: 0,
       name: 'First',
       at: 1,
       version: t.version,
@@ -5505,7 +6232,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     expect((await t.commands.save(t.target, { breakSignatures: true })).kind).toBe('saved');
 
     const { version } = await t.documents.run(t.target, () => Promise.resolve(null));
-    await t.commands.execute(t.target, { kind: 'importPageAsLayer', source: t.source, name: 'Second', at: 0, version });
+    await t.commands.execute(t.target, { kind: 'importPageAsLayer', source: t.source, sourcePage: 0, name: 'Second', at: 0, version });
     const second = await t.commands.save(t.target, { breakSignatures: true });
     expect(second.kind).toBe('saved');
 
@@ -5524,6 +6251,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     await t.commands.execute(t.target, {
       kind: 'importPageAsLayer',
       source: t.source,
+      sourcePage: 0,
       name: 'First',
       at: 1,
       version: t.version,
@@ -5536,7 +6264,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     renameSync(outside, t.targetPath);
 
     const { version } = await t.documents.run(t.target, () => Promise.resolve(null));
-    await t.commands.execute(t.target, { kind: 'importPageAsLayer', source: t.source, name: 'Second', at: 0, version });
+    await t.commands.execute(t.target, { kind: 'importPageAsLayer', source: t.source, sourcePage: 0, name: 'Second', at: 0, version });
     const refused = await t.commands.save(t.target, { breakSignatures: true });
     expect(refused).toMatchObject({ kind: 'refused', verdict: { kind: 'replaced' } });
   });
@@ -5546,6 +6274,7 @@ describe('importPageAsLayer — saved and reopened, and undone, through the lane
     await t.commands.execute(t.target, {
       kind: 'importPageAsLayer',
       source: t.source,
+      sourcePage: 0,
       name: 'Letterhead',
       at: 1,
       version: t.version,
@@ -5875,5 +6604,157 @@ describe('suggestedComposedName', () => {
     expect(suggestedComposedName('C:\\notes\\README')).toBe('README.pdf');
     // A NAME THAT IS ONLY AN EXTENSION keeps it, rather than suggesting a hidden `.pdf`.
     expect(suggestedComposedName('C:\\notes\\.md')).toBe('.md.pdf');
+  });
+});
+
+/**
+ * A document opened with its password leaves no unprotected copy on disk, and no trace of the password once it closes
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 6).
+ *
+ * The document is generated and encrypted here with AES-256 and both passwords, never a person's file. Everything main
+ * writes for it goes under one root: the file and its save's backup, the service's checkpoints, and the snapshot each
+ * restore writes, as the supervisor's recycle writes one. The engine is MuPDF in this process; PDFium's output is
+ * `proof:pdfiumcommand`'s case, and the rewriter's and the inline-image keeper's are `proof:shimpassword`'s.
+ *
+ * Each scan carries its own positive control, run on the same root: a plaintext PDF planted there is reported, and the
+ * password planted in a file there is found, in both encodings.
+ */
+describe('a document opened with its password: no unprotected copy, and no password left after close', () => {
+  const USER = 'sample-user-0171-d6';
+  const OWNER = 'sample-owner-0171-d6';
+
+  /** Every file under `root`, recursively. */
+  function filesUnder(root: string): string[] {
+    return readdirSync(root, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory() ? filesUnder(join(root, entry.name)) : [join(root, entry.name)],
+    );
+  }
+
+  /** The PDFs under `root` and which of them open with no password. */
+  async function unprotectedPdfs(root: string): Promise<{ readonly pdfs: number; readonly open: readonly string[] }> {
+    const open: string[] = [];
+    let pdfs = 0;
+    for (const path of filesUnder(root)) {
+      const bytes = new Uint8Array(readFileSync(path));
+      if (!Buffer.from(bytes.subarray(0, 5)).equals(Buffer.from('%PDF-'))) continue;
+      pdfs += 1;
+      try {
+        await mupdfWriter.close(await mupdfWriter.open(bytes));
+        open.push(basename(path));
+      } catch (thrown) {
+        if (!(thrown instanceof DocumentLocked)) throw thrown;
+      }
+    }
+    return { pdfs, open };
+  }
+
+  /** The files under `root` holding either password, in UTF-8 or in UTF-16LE. */
+  function filesHoldingAPassword(root: string): string[] {
+    const needles = [USER, OWNER].flatMap((password) => [Buffer.from(password, 'utf8'), Buffer.from(password, 'utf16le')]);
+    return filesUnder(root).filter((path) => {
+      const bytes = readFileSync(path);
+      return needles.some((needle) => bytes.includes(needle));
+    });
+  }
+
+  it('edits, checkpoints, an undo’s restore, a redo and a save leave only encrypted PDFs; after close no file holds the password', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'monstera-locked-copies-'));
+    const documents = join(root, 'documents');
+    const snapshots = join(root, 'snapshots');
+    for (const directory of [documents, snapshots]) mkdirSync(directory);
+    try {
+      const plain = await PDFDocument.create();
+      const font = await plain.embedFont(StandardFonts.Helvetica);
+      for (let index = 0; index < 3; index += 1) {
+        plain.addPage([612, 792]).drawText(`generated page ${String(index + 1)}`, { font, size: 24, x: 72, y: 700 });
+      }
+      plain.encrypt({ userPassword: USER, ownerPassword: OWNER, algorithm: 'AES-256' });
+      const path = join(documents, 'locked.pdf');
+      writeFileSync(path, await plain.save());
+
+      const held = new EngineSessions();
+      const registry = new CapabilityRegistry();
+      const own = new DocumentService(registry, {
+        documentBytesCeiling: AMPLE_CEILING,
+        checkpointDirectory: join(root, 'checkpoints'),
+        teardown: held.releaseOnClose,
+      });
+      const outcome = await own.open(registry.mint(path));
+      if (outcome.kind !== 'opened') throw new Error(`fixture did not open: ${outcome.kind}`);
+      const docId = outcome.docId;
+      // OPENED LOCKED, then unlocked as `document.unlock` does: the engine opens with the password and the holder keeps it.
+      held.markLocked(docId, 'needs-password');
+      held.unlock(docId, { mupdf: await mupdfWriter.open(new Uint8Array(readFileSync(path)), USER) }, USER);
+
+      let restores = 0;
+      const flushHeld: DocumentFlush = (_id, sessions) => {
+        const mupdf = sessions.mupdf;
+        if (mupdf === undefined) throw new Error('the fixture holds a session');
+        return mupdfWriter.serialise(mupdf);
+      };
+      const commands = new DocumentCommands({
+        ...LOCAL_READS,
+        signaturesKept: signaturesKeptBySave,
+        documents: own,
+        bus: new CommandBus({ mupdf: localMupdfWriter }),
+        engine: held,
+        // THE SUPERVISOR'S RECYCLE: the checkpoint written to a snapshot file and reopened with what the holder holds.
+        restore: (id, write) =>
+          held.recycle(id, async () => {
+            restores += 1;
+            const snapshot = join(snapshots, `restore-${String(restores)}.pdf`);
+            await write(snapshot);
+            return { mupdf: await mupdfWriter.open(new Uint8Array(readFileSync(snapshot)), held.opensWith(id)?.reveal()) };
+          }),
+        save: {
+          provenance: ledger(),
+          deps: {
+            checkWriteTarget: (id) => own.checkWriteTarget(id),
+            surface: nodeFileSurface,
+            names: (target) => siblingNames(target, 1),
+            wait: () => Promise.resolve(),
+          },
+          flush: flushHeld,
+          stage: stagingFrom(flushHeld),
+        },
+      });
+
+      await commands.execute(docId, rotateOnce);
+      // TERMINAL, so the bus takes a checkpoint file before it.
+      await commands.execute(docId, { kind: 'deletePages', pages: [2] });
+      expect(await commands.undo(docId)).toBeDefined();
+      expect(restores).toBe(1);
+      expect(await commands.redo(docId)).toBeDefined();
+      expect(await commands.save(docId, { breakSignatures: false })).toMatchObject({ kind: 'saved' });
+
+      // THE FILES THE CASE IS ABOUT EXIST, so a clean answer is not an empty root's: the saved file and its backup, a
+      // checkpoint, and the restore's snapshot.
+      const before = await unprotectedPdfs(root);
+      expect(readdirSync(join(root, 'checkpoints')).length).toBeGreaterThan(0);
+      expect(readdirSync(snapshots)).toStrictEqual(['restore-1.pdf']);
+      expect(existsSync(`${path}.bak`)).toBe(true);
+      expect(before.pdfs).toBeGreaterThanOrEqual(4);
+      expect(before.open).toStrictEqual([]);
+
+      // POSITIVE CONTROL, ON THE SAME ROOT: a plaintext PDF planted here is reported, so the scan can see one.
+      writeFileSync(join(snapshots, 'planted-plain.pdf'), await pdfBytes());
+      expect((await unprotectedPdfs(root)).open).toStrictEqual(['planted-plain.pdf']);
+      rmSync(join(snapshots, 'planted-plain.pdf'));
+
+      // CLOSED: the holder wipes the password and the service removes its checkpoints.
+      await own.close(docId);
+      expect(held.opensWith(docId)).toBeUndefined();
+      expect(filesHoldingAPassword(root)).toStrictEqual([]);
+
+      // POSITIVE CONTROL, ON THE SAME ROOT: the password planted in a file in either encoding is found.
+      writeFileSync(join(snapshots, 'planted-utf8.txt'), `a note that says ${USER}`);
+      writeFileSync(join(snapshots, 'planted-utf16.bin'), Buffer.from(`and ${OWNER}`, 'utf16le'));
+      expect(filesHoldingAPassword(root).map((each) => basename(each)).sort()).toStrictEqual([
+        'planted-utf16.bin',
+        'planted-utf8.txt',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

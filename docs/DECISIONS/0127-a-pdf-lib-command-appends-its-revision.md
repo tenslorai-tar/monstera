@@ -94,3 +94,11 @@ append is that ADR's question, not this one's.
 appended, which MuPDF reads unrepaired with one more version; CONTROL, a whole save of the same edit is not; and
 `appendRevision` refuses a document loaded whole. The kernel's 1,785 cases pass on the appended route, the
 `reproducible` declarations' byte-equality cases among them.
+
+## Addition, 2026-10-03 — the signer takes the appended route too
+
+The correction above kept the signer on its whole save. That save is what broke an earlier signature when a document
+was signed a second time, measured on 2026-10-03, so the signer's placeholder now takes `openForWriting` and
+`appendRevision` like every pdf-lib command, with objects uncompressed
+([ADR-0149](0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)). `openWhole` has no caller
+left and goes.

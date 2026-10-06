@@ -1,4 +1,4 @@
-import type { AiProviderId } from '@monstera/contract';
+import { AI_PROVIDERS, type AiProviderId } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import { PROVIDERS_WITHOUT_A_LIST, listModels, readModels } from './aiModels.js';
@@ -27,6 +27,22 @@ function fetching(answer: { status: number; body?: unknown; throws?: boolean }):
 }
 
 describe('listModels', () => {
+  it('NO PROVIDER’S request carries the key in its URL, and every one that asks carries it somewhere (CR-SEC-03)', async () => {
+    const key = 'secret-key-0123';
+    const askedOf: { provider: string; url: string; inHeaders: boolean }[] = [];
+    for (const provider of Object.keys(AI_PROVIDERS) as AiProviderId[]) {
+      const { fetchImpl, asked } = fetching({ status: 200, body: { data: [], models: [] } });
+      await listModels({ provider, key, endpoint: 'https://example.openai.azure.com', fetchImpl });
+      for (const request of asked) {
+        askedOf.push({ provider, url: request.url, inHeaders: Object.values(request.headers).some((value) => value.includes(key)) });
+      }
+    }
+    // THE POSITIVE CONTROL: requests were made, so "no URL carries it" is a reading and not an empty list.
+    expect(askedOf.length).toBeGreaterThan(5);
+    expect(askedOf.filter((request) => request.url.includes(key))).toStrictEqual([]);
+    expect(askedOf.filter((request) => !request.inHeaders)).toStrictEqual([]);
+  });
+
   it('asks OpenAI-format providers with a bearer key and reads the ids out', async () => {
     const { fetchImpl, asked } = fetching({ status: 200, body: { data: [{ id: 'gpt-x' }, { id: 'gpt-y' }] } });
 
@@ -55,12 +71,15 @@ describe('listModels', () => {
     ]);
   });
 
-  it('asks Gemini with the key in the query and keeps the full name as the id', async () => {
+  it('asks Gemini with the key in a header, never the query, and keeps the full name as the id', async () => {
     const { fetchImpl, asked } = fetching({ status: 200, body: { models: [{ name: 'models/gemini-x' }] } });
 
     const list = await listModels({ provider: 'gemini', key: 'a b', fetchImpl });
 
-    expect(asked[0]?.url).toBe('https://generativelanguage.googleapis.com/v1beta/models?key=a%20b');
+    expect(asked[0]).toStrictEqual({
+      url: 'https://generativelanguage.googleapis.com/v1beta/models',
+      headers: { 'x-goog-api-key': 'a b' },
+    });
     expect(list.models).toStrictEqual([
       { id: 'models/gemini-x', label: 'gemini-x', capabilities: { vision: null, streaming: null } },
     ]);
@@ -88,6 +107,38 @@ describe('listModels', () => {
 
     expect(asked).toStrictEqual([]);
     expect(list.source).toBe('fallback');
+  });
+
+  it('sends the key to NO address that is not an Azure OpenAI resource, and says which problem it is', async () => {
+    // EACH WOULD BE ASKED WITHOUT THE CHECK: every one parses as a URL, so nothing else on the path refuses it, and
+    // the call count is the claim.
+    for (const endpoint of [
+      'http://mine.openai.azure.com',
+      'https://example.test',
+      'https://mine.openai.azure.com.example.test',
+      'https://evilopenai.azure.com',
+      'https://user:pass@mine.openai.azure.com',
+      'https://mine.openai.azure.com:8443',
+      'https://127.0.0.1',
+    ]) {
+      const { fetchImpl, asked } = fetching({ status: 200, body: { data: [{ id: 'x' }] } });
+      const list = await listModels({ provider: 'azure-openai', key: 'k', endpoint, fetchImpl });
+      expect({ endpoint, asked }).toStrictEqual({ endpoint, asked: [] });
+      expect(list).toMatchObject({ source: 'fallback', problem: 'not-the-service' });
+    }
+  });
+
+  it('CONTROL: every host form Azure documents is asked, at the resource’s own origin', async () => {
+    for (const [endpoint, origin] of [
+      ['https://mine.openai.azure.com/openai/v1/', 'https://mine.openai.azure.com'],
+      ['https://mine.services.ai.azure.com', 'https://mine.services.ai.azure.com'],
+      ['https://mine.openai.azure.us/', 'https://mine.openai.azure.us'],
+      ['https://MINE.OpenAI.Azure.com:443', 'https://mine.openai.azure.com'],
+    ] as const) {
+      const { fetchImpl, asked } = fetching({ status: 200, body: { data: [{ id: 'x' }] } });
+      await listModels({ provider: 'azure-openai', key: 'k', endpoint, fetchImpl });
+      expect(asked.map((each) => each.url)).toStrictEqual([`${origin}/openai/models?api-version=2024-10-21`]);
+    }
   });
 
   it('asks nothing without a key, for any provider', async () => {

@@ -128,9 +128,19 @@ async function sampler(sharp, png) {
   };
 }
 
-/** @param {any} kernel @param {any} session @param {'text' | 'layout' | 'rich'} mode */
+/**
+ * TYPED FROM THE BUILT DECLARATIONS of the module it runs, which `npm run typecheck` writes before it checks this
+ * file, so a parameter the composer gains is a typecheck failure here rather than an `undefined` the built module
+ * meets on the runner. Not from the source: that puts the kernel's own globals in this program beside the built
+ * ones, and they collide.
+ *
+ * @param {typeof import('../../packages/kernel/dist/wordPictures.js')} kernel
+ * @param {import('../../packages/kernel/dist/engineSeam.js').MupdfSession} session
+ * @param {'text' | 'layout' | 'rich'} mode
+ */
 async function exported(kernel, session, mode) {
-  const { chunks } = kernel.composeWordDocument(session, mode);
+  // THE FIXTURE'S ONE PAGE, which is every page it has.
+  const { chunks } = kernel.composeWordDocument(session, mode, [0]);
   /** @type {Uint8Array[]} */
   const parts = [];
   for await (const part of chunks) parts.push(part);
@@ -140,9 +150,7 @@ async function exported(kernel, session, mode) {
 
 /** @param {any} sharp */
 async function run(sharp) {
-  /** @type {any} */
   const kernel = await import('../../packages/kernel/dist/wordPictures.js');
-  /** @type {any} */
   const { mupdfWriter } = await import('../../packages/kernel/dist/mupdfWriter.js');
   const session = await mupdfWriter.open(await picturedPage());
   try {

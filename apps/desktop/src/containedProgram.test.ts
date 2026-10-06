@@ -85,4 +85,31 @@ describe('the environment follows from the program', () => {
     ]);
     expect(environmentFor(CONVERTER, lower)).toStrictEqual(['PATH=C:/Windows', 'TEMP=C:/t']);
   });
+
+  it('hands on the variables Windows defines and none a shell or a person added (CR-SEC-18)', () => {
+    // BUILT FROM WHAT THE ABSENT GUARD WOULD PASS: a launching shell holding a client secret, a key and NODE_OPTIONS,
+    // beside the system's own variables in the case Windows reports them.
+    const shell = {
+      SystemRoot: 'C:\\Windows',
+      windir: 'C:\\Windows',
+      Path: 'C:\\Windows\\system32',
+      TMP: 'C:\\t',
+      LOCALAPPDATA: 'C:\\Users\\a\\AppData\\Local',
+      MONSTERA_GOOGLE_CLIENT_SECRET: 'not-for-the-host',
+      ANTHROPIC_API_KEY: 'not-for-the-host',
+      NODE_OPTIONS: '--require C:\\elsewhere.js',
+    };
+    for (const program of [HOST, CONVERTER]) {
+      const handed = environmentFor(program, shell);
+      expect(handed.filter((entry) => !entry.startsWith('ELECTRON_RUN_AS_NODE='))).toStrictEqual([
+        'SystemRoot=C:\\Windows',
+        'windir=C:\\Windows',
+        'Path=C:\\Windows\\system32',
+        'TMP=C:\\t',
+        'LOCALAPPDATA=C:\\Users\\a\\AppData\\Local',
+      ]);
+      expect(handed.join('\n')).not.toContain('not-for-the-host');
+      expect(handed.join('\n')).not.toContain('NODE_OPTIONS');
+    }
+  });
 });

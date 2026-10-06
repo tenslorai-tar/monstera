@@ -2,8 +2,9 @@ import { compileQuery } from '@monstera/shared';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { ByteImage } from './engineSeam.js';
-import { objectRuns, pageCount, pdfiumWriter, replaceTextObjects } from './pdfiumFfi.js';
+import type { ByteImage, ImageSession } from './engineSeam.js';
+import { objectRuns, onImage, pageCount, pdfiumWriter, replaceTextObjects } from './pdfiumFfi.js';
+import { NothingToReplaceError } from './textEditRefusals.js';
 
 /**
  * Document-wide replace-all, as the bus calls it.
@@ -46,28 +47,9 @@ import { objectRuns, pageCount, pdfiumWriter, replaceTextObjects } from './pdfiu
  * Decision 2, 13.7× over forty replacements). So this collects a page's
  * replacements and makes one `replaceTextObjects` call for it — and makes none
  * at all for a page with no match, because an untouched page must not pay a
- * regeneration for a command that found nothing on it.
+ * regeneration for a command that found nothing on it. A document where no page
+ * changed is {@link NothingToReplaceError}, and has no new version.
  */
-
-/**
- * Runs `work` against a session opened from `image`, closing it however it ends.
- *
- * The third copy of these four lines in this package, and they stay copied:
- * sharing them would put an import edge between three modules that have no
- * other reason to know about each other, and the shared thing would be a
- * `try`/`finally`.
- */
-async function onImage<T>(
-  image: ByteImage,
-  work: (session: Awaited<ReturnType<typeof pdfiumWriter.open>>) => Promise<T>,
-): Promise<T> {
-  const session = await pdfiumWriter.open(image);
-  try {
-    return await work(session);
-  } finally {
-    await pdfiumWriter.close(session);
-  }
-}
 
 /**
  * Says why a replace-all has no prior, so the bus takes a checkpoint.
@@ -147,7 +129,7 @@ function replacedIn(
  * and the surface is where a person meets it.
  */
 export async function applyReplaceAllText(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'replaceAllText'>,
 ): Promise<ByteImage> {
   const compiled = compileQuery(command.find, {
@@ -170,6 +152,7 @@ export async function applyReplaceAllText(
 
   return onImage(image, async (session) => {
     const pages = await pageCount(session);
+    let rewritten = 0;
     for (let page = 0; page < pages; page += 1) {
       // SEQUENTIALLY, and per page. PDFium's page handles are not safe to work
       // through concurrently, and each page's generation is its own cost — so
@@ -190,8 +173,14 @@ export async function applyReplaceAllText(
       // NO CALL FOR A PAGE WITH NO MATCH. `replaceTextObjects` throws on an
       // empty list precisely so this decision is made here rather than there.
       if (replacements.length === 0) continue;
-      await replaceTextObjects(session, page, replacements);
+      // THE LINE IS HELD: a replacement that would move the text after it is refused, and the whole command with it.
+      await replaceTextObjects(session, page, replacements, 'held');
+      rewritten += 1;
     }
+    // NO PAGE CHANGED, SO NO VERSION (ADR-0169 Decision 6): thrown before the serialise, so the bus records nothing and
+    // the person reads that nothing matched. Serialised, an unchanged document came back as new bytes and a new version
+    // with an undo step that did nothing.
+    if (rewritten === 0) throw new NothingToReplaceError();
     return pdfiumWriter.serialise(session);
   });
 }

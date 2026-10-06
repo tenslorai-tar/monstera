@@ -1,4 +1,4 @@
-import { SERVICE_PROBLEMS } from '@monstera/contract';
+import { FAILURE_DETAIL_SCHEMAS, SERVICE_PROBLEMS } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -64,9 +64,30 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     // Said rather than swallowed, because a Copy that did nothing looks like one that worked
     // until the paste finds an empty clipboard.
     z.object({ code: z.literal('not-copyable') }).strict(),
+    // A COMMENT LONGER THAN AN EDIT CAN WRITE BACK (`MAX_ANNOTATION_TEXT`), from another application: the editor does
+    // not open on a slice of it, because saving the slice would cut the rest.
+    z.object({ code: z.literal('comment-too-long') }).strict(),
     // AN IN-PLACE EDIT THE PAGE'S FONT CANNOT CARRY (ADR-0096). The editor says it beside the
-    // words; this is the sentence for any other surface that writes a block.
-    z.object({ code: z.literal('text-not-writable') }).strict(),
+    // words; this is the sentence for any other surface that writes a block. It names the characters
+    // (ADR-0169), so the props take the contract's one schema for them.
+    z.object({ code: z.literal('text-not-writable'), detail: FAILURE_DETAIL_SCHEMAS['text-not-writable'] }).strict(),
+    // ONE OCCURRENCE NO SINGLE TEXT OBJECT HOLDS AT ITS POINT (ADR-0156): the spelling review says it beside the word;
+    // this is the sentence for any other surface that sends `replaceTextAt`.
+    z.object({ code: z.literal('text-not-in-place') }).strict(),
+    // A REPLACEMENT THAT MATCHED NOTHING A TEXT OBJECT HOLDS, OR CHANGED NOTHING (ADR-0169 Decision 6): no new version.
+    z.object({ code: z.literal('nothing-to-replace') }).strict(),
+    // A REPLACEMENT THAT WOULD MOVE THE TEXT AFTER IT ON ITS LINE (`replaceLineRule.ts`): nothing written, no new version.
+    z.object({ code: z.literal('replace-moves-line') }).strict(),
+    // AN EDIT PDFIUM REFUSED (ADR-0169): the sentence is the step's, and the step and PDFium's number are the reference,
+    // where `internal` shows its incident id.
+    z.object({ code: z.literal('edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['edit-refused'] }).strict(),
+    // A COPY MADE FOR AN EDIT OF A SIGNED DOCUMENT (ADR-0149) that was written and could not be opened: gone before
+    // the open, no room beside the documents already open, or its read refused — another program holding it, or no
+    // permission. The file is where the person put it, without the edit.
+    z.object({ code: z.literal('copy-absent') }).strict(),
+    z.object({ code: z.literal('copy-at-capacity') }).strict(),
+    z.object({ code: z.literal('copy-busy') }).strict(),
+    z.object({ code: z.literal('copy-denied') }).strict(),
     // A SERVICE'S ANSWER to a region recognition — `SERVICE_PROBLEMS` in the contract.
     z.object({ code: z.enum(SERVICE_PROBLEMS) }).strict(),
     z.object({ code: z.literal('internal'), incident: z.string().min(1) }).strict(),

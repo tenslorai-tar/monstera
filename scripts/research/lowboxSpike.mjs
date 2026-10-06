@@ -439,7 +439,7 @@ import koffi from 'koffi';
 
 import { createRoster } from '../lib/passRoster.mjs';
 import { buildLargeFixture } from '../perf/largeFixture.mjs';
-import { electronBinaryPath } from '../provision/electron.mjs';
+import { electronBinaryPath, electronRoot } from '../provision/electron.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 // `isInvalidHandle` is no longer imported here: the only caller was this file's
 // own `CreateNamedPipeW`, and the shipped surface answers that question now —
@@ -2218,7 +2218,9 @@ const CELL_COUNT = CELLS.length;
  * own did not take", because only the second is something the app can fix.
  */
 const GRANTS = [
-  { path: join(ROOT, '.tools', 'electron', '43.4.1'), rights: 'RX', why: 'the runtime binary and its resources' },
+  // THE PINNED RUNTIME, from provisioning: spelt here as a version literal, the grant named 43.4.1 after the pin moved
+  // to 43.7.7, and the spike rightly refused to measure a host it was not granting (CI, 2026-10-03).
+  { path: electronRoot(ROOT), rights: 'RX', why: 'the runtime binary and its resources' },
   { path: join(ROOT, 'node_modules', 'koffi'), rights: 'RX', why: 'the FFI' },
   { path: join(ROOT, 'node_modules', '@koromix', 'koffi-win32-x64'), rights: 'RX', why: "the FFI's platform sibling" },
   { path: join(ROOT, 'native', 'mupdf-shim', 'out'), rights: 'RX', why: 'the engine shim' },

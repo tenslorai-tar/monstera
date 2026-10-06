@@ -25,6 +25,7 @@ describe('backup copies to keep, as a save reads the setting', () => {
     expect(siblingNames('C:/d/report.pdf', 3).temp).not.toBe(three.temp);
     expect(three).toStrictEqual({
       temp: three.temp,
+      previous: 'C:/d/report.pdf.monstera-previous',
       backups: ['C:/d/report.pdf.bak', 'C:/d/report.pdf.bak2', 'C:/d/report.pdf.bak3'],
       retired: Array.from({ length: MAX_BACKUP_COPIES - 3 }, (_unused, index) => `C:/d/report.pdf.bak${String(index + 4)}`),
     });

@@ -3,6 +3,7 @@ import type { CommandOfKind, OutlineEntry } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, ByteImage, Invert } from './engineSeam.js';
+import { frameOfPage } from './pdfLibFrame.js';
 import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
@@ -192,8 +193,12 @@ export const applyGenerateToc: Apply<'pdf-lib', 'generateToc', 'none', 'outline'
   // neighbour when the table is appended. Neither is a preference: a table of
   // contents in a shape none of its neighbours share is the artefact a reader
   // notices first.
+  //
+  // ITS SIZE AS IT IS SHOWN (CR-COR-01): a neighbour turned by `/Rotate 90` shows its MediaBox's height across, and the
+  // table's pages are not turned, so they take the shown size or they would sit a quarter turn from their neighbours.
   const neighbour = existing[at] ?? existing[existing.length - 1];
-  const { width, height } = neighbour === undefined ? FALLBACK_SIZE : neighbour.getSize();
+  const shown = neighbour === undefined ? null : frameOfPage(neighbour);
+  const { width, height } = shown === null ? FALLBACK_SIZE : shown.viewport;
 
   const perPage = rowsPerPage(height);
   const inserted = tocPageCount(outline.length, perPage);

@@ -97,6 +97,13 @@ export const DOCUMENT_PANEL_MAX_WIDTH = 1600;
 export const SIDE_PANEL_MAX_SHARE = 35;
 
 /**
+ * The page area's floor and a reopen handle's width (ADR-0146), defined in `@monstera/shared` beside the minimum window
+ * the floor is derived from, which the rendered cases read as well. Re-exported so the layout's readers find every one
+ * of its widths here.
+ */
+export { EDGE_HANDLE_WIDTH, PAGE_AREA_MIN_WIDTH } from '@monstera/shared';
+
+/**
  * The document panel's width, in CSS pixels (§10.3: *"panels resizable with persisted widths"*).
  *
  * Pixels because that is what a person sets: the panel stays the width they dragged it to when the
@@ -210,14 +217,15 @@ export const FLOAT_BAR_POSITION_SETTING: SettingDefinition<typeof FLOAT_BAR_POSI
  * The document panel's rule one side over: the setting is the one owner of which tab shows,
  * so a command that opens the assistant and a person clicking the tab move the same value.
  * **Properties by default** — the panel held only that until this tab arrived, and a person
- * who has not asked for the assistant should not find their panel replaced by it.
+ * who has not asked for the assistant should not find their panel replaced by it. **Spelling** is the third
+ * tab (ADR-0156), opened by the Spell check command.
  */
 export const CONTEXT_PANEL_TAB_SETTING: SettingDefinition<
-  z.ZodEnum<{ properties: 'properties'; assistant: 'assistant' }>
+  z.ZodEnum<{ properties: 'properties'; assistant: 'assistant'; spelling: 'spelling' }>
 > = {
   id: 'appearance.context-panel-tab',
   title: CONTEXT_PANEL_TAB_TITLE,
-  schema: z.enum(['properties', 'assistant']),
+  schema: z.enum(['properties', 'assistant', 'spelling']),
   fallback: 'properties',
   category: 'appearance',
   remembered: true,
@@ -245,8 +253,18 @@ export const CONTEXT_PANEL_OPEN_SETTING: SettingDefinition<z.ZodBoolean> = {
  * comment field takes a percentage width. With marks selected it is UNMEASURED — no harness can
  * select one yet — and so is the Assistant tab. So 216 is kept rather than lowered: nothing measured
  * says what a lower floor would clip.
+ *
+ * **RAISED TO 264 ON 2026-10-03, because the HEADER binds and nothing measured it.** v5 gave the two tabs a glyph
+ * each, and the header then needed more than the panel at 216 gave it: measured in Chromium 151 at 1024 × 720, the
+ * header's content was 256 px wide in a 238 px box, so the collapse chevron was clipped at the application's own
+ * minimum window — and at 216 it was gone entirely. Read from the stylesheets and the English catalogue: the header's
+ * `--space-8` start padding (8), the two tabs (220, as laid out), the `--space-4` gap (4), the chevron (24) and the
+ * `--space-4` end padding (4), 260, plus the panel's 1 px border on each side (2): 262, raised to 264 on §10.2's 8 px
+ * grid. The tabs' width is the catalogue's, so a longer language is held by the header's own rule instead: the
+ * chevron never shrinks, and a tab's label gives way first (`app.css`, `.m-context-panel__tab-label`). The rendered
+ * minimum-width case asserts both at this width.
  */
-export const CONTEXT_PANEL_MIN_WIDTH = 216;
+export const CONTEXT_PANEL_MIN_WIDTH = 264;
 
 /** The widest the right contextual panel may be: the document panel's bound, for its reason. */
 export const CONTEXT_PANEL_MAX_WIDTH = DOCUMENT_PANEL_MAX_WIDTH;
@@ -258,6 +276,9 @@ export const CONTEXT_PANEL_WIDTH_SETTING: SettingDefinition<z.ZodNumber> = {
   id: 'appearance.context-panel-width',
   title: CONTEXT_PANEL_WIDTH_TITLE,
   schema: z.number().int().min(CONTEXT_PANEL_MIN_WIDTH).max(CONTEXT_PANEL_MAX_WIDTH),
+  // A WIDTH STORED UNDER THE OLD 216 FLOOR is the narrowest this panel can now be, never the fallback: the person chose
+  // narrow, and refusing the value would have put them back at 340.
+  migrate: (stored) => (typeof stored === 'number' && stored < CONTEXT_PANEL_MIN_WIDTH ? CONTEXT_PANEL_MIN_WIDTH : stored),
   // v5: the right panel is 340 wide (256 until 2026-09-26).
   fallback: 340,
   category: 'appearance',

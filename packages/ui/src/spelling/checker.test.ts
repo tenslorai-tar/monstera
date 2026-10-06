@@ -2,7 +2,7 @@ import { type ContractClient, channels, createClient } from '@monstera/contract'
 import { err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { type Misspelling, buildChecker, collectMisspellings } from './checker.js';
+import { buildChecker } from './checker.js';
 
 /** A dictionary small enough for a case to state in full. */
 const AFFIX = 'SET UTF-8\n';
@@ -79,70 +79,42 @@ describe('building a checker', () => {
   });
 });
 
-describe('collecting misspellings', () => {
-  /** A checker with a stated vocabulary, so a case need not build one. */
-  const checker = {
-    correct: (word: string) => ['document', 'page', 'the', 'on'].includes(word.toLowerCase()),
-    suggest: (word: string) => [`${word}!`],
-  };
-
-  function collect(lines: readonly string[], page = 0): Misspelling[] {
-    const found = new Map<string, Misspelling>();
-    collectMisspellings(checker, lines, page, found);
-    return [...found.values()];
+describe('the dictionary is built once and held', () => {
+  /** A client that counts how often it is asked for the dictionary, answering `answers` in turn. */
+  function counting(answers: readonly ('dictionary' | 'unknown')[]): { client: ContractClient; asked: () => number } {
+    let asked = 0;
+    const client = createClient(channels, (id) => {
+      if (id !== 'spelling.dictionary') throw new Error(`unexpected channel ${id}`);
+      const answer = answers[Math.min(asked, answers.length - 1)];
+      asked += 1;
+      if (answer === 'unknown') return Promise.resolve(ok({ kind: 'unknown-dictionary' }));
+      return Promise.resolve(
+        ok({
+          kind: 'dictionary',
+          language: 'en',
+          affix: new TextEncoder().encode(AFFIX),
+          words: new TextEncoder().encode(WORDS),
+        }),
+      );
+    });
+    return { client, asked: () => asked };
   }
 
-  it('reports a word the checker refuses and not one it accepts', () => {
-    expect(collect(['the documnet']).map((entry) => entry.word)).toEqual(['documnet']);
+  it('ASKS ONCE for two checkers, and each keeps its own personal words', async () => {
+    // ASSERTS THE CALL, not the answer: the two checkers answer alike either way, so only the count separates a held
+    // dictionary from one built 401 ms at a time.
+    const { client, asked } = counting(['dictionary']);
+    const first = await buildChecker(client, 'en', ['Monstera']);
+    const second = await buildChecker(client, 'en', []);
+    expect(asked()).toBe(1);
+    expect(first?.correct('Monstera')).toBe(true);
+    expect(second?.correct('Monstera')).toBe(false);
   });
 
-  it('counts one word seen twice ONCE, and keeps the first spelling', () => {
-    const [entry] = collect(['Documnet and documnet']);
-
-    expect(entry?.word).toBe('Documnet');
-    expect(entry?.occurrences).toBe(2);
-  });
-
-  it('JOINS the lines with a space, so a wrapped sentence invents no word', () => {
-    // WITHOUT THE JOIN the two lines concatenate into `pagedocument`, which is
-    // in no document and would be reported as a misspelling the reader never
-    // wrote. That is louder than the word count's version of the same defect,
-    // where it is only a total that is short.
-    expect(collect(['page', 'document'])).toEqual([]);
-  });
-
-  it('SKIPS numbers and single letters, which no dictionary can judge', () => {
-    // A page of figures would otherwise report every number on it, and a
-    // mathematical document every variable — a list of real problems becomes a
-    // list nobody reads. `3rd` is here because ANY digit disqualifies, not all.
-    expect(collect(['2026 x 3rd H2O'])).toEqual([]);
-  });
-
-  it('records the FIRST page a word appeared on, not the last', () => {
-    const found = new Map<string, Misspelling>();
-    collectMisspellings(checker, ['documnet'], 2, found);
-    collectMisspellings(checker, ['documnet'], 7, found);
-
-    expect(found.get('documnet')?.firstPage).toBe(2);
-    expect(found.get('documnet')?.occurrences).toBe(2);
-  });
-
-  it('suggests once, for the first occurrence', () => {
-    let asked = 0;
-    const counting = {
-      correct: () => false,
-      suggest: (word: string) => {
-        asked += 1;
-        return [word];
-      },
-    };
-    const found = new Map<string, Misspelling>();
-    collectMisspellings(counting, ['zzzq zzzq zzzq'], 0, found);
-
-    // ASSERTS THE CALL, not the answer. The suggestions are identical either
-    // way, so a case reading only the result would pass against a build that
-    // recomputed them for every occurrence — which is the expensive half of the
-    // library run three times for one entry.
-    expect(asked).toBe(1);
+  it('ASKS AGAIN after a dictionary that would not load, so a later check can still find one', async () => {
+    const { client, asked } = counting(['unknown', 'dictionary']);
+    expect(await buildChecker(client, 'en', [])).toBeNull();
+    expect((await buildChecker(client, 'en', []))?.correct('document')).toBe(true);
+    expect(asked()).toBe(2);
   });
 });

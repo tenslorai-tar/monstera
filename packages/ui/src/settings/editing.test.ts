@@ -1,7 +1,29 @@
 import { describe, expect, it } from 'vitest';
 
 import { SettingsRegistry } from '../registries/settings.js';
-import { AUTHOR_NAME_SETTING, OCR_LANGUAGE_SETTING, authorFor } from './editing.js';
+import { AUTHOR_NAME_SETTING, MEASURE_RATIO_SETTING, MEASURE_UNIT_SETTING, OCR_LANGUAGE_SETTING, authorFor, measureScaleOf } from './editing.js';
+
+/**
+ * What a measurement reads in (the owner's item 14a): the page's physical length in the unit chosen, times the
+ * drawing's own scale. Until this the scale was *units per point* and defaulted to 1, so a line 72 points long read
+ * 72 cm once centimetres were chosen.
+ */
+describe('the scale a measurement is sent with', () => {
+  it('reads the page itself by default, in inches as the rulers do: 72 points are one inch', () => {
+    const { perPoint, unit } = measureScaleOf(MEASURE_UNIT_SETTING.fallback, MEASURE_RATIO_SETTING.fallback);
+    expect(unit).toBe('in');
+    expect(72 * perPoint).toBeCloseTo(1, 12);
+  });
+
+  it('in centimetres, 72 points are 2.54 cm — not the 72 the per-point default gave', () => {
+    expect(72 * measureScaleOf('cm', 1).perPoint).toBeCloseTo(2.54, 12);
+  });
+
+  it('a drawing at 1:100 multiplies the page’s length, in the unit chosen', () => {
+    // A HUNDRED, so a scale applied to the wrong side of the conversion (divided, or squared) gives another figure.
+    expect(72 * measureScaleOf('m', 100).perPoint).toBeCloseTo(2.54, 12);
+  });
+});
 
 /**
  * *Your name for comments* (ADR-0103 Decision 2): empty by default, and empty means the Windows user

@@ -15,7 +15,7 @@ The assistant answers questions about your document using an AI provider you cho
 3. Choose the **Provider** and **Model**, in the two boxes under the message box. Whatever the provider box shows is where your next message goes.
 4. In the **Choose** row above the message box, open **Context** and choose what to send: this page, the whole document, the comments, a picture of this page, or **None**, and the text you selected or a comment when there is one. With two or more documents open, **All Open Docs** sends every one of them. The open menu marks what is chosen. Nothing is sent until you press **Send**. **Sources** chooses **Document only** or **Document + web**.
 5. Type your question in the box that says **Ask about this page…**. Press **Enter** to send (**Shift+Enter** starts a new line). To ask about a file you have not opened, choose **Attach files**, the paperclip, and pick up to eight files of any kind; each shows above the box, with an **x** to take it off.
-6. Choose **Go to page …** in an answer to jump to the page it cites.
+6. Choose **Go to page …** in an answer to jump to the page it cites. A page the answer names in any usual way, such as "[p. 3]", "[Page 3]", "(pp. 3–4)" or "on page 3", is a link; an answer about the document that names none of its pages says **No page cited — check this against the document.**
 
 ![The Assistant tab with Provider, Model, Context and an answer citing a page](screenshot:ai-assistant-1)
 

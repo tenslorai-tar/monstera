@@ -7,6 +7,7 @@ import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { ENGINE_LAYER_NAME_MAX, ENGINE_LAYERS_MAX } from './host/engineChannels.js';
 import { bufferBytes, withDocument, withDocuments } from './mupdfWriter.js';
 import { pushInheritablesDown } from './pageExtract.js';
+import { pageInDocument } from './pageScope.js';
 import { shownName } from './shownName.js';
 
 /**
@@ -424,12 +425,11 @@ function appendGroup(document: PDFDocument, groupRef: PDFObject): void {
  * Places the source document's FIRST page onto one page of the target, as a new
  * optional-content group that is visible by default.
  *
- * ## Which source page, and why only the first
+ * ## Which source page
  *
- * The renderer knows no other document's page count — an open-document entry carries an
- * id, a version, a byte length and a name — so it cannot bound a chosen page. That is the
- * gap `replacePage`'s contract note records for *insert selected pages*, and this command
- * takes the same default rather than a blind index the kernel would refuse.
+ * The payload's `sourcePage`, which the renderer bounds by the source's page count read
+ * through `document.viewModel`; a page the source no longer has is refused here, since
+ * that read may be older than the source.
  *
  * ## The group joins `/OCProperties` HERE, in this module
  *
@@ -454,7 +454,7 @@ function appendGroup(document: PDFDocument, groupRef: PDFObject): void {
 export const applyImportPageAsLayer: Apply<'mupdf', 'importPageAsLayer', 'one'> = (
   session: MupdfSession,
   command: CommandOfKind<'importPageAsLayer'>,
-  source: MupdfSession,
+  [source]: readonly [MupdfSession],
 ): Promise<void> =>
   withDocuments(session, source, (target, from) => {
     const count = target.countPages();
@@ -464,13 +464,12 @@ export const applyImportPageAsLayer: Apply<'mupdf', 'importPageAsLayer', 'one'> 
           'page(s). Page indices are zero-based, and a layer is placed on a page that EXISTS.',
       );
     }
-    if (from.countPages() === 0) {
-      throw new RangeError('The source document has no page to import as a layer.');
-    }
+    // THE SOURCE PAGE MUST EXIST, by `pageScope.ts`' one refusal — which a source of no pages meets too.
+    const sourcePage = pageInDocument(command.sourcePage, from.countPages());
 
     // READ FROM `from`, WRITTEN INTO `target` — `withDocuments` names its parameters
     // because both are `PDFDocument` and a transposition would type-check.
-    const leaf = pushInheritablesDown(from, 0);
+    const leaf = pushInheritablesDown(from, sourcePage);
     const map = target.newGraftMap();
 
     const group = target.newDictionary();

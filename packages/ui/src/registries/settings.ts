@@ -158,6 +158,14 @@ export interface SettingDefinition<Schema extends z.ZodType = z.ZodType> {
    */
   readonly purpose?: 'name' | 'email';
   /**
+   * Whether a TEXT setting's value is one a person reads whole and that runs long — an address, an endpoint, a path
+   * ([ADR-0157](../../../../docs/DECISIONS/0157-a-field-whose-value-runs-long-takes-its-rows-width.md)), so its field
+   * takes the row's width. **Required of every text setting** and refused at construction where it is missing, so a
+   * path setting cannot arrive at the browser's twenty characters by nobody deciding. A secret carries none: every
+   * secret setting is a key or a token, which runs long by definition.
+   */
+  readonly runsLong?: boolean;
+  /**
    * State the application remembers FOR a person rather than a choice they come here to make: how
    * wide they dragged a panel, which tab was open, whether the rulers are showing.
    *
@@ -167,6 +175,15 @@ export interface SettingDefinition<Schema extends z.ZodType = z.ZodType> {
    * these is the thing itself: the splitter, the tab, the ribbon button that toggles them.
    */
   readonly remembered?: boolean;
+  /**
+   * The application writes this on its own, and no person's action does: the round of tips already shown, written as
+   * each is chosen ([ADR-0160](../../../../docs/DECISIONS/0160-a-setting-the-application-writes-for-itself-reports-no-failed-save.md)).
+   *
+   * A failed save of a change to it opens no *Preference not saved*: that dialog is for a person who changed something
+   * and would otherwise learn at a restart that it did not stick, and here nobody changed anything. Always also
+   * `remembered`, since a value no person sets is never a row; the registry refuses one that is not.
+   */
+  readonly background?: boolean;
   /**
    * Whether this setting needs the OS credential store, without being a secret itself.
    *
@@ -310,6 +327,30 @@ export class SettingsRegistry {
         throw new Error(
           `Setting "${setting.id}" has an unset title and is not a colour setting built by ` +
             'colourSchema, so there is no no-choice state for it to name (ADR-0056).',
+        );
+      }
+      // A BACKGROUND SETTING IS REMEMBERED (ADR-0160): a value no person sets is never a row a person could set it in.
+      if (setting.background === true && setting.remembered !== true) {
+        throw new Error(
+          `Setting "${setting.id}" is written by the application in the background and is not remembered, so the ` +
+            'Settings dialog would draw a row for a value no person sets. Mark it remembered: true (ADR-0160).',
+        );
+      }
+      // WHETHER A TEXT FIELD RUNS LONG IS DECIDED, never defaulted (ADR-0157): a text setting says it, a secret is a key
+      // and runs long by definition, and nothing else has a text field for it to describe — a remembered setting is
+      // state the application keeps, and is never a row.
+      const text = setting.schema instanceof z.ZodString && setting.secret !== true && setting.remembered !== true;
+      if (text && setting.runsLong === undefined) {
+        throw new Error(
+          `Setting "${setting.id}" is a text setting that does not say whether its value runs long, so its field ` +
+            'would take the browser’s twenty characters by nobody deciding. Declare runsLong: true for a key, an ' +
+            'address, an endpoint, a path, an OAuth value or a timestamp, and false otherwise (ADR-0157).',
+        );
+      }
+      if (!text && setting.runsLong !== undefined) {
+        throw new Error(
+          `Setting "${setting.id}" declares runsLong and is not a text setting: a secret runs long by definition, and ` +
+            'any other kind draws no text field for it to describe (ADR-0157).',
         );
       }
       this.#byId.set(setting.id, setting);

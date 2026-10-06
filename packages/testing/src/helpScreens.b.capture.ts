@@ -61,8 +61,8 @@ test('export-pages-as-images-1', async ({ page }) => {
 test('export-to-word-1', async ({ page }) => {
   await openApp(page);
   await openDocument(page);
-  await openSection(page, 'Home');
-  await ribbonGroup(page, 'Export').getByRole('button', { name: 'Word', exact: true }).click();
+  const menu = await openGroupMenu(page, 'Home', 'Export', 'Export');
+  await menu.getByRole('menuitem', { name: 'Export to Word…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Export to Word' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('radio').first()).toBeChecked();
@@ -214,10 +214,9 @@ test('export-text-1', async ({ page }) => {
 test('export-to-powerpoint-1', async ({ page }) => {
   await openApp(page);
   await openDocument(page);
-  await openSection(page, 'Home');
-  const group = ribbonGroup(page, 'Export');
-  await group.getByRole('button', { name: 'PowerPoint', exact: true }).focus();
-  await shoot(page, 'export-to-powerpoint-1', group, 8);
+  const menu = await openGroupMenu(page, 'Home', 'Export', 'Export');
+  await menu.getByRole('menuitem', { name: 'Export to PowerPoint…' }).focus();
+  await shoot(page, 'export-to-powerpoint-1', menu, 12);
 });
 
 test('insert-a-blank-page-1', async ({ page }) => {
@@ -303,7 +302,7 @@ test('insert-pages-from-a-pdf-1', async ({ page }) => {
   const dialog = page.getByRole('dialog', { name: /Insert/u });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('combobox')).toHaveText(/Appendix\.pdf/u);
-  await dialog.getByRole('textbox').first().fill('3');
+  await dialog.getByRole('textbox', { name: 'Page', exact: true }).fill('3');
   await shoot(page, 'insert-pages-from-a-pdf-1', dialog);
 });
 
@@ -346,7 +345,7 @@ test('find-text-1', async ({ page }) => {
   await page.keyboard.press('Control+F');
   const panel = page.getByRole('tabpanel', { name: 'Search' });
   await expect(panel).toBeVisible();
-  await panel.getByRole('textbox', { name: 'Find on this page' }).fill('renewals');
+  await panel.getByRole('textbox', { name: 'Find text' }).fill('renewals');
   await panel.getByRole('button', { name: 'Search all pages' }).click();
   await expect(panel.getByText(/matches in this document/u)).toBeVisible();
   // THE PANEL ALONE: the shim places a page's text boxes by line index rather than where the words are drawn, so a
@@ -360,7 +359,7 @@ test('find-and-replace-1', async ({ page }) => {
   await page.keyboard.press('Control+F');
   const panel = page.getByRole('tabpanel', { name: 'Search' });
   await expect(panel).toBeVisible();
-  await panel.getByRole('textbox', { name: 'Find on this page' }).fill('renewals');
+  await panel.getByRole('textbox', { name: 'Find text' }).fill('renewals');
   await panel.getByRole('textbox', { name: 'Replace with' }).fill('contract renewals');
   await shoot(page, 'find-and-replace-1', panel, 8);
 });
@@ -368,11 +367,11 @@ test('find-and-replace-1', async ({ page }) => {
 test('fill-in-a-form-1', async ({ page }) => {
   const rect = (y: number): { x0: number; y0: number; x1: number; y1: number } => ({ x0: 72, y0: y, x1: 300, y1: y + 20 });
   const fields = [
-    { page: 0, index: 0, kind: 'text', name: 'Full name', values: [], on: null, options: [], readOnly: false, rect: rect(640) },
-    { page: 0, index: 1, kind: 'text', name: 'Email', values: [], on: null, options: [], readOnly: false, rect: rect(600) },
-    { page: 0, index: 2, kind: 'checkbox', name: 'Subscribe to updates', values: [], on: true, options: [], readOnly: false, rect: rect(560) },
-    { page: 0, index: 3, kind: 'radio', name: 'Member', values: [], on: false, options: [], readOnly: false, rect: rect(520) },
-    { page: 0, index: 4, kind: 'dropdown', name: 'Region', values: ['North'], on: null, options: ['North', 'South', 'West'], readOnly: false, rect: rect(480) },
+    { page: 0, index: 0, kind: 'text', name: 'Full name', values: [], on: null, options: [], readOnly: false, multiline: false, rect: rect(640) },
+    { page: 0, index: 1, kind: 'text', name: 'Email', values: [], on: null, options: [], readOnly: false, multiline: false, rect: rect(600) },
+    { page: 0, index: 2, kind: 'checkbox', name: 'Subscribe to updates', values: [], on: true, options: [], readOnly: false, multiline: false, rect: rect(560) },
+    { page: 0, index: 3, kind: 'radio', name: 'Member', values: [], on: false, options: [], readOnly: false, multiline: false, rect: rect(520) },
+    { page: 0, index: 4, kind: 'dropdown', name: 'Region', values: ['North'], on: null, options: ['North', 'South', 'West'], readOnly: false, multiline: false, rect: rect(480) },
   ] as const;
   await openApp(page, { formFields: [fields] });
   await openDocument(page);

@@ -134,7 +134,8 @@ const changed = blocks.flatMap((block, at) =>
 if (changed.length === 0) fail('nothing came back changed, so nothing was translated.');
 
 const written = await localPdfiumExecution.apply({
-  session: bytes,
+  // A GENERATED DOCUMENT, which opens with no password (ADR-0171's addendum: the session is the bytes and their key).
+  session: { bytes, opensWith: undefined },
   command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
     kind: 'editTextBlock',
     page: 0,
@@ -142,7 +143,7 @@ const written = await localPdfiumExecution.apply({
     fit: 'shrink',
     version: 1,
   }),
-  source: undefined,
+  sources: [],
   reads: undefined,
 });
 const reopened = await pdfiumWriter.open(written);

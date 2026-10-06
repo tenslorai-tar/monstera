@@ -1,4 +1,4 @@
-import { asDocId, asDocVersion, messageKey } from '@monstera/shared';
+import { asDocId, asDocVersion, messageKey, viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
@@ -15,7 +15,7 @@ import {
   declareDialog,
 } from './dialogs.js';
 import { SettingsRegistry, type SettingDefinition, colourKindOf, colourSchema } from './settings.js';
-import { ToolRegistry, type UiTool, pointerPath } from './tools.js';
+import { ToolRegistry, type UiTool, endOf, pointerPath, startOf } from './tools.js';
 
 const context: CommandContext = {
   selectedPages: [],
@@ -109,17 +109,30 @@ describe('CommandRegistry', () => {
     expect(registry.size).toBe(1);
   });
 
-  it('CONTROL: a command only in a context menu or the palette may omit its icon', () => {
-    // The refusal is about surfaces that draw a glyph. A menu row and a palette
-    // entry are text, and demanding an icon there would be a rule broader than
-    // §10.4, which a reader would then learn to satisfy with any glyph at all.
-    const registry = new CommandRegistry([
-      command('edit.menu-only', {
-        placements: [{ surface: 'context-menu', context: 'annotation', order: 1 }],
-      }),
-      command('edit.palette-only'),
-    ]);
-    expect(registry.size).toBe(2);
+  it('CONTROL: a command only in the palette may omit its icon', () => {
+    // The refusal is about surfaces that draw a glyph. A palette entry is text, and demanding an icon there would be a
+    // rule broader than the surfaces, which a reader would then learn to satisfy with any glyph at all. A right-click
+    // menu USED to be listed here too; since the owner's item 9b it draws the glyph, and the case below refuses it.
+    const registry = new CommandRegistry([command('edit.palette-only')]);
+    expect(registry.size).toBe(1);
+  });
+
+  it('refuses a command a RIGHT-CLICK menu lists with no icon, as a menu-bar one (the owner\'s item 9b)', () => {
+    expect(
+      () =>
+        new CommandRegistry([
+          command('annotate.menu-only', { placements: [{ surface: 'context-menu', context: 'annotation', order: 1 }] }),
+        ]),
+    ).toThrow(/"annotate\.menu-only" is in a menu and names no icon/u);
+    // CONTROL: the same command with a glyph is accepted.
+    expect(
+      new CommandRegistry([
+        command('annotate.menu-only', {
+          icon: 'Pencil',
+          placements: [{ surface: 'context-menu', context: 'annotation', order: 1 }],
+        }),
+      ]).size,
+    ).toBe(1);
   });
 
   // THE MENU BAR DRAWS EVERY ITEM'S GLYPH (the owner's review of 0.1.8.0): a command a menu lists with no icon would be
@@ -387,6 +400,21 @@ describe('SettingsRegistry', () => {
   /** A union with the colour kind's exact SHAPE, which `colourSchema` did not build. */
   const lookalike = (): z.ZodType => z.union([z.literal('auto'), z.string().regex(/^#[0-9a-f]{6}$/u)]);
 
+  it('refuses a BACKGROUND setting that is not remembered, and takes one that is (ADR-0160)', () => {
+    const round = {
+      id: 'appearance.round',
+      title: messageKey('setting.appearance-theme.title'),
+      schema: z.boolean(),
+      fallback: false,
+      category: 'appearance' as const,
+    };
+    expect(() => new SettingsRegistry([{ ...round, background: true }])).toThrow(
+      /"appearance\.round" is written by the application in the background and is not remembered/u,
+    );
+    // CONTROL: remembered, it is taken.
+    expect(new SettingsRegistry([{ ...round, background: true, remembered: true }]).get('appearance.round')).toBeDefined();
+  });
+
   it('refuses a colour setting with no unset title', () => {
     expect(
       () =>
@@ -436,6 +464,36 @@ describe('SettingsRegistry', () => {
     ).toBe(1);
     expect(colourKindOf(schema)).toStrictEqual({ unset: 'auto', starting: '#d92626' });
     expect(colourKindOf(lookalike())).toBeUndefined();
+  });
+
+  // ADR-0157: whether a text field runs long is decided by the setting, never defaulted.
+  const textSetting = (over: Partial<SettingDefinition>): SettingDefinition => ({
+    id: 'editing.address',
+    title: messageKey('setting.address.label'),
+    schema: z.string(),
+    fallback: '',
+    category: 'editing',
+    ...over,
+  });
+
+  it('refuses a TEXT setting that does not say whether its value runs long', () => {
+    expect(() => new SettingsRegistry([textSetting({})])).toThrow(/"editing\.address" is a text setting that does not say/u);
+  });
+
+  it('refuses runsLong on a secret, which runs long by definition, and on a setting with no text field', () => {
+    expect(() => new SettingsRegistry([textSetting({ secret: true, runsLong: true })])).toThrow(
+      /"editing\.address" declares runsLong and is not a text setting/u,
+    );
+    expect(() =>
+      new SettingsRegistry([textSetting({ schema: z.boolean(), fallback: false, runsLong: false })]),
+    ).toThrow(/"editing\.address" declares runsLong and is not a text setting/u);
+  });
+
+  it('CONTROL: a text setting saying either answer constructs, and so do a secret and a remembered string saying none', () => {
+    expect(new SettingsRegistry([textSetting({ runsLong: true })]).size).toBe(1);
+    expect(new SettingsRegistry([textSetting({ runsLong: false })]).size).toBe(1);
+    expect(new SettingsRegistry([textSetting({ secret: true })]).size).toBe(1);
+    expect(new SettingsRegistry([textSetting({ remembered: true })]).size).toBe(1);
   });
 
   it('colourSchema refuses a starting colour an input cannot take, and a no-choice value that is a colour', () => {
@@ -508,9 +566,27 @@ describe('SettingsRegistry', () => {
   });
 });
 
+describe('pointerPath — the gesture every pointer-driven tool spreads', () => {
+  it('KEEPS THE PRESS where a first move is under two pixels, and still follows the pointer with the last point', () => {
+    // The press was the gesture's only point, and so also its last, which a near move replaces: every drag began up
+    // to two pixels from where it was pressed, and a typewriter's click landed half a point off at zoom 2.
+    const pressed = pointerPath.begin(viewportPoint(40, 40));
+    const jittered = pointerPath.update(pressed, viewportPoint(41, 41));
+    expect(startOf(jittered)).toStrictEqual(viewportPoint(40, 40));
+    expect(endOf(jittered)).toStrictEqual(viewportPoint(41, 41));
+  });
+
+  it('CONTROL: a later near move still replaces the last point, so the interior stays decimated', () => {
+    const pressed = pointerPath.begin(viewportPoint(40, 40));
+    const moved = pointerPath.update(pointerPath.update(pressed, viewportPoint(41, 41)), viewportPoint(41.5, 41.5));
+    expect(moved.points).toStrictEqual([viewportPoint(40, 40), viewportPoint(41.5, 41.5)]);
+  });
+});
+
 describe('ToolRegistry', () => {
   const tool = (id: string): UiTool => ({
     id,
+    hint: ANY_TITLE,
     // THE SHARED PATH, exactly as a real tool spreads it: a fixture writing its
     // own `begin` and `update` would be testing the registry against a
     // controller no tool resembles.

@@ -1,14 +1,14 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import { messageKey } from '@monstera/shared';
-import { act, render as renderBare, screen } from '@testing-library/react';
-import { lazy, useState, type ReactElement, type ReactNode } from 'react';
+import { act, fireEvent, render as renderBare, screen } from '@testing-library/react';
+import { lazy, useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { activateCatalogue, i18n } from '../i18n.js';
 import { DIALOG_OK, DIALOG_PROBLEM_BODY, DIALOG_PROBLEM_TITLE } from '../messages/en.js';
-import { DialogRegistry, declareDialog } from '../registries/dialogs.js';
+import { DialogRegistry, type DialogReports, declareDialog } from '../registries/dialogs.js';
 import { DialogHost, useDialogHost } from './DialogHost.js';
 
 /**
@@ -65,6 +65,8 @@ const pickEntry = declareDialog({
       }) => (
         <>
           <p>{`picking under ${String(limit)}`}</p>
+          {/* WHAT A PERSON TYPED, held by the DOM alone: kept only while the body stays mounted (ADR-0158). */}
+          <input aria-label="Note" defaultValue="" />
           <button
             type="button"
             onClick={() => {
@@ -125,7 +127,24 @@ const brokenEntry = declareDialog({
   ),
 });
 
-const registry = new DialogRegistry([renameEntry, pickEntry, brokenEntry]);
+/** A dialog whose chunk ARRIVES WHEN THE CASE SAYS, for the moment between the open and the body. */
+let arriveHeld: () => void = () => undefined;
+const heldEntry = declareDialog({
+  id: 'dialog.held',
+  title: messageKey('dialog.held.title'),
+  props: z.object({}),
+  informs: 'message',
+  component: lazy(
+    () =>
+      new Promise<{ default: () => ReactElement }>((arrive) => {
+        arriveHeld = () => {
+          arrive({ default: () => <p>the held body</p> });
+        };
+      }),
+  ),
+});
+
+const registry = new DialogRegistry([renameEntry, pickEntry, brokenEntry, heldEntry]);
 
 /**
  * A real catalogue, because the host no longer takes a resolver.
@@ -143,6 +162,7 @@ activateCatalogue('en', {
   [RENAME_TITLE]: 'Rename document',
   [PICK_TITLE]: 'Pick a page',
   [messageKey('dialog.broken.title')]: 'Broken dialog',
+  [messageKey('dialog.held.title')]: 'Held dialog',
   [DIALOG_PROBLEM_TITLE]: 'This could not be opened.',
   [DIALOG_PROBLEM_BODY]: 'Nothing was changed.',
   [CLOSE]: 'Close',
@@ -172,8 +192,8 @@ function Harness({
   props: unknown;
   /** What the dialog settled with, for the cases about the answer. */
   onAnswer?: (answer: unknown) => void;
-  /** What a body REPORTED without closing (ADR-0094), for the cases about updates. */
-  onUpdate?: (result: unknown) => void;
+  /** What a body REPORTED without closing (ADR-0094), with the reply (ADR-0158), for the cases about updates. */
+  onUpdate?: DialogReports;
 }): ReactElement {
   const { open, ask, close, resolve, report } = useDialogHost(registry);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -246,6 +266,27 @@ describe('DialogHost', () => {
     // the primitive does not govern, and that failure is invisible to every
     // assertion above.
     expect(dialog.contains(body)).toBe(true);
+  });
+
+  it('draws NO PART of a dialog whose body has not arrived, then the whole of it at once', async () => {
+    // The chrome used to be drawn over an empty body and then grow: an unfinished screen a person saw, and the frame
+    // CI's high-contrast Donate baseline photographed (214 × 92 against 626 × 254, on 6b7a6bd9).
+    render(<Harness id="dialog.held" props={{}} />);
+    screen.getByRole('button', { name: 'Open' }).click();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText('Held dialog')).toBeNull();
+
+    await act(async () => {
+      arriveHeld();
+      await Promise.resolve();
+    });
+    const dialog = await screen.findByRole('dialog', { name: 'Held dialog' });
+    // CONTROL: the body is inside it the first time the dialog is seen, with the footer the declaration gives it.
+    expect(dialog.textContent).toContain('the held body');
+    expect(screen.getByRole('button', { name: 'OK' })).toBeTruthy();
   });
 
   it('a dialog that ASKS NOTHING ends in its one button, which closes it — and CONTROL: one that answers gets none', async () => {
@@ -471,6 +512,188 @@ describe('DialogHost', () => {
       // NOTHING REACHED THE OPENER, and the refusal is reported where an answer's would be.
       expect(reports).toStrictEqual([]);
       expect(screen.getByText(/DialogResultRejected|refuses/u)).toBeDefined();
+    });
+  });
+
+  describe('an opener that REPLIES to a report with new props (ADR-0158)', () => {
+    async function openAndReport(onUpdate: DialogReports): Promise<void> {
+      screen.getByRole('button', { name: 'Open' }).click();
+      await screen.findByRole('dialog');
+      fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'typed before the reply' } });
+      await act(async () => {
+        screen.getByRole('button', { name: 'Report' }).click();
+        await Promise.resolve();
+      });
+      expect(onUpdate).toBeDefined();
+    }
+
+    it('draws the new props in the SAME open body, which keeps what was typed', async () => {
+      const onUpdate: DialogReports = (_result, reply) => {
+        reply({ limit: 3 });
+      };
+      render(<Harness id="dialog.pick" props={{ limit: 9 }} onUpdate={onUpdate} />);
+      await openAndReport(onUpdate);
+      expect(await screen.findByText('picking under 3')).toBeDefined();
+      // STILL OPEN AND STILL MOUNTED: the typed note is the DOM's own, which a remount would have emptied.
+      expect(screen.queryByRole('dialog')).not.toBeNull();
+      expect(screen.getByLabelText('Note')).toHaveProperty('value', 'typed before the reply');
+    });
+
+    it('REFUSES props the dialog’s schema rejects, to the opener, and leaves the dialog as it was', async () => {
+      const thrown: unknown[] = [];
+      const onUpdate: DialogReports = (_result, reply) => {
+        try {
+          reply({ limit: -1 });
+        } catch (error) {
+          thrown.push(error);
+        }
+      };
+      render(<Harness id="dialog.pick" props={{ limit: 9 }} onUpdate={onUpdate} />);
+      await openAndReport(onUpdate);
+      expect(thrown).toHaveLength(1);
+      expect(screen.getByText('picking under 9')).toBeDefined();
+    });
+
+    it('does NOTHING once the dialog that reported has closed, even to the same dialog opened again', async () => {
+      let late: ((props: unknown) => void) | undefined;
+      const onUpdate: DialogReports = (_result, reply) => {
+        late = reply;
+      };
+      render(<Harness id="dialog.pick" props={{ limit: 9 }} onUpdate={onUpdate} />);
+      await openAndReport(onUpdate);
+      await act(async () => {
+        screen.getByRole('button', { name: 'Close' }).click();
+        await Promise.resolve();
+      });
+      screen.getByRole('button', { name: 'Open' }).click();
+      await screen.findByText('picking under 9');
+      act(() => {
+        late?.({ limit: 3 });
+      });
+      // THE SAME ID, A DIFFERENT OPEN: the slow answer is not drawn into it.
+      expect(late).toBeDefined();
+      expect(screen.getByText('picking under 9')).toBeDefined();
+      expect(screen.queryByText('picking under 3')).toBeNull();
+    });
+  });
+
+  /**
+   * A SECOND ASK WHILE A DIALOG IS OPEN (CR-COR-08): it waits, and the one being answered is not taken away. Each case
+   * asks from outside the dialog, as an autosave's refusal or a window's close does, through the hook's own `ask`.
+   */
+  describe('an ask that arrives while a dialog is open', () => {
+    /** What the cases reach: the hook's functions as of the latest render, and every answer in the order settled. */
+    interface Reach {
+      host: ReturnType<typeof useDialogHost> | undefined;
+      readonly answers: { readonly id: string; readonly answer: unknown }[];
+    }
+
+    function Asker({ reach }: { readonly reach: Reach }): ReactElement {
+      const host = useDialogHost(registry);
+      // AFTER EACH COMMIT, so a case reads the functions the latest render made, as a body does.
+      useEffect(() => {
+        held(reach, host);
+      });
+      return (
+        <DialogHost
+          registry={registry}
+          closeLabel={CLOSE}
+          open={host.open}
+          onClose={host.close}
+          onResolve={host.resolve}
+          onUpdate={host.report}
+        />
+      );
+    }
+
+    function held(reach: Reach, host: ReturnType<typeof useDialogHost>): void {
+      reach.host = host;
+    }
+
+    async function asked(reach: Reach, id: string, props: unknown): Promise<void> {
+      await act(async () => {
+        const host = reach.host;
+        if (host === undefined) throw new Error('the host rendered');
+        void host.ask(id, props).then((answer) => {
+          reach.answers.push({ id, answer });
+        });
+        await Promise.resolve();
+      });
+    }
+
+    async function press(name: string): Promise<void> {
+      await act(async () => {
+        screen.getByRole('button', { name }).click();
+        await Promise.resolve();
+      });
+    }
+
+    it('WAITS behind the open one, which keeps what was typed and answers its own opener', async () => {
+      const reach: Reach = { host: undefined, answers: [] };
+      render(<Asker reach={reach} />);
+      await asked(reach, 'dialog.pick', { limit: 4 });
+      await screen.findByText('picking under 4');
+      fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'typed while it was open' } });
+
+      await asked(reach, 'dialog.rename', { name: 'chapter one' });
+      // STILL THE FIRST, with nothing settled: the late ask took neither the slot nor the answer.
+      expect(screen.getByText('picking under 4')).toBeDefined();
+      expect(screen.getByLabelText('Note')).toHaveProperty('value', 'typed while it was open');
+      expect(reach.answers).toStrictEqual([]);
+
+      await press('Choose');
+      expect(reach.answers).toStrictEqual([{ id: 'dialog.pick', answer: { chosen: 2 } }]);
+      // AND THEN THE SECOND, as an open of its own.
+      expect(await screen.findByText('renaming chapter one')).toBeDefined();
+      expect(screen.getByRole('dialog', { name: 'Rename document' })).toBeDefined();
+    });
+
+    it('an informational dialog that SAYS THE SAME as one ahead of it ends with it — CONTROL: different words are both shown', async () => {
+      const reach: Reach = { host: undefined, answers: [] };
+      render(<Asker reach={reach} />);
+      await asked(reach, 'dialog.pick', { limit: 4 });
+      await screen.findByText('picking under 4');
+      await asked(reach, 'dialog.rename', { name: 'chapter one' });
+      await asked(reach, 'dialog.rename', { name: 'chapter one' });
+      await asked(reach, 'dialog.rename', { name: 'chapter two' });
+
+      await press('Choose');
+      await screen.findByText('renaming chapter one');
+      await press('OK');
+      // BOTH SETTLED by the one read, and the next dialog is the different one — not the same words again.
+      expect(reach.answers.filter((one) => one.id === 'dialog.rename')).toStrictEqual([
+        { id: 'dialog.rename', answer: undefined },
+        { id: 'dialog.rename', answer: undefined },
+      ]);
+      expect(await screen.findByText('renaming chapter two')).toBeDefined();
+      await press('OK');
+      expect(reach.answers).toHaveLength(4);
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('a LATE ANSWER from an open that has ended neither closes nor answers the one showing now', async () => {
+      const reach: Reach = { host: undefined, answers: [] };
+      render(<Asker reach={reach} />);
+      await asked(reach, 'dialog.pick', { limit: 4 });
+      await screen.findByText('picking under 4');
+      // THE BODY'S ANSWER AS OF THIS RENDER, as an asynchronous handler in it would hold it.
+      const late = reach.host?.resolve;
+      await asked(reach, 'dialog.pick', { limit: 6 });
+      await press('Close');
+      await screen.findByText('picking under 6');
+
+      act(() => {
+        late?.({ chosen: 1 });
+      });
+      expect(late).toBeDefined();
+      // THE SECOND IS STILL OPEN, and still unanswered — then it answers its own opener.
+      expect(screen.getByText('picking under 6')).toBeDefined();
+      expect(reach.answers).toStrictEqual([{ id: 'dialog.pick', answer: undefined }]);
+      await press('Choose');
+      expect(reach.answers).toStrictEqual([
+        { id: 'dialog.pick', answer: undefined },
+        { id: 'dialog.pick', answer: { chosen: 2 } },
+      ]);
     });
   });
 });

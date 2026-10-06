@@ -1,7 +1,7 @@
 import type { DocId, DocVersion } from '@monstera/shared';
 import { z } from 'zod';
 
-import { pageSetSchema } from './pageSet.js';
+import { MAX_PAGE_INDEX, pageSetSchema, pairedPageSetSchema } from './pageSet.js';
 import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   OCR_ENGINES,
@@ -362,6 +362,15 @@ const stampSlotsSchema = z
     right: z.string().max(200),
   })
   .strict();
+
+/**
+ * The two tokens, spelt once: the kernel resolves them (`resolveStampTokens`) and the dialog names them to the person.
+ *
+ * ONE SPELLING because there were two and they disagreed in effect: the dialog's hint carried `{n}` and `{N}` inside
+ * its message, where the message format reads a brace as a value to fill, so the hint drew *"Type  for the page number
+ * and  for the page count"* with both tokens missing (the gallery's reading, 2026-10-03).
+ */
+export const STAMP_TOKENS = { page: '{n}', count: '{N}' } as const;
 
 /**
  * Draw headers and footers on pages.
@@ -794,6 +803,23 @@ export const generateTocSchema = z.object({
 }).strict();
 
 /**
+ * The pages of a SECOND document a command copies: `'all'`, or a page set in the source's own frame, in the order
+ * they are to land.
+ *
+ * **Required, with `'all'` spelt out**, so a payload says which pages it takes rather than leaving *every page* to an
+ * absent field. The renderer reads the source's page count through `document.viewModel` to bound the choice it
+ * offers; the kernel refuses an index the source does not have when it applies, since the source is a document the
+ * renderer's read may have outlived. **A paired set**, since a replace carries it beside its own pages.
+ */
+export const sourcePagesSchema = z.union([z.literal('all'), pairedPageSetSchema]);
+
+/**
+ * The most documents one merge takes (ADR-0152 Decision 3): a bound so the message has a size, chosen and not
+ * measured. It is not a figure for how many files people merge, and each one costs the message one id.
+ */
+export const MAX_MERGE_DOCUMENTS = 32;
+
+/**
  * Append another OPEN document's pages into this one.
  *
  * ## The source is a `DocId`, and it is a document the user has open
@@ -818,18 +844,55 @@ export const generateTocSchema = z.object({
  * of that again, and B3a's record is that the second answer agrees with the
  * first until it does not.
  */
-export const mergeDocumentSchema = z.object({
-  kind: z.literal('mergeDocument'),
-  /** The open document whose pages are copied in. Never modified. */
-  source: docIdSchema,
-  /**
-   * Zero-based index the source's first page occupies afterwards.
-   *
-   * `insertBlankPage`'s spelling and its bound: `at` is in the destination
-   * frame, so `at: pageCount` appends and the kernel clamps to the count.
-   */
-  at: z.number().int().nonnegative(),
-}).strict();
+export const mergeDocumentSchema = z
+  .object({
+    kind: z.literal('mergeDocument'),
+    /**
+     * The open documents whose pages are copied in, in the order they land, each never modified
+     * ([ADR-0152](../../../docs/DECISIONS/0152-a-merge-takes-several-documents-in-one-command.md)): one intent and
+     * one log entry however many files the person chose, so a failure on any of them changes nothing.
+     */
+    //
+    // TWO SHAPES, and the bound is why: ONE document with the pages chosen of it (*Insert from PDF*), or one to
+    // `MAX_MERGE_DOCUMENTS` documents each taken whole (*Merge*). A list of parts each free to carry a page set has a
+    // worst of 32 sets, past the hosts' frame, and a refine holding their total to one set's is invisible to
+    // `maxEncodedBytes`, which reads the shape — so the check that owns the message's size would read it as too large,
+    // correctly by its own rule (B3a). A merge of several documents with pages chosen of each is a widening of this
+    // union, made on purpose.
+    documents: z.union([
+      z.tuple([
+        z
+          .object({
+            /** An open document. */
+            source: docIdSchema,
+            /** Which of its pages are copied, in this order. See {@link sourcePagesSchema}. */
+            sourcePages: sourcePagesSchema,
+          })
+          .strict(),
+      ]),
+      z
+        .array(
+          z
+            .object({
+              /** An open document. The same one may appear more than once. */
+              source: docIdSchema,
+              /** Every page, in its own order. */
+              sourcePages: z.literal('all'),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(MAX_MERGE_DOCUMENTS),
+    ]),
+    /**
+     * Zero-based index the first document's first page occupies afterwards; each next document follows the last.
+     *
+     * `insertBlankPage`'s spelling and its bound: `at` is in the destination
+     * frame, so `at: pageCount` appends and the kernel clamps to the count.
+     */
+    at: z.number().int().nonnegative(),
+  })
+  .strict();
 
 /**
  * Replace one page with another open document's pages.
@@ -850,21 +913,27 @@ export const mergeDocumentSchema = z.object({
  * `mergeDocument`'s in one command. `CommandPrior` types it `never` and the bus
  * checkpoints the target.
  *
- * ## The WHOLE source replaces one page
+ * ## Target pages and source pages, and how they pair
  *
- * A source of three pages replacing page 4 leaves a document one page shorter
- * plus three, which is what *replace with this document* means. Choosing which
- * of the source's pages to use is the same capability *insert selected pages*
- * is owed, and blocked on the same missing page count.
+ * `pages` are the target's pages being replaced (the selection, else the page on show — `targetPages`), and
+ * `sourcePages` the source's pages that take their place. The kernel sorts and deduplicates `pages`, then:
+ *
+ * - **the same number of each**: each replaced page is swapped for the source page in the same position of the list,
+ *   in place, so pages 2 and 5 replaced by two source pages stay pages 2 and 5 and the count does not change;
+ * - **different numbers**: the replaced pages must be ONE RUN, and the run is swapped for the source pages as a block.
+ *   Replacing pages that are not next to each other with a different number of pages has no position everybody would
+ *   agree on, so it is refused rather than guessed.
  */
 export const replacePageSchema = z.object({
   kind: z.literal('replacePage'),
-  /** The open document whose pages take the replaced page's place. */
+  /** The open document whose pages take the replaced pages' place. */
   source: docIdSchema,
-  /** Zero-based index of the TARGET page being replaced. */
-  at: z.number().int().nonnegative(),
+  /** The TARGET's pages being replaced, zero-based, as a paired page set beside `sourcePages`. Each must exist. */
+  pages: pairedPageSetSchema,
+  /** The source's pages that take their place. See {@link sourcePagesSchema}. */
+  sourcePages: sourcePagesSchema,
   /**
-   * The version `at` was read at. A page index is a position in the page tree at a
+   * The version `pages` were read at. A page index is a position in the page tree at a
    * version, and a page inserted or moved since would make it name another page — the
    * one a replace then destroys. The bus refuses a stale one inside the lane
    * (ADR-0062's 2026-09-14 correction).
@@ -902,12 +971,11 @@ export const MAX_LAYER_NAME_LENGTH = 256;
  *
  * `mergeDocumentSchema`'s reason, ADR-0040 Decisions 1 and 2.
  *
- * ## Its FIRST page, because the renderer cannot bound another
+ * ## The source page is chosen
  *
- * An open-document entry carries an id, a version, a byte length and a name, and no page
- * count. A chosen source page could not be bounded here, which is the gap
- * `replacePageSchema`'s note records for *insert selected pages*; this command takes the
- * same default rather than an index the kernel would refuse blind.
+ * `sourcePage`, zero-based in the source. The renderer bounds it by the source's page
+ * count read through `document.viewModel` ({@link sourcePagesSchema}'s reason), and the
+ * kernel refuses a page the source no longer has.
  *
  * ## The NAME is the renderer's to send
  *
@@ -917,8 +985,10 @@ export const MAX_LAYER_NAME_LENGTH = 256;
  */
 export const importPageAsLayerSchema = z.object({
   kind: z.literal('importPageAsLayer'),
-  /** The open document whose first page is placed. Never modified. */
+  /** The open document whose page is placed. Never modified. */
   source: docIdSchema,
+  /** Zero-based index of the SOURCE page placed. It must exist in the source. */
+  sourcePage: z.number().int().min(0).max(MAX_PAGE_INDEX),
   /** The layer's name, as the Layers panel will show it. */
   name: z.string().min(1).max(MAX_LAYER_NAME_LENGTH),
   /** Zero-based index of the TARGET page the layer is placed on. It must exist. */
@@ -965,6 +1035,11 @@ export const MAX_ANNOTATION_BORDER = 144;
  *
  * Generous enough that no note a person types meets it, so a refusal here is
  * evidence something built the command from a file rather than from a dialog.
+ *
+ * **It also bounds the read of one mark's whole words** (`document.annotationWords`), and that is the same number
+ * rather than a third one: the read exists to start an edit, and an edit writes back through this bound. Words past
+ * it could be read and never saved, so the read answers `whole: false` instead and the editor says the comment is
+ * too long to edit here, which leaves it as it is.
  */
 export const MAX_ANNOTATION_TEXT = 4096;
 
@@ -1230,6 +1305,23 @@ export const annotationColourSchema = z.tuple([
 export type AnnotationColour = z.infer<typeof annotationColourSchema>;
 
 /**
+ * How a text mark's words are drawn, as the file says: the type size, colour, face and the side the lines sit against
+ * — a `/FreeText`'s `/DA` and `/Q`. The four fields every text draft carries, under the same bounds, so a value read is
+ * one a draft could write back; a mark whose `/DA` says something outside them carries none (ADR-0154 Decision 3).
+ */
+export const annotationWordsStyleSchema = z
+  .object({
+    fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
+    colour: annotationColourSchema,
+    font: annotationFontSchema,
+    direction: textDirectionSchema,
+  })
+  .strict();
+
+/** See {@link annotationWordsStyleSchema}. */
+export type AnnotationWordsStyle = z.infer<typeof annotationWordsStyleSchema>;
+
+/**
  * How opaque an annotation is drawn — `/CA`, from 0.1 to 1.
  *
  * ## On EVERY member, because it is a property of an annotation
@@ -1383,6 +1475,21 @@ export const measureUnitSchema = z.enum(['pt', 'mm', 'cm', 'm', 'in', 'ft']);
 
 /** A measurement's unit. See {@link measureUnitSchema}. */
 export type MeasureUnit = z.infer<typeof measureUnitSchema>;
+
+/**
+ * How many PDF points each unit is, on the page — the one table of physical lengths in this build, read by the
+ * measurements and the rulers alike (B3a). A point is 1/72 inch (PDF 32000 §8.3.2.3), and the rest follow from the
+ * inch: 2.54 cm and 25.4 mm exactly, twelve inches to the foot. Written as the divisions rather than as rounded
+ * decimals so each definition is visible in the value.
+ */
+export const POINTS_PER_UNIT: Readonly<Record<MeasureUnit, number>> = {
+  pt: 1,
+  in: 72,
+  ft: 72 * 12,
+  cm: 72 / 2.54,
+  mm: 72 / 25.4,
+  m: 72 / 0.0254,
+};
 
 /**
  * How a drawing's own units relate to the page's.
@@ -2861,6 +2968,31 @@ export function keepsTheAnnotationWalk<C extends { readonly kind: string }>(
 }
 
 /**
+ * The page-object commands that leave a page's OBJECT walk as it was — the same objects, in the same order, the edited
+ * one at its own index — so an object selected on the page stays selected across them
+ * ([ADR-0153](../../../docs/DECISIONS/0153-edit-object-is-a-mode-on-the-page-and-a-placed-picture-is-one-of-its-objects.md)
+ * Decision 4). {@link KEEPS_THE_ANNOTATION_WALK}'s rule on PDFium's walk.
+ *
+ * **Measured 2026-10-04** with PDFium 155.0.8044.0, on a page of two text runs, a rule and two images: a move, a
+ * resize and a recolour each answered the same five kinds in the same order; a removal shifted every later index, which
+ * is why `deletePageObjects` is not here.
+ */
+export const KEEPS_THE_OBJECT_WALK: ReadonlySet<ObjectWalkKeepingKind> = new Set([
+  'placePageObject',
+  'recolorPageObjects',
+] as const);
+
+/** The kinds {@link KEEPS_THE_OBJECT_WALK} names. */
+export type ObjectWalkKeepingKind = 'placePageObject' | 'recolorPageObjects';
+
+/** Whether `command` is one of them — the set's one reader for a command in hand. */
+export function keepsTheObjectWalk<C extends { readonly kind: string }>(
+  command: C,
+): command is Extract<C, { readonly kind: ObjectWalkKeepingKind }> {
+  return (KEEPS_THE_OBJECT_WALK as ReadonlySet<string>).has(command.kind);
+}
+
+/**
  * How many form fields one deletion may name.
  *
  * {@link MAX_REMOVED_ANNOTATIONS}' argument on the other walk: this is *how
@@ -2953,17 +3085,168 @@ export const flattenFormFieldsSchema = z.object({
 export const MAX_SIGNATURE_FIELD = 256;
 
 /**
- * The faces a typed signature may be set in.
+ * The faces a typed signature may be set in, in the order a person is offered them
+ * ([ADR-0150](../../../docs/DECISIONS/0150-a-typed-signature-is-written-as-outlines-of-a-bundled-face.md)).
  *
- * **pdf-lib's standard fonts, so what is written is a name and not a font
- * program** — nothing is embedded, and nothing here ships a font file. That is
- * also the limit, stated where the choice is made: a standard font encodes
- * WinAnsi, so text outside it cannot be drawn. The kernel refuses such text
- * against the font's own character set (B3a — the font is the authority on what
- * it can encode), and this list is deliberately not accompanied by a character
- * rule of its own.
+ * **Fifteen bundled OFL faces, twelve of them script or italic**, and what reaches a document is their OUTLINES,
+ * never a font: the renderer makes the path from the face's own glyphs ({@link outlinedSignatureMarkSchema}), so no
+ * font program and no subsetting goes into the file. Which characters a face can draw is the face's character map,
+ * read where the faces are (B3a), and this list carries no character rule of its own.
  */
-export const SIGNATURE_FONTS = ['helvetica', 'times-roman', 'times-italic', 'courier'] as const;
+export const SIGNATURE_FONTS = [
+  'dancing-script',
+  'great-vibes',
+  'allura',
+  'alex-brush',
+  'sacramento',
+  'parisienne',
+  'pinyon-script',
+  'mr-dafoe',
+  'herr-von-muellerhoff',
+  'la-belle-aurore',
+  'caveat',
+  'garamond-italic',
+  'garamond',
+  'source-sans',
+  'courier-prime',
+] as const;
+
+/** One of {@link SIGNATURE_FONTS}. */
+export type SignatureFont = (typeof SIGNATURE_FONTS)[number];
+
+/**
+ * The faces a signature KEPT before ADR-0150 may name, each with the face it is shown and placed in now — the nearest:
+ * the sans, the serif, its italic and the mono. A library on disk is read whole and refused whole when one entry does
+ * not parse, so these stay readable for as long as a kept entry may name one; nothing writes them.
+ */
+export const RETIRED_SIGNATURE_FONTS = {
+  helvetica: 'source-sans',
+  'times-roman': 'garamond',
+  'times-italic': 'garamond-italic',
+  courier: 'courier-prime',
+} as const satisfies Readonly<Record<string, SignatureFont>>;
+
+/** A face a kept typed signature may name: a current one, or a retired one it is mapped from. */
+export type KeptSignatureFont = SignatureFont | keyof typeof RETIRED_SIGNATURE_FONTS;
+
+/** The face a kept typed signature is shown and placed in: its own, or the one its retired face maps to. */
+export function signatureFontOf(font: KeptSignatureFont): SignatureFont {
+  return font in RETIRED_SIGNATURE_FONTS ? RETIRED_SIGNATURE_FONTS[font as keyof typeof RETIRED_SIGNATURE_FONTS] : (font as SignatureFont);
+}
+
+/**
+ * The grid an outline's points lie on: whole numbers from 0 to this, y down, the outline's own box scaled to fit on
+ * its longer side. Five digits at most, so a coordinate's encoded size is bounded by its shape.
+ */
+export const SIGNATURE_OUTLINE_GRID = 32767;
+
+/**
+ * How many points an outline may carry: 10,240. At most five digits and a comma per coordinate, the points are at most
+ * 122,880 bytes; the operators, at most one and a half per point and two bytes each, 30,720 — together under three
+ * quarters of the engine host's frame, where `hostRoutes.test.ts` holds every command it can measure (ADR-0150
+ * Decision 7). At about 160 points a letter in the most intricate face measured, that is some sixty letters.
+ */
+export const MAX_SIGNATURE_OUTLINE_POINTS = 10240;
+
+/**
+ * The path operators, by the code an outline carries: a move, a line, a quadratic, a cubic, a close.
+ *
+ * **Codes rather than letters**, because a string is priced at a `\u` escape a character wherever a bound is read
+ * (`maxEncodedBytes`), so a string of operators cost six bytes each where a code costs two.
+ */
+export const OUTLINE_OPS = ['M', 'L', 'Q', 'C', 'Z'] as const;
+
+/** One of {@link OUTLINE_OPS}. */
+export type OutlineOp = (typeof OUTLINE_OPS)[number];
+
+/** The codes for operators written as letters — `'MLQZ'` — which is how a path is read by a person and by a font. */
+export function outlineOpCodes(letters: string): number[] {
+  const codes: number[] = [];
+  // BY INDEX: an operator is one ASCII letter, so a code unit is a letter, and anything else is refused below.
+  for (let at = 0; at < letters.length; at += 1) {
+    const letter = letters.charAt(at);
+    const code = OUTLINE_OPS.indexOf(letter as OutlineOp);
+    if (code < 0) throw new RangeError(`${letter} is not a path operator`);
+    codes.push(code);
+  }
+  return codes;
+}
+
+/** How many points each operator takes, in {@link OUTLINE_OPS}' order. */
+const OUTLINE_ARITY: readonly number[] = [1, 1, 2, 3, 0];
+
+/** {@link OUTLINE_OPS}' codes for the two operators the path rule is about. */
+const MOVE = OUTLINE_OPS.indexOf('M');
+const CLOSE = OUTLINE_OPS.indexOf('Z');
+
+/**
+ * How many points an outline's operators take — THE ONE COUNT, for the schema's check and for the renderer that
+ * writes the path, so the two cannot disagree about an operator's arity (B3a).
+ */
+export function outlinePointsOf(ops: readonly number[]): number {
+  let points = 0;
+  for (const op of ops) points += OUTLINE_ARITY[op] ?? 0;
+  return points;
+}
+
+/**
+ * Whether operators make a path — THE ONE RULE for what a well-formed outline is: every subpath a move followed by at
+ * least one line or curve, closed or not. So a subpath holds two points at least, and there are never more than one and
+ * a half operators a point, which is what {@link MAX_SIGNATURE_OUTLINE_POINTS}' bound on the operators rests on.
+ */
+export function outlineOpsArePath(ops: readonly number[]): boolean {
+  // HOW MANY LINES AND CURVES THE OPEN SUBPATH HAS, or that none is open: before the first move, and after a close.
+  let segments: number | 'none open' = 'none open';
+  for (const op of ops) {
+    if (op === MOVE) {
+      if (segments === 0) return false;
+      segments = 0;
+    } else if (op === CLOSE) {
+      if (segments === 'none open' || segments === 0) return false;
+      segments = 'none open';
+    } else {
+      if (segments === 'none open') return false;
+      segments += 1;
+    }
+  }
+  // AN OPEN SUBPATH AT THE END is a path if it drew something; no subpath at all is not one.
+  return segments === 'none open' ? ops.length > 0 : segments > 0;
+}
+
+/** A coordinate on {@link SIGNATURE_OUTLINE_GRID}. */
+const outlineCoordinate = z.number().int().min(0).max(SIGNATURE_OUTLINE_GRID);
+
+/**
+ * A typed name's outline: a path, filled by the nonzero rule both TrueType and CFF outlines use.
+ *
+ * - `ops` — the operators, by {@link OUTLINE_OPS}' codes, each subpath a move followed by lines and curves and closed
+ *   or not. A quadratic is kept as one: the kernel turns it into the cubic that is the same curve, so nothing is
+ *   approximated on the way.
+ * - `points` — the operators' points, flat, `x` then `y`, on {@link SIGNATURE_OUTLINE_GRID}.
+ * - `frame` — the face's line box on the same grid, `[left, top, right, bottom]`: the name's advance by the face's
+ *   ascender and descender. The kernel fits this and the ink together, so a name without descenders is not drawn
+ *   taller than one with them, and a swash past the advance is not cut.
+ */
+const signatureOutlineSchema = z
+  .object({
+    ops: z
+      .array(z.number().int().min(0).max(OUTLINE_OPS.length - 1))
+      .min(2)
+      .max((3 * MAX_SIGNATURE_OUTLINE_POINTS) / 2),
+    points: z.array(outlineCoordinate).min(4).max(2 * MAX_SIGNATURE_OUTLINE_POINTS),
+    frame: z.tuple([outlineCoordinate, outlineCoordinate, outlineCoordinate, outlineCoordinate]),
+  })
+  .strict()
+  .refine(({ ops }) => outlineOpsArePath(ops), { message: 'the operators do not make a path' })
+  .refine(({ ops, points }) => points.length === 2 * outlinePointsOf(ops), {
+    message: 'the points are not the ones the operators take',
+  })
+  .refine(({ frame: [left, top, right, bottom] }) => left < right && top < bottom, {
+    message: 'the frame has no area',
+  });
+
+/** See {@link signatureOutlineSchema}. */
+export type SignatureOutline = z.infer<typeof signatureOutlineSchema>;
 
 /**
  * The RFC 3161 timestamp authorities a signature may ask, each with its one URL
@@ -3019,9 +3302,12 @@ export const TIMESTAMP_AUTHORITY_IDS = ['digicert', 'globalsign', 'sectigo'] as 
 export const SIGN_REFUSALS = [
   'wrong-passphrase',
   'unreadable',
-  'unencodable-text',
   'image-unreadable',
   'image-too-large',
+  /** A scanned signature PDF whose first page carries no ink. */
+  'scan-blank',
+  /** A scanned signature PDF that needs a password to be read. */
+  'scan-locked',
   /** The signature and its timestamp do not fit the space the placeholder reserves. */
   'signature-too-large',
   /** The authority could not be reached, or answered with an HTTP error. */
@@ -3060,7 +3346,8 @@ export const MAX_SIGNATURE_STROKE_POINTS = 1024;
  */
 const signaturePointSchema = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)]);
 
-const typedSignatureMarkSchema = z
+/** A typed name as it is MADE and kept: the name, and the face. */
+export const typedSignatureMarkSchema = z
   .object({
     kind: z.literal('typed'),
     text: z.string().min(1).max(MAX_SIGNATURE_FIELD),
@@ -3068,7 +3355,40 @@ const typedSignatureMarkSchema = z
   })
   .strict();
 
-const drawnSignatureMarkSchema = z
+/** A typed name as the library READS it: a current face, or a retired one ({@link RETIRED_SIGNATURE_FONTS}). */
+const keptTypedSignatureMarkSchema = typedSignatureMarkSchema
+  .extend({
+    font: z.enum([
+      ...SIGNATURE_FONTS,
+      ...(Object.keys(RETIRED_SIGNATURE_FONTS) as (keyof typeof RETIRED_SIGNATURE_FONTS)[]),
+    ]),
+  })
+  .strict();
+
+/**
+ * A typed name as it is DRAWN: the name and the face, and the outline the renderer made of it
+ * ([ADR-0150](../../../docs/DECISIONS/0150-a-typed-signature-is-written-as-outlines-of-a-bundled-face.md) Decision 3).
+ *
+ * **Its own kind rather than an optional field on `typed`**, so a typed mark that reaches a writer without its outline
+ * cannot be written: the kept form and the drawn form are different shapes, and a writer takes only this one (B5). The
+ * name and the face travel with it so a placement can be kept as the person made it.
+ */
+export const outlinedSignatureMarkSchema = z
+  .object({
+    kind: z.literal('outlined'),
+    text: z.string().min(1).max(MAX_SIGNATURE_FIELD),
+    font: z.enum(SIGNATURE_FONTS),
+    outline: signatureOutlineSchema,
+  })
+  .strict();
+
+/** See {@link outlinedSignatureMarkSchema}. */
+export type OutlinedSignatureMark = z.infer<typeof outlinedSignatureMarkSchema>;
+
+/** A typed name as it is made and kept: {@link typedSignatureMarkSchema}. */
+export type TypedSignatureMark = z.infer<typeof typedSignatureMarkSchema>;
+
+export const drawnSignatureMarkSchema = z
   .object({
     kind: z.literal('drawn'),
     strokes: z
@@ -3129,7 +3449,7 @@ export const libraryEntrySchema = z.discriminatedUnion('kind', [
     .object({
       id: libraryIdSchema,
       kind: z.literal('signature'),
-      look: z.discriminatedUnion('kind', [libraryPictureSchema, typedSignatureMarkSchema, drawnSignatureMarkSchema]),
+      look: z.discriminatedUnion('kind', [libraryPictureSchema, keptTypedSignatureMarkSchema, drawnSignatureMarkSchema]),
     })
     .strict(),
 ]);
@@ -3139,8 +3459,25 @@ export type LibraryEntry = z.infer<typeof libraryEntrySchema>;
 /** A signature a person may keep as it is made: typed or drawn. A picture is added by main's picker. */
 export const keepableSignatureSchema = z.discriminatedUnion('kind', [typedSignatureMarkSchema, drawnSignatureMarkSchema]);
 
-/** One of {@link keepableSignatureSchema}'s looks: what is kept, and what both signature writers draw from. */
+/** One of {@link keepableSignatureSchema}'s looks: what is kept. */
 export type KeepableSignature = z.infer<typeof keepableSignatureSchema>;
+
+/**
+ * A typed or drawn signature as both writers DRAW it: a typed name's outline, or the strokes. The kept typed form is
+ * not here, because it has nothing to draw until the renderer makes its outline (ADR-0150).
+ */
+export const drawableSignatureSchema = z.discriminatedUnion('kind', [outlinedSignatureMarkSchema, drawnSignatureMarkSchema]);
+
+/** One of {@link drawableSignatureSchema}'s looks. */
+export type DrawableSignature = z.infer<typeof drawableSignatureSchema>;
+
+/**
+ * What the library keeps of a look that was drawn: a typed name's name and face without its outline, which is derived
+ * and so is never stored (ADR-0150 Decision 3); a drawing as it is.
+ */
+export function keptLookOf(mark: DrawableSignature): KeepableSignature {
+  return mark.kind === 'outlined' ? { kind: 'typed', text: mark.text, font: mark.font } : mark;
+}
 
 /**
  * How many points a drawing may carry where it is PLACED — `placeSignatureMark`, which crosses the MuPDF host's pipe
@@ -3181,22 +3518,22 @@ const placedDrawingSchema = z
 /** See {@link placedDrawingSchema}. */
 export type PlacedDrawing = z.infer<typeof placedDrawingSchema>;
 
-/** A signature's look as `placeSignatureMark` carries it: typed as kept, or a drawing in its placed form. */
-const placedSignatureMarkSchema = z.discriminatedUnion('kind', [typedSignatureMarkSchema, placedDrawingSchema]);
+/** A signature's look as `placeSignatureMark` carries it: a typed name's outline, or a drawing in its placed form. */
+const placedSignatureMarkSchema = z.discriminatedUnion('kind', [outlinedSignatureMarkSchema, placedDrawingSchema]);
 
 /** See {@link placedSignatureMarkSchema}. */
 export type PlacedSignatureMark = z.infer<typeof placedSignatureMarkSchema>;
 
 /**
- * A kept look in the form the placing command carries — the ONE place a drawing is fitted to
- * {@link MAX_PLACED_SIGNATURE_POINTS} and flattened (B3a).
+ * A look in the form the placing command carries — the ONE place a drawing is fitted to
+ * {@link MAX_PLACED_SIGNATURE_POINTS} and flattened (B3a). An outline is already bounded by its own schema.
  *
  * **Thinned, never cut**: while the drawing is too long, every stroke longer than two points keeps its first point,
  * every other point after it, and its last. Each pass about halves the drawing and keeps every stroke and both its ends,
  * so the shape survives at a lower resolution; cutting the points past the bound would drop the end of the signature.
  */
-export function placedMarkOf(mark: KeepableSignature): PlacedSignatureMark {
-  if (mark.kind === 'typed') return mark;
+export function placedMarkOf(mark: DrawableSignature): PlacedSignatureMark {
+  if (mark.kind === 'outlined') return mark;
   let strokes = mark.strokes;
   const total = (): number => strokes.reduce((sum, stroke) => sum + stroke.length, 0);
   while (total() > MAX_PLACED_SIGNATURE_POINTS) {
@@ -3228,16 +3565,43 @@ export function strokesOfPlaced(drawing: PlacedDrawing): Extract<KeepableSignatu
  * Signature's dialog previewed (ADR-0133's second correction). `saved` names a
  * signature the person kept, by its library id — main looks it up, so a kept
  * picture's bytes never have to travel back.
+ *
+ * **A typed name arrives as its outline**, made by the renderer (ADR-0150), and a KEPT typed one is sent the same way
+ * rather than by `saved`: main has the name and the face but no outline to draw.
  */
 export const requestedSignatureMarkSchema = z.discriminatedUnion('kind', [
-  typedSignatureMarkSchema,
+  outlinedSignatureMarkSchema,
   drawnSignatureMarkSchema,
-  z.object({ kind: z.literal('image'), picked: fileHandleSchema.optional() }).strict(),
-  z.object({ kind: z.literal('saved'), id: libraryIdSchema }).strict(),
+  pictureRequestSchema(),
+  savedRequestSchema(),
 ]);
 
-/** One of {@link requestedSignatureMarkSchema}'s three looks. */
+/** A picture the renderer asks for: picked now by main, or the one main holds under `picked`. */
+function pictureRequestSchema() {
+  return z.object({ kind: z.literal('image'), picked: fileHandleSchema.optional() }).strict();
+}
+
+/** A kept signature, by its library id. */
+function savedRequestSchema() {
+  return z.object({ kind: z.literal('saved'), id: libraryIdSchema }).strict();
+}
+
+/** One of {@link requestedSignatureMarkSchema}'s looks. */
 export type RequestedSignatureMark = z.infer<typeof requestedSignatureMarkSchema>;
+
+/**
+ * A look as a person CHOSE it, before the renderer has made a typed name's outline: {@link requestedSignatureMarkSchema}
+ * with the typed name as it was typed. What the signing dialogs answer; what crosses to main is the requested form.
+ */
+export const chosenSignatureMarkSchema = z.discriminatedUnion('kind', [
+  typedSignatureMarkSchema,
+  drawnSignatureMarkSchema,
+  pictureRequestSchema(),
+  savedRequestSchema(),
+]);
+
+/** One of {@link chosenSignatureMarkSchema}'s looks. */
+export type ChosenSignatureMark = z.infer<typeof chosenSignatureMarkSchema>;
 
 /**
  * How a visible signature looks, as the COMMAND carries it.
@@ -3247,7 +3611,7 @@ export type RequestedSignatureMark = z.infer<typeof requestedSignatureMarkSchema
  * `placeImageSchema`'s bound, for their reasons.
  */
 const signatureMarkSchema = z.discriminatedUnion('kind', [
-  typedSignatureMarkSchema,
+  outlinedSignatureMarkSchema,
   drawnSignatureMarkSchema,
   z
     .object({
@@ -4609,6 +4973,36 @@ export const replaceAllTextSchema = z.object({
   regex: z.boolean().optional(),
 }).strict();
 
+/**
+ * Replaces ONE occurrence of a word, named by where it is on the page (ADR-0156 Decision 4).
+ *
+ * ## The point is the occurrence's name, because a list position cannot cross
+ *
+ * The word was found in MuPDF's reading of the page, and page text is written through PDFium's text objects; the two
+ * engines' readings of one page agreed on 52.9% of lines (`proof:lineagreement`), so *the third match on page 4* names
+ * a different word about half the time. The page's geometry is what both engines share. `at` is the word's centre in
+ * PDF user space, and the kernel replaces `find` — whole word, exactly as written — in the one text object whose
+ * bounds hold `at`, and only when that object holds it exactly once. Anything else is refused as `text-not-in-place`
+ * and nothing changes.
+ *
+ * ## It names nothing it could be stale against, so it carries no version
+ *
+ * `replaceAllText`'s reason: it is content-addressed. A document that has moved either still holds the word at that
+ * point, and the edit is the one asked for, or it does not, and the refusal says so.
+ */
+export const replaceTextAtSchema = z
+  .object({
+    kind: z.literal('replaceTextAt'),
+    page: z.number().int().nonnegative(),
+    /** The word as it is on the page. Refused when empty: there is nothing to find. */
+    find: z.string().min(1).max(MAX_FIND_TEXT),
+    /** What it becomes; `replaceAllText`'s bound, a person's typing. */
+    replace: z.string().max(MAX_FIND_TEXT),
+    /** The occurrence's centre, in PDF user space. */
+    at: annotationPointSchema,
+  })
+  .strict();
+
 /** How a block edit takes words that no longer fit its box (ADR-0097 4b). */
 export const TEXT_FIT_MODES = ['reflow', 'shrink'] as const;
 
@@ -4807,6 +5201,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   deletePageObjectsSchema,
   promoteFormObjectsSchema,
   replaceAllTextSchema,
+  replaceTextAtSchema,
   editTextBlockSchema,
 ]);
 
@@ -5012,6 +5407,10 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // 52.9% line-agreement score refuses. The kernel finds them in the editing
   // engine's own runs.
   replaceAllTextSchema,
+  // RENDERABLE: two strings and a point. The point is what the renderer CAN say about where one occurrence is — the
+  // page's own geometry, read from MuPDF's quads — where a position in MuPDF's list would name another word in
+  // PDFium's about half the time (ADR-0156).
+  replaceTextAtSchema,
   // RENDERABLE: the block a person saw, as indices a read answered, and the
   // words they typed. What it cannot express is where a line breaks or where a
   // new one goes — the renderer does not have the page's fonts, so those are
@@ -5137,13 +5536,8 @@ export function sourceIdsOf(command: Command): readonly DocId[] {
   // Listing every arm to satisfy the rule would be a list nobody reads, nearly
   // all of whose arms are the same line. The `if` says the same thing and the
   // type check below is what keeps the names honest.
-  if (
-    command.kind === 'mergeDocument' ||
-    command.kind === 'replacePage' ||
-    command.kind === 'importPageAsLayer'
-  ) {
-    return [command.source];
-  }
+  if (command.kind === 'mergeDocument') return command.documents.map((part) => part.source);
+  if (command.kind === 'replacePage' || command.kind === 'importPageAsLayer') return [command.source];
   return NO_SOURCES;
 }
 
@@ -5163,7 +5557,8 @@ const NO_SOURCES: readonly DocId[] = Object.freeze([]);
  * else refuses to let it drift. The anchor is the kernel's `sources` axis; this
  * package cannot import the kernel, so the tie is written *there*, in
  * `commandDeclarations.test.ts`, as a mutual assignability between this type
- * and the kinds whose declaration says `sources: 'one'`.
+ * and the kinds whose declaration names another document (`sources: 'one'`,
+ * or `'several'` since ADR-0152).
  *
  * ## The line below checks less than its old name claimed
  *
@@ -5217,6 +5612,19 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'replacePage') return command.version;
   if (command.kind === 'importPageAsLayer') return command.version;
   return undefined;
+}
+
+/**
+ * {@link targetVersionOf}'s inverse: the same command, composed against `version` instead.
+ *
+ * For applying an edit to a COPY of the document it was composed on
+ * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)
+ * Decision 5): the copy holds the same content under its own version, so a command naming the original's must name the
+ * copy's to apply there. Keyed on {@link targetVersionOf}'s kinds, never on a field spelt `version`, for that function's
+ * reason; a kind that names no version comes back unchanged.
+ */
+export function withTargetVersion<C extends Command>(command: C, version: DocVersion): C {
+  return targetVersionOf(command) === undefined ? command : { ...command, version };
 }
 
 /**

@@ -24,7 +24,7 @@ describe('the two fits on Home › Display (ADR-0107’s 2026-10-02 correction)'
     };
     expect(home(width)).toStrictEqual({ order: 200 });
     expect(home(page)).toStrictEqual({ order: 202 });
-    // NOTHING ELSE ON HOME › DISPLAY SITS BETWEEN THEM: the registry's next Home › Display tool is at 204 (Dim Pages).
+    // NOTHING ELSE ON HOME › DISPLAY SITS BETWEEN THEM: the registry's next Home › Display tool is at 204 (Dim pages).
   });
 
   it('it keeps its Tools › Display, View › Zoom and status-bar places', () => {

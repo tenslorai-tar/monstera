@@ -1989,9 +1989,26 @@ export class Pixmap extends Userdata<"fz_pixmap"> {
 		let s = libmupdf._wasm_pixmap_get_stride(this.pointer)
 		let h = libmupdf._wasm_pixmap_get_h(this.pointer)
 		let p = libmupdf._wasm_pixmap_get_samples(this.pointer)
-		/* MONSTERA: a view over the pixmap's own samples, as upstream's was: callers write into it (Enhance levels
-		 * in place, the scan straightener warps into it) and then encode the pixmap. It lives as long as the pixmap. */
-		return new Uint8ClampedArray(boundNative().view(p, s * h))
+		/* MONSTERA: a COPY of the samples, where upstream returned a view into the WASM heap. A view over native
+		 * memory is an external ArrayBuffer, and Electron's runtime refuses those: koffi's `view` there aborts the
+		 * process (`FATAL ERROR: Error::New napi_get_last_error_info`, measured under ELECTRON_RUN_AS_NODE on
+		 * Electron 43.4.1, 2026-10-03), which is how Deskew, Enhance, Straighten and Read barcodes killed the engine
+		 * host while plain Node, which allows them, kept every kernel test green. A caller that changes the samples
+		 * hands them back through `setPixels`. */
+		const out = new Uint8ClampedArray(s * h)
+		if (out.length > 0) boundNative().read(p, out, out.length)
+		return out
+	}
+
+	/* MONSTERA: the write half of the copy above, which upstream did not need because its view wrote through. The
+	 * length is the pixmap's own, so a buffer of any other size is refused rather than written short or past the end. */
+	setPixels(samples: Uint8ClampedArray | Uint8Array) {
+		let s = libmupdf._wasm_pixmap_get_stride(this.pointer)
+		let h = libmupdf._wasm_pixmap_get_h(this.pointer)
+		if (samples.length !== s * h)
+			throw new RangeError(`a pixmap of stride ${s} and height ${h} holds ${s * h} samples; ${samples.length} were given`)
+		let p = libmupdf._wasm_pixmap_get_samples(this.pointer)
+		if (samples.length > 0) boundNative().write(p, samples, samples.length)
 	}
 
 	asPNG() {
@@ -5107,7 +5124,10 @@ globalThis.$libmupdf_device = {
 		alpha: number
 	): void {
 		$libmupdf_device_table.get(id)?.fillShade?.(
-				new Shade(shade),
+				/* MONSTERA: KEPT, as every other callback here keeps what it wraps. MuPDF lends the shade for the call, and
+				 * upstream wrapped it bare, so the wrapper's drop released a reference MuPDF still counted: a device that
+				 * destroyed its shade freed the loaded shading under the store (CR-NAT-05). */
+				new Shade(libmupdf._wasm_keep_shade(shade)),
 				fromMatrix(ctm),
 				alpha
 			)
@@ -5309,7 +5329,6 @@ interface NativeAccess {
 	read(from: number, to: ArrayBufferView, n: number): void
 	write(to: number, from: ArrayBufferView, n: number): void
 	strlen(s: number): number
-	view(address: number, n: number): ArrayBuffer
 }
 
 let nativeAccess: NativeAccess | undefined
@@ -5383,14 +5402,19 @@ export function openMupdfShim(libraryPath: string): void {
 			// a number, so the same conversion happens here, once, for every export.
 			const result = call(...args.map((arg) => (typeof arg === "number" ? arg : arg ? 1 : 0)))
 			const kind = errorKind()
+			// A CALLBACK'S THROW BELONGS TO THE EXPORT THAT RAN IT, whether or not MuPDF let it reach the export: the
+			// display-list player catches a device's error and plays on, so the call returned cleanly and the value
+			// stayed here, to be thrown by the next export that failed for a reason of its own (CR-NAT-04). In WASM a
+			// JavaScript throw escaped the export that ran it every time, which is what this keeps.
+			if (pendingCallbackThrow !== undefined) {
+				const thrown = pendingCallbackThrow.value
+				pendingCallbackThrow = undefined
+				if (kind !== 0) errorClear()
+				throw thrown
+			}
 			if (kind !== 0) {
 				const message = errorMessage()
 				errorClear()
-				if (pendingCallbackThrow !== undefined) {
-					const thrown = pendingCallbackThrow.value
-					pendingCallbackThrow = undefined
-					throw thrown
-				}
 				if (kind === MZG_TRYLATER)
 					throw "TRYLATER"
 				if (kind === MZG_ABORT)
@@ -5406,12 +5430,14 @@ export function openMupdfShim(libraryPath: string): void {
 	const read = library.func("void mzg_read(intptr_t from, void *to, size_t n)") as unknown as (a: number, b: ArrayBufferView, n: number) => void
 	const write = library.func("void mzg_write(intptr_t to, const void *from, size_t n)") as unknown as (a: number, b: ArrayBufferView, n: number) => void
 	const strlen = library.func("size_t mzg_strlen(intptr_t s)") as unknown as (s: number) => number
-	const pointer = library.func("void *mzg_pointer(intptr_t address)") as unknown as (address: number) => unknown
+	/* NO VIEW OVER NATIVE MEMORY, by construction: every crossing is a copy through `read` or `write`, because an
+	 * external ArrayBuffer aborts the Electron runtime the engine hosts run in (`getPixels`). `proof:hostruntime`
+	 * runs the kernel's whole suite under that runtime, which is what fails if one comes back, under any spelling.
+	 * (`mzg_pointer` in the shim's runtime C existed only for the view, and nothing binds it now.) */
 	nativeAccess = {
 		read: (from, to, n) => read(from, to, n),
 		write: (to, from, n) => write(to, from, n),
 		strlen: (s) => strlen(s),
-		view: (address, n) => koffi.view(pointer(address), n),
 	}
 
 	const callbackType = koffi.proto("int MzgJs(const char *target, int argc, const double *argv, double *result)")
@@ -5442,6 +5468,7 @@ export function openMupdfShim(libraryPath: string): void {
 		drop: library.func("void mz_drop(void *c)") as unknown as MzNative,
 		lastError: library.func("const char *mz_last_error(void *c)") as unknown as MzNative,
 		open: library.func("int mz_open(void *c, const char *path, _Out_ void **out)") as unknown as MzNative,
+		authenticate: library.func("int mz_authenticate(void *c, void *d, const char *password, _Out_ int *access)") as unknown as MzNative,
 		close: library.func("int mz_close(void *c, void *d)") as unknown as MzNative,
 		rewriteImages: library.func("int mz_rewrite_images(void *c, void *d, int quality, int over, int to)") as unknown as MzNative,
 		saveCompacted: library.func("int mz_save_compacted(void *c, void *d, const char *path)") as unknown as MzNative,
@@ -5471,6 +5498,7 @@ interface MzApi {
 	readonly drop: MzNative
 	readonly lastError: MzNative
 	readonly open: MzNative
+	readonly authenticate: MzNative
 	readonly close: MzNative
 	readonly rewriteImages: MzNative
 	readonly saveCompacted: MzNative
@@ -5501,6 +5529,37 @@ export class MupdfOpenRefused extends MupdfNativeError {
 	}
 }
 
+/**
+ * Opens the PDF at `input` and makes the one password attempt MuPDF reads it with, before anything reads a page:
+ * `password`, or the empty one when there is none. Every shim call that reads a document's content opens through this,
+ * because a page of an encrypted document read with no key is read undecrypted and in silence — measured 2026-10-05,
+ * the inline-image keeper found nothing on an AES-256 page, and the image rewriter wrote a copy with no page in it
+ * (ADR-0171's addendum).
+ *
+ * @throws {MupdfOpenRefused} where MuPDF could not open the document, or the password it was given does not open it
+ */
+function openReading(api: MzApi, c: unknown, input: string, password: string | undefined, said: () => string): unknown {
+	const document: unknown[] = [ null ]
+	if (api.open(c, input, document) !== 0)
+		throw new MupdfOpenRefused(said())
+	const d = document[0]
+	const access: number[] = [ 0 ]
+	if (api.authenticate(c, d, password ?? "", access) !== 0) {
+		const refusal = new MupdfNativeError("try the password", said())
+		api.close(c, d)
+		throw refusal
+	}
+	if ((access[0] ?? 0) === 0) {
+		api.close(c, d)
+		throw new MupdfOpenRefused(
+			password === undefined
+				? "the document opens only with a password, and none was given"
+				: "the password given does not open the document",
+		)
+	}
+	return d
+}
+
 /** One setting of the image rewriter, in the shim's three integers. */
 export interface ImageRewrite {
 	/** JPEG quality for images stored lossy, 1 to 100. */
@@ -5518,9 +5577,13 @@ export interface ImageRewrite {
  * and this function opens nothing else. A context per call, dropped in `finally`, so a failure leaves no MuPDF state
  * behind for the next document.
  *
+ * `password` is the one the document opens with, or none ({@link openReading}). The copy keeps the document's
+ * encryption, since the save keeps its security handler.
+ *
+ * @throws {MupdfOpenRefused} where MuPDF could not open the document, or `password` does not open it
  * @throws {MupdfNativeError} where MuPDF refused a step, with its message
  */
-export function rewriteImages(input: string, output: string, setting: ImageRewrite): void {
+export function rewriteImages(input: string, output: string, setting: ImageRewrite, password?: string): void {
 	const api = mzApi
 	if (api === undefined)
 		throw new Error("the MuPDF shim is not bound in this process; openMupdfShim was not called")
@@ -5531,10 +5594,7 @@ export function rewriteImages(input: string, output: string, setting: ImageRewri
 	const c = context[0]
 	const said = (): string => String(api.lastError(c))
 	try {
-		const document: unknown[] = [ null ]
-		if (api.open(c, input, document) !== 0)
-			throw new MupdfOpenRefused(said())
-		const d = document[0]
+		const d = openReading(api, c, input, password, said)
 		try {
 			if (api.rewriteImages(c, d, setting.quality, setting.over, setting.to) !== 0)
 				throw new MupdfNativeError("rewrite the images", said())
@@ -5562,10 +5622,18 @@ export interface InlineImagesKept {
  * A page past the document's end is not rewritten: the command that named it is refused by its own engine, for its
  * own reason, and a refusal here would stand in front of that one with a worse sentence.
  *
- * @throws {MupdfOpenRefused} where MuPDF could not open the document
+ * `password` is the one the document opens with, or none ({@link openReading}). The incremental save appends under
+ * the document's own encryption.
+ *
+ * @throws {MupdfOpenRefused} where MuPDF could not open the document, or `password` does not open it
  * @throws {MupdfNativeError} where MuPDF refused a later step, with its message
  */
-export function keepInlineImages(input: string, output: string, scope: "all" | number): InlineImagesKept {
+export function keepInlineImages(
+	input: string,
+	output: string,
+	scope: "all" | number,
+	password?: string,
+): InlineImagesKept {
 	const api = mzApi
 	if (api === undefined)
 		throw new Error("the MuPDF shim is not bound in this process; openMupdfShim was not called")
@@ -5576,10 +5644,7 @@ export function keepInlineImages(input: string, output: string, scope: "all" | n
 	const c = context[0]
 	const said = (): string => String(api.lastError(c))
 	try {
-		const document: unknown[] = [ null ]
-		if (api.open(c, input, document) !== 0)
-			throw new MupdfOpenRefused(said())
-		const d = document[0]
+		const d = openReading(api, c, input, password, said)
 		try {
 			const counted: number[] = [ 0 ]
 			if (api.pageCount(c, d, counted) !== 0)

@@ -50,6 +50,19 @@ export const pageSetSchema = z.array(z.union([pageIndexSchema, pageRunSchema])).
 export type PageSet = z.infer<typeof pageSetSchema>;
 
 /**
+ * The most entries each page set holds in a command that carries TWO — its own pages and a second document's: half of
+ * {@link MAX_PAGE_SET_ENTRIES}, so the pair's worst encoding is one set's and fits the frame by the same margin. Two
+ * full sets were measured at 297,411 bytes against the hosts' 262,144-byte frame (`hostRoutes.test.ts`, 2026-10-04).
+ */
+export const MAX_PAIRED_PAGE_SET_ENTRIES = MAX_PAGE_SET_ENTRIES / 2;
+
+/** A page set in a command that carries two, each bounded by {@link MAX_PAIRED_PAGE_SET_ENTRIES}. */
+export const pairedPageSetSchema = z
+  .array(z.union([pageIndexSchema, pageRunSchema]))
+  .min(1)
+  .max(MAX_PAIRED_PAGE_SET_ENTRIES);
+
+/**
  * Pages as the shortest page set that names them in the same order: each stretch of consecutive ascending pages
  * becomes one run. Nothing is sorted or dropped, so `pagesOfSet(pageSetOf(pages))` is `pages` again.
  */
@@ -69,16 +82,31 @@ export function pageSetOf(pages: readonly number[]): PageSet {
   return set;
 }
 
+/** The page-list fields a command carries: its own pages, and the pages of a second document it copies. */
+const PAGE_LIST_FIELDS = ['pages', 'sourcePages'] as const;
+
+/** The field holding a merge's parts, each of which carries its own `sourcePages` (ADR-0152). */
+const PARTS_FIELD = 'documents';
+
 /**
- * A command with its page list written as runs — the renderer's one spelling, applied where every command leaves it
- * (`applyDocumentCommand`), so no surface has to remember to. A command with no `pages`, `'all'`, or a set already
- * holding runs is answered as it came.
+ * A command with its page lists written as runs — the renderer's one spelling, applied where every command leaves it
+ * (`applyDocumentCommand`), so no surface has to remember to. A field that is absent, `'all'`, or a set already holding
+ * runs is answered as it came, and so is a command whose every list already is.
  */
 export function withPageRuns<TCommand extends object>(command: TCommand): TCommand {
-  if (!('pages' in command)) return command;
-  const pages: unknown = command.pages;
-  if (!Array.isArray(pages) || !pages.every((page): page is number => typeof page === 'number')) return command;
-  return { ...command, pages: pageSetOf(pages) };
+  let written: TCommand = command;
+  for (const field of PAGE_LIST_FIELDS) {
+    if (!(field in written)) continue;
+    const pages: unknown = (written as Record<string, unknown>)[field];
+    if (!Array.isArray(pages) || !pages.every((page): page is number => typeof page === 'number')) continue;
+    written = { ...written, [field]: pageSetOf(pages) };
+  }
+  const parts: unknown = (written as Record<string, unknown>)[PARTS_FIELD];
+  if (Array.isArray(parts) && parts.every((part): part is object => typeof part === 'object' && part !== null)) {
+    const runs = parts.map((part) => withPageRuns(part));
+    if (runs.some((part, at) => part !== parts[at])) written = { ...written, [PARTS_FIELD]: runs };
+  }
+  return written;
 }
 
 /**

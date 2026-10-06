@@ -27,6 +27,8 @@ import {
   MAX_EDIT_TEXT,
   blockEditOf,
   MAX_SETTINGS_FILE_BYTES,
+  RECENT_CHECK_CAP_MS,
+  type RecentAvailability,
   SECRET_SETTING_IDS,
   TRANSLATION_LANGUAGES,
   type ChannelResult,
@@ -38,6 +40,9 @@ import {
   type SpellingLanguage,
   type StorePage,
   type WindowEditAction,
+  isFollowable,
+  shownSchemeOf,
+  withTargetVersion,
 } from '@monstera/contract';
 import {
   type AiModelList,
@@ -70,6 +75,7 @@ import { basename, isAbsolute } from 'node:path';
 import { type DocId, type FileHandle, err, lineText, ok } from '@monstera/shared';
 
 import { executeCommandHandler } from './commandHandlers.js';
+import { editRefusalOf, rewriteRefusalOf } from './editRefusals.js';
 import {
   type DocumentCommands,
   DocumentPoisonedError,
@@ -92,7 +98,8 @@ import { CloudOutcomeRefused, type CloudStorage } from './cloudSession.js';
 import { type KnownRoot, displayLocationOf } from './displayLocation.js';
 import type { RecentPictures } from './recentPictures.js';
 import type { HeldPicture } from './heldPicture.js';
-import { type PersonalLibrary, pictureTypeOf } from './personalLibrary.js';
+import type { PersonalLibrary } from './personalLibrary.js';
+import { type SignaturePictureSource, pickSignaturePicture } from './signaturePicture.js';
 import type { ReviewPrompt } from './engagement.js';
 import type { ComponentStatus } from './componentStatus.js';
 import type { RecentFiles } from './recentFiles.js';
@@ -270,6 +277,8 @@ export function createContractHandlers(deps: {
     readonly read: ImageSource['read'];
     /** The plain Signature's previewed picture, the slot `DocumentCommands.placeSignature` places from. */
     readonly held: HeldPicture;
+    /** Where Upload picks a signature picture from: a PNG, a JPEG or a scanned PDF. */
+    readonly signaturePicture: SignaturePictureSource;
   };
   /** The Store rating prompt (E3). REQUIRED, for `recentRoots`' reason. */
   readonly reviewPrompt: ReviewPrompt;
@@ -364,6 +373,12 @@ export function createContractHandlers(deps: {
    * function resolves the second from the first, in `main`, so no page can name a destination.
    */
   readonly openWebPage: (page: WebPage) => Promise<boolean>;
+  /**
+   * Opens an address a document holds in the person's browser or mail program, once they asked for that link
+   * (ADR-0167), answering whether the system opened it. Only ever handed an address `main` read from the document
+   * and `isFollowable` allowed; it checks the scheme again itself, at the edge where the address leaves.
+   */
+  readonly openLink: (address: string) => Promise<boolean>;
   /** Opens one of the Store application's pages (ADR-0107), answering whether this build can reach the Store. */
   readonly openStore: (page: StorePage) => Promise<boolean>;
   /**
@@ -436,12 +451,24 @@ export function createContractHandlers(deps: {
     'document.undo': undoHandler(deps.commands),
     'document.redo': redoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
+    'document.deleteHeldCopies': async ({ docId }) => {
+      try {
+        return ok({ held: [...(await deps.commands.deleteHeldCopies(docId))] });
+      } catch (thrown) {
+        // THE LANE'S OWN REFUSALS, as `document.save` answers them; anything else is `internal`.
+        if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' } as const);
+        if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' } as const);
+        throw thrown;
+      }
+    },
     'document.extract': extractHandler(deps.commands, mintWritten),
     'document.snapshotRegion': snapshotRegionHandler(deps.commands, mintWritten),
     'document.exportFormData': exportFormDataHandler(deps.commands, mintWritten),
     'document.exportAnnotations': exportAnnotationsHandler(deps.commands, mintWritten),
     'document.importAnnotations': importAnnotationsHandler(deps.commands),
     'document.copyAnnotations': copyAnnotationsHandler(deps.commands),
+    'document.annotationWords': annotationWordsHandler(deps.commands),
+    'document.openLink': openLinkHandler(deps.commands, deps.openLink),
     'document.pasteAnnotations': pasteAnnotationsHandler(deps.commands),
     'document.importFormData': importFormDataHandler(deps.commands),
     'document.split': splitHandler(deps.commands, mintWritten),
@@ -456,6 +483,26 @@ export function createContractHandlers(deps: {
     'document.optimizeMeasure': optimizeMeasureHandler(deps.commands),
     'document.optimize': optimizeHandler(deps.commands, mintWritten),
     'document.saveCopy': saveCopyHandler(deps.commands, mintWritten),
+    'document.editCopy': editCopyHandler(deps),
+    'document.workOnCopy': workOnCopyHandler(deps),
+    // WHICH FILE IS NEWER, from the times main holds for each open document; no time crosses (cloud-4 8a).
+    'document.newerOf': ({ first, second }) => {
+      try {
+        return Promise.resolve(ok({ newer: deps.documents.newerOf(first, second) }));
+      } catch (thrown) {
+        if (thrown instanceof DocumentNotOpenError) return Promise.resolve(err({ code: 'document-not-open' as const }));
+        throw thrown;
+      }
+    },
+    // ASKED OF THE FILE AT EACH CALL (cloud-4 7b): the answer is something to tell a person, never kept.
+    'document.fileAccess': async ({ docId }) => {
+      try {
+        return ok({ access: await deps.commands.fileAccess(docId) });
+      } catch (thrown) {
+        if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+        throw thrown;
+      }
+    },
     'document.insertImage': insertImageHandler(deps.commands),
     'document.newFromMarkdown': newFromImportHandler(deps, 'markdown'),
     'document.newFromCsv': newFromImportHandler(deps, 'csv'),
@@ -667,6 +714,12 @@ export function createContractHandlers(deps: {
         const code = askUnreadCode(thrown);
         if (code !== undefined) return err({ code });
         throw thrown;
+      }
+      // NO COMMENTS AND NOTHING ELSE TO SEND is a question about nothing: refused by name before a provider is reached,
+      // so the panel says what is missing rather than posting a turn whose answer could only be invented. The count is
+      // the window's own, `commentsWindow`'s, so this asks the reader that decides what a comment is (B3a).
+      if (about?.scope === 'comments' && window?.sent.comments === 0 && attached.length === 0) {
+        return err({ code: 'no-comments' });
       }
       const context =
         many !== null
@@ -898,12 +951,13 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
           kind: 'saved',
           version: outcome.version,
           cleared: cleared === null ? null : { backups: cleared.backups, undoCopies: cleared.undoCopies, kept: [...cleared.kept] },
+          held: [...outcome.held],
         } as const);
       }
       if (outcome.kind === 'breaks-signatures') {
         return ok({ kind: 'breaks-signatures', signatures: outcome.signatures } as const);
       }
-      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed', cause: outcome.cause } as const);
       return ok({ kind: 'refused', reason: refusalReason(outcome.verdict) } as const);
     } catch (thrown) {
       // MATCHED ON THE CLASS, exactly as undo and execute do. Everything else
@@ -1122,6 +1176,9 @@ function appendMarkdownHandler(
 
       const { outcome, sessions } = await openPath(deps, composed.destination);
       if (outcome.kind === 'absent') return ok({ kind: 'absent' });
+      // A FILE THIS BUILD JUST WROTE CAN STILL BE HELD: a scanner opening it the moment it lands holds it as any
+      // program does, so the refusal is the person's to hear rather than a defect to throw.
+      if (outcome.kind === 'busy' || outcome.kind === 'denied') return ok({ kind: outcome.kind });
       if (outcome.kind === 'at-capacity') {
         return ok({ kind: 'at-capacity', wouldHold: outcome.wouldHold, ceiling: outcome.ceiling });
       }
@@ -1137,7 +1194,8 @@ function appendMarkdownHandler(
       try {
         applied = await deps.commands.execute(docId, {
           kind: 'mergeDocument',
-          source: outcome.docId,
+          // EVERY PAGE THE MARKDOWN BECAME: the file was composed for this append alone.
+          documents: [{ source: outcome.docId, sourcePages: 'all' }],
           at,
         });
       } catch (thrown) {
@@ -1251,6 +1309,7 @@ function reimportExternalEditHandler(
 
       const { outcome, sessions } = await openPath(deps, path);
       if (outcome.kind === 'absent') return ok({ kind: 'absent' });
+      if (outcome.kind === 'busy' || outcome.kind === 'denied') return ok({ kind: outcome.kind });
       if (outcome.kind === 'at-capacity') {
         return ok({ kind: 'at-capacity', wouldHold: outcome.wouldHold, ceiling: outcome.ceiling });
       }
@@ -1376,35 +1435,26 @@ function addLibraryPictureHandler(library: {
 }
 
 /**
- * Picks a picture for the plain Signature and HOLDS what it read (ADR-0133's second correction): the size before any
- * read, the bounded read, then the type from the bytes by the library's own resolver — so a file that is not a picture
- * is refused here, where the person is looking, rather than after the click. The bytes answered are the bytes held,
- * so the preview is of exactly what will be placed.
+ * Picks a picture for the plain Signature and HOLDS what it read (ADR-0133's second correction): the bounded read,
+ * which sizes a file before reading it, then the type from the bytes by the library's own resolver — so a file that is
+ * not a picture is refused here, where the person is looking, rather than after the click. The bytes answered are the
+ * bytes held, so the preview is of exactly what will be placed.
+ *
+ * The picture is `pickSignaturePicture`'s, the one resolver *Sign with certificate* takes too: a PNG or a JPEG, or a
+ * scanned PDF the compose host made a picture of — and then what is held and previewed is that PNG, never the PDF.
  */
 function pickSignaturePictureHandler(
-  library: {
-    readonly pick: PickImage;
-    readonly size: (path: string) => Promise<number | null>;
-    readonly read: ImageSource['read'];
-    readonly held: HeldPicture;
-  },
+  library: { readonly signaturePicture: SignaturePictureSource; readonly held: HeldPicture },
   capabilities: CapabilityRegistry,
 ): ContractHandlers['signature.pickPicture'] {
   return async () => {
-    const picked = await library.pick();
-    if (picked === null) return ok({ kind: 'cancelled' } as const);
-    const size = await library.size(picked);
-    if (size === null) return ok({ kind: 'unreadable' } as const);
-    if (size > MAX_IMAGE_BYTES) return ok({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES } as const);
-    const read = await library.read(picked);
-    if (read.kind === 'too-large') return ok({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES } as const);
-    if (read.kind !== 'read') return ok({ kind: 'unreadable' } as const);
-    const mediaType = pictureTypeOf(read.bytes);
-    if (mediaType === null) return ok({ kind: 'unreadable' } as const);
-    const handle = capabilities.mint(picked);
-    const name = basename(picked);
-    library.held.hold(handle, { name, mediaType, bytes: read.bytes });
-    return ok({ kind: 'picked', handle, name, mediaType, bytes: read.bytes } as const);
+    const picked = await pickSignaturePicture(library.signaturePicture);
+    if (picked.kind === 'too-large') return ok({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES } as const);
+    if (picked.kind !== 'picture') return ok({ kind: picked.kind });
+    const { bytes, mediaType, name } = picked;
+    const handle = capabilities.mint(picked.path);
+    library.held.hold(handle, { name, mediaType, bytes });
+    return ok({ kind: 'picked', handle, name, mediaType, bytes } as const);
   };
 }
 
@@ -1763,6 +1813,51 @@ function copyAnnotationsHandler(commands: DocumentCommands): ContractHandlers['d
   };
 }
 
+/** One mark's whole words for an editor, mapped as the clipboard's copy is: both name marks by the walk's handle. */
+function annotationWordsHandler(commands: DocumentCommands): ContractHandlers['document.annotationWords'] {
+  return async ({
+    docId,
+    page,
+    index,
+    version,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.annotationWords']>>> => {
+    try {
+      return ok(await commands.annotationWords(docId, page, index, version));
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * Follows one of a document's web links (ADR-0167 Decision 3): the address is read from the document by the link's
+ * place, at the version the renderer saw, and opened only when its scheme is one a person may follow. The renderer
+ * named a link, never an address, so nothing it holds can widen what is opened.
+ */
+function openLinkHandler(
+  commands: DocumentCommands,
+  openLink: (address: string) => Promise<boolean>,
+): ContractHandlers['document.openLink'] {
+  return async ({ docId, version, page, index }): Promise<Awaited<ReturnType<ContractHandlers['document.openLink']>>> => {
+    try {
+      const read = await commands.linkAddress(docId, page, index, version);
+      if (read.kind !== 'address') return ok({ kind: read.kind });
+      if (!isFollowable(read.uri)) {
+        return ok({ kind: 'scheme-refused', scheme: shownSchemeOf(read.uri) });
+      }
+      return ok({ kind: (await openLink(read.uri)) ? 'opened' : 'not-opened' });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
 /** The clipboard's paste — main mints the import — mapped as the import is. */
 function pasteAnnotationsHandler(commands: DocumentCommands): ContractHandlers['document.pasteAnnotations'] {
   return async ({
@@ -1882,9 +1977,10 @@ function exportTextHandler(commands: DocumentCommands, mint: MintWritten): Contr
   return async ({
     docId,
     mode,
+    pages,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportText']>>> => {
     try {
-      const outcome = await commands.exportText(docId, mode);
+      const outcome = await commands.exportText(docId, mode, pages);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       switch (outcome.kind) {
         case 'copied':
@@ -1914,9 +2010,10 @@ function exportWordHandler(commands: DocumentCommands, mint: MintWritten): Contr
   return async ({
     docId,
     mode,
+    pages,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportWord']>>> => {
     try {
-      const outcome = await commands.exportWord(docId, mode);
+      const outcome = await commands.exportWord(docId, mode, pages);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
@@ -1934,9 +2031,10 @@ function exportWordHandler(commands: DocumentCommands, mint: MintWritten): Contr
 function exportPowerPointHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.exportPowerPoint'] {
   return async ({
     docId,
+    pages,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPowerPoint']>>> => {
     try {
-      const outcome = await commands.exportPowerPoint(docId);
+      const outcome = await commands.exportPowerPoint(docId, pages);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
@@ -2037,9 +2135,9 @@ function emailHandler(commands: DocumentCommands): ContractHandlers['document.em
 
 /** The print's handler: the command's outcomes as they are, and a dismissed dialog as `cancelled`. */
 function printHandler(commands: DocumentCommands): ContractHandlers['document.print'] {
-  return async ({ docId, dpi }): Promise<Awaited<ReturnType<ContractHandlers['document.print']>>> => {
+  return async ({ docId, dpi, pages }): Promise<Awaited<ReturnType<ContractHandlers['document.print']>>> => {
     try {
-      const outcome = await commands.print(docId, dpi);
+      const outcome = await commands.print(docId, dpi, pages);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'printed') return ok({ kind: 'printed', pages: outcome.pages } as const);
       return ok({ kind: outcome.kind });
@@ -2060,9 +2158,10 @@ function exportExcelHandler(commands: DocumentCommands, mint: MintWritten): Cont
     engine,
     version,
     edits,
+    pages,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportExcel']>>> => {
     try {
-      const outcome = await commands.exportExcel(docId, layout, { version, edits }, engine);
+      const outcome = await commands.exportExcel(docId, layout, { version, edits, pages }, engine);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
@@ -2098,6 +2197,102 @@ function saveCopyHandler(commands: DocumentCommands, mint: MintWritten): Contrac
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * An edit made on a copy, so a signed original keeps its signatures
+ * ([ADR-0149](../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)
+ * Decision 5): `saveCopy`'s picker and write, the one open route ({@link openPath}), then the command applied to the
+ * copy once its sessions exist, with the version it names re-bound to the copy's.
+ *
+ * ## The copy stays open whatever its edit does, unless nothing can say why
+ *
+ * A refusal the person can act on answers `edit-refused` beside the open copy. Anything else is a defect, and it is
+ * rethrown so the boundary records it — after the copy is CLOSED, because an answer that is not `edited` or
+ * `edit-refused` carries no document, and a document open in `main` that no tab shows is one nobody can close. The
+ * copy's file stays where the person put it.
+ */
+/**
+ * A copy to work on, for a document whose own file cannot be written over (cloud-4 7b): {@link editCopyHandler}'s
+ * picker, write and the one open route, with no edit. The copy opens as its own document; the original is left as it
+ * was.
+ */
+function workOnCopyHandler(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+): ContractHandlers['document.workOnCopy'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.workOnCopy']>>> => {
+    let copied;
+    try {
+      copied = await deps.commands.copyToWorkOn(docId);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+    if (copied === undefined) return ok({ kind: 'cancelled' } as const);
+    if (copied.outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+    if (copied.outcome.kind === 'refused') {
+      return ok({ kind: 'destination-contested', openElsewhere: copied.outcome.others.length } as const);
+    }
+
+    const { outcome } = await openPath(deps, copied.destination);
+    // UNREACHABLE BY `saveCopy`'s OWN RULE, for `editCopyHandler`'s reason: a destination another open document reaches
+    // is refused before anything is written, so the file just written cannot already be open.
+    if (outcome.kind === 'already-open') {
+      throw new Error('a copy written to work on opened as "already-open", which its write refuses');
+    }
+    return ok(outcome);
+  };
+}
+
+function editCopyHandler(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+): ContractHandlers['document.editCopy'] {
+  return async ({ docId, command }): Promise<Awaited<ReturnType<ContractHandlers['document.editCopy']>>> => {
+    let copied;
+    try {
+      copied = await deps.commands.copyForEditing(docId, command);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof StaleTargetError) return err({ code: 'stale-target' });
+      throw thrown;
+    }
+    if (copied === undefined) return ok({ kind: 'cancelled' } as const);
+    if (copied.outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+    if (copied.outcome.kind === 'refused') {
+      return ok({ kind: 'destination-contested', openElsewhere: copied.outcome.others.length } as const);
+    }
+
+    const { outcome: opened, sessions } = await openPath(deps, copied.destination);
+    // A REFUSED READ TOO, for `appendMarkdownHandler`'s reason: a file this build just wrote can still be held.
+    if (opened.kind === 'absent' || opened.kind === 'at-capacity' || opened.kind === 'busy' || opened.kind === 'denied') {
+      return ok(opened);
+    }
+    if (opened.kind !== 'opened') {
+      // UNREACHABLE BY `saveCopy`'s OWN RULE: a destination another open document reaches is refused before anything
+      // is written, so the file just written cannot already be open.
+      throw new Error(`a copy written for editing opened as "${opened.kind}", which its write refuses`);
+    }
+
+    // THE COPY'S SESSIONS FIRST, as a merge waits for a source it just opened: the edit runs in them.
+    await sessions;
+    try {
+      const applied = await deps.commands.execute(opened.docId, withTargetVersion(command, opened.version), {
+        breakSignatures: true,
+      });
+      return ok({ ...opened, kind: 'edited', ...applied } as const);
+    } catch (thrown) {
+      const problem =
+        editRefusalOf(thrown) ?? (thrown instanceof DocumentPoisonedError ? ({ code: 'document-poisoned' } as const) : undefined);
+      if (problem !== undefined) return ok({ ...opened, kind: 'edit-refused', problem } as const);
+      await deps.documents.close(opened.docId);
+      deps.recent.closed(opened.docId);
       throw thrown;
     }
   };
@@ -2285,11 +2480,11 @@ function pageWordCountHandler(
     page,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.pageWordCount']>>> => {
     try {
-      const { version, words, characters, charactersNoSpaces } = await commands.pageWordCount(
+      const { version, words, characters, charactersNoSpaces, lines, cjkCharacters } = await commands.pageWordCount(
         docId,
         page,
       );
-      return ok({ version, words, characters, charactersNoSpaces });
+      return ok({ version, words, characters, charactersNoSpaces, lines, cjkCharacters });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
@@ -2809,6 +3004,10 @@ function undoHandler(commands: DocumentCommands): ContractHandlers['document.und
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      // AN UNDO RUNS THE SAME REWRITE as the edit it reverses, read back the same way (ADR-0169), so it is refused the
+      // same way, and the person reads the same sentence.
+      const refusal = rewriteRefusalOf(thrown);
+      if (refusal !== undefined) return err(refusal);
       throw thrown;
     }
   };
@@ -2828,6 +3027,8 @@ function redoHandler(commands: DocumentCommands): ContractHandlers['document.red
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      const refusal = rewriteRefusalOf(thrown);
+      if (refusal !== undefined) return err(refusal);
       throw thrown;
     }
   };
@@ -2842,11 +3043,13 @@ function redoHandler(commands: DocumentCommands): ContractHandlers['document.red
  * reachable from the renderer's request, which carried no parameters, so
  * "opened the wrong file" is not a state a renderer can steer into.
  *
- * ## THE HANDLE IS REVOKED ON EXACTLY TWO OUTCOMES, AND NOT ON THE THIRD
+ * ## THE HANDLE IS REVOKED ON EVERY OUTCOME THAT HOLDS NO DOCUMENT, AND NOT ON `already-open`
  *
- * `absent` and `at-capacity` leave nothing holding the handle: the service did
- * not take it, so without a revoke a user repeatedly picking missing files
- * would grow the registry once per distinct path, forever.
+ * `absent`, `at-capacity`, `busy` and `denied` leave nothing holding the handle:
+ * the service did not take it, so without a revoke a user repeatedly picking
+ * missing files would grow the registry once per distinct path, forever.
+ * {@link HOLDS_NO_DOCUMENT} names every outcome, so one the service gains
+ * decides there whether its handle stays.
  *
  * `already-open` is the one that must **not** be revoked, and the reason is a
  * property of `mint` rather than of this function. Minting is *idempotent per
@@ -2856,9 +3059,9 @@ function redoHandler(commands: DocumentCommands): ContractHandlers['document.red
  * under a document that is open and working, and the failure would surface
  * later, somewhere else, as a resolve that throws.
  *
- * That is the whole finding: the tidy-up that looks symmetric across four
- * outcomes is correct on two, harmless on the one that took the handle, and
- * destructive on the one where two callers share it.
+ * That is the whole finding: the tidy-up that looks symmetric across every
+ * outcome is correct on the refusals, harmless on the one that took the handle,
+ * and destructive on the one where two callers share it.
  */
 /**
  * Fetches a PDF from a URL through the SSRF guard, and opens the file it wrote
@@ -2954,6 +3157,20 @@ function openDroppedHandler(deps: OpenPathParts): PreloadHandlers['document.open
   };
 }
 
+/**
+ * Whether an open's outcome left the handle it was given held by nothing, so {@link openPath} revokes it — the open
+ * handler's header has why `already-open` must not be. A `Record`, so an outcome the service gains is a compile error
+ * here until somebody decides.
+ */
+const HOLDS_NO_DOCUMENT: Readonly<Record<Awaited<ReturnType<DocumentService['open']>>['kind'], boolean>> = {
+  opened: false,
+  'already-open': false,
+  absent: true,
+  'at-capacity': true,
+  busy: true,
+  denied: true,
+};
+
 /** What {@link openPath} opens a document through. */
 interface OpenPathParts {
   readonly documents: DocumentService;
@@ -2961,6 +3178,8 @@ interface OpenPathParts {
   readonly openedDocument: OpenedDocument;
   readonly recent: RecentFiles;
   readonly recentPictures: RecentPictures;
+  /** Links a document opened from a cloud working copy to its cloud file, by the copy's path; a no-op for any other. */
+  readonly cloud: Pick<CloudStorage, 'link'>;
 }
 
 /**
@@ -2996,9 +3215,13 @@ async function openPath(
   const handle = deps.capabilities.mint(path);
   const outcome = await deps.documents.open(handle);
 
-  if (outcome.kind === 'absent' || outcome.kind === 'at-capacity') {
-    deps.capabilities.revoke(handle);
-  }
+  if (HOLDS_NO_DOCUMENT[outcome.kind]) deps.capabilities.revoke(handle);
+
+  // A WORKING COPY IS ITS CLOUD FILE HOWEVER IT IS OPENED (CR-DOC-02). Linked here, the one way to open a document,
+  // rather than in the two cloud channels alone: a copy reopened from Recent, the last session or the picker opened as
+  // a local file, so its Save back said not-from-cloud and its edits stayed on this disk. `link` answers by the
+  // copy's path and does nothing for any other.
+  if (outcome.kind === 'opened' || outcome.kind === 'already-open') deps.cloud.link(outcome.docId, path);
 
   // ONLY FOR A DOCUMENT THIS CALL OPENED, and `already-open` is the outcome
   // that makes the distinction load-bearing rather than pedantic: that
@@ -3045,33 +3268,78 @@ function recentHandler(deps: {
       return false;
     }
   };
+
+  /**
+   * THE CHECKS STILL OWED AN ASK, one per path. A check still running is shared by every read that arrives while it
+   * runs, so a network drive that has gone costs one `stat` and not one per read. A check that answers is the answer to
+   * the reads that were waiting on it and to the FIRST read after it lands, and is then dropped — so nothing is stored
+   * past the question it answers, the next read asks the disk again (ADR-0143: *read at each ask*), and a check slower
+   * than every read's wait still reaches the view that keeps asking.
+   */
+  interface Check {
+    done: Promise<boolean>;
+    answer: boolean | null;
+  }
+  const checks = new Map<string, Check>();
+  const checkOf = (path: string): Check => {
+    const held = checks.get(path);
+    if (held !== undefined) return held;
+    // THE ANSWER IS RECORDED INSIDE THE PROMISE every read awaits, so a read that saw it settle reads it recorded.
+    const fresh: Check = { done: Promise.resolve(false), answer: null };
+    fresh.done = available(path).then((value) => {
+      fresh.answer = value;
+      return value;
+    });
+    checks.set(path, fresh);
+    return fresh;
+  };
+  /** What a check says to this read; an answered one is dropped here, having answered. */
+  const readOf = (path: string, check: Check): RecentAvailability => {
+    if (check.answer === null) return 'checking';
+    if (checks.get(path) === check) checks.delete(path);
+    return check.answer ? 'available' : 'unavailable';
+  };
   return async () => {
     const listed = deps.recent.list();
+    const session = deps.recent.lastSession();
     // ALL AT ONCE, off the event loop: each is a `stat` and a `realpath` on the thread pool, so ten entries cost the
-    // slowest one rather than the sum. Read NOW, as the list is asked for, and never stored — a file comes and goes.
-    const present = await Promise.all(listed.map((entry) => available(entry.path)));
+    // slowest one rather than the sum — and that slowest one is waited for at most RECENT_CHECK_CAP_MS, so the list
+    // shows at once and a file still being looked for says `checking` (the owner's answer, cloud-4 7d).
+    // EACH ENTRY PAIRED WITH ITS CHECK, so the answer read back is the one asked for that entry. A file in both lists
+    // shares one check, and each list reads it from the object it holds.
+    const entries = listed.map((entry) => ({ entry, check: checkOf(entry.path) }));
+    const sessions = session.map((entry) => ({ entry, check: checkOf(entry.path) }));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.all([...entries, ...sessions].map(({ check }) => check.done)),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, RECENT_CHECK_CAP_MS);
+      }),
+    ]);
+    clearTimeout(timer);
     return ok({
       // MINTED HERE, not stored. `mint` is idempotent per path, so the handle
       // an entry carries is the same one that document would have if opened —
       // and minting at the boundary rather than persisting the token means a
       // list written by a previous run cannot carry a capability into this
       // one.
-      entries: listed.map((entry, at) => ({
+      entries: entries.map(({ entry, check }) => ({
         handle: deps.capabilities.mint(entry.path),
         name: entry.name,
         // DERIVED HERE, from the path that never crosses: a known folder and one folder's name (ADR-0100).
         location: displayLocationOf(entry.path, deps.recentRoots),
         openedAt: entry.openedAt,
-        available: present[at] === true,
+        availability: readOf(entry.path, check),
       })),
       lastExitClean: deps.recent.lastExitClean(),
       // THE SAME MINTING, for the same reason. These entries are paths the
       // previous run recorded as open; a handle minted here is one this run
       // can resolve, and a token persisted across runs would be a capability
       // surviving the process that granted it.
-      lastSession: deps.recent.lastSession().map((entry) => ({
+      lastSession: sessions.map(({ entry, check }) => ({
         handle: deps.capabilities.mint(entry.path),
         name: entry.name,
+        availability: readOf(entry.path, check),
       })),
     });
   };
@@ -3197,8 +3465,8 @@ function cloudHandlers(
       } catch (thrown) {
         return ok(cloudRefusal(thrown));
       }
+      // LINKED BY THE OPEN, as every working copy is (`openPath`).
       const { outcome } = await openPath(deps, path);
-      if (outcome.kind === 'opened' || outcome.kind === 'already-open') deps.cloud.link(outcome.docId, path);
       return ok(outcome);
     },
     // THE PICKER'S FILE opens as a listed one does: the same working copy, the same open, the same link.
@@ -3210,7 +3478,6 @@ function cloudHandlers(
         return ok(cloudRefusal(thrown));
       }
       const { outcome } = await openPath(deps, path);
-      if (outcome.kind === 'opened' || outcome.kind === 'already-open') deps.cloud.link(outcome.docId, path);
       return ok(outcome);
     },
     'cloud.saveBack': async ({ docId }) => {
@@ -3218,12 +3485,14 @@ function cloudHandlers(
       try {
         // NEVER BREAKING A SIGNATURE UNASKED: a save-back is not the place a person is told, so a save that would break
         // one is not written and the save-back answers that it failed.
-        const saved = await deps.commands.save(docId, { breakSignatures: false });
-        if (saved.kind !== 'saved') return ok({ kind: 'save-failed' as const });
+        // THE IMAGE IS TAKEN WITH THE SAVE, in its lane entry (CR-DOC-04): asked for afterwards, it was whatever the
+        // document held by then, and a command landing between the two was uploaded under the version saved here.
+        const { outcome: saved, image } = await deps.commands.saveAndTake(docId, { breakSignatures: false });
+        if (saved.kind !== 'saved' || image === null) return ok({ kind: 'save-failed' as const });
         // THE UPLOAD'S REFUSAL IS CAUGHT HERE, where the saved version is in scope, so a refusal
         // after the working copy was written still says which version it holds.
         try {
-          await deps.cloud.saveBack(docId, await deps.commands.currentImage(docId));
+          await deps.cloud.saveBack(docId, image);
         } catch (thrown) {
           return ok({ ...cloudRefusal(thrown), version: saved.version });
         }

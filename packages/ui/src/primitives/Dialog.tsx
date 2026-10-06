@@ -2,11 +2,24 @@ import { useLingui } from '@lingui/react';
 import { Dialog as BaseDialog } from '@base-ui/react/dialog';
 import type { MessageKey } from '@monstera/shared';
 import { X } from 'lucide-react';
-import { type ReactElement, type ReactNode, type RefObject, useId, useRef } from 'react';
+import {
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+  createContext,
+  useCallback,
+  useContext,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
+import { createPortal } from 'react-dom';
 
 import { CLOSE_LABEL, DIALOG_CANCEL, DIALOG_OK } from '../messages/en.js';
 import { Button } from './Button.js';
 import { IconButton } from './IconButton.js';
+import { OPENS_FOCUSED } from './Input.js';
 
 /**
  * The one dialog primitive. Every dialog in the application is this (B9).
@@ -26,7 +39,10 @@ import { IconButton } from './IconButton.js';
  * clickable behind one invites an edit the dialog is mid-way through deciding
  * about.
  *
- * ## Focus opens ON THE DIALOG, not on its first control
+ * ## Focus opens ON THE DIALOG, not on its first control — unless the dialog asks for words
+ *
+ * A dialog whose body names the field it was opened to be typed into opens on that field (`openingField`). Every
+ * other dialog opens on the popup itself, for the reason that follows.
  *
  * Base UI's default initial focus is the popup's first tabbable element
  * (`dialog/popup/DialogPopup.js`, 1.7.0), which here is the header's Close icon
@@ -78,16 +94,42 @@ export interface DialogProps {
   /** The accessible name of the close control — an action, e.g. "Close". */
   closeLabel: MessageKey;
   /**
-   * Where focus lands when the dialog opens; the popup itself when omitted.
+   * Where focus lands when the dialog opens. When omitted, the field the body marks `opensFocused`, or the popup itself
+   * where the body marks none (`openingField`, and the tooltip reason above).
    *
-   * A dialog whose whole purpose is a field — the command palette — takes the field, because the chord that opened it
-   * says the person is about to type. Every other dialog keeps the popup, for the tooltip reason above.
+   * Given by a dialog that is not a body of the pattern — the command palette names its query field.
    */
   initialFocus?: RefObject<HTMLElement | null>;
   /** A second class on the popup, for a dialog placed differently from the centred default. */
   popupClassName?: string;
   children: ReactNode;
 }
+
+/**
+ * The field the body was opened to be typed into, or `null` when it names none.
+ *
+ * A dialog that asks for words — a text box drawn, a note placed, a password asked for — opens there (the owner's
+ * review: a text box, a typewriter and a note opened with typing going nowhere). **The body names that field**
+ * (`Input`'s `opensFocused`); the dialog does not take its first text field, because Settings and Help hold text fields
+ * too and were not opened to be typed into: focus in a setting's box is a stray key away from editing it. A dialog
+ * whose body names none keeps the popup, for the tooltip reason above.
+ */
+function openingField(popup: HTMLElement | null): HTMLElement | null {
+  return popup?.querySelector<HTMLElement>(`.m-dialog__body [${OPENS_FOCUSED}]:not(:disabled)`) ?? null;
+}
+
+/**
+ * Where a body's `DialogFooter` is drawn: the popup's foot, after the body and outside it, so the body scrolls and the
+ * footer never does. `undefined` outside a dialog (a body rendered on its own, as a unit test renders one), where the
+ * footer stays in place; `null` for the one commit before the foot is attached.
+ *
+ * **WHY A SLOT, and not a footer pinned inside the scrolling body.** A sticky footer stayed in view, but the rows
+ * scrolled under it and had to be covered, and the dialog's ground is glass — translucent over a blur of the window —
+ * which no colour of the footer's own can match: an opaque cover drew a white band in light (measured 2026-10-03,
+ * Reading order and tags and Sign document at 760 × 560), and one at the ground's own alpha let the rows through. A
+ * footer outside the scroll has nothing under it, so it is drawn on the ground itself.
+ */
+const FooterSlot = createContext<HTMLElement | null | undefined>(undefined);
 
 export function Dialog({
   open,
@@ -104,11 +146,46 @@ export function Dialog({
   // `IconButton` to accept one, which is the prop type this commit removes.
   const { _ } = useLingui();
   const popup = useRef<HTMLDivElement>(null);
+  // FOCUSED AS THE POPUP ATTACHES, in the commit that opens it: Base UI's `initialFocus` moves focus a frame later, and
+  // keys typed in that frame went to the page (the palette's measurement, 12 of 20 openings). A ref callback runs after
+  // the popup's descendants are attached, so the body's field is there to take it. STABLE, because React calls a ref
+  // callback whose identity changed again on every render, and each call would pull focus back to the first field
+  // from wherever the person had moved it.
+  const attachPopup = useCallback(
+    (element: HTMLDivElement | null): void => {
+      popup.current = element;
+      if (element !== null && initialFocus === undefined) openingField(element)?.focus();
+    },
+    [initialFocus],
+  );
+  // WHETHER A PRESS HAS BEGUN SINCE THE DIALOG OPENED, from a capturing listener attached in the commit that opens
+  // it — before any later input event can be dispatched. `onOpenChange` below reads it.
+  const pressedWhileOpen = useRef(false);
+  // THE FOOT, held as state so the body's footer renders into it once it is attached. A ref callback's update is applied
+  // in the same commit, before the browser paints, so the footer is never drawn a frame late.
+  const [foot, setFoot] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    pressedWhileOpen.current = false;
+    if (!open) return undefined;
+    const pressed = (): void => {
+      pressedWhileOpen.current = true;
+    };
+    document.addEventListener('pointerdown', pressed, true);
+    return (): void => {
+      document.removeEventListener('pointerdown', pressed, true);
+    };
+  }, [open]);
 
   return (
     <BaseDialog.Root
       modal
-      onOpenChange={(next): void => {
+      onOpenChange={(next, details): void => {
+        // AN OUTSIDE PRESS COUNTS ONLY IF IT BEGAN WHILE THIS DIALOG WAS OPEN. Base UI's `intentional` dismissal closes
+        // on any outside `click` whose press did not start inside the popup, and never asks whether the press began
+        // before the dialog existed — so a dialog opened on a pointer-up (a drawn text box, a typewriter's click) was
+        // closed by the `click` that ends that same press whenever Base UI's listener was attached before the browser
+        // dispatched it (measured 2026-10-03: reason `outside-press`, event `click`, 1 ms after the `mouseup`).
+        if (!next && details.reason === 'outside-press' && !pressedWhileOpen.current) return;
         onOpenChange(next);
       }}
       open={open}
@@ -117,8 +194,8 @@ export function Dialog({
         <BaseDialog.Backdrop className="m-dialog__backdrop" />
         <BaseDialog.Popup
           className={popupClassName === undefined ? 'm-dialog' : `m-dialog ${popupClassName}`}
-          initialFocus={initialFocus ?? popup}
-          ref={popup}
+          initialFocus={initialFocus ?? (() => openingField(popup.current) ?? popup.current)}
+          ref={attachPopup}
         >
           <div className="m-dialog__header">
             <BaseDialog.Title className="m-dialog__title">{_(title)}</BaseDialog.Title>
@@ -132,7 +209,10 @@ export function Dialog({
                 from this button did not. */}
             <BaseDialog.Close nativeButton render={<IconButton icon={X} label={closeLabel} size="control" />} />
           </div>
-          <div className="m-dialog__body">{children}</div>
+          <FooterSlot.Provider value={foot}>
+            <div className="m-dialog__body">{children}</div>
+          </FooterSlot.Provider>
+          <div className="m-dialog__foot" ref={setFoot} />
         </BaseDialog.Popup>
       </BaseDialog.Portal>
     </BaseDialog.Root>
@@ -159,11 +239,14 @@ export function Dialog({
 export function DialogRow({
   label,
   note,
+  noteValues,
   problem,
   children,
 }: {
   readonly label: MessageKey;
   readonly note?: MessageKey | undefined;
+  /** The note's values, for a note that counts or names something — a source document's pages. */
+  readonly noteValues?: Readonly<Record<string, string | number>> | undefined;
   /** Already translated, since a refusal names the part that was wrong; empty or absent while nothing is refused. */
   readonly problem?: string | undefined;
   readonly children: ReactNode;
@@ -173,7 +256,7 @@ export function DialogRow({
     <div className="m-dialog-row">
       <div className="m-dialog-row__text">
         <span className="m-dialog-row__label">{_(label)}</span>
-        {note === undefined ? null : <span className="m-dialog-row__note">{_(note)}</span>}
+        {note === undefined ? null : <span className="m-dialog-row__note">{_(note, noteValues)}</span>}
       </div>
       <div className="m-dialog-row__control">{children}</div>
       {problem === undefined || problem === '' ? null : (
@@ -185,11 +268,18 @@ export function DialogRow({
   );
 }
 
+/**
+ * A choice's words: a catalogue key, or text that is the document's own and is shown as it is — an object's kind and
+ * where it sits, which no catalogue holds. One shape for both, so a choice of things in a document is drawn by the
+ * same rows as a choice of options rather than by a copy of them.
+ */
+export type ChoiceText = MessageKey | { readonly shown: string };
+
 /** One option of `DialogChoices`: a short name, and the sentence that says what a person gets. */
 export interface DialogChoice<Value extends string> {
   readonly value: Value;
-  readonly label: MessageKey;
-  readonly note: MessageKey;
+  readonly label: ChoiceText;
+  readonly note: ChoiceText;
 }
 
 /**
@@ -215,6 +305,7 @@ export function DialogChoices<Value extends string>({
   const { _ } = useLingui();
   const heading = useId();
   const name = useId();
+  const say = (text: ChoiceText): string => (typeof text === 'string' ? _(text) : text.shown);
   return (
     <div aria-labelledby={heading} className="m-dialog-choices" role="radiogroup">
       <div className="m-dialog-row__text" id={heading}>
@@ -232,8 +323,8 @@ export function DialogChoices<Value extends string>({
             type="radio"
           />
           <span className="m-dialog-row__text">
-            <span className="m-dialog-row__label">{_(option.label)}</span>
-            <span className="m-dialog-row__note">{_(option.note)}</span>
+            <span className="m-dialog-row__label">{say(option.label)}</span>
+            <span className="m-dialog-row__note">{say(option.note)}</span>
           </span>
         </label>
       ))}
@@ -336,9 +427,10 @@ export function DialogFooter({
    * With no `children` the closing button is the dialog's only action, so it is the primary one.
    */
   readonly dismissal?: 'cancel' | 'ok' | 'close' | 'own';
-}): ReactElement {
+}): ReactElement | null {
   const only = children === undefined;
-  return (
+  const slot = useContext(FooterSlot);
+  const footer = (
     <div className="m-dialog-footer">
       {aside === undefined ? null : <span className="m-dialog-footer__aside">{aside}</span>}
       {dismissal === 'own' ? null : (
@@ -350,6 +442,9 @@ export function DialogFooter({
       {children}
     </div>
   );
+  // IN THE POPUP'S FOOT where there is one (`FooterSlot`); in place where the body is rendered on its own.
+  if (slot === undefined) return footer;
+  return slot === null ? null : createPortal(footer, slot);
 }
 
 const DISMISSAL: Readonly<Record<'cancel' | 'ok' | 'close', MessageKey>> = {

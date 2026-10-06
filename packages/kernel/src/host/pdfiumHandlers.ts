@@ -1,9 +1,16 @@
 import type { Handlers } from '@monstera/contract';
+import { HeldPassword } from '@monstera/shared';
 
 import type { CommandExecution } from '../commandRouting.js';
-import type { ByteImage } from '../engineSeam.js';
+import type { ImageSession } from '../engineSeam.js';
 import type { TextRun } from '../pdfiumFfi.js';
-import { TextNotWritableError } from '../textEditRefusals.js';
+import {
+  EditRefusedError,
+  NothingToReplaceError,
+  ReplaceMovesLineError,
+  TextNotInPlaceError,
+  TextNotWritableError,
+} from '../textEditRefusals.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import type { HostArea, HostFilesystem, HostSessions } from './engineHandlers.js';
 import {
@@ -71,7 +78,7 @@ import {
  * on a second engine.
  */
 export type HostTextRunsReader = (
-  image: ByteImage,
+  image: ImageSession,
   page: number,
 ) => Promise<{
   /** `pdfiumFfi.ts`' own type, named by an erased import so no binding loads here. */
@@ -96,14 +103,14 @@ export type HostTextRunsReader = (
  * handler's knowledge and not the rasteriser's.
  */
 export type HostPageRasteriser = (
-  image: ByteImage,
+  image: ImageSession,
   page: number,
   width: number,
   height: number,
 ) => Promise<Uint8Array>;
 
 export type HostPageObjectsReader = (
-  image: ByteImage,
+  image: ImageSession,
   page: number,
 ) => Promise<{
   readonly objects: readonly {
@@ -159,16 +166,29 @@ export function createPdfiumHandlers({
 
   // GENERIC OVER THE CODE, so each channel's return narrows to the failures IT
   // declares — a helper returning the union of both would compile at neither
-  // call site. The cause is DISCARDED rather than forwarded: it comes from a
-  // native library parsing a file this design assumes is hostile, and the code
-  // is what the supervisor acts on.
-  const failed = <C extends string>(
-    code: C,
-    _cause: unknown,
-  ): { readonly ok: false; readonly error: { readonly code: C } } => ({
+  // call site. The cause's TEXT is discarded rather than forwarded: it can carry
+  // a native library's words about a file this design assumes is hostile, and
+  // the code is what the supervisor acts on. What a refusal carries beside it is
+  // {@link refusedBy}'s, and it is this application's reading, never PDFium's.
+  const failed = <C extends string>(code: C): { readonly ok: false; readonly error: { readonly code: C } } => ({
     ok: false,
     error: { code },
   });
+
+  /**
+   * The failure a command's native work answers: the step and PDFium's number for a refusal at a step, the characters
+   * for a font that cannot carry a write — both forwarded (ADR-0169 Decision 4), where until 2026-10-05 every one was
+   * `engine-refused` and reached the person as *Something went wrong* — and `engine-refused` for anything else.
+   */
+  const refusedBy = (error: unknown) => {
+    if (error instanceof EditRefusedError) {
+      return {
+        ok: false,
+        error: { code: 'edit-refused', detail: { step: error.step, engineError: error.engineError } },
+      } as const;
+    }
+    return failed('engine-refused');
+  };
 
   /**
    * The document image this call names, out of the directory this session was
@@ -178,8 +198,11 @@ export function createPdfiumHandlers({
    * file by a route that skips the area — and there is one place to read when
    * asking what this host may open.
    */
-  const imageFor = (held: HostArea, from: string): Promise<Uint8Array> =>
-    files.readSnapshot(held.snapshotDirectory, from);
+  const imageFor = async (held: HostArea, from: string, password: string | null): Promise<ImageSession> => ({
+    bytes: await files.readSnapshot(held.snapshotDirectory, from),
+    // THE KEY THE FRAME CARRIED, held as main holds it for the length of the call (ADR-0171's addendum).
+    opensWith: password === null ? undefined : new HeldPassword(password),
+  });
 
   return {
     // NO try/catch, for `engineHandlers.ts`' reason: every outcome this can
@@ -221,17 +244,17 @@ export function createPdfiumHandlers({
       return Promise.resolve({ ok: true, value: {} });
     },
 
-    'engine/capture': async ({ session, command, from }) => {
+    'engine/capture': async ({ session, command, from, password }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
-      let image: Uint8Array;
+      let image: ImageSession;
       try {
-        image = await imageFor(held, from);
-      } catch (error) {
+        image = await imageFor(held, from, password);
+      } catch {
         // THE SAME CODE `engine/apply` USES for a missing input, because it is
         // the same fault: main wrote the image and it went, or main did not
         // write it. `asset-missing` is ours rather than the document's.
-        return failed('asset-missing', error);
+        return failed('asset-missing');
       }
       // NO CAST. `pdfiumCommandSchema` infers exactly the kinds routed here, so
       // the wire command is already `CommandOfKind<KindsRoutedTo<'pdfium'>>` —
@@ -241,12 +264,12 @@ export function createPdfiumHandlers({
       // is omitted, so nothing has to be asserted back.
       //
       // WRAPPED, because this engine PARSES on every call: a document it cannot
-      // read is an outcome rather than a defect. See {@link refused}.
+      // read is an outcome rather than a defect, and a refusal at a step says which ({@link refusedBy}).
       let captured;
       try {
         captured = await execution.capture(image, command);
       } catch (error) {
-        return failed('engine-refused', error);
+        return refusedBy(error);
       }
       return captured.captured
         ? // The kind is stamped from the COMMAND THIS CALL CARRIED, so the tag
@@ -262,14 +285,14 @@ export function createPdfiumHandlers({
         : { ok: true, value: { captured: false, reason: captured.reason } };
     },
 
-    'engine/apply': async ({ session, command, from, into }) => {
+    'engine/apply': async ({ session, command, from, password, into }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
-      let image: Uint8Array;
+      let image: ImageSession;
       try {
-        image = await imageFor(held, from);
-      } catch (error) {
-        return failed('asset-missing', error);
+        image = await imageFor(held, from, password);
+      } catch {
+        return failed('asset-missing');
       }
       // THE BYTES COME BACK THROUGH THE GRANTED DIRECTORY, never over the pipe.
       // This is `engine/serialise`'s job and this engine's apply in one call
@@ -284,29 +307,34 @@ export function createPdfiumHandlers({
       // touched the target* rule exists to prevent, one layer out.
       let applied;
       try {
-        // BOTH `undefined`S ARE WRITTEN DOWN (ADR-0069). No PDFium command can
-        // be handed a source and none declares `reads`, so this channel carries
-        // neither; the request makes that a statement rather than the absence
-        // of one.
-        applied = await execution.apply({ session: image, command, source: undefined, reads: undefined });
+        // BOTH ARE WRITTEN DOWN (ADR-0069). No PDFium command can be handed a
+        // source and none declares `reads`, so this channel carries neither; the
+        // request makes that a statement rather than the absence of one.
+        applied = await execution.apply({ session: image, command, sources: [], reads: undefined });
       } catch (error) {
         // THE PERSON'S TO ACT ON, so its own code: main says it in a sentence,
         // where `engine-refused` is a document this engine could not work with.
-        if (error instanceof TextNotWritableError) return failed('text-not-writable', error);
-        return failed('engine-refused', error);
+        // The characters a font cannot show travel with it (ADR-0169).
+        if (error instanceof TextNotWritableError) {
+          return { ok: false, error: { code: 'text-not-writable', detail: { characters: error.characters } } } as const;
+        }
+        if (error instanceof TextNotInPlaceError) return failed('text-not-in-place');
+        if (error instanceof NothingToReplaceError) return failed('nothing-to-replace');
+        if (error instanceof ReplaceMovesLineError) return failed('replace-moves-line');
+        return refusedBy(error);
       }
       const written = await files.writeOutput(held.outputDirectory, into, applied);
       return { ok: true, value: { bytes: written } };
     },
 
-    'engine/invert': async ({ session, inverse, from, into }) => {
+    'engine/invert': async ({ session, inverse, from, password, into }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
-      let image: Uint8Array;
+      let image: ImageSession;
       try {
-        image = await imageFor(held, from);
-      } catch (error) {
-        return failed('asset-missing', error);
+        image = await imageFor(held, from, password);
+      } catch {
+        return failed('asset-missing');
       }
       // `engine/apply`'s shape exactly, including the write staying outside the
       // `try`. An inverse that could not be applied must leave main's output
@@ -315,20 +343,22 @@ export function createPdfiumHandlers({
       try {
         inverted = await execution.invert(image, inverse.kind, inverse.prior);
       } catch (error) {
-        return failed('engine-refused', error);
+        // AN UNDO CAN LOSE TEXT AS AN EDIT CAN — it regenerates the page by the same call — so it refuses at the same
+        // read-back and says so the same way.
+        return refusedBy(error);
       }
       const written = await files.writeOutput(held.outputDirectory, into, inverted);
       return { ok: true, value: { bytes: written } };
     },
 
-    'engine/text-runs': async ({ session, from, page }) => {
+    'engine/text-runs': async ({ session, from, password, page }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
-      let image: Uint8Array;
+      let image: ImageSession;
       try {
-        image = await imageFor(held, from);
-      } catch (error) {
-        return failed('asset-missing', error);
+        image = await imageFor(held, from, password);
+      } catch {
+        return failed('asset-missing');
       }
       try {
         const found = await textRuns(image, page);
@@ -345,7 +375,7 @@ export function createPdfiumHandlers({
             unaddressable: found.unaddressable,
           },
         };
-      } catch (error) {
+      } catch {
         // THE DOCUMENT'S FAULT rather than the host's — a page this document
         // does not have, or one PDFium cannot load. It must not reach the
         // supervisor as evidence of a sick host, because a rebuild-and-retry
@@ -355,7 +385,7 @@ export function createPdfiumHandlers({
         // `engine-refused` and not a code of its own, for that same reason: the
         // axis a code separates is *is the host sick*, and a second name for
         // *no* would be two names for one decision.
-        return failed('engine-refused', error);
+        return failed('engine-refused');
       }
     },
 
@@ -363,14 +393,14 @@ export function createPdfiumHandlers({
     // written out rather than shared, because the two differ in every line that
     // matters (which reader, which bound, which field name) and what they share
     // is a `try`/`catch` around an image lookup.
-    'engine/page-objects': async ({ session, from, page }) => {
+    'engine/page-objects': async ({ session, from, password, page }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
-      let image: Uint8Array;
+      let image: ImageSession;
       try {
-        image = await imageFor(held, from);
-      } catch (error) {
-        return failed('asset-missing', error);
+        image = await imageFor(held, from, password);
+      } catch {
+        return failed('asset-missing');
       }
       try {
         const found = await pageObjects(image, page);
@@ -381,28 +411,28 @@ export function createPdfiumHandlers({
             truncated: found.truncated,
           },
         };
-      } catch (error) {
-        return failed('engine-refused', error);
+      } catch {
+        return failed('engine-refused');
       }
     },
 
-    'engine/render-page': async ({ session, from, into, page, width, height }) => {
+    'engine/render-page': async ({ session, from, password, into, page, width, height }) => {
       const held = areas.lookup(session);
       if (held === undefined) return gone;
-      let image: Uint8Array;
+      let image: ImageSession;
       try {
-        image = await imageFor(held, from);
-      } catch (error) {
-        return failed('asset-missing', error);
+        image = await imageFor(held, from, password);
+      } catch {
+        return failed('asset-missing');
       }
       let raster;
       try {
         raster = await renderPage(image, page, width, height);
-      } catch (error) {
+      } catch {
         // THE DOCUMENT'S FAULT OR THE REQUEST'S, not the host's: a page this
         // document does not have, or a size PDFium cannot allocate. Neither is
         // evidence of a sick host, which is the axis a code separates.
-        return failed('engine-refused', error);
+        return failed('engine-refused');
       }
       // THE WRITE STAYS OUTSIDE THE `try`, `engine/apply`'s rule: a raster that
       // could not be produced must leave main's output name unwritten, so main

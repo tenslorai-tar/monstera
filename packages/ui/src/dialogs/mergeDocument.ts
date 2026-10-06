@@ -3,7 +3,8 @@ import { z } from 'zod';
 
 import { MERGE_DOCUMENT_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
-import { MERGE_DOCUMENT_RESULT } from './mergeDocumentResult.js';
+import { MERGE_DOCUMENT_DRAFT, MERGE_DOCUMENT_RESULT } from './mergeDocumentResult.js';
+import { SOURCE_PROPS } from './sourceDocuments.js';
 
 /** The id `mergeDocumentCommand` opens to choose a source document. */
 export const MERGE_DOCUMENT_DIALOG_ID = 'dialog.merge-document';
@@ -36,19 +37,19 @@ export const MERGE_DOCUMENT_DIALOG_ID = 'dialog.merge-document';
  * ## Merging a document into ITSELF is refused by the props, not by the body
  *
  * `choices` arrives already filtered by the command, which holds
- * `context.docId`. `.min(1)` then means *there is something to merge*, so a
- * dialog offering nothing cannot be opened — the command checks first and says
- * so, rather than presenting an empty picker the reader has to interpret.
+ * `context.docId`. An empty list is a state the dialog says rather than one it
+ * refuses: *Choose file…* is the way to a source then (`sourceDocuments.ts`).
  */
 export const MERGE_DOCUMENT_DIALOG = declareDialog({
   id: MERGE_DOCUMENT_DIALOG_ID,
   title: MERGE_DOCUMENT_TITLE,
   props: z
     .object({
-      /** The other open documents, in tab order. Never includes the target. */
-      choices: z
-        .array(z.object({ docId: z.string().min(1), name: z.string().min(1) }).strict())
-        .min(1),
+      ...SOURCE_PROPS,
+      /** The TARGET's page count, bounding *after page* and naming *at the end*. */
+      pageCount: z.number().int().positive(),
+      /** What the person had entered before *Choose file…*, restored as the dialog reopens. */
+      draft: MERGE_DOCUMENT_DRAFT.optional(),
     })
     .strict(),
   result: MERGE_DOCUMENT_RESULT,

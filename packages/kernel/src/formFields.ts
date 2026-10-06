@@ -1,4 +1,5 @@
 import type { AnnotationRect, CommandOfKind, FieldFill, FormFieldKind } from '@monstera/contract';
+import { MAX_FIELD_VALUE } from '@monstera/contract/host';
 import type { PDFDocument, PDFObject, PDFPage, PDFWidget } from './mupdfRaw.js';
 
 import { BoundedList } from './boundedList.js';
@@ -106,6 +107,13 @@ const MAX_FIELD_ANCESTRY = 32;
  * tick box's `/Yes` and what the on-state comparison below needs. A signature's
  * `/V` is a dictionary and answers **no values**, which is the honest reading:
  * it holds a signature, not text.
+ *
+ * ## WHOLE, and the listing's bound is the listing's
+ *
+ * Each value is answered as long as the document holds it. A listing crosses to a panel in a bounded answer and cuts
+ * there ({@link listedValues}, which says so); an export writes the field into a file and an undo puts it back, and a
+ * value cut for either is text taken out of the document. This read cut every value at the listing's 512 characters
+ * until 2026-10-04, so an export wrote a long field cut and an undo of a fill restored the cut value.
  */
 export function fieldValues(widget: PDFWidget): readonly string[] {
   let object: PDFObject = widget.getObject();
@@ -128,15 +136,28 @@ export function fieldValues(widget: PDFWidget): readonly string[] {
       // A NAME INSIDE THE ARRAY is legal and rare; reading it as a string would
       // answer `null` and drop the entry, which is this function's own subject.
       const text = entry.isName() ? entry.asName() : entry.isString() ? entry.asString() : null;
-      if (text !== null) found.push(text.slice(0, MAX_FIELD_TEXT));
+      if (text !== null) found.push(text);
     }
     return found;
   }
-  if (value.isName()) return [value.asName().slice(0, MAX_FIELD_TEXT)];
-  if (value.isString()) return [value.asString().slice(0, MAX_FIELD_TEXT)];
+  if (value.isName()) return [value.asName()];
+  if (value.isString()) return [value.asString()];
   // NULL, A DICTIONARY OR A STREAM. The first is a field nobody filled; the
   // second is a signature; the third is not a value any reader would take.
   return [];
+}
+
+/**
+ * A field's values as a listing carries them: each cut to {@link MAX_FIELD_TEXT}, and `cut` where one was, so a
+ * surface can tell a value it may start an edit from from a slice of one. An edit started from a slice writes the
+ * slice back over the whole.
+ */
+function listedValues(widget: PDFWidget): { readonly values: readonly string[]; readonly cut: boolean } {
+  const whole = fieldValues(widget);
+  return {
+    values: whole.map((value) => value.slice(0, MAX_FIELD_TEXT)),
+    cut: whole.some((value) => value.length > MAX_FIELD_TEXT),
+  };
 }
 
 /** One AcroForm field's widget, as a surface may show it. */
@@ -184,8 +205,12 @@ export interface ListedField {
   readonly options: readonly string[];
   /** Whether the document forbids filling it. */
   readonly readOnly: boolean;
+  /** Whether a text field takes line breaks (`/Ff` bit 13); false for every other kind. */
+  readonly multiline: boolean;
   /** Where it is, in PDF user space, or `null` for a page that displays none. */
   readonly rect: AnnotationRect | null;
+  /** Present and true where a value in {@link values} is a slice of a longer one — {@link listedValues}. */
+  readonly cut?: true;
 }
 
 /**
@@ -327,6 +352,7 @@ export function readFormFields(
         // records — a stream whose first key is `BBox`. Both halves are fixed:
         // the caller no longer asks, and the reader no longer answers.
         const stateful = kind === 'checkbox' || kind === 'radio';
+        const listed = stateful || kind === 'button' ? { values: [], cut: false } : listedValues(widget);
         found.add({
           page,
           index: index++,
@@ -335,11 +361,15 @@ export function readFormFields(
           // EMPTY FOR EVERY BUTTON KIND, which is the trap made unrepresentable
           // rather than described: `/V` would answer the on-state name here,
           // and a push button's is meaningless in a different way again.
-          values: stateful || kind === 'button' ? [] : fieldValues(widget),
+          values: listed.values,
           on: stateful ? onState(widget) : null,
           options: widget.getOptions().slice(0, MAX_FIELD_OPTIONS),
           readOnly: widget.isReadOnly(),
+          // ONLY A TEXT FIELD: bit 13 of `/Ff` is Multiline in the text-field flags (ISO 32000-1, Table 228) and is
+          // not a multiline flag for any other field type, so it is read by kind rather than for every widget.
+          multiline: kind === 'text' && widget.isMultiline(),
           rect: transform === null ? null : readRect(widget, transform),
+          ...(listed.cut ? { cut: true as const } : {}),
         });
       }
     }
@@ -615,6 +645,16 @@ export function captureFillFormField(
         };
       }
       const held = holds[0] ?? '';
+      if (held.length > MAX_FIELD_VALUE) {
+        // THE PRIOR IS LONGER THAN A FILL CAN CARRY, so an inverse would put back its first part and drop the rest. A
+        // checkpoint restores it exactly — `holds.length`'s refusal above, with a different cause.
+        return {
+          captured: false,
+          reason:
+            `the field holds ${String(held.length)} characters and a fill carries ${String(MAX_FIELD_VALUE)}, so an ` +
+            'inverse built from it would cut the rest rather than restore it',
+        };
+      }
       if (command.value.set === 'choice' && held !== '' && !widget.getOptions().includes(held)) {
         // THE DOCUMENT ARRIVED HOLDING SOMETHING IT DOES NOT OFFER, which
         // MuPDF permits and this build refuses to write. Recording it as a
@@ -750,6 +790,91 @@ export function pruneEmptyFields(document: PDFDocument): void {
     // one pass usually suffices; the loop is what makes that an observation
     // rather than an assumption about tree depth.
   }
+
+  // THE CALCULATION ORDER NAMES FIELDS TOO, and a field it still names is written with its answer however far it left
+  // the tree: measured 2026-10-04, a deleted page's field listed in `/CO` kept its value in the saved file
+  // (ADR-0155). So `/CO` keeps only the fields the tree still holds.
+  const order = acroForm.get('CO');
+  if (!order.isArray()) return;
+  const held = new Set<number>();
+  const hold = (array: PDFObject): void => {
+    for (let index = 0; index < array.length; index += 1) {
+      const field = array.get(index);
+      if (!field.isIndirect() || held.has(field.asIndirect())) continue;
+      held.add(field.asIndirect());
+      const kids = field.get('Kids');
+      if (kids.isArray()) hold(kids);
+    }
+  };
+  hold(fields);
+  for (let index = order.length - 1; index >= 0; index -= 1) {
+    const field = order.get(index);
+    if (field.isIndirect() && !held.has(field.asIndirect())) order.delete(index);
+  }
+}
+
+/**
+ * Takes the form fields off pages that are about to leave the document: each widget on them is deleted and the
+ * field tree pruned, by the calls {@link applyDeleteFormFields} makes.
+ *
+ * **Called by every command that removes pages, BEFORE the page tree is rewritten**, while the indices still name the
+ * pages ([ADR-0151](../../../docs/DECISIONS/0151-every-full-save-collects-and-a-deleted-page-takes-its-fields.md)).
+ * Rewriting `/Kids` alone leaves `/AcroForm` naming the widgets, and each widget's `/P` keeps the page itself
+ * reachable, so the field stays in the form and no collecting save can drop the page — measured 2026-10-03, the
+ * owner's item 12a. A field with widgets on pages that stay keeps them and its value: only an emptied `/Kids` is
+ * pruned.
+ */
+export function removeFieldsOnPages(document: PDFDocument, pages: Iterable<number>): void {
+  for (const page of pages) {
+    const loaded = document.loadPage(page);
+    for (const widget of loaded.getWidgets()) loaded.deleteAnnotation(widget);
+  }
+  pruneEmptyFields(document);
+}
+
+/**
+ * Keeps only the form fields whose widgets sit on this document's own pages, and removes the form when none is left.
+ *
+ * **For a document BUILT from another one's pages** — an extract, a split, a page sent to another application — whose
+ * `/AcroForm` was grafted whole (`pageExtract.ts`). Grafted whole, it held every field of the source with its answer,
+ * and each widget's `/P` brought the page it sat on: measured 2026-10-03, extracting page 1 alone wrote the answers
+ * from page 4 and page 4 itself (the owner's item 12b).
+ *
+ * The rule is one sentence: a field node with no `/Kids` stays only when it is a widget on one of the pages, and
+ * {@link pruneEmptyFields} then takes away every parent that rule emptied. A value-only field, which the format allows
+ * and which no page shows, does not stay either: in a file built from some pages it is an answer with nowhere to be
+ * seen.
+ */
+export function keepFieldsOnPages(document: PDFDocument): void {
+  const root = document.getTrailer().get('Root');
+  const acroForm = root.get('AcroForm');
+  if (!acroForm.isDictionary()) return;
+  const fields = acroForm.get('Fields');
+  if (fields.isArray()) {
+    const onPages = new Set<number>();
+    for (let page = 0; page < document.countPages(); page += 1) {
+      const annots = document.findPage(page).get('Annots');
+      if (!annots.isArray()) continue;
+      for (let at = 0; at < annots.length; at += 1) {
+        const entry = annots.get(at);
+        if (entry.isIndirect()) onPages.add(entry.asIndirect());
+      }
+    }
+    const shown = (node: PDFObject): boolean => node.isIndirect() && onPages.has(node.asIndirect());
+    const sweep = (array: PDFObject): void => {
+      for (let index = array.length - 1; index >= 0; index -= 1) {
+        const node = array.get(index);
+        const kids = node.get('Kids');
+        if (kids.isArray()) sweep(kids);
+        else if (!shown(node)) array.delete(index);
+      }
+    };
+    sweep(fields);
+    pruneEmptyFields(document);
+  }
+  // NO FIELD LEFT IS NO FORM: an `/AcroForm` with empty `/Fields` is a form a reader offers to fill with nothing in it.
+  const left = acroForm.get('Fields');
+  if (!left.isArray() || left.length === 0) root.delete('AcroForm');
 }
 
 /**

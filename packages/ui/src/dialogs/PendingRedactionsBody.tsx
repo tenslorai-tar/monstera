@@ -12,7 +12,8 @@ import {
 } from './pendingRedactions.js';
 
 /**
- * *N redactions are marked but not applied. Apply them now?* — Apply, go ahead without applying, or Cancel.
+ * *N parts of this document are marked for redaction, but they have not been removed yet* — Apply, go ahead without
+ * applying, or Cancel.
  *
  * ## Each button says what it does
  *

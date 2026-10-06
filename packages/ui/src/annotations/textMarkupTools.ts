@@ -1,10 +1,12 @@
 import type { AnnotationColour, DispatchableCommand } from '@monstera/contract';
-import type { PageTransform } from '@monstera/shared';
+import type { MessageKey, PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
+import { HINT_HIGHLIGHT, HINT_REDACT_TEXT, HINT_STRIKEOUT, HINT_UNDERLINE } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationStyle } from './annotationStyle.js';
+import { STROKE } from './shapeTools.js';
 
 /**
  * Highlight, underline and strikethrough — a drag across text.
@@ -66,6 +68,13 @@ export const MARKUP_COLOURS = {
 
 export type MarkupType = keyof typeof MARKUP_COLOURS;
 
+/** What each markup's tool waits for, keyed as the colours are, so a markup arriving without a hint does not compile. */
+const MARKUP_HINTS: Record<MarkupType, MessageKey> = {
+  highlight: HINT_HIGHLIGHT,
+  underline: HINT_UNDERLINE,
+  strikeout: HINT_STRIKEOUT,
+};
+
 /**
  * The command that marks up the text between two points on a page — the ONE builder for it, taken
  * by the drag tools below and by the selected-text menu (§7). Both name a run by its two ends and
@@ -95,7 +104,64 @@ export function markupCommand(
   };
 }
 
+/**
+ * The command that MARKS the text between two points for redaction — the ONE builder for it, taken by the Redact text
+ * tool and by the selected-text menu, `markupCommand`'s rule for its reason. It marks and nothing more: the words stay
+ * in the file until *Apply redactions* runs (ADR-0008 rule 1). Two ends rather than a box, so the engine decides the
+ * lines and the mark is the run the person selected, not the rectangle a selection over two part lines sweeps.
+ */
+export function redactTextCommand(
+  page: number,
+  from: { readonly x: number; readonly y: number },
+  to: { readonly x: number; readonly y: number },
+  style: AnnotationStyle,
+): DispatchableCommand {
+  return {
+    kind: 'addAnnotation',
+    page,
+    annotation: {
+      type: 'redact',
+      over: 'text',
+      from: { x: from.x, y: from.y },
+      to: { x: to.x, y: to.y },
+      // THE AREA TOOL'S OWN DEFAULT, resolved through the style as `redactTool` does, so a mark swept over words and
+      // one swept over a region are the same colour. No border width: MuPDF refuses one on a Redact.
+      colour: style.colour(STROKE),
+      opacity: style.opacity,
+    },
+  };
+}
+
+/** The id the Redact text tool and its command share. */
+export const REDACT_TEXT_TOOL_ID = 'annotate.redact-text';
+
+/**
+ * Redact text — words marked for redaction the way Highlight marks them (the owner's item 14b's sibling, 14e): an
+ * I-beam, the page's own selection, and on release exactly the run selected. *Redact area* is the box beside it.
+ */
+export function redactTextTool(style: AnnotationStyle): UiTool {
+  return textRunTool(REDACT_TEXT_TOOL_ID, HINT_REDACT_TEXT, (page, from, to) => redactTextCommand(page, from, to, style));
+}
+
 function markupTool(id: string, type: MarkupType, style: AnnotationStyle): UiTool {
+  return textRunTool(id, MARKUP_HINTS[type], (page, from, to) => markupCommand(type, page, from, to, style));
+}
+
+/**
+ * A tool that names a run of text by its two ends — the three markups and Redact text. One gesture and one selection
+ * rule for all four, so a redaction and a highlight over the same words name the same words.
+ *
+ * @param command what the run's two ends become, in PDF space
+ */
+function textRunTool(
+  id: string,
+  hint: MessageKey,
+  command: (
+    page: number,
+    from: { readonly x: number; readonly y: number },
+    to: { readonly x: number; readonly y: number },
+  ) => DispatchableCommand,
+): UiTool {
   const moved = (gesture: Gesture): boolean => {
     const from = startOf(gesture);
     const to = endOf(gesture);
@@ -110,7 +176,7 @@ function markupTool(id: string, type: MarkupType, style: AnnotationStyle): UiToo
       transform: PageTransform,
     ): DispatchableCommand | undefined => {
       if (!moved(gesture)) return undefined;
-      return markupCommand(type, page, toPdf(startOf(gesture), transform), toPdf(endOf(gesture), transform), style);
+      return command(page, toPdf(startOf(gesture), transform), toPdf(endOf(gesture), transform));
     },
     preview: (gesture: Gesture): ToolPreview | undefined => {
       if (!moved(gesture)) return undefined;
@@ -123,20 +189,22 @@ function markupTool(id: string, type: MarkupType, style: AnnotationStyle): UiToo
   return {
     id,
     controller,
+    hint,
     // THE TEXT IS THE GESTURE (the owner's review of 0.1.6.0): a line from where the drag started to where it ended
     // was ambiguous between two lines of text. Now the page's own selection shows exactly the words that will be
     // marked, under an I-beam, and the two ends of that selection are the two points the kernel resolves — the same
     // command the selected-text menu builds (`markupCommand`), so the drag and the menu cannot disagree.
     cursor: 'text',
-    fromSelection: (selection) => markupCommand(type, selection.page, selection.from, selection.to, style),
+    fromSelection: (selection) => command(selection.page, selection.from, selection.to),
   };
 }
 
-/** The three text markups, in the order their controls appear. */
+/** The text-run tools: the three markups, in the order their controls appear, and Redact text. */
 export function textMarkupTools(style: AnnotationStyle): readonly UiTool[] {
   return [
     markupTool(HIGHLIGHT_TOOL_ID, 'highlight', style),
     markupTool(UNDERLINE_TOOL_ID, 'underline', style),
     markupTool(STRIKEOUT_TOOL_ID, 'strikeout', style),
+    redactTextTool(style),
   ];
 }

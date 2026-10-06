@@ -117,7 +117,7 @@ if (outcome.kind !== 'opened') {
 
 // The service now holds the canonical image. Touched through its own accessor
 // rather than through a private field, so what is measured is the number the
-// ceiling is compared against — the same one `at-capacity` is computed from.
+// ceiling is compared against — the one that decides whether an image is held in memory (ADR-0165).
 const resident = documents.residentDocumentBytes();
 if (resident !== size) {
   process.stderr.write(

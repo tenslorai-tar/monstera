@@ -2,12 +2,11 @@ import type { AnnotationColour, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
-import { ANNOTATION_NOTE_DIALOG_ID } from '../dialogs/annotationNote.js';
-import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
+import { HINT_CARET, HINT_NOTE, WRITE_NOTE_LABEL } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { pointerPath, startOf } from '../registries/tools.js';
 import type { AnnotationStyle } from './annotationStyle.js';
-import type { TextToolDeps } from './textTools.js';
+import { type TextToolDeps, writeAnnotationWords } from './textTools.js';
 
 /**
  * The point tools — the first whose gesture is a CLICK rather than a drag.
@@ -42,7 +41,7 @@ import type { TextToolDeps } from './textTools.js';
  * what the person watching their own pointer will expect.
  *
  * There is nothing to refuse, so nothing here returns `undefined` for geometry.
- * The sticky note still answers `undefined` for a dismissed dialog, which is
+ * The sticky note still answers `undefined` for a comment left blank, which is
  * the platform's other reason and not this file's.
  *
  * ## Nothing is previewed, deliberately
@@ -84,7 +83,7 @@ const NOTE_COLOUR: AnnotationColour = [1, 0.8, 0.2];
  *
  * @param page The page the note is placed on.
  * @param at Where its icon sits, in PDF user space.
- * @param text What the note says — already parsed by the dialog's result.
+ * @param text What the note says — already trimmed by the annotation-text result.
  * @param style The style the next annotation is drawn in.
  */
 export function stickyNoteCommand(
@@ -144,9 +143,9 @@ function clickedAt(
  * The sticky note — a click, then the comment it holds.
  *
  * @param deps what the tool needs to ask. `textTools.ts`' `TextToolDeps`,
- *   imported rather than declared again: *a tool that must open a dialog holds
- *   `ask`* is the platform's shape, and a second interface with the same one
- *   member would be a second statement of it
+ *   imported rather than declared again: *a tool that needs a person's words
+ *   holds `write`* is the platform's shape, and a second interface with the
+ *   same members would be a second statement of it
  */
 export function stickyNoteTool(deps: TextToolDeps & { readonly style: AnnotationStyle }): UiTool {
   const controller: ToolController = {
@@ -156,33 +155,35 @@ export function stickyNoteTool(deps: TextToolDeps & { readonly style: Annotation
       page: number,
       transform: PageTransform,
     ): Promise<DispatchableCommand | undefined> => {
-      // THE POINT IS READ BEFORE THE ASK, `textTools.ts`' rule: the transform
+      // THE POINT IS READ BEFORE THE WORDS, `textTools.ts`' rule: the transform
       // is the one the overlay measured at pointer-up, and converting after the
       // person has typed would place the note using whatever zoom the page has
       // reached by then.
       const at = clickedAt(gesture, transform);
 
-      const answered = ANNOTATION_TEXT_RESULT.safeParse(
-        await deps.ask(ANNOTATION_NOTE_DIALOG_ID, {}),
-      );
-      // A DISMISSED DIALOG AND A REFUSED ANSWER ARE BOTH `undefined`, which is
-      // the platform's gate: there is nothing to build a command from, so
-      // nothing is sent. A parse failure here means the id resolved to a dialog
-      // answering another shape — a registration defect rather than a person's
-      // doing, and refused quietly for the same reason, since the page is
-      // unchanged either way.
-      if (!answered.success) return undefined;
+      // ITS BOX OPENS WHERE IT WAS CLICKED: a comment is not drawn on the page,
+      // so it is typed on a card at the note's point rather than in the page's
+      // style (`writeAnnotationWords`' `colour: undefined`).
+      const text = await writeAnnotationWords(deps, {
+        page,
+        box: { x0: at.x, y0: at.y, x1: at.x, y1: at.y },
+        label: WRITE_NOTE_LABEL,
+        colour: undefined,
+        grows: false,
+      });
+      // NOTHING TYPED IS NO NOTE: there is nothing to build a command from.
+      if (text === undefined) return undefined;
 
       // THROUGH THE SHARED BUILDER, which the selected-text menu's *Comment*
       // also calls. See {@link stickyNoteCommand} for why the draft is not
       // written out here.
-      return stickyNoteCommand(page, at, answered.data.text, deps.style);
+      return stickyNoteCommand(page, at, text, deps.style);
     },
     preview: noPreview,
   };
 
   // THE ARROW: a note is placed at a point by a click, the ribbon's *Comment* (the owner's review of 0.1.6.0).
-  return { id: STICKY_NOTE_TOOL_ID, controller, cursor: 'arrow' };
+  return { id: STICKY_NOTE_TOOL_ID, controller, cursor: 'arrow', hint: HINT_NOTE };
 }
 
 /**
@@ -197,6 +198,9 @@ export function stickyNoteTool(deps: TextToolDeps & { readonly style: Annotation
 export function caretTool(deps: { readonly style: AnnotationStyle }): UiTool {
   return {
     id: CARET_TOOL_ID,
+    hint: HINT_CARET,
+    // THE ARROW: a caret is placed at a point by a click, the note's gesture (the owner's item 15d).
+    cursor: 'arrow',
     controller: {
       ...pointerPath,
       commit: (

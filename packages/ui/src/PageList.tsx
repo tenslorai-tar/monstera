@@ -17,17 +17,41 @@ import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { type TextEditing, TextEditPage } from './TextEditLayer.js';
+import { type ObjectEditing, ObjectEditPage } from './ObjectEditLayer.js';
+import { InlineWriter } from './InlineWriter.js';
+import type { Draft, WriteRequest } from './pageWriting.js';
+
+/** What a press on the page edits, when a mode rather than a drawing tool holds the tool slot. */
+export type PageEditing = TextEditing | ObjectEditing;
+
+/** The one pending request for words on a page, its draft, and where its answer goes (ADR-0154). */
+export interface PageWriting {
+  /** Which request this is, one number per request in the window. */
+  readonly id: number;
+  readonly request: WriteRequest;
+  readonly draft: Draft;
+  readonly onDone: (words: string | undefined) => void;
+}
 import { TextLayer, type TextLayerLine, readTextSelection } from './TextLayer.js';
+import { type FollowedLink, LinkLayer } from './LinkLayer.js';
 import { type DifferenceMark, DifferenceLayer } from './DifferenceLayer.js';
+
+/** What a mark over a page sits on: the paper. */
+const ON_PAPER: readonly string[] = ['--page'];
 
 /** No marks on a page, one identity for every page without any. */
 const NO_MARKS: readonly DifferenceMark[] = [];
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
+import { type PageLinkOnPage, usePageLinks } from './usePageLinks.js';
+import { FormLayer, type PageFill } from './forms/FormLayer.js';
+import type { ListedField } from './forms/fieldFill.js';
+import { usePageFormFields } from './forms/usePageFormFields.js';
 import { useSelectedTextPages } from './useSelectedTextPages.js';
 import { ANNOTATION_SURFACE_LABEL, PAGE_IMAGE_ONLY, PAGE_LIST_LABEL, PAGE_OPENING } from './messages/en.js';
 import { Icon } from './primitives/Icon.js';
+import { useOnColor } from './primitives/useOnColor.js';
 import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
@@ -172,6 +196,19 @@ export interface PageListProps {
   /** Whether the grid overlay is drawn. `viewing.grid`. */
   readonly showGrid: boolean;
   /**
+   * Follows a link a person pressed on a page (ADR-0167), or `undefined` where this list follows none — the comparison
+   * view's panes, whose pages are being read against each other. With it, each visible page draws its links.
+   */
+  readonly onFollowLink: ((followed: FollowedLink) => void) | undefined;
+  /** Whether each link's edge is drawn: the Comment section is on show, where links are made. */
+  readonly linksOutlined: boolean;
+  /**
+   * Fills a form field a person pressed on its page (ADR-0168), named by page, walk index and the version its list was
+   * read at, or `undefined` where this list fills none — the comparison view's panes. With it, each visible page draws
+   * its fillable fields.
+   */
+  readonly onFillField: ((fill: PageFill & { readonly version: DocVersion }) => void) | undefined;
+  /**
    * What both are read in. `viewing.ruler-unit`.
    *
    * ONE unit for both, passed as one prop, because a grid line a reader cannot
@@ -215,13 +252,22 @@ export interface PageListProps {
    * is worse than none.
    */
   /**
-   * Edit text's mode, or `undefined` when it is off (ADR-0096).
+   * Edit text's mode (ADR-0096) or Edit object's (ADR-0153), or `undefined` when neither is on.
    *
    * A sibling of {@link drawing} rather than a member of it, because the two
    * never hold at once — they share one slot in the application, the tool id —
-   * and a surface that is not a gesture has nothing to put in `tool`.
+   * and a surface that is not a gesture has nothing to put in `tool`. ONE prop for
+   * both modes, discriminated by `mode`, for the same reason: they share that slot
+   * too, so a type that could hold both at once would describe a state the
+   * application does not have.
    */
-  readonly editing?: TextEditing | undefined;
+  readonly editing?: PageEditing | undefined;
+  /**
+   * Words being typed on a page, asked for by a tool or a command (ADR-0154), or `undefined` for none. Drawn over the
+   * request's own page only. Required and `| undefined` for {@link search}'s reason: a request dropped on the way to
+   * the slot would leave a tool waiting for words nobody can type.
+   */
+  readonly writing: PageWriting | undefined;
   /**
    * The HAND tool (§10.3's floating toolbar): a drag on the page area scrolls it, and the pages' own
    * layers stop taking the pointer so a drag never selects text on the way. Another value of the same
@@ -402,12 +448,16 @@ export function PageList({
   loupe,
   rulers,
   showGrid,
+  onFollowLink,
+  linksOutlined,
+  onFillField,
   unit,
   label,
   labelValues,
   startAt,
   drawing,
   editing,
+  writing,
   panning = false,
   search,
   differences,
@@ -482,9 +532,43 @@ export function PageList({
   // NOT BEFORE THE FIRST FRAME, with the marks below: both are reads in main's one lane, and asked at mount they were
   // queued ahead of the rotation the first page waits for. Neither is drawn before a page is measured anyway.
   const scroller = useRef<HTMLDivElement | null>(null);
+  // THE ACCENT ON THE PAPER, solved once for every mark drawn over a page — an outline, a handle, a preview, a caret —
+  // against `--page`, which is what those marks sit on: the accent itself is 3.30:1 on white in light, 2.54:1 in dark
+  // and 1.49:1 in high contrast (measured 2026-10-04 with `contrast`), under the 3:1 a boundary needs in two of three.
+  // `--accent-on-paper` inherits to every slot, and the rules fall back to the accent where nothing is solved.
+  useOnColor(scroller, '--accent-on-paper', '--accent', ON_PAPER, 3);
+  // AND THE GRID'S LINES, by the same rule: the soft border they were drawn in is a colour for the shell's own
+  // surfaces, and on the paper it all but vanishes. A boundary's 3:1, against `--page`, since the grid is over a page.
+  useOnColor(scroller, '--grid-on-paper', '--border-soft', ON_PAPER, 3);
   // AND THE PAGES A SELECTION IS IN, on screen or not: their layers hold the selection's ends (`useSelectedTextPages`).
   const selectedPages = useSelectedTextPages(scroller);
   const pageText = usePageText(client, docId, version, firstFrame ? new Set([...visible, ...selectedPages]) : NOTHING_VISIBLE);
+  // THE LINKS ON WHAT IS ON SCREEN (ADR-0167), after the first frame for the text's reason, and only where this list
+  // follows links: a list with nothing to hand a press to reads nothing to draw.
+  const pageLinks = usePageLinks(
+    onFollowLink === undefined ? undefined : client,
+    docId,
+    version,
+    firstFrame ? visible : NOTHING_VISIBLE,
+  );
+  // THE FORM'S FIELDS ON WHAT IS ON SCREEN (ADR-0168), read whole once per version and handed to each visible page,
+  // and only where this list fills fields.
+  const pageFields = usePageFormFields(
+    onFillField === undefined ? undefined : client,
+    docId,
+    version,
+    firstFrame ? visible : NOTHING_VISIBLE,
+  );
+  // AT THE VERSION ON SHOW, which is the version the fields were read at: the hook answers no fields for any other.
+  const fillOnPage = useMemo(
+    () =>
+      onFillField === undefined
+        ? undefined
+        : (fill: PageFill): void => {
+            onFillField({ ...fill, version });
+          },
+    [onFillField, version],
+  );
   // EVERY PAGE'S MARKS, one read per version: the channel is whole-document, so there is nothing
   // to narrow to the visible set, and the layer is mounted only on slots that are measured.
   const pageAnnotations = usePageAnnotations(firstFrame ? client : undefined, docId, version);
@@ -918,15 +1002,19 @@ export function PageList({
       frame = requestAnimationFrame(step);
     };
     frame = requestAnimationFrame(step);
+    // IN THE CAPTURE PHASE, and the Escape is spent here: the scroll is the innermost thing running, so it stops first
+    // and the tool on (App's shortcut handler, ADR-0154 Decision 4) stops only at the next Escape.
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') stop();
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      stop();
     };
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
     box.addEventListener('pointerdown', stop);
     box.addEventListener('wheel', stop);
     return (): void => {
       cancelAnimationFrame(frame);
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onKey, true);
       box.removeEventListener('pointerdown', stop);
       box.removeEventListener('wheel', stop);
     };
@@ -1033,15 +1121,13 @@ export function PageList({
           <Loupe view={view} page={lens.page} zoom={shown} rotation={rotations.get(lens.page)} at={lens.at} />
         </div>
       ) : null}
-      {rulers || grid !== undefined ? (
+      {rulers ? (
         <PageSpans
           scroller={scroller}
           slotFor={slotFor}
           visible={visible}
           viewport={viewport}
           sizes={sizes}
-          rulers={rulers}
-          grid={grid !== undefined}
           unit={unit}
           zoom={shown}
         />
@@ -1059,7 +1145,6 @@ export function PageList({
         // ONE PAGE TO A SCREEN, centred, at Fit page in a continuous layout (`app.css`); facing pages fit a spread, and
         // single page already shows one.
         fitOnePage ? 'm-page-list--fit-page' : '',
-        grid === undefined ? '' : 'm-page-list-grid',
         panning ? 'm-page-list--panning' : '',
         selectsText ? 'm-page-list--selects-text' : '',
         grab === undefined ? '' : 'is-grabbing',
@@ -1102,10 +1187,8 @@ export function PageList({
         grid === undefined && !fitOnePage
           ? undefined
           : ({
+              // INHERITED BY EVERY PAGE'S GRID, whose origin is its own page's corner, the zero the rulers read from.
               ...(grid === undefined ? {} : { '--m-grid': `${String(grid)}px` }),
-              // THE ORIGIN (`--m-grid-x`, `--m-grid-y`) IS `PageSpans`', the one the ruler uses, so a grid line is a
-              // mark the reader can find on the ruler; it is set on this element there, because it moves with every
-              // scroll and this component must not render with it.
               //
               // FIT PAGE'S ROOM: the scroller's own measured height, each page's share of it.
               ...(fitOnePage && viewport !== undefined ? { '--m-fit-room': `${String(viewport.height)}px` } : {}),
@@ -1163,6 +1246,8 @@ export function PageList({
           // GATED ON THE SLOT'S OWN MEASUREMENT for `drawing`'s reason: an outline
           // placed with a neighbour's box would sit over the wrong words.
           editing={sizes.has(page) ? editing : undefined}
+          // ONLY THE REQUEST'S OWN PAGE, gated on its measurement for `drawing`'s reason.
+          writing={sizes.has(page) && writing?.request.page === page ? writing : undefined}
           // THE SLOT'S OWN MEASUREMENT GATES THIS TOO, and for `drawing`'s
           // reason: a text layer placed with a neighbour's box would put every
           // line in the wrong frame, which reads as a selection that drifts
@@ -1185,6 +1270,14 @@ export function PageList({
           tiled={renderZoom * quality > tileAbove}
           quality={quality}
           badge={pageBadges}
+          grid={grid !== undefined}
+          // GATED ON THE SLOT'S OWN MEASUREMENT for the text layer's reason: a link placed with a neighbour's box would
+          // be pressed where the link is not.
+          links={sizes.has(page) && onFollowLink !== undefined ? pageLinks.get(page) : undefined}
+          linksOutlined={linksOutlined}
+          onFollowLink={onFollowLink}
+          fields={sizes.has(page) && fillOnPage !== undefined ? pageFields.get(page) : undefined}
+          onFillField={fillOnPage}
           scroller={scroller}
           hidden={layout === 'single' && page !== onShow}
         />
@@ -1242,9 +1335,8 @@ const NOTHING_VISIBLE: ReadonlySet<number> = new Set();
  * past page 1's foot, so every later page read a continuation of page 1's numbers (the owner's review of 0.1.6.0).
  * The pages are the ones `visible` already names, so this asks the slots the observer is watching and no others.
  *
- * The grid's origin is the CURRENT page's corner, which is also what the horizontal ruler measures from, with the page
- * beside it in a facing row. The numbers go NEGATIVE once a page is scrolled past, which is correct: a ruler whose
- * origin clamped to zero would put its zero mark wherever the viewport happened to start.
+ * The numbers go NEGATIVE once a page is scrolled past, which is correct: a ruler whose origin clamped to zero would
+ * put its zero mark wherever the viewport happened to start.
  *
  * ## ITS OWN COMPONENT, so a scroll renders this and nothing else
  *
@@ -1254,8 +1346,8 @@ const NOTHING_VISIBLE: ReadonlySet<number> = new Set();
  * collection beside it. Held here, a scroll renders the rulers; the list renders when a page enters or leaves
  * `visible`, which is what it draws.
  *
- * The grid's origin is the same reading (a grid line is a mark the reader can find on the ruler), so it is written
- * here as the scroller's two custom properties rather than through `PageList`'s style, which would render it again.
+ * The grid needs nothing from here: it is drawn inside each page's slot, so its origin is that page's corner, the
+ * zero each ruler reads from, with no reading to keep up with a scroll.
  */
 function PageSpans({
   scroller,
@@ -1263,8 +1355,6 @@ function PageSpans({
   visible,
   viewport,
   sizes,
-  rulers,
-  grid,
   unit,
   zoom,
 }: {
@@ -1274,8 +1364,6 @@ function PageSpans({
   /** What moves the pages' corners besides a scroll, with `zoom`: read by nothing here, and a dependency of the measure. */
   readonly viewport: unknown;
   readonly sizes: unknown;
-  readonly rulers: boolean;
-  readonly grid: boolean;
   readonly unit: RulerUnit;
   readonly zoom: number;
 }): ReactElement | null {
@@ -1314,11 +1402,6 @@ function PageSpans({
       // page can lie wholly above it; the boxes read here say which pages the scrollport actually shows.
       const current = pages.find((page) => page.bottom > 0 && page.top < outer.height) ?? pages[0];
       if (current === undefined) return;
-      if (grid) {
-        box.style.setProperty('--m-grid-x', `${String(current.left)}px`);
-        box.style.setProperty('--m-grid-y', `${String(current.top)}px`);
-      }
-      if (!rulers) return;
       setSpans({
         across: pages
           .filter((page) => page.top < current.bottom && page.bottom > current.top)
@@ -1333,18 +1416,9 @@ function PageSpans({
       cancelAnimationFrame(first);
       box.removeEventListener('scroll', measure);
     };
-  }, [grid, rulers, scroller, slotFor, visible, zoom, viewport, sizes]);
+  }, [scroller, slotFor, visible, zoom, viewport, sizes]);
 
-  // THE GRID'S ORIGIN LEAVES WITH THE GRID: a property left on the scroller would anchor a grid nobody shows.
-  useEffect(() => {
-    const box = scroller.current;
-    if (grid || box === null) return undefined;
-    box.style.removeProperty('--m-grid-x');
-    box.style.removeProperty('--m-grid-y');
-    return undefined;
-  }, [grid, scroller]);
-
-  if (!rulers || spans.size.height === 0) return null;
+  if (spans.size.height === 0) return null;
   return <Rulers unit={unit} zoom={zoom} size={spans.size} across={spans.across} down={spans.down} />;
 }
 
@@ -1383,6 +1457,7 @@ function PageSlot({
   onFailed,
   drawing,
   editing,
+  writing,
   text,
   kind,
   annotations,
@@ -1392,6 +1467,12 @@ function PageSlot({
   tiled,
   quality,
   badge,
+  grid,
+  links,
+  linksOutlined,
+  onFollowLink,
+  fields,
+  onFillField,
   scroller,
   hidden,
 }: {
@@ -1410,7 +1491,9 @@ function PageSlot({
   /** Told that this page would not draw, with `onMeasured`'s need to be stable. */
   readonly onFailed: (page: number) => void;
   readonly drawing: PageListProps['drawing'];
-  readonly editing: TextEditing | undefined;
+  readonly editing: PageEditing | undefined;
+  /** The pending request for words when it is THIS page's, otherwise `undefined`. */
+  readonly writing: PageWriting | undefined;
   readonly text: readonly TextLayerLine[] | undefined;
   /** What the page is made of, or `undefined` before its text has arrived. */
   readonly kind: PageTextAnswer['kind'] | undefined;
@@ -1436,6 +1519,15 @@ function PageSlot({
   readonly quality: number;
   /** Whether the page's number is drawn at its foot. */
   readonly badge: boolean;
+  /** Whether the grid is drawn over the page; its spacing is the list's `--m-grid`, inherited. */
+  readonly grid: boolean;
+  /** This page's links, or `undefined` before they are known, the slot is measured, or where none are followed. */
+  readonly links: readonly PageLinkOnPage[] | undefined;
+  readonly linksOutlined: boolean;
+  readonly onFollowLink: ((followed: FollowedLink) => void) | undefined;
+  /** This page's form fields, or `undefined` before they are known, the slot is measured, or where none are filled. */
+  readonly fields: readonly ListedField[] | undefined;
+  readonly onFillField: ((fill: PageFill) => void) | undefined;
   /** The scroller the slot sits in, whose box decides which tiles are wanted. */
   readonly scroller: React.RefObject<HTMLElement | null>;
   /** Out of the layout: single page shows only the page on show, and a hidden slot is never visible, so never drawn. */
@@ -1627,6 +1719,11 @@ function PageSlot({
           style={shown === undefined ? undefined : { width: shown.width, height: shown.height }}
         />
       ) : null}
+      {/* THE GRID, OVER THE PAPER. It was the scroller's background, which every page covers: it showed in the gutters
+          and nowhere a person measures. Here it is one box over the page, so its origin is the page's corner — the
+          zero the rulers read from — and it takes no pointer. It is the shell's and not the document's: nothing that
+          prints, exports or saves reads this element. */}
+      {grid ? <div aria-hidden="true" className="m-paper-grid" data-paper-grid={String(page)} /> : null}
       {/* UNDER the annotation overlay and over the canvas. The overlay is
           mounted only while a tool is active, so while somebody is drawing the
           drawing surface takes the pointer and while nobody is, this does —
@@ -1657,6 +1754,17 @@ function PageSlot({
           search={search}
         />
       )}
+      {/* THE PAGE'S LINKS (ADR-0167), over the text so a press on a link follows it rather than starting a selection,
+          and under the drawing overlay, which is mounted only while a tool is on and then takes the press. */}
+      {links === undefined || size === undefined || onFollowLink === undefined ? null : (
+        <LinkLayer
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          links={links}
+          onFollow={onFollowLink}
+          outlined={linksOutlined}
+          page={page}
+        />
+      )}
       {/* A COMPARISON'S MARKS (ADR-0131), over the text and under the annotations, gated on the slot's own measurement
           for the text layer's reason: a box placed with a neighbour's geometry would mark the wrong region. */}
       {differences === undefined || size === undefined ? null : (
@@ -1676,10 +1784,27 @@ function PageSlot({
           page={page}
         />
       )}
-      {/* OVER THE TEXT AND ITS MARKS, as the drawing overlay is: while Edit text is
-          on, a press on an outlined block is the mode's, and nothing else holds
-          the pointer — the two modes share one slot and never mount together. */}
-      {editing === undefined || size === undefined ? null : (
+      {/* THE PAGE'S FORM FIELDS (ADR-0168), over the text, the links and the marks so a press on a field fills it, and
+          under the drawing overlay, which takes the press while a tool is on. Not while Edit text or Edit object holds
+          the page: there a press is the mode's. */}
+      {fields === undefined || size === undefined || onFillField === undefined || editing !== undefined ? null : (
+        <FormLayer
+          fields={fields}
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          onFill={onFillField}
+          page={page}
+        />
+      )}
+      {/* OVER THE TEXT AND ITS MARKS, as the drawing overlay is: while Edit text or
+          Edit object is on, a press on an outline is the mode's, and nothing else
+          holds the pointer — the modes share one slot and never mount together. */}
+      {editing === undefined || size === undefined ? null : editing.mode === 'objects' ? (
+        <ObjectEditPage
+          editing={editing}
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          page={page}
+        />
+      ) : (
         <TextEditPage
           paperAt={paperAt}
           editing={editing}
@@ -1713,6 +1838,17 @@ function PageSlot({
           drawnWith={drawnWith}
           page={page}
           tool={drawing.tool}
+        />
+      )}
+      {/* WORDS BEING TYPED, over everything else on the page: the box a person is typing in is what is in front. */}
+      {writing === undefined || size === undefined ? null : (
+        <InlineWriter
+          // A SECOND REQUEST IS A NEW EDITOR, never the first one's words and its answered state.
+          key={writing.id}
+          draft={writing.draft}
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          onDone={writing.onDone}
+          request={writing.request}
         />
       )}
     </div>

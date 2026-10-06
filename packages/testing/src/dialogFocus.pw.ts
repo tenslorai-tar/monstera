@@ -36,7 +36,9 @@ test('CONTROL: Tab onto its Close button, and that control draws its ring', asyn
   const popup = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
   await expect(popup).toBeFocused();
   await page.keyboard.press('Tab');
-  const close = popup.getByRole('button', { name: 'Close' });
+  // THE TITLE BAR'S CLOSE, the first stop after the popup. Named by its place: the footer has a Close of its own, which
+  // this case could not see while the host drew the chrome before the body had loaded.
+  const close = popup.locator('.m-dialog__header').getByRole('button', { name: 'Close' });
   await expect(close).toBeFocused();
   expect(await close.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('solid');
 });

@@ -4,11 +4,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { type ClientApi, createClient, type Incident, wrapHandlers } from '@monstera/contract';
+import {
+  type ClientApi,
+  createClient,
+  type Incident,
+  type OutlinedSignatureMark,
+  outlineOpCodes,
+  wrapHandlers,
+} from '@monstera/contract';
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import { extractPages } from '../pageExtract.js';
 import { applyPdfLibImage } from '../pdfLibWriter.js';
+import { prepareSignature } from '../signaturePlaceholder.js';
 import {
   parseAnnotationData,
   readInterchangeAnnotations,
@@ -23,14 +31,22 @@ import { accessFor, mupdfWriter } from '../mupdfWriter.js';
 import { placeStaged } from '../savePipeline.js';
 import { readSignatures } from '../signatureRead.js';
 import { composeWordDocument } from '../wordPictures.js';
+import { readAnnounced } from './announcedOutput.js';
 import { type EngineChannels, engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
 import { hostFilesystem } from './hostNodeSurfaces.js';
 import {
+  EngineCallFailed,
   type RemoteSessions,
   type SessionArea,
   createRemoteSessions,
+  remotePdfLibHost,
+  remoteSignatureHost,
+  type SessionAssets,
 } from './remoteEngine.js';
+import { PngPixelsRefused } from '../imageDimensions.js';
+import type { PlaceholderRequest } from '../signatureHole.js';
+import { SignatureAppearanceRefusedError } from '../signingRefusals.js';
 import {
   EngineOpenFailed,
   EngineSerialiseMismatch,
@@ -143,15 +159,10 @@ function realAreas(): FakeAreas {
     writeSnapshot: async (area, name, image) => {
       await writeFile(join(area.snapshotDirectory, name), image);
     },
-    takeOutput: async (area, name) => {
-      const path = join(area.outputDirectory, name);
-      const bytes = await readFile(path);
-      // DELETED ON THE WAY OUT. Every serialise is another whole copy of the
-      // user's document, and a save-heavy session would otherwise leave one per
-      // save in a directory the contained host may read.
-      await rm(path);
-      return new Uint8Array(bytes);
-    },
+    // THE APPLICATION'S OWN READ, so these cases cross the read main makes: held to the host's count before anything
+    // is read, and DELETED ON THE WAY OUT — every serialise is another whole copy of the user's document, and a
+    // save-heavy session would otherwise leave one per save in a directory the contained host may read.
+    takeOutput: (area, name, announced) => readAnnounced(join(area.outputDirectory, name), announced),
     moveOutput: async (area, name, destination) => {
       await rename(join(area.outputDirectory, name), destination);
       return (await stat(destination)).size;
@@ -235,6 +246,9 @@ function joined(
       pageLinks: () => {
         throw new Error('the lifecycle half must not read page links');
       },
+      linkAddress: () => {
+        throw new Error('the lifecycle half must not read a link address');
+      },
       pageFills: () => {
         throw new Error('the lifecycle half must not read page fills');
       },
@@ -266,6 +280,8 @@ function joined(
       extract: extractPages,
       // THE REAL pdf-lib RUN, for the same reason (ADR-0121 Decision 3): a hosted apply is this trip with a spec in it.
       applyPdfLib: applyPdfLibImage,
+      // AND THE SIGNATURE'S PLACEHOLDER, for pdf-lib's reason (ADR-0148).
+      prepareSignature,
       // AND THE REAL ONE FOR THE SAME REASON: a snapshot takes the identical
       // round trip through the granted area, and this file is where that trip
       // is driven end to end.
@@ -290,6 +306,9 @@ function joined(
       },
       annotationRecords: () => {
         throw new Error('the lifecycle half must not read annotation records');
+      },
+      annotationWords: () => {
+        throw new Error('the lifecycle half must not read annotation words');
       },
       signaturesKept: () => Promise.reject(new Error('the lifecycle half asks nothing about keeping signatures')),
     }),
@@ -330,6 +349,19 @@ function joined(
     held,
     open: (image: Uint8Array) => openAsSupervisor(client, sessions, areas, image),
     lifecycle: remoteMupdfLifecycle(client, sessions, areas),
+    // THE SIGNER'S HOST HALF, through the same client and areas, with assets written where the host reads them.
+    signer: remoteSignatureHost(client, sessions, areas, fileAssets(areas)),
+    // AND pdf-lib's, for the same reason: a hosted command's refusal crosses this same pipe.
+    pdfLib: remotePdfLibHost(client, sessions, areas, fileAssets(areas)),
+  };
+}
+
+/** Assets written where the host reads them, under names the areas mint. */
+function fileAssets(areas: FakeAreas): SessionAssets {
+  return {
+    name: areas.mintName,
+    write: (directory, name, bytes) => writeFile(join(directory, name), bytes),
+    remove: (directory, name) => rm(join(directory, name), { force: true }),
   };
 }
 
@@ -590,6 +622,9 @@ describe('remoteMupdfLifecycle', () => {
         pageLinks: () => {
           throw new Error('the byte-size case must not read page links');
         },
+        linkAddress: () => {
+          throw new Error('the byte-size case must not read a link address');
+        },
         pageFills: () => {
           throw new Error('the byte-size case must not read page fills');
         },
@@ -626,6 +661,9 @@ describe('remoteMupdfLifecycle', () => {
         applyPdfLib: () => {
           throw new Error('the byte-size case must not run pdf-lib');
         },
+        prepareSignature: () => {
+          throw new Error('the byte-size case must not prepare a signature');
+        },
         snapshot: () => {
           throw new Error('the byte-size case must not rasterise a page');
         },
@@ -647,6 +685,9 @@ describe('remoteMupdfLifecycle', () => {
         signaturesKept: () => Promise.reject(new Error('this case asks nothing about keeping signatures')),
         annotationRecords: () => {
           throw new Error('the byte-size case must not read annotation records');
+        },
+        annotationWords: () => {
+          throw new Error('the byte-size case must not read annotation words');
         },
       }),
       () => undefined,
@@ -813,7 +854,9 @@ describe('remoteMupdfLifecycle', () => {
 
     const shortened: FakeAreas = {
       ...areas,
-      takeOutput: async (area, name) => (await areas.takeOutput(area, name)).slice(0, 10),
+      // A SURFACE THAT IGNORES THE COUNT, answering fewer bytes than announced: `takeAnnounced`'s own check is what
+      // refuses it, so a surface that does not hold the bound is still not trusted.
+      takeOutput: async (area, name, announced) => (await areas.takeOutput(area, name, announced)).slice(0, 10),
     };
     const { lifecycle: lying, open: openLying } = joined(shortened);
     const other = await openLying(flat);
@@ -873,7 +916,7 @@ describe('remoteMupdfLifecycle', () => {
     const destination = join(await mkdtemp(join(tmpdir(), 'monstera-lifecycle-')), 'words.docx');
     mintedRoots.push(join(destination, '..'));
 
-    const staged = await lifecycle.word(session, 'layout');
+    const staged = await lifecycle.word(session, 'layout', [0]);
     // CONTROL: the package is IN the output directory until placed, so the emptiness below is the move's doing.
     expect(await readdir(output)).toHaveLength(1);
     await placeStaged(staged, destination);
@@ -940,5 +983,112 @@ describe('remoteMupdfLifecycle', () => {
     expect(await exists(two?.snapshotDirectory ?? '')).toBe(true);
 
     await lifecycle.close(second);
+  });
+});
+
+describe("a signature's placeholder, prepared in the host and taken by main (ADR-0148)", () => {
+  afterEach(async () => {
+    while (mintedRoots.length > 0) {
+      const root = mintedRoots.pop();
+      if (root !== undefined) await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  const RECT = { x0: 10, y0: 10, x1: 110, y1: 60 };
+  // A TYPED NAME as the renderer sends it, an outline (ADR-0150).
+  const typed: OutlinedSignatureMark = {
+    kind: 'outlined',
+    text: 'Grace Hopper',
+    font: 'courier-prime',
+    outline: { ops: outlineOpCodes('MLLLZ'), points: [0, 100, 1000, 100, 1000, 400, 0, 400], frame: [0, 0, 1000, 500] },
+  };
+
+  it("prepares the placeholder beside the session, and main TAKES the file out of the host's area", async () => {
+    const areas = realAreas();
+    const { open, signer, lifecycle } = joined(areas);
+    const session = await open(flat);
+    const area = areas.made[0];
+    if (area === undefined) throw new Error('the fixture made no area');
+
+    const prepared = await signer(session, { kind: 'signDocument', appearance: { page: 0, rect: RECT, mark: typed } });
+    const [start, holeStart, holeEnd, rest] = prepared.byteRange;
+    expect(start).toBe(0);
+    expect(holeEnd + rest).toBe(prepared.bytes.byteLength);
+    expect(Buffer.from(prepared.bytes.subarray(holeStart, holeEnd)).toString('latin1')).toBe(`<${'0'.repeat(8192 * 2)}>`);
+    // NOTHING LEFT WHERE THE HOST CAN WRITE: the prepared file was taken, not copied, so a host writing to that name
+    // afterwards writes to nothing main signs.
+    expect(await readdir(area.outputDirectory)).toStrictEqual([]);
+    await lifecycle.close(session);
+  });
+
+  it('a REFUSAL a person can act on keeps its class across the pipe, the picture having crossed as an asset', async () => {
+    const areas = realAreas();
+    const { open, signer, lifecycle } = joined(areas);
+    const session = await open(flat);
+    const area = areas.made[0];
+    if (area === undefined) throw new Error('the fixture made no area');
+    const before = await readdir(area.snapshotDirectory);
+    const picture = (bytes: Uint8Array, mediaType: 'image/jpeg' | 'image/png'): PlaceholderRequest => ({
+      kind: 'signDocument',
+      appearance: { page: 0, rect: RECT, mark: { kind: 'image', bytes, mediaType } },
+    });
+
+    // NOT A JPEG: the host decoded what it was sent and refused it, which it can only do if the asset arrived — a
+    // missing one is `asset-missing`, a different code and no appearance refusal at all.
+    const unreadable = signer(session, picture(Uint8Array.of(1, 2, 3), 'image/jpeg'));
+    await expect(unreadable).rejects.toBeInstanceOf(SignatureAppearanceRefusedError);
+    await expect(unreadable).rejects.toMatchObject({ reason: 'unreadable-image' });
+
+    // A PNG HEADER CLAIMING 12,000 × 12,000, refused by the pixel rule before a decoder runs.
+    const header = new Uint8Array(29);
+    header.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    new DataView(header.buffer).setUint32(16, 12_000);
+    new DataView(header.buffer).setUint32(20, 12_000);
+    const tooLarge = signer(session, picture(header, 'image/png'));
+    await expect(tooLarge).rejects.toBeInstanceOf(PngPixelsRefused);
+    await expect(tooLarge).rejects.toMatchObject({ reason: 'too-many-pixels' });
+
+    // CONTROL: a page the document does not have is the DOCUMENT's failure, and comes back as the host's, not as
+    // something a person could fix by choosing another picture.
+    const elsewhere = signer(session, { kind: 'signDocument', appearance: { page: 9, rect: RECT, mark: typed } });
+    await expect(elsewhere).rejects.toBeInstanceOf(EngineCallFailed);
+    await expect(elsewhere).rejects.toMatchObject({ code: 'apply-failed' });
+
+    // EACH ASSET WAS REMOVED, and nothing the host might have written is left in its output directory.
+    expect(await readdir(area.snapshotDirectory)).toStrictEqual(before);
+    expect(await readdir(area.outputDirectory)).toStrictEqual([]);
+    await lifecycle.close(session);
+  });
+});
+
+describe('a hosted pdf-lib command’s refusal, across the pipe (ADR-0121 Decision 3)', () => {
+  afterEach(async () => {
+    while (mintedRoots.length > 0) {
+      const root = mintedRoots.pop();
+      if (root !== undefined) await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('a page image past the PIXEL bound arrives in main as that refusal, not as the host failing', async () => {
+    // `documentCommands.insertImage` answers *too many pixels* only for this class; anything else it answers as an
+    // unreadable picture, which blames a valid one. The rule runs in the host since pdf-lib moved there.
+    const areas = realAreas();
+    const { open, pdfLib, lifecycle } = joined(areas);
+    const session = await open(flat);
+    const header = new Uint8Array(29);
+    header.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    new DataView(header.buffer).setUint32(16, 12_000);
+    new DataView(header.buffer).setUint32(20, 12_000);
+    const refused = pdfLib(session, { kind: 'insertImagePage', at: 0, bytes: header, mediaType: 'image/png' }, undefined);
+    await expect(refused).rejects.toBeInstanceOf(PngPixelsRefused);
+    await expect(refused).rejects.toMatchObject({ reason: 'too-many-pixels' });
+    // CONTROL: bytes that are no picture at all are the command's failure, as before.
+    const unreadable = pdfLib(
+      session,
+      { kind: 'insertImagePage', at: 0, bytes: Uint8Array.of(1, 2, 3), mediaType: 'image/jpeg' },
+      undefined,
+    );
+    await expect(unreadable).rejects.toBeInstanceOf(EngineCallFailed);
+    await lifecycle.close(session);
   });
 });

@@ -5,7 +5,7 @@ import type * as mupdf from './mupdfRaw.js';
 import { BoundedList } from './boundedList.js';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
-import { ENGINE_LINK_URI_MAX, ENGINE_PAGE_LINKS_MAX } from './host/engineChannels.js';
+import { ENGINE_LINK_ADDRESS_MAX, ENGINE_LINK_URI_MAX, ENGINE_PAGE_LINKS_MAX } from './host/engineChannels.js';
 import { withDocument } from './mupdfWriter.js';
 import { shownName } from './shownName.js';
 import { frameOf, placedRect, touchesPage } from './pageAnnotations.js';
@@ -90,6 +90,36 @@ export function readPageLinks(session: MupdfSession, page: number, bound = ENGIN
     const pageCount = document.countPages();
     pageInDocument(page, pageCount);
     return linksOn(document, page, bound);
+  });
+}
+
+/** What {@link readLinkAddress} answers: the address, or why there is none to follow. */
+export type LinkAddress =
+  | { readonly kind: 'address'; readonly uri: string }
+  /** No link at that place on the page, or one that goes inside the document. */
+  | { readonly kind: 'no-such-link' }
+  /** An address past {@link ENGINE_LINK_ADDRESS_MAX}, which is not opened rather than opened cut. */
+  | { readonly kind: 'too-long' };
+
+/**
+ * One external link's address, in full, by its place among the page's links (ADR-0167 Decision 3).
+ *
+ * The place is the position {@link readPageLinks} lists it at, which is MuPDF's own order for `getLinks`, so the two
+ * reads name one link by one number. The address is NOT shortened as the listing's is: a person who asked to follow
+ * a tracking link gets the link the document holds, or, past {@link ENGINE_LINK_ADDRESS_MAX}, nothing opened.
+ */
+export function readLinkAddress(session: MupdfSession, page: number, index: number): Promise<LinkAddress> {
+  return withDocument(session, (document) => {
+    pageInDocument(page, document.countPages());
+    const links = document.loadPage(page).getLinks();
+    try {
+      const link = links[index];
+      if (link?.isExternal() !== true) return { kind: 'no-such-link' };
+      const uri = link.getURI();
+      return uri.length > ENGINE_LINK_ADDRESS_MAX ? { kind: 'too-long' } : { kind: 'address', uri };
+    } finally {
+      for (const link of links) link.destroy();
+    }
   });
 }
 
@@ -281,8 +311,8 @@ function linksOn(document: mupdf.PDFDocument, page: number, bound: number): List
       const [x0, y0, x1, y1] = link.getBounds();
       const bounds: LinkBounds = { x0, y0, x1, y1 };
       // SHOWN SHORTENED, never refused: one tracking link past the wire's bound made every link on the page
-      // unreadable (`shownName.ts`). Nothing follows this text — the Links panel shows an external link and offers
-      // nothing to press (invariant 24) — so the ellipsis is the whole of what a shortened URI changes.
+      // unreadable (`shownName.ts`). Nothing follows THIS text: a link a person follows is read again in full by its
+      // place, through `engine/link-address` (ADR-0167), so the ellipsis changes only what is shown.
       // RESOLVED HERE when internal, because the engine is the only thing that knows how to turn a destination into
       // a page — a named destination, an explicit /XYZ, or a page reference all arrive as one string and all mean a
       // page.

@@ -29,6 +29,17 @@ describe('the registered settings', () => {
     expect(marked).toStrictEqual([...SECRET_SETTING_IDS].sort());
   });
 
+  it('names every setting with a title of its own', () => {
+    // ONE NAME, ONE SETTING: a title is how a setting is named in the dialog, its search and an exported file, so two
+    // under one title are one name for two things — found when the tips' remembered round took the switch's.
+    const byTitle = new Map<string, string[]>();
+    for (const setting of ALL_SETTINGS) byTitle.set(setting.title, [...(byTitle.get(setting.title) ?? []), setting.id]);
+    const shared = [...byTitle.values()].filter((ids) => ids.length > 1);
+    expect(shared).toStrictEqual([]);
+    // CONTROL: the map holds every setting, so an empty answer is not an empty walk.
+    expect([...byTitle.values()].flat()).toHaveLength(ALL_SETTINGS.length);
+  });
+
   it('constructs as a registry, which refuses an enumerated setting not titled exactly', () => {
     // THE PRODUCTION SET, through the production check: `main.tsx` builds this
     // registry at startup, so a title missing here is a crash on launch rather
@@ -52,9 +63,12 @@ describe('the registered settings', () => {
     // bar's own grip and Window › Reset Float bar position — a pair of number boxes here would place it blind.
     // EACH PROVIDER'S CHOSEN MODEL LEFT THIS LIST the day it arrived (ADR-0117, corrected 2026-09-28): its control is
     // declared, and lists what main already holds, so a props-only dialog draws it without fetching.
+    // AND THE TIPS SHOWN THIS ROUND (ADR-0159), a list of tip ids whose control is the tips themselves; the person's
+    // choice is the switch beside it, which is a row.
     expect(excluded).toStrictEqual([
       'appearance.accent',
       'appearance.float-bar-position',
+      'appearance.tips-shown',
       'editing.personal-dictionary',
       'keyboard.shortcuts',
     ]);

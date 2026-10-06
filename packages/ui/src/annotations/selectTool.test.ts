@@ -1,4 +1,4 @@
-import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
+import type { AnnotationRect, AnnotationWordsStyle, DispatchableCommand } from '@monstera/contract';
 import { asDocVersion, viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -38,6 +38,13 @@ const PLAIN = { colour: [1, 0, 0], opacity: 1, borderWidth: 2 } as const;
  */
 const CARRIED = { style: PLAIN, kind: 'square', contents: '', author: '', created: null, blend: 'normal' } as const;
 
+/** What a reopen needs, REFUSING BY NAME: these cases select, and a case that reached the page writer fails at it. */
+const NO_REOPEN = {
+  write: () => Promise.reject(new Error('this case types nothing')),
+  wordsOf: () => Promise.reject(new Error('this case reads no words')),
+  ask: () => Promise.reject(new Error('this case opens no dialog')),
+} as const;
+
 /** PDF x 60–100, y 350–390 — screen (20,20) to (100,100). */
 const A_RECT: AnnotationRect = { x0: 60, y0: 350, x1: 100, y1: 390 };
 const A: ErasableAnnotation = { page: 3, index: 1, rect: A_RECT, ...CARRIED };
@@ -58,6 +65,7 @@ function selecting(
 } {
   const chosen: (AnnotationSelection | undefined)[] = [];
   const tool = selectTool({
+    ...NO_REOPEN,
     annotations: () =>
       Promise.resolve(annotations === undefined ? undefined : { version: VERSION, annotations }),
     onSelect: (selection) => {
@@ -151,6 +159,7 @@ describe('selectTool', () => {
     // version bump behind a click that was only meant to point at something —
     // and would then invalidate the selection it had just made.
     const tool = selectTool({
+      ...NO_REOPEN,
       annotations: () => Promise.resolve({ version: VERSION, annotations: [A] }),
       onSelect: () => undefined,
       selected: () => undefined,
@@ -161,6 +170,7 @@ describe('selectTool', () => {
 
   it('previews the marquee once the gesture is one, and not before', () => {
     const tool = selectTool({
+      ...NO_REOPEN,
       annotations: () => Promise.resolve(undefined),
       onSelect: () => undefined,
       selected: () => undefined,
@@ -168,8 +178,8 @@ describe('selectTool', () => {
     const started = tool.controller.begin(viewportPoint(10, 10));
     // BELOW THE THRESHOLD the gesture is still a click, and a one-pixel
     // rectangle under the pointer would show a region about to be ignored.
-    expect(tool.controller.preview(tool.controller.update(started, viewportPoint(12, 10)))).toBeUndefined();
-    expect(tool.controller.preview(tool.controller.update(started, viewportPoint(60, 50)))).toStrictEqual({
+    expect(tool.controller.preview(tool.controller.update(started, viewportPoint(12, 10)), 3, overlayTransform(PAGE))).toBeUndefined();
+    expect(tool.controller.preview(tool.controller.update(started, viewportPoint(60, 50)), 3, overlayTransform(PAGE))).toStrictEqual({
       shape: 'rect',
       x: 10,
       y: 10,
@@ -231,6 +241,46 @@ describe('selectTool', () => {
     });
   });
 
+  it('PREVIEWS a move and a resize where the release will put the marks (ADR-0166) — CONTROL: a marquee stays one', () => {
+    const selected = {
+      page: 3,
+      version: VERSION,
+      items: [
+        { index: 1, rect: A_RECT, ...CARRIED },
+        { index: 2, rect: B_RECT, ...CARRIED },
+      ],
+    };
+    const tool = selectTool({
+      ...NO_REOPEN,
+      annotations: () => Promise.resolve({ version: VERSION, annotations: [A, B] }),
+      onSelect: () => undefined,
+      selected: () => selected,
+    });
+    const { controller } = tool;
+    const previewOf = (from: readonly [number, number], to: readonly [number, number]): unknown =>
+      controller.preview(
+        controller.update(controller.begin(viewportPoint(from[0], from[1])), viewportPoint(to[0], to[1])),
+        3,
+        overlayTransform(PAGE),
+      );
+    // A MOVE, from inside A: BOTH boxes, each 20 px right of where it is — A at (20,20)–(100,100), B at
+    // (220,420)–(300,500). The box from the press to the pointer, (40,40)–(60,40), is what was drawn before.
+    expect(previewOf([40, 40], [60, 40])).toStrictEqual({
+      shape: 'boxes',
+      boxes: [
+        { x: 40, y: 20, width: 80, height: 80 },
+        { x: 240, y: 420, width: 80, height: 80 },
+      ],
+    });
+    // A RESIZE by A's bottom-right corner to (140, 140): A alone, its top-left kept.
+    expect(previewOf([100, 100], [140, 140])).toStrictEqual({
+      shape: 'boxes',
+      boxes: [{ x: 20, y: 20, width: 120, height: 120 }],
+    });
+    // CONTROL: a drag that starts on neither is a marquee, drawn as the box it sweeps.
+    expect(previewOf([150, 150], [190, 180])).toStrictEqual({ shape: 'rect', x: 150, y: 150, width: 40, height: 30 });
+  });
+
   it('resizes only that one, even when several are selected', async () => {
     // Grabbing a handle means *make this that size*. Scaling four marks from one
     // corner is a different operation, and nobody asked for it by taking hold of
@@ -274,8 +324,39 @@ describe('selectTool', () => {
     expect(await drag([40, 40], [60, 40])).toBeUndefined();
   });
 
+  it('a DOUBLE-CLICK on a text mark opens its words in its own box and sends the edit; on a square it opens nothing', async () => {
+    // The first click has selected the mark; the second, with no gesture in flight, is `reopen` (ADR-0154
+    // Decision 3). The square is the control: a mark whose words are its comment is Edit comment's, so the same
+    // double-click there must ask the page for nothing.
+    const typed: AnnotationWordsStyle = { fontSize: 11, colour: [0, 0, 0], font: 'sans', direction: 'left-to-right' };
+    const words: ErasableAnnotation = { ...A, kind: 'typewriter', contents: 'Due Friday', typed };
+    const asked: unknown[] = [];
+    const tool = selectTool({
+      ...NO_REOPEN,
+      write: (request) => {
+        asked.push(request);
+        return Promise.resolve('Due Monday');
+      },
+      wordsOf: (mark) => Promise.resolve({ kind: 'words', text: mark.contents }),
+      annotations: () => Promise.resolve({ version: VERSION, annotations: [words, B] }),
+      onSelect: () => undefined,
+      selected: () => undefined,
+    });
+    expect(await tool.controller.reopen(viewportPoint(40, 40), 3, overlayTransform(PAGE))).toStrictEqual({
+      kind: 'editAnnotationText',
+      page: 3,
+      index: 1,
+      text: 'Due Monday',
+      version: VERSION,
+    });
+    expect(asked).toMatchObject([{ box: A_RECT, initial: 'Due Friday', style: typed }]);
+    expect(await tool.controller.reopen(viewportPoint(260, 460), 3, overlayTransform(PAGE))).toBeUndefined();
+    expect(asked).toHaveLength(1);
+  });
+
   it('claims the id its command selects', () => {
     const tool = selectTool({
+      ...NO_REOPEN,
       annotations: () => Promise.resolve(undefined),
       onSelect: () => undefined,
       selected: () => undefined,

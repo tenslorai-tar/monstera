@@ -36,8 +36,36 @@ export interface PrintChoice {
 
 /** The system print dialog, or null where there is none. */
 export interface PrintDestination {
-  /** Shows the dialog for a document of `pageCount` pages; null when it is dismissed. */
-  readonly choose: (pageCount: number) => PrintChoice | null;
+  /**
+   * Shows the dialog for a document of `pageCount` pages, its own *Pages* starting on `start` (zero-based, the
+   * application's page row; ADR-0161 Decision 3); null when it is dismissed.
+   */
+  readonly choose: (pageCount: number, start: readonly number[]) => PrintChoice | null;
+}
+
+/**
+ * What the system dialog is told about the pages, from the application's choice (ADR-0161 Decision 3).
+ *
+ * - `all`: every page was chosen, so the dialog starts on *All*.
+ * - `ranges`: its own *Pages*, one-based and inclusive as it shows them, which it then answers.
+ * - `fixed`: more runs than the dialog can hold, so it offers no page choice of its own, and these pages print.
+ */
+export type PrintStart =
+  | { readonly kind: 'all' }
+  | { readonly kind: 'ranges'; readonly ranges: readonly { readonly from: number; readonly to: number }[] }
+  | { readonly kind: 'fixed'; readonly pages: readonly number[] };
+
+/** The {@link PrintStart} for a choice of zero-based pages in a document of `pageCount`, given the dialog's limit. */
+export function printStart(pageCount: number, start: readonly number[], maxRanges: number): PrintStart {
+  const pages = [...new Set(start)].filter((page) => page >= 0 && page < pageCount).sort((one, two) => one - two);
+  if (pages.length === 0 || pages.length === pageCount) return { kind: 'all' };
+  const ranges: { from: number; to: number }[] = [];
+  for (const page of pages) {
+    const last = ranges.at(-1);
+    if (last?.to === page) last.to = page + 1;
+    else ranges.push({ from: page + 1, to: page + 1 });
+  }
+  return ranges.length > maxRanges ? { kind: 'fixed', pages } : { kind: 'ranges', ranges };
 }
 
 /** Raised when the printer refuses a step of a document; the document was abandoned. */

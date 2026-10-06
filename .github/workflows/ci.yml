@@ -175,8 +175,10 @@ jobs:
       - name: Typecheck and build
         run: npm run build
 
+      # `npm run lint`'s own script, by path through the wrapper, so a failing unit's report is a public annotation
+      # (`annotateCoverage.mjs`). The runner is where ESLint is invoked; this names the runner (ADR-0170).
       - name: Lint
-        run: npm run lint
+        run: node scripts/ci/annotate.mjs scripts/lib/lintcheck.mjs
 
       # A boundary that lints clean may simply be matching no files. This
       # violates every boundary on purpose and fails if any is permitted.
@@ -343,6 +345,15 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/pdfiumObject.proof.mjs
           ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
 
+      # Every PDFium command on a page carrying Type 3 text, which PDFium's
+      # generation drops: each must refuse at the read-back and save nothing,
+      # and each has a control that must be saved (ADR-0169). Both legs, for
+      # the reason above.
+      - name: Prove a PDFium rewrite is saved only when it reads back as edited
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/pdfiumReadBack.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+
       # BUILD-PROMPT.md:706's owed fidelity proof. The corpus is not here, so its
       # corpus half reports UNVERIFIABLE and exits 0; the half that runs on every
       # runner is the load-bearing one — a constructed page whose untouched save
@@ -362,6 +373,19 @@ jobs:
         run: >
           node scripts/ci/annotate.mjs scripts/proofs/inlineImages.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
+
+      # ADR-0171's addendum. The shim's two readers of a document's content,
+      # the inline-image keeper and Optimize's rewriter, open an encrypted
+      # document with its password: without it the keeper found nothing and
+      # the rewriter wrote a copy with no page. The keeper is run with the
+      # user password, the owner password, none and a wrong one, the rewriter
+      # with the user password and none, against controls that the fixtures
+      # need a password and that an unencrypted page needs none. The shim
+      # only, so Windows requires it.
+      - name: Prove the shim opens an encrypted document with its password
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/shimPassword.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-shim' || '' }}
 
       # THE WORD EXPORT CARRIES THE PAGE'S PICTURES (ADR-0072's amendment of
       # 2026-10-01): inline in reading order, at their box in the exact layout,
@@ -623,14 +647,16 @@ jobs:
         run: node scripts/ci/annotate.mjs scripts/proofs/typecheck.proof.mjs
 
       # The same gap, one gate along, and it cost a red board rather than being
-      # reasoned about: `npm run lint` is not a `check:*` name and not a `node`
-      # command line either, so the rule set governing every line of this
-      # repository was outside the sweep that runs before every push. 7ba978c
-      # added four ordinary lint errors, `npm run local -- --only check:`
-      # reported 14 of 14 passed, and CI failed at "Lint" on all three jobs.
+      # reasoned about: `npm run lint` is not a `check:*` name, so the rule set
+      # governing every line of this repository was outside the sweep that runs
+      # before every push. 7ba978c added four ordinary lint errors, `npm run
+      # local -- --only check:` reported 14 of 14 passed, and CI failed at "Lint"
+      # on all three jobs. `check:lint` names the same runner as `lint`.
       #
-      # Drives the real linter against fixture trees with their own flat config,
-      # so it needs node_modules and belongs in this job rather than with Guards.
+      # The runner is also the lint's memory guard (ADR-0170): one process per
+      # unit under one heap budget, each unit's peak printed in the Lint step.
+      # This drives it against fixture trees with their own flat config, so it
+      # needs node_modules and belongs in this job rather than with Guards.
       - name: Prove the lint runner separates a violating tree from a clean one
         run: node scripts/ci/annotate.mjs scripts/proofs/lintcheck.proof.mjs
 
@@ -875,6 +901,14 @@ jobs:
       - name: Unit tests
         run: node scripts/ci/annotate.mjs --npm test
 
+      # THE SAME KERNEL SUITE IN THE RUNTIME THE ENGINE HOSTS RUN IN: the pinned Electron binary with
+      # ELECTRON_RUN_AS_NODE=1. `npm test` runs plain Node, which permits what Electron refuses at a native boundary;
+      # `getPixels` made a view over native memory, every kernel test passed, and Deskew, Enhance scans, Straighten
+      # scans and Read barcodes killed the host in the application. Node mode needs no display, so it runs on both legs
+      # (measured on Linux without xvfb, 2026-10-03), and --require-electron makes a missing binary or engine red.
+      - name: The kernel's tests pass in the engine hosts' runtime
+        run: node scripts/ci/annotate.mjs scripts/proofs/hostRuntime.proof.mjs --require-electron
+
       # §10.4'S MANDATED GATE: "axe-core running on every Playwright-rendered
       # screen from Stage 0, with zero serious violations". BUILD-PROMPT.md:768
       # names the same vehicle against the browser shim.
@@ -1063,8 +1097,9 @@ jobs:
       - name: Typecheck and build
         run: npm run build
 
+      # Through the wrapper, for the matrix job's reason.
       - name: Lint
-        run: npm run lint
+        run: node scripts/ci/annotate.mjs scripts/lib/lintcheck.mjs
 
       - name: Tests
         run: npm test

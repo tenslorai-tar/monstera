@@ -6,12 +6,21 @@ import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
-import { type SceneShim, openApp, openDocument, openSection, runCommand, samplePdf, shoot } from './helpScreensHarness.js';
+import {
+  SAMPLE_DOC_ID,
+  type SceneShim,
+  openApp,
+  openDocument,
+  openSection,
+  runCommand,
+  samplePdf,
+  shoot,
+} from './helpScreensHarness.js';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 /** The id `openApp` gives the sample document, so a scene that swaps the bytes keeps the same tab. */
-const SAMPLE_ID = asDocId('00000000-0000-4000-8000-0000000000a1');
+const SAMPLE_ID = asDocId(SAMPLE_DOC_ID);
 
 /**
  * The shim options that open `bytes` as the one document, under `name`, in place of the sample — for a scene whose
@@ -212,10 +221,10 @@ test('add-a-text-box-1', async ({ page }) => {
   // THROUGH THE PALETTE: at 1280 wide the Markup group folds Text box into its More.
   await runCommand(page, 'Text box');
   await dragOnPage(page, [360, 20], [540, 80]);
-  const dialog = page.getByRole('dialog', { name: 'Text box' });
-  await dialog.getByLabel('Text').fill('See figure 3');
-  // THE DIALOG ALONE: the modal blurs the page behind it, the box drawn included.
-  await shoot(page, 'add-a-text-box-1', dialog);
+  // TYPED WHERE THE WORDS GO (ADR-0154): the box drawn holds the caret, and the words are set as the page will set them.
+  const box = page.getByRole('textbox', { name: 'Text box' });
+  await box.fill('See figure 3');
+  await shootAround(page, 'add-a-text-box-1', [box], 48);
 });
 
 test('add-a-note-1', async ({ page }) => {
@@ -224,10 +233,10 @@ test('add-a-note-1', async ({ page }) => {
   await openSection(page, 'Comment');
   await runCommand(page, 'Note');
   await clickOnPage(page, [520, 60]);
-  const dialog = page.getByRole('dialog', { name: 'Note' });
-  await dialog.getByLabel('Comment').fill('Check this figure');
-  // THE DIALOG ALONE: the modal blurs the page behind it, and the note's icon is drawn only once it is added.
-  await shoot(page, 'add-a-note-1', dialog);
+  // ITS BOX OPENS WHERE IT WAS CLICKED (ADR-0154), a card on the page; the note's icon is drawn once it is added.
+  const box = page.getByRole('textbox', { name: 'Comment' });
+  await box.fill('Check this figure');
+  await shootAround(page, 'add-a-note-1', [box], 48);
 });
 
 test('add-links-1', async ({ page }) => {
@@ -236,9 +245,10 @@ test('add-links-1', async ({ page }) => {
   await openSection(page, 'Comment');
   await page.getByRole('button', { name: 'Web link', exact: true }).click();
   await dragOnPage(page, [72, 122], [300, 136]);
-  const dialog = page.getByRole('dialog', { name: 'Link to a web address' });
-  await dialog.getByLabel('Address').fill('https://example.com');
-  await shoot(page, 'add-links-1', dialog);
+  // TYPED BESIDE THE REGION DRAWN (ADR-0154): a line under the box, in the application's own field.
+  const line = page.getByRole('textbox', { name: 'Address' });
+  await line.fill('https://example.com');
+  await shootAround(page, 'add-links-1', [line], 48);
 });
 
 /** The four places to write on {@link formPdf}'s page, in PDF user space: the label, and the ruled line after it. */
@@ -390,9 +400,10 @@ test('create-form-fields-1', async ({ page }) => {
   await runCommand(page, 'Draw a text field');
   // ALONG THE FULL NAME LINE, which sits 154 points down the page.
   await dragOnPage(page, [180, 140], [520, 156]);
-  const dialog = page.getByRole('dialog', { name: 'New text field' });
-  await dialog.getByLabel('Field name').fill('full_name');
-  await shoot(page, 'create-form-fields-1', dialog);
+  // NAMED BESIDE THE BOX DRAWN (ADR-0154), in a line under it.
+  const line = page.getByRole('textbox', { name: 'Field name' });
+  await line.fill('full_name');
+  await shootAround(page, 'create-form-fields-1', [line], 48);
 });
 
 test('detect-form-fields-1', async ({ page }) => {
@@ -441,13 +452,23 @@ test('edit-page-objects-1', async ({ page }) => {
   await openApp(page, { ...openedAs(await logoPdf(), 'Annual report.pdf'), pageObjects: await logoPageObjects() });
   await openDocument(page);
   await openSection(page, 'Edit');
-  await runCommand(page, 'Edit an object on page');
-  const dialog = page.getByRole('dialog', { name: 'Edit an object on this page' });
-  await dialog.getByRole('radio', { name: /^Image/u }).check();
-  // THE DIALOG'S BODY SCROLLS at this window's height: brought to its foot, the picked image and every action on it
-  // are in view together.
-  await dialog.getByRole('button', { name: 'Remove from page' }).scrollIntoViewIfNeeded();
-  await shoot(page, 'edit-page-objects-1', dialog);
+  // THE MODE ON THE PAGE (ADR-0153): every object outlined where it is, and the logo selected with its handles.
+  await page.getByRole('button', { name: 'Edit object' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Edit all objects' }).click();
+  const layer = page.getByRole('group', { name: 'Objects on page 1' });
+  const logo = layer.locator('[data-object="content:23"]');
+  await logo.click();
+  await expect(logo).toHaveAttribute('aria-pressed', 'true');
+  // FRAMED ON WHAT THE ARTICLE NAMES: the outlined title, the selected logo with its handles, and the Properties tab
+  // saying what is selected — the whole page is taller than the window and says nothing more.
+  const named = page.locator('.m-properties__head').first();
+  await expect(named.getByRole('heading', { name: 'Object' })).toBeVisible();
+  await shootAround(page, 'edit-page-objects-1', [
+    layer.locator('[data-object="content:0"]'),
+    layer.locator('[data-object="content:5"]'),
+    logo,
+    named,
+  ]);
 });
 
 /** A ribbon group, by its caption. */
@@ -553,6 +574,7 @@ test('delete-form-fields-1', async ({ page }) => {
     on: null,
     options: [],
     readOnly: false,
+    multiline: false,
     rect: { x0: 180, y0: y - 2, x1: 520, y1: y + 14 },
   });
   await openApp(page, {

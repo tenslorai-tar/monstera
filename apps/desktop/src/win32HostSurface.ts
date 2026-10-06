@@ -46,7 +46,7 @@
  * surface.
  */
 
-import { readFileSync, rmSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 
 import {
   type IntegrityReading,
@@ -73,6 +73,7 @@ import type {
   ProcessHandle,
   ThreadHandle,
 } from './engineHostFactory.js';
+import { readDiagnosticHead } from './diagnosticHead.js';
 import type { ConverterSurface, ExitReading } from './externalConverter.js';
 
 /**
@@ -1069,15 +1070,11 @@ export function createWin32HostSurface(config: Win32HostSurfaceConfig): Converte
     // The file is opened `FILE_SHARE_READ_WRITE` and main's own copy of the
     // handle is closed straight after `CreateProcessW`, so this reads while the
     // host is alive and still holds it.
-    diagnostics: (): string | null => {
-      if (config.diagnosticPath === null) return null;
-      try {
-        const text = readFileSync(config.diagnosticPath, 'utf8').trim();
-        return text.length === 0 ? null : text;
-      } catch {
-        return null;
-      }
-    },
+    //
+    // THE HEAD, BOUNDED (CR-SEC-12): the log is the one file a contained program writes that main read with no byte
+    // bound, and what it says is quoted into a failure's detail.
+    diagnostics: (): string | null =>
+      config.diagnosticPath === null ? null : readDiagnosticHead(config.diagnosticPath),
 
     discardDiagnostics: (): void => {
       if (config.diagnosticPath === null) return;

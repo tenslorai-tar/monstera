@@ -2,7 +2,7 @@ import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
 
 import { HORIZONTAL_RULER_LABEL, VERTICAL_RULER_LABEL } from './messages/en.js';
-import { type RulerSpan, type RulerUnit, spanTicks } from './rulerGeometry.js';
+import { type RulerRun, type RulerSpan, type RulerUnit, pageRuns } from './rulerGeometry.js';
 
 /**
  * The two rulers along the scroller's top and left edge.
@@ -21,11 +21,18 @@ import { type RulerSpan, type RulerUnit, spanTicks } from './rulerGeometry.js';
  *
  * ## Aligned to EACH PAGE'S zero, not the scroller's
  *
- * Every page on screen is a span along the ruler, and each span's `0` is on that
+ * Every page on screen is a run along the ruler, and each run's `0` is on that
  * page's corner, so the numbers are page coordinates — which is what a person
  * is measuring. A ruler zeroed on the viewport would change meaning every time
  * the window moved; one zeroed on the first page reads arithmetic on every page
- * after it ({@link spanTicks}).
+ * after it ({@link pageRuns}).
+ *
+ * ## A scroll moves each page's run and redraws no mark
+ *
+ * A run is one element placed at its page's start, and its marks are placed from the PAGE'S zero, so they are the same
+ * at every scroll position and React keeps every one of them: a scroll changes one style per page on screen. Marks
+ * placed from the ruler's start were keyed by that scrolled offset, so every mark was removed and inserted again on
+ * every frame of a scroll (`pageRuns`, measured there).
  *
  * The two rulers start where the scroller starts — the horizontal one above it,
  * the vertical one beside it — so an offset measured from the scroller's box is
@@ -57,37 +64,51 @@ export function Rulers({
   readonly down: readonly RulerSpan[];
 }): ReactElement {
   const { i18n } = useLingui();
-  const across = spanTicks(acrossSpans, size.width, unit, zoom);
-  const down = spanTicks(downSpans, size.height, unit, zoom);
 
   return (
     <>
-      <div
-        className="m-ruler m-ruler-h"
-        role="img"
-        aria-label={i18n._(HORIZONTAL_RULER_LABEL)}
-      >
-        {across.map((tick) => (
-          <span
-            key={`${String(tick.span)}:${String(tick.offset)}`}
-            className={tick.major ? 'm-tick m-tick-major' : 'm-tick'}
-            style={{ insetInlineStart: `${String(tick.offset)}px` }}
-          >
-            {tick.label}
-          </span>
-        ))}
+      <div className="m-ruler m-ruler-h" role="img" aria-label={i18n._(HORIZONTAL_RULER_LABEL)}>
+        <Runs axis="inline" runs={pageRuns(acrossSpans, size.width, unit, zoom)} />
       </div>
       <div className="m-ruler m-ruler-v" role="img" aria-label={i18n._(VERTICAL_RULER_LABEL)}>
-        {down.map((tick) => (
-          <span
-            key={`${String(tick.span)}:${String(tick.offset)}`}
-            className={tick.major ? 'm-tick m-tick-major' : 'm-tick'}
-            style={{ insetBlockStart: `${String(tick.offset)}px` }}
-          >
-            {tick.label}
-          </span>
-        ))}
+        <Runs axis="block" runs={pageRuns(downSpans, size.height, unit, zoom)} />
       </div>
+    </>
+  );
+}
+
+/**
+ * One ruler's runs along its axis. A run is keyed by its place among the pages on screen and a mark by its offset from
+ * the page's zero — both unchanged by a scroll, so React updates a run's start and touches nothing inside it.
+ */
+function Runs({ axis, runs }: { readonly axis: 'inline' | 'block'; readonly runs: readonly RulerRun[] }): ReactElement {
+  return (
+    <>
+      {runs.map((run, at) => (
+        <div
+          className="m-ruler-run"
+          key={at}
+          style={
+            axis === 'inline'
+              ? { insetInlineStart: `${String(run.start)}px`, inlineSize: `${String(run.length)}px` }
+              : { insetBlockStart: `${String(run.start)}px`, blockSize: `${String(run.length)}px` }
+          }
+        >
+          {run.ticks.map((tick) => (
+            <span
+              key={tick.offset}
+              className={tick.major ? 'm-tick m-tick-major' : 'm-tick'}
+              style={
+                axis === 'inline'
+                  ? { insetInlineStart: `${String(tick.offset)}px` }
+                  : { insetBlockStart: `${String(tick.offset)}px` }
+              }
+            >
+              {tick.label}
+            </span>
+          ))}
+        </div>
+      ))}
     </>
   );
 }

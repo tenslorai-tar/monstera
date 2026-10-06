@@ -10,17 +10,19 @@ Export tables to Excel reads the tables in your document, lets you check and cor
 
 ## Steps
 
-1. In the rail, choose **Home**, then **Excel…** in the **Export** group (its full name is **Export tables to Excel…**).
+1. In the rail, choose **Home**, then **Export** in the **Export** group, and **Export tables to Excel…**.
 2. If you have added an Azure or Claude key, choose in **Read the tables with**: **This PDF's own text**, **Azure Document Intelligence** or **Claude**. Without a key, the window uses the PDF's own text and says how to add a key.
 3. With **This PDF's own text**, the window shows the tables on the page you are reading. Use **Previous page** and **Next page** to look through the others, and click any cell to correct it.
-4. In **Where the tables go**, choose **A sheet for each page that has tables** or **Every table on one sheet**.
-5. Choose **Choose where to save…** and save the workbook.
+4. In **Pages**, keep **Every page**, or choose **Select pages** and type the pages whose tables you want, for example 1-3, 5. You can still look at any page while you check.
+5. In **Where the tables go**, choose **A sheet for each page that has tables** or **Every table on one sheet**.
+6. Choose **Choose where to save…** and save the workbook.
 
 ![The Export tables to Excel window showing a table's cells, the page buttons and the two choices](screenshot:export-tables-to-excel-1)
 
 ## Good to know
 
 - **This PDF's own text** works on tables with ruled lines best; a table without lines may be split at its gaps.
+- With Azure or Claude, only the pages you chose are sent, and the window says how many before anything is sent.
 - For scanned tables, recognise the text first (Tools › OCR), or use Azure Document Intelligence or Claude. Those send your pages to that service, which the window says before anything is sent. You need your own key, and the service bills you directly. See "Get and add keys for AI and online reading services".
 - Cells found by Azure or Claude are written without fonts, borders or shading.
 - If the document has no tables, Monstera says so before asking where to save.

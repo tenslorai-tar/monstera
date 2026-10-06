@@ -28,8 +28,8 @@ function inDialog(body: ReactNode, onOpenChange: (open: boolean) => void = () =>
 }
 
 const CHOICES = [
-  { docId: 'd-a', name: 'Alpha.pdf' },
-  { docId: 'd-b', name: 'Beta.pdf' },
+  { docId: 'd-a', name: 'Alpha.pdf', pageCount: 3 },
+  { docId: 'd-b', name: 'Beta.pdf', pageCount: 1 },
 ];
 
 /** Every dialog of the group, each with the action a person presses and the answer that press must give. */
@@ -58,11 +58,11 @@ const BODIES: readonly {
     answer: { groups: [[0], [1]] },
   },
   {
-    name: 'Duplicate pages',
+    name: 'Delete duplicate pages',
     body: (resolve) => (
       <DuplicatePagesBody groups={[{ pages: [0, 3] }]} truncated={false} resolve={resolve} update={() => undefined} />
     ),
-    action: 'Remove 1 duplicate page(s)',
+    action: 'Delete 1 duplicate page',
     answer: { pages: [3] },
   },
   {
@@ -79,27 +79,33 @@ const BODIES: readonly {
   },
   {
     name: 'Merge',
-    body: (resolve) => <MergeDocumentBody choices={CHOICES} resolve={resolve} update={() => undefined} />,
+    body: (resolve) => <MergeDocumentBody choices={CHOICES} pageCount={5} resolve={resolve} update={() => undefined} />,
     action: 'Merge',
-    answer: { source: 'd-a' },
+    // AT THE END, as it opens: the target's page count.
+    answer: { kind: 'merge', documents: ['d-a'], at: 5 },
   },
   {
     name: 'Insert from PDF',
-    body: (resolve) => <InsertFromPdfBody choices={CHOICES} pageCount={3} resolve={resolve} update={() => undefined} />,
+    body: (resolve) => (
+      <InsertFromPdfBody choices={CHOICES} pageCount={3} page={1} resolve={resolve} update={() => undefined} />
+    ),
     action: 'Insert',
-    answer: { source: 'd-a', at: 3 },
+    // AFTER THE PAGE ON SHOW, which is page 2: zero-based 2.
+    answer: { kind: 'insert', source: 'd-a', sourcePages: 'all', at: 2 },
   },
   {
-    name: 'Replace page',
-    body: (resolve) => <ReplacePageBody choices={CHOICES} page={1} resolve={resolve} update={() => undefined} />,
+    name: 'Replace pages',
+    body: (resolve) => <ReplacePageBody choices={CHOICES} pages={[1]} resolve={resolve} update={() => undefined} />,
     action: 'Replace page',
-    answer: { source: 'd-a' },
+    // ONE PAGE FOR ONE: Alpha has three, so the dialog opens on its first.
+    answer: { kind: 'replace', source: 'd-a', sourcePages: [0] },
   },
   {
     name: 'Import page as layer',
     body: (resolve) => <ImportPageAsLayerBody choices={CHOICES} page={1} resolve={resolve} update={() => undefined} />,
     action: 'Import as layer',
-    answer: { source: 'd-a' },
+    // ITS FIRST PAGE, as it opens.
+    answer: { kind: 'import', source: 'd-a', sourcePage: 0 },
   },
 ];
 
@@ -135,13 +141,17 @@ describe('the Organize dialogs in the dialog pattern', () => {
   });
 
   it('each question is a ROW: its words beside its control, which is named by the same words', () => {
-    render(inDialog(<InsertFromPdfBody choices={CHOICES} pageCount={3} resolve={vi.fn()} update={() => undefined} />));
+    render(
+      inDialog(<InsertFromPdfBody choices={CHOICES} pageCount={3} page={1} resolve={vi.fn()} update={() => undefined} />),
+    );
     const rows = [...document.querySelectorAll('.m-dialog-row')].map(
       (row) => row.querySelector('.m-dialog-row__label')?.textContent,
     );
-    expect(rows).toStrictEqual(['Document to insert', 'Insert before page']);
-    expect(screen.getByRole('combobox', { name: 'Document to insert' })).toBeTruthy();
-    expect(screen.getByRole('textbox', { name: 'Insert before page' })).toBeTruthy();
+    expect(rows).toStrictEqual(['Insert from', 'Pages', 'Where']);
+    expect(screen.getByRole('combobox', { name: 'Insert from' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Pages' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Where' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Page' })).toBeTruthy();
   });
 
   it('Split’s two ways are CHOICES under their question, each with its sentence, and choosing ranges asks for them', () => {

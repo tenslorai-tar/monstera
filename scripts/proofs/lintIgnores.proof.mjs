@@ -19,16 +19,21 @@
  *     run. Without this half, a config that ignored the entire repository would
  *     satisfy every case above.
  *
+ * The second half runs THE LINT, `scripts/lib/lintcheck.mjs`'s units, never an
+ * `eslint .` of its own (ADR-0170): one process over the whole tree is the shape
+ * that ADR retired, and this control spelt it until 2026-10-05, when it aborted
+ * at V8's heap limit on ubuntu-latest (run 37280228611) as the old lint had.
+ *
  * Usage: node scripts/proofs/lintIgnores.proof.mjs
  */
 
-import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { ESLint } from 'eslint';
 
 import { repoRoot } from '../lib/gitScope.mjs';
+import { ESLINT_ENTRY, LINT_HEAP_BUDGET_MB, lintUnits, runLint } from '../lib/lintcheck.mjs';
 
 const ROOT = repoRoot();
 
@@ -105,13 +110,21 @@ for (const relative of MUST_LINT) {
 }
 
 // ---------------------------------------------------------------------------
-// The control that makes the rest mean something: `eslint .` must still be able
+// The control that makes the rest mean something: the lint must still be able
 // to fail. Everything above is answered by ESLint's own ignore logic, so a
 // config that ignored the whole tree would satisfy all of it.
+//
+// THE TWO UNITS THE PLANTED FILES FALL IN, of the lint's own units: a package's
+// source, and the rest of the tree, which is where `out/` is and so where the
+// gitignore-derived ignores are what keeps build output out. Both by the
+// runner's names, so a unit that stopped existing is a failure here rather than
+// a control that linted nothing.
 // ---------------------------------------------------------------------------
 {
   const planted = join(ROOT, 'packages', 'shared', 'src', '__lint_ignore_probe__.ts');
   const artifact = join(ROOT, 'out', '__lint_ignore_probe__.js');
+  const wanted = ['packages/shared (source)', 'the rest of the tree'];
+  const units = lintUnits(ROOT).filter((unit) => wanted.includes(unit.name));
 
   try {
     // `any` is an error under B7, so this is a violation of a rule this project
@@ -120,25 +133,31 @@ for (const relative of MUST_LINT) {
     mkdirSync(dirname(artifact), { recursive: true });
     writeFileSync(artifact, 'export const built = 1 as any;\n', 'utf8');
 
-    const run = spawnSync(
-      process.execPath,
-      [join(ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js'), '.'],
-      { cwd: ROOT, encoding: 'utf8' },
+    check(
+      'the lint has the two units the planted files fall in',
+      units.length === wanted.length,
+      `found ${JSON.stringify(units.map((unit) => unit.name))} of ${JSON.stringify(wanted)}`,
     );
-    const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
+    const outcomes = runLint(join(ROOT, ESLINT_ENTRY), units, ROOT, LINT_HEAP_BUDGET_MB);
+    const source = outcomes.find((outcome) => outcome.unit.name === wanted[0]);
+    const rest = outcomes.find((outcome) => outcome.unit.name === wanted[1]);
 
     check(
-      'CONTROL: a violation planted in real source still fails `eslint .`',
-      run.status !== 0 && output.includes('__lint_ignore_probe__.ts'),
-      `exit ${run.status}. If this passes, the ignore list swallows the source tree and every ` +
-        `case above is vacuous.\n      Output tail:\n${output.slice(-800)}`,
+      'CONTROL: a violation planted in real source still fails the lint, in its package’s unit',
+      source?.status === 'problems' && source.output.includes('__lint_ignore_probe__.ts'),
+      `${source?.status ?? 'no such unit'}. If this passes, the ignore list swallows the source tree and every ` +
+        `case above is vacuous.\n      Output tail:\n${(source?.output ?? '').slice(-800)}`,
     );
 
+    // CLEAN, not merely silent about the file: the unit linted and found nothing, so the artifact was ignored rather
+    // than the unit having died at the heap limit, which also names no file.
     check(
       'and the identical violation inside a build directory is not reported',
-      !output.includes(join('out', '__lint_ignore_probe__.js')) &&
-        !output.includes('out/__lint_ignore_probe__.js'),
-      `the same code in out/ was reported, so build output is being linted:\n${output.slice(-800)}`,
+      rest?.status === 'clean' &&
+        !rest.output.includes(join('out', '__lint_ignore_probe__.js')) &&
+        !rest.output.includes('out/__lint_ignore_probe__.js'),
+      `${rest?.status ?? 'no such unit'}; the same code in out/ was reported, or the unit did not run clean:\n` +
+        (rest?.output ?? '').slice(-800),
     );
   } finally {
     rmSync(planted, { force: true });

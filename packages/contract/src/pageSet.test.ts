@@ -97,4 +97,29 @@ describe('withPageRuns — the renderer’s one place a command’s pages are wr
     expect(withPageRuns(runs)).toBe(runs);
     expect(withPageRuns(none)).toBe(none);
   });
+
+  it('writes a SECOND document’s page list short too, so a long source range fits the set’s bound', () => {
+    // 9,000 pages listed one by one is past `MAX_PAGE_SET_ENTRIES`; as one run it is one entry.
+    const many = Array.from({ length: 9000 }, (_, page) => page);
+    expect(withPageRuns({ kind: 'replacePage', pages: [3, 4], sourcePages: many })).toStrictEqual({
+      kind: 'replacePage',
+      pages: [[3, 4]],
+      sourcePages: [[0, 8999]],
+    });
+    // CONTROL: `'all'` is a choice, not a list, and stays as it came.
+    const every = { kind: 'mergeDocument', documents: [{ source: 'a', sourcePages: 'all' as const }], at: 0 };
+    expect(withPageRuns(every)).toBe(every);
+  });
+
+  it('writes EACH merge part’s page list short, and keeps a part already short as it came (ADR-0152)', () => {
+    const short = { source: 'b', sourcePages: [[0, 1] as [number, number]] };
+    const command = { kind: 'mergeDocument', documents: [{ source: 'a', sourcePages: [4, 5, 6, 9] }, short], at: 2 };
+    const written = withPageRuns(command);
+    expect(written).toStrictEqual({
+      kind: 'mergeDocument',
+      documents: [{ source: 'a', sourcePages: [[4, 6], 9] }, short],
+      at: 2,
+    });
+    expect(written.documents[1]).toBe(short);
+  });
 });

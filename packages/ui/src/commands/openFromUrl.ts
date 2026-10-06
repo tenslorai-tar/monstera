@@ -35,6 +35,9 @@ export function urlOpenProblem(answer: ChannelResult<'document.openFromUrl'>): U
       return { reason: 'absent' };
     case 'at-capacity':
       return { reason: 'at-capacity' };
+    case 'busy':
+    case 'denied':
+      return { reason: answer.kind };
     // `cancelled` is a person changing their mind; `opened` and `already-open` are the
     // document they asked for. Named rather than defaulted, `markdownImportProblem`'s rule.
     case 'cancelled':

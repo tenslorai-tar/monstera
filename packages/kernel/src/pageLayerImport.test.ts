@@ -76,14 +76,15 @@ async function imported(
   sourceBytes: Uint8Array,
   at: number,
   name = 'Letterhead',
+  sourcePage = 0,
 ): Promise<Uint8Array> {
   const targetSession = await mupdfWriter.open(targetBytes);
   const sourceSession = await mupdfWriter.open(sourceBytes);
   try {
     await applyImportPageAsLayer(
       targetSession,
-      { kind: 'importPageAsLayer', source: asDocId('s'), name, at, version: asDocVersion(1) },
-      sourceSession,
+      { kind: 'importPageAsLayer', source: asDocId('s'), sourcePage, name, at, version: asDocVersion(1) },
+      [sourceSession],
     );
     return await mupdfWriter.serialise(targetSession);
   } finally {
@@ -178,6 +179,25 @@ describe('importPageAsLayer', () => {
     expect(bbox?.asArray().map((entry) => (entry as PDFNumber).asNumber())).toStrictEqual([0, 0, 400, 200]);
   });
 
+  it('places the CHOSEN source page, read back by its box', async () => {
+    // Two source pages of different sizes, the second chosen: an import that took the first gives 400 × 200.
+    const twoPages = await PDFDocument.create();
+    twoPages.addPage([400, 200]);
+    twoPages.addPage([250, 120]);
+    const document = await PDFDocument.load(
+      await imported(await target(1), await twoPages.save({ useObjectStreams: false }), 0, 'Second', 1),
+    );
+    const bbox = formsOn(document, 0).get('MonsteraLayer0')?.lookup(PDFName.of('BBox'), PDFArray);
+
+    expect(bbox?.asArray().map((entry) => (entry as PDFNumber).asNumber())).toStrictEqual([0, 0, 250, 120]);
+  });
+
+  it('REFUSES a source page the source does not have', async () => {
+    await expect(imported(await target(1), await inheritingSource(), 0, 'X', 1)).rejects.toThrow(
+      /Page 1 is outside this document, which has 1 page/u,
+    );
+  });
+
   it("keeps the page's OWN content, and draws the layer after it", async () => {
     const withOwn = await PDFDocument.load(await target(1));
     withOwn.getPage(0).drawRectangle({ x: 1, y: 1, width: 2, height: 2 });
@@ -217,8 +237,8 @@ describe('importPageAsLayer', () => {
       await expect(
         applyImportPageAsLayer(
           targetSession,
-          { kind: 'importPageAsLayer', source: asDocId('s'), name: 'X', at: 2, version: asDocVersion(1) },
-          sourceSession,
+          { kind: 'importPageAsLayer', source: asDocId('s'), sourcePage: 0, name: 'X', at: 2, version: asDocVersion(1) },
+          [sourceSession],
         ),
       ).rejects.toThrow(RangeError);
       // Built from something the absent refusal would NOT satisfy: a write before the

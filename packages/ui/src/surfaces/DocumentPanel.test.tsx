@@ -10,6 +10,7 @@ import { EN } from '../messages/en.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
+import { PanelPresence } from '../panelPresence.js';
 import { SettingsStore } from '../settingsStore.js';
 import { DocumentPanel } from './DocumentPanel.js';
 
@@ -39,13 +40,15 @@ const STAND_INS = {
 
 function drawn(settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS))): {
   readonly settings: SettingsStore;
+  readonly presence: PanelPresence;
 } {
+  const presence = new PanelPresence(settings);
   render(
     <Wrapped>
-      <DocumentPanel settings={settings} pages={<p>pages content</p>} panels={STAND_INS} />
+      <DocumentPanel settings={settings} presence={presence} pages={<p>pages content</p>} panels={STAND_INS} />
     </Wrapped>,
   );
-  return { settings };
+  return { settings, presence };
 }
 
 describe('DocumentPanel', () => {
@@ -134,6 +137,32 @@ describe('DocumentPanel', () => {
 
     // THE PANEL IT HAD, not the default: collapsing hides the panel and changes no choice.
     expect(screen.getByText('comments content')).toBeDefined();
+    expect(settings.get(DOCUMENT_PANEL_OPEN_SETTING.id)).toBe(true);
+  });
+
+  it('IN A ROW WITH NO ROOM for it, opens from its handle as a SHEET, and its chevron closes only the sheet (ADR-0146)', async () => {
+    const { settings, presence } = drawn();
+    await act(async () => {
+      presence.measure(400);
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('tab')).toBeNull();
+    await act(async () => {
+      screen.getByRole('button', { name: 'Show the document panel' }).click();
+      await Promise.resolve();
+    });
+    const sheet = document.querySelector('[data-panel-sheet="start"]');
+    expect(sheet?.textContent).toContain('pages content');
+
+    // THE PANEL'S OWN CHEVRON, inside the sheet: it closes the sheet and leaves the setting on, where in the row it
+    // shuts the setting — so a wider window draws the panel again.
+    const chevron = sheet?.querySelector<HTMLButtonElement>('button[aria-label="Collapse the document panel"]');
+    expect(chevron).not.toBeNull();
+    await act(async () => {
+      chevron?.click();
+      await Promise.resolve();
+    });
+    expect(document.querySelector('[data-panel-sheet]')).toBeNull();
     expect(settings.get(DOCUMENT_PANEL_OPEN_SETTING.id)).toBe(true);
   });
 });

@@ -14,6 +14,7 @@ import {
   DOCUMENT_PANEL_WIDTH_SETTING,
   LAYOUT_MODE_SETTING,
 } from '../settings/layout.js';
+import { PanelPresence } from '../panelPresence.js';
 import { SettingsStore } from '../settingsStore.js';
 import { DocumentBody } from './DocumentBody.js';
 
@@ -33,11 +34,20 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
 }
 
+/** The window's presence for the last row `drawn` built, so a case can tell it the width a layout would have. */
+let lastPresence: PanelPresence | undefined;
+
 function drawn(settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS))): SettingsStore {
+  const presence = new PanelPresence(settings);
+  lastPresence = presence;
   render(
     <Wrapped>
+      {/* NOT MEASURING: happy-dom lays nothing out, so the row would report a width of nothing and every side would
+          give way. A case that wants a narrow row says so through the presence, which is what a layout would do. */}
       <DocumentBody
         settings={settings}
+        presence={presence}
+        measuresRow={false}
         panel={<p>panel</p>}
         page={<p>page</p>}
         contextPanel={<p>context</p>}
@@ -89,6 +99,28 @@ describe('DocumentBody', () => {
     expect(screen.getByText('panel')).toBeDefined();
     expect(screen.getByText('page')).toBeDefined();
     expect(screen.getByText('context')).toBeDefined();
+  });
+
+  it('a NARROW ROW takes the right side out of the row — no handle, drawn beside it — and writes no open setting (ADR-0146)', async () => {
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    const writes: string[] = [];
+    settings.subscribe((id) => {
+      if (id === DOCUMENT_PANEL_OPEN_SETTING.id || id === CONTEXT_PANEL_OPEN_SETTING.id) writes.push(id);
+    });
+    drawn(settings);
+    // CONTROL: wide, both resize handles, so the absence below is the narrow row's doing.
+    expect(screen.getByRole('separator', { name: 'Resize the properties panel' })).toBeDefined();
+
+    await act(async () => {
+      lastPresence?.measure(800);
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('separator', { name: 'Resize the properties panel' })).toBeNull();
+    expect(screen.getByRole('separator', { name: 'Resize the document panel' })).toBeDefined();
+    // STILL DRAWN, after the row: the panel decides its own form there, which is its handle or its sheet.
+    const page = screen.getByText('page');
+    expect(page.compareDocumentPosition(screen.getByText('context')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(writes).toStrictEqual([]);
   });
 
   it('collapsing and reopening neither WRITES nor forgets the stored width', async () => {

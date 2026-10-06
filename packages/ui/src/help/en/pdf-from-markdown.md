@@ -27,7 +27,7 @@ To add the pages to the open document:
 - Every page is US Letter size.
 - The file must be UTF-8 text, up to 4 MB.
 - Text uses standard fonts. A character they cannot draw stops the import, and the message names the line.
-- A table too wide for the page is refused.
+- A table too wide for the page turns its pages sideways and sets its text smaller, and one wider still continues on further pages, its first column repeated on each.
 
 <!--
 Screenshots to capture:

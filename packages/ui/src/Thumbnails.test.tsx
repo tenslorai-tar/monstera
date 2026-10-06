@@ -30,6 +30,9 @@ const rasterised: [number, number | { readonly fitWidth: number }][] = [];
 const signals: AbortSignal[] = [];
 /** The rotation each rasterisation was handed, in the same order. */
 const drawnAt: (number | undefined)[] = [];
+/** When set, each draw waits for the case to finish it through {@link held}. */
+let holdDraws = false;
+const held: (() => void)[] = [];
 
 vi.mock('./renderPage.js', async (importOriginal) => ({
   // THE REAL MODULE UNDER THE STUB, so `RenderCancelledError` is the class callers test against.
@@ -47,7 +50,14 @@ vi.mock('./renderPage.js', async (importOriginal) => ({
     signals.push(signal);
     // A 600 × 800 page, fitted the way the real one fits it: from its own width.
     const factor = typeof scale === 'number' ? scale : scale.fitWidth / 600;
-    return Promise.resolve({ width: 600 * factor, height: 800 * factor });
+    const size = { width: 600 * factor, height: 800 * factor };
+    if (!holdDraws) return Promise.resolve(size);
+    // A DRAW STILL UNDER WAY, finished by the case, which is the moment a redraw at a new width is in.
+    return new Promise((resolve) => {
+      held.push(() => {
+        resolve(size);
+      });
+    });
   },
 }));
 
@@ -94,10 +104,20 @@ async function settle(): Promise<void> {
   });
 }
 
+/** Every `scrollIntoView` a card was asked for, as `page@block`: happy-dom has no layout to scroll. */
+const scrolledTo: string[] = [];
+
 beforeEach(() => {
+  scrolledTo.length = 0;
+  HTMLElement.prototype.scrollIntoView = function scrollIntoView(this: HTMLElement, options?: boolean | ScrollIntoViewOptions) {
+    const block = typeof options === 'object' ? (options.block ?? 'start') : 'start';
+    scrolledTo.push(`${this.dataset['thumbPage'] ?? '?'}@${block}`);
+  };
   rasterised.length = 0;
   drawnAt.length = 0;
   signals.length = 0;
+  holdDraws = false;
+  held.length = 0;
   latestVersion = VERSION;
   const target: { IntersectionObserver: typeof IntersectionObserver } = globalThis;
   target.IntersectionObserver = class {
@@ -124,15 +144,27 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
 
 describe('Thumbnails as the Organize grid (ADR-0104)', () => {
   /** A grid whose selection is held here, as the document store holds it, so a gesture's result is visible. */
-  function grid(selected: readonly number[] = []) {
-    const calls = { select: [] as (readonly number[])[], open: [] as number[], remove: [] as (readonly number[])[], jump: [] as number[], swap: 0 };
+  function grid(
+    selected: readonly number[] = [],
+    options: { readonly goTo?: number; readonly onePage?: boolean; readonly current?: number } = {},
+  ) {
+    const wentTo = vi.fn();
+    const viewing: number[] = [];
+    const calls = {
+      select: [] as (readonly number[])[],
+      current: [] as number[],
+      open: [] as number[],
+      remove: [] as (readonly number[])[],
+      jump: [] as number[],
+      swap: 0,
+    };
     const { container, rerender } = render(
       <Wrapped>
         <Thumbnails
           {...reads()}
           view={view()}
           pageCount={4}
-          current={0}
+          current={options.current ?? 0}
           onJump={(page) => calls.jump.push(page)}
           onSwap={() => {
             calls.swap += 1;
@@ -141,8 +173,12 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
             width: 110,
             selected,
             onSelect: (pages) => calls.select.push(pages),
+            onCurrent: (page) => calls.current.push(page),
             onOpen: (page) => calls.open.push(page),
             onDelete: (pages) => calls.remove.push(pages),
+            goTo: options.goTo,
+            onWentTo: wentTo,
+            onePage: options.onePage === true ? { onViewing: (page) => viewing.push(page) } : undefined,
           }}
         />
       </Wrapped>,
@@ -152,8 +188,39 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
       if (found === null) throw new Error(`no card for page ${String(page)}`);
       return found;
     };
-    return { calls, card, container, rerender };
+    return { calls, card, container, rerender, wentTo, viewing };
   }
+
+  describe('ONE CURRENT PAGE (item 13a)', () => {
+    it('a click makes the clicked card the current page, whatever it does to the selection', () => {
+      const { calls, card } = grid([2]);
+      fireEvent.click(card(1));
+      fireEvent.click(card(3), { shiftKey: true });
+      fireEvent.click(card(2), { ctrlKey: true });
+      expect(calls.current).toStrictEqual([1, 3, 2]);
+    });
+
+    it('OPENS on the current page: its card is scrolled into view before the grid paints', () => {
+      grid([], { current: 2 });
+      expect(scrolledTo).toStrictEqual(['2@nearest']);
+    });
+
+    it('in Full page it opens with the current card’s top at the top of the view, so no strip of the page before shows', () => {
+      grid([], { current: 2, onePage: true });
+      expect(scrolledTo).toStrictEqual(['2@start']);
+    });
+
+    it('the NAVIGATOR’S request scrolls to that card and is reported taken, once', () => {
+      const { wentTo } = grid([], { goTo: 3, onePage: true });
+      expect(scrolledTo.at(-1)).toBe('3@start');
+      expect(wentTo).toHaveBeenCalledTimes(1);
+    });
+
+    it('CONTROL: with no request nothing is reported taken, so the call above is the request’s and not the mount’s', () => {
+      const { wentTo } = grid([], { onePage: true });
+      expect(wentTo).not.toHaveBeenCalled();
+    });
+  });
 
   it('a click SELECTS the page and does not jump; Ctrl+click toggles; Shift+click extends from the last click', () => {
     const { calls, card } = grid([2]);
@@ -185,6 +252,29 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
     expect(ticked.calls.select).toStrictEqual([]);
   });
 
+  it('a HELD Delete removes once, and the document never hears the grid’s Delete (CR-COR-06, CR-COR-15)', () => {
+    const held = grid([]);
+    const heard: string[] = [];
+    const listener = (event: KeyboardEvent): void => {
+      heard.push(event.key);
+    };
+    document.addEventListener('keydown', listener);
+    try {
+      fireEvent.keyDown(held.card(1), { key: 'Delete' });
+      // THE KEYBOARD'S REPEATS of the same held key, which deleted the page that moved into this slot each time.
+      fireEvent.keyDown(held.card(1), { key: 'Delete', repeat: true });
+      fireEvent.keyDown(held.card(1), { key: 'Delete', repeat: true });
+      expect(held.calls.remove).toStrictEqual([[1]]);
+      // THE GRID'S KEY ALONE: a selected annotation's own Delete is the document's, and it ran on the same press.
+      expect(heard).toStrictEqual([]);
+      // CONTROL: a key the grid does not take still reaches the document, so the listener can hear.
+      fireEvent.keyDown(held.card(1), { key: 'x' });
+      expect(heard).toStrictEqual(['x']);
+    } finally {
+      document.removeEventListener('keydown', listener);
+    }
+  });
+
   it('the GRID draws every page at the width it is given, and a new width redraws', async () => {
     const card = (width: number): ReactElement => (
       <Wrapped>
@@ -194,7 +284,17 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
           pageCount={4}
           current={0}
           onJump={vi.fn()}
-          grid={{ width, selected: [], onSelect: vi.fn(), onOpen: vi.fn(), onDelete: vi.fn() }}
+          grid={{
+            width,
+            selected: [],
+            onSelect: vi.fn(),
+            onCurrent: vi.fn(),
+            onOpen: vi.fn(),
+            onDelete: vi.fn(),
+            goTo: undefined,
+            onWentTo: vi.fn(),
+            onePage: undefined,
+          }}
         />
       </Wrapped>
     );
@@ -210,6 +310,58 @@ describe('Thumbnails as the Organize grid (ADR-0104)', () => {
     rerender(card(110));
     await settle();
     expect(rasterised.at(-1)).toStrictEqual([1, { fitWidth: 110 }]);
+  });
+
+  it('says a drawing made for ANOTHER width is stale until the redraw lands, and keeps its shape meanwhile', async () => {
+    // `data-drawn` read `true` from the first draw on, so a reader waiting for Organize's Full page took a canvas drawn
+    // at thumbnail size as ready and measured a thumbnail (CI on 6b7a6bd9). It names what the drawing was made FOR.
+    const view0 = view();
+    const card = (width: number): ReactElement => (
+      <Wrapped>
+        <Thumbnails
+          {...reads()}
+          view={view0}
+          pageCount={4}
+          current={0}
+          onJump={vi.fn()}
+          grid={{
+            width,
+            selected: [],
+            onSelect: vi.fn(),
+            onCurrent: vi.fn(),
+            onOpen: vi.fn(),
+            onDelete: vi.fn(),
+            goTo: undefined,
+            onWentTo: vi.fn(),
+            onePage: undefined,
+          }}
+        />
+      </Wrapped>
+    );
+    const { container, rerender } = render(card(110));
+    await settle();
+    const canvas = (): HTMLElement | null => container.querySelector<HTMLElement>('[data-thumb-page="0"] canvas');
+    expect(canvas()?.dataset['drawn']).toBe('true');
+
+    holdDraws = true;
+    rerender(card(660));
+    await settle();
+    expect(rasterised.at(-1)).toStrictEqual([1, { fitWidth: 660 }]);
+    expect(canvas()?.dataset['drawn']).toBe('stale');
+    // THE LAST DRAWING'S SHAPE at the new width — 3 : 4 — not the old drawing's height under the new width.
+    expect([canvas()?.style.width, canvas()?.style.height]).toStrictEqual(['660px', '880px']);
+
+    await act(async () => {
+      for (const finish of held) finish();
+      await Promise.resolve();
+    });
+    await settle();
+    expect(canvas()?.dataset['drawn']).toBe('true');
+    // CONTROL: undrawn is a third state, so `stale` is not what a canvas with no drawing reads.
+    holdDraws = true;
+    const fresh = render(card(110));
+    await settle();
+    expect(fresh.container.querySelector<HTMLElement>('[data-thumb-page="0"] canvas')?.dataset['drawn']).toBe('false');
   });
 
   it('CONTROL: the side strip — no grid — jumps on click, swaps on Shift+click, and Delete does nothing', () => {

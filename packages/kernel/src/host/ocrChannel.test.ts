@@ -140,6 +140,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       pageLinks: () => {
         throw new Error('a recognition must not read the page links');
       },
+      linkAddress: () => {
+        throw new Error('a recognition must not read a link address');
+      },
       pageFills: () => {
         throw new Error('a recognition must not read the page fills');
       },
@@ -168,6 +171,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       applyPdfLib: () => {
         throw new Error('a recognition must not run pdf-lib');
       },
+      prepareSignature: () => {
+        throw new Error('a recognition must not prepare a signature');
+      },
       snapshot: () => {
         throw new Error('a recognition must not write a PNG out');
       },
@@ -195,6 +201,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       signaturesKept: () => Promise.reject(new Error('this case asks nothing about keeping signatures')),
       annotationRecords: () => {
         throw new Error('a recognition must not read annotation records');
+      },
+      annotationWords: () => {
+        throw new Error('a recognition must not read annotation words');
       },
     }),
     (incident) => incidents.push(incident),

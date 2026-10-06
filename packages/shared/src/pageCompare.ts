@@ -434,8 +434,19 @@ function cut(words: readonly PlacedWord[]): string {
 }
 
 /** The text and layout changes of a pair: lines aligned first, then the words of each run of changed lines. */
-function textChanges(left: readonly CompareLine[], right: readonly CompareLine[]): PairChange[] {
+/**
+ * The text changes of a pair, and the regions they EXPLAIN: every line of an edited run, whole, on both sides.
+ *
+ * Wider than the changed words, because an edit moves the words after it along its line, and those words are not
+ * reported — sliding is the edit's own consequence. Their pixels still move, so a picture comparison told only the
+ * changed words would report each slid word as a picture change (F-C1).
+ */
+function textChanges(
+  left: readonly CompareLine[],
+  right: readonly CompareLine[],
+): { readonly changes: PairChange[]; readonly explains: CompareBox[] } {
   const changes: PairChange[] = [];
+  const explains: CompareBox[] = [];
   const steps = alignSequences(
     left.map((line) => comparableLine(line.text)),
     right.map((line) => comparableLine(line.text)),
@@ -481,6 +492,14 @@ function textChanges(left: readonly CompareLine[], right: readonly CompareLine[]
       }
     }
     if (gone.length > 0 || come.length > 0) {
+      for (const at of removedLines) {
+        const box = left[at]?.box;
+        if (box !== undefined) explains.push(box);
+      }
+      for (const at of addedLines) {
+        const box = right[at]?.box;
+        if (box !== undefined) explains.push(box);
+      }
       changes.push({
         kind: 'text',
         // WORD BY WORD (the owner's answer of 2 October, and ADR-0131 Decision 5's *removed tokens are boxed*): one box
@@ -512,7 +531,7 @@ function textChanges(left: readonly CompareLine[], right: readonly CompareLine[]
   }
   flushHunk();
   flushLayout();
-  return changes;
+  return { changes, explains };
 }
 
 function overlap(a: CompareBox, b: CompareBox): number {
@@ -658,9 +677,10 @@ export function comparePair(left: ComparePage, right: ComparePage): readonly Pai
       right: [{ x0: 0, y0: 0, x1: right.size.width, y1: right.size.height }],
     });
   }
-  const textual = [...textChanges(left.lines, right.lines), ...annotationChanges(left.annotations, right.annotations)];
+  const text = textChanges(left.lines, right.lines);
+  const textual = [...text.changes, ...annotationChanges(left.annotations, right.annotations)];
   changes.push(...textual);
-  const explained = textual.flatMap((change) => [...change.left, ...change.right]);
+  const explained = [...textual.flatMap((change) => [...change.left, ...change.right]), ...text.explains];
   changes.push(...graphicsChanges(left, right, explained));
   const top = (change: PairChange): number => Math.min(...[...change.left, ...change.right].map((box) => box.y0), Number.POSITIVE_INFINITY);
   return changes.sort((a, b) => (a.pageSize === true ? -1 : b.pageSize === true ? 1 : top(a) - top(b)));

@@ -124,6 +124,9 @@ export function harnessSurfaces(
     pickImage: () => {
       throw new Error(`${harness} inserts no image, so nothing may pick one`);
     },
+    pickSignaturePicture: () => {
+      throw new Error(`${harness} signs nothing, so nothing may pick a signature picture`);
+    },
     pickDirectory: () => {
       throw new Error(`${harness} splits nothing, so nothing may pick a folder`);
     },

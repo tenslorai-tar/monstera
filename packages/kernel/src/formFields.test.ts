@@ -449,6 +449,25 @@ describe('readFormFields', () => {
     expect(answer.fields.every((field) => field.rect !== null)).toBe(true);
   });
 
+  it('SAYS WHICH TEXT FIELD TAKES LINE BREAKS — CONTROL: a one-line field and every other kind say no', async () => {
+    // A surface edits a multi-line field in a control that keeps its line breaks; a one-line input strips them from
+    // what it shows, which rewrote a multi-line answer as one line on the next blur.
+    const document = await PDFDocument.load(await form());
+    const page = document.getPage(0);
+    const address = document.getForm().createTextField('applicant.address');
+    address.enableMultiline();
+    address.setText('1 High Street\nLeeds');
+    address.addToPage(page, { x: 220, y: 300, width: 160, height: 60 });
+    const answer = await onSession(await document.save(), (session) => readFormFields(session));
+    const multiline = answer.fields.filter((field) => field.multiline).map((field) => field.name);
+    expect(multiline).toStrictEqual(['applicant.address']);
+    // CONTROL: the fixture's one-line text field is read too, so the answer above is a reading and not a default.
+    expect(answer.fields.find((field) => field.name === 'applicant.name')?.multiline).toBe(false);
+    expect(answer.fields.find((field) => field.name === 'applicant.address')?.values).toStrictEqual([
+      '1 High Street\nLeeds',
+    ]);
+  });
+
   it('IS A DIFFERENT WALK FROM THE ANNOTATIONS, sharing no entries', async () => {
     // ADR-0041 measured the annotation walk filtering widgets. This is the same
     // fact from the other side, and it is what settles a field being named by a
@@ -1116,5 +1135,66 @@ describe('applyFlattenFormFields', () => {
     expect(() => invertFlattenFormFields(undefined as never, undefined as never)).toThrow(
       /no inverse/u,
     );
+  });
+});
+
+/** One text field holding `length` characters, each one telling where it is, so a cut shows in the value. */
+async function longField(length: number): Promise<{ readonly bytes: Uint8Array; readonly value: string }> {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 600]);
+  const value = Array.from({ length }, (_, at) => String.fromCharCode(97 + (at % 26))).join('');
+  const field = document.getForm().createTextField('notes');
+  field.setText(value);
+  field.addToPage(page, { x: 20, y: 500, width: 300, height: 40 });
+  return { bytes: await document.save(), value };
+}
+
+describe('a long text field (the listing cuts it, nothing else does)', () => {
+  it('LISTS A 600-CHARACTER VALUE CUT, and says so', async () => {
+    const { bytes, value } = await longField(600);
+    const [field] = (await onSession(bytes, (session) => readFormFields(session))).fields;
+    expect(field?.values).toStrictEqual([value.slice(0, 512)]);
+    expect(field?.cut).toBe(true);
+  });
+
+  it('CONTROL: a value of exactly 512 characters is whole, and carries no cut', async () => {
+    const { bytes, value } = await longField(512);
+    const [field] = (await onSession(bytes, (session) => readFormFields(session))).fields;
+    expect(field?.values).toStrictEqual([value]);
+    expect(field).not.toHaveProperty('cut');
+  });
+
+  it('AN UNDO OF A FILL PUTS BACK THE WHOLE VALUE, not the listing’s 512 characters', async () => {
+    const { bytes, value } = await longField(600);
+    const restored = await onSession(bytes, async (session) => {
+      const command = filling(0, 0, { set: 'text', text: 'Grace' });
+      const captured = await captureFillFormField(session, command);
+      if (!captured.captured) throw new Error(`the capture refused: ${captured.reason}`);
+      await applyFillFormField(session, command);
+      await invertFillFormField(session, captured.prior);
+      return mupdfWriter.serialise(session);
+    });
+    // THE OTHER LIBRARY reads it back, so the length is the document's and not this module's own reading.
+    expect((await byPdfLib(restored))['notes']).toBe(`(${value})`);
+  });
+
+  it('REFUSES TO CAPTURE a value longer than a fill can carry, so a checkpoint restores it instead', async () => {
+    const { bytes } = await longField(4097);
+    const captured = await onSession(bytes, (session) =>
+      captureFillFormField(session, filling(0, 0, { set: 'text', text: 'Grace' })),
+    );
+    expect(captured.captured).toBe(false);
+    expect(captured.captured ? '' : captured.reason).toMatch(/4097 characters/u);
+  });
+
+  it('CONTROL: a value of exactly 4,096 characters is captured whole', async () => {
+    const { bytes, value } = await longField(4096);
+    const captured = await onSession(bytes, (session) =>
+      captureFillFormField(session, filling(0, 0, { set: 'text', text: 'Grace' })),
+    );
+    expect(captured).toStrictEqual({
+      captured: true,
+      prior: { page: 0, index: 0, value: { set: 'text', text: value } },
+    });
   });
 });

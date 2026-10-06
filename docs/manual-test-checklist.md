@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 222 — and the checks only the installed window can answer.
+Every command the application registers — 226 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -45,31 +45,31 @@ is not available.
 - [ ] **Resize pages…** — Adjust · `document.resize-pages` · Shows: on screen · Help: *Resize pages*
 - [ ] **Straighten crooked pages** — Adjust · `document.deskew-pages` · Shows: on screen · Help: *Straighten crooked scanned pages*
 - [ ] **Page transition…** — Adjust · `document.page-transition` · Shows: a toast · Help: *Add page transitions for presenting*
-- [ ] **Merge a document…** — Combine · `document.merge` · Shows: on screen · Help: *Merge PDFs into one*
+- [ ] **Merge documents…** — Combine · `document.merge` · Shows: on screen · Help: *Merge PDFs into one*
 - [ ] **Split…** — Combine · `document.split` · Shows: a toast · Help: *Split a document into several PDFs*
 - [ ] **Bates numbering…** — Marks · `document.bates-number` · Shows: on screen · Help: *Add Bates numbers*
 - [ ] **Headers and footers…** — Marks · `document.header-footer` · Shows: on screen · Help: *Add headers and footers*
 - [ ] **Watermark…** — Marks · `document.watermark-pages` · Shows: on screen · Help: *Add a watermark*
-- [ ] **Add page background** — Marks · `document.page-background` · Shows: on screen · Help: *Add a page background*
+- [ ] **Add page background…** — Marks · `document.page-background` · Shows: on screen · Help: *Add a page background*
 - [ ] **Table of contents** — Marks · `document.generate-toc` · Shows: on screen · Help: *Add a table of contents*
 - [ ] **Add a barcode** — Marks · `organize.barcode` · Shows: on screen · Help: *Add and read barcodes and QR codes*
 - [ ] **Read barcodes** — Marks · `document.read-barcodes` · Shows: a result dialog · Help: *Add and read barcodes and QR codes*
 - [ ] **Delete pages…** — Pages · `document.delete-pages` · Shows: on screen · Help: *Delete pages*
-- [ ] **Rotate page** — Pages · `document.rotate-page` · Shows: on screen · Help: *Rotate pages*
-- [ ] **Rotate page 180°** — Pages · `document.rotate-page-180` · Shows: on screen · Help: *Rotate pages*
-- [ ] **Rotate page 270°** — Pages · `document.rotate-page-270` · Shows: on screen · Help: *Rotate pages*
 - [ ] **Insert from PDF…** — Pages · `document.insert-from-pdf` · Shows: on screen · Help: *Insert pages from another PDF*
-- [ ] **Extract pages…** — Pages · `document.extract-pages` · Shows: a toast · Help: *Extract pages to a new PDF*
-- [ ] **Replace page…** — Pages · `document.replace-page` · Shows: on screen · Help: *Replace a page*
-- [ ] **Duplicate page** — Pages · `document.duplicate-page` · Shows: on screen · Help: *Duplicate a page*
-- [ ] **Delete page** — Pages · `document.delete-page` · Shows: on screen · Help: *Delete pages*
 - [ ] **Insert blank page** — Pages · `document.insert-blank-page` · Shows: on screen · Help: *Insert a blank page*
 - [ ] **Insert image…** — Pages · `document.insert-image` · Shows: on screen · Help: *Add a picture as a new page*
+- [ ] **Extract pages…** — Pages · `document.extract-pages` · Shows: a toast · Help: *Extract pages to a new PDF*
+- [ ] **Replace pages…** — Pages · `document.replace-page` · Shows: on screen · Help: *Replace pages*
+- [ ] **Duplicate page** — Pages · `document.duplicate-page` · Shows: on screen · Help: *Duplicate a page*
+- [ ] **Delete page** — Pages · `document.delete-page` · Shows: on screen · Help: *Delete pages*
 - [ ] **Move page up** — Pages · `document.move-page-earlier` · Shows: on screen · Help: *Change the order of pages*
 - [ ] **Move page down** — Pages · `document.move-page-later` · Shows: on screen · Help: *Change the order of pages*
 - [ ] **Import page as layer…** — Pages · `document.import-page-as-layer` · Shows: on screen · Help: *Import a page as a layer*
-- [ ] **Find duplicate pages…** — Pages · `document.find-duplicate-pages` · Shows: a result dialog · Help: *Find and remove duplicate pages*
+- [ ] **Delete duplicate pages…** — Pages · `document.find-duplicate-pages` · Shows: a result dialog · Help: *Delete duplicate pages*
 - [ ] **Edit page in another app…** — Pages · `document.edit-page-externally` · Shows: on screen · Help: *Edit a page in another app*
+- [ ] **Rotate page** — Rotate · `document.rotate-page` · Shows: on screen · Help: *Rotate pages*
+- [ ] **Rotate page 180°** — Rotate · `document.rotate-page-180` · Shows: on screen · Help: *Rotate pages*
+- [ ] **Rotate page 270°** — Rotate · `document.rotate-page-270` · Shows: on screen · Help: *Rotate pages*
 
 ## Ribbon › Edit
 
@@ -78,7 +78,10 @@ is not available.
 - [ ] **Spell check** — Proofing · `document.spell-check` · Shows: on screen · Help: *Check spelling*
 - [ ] **Word count** — Proofing · `document.word-count` · Shows: a result dialog · Help: *Count words and characters*
 - [ ] **Edit text on the page** — Text · `text.edit` · Shows: on screen · Help: *Edit text on the page*
-- [ ] **Edit an object on page** — Text · `document.edit-page-object` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
+- [ ] **Edit all objects** — Text · `edit.objects-all` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
+- [ ] **Edit text objects** — Text · `edit.objects-text` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
+- [ ] **Edit images** — Text · `edit.objects-images` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
+- [ ] **Edit shapes** — Text · `edit.objects-shapes` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Copy** — Text · `edit.copy` · Shows: a toast · Help: *Select and copy text*
 
 ## Ribbon › Comment
@@ -87,7 +90,7 @@ is not available.
 - [ ] **Link to a page** — Links · `annotate.link-page` · Shows: on screen · Help: *Add a link to a web page or another page*
 - [ ] **Highlight text** — Markup · `annotate.highlight` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Underline text** — Markup · `annotate.underline` · Shows: on screen · Help: *Highlight, underline or strike through text*
-- [ ] **Strike through text** — Markup · `annotate.strikeout` · Shows: on screen · Help: *Highlight, underline or strike through text*
+- [ ] **Strikethrough text** — Markup · `annotate.strikeout` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Select annotations** — Markup · `annotate.select` · Shows: on screen · Help: *Change how annotations look*
 - [ ] **Freehand** — Markup · `annotate.ink` · Shows: on screen · Help: *Draw freehand*
 - [ ] **Text box** — Markup · `annotate.text-box` · Shows: on screen · Help: *Add a text box*
@@ -101,7 +104,8 @@ is not available.
 - [ ] **Measure distance** — Measure · `annotate.measure-distance` · Shows: on screen · Help: *Measure distance, area and perimeter*
 - [ ] **Measure area** — Measure · `annotate.measure-area` · Shows: on screen · Help: *Measure distance, area and perimeter*
 - [ ] **Measure perimeter** — Measure · `annotate.measure-perimeter` · Shows: on screen · Help: *Measure distance, area and perimeter*
-- [ ] **Mark for redaction** — Redact · `annotate.redact` · Shows: on screen · Help: *Redact (permanently remove) content*
+- [ ] **Mark text for redaction** — Redact · `annotate.redact-text` · Shows: on screen · Help: *Redact (permanently remove) content*
+- [ ] **Mark an area for redaction** — Redact · `annotate.redact` · Shows: on screen · Help: *Redact (permanently remove) content*
 - [ ] **Rectangle** — Shapes · `annotate.rectangle` · Shows: on screen · Help: *Draw rectangles, ellipses, lines and arrows*
 - [ ] **Ellipse** — Shapes · `annotate.ellipse` · Shows: on screen · Help: *Draw rectangles, ellipses, lines and arrows*
 - [ ] **Line** — Shapes · `annotate.line` · Shows: on screen · Help: *Draw rectangles, ellipses, lines and arrows*
@@ -127,7 +131,7 @@ is not available.
 - [ ] **Draw a list box** — Fields · `forms.field-listbox` · Shows: on screen · Help: *Create form fields*
 - [ ] **Fields list** — Fields · `view.show-fields` · Shows: on screen · Help: *Delete a form field*
 - [ ] **Find fields on this page…** — Manage · `document.find-flat-fields` · Shows: a result dialog · Help: *Find fields on a flat form*
-- [ ] **Flatten form** — Manage · `document.flatten-form` · Shows: on screen · Help: *Flatten a form*
+- [ ] **Flatten form** — Manage · `document.flatten-form` · Shows: a toast · Help: *Flatten a form*
 
 ## Ribbon › Protect
 
@@ -181,7 +185,7 @@ is not available.
 - [ ] **Fit page** — Display · `view.fit-page` · Shows: on screen · Help: *Read the status bar*
 - [ ] **Show rulers** — Display · `view.toggle-rulers` · Shows: on screen · Help: *Show rulers and a grid*
 - [ ] **Show grid** — Display · `view.toggle-grid` · Shows: on screen · Help: *Show rulers and a grid*
-- [ ] **Dim Pages** — Display · `view.toggle-dark-page` · Shows: on screen · Help: *Read with dim pages*
+- [ ] **Dim pages** — Display · `view.toggle-dark-page` · Shows: on screen · Help: *Read with dim pages*
 - [ ] **Loupe** — Display · `view.toggle-loupe` · Shows: on screen · Help: *Magnify part of a page with the loupe*
 - [ ] **Split view** — Display · `view.toggle-split` · Shows: on screen · Help: *See two pages of a document at once*
 - [ ] **Make scanned pages searchable** — OCR · `document.ocr` · Shows: a result dialog · Help: *Make scanned pages searchable (OCR)*
@@ -208,7 +212,7 @@ is not available.
 - [ ] **Copy** · `annotate.copy-selection` · Shows: a toast · Help: *Select, move, resize and delete annotations*
 - [ ] **Strikethrough** · `text.strikeout` · Shows: on screen · Help: *Highlight, underline or strike through text*
 - [ ] **Add comment** · `text.comment` · Shows: on screen · Help: *Add a note (sticky note)*
-- [ ] **Delete selected annotations** · `annotate.delete-selection` · Shows: on screen · Help: *Select, move, resize and delete annotations*
+- [ ] **Delete selection** · `annotate.delete-selection` · Shows: on screen · Help: *Select, move, resize and delete annotations*
 - [ ] **Mark for redaction** · `text.redact` · Shows: on screen · Help: *Redact (permanently remove) content*
 - [ ] **Search for this** · `text.search` · Shows: on screen · Help: *Find words in a document*
 - [ ] **Ask AI** · `ai.ask-selection` · Shows: on screen · Help: *Ask AI about selected text or a comment*
@@ -225,7 +229,7 @@ is not available.
 - [ ] **Pages panel** · `view.show-pages` · Shows: on screen
 - [ ] **Ribbon layout** · `view.layout-ribbon` · Shows: on screen · Help: *Choose a layout: Ribbon, Studio or Focus*
 - [ ] **Show or hide the document panel** · `view.toggle-panel` · Shows: on screen · Help: *Use the document panel*
-- [ ] **Clear list** · `document.clear-recent` · Shows: on screen · Help: *Reopen a recent file*
+- [ ] **Clear recent files** · `document.clear-recent` · Shows: on screen · Help: *Reopen a recent file*
 - [ ] **Bookmarks panel** · `view.show-bookmarks` · Shows: on screen
 - [ ] **Command palette** · `view.command-palette` · Shows: on screen · Help: *Find any tool by name*
 - [ ] **Light theme** · `view.theme-light` · Shows: on screen

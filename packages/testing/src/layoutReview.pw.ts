@@ -1,7 +1,9 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
-import { openApp, openDocument, openSection, runCommand, samplePdf } from './helpScreensHarness.js';
+import { type SceneShim, openApp, openDocument, openSection, runCommand, samplePdf } from './helpScreensHarness.js';
+import { readLongFields } from './longFields.js';
+import { settled } from './settled.js';
 
 /**
  * Six layout defects from the owner's screenshot review of 0.1.6.0, each asserted as the geometry or computed style it
@@ -66,13 +68,33 @@ test('the SEARCH TAB is drawn in the application’s controls, not the browser�
   expect(read.input).not.toBe('0px');
 });
 
+test('the SEARCH TAB lays its two boxes out alike: one width, one left edge, each with its buttons below it (F-E1)', async ({
+  page,
+}) => {
+  await openApp(page);
+  await openDocument(page);
+  await page.keyboard.press('Control+F');
+  const panel = page.getByRole('tabpanel', { name: 'Search' });
+  await expect(panel).toBeVisible();
+  const find = await boxOf(panel.getByRole('textbox', { name: 'Find text' }));
+  const replace = await boxOf(panel.getByRole('textbox', { name: 'Replace with' }));
+  const replaceAll = await boxOf(panel.getByRole('button', { name: 'Replace everywhere' }));
+  const searchPage = await boxOf(panel.getByRole('button', { name: 'Search this page' }));
+
+  // THE SAME COLUMN: the replace box was one item in a wrapping row, beside its label and its button.
+  expect([replace.x, replace.width]).toStrictEqual([find.x, find.width]);
+  // EACH HALF'S BUTTON UNDER ITS OWN BOX, as the find half's are.
+  expect(searchPage.y).toBeGreaterThanOrEqual(find.y + find.height);
+  expect(replaceAll.y).toBeGreaterThanOrEqual(replace.y + replace.height);
+});
+
 test('the FORMS TAB shows each field’s whole name', async ({ page }) => {
   const rect = (y: number): { x0: number; y0: number; x1: number; y1: number } => ({ x0: 72, y0: y, x1: 300, y1: y + 20 });
   await openApp(page, {
     formFields: [
       [
-        { page: 0, index: 0, kind: 'text', name: 'Full name', values: [], on: null, options: [], readOnly: false, rect: rect(640) },
-        { page: 0, index: 1, kind: 'text', name: 'Email', values: [], on: null, options: [], readOnly: false, rect: rect(600) },
+        { page: 0, index: 0, kind: 'text', name: 'Full name', values: [], on: null, options: [], readOnly: false, multiline: false, rect: rect(640) },
+        { page: 0, index: 1, kind: 'text', name: 'Email', values: [], on: null, options: [], readOnly: false, multiline: false, rect: rect(600) },
       ],
     ],
   });
@@ -120,7 +142,13 @@ test('EVERY SETTINGS PAGE keeps every row’s description at its reading basis o
   const narrow: string[] = [];
   const measured: string[] = [];
   for (const name of names) {
-    await pages.filter({ hasText: name }).first().click();
+    const chosen = pages.filter({ hasText: name }).first();
+    await chosen.click();
+    // THAT PAGE SHOWN AND ITS ROWS STILL, before they are measured: the click alone says nothing about which page's
+    // rows are in the dialog, and a page's rows may arrive after its button is pressed. A page may hold no rows of
+    // this kind at all (Keyboard is a list of commands), so the count is waited on to stop changing, not to be some.
+    await expect(chosen).toHaveAttribute('aria-current', 'page');
+    await settled(page, () => dialog.locator('.m-settings-row').count(), () => true, `the ${name} page`);
     const found = await dialog.locator('.m-settings-row').evaluateAll((all) =>
       all.map((row) => {
         const text = row.querySelector<HTMLElement>('.m-settings-row__text');
@@ -157,12 +185,73 @@ test('EVERY SETTINGS PAGE keeps every row’s description at its reading basis o
   expect(narrow).toStrictEqual([]);
 });
 
+// A VALUE TYPED THAT RUNS LONG: an example key's length, a hundred characters and more as providers issue them. Not a
+// key of any provider's form, so nothing reading the repository takes it for one.
+const LONG_KEY = `example-key-${'0'.repeat(100)}`;
+const LONG_ADDRESS = 'https://example-resource-for-a-long-name.openai.azure.com/';
+
+for (const size of [
+  { width: 1280, height: 800 },
+  { width: 760, height: 560 },
+]) {
+  test(`at ${String(size.width)} × ${String(size.height)} a KEY or an ENDPOINT holding a long value takes its row’s width, in Settings and in the AI setup (ADR-0157)`, async ({
+    page,
+  }) => {
+    await openApp(page);
+    await page.setViewportSize(size);
+    await page.getByRole('button', { name: 'Settings' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Settings' });
+    await dialog.getByRole('button', { name: 'AI', exact: true }).click();
+    // THE PAGE SHOWS THE CHOSEN PROVIDER'S ROWS, and Azure OpenAI's are a key and an endpoint.
+    await dialog.getByRole('combobox', { name: 'AI provider' }).selectOption('azure-openai');
+    await dialog.getByLabel('Azure OpenAI endpoint', { exact: true }).fill(LONG_ADDRESS);
+    await dialog.getByLabel('Azure OpenAI key', { exact: true }).fill(LONG_KEY);
+    const ai = await dialog.evaluate(readLongFields);
+    // THE POSITIVE CONTROL: two long values were seen, so an empty list is two fields measured.
+    expect(ai.seen).toBe(2);
+    expect(ai.short).toStrictEqual([]);
+    // AND OCR's, the endpoint and key of a second service on another page.
+    await dialog.getByRole('button', { name: 'OCR', exact: true }).click();
+    await dialog.getByLabel('Azure Document Intelligence endpoint', { exact: true }).fill(LONG_ADDRESS);
+    await dialog.getByLabel('Azure Document Intelligence key', { exact: true }).fill(LONG_KEY);
+    const ocr = await dialog.evaluate(readLongFields);
+    expect(ocr.seen).toBe(2);
+    expect(ocr.short).toStrictEqual([]);
+
+    // AND A SHORT FIELD STAYS SHORT: *Your name for comments* declares it does not run long, so its field keeps the
+    // browser's width rather than the row's, which the widening of every field would not.
+    await dialog.getByRole('button', { name: 'Editing defaults' }).click();
+    const row = dialog.locator('.m-settings-row').filter({ hasText: 'Your name for comments' });
+    const name = row.getByLabel('Your name for comments', { exact: true });
+    expect((await boxOf(name)).width).toBeLessThan((await boxOf(row)).width / 2);
+    await dialog.getByRole('button', { name: 'Done' }).click();
+
+    await runCommand(page, 'Set up AI…');
+    const setup = page.getByRole('dialog', { name: 'Set up the AI assistant' });
+    await setup.getByRole('combobox', { name: 'Provider' }).selectOption('azure-openai');
+    await setup.getByLabel('API key', { exact: true }).fill(LONG_KEY);
+    await setup.getByLabel('Azure OpenAI endpoint', { exact: true }).fill(LONG_ADDRESS);
+    const first = await setup.evaluate(readLongFields);
+    expect(first.seen).toBe(2);
+    expect(first.short).toStrictEqual([]);
+  });
+}
+
 test('the FLOAT BAR covers no ORGANIZE card at 1280 × 800', async ({ page }) => {
   await openApp(page);
   await openDocument(page);
   await openSection(page, 'Organize');
-  const bar = await boxOf(page.getByRole('toolbar', { name: 'Float bar' }));
-  const first = await boxOf(page.locator('.m-page-grid').getByRole('button', { name: 'Page 1', exact: true }));
+  // THE GRID LAID OUT AND STILL: it is sized through a ResizeObserver, and the bar docks against it.
+  await expect(page.locator('.m-page-grid [data-thumb-page="0"] canvas[data-drawn="true"]')).toBeAttached();
+  const [bar, first] = await settled(
+    page,
+    async () => [
+      await boxOf(page.getByRole('toolbar', { name: 'Float bar' })),
+      await boxOf(page.locator('.m-page-grid').getByRole('button', { name: 'Page 1', exact: true })),
+    ] as const,
+    () => true,
+    'the Float bar beside the Organize grid',
+  );
   expect(first.x).toBeGreaterThanOrEqual(bar.x + bar.width);
 });
 
@@ -184,13 +273,15 @@ test('a DIALOG’S OPTION GROUP has no bare frame, and each option is a line of 
 
 // EVERY DIALOG WITH A COLUMN OF CHOICES (the owner's review of 0.1.9.0, Export to Word): the question sits on its first
 // option, no taller than its own words. The heading's flex basis, a width in a row, had become a 22ch height in the
-// column. Each dialog that draws `.m-dialog-choices` is opened here: Export to Word, Split and Signature › Type.
-for (const scene of [
+// column. Every dialog that draws `.m-dialog-choices` (`DialogChoices`) is opened here: Export to Word, Split and Print.
+// Signature › Type drew a column until its styles became a menu (ADR-0150), and Edit page object until it became a mode
+// on the page (ADR-0153).
+const scenes: readonly { readonly name: string; readonly shim?: SceneShim; readonly open: (page: Page) => Promise<void> }[] = [
   {
     name: 'Export to Word',
+    // FROM THE PALETTE, as the other two: this case is about the dialog, and where its button sits moved once already.
     open: async (page: Page): Promise<void> => {
-      await openSection(page, 'Home');
-      await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Word', exact: true }).click();
+      await runCommand(page, 'Export to Word…');
     },
   },
   {
@@ -200,17 +291,15 @@ for (const scene of [
     },
   },
   {
-    name: 'Signature',
+    name: 'Print',
     open: async (page: Page): Promise<void> => {
-      // THE PALETTE, as Split above: this case is about the dialog's columns, and where Home draws Signature at this
-      // width is the ribbon's fold, which `signature.pw.ts` exercises.
-      await runCommand(page, 'Signature');
-      await page.getByRole('dialog', { name: 'Signature' }).getByRole('button', { name: 'Type' }).click();
+      await runCommand(page, 'Print…');
     },
   },
-]) {
+];
+for (const scene of scenes) {
   test(`${scene.name}: a column of choices has no gap between its question and its first option`, async ({ page }) => {
-    await openApp(page);
+    await openApp(page, scene.shim ?? {});
     await openDocument(page);
     await scene.open(page);
     const dialog = page.getByRole('dialog', { name: scene.name });

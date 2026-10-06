@@ -29,6 +29,7 @@ import {
   AI_MODELS_STORED,
   type AiModel,
   type WordMode,
+  type PageSet,
   createClient,
   defaultModel,
   storedSetting,
@@ -37,6 +38,7 @@ import {
   CapabilityRegistry,
   CommandBus,
   type ByteImage,
+  type ImageSession,
   type ContainmentVerdict,
   type EngineChannels,
   DocumentNotOpenError,
@@ -65,6 +67,8 @@ import {
   type HostSnapshot,
   type HostAnnotationsReader,
   type HostAnnotationRecordsReader,
+  type HostAnnotationWordsReader,
+  type HostLinkAddressReader,
   type BarcodeReport,
   type AccessibilityReportOnWire,
   type HostFlatFieldsReader,
@@ -94,6 +98,7 @@ import {
   type SessionAssets,
   type SnapshotWrite,
   type WriterRegistry,
+  DuplicateRemoteSession,
   classifyContainment,
   createRemoteSessions,
   engineChannels,
@@ -101,8 +106,10 @@ import {
   settingOf,
   hostedPdfLibExecution,
   nodeFileSurface,
+  readAnnounced,
   readFileIdentity,
-  signpdfWriterWith,
+  signpdfExecutionWith,
+  takeAnnounced,
   parsePageStructure,
   parsePageTables,
   withCellFills,
@@ -118,6 +125,8 @@ import {
   remoteMupdfDestinations,
   remoteMupdfAnnotations,
   remoteMupdfAnnotationRecords,
+  remoteMupdfAnnotationWords,
+  remoteMupdfLinkAddress,
   remoteMupdfBarcodes,
   remoteMupdfAccessibility,
   remoteMupdfDuplicateReport,
@@ -150,9 +159,10 @@ import {
 } from './budget.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { KnownRoot } from './displayLocation.js';
-import { NO_RECENT_PICTURES, type PictureFiles, createRecentPictures } from './recentPictures.js';
+import { NO_RECENT_PICTURES, type PictureFiles, type RecentPictures, createRecentPictures } from './recentPictures.js';
 import { NO_REQUEST_LOG, createRequestLog, observedHandlers } from './requestLog.js';
 import { createHeldPicture } from './heldPicture.js';
+import type { ScanSignature } from './signaturePicture.js';
 import { createPersonalLibrary, memoryPictureFiles } from './personalLibrary.js';
 import { saveNamesFor } from './backupCopies.js';
 import { fileAnswersFor } from './hostFileAnswers.js';
@@ -223,13 +233,13 @@ import {
 } from './sessionDirectories.js';
 import type { RecentFiles } from './recentFiles.js';
 import { createDocusignSession } from './docusignSession.js';
-import { createCloudStorage, unconfiguredCloud } from './cloudSession.js';
+import { CLOUD_ORIGINS_FILE, createCloudStorage, unconfiguredCloud } from './cloudSession.js';
 import type { OpenInBrowser } from './docusignSignIn.js';
 import type { EditWatchSurface } from './externalEditWatch.js';
 import type { OpenExternalEditor } from './openExternalEditor.js';
 import type { SecretStoreSurface } from './secretStore.js';
 import { type ChatHistory, noChatHistory } from './chatHistory.js';
-import { type SettingsSurface, createEphemeralSettings } from './settingsFile.js';
+import { type SettingsSurface, createEphemeralSettings, createJsonFile } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
 import type { CrashReports } from './crashReports.js';
@@ -248,6 +258,7 @@ import { readSpellingDictionary } from './spellingDictionaries.js';
 import type { ShellDependencies, ShellWindow } from './main.js';
 import { openWebPage } from './webPages.js';
 import { createCloseGate } from './windowClose.js';
+import { removeWorkingFile } from './workingFile.js';
 
 /**
  * Everything creating a contained engine host needs that this file may not hold.
@@ -481,6 +492,8 @@ export interface ShellComposition {
    * unmoved. Three earlier additions each cost a person a click at a dialog.
    */
   readonly pickImage: PickImage;
+  /** Which picture signs: `pickImage`'s dialog with `.pdf` offered too, a scanned signature (`signaturePicture.ts`). */
+  readonly pickSignaturePicture: PickImage;
   /**
    * Where a split's outputs go.
    *
@@ -649,6 +662,11 @@ export interface ShellComposition {
    */
   readonly openStore?: (page: StorePage) => Promise<boolean>;
   /**
+   * Opens an address a document holds, once a person asked for that link (ADR-0167) — `shell.openExternal`, built in
+   * `entry.ts` because this file imports no Electron. Absent, `document.openLink` answers that nothing was opened.
+   */
+  readonly openLink?: (address: string) => Promise<boolean>;
+  /**
    * Where the security notice's acknowledgement is kept (ADR-0110), `update-check.json` under `userData`, resolved
    * in `entry.ts`. Absent, nothing is recorded and the notice returns at the next start.
    */
@@ -785,6 +803,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     openAnnotationData,
     readAnnotationData,
     pickImage,
+    pickSignaturePicture,
     pickDirectory,
     readImage,
     pickMarkdown,
@@ -814,6 +833,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     engagementFile,
     backupLedgerFile = createEphemeralSettings(),
     openStore,
+    openLink,
     updateRecordFile,
     fetchUpdateManifest,
     enginePlatform = null,
@@ -926,6 +946,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // then refused by name rather than composed in `main` (ADR-0060).
   const composeHost =
     composePlatform === null ? null : composeHostBinding(composePlatform, failures, hostPolicy);
+  // A SIGNATURE PICTURE, a PNG, a JPEG or a scanned PDF, from either route that asks for one: the PDF is made a picture
+  // in the compose host, `null` where there is none, which is a graph a picked PDF cannot reach in a build.
+  const signaturePicture = {
+    pick: pickSignaturePicture,
+    read: readImage,
+    scan: composeHost === null ? null : composeHost.signatureFromScan,
+  };
   // BUILT AFTER THE COMPOSE HOST, which it asks to keep a page's inline images before every regenerating command
   // (ADR-0126). Without one there is nothing to ask, and each edit says so in the log rather than in silence.
   const pdfiumHost =
@@ -995,6 +1022,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     }
     return writer.serialise(session);
   };
+  // THE SAME BYTES WITH THE KEY THEY OPEN WITH, for a PDFium read (ADR-0171's addendum): a document opened with its
+  // password serialises to its own encrypted form.
+  const currentImage = async (docId: DocId, sessions: DocumentSessions): Promise<ImageSession> => ({
+    bytes: await currentBytes(docId, sessions),
+    opensWith: engine.opensWith(docId),
+  });
   // THE SAME FLUSH, STAGED: the bytes stay where the host wrote them until they are placed, so a save, a copy and a
   // refreshed image never hold them in `main` (ADR-0121 Decision 2 and its addendum). `currentBytes`' check, the
   // same writer's session.
@@ -1073,6 +1106,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       provenance: createBackupProvenance(backupLedgerFile, {
         identity: readFileIdentity,
         remove: (path) => nodeFileSurface.remove(path),
+        // THE HELD-FILE LADDER'S DELAYS, real ones: a copy another program holds is tried again as a held rename is.
+        wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       }),
     },
     // THE SAME COMPOSITION POINT AS THE FLUSH, and for the same reason: the
@@ -1237,6 +1272,17 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // opener are both in scope on this line and nowhere else.
     restore: (docId, write) =>
       engine.recycle(docId, (id) => engineHost.restoreSessions(id, write)),
+    // A REMOVAL'S SAVE OPENS THE SESSIONS AGAIN from the file it wrote (ADR-0164), opening before releasing; a file that
+    // opens only with a password is the one refusal it expects, and the document keeps the sessions it had.
+    renew: (docId, write) =>
+      engine.renew(
+        docId,
+        (id) => engineHost.restoreSessions(id, write),
+        (thrown) => thrown instanceof EngineDocumentLocked,
+      ),
+    // BUILT BELOW, from this service's own `firstPagePicture`; a save, which is what calls this, cannot run before the
+    // graph exists.
+    recentPicture: { retake: (docId, path) => recentPictures.retake(docId, path) },
     // THE ANNOTATION LIST, composed here for the reads above's reason, and
     // whole-document rather than per page: a panel asks where the comments are,
     // which is a question about all of it.
@@ -1251,6 +1297,19 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.annotationCopy(session, page, indices);
+    },
+    // ONE MARK'S WHOLE WORDS, composed here for the annotation list's reason: read in the host, for an editor whose
+    // listing was cut.
+    annotationWords: (docId, sessions, page, index) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.annotationWords(session, page, index);
+    },
+    // ONE LINK'S WHOLE ADDRESS, for a person following it (ADR-0167), composed for the link read's reason.
+    linkAddress: (docId, sessions, page, index) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.linkAddress(session, page, index);
     },
     // THE FORM FIELD LIST, composed here for the annotation list's reason and
     // whole-document for its reason: a panel asks what a form asks for, which
@@ -1294,7 +1353,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // the first thing to make it matter.
     textBlocks: async (docId, sessions, page) => {
       if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s text');
-      const found = await pdfiumHost.textRuns(await currentBytes(docId, sessions), page);
+      const found = await pdfiumHost.textRuns(await currentImage(docId, sessions), page);
       // THE GROUPING IS MAIN'S, and this is the only place it happens.
       //
       // ADR-0049 permits a grouping of ours where no engine answers, and its
@@ -1348,7 +1407,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // route to them.
     pageObjects: async (docId, sessions, page) => {
       if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s objects');
-      return pdfiumHost.pageObjects(await currentBytes(docId, sessions), page);
+      return pdfiumHost.pageObjects(await currentImage(docId, sessions), page);
     },
     // THE SECOND RASTERISER, and the ENCODE is this layer's job.
     //
@@ -1373,7 +1432,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         throw new EngineUnavailableError('rendering a page with the second engine');
       }
       const raster = await pdfiumHost.renderPage(
-        await currentBytes(docId, sessions),
+        await currentImage(docId, sessions),
         page,
         width,
         height,
@@ -1406,6 +1465,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // A KEPT PICTURE OR SIGNATURE, read — never changed — when one is placed or signs.
     library,
     heldPicture,
+    signaturePicture,
     // EDITING A PAGE ELSEWHERE, and every member is a parameter for `image`'s reason:
     // `shell` is Electron's and `fs.watch` is Node's, and this file imports neither (ADR-0062).
     externalEdit: { pick: pickDestination, open: openExternalEditor, watch: editWatch },
@@ -1485,10 +1545,10 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     },
     // THE WORD EXPORT, `stagedBytesOf`'s route: composed in the host with its pictures and staged there, so
     // `main` moves the package and never reads it (ADR-0072's amendment of 2026-10-01).
-    word: (docId, sessions, mode) => {
+    word: (docId, sessions, mode, pages) => {
       const session = sessions.mupdf;
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-      return engineHost.word(session, mode);
+      return engineHost.word(session, mode, pages);
     },
     // THE PAGE IMAGE, composed as the snapshot is and for its reasons: MuPDF
     // rasterises in the host, and the image arrives through the granted directory.
@@ -1558,7 +1618,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // with nowhere to put the picture would pay that on every open for nothing — measured the costly way: the
   // composition cases' fake host answers no page image, so a capture held the lane and the next command
   // waited out its timeout.
-  const recentPictures =
+  // ANNOTATED, because the service above takes `retake` from this and this takes `firstPagePicture` from it: without
+  // the type, each one's inference waits on the other's.
+  const recentPictures: RecentPictures =
     recentPictureFiles === undefined
       ? NO_RECENT_PICTURES
       : createRecentPictures({
@@ -1615,7 +1677,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       commands,
       documents,
       // THE LIBRARY'S CHANNELS: the image picker, and a size before the bounded read, as the image import takes them.
-      library: { store: library, pick: pickImage, size: sizeImage, read: readImage, held: heldPicture },
+      library: { store: library, pick: pickImage, size: sizeImage, read: readImage, held: heldPicture, signaturePicture },
       // THE PAPERCLIP (ADR-0135): any file, each read by the contained reader its family names — `null` where this
       // build has none, which names the file rather than reading it anywhere else.
       attachments: {
@@ -1679,6 +1741,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
               clients: cloudComposition.clients,
               openInBrowser,
               workingDirectory: cloudComposition.workingDirectory,
+              // BESIDE THE COPIES, and kept as long as they are: a copy reopened in a later run is the same cloud file.
+              origins: createJsonFile(cloudComposition.workingDirectory, CLOUD_ORIGINS_FILE),
               maxBytes: MAIN_DOCUMENT_BYTES_CEILING,
               writeWorkingCopy: async (path, open) => {
                 await mkdir(dirname(path), { recursive: true });
@@ -1761,6 +1825,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // the one route by which this application opens a URL outside itself.
       openWebPage: (page) => openWebPage(page, openInBrowser),
       openStore: async (page) => (openStore === undefined ? false : openStore(page)),
+      openLink: async (address) => (openLink === undefined ? false : openLink(address)),
       closeListening: () => {
         if (shellWindow === null) return false;
         closeGate.listening();
@@ -1884,6 +1949,10 @@ function engineSessionOpener(
   readonly annotations: HostAnnotationsReader;
   /** Named marks serialised for the clipboard, from whichever host is live. */
   readonly annotationCopy: HostAnnotationRecordsReader;
+  /** One mark's whole words, from whichever host is live. */
+  readonly annotationWords: HostAnnotationWordsReader;
+  /** One link's whole address, from whichever host is live (ADR-0167). */
+  readonly linkAddress: HostLinkAddressReader;
   readonly formFields: HostFormFieldsReader;
   /** One page's field candidates, from whichever host is live. */
   readonly flatFields: HostFlatFieldsReader;
@@ -1908,7 +1977,7 @@ function engineSessionOpener(
    */
   readonly stage: (session: MupdfSession) => Promise<StagedImage>;
   /** The document as a Word package, composed by the host and left staged for `main` to move (ADR-0072). */
-  readonly word: (session: MupdfSession, mode: WordMode) => Promise<StagedImage>;
+  readonly word: (session: MupdfSession, mode: WordMode, pages: PageSet) => Promise<StagedImage>;
   /** Rasterises a region of a page. On this surface for {@link extract}'s reason. */
   readonly snapshot: HostSnapshot;
   /** Encodes the form's data. On this surface for {@link extract}'s reason. */
@@ -2033,15 +2102,22 @@ function engineSessionOpener(
       serialiseInto: (session, destination) => liveWriter().serialiseInto(session, destination),
       ...hostedPdfLibExecution((session, command, reads) => liveWriter().pdfLib(session, command, reads)),
     },
-    // THE SIGNER, registered directly for `pdf-lib`'s reason: a byte-image writer
-    // of pure JavaScript, complete at composition, with no host to wait for. It
-    // was absent until 2026-09-13, and `compositionHost.test.ts`' signing case is
-    // the one that routes a signature through this map rather than a bus of its
-    // own — which is the only kind of case that could have seen it.
-    // AND ITS TIMESTAMP PORT, built here because this is the one module that may
-    // decide a request leaves the machine (ADR-0058 Decision 4). The kernel's own
-    // `localSignpdfWriter` has no transport, and refuses a timestamp through it.
-    signpdf: signpdfWriterWith(timestampTransport()),
+    // THE SIGNER, HOSTED IN THE MuPDF HOST since ADR-0148, and written the way `pdf-lib` is for that reason: its
+    // placeholder is prepared in a host that does not exist until one does. It was registered directly, as a
+    // byte-image writer of pure JavaScript in `main` — which parsed the whole document in the process that holds the
+    // key. The host writes the placeholder and the ranges; `main` checks the four numbers and signs. It was absent
+    // until 2026-09-13, and `compositionHost.test.ts`' signing case is the one that routes a signature through this
+    // map rather than a bus of its own — which is the only kind of case that could have seen it.
+    // AND ITS TIMESTAMP PORT, built here because this is the one module that may decide a request leaves the machine
+    // (ADR-0058 Decision 4). The kernel's own `localSignpdfWriter` has no transport, and refuses a timestamp through it.
+    signpdf: {
+      serialise: (session) => liveWriter().serialise(session),
+      serialiseInto: (session, destination) => liveWriter().serialiseInto(session, destination),
+      ...signpdfExecutionWith(
+        (session, request) => liveWriter().prepareSignature(session, request),
+        timestampTransport(),
+      ),
+    },
   };
 
   /**
@@ -2235,6 +2311,34 @@ function engineSessionOpener(
       );
     }
     return annotationCopy(session, page, indices);
+  };
+
+  /** One mark's whole words' half of the same registration. See {@link pageText}. */
+  let annotationWords: HostAnnotationWordsReader | null = null;
+
+  const readAnnotationWordsThroughHost: HostAnnotationWordsReader = (session, page, index) => {
+    if (annotationWords === null) {
+      throw new Error(
+        'An annotation words read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return annotationWords(session, page, index);
+  };
+
+  /** One link's whole address' half of the same registration (ADR-0167). See {@link pageText}. */
+  let linkAddress: HostLinkAddressReader | null = null;
+
+  const readLinkAddressThroughHost: HostLinkAddressReader = (session, page, index) => {
+    if (linkAddress === null) {
+      throw new Error(
+        'A link address read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return linkAddress(session, page, index);
   };
 
   /** The form field list's half of the same registration. See {@link pageText}. */
@@ -2506,6 +2610,8 @@ function engineSessionOpener(
     signaturesKept = remoteMupdfSignaturesKept(client, remote);
     annotations = remoteMupdfAnnotations(client, remote);
     annotationCopy = remoteMupdfAnnotationRecords(client, remote);
+    annotationWords = remoteMupdfAnnotationWords(client, remote);
+    linkAddress = remoteMupdfLinkAddress(client, remote);
     formFields = remoteMupdfFormFields(client, remote);
     flatFields = remoteMupdfFlatFields(client, remote);
     barcodes = remoteMupdfBarcodes(client, remote);
@@ -2527,8 +2633,7 @@ function engineSessionOpener(
    * open: every MuPDF call that answers it is an authentication attempt, and a
    * failed attempt destroys the session's key (ADR-0055). The two exported
    * members below drop the access, because recycling and restoring do not carry
-   * one — a recycle of an unlocked document is refused, and a restore replays
-   * bytes the same password already opened.
+   * one: they reopen bytes the held password already opened (ADR-0171).
    */
   const buildWithAccess = async (
     docId: DocId,
@@ -2611,10 +2716,21 @@ function engineSessionOpener(
       // the registry owns the pair (ADR-0030 Decision 2), which is what lets
       // `serialise` and `close` work on a session this root opened — they read
       // the area from here rather than from a map private to the adapter.
-      return remote.adopt(answer.value.session, {
-        snapshotDirectory: paths.snapshot,
-        outputDirectory: paths.output,
-      });
+      try {
+        return remote.adopt(answer.value.session, {
+          snapshotDirectory: paths.snapshot,
+          outputDirectory: paths.output,
+        });
+      } catch (thrown) {
+        // A HANDLE ISSUED TWICE ENDS THIS HOST (CR-SEC-10), as every protocol violation does on the client's own side:
+        // the peer has stopped being one we understand, and the documents it holds are rebuilt in a host of their own
+        // rather than left reading each other's areas. NOT `live.close()`: that ends a connection as `shutdown`, which
+        // recovery rightly leaves alone, and every document waited for a host nobody built. This open then fails as
+        // every call on an ended connection does, so the ending that counted this document and queued its reopen is
+        // the one owner of what happens to it next.
+        if (thrown instanceof DuplicateRemoteSession) throw new HostConnectionLost(live.client.violated(thrown.message));
+        throw thrown;
+      }
     };
 
     const { session } = await openEngineSessionFrom(write, areas, open, password);
@@ -2653,10 +2769,12 @@ function engineSessionOpener(
     return { sessions: { mupdf: session }, access: opened };
   };
 
+  // EVERY REOPEN OPENS WITH THE PASSWORD the document was unlocked with, read at the open from the one holder
+  // (ADR-0171 Decision 4): a checkpoint of a document opened locked is its own encrypted form, like the canonical image.
   const buildSessions = async (
     docId: DocId,
     write: SnapshotWrite,
-  ): Promise<DocumentSessions> => (await buildWithAccess(docId, write)).sessions;
+  ): Promise<DocumentSessions> => (await buildWithAccess(docId, write, sessions.opensWith(docId)?.reveal())).sessions;
 
   /**
    * One document's sessions from the canonical image — open, reopen, recycle.
@@ -2673,7 +2791,7 @@ function engineSessionOpener(
     buildWithAccess(docId, canonicalImageWrite(documents, docId), password);
 
   const create = async (docId: DocId): Promise<DocumentSessions> =>
-    (await createWithAccess(docId)).sessions;
+    (await createWithAccess(docId, sessions.opensWith(docId)?.reveal())).sessions;
 
   // THE PROMISE IS RETURNED, not voided. `onDocumentOpened` queues its lane entry
   // before its first await, so the ordering it guarantees holds either way; what
@@ -2704,12 +2822,12 @@ function engineSessionOpener(
    * flight, and the loser's session would be held for a document whose entry
    * the winner had already replaced.
    *
-   * ## The password is not held, anywhere, for any duration
+   * ## The password is held only once the engine accepted it
    *
-   * It arrives as an argument, reaches `engine/open` once, and leaves with the
-   * frame. Nothing records it — not the entry, not the record, not a retry —
-   * which is what makes the refusal in `recycle` honest rather than arbitrary
-   * (ADR-0055).
+   * A wrong one reaches `engine/open` once and leaves with the frame. A right one
+   * is handed to the supervisor with the sessions it opened, in one step, and is
+   * held there until the document closes, so every later open of its sessions
+   * can be made (ADR-0171).
    */
   const unlockDocument = async (docId: DocId, password: string): Promise<UnlockOutcome> => {
     // THE LANE'S VERSION STAMP IS DISCARDED, deliberately. Unlocking changes no
@@ -2724,7 +2842,7 @@ function engineSessionOpener(
       if (sessions.locked(docId) === undefined) return { kind: 'not-locked' } as const;
       try {
         const built = await createWithAccess(docId, password);
-        sessions.hold(docId, built.sessions);
+        sessions.unlock(docId, built.sessions, password);
         return { kind: 'unlocked', access: built.access } as const;
       } catch (error) {
         if (error instanceof EngineDocumentLocked) {
@@ -2785,6 +2903,8 @@ function engineSessionOpener(
     signaturesKept: readSignaturesKeptThroughHost,
     annotations: readAnnotationsThroughHost,
     annotationCopy: copyAnnotationsThroughHost,
+    annotationWords: readAnnotationWordsThroughHost,
+    linkAddress: readLinkAddressThroughHost,
     formFields: readFormFieldsThroughHost,
     flatFields: readFlatFieldsThroughHost,
     barcodes: readBarcodesThroughHost,
@@ -2794,7 +2914,7 @@ function engineSessionOpener(
     // THE SAVE'S FLUSH, staged in the host's output directory and moved into place (ADR-0121's addendum).
     stage: (session) => liveWriter().stage(session),
     // THE WORD EXPORT, `stage`'s route: composed in the host, moved into place (ADR-0072's amendment of 2026-10-01).
-    word: (session, mode) => liveWriter().word(session, mode),
+    word: (session, mode, pages) => liveWriter().word(session, mode, pages),
     snapshot: snapshotThroughHost,
     exportFormData: exportFormDataThroughHost,
     exportAnnotationData: exportAnnotationDataThroughHost,
@@ -3050,9 +3170,9 @@ function pdfiumHostBinding(
       // checkpoint on the terminal branch start a process. It is written as the
       // identity directly rather than delegated, because delegating it would
       // require a host to exist in order to return the argument.
-      serialise: (session) => Promise.resolve(session),
+      serialise: (session) => Promise.resolve(session.bytes),
       // THE IDENTITY WRITTEN OUT, for the same reason: a checkpoint of bytes already in hand starts no host.
-      serialiseInto: serialiseIntoFile((session: Uint8Array) => Promise.resolve(session)),
+      serialiseInto: serialiseIntoFile((session: ImageSession) => Promise.resolve(session.bytes)),
     },
     textRuns: async (image, page) => (await ensure()).textRuns(image, page),
     pageObjects: async (image, page) => (await ensure()).pageObjects(image, page),
@@ -3124,6 +3244,7 @@ function composeHostBinding(
   readonly keepInlineImages: PdfiumInputKeeper;
   readonly workbooks: WorkbookComposer;
   readonly imageSize: NonNullable<AttachmentReaders['pictureSize']>;
+  readonly signatureFromScan: ScanSignature;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -3224,21 +3345,16 @@ function composeHostBinding(
 
   /**
    * The composed PDF, taken from the output directory and held to the count the host
-   * reported — one check for every compose channel, so no channel can skip it.
+   * reported — one check for every compose channel, so no channel can skip it, and the one
+   * every engine host's output takes (`takeAnnounced`): a file of another size is refused
+   * before it is read.
    */
   const takeComposed = async (
     area: Parameters<typeof areas.takeOutput>[0],
     into: string,
     reported: number,
   ): Promise<Uint8Array> => {
-    const pdf = await areas.takeOutput(area, into);
-    if (pdf.length !== reported) {
-      throw new Error(
-        `the compose host reported ${String(reported)} bytes and ${String(pdf.length)} ` +
-          'were read back, so the composed document is not the one it wrote.',
-      );
-    }
-    return pdf;
+    return takeAnnounced(areas, area, into, reported);
   };
 
   const ensure = (): Promise<Live> =>
@@ -3340,18 +3456,21 @@ function composeHostBinding(
     // input goes whatever the call answered, for `compose`'s reason. The count the host reported
     // is held to the file's size before anything is streamed, which separates *the host wrote
     // nothing* from *the read found nothing* without reading the copy into `main`.
-    optimize: async (pdf, setting) => {
+    optimize: async (pdf, setting, opensWith) => {
       const built = await ensure();
       const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
       const from = areas.mintName();
       const into = areas.mintName();
       const copyPath = join(area.outputDirectory, into);
-      const discard = (): Promise<void> => rm(copyPath, { force: true });
+      // NEVER REJECTS (`workingFile.ts`): it runs in a `finally` after the copy was streamed, where a failed removal
+      // turned a finished copy into an error.
+      const discard = (): Promise<void> => removeWorkingFile(copyPath, failures);
 
       await writeFile(join(area.snapshotDirectory, from), pdf);
       const answer = await built.client['engine/optimize']({
         session: built.session,
         from,
+        password: opensWith?.reveal() ?? null,
         into,
         ...OPTIMIZE_SETTINGS[setting],
       }).finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
@@ -3402,9 +3521,16 @@ function composeHostBinding(
         const from = areas.mintName();
         const into = areas.mintName();
         keptPath = join(area.outputDirectory, into);
-        await writeFile(join(area.snapshotDirectory, from), image);
-        const answer = await built.client['engine/keep-inline-images']({ session: built.session, from, into, scope })
-          .finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
+        await writeFile(join(area.snapshotDirectory, from), image.bytes);
+        // THE KEY THE PDFIUM CALL CARRIES (ADR-0171's addendum): without it an encrypted page is read undecrypted and
+        // no inline image is found, so the edit after it would drop the picture with nothing said.
+        const answer = await built.client['engine/keep-inline-images']({
+          session: built.session,
+          from,
+          password: image.opensWith?.reveal() ?? null,
+          into,
+          scope,
+        }).finally(() => rm(join(area.snapshotDirectory, from), { force: true }));
         if (!answer.ok) return left(`the compose host answered ${answer.error.code}, so none was checked`);
         const value = answer.value;
         if (value.kind === 'unavailable') return left('the native MuPDF library is not in this build, so none was checked');
@@ -3476,7 +3602,9 @@ function composeHostBinding(
         const built = await ensure();
         const into = areas.mintName();
         const joinedPath = join(built.paths.output, into);
-        const discard = (): Promise<void> => rm(joinedPath, { force: true });
+        // NEVER REJECTS (`workingFile.ts`), so the `discard` handed out below, which nothing awaits, cannot leave a
+        // rejection nothing handles when the file is still held open.
+        const discard = (): Promise<void> => removeWorkingFile(joinedPath, failures);
         const answer = await built.client['engine/join-pdfs']({ session: built.session, from: [...names], into });
         if (!answer.ok) {
           await discard();
@@ -3520,6 +3648,25 @@ function composeHostBinding(
       return answer.value.kind === 'sized' ? { width: answer.value.width, height: answer.value.height } : null;
     },
 
+    // A SCANNED SIGNATURE PDF (`signaturePicture.ts`): `imageSize`'s steps, and the PNG taken from the area against the
+    // count the host reported, as a composed PDF is. `unavailable` throws: the document engine is the same library, so a
+    // build without it opens no document, and a person cannot reach a signature to ask.
+    signatureFromScan: async (pdf) => {
+      const built = await ensure();
+      const area = { snapshotDirectory: built.paths.snapshot, outputDirectory: built.paths.output };
+      const from = areas.mintName();
+      const into = areas.mintName();
+      await writeFile(join(area.snapshotDirectory, from), pdf);
+      const answer = await built.client['engine/signature-from-scan']({ session: built.session, from, into }).finally(() =>
+        rm(join(area.snapshotDirectory, from), { force: true }),
+      );
+      if (!answer.ok) throw new Error(`the compose host could not read the signature PDF: ${answer.error.code}`);
+      const value = answer.value;
+      if (value.kind === 'unavailable') throw new Error('the compose host has no MuPDF library to read a signature PDF with');
+      if (value.kind !== 'drawn') return { kind: value.kind };
+      return { kind: 'drawn', png: await takeComposed(area, into, value.bytes) };
+    },
+
     close: async () => {
       const live = host;
       host = null;
@@ -3558,14 +3705,10 @@ function sessionAreas(platform: EngineHostPlatform): SessionAreaSurface {
     // host that could would have main open an arbitrary path and take the bytes
     // as the user's document.
     mintName: () => randomBytes(16).toString('hex'),
-    takeOutput: async (area, name) => {
-      const path = join(area.outputDirectory, name);
-      const bytes = await readFile(path);
-      await rm(path, { force: true });
-      // A VIEW OF THE READ'S OWN BUFFER, never a copy: `readFile` answers an exactly-sized allocation it owns, and
-      // `new Uint8Array(bytes)` made a second whole image for as long as both lived (ADR-0121's addendum).
-      return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    },
+    // HELD TO THE HOST'S COUNT BEFORE ANYTHING IS READ (`readAnnounced`, CR-SEC-08): reading the file whole and
+    // comparing afterwards let a hostile host choose what main allocates. Its answer is an exactly-sized allocation of
+    // its own, so no second image is made (ADR-0121's addendum).
+    takeOutput: (area, name, announced) => readAnnounced(join(area.outputDirectory, name), announced),
     // A MOVE, so the bytes never pass through `main` (ADR-0121). A checkpoint or a refreshed image lands beside the
     // session root under `sessionData`, one volume, so it is a rename. A SAVE's temporary file sits beside the
     // person's document, which may be on any drive: there `rename` answers `EXDEV`, and a move across volumes is a

@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { SECTION_IDS } from '../registries/placement.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from './all.js';
-import { LAYOUT_MODE_SETTING, RIBBON_SECTION_SETTING } from './layout.js';
+import {
+  CONTEXT_PANEL_MIN_WIDTH,
+  CONTEXT_PANEL_WIDTH_SETTING,
+  LAYOUT_MODE_SETTING,
+  RIBBON_SECTION_SETTING,
+} from './layout.js';
 
 /**
  * The layout settings' own invariants — the ones a derived Settings dialog and the rail both read.
@@ -17,6 +22,17 @@ describe('the layout settings', () => {
   it('the layout mode is §10.3’s three modes, Ribbon by default', () => {
     expect(LAYOUT_MODE_SETTING.schema.options).toStrictEqual(['ribbon', 'studio', 'focus']);
     expect(LAYOUT_MODE_SETTING.fallback).toBe('ribbon');
+  });
+
+  it('a contextual-panel width stored under the OLD 216 floor reads as the new floor, never as the fallback', () => {
+    const registry = new SettingsRegistry(ALL_SETTINGS);
+    expect(CONTEXT_PANEL_MIN_WIDTH).toBe(264);
+    // A PERSON WHO CHOSE NARROW stays at the narrowest the panel now draws; refused, they would be put back at 340.
+    expect(registry.read(CONTEXT_PANEL_WIDTH_SETTING.id, 230)).toBe(CONTEXT_PANEL_MIN_WIDTH);
+    expect(registry.read(CONTEXT_PANEL_WIDTH_SETTING.id, 216)).toBe(CONTEXT_PANEL_MIN_WIDTH);
+    // CONTROL: a width at or over the floor is the person's, untouched, and a value that is not a width is refused.
+    expect(registry.read(CONTEXT_PANEL_WIDTH_SETTING.id, 300)).toBe(300);
+    expect(registry.read(CONTEXT_PANEL_WIDTH_SETTING.id, 'wide')).toBe(CONTEXT_PANEL_WIDTH_SETTING.fallback);
   });
 
   it('both are registered, and the registry accepts their titles and fallbacks', () => {

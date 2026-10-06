@@ -38,10 +38,6 @@ const markdownImportProblemSchema = z.discriminatedUnion('reason', [
     line: z.number().int().positive().nullable(),
   }),
   z.object({
-    reason: z.literal('too-many-columns'),
-    line: z.number().int().positive().nullable(),
-  }),
-  z.object({
     reason: z.literal('destination-contested'),
     openElsewhere: z.number().int().positive(),
   }),
@@ -50,6 +46,8 @@ const markdownImportProblemSchema = z.discriminatedUnion('reason', [
   z.object({ reason: z.literal('conversion-failed') }),
   z.object({ reason: z.literal('absent') }),
   z.object({ reason: z.literal('at-capacity') }),
+  // THE OPENED FILE'S READ REFUSED — another program holding it, or no permission (7a): every open route's two.
+  z.object({ reason: z.enum(['busy', 'denied']) }),
   // AN IMAGE IMPORT'S OWN, and the two per-image reasons carry the FILE NAME where the
   // line reasons carry a line: a person finds a picture by its name, bounded by the
   // channel's own name bound.

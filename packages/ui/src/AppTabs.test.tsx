@@ -2,7 +2,7 @@
 import { I18nProvider } from '@lingui/react';
 import { type ContractClient, channels, createClient } from '@monstera/contract';
 import { type DocId, asDocId, asDocVersion, ok } from '@monstera/shared';
-import { act, fireEvent, render as renderBare, screen } from '@testing-library/react';
+import { act, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { vi } from 'vitest';
@@ -48,12 +48,28 @@ const PAGES: Readonly<Record<string, number>> = { [FIRST]: 2, [SECOND]: 4 };
 // document, so the stub answers the count that document has — without which
 // both tabs would report the same shape and the case below could not tell a
 // per-document count from a shared one.
+/** Every view opened, with the version it was bound to and the move callback it was handed, as the transport holds it. */
+const viewsOpened = vi.hoisted(
+  () =>
+    [] as {
+      readonly docId: string;
+      readonly version: number;
+      readonly onVersionMoved: (next: { readonly version: number; readonly byteLength: number }) => void;
+    }[],
+);
+
 vi.mock('./documentView.js', () => ({
-  openDocumentView: ({ docId }: { docId: DocId }) =>
-    Promise.resolve({
-      document: { numPages: PAGES[docId] ?? 1 },
+  openDocumentView: (options: {
+    docId: DocId;
+    version: number;
+    onVersionMoved: (next: { readonly version: number; readonly byteLength: number }) => void;
+  }) => {
+    viewsOpened.push({ docId: options.docId, version: options.version, onVersionMoved: options.onVersionMoved });
+    return Promise.resolve({
+      document: { numPages: PAGES[options.docId] ?? 1 },
       close: () => Promise.resolve(),
-    }),
+    });
+  },
 }));
 
 vi.mock('./renderPage.js', async (importOriginal) => ({
@@ -130,6 +146,8 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
     if (id === 'log.reveal') return Promise.resolve(ok({ revealed: false }));
     // The shell announces its close subscription on every mount (`windowClose.ts`).
     if (id === 'window.closeListening') return Promise.resolve(ok({ acknowledged: true }));
+    // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
+    if (id === 'document.fileAccess') return Promise.resolve(ok({ access: 'writable' as const }));
     // E3's prompt asks once per mount; not due, so no banner sits over the tabs these cases drive.
     if (id === 'app.reviewPrompt') return Promise.resolve(ok({ due: false }));
     throw new Error(`this fixture has no answer for ${id}`);
@@ -312,9 +330,9 @@ describe('the Organize grid, driven through App (ADR-0104)', () => {
     expect(card(container, 1).getAttribute('aria-pressed')).toBe('true');
     await act(async () => {
       const rotate = [...container.querySelectorAll<HTMLButtonElement>('.m-ribbon button')].find(
-        (button) => button.textContent === 'Rotate page',
+        (button) => button.textContent === 'Rotate 90°',
       );
-      if (rotate === undefined) throw new Error('no Rotate page in the Organize ribbon');
+      if (rotate === undefined) throw new Error('no Rotate 90° in the Organize ribbon');
       rotate.click();
       await Promise.resolve();
       await Promise.resolve();
@@ -328,7 +346,42 @@ describe('the Organize grid, driven through App (ADR-0104)', () => {
       fireEvent.keyDown(card(container, 1), { key: 'Delete' });
       await Promise.resolve();
     });
+    // IT ASKS FIRST (the owner, 2026-10-05, CR-COR-06): the Delete pages dialog, holding the page the key named, and
+    // nothing is sent until the person confirms it.
+    const dialog = await screen.findByRole('dialog', { name: 'Delete pages' });
+    expect(executed.at(-1)).toMatchObject({ kind: 'rotatePages' });
+    expect(within(dialog).getByRole('textbox')).toHaveProperty('value', '2');
+    await act(async () => {
+      within(dialog).getByRole('button', { name: 'Delete pages' }).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     expect(executed.at(-1)).toStrictEqual({ kind: 'deletePages', pages: [1] });
+  });
+
+  it('CANCEL on the Delete key’s question sends nothing, so every page stays (CR-COR-06)', async () => {
+    const { client: built, executed } = organizing();
+    const { container } = render(<App client={built} settings={organizeSettings()} />);
+    await openOne();
+    const before = executed.length;
+
+    await act(async () => {
+      fireEvent.keyDown(card(container, 1), { key: 'Delete' });
+      await Promise.resolve();
+    });
+    const dialog = await screen.findByRole('dialog', { name: 'Delete pages' });
+    await act(async () => {
+      within(dialog).getByRole('button', { name: 'Cancel' }).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // THE CALL THAT WAS NOT MADE, not the page count, which a stubbed kernel would report unchanged either way.
+    expect(executed.slice(before).filter((command) => (command as { readonly kind?: unknown }).kind === 'deletePages')).toStrictEqual(
+      [],
+    );
+    expect(screen.queryByRole('dialog', { name: 'Delete pages' })).toBeNull();
+    expect(container.querySelectorAll('.m-page-grid [data-thumb-page]')).toHaveLength(2);
   });
 
   it('ENTER on a card opens that page in the reading view, which is Home', async () => {
@@ -348,6 +401,26 @@ describe('the Organize grid, driven through App (ADR-0104)', () => {
 });
 
 describe('multi-document tabs', () => {
+  it('the document ON SHOW takes the version its transport reports moved, as one behind does (CR-DOC-03)', async () => {
+    const { client: built } = client();
+    render(<App client={built} settings={freshSettings()} />);
+    await openOne();
+    const shown = viewsOpened.filter((view) => view.docId === FIRST);
+    const bound = shown.at(-1);
+    if (bound === undefined) throw new Error('the document on show opened no view');
+    expect(bound.version).toBe(1);
+
+    // WHAT THE TRANSPORT DOES on a range answered stale: tells the layer the version main named.
+    await act(async () => {
+      bound.onVersionMoved({ version: 7, byteLength: 1024 });
+      for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
+    });
+
+    // THE VIEW IS OPENED AGAIN AT IT. A layer on show that dropped the move kept its view bound to 1, where main
+    // answers every range stale, so the page never drew.
+    expect(viewsOpened.filter((view) => view.docId === FIRST).slice(shown.length).map((view) => view.version)).toStrictEqual([7]);
+  });
+
   it('opens a SECOND document beside the first and brings it forward', async () => {
     const { client: built } = client();
     const { container } = render(<App client={built} settings={freshSettings()} />);

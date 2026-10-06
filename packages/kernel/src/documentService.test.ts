@@ -15,7 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 
-import { type DocId, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
+import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CapabilityRegistry } from './capabilityRegistry.js';
@@ -33,8 +33,11 @@ import {
   type CommandWriter,
   type RangeReader,
   type SaveWriter,
+  accessOfRefusedOpen,
+  saveWriteCause,
   sweepCheckpointDirectories,
 } from './documentService.js';
+import type { AtomicWriteFailure } from './atomicWrite.js';
 
 /**
  * A service with a ceiling large enough not to be the thing under test.
@@ -108,6 +111,9 @@ const COMMAND_WRITER_FOR_TEST = 'command-writer' as CommandWriter;
  * to exercise an integer.
  */
 const SAVE_WRITER_FOR_TEST = 'save-writer' as SaveWriter;
+
+/** The same relationship again, for {@link RangeReader}: these cases read ranges as the renderer's transport does. */
+const RANGE_READER_FOR_TEST = 'range-reader' as RangeReader;
 
 /**
  * What carries the weight here, as in the identity tests, is the set of cases
@@ -1154,6 +1160,7 @@ function terminalEntry(size: number): LogEntry {
     checkpoint: { path: join(root, 'no-such-checkpoint.pdf'), byteLength: size } as Checkpoint,
     reason: 'a checkpoint whose only property under test is its size',
     read: undefined,
+    result: null,
   };
 }
 
@@ -1202,22 +1209,35 @@ describe('the canonical image', () => {
     expect(service.residentDocumentBytes()).toBe(oneDocument + statSync(other()).size);
   });
 
-  it('refuses a document that would cross the ceiling, and says by how much', async () => {
+  it('OPENS a document past the ceiling, held in a file it serves ranges from, and holds nothing in memory (ADR-0165)', async () => {
     const registry = new CapabilityRegistry();
     const size = statSync(original()).size;
-    const service = newService(registry, { documentBytesCeiling: size - 1 });
+    // ITS OWN ROOT, so what is listed below is this case's alone.
+    const storage = join(root, 'held-in-a-file');
+    const service = newService(registry, { documentBytesCeiling: size - 1, checkpointDirectory: storage });
 
     const outcome = await service.open(registry.mint(original()));
+    if (outcome.kind !== 'opened') throw new Error(`expected opened, got ${outcome.kind}`);
 
-    expect(outcome.kind).toBe('at-capacity');
-    if (outcome.kind !== 'at-capacity') throw new Error('narrowing');
-    expect(outcome.wouldHold).toBe(size);
-    expect(outcome.ceiling).toBe(size - 1);
-    // Refused means refused: no record, no image, nothing to close.
+    expect(outcome.byteLength).toBe(size);
     expect(service.residentDocumentBytes()).toBe(0);
+    // THE BYTES ARE THE FILE'S, read through the transport's own call, so a record that held a file of the wrong
+    // length or no file at all fails here rather than at a page the renderer never reaches.
+    const range = service.readRange(RANGE_READER_FOR_TEST, outcome.docId, outcome.version, 1, size - 1);
+    if (range.kind !== 'bytes') throw new Error(`expected bytes, got ${range.kind}`);
+    expect(Buffer.from(range.bytes).equals(readFileSync(original()).subarray(1, size - 1))).toBe(true);
+    // THE COPY IS THE IMAGE, in a fresh directory under the root: the person's file can change while it is open, and
+    // the image must not.
+    const directories = readdirSync(storage);
+    expect(directories).toHaveLength(1);
+    expect(readdirSync(join(storage, directories[0] ?? ''))).toStrictEqual(['image-0.pdf']);
+
+    // AND CLOSE REMOVES IT with the directory, as it removes a document's checkpoints.
+    await service.close(outcome.docId);
+    expect(readdirSync(storage)).toStrictEqual([]);
   });
 
-  it('refuses an over-large document WITHOUT reading it', async () => {
+  it('copies a document past the ceiling WITHOUT reading it into memory', async () => {
     const registry = new CapabilityRegistry();
     let reads = 0;
     const service = newService(registry, {
@@ -1228,14 +1248,196 @@ describe('the canonical image', () => {
       },
     });
 
-    await service.open(registry.mint(original()));
+    const outcome = await service.open(registry.mint(original()));
 
-    // THE POINT OF THE STAT-FIRST CHECK. Reading in order to refuse would
-    // allocate the very image the refusal exists to prevent — a guard causing
-    // the condition it guards against. Counting the reads is the only way to
-    // tell a refusal-before-read from a refusal-after-read, because both return
-    // the same outcome.
+    // THE POINT OF THE STAT-FIRST DECISION. Reading in order to decide where the image goes would allocate the very
+    // image the decision exists to keep out of memory. Counting the reads is the only way to tell a decision made
+    // before the read from one made after it, because both open the document.
+    if (outcome.kind !== 'opened') throw new Error(`expected opened, got ${outcome.kind}`);
     expect(reads).toBe(0);
+    // CLOSED, so its image file's descriptor is not left open in the shared root after the case.
+    await service.close(outcome.docId);
+  });
+
+  it('a file that GREW past the ceiling between its stat and its read is released and held in a file instead', async () => {
+    const registry = new CapabilityRegistry();
+    const size = statSync(original()).size;
+    const read: Uint8Array[] = [];
+    const service = newService(registry, {
+      documentBytesCeiling: size,
+      // THE READ IS THE FACT: one byte longer than the stat said, which only the second decision can see.
+      readBytes: () => {
+        read.push(new Uint8Array(size + 1));
+        return Promise.resolve(read[read.length - 1] ?? new Uint8Array(0));
+      },
+    });
+
+    const outcome = await service.open(registry.mint(original()));
+    if (outcome.kind !== 'opened') throw new Error(`expected opened, got ${outcome.kind}`);
+
+    expect(service.residentDocumentBytes()).toBe(0);
+    // RELEASED, not merely dropped: its backing store is detached, so it is not held until a collection.
+    expect(read.map((bytes) => bytes.buffer.byteLength)).toStrictEqual([0]);
+    // The image is the COPY, made after the read, so its length is the file's own.
+    expect(outcome.byteLength).toBe(size);
+    await service.close(outcome.docId);
+  });
+
+  it('NO ROOM ON THE DISK for the image file is at-capacity, naming what it needed, with nothing left behind', async () => {
+    const registry = new CapabilityRegistry();
+    const size = statSync(original()).size;
+    const storage = join(root, 'no-room');
+    const failingWith = (code: string): DocumentService =>
+      newService(registry, {
+        documentBytesCeiling: 1,
+        checkpointDirectory: storage,
+        // A PARTIAL COPY first, as a disk that fills mid-copy leaves one, so the clean-up is what removes it.
+        copyImage: (_from, to) => {
+          writeFileSync(to, 'part of a document');
+          return Promise.reject(Object.assign(new Error(`${code}: no room, copyfile '${to}'`), { code }));
+        },
+      });
+
+    for (const code of ['ENOSPC', 'EDQUOT']) {
+      const outcome = await failingWith(code).open(registry.mint(original()));
+      expect(outcome.kind).toBe('at-capacity');
+      if (outcome.kind !== 'at-capacity') throw new Error('narrowing');
+      expect(outcome.wouldHold).toBe(size);
+      // THE PARTIAL COPY AND ITS DIRECTORY ARE GONE: the root the service made is all that is left.
+      expect(readdirSync(storage)).toStrictEqual([]);
+    }
+    // A REFUSED SOURCE is the file's answer, as a refused read is.
+    expect(await failingWith('EBUSY').open(registry.mint(original()))).toStrictEqual({ kind: 'busy' });
+    // CONTROL: any other failure is a FAULT, never dressed up as a full disk.
+    await expect(failingWith('EIO').open(registry.mint(original()))).rejects.toThrow(/EIO/u);
+    expect(readdirSync(storage)).toStrictEqual([]);
+  });
+
+  it('a file ANOTHER PROGRAM HOLDS is answered busy, and one this account may not read denied, with nothing held (7a)', async () => {
+    // THE FILE IS ON DISK, so only the read's refusal can make these outcomes: a service that ignored the read's error
+    // code would throw, and one that read the disk its own way would open the file.
+    const refusedWith = async (code: string): Promise<unknown> => {
+      const registry = new CapabilityRegistry();
+      const service = newService(registry, {
+        readBytes: () => Promise.reject(Object.assign(new Error(`${code}: refused, open '${original()}'`), { code })),
+      });
+      const outcome = await service.open(registry.mint(original()));
+      expect(service.residentDocumentBytes()).toBe(0);
+      return outcome;
+    };
+    expect(await refusedWith('EBUSY')).toStrictEqual({ kind: 'busy' });
+    // `EPERM` IS WINDOWS' ACCESS DENIED, as libuv maps it, and `EACCES` the same refusal elsewhere.
+    expect(await refusedWith('EPERM')).toStrictEqual({ kind: 'denied' });
+    expect(await refusedWith('EACCES')).toStrictEqual({ kind: 'denied' });
+  });
+
+  it('CONTROL: a read that fails for any other reason is a FAULT, never dressed up as the file’s answer', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry, {
+      readBytes: () => Promise.reject(Object.assign(new Error('EIO: i/o error'), { code: 'EIO' })),
+    });
+    await expect(service.open(registry.mint(original()))).rejects.toThrow(/EIO/u);
+  });
+
+  it('ASKS THE FILE whether it can be saved over, at its own path and at every call, keeping nothing (7b)', async () => {
+    const registry = new CapabilityRegistry();
+    const asked: string[] = [];
+    const answers = ['read-only', 'writable'] as const;
+    const service = newService(registry, {
+      probeAccess: (path) => {
+        asked.push(path);
+        return Promise.resolve(answers[asked.length - 1] ?? 'absent');
+      },
+    });
+    const opened = await service.open(registry.mint(original()));
+    if (opened.kind !== 'opened') throw new Error(`expected opened, got ${opened.kind}`);
+
+    // TWO ANSWERS, because the answer changes under a document — a person clears the read-only box — and one kept from
+    // the first ask would say the old thing for ever.
+    expect(await service.fileAccess(opened.docId)).toBe('read-only');
+    expect(await service.fileAccess(opened.docId)).toBe('writable');
+    expect(asked).toStrictEqual([original(), original()]);
+  });
+
+  it('WHICH FILE IS NEWER is answered from each document’s own last-write time, either way round (8a, F-C3)', async () => {
+    const older = join(root, 'older.pdf');
+    const newer = join(root, 'newer.pdf');
+    writeFileSync(older, 'the first version\n');
+    writeFileSync(newer, 'the second version\n');
+    utimesSync(older, new Date(1_700_000_000_000), new Date(1_700_000_000_000));
+    utimesSync(newer, new Date(1_700_000_600_000), new Date(1_700_000_600_000));
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const a = await service.open(registry.mint(older));
+    const b = await service.open(registry.mint(newer));
+    if (a.kind !== 'opened' || b.kind !== 'opened') throw new Error('fixture did not open');
+
+    // BOTH ORDERS, so the answer follows the files and not the argument positions.
+    expect([service.newerOf(a.docId, b.docId), service.newerOf(b.docId, a.docId)]).toStrictEqual(['second', 'first']);
+    // CONTROL: one document against itself is neither.
+    expect(service.newerOf(a.docId, a.docId)).toBe('neither');
+    expect(() => service.newerOf(a.docId, asDocId('doc-never-opened'))).toThrow(DocumentNotOpenError);
+  });
+
+  it('a document that is not open has no file to ask about', async () => {
+    const service = newService(new CapabilityRegistry());
+    await expect(service.fileAccess(asDocId('doc-never-opened'))).rejects.toBeInstanceOf(DocumentNotOpenError);
+  });
+
+  it('THE DEFAULT PROBE opens the file for writing and writes nothing: writable, absent, and a fault for anything else', async () => {
+    // ITS OWN FILE, because the case deletes it and puts a folder where it was.
+    const probed = join(root, 'probed.pdf');
+    writeFileSync(probed, 'document bytes\n');
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const opened = await service.open(registry.mint(probed));
+    if (opened.kind !== 'opened') throw new Error(`expected opened, got ${opened.kind}`);
+    const before = statSync(probed);
+
+    expect(await service.fileAccess(opened.docId)).toBe('writable');
+    // NOTHING WRITTEN: the open for writing leaves the bytes and the last-write time as they were.
+    expect(readFileSync(probed, 'utf8')).toBe('document bytes\n');
+    expect(statSync(probed).mtimeMs).toBe(before.mtimeMs);
+
+    unlinkSync(probed);
+    expect(await service.fileAccess(opened.docId)).toBe('absent');
+  });
+
+  it('a refused open for writing reads as the file’s state by libuv’s codes, and any other failure is a FAULT', () => {
+    const refused = (code: string): unknown => accessOfRefusedOpen(Object.assign(new Error(code), { code }));
+    // `EPERM` IS WINDOWS' read-only attribute and access denied alike, as libuv maps them; `EBUSY` its sharing
+    // violation, a program holding the file against writers.
+    expect(['EPERM', 'EACCES', 'EROFS', 'EBUSY', 'ENOENT'].map(refused)).toStrictEqual([
+      'read-only',
+      'read-only',
+      'read-only',
+      'held',
+      'absent',
+    ]);
+    // CONTROL: a failure that is none of its answers is rethrown, never dressed up as the file's state.
+    expect(() => refused('EIO')).toThrow(/EIO/u);
+  });
+
+  it('A SAVE NOT WRITTEN names its cause from the failure and the file — every cause from its own row (7b)', () => {
+    const failed = (stage: AtomicWriteFailure['stage'], detail: string): AtomicWriteFailure => ({ stage, detail });
+    const rows = [
+      // THE FILE'S ACCESS DECIDES FIRST: on Windows a rename over a read-only file and over a held one are both
+      // `EPERM`, so the failure alone would call the read-only file held.
+      [failed('rename', 'EPERM'), 'read-only', 'read-only'],
+      [failed('rename', 'EPERM'), 'held', 'held'],
+      [failed('temp-write', 'ENOSPC'), 'writable', 'disk-full'],
+      // REFUSED BEFORE THE RENAME is the folder's: the new contents go to a file beside the target first.
+      [failed('temp-write', 'EACCES'), 'writable', 'folder-read-only'],
+      [failed('backup', 'EPERM'), 'writable', 'folder-read-only'],
+      // A RENAME REFUSED over a file that can be written is a program holding it against being replaced.
+      [failed('rename', 'EPERM'), 'writable', 'held'],
+      [failed('rename', 'EBUSY'), 'writable', 'held'],
+      [failed('rename', 'EXDEV'), 'writable', 'unknown'],
+      [failed('rename', 'ENOENT'), 'absent', 'unknown'],
+    ] as const;
+    for (const [failure, access, cause] of rows) expect([failure, access, saveWriteCause(failure, access)]).toStrictEqual([failure, access, cause]);
+    // CONTROL: the rows separate every cause, so a resolver answering one constant fails four ways at least.
+    expect(new Set(rows.map(([, , cause]) => cause)).size).toBe(5);
   });
 
   it('admits a document that exactly fills the ceiling', async () => {
@@ -1245,10 +1447,10 @@ describe('the canonical image', () => {
 
     const outcome = await service.open(registry.mint(original()));
 
-    // CONTROL for the two refusals above. A ceiling check written with the
-    // comparison inverted, or one that refuses everything, produces
-    // `at-capacity` for this too — and "the guard works" and "nothing opens"
-    // would be the same observation.
+    // CONTROL for the file-held cases above. A ceiling check written with the
+    // comparison inverted, or one that sends everything to a file, holds this
+    // one in a file too — and "large documents go to a file" and "every
+    // document does" would be the same observation.
     expect(outcome.kind).toBe('opened');
     expect(service.residentDocumentBytes()).toBe(size);
   });
@@ -1483,6 +1685,7 @@ describe('checkpoint files', () => {
       checkpoint: file as Checkpoint,
       reason: 'a stored checkpoint',
       read: undefined,
+      result: null,
     };
   }
 
@@ -1651,7 +1854,6 @@ describe('checkpoint files', () => {
  * the one call made while the new image is being read into memory.
  */
 describe('replacing the image from a file', () => {
-  const RANGE_READER_FOR_TEST = 'range-reader' as RangeReader;
   const OLD = new TextEncoder().encode('the old image, as opened');
   const NEW = new TextEncoder().encode('the new image, longer than the old one was');
 
@@ -1684,28 +1886,54 @@ describe('replacing the image from a file', () => {
     };
 
   it('holds nothing else while the new image is read, and serves ranges from the file meanwhile', async () => {
-    const seen: { resident: number; range: string }[] = [];
+    const seen: { resident: number; atOld: string; atNew: string }[] = [];
     const { service, docId } = await holding((during, id) => {
-      const answer = during.readRange(RANGE_READER_FOR_TEST, id, asDocVersion(1), 4, 7);
-      seen.push({
-        resident: during.residentDocumentBytes(),
-        range: answer.kind === 'bytes' ? new TextDecoder().decode(answer.bytes) : answer.kind,
-      });
+      const read = (version: number): string => {
+        const answer = during.readRange(RANGE_READER_FOR_TEST, id, asDocVersion(version), 4, 7);
+        return answer.kind === 'bytes'
+          ? new TextDecoder().decode(answer.bytes)
+          : `${answer.kind} ${String(answer.version)} ${String(answer.byteLength)}`;
+      };
+      seen.push({ resident: during.residentDocumentBytes(), atOld: read(1), atNew: read(2) });
     });
 
     const { value } = await service.run(docId, (context) =>
       context.replaceCanonicalImageFrom(COMMAND_WRITER_FOR_TEST, fillWith(NEW)),
     );
 
-    // THE POINT: during the read the old buffer is gone (0 held) and a range is the NEW image's, from its file. A
-    // service that read before swapping would report the old image's length here and answer `old`.
-    expect(seen).toStrictEqual([{ resident: 0, range: 'new' }]);
+    // THE POINT: during the read the old buffer is gone (0 held) and a range at the NEW version is the new image's,
+    // from its file. A service that read before swapping would report the old image's length here and answer `old`.
+    //
+    // AND A RANGE AT THE OLD VERSION IS STALE, naming the new version and length (CR-DOC-01): the version moves with
+    // the swap. Until 2026-10-04 this case asked at version 1 and expected the new bytes, which was the defect: a
+    // renderer bound to the old document read the new one's bytes at the old one's offsets.
+    expect(seen).toStrictEqual([{ resident: 0, atOld: `stale 2 ${String(NEW.byteLength)}`, atNew: 'new' }]);
     expect(value).toBe(NEW.byteLength);
     expect(service.residentDocumentBytes()).toBe(NEW.byteLength);
-    const after = service.readRange(RANGE_READER_FOR_TEST, docId, asDocVersion(1), 0, NEW.byteLength);
+    const after = service.readRange(RANGE_READER_FOR_TEST, docId, asDocVersion(2), 0, NEW.byteLength);
     expect(after.kind === 'bytes' ? new TextDecoder().decode(after.bytes) : after.kind).toBe(
       new TextDecoder().decode(NEW),
     );
+    await service.close(docId);
+  });
+
+  it('a command that replaces its image ends at ONE new version, the one ranges moved to at the swap (CR-DOC-01)', async () => {
+    // THE OTHER HALF of the window: after the replacement returns, the bus still awaits the log and the refresh before
+    // it bumps. A range at the old version there is stale too, and the bump that ends the command reports the version
+    // the swap already moved to, so the renderer is told one version, never two.
+    const { service, docId } = await holding();
+    const { value } = await service.run(docId, async (context) => {
+      await context.replaceCanonicalImageFrom(COMMAND_WRITER_FOR_TEST, fillWith(NEW));
+      const between = service.readRange(RANGE_READER_FOR_TEST, docId, asDocVersion(1), 0, 3);
+      return { between: between.kind, bumped: context.bumpVersion(COMMAND_WRITER_FOR_TEST) };
+    });
+    expect(value).toStrictEqual({ between: 'stale', bumped: asDocVersion(2) });
+
+    // CONTROL: an entry that replaces nothing still moves the version once when it bumps.
+    const { value: plain } = await service.run(docId, (context) =>
+      Promise.resolve(context.bumpVersion(COMMAND_WRITER_FOR_TEST)),
+    );
+    expect(plain).toBe(asDocVersion(3));
     await service.close(docId);
   });
 
@@ -1720,6 +1948,47 @@ describe('replacing the image from a file', () => {
     );
     expect(path).not.toBe('');
     expect(existsSync(path)).toBe(false);
+    await service.close(docId);
+  });
+
+  it('KEEPS SERVING FROM THE FILE a new image past the ceiling, and reads one that fits into memory (ADR-0165)', async () => {
+    const registry = new CapabilityRegistry();
+    const size = statSync(original()).size;
+    const service = newService(registry, { documentBytesCeiling: size });
+    const docId = mustOpen(await service.open(registry.mint(original())));
+    expect(service.residentDocumentBytes()).toBe(size);
+
+    const replaceWith = async (bytes: Uint8Array): Promise<{ path: string; version: DocVersion }> => {
+      let path = '';
+      const { value: version } = await service.run(docId, async (context) => {
+        await context.replaceCanonicalImageFrom(COMMAND_WRITER_FOR_TEST, (destination) => {
+          path = destination;
+          return fillWith(bytes)(destination);
+        });
+        // The version the swap moved to, as a command's own bump reports it.
+        return context.bumpVersion(COMMAND_WRITER_FOR_TEST);
+      });
+      return { path, version };
+    };
+    const rangeAt = (version: DocVersion, byteLength: number): string => {
+      const answer = service.readRange(RANGE_READER_FOR_TEST, docId, version, 0, byteLength);
+      return answer.kind === 'bytes' ? new TextDecoder().decode(answer.bytes) : answer.kind;
+    };
+
+    // ONE BYTE PAST THE CEILING: the read that would follow the swap is not made, and the file stays the image.
+    const larger = new TextEncoder().encode('x'.repeat(size + 1));
+    const kept = await replaceWith(larger);
+    expect(service.residentDocumentBytes()).toBe(0);
+    expect(existsSync(kept.path)).toBe(true);
+    expect(rangeAt(kept.version, larger.byteLength)).toBe('x'.repeat(size + 1));
+
+    // CONTROL in the same document: an image that fits is read into memory and the file it came from is removed, so
+    // a rule that kept every replacement in a file fails here, and one that read every one fails above.
+    const smaller = new TextEncoder().encode('a small image');
+    const read = await replaceWith(smaller);
+    expect(service.residentDocumentBytes()).toBe(smaller.byteLength);
+    expect([existsSync(kept.path), existsSync(read.path)]).toStrictEqual([false, false]);
+    expect(rangeAt(read.version, smaller.byteLength)).toBe('a small image');
     await service.close(docId);
   });
 

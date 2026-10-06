@@ -8,6 +8,7 @@ import type {
 import type { PageTransform, ViewportPoint } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
+import { HINT_CLOSED_CORNERS, HINT_OPEN_CORNERS } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, lastPress, pointerPath } from '../registries/tools.js';
 import type { AnnotationStyle } from './annotationStyle.js';
@@ -31,9 +32,11 @@ import type { AnnotationStyle } from './annotationStyle.js';
  * ## Two finish signals, and only one of them needed the platform
  *
  * A **double press** is the one people arrive expecting, and it is the reason
- * `Gesture.done` exists — the overlay reads `event.detail`, because *was that a
- * double-click* is a question the DOM already answers and timing two presses
- * here would be a second opinion about it.
+ * `Gesture.done` exists — the overlay sets it on the platform's `dblclick`,
+ * because *was that a double-click* is a question the DOM already answers and
+ * timing two presses here would be a second opinion about it. The pointer-down's
+ * own `detail` cannot say it: Chromium leaves it at 0 (measured on
+ * 151.0.7922.34, 2026-10-03).
  *
  * **Closing the shape** — pressing near where the first vertex went — needed
  * nothing at all: it is a distance between two entries in `presses`, computed
@@ -105,21 +108,27 @@ function verticesOf(gesture: Gesture): readonly ViewportPoint[] {
   return kept;
 }
 
-/** Whether a press has landed back on the first vertex. */
-function closesShape(gesture: Gesture): boolean {
+/**
+ * Whether the last press landed back on the first vertex, closing a shape of `minimum` corners or more.
+ *
+ * **The closing press is not a corner** (the owner's item 14b). It is the person pointing at the first one, so the
+ * corners before it must already make the shape: `minimum` of them, then the press that closes. Counting the press as
+ * a corner closed two corners and a click on the first into a two-point polygon, which commits nothing and loses the
+ * drawing, and it kept the press as a fourth vertex on a triangle — a zero-length edge in `/Vertices`, measured in
+ * Chromium 151 with real clicks (`toolCursors.pw.ts`).
+ */
+function closesShape(gesture: Gesture, minimum: number): boolean {
   const vertices = verticesOf(gesture);
   const first = vertices[0];
   const last = vertices[vertices.length - 1];
-  // THREE, NOT TWO: with two vertices the "last" press is the second one, and a
-  // shape whose second corner is near its first is a very small polygon
-  // somebody is still drawing rather than one they have closed.
-  if (first === undefined || last === undefined || vertices.length < 3) return false;
+  if (first === undefined || last === undefined || vertices.length < minimum + 1) return false;
   return Math.hypot(last.x - first.x, last.y - first.y) <= CLOSING_RADIUS;
 }
 
-/** The vertices in PDF user space, which is what the payload carries. */
-function placed(gesture: Gesture, transform: PageTransform): AnnotationPoint[] {
-  return verticesOf(gesture).map((vertex) => {
+/** The vertices in PDF user space, which is what the payload carries — without the press that closed the shape. */
+function placed(gesture: Gesture, transform: PageTransform, closing: boolean): AnnotationPoint[] {
+  const vertices = verticesOf(gesture);
+  return (closing ? vertices.slice(0, -1) : vertices).map((vertex) => {
     const point = toPdf(vertex, transform);
     return { x: point.x, y: point.y };
   });
@@ -148,17 +157,22 @@ export function vertexTool(
     // this gesture; a double press does, and for a closed shape so does landing
     // back on the first vertex.
     //
-    // Note what is NOT here: a minimum. A gesture that finishes with too few
-    // vertices is complete — the person said they were done — and `commit`
-    // answers `undefined`. Refusing to finish would leave somebody holding a
-    // gesture they cannot get out of except by pressing Escape.
-    complete: (gesture: Gesture): boolean => gesture.done || (closes && closesShape(gesture)),
+    // A DOUBLE PRESS FINISHES A SHAPE THERE IS ENOUGH OF, or a stray one (F-C5).
+    // It used to finish with too few vertices and commit nothing, so two corners
+    // of a polygon and a double-click threw the drawing away. Now a drawing of
+    // two or more corners stays, every corner placed, and the next press goes
+    // on with it; Escape still abandons it. One corner is a stray double-click
+    // on the page, which ends as it always did and makes nothing.
+    complete: (gesture: Gesture): boolean => {
+      const placedSoFar = verticesOf(gesture).length;
+      return (gesture.done && (placedSoFar >= minimum || placedSoFar <= 1)) || (closes && closesShape(gesture, minimum));
+    },
     commit: (
       gesture: Gesture,
       page: number,
       transform: PageTransform,
     ): DispatchableCommand | undefined => {
-      const points = placed(gesture, transform);
+      const points = placed(gesture, transform, closes && closesShape(gesture, minimum));
       // TOO FEW IS THE ORDINARY OUTCOME, not an error: a double press with one
       // vertex down is a stray double-click on the page. `undefined` is what
       // every other tool answers for a gesture that produced nothing.
@@ -192,7 +206,8 @@ export function vertexTool(
     },
   };
 
-  return { id, controller };
+  // THE HINT FOLLOWS `closes`, the flag that makes a press on the first corner finish the shape.
+  return { id, controller, hint: closes ? HINT_CLOSED_CORNERS : HINT_OPEN_CORNERS };
 }
 
 /** The ids, shared with the commands that select these tools. */

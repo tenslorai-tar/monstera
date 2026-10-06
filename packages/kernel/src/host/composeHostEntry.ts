@@ -8,6 +8,7 @@ import { composeCsv } from '../csvCompose.js';
 import { composeImages } from '../imageCompose.js';
 import { composeMarkdown } from '../markdownCompose.js';
 import { MupdfOpenRefused, keepInlineImages, openMupdfShim, rewriteImages } from '../mupdfRaw.js';
+import { signatureFromScan } from '../signatureScan.js';
 import { cryptoBytes } from '../token.js';
 import { composeChannels } from './composeChannels.js';
 import { type ImageOptimizer, type InlineImageKeeper, createComposeHandlers } from './composeHandlers.js';
@@ -85,12 +86,12 @@ if (shimPath !== null) openMupdfShim(shimPath);
 const optimize: ImageOptimizer | null =
   shimPath === null
     ? null
-    : async (area, from, into, setting) => {
+    : async (area, from, into, setting, password) => {
         const input = join(area.snapshotDirectory, from);
         const output = join(area.outputDirectory, into);
         if (!existsSync(input)) return { kind: 'missing' };
         try {
-          rewriteImages(input, output, setting);
+          rewriteImages(input, output, setting, password);
         } catch (error) {
           if (error instanceof MupdfOpenRefused) return { kind: 'unreadable' };
           throw error;
@@ -105,13 +106,13 @@ const optimize: ImageOptimizer | null =
 const keepInlineImagesIn: InlineImageKeeper | null =
   shimPath === null
     ? null
-    : async (area, from, into, scope) => {
+    : async (area, from, into, scope, password) => {
         const input = join(area.snapshotDirectory, from);
         const output = join(area.outputDirectory, into);
         if (!existsSync(input)) return { kind: 'missing' };
         let kept;
         try {
-          kept = keepInlineImages(input, output, scope);
+          kept = keepInlineImages(input, output, scope, password);
         } catch (error) {
           if (error instanceof MupdfOpenRefused) return { kind: 'unreadable' };
           throw error;
@@ -130,6 +131,8 @@ const areas = createHostSessions<HostArea>(cryptoBytes);
 const handlers = createComposeHandlers({
   keepInlineImages: keepInlineImagesIn,
   optimize,
+  // DRAWN WITH THE BOUND LIBRARY, so it is there exactly when Optimize is.
+  signatureFromScan: shimPath === null ? null : signatureFromScan,
   areas,
   files: hostFilesystem,
   probe: probeContainment,

@@ -283,7 +283,8 @@ async function readOne(
   }
 
   try {
-    return { window: await pdfWindow(await readers.pdfText(pdf), share, place) };
+    // EVERY PAGE of an attached file: the window below decides how much of its text the question carries.
+    return { window: await pdfWindow(await readers.pdfText(pdf, 'all'), share, place) };
   } catch (error) {
     if (error instanceof LayoutTextFailedError) return { unread: 'unreadable' };
     throw error;

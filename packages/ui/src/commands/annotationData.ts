@@ -159,6 +159,7 @@ export function pasteAnnotationsCommand(
     id: 'annotate.paste',
     feedback: VISIBLE,
     title: PASTE_ANNOTATIONS_TITLE,
+    icon: 'ClipboardPaste',
     // NO CHORD OF ITS OWN: Ctrl+V is `edit.paste`'s, which runs this when no text field has the focus (ADR-0107).
     placements: [{ surface: 'context-menu', context: 'page', order: 25 }],
     when: (context) => hasDocument(context) && deps.hasCopied(),

@@ -13,7 +13,7 @@ Some forms are just printed lines and boxes with no fillable fields. Monstera ca
 1. Go to the page.
 2. In the rail, choose **Forms**, then **Detect…** in the **Manage** group (**Find fields on this page…**).
 3. The **Fields this page could have** window lists what it found. Untick anything that is not really a place to write.
-4. Choose **Create … field(s)**.
+4. Choose **Create … fields**. The button says how many fields it will make.
 
 ![The Fields this page could have window with suggestions ticked](screenshot:detect-form-fields-1)
 

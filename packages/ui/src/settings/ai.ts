@@ -95,7 +95,8 @@ export const AI_PROVIDER_KEY_SETTINGS: readonly SettingDefinition<z.ZodString>[]
  *
  * `z.string()` rather than a URL schema, for `AZURE_DI_ENDPOINT_SETTING`'s measured
  * reason: a field that refuses what somebody is in the middle of typing is a field that
- * cannot be typed into, and the scheme check belongs where the request is made.
+ * cannot be typed into, and the address check belongs where the request is made: `serviceOrigin`, in `main`,
+ * before the key is sent.
  */
 export const AZURE_OPENAI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
   // THE ID, SCHEMA AND DEFAULT ARE THE CONTRACT'S, which `main` reads through too (`storedSettings.ts`).
@@ -103,6 +104,8 @@ export const AZURE_OPENAI_ENDPOINT_SETTING: SettingDefinition<z.ZodString> = {
   title: AI_AZURE_OPENAI_ENDPOINT_TITLE,
   description: AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION,
   category: 'ai',
+  // AN ADDRESS, read whole (ADR-0157).
+  runsLong: true,
 };
 
 /**

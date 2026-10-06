@@ -2,6 +2,7 @@ import type { AnnotationRect, DispatchableCommand } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
+import { HINT_SNAPSHOT } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 
@@ -108,7 +109,7 @@ export function snapshotTool(deps: SnapshotDeps): UiTool {
     preview: regionOf,
   };
 
-  return { id: SNAPSHOT_TOOL_ID, controller };
+  return { id: SNAPSHOT_TOOL_ID, controller, hint: HINT_SNAPSHOT };
 }
 
 /** Exported so the cases assert against the tool's own numbers. */

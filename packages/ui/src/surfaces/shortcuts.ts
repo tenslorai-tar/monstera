@@ -27,6 +27,8 @@ export interface KeyChord {
   readonly altKey: boolean;
   readonly shiftKey: boolean;
   readonly metaKey: boolean;
+  /** Whether this press is the keyboard REPEATING a held key — `KeyboardEvent.repeat`. Absent reads as a press. */
+  readonly repeat?: boolean;
 }
 
 /**
@@ -191,12 +193,33 @@ export function controlOwnsChord(target: EventTarget | null, event: KeyChord): b
   return role !== null && ARROW_ROLES.has(role);
 }
 
+/**
+ * Whether a key press belongs to an input method's open COMPOSITION — a Japanese, Chinese or Korean candidate being
+ * chosen, confirmed or cancelled — and so to the input method, not to the field (code review CR-COR-07).
+ *
+ * Confirming a candidate dispatches a `keydown` whose key is Enter, cancelling one a `keydown` whose key is Escape, and
+ * the arrows walk the candidates, each with `isComposing` set. A handler keyed on the key alone sent the assistant a
+ * half-composed message, ran the palette's first match while the person was still choosing, and committed a field.
+ * So every handler that gives Enter, Escape or an arrow a meaning in a text field asks this FIRST, and the document's
+ * shortcuts do too.
+ *
+ * @param event a React key event (its native event is read) or a DOM one
+ */
+export function composing(event: { readonly nativeEvent: KeyboardEvent } | KeyboardEvent): boolean {
+  return 'nativeEvent' in event ? event.nativeEvent.isComposing : event.isComposing;
+}
+
 /** The input types a person types text into, as opposed to ticks, sliders and buttons. */
 const TYPED_INPUTS: ReadonlySet<string> = new Set(['text', 'search', 'email', 'url', 'tel', 'password', 'number']);
 
 /** What a key press did, so a caller knows whether to let the browser have it. */
 export type Dispatch =
   | { readonly kind: 'ran'; readonly command: UiCommand }
+  /**
+   * The chord is a command's, and this press is a held key's repeat of one that runs once per press: claimed, so the
+   * browser does not act on it either, and not run (`UiCommand.repeats`).
+   */
+  | { readonly kind: 'held'; readonly command: UiCommand }
   /** A chord nothing claims, or one whose command does not exist right now. */
   | { readonly kind: 'unclaimed' };
 
@@ -225,6 +248,8 @@ export function dispatchChord(
   const command = map.get(chordOf(event));
   if (command === undefined) return { kind: 'unclaimed' };
   if (!(command.when?.(context) ?? true)) return { kind: 'unclaimed' };
+  // A HELD KEY RUNS A COMMAND ONCE unless the command is a step meant to repeat (`UiCommand.repeats`).
+  if (event.repeat === true && command.repeats !== true) return { kind: 'held', command };
   void command.run(context);
   return { kind: 'ran', command };
 }

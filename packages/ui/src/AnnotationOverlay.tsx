@@ -115,7 +115,7 @@ export function AnnotationOverlay({
    * the page's canvas, so its box IS the page on screen.
    */
   const pointAt = useCallback(
-    (event: React.PointerEvent<SVGSVGElement>): ViewportPoint | undefined => {
+    (event: { readonly clientX: number; readonly clientY: number }): ViewportPoint | undefined => {
       const element = surface.current;
       if (element === null) return undefined;
       return pointerOn(element, event.clientX, event.clientY);
@@ -147,12 +147,6 @@ export function AnnotationOverlay({
           : {
               ...tool.controller.update(current, at),
               presses: [...current.presses, at],
-              // `detail` COUNTS THE CLICKS in this sequence, which is the
-              // platform's own answer to *was that a double-click* — the
-              // alternative is timing two presses here, which is a second
-              // opinion about a question the DOM already settles. Recorded
-              // rather than acted on: `complete` decides what it means.
-              done: current.done || event.detail >= 2,
             },
       );
     },
@@ -169,25 +163,20 @@ export function AnnotationOverlay({
     [gesture, pointAt, tool],
   );
 
-  const up = useCallback(
-    (event: React.PointerEvent<SVGSVGElement>): void => {
-      if (gesture === undefined) return;
-      const at = pointAt(event);
-      if (at === undefined) {
-        // NO POINT MEANS NO SURFACE TO MEASURE AGAINST, and the gesture is
-        // dropped rather than kept: there is nothing to extend it with and
-        // nothing to commit. Cleared here rather than before the check, so the
-        // multi-press path below is the only other place that decides.
-        setGesture(undefined);
-        return;
-      }
-      const finished = tool.controller.update(gesture, at);
+  /**
+   * A gesture at a release, or at a double-click: kept while the tool says it is not complete, committed once it is.
+   * One path for both, so a double-click finishes a shape exactly as the release that completes it would.
+   */
+  const release = useCallback(
+    (finished: Gesture): void => {
       if (!tool.controller.complete(finished)) {
         // THE GESTURE SURVIVES THE RELEASE. Kept rather than cleared, and
         // `commit` is not called — so the next press extends this one
         // (ADR-0042 Decision 2). The state is still a value this component
-        // holds, so Escape and `pointercancel` still abandon it.
-        setGesture(finished);
+        // holds, so Escape and `pointercancel` still abandon it. A double-click
+        // the tool did not take as a finish is not carried forward: kept, it
+        // would end the gesture at the next release, however many presses on.
+        setGesture(finished.done ? { ...finished, done: false } : finished);
         return;
       }
       // THE GESTURE IS CLEARED, whatever the commit decides. A commit that
@@ -207,7 +196,7 @@ export function AnnotationOverlay({
       const transform = overlayTransform(geometry);
       // THE SHAPE AS RELEASED, and the drawing under it now: held only once there is a command, and
       // only for a tool that previews at all.
-      const shape = tool.controller.preview(finished);
+      const shape = tool.controller.preview(finished, page, transform);
       const released = shape === undefined ? undefined : { preview: shape, since: drawnWith };
       // `Promise.resolve` OVER THE UNION. `commit` may answer now or later, and
       // this is the one line that does not care which — a synchronous answer
@@ -216,7 +205,9 @@ export function AnnotationOverlay({
       // pointer-up.
       void Promise.resolve(tool.controller.commit(finished, page, transform)).then(async (command) => {
         // `undefined` IS AN OUTCOME, and now it is two of them: a click that
-        // did not drag produces no annotation, and so does a dismissed dialog.
+        // did not drag produces no annotation from a tool that draws a shape
+        // (the typewriter's click asks for words instead), and so does a
+        // dismissed dialog.
         // Both mean *there is nothing to send*, which is why the gate is the
         // absence of a value rather than a flag somebody checks.
         if (command === undefined) return;
@@ -227,14 +218,92 @@ export function AnnotationOverlay({
         if (!moved) setCommitted((current) => (current === released ? undefined : current));
       });
     },
-    [drawnWith, geometry, gesture, onCommand, page, pointAt, tool],
+    [drawnWith, geometry, onCommand, page, tool],
+  );
+
+  const up = useCallback(
+    (event: React.PointerEvent<SVGSVGElement>): void => {
+      if (gesture === undefined) return;
+      const at = pointAt(event);
+      if (at === undefined) {
+        // NO POINT MEANS NO SURFACE TO MEASURE AGAINST, and the gesture is
+        // dropped rather than kept: there is nothing to extend it with and
+        // nothing to commit. Cleared here rather than before the check, so the
+        // multi-press path below is the only other place that decides.
+        setGesture(undefined);
+        return;
+      }
+      release(tool.controller.update(gesture, at));
+    },
+    [gesture, pointAt, release, tool],
+  );
+
+  /**
+   * A double-click finishes a live gesture (F-C5).
+   *
+   * **The click count is read where the platform puts it.** A pointer event carries none: measured on Chromium
+   * 151.0.7922.34, 2026-10-03, a double-click's two `pointerdown`s both carry `detail` 0, while `mousedown`, `click`
+   * and `dblclick` carry 1 and then 2. This read `detail` on the press until then, so no polygon, cloud, connected
+   * lines, area or perimeter could be finished by a double-click. `dblclick` arrives after the second release, which
+   * has already added that press to the gesture and kept it; it is then released as finished, the tool deciding what
+   * a finish with too few vertices makes.
+   */
+  const doubled = useCallback(
+    (event: React.MouseEvent<SVGSVGElement>): void => {
+      if (gesture !== undefined) {
+        release({ ...gesture, done: true });
+        return;
+      }
+      // NO GESTURE IN FLIGHT: the tool's `reopen` (ADR-0154 Decision 3), which for the tools that edit words in a mark
+      // opens the mark under the point. The transform is read now, before any await, for `release`'s reason.
+      const at = pointAt(event);
+      if (at === undefined) return;
+      const transform = overlayTransform(geometry);
+      void Promise.resolve(tool.controller.reopen(at, page, transform)).then(async (command) => {
+        if (command !== undefined) await onCommand(command);
+      });
+    },
+    [geometry, gesture, onCommand, page, pointAt, release, tool],
   );
 
   const cancel = useCallback((): void => {
     setGesture(undefined);
   }, []);
 
-  const preview = gesture === undefined ? undefined : tool.controller.preview(gesture);
+  /**
+   * Enter and Escape on a gesture that outlives its releases — a polygon, a cloud, connected lines, an area or a
+   * perimeter, between presses (the owner's item 14b).
+   *
+   * **Enter finishes**, by the same path as a double-click: the tool decides, so a shape with too few corners is kept
+   * drawing rather than thrown away. **Escape finishes and keeps** a shape there is enough of, which is what the owner
+   * asked for; with too few corners to be the shape, there is nothing to keep, and it abandons. **During a drag** —
+   * the pointer still down, the rectangle or the line half drawn — Escape abandons as it always did, and Enter is
+   * nothing: those gestures end at their release.
+   */
+  const pressed = useRef(false);
+  const keyed = useCallback(
+    (key: string): boolean => {
+      if (gesture === undefined) return false;
+      if (pressed.current) {
+        if (key !== 'Escape') return false;
+        cancel();
+        return true;
+      }
+      const finished = { ...gesture, done: true };
+      if (key === 'Enter') {
+        release(finished);
+        return true;
+      }
+      if (key !== 'Escape') return false;
+      if (tool.controller.complete(finished)) release(finished);
+      else cancel();
+      return true;
+    },
+    [cancel, gesture, release, tool],
+  );
+
+  // PLACED AS THE COMMIT WILL BE (ADR-0166): this render's page and transform, the ones a release now would read.
+  const preview = gesture === undefined ? undefined : tool.controller.preview(gesture, page, overlayTransform(geometry));
   // DERIVED, not cleared by an effect: once the page has been drawn from a newer view, the shape is
   // in its pixels and this stops rendering it in the same render that carries the new drawing.
   const held = committed !== undefined && committed.since === drawnWith ? committed.preview : undefined;
@@ -248,14 +317,27 @@ export function AnnotationOverlay({
       // THE TOOL'S OWN POINTER (`UiTool.cursor`); the drawing tools say nothing and draw with the crosshair.
       data-cursor={tool.cursor ?? 'crosshair'}
       onKeyDown={(event): void => {
-        // ESCAPE ABANDONS THE DRAG, which is the fourth phase of §6's
-        // lifecycle arriving where the state lives.
-        if (event.key === 'Escape') cancel();
+        // ESCAPE AND ENTER END A GESTURE where the state lives (§6's lifecycle), and are taken from the page's own
+        // keys only when they did: a key the drawing did not use still reaches whatever else listens for it.
+        if (keyed(event.key)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
       }}
-      onPointerCancel={cancel}
-      onPointerDown={down}
+      onDoubleClick={doubled}
+      onPointerCancel={(): void => {
+        pressed.current = false;
+        cancel();
+      }}
+      onPointerDown={(event): void => {
+        if (event.button === 0) pressed.current = true;
+        down(event);
+      }}
       onPointerMove={move}
-      onPointerUp={up}
+      onPointerUp={(event): void => {
+        pressed.current = false;
+        up(event);
+      }}
       ref={surface}
       // A DRAWING SURFACE, and it is focusable so Escape reaches it and so a
       // keyboard user is told the page has become one. What it is NOT is a
@@ -336,6 +418,23 @@ function Preview({ preview }: { readonly preview: ToolPreview }): ReactElement {
           data-annotation-preview="path"
           points={preview.points.map(([x, y]) => `${String(x)},${String(y)}`).join(' ')}
         />
+      );
+    case 'boxes':
+      // ONE GROUP, so a case finds the shape once however many marks move; each box in it keeps its own place.
+      return (
+        <g data-annotation-preview="boxes">
+          {preview.boxes.map((box, at) => (
+            <rect
+              className="m-annotation-preview"
+              height={box.height}
+              // POSITION IS THE IDENTITY: the boxes are one moment's list, rebuilt with every pointer move.
+              key={at}
+              width={box.width}
+              x={box.x}
+              y={box.y}
+            />
+          ))}
+        </g>
       );
     default: {
       // A MEMBER ADDED WITHOUT A BRANCH IS A COMPILE ERROR, which is the point

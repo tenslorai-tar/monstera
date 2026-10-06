@@ -6,7 +6,9 @@ import { AxeBuilder } from '@axe-core/playwright';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { AI_SETUP_AT_START_SETTING_ID, blockEditOf, displayLocationSchema } from '@monstera/contract';
 import {
+  EDGE_HANDLE_WIDTH,
   MINIMUM_WINDOW,
+  PAGE_AREA_MIN_WIDTH,
   asDocId,
   asDocVersion,
   asFileHandle,
@@ -20,6 +22,9 @@ import { type Page, expect, test } from '@playwright/test';
 // and `LOOKS` is theirs too: §10.4's gate and §10.7's baselines check the same three themes, and
 // two lists would drift the day one gains a fourth (audit finding IIIIII-2).
 import { LOOKS, type Look, bridge, bridgeUnder } from './pageBridge.js';
+import { againstPaper } from './contrast.js';
+import { readsAtTextFloor } from './inkOnScreen.js';
+import { pageShown, popupPlaced, settled, startScreenListening } from './settled.js';
 
 /**
  * §10.4's mandated gate: axe-core on a Playwright-rendered screen.
@@ -265,11 +270,11 @@ test('a message with a PLACEHOLDER renders its value, in the production build', 
         name: 'annual report.pdf',
         location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
         openedAt: new Date().toISOString(),
-        available: true,
+        availability: 'available',
       },
     ],
     lastExitClean: false,
-    lastSession: [{ handle: asFileHandle('handle-a'), name: 'annual report.pdf' }],
+    lastSession: [{ handle: asFileHandle('handle-a'), name: 'annual report.pdf', availability: 'available' }],
   });
   await page.goto('/');
 
@@ -298,25 +303,39 @@ for (const look of LOOKS) {
           name: 'annual report.pdf',
           location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
           openedAt: new Date().toISOString(),
-          available: true,
+          availability: 'available',
         },
         {
           handle: asFileHandle('handle-b'),
           name: 'notes.pdf',
           location: displayLocationSchema.parse({ within: 'onedrive', folder: null }),
           openedAt: null,
-          // UNAVAILABLE (ADR-0143), so a disabled card's contrast, name and focus are measured with the rest.
-          available: false,
+          availability: 'available',
+        },
+        {
+          handle: asFileHandle('handle-c'),
+          name: 'site survey.pdf',
+          location: displayLocationSchema.parse({ within: 'documents', folder: 'Surveys' }),
+          openedAt: new Date().toISOString(),
+          // UNAVAILABLE (ADR-0143). Axe does NOT measure this card's text: its colour-contrast rule skips any node under
+          // `aria-disabled="true"` (axe-core 4.13.0, `isDisabled`), so its contrast is measured below, by this case.
+          availability: 'unavailable',
         },
       ],
       lastExitClean: false,
       lastSession: [
-        { handle: asFileHandle('handle-a'), name: 'annual report.pdf' },
-        { handle: asFileHandle('handle-b'), name: 'notes.pdf' },
+        { handle: asFileHandle('handle-a'), name: 'annual report.pdf', availability: 'available' },
+        { handle: asFileHandle('handle-b'), name: 'notes.pdf', availability: 'available' },
       ],
     });
 
     await expectNoSeriousViolations(page, look, 'Monstera closed unexpectedly. These documents were open:');
+
+    // THE UNAVAILABLE CARD'S WORDS READ AT THE THEME'S TEXT FLOOR, its name and its "Unavailable" line, against what
+    // is drawn behind them (`inkOnScreen.ts`): the card is translucent, so its own background colour is not that.
+    const card = page.locator('.m-recent-item[data-unavailable="true"]');
+    await expect(card).toHaveCount(1);
+    await readsAtTextFloor(page, card, look);
   });
 }
 
@@ -554,12 +573,12 @@ async function storedSettings(page: Page): Promise<Readonly<Record<string, unkno
   return parsed.value.stored;
 }
 
-test('at its MINIMUM width the right contextual panel still holds every Properties control', async ({ page }) => {
-  // `CONTEXT_PANEL_MIN_WIDTH` is 216, MEASURED against the tab's min-content width, which this case
-  // prints. This is the rendered panel at that width, asserting no control runs past the pane — what
-  // a person would see clipped.
+test('at its MINIMUM width the right contextual panel still holds every Properties control, and its whole header', async ({ page }) => {
+  // `CONTEXT_PANEL_MIN_WIDTH` is 264, from the HEADER (2026-10-03): at 216 its collapse chevron was cut off, and no case
+  // looked at the header. This is the rendered panel at that width, asserting no control runs past the pane — what a
+  // person would see clipped — the header's chevron among them, and the tab's min-content width printed.
   await page.setViewportSize({ width: 1280, height: 800 });
-  await bridgeWithDocument(page, { 'appearance.context-panel-width': 216 }, 1);
+  await bridgeWithDocument(page, { 'appearance.context-panel-width': 264 }, 1);
   await page.goto('/');
   await page.getByRole('button', { name: 'Open PDF…' }).click();
 
@@ -579,13 +598,36 @@ test('at its MINIMUM width the right contextual panel still holds every Properti
     tab.style.inlineSize = 'min-content';
     const minContent = tab.getBoundingClientRect().width;
     tab.style.inlineSize = '';
-    return { overflow, minContent };
+    // THE HEADER: its chevron inside the pane, and nothing of it hidden by its own overflow.
+    const header = pane.querySelector<HTMLElement>('.m-context-panel__header');
+    const chevron = header?.querySelector('button[aria-label="Collapse the properties panel"]');
+    const headerFits = header !== null && header.scrollWidth <= header.clientWidth;
+    const chevronPast = chevron === null || chevron === undefined ? null : chevron.getBoundingClientRect().right - paneRight;
+    // EVERY TAB'S WORD WHOLE: a label its ellipsis cut is a header that fits by hiding what the tabs are called. Read
+    // in FRACTIONAL pixels — the text's laid-out width (an ellipsis is painted, so the line keeps the whole word's
+    // width) against its box — because `scrollWidth` and `clientWidth` round, and a 71.3 px word in a 71 px box reads
+    // as fitting while it draws an ellipsis.
+    const cut = [...(header?.querySelectorAll<HTMLElement>('.m-context-panel__tab-label') ?? [])]
+      .filter((label) => {
+        const text = document.createRange();
+        text.selectNodeContents(label);
+        return text.getBoundingClientRect().width > label.getBoundingClientRect().width + 0.01;
+      })
+      .map((label) => label.textContent);
+    const labels = header?.querySelectorAll('.m-context-panel__tab-label').length ?? 0;
+    return { overflow, minContent, headerFits, chevronPast, cut, labels };
   });
   expect(measured).not.toBeNull();
   console.log(`Properties tab min-content width: ${String(measured?.minContent)} px`);
   // THE CONTROLS WERE FOUND, or the loop below checks nothing.
   expect((measured?.overflow ?? []).length).toBeGreaterThan(10);
   for (const past of measured?.overflow ?? []) expect(past).toBeLessThanOrEqual(0.5);
+  expect(measured?.headerFits).toBe(true);
+  expect(measured?.chevronPast).not.toBeNull();
+  expect(measured?.chevronPast ?? Infinity).toBeLessThanOrEqual(0.5);
+  // THE LABELS WERE FOUND, all three, or the empty list below is the reassuring answer from a lookup that saw nothing.
+  expect(measured?.labels).toBe(3);
+  expect(measured?.cut).toStrictEqual([]);
 });
 
 test('the ASSISTANT fits its panel: the message box is inside it and nothing scrolls', async ({ page }) => {
@@ -717,6 +759,103 @@ test('the PAGE MENU opens from the keyboard on a focused thumbnail — Shift+F10
   }
 });
 
+// AN EDIT PDFIUM REFUSED (ADR-0169 Decision 5), in every theme: the step's sentence and the step and number as the
+// reference a person can quote, where `internal` shows its incident id. The command is the page menu's Rotate, which
+// every document offers; the shim answers it as main answers an edit refused at the read-back.
+for (const look of LOOKS) {
+  test(`${look.name}: an edit REFUSED AT A STEP says which, with its reference, and passes axe`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await threePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000f1');
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      refusals: new Map([[docId, { code: 'edit-refused', detail: { step: 'read-back', engineError: 0 } }]]),
+    });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+
+    const first = page.locator('[data-thumb-page="0"]');
+    await expect(first).toBeVisible();
+    await first.focus();
+    await page.keyboard.press('Shift+F10');
+    await page.getByRole('menu').getByRole('menuitem', { name: 'Rotate page' }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText('This page uses a font Monstera can’t rewrite yet, so nothing was changed.')).toBeVisible();
+    await expect(dialog.getByText('read-back 0')).toBeVisible();
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+  });
+}
+
+// A REPLACEMENT THAT CHANGED NOTHING, in every theme, for each reason: NOTHING TO REPLACE (ADR-0169 Decision 6), which
+// the shim answers as main answers a find no text object holds whole, and one that WOULD MOVE ITS LINE (the owner's
+// answer of 2026-10-05, `replaceLineRule.ts`). The sentence is said, the bar does not say the replacement happened, and
+// the words the person typed are still in both fields.
+const REPLACE_REFUSALS = [
+  {
+    name: 'NOTHING TO REPLACE',
+    code: 'nothing-to-replace',
+    sentence: 'Nothing was changed: no text Monstera can replace matched. A word drawn in two pieces can be changed with Edit text.',
+  },
+  {
+    name: 'A MOVED LINE',
+    code: 'replace-moves-line',
+    sentence:
+      'Nothing was changed: the new words are a different width, and the text after them on the line would have to move, which Replace cannot do yet. Edit text can change this line.',
+  },
+] as const;
+for (const refusal of REPLACE_REFUSALS) for (const look of LOOKS) {
+  test(`${look.name}: a replacement refused for ${refusal.name} says so, claims nothing, keeps the typed words, and passes axe`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await threePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000f2');
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'three.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      refusals: new Map([[docId, { code: refusal.code }]]),
+    });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('[data-thumb-page="0"]')).toBeVisible();
+
+    await page.keyboard.press('Control+F');
+    const panel = page.getByRole('tabpanel', { name: 'Search' });
+    await panel.getByRole('textbox', { name: 'Find text' }).fill('GIZMO');
+    await panel.getByRole('textbox', { name: 'Replace with' }).fill('GADGET');
+    await panel.getByRole('button', { name: 'Replace everywhere' }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText(refusal.sentence)).toBeVisible();
+    // NOTHING HAPPENED, SO NOTHING IS REPORTED: the bar's after-the-fact note is for a replacement that ran.
+    await expect(panel.locator('.m-find-replaced')).toHaveCount(0);
+    // AXE ON THE OPEN DIALOG, which is the screen the person is shown.
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+
+    // AND THE TYPED WORDS STAY, so the person can change one and send again: read once the dialog is dismissed, since
+    // the modal hides the panel behind it from the accessibility tree the locators read.
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(panel.getByRole('textbox', { name: 'Find text' })).toHaveValue('GIZMO');
+    await expect(panel.getByRole('textbox', { name: 'Replace with' })).toHaveValue('GADGET');
+  });
+}
+
 test('THUMBNAIL SIZE: a stored Large lays the Pages strip in ONE column of 160 px pictures, drawn at that width', async ({
   page,
 }) => {
@@ -812,7 +951,10 @@ async function pressOnSecondParagraph(page: Page, zoom: string): Promise<{ from:
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   const anchor = page.locator('[data-text-layer="0"] [data-text-line="4"]');
   await expect(anchor).toHaveText('A second paragraph, shorter than the first.');
-  const from = await anchor.boundingBox();
+  // THE PANE SHOWN, not only its lines mounted: the lines mount while the pane is still hidden for its first frame,
+  // and a press then lands on the loading state.
+  await pageShown(page);
+  const from = await settled(page, () => anchor.boundingBox(), (box) => box !== null, 'the second paragraph');
   const layer = await page.locator('[data-text-layer="0"]').boundingBox();
   if (from === null || layer === null) throw new Error('the paragraph or its layer has no box');
   await page.mouse.move(from.x + 2, from.y + from.height / 2);
@@ -935,6 +1077,7 @@ test('SELECTED TEXT opens the selected-text menu above the page’s, in the owne
 
   const line = page.locator('[data-text-layer="0"] [data-text-line="0"]');
   await expect(line).toHaveCount(1);
+  await pageShown(page);
   const box = await line.boundingBox();
   if (box === null) throw new Error('the first line has no box');
   await page.mouse.move(box.x + 2, box.y + box.height / 2);
@@ -997,6 +1140,7 @@ test('right-click › ASK AI quotes the selected words in the assistant’s box,
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   const line = page.locator('[data-text-layer="0"] [data-text-line="0"]');
   await expect(line).toHaveCount(1);
+  await pageShown(page);
   const box = await line.boundingBox();
   if (box === null) throw new Error('the first line has no box');
   await page.mouse.move(box.x + 2, box.y + box.height / 2);
@@ -1041,6 +1185,7 @@ test('a triple-click on a page’s LAST LINE still opens the selected-text menu,
 
   const line = page.locator('[data-text-layer="0"] [data-text-line="1"]');
   await expect(line).toHaveCount(1);
+  await pageShown(page);
   const box = await line.boundingBox();
   if (box === null) throw new Error('the last line has no box');
   await line.click({ clickCount: 3, position: { x: box.width / 2, y: box.height / 2 } });
@@ -1317,9 +1462,12 @@ test('a page ZOOMED WIDER THAN ITS PANE can still be scrolled to its left edge',
   await bar.getByRole('slider', { name: 'Zoom level' }).fill('4');
   await expect(bar.locator('.m-status-zoom')).toHaveText('400%');
 
-  const reach = await page.evaluate(() => {
+  // THE PAGE'S SLOT, not its canvas: 150 ms after a zoom settles the page is redrawn, and above the tiling threshold
+  // the one canvas is replaced by tiles, so a canvas read can find nothing on a slow runner. The slot is the page's
+  // box however it is drawn; the reading is taken once it has stopped changing.
+  const reach = await settled(page, () => page.evaluate(() => {
     const list = document.querySelector('.m-page-list');
-    const canvas = document.querySelector('canvas.m-page');
+    const canvas = document.querySelector('.m-page-slot');
     if (list === null || canvas === null) return null;
     // SCROLLED HOME FIRST, because the question is whether the left edge can be reached AT ALL:
     // a pane that happens to be scrolled right would hide the defect behind a scroll position.
@@ -1334,7 +1482,7 @@ test('a page ZOOMED WIDER THAN ITS PANE can still be scrolled to its left edge',
       scrollWidth: list.scrollWidth,
       pageWidth: Math.round(drawn.width),
     };
-  });
+  }), (now) => now !== null, 'the page at 400%');
 
   expect(reach).not.toBeNull();
   // THE VACUITY GUARD, and it is the load-bearing line: with a page NARROWER than its pane there
@@ -1392,7 +1540,11 @@ test('the FLOATING TOOLBAR is a pill inside the page area, off the rail and the 
 
   const toolbar = page.getByRole('toolbar', { name: 'Float bar' });
   await expect(toolbar).toBeVisible();
-  const box = await toolbar.boundingBox();
+  // THE PAGE SHOWN AND THE RULER IN: the bar is visible before the first frame, and it moves 18 px when the vertical
+  // ruler mounts with the first page measure (`app.css`), so its box is read once both have happened and it stops.
+  await pageShown(page);
+  await expect(page.locator('.m-ruler-v')).toBeVisible();
+  const box = await settled(page, () => toolbar.boundingBox(), (now) => now !== null, 'the Float bar');
   const area = await page.locator('.m-canvas-area').boundingBox();
   const organize = await page.getByRole('button', { name: 'Organize' }).boundingBox();
   const panelPane = await page.locator('.m-splitter__pane').first().boundingBox();
@@ -1558,6 +1710,7 @@ test('a DIALOG taller than the window stays inside it, and its body scrolls to t
   await page.setViewportSize({ width: 1280, height: 420 });
   await bridge(page, {});
   await page.goto('/');
+  await startScreenListening(page);
   await page.keyboard.press('Control+Slash');
 
   const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
@@ -1822,6 +1975,8 @@ for (const [chosen, expected] of [
     await page.getByRole('button', { name: 'Open PDF…' }).click();
     const percentage = page.locator('.m-status-bar .m-status-zoom');
     await expect(percentage).toHaveText('100%');
+    // THE PAGES SHOWN: the zoom reads 100% before the first frame, while the pane is still hidden for it.
+    await pageShown(page);
     const scroller = await page.locator('.m-page-list').first().boundingBox();
     if (scroller === null) throw new Error('the page list is laid out');
     await page.mouse.move(scroller.x + scroller.width / 2, scroller.y + scroller.height / 2);
@@ -1944,13 +2099,19 @@ test('DONATE AND RATE US sit at the MENU ROW’s centre while they fit, and afte
   /** The three boxes, read after the layout has settled at a width. */
   const boxes = async (width: number): Promise<{ group: Box; menu: Box; reserve: Box; row: Box }> => {
     await page.setViewportSize({ width, height: 800 });
-    await page.waitForTimeout(150);
     const read = async (locator: typeof row): Promise<Box> => {
       const box = await locator.boundingBox();
       if (box === null) throw new Error(`a box at ${String(width)}`);
       return box;
     };
-    return { group: await read(group), menu: await read(lastMenu), reserve: await read(reserve), row: await read(row) };
+    // SETTLED, not slept on: the row's fit runs through a ResizeObserver and may take more than one pass, so the four
+    // boxes are read once they agree across two frames rather than after a fixed 150 ms.
+    return settled(
+      page,
+      async () => ({ group: await read(group), menu: await read(lastMenu), reserve: await read(reserve), row: await read(row) }),
+      (now) => Math.round(now.row.width) === width,
+      `the menu row at ${String(width)}`,
+    );
   };
 
   // WIDE: centred on the window to the pixel, which is what the equal outer tracks and the equal padding give. At
@@ -1975,6 +2136,254 @@ test('DONATE AND RATE US sit at the MENU ROW’s centre while they fit, and afte
   expect(narrow.group.x).toBeGreaterThanOrEqual(narrow.menu.x + narrow.menu.width);
   expect(narrow.group.x + narrow.group.width).toBeLessThanOrEqual(narrow.reserve.x + 0.5);
   expect(narrow.reserve.x + narrow.reserve.width).toBeLessThanOrEqual(narrow.row.x + narrow.row.width + 0.5);
+});
+
+test('a NARROW MENU ROW stays one line: the words go, then the last menus fold into More, and each is reachable there (ADR-0146)', async ({
+  page,
+}) => {
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  const row = page.locator('.m-menu-bar');
+  const triggers = page.locator('.m-menu-bar__menus .m-menu-bar__trigger');
+  await expect(row.getByRole('button', { name: 'Donate' })).toBeVisible();
+  const ALL = ['File', 'Edit', 'View', 'Organize', 'Comment', 'Forms', 'Review', 'Protect', 'Tools', 'Window', 'Help'];
+
+  /** The row at a width, once its fit has settled: the triggers drawn, whether it overflows, and each button's fit. */
+  const at = async (width: number): Promise<{ names: string[]; spills: boolean; wrapped: boolean[] }> => {
+    await page.setViewportSize({ width, height: 800 });
+    const read = async (): Promise<{ names: string[]; spills: boolean; wrapped: boolean[] }> => ({
+      names: await triggers.allTextContents(),
+      spills: await row.evaluate((element) => element.scrollWidth > element.clientWidth),
+      // A LABEL ON TWO LINES is a button whose content is taller than its box: the box is a fixed height.
+      wrapped: await page
+        .locator('.m-menu-bar__commands .m-button')
+        .evaluateAll((buttons) => buttons.map((button) => button.scrollHeight > button.clientHeight)),
+    });
+    return settled(page, read, () => true, `the menu row at ${String(width)}`);
+  };
+
+  // CONTROL, WIDE: every menu on the row and no More, so the More below is the narrow width's doing.
+  const wide = await at(1920);
+  expect(wide.names).toEqual(ALL);
+  expect(wide.spills).toBe(false);
+
+  // 960, where the row measured its words as fitting while Rate Us drew on two lines: one line now, at any width.
+  for (const width of [1920, 1024, 960, 900, 822, 760]) {
+    const now = await at(width);
+    expect(now.spills, `the row overflows at ${String(width)}`).toBe(false);
+    expect(now.wrapped, `a label wraps at ${String(width)}`).toEqual([false, false]);
+  }
+
+  // 760: menus fold from the END into More, which comes last; the drawn ones are the leading part of the order.
+  const tight = await at(760);
+  expect(tight.names.at(-1)).toBe('More');
+  const drawn = tight.names.slice(0, -1);
+  expect(drawn).toEqual(ALL.slice(0, drawn.length));
+  expect(drawn.length).toBeLessThan(ALL.length);
+  const folded = ALL.slice(drawn.length);
+
+  // EVERY FOLDED MENU IS IN MORE, in order, and its commands are there: Help › About opens from inside it.
+  await triggers.filter({ hasText: 'More' }).click();
+  const inMore = page.locator('[data-folded-menu]');
+  await expect(inMore).toHaveCount(folded.length);
+  expect(await inMore.allTextContents()).toEqual(folded);
+  await page.locator('[data-folded-menu="help"]').hover();
+  const about = page.locator('[data-command="app.about"]');
+  await expect(about).toBeVisible();
+  await about.click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+});
+
+test('a NARROW WINDOW keeps the page: both panels at the minimum window, then the right and the left give way to handles that open sheets (ADR-0146)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 720 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+  const leftResize = page.getByRole('separator', { name: 'Resize the document panel' });
+  const rightResize = page.getByRole('separator', { name: 'Resize the properties panel' });
+  const leftHandle = page.getByRole('button', { name: 'Show the document panel' });
+  const rightHandle = page.getByRole('button', { name: 'Show the properties panel' });
+  // THE SPLITTER'S FLEXIBLE PANE, which is what holds the floor: the canvas area inside it, plus the gaps where the
+  // resize handles lie over its edges.
+  const pageArea = page.locator('.m-splitter__pane:has(> .m-splitter__middle)');
+  const width = async (locator: typeof pageArea): Promise<number> => (await locator.boundingBox())?.width ?? 0;
+
+  // THE MINIMUM WINDOW DRAWS ALL ITS CHROME: both panels in the row, and the page area at its floor or wider.
+  await expect(leftResize).toBeVisible();
+  await expect(rightResize).toBeVisible();
+  await expect(rightHandle).toHaveCount(0);
+  expect(await width(pageArea)).toBeGreaterThanOrEqual(PAGE_AREA_MIN_WIDTH - 0.5);
+
+  // NARROWER: the right side gives way to its handle, the left stays, and the page keeps its floor.
+  await page.setViewportSize({ width: 960, height: 720 });
+  await expect(rightResize).toHaveCount(0);
+  await expect(rightHandle).toBeVisible();
+  await expect(leftResize).toBeVisible();
+  expect(await width(pageArea)).toBeGreaterThanOrEqual(PAGE_AREA_MIN_WIDTH - 0.5);
+
+  // NARROWER STILL: both give way, each handle the width the rule counts it at.
+  await page.setViewportSize({ width: 760, height: 560 });
+  await expect(leftHandle).toBeVisible();
+  for (const handle of ['.m-document-panel-handle', '.m-context-panel-handle']) {
+    expect(Math.round(await width(page.locator(handle))), `${handle}'s width`).toBe(EDGE_HANDLE_WIDTH);
+  }
+
+  // ASKED FOR, the right side opens as a sheet over the page's edge, holding the panel, and Escape gives it back.
+  await rightHandle.click();
+  const sheet = page.locator('[data-panel-sheet="end"]');
+  await expect(sheet.getByRole('complementary', { name: 'Properties' })).toBeVisible();
+  const sheetBox = await sheet.boundingBox();
+  const handleBox = await page.locator('.m-context-panel-handle').boundingBox();
+  if (sheetBox === null || handleBox === null) throw new Error('the sheet and its handle are laid out');
+  // IT MEETS ITS HANDLE: placed against the handle's padding box, so its edge lies on the handle's 1 px seam.
+  const sheetEnd = sheetBox.x + sheetBox.width;
+  expect(sheetEnd).toBeGreaterThanOrEqual(handleBox.x - 0.5);
+  expect(sheetEnd).toBeLessThanOrEqual(handleBox.x + 1.5);
+  // ITS HEADER WHOLE in the sheet too — the chevron the 216 floor cut off.
+  expect(await sheet.locator('.m-context-panel__header').evaluate((header) => header.scrollWidth <= header.clientWidth)).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Show the properties panel' })).toBeFocused();
+  // NEITHER OPEN SETTING WAS WRITTEN: the person's choice is what a wider window draws again.
+  const stored = await storedSettings(page);
+  expect(stored['appearance.context-panel-open']).not.toBe(false);
+  expect(stored['appearance.document-panel-open']).not.toBe(false);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(rightResize).toBeVisible();
+  await expect(leftResize).toBeVisible();
+});
+
+test('a SHORT WINDOW folds the rail’s last entries into More, never the active section, and nothing runs past the rail (ADR-0147)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+  const rail = page.locator('.m-ribbon__rail');
+  const more = page.locator('[data-rail-more]');
+  const spills = (): Promise<boolean> => rail.evaluate((element) => element.scrollHeight > element.clientHeight + 0.5);
+  const drawnSections = (): Promise<string[]> =>
+    rail.locator('button[data-ribbon-section]').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-ribbon-section') ?? ''));
+
+  // CONTROL, TALL: every entry on the rail and no More, so the More below is the height's doing.
+  await expect(rail.getByRole('button', { name: 'Settings' })).toBeVisible();
+  await expect(more).toHaveCount(0);
+  expect(await spills()).toBe(false);
+
+  // SHORT — the work area of a 1080p display at 200% — and nothing runs past the rail.
+  await page.setViewportSize({ width: 960, height: 516 });
+  await expect(more).toBeVisible();
+  await expect.poll(spills).toBe(false);
+  const short = await drawnSections();
+  expect(short[0]).toBe('home');
+  expect(short.length).toBeLessThan(8);
+
+  // MORE HOLDS THE REST in the column's order, and a section chosen there becomes the active one, drawn on the rail.
+  await more.click();
+  const folded = page.locator('[role="menu"] [data-ribbon-section]');
+  await expect(folded.first()).toBeVisible();
+  const foldedIds = await folded.evaluateAll((items) => items.map((item) => item.getAttribute('data-ribbon-section') ?? ''));
+  expect([...short, ...foldedIds]).toStrictEqual(['home', 'organize', 'edit', 'comment', 'forms', 'protect', 'review', 'tools']);
+  await expect(page.locator('[role="menu"] [data-command="app.settings"]')).toBeVisible();
+  await page.locator('[role="menu"] [data-ribbon-section="tools"]').click();
+  await expect(rail.locator('button[data-ribbon-section="tools"]')).toHaveAttribute('aria-current', 'true');
+  await expect.poll(spills).toBe(false);
+});
+
+test('a SHORT PAGE AREA folds the Float bar’s last tools into More, inside the area, each still reachable (ADR-0147, extended)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+  const strip = page.locator('.m-quick-toolbar');
+  const more = page.locator('.m-quick-toolbar__more');
+  /** The strip against its page area: inside it at both ends, and the area scrolling nothing. */
+  const fits = (): Promise<boolean> =>
+    strip.evaluate((element) => {
+      const area = element.parentElement;
+      if (area === null) return false;
+      const own = element.getBoundingClientRect();
+      const room = area.getBoundingClientRect();
+      return own.top >= room.top - 0.5 && own.bottom <= room.bottom + 0.5 && area.scrollHeight <= area.clientHeight + 0.5;
+    });
+  const tools = (): Promise<string[]> =>
+    strip.locator(':scope > .m-icon-button:not(.m-quick-toolbar__more)').evaluateAll((buttons) =>
+      buttons.map((button) => button.getAttribute('aria-label') ?? ''),
+    );
+
+  // CONTROL, TALL: every tool on the strip and no More.
+  await expect(strip).toBeVisible();
+  await expect(more).toHaveCount(0);
+  const all = await tools();
+  expect(await fits()).toBe(true);
+
+  // SHORT: inside the area, More at the end, and the drawn tools the leading part of the strip's order.
+  await page.setViewportSize({ width: 960, height: 516 });
+  await expect(more).toBeVisible();
+  await expect.poll(fits).toBe(true);
+  const drawn = await tools();
+  expect(drawn).toStrictEqual(all.slice(0, drawn.length));
+
+  // MORE HOLDS THE REST, by name and in the strip's order: drawn and folded together are every tool, once.
+  await more.click();
+  const items = page.locator('[role="menu"] [data-command] .m-menu-bar__title');
+  await expect(items.first()).toBeVisible();
+  expect([...drawn, ...(await items.allTextContents())]).toStrictEqual(all);
+});
+
+test('the STATUS BAR’s document line shows whole facts only, giving up the size and the length first, at every width', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridgeWithDocument(page, {}, 1);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+
+  /** The line's facts as drawn, its dots aside, and whether any of them is cut short. */
+  const line = async (width: number, height: number): Promise<{ texts: string[]; cut: string[] }> => {
+    await page.setViewportSize({ width, height });
+    const read = (): Promise<{ texts: string[]; cut: string[] }> =>
+      page.evaluate(() => {
+        const drawn = [
+          ...document.querySelectorAll<HTMLElement>(
+            '.m-status-bar .m-status-document > :not([aria-hidden="true"])',
+          ),
+        ];
+        return {
+          texts: drawn.map((fact) => fact.textContent),
+          // A FACT CUT SHORT is one whose words are wider than its box. The name may be: it is the one that reads so.
+          cut: drawn.filter((fact) => !fact.matches('.m-status-name') && fact.scrollWidth > fact.clientWidth).map((fact) => fact.textContent),
+        };
+      });
+    return settled(page, read, () => true, `the document line at ${String(width)}`);
+  };
+
+  // CONTROL, WIDE: all four, so what leaves below is the width's doing.
+  const wide = await line(1280, 800);
+  expect(wide.texts).toHaveLength(4);
+  expect(wide.texts.at(-1)).toBe('Saved');
+  expect(wide.cut).toStrictEqual([]);
+
+  // THE MINIMUM WINDOW, where every fact read "8 p… · 1… · Sa…" until 2026-10-03: whole facts, the size and the length
+  // gone first, whether it is saved kept.
+  const minimum = await line(MINIMUM_WINDOW.width, MINIMUM_WINDOW.height);
+  expect(minimum.cut).toStrictEqual([]);
+  expect(minimum.texts.at(-1)).toBe('Saved');
+  expect(minimum.texts.length).toBeLessThan(4);
+
+  // NARROWER: never a fact cut short, whatever is left.
+  for (const [width, height] of [[960, 516], [760, 560]] as const) {
+    expect((await line(width, height)).cut, `a fact cut short at ${String(width)}`).toStrictEqual([]);
+  }
 });
 
 // BOTH BRAND TONES ARE FILLS, in every look (the owner's decision, 2026-10-01): Rate Us was an outline on a translucent
@@ -2035,7 +2444,10 @@ for (const look of LOOKS) {
       await button.blur();
 
       // HOVER and PRESS each change what is drawn, and differently from each other and from rest.
-      const filter = (): Promise<string> => button.evaluate((element) => getComputedStyle(element).filter);
+      // EACH READ ONCE THE FILTER HAS STOPPED MOVING: `.m-button` transitions its filter over 140 ms, so a read straight
+      // after the hover or the press is a value on the way, and the first frame of a transition is the rest value.
+      const filter = (): Promise<string> =>
+        settled(page, () => button.evaluate((element) => getComputedStyle(element).filter), () => true, `${name}'s filter`);
       const rest = await filter();
       await button.hover();
       const hovered = await filter();
@@ -2194,13 +2606,38 @@ test('a CAPTION THAT GROWS after the fold measured it is measured again, so the 
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   const tools = page.locator('.m-ribbon__tools');
   await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
-  await expect.poll(() => ribbonOverflow(tools)).toBeLessThanOrEqual(1);
-  const shownBefore = await tools.locator('.m-tool-button[data-command]').count();
-  await page.evaluate(() => {
-    document.styleSheets[0]?.insertRule('.m-tool-button__label { font-size: 13px !important; }', 0);
+  // THE ROW SETTLED BEFORE THE GROWTH, which is what makes this a control. Growing the captions while the document is
+  // still arriving lets an ordinary re-render re-measure them, and the case then passed with no group observed at all
+  // (measured 2026-10-04: 19 tools folding to 17 with both group observations removed). After the page's first frame
+  // and a row that reads the same across frames, nothing else measures, so only the observer can answer the growth.
+  await pageShown(page);
+  const { count: shownBefore } = await settled(
+    page,
+    async () => ({ count: await tools.locator('.m-tool-button[data-command]').count(), overflow: await ribbonOverflow(tools) }),
+    (reading) => reading.overflow <= 1,
+    'the ribbon row',
+  );
+  // THE GROWTH IS DERIVED FROM THE ROOM THE ROW HAS, so it always needs a fold. A fixed 13 px did on Linux's fallback
+  // face and stopped doing on Windows' Segoe UI once Home's three Office buttons became one Export (cloud-4 item 9c):
+  // the narrower captions then grew into the room left at the row's end, nothing folded, and the case failed for
+  // its input rather than the fold. Letter spacing adds exactly its amount for each character a caption draws.
+  const { room, characters } = await tools.evaluate((row) => {
+    const style = getComputedStyle(row);
+    const inner = row.getBoundingClientRect().right - Number.parseFloat(style.paddingRight) - Number.parseFloat(style.borderRightWidth);
+    const groups = [...row.querySelectorAll(':scope > .m-ribbon__group, :scope > .m-ribbon__rest')];
+    const labels = [...row.querySelectorAll('.m-tool-button__label')];
+    return {
+      room: inner - Math.max(...groups.map((group) => group.getBoundingClientRect().right)),
+      characters: labels.reduce((sum, label) => sum + label.textContent.length, 0),
+    };
   });
-  // THE GROWTH TOOK: the captions are drawn larger, so the row had something to answer.
-  await expect(tools.locator('.m-tool-button__label').first()).toHaveCSS('font-size', '13px');
+  expect(characters).toBeGreaterThan(0);
+  const spacing = Math.ceil((room + 24) / characters);
+  await page.evaluate((px) => {
+    document.styleSheets[0]?.insertRule(`.m-tool-button__label { letter-spacing: ${String(px)}px !important; }`, 0);
+  }, spacing);
+  // THE GROWTH TOOK: the captions are drawn wider, so the row had something to answer.
+  await expect(tools.locator('.m-tool-button__label').first()).toHaveCSS('letter-spacing', `${String(spacing)}px`);
   await expect.poll(() => ribbonOverflow(tools)).toBeLessThanOrEqual(1);
   // AND IT ANSWERED BY FOLDING, not by the browser hiding the excess: fewer tools on the row than before.
   expect(await tools.locator('.m-tool-button[data-command]').count()).toBeLessThan(shownBefore);
@@ -2305,7 +2742,31 @@ test('BELOW THE FLOOR whole groups fold into the row’s More, nothing scrolls s
   await page.getByRole('button', { name: 'Open PDF…' }).click();
   const tools = page.locator('.m-ribbon__tools');
   await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
-  const sections = page.locator('.m-ribbon__tab[data-ribbon-section]:not([disabled])');
+  // THE SECTIONS BY ID, read once on the tall window, and each chosen the way a person reaches it: on the rail, or from
+  // the rail's More when a short window has folded it there (ADR-0147). By place on the rail, a fold at 640 x 360 made
+  // the first place Tools, the active section, and the case compared Tools' row with Home's.
+  const ids = await page
+    .locator('.m-ribbon__tab[data-ribbon-section]:not([disabled])')
+    .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-ribbon-section') ?? ''));
+  const choose = async (id: string): Promise<void> => {
+    // THE RAIL AS SETTLED, never mid-fold: read in the frame before a fold answers, a section looks drawn and is then
+    // folded out from under the click (measured: Home at 640 x 360, detached on every retry).
+    const drawn = await settled(
+      page,
+      () =>
+        page
+          .locator('.m-ribbon__rail button[data-ribbon-section]')
+          .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-ribbon-section') ?? '')),
+      () => true,
+      'the rail',
+    );
+    if (drawn.includes(id)) {
+      await page.locator(`.m-ribbon__rail button[data-ribbon-section="${id}"]`).click();
+      return;
+    }
+    await page.locator('[data-rail-more]').click();
+    await page.locator(`[role="menu"] [data-ribbon-section="${id}"]`).click();
+  };
 
   // WHAT A SECTION OFFERS, read the same way at every width: the tools drawn on the row, and every tool a More holds.
   // The join is asserted as SET EQUALITY against the wide row, so a tool that vanished at a width fails, and so does
@@ -2321,9 +2782,11 @@ test('BELOW THE FLOOR whole groups fold into the row’s More, nothing scrolls s
         .filter((id) => id !== '')
         .sort(),
     );
+  expect(ids.length).toBeGreaterThan(1);
   const wide: string[][] = [];
-  for (let index = 0; index < (await sections.count()); index += 1) {
-    await sections.nth(index).click();
+  for (const id of ids) {
+    await choose(id);
+    await expect(tools).toHaveAttribute('data-ribbon-active', id);
     await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
     wide.push(await reachable());
   }
@@ -2331,12 +2794,14 @@ test('BELOW THE FLOOR whole groups fold into the row’s More, nothing scrolls s
   let hidden = 0;
   for (const width of [960, 800, 640]) {
     await page.setViewportSize({ width, height: width === 640 ? 360 : 516 });
-    for (let index = 0; index < (await sections.count()); index += 1) {
-      await sections.nth(index).click();
+    for (const [index, id] of ids.entries()) {
+      await choose(id);
+      // THE SECTION ASKED FOR IS THE ONE DRAWN, so the row compared below is that section's.
+      await expect(tools).toHaveAttribute('data-ribbon-active', id);
       await expect(tools.locator('.m-tool-button[data-command]').first()).toBeVisible();
       // A SETTLED row: the overflow is read once the fold has answered for this width.
       await expect.poll(() => tools.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
-      expect(await reachable(), `section ${String(index)} at ${String(width)}`).toStrictEqual(wide[index]);
+      expect(await reachable(), `section ${id} at ${String(width)}`).toStrictEqual(wide[index]);
       const rest = tools.locator('.m-ribbon__rest .m-ribbon__more');
       if ((await rest.count()) > 0) {
         hidden += 1;
@@ -2370,9 +2835,9 @@ test('LIVE CHECK 1.4.13: a tooltip shows on hover and on keyboard focus, stays w
 
   await trigger.hover();
   await expect(tip).toHaveText('New PDF from Word, Excel or PowerPoint…');
-  // HOVERABLE: the pointer moves onto the tooltip itself and it stays.
-  const box = await tip.boundingBox();
-  if (box === null) throw new Error('the tooltip has no box');
+  // HOVERABLE: the pointer moves onto the tooltip itself and it stays. Its box once PLACED: an unplaced popup sits at
+  // the window's origin at opacity 0, which counts as visible, and a move there leaves the trigger.
+  const box = await popupPlaced(page, tip, 'the tooltip');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 5 });
   await expect(tip).toBeVisible();
   // DISMISSIBLE without moving the pointer.
@@ -2486,6 +2951,9 @@ for (const [theme, offers] of [
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     const bar = page.locator('.m-title-bar');
     await expect(bar.getByRole('button', { name: offers })).toBeVisible();
+    // THE DOCUMENT'S TAB IN THE ROW, which is what the fit is measured WITH: the theme and the switch are both there
+    // before the tab arrives, so a row read on them alone is measured without the share the tabs take.
+    await expect(bar.getByRole('navigation', { name: 'Open documents' }).getByText('width.pdf')).toBeVisible();
 
     const fit = await bar.evaluate((element) => {
       const search = element.querySelector<HTMLElement>('.m-command-search');
@@ -2524,7 +2992,10 @@ test('LIVE CHECK toasts: a toast never covers the assistant’s Send button', as
   await page.keyboard.press('Control+S');
   const toast = page.locator('.m-toast').first();
   await expect(toast).toBeVisible();
-  const [a, b] = [await toast.boundingBox(), await send.boundingBox()];
+  // ITS BOX ONCE IT HAS ARRIVED: a toast slides 8 px up over 160 ms (`m-toast-in`), so a read on appearance is a
+  // point on the way.
+  const a = await settled(page, () => toast.boundingBox(), (box) => box !== null, 'the toast');
+  const b = await send.boundingBox();
   if (a === null || b === null) throw new Error('a box is missing');
   const overlaps = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
   expect(overlaps, `toast ${JSON.stringify(a)} against Send ${JSON.stringify(b)}`).toBe(false);
@@ -2595,6 +3066,9 @@ test('the START SCREEN draws the supplied logo, the hero lines, one primary Open
     return [...document.fonts].filter((face) => face.family.replaceAll('"', '') === 'Marcellus').map((face) => face.status);
   });
   expect(marcellus).toStrictEqual(['loaded']);
+  // DECODED BEFORE IT IS MEASURED: a visible image may not have decoded yet, and its natural width is then 0.
+  await expect.poll(() => hero.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await expect.poll(() => page.locator('.m-menu-bar__logo').evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   const drawn = await measure(hero);
   // DECODED — a broken source is still a laid-out box, with a natural width of zero.
   expect(drawn.natural).toBeGreaterThan(0);
@@ -2671,7 +3145,8 @@ test('the START SCREEN draws its 2x artwork on a 2x display, and its tiles fit a
   // THE LOGO GREW 24 PX and the room it took came from the drop zone and the top padding, so at the size the owner works
   // at the first screen still holds the hero, Open and every tile, unscrolled. Measured against the area that scrolls,
   // not the footer: the footer FOLLOWS the content (`margin-block-start: auto`), so "the last tile is above the footer"
-  // holds at any height and separates nothing. The recent list and the footer below the tiles scroll by design.
+  // holds at any height and separates nothing. The recent list below the tiles scrolls; the footer stays at the window's
+  // foot over it, which the case after this one holds.
   const fit = await page.locator('.m-start-card').last().evaluate((card) => {
     let area: HTMLElement | null = card.parentElement;
     while (area !== null && !['auto', 'scroll'].includes(getComputedStyle(area).overflowY)) area = area.parentElement;
@@ -2685,13 +3160,92 @@ test('the START SCREEN draws its 2x artwork on a 2x display, and its tiles fit a
   await context.close();
 });
 
+for (const look of LOOKS) {
+  test(`${look.name}: the START SCREEN's footer COVERS what scrolls under it, so no card shows through its text`, async ({
+    page,
+  }) => {
+    // MEASURED 2026-10-03 in high contrast: the footer's ground was the ambient gradient alone, which is `none` there, so a
+    // recent card scrolled under the bar was drawn through "Press F1 for help". The ground is the window's colour with
+    // the gradient over it, as `.m-document-surface` lays it, and what the bar must do in every look is cover.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await bridgeUnder(page, look, {
+      recent: ['Annual report.pdf', 'Board minutes.pdf', 'Supplier contract.pdf', 'Lease.pdf'].map((name, at) => ({
+        handle: asFileHandle(`handle-${String(at)}`),
+        name,
+        location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
+        openedAt: new Date(Date.now() - at * 3_600_000).toISOString(),
+        availability: 'available' as const,
+      })),
+    });
+    await page.goto('/');
+    const footer = page.locator('.m-start-footer');
+    await expect(footer).toBeVisible();
+    // A CARD UNDER THE BAR, so the case is about a screen where something can show through.
+    const card = await page.locator('.m-recent-item').first().boundingBox();
+    const bar = await footer.boundingBox();
+    expect((card?.y ?? 0) + (card?.height ?? 0)).toBeGreaterThan(bar?.y ?? Infinity);
+    // COVERS means an opaque colour or a gradient laid over the bar — the ground's own colours are opaque hex — and
+    // neither is what high contrast had, where the colour was transparent and `--ambient` is `none`.
+    const ground = await footer.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { color: style.backgroundColor, image: style.backgroundImage };
+    });
+    const alpha = /^rgba\([^)]*,\s*([\d.]+)\)$/u.exec(ground.color)?.[1];
+    const opaque = alpha === undefined || Number(alpha) === 1;
+    expect(opaque || ground.image !== 'none', JSON.stringify(ground)).toBe(true);
+  });
+}
+
+test('the START SCREEN keeps its footer at the window’s foot at 1280 × 800, with recent files under the tiles', async ({
+  page,
+}) => {
+  // THE OWNER'S ITEM 1f: the footer ended 48 px below the window, and with recent files it followed them further. The
+  // rhythm tightens on a short window and the footer is stuck to the area's foot, so it is in the window either way.
+  // WITH RECENT FILES, because that is the screen the owner sees, and it makes the content taller than the window — a
+  // case without them would hold for the tightening alone.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await bridge(page, {
+    recent: ['Annual report.pdf', 'Board minutes.pdf', 'Supplier contract.pdf', 'Lease.pdf'].map((name, at) => ({
+      handle: asFileHandle(`handle-${String(at)}`),
+      name,
+      location: displayLocationSchema.parse({ within: 'documents', folder: 'Reports' }),
+      openedAt: new Date(Date.now() - at * 3_600_000).toISOString(),
+      availability: 'available' as const,
+    })),
+  });
+  await page.goto('/');
+  const footer = page.locator('.m-start-footer');
+  await expect(footer).toBeVisible();
+  await expect(page.locator('.m-recent')).toBeAttached();
+  const read = await footer.evaluate((element) => {
+    const area = element.closest('.m-start-area');
+    return {
+      bottom: element.getBoundingClientRect().bottom,
+      window: window.innerHeight,
+      // THE CONTENT IS TALLER THAN THE AREA, or the case separates nothing: a short screen pins its footer anyway.
+      overflows: area === null ? null : area.scrollHeight > area.clientHeight,
+    };
+  });
+  expect(read.overflows).toBe(true);
+  expect(read.bottom).toBeLessThanOrEqual(read.window);
+  // AND IT COVERS NO TILE: stuck to the foot over the design's own rhythm, the footer cut the last row of tiles in half
+  // (measured 2026-10-03). The tightening on a short window is what makes room for it.
+  const tile = await page.locator('.m-start-card').last().boundingBox();
+  const bar = await footer.boundingBox();
+  expect((tile?.y ?? Infinity) + (tile?.height ?? 0)).toBeLessThanOrEqual(bar?.y ?? -Infinity);
+
+  // CONTROL: on a window with room the design's own rhythm is kept — the tightening is the short window's alone.
+  await page.setViewportSize({ width: 1280, height: 881 });
+  expect(await page.locator('.m-start-screen').evaluate((element) => getComputedStyle(element).rowGap)).toBe('24px');
+});
+
 test('F1 opens the HELP CENTRE, Ctrl+/ the keyboard shortcuts, and the start screen footer names F1', async ({ page }) => {
   // ADR-0112: F1 is help, and the footer says so. In Chromium, because a browser may claim F1 for itself before a
   // page's listener sees it — the production build is where that would show.
   await bridge(page);
   await page.goto('/');
 
-  await expect(page.locator('.m-start-footer')).toContainText('Press F1 for help');
+  await startScreenListening(page);
 
   await page.keyboard.press('F1');
   const help = page.getByRole('dialog', { name: 'Help centre' });
@@ -2712,6 +3266,55 @@ test('F1 opens the HELP CENTRE, Ctrl+/ the keyboard shortcuts, and the start scr
 
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
+});
+
+test('KEYBOARD SHORTCUTS: the changes end under their header, each key is its own chip, and the prompt is one line', async ({ page }) => {
+  // THE GALLERY'S READING, 2026-10-03, at the minimum window: `.m-shortcuts td` outranked the actions' own class, so the
+  // buttons sat at the cell's start under a header at its end; two keys were two words a gap apart, "Ctrl+W Ctrl+F4",
+  // which reads as one chord; and the waiting prompt wrapped "cancel" onto a line of its own.
+  await page.setViewportSize({ width: 760, height: 560 });
+  await bridge(page);
+  await page.goto('/');
+  await startScreenListening(page);
+  await page.keyboard.press('Control+Slash');
+  const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+  await expect(dialog).toBeVisible();
+
+  // THE PROMPT FIRST, then a key for it: a changed row gains *Reset*, which widens the column of changes, and only then
+  // does a row with two buttons have room to sit at the start. With every row alike the column hugs them, start and end
+  // coincide, and the alignment below holds under the old rule too — measured, so the order is the control.
+  await dialog.getByRole('row').filter({ hasText: 'Open PDF…' }).getByRole('button', { name: 'Change', exact: true }).click();
+  const prompt = dialog.locator('.m-shortcuts__capture');
+  await expect(prompt).toBeFocused();
+  const lines = await prompt.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const inner = element.getBoundingClientRect().height - Number.parseFloat(style.paddingTop) - Number.parseFloat(style.paddingBottom);
+    return inner / Number.parseFloat(style.lineHeight === 'normal' ? String(Number.parseFloat(style.fontSize) * 1.2) : style.lineHeight);
+  });
+  expect(lines, 'the prompt is drawn on one line').toBeLessThan(1.5);
+  await page.keyboard.press('Control+Shift+9');
+  const openPdf = dialog.getByRole('row').filter({ hasText: 'Open PDF…' });
+  await expect(openPdf.getByRole('button', { name: 'Reset', exact: true })).toBeVisible();
+
+  const closeTab = dialog.getByRole('row').filter({ hasText: 'Close tab' });
+  const ends = await closeTab.evaluate((row) => {
+    const cell = row.querySelector<HTMLElement>('.m-shortcuts__actions');
+    const buttons = cell?.querySelectorAll('button') ?? [];
+    const last = buttons[buttons.length - 1];
+    if (cell === null || last === undefined) return null;
+    const style = getComputedStyle(cell);
+    return { content: cell.getBoundingClientRect().right - Number.parseFloat(style.paddingRight), button: last.getBoundingClientRect().right };
+  });
+  expect(ends, 'the row has an actions cell with a button').not.toBeNull();
+  expect(Math.abs((ends?.content ?? 0) - (ends?.button ?? Number.POSITIVE_INFINITY))).toBeLessThanOrEqual(1);
+
+  // A COMMAND WITH TWO KEYS, whichever it is in this build: the case is about two keys side by side, not a command.
+  const twoKeys = dialog.getByRole('row').filter({ has: page.locator('kbd + kbd') }).first();
+  const keys = twoKeys.locator('kbd');
+  expect(await keys.count(), 'some command shows two keys').toBeGreaterThanOrEqual(2);
+  for (const key of await keys.all()) {
+    expect(await key.evaluate((element) => getComputedStyle(element).borderTopStyle)).not.toBe('none');
+  }
 });
 
 test('a START SCREEN SHORTCUT opens a document and lands on its feature’s section', async ({ page }) => {
@@ -2871,7 +3474,7 @@ test('the SIGNATURES dialog keeps a 256-character unbroken name inside itself, a
   await page.getByRole('option', { name: 'Check signatures' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Signatures' });
   // THE BODY IS LOADED when the signer's line is there; an empty frame measures as fitting.
-  const signer = dialog.locator('.m-signatures__signer').first();
+  const signer = dialog.locator('[data-signature] .m-dialog-section__title').first();
   await expect(signer).toContainText('RRRR');
   // CLOSE IS IN THE WINDOW, and the list is what scrolls — CONTROL: the list is taller than its region, or a dialog
   // short enough to fit would pass this without the layout doing anything.
@@ -2890,7 +3493,7 @@ test('the SIGNATURES dialog keeps a 256-character unbroken name inside itself, a
     return {
       sideways: scroll === null ? null : scroll.scrollWidth - scroll.clientWidth,
       // THE WHOLE NAME IS SHOWN, wrapped rather than cut: a fix that clipped it would also stop the overflow.
-      signerText: node.querySelector('.m-signatures__signer')?.textContent ?? '',
+      signerText: node.querySelector('[data-signature] .m-dialog-section__title')?.textContent ?? '',
     };
   });
   expect(measured).toStrictEqual({ sideways: 0, signerText: `${unbroken} — ${words}` });
@@ -3296,7 +3899,9 @@ test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many colum
   // THE LANDSCAPE CARD DRAWN, so it is genuinely shorter when the row is read — undrawn, it is a portrait slot.
   await expect(grid.locator(`[data-thumb-page="${String(LANDSCAPE)}"] canvas[data-drawn="true"]`)).toBeAttached();
 
-  const measured = await page.evaluate(() => {
+  // SETTLED WITH THE ROW DRAWN FOR ITS WIDTH: the strip gaining a scrollbar re-measures the grid, which redraws the
+  // cards (`stale` meanwhile), so one card drawn says nothing about the row being read.
+  const measured = await settled(page, () => page.evaluate(() => {
     const area = document.querySelector('.m-canvas-area')?.getBoundingClientRect();
     const region = document.querySelector('.m-page-grid')?.getBoundingClientRect();
     const all = [...document.querySelectorAll('.m-page-grid [data-thumb-page]')];
@@ -3312,7 +3917,7 @@ test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many colum
       columns,
     };
     return { area: area?.width ?? 0, region: region?.width ?? 0, count, state };
-  });
+  }), (now) => now.state.drawn.length > 0 && now.state.drawn.every((drawn) => drawn === 'true'), 'the Organize grid’s first row');
   const detail = JSON.stringify(measured.state);
   expect(measured.area, 'the page area was measured').toBeGreaterThan(1000);
   expect(measured.region, `the grid is ${String(measured.region)} px of a ${String(measured.area)} px page area`).toBeGreaterThanOrEqual(
@@ -3331,6 +3936,52 @@ test('the ORGANIZE GRID spans the whole page area at 1920 × 1080, as many colum
   expect(Math.max(...portrait) - Math.min(...portrait), detail).toBeLessThanOrEqual(1);
   // CONTROL: the landscape card IS shorter, so the shared top above was a fact about alignment and not about equal cards.
   expect(measured.state.heights[LANDSCAPE] ?? 0, detail).toBeLessThan(Math.min(...portrait) - 10);
+});
+
+// THE GRID'S SUMMARY WRAPS BETWEEN ITEMS AND NO LINE STARTS WITH A DOT. Measured 2026-10-05 at 1280 × 800, where the
+// grid is about 575 px wide: the tips were one string with the dot on it, so a wrapped line began "·" and the last tip
+// broke between its two words. Read from real layout, since happy-dom lays nothing out: each item's dot is its first
+// box, so it shows exactly when the item starts inside the clipping box.
+test('the ORGANIZE GRID’s summary wraps between whole tips, and no wrapped line starts with a separator', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const pdf = await PDFDocument.create();
+  for (let at = 0; at < 6; at += 1) pdf.addPage([612, 792]);
+  const bytes = await pdf.save();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000f2');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'lease.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    settings: { 'appearance.ribbon-section': 'organize' },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  await expect(page.locator('.m-page-grid__hint').first()).toBeVisible();
+
+  const items = await page.evaluate(() => {
+    const clip = document.querySelector('.m-page-grid__summary')?.getBoundingClientRect();
+    return [...document.querySelectorAll('.m-page-grid__items > *')].map((item) => {
+      const box = item.getBoundingClientRect();
+      return {
+        text: item.textContent,
+        top: Math.round(box.top),
+        // THE DOT IS VISIBLE when the item's own box, which begins with it, starts inside the clip.
+        dotShown: clip !== undefined && box.left >= clip.left - 0.5,
+        boxes: item.getClientRects().length,
+      };
+    });
+  });
+  const detail = JSON.stringify(items);
+  // THE CASE'S PRECONDITION: the count, four tips, and a wrap at this width, or a line start is only ever the first.
+  expect(items.length, detail).toBe(5);
+  expect(new Set(items.map((item) => item.top)).size, detail).toBeGreaterThanOrEqual(2);
+  for (const [at, item] of items.entries()) {
+    const startsALine = at === 0 || item.top > (items[at - 1]?.top ?? 0);
+    // A LINE START SHOWS NO DOT, and every other item shows one between it and the item before.
+    expect(item.dotShown, `${item.text} ${startsALine ? 'starts' : 'continues'} a line: ${detail}`).toBe(!startsALine);
+    // AND EACH TIP WHOLE: one box per item. Flex wraps between items, and every tip fits a line at this width; one
+    // string, as the tips were, broke "Enter opens" across two lines here.
+    expect(item.boxes, detail).toBe(1);
+  }
 });
 
 // ORGANIZE'S FULL PAGE (the owner's review of 0.1.9.0): ONE page to a row at the grid's whole width, read top to
@@ -3364,10 +4015,17 @@ for (const size of [
     await page.goto('/');
     await page.getByRole('button', { name: 'Open PDF…' }).click();
     const grid = page.getByRole('region', { name: 'Pages to organize' });
+    const firstCanvas = grid.locator('[data-thumb-page="0"] canvas');
+    // CONTROL FOR THE WAIT BELOW: this case once waited for the first canvas to be drawn, and that is ALREADY TRUE in
+    // thumbnail view, before Full page is chosen — so it could pass at once and the reading was of thumbnails (CI,
+    // ubuntu-latest, 6b7a6bd9: first card 143 px). Asserted here so the old wait is shown to mean nothing about Full page.
+    await expect(firstCanvas).toHaveAttribute('data-drawn', 'true');
+    await expect(grid).toHaveAttribute('data-page-view', 'thumbnail');
     await grid.getByRole('button', { name: 'Full page' }).click();
-    await expect(grid.locator('[data-thumb-page="0"] canvas[data-drawn="true"]')).toBeAttached();
 
     const read = (): Promise<{
+      view: string | null;
+      drawn: string | null;
       strip: { left: number; right: number; scrollWidth: number; clientWidth: number; scrollHeight: number; clientHeight: number };
       cards: { left: number; top: number; width: number }[];
       canvas: number;
@@ -3380,6 +4038,8 @@ for (const size of [
           return { left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width) };
         });
         return {
+          view: document.querySelector('.m-page-grid')?.getAttribute('data-page-view') ?? null,
+          drawn: document.querySelector('.m-page-grid [data-thumb-page="0"] canvas')?.getAttribute('data-drawn') ?? null,
           strip: {
             left: box?.left ?? 0,
             right: box?.right ?? 0,
@@ -3392,7 +4052,10 @@ for (const size of [
           canvas: document.querySelector('.m-page-grid [data-thumb-page="0"] canvas')?.getBoundingClientRect().width ?? 0,
         };
       });
-    const measured = await read();
+    // WHAT THE READING MEANS: the grid in Full page, its first page drawn FOR THE WIDTH NOW ASKED (`data-drawn` reads
+    // `stale` while a drawing made for the thumbnail width is still shown), and nothing moving across two frames — the
+    // strip's scrollbar arriving re-measures the width once more.
+    const measured = await settled(page, read, (now) => now.view === 'full-page' && now.drawn === 'true', 'Organize’s Full page');
     const detail = JSON.stringify(measured);
     // ONE TO A ROW: every card's top below the one before it, and every card in the same column.
     for (let at = 1; at < measured.cards.length; at += 1) {
@@ -3405,14 +4068,212 @@ for (const size of [
     // SCROLLING DOWN: six pages at that width are taller than the strip.
     expect(measured.strip.scrollHeight, detail).toBeGreaterThan(measured.strip.clientHeight * 2);
 
-    // THE GRID'S GESTURES ACT ON IT: a click ticks a page, and Delete sends the command for that page.
+    // THE GRID'S GESTURES ACT ON IT: a click ticks a page, and Delete asks for that page (CR-COR-06), then sends it.
     await grid.getByRole('button', { name: 'Page 3', exact: true }).click();
     await expect(grid.getByRole('button', { name: 'Page 3', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.keyboard.press('Delete');
+    const asked = page.getByRole('dialog', { name: 'Delete pages' });
+    await expect(asked.getByRole('textbox')).toHaveValue('3');
+    expect(JSON.stringify(sent)).not.toContain('"deletePages"');
+    await asked.getByRole('button', { name: 'Delete pages' }).click();
     await expect.poll(() => JSON.stringify(sent)).toContain('"deletePages"');
     expect(JSON.stringify(sent)).toContain('[2]');
   });
 }
+
+// ONE CURRENT PAGE FOR THE WHOLE APP (the owner's item 13a). Organize's grid wrote no current page: Full page's scroll
+// left the status bar on page 1, and its Next counted from that page and moved nothing on screen. Measured before the
+// fix in this harness: scrolled two and a half pages, the page box said 1; Next said 2 and the grid stayed where it was.
+test('ORGANIZE shares ONE current page with the status bar and Home: Full page’s scroll, Next, a click', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const pdf = await PDFDocument.create();
+  for (let at = 0; at < 8; at += 1) pdf.addPage([612, 792]);
+  const bytes = await pdf.save();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000ec');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'pages.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    settings: { 'appearance.ribbon-section': 'organize', 'appearance.organize-grid-size': 'full-page' },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const grid = page.getByRole('region', { name: 'Pages to organize' });
+  await expect(grid).toHaveAttribute('data-page-view', 'full-page');
+  await expect(grid.locator('[data-thumb-page="0"] canvas')).toHaveAttribute('data-drawn', 'true');
+  const box = page.getByRole('textbox', { name: 'Go to page' });
+  const strip = grid.locator('.m-thumbnails');
+  /** Where card `index`'s top sits against the top of the strip's view, in pixels. */
+  const offset = (index: number): Promise<number> =>
+    page.evaluate((at) => {
+      const view = document.querySelector('.m-page-grid .m-thumbnails')?.getBoundingClientRect();
+      const card = document.querySelector(`.m-page-grid [data-thumb-page="${String(at)}"]`)?.getBoundingClientRect();
+      return view === undefined || card === undefined ? Number.NaN : Math.round(card.top - view.top);
+    }, index);
+
+  // SCROLLED TO PAGE 3: the box follows, as Home's does.
+  await strip.evaluate((element) => {
+    const card = element.querySelector<HTMLElement>('[data-thumb-page="2"]');
+    if (card !== null) element.scrollTop += card.getBoundingClientRect().top - element.getBoundingClientRect().top;
+  });
+  await expect(box).toHaveValue('3');
+  // A ONE-PAGE SELECTION GOES WITH IT: the card the box names is the card a page command acts on.
+  await expect(grid.getByRole('button', { name: 'Page 3', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+  // NEXT counts from the page on screen and moves the grid, its card's top at the top of the view: no strip of page 3.
+  await page.getByRole('status', { name: 'Document status' }).getByRole('button', { name: 'Next page' }).click();
+  await expect(box).toHaveValue('4');
+  await expect.poll(() => offset(3)).toBe(0);
+  await expect(grid.getByRole('button', { name: 'Page 4', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(grid.getByRole('button', { name: 'Page 3', exact: true })).toHaveAttribute('aria-pressed', 'false');
+
+  // IN THUMBNAIL VIEW a click names the page.
+  await grid.getByRole('button', { name: 'Thumbnail' }).click();
+  await grid.getByRole('button', { name: 'Page 6', exact: true }).click();
+  await expect(box).toHaveValue('6');
+
+  // AND HOME OPENS THERE: one current page, not one per view.
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Home' }).click();
+  await expect(page.locator('canvas.m-page').first()).toBeVisible();
+  await expect(box).toHaveValue('6');
+});
+
+// ORGANIZE'S FULL PAGE IS SHOWN FINISHED (the owner's item 13h: "flickers and builds up in steps when switching and
+// scrolling"). Two mechanisms, each measured frame by frame here before the fix with reads slowed to 150 ms:
+// - choosing Full page widened every card at once while its canvas held the thumbnail, so the first card was the small
+//   drawing stretched (`stale`) for about 100 ms, then sharp;
+// - the strip's observer had no root, so its margin applied to the window while the strip's own box clipped every
+//   card outside its view: the next page, 180 px below, was never drawn ahead and came in blank on a scroll.
+// THE SAMPLER READS WHAT IS ON SHOW, by computed visibility rather than by the grid's own markup, so it reads the old
+// single strip and the prepared one alike — the control is the code before the fix, which fails both assertions.
+test('ORGANIZE’S FULL PAGE is shown finished: no stale or blank card on show as it is chosen, the next page drawn ahead', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const pdf = await PDFDocument.create();
+  for (let at = 0; at < 8; at += 1) pdf.addPage([612, 792]);
+  const bytes = await pdf.save();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000ee');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'pages.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    settings: { 'appearance.ribbon-section': 'organize' },
+    delays: { 'document.readRange': 150 },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const grid = page.getByRole('region', { name: 'Pages to organize' });
+  // EVERY THUMBNAIL DRAWN before Full page is chosen, since the sampler judges every card on show from its first frame
+  // and all eight are on show at this size. Waiting on page 0 alone let the other seven still be arriving, each range
+  // 150 ms late, and a frame of thumbnails still loading failed the case before the switch it is about (ubuntu,
+  // 9a6e4c81: eight cards 110 px wide, only page 0 drawn).
+  await expect(grid.locator('[data-thumb-page] canvas[data-drawn="true"]')).toHaveCount(8);
+
+  /** Starts recording, every frame, each card on show in its strip's view: its page, its drawn state, its width. */
+  const record = (): Promise<void> =>
+    page.evaluate(() => {
+      const frames: { page: string; drawn: string; width: number }[][] = [];
+      (window as unknown as { frames13h: typeof frames }).frames13h = frames;
+      const tick = (): void => {
+        const region = document.querySelector('[aria-label="Pages to organize"]');
+        const cards = [...(region?.querySelectorAll<HTMLElement>('[data-thumb-page]') ?? [])].filter((card) => {
+          const strip = card.closest('.m-thumbnails')?.getBoundingClientRect();
+          const box = card.getBoundingClientRect();
+          return getComputedStyle(card).visibility === 'visible' && strip !== undefined && box.bottom > strip.top && box.top < strip.bottom;
+        });
+        frames.push(
+          cards.map((card) => {
+            const canvas = card.querySelector('canvas');
+            return {
+              page: card.dataset['thumbPage'] ?? '',
+              drawn: canvas?.dataset['drawn'] ?? 'none',
+              width: Math.round(canvas?.getBoundingClientRect().width ?? 0),
+            };
+          }),
+        );
+        if (frames.length < 240) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  const recorded = (): Promise<{ page: string; drawn: string; width: number }[][]> =>
+    page.evaluate(() => (window as unknown as { frames13h: { page: string; drawn: string; width: number }[][] }).frames13h);
+
+  await record();
+  await grid.getByRole('button', { name: 'Full page' }).click();
+  await expect(grid).toHaveAttribute('data-page-view', 'full-page');
+  await expect.poll(async () => (await recorded()).length, { timeout: 15_000 }).toBeGreaterThanOrEqual(240);
+  const switching = await recorded();
+  const shown = switching.flat();
+  // THE SAMPLER SAW BOTH ENDS (its positive control): thumbnails drawn, then a Full page card drawn at the grid's width.
+  const thumbnail = shown.find((card) => card.drawn === 'true')?.width ?? Infinity;
+  expect(thumbnail, JSON.stringify(switching.slice(0, 3))).toBeLessThan(200);
+  expect(shown.some((card) => card.drawn === 'true' && card.width > thumbnail * 3), JSON.stringify(switching.slice(-3))).toBe(true);
+  const unfinished = switching.findIndex((frame) => frame.some((card) => card.drawn !== 'true'));
+  expect(unfinished, JSON.stringify(switching[unfinished])).toBe(-1);
+
+  // THE NEXT PAGE, below the view, is drawn without a scroll reaching it — and so a wheel scroll down a page and a half,
+  // a notch at a time, never brings a blank one in.
+  await expect(grid.locator('[data-thumb-page="1"] canvas')).toHaveAttribute('data-drawn', 'true');
+  const strip = await grid.locator('.m-thumbnails').boundingBox();
+  if (strip === null) throw new Error('the Full page strip has no box');
+  await page.mouse.move(strip.x + strip.width / 2, strip.y + strip.height / 2);
+  await record();
+  for (let notch = 0; notch < 10; notch += 1) {
+    await page.mouse.wheel(0, 100);
+    await page.waitForTimeout(50);
+  }
+  await expect.poll(async () => (await recorded()).length, { timeout: 15_000 }).toBeGreaterThanOrEqual(240);
+  const scrolling = await recorded();
+  expect(scrolling.flat().some((card) => card.page === '2'), JSON.stringify(scrolling.slice(-3))).toBe(true);
+  const blank = scrolling.findIndex((frame) => frame.some((card) => card.drawn !== 'true'));
+  expect(blank, JSON.stringify(scrolling[blank])).toBe(-1);
+});
+
+// NO CARD RUNS INTO THE ONE BELOW IT, in any strip of pages. Measured 2026-10-03 in Organize's Full page at 1280 × 800:
+// rows of 613.4 px under cards of 637, because a scroll container whose cards overflow it sizes an `auto` row by its
+// card's minimum contribution — so each card ran 24 px into the gap and its page number showed over the next card.
+test('NO PAGE CARD RUNS INTO THE ONE BELOW IT: Full page, the thumbnail grid and the Pages strip', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const pdf = await PDFDocument.create();
+  for (let at = 0; at < 12; at += 1) pdf.addPage([612, 792]);
+  const bytes = await pdf.save();
+  const docId = asDocId('00000000-0000-4000-8000-0000000000ed');
+  await bridge(page, {
+    opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'pages.pdf' }],
+    documentBytes: new Map([[docId, bytes]]),
+    settings: { 'appearance.ribbon-section': 'organize', 'appearance.organize-grid-size': 'full-page' },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open PDF…' }).click();
+  const grid = page.getByRole('region', { name: 'Pages to organize' });
+  await expect(grid.locator('[data-thumb-page="0"] canvas')).toHaveAttribute('data-drawn', 'true');
+  /**
+   * The most any card in `selector` reaches past the top of a card in the row below it, in pixels; 0 when none does.
+   * Rows are told apart by their tops, so a two-column strip compares a card with the cards of the next row only.
+   */
+  const deepest = (selector: string): Promise<{ overlap: number; cards: number }> =>
+    page.evaluate((within) => {
+      const boxes = [...document.querySelectorAll(`${within} [data-thumb-page]`)].map((card) => card.getBoundingClientRect());
+      const tops = [...new Set(boxes.map((box) => Math.round(box.top)))].sort((a, b) => a - b);
+      let overlap = 0;
+      for (const box of boxes) {
+        const next = tops.find((top) => top > Math.round(box.top));
+        if (next !== undefined) overlap = Math.max(overlap, box.bottom - next);
+      }
+      return { overlap: Math.round(overlap * 10) / 10, cards: boxes.length };
+    }, selector);
+  const full = await deepest('.m-page-grid');
+  expect(full.cards).toBe(12);
+  expect(full.overlap, JSON.stringify(full)).toBeLessThanOrEqual(0);
+  await grid.getByRole('button', { name: 'Thumbnail' }).click();
+  await expect(grid).toHaveAttribute('data-page-view', 'thumbnail');
+  expect((await deepest('.m-page-grid')).overlap).toBeLessThanOrEqual(0);
+  // THE SIDE STRIP is the same grid with two columns, and Home is where a person meets it.
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Home' }).click();
+  await expect(page.locator('canvas.m-page').first()).toBeVisible();
+  const strip = await deepest('.m-thumbnails:not(.m-thumbnails--grid)');
+  expect(strip.cards).toBe(12);
+  expect(strip.overlap, JSON.stringify(strip)).toBeLessThanOrEqual(0);
+});
 
 // THE MENU BAR (ADR-0107), in every theme: the window's top row above the title bar, reached from the keyboard by F10,
 // walked with the arrows, an open menu marking the current theme and disabling what cannot run — and passing the gate
@@ -3609,9 +4470,11 @@ for (const [stored, expected] of [
     await page.mouse.down();
     await page.mouse.move(x + 160, y + 60, { steps: 4 });
     await page.mouse.up();
-    const dialog = page.getByRole('dialog', { name: 'Text box' });
-    await dialog.getByLabel('Text').fill('see figure 3');
-    await dialog.getByRole('button', { name: 'Add text box' }).click();
+    // TYPED IN THE BOX ON THE PAGE (ADR-0154), which is set in the chosen face as the words will be.
+    const typed = page.getByRole('textbox', { name: 'Text box' });
+    await expect(typed).toHaveClass(new RegExp(`m-inline-writer__block--${expected}\\b`, 'u'));
+    await typed.fill('see figure 3');
+    await page.keyboard.press('Escape');
 
     const fonts = (): unknown[] =>
       sent.flatMap((params) => {
@@ -3782,7 +4645,7 @@ for (const look of LOOKS) {
 }
 
 // REDACTION MARKS NOBODY APPLIED, in every look (the owner's item N1): the pending mark draws with its label, Ctrl+S
-// asks *2 redactions are marked but not applied* — axe clean — and each answer sends what it says. CONTROL in the same
+// asks *2 parts of this document are marked for redaction* — axe clean — and each answer sends what it says. CONTROL in the same
 // case: until the person answers, nothing was saved and nothing burnt in.
 for (const look of LOOKS) {
   test(`${look.name}: a save with marks pending ASKS first, passes axe, and each answer does its job`, async ({ page }) => {
@@ -3836,7 +4699,7 @@ for (const look of LOOKS) {
     await page.keyboard.press('Control+S');
     const dialog = page.getByRole('dialog', { name: 'Redactions not applied' });
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText('2 redactions are marked but not applied. Apply them now?');
+    await expect(dialog).toContainText('2 parts of this document are marked for redaction, but they have not been removed yet.');
     expect(writes()).toStrictEqual([]);
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
@@ -3867,6 +4730,79 @@ for (const look of LOOKS) {
       images: 'pixels',
       keepTitle: false,
     });
+  });
+}
+
+// AN EDIT REFUSED IN THE EDITOR (ADR-0169 Decision 5), in every theme: the editor stays over the block with the words
+// typed, and says the step's sentence, its reference and the way out beneath them, where a dialog used to close it.
+for (const look of LOOKS) {
+  test(`${look.name}: an edit REFUSED IN THE EDITOR keeps the words typed, says why beneath them, and passes axe`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000f2');
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'edit.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      refusals: new Map([[docId, { code: 'edit-refused', detail: { step: 'read-back', engineError: 0 } }]]),
+      textBlocks: [
+        {
+          box: { x0: 100, y0: 600, x1: 400, y1: 700 },
+          lines: [
+            { runs: [{ index: 3, text: 'A paragraph of words', style: BODY_RUN }], box: { x0: 100, y0: 686, x1: 400, y1: 700 } },
+          ],
+          style: BODY_RUN,
+        },
+      ],
+    });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Edit text on the page');
+    await page.keyboard.press('Enter');
+    await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').click();
+    const editor = page.locator('[data-text-editor]');
+    await expect(editor).toBeFocused();
+    await page.keyboard.type(' typed here');
+    await page.keyboard.press('Escape');
+
+    const said = page.locator('.m-text-editor-problem');
+    await expect(said).toContainText('This page uses a font Monstera can’t rewrite yet, so nothing was changed.');
+    await expect(said).toContainText('read-back 0');
+    await expect(said).toContainText('press Esc to put the text back');
+    // THE WORDS STAY, as typed.
+    expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe('A paragraph of words typed here');
+
+    // CLEARLY READABLE OVER THE PAPER, not merely passing (the owner, 2026-10-05): the note sits on the page, so its
+    // background is composited over the page's own colour, and every line, the reference included, holds 7:1. Axe
+    // cannot judge this: the note's ground is a canvas, and it marks such text as needing review.
+    const read = await said.evaluate((note) => ({
+      paper: getComputedStyle(document.documentElement).getPropertyValue('--page').trim(),
+      ground: getComputedStyle(note).backgroundColor,
+      lines: [...note.querySelectorAll('p, dt, dd')].map((line) => ({
+        text: line.textContent.slice(0, 24),
+        colour: getComputedStyle(line).color,
+      })),
+    }));
+    const paper = channels(read.paper);
+    const ground = paper === null ? null : channels(read.ground, paper);
+    if (ground === null) throw new Error(`could not read the note's ground: ${JSON.stringify(read)}`);
+    const ratios = read.lines.map(({ text, colour }) => {
+      const ink = channels(colour, ground);
+      return { text, ratio: ink === null ? 0 : Math.round(contrast(ink, ground) * 100) / 100 };
+    });
+    expect(ratios.length, JSON.stringify(read)).toBe(4);
+    for (const { text, ratio } of ratios) expect(ratio, `${look.name}: "${text}" over the paper, ${JSON.stringify(ratios)}`).toBeGreaterThanOrEqual(7);
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
   });
 }
 
@@ -3937,10 +4873,14 @@ for (const look of LOOKS) {
     const scale = (pageBox?.width ?? 0) / 612;
     expect(Math.abs((drawn?.x ?? Number.NaN) - ((pageBox?.x ?? 0) + box.x0 * scale))).toBeLessThan(2);
     expect(Math.abs((drawn?.y ?? Number.NaN) - ((pageBox?.y ?? 0) + (792 - box.y1) * scale))).toBeLessThan(2);
+    // THE OUTLINE IS ON THE PAPER and clears 3:1 against it in every look (`contrast.ts`; the accent itself is 2.54:1
+    // in dark and 1.49:1 in high contrast).
+    expect(await againstPaper(outline, 'border-top-color')).toBeGreaterThanOrEqual(3);
 
     await outline.click();
     const editor = page.locator('[data-text-editor]');
     await expect(editor).toBeFocused();
+    expect(await againstPaper(page.locator('.m-text-editor-frame'), 'outline-color')).toBeGreaterThanOrEqual(3);
     expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
       'A paragraph of words set on the page\nand a second line.',
     );
@@ -3961,13 +4901,103 @@ for (const look of LOOKS) {
     expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
       'A paragraph of words set on the page\nand a second line. More',
     );
+    // IN THE LAST RUN'S OWN SPAN, read by which span holds the caret. Its colour could not say so: the last run is set
+    // as the block's base, which the editor root and each line carry too, so words typed beside the run, into the
+    // line or the root, read the same colour.
     expect(
-      await editor.evaluate(() => {
+      await editor.evaluate((root) => {
         const focus = document.getSelection()?.focusNode;
         const element = focus instanceof Element ? focus : (focus?.parentElement ?? null);
-        return element === null ? '' : getComputedStyle(element).color;
+        const run = element?.closest('.m-text-editor__run') ?? null;
+        const spans = [...root.querySelectorAll('.m-text-editor__run')];
+        return { inRun: run !== null, last: run !== null && run === spans[spans.length - 1], text: run?.textContent ?? '' };
       }),
-    ).toBe('rgb(30, 30, 30)');
+    ).toStrictEqual({ inRun: true, last: true, text: 'and a second line. More' });
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+  });
+}
+
+// EDIT OBJECT ON THE PAGE (ADR-0153), in a real browser and every look: the filter outlines its kind, a press selects,
+// a drag sends the move, Delete removes, and the Properties tab shows the object with its foot inside the panel. The
+// component case drives the layer in happy-dom, which has no pointer capture and lays nothing out; this is the
+// browser's capture, the page's own layout and the tab's real height.
+for (const look of LOOKS) {
+  test(`EDIT OBJECT outlines, selects, moves and removes an object on the page — ${look.name}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000ec');
+    const sent: unknown[] = [];
+    await bridgeUnder(
+      page,
+      look,
+      {
+        opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'photos.pdf' }],
+        documentBytes: new Map([[docId, bytes]]),
+        settings: { 'appearance.ribbon-section': 'edit' },
+        pageObjects: [
+          { index: 0, kind: 'text', left: 72, bottom: 700, right: 400, top: 720, fill: { red: 0, green: 0, blue: 0, alpha: 255 } },
+          { index: 1, kind: 'path', left: 72, bottom: 680, right: 540, top: 682, fill: { red: 37, green: 99, blue: 235, alpha: 255 } },
+          // NOT THE FIRST, so a layer that offered a position in its own list would send the wrong index.
+          { index: 2, kind: 'image', left: 72, bottom: 420, right: 300, top: 640, fill: null },
+        ],
+      },
+      (channel, params) => {
+        if (channel === 'document.execute') sent.push(params);
+      },
+    );
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas.m-page').first()).toBeVisible({ timeout: 20_000 });
+
+    await page.getByRole('button', { name: 'Edit object' }).click();
+    await page.getByRole('menuitemcheckbox', { name: 'Edit images' }).click();
+    const layer = page.getByRole('group', { name: 'Objects on page 1' });
+    // ONLY THE IMAGE under Images: the text and the rule are not outlined.
+    await expect(layer.locator('.m-object')).toHaveCount(1);
+    const photo = layer.getByRole('button', { name: 'Image, 1 of 1' });
+    // THE OUTLINE AND, ONCE SELECTED, ITS HANDLES ARE ON THE PAPER and clear 3:1 against it in every look.
+    expect(await againstPaper(layer.locator('.m-object'), 'border-top-color')).toBeGreaterThanOrEqual(3);
+    await photo.click();
+    await expect(photo).toHaveAttribute('aria-pressed', 'true');
+    expect(await againstPaper(layer.locator('.m-object-handle').first(), 'border-top-color')).toBeGreaterThanOrEqual(3);
+
+    // THE PROPERTIES TAB names it, and its foot is INSIDE the panel. CONTROL, measured 2026-10-04: a content-box tab
+    // of 100% height plus its padding was 654 px in a 622 px body, so Delete sat below the panel's edge, cut off.
+    const properties = page.locator('.m-properties').first();
+    await expect(properties.getByRole('heading', { name: 'Object' })).toBeVisible();
+    const fit = await properties.evaluate((section) => {
+      const body = section.parentElement?.getBoundingClientRect();
+      const foot = section.querySelector('.m-properties__foot')?.getBoundingClientRect();
+      return { foot: foot?.bottom ?? Number.POSITIVE_INFINITY, body: body?.bottom ?? 0 };
+    });
+    expect(fit.foot, JSON.stringify(fit)).toBeLessThanOrEqual(fit.body);
+
+    // A DRAG straight across, in the browser's own pointer capture: one move of the image, by its own index, with no
+    // vertical part.
+    const box = await photo.boundingBox();
+    if (box === null) throw new Error('the outline is not on screen');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await expect.poll(() => sent.length).toBe(1);
+    const moved = sent[0] as { command: { kind: string; index: number; moveBy: { x: number; y: number } } };
+    expect(moved.command.kind).toBe('placePageObject');
+    expect(moved.command.index).toBe(2);
+    expect(moved.command.moveBy.x).toBeGreaterThan(0);
+    expect(moved.command.moveBy.y).toBeCloseTo(0, 6);
+
+    // DELETE, by the one Delete command, removes it through PDFium's command.
+    await photo.focus();
+    await page.keyboard.press('Delete');
+    await expect.poll(() => sent.length).toBe(2);
+    expect((sent[1] as { command: unknown }).command).toMatchObject({ kind: 'deletePageObjects', indices: [2] });
 
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));

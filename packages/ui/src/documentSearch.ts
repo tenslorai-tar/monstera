@@ -1,5 +1,5 @@
 import type { ContractClient } from '@monstera/contract';
-import type { DocId } from '@monstera/shared';
+import type { DocId, DocVersion } from '@monstera/shared';
 
 /**
  * Searching every page of a document, one page at a time, cancellably.
@@ -32,6 +32,15 @@ import type { DocId } from '@monstera/shared';
  * issuing twenty at once would queue twenty reads behind each other anyway and
  * make cancellation mean *after the twenty already sent* — which is the
  * cancellation a user would notice not working.
+ *
+ * ## ONE VERSION, or no list
+ *
+ * Each page's answer names the version it was read from. A walk whose pages
+ * answer from two versions crossed an edit, and its list joins two documents'
+ * pages: deleting page 1 halfway through moves every later match one page on.
+ * So the walk ends `moved` and publishes nothing, for a cancelled walk's
+ * reason, and a complete one carries the version every match was found in
+ * (CR-COR-09).
  */
 
 /** One match, with the page it was found on. */
@@ -56,9 +65,13 @@ export type DocumentSearchOutcome =
       readonly matches: readonly DocumentMatch[];
       /** Whether a page hit its per-page bound, so the list is not everything. */
       readonly truncated: boolean;
+      /** The version every page answered from; absent only for a document of no pages. */
+      readonly version: DocVersion | undefined;
     }
   /** Cancelled. **Carries no matches**, deliberately — see the module header. */
   | { readonly kind: 'cancelled'; readonly pagesSearched: number }
+  /** The document moved during the walk: two pages answered from two versions. Carries no matches, for the same reason. */
+  | { readonly kind: 'moved' }
   /** A page refused. The walk stops: a document that cannot answer page 4 is
    * not a document whose count of matches means anything. */
   | { readonly kind: 'refused'; readonly code: string; readonly page: number };
@@ -96,6 +109,7 @@ export async function searchDocument(
   const { client, docId, pageCount, query, perPage, onProgress, signal } = request;
   const matches: DocumentMatch[] = [];
   let truncated = false;
+  let version: DocVersion | undefined;
   // A FUNCTION, not a read of `signal.aborted` at each site. The flag is
   // flipped from outside between the two checks below, which is precisely what
   // the compiler's narrowing assumes cannot happen — reading it inline made the
@@ -119,11 +133,13 @@ export async function searchDocument(
     if (aborted()) return { kind: 'cancelled', pagesSearched: page };
 
     if (!answer.ok) return { kind: 'refused', code: answer.error.code, page };
+    if (version !== undefined && answer.value.version !== version) return { kind: 'moved' };
+    version = answer.value.version;
 
     for (const match of answer.value.matches) matches.push({ page, ...match });
     if (answer.value.truncated) truncated = true;
     onProgress?.({ pagesSearched: page + 1, pageCount });
   }
 
-  return { kind: 'complete', matches, truncated };
+  return { kind: 'complete', matches, truncated, version };
 }

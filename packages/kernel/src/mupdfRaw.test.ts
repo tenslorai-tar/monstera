@@ -80,17 +80,52 @@ describe('the native MuPDF binding', () => {
     }
   });
 
-  it('gives getPixels as a LIVE view: a write through it is what the pixmap then holds', () => {
-    // Enhance levels samples in place and the scan straightener warps into them, then each encodes the pixmap; a
-    // copy would lose every write without an error.
+  it('gives getPixels as a COPY that owns its buffer, so no view over native memory reaches the caller', () => {
+    // A view over native memory is an external ArrayBuffer, which aborts the Electron runtime the engine hosts run
+    // in; `proof:hostruntime` runs the commands under that runtime. Here, in plain Node, the copy is what can be seen.
     const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, 4, 4], false);
     try {
       pixmap.clear(200);
       const first = pixmap.getPixels();
+      expect(first.byteOffset).toBe(0);
+      expect(first.buffer.byteLength).toBe(16);
       first[5] = 17;
+      // A write into the copy is not a write into the pixmap.
+      expect(pixmap.getPixels()[5]).toBe(200);
+    } finally {
+      pixmap.destroy();
+    }
+  });
+
+  it('writes samples back through setPixels: what the pixmap then holds, and only those samples', () => {
+    // Enhance levels samples and the scan straightener warps into them, then each encodes the pixmap; without the
+    // write-back each would encode the unchanged image without an error.
+    const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, 4, 4], false);
+    try {
+      pixmap.clear(200);
+      const samples = pixmap.getPixels();
+      samples[5] = 17;
+      pixmap.setPixels(samples);
       expect(pixmap.getPixels()[5]).toBe(17);
       // CONTROL: the untouched sample kept the clear, so the read is of the pixmap and not of zeroed memory.
       expect(pixmap.getPixels()[4]).toBe(200);
+    } finally {
+      pixmap.destroy();
+    }
+  });
+
+  it('refuses setPixels of any length but the pixmap’s own, rather than writing short or past its end', () => {
+    const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, 4, 4], false);
+    try {
+      pixmap.clear(200);
+      expect(() => {
+        pixmap.setPixels(new Uint8Array(17));
+      }).toThrow(RangeError);
+      expect(() => {
+        pixmap.setPixels(new Uint8Array(15));
+      }).toThrow(RangeError);
+      // CONTROL: the refused writes left the pixmap as it was.
+      expect(Array.from(pixmap.getPixels())).toStrictEqual(new Array<number>(16).fill(200));
     } finally {
       pixmap.destroy();
     }
@@ -108,5 +143,139 @@ describe('the native MuPDF binding', () => {
 
   it('says it is bound, in a process whose setup bound it', () => {
     expect(mupdf.isMupdfShimBound()).toBe(true);
+  });
+
+  describe('a shade a device is handed is the device’s to release (CR-NAT-05)', () => {
+    /** One page painting one axial shading, `/Sh0 sh`, with nothing else on it. */
+    function pageWithOneShade(): mupdf.PDFDocument {
+      const document = new mupdf.PDFDocument();
+      const numbers = (values: readonly number[]): mupdf.PDFObject => {
+        const array = document.newArray();
+        for (const value of values) array.push(value);
+        return array;
+      };
+      const ramp = document.newDictionary();
+      ramp.put('FunctionType', 2);
+      ramp.put('Domain', numbers([0, 1]));
+      ramp.put('N', 1);
+      ramp.put('C0', numbers([1, 0, 0]));
+      ramp.put('C1', numbers([0, 0, 1]));
+      const shading = document.addObject(document.newDictionary());
+      shading.put('ShadingType', 2);
+      shading.put('ColorSpace', document.newName('DeviceRGB'));
+      shading.put('Coords', numbers([0, 0, 100, 0]));
+      shading.put('Function', ramp);
+      const shadings = document.newDictionary();
+      shadings.put('Sh0', shading);
+      const resources = document.newDictionary();
+      resources.put('Shading', shadings);
+      document.insertPage(-1, document.addPage([0, 0, 100, 100], 0, resources, '/Sh0 sh'));
+      return document;
+    }
+
+    it('a device that DESTROYS its shade leaves the document whole, run after run', () => {
+      // UPSTREAM WRAPPED THE LENT POINTER BARE, so the wrapper's drop released a reference MuPDF still counted, and
+      // the shading the store holds was freed under it. Before the fix this case takes its worker down.
+      const document = pageWithOneShade();
+      try {
+        for (let round = 0; round < 20; round += 1) {
+          const page = document.loadPage(0);
+          page.run(
+            new mupdf.Device({
+              fillShade: (shade) => {
+                shade.destroy();
+              },
+            }),
+            [1, 0, 0, 1, 0, 0],
+          );
+          page.toPixmap([1, 0, 0, 1, 0, 0], mupdf.ColorSpace.DeviceRGB).destroy();
+        }
+      } finally {
+        document.destroy();
+      }
+    });
+
+    it('CONTROL: the device is really handed the page’s shading, once a run', () => {
+      const document = pageWithOneShade();
+      try {
+        let handed = 0;
+        document.loadPage(0).run(new mupdf.Device({ fillShade: () => (handed += 1) }), [1, 0, 0, 1, 0, 0]);
+        expect(handed).toBe(1);
+      } finally {
+        document.destroy();
+      }
+    });
+  });
+
+  describe('a callback that throws where MuPDF has no fz_try, or where MuPDF catches it', () => {
+    /** One span of three glyphs, built through the engine. */
+    function threeGlyphs(): mupdf.Text {
+      const text = new mupdf.Text();
+      text.showString(new mupdf.Font('Helvetica'), [1, 0, 0, 1, 0, 0], 'abc');
+      return text;
+    }
+
+    it('a text walker’s throw reaches the caller, and the process lives (CR-NAT-03)', () => {
+      // `wasm_walk_text` calls JavaScript from its own loop with no fz_try on MuPDF's stack, and fz_throw there ends
+      // the process. On the shim before the fix this case takes its worker down rather than failing.
+      const thrown = new Error('the walker refused');
+      expect(() => {
+        threeGlyphs().walk({
+          beginSpan: () => {
+            throw thrown;
+          },
+        });
+      }).toThrow(thrown);
+      // AND THE BINDING STILL WORKS: the jump landed in the export's wrapper, not past it.
+      expect(new mupdf.PDFDocument().countPages()).toBe(0);
+    });
+
+    it('CONTROL: a walker that does not throw is called for the span and each glyph', () => {
+      const seen: string[] = [];
+      threeGlyphs().walk({
+        beginSpan: () => seen.push('span'),
+        showGlyph: (_font, _trm, _glyph, unicode) => seen.push(String.fromCodePoint(unicode)),
+        endSpan: () => seen.push('end'),
+      });
+      expect(seen).toStrictEqual(['span', 'a', 'b', 'c', 'end']);
+    });
+
+    it('a throw MuPDF catches and plays past is thrown by the call that ran it, never by the next one (CR-NAT-04)', () => {
+      // MuPDF's display-list player catches a device's error and goes on, so the run returned cleanly and the thrown
+      // value waited for the next export that failed, which then threw it in place of its own error.
+      const document = pageWithOneFill();
+      const thrown = new Error('the device refused');
+      try {
+        const list = document.loadPage(0).toDisplayList();
+        expect(() => {
+          list.run(
+            new mupdf.Device({
+              fillPath: () => {
+                throw thrown;
+              },
+            }),
+            [1, 0, 0, 1, 0, 0],
+          );
+        }).toThrow(thrown);
+        // THE NEXT FAILURE IS ITS OWN: a page that does not exist, in MuPDF's words.
+        expect(() => document.loadPage(5)).toThrow(/page/iu);
+      } finally {
+        document.destroy();
+      }
+    });
+
+    it('CONTROL: the display list really calls the device, and a device that does not throw lets the run return', () => {
+      const document = pageWithOneFill();
+      try {
+        let fills = 0;
+        document
+          .loadPage(0)
+          .toDisplayList()
+          .run(new mupdf.Device({ fillPath: () => (fills += 1) }), [1, 0, 0, 1, 0, 0]);
+        expect(fills).toBe(1);
+      } finally {
+        document.destroy();
+      }
+    });
   });
 });

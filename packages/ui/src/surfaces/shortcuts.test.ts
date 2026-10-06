@@ -92,6 +92,47 @@ describe('dispatchChord', () => {
     expect(ran).toStrictEqual(['file.save']);
   });
 
+  it('a HELD key runs a once-per-press command ONCE, and keeps its chord claimed (CR-COR-06)', () => {
+    const ran: string[] = [];
+    const registry = new CommandRegistry([
+      command('file.close', {
+        shortcut: 'Ctrl+W',
+        run: () => {
+          ran.push('file.close');
+        },
+      }),
+    ]);
+    const map = shortcutsFor(registry);
+
+    expect(dispatchChord(registry, map, press('w', { ctrlKey: true }), context).kind).toBe('ran');
+    // THE KEYBOARD'S REPEATS of the same held key: claimed — the browser must not act on Ctrl+W either — and not run.
+    for (let at = 0; at < 3; at += 1) {
+      expect(dispatchChord(registry, map, press('w', { ctrlKey: true, repeat: true }), context)).toStrictEqual({
+        kind: 'held',
+        command: registry.get('file.close'),
+      });
+    }
+    expect(ran).toStrictEqual(['file.close']);
+  });
+
+  it('CONTROL: a command declared to REPEAT runs on every repeat — a step meant to be taken many times', () => {
+    const ran: string[] = [];
+    const registry = new CommandRegistry([
+      command('view.zoom-in', {
+        shortcut: 'Ctrl+=',
+        repeats: true,
+        run: () => {
+          ran.push('view.zoom-in');
+        },
+      }),
+    ]);
+    const map = shortcutsFor(registry);
+    dispatchChord(registry, map, press('=', { ctrlKey: true }), context);
+    dispatchChord(registry, map, press('=', { ctrlKey: true, repeat: true }), context);
+    dispatchChord(registry, map, press('=', { ctrlKey: true, repeat: true }), context);
+    expect(ran).toHaveLength(3);
+  });
+
   it('leaves a chord UNCLAIMED when its command does not exist in this context', () => {
     // The load-bearing case. `when` is applied here rather than when the map is
     // built, so an absent command's chord belongs to whoever would otherwise

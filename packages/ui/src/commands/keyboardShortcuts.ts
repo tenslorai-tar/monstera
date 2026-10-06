@@ -1,6 +1,7 @@
 import { KEYBOARD_SHORTCUTS_DIALOG_ID, KEYBOARD_SHORTCUTS_RESULT } from '../dialogs/keyboardShortcuts.js';
 import { GROUP_APPLICATION, KEYBOARD_SHORTCUTS_COMMAND_TITLE } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
+import type { DialogReports } from '../registries/dialogs.js';
 import { SHORTCUTS_SETTING } from '../settings/keyboard.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { normaliseChord } from '../surfaces/projections.js';
@@ -28,7 +29,7 @@ import type { ShortcutRow } from '../surfaces/shortcutChoice.js';
  * because §10.3 named it before that amendment. The ribbon placement puts it in Tools › Application beside About.
  */
 export function keyboardShortcutsCommand(deps: {
-  readonly ask: (id: string, props: unknown, onUpdate?: (result: unknown) => void) => Promise<unknown>;
+  readonly ask: (id: string, props: unknown, onUpdate?: DialogReports) => Promise<unknown>;
   readonly rows: () => readonly ShortcutRow[];
   /** The commands whose stored key went back to its default when the registry was built (`withChosenShortcuts`). */
   readonly dropped: () => readonly string[];

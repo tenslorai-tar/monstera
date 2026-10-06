@@ -3,6 +3,7 @@ import type { PageTransform } from '@monstera/shared';
 
 import { STAMP_DIALOG_ID } from '../dialogs/stamp.js';
 import { STAMP_RESULT, type StampPicture } from '../dialogs/stampResult.js';
+import { HINT_STAMP } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
@@ -72,7 +73,8 @@ function drawn(gesture: Gesture): ToolPreview | undefined {
  * reads the library afresh and opens the chooser again, for as long as the person keeps changing it. Each round lets
  * go of the previous round's `blob:` addresses, so a long session of adding holds one set of pictures at a time.
  */
-export function stampTool(deps: TextToolDeps & StampDeps): UiTool {
+// ASK AND THE STYLE ONLY: the chooser is a dialog the ADR keeps (ADR-0154 *Keeps*), and a stamp has no words to type.
+export function stampTool(deps: Pick<TextToolDeps, 'ask' | 'style'> & StampDeps): UiTool {
   const controller: ToolController = {
     ...pointerPath,
     commit: async (gesture: Gesture, page: number, transform: PageTransform): Promise<DispatchableCommand | undefined> => {
@@ -112,5 +114,5 @@ export function stampTool(deps: TextToolDeps & StampDeps): UiTool {
     },
     preview: drawn,
   };
-  return { id: STAMP_TOOL_ID, controller };
+  return { id: STAMP_TOOL_ID, controller, hint: HINT_STAMP };
 }

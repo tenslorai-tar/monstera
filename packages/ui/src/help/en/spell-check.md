@@ -1,31 +1,34 @@
 ---
 id: spell-check
 title: Check spelling
-summary: List the misspelled words in the document, with suggestions, and add words to your dictionary.
-keywords: [spell check, spelling, typos, misspelled, dictionary, proofing, proofread]
+summary: Go through the document a word at a time, see each word on the page, and replace it, ignore it or add it to your dictionary.
+keywords: [spell check, spelling, typos, misspelled, dictionary, proofing, proofread, replace word]
 commands: [document.spell-check]
-contexts: [dialog.spell-check, edit, review]
+contexts: [edit, review]
 ---
-Spell check goes through the document's text and lists the words it does not recognise, with suggestions.
+Spell check goes through the document's text a word at a time. Each word it does not recognise is shown in the **Spelling** tab of the panel on the right, and marked on the page.
 
 ## Steps
 
 1. In the rail, choose **Edit** (or **Review**), then **Spell check** in the **Proofing** group.
-2. Progress shows in the status bar; you can **Cancel** it.
-3. In the **Spell check** window, each word shows how many times it appears and the page it is first on, with **Suggestions**.
-4. To stop a correct word being flagged, choose **Add … to dictionary**, then **Save … words to your dictionary**.
+2. The **Spelling** tab opens and checks every page. You can **Stop** it while it reads.
+3. For each word, the tab shows where it is and the line it is on, and the page shows it marked.
+4. Choose a suggestion, or type the word you want in **Change to**.
+5. Choose **Replace** to change this word, or **Replace all** to change every place it is written exactly that way.
+6. Choose **Ignore** to leave it, **Ignore all** to leave it everywhere in this check, or **Add to dictionary** to stop it being flagged again.
 
-![The Spell check window listing words with suggestions and the Add to dictionary button](screenshot:spell-check-1)
+![The Spelling tab beside the page, with a misspelled word marked on the page](screenshot:spell-check-1)
 
 ## Good to know
 
+- Under **Also check**, choose whether comments and form fields are checked too. Both are on unless you turn them off, here or in Settings.
 - Words are checked against English.
 - Words you add are kept in your personal dictionary and used in every later check.
-- If the check stops early, the window says the list is incomplete.
-- Misspelled words are not underlined on the page.
-- Spell check only lists words; to change one, use "Edit text on the page".
+- A word is replaced where it is printed. If a word cannot be changed on its own there, for example because it is split across two pieces of text, the tab says so and nothing changes; use "Edit text on the page" to change the line.
+- In a signed document, replacing a word is treated like any other edit: you are warned first that it breaks the signatures, unless you have turned that warning off.
+- A comment or field too long to change here is still checked, and the tab says when one cannot be changed.
 
 <!--
 Screenshots to capture:
-1. spell-check-1 — dialog.spell-check on a document with two misspellings. Frame the dialog.
+1. spell-check-1 — the Spelling tab on its first word, with the word marked on the page. Frame the window.
 -->

@@ -1,4 +1,4 @@
-import { fileHandleSchema, libraryIdSchema, requestedSignatureMarkSchema } from '@monstera/contract';
+import { chosenSignatureMarkSchema, fileHandleSchema, libraryIdSchema } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -14,11 +14,12 @@ export const SIGNATURE_DIALOG_ID = 'dialog.signature';
  * which the opener removes it and asks again with the library as it then is (`SIGN_DOCUMENT_ANSWERS`' reason: props
  * are fixed while a dialog is open).
  *
- * **The contract's own mark schema**, so the dialog cannot answer a look the channel refuses; a kept look is `saved`
- * by its id, and the person's *Save for reuse* travels beside it for main to act on after the mark is placed.
+ * **The contract's own chosen mark**, so the dialog cannot answer a look the channel refuses once its outline is made
+ * (ADR-0150); a kept look is `saved` by its id, and the person's *Save for reuse* travels beside it for main to act on
+ * after the mark is placed.
  */
 export const SIGNATURE_ANSWERS = z.union([
-  z.object({ mark: requestedSignatureMarkSchema, keep: z.boolean() }).strict(),
+  z.object({ mark: chosenSignatureMarkSchema, keep: z.boolean() }).strict(),
   z.object({ library: z.literal('remove'), id: libraryIdSchema }).strict(),
   /**
    * Upload's *Choose picture…*: the opener asks main to pick and hold one, then asks again with it to preview

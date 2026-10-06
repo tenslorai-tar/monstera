@@ -8,7 +8,9 @@ import {
   MAX_OFFICE_MISSING_BLOCKS,
   MAX_PAGE_BARCODES,
   MAX_SETTINGS_FILE_BYTES,
+  RECENT_CHECK_CAP_MS,
   RECENT_PREVIEWS_SETTING_ID,
+  SHOWN_SCHEME_MAX,
   blockEditOf,
   channels,
 } from '@monstera/contract';
@@ -22,7 +24,10 @@ import {
   DocumentService,
   ENGINE_BARCODE_TEXT_MAX,
   ENGINE_BARCODES_MAX,
+  EditRefusedError,
   type IdentityReader,
+  StaleTargetError,
+  TextNotWritableError,
   readFileIdentity,
 } from '@monstera/kernel';
 import { BARCODE_WRITE_FORMATS } from '@monstera/kernel/barcode';
@@ -33,7 +38,7 @@ import {
   asDocVersion,
   asFileHandle,
 } from '@monstera/shared';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CloudOutcomeRefused, type CloudStorage, unconfiguredCloud } from './cloudSession.js';
@@ -44,9 +49,10 @@ import { NO_RECENT_PICTURES, createRecentPictures } from './recentPictures.js';
 import { createHeldPicture } from './heldPicture.js';
 import { unusedLibrarySurface } from './personalLibrary.js';
 import { NO_REVIEW_PROMPT, createEngagement, reviewPrompt } from './engagement.js';
-import type { DocumentCommands } from './documentCommands.js';
+import type { DocumentCommands, ImageRead } from './documentCommands.js';
+import type { ScannedSignaturePicture } from './signaturePicture.js';
 import { type LaunchDocuments, createLaunchDocuments } from './launchDocuments.js';
-import { createRecentFiles } from './recentFiles.js';
+import { type RecentFiles, createRecentFiles } from './recentFiles.js';
 import { createEphemeralSecrets } from './secretStore.js';
 import { createAssistant } from './assistant.js';
 import { type ChatHistory, noChatHistory } from './chatHistory.js';
@@ -84,16 +90,30 @@ type OpenOutcome = Awaited<ReturnType<DocumentService['open']>>;
 function serviceAnswering(outcome: OpenOutcome): {
   documents: DocumentService;
   opened: FileHandle[];
+  closed: DocId[];
 } {
   const opened: FileHandle[] = [];
+  const closed: DocId[] = [];
   const documents = {
     open: (handle: FileHandle) => {
       opened.push(handle);
       return Promise.resolve(outcome);
     },
+    close: (docId: DocId) => {
+      closed.push(docId);
+      return Promise.resolve();
+    },
+    // THE SECOND IS NEWER, unless one is the document no case opened.
+    newerOf: (first: DocId, second: DocId) => {
+      if (first === NOT_OPEN || second === NOT_OPEN) throw new DocumentNotOpenError(NOT_OPEN, 'compare its file’s age');
+      return 'second';
+    },
   } as unknown as DocumentService;
-  return { documents, opened };
+  return { documents, opened, closed };
 }
+
+/** The document no case opened, for the declared failures of the reads that name a document. */
+const NOT_OPEN: DocId = asDocId('doc-not-open');
 
 /** What the harness's page image answers: a JPEG's first two bytes, enough to be told apart from nothing. */
 const PAGE_ONE_JPEG = Uint8Array.of(0xff, 0xd8, 0x01);
@@ -120,10 +140,12 @@ function harness(
     readonly attachments?: { readonly pick: () => Promise<readonly string[]>; readonly readers: AttachmentReaders };
     /** Whether a path names a file (ADR-0143); the kernel's own `readFileIdentity` over the real disk otherwise. */
     readonly fileIdentity?: IdentityReader;
+    /** The recent store, for a case about what a previous run left; a fresh one with a fixed clock otherwise. */
+    readonly recent?: RecentFiles;
   } = {},
 ) {
   const capabilities = new CapabilityRegistry();
-  const { documents, opened } = serviceAnswering(outcome);
+  const { documents, opened, closed } = serviceAnswering(outcome);
   // RECORDED RATHER THAN IGNORED. Whether a document gets an engine session is
   // decided by this call being made, and the outcomes it must NOT be made for
   // produce exactly the same handler result as the one it must.
@@ -135,12 +157,13 @@ function harness(
   // RECORDED for `sessioned`'s reason: the handler forwards one argument, and a handler that dropped
   // it would answer exactly what a correct one answers.
   const webPages: string[] = [];
+  const linksOpened: string[] = [];
   const settings = createEphemeralSettings();
   const secrets = createEphemeralSecrets();
   // RETURNED, like `settings`, so a case can read what the handlers recorded
   // rather than assert that a call was made.
   // A FIXED CLOCK, so a case asserts the instant an opening was stamped with rather than that one was.
-  const recent = createRecentFiles(createEphemeralSettings(), () => OPENED_AT);
+  const recent = overrides.recent ?? createRecentFiles(createEphemeralSettings(), () => OPENED_AT);
   // THE REAL PICTURE STORE over a folder held in memory, wired as the composition root wires it, so a case
   // reads what a capture kept and what a removal deleted rather than that a call was made.
   const pictureFolder = new Map<string, Uint8Array<ArrayBuffer>>();
@@ -215,6 +238,11 @@ function harness(
       webPages.push(page);
       return Promise.resolve(true);
     },
+    // RECORDED for `webPages`' reason: what reached the system is the property, not that a call was made.
+    openLink: (address) => {
+      linksOpened.push(address);
+      return Promise.resolve(true);
+    },
     openStore: () => Promise.resolve(false),
     closeListening: () => false,
     cloud: overrides.cloud ?? unconfiguredCloud(),
@@ -244,6 +272,7 @@ function harness(
   });
   return {
     capabilities,
+    closed,
     engagementFile,
     handlers,
     opened,
@@ -256,6 +285,7 @@ function harness(
     shown,
     storeOpened,
     webPages,
+    linksOpened,
   };
 }
 
@@ -374,9 +404,41 @@ describe('the person’s library (library.*, and document.placeImage with a kept
     expect(small.read).toStrictEqual(['small.png']);
   });
 
+  /**
+   * The library surface with Upload's source answering `picked` — its read answering `read` and recording each path, its
+   * scan answering `scan` and recording the bytes it was handed.
+   */
+  function signaturePicking(
+    picked: string,
+    read: ImageRead,
+    scan: ScannedSignaturePicture | null = null,
+  ): { readonly surface: ReturnType<typeof unusedLibrarySurface>; readonly read: string[]; readonly scanned: Uint8Array[] } {
+    const reads: string[] = [];
+    const scanned: Uint8Array[] = [];
+    const surface = {
+      ...unusedLibrarySurface(),
+      held: createHeldPicture(),
+      signaturePicture: {
+        pick: () => Promise.resolve(picked),
+        read: (path: string) => {
+          reads.push(path);
+          return Promise.resolve(read);
+        },
+        scan:
+          scan === null
+            ? null
+            : (bytes: Uint8Array) => {
+                scanned.push(bytes);
+                return Promise.resolve(scan);
+              },
+      },
+    };
+    return { surface, read: reads, scanned };
+  }
+
   it('signature.pickPicture HOLDS the bytes it answers, under the handle it answers (ADR-0133’s second correction)', async () => {
     const held = createHeldPicture();
-    const { surface } = libraryPicking(join('C:', 'Users', 'someone', 'My signature.png'), PNG.byteLength);
+    const { surface } = signaturePicking(join('C:', 'Users', 'someone', 'My signature.png'), { kind: 'read', bytes: PNG });
     const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
       library: { ...surface, held },
     });
@@ -389,22 +451,54 @@ describe('the person’s library (library.*, and document.placeImage with a kept
     expect(answer.value.bytes).toStrictEqual(PNG);
   });
 
-  it('signature.pickPicture refuses what is not a picture BY ITS BYTES and holds nothing — CONTROL: past the bound, unread', async () => {
+  it('signature.pickPicture refuses what is not a picture BY ITS BYTES and holds nothing — CONTROL: past the bound, the read’s answer', async () => {
     const held = createHeldPicture();
-    // NAMED .png AND READ IN FULL: the bytes are a PDF's header, so only a type read from the bytes refuses it.
-    const notAPicture = libraryPicking('a picture.png', 4, Uint8Array.of(0x25, 0x50, 0x44, 0x46)).surface;
+    // NAMED .png AND READ IN FULL: the bytes are a PDF's header, so only a type read from the bytes refuses it — and a
+    // .png is never sent to the compose host, whose scan here would answer a picture.
+    const notAPicture = signaturePicking('a picture.png', { kind: 'read', bytes: Uint8Array.of(0x25, 0x50, 0x44, 0x46) }, {
+      kind: 'drawn',
+      png: PNG,
+    });
     const refused = await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
-      library: { ...notAPicture, held },
+      library: { ...notAPicture.surface, held },
     }).handlers['signature.pickPicture']({});
     expect(refused.ok ? refused.value : undefined).toStrictEqual({ kind: 'unreadable' });
-    const large = libraryPicking('huge.png', MAX_IMAGE_BYTES + 1);
+    expect(notAPicture.scanned).toStrictEqual([]);
+    // THE BOUND IS THE READ'S, `readImage`'s, which sizes a file before reading it: one opinion about it, not two.
+    const large = signaturePicking('huge.png', { kind: 'too-large', byteLength: MAX_IMAGE_BYTES + 1 });
     const tooLarge = await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
       library: { ...large.surface, held },
     }).handlers['signature.pickPicture']({});
     expect(tooLarge.ok ? tooLarge.value : undefined).toStrictEqual({ kind: 'too-large', limitBytes: MAX_IMAGE_BYTES });
-    expect(large.read).toStrictEqual([]);
     // NOTHING HELD by either refusal, so no later placement can find a picture the person was told was refused.
     expect(held.held(asFileHandle('anything'))).toBeUndefined();
+  });
+
+  it('signature.pickPicture sends a SCANNED PDF to the compose host and holds the PNG it answers, never the PDF (G3d)', async () => {
+    const held = createHeldPicture();
+    const pdf = new TextEncoder().encode('%PDF-1.7 a scanned signature');
+    const picking = signaturePicking(join('C:', 'Scans', 'Signature.PDF'), { kind: 'read', bytes: pdf }, { kind: 'drawn', png: PNG });
+    const answer = await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+      library: { ...picking.surface, held },
+    }).handlers['signature.pickPicture']({});
+    if (!answer.ok || answer.value.kind !== 'picked') throw new Error(`no picture was picked: ${JSON.stringify(answer)}`);
+    // AN UPPER-CASE EXTENSION routes the same way, and the PDF's own bytes are what the host was handed.
+    expect(picking.scanned).toStrictEqual([pdf]);
+    expect(answer.value).toMatchObject({ name: 'Signature.PDF', mediaType: 'image/png', bytes: PNG });
+    expect(held.held(answer.value.handle)?.bytes).toStrictEqual(PNG);
+  });
+
+  it('signature.pickPicture says a scanned PDF with no ink, or a password, and holds nothing', async () => {
+    const pdf = new TextEncoder().encode('%PDF-1.7');
+    for (const kind of ['blank', 'locked'] as const) {
+      const held = createHeldPicture();
+      const picking = signaturePicking('scan.pdf', { kind: 'read', bytes: pdf }, { kind });
+      const answer = await harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+        library: { ...picking.surface, held },
+      }).handlers['signature.pickPicture']({});
+      expect(answer.ok ? answer.value : undefined).toStrictEqual({ kind: `scan-${kind}` });
+      expect(held.held(asFileHandle('anything'))).toBeUndefined();
+    }
   });
 
   it('FORWARDS a kept picture’s id to the placement — the delegate that could drop it, asserted at the handler', async () => {
@@ -441,10 +535,16 @@ describe('the person’s library (library.*, and document.placeImage with a kept
     const request = {
       page: 2,
       rect: { x0: 10, y0: 20, x1: 160, y1: 70 },
-      mark: { kind: 'typed', text: 'Ada Lovelace', font: 'times-italic' },
+      // A TYPED NAME as the renderer sends it, its outline (ADR-0150).
+      mark: {
+        kind: 'outlined',
+        text: 'Ada Lovelace',
+        font: 'allura',
+        outline: { ops: [0, 1, 1, 1, 4], points: [0, 100, 1000, 100, 1000, 400, 0, 400], frame: [0, 0, 1000, 500] },
+      },
       keep: true,
       stamp: { author: 'A. Tester', created: '2026-10-02T12:00:00Z' },
-    } as const;
+    } satisfies Parameters<DocumentCommands['placeSignature']>[1];
     const PLACED = { kind: 'placed', version: asDocVersion(4), byteLength: 2048, historyDropped: 0, kept: 'not-keepable' } as const;
     const requested: unknown[] = [];
     let busy = false;
@@ -482,6 +582,63 @@ describe('app.openWebPage', () => {
     // true` exactly like a correct one. Only the recorded call separates them.
     expect(webPages).toStrictEqual(['donate']);
     expect(answer).toStrictEqual({ ok: true, value: { opened: true } });
+  });
+});
+
+describe('document.openLink (ADR-0167)', () => {
+  /** Commands whose link read answers `read` and records what it was asked. */
+  function linkCommands(read: unknown): { commands: DocumentCommands; asked: unknown[] } {
+    const asked: unknown[] = [];
+    const commands = {
+      linkAddress: (docId: DocId, page: number, index: number, version: number) => {
+        asked.push({ docId, page, index, version });
+        return Promise.resolve(read);
+      },
+    } as unknown as DocumentCommands;
+    return { commands, asked };
+  }
+  const request = { docId: A_DOC, version: asDocVersion(4), page: 2, index: 1 };
+
+  it('OPENS the address main read from the document, by the place the renderer named', async () => {
+    const tracking = `https://example.org/track?id=${'a'.repeat(5000)}`;
+    const { commands, asked } = linkCommands({ kind: 'address', uri: tracking });
+    const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+
+    expect(await handlers['document.openLink'](request)).toStrictEqual({ ok: true, value: { kind: 'opened' } });
+    // THE WHOLE ADDRESS reached the system, past the 2,048 the listing shows, and the read was asked for the place.
+    expect(linksOpened).toStrictEqual([tracking]);
+    expect(asked).toStrictEqual([{ docId: A_DOC, page: 2, index: 1, version: 4 }]);
+  });
+
+  it('NEVER OPENS a scheme a person may not follow, and names it — CONTROL: an https one is opened', async () => {
+    for (const [uri, scheme] of [
+      ['javascript:alert(1)', 'javascript:'],
+      ['file:///C:/Windows/System32/calc.exe', 'file:'],
+      [' https://example.org', null],
+      // A SCHEME LONGER THAN THE ANSWER'S BOUND is said cut to it, so the answer still parses as the channel's.
+      [`${'x'.repeat(SHOWN_SCHEME_MAX + 10)}:payload`, 'x'.repeat(SHOWN_SCHEME_MAX)],
+    ] as const) {
+      const { commands } = linkCommands({ kind: 'address', uri });
+      const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+      const answer = await handlers['document.openLink'](request);
+      expect(answer).toStrictEqual({ ok: true, value: { kind: 'scheme-refused', scheme } });
+      // PARSED HERE, because these handlers are called bare: the schema is what refuses a whole long scheme.
+      expect(answer.ok && channels['document.openLink'].result.safeParse(answer.value).success, uri).toBe(true);
+      expect(linksOpened).toStrictEqual([]);
+    }
+    const { commands } = linkCommands({ kind: 'address', uri: 'https://example.org' });
+    const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    await handlers['document.openLink'](request);
+    expect(linksOpened).toStrictEqual(['https://example.org']);
+  });
+
+  it('opens NOTHING for a moved document, a place with no web link, or an address too long', async () => {
+    for (const kind of ['stale', 'no-such-link', 'too-long'] as const) {
+      const { commands } = linkCommands({ kind });
+      const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+      expect(await handlers['document.openLink'](request)).toStrictEqual({ ok: true, value: { kind } });
+      expect(linksOpened).toStrictEqual([]);
+    }
   });
 });
 
@@ -622,6 +779,15 @@ describe('document.open', () => {
       expect(capabilities.has(handleOpened(opened))).toBe(false);
     });
 
+    it('revokes it when the read was refused, busy or denied, for the same reason (cloud-4 7a)', async () => {
+      for (const kind of ['busy', 'denied'] as const) {
+        const { capabilities, handlers, opened } = harness({ kind }, () => Promise.resolve('C:/docs/held.pdf'));
+
+        expect(await handlers['document.open']({})).toStrictEqual({ ok: true, value: { kind } });
+        expect(capabilities.has(handleOpened(opened))).toBe(false);
+      }
+    });
+
     it('does NOT revoke it when the document is already open', async () => {
       // THE CASE THE SYMMETRIC VERSION GETS WRONG. `mint` is idempotent per
       // path, so the handle minted here IS the live document's handle —
@@ -747,6 +913,7 @@ describe('document.open', () => {
       edit: () => false,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
+      openLink: () => Promise.reject(new Error('this case follows no link')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
@@ -865,6 +1032,241 @@ describe('document.openDropped (ADR-0099)', () => {
     // line above.
     expect(opened).toStrictEqual([]);
     expect(recent.list()).toStrictEqual([]);
+  });
+});
+
+describe('document.editCopy — an edit of a signed document made on a copy (ADR-0149)', () => {
+  const COPY_PATH = resolve('copies', 'signed copy.pdf');
+  const COPY: DocId = asDocId('doc-copy');
+  const OPENED: OpenOutcome = { kind: 'opened', docId: COPY, version: asDocVersion(1), byteLength: 1024, name: 'signed copy.pdf' };
+  const NO_PICKER: PickDocument = () => Promise.reject(new Error('a copy for editing never runs the open picker'));
+  // A COMMAND THAT NAMES A VERSION, so the case can see it re-bound: the original was at 3 when it was composed.
+  const NAMED = { kind: 'removeAnnotation', page: 0, indices: [0], version: asDocVersion(3) } as const;
+
+  /** The commands the handler calls, recording each `execute` and throwing what a case says the copy's edit throws. */
+  function commandsFor(edit: () => Promise<unknown>): {
+    commands: DocumentCommands;
+    executed: unknown[][];
+    copied: unknown[][];
+  } {
+    const executed: unknown[][] = [];
+    const copied: unknown[][] = [];
+    const commands = {
+      copyForEditing: (...args: unknown[]) => {
+        copied.push(args);
+        return Promise.resolve({ outcome: { kind: 'copied', bytes: 1024 }, destination: COPY_PATH });
+      },
+      execute: (...args: unknown[]) => {
+        executed.push(args);
+        return edit();
+      },
+    } as unknown as DocumentCommands;
+    return { commands, executed, copied };
+  }
+
+  it('writes the copy, opens it by the one route, and applies the SAME edit there, its version re-bound and agreed', async () => {
+    const { commands, executed, copied } = commandsFor(() =>
+      Promise.resolve({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }),
+    );
+    const { capabilities, handlers, opened, sessioned, closed } = harness(OPENED, NO_PICKER, undefined, { commands });
+
+    const result = await handlers['document.editCopy']({ docId: A_DOC, command: NAMED });
+
+    expect(result).toStrictEqual({
+      ok: true,
+      value: { kind: 'edited', docId: COPY, version: 2, byteLength: 2048, name: 'signed copy.pdf', historyDropped: 0 },
+    });
+    // THE ORIGINAL IS ASKED FOR A COPY, AND NOTHING ELSE: no `execute` names it.
+    expect(copied).toStrictEqual([[A_DOC, NAMED]]);
+    expect(capabilities.resolve(handleOpened(opened))).toBe(COPY_PATH);
+    expect(sessioned).toStrictEqual([COPY]);
+    expect(executed).toStrictEqual([[COPY, { ...NAMED, version: 1 }, { breakSignatures: true }]]);
+    expect(closed).toStrictEqual([]);
+    // WHAT CROSSES IS THE CHANNEL'S OWN SHAPE: the spread of the open's answer and the edit's must parse as declared.
+    if (!result.ok) throw new Error('the case answered a failure');
+    expect(channels['document.editCopy'].result.safeParse(result.value).success).toBe(true);
+  });
+
+  it('a refusal the person can act on leaves the copy OPEN and says why', async () => {
+    const { commands } = commandsFor(() => Promise.reject(new TextNotWritableError('中')));
+    const { handlers, closed } = harness(OPENED, NO_PICKER, undefined, { commands });
+
+    const result = await handlers['document.editCopy']({ docId: A_DOC, command: NAMED });
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { kind: 'edit-refused', docId: COPY, problem: { code: 'text-not-writable', detail: { characters: '中' } } },
+    });
+    expect(closed).toStrictEqual([]);
+  });
+
+  it('a step PDFium refused on the copy says which, as the same edit says it in place (ADR-0169)', async () => {
+    // THE COPY ROUTE spelt its own list of refusals and knew four of the direct route's, so this was a defect thrown
+    // past an open copy. Both routes now take `editRefusalOf`.
+    const { commands } = commandsFor(() => Promise.reject(new EditRefusedError('read-back', 0, 'the page lost text')));
+    const { handlers, closed } = harness(OPENED, NO_PICKER, undefined, { commands });
+
+    const result = await handlers['document.editCopy']({ docId: A_DOC, command: NAMED });
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { kind: 'edit-refused', docId: COPY, problem: { code: 'edit-refused', detail: { step: 'read-back', engineError: 0 } } },
+    });
+    if (!result.ok) throw new Error('the case answered a failure');
+    expect(channels['document.editCopy'].result.safeParse(result.value).success).toBe(true);
+    expect(closed).toStrictEqual([]);
+  });
+
+  it('a copy whose read was REFUSED says so and runs no edit, where it used to be thrown as a defect (cloud-4 7a)', async () => {
+    // A file this build just wrote can still be held: a scanner opening it the moment it lands holds it as any
+    // program does.
+    for (const kind of ['busy', 'denied'] as const) {
+      const { commands, executed } = commandsFor(() => Promise.reject(new Error('nothing may run on a copy not opened')));
+      const { handlers } = harness({ kind }, NO_PICKER, undefined, { commands });
+
+      const result = await handlers['document.editCopy']({ docId: A_DOC, command: NAMED });
+
+      expect(result).toStrictEqual({ ok: true, value: { kind } });
+      expect(executed).toStrictEqual([]);
+      expect(channels['document.editCopy'].result.safeParse({ kind }).success).toBe(true);
+    }
+  });
+
+  it('a DEFECT in the copy’s edit closes the copy before it is rethrown, so no document is open that no tab shows', async () => {
+    const { commands } = commandsFor(() => Promise.reject(new Error('a defect')));
+    const { handlers, closed } = harness(OPENED, NO_PICKER, undefined, { commands });
+
+    await expect(handlers['document.editCopy']({ docId: A_DOC, command: NAMED })).rejects.toThrow('a defect');
+    expect(closed).toStrictEqual([COPY]);
+  });
+
+  it('a dismissed picker is CANCELLED and opens nothing — CONTROL: a stale command is the declared stale-target', async () => {
+    const dismissed = {
+      copyForEditing: () => Promise.resolve(undefined),
+      execute: () => Promise.reject(new Error('nothing may run after a dismissed picker')),
+    } as unknown as DocumentCommands;
+    const cancelled = harness(OPENED, NO_PICKER, undefined, { commands: dismissed });
+    expect(await cancelled.handlers['document.editCopy']({ docId: A_DOC, command: NAMED })).toStrictEqual({
+      ok: true,
+      value: { kind: 'cancelled' },
+    });
+    expect(cancelled.opened).toStrictEqual([]);
+
+    const stale = {
+      copyForEditing: () => Promise.reject(new StaleTargetError('removeAnnotation', asDocVersion(3), asDocVersion(4))),
+    } as unknown as DocumentCommands;
+    const refused = harness(OPENED, NO_PICKER, undefined, { commands: stale });
+    expect(await refused.handlers['document.editCopy']({ docId: A_DOC, command: NAMED })).toStrictEqual({
+      ok: false,
+      error: { code: 'stale-target' },
+    });
+    expect(refused.opened).toStrictEqual([]);
+  });
+});
+
+describe('document.undo and document.redo — a rewrite refused on the way back (ADR-0169)', () => {
+  // AN UNDO OF A PDFIUM EDIT runs the same rewrite and read-back as the edit, so it is refused the same way.
+  const refusing = (thrown: Error) =>
+    ({ undo: () => Promise.reject(thrown), redo: () => Promise.reject(thrown) }) as unknown as DocumentCommands;
+  const OPENED: OpenOutcome = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' };
+  const NO_PICKER: PickDocument = () => Promise.reject(new Error('an undo never runs the open picker'));
+
+  for (const channel of ['document.undo', 'document.redo'] as const) {
+    it(`${channel} names the step and PDFium's number, and the characters a font could not carry`, async () => {
+      const step = harness(OPENED, NO_PICKER, undefined, { commands: refusing(new EditRefusedError('generate', 6, 'x')) });
+      const stepAnswer = await step.handlers[channel]({ docId: A_DOC });
+      expect(stepAnswer).toStrictEqual({ ok: false, error: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } } });
+      // DECLARED ON THE CHANNEL, which is what the boundary checks an answer's code against.
+      expect(channels[channel].failures).toEqual(expect.arrayContaining(['edit-refused', 'text-not-writable']));
+
+      const font = harness(OPENED, NO_PICKER, undefined, { commands: refusing(new TextNotWritableError('é')) });
+      expect(await font.handlers[channel]({ docId: A_DOC })).toStrictEqual({
+        ok: false,
+        error: { code: 'text-not-writable', detail: { characters: 'é' } },
+      });
+    });
+
+    it(`CONTROL: ${channel} rethrows a defect, which the boundary records as internal`, async () => {
+      const defect = harness(OPENED, NO_PICKER, undefined, { commands: refusing(new Error('a defect')) });
+      await expect(defect.handlers[channel]({ docId: A_DOC })).rejects.toThrow('a defect');
+    });
+  }
+});
+
+describe('document.workOnCopy and document.fileAccess — a file that cannot be saved over (cloud-4 7b)', () => {
+  const COPY_PATH = resolve('copies', 'annual (copy).pdf');
+  const COPY: DocId = asDocId('doc-work-copy');
+  const OPENED: OpenOutcome = { kind: 'opened', docId: COPY, version: asDocVersion(1), byteLength: 1024, name: 'annual (copy).pdf' };
+  const NO_PICKER: PickDocument = () => Promise.reject(new Error('a copy to work on never runs the open picker'));
+
+  function commandsCopying(copied: unknown, access: unknown = 'writable'): { commands: DocumentCommands; asked: unknown[] } {
+    const asked: unknown[] = [];
+    const commands = {
+      copyToWorkOn: (docId: DocId) => {
+        asked.push(['copy', docId]);
+        return Promise.resolve(copied);
+      },
+      fileAccess: (docId: DocId) => {
+        asked.push(['access', docId]);
+        return access instanceof Error ? Promise.reject(access) : Promise.resolve(access);
+      },
+    } as unknown as DocumentCommands;
+    return { commands, asked };
+  }
+
+  it('writes the copy and opens it by the ONE route, so it is a document with a session and a recent entry', async () => {
+    const { commands, asked } = commandsCopying({ outcome: { kind: 'copied', bytes: 1024 }, destination: COPY_PATH });
+    const { capabilities, handlers, opened, sessioned } = harness(OPENED, NO_PICKER, undefined, { commands });
+
+    const result = await handlers['document.workOnCopy']({ docId: A_DOC });
+
+    expect(result).toStrictEqual({ ok: true, value: OPENED });
+    expect(asked).toStrictEqual([['copy', A_DOC]]);
+    expect(capabilities.resolve(handleOpened(opened))).toBe(COPY_PATH);
+    expect(sessioned).toStrictEqual([COPY]);
+    if (!result.ok) throw new Error('the case answered a failure');
+    expect(channels['document.workOnCopy'].result.safeParse(result.value).success).toBe(true);
+  });
+
+  it('a dismissed picker, a refused destination and a failed write OPEN NOTHING and say which', async () => {
+    const cases = [
+      [undefined, { kind: 'cancelled' }],
+      [{ outcome: { kind: 'refused', others: [A_DOC, COPY] }, destination: COPY_PATH }, { kind: 'destination-contested', openElsewhere: 2 }],
+      [{ outcome: { kind: 'write-failed', failure: { stage: 'temp-write', detail: 'ENOSPC' } }, destination: COPY_PATH }, { kind: 'write-failed' }],
+    ] as const;
+    for (const [copied, answer] of cases) {
+      const { commands } = commandsCopying(copied);
+      const { handlers, opened } = harness(OPENED, NO_PICKER, undefined, { commands });
+      expect(await handlers['document.workOnCopy']({ docId: A_DOC })).toStrictEqual({ ok: true, value: answer });
+      expect(opened).toStrictEqual([]);
+    }
+  });
+
+  it('a copy whose read was refused says so, as any open does', async () => {
+    const { commands } = commandsCopying({ outcome: { kind: 'copied', bytes: 1024 }, destination: COPY_PATH });
+    const { handlers } = harness({ kind: 'busy' }, NO_PICKER, undefined, { commands });
+    expect(await handlers['document.workOnCopy']({ docId: A_DOC })).toStrictEqual({ ok: true, value: { kind: 'busy' } });
+  });
+
+  it('newerOf answers the service’s word for the two files, and a document that is not open as the declared failure (8a)', async () => {
+    const { handlers } = harness(OPENED, NO_PICKER);
+    expect(await handlers['document.newerOf']({ first: A_DOC, second: COPY })).toStrictEqual({ ok: true, value: { newer: 'second' } });
+    expect(await handlers['document.newerOf']({ first: A_DOC, second: NOT_OPEN })).toStrictEqual({
+      ok: false,
+      error: { code: 'document-not-open' },
+    });
+  });
+
+  it('fileAccess answers the file’s own state, and a document that is not open as the declared failure', async () => {
+    for (const access of ['read-only', 'held', 'writable'] as const) {
+      const { commands, asked } = commandsCopying(undefined, access);
+      const { handlers } = harness(OPENED, NO_PICKER, undefined, { commands });
+      expect(await handlers['document.fileAccess']({ docId: A_DOC })).toStrictEqual({ ok: true, value: { access } });
+      expect(asked).toStrictEqual([['access', A_DOC]]);
+    }
+    const { commands } = commandsCopying(undefined, new DocumentNotOpenError(A_DOC, 'read its file access'));
+    const { handlers } = harness(OPENED, NO_PICKER, undefined, { commands });
+    expect(await handlers['document.fileAccess']({ docId: A_DOC })).toStrictEqual({ ok: false, error: { code: 'document-not-open' } });
   });
 });
 
@@ -1073,8 +1475,8 @@ describe('the recent list', () => {
     expect(opened).toStrictEqual({ ok: true, value: { kind: 'absent' } });
     expect(recent.list().map((entry) => entry.name)).toStrictEqual(['gone.pdf']);
     const listed = await handlers['document.recent']({});
-    expect(listed.ok ? listed.value.entries.map((entry) => [entry.name, entry.available]) : listed).toStrictEqual([
-      ['gone.pdf', false],
+    expect(listed.ok ? listed.value.entries.map((entry) => [entry.name, entry.availability]) : listed).toStrictEqual([
+      ['gone.pdf', 'unavailable'],
     ]);
   });
 
@@ -1088,7 +1490,7 @@ describe('the recent list', () => {
     }
     const availability = async (handlers: ReturnType<typeof harness>['handlers']): Promise<unknown> => {
       const listed = await handlers['document.recent']({});
-      return listed.ok ? listed.value.entries.map((entry) => [entry.name, entry.available]) : listed;
+      return listed.ok ? listed.value.entries.map((entry) => [entry.name, entry.availability]) : listed;
     };
 
     it('reads each by the OPEN’S OWN RULE: a file on disk is available, a missing one is listed and not', async () => {
@@ -1100,8 +1502,8 @@ describe('the recent list', () => {
       recent.record({ path: here, name: 'here.pdf' });
 
       expect(await availability(handlers)).toStrictEqual([
-        ['here.pdf', true],
-        ['gone.pdf', false],
+        ['here.pdf', 'available'],
+        ['gone.pdf', 'unavailable'],
       ]);
     });
 
@@ -1109,26 +1511,112 @@ describe('the recent list', () => {
       const { here } = aFolder();
       const { handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null));
       recent.record({ path: here, name: 'here.pdf' });
-      expect(await availability(handlers)).toStrictEqual([['here.pdf', true]]);
+      expect(await availability(handlers)).toStrictEqual([['here.pdf', 'available']]);
 
       rmSync(here);
 
-      expect(await availability(handlers)).toStrictEqual([['here.pdf', false]]);
+      expect(await availability(handlers)).toStrictEqual([['here.pdf', 'unavailable']]);
     });
 
     it('a check that THROWS is unavailable, and the rest of the list is still answered', async () => {
       // A refused permission or a device error: an open would fail on it too, so it is not drawn as one that opens.
+      // THE LOCKED FILE EXISTS ON DISK, so only the injected check makes it unavailable: a handler that read the disk
+      // its own way, ignoring the check it is given, would report it available and fail here.
       const { here } = aFolder();
+      const locked = join(dirname(here), 'locked.pdf');
+      writeFileSync(locked, '%PDF-1.7\n');
       const { handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
-        fileIdentity: (path) =>
-          path === 'C:/docs/locked.pdf' ? Promise.reject(new Error('EACCES: permission denied')) : readFileIdentity(path),
+        fileIdentity: (path) => (path === locked ? Promise.reject(new Error('EACCES: permission denied')) : readFileIdentity(path)),
       });
-      recent.record({ path: 'C:/docs/locked.pdf', name: 'locked.pdf' });
+      recent.record({ path: locked, name: 'locked.pdf' });
       recent.record({ path: here, name: 'here.pdf' });
 
       expect(await availability(handlers)).toStrictEqual([
-        ['here.pdf', true],
-        ['locked.pdf', false],
+        ['here.pdf', 'available'],
+        ['locked.pdf', 'unavailable'],
+      ]);
+    });
+
+    /** A check for `slow` that answers only when the case says, and counts how many times it was asked. */
+    function slowCheck(slow: string): {
+      readonly fileIdentity: IdentityReader;
+      readonly asked: () => number;
+      readonly answer: (there: boolean) => void;
+    } {
+      let asked = 0;
+      let settle: ((there: boolean) => void) | undefined;
+      return {
+        fileIdentity: (path) => {
+          if (path !== slow) return readFileIdentity(path);
+          asked += 1;
+          return new Promise((resolve, reject) => {
+            settle = (there) => {
+              if (there) void readFileIdentity(path).then(resolve, reject);
+              else resolve(null);
+            };
+          });
+        },
+        asked: () => asked,
+        answer: (there) => {
+          settle?.(there);
+        },
+      };
+    }
+
+    it('answers within the CAP, the slow file CHECKING and the others read, and the next ask after it lands has it (7d)', async () => {
+      const { here } = aFolder();
+      const slow = join(dirname(here), 'network.pdf');
+      writeFileSync(slow, '%PDF-1.7\n');
+      const check = slowCheck(slow);
+      const { handlers, recent } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+        fileIdentity: check.fileIdentity,
+      });
+      recent.record({ path: slow, name: 'network.pdf' });
+      recent.record({ path: here, name: 'here.pdf' });
+
+      const started = Date.now();
+      expect(await availability(handlers)).toStrictEqual([
+        ['here.pdf', 'available'],
+        ['network.pdf', 'checking'],
+      ]);
+      // THE LIST DID NOT WAIT FOR THE SLOW FILE: it answered at the cap, not when the check did (which is never, yet).
+      expect(Date.now() - started).toBeLessThan(RECENT_CHECK_CAP_MS + 1000);
+
+      // A SECOND ASK WHILE IT RUNS SHARES IT: still checking, and the disk was asked once, not twice.
+      expect(await availability(handlers)).toStrictEqual([
+        ['here.pdf', 'available'],
+        ['network.pdf', 'checking'],
+      ]);
+      expect(check.asked()).toBe(1);
+
+      // IT LANDS BETWEEN TWO ASKS, and the next ask has its answer without asking the disk again.
+      check.answer(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(await availability(handlers)).toStrictEqual([
+        ['here.pdf', 'available'],
+        ['network.pdf', 'available'],
+      ]);
+      expect(check.asked()).toBe(1);
+      // AND HAVING ANSWERED IT IS DROPPED: the ask after asks the disk again, the rule above (read at each ask).
+      await availability(handlers);
+      expect(check.asked()).toBe(2);
+    });
+
+    it('the CRASH OFFER’S entries carry the same reading, so a file that has gone is not offered (7c)', async () => {
+      const { here, gone } = aFolder();
+      // A RUN THAT DIED with two documents open, read by the next run's store over the same file.
+      const file = createEphemeralSettings();
+      const before = createRecentFiles(file, () => OPENED_AT);
+      before.opened(asDocId('00000000-0000-4000-8000-0000000000a1'), { path: here, name: 'here.pdf' });
+      before.opened(asDocId('00000000-0000-4000-8000-0000000000b2'), { path: gone, name: 'gone.pdf' });
+      const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+        recent: createRecentFiles(file, () => OPENED_AT),
+      });
+      const listed = await handlers['document.recent']({});
+      expect(listed.ok ? listed.value.lastExitClean : listed).toBe(false);
+      expect(listed.ok ? listed.value.lastSession.map((entry) => [entry.name, entry.availability]) : listed).toStrictEqual([
+        ['here.pdf', 'available'],
+        ['gone.pdf', 'unavailable'],
       ]);
     });
   });
@@ -1200,6 +1688,7 @@ settings: createEphemeralSettings(),
       edit: () => false,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
+      openLink: () => Promise.reject(new Error('this case follows no link')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
     cloud: unconfiguredCloud(),
@@ -1258,6 +1747,7 @@ settings: createEphemeralSettings(),
       edit: () => false,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
+      openLink: () => Promise.reject(new Error('this case follows no link')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -1292,6 +1782,26 @@ settings: createEphemeralSettings(),
     expect(secrets.read()['ai.perplexity-key']).toBe('a-perplexity-key');
     // NOTHING WAS ASKED, which is what makes `checked: false` the truth rather than a pessimism.
     expect(asked).toStrictEqual([]);
+  });
+
+  it('an Azure OpenAI address that is not Azure’s own is asked NOTHING from main, and its key is not kept', async () => {
+    // THE CHANNEL TAKES ANY STRING, so main is what refuses: without the check this is a request from main, with the
+    // typed key, to whatever the renderer named — and the provider answering 200 would keep the key.
+    const { handlers, secrets, asked } = checking(200);
+    for (const endpoint of ['https://example.test', 'http://mine.openai.azure.com', 'https://127.0.0.1:8080']) {
+      const result = await handlers['ai.checkKey']({ provider: 'azure-openai', key: 'a-key', endpoint });
+      expect({ endpoint, result }).toEqual({ endpoint, result: { ok: true, value: { accepted: false, problem: 'not-the-service' } } });
+    }
+    expect(asked).toStrictEqual([]);
+    expect(secrets.read()['ai.azure-openai-key']).toBeUndefined();
+  });
+
+  it('CONTROL: the same check at an Azure OpenAI resource is asked once, and keeps the key', async () => {
+    const { handlers, secrets, asked } = checking(200);
+    const result = await handlers['ai.checkKey']({ provider: 'azure-openai', key: 'a-key', endpoint: 'https://mine.openai.azure.com' });
+    expect(result).toEqual({ ok: true, value: { accepted: true, checked: true } });
+    expect(asked).toHaveLength(1);
+    expect(secrets.read()['ai.azure-openai-key']).toBe('a-key');
   });
 
   it('ai.models.held answers every provider from what main holds, and asks no provider (ADR-0117)', async () => {
@@ -1390,6 +1900,7 @@ settings: createEphemeralSettings(),
       edit: () => false,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
+      openLink: () => Promise.reject(new Error('this case follows no link')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -1532,6 +2043,7 @@ settings,
       edit: () => false,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
+      openLink: () => Promise.reject(new Error('this case follows no link')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud: unconfiguredCloud(),
@@ -1594,6 +2106,19 @@ describe('cloud.pick (ADR-0091, corrected 2026-09-29)', () => {
     const { handlers } = harness(opened, () => Promise.resolve(null), undefined, { cloud });
 
     expect(await handlers['cloud.pick']({ provider: 'google-drive' })).toStrictEqual({ ok: true, value: opened });
+    expect(links).toStrictEqual([[A_DOC, 'C:/work/google-drive/abc/chosen.pdf']]);
+  });
+
+  it('a working copy reopened from RECENT is linked as well, by the one open (CR-DOC-02)', async () => {
+    // THE ROUTE THAT LOST IT: only the two cloud channels linked, so a copy reopened from Recent, the last session or
+    // the picker opened as a local file and its Save back said not-from-cloud. The link is asked of every open now,
+    // and the storage answers by the copy's path. CONTROL: no cloud channel is called in this case at all.
+    const { cloud, links } = cloudPicking(new CloudOutcomeRefused('nothing-picked'));
+    const opened = { kind: 'opened' as const, docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'chosen.pdf' };
+    const { capabilities, handlers } = harness(opened, () => Promise.resolve(null), undefined, { cloud });
+    const handle = capabilities.mint('C:/work/google-drive/abc/chosen.pdf');
+
+    expect(await handlers['document.openRecent']({ handle })).toStrictEqual({ ok: true, value: opened });
     expect(links).toStrictEqual([[A_DOC, 'C:/work/google-drive/abc/chosen.pdf']]);
   });
 
@@ -1673,9 +2198,13 @@ describe('cloud.saveBack', () => {
       },
     };
     const commands = {
-      save: () =>
-        Promise.resolve(saved === 'saved' ? { kind: 'saved' as const, version: asDocVersion(9) } : { kind: 'write-failed' as const }),
-      currentImage: () => Promise.resolve(new Uint8Array([1, 2, 3])),
+      // THE IMAGE COMES WITH THE SAVE, from its lane entry (CR-DOC-04); `currentImage` is not this handler's to ask.
+      saveAndTake: () =>
+        Promise.resolve(
+          saved === 'saved'
+            ? { outcome: { kind: 'saved' as const, version: asDocVersion(9) }, image: new Uint8Array([1, 2, 3]) }
+            : { outcome: { kind: 'write-failed' as const }, image: null },
+        ),
     } as unknown as DocumentCommands;
     const handlers = createContractHandlers({
       assistant: INERT_ASSISTANT,
@@ -1701,6 +2230,7 @@ settings: createEphemeralSettings(),
       edit: () => false,
       copyText: () => false,
       openWebPage: () => Promise.resolve(false),
+      openLink: () => Promise.reject(new Error('this case follows no link')),
       openStore: () => Promise.resolve(false),
       closeListening: () => false,
       cloud,
@@ -1718,7 +2248,8 @@ settings: createEphemeralSettings(),
       ok: true,
       value: { kind: 'saved-back', version: asDocVersion(9) },
     });
-    expect(uploaded).toHaveLength(1);
+    // THE SAVE'S OWN IMAGE is what goes up.
+    expect(uploaded).toStrictEqual([new Uint8Array([1, 2, 3])]);
   });
 
   it('a refusal AFTER the working copy was saved still names the version, and the refusal', async () => {

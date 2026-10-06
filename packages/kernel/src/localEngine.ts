@@ -2,8 +2,10 @@ import { serialiseIntoFile } from './checkpointFile.js';
 import { type RegisteredWriter, localMupdfExecution } from './commandSpecs.js';
 import type { MupdfSession } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
+import { NO_TIMESTAMPS, type RequestTimestamp, signpdfExecutionWith } from './documentSign.js';
 import { applyPdfLibImage, hostedPdfLibExecution } from './pdfLibWriter.js';
 import { stagedBytes } from './savePipeline.js';
+import { prepareSignature } from './signaturePlaceholder.js';
 
 /**
  * The MuPDF writer assembled for a process that holds the session itself
@@ -52,6 +54,27 @@ export const localPdfLibWriter: RegisteredWriter<'pdf-lib'> = {
     stagedBytes(await applyPdfLibImage(await mupdfWriter.serialise(session), command, reads)),
   ),
 };
+
+/**
+ * The signer, its placeholder prepared beside a MuPDF session in THIS process — what the MuPDF host does — and its
+ * signature made by the same execution `main` registers ([ADR-0148](../../../docs/DECISIONS/0148-signings-parse-runs-in-the-mupdf-host-and-main-keeps-only-the-key.md)).
+ * The bus rebuilds the session from the signed bytes through `adopt`, as it does for the host.
+ *
+ * @param requestTimestamp a timestamp port; without one a command asking for a timestamp is refused as unreachable
+ */
+export function localSignpdfWriterWith(requestTimestamp: RequestTimestamp): RegisteredWriter<'signpdf'> {
+  return {
+    serialise: (session) => mupdfWriter.serialise(session),
+    serialiseInto: serialiseIntoFile((session: MupdfSession) => mupdfWriter.serialise(session)),
+    ...signpdfExecutionWith(
+      async (session, request) => prepareSignature(await mupdfWriter.serialise(session), request),
+      requestTimestamp,
+    ),
+  };
+}
+
+/** {@link localSignpdfWriterWith} with no timestamp port. */
+export const localSignpdfWriter: RegisteredWriter<'signpdf'> = localSignpdfWriterWith(NO_TIMESTAMPS);
 
 export const localMupdfWriter: RegisteredWriter<'mupdf'> = {
   ...mupdfWriter,

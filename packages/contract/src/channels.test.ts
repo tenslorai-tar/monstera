@@ -14,7 +14,16 @@ import {
 import { placeImageSchema } from './commands.js';
 import type { Incident } from './incident.js';
 import { MAX_PAGE_SET_ENTRIES } from './pageSet.js';
-import { AZURE_KEY_SETTING_ID } from './schemas.js';
+import {
+  AZURE_KEY_SETTING_ID,
+  ENGINE_ERROR_MAX,
+  FAILURE_CODE_MAX_CHARS,
+  FILE_HANDLE_MAX_CHARS,
+  INCIDENT_ID_MAX_CHARS,
+  UNWRITABLE_CHARACTERS_MAX_UNITS,
+  failureSchema,
+  fileHandleSchema,
+} from './schemas.js';
 
 /** Discards a diagnostic. The sink is required rather than defaulted. */
 function ignore(_incident: Incident): void {
@@ -99,18 +108,19 @@ const handlers: ContractHandlers = {
             // BOTH HALVES SET, for this fixture's reason: `null` in either is what a boundary that dropped it produces.
             location: displayLocationSchema.parse({ within: 'documents', folder: 'Leases' }),
             openedAt: '2026-09-25T08:00:00.000Z',
-            // `false`, the unusual state (ADR-0143): an entry listed and not there.
-            available: false,
+            // `unavailable`, an unusual state (ADR-0143): an entry listed and not there.
+            availability: 'unavailable',
           },
         ],
         lastExitClean: false,
         // TWO ENTRIES, and neither is the newest recent one. That is the whole
         // point of recording a session rather than inferring it: a fixture
         // where the session is the head of the recent list cannot tell a
-        // boundary that carries this field from one that rebuilt it.
+        // boundary that carries this field from one that rebuilt it. Each in a
+        // state the other is not, so a boundary that dropped or swapped them fails.
         lastSession: [
-          { handle: asFileHandle('handle-7'), name: 'draft.pdf' },
-          { handle: asFileHandle('handle-8'), name: 'notes.pdf' },
+          { handle: asFileHandle('handle-7'), name: 'draft.pdf', availability: 'checking' },
+          { handle: asFileHandle('handle-8'), name: 'notes.pdf', availability: 'available' },
         ],
       }),
     ),
@@ -119,7 +129,8 @@ const handlers: ContractHandlers = {
   'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
   'document.execute': () =>
     Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
-  'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), cleared: null })),
+  'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), cleared: null, held: [] })),
+  'document.deleteHeldCopies': () => Promise.resolve(ok({ held: [] })),
   // CANCELLED rather than copied, for the recent-files fixture's reason one
   // entry up: a byte count is the interesting answer, and a fixture that always
   // returns one cannot show that the dismissal path exists at all.
@@ -153,6 +164,10 @@ const handlers: ContractHandlers = {
   'document.optimizeMeasure': () => Promise.resolve(ok({ kind: 'unavailable' as const })),
   'document.optimize': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.editCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.workOnCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.fileAccess': () => Promise.resolve(ok({ access: 'writable' as const })),
+  'document.newerOf': () => Promise.resolve(ok({ newer: 'neither' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromMarkdown': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.newFromCsv': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -179,6 +194,10 @@ const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), rules: [], humanChecks: [] })),
   'document.importAnnotations': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.copyAnnotations': () => Promise.resolve(ok({ kind: 'nothing-copyable' as const })),
+  // `whole: false` rather than true: a handler that hard-coded the common answer
+  // would say true, and only a read that measured the words says false.
+  'document.annotationWords': () => Promise.resolve(ok({ kind: 'words' as const, text: 'a', whole: false })),
+  'document.openLink': () => Promise.resolve(ok({ kind: 'opened' as const })),
   'document.pasteAnnotations': () => Promise.resolve(ok({ kind: 'empty' as const })),
   'document.pageBarcodes': () =>
     Promise.resolve(ok({ version: asDocVersion(1), barcodes: [], truncated: false })),
@@ -220,11 +239,11 @@ const handlers: ContractHandlers = {
         kind: 'text' as const,
       }),
     ),
-  // NON-ZERO AND ALL THREE DIFFERENT, so a case can assert which figure crossed.
+  // NON-ZERO AND ALL FIVE DIFFERENT, so a case can assert which figure crossed.
   // A fixture of zeros is what a dropped field and an empty page produce alike.
   'document.pageWordCount': () =>
     Promise.resolve(
-      ok({ version: asDocVersion(1), words: 5, characters: 27, charactersNoSpaces: 23 }),
+      ok({ version: asDocVersion(1), words: 5, characters: 27, charactersNoSpaces: 23, lines: 2, cjkCharacters: 4 }),
     ),
   'document.pageTables': () =>
     Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, tables: [], truncated: false })),
@@ -321,6 +340,8 @@ const handlers: ContractHandlers = {
             on: null,
             options: [],
             readOnly: false,
+            // TRUE HERE AND FALSE BELOW, so a boundary that defaulted the flag is visible either way.
+            multiline: true,
             rect: { x0: 10, y0: 20, x1: 110, y1: 40 },
           },
           {
@@ -332,6 +353,7 @@ const handlers: ContractHandlers = {
             on: false,
             options: [],
             readOnly: true,
+            multiline: false,
             rect: null,
           },
         ],
@@ -692,6 +714,60 @@ function reaches(schema: unknown, target: unknown, seen = new Set<unknown>()): b
   return children.some((child) => reaches(child, target, seen));
 }
 
+describe('a handle, a failure code and an incident id are bounded strings (CR-SEC-06, CR-SEC-13)', () => {
+  it('each refuses one character past its bound and takes one at it', () => {
+    const of = (length: number): string => 'a'.repeat(length);
+    expect([fileHandleSchema.safeParse(of(FILE_HANDLE_MAX_CHARS)).success, fileHandleSchema.safeParse(of(FILE_HANDLE_MAX_CHARS + 1)).success]).toStrictEqual([true, false]);
+    const declared = (length: number): boolean => failureSchema.safeParse({ code: of(length) }).success;
+    expect([declared(FAILURE_CODE_MAX_CHARS), declared(FAILURE_CODE_MAX_CHARS + 1)]).toStrictEqual([true, false]);
+    const incident = (length: number): boolean =>
+      failureSchema.safeParse({ code: 'internal', incident: of(length) }).success;
+    expect([incident(INCIDENT_ID_MAX_CHARS), incident(INCIDENT_ID_MAX_CHARS + 1)]).toStrictEqual([true, false]);
+  });
+
+  it('every code a renderer channel declares fits the bound, so the bound never refuses a real answer', () => {
+    const codes = [...Object.values(channels), ...Object.values(preloadChannels)].flatMap(
+      (definition) => definition.failures as readonly string[],
+    );
+    // THE POSITIVE CONTROL: the walk found codes, so "none is too long" is a reading and not an empty list.
+    expect(codes.length).toBeGreaterThan(100);
+    expect(codes.filter((code) => code.length > FAILURE_CODE_MAX_CHARS)).toStrictEqual([]);
+  });
+});
+
+describe('a declared failure carries its detail exactly when its code declares one (ADR-0169)', () => {
+  it('takes a detailed code with its detail, and a plain code without one', () => {
+    expect(failureSchema.safeParse({ code: 'text-not-writable', detail: { characters: '中' } }).success).toBe(true);
+    expect(failureSchema.safeParse({ code: 'edit-refused', detail: { step: 'read-back', engineError: 0 } }).success).toBe(true);
+    expect(failureSchema.safeParse({ code: 'document-busy' }).success).toBe(true);
+  });
+
+  it('refuses a detailed code without its detail, so a refusal cannot arrive having dropped what it names', () => {
+    expect(failureSchema.safeParse({ code: 'text-not-writable' }).success).toBe(false);
+    expect(failureSchema.safeParse({ code: 'edit-refused' }).success).toBe(false);
+  });
+
+  it('refuses a detail on a code that declares none, and a field no detail declares', () => {
+    expect(failureSchema.safeParse({ code: 'document-busy', detail: { characters: 'x' } }).success).toBe(false);
+    expect(
+      failureSchema.safeParse({ code: 'text-not-writable', detail: { characters: 'x', message: 'from PDFium' } }).success,
+    ).toBe(false);
+  });
+
+  it('refuses a step outside the fixed set, a number past PDFium’s, and characters past the bound', () => {
+    expect(failureSchema.safeParse({ code: 'edit-refused', detail: { step: 'parse', engineError: 0 } }).success).toBe(false);
+    expect(
+      failureSchema.safeParse({ code: 'edit-refused', detail: { step: 'open', engineError: ENGINE_ERROR_MAX + 1 } }).success,
+    ).toBe(false);
+    const characters = (length: number): boolean =>
+      failureSchema.safeParse({ code: 'text-not-writable', detail: { characters: 'a'.repeat(length) } }).success;
+    expect([characters(UNWRITABLE_CHARACTERS_MAX_UNITS), characters(UNWRITABLE_CHARACTERS_MAX_UNITS + 1)]).toStrictEqual([
+      true,
+      false,
+    ]);
+  });
+});
+
 describe('DisplayLocation is display-only (ADR-0100)', () => {
   it('the walk can see: it finds the location inside document.recent’s ANSWER', () => {
     // THE POSITIVE CONTROL. A walk that followed nothing would pass the case below for every channel.
@@ -757,12 +833,34 @@ describe('pages past 4,096 cross as one page set (JOURNAL, No document-size refu
   });
 });
 
+describe('every export to another format, and Print, REQUIRE their pages (ADR-0161)', () => {
+  const docId = asDocId('doc-1');
+  const requests = {
+    'document.exportText': { docId, mode: 'plain', pages: [[0, 2]] },
+    'document.exportWord': { docId, mode: 'rich', pages: [[0, 2]] },
+    'document.exportPowerPoint': { docId, pages: [[0, 2]] },
+    'document.exportExcel': { docId, layout: 'one-sheet', engine: 'automatic', version: asDocVersion(3), pages: [[0, 2]], edits: [] },
+    'document.print': { docId, dpi: 300, pages: [[0, 2]] },
+  } as const;
+
+  it('accepts each with its pages, and refuses each without them — a caller that forgot would convert everything', () => {
+    for (const [id, request] of Object.entries(requests)) {
+      const { params } = channels[id as keyof typeof requests];
+      // CONTROL FIRST: the request is otherwise valid, so the refusal below is the missing field's.
+      expect(params.safeParse(request).success, id).toBe(true);
+      const { pages: _dropped, ...without } = request;
+      expect(params.safeParse(without).success, id).toBe(false);
+    }
+  });
+});
+
 describe('document.exportExcel — which engine reads the tables (ADR-0086)', () => {
   const params = channels['document.exportExcel'].params;
   const edited = {
     docId: asDocId('doc-1'),
     layout: 'sheet-per-page',
     version: asDocVersion(3),
+    pages: [[0, 2]],
     edits: [{ page: 0, table: 0, row: 0, column: 0, text: 'A' }],
   };
 

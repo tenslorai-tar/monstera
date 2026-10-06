@@ -20,6 +20,8 @@ function clientOverPages(
     refuseAt?: number;
     onPage?: (page: number) => void;
     truncateAt?: number;
+    /** The version a page is read from: the first, unless a case moves it. */
+    readFrom?: (page: number) => number;
   } = {},
 ): { client: ContractClient; asked: number[] } {
   const asked: number[] = [];
@@ -31,7 +33,7 @@ function clientOverPages(
     if (options.refuseAt === page) return Promise.resolve(err({ code: 'document-busy' }));
     return Promise.resolve(
       ok({
-        version: asDocVersion(1),
+        version: asDocVersion(options.readFrom?.(page) ?? 1),
         matches: [
           {
             line: 0,
@@ -200,5 +202,21 @@ describe('searchDocument', () => {
       { docId: DOC, page: 0, query: 'a', limit: 5, regex: true, wholeWord: true },
       { docId: DOC, page: 1, query: 'a', limit: 5, regex: true, wholeWord: true },
     ]);
+  });
+
+  it('a walk whose pages answer from TWO VERSIONS crossed an edit and carries no matches (CR-COR-09)', async () => {
+    // THE EDIT LANDS AFTER PAGE 0: pages 1 and 2 are read from the next version, so the list would join two documents.
+    const { client } = clientOverPages(3, { readFrom: (page) => (page === 0 ? 1 : 2) });
+    const outcome = await searchDocument({ client, docId: DOC, pageCount: 3, query: 'a', perPage: 5 });
+    expect(outcome).toStrictEqual({ kind: 'moved' });
+  });
+
+  it('CONTROL: a walk read from ONE version completes, and names that version', async () => {
+    const { client } = clientOverPages(3, { readFrom: () => 2 });
+    const outcome = await searchDocument({ client, docId: DOC, pageCount: 3, query: 'a', perPage: 5 });
+    expect(outcome.kind).toBe('complete');
+    if (outcome.kind !== 'complete') return;
+    expect(outcome.version).toBe(asDocVersion(2));
+    expect(outcome.matches).toHaveLength(3);
   });
 });

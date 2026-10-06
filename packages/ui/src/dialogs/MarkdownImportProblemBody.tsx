@@ -14,8 +14,6 @@ import {
   MARKDOWN_IMPORT_TOO_MANY_PIXELS_NO_FILE,
   MARKDOWN_IMPORT_MALFORMED_CSV,
   MARKDOWN_IMPORT_MALFORMED_CSV_NO_LINE,
-  MARKDOWN_IMPORT_TOO_MANY_COLUMNS,
-  MARKDOWN_IMPORT_TOO_MANY_COLUMNS_NO_LINE,
   MARKDOWN_IMPORT_NOTHING_TO_DRAW,
   MARKDOWN_IMPORT_NOT_UTF8,
   MARKDOWN_IMPORT_TOO_LARGE,
@@ -23,6 +21,8 @@ import {
   MARKDOWN_IMPORT_UNENCODABLE_LINE,
   MARKDOWN_IMPORT_UNREADABLE,
   MARKDOWN_IMPORT_WRITE_FAILED,
+  START_BUSY,
+  START_DENIED,
 } from '../messages/en.js';
 import type { MarkdownImportProblem } from './markdownImportProblem.js';
 
@@ -60,16 +60,12 @@ export default function MarkdownImportProblemBody(props: MarkdownImportProblem):
       case 'nothing-to-draw':
         return _(MARKDOWN_IMPORT_NOTHING_TO_DRAW);
       // THE LINE IS NAMED WHERE THERE IS ONE, and a sentence without one where there
-      // is not. A Markdown table's line can be null, and substituting a number would
-      // send a person to a line that says nothing about their table.
+      // is not. The schema lets the line be null, and substituting a number would
+      // send a person to a line that says nothing about their file.
       case 'malformed-csv':
         return props.line === null
           ? _(MARKDOWN_IMPORT_MALFORMED_CSV_NO_LINE)
           : _(MARKDOWN_IMPORT_MALFORMED_CSV, { line: props.line });
-      case 'too-many-columns':
-        return props.line === null
-          ? _(MARKDOWN_IMPORT_TOO_MANY_COLUMNS_NO_LINE)
-          : _(MARKDOWN_IMPORT_TOO_MANY_COLUMNS, { line: props.line });
       case 'destination-contested':
         return _(MARKDOWN_IMPORT_CONTESTED);
       case 'write-failed':
@@ -80,6 +76,11 @@ export default function MarkdownImportProblemBody(props: MarkdownImportProblem):
         return _(MARKDOWN_IMPORT_ABSENT);
       case 'at-capacity':
         return _(MARKDOWN_IMPORT_AT_CAPACITY);
+      // EVERY OPEN ROUTE'S OWN TWO SENTENCES, one key each (B3a).
+      case 'busy':
+        return _(START_BUSY);
+      case 'denied':
+        return _(START_DENIED);
       // THE FILE IS NAMED WHERE THERE IS ONE, for the line's reason above.
       case 'image-unreadable':
         return props.file === null

@@ -8,7 +8,8 @@ import {
   replacementFieldsOf,
 } from '@monstera/contract';
 
-import type { ByteImage } from '../engineSeam.js';
+import type { ByteImage, ImageSession } from '../engineSeam.js';
+import { EditRefusedError, NothingToReplaceError, ReplaceMovesLineError } from '../textEditRefusals.js';
 import { TOKEN_BYTES } from '../token.js';
 import type { HostArea } from './engineHandlers.js';
 import { sessionFileAnswers } from './fileAnswers.js';
@@ -157,6 +158,15 @@ const IN = 'deadbeef';
 const OUT = 'cafe-01';
 
 /**
+ * What a handler handed the execution, as a case records it: the bytes, and the key only when one came — so a case
+ * that sends none reads as it always did, and one that sends one sees the handler carried it (ADR-0171's addendum).
+ */
+function seen(session: ImageSession): string {
+  const key = session.opensWith === undefined ? '' : `|key:${session.opensWith.reveal()}`;
+  return `${[...session.bytes].join(',')}${key}`;
+}
+
+/**
  * @param files what `readSnapshot` will find, and where `writeOutput` records.
  * @param applied what the stubbed execution's `apply` answers.
  */
@@ -181,29 +191,38 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
   const handlers = createPdfiumHandlers({
     areas,
     execution: {
-      apply: ({ session: image }) => {
+      apply: ({ session }) => {
+        const image = session.bytes;
         // THE IMAGE THIS HANDLER READ, recorded so a case can assert the
         // handler passed the file's bytes rather than something else. A case
         // asserting only that `apply` ran would pass on a handler that read the
         // wrong file.
-        calls.push(`apply:${[...image].join(',')}`);
+        calls.push(`apply:${seen(session)}`);
         // A SINGLE BYTE 0 IS A DOCUMENT THIS ENGINE CANNOT READ. The stub
         // refuses it the way the real execution does — by throwing out of a
         // parse — so the `engine-refused` case exercises the handler's catch
         // rather than a branch written for the test.
         if (image.length === 1) throw new Error('PDFium refused the document');
+        // THREE BYTES ARE A PAGE WHOSE SAVE LOST TEXT, refused the way the adapter's `serialise` refuses it (ADR-0169).
+        if (image.length === 3) throw new EditRefusedError('read-back', 0, 'the saved page lost text');
+        // FOUR BYTES ARE A DOCUMENT HOLDING NOTHING THE REPLACEMENT WOULD CHANGE (ADR-0169 Decision 6).
+        if (image.length === 4) throw new NothingToReplaceError();
+        // FIVE BYTES ARE A REPLACEMENT THAT WOULD MOVE THE TEXT AFTER IT ON ITS LINE (`replaceLineRule.ts`).
+        if (image.length === 5) throw new ReplaceMovesLineError();
         return Promise.resolve(applied);
       },
-      capture: (image) => {
-        calls.push(`capture:${[...image].join(',')}`);
-        if (image.length === 1) throw new Error('PDFium refused the document');
+      capture: (session) => {
+        calls.push(`capture:${seen(session)}`);
+        if (session.bytes.length === 1) throw new Error('PDFium refused the document');
         return Promise.resolve({
           captured: true,
           prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] },
         } as never);
       },
-      invert: (image) => {
-        calls.push(`invert:${[...image].join(',')}`);
+      invert: (session) => {
+        calls.push(`invert:${seen(session)}`);
+        // AN UNDO REGENERATES AS AN EDIT DOES, so it is refused at the same step with PDFium's number beside it.
+        if (session.bytes.length === 3) throw new EditRefusedError('generate', 6, 'FPDFPage_GenerateContent failed');
         return Promise.resolve(applied);
       },
     },
@@ -215,7 +234,7 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         loopback: { kind: 'refused', code: 'ETIMEDOUT' },
       }),
     textRuns: (image, page) => {
-      calls.push(`text-runs:${String(page)}:${[...image].join(',')}`);
+      calls.push(`text-runs:${String(page)}:${seen(image)}`);
       return Promise.resolve({
         runs: RUNS,
         truncated: false,
@@ -227,11 +246,11 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
       });
     },
     renderPage: (image, page, width, height) => {
-      calls.push(`render:${String(page)}:${String(width)}x${String(height)}:${[...image].join(',')}`);
+      calls.push(`render:${String(page)}:${String(width)}x${String(height)}:${seen(image)}`);
       // THE SAME REFUSAL SHAPE the other stubs use: a one-byte document is one
       // this engine cannot read, so `engine-refused` exercises the handler's
       // catch rather than a branch written for the test.
-      if (image.length === 1 && image[0] === 0) throw new Error('PDFium refused the document');
+      if (image.bytes.length === 1 && image.bytes[0] === 0) throw new Error('PDFium refused the document');
       // A BUFFER OF THE RIGHT LENGTH, filled with a value nothing else here
       // produces: main checks `width * height * 4` and refuses a short one, so a
       // stub answering an arbitrary length would fail for the right reason and
@@ -239,7 +258,7 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
       return Promise.resolve(new Uint8Array(width * height * 4).fill(7));
     },
     pageObjects: (image, page) => {
-      calls.push(`page-objects:${String(page)}:${[...image].join(',')}`);
+      calls.push(`page-objects:${String(page)}:${seen(image)}`);
       return Promise.resolve({
         objects: [
           {
@@ -380,6 +399,8 @@ describe('the PDFium host body', () => {
     stream.feed(
       request('a1', 'engine/apply', {
         session,
+        // NONE, AND WRITTEN: a PDFium command names no other document, and the channel requires the list.
+        sources: [],
         command: {
           kind: 'replaceTextObject',
           page: 0,
@@ -387,6 +408,7 @@ describe('the PDFium host body', () => {
           version: 1,
         },
         from: IN,
+        password: null,
         into: OUT,
       }, undefined, files),
     );
@@ -401,6 +423,98 @@ describe('the PDFium host body', () => {
     expect(files.written.size).toBe(0);
   });
 
+  it('forwards a refusal at a step WITH the step and PDFium’s number, and writes nothing (ADR-0169)', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1, 2, 3]));
+
+    stream.feed(
+      request('a1', 'engine/apply', {
+        session,
+        sources: [],
+        command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: 1 },
+        from: IN,
+        password: null,
+        into: OUT,
+      }, undefined, files),
+    );
+    stream.feed(
+      request('a2', 'engine/invert', {
+        session,
+        inverse: { kind: 'replaceTextObject', prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] } },
+        from: IN,
+        password: null,
+        into: OUT,
+      }, undefined, files),
+    );
+    await stream.whenSent(3);
+
+    // THE STEP AND THE NUMBER, where until 2026-10-05 the handler discarded the cause and answered `engine-refused` —
+    // which main turned into *Something went wrong*. The invert's differs from the apply's on purpose: a handler
+    // answering one fixed detail would pass a case that checked one channel.
+    expect(answerIn(stream.sent[1])).toMatchObject({
+      body: { ok: false, error: { code: 'edit-refused', detail: { step: 'read-back', engineError: 0 } } },
+    });
+    expect(answerIn(stream.sent[2])).toMatchObject({
+      body: { ok: false, error: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } } },
+    });
+    expect(files.written.size).toBe(0);
+  });
+
+  it('answers a replacement that would change nothing as nothing-to-replace, and writes nothing (ADR-0169)', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1, 2, 3, 4]));
+
+    stream.feed(
+      request('a1', 'engine/apply', {
+        session,
+        sources: [],
+        command: { kind: 'replaceAllText', find: 'absent', replace: 'present' },
+        from: IN,
+        password: null,
+        into: OUT,
+      }, undefined, files),
+    );
+    await stream.whenSent(2);
+
+    // ITS OWN CODE, where `engine-refused` would reach the person as *Something went wrong* for a document working as
+    // made; and no output, since main reads no new version from a refusal.
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'nothing-to-replace' } } });
+    expect(files.written.size).toBe(0);
+    // THE ENGINE WAS REACHED with the file's bytes, so the code is the handler's reading of its refusal and not a
+    // request refused on the way in, which also writes nothing.
+    expect(calls).toContain('apply:1,2,3,4');
+    expect(calls.filter((entry) => entry.startsWith('incident:'))).toStrictEqual([]);
+  });
+
+  it('answers a replacement that would move its line as replace-moves-line, and writes nothing', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1, 2, 3, 4, 5]));
+
+    stream.feed(
+      request('a1', 'engine/apply', {
+        session,
+        sources: [],
+        command: { kind: 'replaceAllText', find: 'narrow', replace: 'much wider' },
+        from: IN,
+        password: null,
+        into: OUT,
+      }, undefined, files),
+    );
+    await stream.whenSent(2);
+
+    // ITS OWN CODE, for `nothing-to-replace`'s reason, and the engine was reached, so it is the handler's reading.
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'replace-moves-line' } } });
+    expect(files.written.size).toBe(0);
+    expect(calls).toContain('apply:1,2,3,4,5');
+    expect(calls.filter((entry) => entry.startsWith('incident:'))).toStrictEqual([]);
+  });
+
   it('applies from the named file and writes the result into the granted directory', async () => {
     stream = stubStream();
     const files = emptyFiles();
@@ -410,6 +524,8 @@ describe('the PDFium host body', () => {
     stream.feed(
       request('a1', 'engine/apply', {
         session,
+        // NONE, AND WRITTEN: a PDFium command names no other document, and the channel requires the list.
+        sources: [],
         command: {
           kind: 'replaceTextObject',
           page: 0,
@@ -417,6 +533,7 @@ describe('the PDFium host body', () => {
           version: 1,
         },
         from: IN,
+        password: null,
         into: OUT,
       }, undefined, files),
     );
@@ -437,6 +554,30 @@ describe('the PDFium host body', () => {
     expect(calls.filter((entry) => entry.startsWith('incident:'))).toStrictEqual([]);
   });
 
+  it('hands the execution and a read the password the frame carried, as the key of the image (ADR-0171)', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([4, 5]));
+
+    stream.feed(
+      request('a1', 'engine/apply', {
+        session,
+        sources: [],
+        command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: 1 },
+        from: IN,
+        password: 'sample-only-0171',
+        into: OUT,
+      }, undefined, files),
+    );
+    await stream.whenSent(2);
+    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, password: 'sample-only-0171', page: 0 }, ANSWER));
+    await stream.whenSent(3);
+
+    // CONTROL: the apply case above sends `null` and records no key, so this separates a carried key from none.
+    expect(calls).toStrictEqual(['apply:4,5|key:sample-only-0171', 'text-runs:0:4,5|key:sample-only-0171']);
+  });
+
   it('refuses an apply whose input file is gone, as asset-missing rather than internal', async () => {
     stream = stubStream();
     const files = emptyFiles();
@@ -445,6 +586,8 @@ describe('the PDFium host body', () => {
     stream.feed(
       request('a1', 'engine/apply', {
         session,
+        // NONE, AND WRITTEN: a PDFium command names no other document, and the channel requires the list.
+        sources: [],
         command: {
           kind: 'replaceTextObject',
           page: 0,
@@ -456,6 +599,7 @@ describe('the PDFium host body', () => {
         // handler's — the two produce different codes and only one of them is
         // this case's subject.
         from: 'fadedface',
+        password: null,
         into: OUT,
       }, undefined, files),
     );
@@ -492,6 +636,7 @@ describe('the PDFium host body', () => {
             version: 1,
           },
           from: IN,
+          password: null,
         },
         ANSWER,
         files,
@@ -525,7 +670,7 @@ describe('the PDFium host body', () => {
     const { session, calls } = await openArea(files);
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([7]));
 
-    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, page: 3 }, ANSWER));
+    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, password: null, page:3 }, ANSWER));
     await stream.whenSent(2);
 
     // THE ANSWER IS IN A FILE, and the frame says how many bytes (ADR-0125): a page drawing one object per glyph
@@ -563,6 +708,7 @@ describe('the PDFium host body', () => {
       request('r1', 'engine/render-page', {
         session,
         from: IN,
+        password: null,
         into: OUT,
         page: 2,
         width: 4,
@@ -598,6 +744,7 @@ describe('the PDFium host body', () => {
       request('r1', 'engine/render-page', {
         session,
         from: IN,
+        password: null,
         into: OUT,
         page: 0,
         width: 2,
@@ -636,7 +783,7 @@ describe('the PDFium host body', () => {
     await stream.whenSent(2);
     expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true } });
 
-    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, page: 0 }, ANSWER));
+    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, password: null, page:0 }, ANSWER));
     await stream.whenSent(3);
     // ORDINARY, NOT TERMINAL: a rebuilt host holds none of the previous one's
     // areas, so an id it does not hold is an outcome the supervisor answers
@@ -659,7 +806,7 @@ describe('the PDFium host body', () => {
     const { session, body, calls } = await openArea(files);
     files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([7]));
 
-    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, page: 0 }));
+    stream.feed(request('t1', 'engine/text-runs', { session, from: IN, password: null, page:0 }));
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(body.termination()?.code).toBe('malformed-request');
     // REFUSED BEFORE THE HANDLER: nothing was read, and nothing was answered or written.

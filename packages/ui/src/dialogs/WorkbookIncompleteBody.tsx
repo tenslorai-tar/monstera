@@ -22,7 +22,7 @@ export default function WorkbookIncompleteBody({ missing, more }: WorkbookIncomp
     <>
       <p className="m-workbook-incomplete__said">{_(WORKBOOK_INCOMPLETE_SAID)}</p>
       <DialogScroll>
-        <ul className="m-workbook-incomplete__list" data-missing-blocks={missing.length}>
+        <ul className="m-dialog-list m-workbook-incomplete__list" data-missing-blocks={missing.length}>
           {missing.map((block) => (
             <li key={`${block.sheet}:${String(block.from)}`}>
               {_(WORKBOOK_INCOMPLETE_BLOCK, { sheet: block.sheet, from: block.from, to: block.to })}

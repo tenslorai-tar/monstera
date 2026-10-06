@@ -7,10 +7,10 @@ import {
   channels,
   createClient,
 } from '@monstera/contract';
-import { asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
+import { type DocId, asDocId, asDocVersion, asFileHandle, err, ok } from '@monstera/shared';
 import { act, cleanup, fireEvent, render as renderBare, screen, within } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
@@ -21,8 +21,10 @@ import type { CommandRegistry } from './registries/commands.js';
 import type { DialogRegistry } from './registries/dialogs.js';
 import { SECTION_IDS } from './registries/placement.js';
 import { START_SCREEN_RECENT } from './RecentFiles.js';
+import { RECENT_RECHECK_MS } from './recentLine.js';
 import { CONTEXT_PANEL_TAB_SETTING, DOCUMENT_PANEL_SETTING, FLOAT_BAR_POSITION_SETTING } from './settings/layout.js';
 import { SECTION_TITLES } from './surfaces/Ribbon.js';
+import { WRITTEN_TIPS, tipsOf } from './tips/tips.js';
 import type { Article, Inline } from './help/article.js';
 
 /** An article's text with its bold written back as `**…**`, one line per block, for the sentence checks below. */
@@ -197,6 +199,8 @@ const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
   // here reaches it; without an answer of the channel's own shape the envelope fails validation
   // and each case carries an unhandled rejection.
   'window.closeListening': { acknowledged: true },
+  // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b); a file a person just opened usually can.
+  'document.fileAccess': { access: 'writable' },
   // E3's rating prompt asks once per mount. Not due is every case's position: a banner here would put four
   // buttons in front of cases that are about something else.
   'app.reviewPrompt': { due: false },
@@ -311,6 +315,7 @@ const OPEN_DOCUMENT_ANSWERS = {
   // `OTHER_ANSWERS`' reason: the shell announces its close subscription on every mount, and these
   // fixtures throw on a channel they have no answer for.
   'window.closeListening': { acknowledged: true },
+  'document.fileAccess': { access: 'writable' as const },
   'document.openWaiting': { opened: [] },
   'document.open': {
     kind: 'opened' as const,
@@ -1172,6 +1177,10 @@ describe('App', () => {
       // THE LOAD-BEARING LINE: still Focus after the Escape the palette consumed.
       expect(settings.get('appearance.layout-mode')).toBe('focus');
 
+      // AN ESCAPE THAT CANCELS A COMPOSITION is the input method's, and leaves nothing (CR-COR-07).
+      await key({ key: 'Escape', isComposing: true });
+      expect(settings.get('appearance.layout-mode')).toBe('focus');
+
       await key({ key: 'Escape' });
       // RETURNED TO STUDIO, the mode left — not to the Ribbon default.
       expect(settings.get('appearance.layout-mode')).toBe('studio');
@@ -1283,6 +1292,13 @@ describe('App', () => {
     });
 
     describe('RECOGNISE SCANNED PAGES WHEN EXPORTING, through the composition that wires it (ADR-0118)', () => {
+      /** Export text through its pages dialog (ADR-0161), as it opens: every page. */
+      async function exportTextOfEveryPage(): Promise<void> {
+        await pressCommand('Export text…');
+        const dialog = await screen.findByRole('dialog', { name: 'Export text' });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Choose where to save…' }));
+      }
+
       /** Two picture pages, the models `eng` and `deu`, and an export that lands. */
       const SCANNED = {
         ...OPEN_DOCUMENT_ANSWERS,
@@ -1305,7 +1321,7 @@ describe('App', () => {
         );
         await withDocumentOpen();
 
-        await pressCommand('Export text…');
+        await exportTextOfEveryPage();
         await vi.waitFor(() => {
           expect(sent.some((call) => call.id === 'document.exportText')).toBe(true);
         });
@@ -1325,7 +1341,7 @@ describe('App', () => {
         render(<App client={client} settings={freshSettings({ 'editing.ocr-language': ['deu'] })} />);
         await withDocumentOpen();
 
-        await pressCommand('Export text…');
+        await exportTextOfEveryPage();
         await vi.waitFor(() => {
           expect(sent.some((call) => call.id === 'document.exportText')).toBe(true);
         });
@@ -1340,7 +1356,7 @@ describe('App', () => {
         render(<App client={client} settings={freshSettings()} />);
         await withDocumentOpen();
 
-        await pressCommand('Export text…');
+        await exportTextOfEveryPage();
         const show = await screen.findByRole('button', { name: 'Show in folder' });
         expect(screen.getByText('Text file saved')).toBeTruthy();
         fireEvent.click(show);
@@ -1476,7 +1492,7 @@ describe('App', () => {
       await withDocumentOpen();
 
       // A SECONDARY in Pages' More (ADR-0098), so its menu item's full title.
-      await pressCommand('Find duplicate pages…', 'Organize');
+      await pressCommand('Delete duplicate pages…', 'Organize');
 
       // ONE-BASED IN THE LABEL. The model's `[0, 3]` reads as pages 1 and 4,
       // and a body that showed the indices would name two pages the reader
@@ -1484,7 +1500,7 @@ describe('App', () => {
       await screen.findByText('Pages 1, 4');
 
       await act(async () => {
-        screen.getByRole('button', { name: 'Remove 1 duplicate page(s)' }).click();
+        screen.getByRole('button', { name: 'Delete 1 duplicate page' }).click();
         await Promise.resolve();
       });
 
@@ -1644,7 +1660,7 @@ describe('App', () => {
       await withDocumentOpen();
       await openPanel('Search');
 
-      const field = screen.getByLabelText('Find on this page');
+      const field = screen.getByLabelText('Find text');
       await act(async () => {
         fireEvent.change(field, { target: { value: 'needle' } });
         await Promise.resolve();
@@ -1749,7 +1765,7 @@ describe('App', () => {
         await withDocumentOpen();
         await openPanel('Search');
 
-        const field = screen.getByLabelText('Find on this page');
+        const field = screen.getByLabelText('Find text');
         await act(async () => {
           fireEvent.change(field, { target: { value: 'needle' } });
           await Promise.resolve();
@@ -1803,7 +1819,7 @@ describe('App', () => {
       await openPanel('Search');
 
       await act(async () => {
-        fireEvent.change(screen.getByLabelText('Find on this page'), {
+        fireEvent.change(screen.getByLabelText('Find text'), {
           target: { value: 'ne+dle' },
         });
         screen.getByLabelText('Regular expression').click();
@@ -1843,7 +1859,7 @@ describe('App', () => {
       await openPanel('Search');
 
       await act(async () => {
-        fireEvent.change(screen.getByLabelText('Find on this page'), {
+        fireEvent.change(screen.getByLabelText('Find text'), {
           target: { value: 'needle' },
         });
         await Promise.resolve();
@@ -1902,7 +1918,7 @@ describe('App', () => {
       await openPanel('Search');
 
       await act(async () => {
-        fireEvent.change(screen.getByLabelText('Find on this page'), {
+        fireEvent.change(screen.getByLabelText('Find text'), {
           target: { value: 'needle' },
         });
         await Promise.resolve();
@@ -1954,7 +1970,7 @@ describe('App', () => {
       await openPanel('Search');
 
       await act(async () => {
-        fireEvent.change(screen.getByLabelText('Find on this page'), { target: { value: '(' } });
+        fireEvent.change(screen.getByLabelText('Find text'), { target: { value: '(' } });
         screen.getByLabelText('Regular expression').click();
         await Promise.resolve();
       });
@@ -1998,7 +2014,7 @@ describe('App', () => {
       // case asserted before design pass C: the Pages panel shows by default, so the field
       // exists only if the chord opened the Search panel. A command that focused a field
       // it did not first reveal would find nothing to focus.
-      expect(screen.queryByLabelText('Find on this page')).toBeNull();
+      expect(screen.queryByLabelText('Find text')).toBeNull();
 
       await act(async () => {
         document.dispatchEvent(
@@ -2013,7 +2029,7 @@ describe('App', () => {
         });
       });
 
-      expect(document.activeElement).toBe(screen.getByLabelText('Find on this page'));
+      expect(document.activeElement).toBe(screen.getByLabelText('Find text'));
     });
 
     it('the GO-TO chord takes the caret to the status bar field', async () => {
@@ -2180,7 +2196,7 @@ describe('App', () => {
       expect(sent.filter((call) => call.id === 'document.readRange')).toHaveLength(before);
     });
 
-    it('FORMS › MANAGE › FLATTEN sends flattenFormFields, the command the Forms panel’s button runs', async () => {
+    it('FORMS › MANAGE › FLATTEN asks, then sends flattenFormFields and says it did (F-F1)', async () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
         'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
@@ -2189,10 +2205,13 @@ describe('App', () => {
       await withDocumentOpen();
 
       await pressCommand('Flatten', 'Forms');
-      await act(async () => {
-        await Promise.resolve();
-      });
+      // THROUGH THE COMPOSITION: the shell's own dialog registry opens the question, and nothing is sent before it.
+      const question = await screen.findByRole('dialog', { name: 'Flatten the form' });
+      expect(sent.filter((call) => call.id === 'document.execute')).toStrictEqual([]);
+      fireEvent.click(within(question).getByRole('button', { name: 'Flatten form' }));
 
+      // THE SHELL'S TOAST, which a root that dropped `toast` from flatten's dependencies could not show.
+      expect(await screen.findByText('Form flattened. Save to keep the change.')).toBeTruthy();
       const executed = sent.filter((call) => call.id === 'document.execute');
       expect(executed).toHaveLength(1);
       expect((executed[0]?.params as { command: { kind: string } }).command.kind).toBe('flattenFormFields');
@@ -2228,7 +2247,7 @@ describe('App', () => {
           version += 1;
           return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0 }));
         }
-        if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), cleared: null }));
+        if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), cleared: null, held: [] }));
         if (id === 'cloud.saveBack') {
           return Promise.resolve(ok({ kind: 'saved-back' as const, version: asDocVersion(version) }));
         }
@@ -2286,7 +2305,7 @@ describe('App', () => {
             version += 1;
             return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0 }));
           }
-          if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), cleared: null }));
+          if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), cleared: null, held: [] }));
           const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id] ?? OTHER_ANSWERS[id];
           if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
           return Promise.resolve(ok(answer));
@@ -2324,7 +2343,7 @@ describe('App', () => {
       // document that has not changed.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.save': { kind: 'saved' as const, version: asDocVersion(2), cleared: null },
+        'document.save': { kind: 'saved' as const, version: asDocVersion(2), cleared: null, held: [] },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -2621,6 +2640,41 @@ describe('App', () => {
     expect(await press(true)).toBe('status-bar');
   });
 
+  it('every TIP names only commands the application REGISTERS, and a key only for a command that has one (ADR-0159)', () => {
+    // THE OWNER'S CHECK (item 18b): a tip naming something that no longer exists fails here, against the registry this
+    // shell builds, as the Help articles' names do below. A `{nameKey}` in a tip's English words needs that command's
+    // shortcut, or the tip would say a key there is not.
+    let commands: CommandRegistry | undefined;
+    const { client } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} onRegistries={(registries) => (commands = registries.commands)} />);
+    if (commands === undefined) throw new Error('the shell reported no registries');
+    const registry = commands;
+    const wrong = WRITTEN_TIPS.flatMap((tip) => {
+      const words = EN[tip.words] ?? '';
+      const unknown = Object.entries(tip.names)
+        .filter(([, id]) => registry.get(id) === undefined)
+        .map(([name, id]) => `${tip.id}: {${name}} names ${id}, which is not registered`);
+      const keys = [...words.matchAll(/\{(\w+)Key\}/gu)].map((match) => match[1] ?? '');
+      const keyless = keys
+        .filter((name) => registry.get(tip.names[name] ?? '')?.shortcut === undefined)
+        .map((name) => `${tip.id}: {${name}Key} needs a key, and ${tip.names[name] ?? `no command named {${name}}`} has none`);
+      // EVERY PLACEHOLDER IS A NAME, so no word in a tip is left as a brace a person reads.
+      const placeholders = [...words.matchAll(/\{(\w+)\}/gu)].map((match) => match[1] ?? '');
+      const unnamed = placeholders
+        .filter((name) => !(name in tip.names) && !(name.endsWith('Key') && name.slice(0, -3) in tip.names))
+        .map((name) => `${tip.id}: {${name}} is named by no command`);
+      return [...unknown, ...keyless, ...unnamed];
+    });
+    expect(wrong, `\n${wrong.join('\n')}\n`).toStrictEqual([]);
+    // WELL OVER A HUNDRED, every one drawn whole against this registry.
+    const tips = tipsOf(registry.all(), (key) => i18n._(key), (section) => SECTION_TITLES[section]);
+    expect(tips.length).toBeGreaterThan(150);
+    expect(tips.filter((tip) => !tip.id.includes(':')).map((tip) => tip.id)).toStrictEqual(WRITTEN_TIPS.map((tip) => tip.id));
+    // CONTROL: the registry is the application's, so a real id is found and an invented one is not.
+    expect(registry.get('app.help')?.shortcut).toBe('F1');
+    expect(registry.get('app.frobnicate')).toBeUndefined();
+  });
+
   it('every Help article names only commands and places the application REGISTERS', () => {
     // ADR-0112 Decision 2, against the registries this shell builds rather than a list kept here. The vocabulary of
     // places is each one's own authority: the rail's sections, the two panels' tab settings, the dialog registry, and
@@ -2802,6 +2856,21 @@ describe('App', () => {
   });
 
   describe('the start screen reports an open that produced no document', () => {
+    /** What asked to be scrolled into view, and how. happy-dom implements no `scrollIntoView`, so it is recorded here. */
+    const scrolled: { readonly element: Element; readonly options: unknown }[] = [];
+    beforeEach(() => {
+      scrolled.length = 0;
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value(this: HTMLElement, options: unknown): void {
+          scrolled.push({ element: this, options });
+        },
+      });
+    });
+    afterEach(() => {
+      Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+    });
+
     /** A client whose `document.open` answers one outcome. */
     function openAnswering(outcome: unknown): ContractClient {
       return createClient(channels, (id) => {
@@ -2847,6 +2916,110 @@ describe('App', () => {
       expect(
         screen.getByText('There is not enough room to open that document. Close another one first.'),
       ).toBeDefined();
+    });
+
+    it('SAYS WHICH when the file is there and its read was refused (cloud-4 7a)', async () => {
+      // The defect this closes: a file another program held open answered EBUSY, which the
+      // service threw, which reached here as a failure and was settled as nothing at all.
+      const busy = render(<App client={openAnswering({ kind: 'busy' })} settings={freshSettings()} />);
+      await pick();
+      const line = screen.getByText(
+        'That file is open in another program that does not let others read it. Close it there, then open it again.',
+      );
+      // AND BROUGHT INTO VIEW, centred: in a short window the line is below the fold, under the footer.
+      expect(scrolled).toStrictEqual([{ element: line, options: { block: 'center' } }]);
+      busy.unmount();
+
+      render(<App client={openAnswering({ kind: 'denied' })} settings={freshSettings()} />);
+      await pick();
+      expect(
+        screen.getByText('You do not have permission to read that file. Ask its owner for access, or open a copy you can read.'),
+      ).toBeDefined();
+    });
+
+    it('CONTROL: a line already in view is NOT scrolled to, so the screen does not jump under the person', async () => {
+      const seen = vi.spyOn(document, 'elementFromPoint').mockImplementation(() => document.querySelector('.m-start-problem'));
+      render(<App client={openAnswering({ kind: 'busy' })} settings={freshSettings()} />);
+      await pick();
+
+      expect(document.querySelector('.m-start-problem')).not.toBeNull();
+      expect(seen).toHaveBeenCalled();
+      expect(scrolled).toStrictEqual([]);
+      seen.mockRestore();
+    });
+
+    it('SAYS SO when main answered the open with a failure, where it used to say nothing', async () => {
+      const client = createClient(channels, (id) => {
+        if (id === 'document.open') return Promise.resolve(err({ code: 'internal' as const, incident: 'incident-1' }));
+        const answer = OTHER_ANSWERS[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await pick();
+
+      expect(
+        screen.getByText('That file could not be opened. Try again, and if it happens again, restart Monstera.'),
+      ).toBeDefined();
+    });
+
+    /** A client whose `document.open` answers each outcome in turn, and a document's answers otherwise. */
+    function openAnsweringInTurn(outcomes: readonly unknown[]): ContractClient {
+      let asked = 0;
+      return createClient(channels, (id) => {
+        if (id === 'document.open') return Promise.resolve(ok(outcomes[asked++]));
+        const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id] ?? OTHER_ANSWERS[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+    }
+
+    it('says it in a DIALOG when a document is on screen, because the start screen’s line is not', async () => {
+      // The start screen is the only place the line is drawn, so an open from File with a document in
+      // front settled into a state nobody could see — the same silence, one surface along.
+      const { container } = render(
+        <App client={openAnsweringInTurn([OPEN_DOCUMENT_ANSWERS['document.open'], { kind: 'busy' }])} settings={freshSettings()} />,
+      );
+      await withDocumentOpen();
+      expect(container.querySelector('.m-start-area')).toBeNull();
+
+      await pressMenuItem('File', 'Open PDF…');
+      const dialog = await screen.findByRole('dialog', { name: 'The document could not be opened' });
+      expect(
+        within(dialog).getByText(
+          'That file is open in another program that does not let others read it. Close it there, then open it again.',
+        ),
+      ).toBeDefined();
+
+      // SAID ONCE: the start screen, reached later, does not say it again.
+      await act(async () => {
+        within(dialog).getByRole('button', { name: 'OK' }).click();
+        await Promise.resolve();
+      });
+      await pressMenuItem('File', 'Start screen');
+      expect(container.querySelector('.m-start-area')).not.toBeNull();
+      expect(container.querySelector('.m-start-problem')).toBeNull();
+    });
+
+    it('CONTROL: with no document on screen the same problem is the start screen’s line, and no dialog opens', async () => {
+      const { container } = render(<App client={openAnswering({ kind: 'busy' })} settings={freshSettings()} />);
+      await pick();
+
+      expect(container.querySelector('.m-start-problem')).not.toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'The document could not be opened' })).toBeNull();
+    });
+
+    it('a document opened AFTER a problem clears it, so the start screen never shows a sentence about an old open', async () => {
+      const { container } = render(
+        <App client={openAnsweringInTurn([{ kind: 'absent' }, OPEN_DOCUMENT_ANSWERS['document.open']])} settings={freshSettings()} />,
+      );
+      await pick();
+      expect(container.querySelector('.m-start-problem')).not.toBeNull();
+
+      await withDocumentOpen();
+      await pressMenuItem('File', 'Start screen');
+      expect(container.querySelector('.m-start-area')).not.toBeNull();
+      expect(container.querySelector('.m-start-problem')).toBeNull();
     });
 
     it('CONTROL: a cancelled pick says nothing', async () => {
@@ -3155,9 +3328,9 @@ describe('App', () => {
     function row(
       handle: string,
       name: string,
-      available = true,
-    ): { handle: string; name: string; location: unknown; openedAt: null; available: boolean } {
-      return { handle, name, location: { within: null, folder: null }, openedAt: null, available };
+      availability: 'available' | 'unavailable' | 'checking' = 'available',
+    ): { handle: string; name: string; location: unknown; openedAt: null; availability: string } {
+      return { handle, name, location: { within: null, folder: null }, openedAt: null, availability };
     }
 
     it('a card shows the picture main kept, asked for by the list’s handle, and the placeholder otherwise', async () => {
@@ -3203,7 +3376,7 @@ describe('App', () => {
       createObjectURL.mockRestore();
     });
 
-    it('*Clear list* asks main to empty it, and the cards go only when main has', async () => {
+    it('*Clear recent files* asks main to empty it, and the cards go only when main has', async () => {
       const { client, sent } = withRecent({
         entries: [row('handle-a', 'annual.pdf')],
         lastExitClean: true,
@@ -3215,7 +3388,7 @@ describe('App', () => {
       });
 
       await act(async () => {
-        screen.getByRole('button', { name: 'Clear list' }).click();
+        screen.getByRole('button', { name: 'Clear recent files' }).click();
         await Promise.resolve();
       });
 
@@ -3223,7 +3396,7 @@ describe('App', () => {
       expect(screen.queryByRole('button', { name: 'annual.pdf' })).toBeNull();
     });
 
-    it('*Clear list* that main REFUSED, or that never arrived, leaves every card where it was', async () => {
+    it('*Clear recent files* that main REFUSED, or that never arrived, leaves every card where it was', async () => {
       // The other half of *only when main has*: the case above cannot tell a list cleared on main's answer from
       // one cleared on the press, since main answers yes there. Each failure shape is its own mount.
       for (const failing of [
@@ -3242,7 +3415,7 @@ describe('App', () => {
         });
 
         await act(async () => {
-          screen.getByRole('button', { name: 'Clear list' }).click();
+          screen.getByRole('button', { name: 'Clear recent files' }).click();
           // A WHOLE TASK, not one microtask: the answer's handler runs a few promise hops after the press, and
           // a card still on screen one hop in is what every version shows, including one that clears on refusal.
           await new Promise((settle) => setTimeout(settle, 0));
@@ -3286,7 +3459,7 @@ describe('App', () => {
             name: 'annual.pdf',
             location: { within: 'documents', folder: 'Leases' },
             openedAt: new Date().toISOString(),
-            available: true,
+            availability: 'available',
           },
         ],
         lastExitClean: true,
@@ -3355,8 +3528,8 @@ describe('App', () => {
         entries: [row('handle-a', 'annual.pdf')],
         lastExitClean: false,
         lastSession: [
-          { handle: 'handle-b', name: 'draft.pdf' },
-          { handle: 'handle-c', name: 'notes.pdf' },
+          { handle: 'handle-b', name: 'draft.pdf', availability: 'available' },
+          { handle: 'handle-c', name: 'notes.pdf', availability: 'available' },
         ],
       });
       render(<App client={client} settings={freshSettings()} />);
@@ -3380,6 +3553,103 @@ describe('App', () => {
       expect(sent.filter((call) => call.id === 'document.openRecent')).toStrictEqual([
         { id: 'document.openRecent', params: { handle: 'handle-c' } },
       ]);
+    });
+
+    it('the offer SKIPS a document that has gone, and shows one still being looked for as such (7c)', async () => {
+      const { client } = withRecent({
+        entries: [row('handle-a', 'annual.pdf')],
+        lastExitClean: false,
+        lastSession: [
+          { handle: 'handle-b', name: 'draft.pdf', availability: 'unavailable' },
+          { handle: 'handle-c', name: 'notes.pdf', availability: 'available' },
+          { handle: 'handle-d', name: 'survey.pdf', availability: 'checking' },
+        ],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText('Monstera closed unexpectedly. These documents were open:')).toBeDefined();
+      expect(screen.queryByRole('button', { name: 'Reopen draft.pdf' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Reopen notes.pdf' })).toBeDefined();
+      // NOT YET OFFERED, and saying why: a file on a slow drive is neither offered nor dropped until main answers.
+      expect(screen.getByRole('button', { name: 'Looking for survey.pdf…' }).hasAttribute('disabled')).toBe(true);
+    });
+
+    it('when EVERY document that was open has gone, the offer says so and offers no button that cannot work (7c)', async () => {
+      const { client } = withRecent({
+        entries: [row('handle-a', 'annual.pdf')],
+        lastExitClean: false,
+        lastSession: [
+          { handle: 'handle-b', name: 'draft.pdf', availability: 'unavailable' },
+          { handle: 'handle-c', name: 'notes.pdf', availability: 'unavailable' },
+        ],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(
+        screen.getByText(
+          'Monstera closed unexpectedly. The documents that were open are no longer where they were, so there is nothing to reopen.',
+        ),
+      ).toBeDefined();
+      expect(screen.queryByText('Monstera closed unexpectedly. These documents were open:')).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Reopen / })).toBeNull();
+    });
+
+    it('a card STILL BEING LOOKED FOR says so, opens nothing, and the list is asked again until it resolves (7d)', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        let answers = 0;
+        // THE FILE'S DEFAULTS for every other channel, and the list answered by the case: checking, then there.
+        const { client, sent } = withRecent(
+          { entries: [], lastExitClean: true, lastSession: [] },
+          {
+            'document.recent': () => {
+              answers += 1;
+              return Promise.resolve(
+                ok({
+                  entries: [row('handle-n', 'network.pdf', answers === 1 ? 'checking' : 'available')],
+                  lastExitClean: true,
+                  lastSession: [],
+                }),
+              );
+            },
+          },
+        );
+        render(<App client={client} settings={freshSettings()} />);
+        await act(async () => {
+          await Promise.resolve();
+        });
+
+        const card = screen.getByRole('button', { name: 'network.pdf' });
+        expect(card.getAttribute('aria-disabled')).toBe('true');
+        expect(screen.getByText('Checking…')).toBeDefined();
+        await act(async () => {
+          card.click();
+          await Promise.resolve();
+        });
+        expect(sent.filter((call) => call.id === 'document.openRecent')).toStrictEqual([]);
+
+        // ASKED AGAIN after the recheck interval, and now it opens.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(RECENT_RECHECK_MS);
+        });
+        expect(answers).toBe(2);
+        expect(screen.getByRole('button', { name: 'network.pdf' }).getAttribute('aria-disabled')).toBeNull();
+        expect(screen.queryByText('Checking…')).toBeNull();
+
+        // AND THEN IT STOPS ASKING: nothing is checking any more.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(RECENT_RECHECK_MS * 3);
+        });
+        expect(answers).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('CONTROL: an unclean run with NOTHING RECORDED offers nothing', async () => {
@@ -3415,7 +3685,7 @@ describe('App', () => {
       const { client } = withRecent({
         entries: [row('handle-a', 'annual.pdf')],
         lastExitClean: true,
-        lastSession: [{ handle: 'handle-b', name: 'draft.pdf' }],
+        lastSession: [{ handle: 'handle-b', name: 'draft.pdf', availability: 'available' }],
       });
       render(<App client={client} settings={freshSettings()} />);
       await act(async () => {
@@ -3432,8 +3702,8 @@ describe('App', () => {
       const SESSION = {
         entries: [row('handle-a', 'annual.pdf')],
         lastSession: [
-          { handle: 'handle-b', name: 'draft.pdf' },
-          { handle: 'handle-c', name: 'notes.pdf' },
+          { handle: 'handle-b', name: 'draft.pdf', availability: 'available' },
+          { handle: 'handle-c', name: 'notes.pdf', availability: 'available' },
         ],
       };
       /** The handles a start reopened, in the order it asked for them. */
@@ -3486,7 +3756,7 @@ describe('App', () => {
           return Promise.resolve(
             ok({
               entries: [
-                { handle: 'stale', name: 'annual.pdf', location: { within: null, folder: null }, openedAt: null, available: true },
+                { handle: 'stale', name: 'annual.pdf', location: { within: null, folder: null }, openedAt: null, availability: 'available' },
               ],
               lastExitClean: true,
               lastSession: [],
@@ -3502,6 +3772,9 @@ describe('App', () => {
       await act(async () => {
         await Promise.resolve();
       });
+      // COUNTED BEFORE THE CLICK, so the read the refusal causes is told apart from however many the mount made.
+      const readsBefore = sent.filter((call) => call.id === 'document.recent').length;
+      expect(readsBefore).toBeGreaterThan(0);
 
       await act(async () => {
         screen.getByRole('button', { name: 'annual.pdf' }).click();
@@ -3512,13 +3785,13 @@ describe('App', () => {
         screen.getByText('That document could not be opened. It may have been moved or renamed.'),
       ).toBeDefined();
       // READ AGAIN, and the row is still there: main keeps it (ADR-0143).
-      expect(sent.filter((call) => call.id === 'document.recent').length).toBeGreaterThanOrEqual(2);
+      expect(sent.filter((call) => call.id === 'document.recent').length).toBeGreaterThan(readsBefore);
       expect(screen.getByRole('button', { name: 'annual.pdf' })).toBeDefined();
     });
 
     it('an UNAVAILABLE file is a card that says so, is disabled and opens nothing — listed, never hidden (ADR-0143)', async () => {
       const { client, sent } = withRecent({
-        entries: [row('handle-gone', 'gone.pdf', false), row('handle-here', 'here.pdf')],
+        entries: [row('handle-gone', 'gone.pdf', 'unavailable'), row('handle-here', 'here.pdf')],
         lastExitClean: true,
         lastSession: [],
       });
@@ -3659,6 +3932,48 @@ describe('the menu bar, in the shell (ADR-0107)', () => {
     ]);
   });
 
+  it('a READ-ONLY file is said as it opens, and Save a copy opens the copy in a tab BESIDE it (cloud-4 7b)', async () => {
+    const COPY = asDocId('doc-annual-copy');
+    const sent: Sent[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      if (id === 'document.fileAccess') {
+        return Promise.resolve(ok({ access: (params as { docId: DocId }).docId === DOC ? 'read-only' : 'writable' }));
+      }
+      if (id === 'document.workOnCopy') {
+        return Promise.resolve(
+          ok({ kind: 'opened', docId: COPY, version: asDocVersion(1), byteLength: 1024, name: 'annual (copy).pdf' }),
+        );
+      }
+      const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id];
+      if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+      return Promise.resolve(ok(answer));
+    });
+    const { container } = render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+
+    const dialog = await screen.findByRole('dialog', { name: 'Changes cannot be saved to this file' });
+    expect(within(dialog).getByText(/This file is read-only/u)).toBeDefined();
+    await act(async () => {
+      within(dialog).getByRole('button', { name: 'Save a copy…' }).click();
+      await Promise.resolve();
+    });
+
+    await vi.waitFor(() => {
+      expect(container.querySelector(`[data-tab="${COPY}"]`)).not.toBeNull();
+    });
+    // THE ORIGINAL STAYS OPEN: closing what the person opened is theirs.
+    expect(container.querySelector(`[data-tab="${DOC}"]`)).not.toBeNull();
+    expect(sent.filter((one) => one.id === 'document.workOnCopy')).toStrictEqual([
+      { id: 'document.workOnCopy', params: { docId: DOC } },
+    ]);
+    // AND THE COPY WAS ASKED ABOUT TOO, as any document a person opens is.
+    expect(sent.filter((one) => one.id === 'document.fileAccess').map((one) => one.params)).toStrictEqual([
+      { docId: DOC },
+      { docId: COPY },
+    ]);
+  });
+
   it('File › Start screen shows the start screen and KEEPS the document’s tab', async () => {
     const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
     const { container } = render(<App client={client} settings={freshSettings()} />);
@@ -3687,7 +4002,7 @@ describe('the menu bar, in the shell (ADR-0107)', () => {
     render(<App client={client} settings={freshSettings()} />);
     await withDocumentOpen();
     await openPanel('Search');
-    const field = screen.getByLabelText<HTMLInputElement>('Find on this page');
+    const field = screen.getByLabelText<HTMLInputElement>('Find text');
     await act(async () => {
       fireEvent.change(field, { target: { value: 'needle' } });
       field.focus();
@@ -3711,7 +4026,7 @@ describe('the menu bar, in the shell (ADR-0107)', () => {
     render(<App client={client} settings={freshSettings()} />);
     await withDocumentOpen();
     await openPanel('Search');
-    const field = screen.getByLabelText<HTMLInputElement>('Find on this page');
+    const field = screen.getByLabelText<HTMLInputElement>('Find text');
     await act(async () => {
       fireEvent.change(field, { target: { value: 'needle' } });
       field.focus();
@@ -3819,6 +4134,27 @@ describe('Settings › Saving › Confirm before redacting (Part F)', () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
         'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        // ONE MARK, so Apply has something to burn in: with none it says so and offers nothing (F-P1).
+        'document.annotations': {
+          version: asDocVersion(1),
+          annotations: [
+            {
+              page: 0,
+              index: 0,
+              rect: { x0: 10, y0: 10, x1: 50, y1: 30 },
+              inReplyTo: null,
+              kind: 'redact',
+              style: { colour: [0, 0, 0], opacity: 1, borderWidth: null },
+              contents: '',
+              authored: true,
+              author: '',
+              created: null,
+              blend: 'normal',
+            },
+          ],
+          next: null,
+          truncated: false,
+        },
       });
       const { unmount } = render(<App client={client} settings={settings} />);
       await withDocumentOpen();
@@ -3893,6 +4229,27 @@ describe('Settings › Viewing › Zoom step (Part F)', () => {
 
 describe('the proof locale — every word on screen came through the catalogue (BUILD-PROMPT.md:721)', () => {
   /**
+   * A text with what the proof locale marks taken out, INNERMOST FIRST. A message drawing another message's words as
+   * a value nests one mark in another — a tip saying a command's title is `⟦⟦title⟧: press Ctrl+End.⟧` — and a pattern
+   * ending at the first closing mark would take `⟦⟦title⟧` and leave the outer message's words as though unmarked.
+   */
+  function withoutMarked(text: string): string {
+    let left = text;
+    for (let before = ''; before !== left; ) {
+      before = left;
+      left = left.replace(/⟦[^⟦⟧]*⟧/gu, '');
+    }
+    return left;
+  }
+
+  it('takes out a mark nested in another, and still leaves a word outside every mark', () => {
+    expect(withoutMarked('⟦⟦Ţîţļé⟧: þŕéšš Ctrl+End.⟧')).toBe('');
+    // CONTROLS: a literal after a nested message, and one between two messages, are still left to be reported.
+    expect(withoutMarked('⟦⟦Ţîţļé⟧ þŕéšš⟧ Literal')).toBe(' Literal');
+    expect(withoutMarked('⟦þŕéšš ⟦Ţîţļé⟧⟧ and ⟦x⟧ Literal')).toBe(' and  Literal');
+  });
+
+  /**
    * Every visible text and every named attribute, with what the proof locale marks — `⟦…⟧` — taken out. What is
    * left and still has a word in it did not come from the catalogue.
    */
@@ -3910,7 +4267,7 @@ describe('the proof locale — every word on screen came through the catalogue (
       }
     }
     return found
-      .map((text) => text.replace(/⟦[^⟧]*⟧/gu, '').trim())
+      .map((text) => withoutMarked(text).trim())
       .filter((text) => /[A-Za-z]{2}/u.test(text));
   }
 

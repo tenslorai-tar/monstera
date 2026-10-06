@@ -111,6 +111,21 @@ describe('AccessibilityCheckBody', () => {
     expect(rows.slice(4).every((row) => !/Passed|Failed/u.test(row))).toBe(true);
   });
 
+  // THE PLURAL ONLY: where the pages sit is the CSS grid's, which happy-dom does not lay out, so it is measured in the
+  // browser (fc74ae2a's commit) and not claimed here.
+  it('ONE page is "Page 4", never "Pages 4"', () => {
+    render(
+      <Wrapped>
+        <AccessibilityCheckBody
+          kind="checked"
+          rules={[{ clause: '7.3', test: 1, verdict: 'failed', count: 1, pages: [4] }]}
+          humanChecks={[...ACCESSIBILITY_HUMAN_CHECKS]}
+        />
+      </Wrapped>,
+    );
+    expect(screen.getAllByRole('listitem')[0]?.textContent).toBe('FailedEvery figure has alternative textPage 4');
+  });
+
   it('CONTROL: with nothing failed it still says the document is not shown to be accessible', () => {
     render(
       <Wrapped>

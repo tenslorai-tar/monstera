@@ -116,4 +116,46 @@ describe('useVisiblePages', () => {
     expect(moved).not.toBe(settled);
     expect(moved === undefined ? [] : [...moved]).toStrictEqual([1]);
   });
+
+  /** The set as of the latest render, sorted, after anything queued behind the commit has run. */
+  async function latest(): Promise<readonly number[]> {
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const last = seen[seen.length - 1];
+    return last === undefined ? [] : [...last].sort((a, b) => a - b);
+  }
+
+  it('a slot that GOES leaves the set: a delete that shortens the document keeps no index past its end (CR-COR-10)', async () => {
+    const { rerender } = render(<Host label="a" pages={[0, 1, 2]} />);
+    flush();
+    expect(await latest()).toStrictEqual([0, 1, 2]);
+    // THE LAST PAGE DELETED: its slot unmounts, and the observer has nothing to say about an element that is gone.
+    rerender(<Host label="a" pages={[0, 1]} />);
+    expect(flush()).toBe(0);
+    expect(await latest()).toStrictEqual([0, 1]);
+  });
+
+  it('CONTROL — a slot REPLACED in one commit never leaves the set, so its page is not redrawn', async () => {
+    function Swapping({ generation }: { generation: number }): ReactElement {
+      const { visible, slotRef } = useVisiblePages('0px');
+      seen.push(visible);
+      // A NEW ELEMENT FOR PAGE 2 under the same ref: React tells the ref null, then the new element.
+      return (
+        <div>
+          <div ref={slotRef(0)} />
+          <div ref={slotRef(1)} />
+          <section key={generation} ref={slotRef(2)} />
+        </div>
+      );
+    }
+    const { rerender } = render(<Swapping generation={1} />);
+    flush();
+    expect(await latest()).toStrictEqual([0, 1, 2]);
+    const before = seen.length;
+    rerender(<Swapping generation={2} />);
+    expect(await latest()).toStrictEqual([0, 1, 2]);
+    // NO RENDER WITHOUT PAGE 2 in between: every set since the swap still holds it.
+    expect(seen.slice(before).every((set) => set.has(2))).toBe(true);
+  });
 });

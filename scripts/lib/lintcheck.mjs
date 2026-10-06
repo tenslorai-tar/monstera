@@ -1,229 +1,204 @@
 // @ts-check
 /**
- * The lint, invoked the way the local sweep can reach it (finding DDDD-7).
+ * The lint: `npm run lint`, and `npm run check:lint` for the local sweep, are this file (ADR-0170).
  *
- * ## The gap this closes, and it cost a red board
+ * ## One process per unit, under one heap budget
  *
- * `checkLocal.mjs` derives its set from every `check:*` and `proof:*` name in
- * `package.json`, and invokes only commands whose first token is `node`. `npm
- * run lint` is neither. So the rule set that governs every line of this
- * repository sat outside the sweep that runs before every push — and the sweep's
- * own disclosure names the PROOFS it did not run, so nothing named this hole
- * either. A file-naming convention was standing in for a check, one layer up
- * from where W-1 found it the first time.
+ * The lint was `eslint .`, one process holding a TypeScript program for every tsconfig at once, and it grew until
+ * GitHub's Ubuntu runner aborted it at V8's heap limit (about 3.9 GB, twice in three runs) and the owner's PC, with a
+ * 2 GB default, had failed it for three weeks. Linted alone, no unit needs more than 2 GB. So each unit runs in its
+ * own process, one after another, and the memory each held is released when it ends.
  *
- * Measured: `7ba978c` added two files carrying four ordinary lint errors —
- * three `no-confusing-void-expression`, one `dot-notation`. `npm run local --
- * --only check:` reported **14 of 14 passed**, and CI 32828958338 failed at step
- * "Lint" on all three jobs. The files had been linted by hand, one at a time,
- * which is the compensation this project has written down three times as not
- * being a mechanism.
+ * A unit is a package's source or a package's tests, for every directory under `packages/` and `apps/` that holds a
+ * `package.json` — derived, so a package added tomorrow is linted with no edit here; then `scripts/`; then THE REST,
+ * the whole tree less those, which is what makes the units' union `.` by construction rather than by a list somebody
+ * keeps.
  *
- * This is `check:types`' sibling and is deliberately its near-copy: the same
- * gap, found the same way, closed the same way. Where the two differ is stated
- * at {@link EXPECTED_TARGETS}.
+ * ## The budget is a heap limit, and the report is resident memory
  *
- * ## `package.json` is the authority, and this file does not re-spell it
+ * Every unit runs under {@link LINT_HEAP_BUDGET_MB}. A unit that needs more ends at V8's heap limit, and the run says
+ * that unit went over the budget, by name. Every unit's peak resident memory is printed on every run, so the growth
+ * that took three weeks to crash is a number in every CI log.
  *
- * The `lint` script says what the lint IS — which paths, with which flags.
- * Copying them here would be a second opinion about a question one manifest
- * already answers (B3a), and the dangerous kind: it would agree right up until
- * somebody added a flag to one and not the other.
+ * ## The gap `check:lint` closes (finding DDDD-7)
+ *
+ * `checkLocal.mjs` derives its set from every `check:*` and `proof:*` name, so the lint reaches the sweep that runs
+ * before a push only through this name. Measured when it was added: `7ba978c` carried four ordinary lint errors, the
+ * sweep reported 14 of 14 passed, and CI failed at Lint on all three jobs.
  *
  * ## The interpreter is invoked directly, never the `.bin` shim
  *
- * `node_modules/eslint/bin/eslint.js` is a JavaScript entry point. The `.bin`
- * shim is a platform-specific wrapper, and this repository has already paid for
- * resolving a shim by hand — the pre-commit guard and its proof disagreed about
- * which `npm` exists because one followed *npm beside node* and the other did
- * not.
+ * `node_modules/eslint/bin/eslint.js` is a JavaScript entry point; the `.bin` shim is a platform-specific wrapper,
+ * and this repository has already paid for resolving a shim by hand.
  *
- * ## Its control
+ * `proof:lintcheck` drives {@link runLint} against built trees: a violation in each kind of unit is reported, a clean
+ * tree is not, and a budget too small to start under is reported as the budget.
  *
- * The reassuring answer here is *no problems*, and a parse that yielded no
- * invocations produces it too, silently, in the voice of a clean tree. So the
- * parse must yield exactly as many invocations as the authority has segments,
- * and their targets must match {@link EXPECTED_TARGETS}.
- * `proof:lintcheck` carries the resolution test neither control can: a fixture
- * with a deliberate violation beside a clean one, requiring the runner to
- * separate them.
- *
- * Usage: npm run check:lint
+ * Usage: npm run lint
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { repoRoot } from './gitScope.mjs';
 import { isMain } from './isMain.mjs';
-import { segmentsOf } from './scriptSegments.mjs';
 
 /** ESLint's JavaScript entry point, relative to the root. */
 export const ESLINT_ENTRY = join('node_modules', 'eslint', 'bin', 'eslint.js');
 
 /**
- * The paths this repository's lint may not quietly stop covering.
+ * The heap, in megabytes, that every lint unit runs under (ADR-0170 Decision 3).
  *
- * THE ANCHOR, and it is a different one from `check:types`' because the danger
- * has a different shape. There, a shrink removes an `&&` segment and the count
- * catches it. Here the whole lint is ONE segment, and it shrinks by having its
- * argument changed — `eslint .` to `eslint packages` lints less and reports a
- * clean tree, faithfully, with the invocation count unmoved.
+ * The default heap of the smallest machine this repository is linted on: the owner's PC, 11.9 GB, where V8 sizes
+ * the heap at about 2 GB (it failed `eslint .` from 2026-09-13). Below every machine's own default, so it raises
+ * nothing, and the same on every machine, so a lint that passes in CI passes there.
  *
- * Item 4c's rule either way: derive from a set only when the failure you fear
- * makes that set BIGGER. Extent shrinking is the failure here, so the extent
- * comes from a literal that a shrink has to touch separately.
- *
- * Compared as a SET, so reordering or adding a path is not an event — adding is
- * a widening and needs no ceremony. Removing one is the thing that must be
- * deliberate, and editing this line is what makes it something somebody wrote
- * down.
+ * Headroom, read on 2026-10-05 at `91450ef5` on the cloud session machine: the largest units, `packages/ui`'s source
+ * and its tests, each pass under 1,536 MB (1,635 and 1,610 MB peak resident). All of `ui` in one process fails at
+ * 1,536 and passes at 2,048, which is why source and tests are two units.
  */
-export const EXPECTED_TARGETS = ['.'];
+export const LINT_HEAP_BUDGET_MB = 2048;
+
+/** The test files of a package, linted as their own unit. */
+const TEST_FILES = ['**/*.test.ts', '**/*.test.tsx'];
+
+/** The directories whose packages are units: each child of these that holds a `package.json`. */
+const PACKAGE_PARENTS = ['packages', 'apps'];
 
 /**
- * The argument lists to hand ESLint, one per segment.
+ * One lint process: a name for the report, and the arguments ESLint is given.
  *
- * A segment that does not start with `eslint` is returned as `null` rather than
- * skipped: the caller compares the count against {@link segmentsOf}, and a
- * silently dropped segment is a lint that got smaller with nothing saying so.
- *
- * @param {string} command
- * @returns {Array<string[] | null>}
+ * @typedef {{ readonly name: string, readonly args: readonly string[] }} LintUnit
  */
-export function parseLintScript(command) {
-  return segmentsOf(command).map((segment) => {
-    const parts = segment.split(/\s+/u).filter((part) => part !== '');
-    if (parts[0] !== 'eslint') return null;
-    return parts.slice(1);
+
+/**
+ * The units of the tree at `root`, in the order they run (ADR-0170 Decision 2).
+ *
+ * @param {string} root
+ * @returns {LintUnit[]}
+ */
+export function lintUnits(root) {
+  const packages = PACKAGE_PARENTS.flatMap((parent) => {
+    const at = join(root, parent);
+    if (!existsSync(at)) return [];
+    return readdirSync(at, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && existsSync(join(at, entry.name, 'package.json')))
+      .map((entry) => `${parent}/${entry.name}`)
+      .sort();
+  });
+  const notTests = TEST_FILES.flatMap((pattern) => ['--ignore-pattern', pattern]);
+  /** @type {LintUnit[]} */
+  const units = packages.flatMap((dir) => [
+    { name: `${dir} (source)`, args: [dir, ...notTests] },
+    // A PACKAGE WITH NO TESTS matches nothing, which is not an error here: its source unit still ran.
+    { name: `${dir} (tests)`, args: ['--no-error-on-unmatched-pattern', ...TEST_FILES.map((pattern) => `${dir}/${pattern}`)] },
+  ]);
+  const own = [...packages];
+  if (existsSync(join(root, 'scripts'))) {
+    units.push({ name: 'scripts', args: ['scripts'] });
+    own.push('scripts');
+  }
+  // THE REST: everything the units above do not name, so a file anywhere else is still linted.
+  units.push({ name: 'the rest of the tree', args: ['.', ...own.flatMap((dir) => ['--ignore-pattern', `${dir}/**`])] });
+  return units;
+}
+
+/**
+ * One unit's outcome.
+ *
+ * @typedef {{
+ *   readonly unit: LintUnit,
+ *   readonly status: 'clean' | 'problems' | 'over-budget' | 'failed',
+ *   readonly peakMb: number | null,
+ *   readonly seconds: number,
+ *   readonly output: string,
+ * }} UnitOutcome
+ */
+
+/**
+ * Runs every unit, one process each under `heapMb`, and answers each one's outcome. Every unit runs whatever an
+ * earlier one found, so a red lint names every unit's problems as one process did.
+ *
+ * Injectable rather than reading the repository, so the proof drives it against built trees with their own config.
+ *
+ * @param {string} eslintPath absolute path to ESLint's entry point
+ * @param {readonly LintUnit[]} units
+ * @param {string} cwd
+ * @param {number} heapMb
+ * @returns {UnitOutcome[]}
+ */
+export function runLint(eslintPath, units, cwd, heapMb) {
+  const report = join(repoRoot(), 'scripts', 'lib', 'lintPeakReport.mjs');
+  return units.map((unit) => {
+    const started = Date.now();
+    const run = spawnSync(
+      process.execPath,
+      [`--max-old-space-size=${String(heapMb)}`, '--import', pathToFileURL(report).href, eslintPath, ...unit.args],
+      { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe', 'pipe'] },
+    );
+    const seconds = (Date.now() - started) / 1000;
+    const output = `${run.stdout ?? ''}${run.stderr ?? ''}`.trim();
+    const peak = peakOf(run.output[3]);
+    // V8'S OWN WORDS at its heap limit, the one way a unit ends over the budget: the process aborts before the report
+    // is written, so no peak is read and the status cannot be mistaken for a lint problem.
+    const overBudget = run.status !== 0 && /heap out of memory/u.test(run.stderr ?? '');
+    /** @type {UnitOutcome['status']} */
+    const status = overBudget ? 'over-budget' : run.status === 0 ? 'clean' : run.status === 1 ? 'problems' : 'failed';
+    return { unit, status, peakMb: peak, seconds, output };
   });
 }
 
 /**
- * The non-flag arguments across every invocation — what is actually linted.
+ * The peak a unit's preload wrote, in megabytes, or `null` where it wrote none — a process that ended at the heap
+ * limit, or one the preload never reached.
  *
- * `--flag value` is not handled: a value-taking flag's VALUE arrives here as a
- * target, so `eslint --max-warnings 0 .` reads as `['0', '.']`.
- *
- * That is harmless, and the reason is the anchor's shape rather than luck. The
- * check asks whether every {@link EXPECTED_TARGETS} entry is still present — a
- * subset test, not an equality — so a spurious extra changes nothing. Equality
- * would make adding a flag an event, and adding is a widening that needs no
- * ceremony; it is the SHRINK this file exists to make somebody write down.
- *
- * This paragraph said the opposite first — that a flag's value would fail the
- * anchor and refuse — and the proof's own case reddened on it. Recorded rather
- * than quietly fixed, because a comment describing a stricter guard than the
- * code has is the shape that gets believed by the next reader.
- *
- * @param {ReadonlyArray<string[]>} invocations
- * @returns {string[]}
+ * @param {string | null | undefined} written
+ * @returns {number | null}
  */
-export function targetsOf(invocations) {
-  return invocations.flatMap((args) => args.filter((arg) => !arg.startsWith('-')));
-}
-
-/**
- * Runs each argument list under this process's own `node`, stopping at the first
- * failure — `&&` is part of what the authority said.
- *
- * Injectable rather than reading `package.json` itself, so the proof can drive
- * it against fixture trees instead of against this repository. A runner that
- * could only be exercised by linting the whole tree would be exercised by
- * nothing.
- *
- * @param {string} eslintPath Absolute path to ESLint's JS entry point.
- * @param {ReadonlyArray<string[]>} invocations
- * @param {string} cwd
- * @returns {{ failed: Array<{ args: string[], status: number | null, output: string }>, ran: number }}
- */
-export function runLint(eslintPath, invocations, cwd) {
-  /** @type {Array<{ args: string[], status: number | null, output: string }>} */
-  const failed = [];
-  let ran = 0;
-  for (const args of invocations) {
-    const run = spawnSync(process.execPath, [eslintPath, ...args], {
-      cwd,
-      encoding: 'utf8',
-      maxBuffer: 32 * 1024 * 1024,
-    });
-    ran += 1;
-    if (run.status !== 0) {
-      failed.push({
-        args,
-        status: run.status,
-        output: `${run.stdout ?? ''}${run.stderr ?? ''}`.trim(),
-      });
-      break;
-    }
-  }
-  return { failed, ran };
+function peakOf(written) {
+  if (written === null || written === undefined || written === '') return null;
+  const parsed = /** @type {{ maxRssKb?: unknown }} */ (JSON.parse(written));
+  return typeof parsed.maxRssKb === 'number' ? Math.round(parsed.maxRssKb / 1024) : null;
 }
 
 if (isMain(import.meta.url)) {
   const root = repoRoot();
-  const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-  const authority = String(manifest.scripts?.lint ?? '');
-  const segments = segmentsOf(authority);
-  const parsed = parseLintScript(authority);
-  const invocations = parsed.filter((args) => args !== null);
   const eslintPath = join(root, ESLINT_ENTRY);
-
-  if (segments.length === 0 || invocations.length !== segments.length) {
-    process.stderr.write(
-      `The lint script could not be read as ESLint invocations, so this check cannot report on ` +
-        `it and its silence would mean nothing.\n\n` +
-        `  package.json "lint": ${authority || '(absent)'}\n` +
-        `  segments: ${String(segments.length)}, understood as eslint: ${String(invocations.length)}\n\n` +
-        `Every segment must be an \`eslint\` command line. package.json is the authority for what ` +
-        `the lint is; this file runs what it says rather than restating it, so a segment it ` +
-        `cannot read is a hole and not a shorter lint.\n`,
-    );
-    process.exit(1);
-  }
-
-  const targets = targetsOf(invocations);
-  const missing = EXPECTED_TARGETS.filter((expected) => !targets.includes(expected));
-  if (missing.length > 0) {
-    process.stderr.write(
-      `The lint script no longer covers ${missing.join(', ')}.\n\n` +
-        `  package.json "lint": ${authority}\n` +
-        `  linted: ${targets.join(', ') || '(nothing)'}\n\n` +
-        `A narrowed lint reports a clean tree, faithfully, having examined less — and the ` +
-        `invocation count does not move, which is why the extent is anchored to a literal here ` +
-        `rather than derived (item 4c). If the reduction is deliberate, change EXPECTED_TARGETS ` +
-        `in the same commit. That edit is the point: it makes the shrink something somebody ` +
-        `wrote down.\n`,
-    );
-    process.exit(1);
-  }
-
   if (!existsSync(eslintPath)) {
     process.stderr.write(
-      `ESLint is not at ${ESLINT_ENTRY}, so nothing was linted. Run \`npm ci\` and try again — a ` +
-        `lint that cannot find its linter must not report a clean tree.\n`,
+      `ESLint is not at ${ESLINT_ENTRY}, so nothing was linted. Run \`npm ci\` and try again — a lint that cannot ` +
+        `find its linter must not report a clean tree.\n`,
     );
     process.exit(1);
   }
 
-  const { failed } = runLint(eslintPath, invocations, root);
-
-  if (failed.length > 0) {
-    for (const failure of failed) {
-      process.stderr.write(`\neslint ${failure.args.join(' ')} exited ${String(failure.status)}\n\n`);
-      process.stderr.write(`${failure.output}\n`);
+  const outcomes = runLint(eslintPath, lintUnits(root), root, LINT_HEAP_BUDGET_MB);
+  for (const { unit, status, peakMb, seconds, output } of outcomes) {
+    const measured = `${peakMb === null ? 'no peak read' : `peak ${String(peakMb)} MB resident`}, ${seconds.toFixed(0)} s`;
+    if (status === 'clean') {
+      process.stdout.write(`  ok  ${unit.name}: ${measured}\n`);
+      if (output !== '') process.stdout.write(`${output}\n`);
+      continue;
     }
-    process.stderr.write(
-      `\n${String(failed.length)} of ${String(invocations.length)} ESLint invocation(s) failed. ` +
-        `This is what CI runs on every leg, so a red here is a red board.\n`,
-    );
+    const why =
+      status === 'over-budget'
+        ? `went over the lint heap budget of ${String(LINT_HEAP_BUDGET_MB)} MB (LINT_HEAP_BUDGET_MB, ADR-0170). The ` +
+          `unit has grown past what the smallest linting machine can hold; split it or make it cheaper, and do not ` +
+          `raise the budget to make this pass`
+        : status === 'problems'
+          ? 'reported problems'
+          : 'failed';
+    process.stderr.write(`\nFAIL  ${unit.name}: ${why} (${measured})\n${status === 'over-budget' ? '' : `${output}\n`}`);
+  }
+  const red = outcomes.filter((outcome) => outcome.status !== 'clean');
+  if (red.length > 0) {
+    process.stderr.write(`\n${String(red.length)} of ${String(outcomes.length)} lint unit(s) failed.\n`);
     process.exit(1);
   }
-
   process.stdout.write(
-    `  ok  ${String(invocations.length)} ESLint invocation(s) from package.json's lint script ` +
-      `reported no problems\n` +
-      `  ok  and they cover ${EXPECTED_TARGETS.join(', ')}, so the count is the whole tree\n`,
+    `  ok  ${String(outcomes.length)} lint unit(s) reported no problems, each under ${String(LINT_HEAP_BUDGET_MB)} MB ` +
+      `of heap, and together they cover the whole tree\n`,
   );
 }

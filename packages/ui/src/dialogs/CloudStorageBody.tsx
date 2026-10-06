@@ -21,6 +21,7 @@ import {
   CLOUD_NOTE_SIGNED_OUT,
   CLOUD_NOTE_UPLOADED,
   CLOUD_OPEN,
+  CLOUD_OPEN_SHOWN,
   CLOUD_PICK,
   CLOUD_PROBLEMS,
   CLOUD_PROVIDER_NAMES,
@@ -183,6 +184,7 @@ export default function CloudStorageBody({
                         </span>
                         <Button
                           label={CLOUD_OPEN}
+                          shown={CLOUD_OPEN_SHOWN}
                           values={{ name: file.name }}
                           onClick={() => {
                             resolve({ kind: 'open', provider, fileId: file.id });

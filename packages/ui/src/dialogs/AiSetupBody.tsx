@@ -10,6 +10,7 @@ import {
   AI_SETUP_INTRO,
   AI_SETUP_KEY,
   AI_SETUP_NOT_STORED,
+  AI_SETUP_NOT_THE_SERVICE,
   AI_SETUP_PROVIDER,
   AI_SETUP_REJECTED,
   AI_SETUP_SKIP,
@@ -30,6 +31,7 @@ const PROBLEM_TEXT: Readonly<Record<AiSetupProblem, MessageKey>> = {
   unreachable: AI_SETUP_UNREACHABLE,
   rejected: AI_SETUP_REJECTED,
   unreadable: AI_SETUP_UNREADABLE,
+  'not-the-service': AI_SETUP_NOT_THE_SERVICE,
   'not-stored': AI_SETUP_NOT_STORED,
 };
 
@@ -88,7 +90,7 @@ export default function AiSetupBody({
       </DialogRow>
       {secretsAvailable ? (
         <DialogRow label={AI_SETUP_KEY}>
-          <Input label={AI_SETUP_KEY} labelShownBeside onValueChange={setKey} secret value={key} />
+          <Input label={AI_SETUP_KEY} labelShownBeside onValueChange={setKey} runsLong secret value={key} />
         </DialogRow>
       ) : (
         <p className="m-ai-setup__problem" role="status">
@@ -97,7 +99,7 @@ export default function AiSetupBody({
       )}
       {needsEndpoint && secretsAvailable ? (
         <DialogRow label={AI_SETUP_ENDPOINT}>
-          <Input label={AI_SETUP_ENDPOINT} labelShownBeside onValueChange={setEndpoint} value={endpoint} />
+          <Input label={AI_SETUP_ENDPOINT} labelShownBeside onValueChange={setEndpoint} runsLong value={endpoint} />
         </DialogRow>
       ) : null}
       {problem === undefined ? null : (

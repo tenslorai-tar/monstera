@@ -20,15 +20,18 @@ import {
   EXPORT_EXCEL_NO_TABLES_HERE,
   EXPORT_EXCEL_ONE_SHEET,
   EXPORT_EXCEL_PAGE,
+  EXPORT_EXCEL_PAGES_NOTE,
   EXPORT_EXCEL_PREVIOUS_PAGE,
   EXPORT_EXCEL_SHEET_PER_PAGE,
   EXPORT_EXCEL_TABLE,
   EXPORT_EXCEL_TRUNCATED,
+  PAGE_RANGE_EXPORT_EMPTY,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { ExportExcelAnswer, ExportExcelProps } from './exportExcel.js';
+import { PageRangeChoice, usePageRange } from './PageRangeChoice.js';
 
 type SheetLayout = ExportExcelAnswer['layout'];
 type Engine = ExportExcelAnswer['engine'];
@@ -79,9 +82,11 @@ export default function ExportExcelBody({
   engines,
   engine: initialEngine,
   edits: initialEdits,
+  range: initialRange,
   resolve,
 }: ExportExcelProps & DialogAnswering<ExportExcelAnswer>): ReactElement {
   const { _ } = useLingui();
+  const range = usePageRange(pageCount, initialRange);
   const [layout, setLayout] = useState<SheetLayout>(initialLayout);
   const [engine, setEngine] = useState<Engine>(initialEngine);
   const [edits, setEdits] = useState<ReadonlyMap<string, Edit>>(
@@ -92,6 +97,18 @@ export default function ExportExcelBody({
   // them with any other engine, and a correction to a table the service never read would be
   // written nowhere.
   const answer = (): ExportExcelAnswer['edits'] => (engine === 'automatic' ? [...edits.values()] : []);
+
+  // THE ROW AS LEFT travels with a move to another page, unparsed: a half-typed range is not wrong yet (`PageRangeChoice`).
+  const left = { every: range.every, text: range.text };
+  const exportChosen = (made: ExportExcelAnswer['edits']): void => {
+    const pages = range.proceed();
+    if (pages === undefined) return;
+    resolve({ kind: 'export', layout, engine, edits: made, pages: [...pages] });
+  };
+
+  const pageChoice = (
+    <PageRangeChoice empty={PAGE_RANGE_EXPORT_EMPTY} note={EXPORT_EXCEL_PAGES_NOTE} range={range} />
+  );
 
   const layoutChoice = (
     <DialogRow label={EXPORT_EXCEL_LAYOUT}>
@@ -144,15 +161,29 @@ export default function ExportExcelBody({
     return (
       <div className="m-export-excel">
         {engineChoice}
-        <p>{_(SENDS[engine], { count: pageCount })}</p>
+        {pageChoice}
+        {/* THE PAGES THAT WILL BE SENT, counted from the row, and said only while the row names some: a count of every
+            page under *Select pages* would say more leaves this computer than does. */}
+        {range.chosen === undefined ? null : (
+          <p>
+            {_(SENDS[engine], {
+              count: range.chosen.length,
+              every: range.chosen.length === pageCount ? 'yes' : 'no',
+            })}
+          </p>
+        )}
         {layoutChoice}
-        <Button
-          label={EXPORT_EXCEL_APPLY}
-          variant="primary"
-          onClick={() => {
-            resolve({ kind: 'export', layout, engine, edits: [] });
-          }}
-        />
+        {/* IN THE FOOTER, beside Cancel, as in the other state: here it stood alone at the body's left with no way to
+            decline but the title bar, and the dialog sat outside the pattern's width (the gallery, 2026-10-03). */}
+        <DialogFooter>
+          <Button
+            label={EXPORT_EXCEL_APPLY}
+            variant="primary"
+            onClick={() => {
+              exportChosen([]);
+            }}
+          />
+        </DialogFooter>
       </div>
     );
   }
@@ -165,7 +196,7 @@ export default function ExportExcelBody({
           label={EXPORT_EXCEL_PREVIOUS_PAGE}
           disabled={index === 0}
           onClick={() => {
-            resolve({ kind: 'page', to: index - 1, layout, engine, edits: answer() });
+            resolve({ kind: 'page', to: index - 1, layout, engine, edits: answer(), range: left });
           }}
         />
         <span>{_(EXPORT_EXCEL_PAGE, { page, count: pageCount })}</span>
@@ -173,7 +204,7 @@ export default function ExportExcelBody({
           label={EXPORT_EXCEL_NEXT_PAGE}
           disabled={index + 1 >= pageCount}
           onClick={() => {
-            resolve({ kind: 'page', to: index + 1, layout, engine, edits: answer() });
+            resolve({ kind: 'page', to: index + 1, layout, engine, edits: answer(), range: left });
           }}
         />
       </div>
@@ -218,13 +249,16 @@ export default function ExportExcelBody({
       ))}
       {truncated ? <p>{_(EXPORT_EXCEL_TRUNCATED)}</p> : null}
 
+      {/* BESIDE WHERE THE TABLES GO, under the grid: the two choices of what is written sit together, and the typed
+          pages are kept apart from the review's own Previous and Next, which move the grid and choose nothing. */}
+      {pageChoice}
       {layoutChoice}
       <DialogFooter>
         <Button
           label={EXPORT_EXCEL_APPLY}
           variant="primary"
           onClick={() => {
-            resolve({ kind: 'export', layout, engine, edits: answer() });
+            exportChosen(answer());
           }}
         />
       </DialogFooter>

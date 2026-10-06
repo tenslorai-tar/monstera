@@ -107,6 +107,19 @@ export interface AtomicWriteFailure {
   readonly attempts?: number;
 }
 
+/** What a write that landed left behind. */
+export interface AtomicWriteDone {
+  /**
+   * Where the version this write replaced is kept: the newest backup name, the copy-aside name where moving it into the
+   * backups was refused, or `null` where nothing was kept — no file was there, or a person keeps no backups.
+   *
+   * **A PATH, never a flag that a backup was made.** A flag answered *no* for the copy-aside, which is still a copy of
+   * the person's document, so a caller recording the copies Monstera made recorded nothing, and a removal's save
+   * left that copy beside the file it had just cleaned (QQQQQQQ-8).
+   */
+  readonly previousKeptAt: string | null;
+}
+
 /**
  * How long to wait before each rename retry, in milliseconds.
  *
@@ -145,9 +158,15 @@ export async function atomicWrite(
   surface: AtomicWriteSurface,
   target: string,
   writeTemp: (temp: string) => Promise<void>,
-  names: { readonly temp: string; readonly backups: readonly string[]; readonly retired: readonly string[] },
+  names: {
+    readonly temp: string;
+    /** Where the file being replaced is copied before the rename, to become the newest backup once the save lands. */
+    readonly previous: string;
+    readonly backups: readonly string[];
+    readonly retired: readonly string[];
+  },
   wait: (ms: number) => Promise<void>,
-): Promise<Result<{ readonly backedUp: boolean }, AtomicWriteFailure>> {
+): Promise<Result<AtomicWriteDone, AtomicWriteFailure>> {
   try {
     await writeTemp(names.temp);
   } catch (cause) {
@@ -173,17 +192,13 @@ export async function atomicWrite(
   // AND ONLY WHERE A PERSON KEEPS ANY (`saving.backup-copies`): none is a choice, and then nothing is copied.
   const hadOriginal = await surface.exists(target);
   const [newest] = names.backups;
-  if (hadOriginal && newest !== undefined) {
+  const keeping = hadOriginal && newest !== undefined;
+  if (keeping) {
     try {
-      // ROTATED FIRST, OLDEST END FIRST: each kept backup moves one name older, so the oldest name is overwritten by
-      // the one before it and the newest name is free for the file about to be replaced. A gap — `.bak2` missing while
-      // `.bak` exists — is stepped over, never filled with something older.
-      for (let index = names.backups.length - 1; index > 0; index -= 1) {
-        const newer = names.backups[index - 1];
-        const older = names.backups[index];
-        if (newer !== undefined && older !== undefined && (await surface.exists(newer))) await surface.rename(newer, older);
-      }
-      await surface.copy(target, newest);
+      // COPIED ASIDE, and the kept backups NOT TOUCHED until the save has landed (CR-DOC-09). Rotating them first meant
+      // a rename that then failed had already overwritten the oldest, and with one copy kept `.bak` became the very
+      // file that was never replaced: a save that did not happen destroyed the previous version.
+      await surface.copy(target, names.previous);
     } catch (cause) {
       // REFUSED, not continued — and NOT because the rename needs something to
       // roll back to. Nothing here reads the backup, no case asserts a recovery
@@ -194,6 +209,7 @@ export async function atomicWrite(
       // would replace the user's document and report success while silently
       // dropping the one thing that save promised to leave behind.
       await surface.remove(names.temp).catch(() => undefined);
+      await surface.remove(names.previous).catch(() => undefined);
       return err({ stage: 'backup', detail: describe(cause) });
     }
   }
@@ -205,10 +221,11 @@ export async function atomicWrite(
     attempts += 1;
     try {
       await surface.rename(names.temp, target);
+      const previousKeptAt = keeping ? ((await rotateIn(surface, names.previous, names.backups)) ? newest : names.previous) : null;
       // THE BACKUPS A SHORTER CHOICE NO LONGER KEEPS go once the save has landed — best-effort, since the save itself
       // succeeded and a copy that could not be removed is still a copy of the person's document, not a failure.
       for (const retired of names.retired) await surface.remove(retired).catch(() => undefined);
-      return ok({ backedUp: hadOriginal && newest !== undefined });
+      return ok({ previousKeptAt });
     } catch (cause) {
       last = cause;
       // ONLY THE HOLDING ERRORS ARE RETRIED. `ENOENT` means the temp is gone
@@ -221,6 +238,8 @@ export async function atomicWrite(
   }
 
   await surface.remove(names.temp).catch(() => undefined);
+  // THE COPY ASIDE GOES, and the kept backups are exactly as they were: this save did not happen.
+  await surface.remove(names.previous).catch(() => undefined);
   return err({
     stage: 'rename',
     detail: describe(last),
@@ -229,13 +248,43 @@ export async function atomicWrite(
 }
 
 /**
+ * Moves the copy of the replaced file into the newest backup name, after the save has landed.
+ *
+ * Oldest end first: each kept backup moves one name older, so the oldest name is overwritten by the one before it and
+ * the newest name is free. A gap — `.bak2` missing while `.bak` exists — is stepped over, never filled with something
+ * older.
+ *
+ * @returns whether the newest name now holds the previous version. `false` where a rename was refused, a backup open
+ *   elsewhere being the likely one: the save has landed, so this is not its failure, and nothing is lost — the
+ *   previous version stays at `previous`, and each backup at the name it had or one older.
+ */
+async function rotateIn(surface: AtomicWriteSurface, previous: string, backups: readonly string[]): Promise<boolean> {
+  try {
+    for (let index = backups.length - 1; index > 0; index -= 1) {
+      const newer = backups[index - 1];
+      const older = backups[index];
+      if (newer !== undefined && older !== undefined && (await surface.exists(newer))) await surface.rename(newer, older);
+    }
+    const [newest] = backups;
+    if (newest === undefined) return false;
+    await surface.rename(previous, newest);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Whether a rename failure is one waiting can fix.
  *
  * Windows reports a file held open by another process as `EPERM` or `EBUSY`
  * depending on how it was opened; both are the same situation to this ladder.
  * Anything else — a missing temp, a full disk, a read-only volume — is not.
+ *
+ * Exported with {@link RENAME_BACKOFF_MS} as the one answer to *is another program holding this file*: a delete of a
+ * backup climbs the same ladder (`backupLedger.ts`), so the two cannot disagree about which failures are worth a wait.
  */
-function isTransient(cause: unknown): boolean {
+export function isTransient(cause: unknown): boolean {
   const code = (cause as { code?: unknown } | null)?.code;
   return code === 'EPERM' || code === 'EBUSY';
 }

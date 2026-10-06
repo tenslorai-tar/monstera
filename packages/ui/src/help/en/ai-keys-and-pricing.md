@@ -41,8 +41,9 @@ Azure OpenAI is one of the providers the AI assistant can use.
 
 1. Open **Settings**: in the rail, choose **Settings**, or in the rail choose **Tools**, then **Settings** in the **Application** group.
 2. For **Claude** or **Azure OpenAI** (and the other assistant providers): choose the **AI** page. In **AI provider**, pick the provider, then paste the key into its key field, for example **Anthropic API key** or **Azure OpenAI key**. For Azure OpenAI, also fill in **Azure OpenAI endpoint**. The provider you pick here is also the one the assistant asks. Under **AI model**, choose the model; the line beneath it says whether the list came from the provider this session or is Monstera's own.
-3. For **Azure Document Intelligence**: choose the **OCR** page and fill in both **Azure Document Intelligence endpoint** and **Azure Document Intelligence key**.
-4. Changes save as you make them. Choose **Done** to close Settings.
+3. To make sure an assistant key works, choose **Check** under its key field. Monstera asks the provider with the stored key and says **Key works**, or says why not: the key was not accepted, the provider could not be reached, or it refused. A key that works also fills **AI model** with the provider's own list. The answer stays until you change the key.
+4. For **Azure Document Intelligence**: choose the **OCR** page and fill in both **Azure Document Intelligence endpoint** and **Azure Document Intelligence key**.
+5. Changes save as you make them. Choose **Done** to close Settings.
 
 ![The Settings window on the AI page, with AI provider set to Anthropic and the Anthropic API key field showing that a key is stored](screenshot:ai-keys-and-pricing-1)
 

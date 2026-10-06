@@ -1,15 +1,10 @@
 import { useLingui } from '@lingui/react';
-import { MAX_SIGNATURE_FIELD, type RequestedSignatureMark, SIGNATURE_FONTS } from '@monstera/contract';
-import type { MessageKey } from '@monstera/shared';
+import { type ChosenSignatureMark, MAX_SIGNATURE_FIELD, type SignatureFont } from '@monstera/contract';
 import type { ReactElement } from 'react';
 import { useId, useState } from 'react';
 
 import {
   SIGN_DOCUMENT_CLEAR,
-  SIGN_DOCUMENT_FONT_COURIER,
-  SIGN_DOCUMENT_FONT_HELVETICA,
-  SIGN_DOCUMENT_FONT_TIMES,
-  SIGN_DOCUMENT_FONT_TIMES_ITALIC,
   SIGN_DOCUMENT_KEPT_REMOVE,
   SIGN_DOCUMENT_MARK_MISSING,
   SIGNATURE_DRAW,
@@ -24,7 +19,6 @@ import {
   SIGNATURE_PICTURE_SHOWN,
   SIGNATURE_SAVE,
   SIGNATURE_SAVE_NOTE,
-  SIGNATURE_STYLE,
   SIGNATURE_TOO_LONG,
   SIGNATURE_TYPE,
   SIGNATURE_UPLOAD,
@@ -33,10 +27,12 @@ import {
   SIGNATURE_UPLOAD_NOTE,
   SIGNATURE_USE,
 } from '../messages/en.js';
+import { useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
-import { Input } from '../primitives/Input.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
+import { DEFAULT_SIGNATURE_FONT } from '../signatureFaces.js';
+import { TypedSignatureFields, typedNameProblem, useSignatureFaces, useTypedName } from './TypedSignature.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { KeptSignatureLook } from './KeptSignatureLook.js';
 import type { HeldSignaturePicture, SignatureAnswers } from './signature.js';
@@ -46,14 +42,6 @@ import { SignaturePad } from './SignaturePad.js';
 
 /** The three ways to make a new signature, in the order the owner named them. */
 type Way = 'draw' | 'type' | 'upload';
-
-/** Each face's name, keyed on the contract's own list, so a face added there owes its words here. */
-const FACES: Readonly<Record<(typeof SIGNATURE_FONTS)[number], MessageKey>> = {
-  helvetica: SIGN_DOCUMENT_FONT_HELVETICA,
-  'times-roman': SIGN_DOCUMENT_FONT_TIMES,
-  'times-italic': SIGN_DOCUMENT_FONT_TIMES_ITALIC,
-  courier: SIGN_DOCUMENT_FONT_COURIER,
-};
 
 /**
  * The plain Signature's dialog (ADR-0133), in the dialog pattern: the kept signatures first, for one-click reuse; then
@@ -73,8 +61,15 @@ const FACES: Readonly<Record<(typeof SIGNATURE_FONTS)[number], MessageKey>> = {
  *
  * ## *Use Signature* waits for something to draw
  *
- * A drawn look needs a stroke, a typed one a name and an upload its picture. The status line says what is missing
- * rather than leaving a disabled button to explain itself.
+ * A drawn look needs a stroke, a typed one a name and an upload its picture. The button stays pressable, and once it
+ * has been pressed the status line says what is missing (`attempt.ts`); switching to another way forgets the press,
+ * since that way's empty field is one the person has not yet had a chance to fill.
+ *
+ * ## A typed name its style cannot write is said as it is typed
+ *
+ * The style's own character map decides (ADR-0150 Decision 5), and the status line names the characters while the
+ * person can still change the name or the style; the list of styles says the same of each one. Nothing is drawn in a
+ * missing letter's place, so *Use Signature* has nothing to place until the name and the style agree.
  */
 export default function SignatureBody({
   kept,
@@ -87,19 +82,22 @@ export default function SignatureBody({
   readonly keep?: boolean | undefined;
 } & DialogAnswering<SignatureAnswers>): ReactElement {
   const { _ } = useLingui();
-  const facesName = useId();
   const keepId = useId();
+  const faces = useSignatureFaces();
   // ASKED AGAIN WITH A PICTURE, the dialog opens where the person was: on Upload, showing it.
   const [way, setWay] = useState<Way>(picked === undefined ? 'draw' : 'upload');
   const [strokes, setStrokes] = useState<readonly PadStroke[]>([]);
   const [name, setName] = useState('');
-  const [face, setFace] = useState<(typeof SIGNATURE_FONTS)[number]>('times-italic');
+  const [face, setFace] = useState<SignatureFont>(DEFAULT_SIGNATURE_FONT);
   // TICKED, the owner's default: a signature made here is usually one a person will place again.
   const [keep, setKeep] = useState(keptChoice ?? true);
 
   const tooLong = name.trim().length > MAX_SIGNATURE_FIELD;
+  const attempt = useAttempt();
+  // THE NAME SET IN THE CHOSEN FACE — what the preview shows and what decides whether there is a mark to place.
+  const typed = useTypedName(faces, face, name.trim());
   /** The look to place, or `undefined` while the chosen way has nothing to draw. */
-  const mark = ((): RequestedSignatureMark | undefined => {
+  const mark = ((): ChosenSignatureMark | undefined => {
     if (way === 'upload') return picked === undefined ? undefined : { kind: 'image', picked: picked.handle };
     if (way === 'draw') {
       return strokes.length === 0
@@ -107,8 +105,11 @@ export default function SignatureBody({
         : { kind: 'drawn', strokes: strokes.map((stroke) => stroke.map(([across, down]): [number, number] => [across, down])) };
     }
     const text = name.trim();
-    return text.length === 0 || tooLong ? undefined : { kind: 'typed', text, font: face };
+    return text.length === 0 || tooLong || typed?.kind !== 'outline' ? undefined : { kind: 'typed', text, font: face };
   })();
+  // WHAT THE CHOSEN FACE CANNOT DO WITH WHAT WAS TYPED, said as soon as it is typed: the person has acted, and the list
+  // beside it already says the same of every face.
+  const facing = way === 'type' && name.trim() !== '' && typed !== undefined ? typedNameProblem(typed) : undefined;
 
   return (
     <div className="m-signature">
@@ -146,7 +147,10 @@ export default function SignatureBody({
       <DialogRow label={SIGNATURE_MAKE}>
         <SegmentedControl<Way>
           label={SIGNATURE_MAKE}
-          onChange={setWay}
+          onChange={(next) => {
+            setWay(next);
+            attempt.forget();
+          }}
           options={[
             { value: 'draw', label: SIGNATURE_DRAW },
             { value: 'type', label: SIGNATURE_TYPE },
@@ -173,34 +177,15 @@ export default function SignatureBody({
       ) : null}
 
       {way === 'type' ? (
-        <>
-          <DialogRow label={SIGNATURE_NAME}>
-            <Input invalid={tooLong} label={SIGNATURE_NAME} labelShownBeside onValueChange={setName} purpose="name" value={name} />
-          </DialogRow>
-          {/* THE FACES AS THEY WILL LOOK: each choice shows the name in that face, so a person picks a signature rather
-              than a font's name. Radio rows in the pattern's shape, named by the row's heading. */}
-          <div aria-labelledby={`${facesName}-heading`} className="m-dialog-choices" role="radiogroup">
-            <div className="m-dialog-row__text" id={`${facesName}-heading`}>
-              <span className="m-dialog-row__label">{_(SIGNATURE_STYLE)}</span>
-            </div>
-            {SIGNATURE_FONTS.map((each) => (
-              <label className="m-dialog-choice" key={each}>
-                <input
-                  checked={face === each}
-                  name={facesName}
-                  onChange={() => {
-                    setFace(each);
-                  }}
-                  type="radio"
-                />
-                <span className="m-dialog-row__text">
-                  <span className={`m-signature__face m-sign-font--${each}`}>{name.trim() === '' ? _(FACES[each]) : name.trim()}</span>
-                  <span className="m-dialog-row__note">{_(FACES[each])}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-        </>
+        <TypedSignatureFields
+          face={face}
+          faces={faces}
+          invalid={tooLong || facing !== undefined}
+          label={SIGNATURE_NAME}
+          onFaceChange={setFace}
+          onTextChange={setName}
+          text={name}
+        />
       ) : null}
 
       {way === 'upload' ? (
@@ -240,15 +225,18 @@ export default function SignatureBody({
       <p className="m-signature__problem" role="status">
         {tooLong
           ? _(SIGNATURE_TOO_LONG, { limit: MAX_SIGNATURE_FIELD })
-          : mark === undefined
-            ? _(way === 'upload' ? SIGNATURE_PICTURE_MISSING : SIGN_DOCUMENT_MARK_MISSING)
-            : ''}
+          : facing !== undefined
+            ? _(facing.message, facing.values)
+            : mark === undefined && attempt.tried
+              ? _(way === 'upload' ? SIGNATURE_PICTURE_MISSING : SIGN_DOCUMENT_MARK_MISSING)
+              : ''}
       </p>
       <DialogFooter>
         <Button
-          disabled={mark === undefined}
+          disabled={tooLong}
           label={SIGNATURE_USE}
           onClick={() => {
+            attempt.attempt();
             if (mark === undefined) return;
             resolve({ mark, keep });
           }}

@@ -308,6 +308,31 @@ describe('Compare — the walk runs when asked, and its list jumps to each chang
     expect(screen.getByRole('button', { name: 'Compare' }).getAttribute('aria-disabled')).not.toBe('true');
   });
 
+  it('ONE DOCUMENT IN BOTH HALVES offers no Compare and says how to choose a second (8a, F-H2); CONTROL: a second enables it', async () => {
+    const { client, read } = clientFor(new Map([[LEFT, 'The quick brown fox jumps over']]));
+    const [first, second] = DOCUMENTS;
+    if (first === undefined || second === undefined) throw new Error('no fixture documents');
+    const { container, rerender } = mount(client, { left: first, right: first });
+    await settle();
+
+    const compare = screen.getByRole('button', { name: 'Compare' });
+    expect(compare.getAttribute('aria-disabled')).toBe('true');
+    const hint = container.querySelector('[data-side-alone]');
+    expect(hint?.textContent).toBe('Choose a second document on the right, or open another PDF, to compare');
+    // DESCRIBED BY THE HINT, so a screen reader that lands on the button hears why it does nothing.
+    expect(compare.getAttribute('aria-describedby')).toBe(hint?.id);
+    const before = read.length;
+    fireEvent.click(compare);
+    await settle();
+    expect(read.length).toBe(before);
+
+    rerender(first, second);
+    await settle();
+    expect(screen.getByRole('button', { name: 'Compare' }).getAttribute('aria-disabled')).not.toBe('true');
+    expect(container.querySelector('[data-side-alone]')).toBeNull();
+    expect(screen.getByText('Compare two open documents')).toBeTruthy();
+  });
+
   it('while comparing, Compare BECOMES Stop in its place, and Stop ends the walk with no panel left', async () => {
     const { client } = clientFor(
       new Map([

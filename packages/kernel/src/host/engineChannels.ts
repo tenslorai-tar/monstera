@@ -3,6 +3,7 @@ import {
   type CommandOfKind,
   DOCUMENT_ACCESS_VALUES,
   DOCUMENT_PASSWORD_MAX_CHARS,
+  MAX_MERGE_DOCUMENTS,
   addAnnotationSchema,
   pageSetSchema,
   placeImageSchema,
@@ -51,6 +52,7 @@ import {
   annotationAuthorSchema,
   annotationBlendSchema,
   annotationInstantSchema,
+  annotationWordsStyleSchema,
   replyToAnnotationSchema,
   removeAnnotationSchema,
   replacePageSchema,
@@ -70,6 +72,9 @@ import {
   createFormFieldSchema,
   ocrPageSchema,
   generateTocSchema,
+  drawableSignatureSchema,
+  signDocumentSchema,
+  signaturePlacementSchema,
 } from '@monstera/contract/host';
 import { z } from 'zod';
 
@@ -77,6 +82,7 @@ import { HUMAN_CHECKS } from '../accessibilityRules.js';
 import type { CommandPrior } from '../commandLog.js';
 import { type DeclaredCommands, declaredCommands } from '../commandDeclarations.js';
 import type { KindsRoutedTo } from '../commandRouting.js';
+import type { PlaceholderRequest } from '../signatureHole.js';
 import { PAGE_TEXT_READS } from '../textStructure.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
 
@@ -229,6 +235,13 @@ export const ENGINE_WORD_LINE_MAX = 1024;
  * answer being refused, and nothing follows the shown text.
  */
 export const ENGINE_LINK_URI_MAX = 2048;
+
+/**
+ * How long an address may be when a person follows its link (ADR-0167): sixteen times the shown bound, so a tracking
+ * link is opened as the document holds it. Past this it is not opened at all, since an address cut short is another
+ * address.
+ */
+export const ENGINE_LINK_ADDRESS_MAX = 32_768;
 
 /**
  * How many recognised lines one page may answer with.
@@ -400,9 +413,9 @@ export const ENGINE_ANNOTATION_CONTENTS_MAX = 512;
  * longer than this is still a value, and refusing the field would hide it from
  * the list it belongs in.
  */
-export const ENGINE_FORM_FIELDS_MAX = 77_600;
+export const ENGINE_FORM_FIELDS_MAX = 66_500;
 /** The fewest bytes one form field serialises to on this wire. Measured by `engineChannels.test.ts`. */
-export const SMALLEST_FORM_FIELD_BYTES = 107;
+export const SMALLEST_FORM_FIELD_BYTES = 125;
 export const ENGINE_FORM_FIELD_TEXT_MAX = 512;
 export const ENGINE_FORM_FIELD_OPTIONS_MAX = 512;
 /** How many values one field may carry. The contract's bound, on this wire. */
@@ -496,6 +509,16 @@ const engineAnnotationSchema = z
     created: annotationInstantSchema.nullable(),
     /** The blend the appearance is drawn in. */
     blend: annotationBlendSchema,
+    /**
+     * Present and true on a stamp that draws a picture. EXACTLY optional rather than nullable: the reader spreads it in
+     * only when true, so absent is the one spelling of *no*, on the wire and in the reader's type alike, and a key
+     * present with no value is refused rather than read as a third answer.
+     */
+    pictured: z.literal(true).exactOptional(),
+    /** Present and true where `contents` is a slice of longer words, exactly optional for `pictured`'s reason. */
+    cut: z.literal(true).exactOptional(),
+    /** How a text mark's words are drawn, exactly optional for `pictured`'s reason (the renderer channel's member). */
+    typed: annotationWordsStyleSchema.exactOptional(),
   })
   .strict();
 
@@ -542,8 +565,12 @@ const engineFormFieldSchema = z
       .max(ENGINE_FORM_FIELD_OPTIONS_MAX)
       .readonly(),
     readOnly: z.boolean(),
+    /** Whether a text field takes line breaks; false for every other kind. */
+    multiline: z.boolean(),
     /** PDF user space, or null for a page that displays no region. */
     rect: annotationRectSchema.nullable(),
+    /** Present and true where a value is a slice of a longer one, exactly optional for the annotation's `cut`. */
+    cut: z.literal(true).exactOptional(),
   })
   .strict();
 
@@ -1273,6 +1300,75 @@ export function joinPdfLibAsset(
   return { ...command, bytes: asset };
 }
 
+/**
+ * The signing command as `engine/prepareSignature` carries it to the MuPDF host
+ * ([ADR-0148](../../../../docs/DECISIONS/0148-signings-parse-runs-in-the-mupdf-host-and-main-keeps-only-the-key.md)).
+ *
+ * **No certificate and no passphrase, by the schema**: `signDocumentSchema` with both omitted, so a host cannot be
+ * handed a key whatever main's code does. The picture of a visible signature travels without its bytes, for
+ * `insertImagePage`'s reason: this wire is JSON, so they cross as an asset in the session's snapshot directory.
+ */
+const placeholderRequestSchema = signDocumentSchema
+  .omit({ bytes: true, passphrase: true, appearance: true })
+  .extend({
+    appearance: signaturePlacementSchema
+      .extend({
+        mark: z.discriminatedUnion('kind', [
+          ...drawableSignatureSchema.options,
+          z.object({ kind: z.literal('image'), mediaType: z.enum(['image/jpeg', 'image/png']) }).strict(),
+        ]),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+/** A placeholder request once its picture has been taken out. */
+export type PlaceholderWireRequest = z.infer<typeof placeholderRequestSchema>;
+
+/** {@link splitPdfLibAsset} for a signature's picture: the request without its bytes, and the bytes. */
+export function splitPlaceholderAsset(request: PlaceholderRequest): {
+  readonly request: PlaceholderWireRequest;
+  readonly asset: Uint8Array | undefined;
+} {
+  const { appearance, ...rest } = request;
+  if (appearance === undefined) return { request: rest, asset: undefined };
+  const { mark, ...where } = appearance;
+  if (mark.kind !== 'image') return { request: { ...rest, appearance: { ...where, mark } }, asset: undefined };
+  const { bytes, ...picture } = mark;
+  return { request: { ...rest, appearance: { ...where, mark: picture } }, asset: bytes };
+}
+
+/** {@link joinPdfLibAsset} for a signature's picture: whole again, or `undefined` where the request and asset disagree. */
+export function joinPlaceholderAsset(
+  request: PlaceholderWireRequest,
+  asset: Uint8Array | undefined,
+): PlaceholderRequest | undefined {
+  const { appearance, ...rest } = request;
+  if (appearance === undefined) return asset === undefined ? rest : undefined;
+  const { mark, ...where } = appearance;
+  if (mark.kind !== 'image') return asset === undefined ? { ...rest, appearance: { ...where, mark } } : undefined;
+  if (asset === undefined) return undefined;
+  return { ...rest, appearance: { ...where, mark: { ...mark, bytes: asset } } };
+}
+
+/**
+ * The refusals a hosted command can meet that a person can act on, by the code each crosses the pipe as. A throw
+ * crossing the boundary becomes `internal` with its diagnostic withheld, so each is returned under its own code and
+ * main rethrows the class its outcomes are chosen by (`documentCommands.insertImage`, `documentCommands.sign`).
+ * `hostRefusals.ts` is the one table both directions read.
+ *
+ * A picture past the pixel bound is any picture's: Insert image's, run in pdf-lib here since ADR-0121, and a visible
+ * signature's.
+ */
+export const PICTURE_REFUSALS = ['picture-too-many-pixels'] as const;
+
+/** {@link PICTURE_REFUSALS}, and the one only a signature's appearance meets. */
+export const PLACEHOLDER_REFUSALS = [
+  'signature-picture-unreadable',
+  ...PICTURE_REFUSALS,
+] as const;
+
 /** {@link carriesAsset} over a pdf-lib wire command: both halves from `declaredCommands`, as there. */
 function pdfLibCarriesAsset(
   command: PdfLibWireCommand,
@@ -1315,7 +1411,7 @@ const pathSchema = z.string().min(1).max(ENGINE_PATH_MAX_CHARS);
  * that disagrees the day one is raised, with the failure landing as a frame
  * error in the middle of somebody typing (B3a).
  */
-const documentPasswordSchema = z.string().max(DOCUMENT_PASSWORD_MAX_CHARS);
+export const documentPasswordSchema = z.string().max(DOCUMENT_PASSWORD_MAX_CHARS);
 
 /**
  * One attempt's outcome, exactly as `containment.ts` defines it.
@@ -1519,11 +1615,12 @@ export const liveSessionWire = {
 >;
 
 /**
- * The wire of a writer whose session is the document's bytes.
+ * The wire of a writer whose session is the document's bytes and the key that
+ * opens them (ADR-0171's addendum).
  *
  * PDFium's, and any future byte-image engine's that runs in a host. Every call
- * names where its image is; a write also names where its result goes and
- * answers how many bytes arrived.
+ * names where its image is and carries its key; a write also names where its
+ * result goes and answers how many bytes arrived.
  *
  * **`engine-refused` is where ADR-0048's withdrawn Decision 3 went.** That
  * decision put *this engine cannot read this document* at `engine/open`; main's
@@ -1535,7 +1632,10 @@ export const byteImageWire = {
   open: {},
   openFailures: [],
   opened: {},
-  read: { from: outputNameSchema },
+  // THE KEY TRAVELS WITH THE NAME (ADR-0171's addendum): a document opened with its password serialises to its own
+  // encrypted form, and the host holds nothing between calls to open it with. REQUIRED and `null` for none, so a frame
+  // that leaves it out is a compile error rather than a document opened without its key (ADR-0069's rule).
+  read: { from: outputNameSchema, password: documentPasswordSchema.nullable() },
   write: { into: outputNameSchema },
   wrote: z.object({ bytes: z.number().int().nonnegative() }).strict(),
   transferFailures: ['asset-missing', 'engine-refused'],
@@ -1760,24 +1860,24 @@ export function coreEngineChannels<
           session: sessionSchema,
           command: schemas.command,
           /**
-           * The source document's session, for a `sources: 'one'` command.
+           * The other documents' sessions, in the command's order: one for a
+           * `sources: 'one'` command, one or more for a merge, none for every
+           * other ([ADR-0152](../../../../docs/DECISIONS/0152-a-merge-takes-several-documents-in-one-command.md)).
            *
-           * **A second SESSION TOKEN, which is why ADR-0040 needs no new
-           * process shape**: both documents are sessions in this same host, so
+           * **More SESSION TOKENS, which is why ADR-0040 needs no new
+           * process shape**: every document is a session in this same host, so
            * what crosses is another handle this host already holds — never
            * bytes, and never a path.
            *
-           * Optional because eleven of the twelve MuPDF-routed commands name no
-           * second document. It is `.optional()` rather than nullable for the
-           * reason `mergeDocumentSchema` is not: this is a field that may be
-           * absent from the message, not a value that may be null, and the two
-           * spellings mean different things to a caller.
+           * Required and empty for most commands, as `ApplyRequest.sources` is,
+           * so one field means the same thing on both sides of the pipe. Bounded
+           * by the merge's own bound, the most any command names.
            *
            * A token this host does not hold answers `no-such-session` exactly
-           * as the target's does — the handler looks both up the same way, so a
-           * closed source is the same ordinary race as a closed target.
+           * as the target's does — the handler looks every one up the same way,
+           * so a closed source is the same ordinary race as a closed target.
            */
-          source: sessionSchema.optional(),
+          sources: z.array(sessionSchema).max(MAX_MERGE_DOCUMENTS),
           /**
            * The file in this session's snapshot directory holding the command's
            * bytes, for an `asset: 'bytes'` command
@@ -1994,7 +2094,43 @@ export const engineChannels = {
       })
       .strict(),
     z.object({ bytes: z.number().int().nonnegative() }).strict(),
-    ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed'],
+    ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed', ...PICTURE_REFUSALS],
+  ),
+
+  /**
+   * A signature's placeholder, written BESIDE the session it signs, and its ranges prepared
+   * ([ADR-0148](../../../../docs/DECISIONS/0148-signings-parse-runs-in-the-mupdf-host-and-main-keeps-only-the-key.md)).
+   *
+   * The host serialises the session it holds, writes the placeholder and the appearance with pdf-lib (the picture is
+   * decoded here), and runs `@signpdf`'s range step with a signer that answers no bytes. The file it writes under the
+   * name main chose has its ranges written and its hole all `0`; the answer is the count and the four numbers, which
+   * main checks against the file before it signs. The request carries no credential, by its schema. The session is not
+   * rebuilt here: main signs the file and rebuilds it through `adopt`, as for any byte-image result.
+   */
+  // FILE-REQUESTED for `engine/applyPdfLib`'s reason: a drawn signature's strokes can outgrow a frame at their worst.
+  'engine/prepareSignature': fileRequested(
+    'Writes a signature placeholder into the image of a session this host holds and prepares its byte ranges, ' +
+      'writing the result to the output directory.',
+    z
+      .object({
+        session: sessionSchema,
+        request: placeholderRequestSchema,
+        asset: outputNameSchema.optional(),
+        into: outputNameSchema,
+      })
+      .strict(),
+    z
+      .object({
+        bytes: z.number().int().nonnegative(),
+        byteRange: z.tuple([
+          z.number().int().nonnegative(),
+          z.number().int().nonnegative(),
+          z.number().int().nonnegative(),
+          z.number().int().nonnegative(),
+        ]),
+      })
+      .strict(),
+    ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed', ...PLACEHOLDER_REFUSALS],
   ),
 
   'engine/extract': channel(
@@ -2122,6 +2258,8 @@ export const engineChannels = {
         session: sessionSchema,
         mode: z.enum(WORD_MODES),
         into: outputNameSchema,
+        // THE PAGES THE PERSON CHOSE (ADR-0161), as the set, expanded where the page count is known.
+        pages: pageSetSchema,
       })
       .strict(),
     // A COUNT, for `engine/serialise`'s reason; and how many pictures it carries, which is what the export exists to
@@ -2403,6 +2541,26 @@ export const engineChannels = {
   ),
 
   /**
+   * One external link's address in full, named by its place among the page's links, so `main` reads
+   * what a person asked to follow from the document rather than from the renderer (ADR-0167).
+   */
+  'engine/link-address': fileAnswered(
+    'Reads one external link’s address in full, by its place among the page’s links, for a person following it.',
+    z
+      .object({
+        session: sessionSchema,
+        page: z.number().int().nonnegative(),
+        /** The link's position in `engine/page-links`' answer for the same page. */
+        index: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z.object({ uri: z.string().max(ENGINE_LINK_ADDRESS_MAX) }).strict(),
+    // TWO REFUSALS BY NAME: no external link at that place, and an address too long to open as written. Neither is
+    // a failure of the host, and main tells the person which.
+    ['no-such-session', 'no-such-link', 'address-too-long'],
+  ),
+
+  /**
    * One page's filled shapes and their colours — what a table cell's background is joined from
    * (`cellFills.ts`). A shape, not MuPDF's own format, so the host builds it and the schema bounds
    * it: the count, each coordinate, and each channel.
@@ -2615,6 +2773,26 @@ export const engineChannels = {
       })
       .strict(),
     ['no-such-session'],
+  ),
+
+  'engine/annotation-words': fileAnswered(
+    'Reads one annotation’s own words whole, for an editor whose listing was cut.',
+    z
+      .object({
+        session: sessionSchema,
+        page: z.number().int().nonnegative(),
+        index: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z
+      .object({
+        /** The words, to `MAX_ANNOTATION_TEXT`: the most an edit can write back. */
+        text: z.string().max(MAX_ANNOTATION_TEXT),
+        /** Whether that is all of them; `false` is a note past the bound, which an editor may not start from. */
+        whole: z.boolean(),
+      })
+      .strict(),
+    ['no-such-session', 'no-such-annotation'],
   ),
 
   'engine/form-fields': fileAnswered(
@@ -2864,4 +3042,10 @@ export type EngineFailureCode =
   // before anything is generated (ADR-0096), and main turns this into the
   // sentence that says so — where `engine-refused` becomes `internal` with an
   // incident id, for a document the engine could not work with.
-  | 'text-not-writable';
+  | 'text-not-writable'
+  // AND ONE OCCURRENCE NAMED BY ITS POINT that no single text object holds there (ADR-0156): the person's too.
+  | 'text-not-in-place'
+  // AND A REPLACEMENT THAT WOULD CHANGE NOTHING, which makes no version (ADR-0169 Decision 6): the person's too.
+  | 'nothing-to-replace'
+  // AND A REPLACEMENT THAT WOULD MOVE THE TEXT AFTER IT on its line, which a Replace cannot do (`replaceLineRule.ts`).
+  | 'replace-moves-line';

@@ -1,15 +1,15 @@
 import { type CommandOfKind, blocksOfEdit, replacementsOf } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
-import type { ByteImage } from './engineSeam.js';
+import type { ByteImage, ImageSession } from './engineSeam.js';
 import {
   editTextBlocks,
+  onImage,
   pdfiumWriter,
+  removesItsObject,
   replaceTextObjects,
   textObjectText,
-  drawnTexts,
 } from './pdfiumFfi.js';
-import { TextNotWritableError } from './textEditRefusals.js';
 
 /**
  * In-place text editing, as the bus calls it: **region replacement**.
@@ -71,24 +71,16 @@ export interface PriorTextObjects {
 }
 
 /**
- * Runs `work` against a session opened from `image`, closing it however `work`
- * ends.
- *
- * The three exports below are the same four lines with a different middle, and
- * this is where the `finally` lives so that none of them can be written
- * without one.
+ * Why a replacement that empties an object, or names one that reads as no text, has no prior: the object is removed,
+ * by the replacement or by restoring nothing, and PDFium cannot rebuild one ({@link removesItsObject}). The bus takes a
+ * checkpoint, so the undo still puts the page back.
  */
-async function onImage<T>(
-  image: ByteImage,
-  work: (session: Awaited<ReturnType<typeof pdfiumWriter.open>>) => Promise<T>,
-): Promise<T> {
-  const session = await pdfiumWriter.open(image);
-  try {
-    return await work(session);
-  } finally {
-    await pdfiumWriter.close(session);
-  }
-}
+export const EMPTIED = {
+  captured: false,
+  reason:
+    'an object left with no text is removed, and PDFium cannot rebuild a removed one, so the strings this changes ' +
+    'are not enough to put the page back',
+} as const satisfies CaptureResult<never>;
 
 /**
  * The string the named object currently holds.
@@ -106,18 +98,27 @@ async function onImage<T>(
  * carries the numbers the caller sent and nothing the file said.
  */
 export async function captureReplaceTextObject(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'replaceTextObject'>,
 ): Promise<CaptureResult<PriorTextObjects>> {
+  const replacements = replacementsOf(command);
+  // AN EMPTIED OBJECT IS REMOVED, and `captureEditTextBlock`'s reason follows: PDFium cannot rebuild a removed object,
+  // so the strings this changes are not enough to put the page back.
+  if (replacements.some((replacement) => removesItsObject(replacement.text))) return Promise.resolve(EMPTIED);
   return onImage(image, async (session) => {
     const objects: { index: number; text: string }[] = [];
-    for (const replacement of replacementsOf(command)) {
+    for (const replacement of replacements) {
       try {
         // SEQUENTIALLY, on one session. `textObjectText` loads and closes a text
         // page per call, and PDFium's page handles are not safe to work through
         // concurrently — a `Promise.all` here would interleave loads against one
         // document for no gain, the whole read being in-memory.
         const text = await textObjectText(session, command.page, replacement.index);
+        // AN OBJECT THAT READS AS NO TEXT cannot be put back from what it reads: restoring nothing removes it. So it is a
+        // checkpoint, as an emptied one is. NO FIXTURE REACHES THIS, measured 2026-10-05 on PDFium 155.0.8044.0's Linux
+        // build: an empty `Tj` makes no object, and a glyph named nowhere reads as its own code (U+0081). It stays
+        // because the other answer, a removal on undo, loses the object where a checkpoint loses nothing.
+        if (removesItsObject(text)) return EMPTIED;
         objects.push({ index: replacement.index, text });
       } catch {
         // ALL OR NOTHING, and that is the capture's own rule rather than a
@@ -151,12 +152,13 @@ export async function captureReplaceTextObject(
  * run, and a visual line is several runs.
  */
 export async function applyReplaceTextObject(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'replaceTextObject'>,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {
-    // READ BACK THROUGH THE CONTRACT'S DECODER, the one inverse of the wire form (ADR-0142).
-    await replaceTextObjects(session, command.page, replacementsOf(command));
+    // READ BACK THROUGH THE CONTRACT'S DECODER, the one inverse of the wire form (ADR-0142). THE LINE IS HELD: strings
+    // set object by object carry no knowledge of the line, a Replace's position (`replaceLineRule.ts`).
+    await replaceTextObjects(session, command.page, replacementsOf(command), 'held');
     return pdfiumWriter.serialise(session);
   });
 }
@@ -175,11 +177,12 @@ export async function applyReplaceTextObject(
  * single inverse is what makes the step reversible in one move.
  */
 export async function invertReplaceTextObject(
-  image: ByteImage,
+  image: ImageSession,
   inverse: PriorTextObjects,
 ): Promise<ByteImage> {
   return onImage(image, async (session) => {
-    await replaceTextObjects(session, inverse.page, inverse.objects);
+    // AS WRITTEN: the recorded strings are the line as it was, widths and all, and an undo is never refused for them.
+    await replaceTextObjects(session, inverse.page, inverse.objects, 'as-written');
     return pdfiumWriter.serialise(session);
   });
 }
@@ -198,7 +201,7 @@ export async function invertReplaceTextObject(
  * Text neither a run's font nor its twin can carry throws `TextNotWritableError`
  * and this answers no bytes — so the document is exactly what it was.
  *
- * ## Every write is read back from the SAVED bytes, reopened
+ * ## Every write is read back from the SAVED bytes, by `serialise`
  *
  * The adapter reads each write back from the live page, and for a run's own font
  * that agrees with a reader of the file — 0 disagreements in 457 corpus writes
@@ -206,28 +209,27 @@ export async function invertReplaceTextObject(
  * does not: measured 2026-09-24, in a document already holding a Helvetica-family
  * font declared in StandardEncoding (Helvetica, Helvetica-Bold, Arial), the
  * Helvetica twin reads `é` on the live page and is saved into that font's own
- * dictionary, where a reader decodes the byte `E9` as `Ø`. Times-Roman and
- * Courier in the same encoding twin correctly, because their twin is a different
- * font.
+ * dictionary, where a reader decodes the byte `E9` as `Ø`.
  *
- * So the new bytes are opened again and every write read back as a reader reads
- * it, and anything that says other than what was written refuses the edit. There
- * is no retry: the failure this catches is the twin collapsing into the page's
- * font, and a second attempt would make the same twin.
+ * This function reopened the bytes itself until 2026-10-05, reading each write
+ * by its index, and on a page whose save lost text the index named another
+ * object, so a Type 3 page was refused as a font that cannot carry the words
+ * (ADR-0169). The adapter's `serialise` now reads every regenerated page back
+ * against the page as edited, which is the same question asked once: a lost
+ * object the edit did not write is the read-back refusal, and a write that reads
+ * differently is `TextNotWritableError` with its characters. There is no retry:
+ * a second attempt would make the same twin.
  */
 export async function applyEditTextBlock(
-  image: ByteImage,
+  image: ImageSession,
   command: CommandOfKind<'editTextBlock'>,
 ): Promise<ByteImage> {
-  const { bytes, written } = await onImage(image, async (session) => {
+  return onImage(image, async (session) => {
     // ONE FIT FOR THE COMMAND, laid out per block as before (ADR-0142).
     const blocks = blocksOfEdit(command).map((block) => ({ ...block, fit: command.fit }));
-    const placed = await editTextBlocks(session, command.page, blocks);
-    return { bytes: await pdfiumWriter.serialise(session), written: placed };
+    await editTextBlocks(session, command.page, blocks);
+    return pdfiumWriter.serialise(session);
   });
-  const read = await onImage(bytes, (session) => drawnTexts(session, command.page, written.map((write) => write.index)));
-  if (written.some((write, at) => read[at] !== write.text)) throw new TextNotWritableError();
-  return bytes;
 }
 
 /**

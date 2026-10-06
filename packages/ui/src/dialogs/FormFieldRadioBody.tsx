@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-import { FORM_FIELD_GROUP_LABEL, FORM_FIELD_RADIO_APPLY } from '../messages/en.js';
+import { FORM_FIELD_GROUP_LABEL, FORM_FIELD_GROUP_NOTE, FORM_FIELD_RADIO_APPLY } from '../messages/en.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { FormFieldForm } from './FormFieldForm.js';
 import type { FormFieldAnswer } from './formFieldResult.js';
@@ -22,6 +22,7 @@ export default function FormFieldRadioBody({
       apply={FORM_FIELD_RADIO_APPLY}
       collects="option"
       label={FORM_FIELD_GROUP_LABEL}
+      note={FORM_FIELD_GROUP_NOTE}
       resolve={resolve}
     />
   );

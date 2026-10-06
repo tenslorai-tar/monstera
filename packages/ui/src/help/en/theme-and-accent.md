@@ -2,7 +2,7 @@
 id: theme-and-accent
 title: Change the theme and accent colour
 summary: Choose a light or dark window, follow Windows, and pick an accent colour.
-keywords: [theme, dark mode, light mode, high contrast, accent colour, color, appearance, reduce motion, animations]
+keywords: [theme, dark mode, light mode, high contrast, accent colour, color, appearance, reduce motion, animations, tips]
 commands: [app.settings]
 contexts: [dialog.settings]
 ---
@@ -18,6 +18,7 @@ For the other choices:
 2. In **Theme**, choose **Match the system**, **Light** or **Dark**.
 3. Under **Accent colour**, choose a colour, or **The theme's own**.
 4. To turn off animations, turn on **Reduce motion**.
+5. To stop the tips at the start of the status bar, turn off **Show tips in the status bar**.
 
 ![The Appearance page of Settings with Theme and the Accent colour swatches](screenshot:theme-and-accent-1)
 

@@ -65,6 +65,8 @@ describe('countPageWords', () => {
       words: 0,
       characters: 0,
       charactersNoSpaces: 0,
+      lines: 0,
+      cjkCharacters: 0,
     });
   });
 
@@ -101,6 +103,8 @@ describe('countPageWords', () => {
       words: 2,
       characters: 10,
       charactersNoSpaces: 9,
+      lines: 1,
+      cjkCharacters: 0,
     });
   });
 });

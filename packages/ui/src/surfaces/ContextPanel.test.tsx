@@ -13,6 +13,7 @@ import {
   CONTEXT_PANEL_TAB_SETTING,
   DOCUMENT_PANEL_OPEN_SETTING,
 } from '../settings/layout.js';
+import { PanelPresence } from '../panelPresence.js';
 import { SettingsStore } from '../settingsStore.js';
 import { ContextPanel } from './ContextPanel.js';
 
@@ -29,10 +30,20 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
 }
 
+/** The presence the last panel `drawn` was built with, for a case that tells it how wide the row is. */
+let lastPresence: PanelPresence | undefined;
+
 function drawn(settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS))): SettingsStore {
+  const presence = new PanelPresence(settings);
+  lastPresence = presence;
   render(
     <Wrapped>
-      <ContextPanel assistant={<p>assistant content</p>} settings={settings}>
+      <ContextPanel
+        assistant={<p>assistant content</p>}
+        spelling={<p>spelling content</p>}
+        settings={settings}
+        presence={presence}
+      >
         <p>properties content</p>
       </ContextPanel>
     </Wrapped>,
@@ -95,11 +106,57 @@ describe('ContextPanel', () => {
     expect(screen.getByText('assistant content')).toBeDefined();
   });
 
+  it('THREE TABS, each showing its own content and only its own, and a click moves the one setting (ADR-0156)', async () => {
+    const settings = drawn();
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toStrictEqual(['Properties', 'Assistant', 'Spelling']);
+    await act(async () => {
+      screen.getByRole('tab', { name: 'Spelling' }).click();
+      await Promise.resolve();
+    });
+    expect(settings.get(CONTEXT_PANEL_TAB_SETTING.id)).toBe('spelling');
+    expect(screen.getByText('spelling content')).toBeDefined();
+    // CONTROL: neither of the other two is drawn beside it, so the content above is the tab's and not a list of all.
+    expect(screen.queryByText('properties content')).toBeNull();
+    expect(screen.queryByText('assistant content')).toBeNull();
+  });
+
   it('a STORED collapse is what opens', () => {
     const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
     settings.hydrate({ [CONTEXT_PANEL_OPEN_SETTING.id]: false });
     drawn(settings);
     expect(screen.queryByText('properties content')).toBeNull();
     expect(screen.getByRole('button', { name: 'Show the properties panel' })).toBeDefined();
+  });
+
+  it('IN A NARROW ROW its handle opens it as a SHEET, which takes the focus, and Escape gives the focus back (ADR-0146)', async () => {
+    const settings = drawn();
+    await act(async () => {
+      lastPresence?.measure(600);
+      await Promise.resolve();
+    });
+    // GAVE WAY: the handle, with the setting still on — the person's choice is untouched.
+    expect(screen.queryByText('properties content')).toBeNull();
+    expect(settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(true);
+    const handle = screen.getByRole('button', { name: 'Show the properties panel' });
+
+    await act(async () => {
+      handle.focus();
+      handle.click();
+      await Promise.resolve();
+    });
+    const sheet = document.querySelector('[data-panel-sheet="end"]');
+    expect(sheet?.textContent).toContain('properties content');
+    expect(sheet?.contains(document.activeElement)).toBe(true);
+    // THE HANDLE NOW CLOSES IT, and says so: it and the sheet's own chevron are the two ways, named alike.
+    expect(screen.getAllByRole('button', { name: 'Collapse the properties panel' })).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Show the properties panel' })).toBeNull();
+
+    await act(async () => {
+      document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(document.querySelector('[data-panel-sheet]')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show the properties panel' }));
+    expect(settings.get(CONTEXT_PANEL_OPEN_SETTING.id)).toBe(true);
   });
 });

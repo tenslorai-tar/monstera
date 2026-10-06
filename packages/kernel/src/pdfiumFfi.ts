@@ -1,9 +1,11 @@
-import { replacementsForLine } from '@monstera/shared';
+import { type EditStep, replacementsForLine } from '@monstera/shared';
 import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
-import type { ByteImage, EngineWriter, PdfiumSession } from './engineSeam.js';
+import type { ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
-import { TextNotWritableError } from './textEditRefusals.js';
+import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
+import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
+import { EditRefusedError, ReplaceMovesLineError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
 /**
@@ -92,6 +94,7 @@ interface Bound {
   readonly charObject: Native;
   readonly charGenerated: Native;
   readonly charBox: Native;
+  readonly looseCharBox: Native;
   readonly objectBounds: Native;
   readonly getMatrix: Native;
   readonly setMatrix: Native;
@@ -156,6 +159,15 @@ function numberFrom(value: unknown, what: string): number {
 }
 
 /**
+ * A native call's refusal at `step`, carrying what `FPDF_GetLastError` answers NOW — so it is built at the point of
+ * the refusal, before another call can overwrite the error (ADR-0169 Decision 3). `what` is this file's own sentence
+ * about the call, never PDFium's words about the document.
+ */
+function refusedAt(step: EditStep, what: string): EditRefusedError {
+  return new EditRefusedError(step, numberFrom(api().lastError(), 'FPDF_GetLastError'), what);
+}
+
+/**
  * The bound library, or `undefined` before {@link openPdfium} has run.
  *
  * Module state rather than a parameter threaded through every call, because
@@ -210,8 +222,12 @@ export function openPdfium(libraryPath: string): void {
     writeBlock,
     initialise: native(library.func('void FPDF_InitLibrary()')),
     lastError: native(library.func('unsigned long FPDF_GetLastError()')),
+    // THE 64-BIT LOAD, whose length is a `size_t` (CR-NAT-13). `FPDF_LoadMemDocument` takes an `int`, and koffi wraps
+    // a number past 2^31 - 1 into one rather than refusing it — measured 2026-10-04 against libc's `abs`: 3 GiB
+    // arrives as 1 GiB — so a document that large would be parsed from its first gigabyte as though that were all of
+    // it. A document past `main`'s memory ceiling opens since ADR-0165, which makes that length reachable.
     loadDocument: native(
-      library.func('void *FPDF_LoadMemDocument(const void *data, int size, const char *password)'),
+      library.func('void *FPDF_LoadMemDocument64(const void *data, size_t size, const char *password)'),
     ),
     closeDocument: native(library.func('void FPDF_CloseDocument(void *document)')),
     pageCount: native(library.func('int FPDF_GetPageCount(void *document)')),
@@ -277,6 +293,9 @@ export function openPdfium(libraryPath: string): void {
         'int FPDFText_GetCharBox(void *textPage, int index, _Out_ double *left, _Out_ double *right, _Out_ double *bottom, _Out_ double *top)',
       ),
     ),
+    // ONE CHARACTER'S ADVANCE, as a box from its origin across its width in the font, whatever its ink: where the next
+    // character starts. `replaceLineRule.ts` measures a run's end by it, since ink ends differently letter by letter.
+    looseCharBox: native(library.func('int FPDFText_GetLooseCharBox(void *textPage, int index, _Out_ FS_RECTF *rect)')),
     // ONE OBJECT'S BOX, in PAGE space and after its matrix — measured, and it is
     // what a surface draws a handle on. Note the parameter ORDER differs from
     // `charBox` above: left, bottom, right, top here against left, right,
@@ -447,9 +466,9 @@ export function pdfiumIsOpen(): boolean {
 /**
  * A live document, and **the bytes it is still reading**.
  *
- * ## `FPDF_LoadMemDocument` DOES NOT COPY, and that is the hazard
+ * ## `FPDF_LoadMemDocument64` DOES NOT COPY, and that is the hazard
  *
- * PDFium parses lazily: the buffer handed to `FPDF_LoadMemDocument` must stay
+ * PDFium parses lazily: the buffer handed to `FPDF_LoadMemDocument64` must stay
  * valid and unmoved for the whole life of the document, and the API says so.
  * Node's garbage collector is free to collect a `Buffer` nothing references, and
  * koffi does not retain one on the caller's behalf — so a session that kept only
@@ -457,14 +476,16 @@ export function pdfiumIsOpen(): boolean {
  * between two commands, which is the shape that reads as flakiness.
  *
  * So the bytes are held **beside** the document for exactly as long as it lives,
- * and dropped in `close`. This is the same reason `mupdfWriter.ts` copies out of
- * the WASM heap rather than keeping a view into it: an engine's memory and
- * JavaScript's lifetime rules are two owners of one buffer.
+ * and dropped in `close`: PDFium reads the bytes for as long as the document is
+ * open, and JavaScript's lifetime rules know nothing of that, so two owners of
+ * one buffer agree only when this one is told explicitly.
  */
 interface Live {
   readonly document: unknown;
   /** Retained for the document's lifetime. See above — this is not spare state. */
   readonly bytes: Buffer;
+  /** What the document opened with, for the read-back's reopen of the bytes it saves (ADR-0171's addendum). */
+  readonly password: string | undefined;
 }
 
 /**
@@ -529,11 +550,7 @@ function onPage<T>(session: PdfiumSession, page: number, work: (handle: unknown)
   const bindings = api();
   const document = documentFor(session);
   const handle: unknown = bindings.loadPage(document, page);
-  if (handle === null) {
-    throw new Error(
-      `PDFium could not load page ${String(page)} (FPDF_GetLastError ${String(bindings.lastError())}).`,
-    );
-  }
+  if (handle === null) throw refusedAt('page', `PDFium could not load page ${String(page)}`);
   try {
     return work(handle);
   } finally {
@@ -600,7 +617,7 @@ export function pageText(session: PdfiumSession, page: number): Promise<string> 
     onPage(session, page, (handle) => {
       const bindings = api();
       const textPage: unknown = bindings.loadTextPage(handle);
-      if (textPage === null) throw new Error('PDFium could not load the page for text reading.');
+      if (textPage === null) throw refusedAt('page', 'PDFium could not load the page for text reading');
       try {
         const count = numberFrom(bindings.countChars(textPage), 'FPDFText_CountChars');
         if (count <= 0) return '';
@@ -613,7 +630,7 @@ export function pageText(session: PdfiumSession, page: number): Promise<string> 
         // The count EXCLUDES the terminator, so slicing to `written - 1` is what
         // drops it. A caller comparing this against an expected string would
         // otherwise never match and would read as an encoding problem.
-        return String.fromCharCode(...buffer.subarray(0, Math.max(0, written - 1)));
+        return fromUtf16Units(buffer.subarray(0, Math.max(0, written - 1)));
       } finally {
         bindings.closeTextPage(textPage);
       }
@@ -654,7 +671,7 @@ export function textObjectText(
       const bindings = api();
       const object = textObjectAt(bindings, handle, page, index);
       const textPage: unknown = bindings.loadTextPage(handle);
-      if (textPage === null) throw new Error('PDFium could not load the page for text reading.');
+      if (textPage === null) throw refusedAt('page', 'PDFium could not load the page for text reading');
       try {
         return objectTextOn(bindings, object, textPage);
       } finally {
@@ -723,7 +740,26 @@ function objectTextOn(bindings: Bound, object: unknown, textPage: unknown): stri
   );
   // `written` is bytes and includes the terminator, so the character count is
   // one short of half of it.
-  return String.fromCharCode(...buffer.subarray(0, Math.max(0, written / 2 - 1)));
+  return fromUtf16Units(buffer.subarray(0, Math.max(0, written / 2 - 1)));
+}
+
+/** How many UTF-16 units one `String.fromCharCode` call is handed: far under the limit, and few calls per page. */
+const UTF16_CHUNK = 8192;
+
+/**
+ * PDFium's UTF-16 units as a string, unit for unit (CR-NAT-14).
+ *
+ * IN CHUNKS, because a spread passes one argument per unit and V8 refuses past its limit: measured 2026-10-04 on Node
+ * 22.22, 125 000 units read and 150 000 threw `RangeError: Maximum call stack size exceeded`, so a dense page's text
+ * failed whole. NOT a `TextDecoder`, which replaces a lone surrogate with U+FFFD: PDFium answers what the page's
+ * encoding maps to, and a reader comparing that must get it unchanged.
+ */
+function fromUtf16Units(units: Uint16Array): string {
+  let text = '';
+  for (let at = 0; at < units.length; at += UTF16_CHUNK) {
+    text += String.fromCharCode(...units.subarray(at, at + UTF16_CHUNK));
+  }
+  return text;
 }
 
 /**
@@ -970,9 +1006,19 @@ interface WalkedRun {
 function walkRuns(
   bindings: Bound,
   handle: unknown,
-): { readonly runs: ReadonlyMap<number, WalkedRun>; readonly unaddressable: number } {
+): {
+  readonly runs: ReadonlyMap<number, WalkedRun>;
+  readonly unaddressable: number;
+  /**
+   * Where each run's last ADVANCE ends, by object index: the furthest right edge of its characters' loose boxes, which
+   * is where text after it starts. A run's `right` is its ink's, and two strings of one width end their ink at
+   * different places (measured: `WID` and `WDI` in Helvetica). Beside the runs rather than in them, since a run is
+   * spread into what crosses the host's pipe and this is the line rule's alone.
+   */
+  readonly ends: ReadonlyMap<number, number>;
+} {
   const textPage: unknown = bindings.loadTextPage(handle);
-  if (textPage === null) throw new Error('PDFium could not load the page for text reading.');
+  if (textPage === null) throw refusedAt('page', 'PDFium could not load the page for text reading');
   try {
     const objects = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
     /** Address -> index, from this page's own objects. */
@@ -984,6 +1030,7 @@ function walkRuns(
     const chars = numberFrom(bindings.countChars(textPage), 'FPDFText_CountChars');
     /** index -> the run being accumulated. Insertion order is reading order. */
     const runs = new Map<number, WalkedRun>();
+    const ends = new Map<number, number>();
     let unaddressable = 0;
     /** The run the last DRAWN character joined, for a generated space to follow. */
     let previous: WalkedRun | undefined;
@@ -1042,6 +1089,10 @@ function walkRuns(
         runs.set(index, held);
       }
       held.text += character;
+      const loose: Record<string, number> = {};
+      if (numberFrom(bindings.looseCharBox(textPage, at, loose), 'FPDFText_GetLooseCharBox') === 1) {
+        ends.set(index, Math.max(ends.get(index) ?? Number.NEGATIVE_INFINITY, loose['right'] ?? Number.NEGATIVE_INFINITY));
+      }
       // THE UNION, so a run's extent covers every character in it. A run sized
       // from its first character alone would lose an ascender and stop
       // overlapping the neighbour it shares a line with.
@@ -1060,6 +1111,7 @@ function walkRuns(
       // every comparison it would answer falsely.
       runs: new Map([...runs.entries()].filter(([, run]) => Number.isFinite(run.left))),
       unaddressable,
+      ends,
     };
   } finally {
     bindings.closeTextPage(textPage);
@@ -1107,7 +1159,7 @@ function styleOf(bindings: Bound, object: unknown, programs: Map<string, Program
   return {
     size: (size[0] ?? 0) * Math.hypot(a, b),
     colour: { r: red[0] ?? 0, g: green[0] ?? 0, b: blue[0] ?? 0 },
-    font: name,
+    font: wireFontName(name),
     serif: (flags & 2) !== 0,
     mono: (flags & 1) !== 0,
     bold: face.bold,
@@ -1147,13 +1199,38 @@ function programOf(bindings: Bound, font: unknown, programs: Map<string, Program
   return face;
 }
 
-/** A font's base name, as ASCII — what `FPDFFont_GetBaseFontName` answers. */
+/** The most bytes of one base name read: a name is a PDF name, and one this long is not a font's (CR-NAT-12). */
+const MAX_FONT_NAME_BYTES = 64 * 1024;
+
+/**
+ * A font's base name — what `FPDFFont_GetBaseFontName` answers — as UTF-8, and cut to {@link PDFIUM_FONT_NAME_MAX} for
+ * the wire.
+ *
+ * **PDFium's own two calls** (`fpdf_edit.h`): the length first, terminator counted, then a buffer of that length.
+ * One fixed 128-byte buffer read a longer name as 127 NULs, because a buffer shorter than the answer is left
+ * untouched while the full length is still returned (CR-NAT-12). The buffer is UTF-8 by the same header, where this
+ * decoded it as Latin-1. A name past {@link MAX_FONT_NAME_BYTES} is answered as no name.
+ *
+ * **Cut, not refused**, at ISO 32000's own limit on a name, 127 bytes, which is the wire's bound: a document past it is
+ * still a document, and the full name has already been read for its face.
+ */
 function baseNameOf(bindings: Bound, font: unknown): string {
-  const buffer = new Uint8Array(128);
-  const length = numberFrom(bindings.fontBaseName(font, buffer, buffer.length), 'FPDFFont_GetBaseFontName');
-  // THE TERMINATOR IS COUNTED, and a name longer than the buffer answers its
-  // full length without writing — so the slice is bounded by both.
-  return String.fromCharCode(...buffer.subarray(0, Math.max(0, Math.min(length, buffer.length) - 1)));
+  const needed = numberFrom(bindings.fontBaseName(font, null, 0), 'FPDFFont_GetBaseFontName');
+  if (needed <= 1 || needed > MAX_FONT_NAME_BYTES) return '';
+  const buffer = new Uint8Array(needed);
+  if (numberFrom(bindings.fontBaseName(font, buffer, buffer.length), 'FPDFFont_GetBaseFontName') !== needed) return '';
+  return new TextDecoder().decode(buffer.subarray(0, needed - 1));
+}
+
+/** A name cut to the wire's bound at a whole character: {@link PDFIUM_FONT_NAME_MAX} UTF-16 units, as the schema counts. */
+function wireFontName(name: string): string {
+  if (name.length <= PDFIUM_FONT_NAME_MAX) return name;
+  let cut = '';
+  for (const character of name) {
+    if (cut.length + character.length > PDFIUM_FONT_NAME_MAX) break;
+    cut += character;
+  }
+  return cut;
 }
 
 /**
@@ -1176,8 +1253,21 @@ function isUpright(a: number, b: number, c: number, d: number): boolean {
 export interface TextReplacement {
   /** The object's index, as {@link textObjectIndices} reports it. */
   readonly index: number;
-  /** What it should say. */
+  /** What it should say; nothing at all removes the object ({@link removesItsObject}). */
   readonly text: string;
+}
+
+/**
+ * Whether a replacement leaves its object with no text, which {@link replaceTextObjects} answers by removing the object
+ * (ADR-0169 Decision 6: replacing a word with nothing deletes it).
+ *
+ * `FPDFText_SetText` refuses an empty string — measured 2026-10-05 on PDFium 155.0.8044.0's Linux build, a replace-all
+ * of an object's whole text with nothing answered 0 at the set, with `FPDF_GetLastError` 0 — so an emptied object is
+ * the editor's removed one. And a removed object renumbers the page and has no constructor, so a command that empties
+ * one cannot be undone from the strings it changed: each capture asks this, and takes a checkpoint.
+ */
+export function removesItsObject(text: string): boolean {
+  return text === '';
 }
 
 /**
@@ -1191,17 +1281,16 @@ export interface TextReplacement {
 function textObjectAt(bindings: Bound, handle: unknown, page: number, index: number): unknown {
   const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
   if (index < 0 || index >= total) {
-    throw new Error(
-      `Page ${String(page)} has ${String(total)} objects, so index ${String(index)} names none.`,
-    );
+    throw refusedAt('object', `Page ${String(page)} has ${String(total)} objects, so index ${String(index)} names none`);
   }
   const object: unknown = bindings.getObject(handle, index);
   if (
     object === null ||
     numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') !== TEXT_OBJECT
   ) {
-    throw new Error(
-      `Object ${String(index)} on page ${String(page)} is not a text object, and FPDFText_SetText is defined only for one.`,
+    throw refusedAt(
+      'object',
+      `Object ${String(index)} on page ${String(page)} is not a text object, and FPDFText_SetText is defined only for one`,
     );
   }
   return object;
@@ -1255,11 +1344,21 @@ function textObjectAt(bindings: Bound, handle: unknown, page: number, index: num
  * upstream that a silent success would hide.
  * @throws when an index is not a text object, rather than editing whatever is
  * there. `FPDFText_SetText` on a path object is undefined behaviour.
+ * @throws TextNotWritableError when a write reads back as something other than what was written: the run's font
+ * cannot draw it, and nothing is generated.
+ * @throws ReplaceMovesLineError under `line: 'held'` when a replacement changes its object's width and text follows it
+ * on its line, before anything is generated.
+ *
+ * @param line `'held'` for a Replace, which has no knowledge of the line and refuses an edit that would move the text
+ *   after it (`replaceLineRule.ts`); `'as-written'` where the strings are already what the line should hold: an undo
+ *   putting back the strings it recorded, which also puts back their widths, and the adapter's own proofs, which
+ *   measure the write rather than the line. Required, so no caller inherits either.
  */
 export function replaceTextObjects(
   session: PdfiumSession,
   page: number,
   replacements: readonly TextReplacement[],
+  line: 'held' | 'as-written',
 ): Promise<void> {
   return promised(() => {
     onPage(session, page, (handle) => {
@@ -1272,27 +1371,78 @@ export function replaceTextObjects(
       }
       // RESOLVED IN FULL FIRST. See the note above: a refusal must not leave
       // the page holding part of a replacement.
-      const objects = replacements.map((replacement) =>
-        textObjectAt(bindings, handle, page, replacement.index),
-      );
-      for (const [at, replacement] of replacements.entries()) {
-        if (
-          numberFrom(bindings.setText(objects[at], wideString(replacement.text)), 'FPDFText_SetText') !==
-          1
-        ) {
-          throw new Error(
-            `FPDFText_SetText refused the replacement for object ${String(replacement.index)} ` +
-              `(FPDF_GetLastError ${String(bindings.lastError())}).`,
-          );
+      const resolved = replacements.map((replacement) => ({
+        replacement,
+        object: textObjectAt(bindings, handle, page, replacement.index),
+      }));
+      // AN EMPTIED OBJECT IS REMOVED, never set to nothing, which PDFium refuses ({@link removesItsObject}). Removed
+      // after every set, as the block edit removes, so no index above was read from a page already renumbered.
+      const kept = resolved.filter(({ replacement }) => !removesItsObject(replacement.text));
+      const removed = resolved.filter(({ replacement }) => removesItsObject(replacement.text));
+      // THE LINE AS IT WAS, read before any write and only where it is held: each object's ink and advance end.
+      const before = line === 'held' ? lineBoxes(walkRuns(bindings, handle)) : undefined;
+      for (const { replacement, object } of kept) {
+        if (numberFrom(bindings.setText(object, wideString(replacement.text)), 'FPDFText_SetText') !== 1) {
+          throw refusedAt('set-text', `FPDFText_SetText refused the replacement for object ${String(replacement.index)}`);
         }
       }
-      if (numberFrom(bindings.generateContent(handle), 'FPDFPage_GenerateContent') !== 1) {
-        throw new Error(
-          'FPDFPage_GenerateContent failed, so the edit would be present in memory and absent from the saved bytes.',
-        );
+      // MEASURED AFTER THE SETS AND BEFORE THE REMOVALS, so every index still names the object it named above. An object
+      // with no characters read back has no box here and is the read-back's to refuse.
+      if (before !== undefined) {
+        const now = lineBoxes(walkRuns(bindings, handle));
+        const after = new Map<number, RunBox | null>();
+        for (const { replacement } of resolved) {
+          const box = removesItsObject(replacement.text) ? null : now.get(replacement.index);
+          if (box !== undefined) after.set(replacement.index, box);
+        }
+        if (replacementsMovingTheirLine(before, after).length > 0) throw new ReplaceMovesLineError();
       }
+      for (const { replacement, object } of removed) {
+        if (numberFrom(bindings.removeObject(handle, object), 'FPDFPage_RemoveObject') !== 1) {
+          throw refusedAt('object', `FPDFPage_RemoveObject refused object ${String(replacement.index)}, emptied by its replacement`);
+        }
+        bindings.destroyObject(object);
+      }
+      // EVERY WRITE IS READ BACK before anything is generated, by the block edit's rule (`editTextBlocks`): a 1 from
+      // FPDFText_SetText says the string was set, not that the run's font can draw it, and a subset font missing a
+      // character drew it as nothing while Replace All reported success (CR-NAT-10). A throw here leaves the document
+      // as it came, since nothing has been generated and the page is discarded.
+      const textPage: unknown = bindings.loadTextPage(handle);
+      if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read the replacement back');
+      try {
+        const drawn = drawnTextOn(
+          bindings,
+          textPage,
+          kept.map(({ object }) => object),
+        );
+        const pairs = kept.map(({ replacement }, at) => ({
+          written: asTextPageReads(replacement.text),
+          read: drawn[at] ?? '',
+        }));
+        if (pairs.some(({ written, read }) => written !== read)) {
+          throw new TextNotWritableError(unwritableCharacters(pairs));
+        }
+      } finally {
+        bindings.closeTextPage(textPage);
+      }
+      generate(
+        session,
+        page,
+        handle,
+        kept.map(({ object }) => object),
+      );
     });
   });
+}
+
+/** Each walked run as the line rule reads it: its ink's start and height, and its advance's end. */
+function lineBoxes(walked: ReturnType<typeof walkRuns>): ReadonlyMap<number, RunBox> {
+  const boxes = new Map<number, RunBox>();
+  for (const [index, run] of walked.runs) {
+    const end = walked.ends.get(index);
+    if (end !== undefined && Number.isFinite(end)) boxes.set(index, { left: run.left, end, bottom: run.bottom, top: run.top });
+  }
+  return boxes;
 }
 
 /**
@@ -1325,6 +1475,9 @@ const MIN_FIT = 0.6;
  * wide — at 11 points, under a tenth of a point of size, which no reader sees.
  */
 const FIT_STEPS = 6;
+
+/** Characters as a person sees them, for naming the ones a font cannot carry: an accent typed as a mark stays on its letter. */
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 /** A named run, resolved on a loaded page. */
 interface HeldRun {
@@ -1362,7 +1515,7 @@ interface Matrix {
 function matrixOn(bindings: Bound, object: unknown): Matrix {
   const raw: Record<string, unknown> = {};
   if (numberFrom(bindings.getMatrix(object, raw), 'FPDFPageObj_GetMatrix') !== 1) {
-    throw new Error('FPDFPageObj_GetMatrix refused a text object this page handed back.');
+    throw refusedAt('matrix', 'FPDFPageObj_GetMatrix refused a text object this page handed back');
   }
   const read = (key: string): number => numberFrom(raw[key], `FS_MATRIX.${key}`);
   return { a: read('a'), b: read('b'), c: read('c'), d: read('d'), e: read('e'), f: read('f') };
@@ -1370,7 +1523,7 @@ function matrixOn(bindings: Bound, object: unknown): Matrix {
 
 function setMatrixOn(bindings: Bound, object: unknown, matrix: Matrix): void {
   if (numberFrom(bindings.setMatrix(object, matrix), 'FPDFPageObj_SetMatrix') !== 1) {
-    throw new Error('FPDFPageObj_SetMatrix refused a text object this edit moved.');
+    throw refusedAt('matrix', 'FPDFPageObj_SetMatrix refused a text object this edit moved');
   }
 }
 
@@ -1383,7 +1536,7 @@ function moveBy(bindings: Bound, object: unknown, dx: number, dy: number): void 
 
 function setTextOn(bindings: Bound, object: unknown, text: string): void {
   if (!trySetText(bindings, object, text)) {
-    throw new Error(`FPDFText_SetText refused a block edit (FPDF_GetLastError ${String(bindings.lastError())}).`);
+    throw refusedAt('set-text', 'FPDFText_SetText refused a block edit');
   }
 }
 
@@ -1447,10 +1600,12 @@ function lastBreak(text: string): number {
  *    accented Western string for 308 of 325 runs whose own font did not. Only a
  *    twin that cannot carry it either refuses the edit, with
  *    {@link TextNotWritableError}, before generation. Every write is read back
- *    once more at the end, after the layout has moved it.
+ *    once more at the end, after the layout has moved it, and the page's
+ *    generation is told which objects are writes, so the saved bytes are read
+ *    back against them by `serialise` (ADR-0169).
  *
  * @throws TextNotWritableError when neither a run's font nor its standard twin
- * can carry the text.
+ * can carry the text, naming the characters neither carries.
  * @throws when an index is not a text object, or names a run the page's text
  * reading cannot place, or when the edit changes nothing — regenerating a
  * page's content for no change is the whole cost of an edit paid for nothing.
@@ -1459,12 +1614,9 @@ export async function editTextBlocks(
   session: PdfiumSession,
   page: number,
   edits: readonly BlockEdit[],
-): Promise<readonly WrittenText[]> {
+): Promise<void> {
   const scales = await fitScales(session, page, edits);
-  const outcome = await promised(() =>
-    onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, scales, 'write')),
-  );
-  return outcome.placed;
+  await promised(() => onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, scales, 'write')));
 }
 
 /**
@@ -1509,9 +1661,9 @@ async function fitScales(session: PdfiumSession, page: number, edits: readonly B
 }
 
 /**
- * One pass over a page's block edits: `write` makes the edit and answers where each write sits;
- * `trial` lays the blocks out at the scales given, writes without reading back, generates nothing,
- * and answers which blocks ended above their original last line.
+ * One pass over a page's block edits: `write` makes the edit and generates the page, naming its writes to the
+ * generation; `trial` lays the blocks out at the scales given, writes without reading back, generates nothing. Both
+ * answer which blocks ended above their original last line.
  */
 function layOutBlocks(
   session: PdfiumSession,
@@ -1520,7 +1672,7 @@ function layOutBlocks(
   edits: readonly BlockEdit[],
   scales: readonly number[],
   mode: 'write' | 'trial',
-): { readonly placed: readonly WrittenText[]; readonly fits: readonly boolean[] } {
+): { readonly fits: readonly boolean[] } {
       const bindings = api();
       const document = documentFor(session);
       const walked = walkRuns(bindings, handle);
@@ -1545,21 +1697,23 @@ function layOutBlocks(
           line.map((named): HeldRun => {
             const members = membersOf(joined, named);
             if (members === undefined) {
-              throw new Error(
-                `Object ${String(named)} on page ${String(page)} begins no run this page's reading answered.`,
+              throw refusedAt(
+                'object',
+                `Object ${String(named)} on page ${String(page)} begins no run this page's reading answered`,
               );
             }
             const held = members.map((index) => {
               const run = walked.runs.get(index);
               if (run === undefined) {
-                throw new Error(
-                  `Object ${String(index)} on page ${String(page)} carries no text this page's reading can place.`,
+                throw refusedAt(
+                  'object',
+                  `Object ${String(index)} on page ${String(page)} carries no text this page's reading can place`,
                 );
               }
               return { object: textObjectAt(bindings, handle, page, index), run };
             });
             const [first, ...rest] = held;
-            if (first === undefined) throw new Error(`Run ${String(named)} on page ${String(page)} has no object.`);
+            if (first === undefined) throw refusedAt('object', `Run ${String(named)} on page ${String(page)} has no object`);
             return {
               index: named,
               object: first.object,
@@ -1615,7 +1769,7 @@ function layOutBlocks(
           }
         }
         if (numberFrom(bindings.insertObjectAt(handle, object, at + 1), 'FPDFPage_InsertObjectAtIndex') !== 1) {
-          throw new Error(`FPDFPage_InsertObjectAtIndex refused a line this edit made on page ${String(page)}.`);
+          throw refusedAt('object', `FPDFPage_InsertObjectAtIndex refused a line this edit made on page ${String(page)}`);
         }
       };
       /**
@@ -1628,7 +1782,7 @@ function layOutBlocks(
         if (scratch !== undefined) return scratch.handle;
         const index = numberFrom(bindings.pageCount(document), 'FPDF_GetPageCount');
         const made: unknown = bindings.newPage(document, index, 612, 792);
-        if (made === null) throw new Error('FPDFPage_New refused a scratch page for a block edit.');
+        if (made === null) throw refusedAt('page', 'FPDFPage_New refused a scratch page for a block edit');
         scratch = { handle: made, index };
         return made;
       };
@@ -1661,11 +1815,11 @@ function layOutBlocks(
         setMatrixOn(bindings, probe, { ...matrix, e: 72, f: 396 });
         const sheet = scratchPage();
         if (numberFrom(bindings.insertObject(sheet, probe), 'FPDFPage_InsertObject') !== 1) {
-          throw new Error('FPDFPage_InsertObject refused a probe on the scratch page.');
+          throw refusedAt('object', 'FPDFPage_InsertObject refused a probe on the scratch page');
         }
         try {
           const textPage: unknown = bindings.loadTextPage(sheet);
-          if (textPage === null) throw new Error('PDFium could not load the scratch page to read a probe.');
+          if (textPage === null) throw refusedAt('page', 'PDFium could not load the scratch page to read a probe');
           try {
             return drawnTextOn(bindings, textPage, [probe])[0] === asTextPageReads(text);
           } finally {
@@ -1681,10 +1835,33 @@ function layOutBlocks(
         let font = standardFonts.get(name);
         if (font === undefined) {
           font = bindings.loadStandardFont(document, name);
-          if (font === null) throw new Error(`FPDFText_LoadStandardFont refused ${name}.`);
+          if (font === null) throw refusedAt('object', `FPDFText_LoadStandardFont refused ${name}`);
           standardFonts.set(name, font);
         }
         return font;
+      };
+      /**
+       * The characters of `text` that neither `source`'s font nor its standard twin carries, each asked ALONE — the
+       * names a refusal gives (ADR-0169 Decision 4). Only reached on the way to a refusal, so its probes cost an edit
+       * that is not being made; each distinct character is asked once.
+       */
+      const uncarriedIn = (source: unknown, text: string): string => {
+        const twin = makeTextLike(bindings, document, source, 0, standardFontLike(source));
+        try {
+          const answers = new Map<string, boolean>();
+          const carried = (character: string): boolean => {
+            let answer = answers.get(character);
+            if (answer === undefined) {
+              answer = character.trim() === '' || carries(source, character) || carries(twin, character);
+              answers.set(character, answer);
+            }
+            return answer;
+          };
+          const kept = Array.from(graphemes.segment(text), (part) => part.segment).filter(carried);
+          return unwritableCharacters([{ written: text, read: kept.join('') }]);
+        } finally {
+          bindings.destroyObject(twin);
+        }
       };
       const record = (object: unknown, text: string): void => {
         const entry = written.find((write) => write.object === object);
@@ -1712,7 +1889,7 @@ function layOutBlocks(
         const twin = makeTextLike(bindings, document, object, matrixOn(bindings, object).e, standardFontLike(object));
         if (!trySetText(bindings, twin, text) || (mode === 'write' && !carries(twin, text))) {
           bindings.destroyObject(twin);
-          throw new TextNotWritableError();
+          throw new TextNotWritableError(uncarriedIn(object, text));
         }
         insertAfter(twin, object);
         removed.push(object);
@@ -1738,8 +1915,9 @@ function layOutBlocks(
           for (const run of lines.flat()) {
             const matrix = matrixOn(bindings, run.object);
             if (!isUpright(matrix.a, matrix.b, matrix.c, matrix.d)) {
-              throw new Error(
-                `Object ${String(run.index)} on page ${String(page)} is not set upright, so it is not edited in place.`,
+              throw refusedAt(
+                'matrix',
+                `Object ${String(run.index)} on page ${String(page)} is not set upright, so it is not edited in place`,
               );
             }
           }
@@ -1809,7 +1987,7 @@ function layOutBlocks(
                 object = makeTextLike(bindings, document, source, left, standardFontLike(source));
                 if (!trySetText(bindings, object, rest)) {
                   bindings.destroyObject(object);
-                  throw new TextNotWritableError();
+                  throw new TextNotWritableError(uncarriedIn(source, rest));
                 }
               }
               let tail = '';
@@ -1929,7 +2107,7 @@ function layOutBlocks(
 
         // A TRIAL ENDS HERE: nothing removed, nothing read back, nothing generated — the page is
         // closed and its changes go with it.
-        if (mode === 'trial') return { placed: [], fits };
+        if (mode === 'trial') return { fits };
 
         if (written.length === 0 && removed.length === 0) {
           throw new Error(
@@ -1940,7 +2118,7 @@ function layOutBlocks(
 
         for (const object of removed) {
           if (numberFrom(bindings.removeObject(handle, object), 'FPDFPage_RemoveObject') !== 1) {
-            throw new Error(`FPDFPage_RemoveObject refused an object this edit removes on page ${String(page)}.`);
+            throw refusedAt('object', `FPDFPage_RemoveObject refused an object this edit removes on page ${String(page)}`);
           }
           bindings.destroyObject(object);
         }
@@ -1950,36 +2128,32 @@ function layOutBlocks(
         // here leaves the document as it came: nothing has been generated, and
         // the session is discarded with the page.
         const textPage: unknown = bindings.loadTextPage(handle);
-        if (textPage === null) throw new Error('PDFium could not load the page to read the edit back.');
+        if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read the edit back');
         try {
           const drawn = drawnTextOn(
             bindings,
             textPage,
             written.map((write) => write.object),
           );
-          if (written.some((write, at) => drawn[at] !== asTextPageReads(write.text))) throw new TextNotWritableError();
+          const pairs = written.map((write, at) => ({ written: asTextPageReads(write.text), read: drawn[at] ?? '' }));
+          if (pairs.some(({ written: wrote, read }) => wrote !== read)) {
+            throw new TextNotWritableError(unwritableCharacters(pairs));
+          }
         } finally {
           bindings.closeTextPage(textPage);
         }
 
-        // WHERE EACH WRITE NOW SITS in the page's object order, which is the order
-        // generation writes and a reopened page reads — so the caller can read
-        // every write back from the SAVED bytes. The live read-back above cannot
-        // stand in for that for a twin: measured 2026-09-24, a Helvetica twin in a
-        // document already holding a Helvetica-family font in StandardEncoding reads
-        // `é` here and is saved into that font's dictionary, where `E9` is `Ø`.
-        const indexOf = new Map<string, number>();
-        const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
-        for (let at = 0; at < count; at += 1) indexOf.set(String(koffi.address(bindings.getObject(handle, at))), at);
-        const placed = written.map((write) => {
-          const index = indexOf.get(String(koffi.address(write.object)));
-          if (index === undefined) throw new Error(`A write on page ${String(page)} is not on the page it was written to.`);
-          // WHAT A READER OF THE SAVED FILE WILL SEE, by the same whitespace rule.
-          return { index, text: asTextPageReads(write.text) };
-        });
-
-        generate(bindings, handle);
-        return { placed, fits };
+        // THE WRITES ARE NAMED TO THE GENERATION, so the saved bytes are read back against them (ADR-0169). The live
+        // read-back above cannot stand in for that for a twin: measured 2026-09-24, a Helvetica twin in a document
+        // already holding a Helvetica-family font in StandardEncoding reads `é` here and is saved into that font's
+        // dictionary, where `E9` is `Ø` — which `serialise` reports as this write's characters.
+        generate(
+          session,
+          page,
+          handle,
+          written.map((write) => write.object),
+        );
+        return { fits };
       } finally {
         // OURS TO CLOSE, and only ours: each object holds its own reference to
         // the font it was made in, so closing the caller's handle frees nothing
@@ -1991,34 +2165,6 @@ function layOutBlocks(
           bindings.deletePage(document, scratch.index);
         }
       }
-}
-
-/** One write an edit made: where it sits on the page afterwards, and what it says. */
-export interface WrittenText {
-  readonly index: number;
-  readonly text: string;
-}
-
-/**
- * What each named text object on a page DRAWS, read through ONE text page — the reopened-bytes
- * read-back {@link editTextBlocks}' caller makes, by {@link drawnTextOn}'s rule.
- *
- * @throws when an index is not a text object, for {@link textObjectText}'s reason.
- */
-export function drawnTexts(session: PdfiumSession, page: number, indices: readonly number[]): Promise<readonly string[]> {
-  return promised(() =>
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      const objects = indices.map((index) => textObjectAt(bindings, handle, page, index));
-      const textPage: unknown = bindings.loadTextPage(handle);
-      if (textPage === null) throw new Error('PDFium could not load the page for text reading.');
-      try {
-        return drawnTextOn(bindings, textPage, objects);
-      } finally {
-        bindings.closeTextPage(textPage);
-      }
-    }),
-  );
 }
 
 /**
@@ -2080,9 +2226,9 @@ function makeTextLike(
 ): unknown {
   const size = [0];
   numberFrom(bindings.textFontSize(source, size), 'FPDFTextObj_GetFontSize');
-  if (font === null) throw new Error('A text object answered no font, so a line in its style cannot be made.');
+  if (font === null) throw refusedAt('object', 'A text object answered no font, so a line in its style cannot be made');
   const object: unknown = bindings.createTextObject(document, font, size[0] ?? 0);
-  if (object === null) throw new Error('FPDFPageObj_CreateTextObj refused the font of the line it continues.');
+  if (object === null) throw refusedAt('object', 'FPDFPageObj_CreateTextObj refused the font of the line it continues');
   const matrix = matrixOn(bindings, source);
   setMatrixOn(bindings, object, { ...matrix, e: left });
   const red = [0];
@@ -2153,13 +2299,11 @@ export interface ObjectPlacement {
 function objectAt(bindings: Bound, handle: unknown, page: number, index: number): unknown {
   const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
   if (index < 0 || index >= total) {
-    throw new Error(
-      `Page ${String(page)} has ${String(total)} objects, so index ${String(index)} names none.`,
-    );
+    throw refusedAt('object', `Page ${String(page)} has ${String(total)} objects, so index ${String(index)} names none`);
   }
   const object: unknown = bindings.getObject(handle, index);
   if (object === null) {
-    throw new Error(`FPDFPage_GetObject answered nothing for index ${String(index)} on page ${String(page)}.`);
+    throw refusedAt('object', `FPDFPage_GetObject answered nothing for index ${String(index)} on page ${String(page)}`);
   }
   return object;
 }
@@ -2177,7 +2321,7 @@ function boundsOf(
   const right = [0];
   const top = [0];
   if (numberFrom(bindings.objectBounds(object, left, bottom, right, top), 'FPDFPageObj_GetBounds') !== 1) {
-    throw new Error('FPDFPageObj_GetBounds refused an object this page handed back.');
+    throw refusedAt('object', 'FPDFPageObj_GetBounds refused an object this page handed back');
   }
   return { left: left[0] ?? 0, bottom: bottom[0] ?? 0, right: right[0] ?? 0, top: top[0] ?? 0 };
 }
@@ -2255,9 +2399,10 @@ export function objectMatrix(
       const object = objectAt(bindings, handle, page, index);
       const matrix: Record<string, unknown> = {};
       if (numberFrom(bindings.getMatrix(object, matrix), 'FPDFPageObj_GetMatrix') !== 1) {
-        throw new Error(
+        throw refusedAt(
+          'matrix',
           `FPDFPageObj_GetMatrix refused object ${String(index)} on page ${String(page)}, so its ` +
-            'placement cannot be recorded and an edit to it could not be undone.',
+            'placement cannot be recorded and an edit to it could not be undone',
         );
       }
       const read = (key: string): number => numberFrom(matrix[key], `FS_MATRIX.${key}`);
@@ -2317,7 +2462,7 @@ export function placeObject(
         box.left * (1 - scaleX) + placement.moveBy.x,
         box.bottom * (1 - scaleY) + placement.moveBy.y,
       );
-      generate(bindings, handle);
+      generate(session, page, handle);
     });
   });
 }
@@ -2339,11 +2484,9 @@ export function setObjectMatrix(
       const bindings = api();
       const object = objectAt(bindings, handle, page, index);
       if (numberFrom(bindings.setMatrix(object, matrix), 'FPDFPageObj_SetMatrix') !== 1) {
-        throw new Error(
-          `FPDFPageObj_SetMatrix refused object ${String(index)} on page ${String(page)}.`,
-        );
+        throw refusedAt('matrix', `FPDFPageObj_SetMatrix refused object ${String(index)} on page ${String(page)}`);
       }
-      generate(bindings, handle);
+      generate(session, page, handle);
     });
   });
 }
@@ -2424,9 +2567,10 @@ export function promoteFormObjects(session: PdfiumSession, page: number): Promis
       const matrixOfForm = (form: unknown): ObjectMatrix => {
         const matrix: ObjectMatrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
         if (numberFrom(bindings.getMatrix(form, matrix), 'FPDFPageObj_GetMatrix') !== 1) {
-          throw new Error(
+          throw refusedAt(
+            'matrix',
             `FPDFPageObj_GetMatrix refused a form object on page ${String(page)}, so its ` +
-              'content cannot be placed and nothing was promoted.',
+              'content cannot be placed and nothing was promoted',
           );
         }
         return matrix;
@@ -2462,10 +2606,11 @@ export function promoteFormObjects(session: PdfiumSession, page: number): Promis
             continue;
           }
           if (numberFrom(bindings.setMatrix(child, target), 'FPDFPageObj_SetMatrix') !== 1) {
-            throw new Error(
+            throw refusedAt(
+              'matrix',
               `FPDFPageObj_SetMatrix refused a promoted object on page ${String(page)}. Nothing ` +
                 'is inserted after a refusal: an object placed with its form matrix left out ' +
-                'would render somewhere else on a page that still looks plausible.',
+                'would render somewhere else on a page that still looks plausible',
             );
           }
           if (numberFrom(bindings.removeFormObject(form, child), 'FPDFFormObj_RemoveObject') !== 1) {
@@ -2475,9 +2620,10 @@ export function promoteFormObjects(session: PdfiumSession, page: number): Promis
           // frees the object itself on failure — so a failed insert is not a
           // leak and must not be followed by a destroy.
           if (numberFrom(bindings.insertObject(handle, child), 'FPDFPage_InsertObject') !== 1) {
-            throw new Error(
+            throw refusedAt(
+              'object',
               `FPDFPage_InsertObject refused a promoted object on page ${String(page)}, which ` +
-                'PDFium frees on failure — so that object is gone from the document.',
+                'PDFium frees on failure, so that object is gone from this session',
             );
           }
           moved += 1;
@@ -2493,7 +2639,7 @@ export function promoteFormObjects(session: PdfiumSession, page: number): Promis
         }
       }
 
-      if (moved > 0) generate(bindings, handle);
+      if (moved > 0) generate(session, page, handle);
       return moved;
     }),
   );
@@ -2545,13 +2691,10 @@ export function setObjectFills(
             'FPDFPageObj_SetFillColor',
           ) !== 1
         ) {
-          throw new Error(
-            `FPDFPageObj_SetFillColor refused object ${String(fill.index)} on page ${String(page)} ` +
-              `(FPDF_GetLastError ${String(bindings.lastError())}).`,
-          );
+          throw refusedAt('object', `FPDFPageObj_SetFillColor refused object ${String(fill.index)} on page ${String(page)}`);
         }
       }
-      generate(bindings, handle);
+      generate(session, page, handle);
     });
   });
 }
@@ -2636,13 +2779,11 @@ export function removeObjects(
       const objects = named.map((index) => objectAt(bindings, handle, page, index));
       for (const [at, index] of named.entries()) {
         if (numberFrom(bindings.removeObject(handle, objects[at]), 'FPDFPage_RemoveObject') !== 1) {
-          throw new Error(
-            `FPDFPage_RemoveObject refused object ${String(index)} on page ${String(page)}.`,
-          );
+          throw refusedAt('object', `FPDFPage_RemoveObject refused object ${String(index)} on page ${String(page)}`);
         }
         bindings.destroyObject(objects[at]);
       }
-      generate(bindings, handle);
+      generate(session, page, handle);
     });
   });
 }
@@ -2758,12 +2899,174 @@ export function renderPageBitmap(
  * without it: with, the reopened bytes carry two objects; without, three. So a
  * mutation that skipped this would be present in memory, absent from the file,
  * and visible to nothing until the document was reopened.
+ *
+ * ## And it RECORDS the page as edited, which `serialise` reads the saved bytes back against
+ *
+ * [ADR-0169](../../../docs/DECISIONS/0169-a-pdfium-rewrite-is-saved-only-when-it-reads-back-as-edited.md)
+ * Decision 1. Generation writes a Type 3 text object with no `Tf`, no text and no `ET`
+ * (`CPDF_PageContentGenerator::ProcessText` names a font only for Type 1, TrueType and CID fonts), so a page that
+ * carries one loses its text here and nothing in memory shows it: measured 2026-10-05 on PDFium 155.0.8044.0's Linux
+ * build, a Chromium print went from 60 text objects to 1 and every command answered success. The record is taken here
+ * because this is the one call every edit makes, so no command can reach the saved bytes unchecked and none has to say
+ * what it touched. `writes` names the objects the edit wrote: a difference there is the font's, anywhere else a loss.
  */
-function generate(bindings: Bound, handle: unknown): void {
+function generate(session: PdfiumSession, page: number, handle: unknown, writes: readonly unknown[] = []): void {
+  const bindings = api();
+  const { objects, texts } = heldTextsOn(bindings, handle);
+  const written = new Set(writes.map((object) => String(koffi.address(object))));
+  const writesAt = new Set(objects.flatMap((object, at) => (written.has(String(koffi.address(object))) ? [at] : [])));
   if (numberFrom(bindings.generateContent(handle), 'FPDFPage_GenerateContent') !== 1) {
-    throw new Error(
-      'FPDFPage_GenerateContent failed, so the edit would be present in memory and absent from the saved bytes.',
+    throw refusedAt(
+      'generate',
+      'FPDFPage_GenerateContent failed, so the edit would be present in memory and absent from the saved bytes',
     );
+  }
+  let pages = editedPages.get(session);
+  if (pages === undefined) {
+    pages = new Map();
+    editedPages.set(session, pages);
+  }
+  pages.set(page, { texts, writes: writesAt });
+}
+
+/** One text object as a page holds it: what it says, and the base name of the font it is set in. */
+interface HeldText {
+  readonly text: string;
+  readonly font: string;
+}
+
+/** A regenerated page as it was edited: {@link generate}'s record, which {@link readBack} holds the saved bytes to. */
+interface EditedPage {
+  /** Its text objects in page order, a Form XObject's own in its place. */
+  readonly texts: readonly HeldText[];
+  /** The positions in `texts` the edit wrote. */
+  readonly writes: ReadonlySet<number>;
+}
+
+/** Each session's regenerated pages, by page index; a session is one command's, so this lives as long as it does. */
+const editedPages = new WeakMap<PdfiumSession, Map<number, EditedPage>>();
+
+/**
+ * A page's text objects in page order, each Form XObject's in its place, depth first.
+ *
+ * WITH AN EXPLICIT STACK rather than recursion: a form can hold a form, and a document is hostile by invariant 25's
+ * premise, so its nesting depth is not this process's stack depth to spend.
+ */
+function textObjectsIn(bindings: Bound, handle: unknown): unknown[] {
+  const found: unknown[] = [];
+  const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  const pending: unknown[] = [];
+  for (let at = count - 1; at >= 0; at -= 1) pending.push(bindings.getObject(handle, at));
+  while (pending.length > 0) {
+    const object = pending.pop();
+    if (object === null || object === undefined) continue;
+    const kind = numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType');
+    if (kind === TEXT_OBJECT) {
+      found.push(object);
+    } else if (kind === OBJECT_FORM) {
+      const children = numberFrom(bindings.countFormObjects(object), 'FPDFFormObj_CountObjects');
+      for (let at = children - 1; at >= 0; at -= 1) pending.push(bindings.formObject(object, at));
+    }
+  }
+  return found;
+}
+
+/** What each of a page's text objects says and is set in, read through one text page. */
+function heldTextsOn(bindings: Bound, handle: unknown): { readonly objects: unknown[]; readonly texts: HeldText[] } {
+  const objects = textObjectsIn(bindings, handle);
+  const textPage: unknown = bindings.loadTextPage(handle);
+  if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to record its text');
+  try {
+    const texts = objects.map((object) => {
+      const font: unknown = bindings.textFont(object);
+      return { text: objectTextOn(bindings, object, textPage), font: font === null ? '' : baseNameOf(bindings, font) };
+    });
+    return { objects, texts };
+  } finally {
+    bindings.closeTextPage(textPage);
+  }
+}
+
+/**
+ * Reopens `bytes` and requires every page in `edited` to read back as it was edited, or throws — ADR-0169 Decision 2.
+ *
+ * - **A text object the edit did not write that is missing or reads differently** is lost text: refused at step
+ *   `read-back`. The count is compared first, so a page that lost objects is that refusal whichever ones went.
+ * - **Otherwise, a write that reads differently** is the font it was saved in failing to carry it — measured
+ *   2026-09-24, a Helvetica twin saved into a StandardEncoding Helvetica-family font reads `é` back as `Ø` — so it is
+ *   `TextNotWritableError`, naming the characters.
+ *
+ * Opened WITH THE PASSWORD THE SESSION OPENED WITH: the save keeps the document's security handler (flags 0, measured
+ * on PDFium 155 2026-10-05), so the bytes of a document opened with its password open only with it (ADR-0171's
+ * addendum).
+ */
+function readBack(bytes: Buffer, edited: ReadonlyMap<number, EditedPage>, password: string | undefined): void {
+  const bindings = api();
+  // `bytes` IS HELD by this frame for as long as the document is open — `FPDF_LoadMemDocument64` does not copy (`Live`).
+  const document: unknown = bindings.loadDocument(bytes, bytes.length, password ?? null);
+  if (document === null) throw refusedAt('read-back', 'PDFium could not reopen the bytes it had just saved');
+  try {
+    const misread: { written: string; read: string }[] = [];
+    for (const [page, recorded] of edited) {
+      const handle: unknown = bindings.loadPage(document, page);
+      if (handle === null) throw refusedAt('read-back', `PDFium could not load page ${String(page)} of the bytes it saved`);
+      let saved: readonly HeldText[];
+      try {
+        saved = heldTextsOn(bindings, handle).texts;
+      } finally {
+        bindings.closePage(handle);
+      }
+      if (saved.length !== recorded.texts.length) {
+        throw refusedAt(
+          'read-back',
+          `page ${String(page)} was edited with ${String(recorded.texts.length)} text objects and saved with ` +
+            String(saved.length),
+        );
+      }
+      // AS A MULTISET, NOT BY POSITION: generation does not keep page order. Measured 2026-10-05 on PDFium
+      // 155.0.8044.0's Linux build, a line promoted out of a Form XObject is LAST in the session and FIRST in the saved
+      // page, with every object present and unchanged — so a positional comparison refused a faithful save.
+      const unmatched = new Map<string, number>();
+      for (const back of saved) {
+        const key = `${back.font}\u0000${back.text}`;
+        unmatched.set(key, (unmatched.get(key) ?? 0) + 1);
+      }
+      const take = (key: string): boolean => {
+        const left = unmatched.get(key) ?? 0;
+        if (left === 0) return false;
+        unmatched.set(key, left - 1);
+        return true;
+      };
+      for (const [at, held] of recorded.texts.entries()) {
+        if (recorded.writes.has(at) || take(`${held.font}\u0000${held.text}`)) continue;
+        throw refusedAt(
+          'read-back',
+          `a text object on page ${String(page)} the edit did not write was saved reading differently, in another font, ` +
+            'or not at all',
+        );
+      }
+      // WHAT IS LEFT is the writes, read back: each one written is matched by text — its font may be a twin's — and
+      // what matches nothing is a write the saved font does not carry.
+      const readBackWrites = [...unmatched].flatMap(([key, count]) =>
+        Array.from({ length: count }, () => key.slice(key.indexOf('\u0000') + 1)),
+      );
+      const unmatchedWrites: string[] = [];
+      for (const at of recorded.writes) {
+        const wrote = recorded.texts[at]?.text ?? '';
+        const found = readBackWrites.indexOf(wrote);
+        if (found === -1) unmatchedWrites.push(wrote);
+        else readBackWrites.splice(found, 1);
+      }
+      // THE CHARACTERS are named against every write that read back as something else, joined, since which saved
+      // object a misread write became is the one thing a multiset cannot say; the characters absent from all of them
+      // are the ones no write carried. Joined by spaces, which a refusal never names.
+      if (unmatchedWrites.length > 0) {
+        misread.push({ written: unmatchedWrites.join(' '), read: readBackWrites.join(' ') });
+      }
+    }
+    if (misread.length > 0) throw new TextNotWritableError(unwritableCharacters(misread));
+  } finally {
+    bindings.closeDocument(document);
   }
 }
 
@@ -2776,7 +3079,7 @@ function saveAsCopy(document: unknown): Buffer {
       // `decode` COPIES out of PDFium's block into a JavaScript array, and
       // `Buffer.from` copies again — the block is valid only for the duration of
       // this callback, so a view kept past the return would be reading freed
-      // memory. Same hazard as `mupdfWriter.ts`'s view into the WASM heap.
+      // memory.
       const bytes: unknown = koffi.decode(data, 'uint8_t', size);
       blocks.push(Buffer.from(bytes as Uint8Array));
       return 1;
@@ -2790,11 +3093,7 @@ function saveAsCopy(document: unknown): Buffer {
       bindings.saveAsCopy(document, { version: 1, WriteBlock: callback }, 0),
       'FPDF_SaveAsCopy',
     );
-    if (ok !== 1) {
-      throw new Error(
-        `FPDF_SaveAsCopy answered ${String(ok)} (FPDF_GetLastError ${String(bindings.lastError())}).`,
-      );
-    }
+    if (ok !== 1) throw refusedAt('save', `FPDF_SaveAsCopy answered ${String(ok)}`);
     return Buffer.concat(blocks);
   } finally {
     koffi.unregister(callback);
@@ -2818,34 +3117,47 @@ function saveAsCopy(document: unknown): Buffer {
  * for the dead one beside it (finding CCCCCC-2). Nothing in `63f10be` opened
  * this file.
  */
+/**
+ * Runs `work` against a session opened from `image` with the key it carries, closing it however it ends. THE ONE
+ * OPENER every PDFium spec and read takes (ADR-0171's addendum), where each module had a copy of these lines: a copy
+ * that opened without the key would read as the same four lines and refuse every document opened with its password.
+ */
+export async function onImage<T>(image: ImageSession, work: (session: PdfiumSession) => Promise<T>): Promise<T> {
+  const session = await pdfiumWriter.open(image.bytes, image.opensWith?.reveal());
+  try {
+    return await work(session);
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+}
+
 export const pdfiumWriter: EngineWriter<PdfiumSession> = {
   /**
    * Parses `image` into a session.
    *
    * The bytes are **copied into a `Buffer` this session owns** rather than
-   * passed through. Two reasons and both are load-bearing: `FPDF_LoadMemDocument`
+   * passed through. Two reasons and both are load-bearing: `FPDF_LoadMemDocument64`
    * keeps reading the caller's memory for the document's whole life (see
    * {@link Live}), and a `ByteImage` is the kernel's canonical image, which
    * nothing below the seam may hold a live pointer into.
    *
-   * No password is offered. An encrypted document is a Stage 7 concern with its
-   * own row, and a `null` here makes PDFium refuse one loudly rather than this
-   * adapter inventing an empty-string policy nobody wrote down.
+   * **The password is the one the document was opened with in `main`, or none**
+   * (ADR-0171's addendum). `null` without one, so PDFium refuses an encrypted
+   * document loudly rather than this adapter inventing an empty-string policy
+   * nobody wrote down; the session keeps it for the read-back's reopen.
    */
-  open(image: ByteImage): Promise<PdfiumSession> {
+  open(image: ByteImage, password?: string): Promise<PdfiumSession> {
     return promised(() => {
       const bindings = api();
       const bytes = Buffer.from(image);
-      const document: unknown = bindings.loadDocument(bytes, bytes.length, null);
-      if (document === null) {
-        throw new Error(
-          `PDFium refused the document (FPDF_GetLastError ${String(bindings.lastError())}).`,
-        );
-      }
+      const document: unknown = bindings.loadDocument(bytes, bytes.length, password ?? null);
+      // `open` WITH PDFium's own number, so a document protected by a password is named as one (`FPDF_ERR_PASSWORD`,
+      // 4) rather than as a document PDFium could not read.
+      if (document === null) throw refusedAt('open', 'PDFium refused the document');
       // The one place a PdfiumSession is minted. Keeping this cast unexported is
       // what makes the brand mean "this adapter produced it".
       const session = { engine: 'pdfium' } as PdfiumSession;
-      documents.set(session, { document, bytes });
+      documents.set(session, { document, bytes, password });
       return session;
     });
   },
@@ -2867,7 +3179,14 @@ export const pdfiumWriter: EngineWriter<PdfiumSession> = {
    * select, and a parameter that changed nothing would read as a policy.
    */
   serialise(session: PdfiumSession): Promise<ByteImage> {
-    return promised(() => new Uint8Array(saveAsCopy(documentFor(session))));
+    return promised(() => {
+      const bytes = saveAsCopy(documentFor(session));
+      // NOTHING LEAVES UNREAD (ADR-0169): every page this session regenerated is read back from these bytes, and a
+      // page that lost text refuses before any caller holds them. A session that regenerated nothing pays nothing.
+      const edited = editedPages.get(session);
+      if (edited !== undefined && edited.size > 0) readBack(bytes, edited, documents.get(session)?.password);
+      return new Uint8Array(bytes);
+    });
   },
 
   /** Releases the native document and drops the bytes it was reading. */

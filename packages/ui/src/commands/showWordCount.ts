@@ -87,6 +87,8 @@ export function showWordCountCommand(deps: {
       let words = 0;
       let characters = 0;
       let charactersNoSpaces = 0;
+      let lines = 0;
+      let cjkCharacters = 0;
       let pagesCounted = 0;
       let expected: unknown;
 
@@ -121,6 +123,8 @@ export function showWordCountCommand(deps: {
           words += answer.value.words;
           characters += answer.value.characters;
           charactersNoSpaces += answer.value.charactersNoSpaces;
+          lines += answer.value.lines;
+          cjkCharacters += answer.value.cjkCharacters;
           pagesCounted += 1;
           task.step(pagesCounted);
         }
@@ -139,6 +143,8 @@ export function showWordCountCommand(deps: {
         words,
         characters,
         charactersNoSpaces,
+        lines,
+        cjkCharacters,
         pagesCounted,
         pageCount,
       });

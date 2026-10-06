@@ -159,6 +159,66 @@ test('each half shows ITS OWN document: its own pages, and its own words on the 
   }
 });
 
+// TWO COPIES OF ONE DOCUMENT READ ONE ZOOM (8a, F-C2): the divider was the second half's border, so that half's pages
+// fitted to a list one pixel narrower — 621 against 622 at 1280 wide, measured 2026-10-03 — and identical halves read
+// two percentages wherever the zoom sat near a half. The widths are the assertion, because a rounded percentage hides
+// a one-pixel gap at most widths: the control is the measurement above, which this case fails against the old rule.
+test('identical documents in the two halves fit to the SAME width and read the same zoom, at three window widths', async ({
+  context,
+}) => {
+  const same = asDocId('00000000-0000-4000-8000-0000000000e1');
+  const copy = asDocId('00000000-0000-4000-8000-0000000000e2');
+  for (const width of [1024, 1280, 1366]) {
+    const page = await context.newPage();
+    const bytes = await pages([
+      [612, 792],
+      [612, 792],
+    ]);
+    await page.setViewportSize({ width, height: 800 });
+    await bridgeUnder(page, LOOKS[0], {
+      opens: [
+        { kind: 'opened', docId: same, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'same.pdf' },
+        { kind: 'opened', docId: copy, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'same copy.pdf' },
+      ],
+      documentBytes: new Map([
+        [same, bytes],
+        [copy, bytes],
+      ]),
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Open', exact: true }).click();
+    await page.locator('nav.m-ribbon__rail').getByRole('button', { name: 'Review' }).click();
+    await page.locator('.m-ribbon__tools').getByRole('button', { name: 'Compare', exact: true }).click();
+    const surface = page.locator('section[data-side-by-side]');
+    // BOTH HALVES DRAWN, since both are read. Each half loads on its own (`view.ready`), and this waited for the right
+    // alone: on Windows at e1ade294 the left read as having no page list at 1366 (NaN), in a run that kept no
+    // artifacts, so whether it was still loading or had FAILED is not known. A failed half draws a marked canvas in
+    // place of its list, so it is named here rather than read as a width.
+    for (const side of ['left', 'right']) {
+      const half = surface.locator(`[data-side-half="${side}"]`);
+      // EITHER OUTCOME ends the wait, so a failed half is named at once rather than as a page that never drew.
+      // A FAILED HALF'S CANVAS HAS NO SIZE, so it is found by its presence; a drawn one by being on show.
+      await expect
+        .poll(async () => (await half.locator('.m-page-list canvas.m-page:visible').count()) + (await half.locator('canvas[data-failed]').count()), {
+          message: `the ${side} half settles at ${String(width)}`,
+          timeout: 20_000,
+        })
+        .toBeGreaterThan(0);
+      await expect(half.locator('canvas[data-failed]'), `the ${side} half failed to load at ${String(width)}`).toHaveCount(0);
+    }
+    const read = (side: string): Promise<{ client: number; zoom: string | null }> =>
+      surface.locator(`[data-side-half="${side}"]`).evaluate((half) => ({
+        client: half.querySelector<HTMLElement>('.m-page-list')?.clientWidth ?? Number.NaN,
+        zoom: half.querySelector('[data-side-zoom]')?.textContent ?? null,
+      }));
+    const [left, right] = [await read('left'), await read('right')];
+    expect([width, left.client]).toStrictEqual([width, right.client]);
+    expect([width, left.zoom]).toStrictEqual([width, right.zoom]);
+    await page.close();
+  }
+});
+
 test('the Differences close hides the panel AND every mark on both halves; the comparison is still held', async ({ page }) => {
   const surface = await openSideBySide(page);
   await surface.locator('[data-side-compare]').click();

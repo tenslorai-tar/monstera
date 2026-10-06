@@ -59,10 +59,14 @@ export const BACKUP_COPIES_SETTING: SettingDefinition<z.ZodEnum<{ [K in BackupCo
 };
 
 /**
- * Whether a save that would break the document's signatures asks first — Part F's *"warn before signature-breaking
- * save"* (`BUILD-PROMPT.md`:618), ON by default: a signature that stops verifying is not something a person can see
- * happen, and most saves of a signed document keep it (they append). Off, such a save goes ahead; a timer's save never
- * breaks one either way.
+ * Whether a change or a save that would break the document's signatures asks first — Part F's *"warn before
+ * signature-breaking save"* (`BUILD-PROMPT.md`:618), ON by default: a signature that stops verifying is not something
+ * a person can see happen, and most changes to a signed document keep it (they append). Off, such a change or save
+ * goes ahead unasked; a timer's save never breaks one either way.
+ *
+ * **One switch for both questions** ([ADR-0149](../../../../docs/DECISIONS/0149-a-signature-is-appended-and-an-edit-that-breaks-one-is-asked-first.md)):
+ * the edit is asked about before it is made, and the save after it does not ask again, so a person who turned the
+ * save's warning off and was then asked about the edit would be asked by a switch they turned off.
  */
 export const WARN_SIGNATURE_BREAK_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'saving.warn-signature-break',

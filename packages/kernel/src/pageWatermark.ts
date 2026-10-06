@@ -1,9 +1,10 @@
-import { StandardFonts, degrees, rgb } from '@cantoo/pdf-lib';
+import { StandardFonts, rgb } from '@cantoo/pdf-lib';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
+import { pageFrame, upright } from './pdfLibFrame.js';
 import { appendRevision, openForWriting } from './pdfLibSession.js';
 
 /**
@@ -160,7 +161,9 @@ export const applyWatermarkPages: Apply<'pdf-lib', 'watermarkPages'> = async (im
     // would be the one place this file stopped carrying the property.
     if (page === undefined) continue;
 
-    const { width, height } = page.getSize();
+    // THE PAGE AS THE READER SEES IT (CR-COR-01): the centre and the slant are the displayed page's.
+    const frame = pageFrame(page, index);
+    const { width, height } = frame.viewport;
     const textWidth = font.widthOfTextAtSize(command.text, command.fontSize);
     const textHeight = font.heightAtSize(command.fontSize);
 
@@ -173,14 +176,13 @@ export const applyWatermarkPages: Apply<'pdf-lib', 'watermarkPages'> = async (im
     const offsetX = halfWidth * Math.cos(radians) - halfHeight * Math.sin(radians);
     const offsetY = halfWidth * Math.sin(radians) + halfHeight * Math.cos(radians);
 
+    // FROM THE TOP, the frame's direction: the text's start is the offset left of the centre and below it.
     page.drawText(command.text, {
-      x: width / 2 - offsetX,
-      y: height / 2 - offsetY,
+      ...upright(frame, width / 2 - offsetX, height / 2 + offsetY, command.rotationDegrees),
       size: command.fontSize,
       font,
       color: colour,
       opacity: command.opacity,
-      rotate: degrees(command.rotationDegrees),
     });
   }
 

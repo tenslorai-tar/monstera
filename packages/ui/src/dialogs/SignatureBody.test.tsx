@@ -11,6 +11,7 @@ import { asFileHandle } from '@monstera/shared';
 
 import type { HeldSignaturePicture } from './signature.js';
 import SignatureBody from './SignatureBody.js';
+import { facesRead, openStyleMenu } from './styleMenuInTest.js';
 import type { KeptSignature } from './signDocument.js';
 
 /**
@@ -20,7 +21,7 @@ import type { KeptSignature } from './signDocument.js';
  */
 
 const KEPT: readonly KeptSignature[] = [
-  { id: '00000000-0000-4000-8000-0000000000a1', look: { kind: 'typed', text: 'Grace Hopper', font: 'helvetica' } },
+  { id: '00000000-0000-4000-8000-0000000000a1', look: { kind: 'typed', text: 'Grace Hopper', font: 'source-sans' } },
 ];
 
 function opened(
@@ -50,28 +51,66 @@ afterEach(() => {
 });
 
 describe('SignatureBody', () => {
-  it('TYPE answers the name in the chosen face, with Save for reuse TICKED by default', () => {
+  it('TYPE answers the name in the face chosen from the style menu, with Save for reuse TICKED by default', async () => {
     const { resolve } = opened();
     fireEvent.click(screen.getByRole('button', { name: 'Type' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Your name' }), { target: { value: '  Ada Lovelace  ' } });
-    fireEvent.click(screen.getByRole('radio', { name: /Courier$/u }));
+    await facesRead();
+    await openStyleMenu('Dancing Script');
+    // ALL FIFTEEN FACES, each its own radio item, named by the face.
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(15);
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Courier Prime' }));
     fireEvent.click(USE());
-    expect(resolve).toHaveBeenCalledWith({ mark: { kind: 'typed', text: 'Ada Lovelace', font: 'courier' }, keep: true });
+    expect(resolve).toHaveBeenCalledWith({ mark: { kind: 'typed', text: 'Ada Lovelace', font: 'courier-prime' }, keep: true });
   });
 
-  it('CONTROL: unticked, the same look answers keep false', () => {
+  it('CONTROL: unticked, the same look answers keep false, in the face it opened with', async () => {
     const { resolve } = opened();
     fireEvent.click(screen.getByRole('button', { name: 'Type' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Your name' }), { target: { value: 'Ada' } });
+    await facesRead();
+    screen.getByRole('img', { name: 'Your signature, as it will be placed' });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Save for reuse' }));
     fireEvent.click(USE());
-    expect(resolve).toHaveBeenCalledWith({ mark: { kind: 'typed', text: 'Ada', font: 'times-italic' }, keep: false });
+    expect(resolve).toHaveBeenCalledWith({ mark: { kind: 'typed', text: 'Ada', font: 'dancing-script' }, keep: false });
   });
 
-  it('UPLOAD asks for a picture first: Use Signature waits and says so, and Choose picture… answers the pick with keep', () => {
+  it('the PREVIEW is the name drawn in the face — the outline the page receives, not a CSS font', async () => {
+    opened();
+    fireEvent.click(screen.getByRole('button', { name: 'Type' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Your name' }), { target: { value: 'Ada' } });
+    await facesRead();
+    const preview = screen.getByRole('img', { name: 'Your signature, as it will be placed' });
+    expect(preview.tagName.toLowerCase()).toBe('svg');
+    expect(preview.querySelector('path')?.getAttribute('d')).toMatch(/^M.*Q/u);
+  });
+
+  it('a name the face CANNOT WRITE says which characters as it is typed, and Use Signature answers nothing', async () => {
+    const { resolve } = opened();
+    fireEvent.click(screen.getByRole('button', { name: 'Type' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Your name' }), { target: { value: 'Ада' } });
+    // DANCING SCRIPT'S FILES ARE LATIN, Latin Extended and Vietnamese: each Cyrillic letter is named once.
+    await facesRead();
+    screen.getByText('This style cannot write А д а. Choose another style, or draw or upload your signature.');
+    fireEvent.click(USE());
+    expect(resolve).not.toHaveBeenCalled();
+    // AND THE STYLE MENU says it of each face that cannot, while a face that can — Source Sans 3 — says nothing.
+    await openStyleMenu('Dancing Script');
+    const sans = screen.getByRole('menuitemradio', { name: 'Source Sans 3' });
+    expect(sans.textContent).not.toMatch(/Cannot write/u);
+    // THE NOTE IS PART OF THE ITEM'S NAME, so a screen reader hears it with the face.
+    expect(screen.getByRole('menuitemradio', { name: /^Allura/u }).textContent).toMatch(/Cannot write А д а/u);
+    fireEvent.click(sans);
+    fireEvent.click(USE());
+    expect(resolve).toHaveBeenCalledWith({ mark: { kind: 'typed', text: 'Ада', font: 'source-sans' }, keep: true });
+  });
+
+  it('UPLOAD asks for a picture first: Use Signature answers nothing and says so once pressed, and Choose picture… answers the pick with keep', () => {
     const { resolve } = opened();
     fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
-    expect(USE().hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('status').textContent).toBe('');
+    fireEvent.click(USE());
+    expect(resolve).not.toHaveBeenCalled();
     expect(screen.getByRole('status').textContent).toBe('Choose a picture first.');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Save for reuse' }));
     fireEvent.click(screen.getByRole('button', { name: 'Choose picture…' }));
@@ -91,13 +130,17 @@ describe('SignatureBody', () => {
     expect(resolve).toHaveBeenCalledWith({ mark: { kind: 'image', picked: 'held-1' }, keep: false });
   });
 
-  it('DRAW waits for a stroke: Use Signature is disabled on an empty pad and says why', () => {
+  it('DRAW waits for a stroke: an empty pad OPENS QUIET, and pressing Use Signature answers nothing and says why', () => {
     const { resolve } = opened();
-    expect(USE().hasAttribute('disabled')).toBe(true);
-    expect(screen.getByRole('status').textContent).toBe('Type or draw the signature first.');
+    // QUIET ON OPEN: the person has not had a chance to draw yet (`attempt.ts`).
+    expect(screen.getByRole('status').textContent).toBe('');
     expect(screen.getByText('Draw your signature above')).toBeDefined();
     fireEvent.click(USE());
     expect(resolve).not.toHaveBeenCalled();
+    expect(screen.getByRole('status').textContent).toBe('Type or draw the signature first.');
+    // ANOTHER WAY FORGETS THE PRESS: Type's empty field is one the person has not had a chance to fill.
+    fireEvent.click(screen.getByRole('button', { name: 'Type' }));
+    expect(screen.getByRole('status').textContent).toBe('');
   });
 
   it('a KEPT signature is used by ONE click, as itself, and is not kept again', () => {

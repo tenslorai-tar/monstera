@@ -1,10 +1,12 @@
+import type { PageSet } from '@monstera/contract/host';
+
 import type { MupdfSession } from './engineSeam.js';
 import { ColorSpace, DrawDevice, type Image, Matrix, Pixmap, type Rect } from './mupdfRaw.js';
 import { withDocument } from './mupdfWriter.js';
 import { ooxmlPackage } from './ooxmlPackage.js';
 import { readPageGeometry } from './pageGeometry.js';
-import { pageInDocument } from './pageScope.js';
-import { MAX_SNAPSHOT_PIXELS } from './pageSnapshot.js';
+import { pageInDocument, pagesOf } from './pageScope.js';
+import { scaleWithinPixelBound } from './pageSnapshot.js';
 import { readPageTextJson } from './pageText.js';
 import { PICTURE_READ_OPTIONS, type PagePicture, type PrintedBox, parsePageLayout } from './textStructure.js';
 import { type WordMode, type WordPage, wordDocumentParts } from './wordDocument.js';
@@ -21,10 +23,11 @@ import { type WordMode, type WordPage, wordDocumentParts } from './wordDocument.
 export function composeWordDocument(
   session: MupdfSession,
   mode: WordMode,
+  pages: PageSet,
 ): { readonly chunks: AsyncIterable<Uint8Array>; readonly pictures: () => number } {
   let drawn = 0;
   const chunks = ooxmlPackage(
-    wordDocumentParts(mode, wordPages(session), async (page, pictures) => {
+    wordDocumentParts(mode, wordPages(session, pages), async (page, pictures) => {
       const pngs = await drawPagePictures(session, page, pictures);
       drawn += pngs.length;
       return pngs;
@@ -33,9 +36,10 @@ export function composeWordDocument(
   return { chunks, pictures: () => drawn };
 }
 
-async function* wordPages(session: MupdfSession): AsyncIterable<WordPage> {
+/** THE CHOSEN PAGES only (ADR-0161), in the set's order, a page past the document refused before any is read. */
+async function* wordPages(session: MupdfSession, chosen: PageSet): AsyncIterable<WordPage> {
   const { pageCount } = await readPageGeometry(session, []);
-  for (let index = 0; index < pageCount; index += 1) {
+  for (const index of pagesOf(chosen, pageCount)) {
     // THE SHARED READ, parsed by the one reader: the words and the pictures' places
     // are exactly what search, the text layer and the text export see.
     const { text, pictures } = parsePageLayout(await readPageTextJson(session, index, 'substrate'));
@@ -116,7 +120,7 @@ export function drawPagePictures(
  * came back black).
  *
  * **At the picture's own resolution**, the image's pixels over the area its
- * transform covers, and at most {@link MAX_SNAPSHOT_PIXELS} — the host's bound on
+ * transform covers, and at most `MAX_SNAPSHOT_PIXELS` (through `scaleWithinPixelBound`) — the host's bound on
  * one pixmap, which a larger picture is scaled down to rather than refused. The
  * same bound a snapshot and a page image take, not a figure of this export's own.
  *
@@ -128,7 +132,7 @@ function drawPicture(image: Image, bbox: Rect, transform: Matrix): Uint8Array {
   const height = Math.max(bbox[3] - bbox[1], 1e-3);
   const area = Math.abs(transform[0] * transform[3] - transform[1] * transform[2]);
   const own = area > 0 ? Math.sqrt((image.getWidth() * image.getHeight()) / area) : 1;
-  const bounded = Math.min(own, Math.sqrt(MAX_SNAPSHOT_PIXELS / (width * height)));
+  const bounded = scaleWithinPixelBound(width, height, own);
   const pixelsWide = Math.max(1, Math.round(width * bounded));
   const pixelsHigh = Math.max(1, Math.round(height * bounded));
 

@@ -126,6 +126,11 @@ export type ShellFailureEvent =
    */
   | 'package-data-unlocked'
   /**
+   * A file this build wrote for its own use could not be removed (`workingFile.ts`): which, and why. Nothing a person
+   * asked for depends on it, so the command it served goes on; this line is where the file left behind is named.
+   */
+  | 'working-file-left'
+  /**
    * The shell could not close what it holds on the way out.
    *
    * A lifecycle failure like the rest, and the only one that happens when there

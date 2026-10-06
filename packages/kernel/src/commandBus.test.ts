@@ -1,11 +1,13 @@
 import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { inspect } from 'node:util';
 
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFString } from '@cantoo/pdf-lib';
+import forge from 'node-forge';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { type Command, type CommandOfKind, NETWORK_OCR_ENGINES, type PageSet } from '@monstera/contract';
+import { type Command, type CommandOfKind, NETWORK_OCR_ENGINES, type PageSet, outlineOpCodes } from '@monstera/contract';
 import { type DocVersion, asDocVersion } from '@monstera/shared';
 
 import {
@@ -26,12 +28,14 @@ import {
 import type { CommandWriter, DocumentContext, HeldFile } from './documentService.js';
 import { serialiseIntoFile } from './checkpointFile.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
-import { localMupdfWriter } from './localEngine.js';
+import { localMupdfWriter, localSignpdfWriter } from './localEngine.js';
 import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
+import * as mupdf from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { applyAddAnnotation, readAnnotations } from './pageAnnotations.js';
 import { localPdfLibWriter } from './localEngine.js';
 import { shownOn } from './shownText.js';
+import { NothingToReplaceError } from './textEditRefusals.js';
 
 /**
  * The log and the one path from a command to an entry (ADR-0009 §4).
@@ -118,6 +122,11 @@ function contextStub(acceptsImages = false): DocumentContext & {
     },
     get removedSinceSave(): boolean {
       return removals > 0;
+    },
+    // THE BUS NEITHER ASKS NOR AGREES about signatures; that is the command layer's (ADR-0149).
+    signaturesBreakAgreed: false,
+    agreeToBreakSignatures: (): never => {
+      throw new Error('the bus does not agree to break signatures');
     },
     removals: () => removals,
     commandLog(_writer: CommandWriter): CommandLog {
@@ -270,7 +279,7 @@ function restoreStub(): {
  * a checkpoint. The document starts as `image`. Files go under this file's temporary directory, never the working
  * directory — `adopt`'s write places a real file now.
  */
-function hostModel(image: ByteImage): Pick<CommandInputs, 'current' | 'currentInto' | 'adopt'> & {
+function hostModel(image: ByteImage): Pick<CommandInputs, 'current' | 'opensWith' | 'currentInto' | 'adopt'> & {
   readonly restore: CheckpointRestore;
 } {
   let held: ByteImage = image;
@@ -282,6 +291,8 @@ function hostModel(image: ByteImage): Pick<CommandInputs, 'current' | 'currentIn
   };
   return {
     current: () => Promise.resolve(held),
+    // A document that opens with no password, which every fixture in this file is.
+    opensWith: () => undefined,
     currentInto: (destination) => serialiseIntoFile(() => Promise.resolve(held))(held, destination),
     adopt: rebuildFrom,
     restore: rebuildFrom,
@@ -313,6 +324,9 @@ const noRestoreExpected: CheckpointRestore = () => {
  */
 const noByteImageExpected: CommandInputs = {
   current: () => {
+    throw new Error('this case runs a live-session command and must not mint a byte image');
+  },
+  opensWith: () => {
     throw new Error('this case runs a live-session command and must not mint a byte image');
   },
   currentInto: () => {
@@ -411,6 +425,7 @@ describe('CommandLog — a cursor, not a stack', () => {
     if (recorded.command.kind !== 'rotatePages') {
       throw new Error(`expected a rotatePages entry, got ${recorded.command.kind}`);
     }
+    if (recorded.kind === 'terminal' && recorded.result !== null) throw new Error('expected a rotation kept whole');
     return recorded.command.pages;
   }
 
@@ -954,7 +969,13 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
           kind: 'placeSignatureMark',
           page: 1,
           rect: { x0: 100, y0: 100, x1: 300, y1: 180 },
-          mark: { kind: 'typed', text: 'Grace Hopper', font: 'times-italic' },
+          // A TYPED NAME as the renderer sends it, an outline (ADR-0150): one filled block in its line box.
+          mark: {
+            kind: 'outlined',
+            text: 'Grace Hopper',
+            font: 'great-vibes',
+            outline: { ops: outlineOpCodes('MLLLZ'), points: [0, 100, 1000, 100, 1000, 400, 0, 400], frame: [0, 0, 1000, 500] },
+          },
           stamp: { author: 'Priya Raman', created: '2026-10-02T09:00:00.000Z' },
         },
         showingInputs(session),
@@ -1060,6 +1081,26 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
         document.loadPage(0).getObject().get('Rotate').toString(),
       );
       expect(applied).toBe('/Landscape');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: a refusing APPLY after a successful capture records nothing and does not bump the version', async () => {
+    // A replacement that matches nothing refuses at the apply, after its capture ran (ADR-0169 Decision 6): the one
+    // window where *no new version* rests on the recording coming after the apply rather than on an earlier refusal.
+    // Capture is the working writer's, so the case cannot pass by refusing first.
+    const bus = new CommandBus({
+      mupdf: { ...localMupdfWriter, apply: () => Promise.reject(new NothingToReplaceError()) },
+    });
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub();
+    try {
+      await expect(bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected)).rejects.toThrow(
+        NothingToReplaceError,
+      );
+      expect(context.log.entries).toStrictEqual([]);
+      expect(context.bumps()).toBe(0);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -1280,6 +1321,89 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       const images = context.images();
       expect(images).toHaveLength(2);
       expect(await pagesIn(images[0])).toBe(2);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  /**
+   * Undo restores every reference the delete cleared (ADR-0155 decision 4).
+   *
+   * The delete now takes out a bookmark, a link, a named destination and the open action that named its page. None of
+   * that is prior state an inverse could carry; it is in the checkpoint because the bus takes the checkpoint before the
+   * apply. So the case asserts both halves: the delete DID clear them (without that, a restore of an untouched file
+   * passes), and the restored bytes are the document before it, every reference resolving to page 2 again.
+   */
+  it('UNDOING A DELETE restores the bookmark, link, named destination and open action it cleared', async () => {
+    const source = await PDFDocument.create();
+    const pages = [0, 1, 2].map(() => source.addPage([400, 600]));
+    const ctx = source.context;
+    const second = pages[1]?.ref;
+    const first = pages[0];
+    if (second === undefined || first === undefined) throw new Error('the fixture has three pages');
+    const fit = (): PDFArray => ctx.obj([second, PDFName.of('Fit')]);
+    const outlines = ctx.nextRef();
+    const entry = ctx.register(ctx.obj({ Title: PDFString.of('Chapter two'), Parent: outlines, Dest: fit() }));
+    ctx.assign(outlines, ctx.obj({ Type: 'Outlines', First: entry, Last: entry, Count: 1 }));
+    source.catalog.set(PDFName.of('Outlines'), outlines);
+    first.node.set(PDFName.of('Annots'), ctx.obj([ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Link', Rect: [0, 0, 10, 10], Dest: fit() }))]));
+    source.catalog.set(PDFName.of('Names'), ctx.obj({ Dests: ctx.obj({ Names: [PDFString.of('two'), fit()] }) }));
+    source.catalog.set(PDFName.of('OpenAction'), fit());
+
+    const referencesTo = (document: PDFDocument): readonly string[] => {
+      const page = document.getPage(1).ref;
+      const names = document.catalog.lookupMaybe(PDFName.of('Names'), PDFDict)?.lookupMaybe(PDFName.of('Dests'), PDFDict);
+      const found: string[] = [];
+      const outline = document.catalog.lookupMaybe(PDFName.of('Outlines'), PDFDict)?.lookupMaybe(PDFName.of('First'), PDFDict);
+      if (outline?.lookupMaybe(PDFName.of('Dest'), PDFArray)?.get(0) === page) found.push('bookmark');
+      const link = document.getPage(0).node.lookupMaybe(PDFName.of('Annots'), PDFArray)?.lookupMaybe(0, PDFDict);
+      if (link?.lookupMaybe(PDFName.of('Dest'), PDFArray)?.get(0) === page) found.push('link');
+      if (names?.lookupMaybe(PDFName.of('Names'), PDFArray)?.lookupMaybe(1, PDFArray)?.get(0) === page) found.push('named destination');
+      if (document.catalog.lookupMaybe(PDFName.of('OpenAction'), PDFArray)?.get(0) === page) found.push('open action');
+      return found;
+    };
+    const ALL = ['bookmark', 'link', 'named destination', 'open action'];
+    /**
+     * Each of the four that names a page the document NO LONGER HOLDS. `referencesTo` cannot say this after the
+     * delete: its page 1 is then the old page 3, which nothing named, so a delete that cleared nothing read as clean.
+     */
+    const dangling = (document: PDFDocument): readonly string[] => {
+      const kept = new Set(document.getPages().map((each) => each.ref.toString()));
+      const names = document.catalog.lookupMaybe(PDFName.of('Names'), PDFDict)?.lookupMaybe(PDFName.of('Dests'), PDFDict);
+      const outline = document.catalog.lookupMaybe(PDFName.of('Outlines'), PDFDict)?.lookupMaybe(PDFName.of('First'), PDFDict);
+      const link = document.getPage(0).node.lookupMaybe(PDFName.of('Annots'), PDFArray)?.lookupMaybe(0, PDFDict);
+      const targets: readonly [string, unknown][] = [
+        ['bookmark', outline?.lookupMaybe(PDFName.of('Dest'), PDFArray)?.get(0)],
+        ['link', link?.lookupMaybe(PDFName.of('Dest'), PDFArray)?.get(0)],
+        ['named destination', names?.lookupMaybe(PDFName.of('Names'), PDFArray)?.lookupMaybe(1, PDFArray)?.get(0)],
+        ['open action', document.catalog.lookupMaybe(PDFName.of('OpenAction'), PDFArray)?.get(0)],
+      ];
+      return targets.filter(([, target]) => target instanceof PDFRef && !kept.has(target.toString())).map(([kind]) => kind);
+    };
+
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(await source.save({ useObjectStreams: false }));
+    const context = contextStub(true);
+    const supervisor = restoreStub();
+    try {
+      const before = await mupdfWriter.serialise(session);
+      expect(referencesTo(await PDFDocument.load(before))).toStrictEqual(ALL);
+      // THE READ CAN SEE A LEFT-BEHIND REFERENCE: a page removed by pdf-lib, which clears nothing, leaves all four
+      // naming a page the document no longer holds.
+      const torn = await PDFDocument.load(before);
+      torn.removePage(1);
+      expect(dangling(torn)).toStrictEqual(ALL);
+
+      await bus.execute({ mupdf: session }, context, { kind: 'deletePages', pages: [1] }, showingInputs(session));
+      // THE DELETE CLEARED THEM: nothing names the page that left.
+      expect(dangling(await PDFDocument.load(await mupdfWriter.serialise(session)))).toStrictEqual([]);
+
+      await bus.undo({ mupdf: session }, context, supervisor.restore, showingInputs(session));
+      const restored = context.written()[0]?.bytes;
+      if (restored === undefined) throw new Error('expected a restore');
+      const bytes = new Uint8Array(await readFile(restored.path));
+      expect(bytes).toStrictEqual(new Uint8Array(before));
+      expect(referencesTo(await PDFDocument.load(bytes))).toStrictEqual(ALL);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -1990,7 +2114,7 @@ describe('CommandBus and the targets axis', () => {
           bus.execute(
             { mupdf: target },
             context,
-            { kind: 'replacePage', source: sourceId, at: 0, version: asDocVersion(9) },
+            { kind: 'replacePage', source: sourceId, pages: [0], sourcePages: 'all', version: asDocVersion(9) },
             { ...noByteImageExpected, sources: new Map([[sourceId, { mupdf: source }]]) },
           ),
         ).rejects.toThrow(StaleTargetError);
@@ -2015,7 +2139,7 @@ describe('CommandBus and the targets axis', () => {
         await bus.execute(
           { mupdf: target },
           context,
-          { kind: 'replacePage', source: sourceId, at: 0, version: asDocVersion(1) },
+          { kind: 'replacePage', source: sourceId, pages: [0], sourcePages: 'all', version: asDocVersion(1) },
           { ...showingInputs(target), sources: new Map([[sourceId, { mupdf: source }]]) },
         );
         expect(await pageCount(target)).toBe(4);
@@ -2197,6 +2321,240 @@ describe('CommandBus and what the window is handed', () => {
       ).rejects.toThrow(/nothing may replace the image/u);
     } finally {
       await mupdfWriter.close(session);
+    }
+  });
+});
+
+/**
+ * A command whose effect is its RESULT is redone from that result, and its entry keeps no credential
+ * ([ADR-0162](../../../docs/DECISIONS/0162-a-command-whose-effect-is-its-result-is-redone-from-that-result.md);
+ * CR-SEC-19, CR-DOC-12).
+ *
+ * The signature is real, over a P12 minted here in memory as `documentSign.test.ts` mints one, so nothing on disk is a
+ * credential. What the cases assert is the DECISION as well as the bytes: RSA PKCS#1 v1.5 is deterministic and the
+ * signing time is in seconds, so a redo that signed again inside the same second could produce the same file, and a
+ * case reading only the bytes would pass a bus that re-signs.
+ */
+describe('CommandBus and a command redone from its result', () => {
+  const PASSPHRASE = 'a passphrase the log must not keep';
+  let certificate: Uint8Array;
+
+  beforeAll(() => {
+    const keys = forge.pki.rsa.generateKeyPair(2048);
+    const cert = forge.pki.createCertificate();
+    cert.publicKey = keys.publicKey;
+    cert.serialNumber = '01';
+    cert.validity.notBefore = new Date(Date.now() - 86_400_000);
+    cert.validity.notAfter = new Date(Date.now() + 86_400_000);
+    const attrs = [{ name: 'commonName', value: 'Monstera Test' }];
+    cert.setSubject(attrs);
+    cert.setIssuer(attrs);
+    cert.sign(keys.privateKey, forge.md.sha256.create());
+    const p12 = forge.pkcs12.toPkcs12Asn1(keys.privateKey, [cert], PASSPHRASE, { algorithm: '3des' });
+    const der = forge.asn1.toDer(p12).getBytes();
+    certificate = Uint8Array.from(der, (character: string) => character.charCodeAt(0));
+  }, 60_000);
+
+  /** Signs `flat` through the bus with a writer that counts its applies, then undoes it. */
+  async function signedThenUndone(): Promise<{
+    readonly bus: CommandBus;
+    readonly context: ReturnType<typeof contextStub>;
+    readonly inputs: CommandInputs & { readonly restore: CheckpointRestore };
+    readonly applies: () => number;
+  }> {
+    let applies = 0;
+    const bus = new CommandBus({
+      signpdf: {
+        ...localSignpdfWriter,
+        apply: (request) => {
+          applies += 1;
+          return localSignpdfWriter.apply(request);
+        },
+      },
+    });
+    const context = contextStub(true);
+    const inputs = { ...noByteImageExpected, ...hostModel(flat) };
+    await bus.execute(
+      { mupdf: hosting },
+      context,
+      { kind: 'signDocument', bytes: certificate, passphrase: PASSPHRASE, name: 'Grace Hopper' },
+      inputs,
+    );
+    await bus.undo({ mupdf: hosting }, context, inputs.restore, inputs);
+    return { bus, context, inputs, applies: () => applies };
+  }
+
+  it('keeps only the command’s kind beside the result, so neither the P12 nor the passphrase is in the log', async () => {
+    const { context } = await signedThenUndone();
+    const entry = context.mutableLog.peekRedo();
+    if (entry?.kind !== 'terminal') throw new Error('expected the signature’s terminal entry');
+    expect(entry.command).toStrictEqual({ kind: 'signDocument' });
+    if (entry.result === null) throw new Error('expected the signature’s entry to keep its result');
+    // THE FILE IS THE SIGNED ONE, read off the disk: an unsigned copy carries no /ByteRange.
+    const kept = new TextDecoder('latin1').decode(await readFile(entry.result.path));
+    expect(kept).toContain('/ByteRange');
+    expect(kept).not.toContain(PASSPHRASE);
+  });
+
+  it('redo INSTALLS the signed file it kept, byte for byte, and does not sign again', async () => {
+    const { bus, context, inputs, applies } = await signedThenUndone();
+    await bus.redo({ mupdf: hosting }, context, inputs);
+
+    // THE DECISION: one signature across execute, undo and redo. A bus that re-ran the command reads 2.
+    expect(applies()).toBe(1);
+    // AND THE DOCUMENT IS THE SIGNED ONE: main's image after the redo is the image the signature installed.
+    const images = context.images();
+    expect(images.at(-1)).toStrictEqual(images[0]);
+    expect(context.mutableLog.canRedo).toBe(false);
+  });
+
+  it('the result and the checkpoint are both counted and both kept, as two whole documents on disk', async () => {
+    const { context } = await signedThenUndone();
+    const entry = context.mutableLog.peekRedo();
+    if (entry?.kind !== 'terminal' || entry.result === null) throw new Error('expected a result entry');
+    expect(context.mutableLog.checkpointPaths()).toStrictEqual(new Set([entry.checkpoint.path, entry.result.path]));
+    expect(context.mutableLog.retainedBytes()).toBe(entry.checkpoint.byteLength + entry.result.byteLength);
+  });
+});
+
+/**
+ * A command whose intent IS a password keeps it out of the log, and redo and replay still re-run it whole
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 3).
+ *
+ * The protection is real, applied by MuPDF to a session in this process, and every case that says the document is
+ * protected reads it back by opening the serialised bytes. What the redo and replay cases assert first is the CALL:
+ * the writer was handed the command with both passwords, which a bus re-running the entry's kind alone, or a command
+ * with its passwords taken out, could not have done.
+ */
+describe('CommandBus and a command whose intent is a password', () => {
+  const USER = 'open-me, the user password the log must not keep';
+  const OWNER = 'own-me, the owner password the log must not keep';
+  const protect: CommandOfKind<'setDocumentProtection'> = {
+    kind: 'setDocumentProtection',
+    encryption: 'aes-256',
+    userPassword: USER,
+    ownerPassword: OWNER,
+  };
+
+  /** A bus whose MuPDF writer records every command its apply is handed. */
+  function recordingBus(): { readonly bus: CommandBus; readonly applied: readonly Command[] } {
+    const applied: Command[] = [];
+    const bus = new CommandBus({
+      mupdf: {
+        ...localMupdfWriter,
+        apply: (request) => {
+          applied.push(request.command);
+          return localMupdfWriter.apply(request);
+        },
+      },
+    });
+    return { bus, applied };
+  }
+
+  /** What MuPDF answers an empty password and the user password with, for the session's bytes as they serialise. */
+  async function accessOf(session: MupdfSession): Promise<{ readonly none: number; readonly user: number }> {
+    const document = mupdf.PDFDocument.openDocument(await mupdfWriter.serialise(session), 'application/pdf');
+    try {
+      // 1 is a document with no /Encrypt at all, 0 one that this password does not open, 2 the user password's rights.
+      return { none: document.authenticatePassword(''), user: document.authenticatePassword(USER) };
+    } finally {
+      document.destroy();
+    }
+  }
+
+  /** Every way this code base serialises a value, applied to the whole log. */
+  function everySerialisation(value: unknown): string {
+    return `${JSON.stringify(value)}\n${inspect(value, { depth: Number.POSITIVE_INFINITY })}\n${String(value)}`;
+  }
+
+  it('the entry keeps the kind alone, so neither password is in any serialisation of the log', async () => {
+    const { bus } = recordingBus();
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub();
+    try {
+      await bus.execute({ mupdf: session }, context, protect, noByteImageExpected);
+      const entry = context.log.entries[0];
+      if (entry?.kind !== 'terminal') throw new Error('expected the protection’s terminal entry');
+      expect(entry.command).toStrictEqual({ kind: 'setDocumentProtection' });
+
+      const written = everySerialisation(context.log.entries);
+      expect(written).not.toContain(USER);
+      expect(written).not.toContain(OWNER);
+      // POSITIVE CONTROL: the same serialisation of the command itself carries both, so the scan above can see them.
+      const command = everySerialisation([protect]);
+      expect([command.includes(USER), command.includes(OWNER)]).toStrictEqual([true, true]);
+      // AND THE PROTECTION WAS APPLIED: the bytes open with the user password and not without it.
+      expect(await accessOf(session)).toStrictEqual({ none: 0, user: 2 });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('redo re-runs the WHOLE command from the held table, and protects a session that was not', async () => {
+    const { bus, applied } = recordingBus();
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub();
+    // THE SESSION AFTER THE UNDO, as the restore rebuilds it from the checkpoint: the document before the protect.
+    const restored = await mupdfWriter.open(flat);
+    try {
+      await bus.execute({ mupdf: session }, context, protect, noByteImageExpected);
+      await bus.undo({ mupdf: session }, context, restoreStub().restore, noByteImageExpected);
+      // CONTROL: the restored session is unprotected before the redo, so the redo is what protects it.
+      expect((await accessOf(restored)).none).toBe(1);
+
+      await bus.redo({ mupdf: restored }, context, noByteImageExpected);
+
+      // THE DECISION: the redo's apply was handed the command whole, passwords included.
+      expect(applied).toStrictEqual([protect, protect]);
+      expect(await accessOf(restored)).toStrictEqual({ none: 0, user: 2 });
+      expect(context.log.canRedo).toBe(false);
+    } finally {
+      await mupdfWriter.close(session);
+      await mupdfWriter.close(restored);
+    }
+  });
+
+  it('a REPLAY past the image (ADR-0115) re-applies the held command, so a rebuilt session is protected', async () => {
+    const { bus, applied } = recordingBus();
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub();
+    const rebuilt = await mupdfWriter.open(flat);
+    try {
+      await bus.execute({ mupdf: session }, context, protect, noByteImageExpected);
+      // NOTHING DRAWN, so the image never took it and the entry is past the base.
+      expect(context.log.pastImage).toHaveLength(1);
+
+      expect(await bus.replayPastImage({ mupdf: rebuilt }, context, noByteImageExpected)).toBe(1);
+
+      expect(applied).toStrictEqual([protect, protect]);
+      expect(await accessOf(rebuilt)).toStrictEqual({ none: 0, user: 2 });
+    } finally {
+      await mupdfWriter.close(session);
+      await mupdfWriter.close(rebuilt);
+    }
+  });
+
+  it('CONTROL: the held table is the ONLY source, so a bus that holds nothing for the entry refuses and applies nothing', async () => {
+    // A SECOND BUS over the same log is a bus whose table never saw the entry: the state a redo that read the entry's
+    // own command would sail through, re-applying the kind alone, which is no command at all.
+    const { bus } = recordingBus();
+    const stranger = recordingBus();
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub();
+    const restored = await mupdfWriter.open(flat);
+    try {
+      await bus.execute({ mupdf: session }, context, protect, noByteImageExpected);
+      await bus.undo({ mupdf: session }, context, restoreStub().restore, noByteImageExpected);
+
+      await expect(stranger.bus.redo({ mupdf: restored }, context, noByteImageExpected)).rejects.toThrow(
+        /none is held for this entry/u,
+      );
+      expect(stranger.applied).toStrictEqual([]);
+      expect(context.log.canRedo).toBe(true);
+      expect((await accessOf(restored)).none).toBe(1);
+    } finally {
+      await mupdfWriter.close(session);
+      await mupdfWriter.close(restored);
     }
   });
 });
