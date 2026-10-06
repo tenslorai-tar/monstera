@@ -120,3 +120,17 @@ the page as the PDFium host answers it, its joined runs with their members and t
 The bus resolves it against the version the command names. The count Decision 2 put on the command comes from that
 pre-read instead, which is the same check from the reading that already holds it, so the command carries exactly
 `editTextBlock`'s fields.
+
+**Note on Decisions 4 and 5, 2026-10-06, as built (`packages/kernel/src/operatorEdit.ts`):** three things the writer had
+to decide that the text above leaves open.
+
+- **Which operators an edit sets again.** Each typed line is diffed by `replacementsForLine`, the PDFium writer's own
+  rule. The runs before the first run the diff names keep their operators; from that run to the end of the line every
+  run is set again in its own state, keeping the gap it had to the run before it, because a run that grows has to push
+  the ones after it and an operator positioned by a move cannot be pushed without being rewritten. A line that a wrap
+  above it moved down is set again whole. A line the edit did not reach keeps every byte.
+- **A sibling's weight.** *The same weight* is read as *no stated weight that differs*: the committed Chromium print's
+  Type0 body font states no `/FontWeight` beside its Type 3 heading's 400, of the same face, and requiring both to be
+  stated would have refused every word the heading's subset lacks on the one page this ADR was written for.
+- **A word space neither font draws** is moved, never drawn, by 0.278 em, the space advance of Liberation Sans and of
+  Helvetica. The Chromium subsets draw their spaces (code 3), so on that page the gap comes from the font itself.
