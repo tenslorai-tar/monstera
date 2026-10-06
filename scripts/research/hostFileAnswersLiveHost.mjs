@@ -398,6 +398,8 @@ async function main() {
     let reopenedBlocks = null;
     /** @type {any} */
     let installedBoxes = null;
+    /** @type {any} */
+    let bundledBoxes = null;
     if (opened?.ok === true && opened.value.kind === 'opened') {
       const docId = opened.value.docId;
       blocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0, from: 0 }));
@@ -450,6 +452,32 @@ async function main() {
               }),
             );
             installedBoxes = answered?.ok === true ? { boxed: answered.value.boxed, more: answered.value.more } : answered;
+          }
+          // THE BOX ALONE, in the same contained host (SSSSSSS-1): a third edit adding only the code point no font
+          // carries, whose box comes from the first catalogue face with a box glyph, a BUNDLED one. Read at the page's
+          // version now, since the edit above may have made one. Saved here and refused above separates a host that
+          // misreads what it set in an installed face from one that misreads any face it loads.
+          const current = await observed(() => handlers['document.textBlocks']({ docId: again.value.docId, page: 0, from: 0 }));
+          const target = current?.ok === true ? current.value.blocks[0] : undefined;
+          if (target !== undefined) {
+            const boxedOnly = await observed(() =>
+              handlers['document.execute']({
+                docId: again.value.docId,
+                command: {
+                  kind: 'editTextBlock',
+                  page: 0,
+                  ...blockEditOf([
+                    {
+                      lines: target.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                      text: `${EDITED} ${String.fromCodePoint(0x378)}`,
+                    },
+                  ]),
+                  fit: 'reflow',
+                  version: current.value.version,
+                },
+              }),
+            );
+            bundledBoxes = boxedOnly?.ok === true ? { boxed: boxedOnly.value.boxed, more: boxedOnly.value.more } : boxedOnly;
           }
         }
       }
@@ -626,6 +654,7 @@ async function main() {
       reopenedHasEdit: blockTexts(reopenedBlocks).some((text) => text.replace(/\s+/gu, ' ').includes(EDITED)),
       reopenedBlocks: reopenedBlocks?.ok === true ? 'ok' : reopenedBlocks,
       installedBoxes,
+      bundledBoxes,
       failures,
     };
     // THE REPORT FIRST, for `hostRecoveryHost.mjs`' reason: everything after it is cleanup, and cleanup can fail.

@@ -82,12 +82,13 @@ const CASES = [
   'the inline-picture page, edited through the compose and PDFium hosts and saved, still draws its picture',
   'the Word export, composed in the real MuPDF host and moved by main, carries both pictures, the first between its paragraphs',
   'the real PDFium host set the ideograph in an installed face, and boxed only the code point no font carries',
+  'the real PDFium host boxed the code point no font carries in a bundled face, in the same container',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 17 });
-if (CASES.length !== 17) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 17`);
+const roster = createRoster(failures, { cases: 18 });
+if (CASES.length !== 18) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 18`);
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -268,6 +269,14 @@ if (!runnable) {
     `the second edit answered ${JSON.stringify(seen.installedBoxes)}. The ideograph AMONG the boxes is a PDFium host that ` +
       'could not read the installed fonts or a machine with no editable face for it, which ADR-0172 Decision 2 answers ' +
       'with a correction, never a wider grant; no box at all is the unassigned code point drawn as nothing.',
+  );
+  check(
+    CASES[17] ?? '',
+    JSON.stringify(seen.bundledBoxes) ===
+      JSON.stringify({ boxed: [{ character: String.fromCodePoint(0x378), page: 0 }], more: 0 }),
+    `the third edit, the box alone, answered ${JSON.stringify(seen.bundledBoxes)}. Saved here while the case above is ` +
+      'refused is a host that misreads what it sets in an installed face; refused here too is a host that misreads any ' +
+      'face it loads, bundled ones included (SSSSSSS-1).',
   );
 
   process.stdout.write(
