@@ -2750,12 +2750,12 @@ function textBlocksHandler(commands: DocumentCommands): ContractHandlers['docume
     from,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.textBlocks']>>> => {
     try {
-      const { version, blocks, truncated, rotated, unaddressable, rewrite } = await commands.textBlocks(docId, page);
+      const { version, blocks, truncated, rotated, angled, unaddressable, rewrite } = await commands.textBlocks(docId, page);
       // A PART AT A TIME (ADR-0130): a dense page is thousands of blocks, and answered whole it was refused by the
       // contract's bound as `internal` (AAAAAAA-1). The page's counts and its writer ride on every part; they are the
       // page's.
       const part = listPart(blocks, truncated, from, TEXT_BLOCKS_PART);
-      return ok({ version, blocks: part.items, next: part.next, truncated: part.truncated, rotated, unaddressable, rewrite });
+      return ok({ version, blocks: part.items, next: part.next, truncated: part.truncated, rotated, angled, unaddressable, rewrite });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });

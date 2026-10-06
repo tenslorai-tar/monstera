@@ -30,7 +30,7 @@ import { ShapingFace } from './textShaping.js';
 import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
 import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
 import { EditRefusedError, ReplaceMovesLineError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
-import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
+import { type JoinedRun, type Orientation, joinRuns, membersOf } from './textRunJoin.js';
 
 /**
  * The PDFium native boundary.
@@ -901,12 +901,13 @@ export interface RunStyle {
   /** Weight 600 or more, from the embedded program, else the descriptor, else the name (`fontFace.ts`). */
   readonly bold: boolean;
   /**
-   * Whether the run is set straight — no rotation, no skew, no mirror.
+   * How the run is set: `upright` is straight — no rotation, no skew, no mirror — and anything else says which it is.
    *
    * An edit over rotated text cannot be placed where the words are, so a block
-   * that holds any run that is not upright is not offered for editing in place.
+   * that holds any run that is not upright is not offered for editing in place,
+   * and the editor names the kind (ADR-0181 Decision 7).
    */
-  readonly upright: boolean;
+  readonly orientation: Orientation;
 }
 
 /**
@@ -1297,7 +1298,7 @@ function styleOf(bindings: Bound, object: unknown, programs: Map<string, Program
     mono: (flags & 1) !== 0,
     bold: face.bold,
     italic: face.italic,
-    upright: isUpright(a, b, c, d),
+    orientation: orientationOf(a, b, c, d),
   };
 }
 
@@ -1484,6 +1485,28 @@ function isUpright(a: number, b: number, c: number, d: number): boolean {
   const scale = Math.max(Math.abs(a), Math.abs(d));
   if (!(a > 0 && d > 0)) return false;
   return Math.abs(b) <= scale * 1e-6 && Math.abs(c) <= scale * 1e-6;
+}
+
+/**
+ * HOW a text matrix sets text, for the editor to say what it will not edit and why
+ * ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
+ * Decision 7): `upright` is {@link isUpright}'s, the one test, and the rest is why it failed it.
+ *
+ * - `mirrored`: the matrix turns the page over (a negative determinant).
+ * - `slanted`: its columns are not at a right angle, a shear — an oblique drawn by the matrix and not by the font.
+ * - `vertical`: a rotation of a quarter turn, which is how lines that run up or down a page are set.
+ * - `turned`: any other rotation, a half turn included.
+ */
+export function orientationOf(a: number, b: number, c: number, d: number): Orientation {
+  if (isUpright(a, b, c, d)) return 'upright';
+  if (a * d - b * c < 0) return 'mirrored';
+  const first = Math.hypot(a, b);
+  const second = Math.hypot(c, d);
+  // THE COLUMNS' DOT PRODUCT against the product of their lengths: zero for a rotation, whatever the angle, and not
+  // zero for a shear. Relative, as {@link isUpright}'s test is, since a matrix read back as floats carries rounding.
+  if (first === 0 || second === 0 || Math.abs(a * c + b * d) > first * second * 1e-6) return 'slanted';
+  const quarters = Math.abs(Math.atan2(b, a)) / (Math.PI / 2);
+  return Math.abs(quarters - Math.round(quarters)) < 1e-6 && Math.round(quarters) % 2 === 1 ? 'vertical' : 'turned';
 }
 
 /** One text object's new text, named by its index in the page's object order. */

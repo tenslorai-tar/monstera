@@ -27,7 +27,7 @@ describe('engine/text-runs’ bound', () => {
       mono: true,
       italic: true,
       bold: true,
-      upright: true,
+      orientation: 'turned',
     },
   };
 

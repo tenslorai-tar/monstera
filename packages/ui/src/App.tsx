@@ -3387,6 +3387,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             blocks: items,
             truncated: last.truncated,
             rotated: last.rotated,
+            angled: last.angled,
             unaddressable: last.unaddressable,
             // EVERY PART CARRIES THE PAGE'S WRITER; the last one's is the page's, read at the same version.
             rewrite: last.rewrite,

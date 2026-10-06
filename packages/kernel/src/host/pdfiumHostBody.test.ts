@@ -136,7 +136,7 @@ const RUNS = [
       mono: false,
       italic: true,
       bold: false,
-      upright: true,
+      orientation: 'upright' as const,
     },
   },
   {
@@ -155,7 +155,7 @@ const RUNS = [
       mono: true,
       italic: false,
       bold: true,
-      upright: false,
+      orientation: 'turned' as const,
     },
   },
 ];

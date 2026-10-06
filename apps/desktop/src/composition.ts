@@ -1350,10 +1350,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // cannot be placed along an axis the page is not set on, and a block
       // mixing upright and rotated runs would be outlined as a box around
       // neither.
-      const upright = found.runs.filter((run) => run.style.upright);
-      const rotated = found.runs
-        .filter((run) => !run.style.upright)
-        .reduce((total, run) => total + run.text.length, 0);
+      const upright = found.runs.filter((run) => run.style.orientation === 'upright');
+      // COUNTED BY KIND (ADR-0181 Decision 7), from the one classification the read makes, so the editor names which text
+      // is not its to edit and `rotated` stays the total it always was.
+      const angled = { turned: 0, vertical: 0, slanted: 0, mirrored: 0 };
+      for (const run of found.runs) {
+        if (run.style.orientation !== 'upright') angled[run.style.orientation] += run.text.length;
+      }
+      const rotated = angled.turned + angled.vertical + angled.slanted + angled.mirrored;
       return {
         blocks: groupIntoBlocks(
           upright.map((run) => ({
@@ -1372,6 +1376,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         ),
         truncated: found.truncated,
         rotated,
+        angled,
         // FORWARDED, NOT GROUPED. These characters formed no run at all — they
         // are what the engine could not place, so there is nothing here to
         // group and the count crosses as the count it is.

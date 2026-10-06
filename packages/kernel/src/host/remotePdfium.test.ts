@@ -576,7 +576,7 @@ describe('main’s PDFium writer', () => {
           mono: false,
           italic: true,
           bold: false,
-          upright: true,
+          orientation: 'upright' as const,
         },
       },
       {
@@ -595,7 +595,7 @@ describe('main’s PDFium writer', () => {
           mono: true,
           italic: false,
           bold: true,
-          upright: false,
+          orientation: 'turned' as const,
         },
       },
     ];

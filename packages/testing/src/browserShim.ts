@@ -2291,6 +2291,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           ...shimPart(blocks, from, TEXT_BLOCKS_PART, 'blocks'),
           truncated: false,
           rotated: 0,
+          angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 },
           unaddressable: 0,
           rewrite: options.textRewrite ?? 'objects',
         }),

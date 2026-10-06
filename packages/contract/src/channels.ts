@@ -5088,6 +5088,20 @@ export const channels = {
        */
       rotated: z.number().int().nonnegative(),
       /**
+       * `rotated` by kind ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
+       * Decision 7), read from the matrix each run is set by: `turned` a rotation, `vertical` a quarter turn (how lines
+       * that run up or down a page are set), `slanted` a shear and `mirrored` a flip. The editor names each kind present,
+       * so a person is told which text is not theirs to edit and why. They sum to `rotated`.
+       */
+      angled: z
+        .object({
+          turned: z.number().int().nonnegative(),
+          vertical: z.number().int().nonnegative(),
+          slanted: z.number().int().nonnegative(),
+          mirrored: z.number().int().nonnegative(),
+        })
+        .strict(),
+      /**
        * Characters on this page that no editing command can name.
        *
        * **Text inside a Form XObject**, which is how Office and InDesign emit

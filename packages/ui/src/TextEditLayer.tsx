@@ -26,7 +26,10 @@ import {
   TEXT_EDIT_PAST_PAGE,
   TEXT_EDIT_PROMOTE,
   TEXT_EDIT_REFUSED_HINT,
-  TEXT_EDIT_ROTATED,
+  TEXT_EDIT_MIRRORED,
+  TEXT_EDIT_SLANTED,
+  TEXT_EDIT_TURNED,
+  TEXT_EDIT_VERTICAL,
   TEXT_EDIT_TRUNCATED,
   TEXT_EDIT_UNADDRESSABLE,
   TEXT_EDIT_UNREADABLE,
@@ -89,6 +92,8 @@ export interface PageBlocks extends BlocksRead {
   readonly blocks: readonly TextBlock[];
   readonly truncated: boolean;
   readonly rotated: number;
+  /** `rotated` by kind, which the note names (ADR-0181 Decision 7). */
+  readonly angled: { readonly turned: number; readonly vertical: number; readonly slanted: number; readonly mirrored: number };
   readonly unaddressable: number;
 }
 
@@ -426,7 +431,12 @@ export function TextEditLayer({
       notes.push(<p key="none">{_(TEXT_EDIT_NONE)}</p>);
     }
     if (blocks.truncated) notes.push(<p key="truncated">{_(TEXT_EDIT_TRUNCATED)}</p>);
-    if (blocks.rotated > 0) notes.push(<p key="rotated">{_(TEXT_EDIT_ROTATED)}</p>);
+    // THE KINDS THE PAGE HAS, each in its own sentence, in a fixed order (ADR-0181 Decision 7).
+    const angled = blocks.angled;
+    if (angled.turned > 0) notes.push(<p key="turned">{_(TEXT_EDIT_TURNED)}</p>);
+    if (angled.vertical > 0) notes.push(<p key="vertical">{_(TEXT_EDIT_VERTICAL)}</p>);
+    if (angled.slanted > 0) notes.push(<p key="slanted">{_(TEXT_EDIT_SLANTED)}</p>);
+    if (angled.mirrored > 0) notes.push(<p key="mirrored">{_(TEXT_EDIT_MIRRORED)}</p>);
     if (blocks.unaddressable > 0) {
       notes.push(
         <p key="unaddressable">
@@ -1282,6 +1292,11 @@ function BlockEditor({
           // THE PARAGRAPHS' SHAPE (ADR-0179): the alignment the lines keep, and a first line set in or out from the rest.
           // A hanging indent is a negative one, drawn as padding on the block and the first line taken back out.
           textAlign: block.shape.align,
+          // EACH PARAGRAPH RUNS THE WAY ITS OWN FIRST LETTER SAYS (ADR-0181): a Hebrew or Arabic line is laid out right to
+          // left as it is typed, the next paragraph of the same block by its own letters, which one `dir` on the element
+          // could not do. The page is written by the writer's own reading of the same line (`lineDirection`), which agrees
+          // for every line that is mostly one script.
+          unicodeBidi: 'plaintext',
           ...(block.shape.align === 'left' && block.shape.firstIndent !== 0
             ? {
                 paddingLeft: Math.max(0, -block.shape.firstIndent) * geometry.zoom,

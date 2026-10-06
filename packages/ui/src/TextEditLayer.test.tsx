@@ -107,6 +107,7 @@ const BLOCKS: PageBlocks = {
   ],
   truncated: false,
   rotated: 0,
+  angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 },
   unaddressable: 0,
   rewrite: 'objects',
 };
@@ -242,6 +243,13 @@ describe('Edit text on the page (ADR-0096)', () => {
     const editor = editorIn(view.container);
     expect(editor.style.paddingLeft).toBe('12px');
     expect(editor.style.textIndent).toBe('-12px');
+  });
+
+  it('lays each paragraph out in the direction its own letters say, so Hebrew and Arabic are typed right to left (ADR-0181)', () => {
+    const { view } = mount();
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    // `unicode-bidi: plaintext` is per paragraph, which a `dir` on the one element is not.
+    expect(editorIn(view.container).getAttribute('style')).toMatch(/unicode-bidi:\s*plaintext/u);
   });
 
   it('CONTROL: a block with no indent has none, so the case above is the shape and not a default', () => {
@@ -1120,6 +1128,31 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(packed.onPromote).toHaveBeenCalledTimes(1);
     // CONTROL: a page with blocks and nothing packed says neither sentence.
     expect(packed.view.container.textContent).not.toContain('no text that can be edited');
+  });
+
+  it('names each KIND of text it will not edit, so a person is told which text and why (ADR-0181)', () => {
+    const angled = (set: Partial<PageBlocks['angled']>): PageBlocks => ({
+      ...BLOCKS,
+      rotated: Object.values(set).reduce((total, count) => total + count, 0),
+      angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0, ...set },
+    });
+    const kinds = [
+      ['turned', 'Text turned at an angle'],
+      ['vertical', 'Text that runs up or down'],
+      ['slanted', 'Text this page slants itself'],
+      ['mirrored', 'Mirrored text'],
+    ] as const;
+    for (const [kind, sentence] of kinds) {
+      const made = mount({ blocks: angled({ [kind]: 12 }) });
+      expect(made.view.container.textContent, kind).toContain(sentence);
+      // CONTROL: only the kind the page has is named, so the sentences are not all printed for any angled text.
+      for (const [other, otherSentence] of kinds) {
+        if (other !== kind) expect(made.view.container.textContent, `${kind} page says ${other}`).not.toContain(otherSentence);
+      }
+      made.view.unmount();
+    }
+    const plain = mount();
+    for (const [, sentence] of kinds) expect(plain.view.container.textContent).not.toContain(sentence);
   });
 });
 

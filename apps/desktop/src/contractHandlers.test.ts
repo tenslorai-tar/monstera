@@ -290,6 +290,8 @@ function harness(
 }
 
 const A_DOC: DocId = asDocId('doc-1');
+/** A page with no text set at an angle: the counts `document.textBlocks` answers by kind (ADR-0181 Decision 7). */
+const NOT_ANGLED = { turned: 0, vertical: 0, slanted: 0, mirrored: 0 } as const;
 
 /**
  * The handle the service was asked to open.
@@ -1889,7 +1891,7 @@ describe('ai.translatePage (ADR-0097)', () => {
     const commands = {
       textBlocks: (docId: DocId) =>
         docId === DOC
-          ? Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, unaddressable: 0 })
+          ? Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, angled: NOT_ANGLED, unaddressable: 0 })
           : Promise.reject(new DocumentNotOpenError(docId, 'read its text blocks')),
     } as unknown as DocumentCommands;
     const handlers = createContractHandlers({
@@ -2366,7 +2368,15 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
   }));
   const commands = {
     textBlocks: () =>
-      Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, unaddressable: 2, rewrite: 'operators' }),
+      Promise.resolve({
+        version: asDocVersion(7),
+        blocks,
+        truncated: false,
+        rotated: 0,
+        angled: NOT_ANGLED,
+        unaddressable: 2,
+        rewrite: 'operators',
+      }),
     pageObjects: () => Promise.resolve({ version: asDocVersion(7), objects, truncated: false }),
   } as unknown as DocumentCommands;
   const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
@@ -2406,7 +2416,10 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
 
   it('CONTROL: the same page answered WHOLE is refused by the contract — the fixture is at the breaking size', () => {
     const whole = { version: asDocVersion(7), next: null, truncated: false };
-    expect(channels['document.textBlocks'].result.safeParse({ ...whole, blocks, rotated: 0, unaddressable: 2 }).success).toBe(false);
+    // EVERY OTHER FIELD PRESENT, so the size is the only thing it can be refused for.
+    const answer = { ...whole, blocks, rotated: 0, angled: NOT_ANGLED, unaddressable: 2, rewrite: 'objects' as const };
+    expect(channels['document.textBlocks'].result.safeParse(answer).success).toBe(false);
+    expect(channels['document.textBlocks'].result.safeParse({ ...answer, blocks: blocks.slice(0, 1) }).success).toBe(true);
     expect(channels['document.pageObjects'].result.safeParse({ ...whole, objects }).success).toBe(false);
   });
 });

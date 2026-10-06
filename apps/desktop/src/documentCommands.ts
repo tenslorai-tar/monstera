@@ -1898,6 +1898,13 @@ export interface DocumentTextBlocks {
    * in place: an editor cannot be placed along an axis the page is not set on.
    */
   readonly rotated: number;
+  /** `rotated` by kind, so the editor can say which text is not offered and why (ADR-0181 Decision 7). */
+  readonly angled: {
+    readonly turned: number;
+    readonly vertical: number;
+    readonly slanted: number;
+    readonly mirrored: number;
+  };
   /**
    * Characters on this page no command can name — text inside a Form XObject.
    *
