@@ -32,17 +32,17 @@ function said(op: ShowOperator, fonts: ReadonlyMap<string, PageFont>): string {
  * `textRunJoin.ts` joins a line drawn a glyph per object. Its ink is left at the origin, so the block's right edge is the
  * operators' own advance, which is what a case that measures a wrap needs to know exactly.
  */
-function runsOf(content: Uint8Array, fonts: ReadonlyMap<string, PageFont>): PageRuns {
+function runsOf(content: Uint8Array, fonts: ReadonlyMap<string, PageFont>, objectOf: (text: number) => number = (text) => text): PageRuns {
   const ops = showOperators(content);
   const runs: PageRun[] = [];
   for (const textObject of new Set(ops.map((op) => op.textObject))) {
     const line = ops.filter((op) => op.textObject === textObject && op.object !== null);
-    const members = line.filter((op) => said(op, fonts).trim() !== '').map((op) => op.object ?? -1);
+    const members = line.filter((op) => said(op, fonts).trim() !== '').map((op) => objectOf(op.object ?? -1));
     const first = members[0];
     if (first === undefined) continue;
     runs.push({ index: first, members, text: line.map((op) => said(op, fonts)).join(''), left: 0, right: 0, bottom: 0, top: 0 });
   }
-  return { objects: textObjectCount(ops), runs };
+  return { textObjects: Array.from({ length: textObjectCount(ops) }, (_, text) => objectOf(text)), runs };
 }
 
 /** A font built for a case: every code draws and is `width` em wide, and its ToUnicode is `characters` from code 97. */
@@ -196,12 +196,26 @@ describe('editOperators on a page of lines', () => {
   });
 
   it('refuses a content whose count of text objects is not PDFium’s, and edits with it', () => {
-    expect(editOperators(content, fonts, { ...page, objects: 4 }, block('abc\ndef\nghx'))).toMatchObject({
+    expect(editOperators(content, fonts, { ...page, textObjects: [...page.textObjects, 9] }, block('abc\ndef\nghx'))).toMatchObject({
       ok: false,
       error: { reason: 'numbering' },
     });
     // CONTROL: PDFium's own count is accepted.
     expect(editOperators(content, fonts, page, block('abc\ndef\nghx')).ok).toBe(true);
+  });
+
+  it('finds a run by its PAGE object index where a rule between the lines is an object too', () => {
+    // A RULE DRAWN BEFORE EACH LINE: PDFium's objects are rule 0, line 1, rule 2, line 3, rule 4, line 5.
+    const ruled = runsOf(content, fonts, (text) => 2 * text + 1);
+    const result = editOperators(content, fonts, ruled, [{ lines: [[1], [3], [5]], text: 'abc\ndef\nghx' }]);
+    if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+    // THE THIRD LINE'S OPERATOR, text object 2, page object 5.
+    expect(result.value.emptied).toStrictEqual([2]);
+    // CONTROL: named by text ordinal instead, object 2 is a rule and no run begins there.
+    expect(editOperators(content, fonts, ruled, [{ lines: [[0], [1], [2]], text: 'abc\ndef\nghx' }])).toMatchObject({
+      ok: false,
+      error: { reason: 'numbering' },
+    });
   });
 
   it('refuses a block whose lines draw under different CTMs, which one inserted object cannot', () => {
@@ -222,7 +236,7 @@ describe('an emptied operator keeps its advance only where a later one is placed
   const content = bytes('BT /F1 10 Tf 0 0 Td (ab) Tj (cd) Tj (ef) Tj ET');
   const fonts = new Map([['F1', LETTERS]]);
   const page: PageRuns = {
-    objects: 3,
+    textObjects: [0, 1, 2],
     runs: [0, 1, 2].map((index) => ({ index, members: [index], text: ['ab', 'cd', 'ef'][index] ?? '', left: 0, right: 0, bottom: 0, top: 0 })),
   };
 

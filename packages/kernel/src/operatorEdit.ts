@@ -44,8 +44,9 @@ import { codesFor } from './toUnicode.js';
 
 /** One of PDFium's joined runs on the page, as the `pageRuns` pre-read answers it (ADR-0176's correction). */
 export interface PageRun {
+  /** Its first object, by PDFium's page object index. */
   readonly index: number;
-  /** Exactly the objects the run is, `textRunJoin.ts`' `members`. */
+  /** Exactly the objects the run is, `textRunJoin.ts`' `members`, by page object index. */
   readonly members: readonly number[];
   /** What the person was shown it saying. */
   readonly text: string;
@@ -56,9 +57,19 @@ export interface PageRun {
   readonly top: number;
 }
 
-/** PDFium's reading of the page: its joined runs, and how many text objects it walked. */
+/**
+ * PDFium's reading of the page: its joined runs, and the page object index of each of its text objects in order.
+ *
+ * ## By OBJECT index, because that is what a run names
+ *
+ * PDFium numbers a page's objects across every kind, text, paths, images and forms, and a run names its objects by that
+ * number (`textObjectIndices`). The content's operators are numbered among TEXT objects alone (`textOperators.ts`), so
+ * the k-th text object is `textObjects[k]`: on a page that draws a rule between two lines, object 1 is the rule and
+ * the second line is object 2 and text object 1. The writer translates through this list and nothing else, so the
+ * two numberings meet in one place.
+ */
 export interface PageRuns {
-  readonly objects: number;
+  readonly textObjects: readonly number[];
   readonly runs: readonly PageRun[];
 }
 
@@ -210,15 +221,18 @@ function write(
   const ops = showOperators(content);
   const indexOf = new Map(ops.map((op, at) => [op, at]));
   const counted = textObjectCount(ops);
-  if (counted !== page.objects) {
+  if (counted !== page.textObjects.length) {
     throw new Refused({
       reason: 'numbering',
-      detail: `the content shows ${String(counted)} text objects and PDFium read ${String(page.objects)}`,
+      detail: `the content shows ${String(counted)} text objects and PDFium read ${String(page.textObjects.length)}`,
     });
   }
-  /** Each PDFium object's operator, by its index in `ops`. */
+  /** Each PDFium page object's operator, by its index in `ops`: the k-th text object is `textObjects[k]`. */
   const opAt = new Map<number, number>();
-  for (const [at, op] of ops.entries()) if (op.object !== null) opAt.set(op.object, at);
+  for (const [at, op] of ops.entries()) {
+    const object = op.object === null ? undefined : page.textObjects[op.object];
+    if (object !== undefined) opAt.set(object, at);
+  }
   const runs = new Map(page.runs.map((run) => [run.index, run]));
   const memberOps = new Set(page.runs.flatMap((run) => run.members.map((member) => opAt.get(member) ?? -1)));
 
