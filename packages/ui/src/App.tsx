@@ -3358,7 +3358,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         );
         if (answer.ok) {
           const { version, items, last } = answer.value;
-          return { version, blocks: items, truncated: last.truncated, rotated: last.rotated, unaddressable: last.unaddressable };
+          return {
+            version,
+            blocks: items,
+            truncated: last.truncated,
+            rotated: last.rotated,
+            unaddressable: last.unaddressable,
+            // EVERY PART CARRIES THE PAGE'S WRITER; the last one's is the page's, read at the same version.
+            rewrite: last.rewrite,
+          };
         }
         if (!refusal.reported) {
           refusal.reported = true;
@@ -3367,8 +3375,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         }
         return undefined;
       },
-      onCommit: (page, block, text, version) =>
-        commitTextBlock(deps, docId, page, block, text, version),
+      onCommit: (page, block, text, read) => commitTextBlock(deps, docId, page, block, text, read),
       runFonts: (page, block, version) => readRunFonts(client, docId, page, block, version),
       onPromote: (page) => {
         void promoteTextOnPage(deps, docId, page);

@@ -147,7 +147,15 @@ const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
   'document.textBlocks': () =>
     Promise.resolve(
-      ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 }),
+      ok({
+        version: asDocVersion(1),
+        blocks: [],
+        next: null,
+        truncated: false,
+        rotated: 0,
+        unaddressable: 0,
+        rewrite: 'objects' as const,
+      }),
     ),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),

@@ -5,7 +5,7 @@ import { type ReactElement, useCallback, useEffect, useId, useLayoutEffect, useR
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform } from './annotations/annotationSpace.js';
-import type { BlockCommit, RunFonts, TextBlock } from './commands/documentCommands.js';
+import type { BlockCommit, BlocksRead, RunFonts, TextBlock } from './commands/documentCommands.js';
 import { problemMessage, problemParticulars } from './dialogs/problemMessages.js';
 import {
   TEXT_EDIT_BLOCK_LABEL,
@@ -51,9 +51,8 @@ import { composing } from './surfaces/shortcuts.js';
  * nothing: hit-testing is the browser's, on the elements they position.
  */
 
-/** One page's blocks, stamped with the version the read answered at. */
-export interface PageBlocks {
-  readonly version: DocVersion;
+/** One page's blocks, stamped with the version the read answered at and the writer it named. */
+export interface PageBlocks extends BlocksRead {
   readonly blocks: readonly TextBlock[];
   readonly truncated: boolean;
   readonly rotated: number;
@@ -67,8 +66,8 @@ export interface TextEditLayerProps {
   readonly geometry: OverlayPage;
   /** The page's blocks, or `undefined` while they are being read. */
   readonly blocks: PageBlocks | undefined;
-  /** Writes one block's new words, at the version the blocks were read at. */
-  readonly onCommit: (block: TextBlock, text: string, version: DocVersion) => Promise<BlockCommit>;
+  /** Writes one block's new words, at the version the blocks were read at and by the writer that read named. */
+  readonly onCommit: (block: TextBlock, text: string, read: BlocksRead) => Promise<BlockCommit>;
   /** The fonts the open block's runs are drawn in, rebuilt by the host, at the version it was read at (ADR-0175). */
   readonly runFonts: (block: TextBlock, version: DocVersion) => Promise<RunFonts>;
   /** Unpacks the page's blocked-in text so it can be edited. */
@@ -306,7 +305,7 @@ export function TextEditLayer({
                 setOpened((current) => (current?.at === at ? undefined : current));
               }}
               onCommit={async (text) => {
-                const outcome = await onCommit(block, text, blocks.version);
+                const outcome = await onCommit(block, text, blocks);
                 if (outcome === 'written') setWritten({ box: block.box, version: blocks.version });
                 return outcome;
               }}
@@ -363,7 +362,7 @@ export interface TextEditing {
   readonly version: DocVersion;
   /** Reads one page's blocks, or `undefined` where the read was refused. */
   readonly read: (page: number) => Promise<PageBlocks | undefined>;
-  readonly onCommit: (page: number, block: TextBlock, text: string, version: DocVersion) => Promise<BlockCommit>;
+  readonly onCommit: (page: number, block: TextBlock, text: string, read: BlocksRead) => Promise<BlockCommit>;
   /** The fonts one block's runs are drawn in, as the host rebuilt them, at the version the block was read at (ADR-0175). */
   readonly runFonts: (page: number, block: TextBlock, version: DocVersion) => Promise<RunFonts>;
   readonly onPromote: (page: number) => void;
@@ -411,7 +410,7 @@ export function TextEditPage({
     <TextEditLayer
       blocks={answer?.version === version ? answer.blocks : undefined}
       geometry={geometry}
-      onCommit={(block, text, at) => editing.onCommit(page, block, text, at)}
+      onCommit={(block, text, read) => editing.onCommit(page, block, text, read)}
       onLeave={editing.onLeave}
       runFonts={(block, at) => editing.runFonts(page, block, at)}
       onPromote={() => {

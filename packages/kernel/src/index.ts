@@ -138,6 +138,7 @@ export {
   type HostOcrReader,
   type HostPageImage,
   type HostPageFillsReader,
+  type HostPageRewriteReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostWordBoxesReader,
@@ -310,6 +311,8 @@ export {
 } from './host/remotePdfium.js';
 // A TYPE ONLY: the shape of `editTextOperators`' pre-read, which `main` resolves through the PDFium host (ADR-0176).
 export type { PageRuns } from './operatorEdit.js';
+// A TYPE ONLY, and spelt `export type` so nothing of `pageRewrite.ts`, which binds MuPDF, is emitted here.
+export type { PageRewrite } from './pageRewrite.js';
 // THE GROUPING, and it is on the BARREL rather than behind `pdfium.ts` because
 // it binds no engine: it takes runs and answers blocks, and `proof:kernelload`'s
 // rule is about what a specifier LOADS. Main is its one caller — the
@@ -364,6 +367,7 @@ export {
   remoteMupdfSignaturesKept,
   remoteMupdfOcr,
   remoteMupdfPageFills,
+  remoteMupdfPageRewrite,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   remoteMupdfWordBoxes,

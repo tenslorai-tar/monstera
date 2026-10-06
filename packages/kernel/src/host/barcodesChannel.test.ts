@@ -90,6 +90,7 @@ async function joined(
       pageLinks: refuse('read the page links'),
       linkAddress: refuse('read a link address'),
       pageFills: refuse('read the page fills'),
+      pageRewrite: refuse('read which writer a page needs'),
       wordBoxes: refuse('read the word boxes'),
       ocr: refuse('recognise a page'),
       destinations: refuse('read the outline'),

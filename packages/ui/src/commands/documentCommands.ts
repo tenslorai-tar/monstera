@@ -3909,6 +3909,18 @@ export async function promoteTextOnPage(deps: DocumentCommandDeps, docId: DocId,
 /** One block as `document.textBlocks` answers it. */
 export type TextBlock = ChannelResult<'document.textBlocks'>['blocks'][number];
 
+/**
+ * What a block's edit is sent BY, from the read its blocks came from: the version they were read at, and the writer the
+ * page named (ADR-0176 Decision 1). One pair, so an edit cannot carry the version of one read and the writer of another.
+ */
+export type BlocksRead = Pick<ChannelResult<'document.textBlocks'>, 'version' | 'rewrite'>;
+
+/** The command each writer the page names is rewritten by, with the same block wire (ADR-0176 Decision 1). */
+const BLOCK_EDIT_KIND = { objects: 'editTextBlock', operators: 'editTextOperators' } as const satisfies Record<
+  BlocksRead['rewrite'],
+  'editTextBlock' | 'editTextOperators'
+>;
+
 /** A block's run fonts as the editor draws them: each font once, and each run's font by the run's first object. */
 export interface RunFonts {
   readonly fonts: readonly Uint8Array<ArrayBuffer>[];
@@ -3998,7 +4010,7 @@ export async function commitTextBlock(
   page: number,
   block: TextBlock,
   text: string,
-  version: DocVersion,
+  read: BlocksRead,
 ): Promise<BlockCommit> {
   const before = block.lines.map((line) => lineText(line.runs)).join('\n');
   if (text === before) return 'unchanged';
@@ -4008,13 +4020,14 @@ export async function commitTextBlock(
     deps,
     docId,
     {
-      kind: 'editTextBlock',
+      // THE PAGE'S WRITER, as the read named it: a page showing Type 3 text is rewritten in its own content stream.
+      kind: BLOCK_EDIT_KIND[read.rewrite],
       page,
       // IN THE WIRE FORM, through the contract's one encoder (ADR-0142).
       ...blockEditOf([{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text }]),
       // REFLOW: a person typing sees the block grow as they type, and it stays that way.
       fit: 'reflow',
-      version,
+      version: read.version,
     },
     {
       keep: (error) => {

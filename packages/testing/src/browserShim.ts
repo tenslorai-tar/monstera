@@ -608,6 +608,11 @@ export interface BrowserShimOptions {
    */
   readonly textBlocks?: ChannelResult<'document.textBlocks'>['blocks'] | null;
   /**
+   * Which writer the shim's pages name (ADR-0176 Decision 1): `objects` unless a case says the page shows Type 3 text,
+   * which is what a page a case wrote down is unless it says otherwise.
+   */
+  readonly textRewrite?: ChannelResult<'document.textBlocks'>['rewrite'];
+  /**
    * What `document.runFonts` answers (ADR-0175): the fonts, and each run's place among them by the run's first object.
    * Every font is answered whatever was asked, as a host answers each font met once. Absent is none for every run, which
    * is what an installation with no PDFium answers, and the editor draws each run in its kind of face.
@@ -2273,7 +2278,14 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
         // addressable by construction. A shim that could report otherwise would
         // be inventing a Form XObject nobody built.
         // CUT INTO REAL PARTS, so a case can seed a page past one part and watch the surface read it whole.
-        ok({ version: asDocVersion(current), ...shimPart(blocks, from, TEXT_BLOCKS_PART, 'blocks'), truncated: false, rotated: 0, unaddressable: 0 }),
+        ok({
+          version: asDocVersion(current),
+          ...shimPart(blocks, from, TEXT_BLOCKS_PART, 'blocks'),
+          truncated: false,
+          rotated: 0,
+          unaddressable: 0,
+          rewrite: options.textRewrite ?? 'objects',
+        }),
       );
     },
 

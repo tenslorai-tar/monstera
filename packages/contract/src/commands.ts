@@ -5157,6 +5157,14 @@ export const editTextBlockSchema = blockEditCommandSchema('editTextBlock');
  */
 export const editTextOperatorsSchema = blockEditCommandSchema('editTextOperators');
 
+/**
+ * Which of the two a page's text is rewritten by (ADR-0176 Decision 1): `objects` for {@link editTextBlockSchema},
+ * `operators` for {@link editTextOperatorsSchema}, where the page shows text in a Type 3 font. Defined once, beside the
+ * two kinds it chooses between: the engine host answers it, `document.textBlocks` carries it, the renderer sends by it.
+ */
+export const textRewriteSchema = z.enum(['objects', 'operators']);
+export type TextRewrite = z.infer<typeof textRewriteSchema>;
+
 /** A block edit command of `kind`: {@link editTextBlockSchema}'s fields, declared once for both kinds. */
 function blockEditCommandSchema<K extends 'editTextBlock' | 'editTextOperators'>(kind: K) {
   return z

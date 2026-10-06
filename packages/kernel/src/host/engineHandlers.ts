@@ -31,6 +31,7 @@ import {
   type RecognisedPage,
 } from '../ocrRecognise.js';
 import type { PageFill } from '../cellFills.js';
+import type { PageRewrite } from '../pageRewrite.js';
 import type { LinkAddress, ListedPageLinks } from '../pageLinks.js';
 import type { PageWordBoxes } from '../wordBoxes.js';
 import type { PageTextRead } from '../textStructure.js';
@@ -102,6 +103,9 @@ export type HostLinkAddressReader = (session: MupdfSession, page: number, index:
 
 /** Reads one page's filled shapes — what a table cell's background is joined from. */
 export type HostPageFillsReader = (session: MupdfSession, page: number) => Promise<readonly PageFill[]>;
+
+/** Which writer rewrites one page's text (ADR-0176 Decision 1): `readPageRewrite` in the host. */
+export type HostPageRewriteReader = (session: MupdfSession, page: number) => Promise<PageRewrite>;
 
 /** One page's word boxes (ADR-0137): `readPageWordBoxes` in the host, `remoteMupdfWordBoxes` across the pipe. */
 export type HostWordBoxesReader = (session: MupdfSession, page: number) => Promise<PageWordBoxes>;
@@ -475,6 +479,8 @@ export interface EngineHandlerParts {
   readonly linkAddress: HostLinkAddressReader;
   /** A page's filled shapes. `engine/page-fills`. */
   readonly pageFills: HostPageFillsReader;
+  /** Which writer rewrites a page's text (ADR-0176 Decision 1). `engine/page-rewrite`. */
+  readonly pageRewrite: HostPageRewriteReader;
   /** A page's word boxes (ADR-0137). `engine/word-boxes`. */
   readonly wordBoxes: HostWordBoxesReader;
   /** How this process turns a raster into characters. `engine/ocr-page`. */
@@ -534,6 +540,7 @@ export function createEngineHandlers({
   pageLinks,
   linkAddress,
   pageFills,
+  pageRewrite,
   wordBoxes,
   ocr,
   destinations,
@@ -929,6 +936,13 @@ export function createEngineHandlers({
       if (held === undefined) return gone;
       // NO try/catch, for the link read's reason.
       return { ok: true, value: { fills: [...(await pageFills(held.session, page))] } };
+    },
+
+    'engine/page-rewrite': async ({ session, page }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the link read's reason.
+      return { ok: true, value: { rewrite: await pageRewrite(held.session, page) } };
     },
 
     'engine/word-boxes': async ({ session, page }) => {

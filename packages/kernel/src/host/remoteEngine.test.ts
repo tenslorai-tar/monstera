@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -14,6 +17,7 @@ import { prepareSignature } from '../signaturePlaceholder.js';
 import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import { readPageGeometry } from '../pageGeometry.js';
+import { readPageRewrite } from '../pageRewrite.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
 import { checkAccessibility } from '../accessibilityCheck.js';
@@ -44,6 +48,7 @@ import {
   remoteMupdfGeometry,
   remoteMupdfPageText,
   remoteMupdfPageFills,
+  remoteMupdfPageRewrite,
   remoteMupdfWordBoxes,
   remoteMupdfAccessibility,
   type SessionAssets,
@@ -236,6 +241,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
   readonly geometry: ReturnType<typeof remoteMupdfGeometry>;
   readonly pageText: ReturnType<typeof remoteMupdfPageText>;
   readonly pageFills: ReturnType<typeof remoteMupdfPageFills>;
+  readonly pageRewrite: ReturnType<typeof remoteMupdfPageRewrite>;
   readonly wordBoxes: ReturnType<typeof remoteMupdfWordBoxes>;
   readonly accessibility: ReturnType<typeof remoteMupdfAccessibility>;
   readonly sessions: ReturnType<typeof createRemoteSessions>;
@@ -322,6 +328,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       pageLinks: readPageLinks,
       linkAddress: readLinkAddress,
       pageFills: readPageFills,
+      pageRewrite: readPageRewrite,
       wordBoxes: readPageWordBoxes,
       // NOT THE REAL READER, where its neighbours above are. `recognisePage`
       // instantiates 2.8 MB of Tesseract WASM and takes about four seconds per
@@ -381,6 +388,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
     geometry: remoteMupdfGeometry(client, sessions),
     pageText: remoteMupdfPageText(client, sessions),
     pageFills: remoteMupdfPageFills(client, sessions),
+    pageRewrite: remoteMupdfPageRewrite(client, sessions),
     wordBoxes: remoteMupdfWordBoxes(client, sessions),
     accessibility: remoteMupdfAccessibility(client, sessions),
     sessions,
@@ -569,6 +577,23 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       expect(crossed).toStrictEqual(await readPageWordBoxes(session, 0));
     } finally {
       await mupdfWriter.close(session);
+    }
+  });
+
+  it('the PAGE-REWRITE read crosses: the Chromium print names the operator writer, a plain page the object one (ADR-0176)', async () => {
+    const chromium = new Uint8Array(
+      readFileSync(fileURLToPath(new URL('../../../testing/fixtures/text-edit/chromium-type3.pdf', import.meta.url))),
+    );
+    const type3 = await joined(chromium);
+    const plain = await joined(flat);
+    try {
+      expect(await type3.pageRewrite(type3.token, 0)).toBe('operators');
+      // CONTROL: the same handler and wire answer the other word for a page with no Type 3 text, so the answer above
+      // is the page's and not a constant.
+      expect(await plain.pageRewrite(plain.token, 0)).toBe('objects');
+    } finally {
+      await mupdfWriter.close(type3.session);
+      await mupdfWriter.close(plain.session);
     }
   });
 
@@ -809,6 +834,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         pageFills: () => {
           throw new Error('unused');
         },
+        pageRewrite: () => {
+          throw new Error('no case here reads which writer a page needs');
+        },
         wordBoxes: () => {
           throw new Error('unused');
         },
@@ -959,6 +987,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         pageFills: () => {
           throw new Error('the rotation-refusal case must not read page fills');
+        },
+        pageRewrite: () => {
+          throw new Error('no case here reads which writer a page needs');
         },
         wordBoxes: () => {
           throw new Error('the rotation-refusal case must not read word boxes');

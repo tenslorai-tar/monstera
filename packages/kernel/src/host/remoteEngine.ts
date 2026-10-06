@@ -43,6 +43,7 @@ import type {
   HostOcrReader,
   HostPageFillsReader,
   HostPageLinksReader,
+  HostPageRewriteReader,
   HostPageTextReader,
   HostWordBoxesReader,
 } from './engineHandlers.js';
@@ -405,6 +406,13 @@ export function remoteMupdfPageFills(
       'engine/page-fills',
       await client['engine/page-fills']({ session: sessions.handleFor(session), page }),
     ).fills;
+}
+
+/** Which writer rewrites one page's text, over the boundary (ADR-0176 Decision 1) — {@link remoteMupdfPageFills}' shape. */
+export function remoteMupdfPageRewrite(client: ClientApi<EngineChannels>, sessions: RemoteSessions): HostPageRewriteReader {
+  return async (session, page) =>
+    answered('engine/page-rewrite', await client['engine/page-rewrite']({ session: sessions.handleFor(session), page }))
+      .rewrite;
 }
 
 /** One page's word boxes, over the boundary (ADR-0137) — {@link remoteMupdfPageFills}' shape, for its reason. */

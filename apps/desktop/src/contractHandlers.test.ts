@@ -2364,7 +2364,8 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
     fill: null,
   }));
   const commands = {
-    textBlocks: () => Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, unaddressable: 2 }),
+    textBlocks: () =>
+      Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, unaddressable: 2, rewrite: 'operators' }),
     pageObjects: () => Promise.resolve({ version: asDocVersion(7), objects, truncated: false }),
   } as unknown as DocumentCommands;
   const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });

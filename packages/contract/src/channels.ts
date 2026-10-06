@@ -73,6 +73,7 @@ import {
   SIGN_REFUSALS,
   signaturePlacementSchema,
   TIMESTAMP_AUTHORITY_IDS,
+  textRewriteSchema,
 } from './commands.js';
 import {
   DOCUMENT_ACCESS_VALUES,
@@ -5070,6 +5071,13 @@ export const channels = {
        * reader a sentence when it is non-zero; it cannot offer them a row.
        */
       unaddressable: z.number().int().nonnegative(),
+      /**
+       * Which command rewrites this page's text
+       * ([ADR-0176](../../../docs/DECISIONS/0176-a-page-holding-type-3-text-is-edited-in-its-own-content-stream-by-mupdf.md)
+       * Decision 1): `objects` for `editTextBlock`, `operators` for `editTextOperators`, where the page shows text in a
+       * Type 3 font. The same block wire either way, so the editor does not change; the page decides the command.
+       */
+      rewrite: textRewriteSchema,
     }),
     ['document-not-open', 'document-poisoned', 'engine-unavailable'],
   ),

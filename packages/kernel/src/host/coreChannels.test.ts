@@ -76,6 +76,8 @@ const MUPDF_READS = [
   // A PAGE'S FILLS ARE ONE OF MuPDF'S READS: drawing the page parses it, and a table cell's
   // background is joined from them in main (`cellFills.ts`).
   'engine/page-fills',
+  // WHICH WRITER REWRITES A PAGE'S TEXT IS ONE OF MuPDF'S READS: the PDFium API has no query for a font's type (ADR-0176).
+  'engine/page-rewrite',
   // A PAGE'S WORD BOXES ARE ONE OF MuPDF'S READS: its characters' quads, walked from the structured text (ADR-0137).
   'engine/word-boxes',
   // RECOGNITION IS ONE OF MuPDF'S READS, and that is §3's matrix rather than a

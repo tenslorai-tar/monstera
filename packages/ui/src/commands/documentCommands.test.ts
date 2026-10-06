@@ -1554,7 +1554,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown dog\njumps over',
-      asDocVersion(7),
+      { version: asDocVersion(7), rewrite: 'objects' },
     );
     expect(outcome).toBe('written');
     expect(sent).toStrictEqual([
@@ -1581,6 +1581,45 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(applied).toHaveLength(1);
   });
 
+  it('ON A PAGE THE READ NAMED `operators` the same edit is sent as editTextOperators, with the same wire (ADR-0176)', async () => {
+    // THE UI HALF OF THE WIRED PAIR for `editTextOperators`. Its kernel half is `textOperatorEdit.test.ts`, which
+    // rewrites the Chromium print's Type 3 heading through MuPDF and saves it. Only the kind differs from the case
+    // above, which is its control: a commit that ignored the read's writer would send `editTextBlock` here.
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0 }));
+    });
+    const outcome = await commitTextBlock(
+      { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown dog\njumps over',
+      { version: asDocVersion(7), rewrite: 'operators' },
+    );
+    expect(outcome).toBe('written');
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'editTextOperators',
+            page: 3,
+            runs: [4, 9, 2],
+            lineStarts: [0, 2],
+            blockStarts: [0],
+            text: 'The quick brown dog\njumps over',
+            textStarts: [0],
+            fit: 'reflow',
+            version: 7,
+          },
+        },
+      },
+    ]);
+  });
+
   it('CONTROL: a block whose words did not change SENDS NOTHING', async () => {
     // The words are compared by `lineText`, the rule the kernel diffs with. A
     // commit that sent anyway would regenerate the page for no change — which
@@ -1596,7 +1635,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown fox\njumps over',
-      asDocVersion(7),
+      { version: asDocVersion(7), rewrite: 'objects' },
     );
     expect(outcome).toBe('unchanged');
     expect(sent).toStrictEqual([]);
@@ -1622,7 +1661,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown 中',
-      asDocVersion(7),
+      { version: asDocVersion(7), rewrite: 'objects' },
     );
     // WHOLE, characters and all, for the editor to name them.
     expect(outcome).toStrictEqual({ refused: { code: 'text-not-writable', detail: { characters: '中' } } });
@@ -1666,7 +1705,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown dog',
-      asDocVersion(7),
+      { version: asDocVersion(7), rewrite: 'objects' },
     );
     expect(outcome).toStrictEqual({ refused: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } } });
     expect(asked).toStrictEqual([]);
@@ -1715,7 +1754,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown dog',
-      asDocVersion(7),
+      { version: asDocVersion(7), rewrite: 'objects' },
     );
     expect(outcome).toStrictEqual({ refused: { code: 'stale-target' } });
     expect(asked).toStrictEqual([]);
@@ -1740,7 +1779,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown dog',
-      asDocVersion(7),
+      { version: asDocVersion(7), rewrite: 'objects' },
     );
     // NOT `refused`, which closes the editor over what was typed; and nothing is reported, since the person chose it.
     expect(outcome).toBe('held');

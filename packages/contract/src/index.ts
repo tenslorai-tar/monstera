@@ -506,6 +506,9 @@ export {
   setPageTransitionSchema,
   swapPagesSchema,
   watermarkPagesSchema,
+  // WHICH COMMAND REWRITES A PAGE'S TEXT (ADR-0176): the host answers it and the renderer sends by it.
+  type TextRewrite,
+  textRewriteSchema,
 } from './commands.js';
 export {
   // A command's pages as runs (decision D, finding AAA-1): the renderer writes them, the kernel expands them.

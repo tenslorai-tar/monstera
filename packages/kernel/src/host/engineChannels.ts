@@ -5,6 +5,7 @@ import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   MAX_MERGE_DOCUMENTS,
   addAnnotationSchema,
+  textRewriteSchema,
   pageSetSchema,
   placeImageSchema,
   placeSignatureMarkSchema,
@@ -2697,6 +2698,24 @@ export const engineChannels = {
           .max(ENGINE_PAGE_FILLS_MAX),
       })
       .strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * Which writer rewrites one page's text ([ADR-0176](../../../../docs/DECISIONS/0176-a-page-holding-type-3-text-is-edited-in-its-own-content-stream-by-mupdf.md)
+   * Decision 1): `operators` where the page's content shows text in a Type 3 font, `objects` everywhere else. One word,
+   * so framed: nothing about the answer scales with the page.
+   */
+  'engine/page-rewrite': channel(
+    'Reads which writer rewrites one page’s text, from a session this host holds.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based index, as `commands.ts` declares them. */
+        page: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z.object({ rewrite: textRewriteSchema }).strict(),
     ['no-such-session'],
   ),
 

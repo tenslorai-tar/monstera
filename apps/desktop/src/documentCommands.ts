@@ -98,6 +98,7 @@ import {
   type StructureOutline,
   type RecognitionRequest,
   type RecognisedPage,
+  type PageRewrite,
   type PageRuns,
   type SaveDependencies,
   type CopyOutcome,
@@ -1905,6 +1906,11 @@ export interface DocumentTextBlocks {
    * editable with nothing saying why.
    */
   readonly unaddressable: number;
+  /**
+   * Which writer rewrites this page's text (ADR-0176 Decision 1): `objects` for `editTextBlock`, `operators` for
+   * `editTextOperators`, where the page shows text in a Type 3 font.
+   */
+  readonly rewrite: PageRewrite;
 }
 
 /** One of a page's objects, as the editing engine describes it. */

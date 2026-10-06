@@ -81,6 +81,7 @@ import {
   type HostFormFieldsReader,
   type HostLayersReader,
   type HostPageFillsReader,
+  type HostPageRewriteReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostWordBoxesReader,
@@ -142,6 +143,7 @@ import {
   type ReadSignature,
   remoteMupdfOcr,
   remoteMupdfPageFills,
+  remoteMupdfPageRewrite,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   remoteMupdfWordBoxes,
@@ -1327,6 +1329,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // the first thing to make it matter.
     textBlocks: async (docId, sessions, page) => {
       if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s text');
+      const mupdf = sessions.mupdf;
+      if (mupdf === undefined) throw new MissingSessionError(docId, 'mupdf');
       const found = await pdfiumHost.textRuns(await currentImage(docId, sessions), page);
       // THE GROUPING IS MAIN'S, and this is the only place it happens.
       //
@@ -1372,6 +1376,9 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         // are what the engine could not place, so there is nothing here to
         // group and the count crosses as the count it is.
         unaddressable: found.unaddressable,
+        // THE PAGE'S WRITER, MuPDF's reading (ADR-0176 Decision 1): the PDFium API has no query for a font's type,
+        // and the session MuPDF holds is the document these runs were read from.
+        rewrite: await engineHost.pageRewrite(mupdf, page),
       };
     },
     // THE OTHER ENGINE'S SECOND READ, and it groups nothing — an object is what
@@ -1915,6 +1922,8 @@ function engineSessionOpener(
   readonly pageLinks: HostPageLinksReader;
   /** One page's filled shapes, from whichever host is live — a table cell's background. */
   readonly pageFills: HostPageFillsReader;
+  /** Which writer rewrites one page's text, from whichever host is live (ADR-0176 Decision 1). */
+  readonly pageRewrite: HostPageRewriteReader;
   /** One page's word boxes, from whichever host is live (ADR-0137). */
   readonly wordBoxes: HostWordBoxesReader;
   /** The document's outline, from whichever host is live. */
@@ -2179,6 +2188,20 @@ function engineSessionOpener(
       );
     }
     return pageFills(session, page);
+  };
+
+  /** Which writer rewrites a page's text (ADR-0176 Decision 1), the same registration's. See {@link pageText}. */
+  let pageRewrite: HostPageRewriteReader | null = null;
+
+  const readPageRewriteThroughHost: HostPageRewriteReader = (session, page) => {
+    if (pageRewrite === null) {
+      throw new Error(
+        'A page-rewrite read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return pageRewrite(session, page);
   };
 
   /** The word-box read's half of the same registration. See {@link pageText}. */
@@ -2582,6 +2605,7 @@ function engineSessionOpener(
     pageText = remoteMupdfPageText(client, remote);
     pageLinks = remoteMupdfPageLinks(client, remote);
     pageFills = remoteMupdfPageFills(client, remote);
+    pageRewrite = remoteMupdfPageRewrite(client, remote);
     wordBoxes = remoteMupdfWordBoxes(client, remote);
     destinations = remoteMupdfDestinations(client, remote);
     ocr = remoteMupdfOcr(client, remote);
@@ -2959,6 +2983,7 @@ function engineSessionOpener(
     pageText: readPageTextThroughHost,
     pageLinks: readPageLinksThroughHost,
     pageFills: readPageFillsThroughHost,
+    pageRewrite: readPageRewriteThroughHost,
     wordBoxes: readWordBoxesThroughHost,
     destinations: readDestinationsThroughHost,
     ocr: recogniseThroughHost,

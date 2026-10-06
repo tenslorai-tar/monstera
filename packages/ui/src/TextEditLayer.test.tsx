@@ -5,7 +5,13 @@ import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { type BlockCommit, NO_RUN_FONTS, type RunFonts, type TextBlock } from './commands/documentCommands.js';
+import {
+  type BlockCommit,
+  type BlocksRead,
+  NO_RUN_FONTS,
+  type RunFonts,
+  type TextBlock,
+} from './commands/documentCommands.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import { type PageBlocks, TextEditLayer } from './TextEditLayer.js';
@@ -89,13 +95,14 @@ const BLOCKS: PageBlocks = {
   truncated: false,
   rotated: 0,
   unaddressable: 0,
+  rewrite: 'objects',
 };
 
 function mount(overrides: Partial<Parameters<typeof TextEditLayer>[0]> = {}) {
-  const commits: { block: TextBlock; text: string; version: number }[] = [];
+  const commits: { block: TextBlock; text: string; version: number; rewrite: BlocksRead['rewrite'] }[] = [];
   let answer: BlockCommit = 'written';
-  const onCommit = vi.fn((block: TextBlock, text: string, version: number) => {
-    commits.push({ block, text, version });
+  const onCommit = vi.fn((block: TextBlock, text: string, read: BlocksRead) => {
+    commits.push({ block, text, version: read.version, rewrite: read.rewrite });
     return Promise.resolve(answer);
   });
   const onLeave = vi.fn();
@@ -212,7 +219,23 @@ describe('Edit text on the page (ADR-0096)', () => {
     // THE BLOCK AS READ: its runs' own indices travel to the write, not a position.
     expect(commits[0]?.block.lines.map((line) => line.runs.map((run) => run.index))).toStrictEqual([[8, 9], [11]]);
     expect(commits[0]?.version).toBe(7);
+    // AND THE WRITER THE SAME READ NAMED, carried with its version rather than looked up beside it.
+    expect(commits[0]?.rewrite).toBe('objects');
     expect(view.container.querySelector('[data-text-editor]')).toBeNull();
+  });
+
+  it('a page read as needing the operator writer commits with that writer (ADR-0176 Decision 1)', async () => {
+    // CONTROL for the case above: the same block and words on a page the read named `operators`, so a layer that sent
+    // a constant would answer `objects` here.
+    const { view, commits } = mount({ blocks: { ...BLOCKS, rewrite: 'operators' } });
+    fireEvent.click(find(view.container, '[data-text-block="0"]'));
+    const editor = editorIn(view.container);
+    typeInto(editor, 'WORK HISTORY');
+    await act(async () => {
+      fireEvent.keyDown(editor, { key: 'Escape' });
+      await Promise.resolve();
+    });
+    expect(commits.map((commit) => [commit.text, commit.rewrite])).toStrictEqual([['WORK HISTORY', 'operators']]);
   });
 
   it('A CLICK AWAY writes too — the editor losing focus is the person finishing', async () => {
