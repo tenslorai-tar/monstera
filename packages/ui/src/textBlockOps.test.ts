@@ -88,7 +88,7 @@ describe('splitEdits', () => {
     expect(halves?.[0]).toMatchObject({ lines: [[1], [2]], text: 'First para continues.' });
     expect(halves?.[1]).toMatchObject({ lines: [[3]], text: 'Second para.' });
     // THE TWO TOGETHER ARE THE WORDS THEY WERE, so nothing was dropped between them.
-    expect(`${halves?.[0].text}\n${halves?.[1].text}`).toBe(wordsOfBlock(TWO));
+    expect([halves?.[0]?.text, halves?.[1]?.text].join('\n')).toBe(wordsOfBlock(TWO));
   });
 
   it('moves the second half down by a line, the movement that keeps the grouping from joining them again', () => {
@@ -121,6 +121,8 @@ describe('neighbourOf', () => {
 
   it('wants the same column: a block beside it is no continuation', () => {
     const aside = { ...blocks[1], box: box(400, 656, 520, 670) } as TextBlock;
-    expect(neighbourOf([blocks[0] as TextBlock, aside], 1, 'above')).toBeUndefined();
+    const first = blocks[0];
+    if (first === undefined) throw new Error('the fixture lost its first block');
+    expect(neighbourOf([first, aside], 1, 'above')).toBeUndefined();
   });
 });

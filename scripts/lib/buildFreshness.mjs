@@ -146,6 +146,12 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/textEditRefusals.ts', 'packages/kernel/dist/textEditRefusals.js', 'tsc'],
   ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
   ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
+  // RIGHT-TO-LEFT TEXT AND A SCAN'S PAPER (ADR-0181): the order a line is drawn in and read back in, the cut of a line into
+  // objects, the Arabic joining forms the proof reads directly, and the paper a scan's cover is coloured from.
+  ['packages/kernel/src/bidiOrder.ts', 'packages/kernel/dist/bidiOrder.js', 'tsc'],
+  ['packages/kernel/src/visualPieces.ts', 'packages/kernel/dist/visualPieces.js', 'tsc'],
+  ['packages/kernel/src/arabicForms.ts', 'packages/kernel/dist/arabicForms.js', 'tsc'],
+  ['packages/kernel/src/paperColour.ts', 'packages/kernel/dist/paperColour.js', 'tsc'],
 ];
 
 /**
