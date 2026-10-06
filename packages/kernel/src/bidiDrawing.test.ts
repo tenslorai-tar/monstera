@@ -40,9 +40,11 @@ describe('drawnOrder', () => {
 });
 
 describe('drawnRightToLeft', () => {
-  it('keeps a letter’s marks after it, since a mark is drawn where the letter ended', () => {
+  // The shaper answers a right-to-left cluster in visual order, the mark first, and a mark drawn before its letter sits
+  // nearer where the shaper put it than one drawn after.
+  it('draws a letter’s marks before it, in the order the shaper answers a right-to-left cluster', () => {
     const marked = `ב${String.fromCodePoint(0x5b7)}א`;
-    expect(drawnRightToLeft(marked)).toBe(`אב${String.fromCodePoint(0x5b7)}`);
+    expect(drawnRightToLeft(marked)).toBe(`א${String.fromCodePoint(0x5b7)}ב`);
   });
 });
 

@@ -20,11 +20,14 @@
  *
  * ## What this does not do
  *
- * It is the joining of the Unicode Arabic shaping model and nothing a shaping engine adds: a lam followed by an alef is
- * drawn as the two joined letters and not as the ligature, and a mark is drawn at the font's own offset for it rather
- * than at the anchor the font's positioning table names. Both read back as typed. The ligature is left out because a
- * text page reads one glyph standing for two letters in the reverse of their order and the line could not be read back
- * as it was typed.
+ * It is the joining and the lam-alef ligature of the Unicode Arabic shaping model, and not the rest of what a shaping
+ * engine adds: a mark is drawn at the offset the writer's own object gives it rather than at the anchor the font's
+ * positioning table names, because a mark in an object of its own is read back scrambled by a text page (measured
+ * 2026-10-06), and one inside its letter's object cannot be moved off its own advance.
+ *
+ * A text page reads the ligature as the two letters in the reverse of their order (a lone U+FEFB reads lam then alef,
+ * the order typed), because it normalises presentation forms AFTER it reverses a right-to-left run; the reading model
+ * is `lettersOfForms(readBackOf(drawn))` for that reason.
  */
 
 /** A letter's shapes, as code points. */
@@ -68,6 +71,22 @@ const FORMS: ReadonlyMap<number, Forms> = (() => {
 
 const TATWEEL = 0x640;
 const ZERO_WIDTH_JOINER = 0x200d;
+const LAM = 0x644;
+
+/**
+ * The lam-alef ligatures, by the alef: the code point for the isolated lam and the one for a lam joined to the letter
+ * before it. The blocks hold them as one code point each (U+FEF5 to U+FEFC) and the normaliser says what they are, so the
+ * table is read from it like the forms are.
+ */
+const LAM_ALEF: ReadonlyMap<number, { readonly isolated: number; readonly final: number }> = (() => {
+  const found = new Map<number, { isolated: number; final: number }>();
+  for (let point = 0xfef5; point <= 0xfefc; point += 2) {
+    const [lam, alef] = Array.from(String.fromCodePoint(point).normalize('NFKC'));
+    if (lam?.codePointAt(0) !== LAM || alef === undefined) continue;
+    found.set(alef.codePointAt(0) ?? 0, { isolated: point, final: point + 1 });
+  }
+  return found;
+})();
 
 /** Whether the letter reaches toward the one after it: a letter of four forms, the tatweel and the joiner. */
 function joinsNext(point: number): boolean {
@@ -91,27 +110,41 @@ export function arabicForms(text: string): string {
   if (!characters.some((character) => FORMS.has(character.codePointAt(0) ?? 0))) return text;
   const point = (at: number): number => characters[at]?.codePointAt(0) ?? 0;
   const transparent = (at: number): boolean => TRANSPARENT.test(characters[at] ?? '');
-  return characters
-    .map((character, at) => {
-      const forms = FORMS.get(point(at));
-      if (forms === undefined) return character;
-      let before = at - 1;
-      while (before >= 0 && transparent(before)) before -= 1;
-      let after = at + 1;
-      while (after < characters.length && transparent(after)) after += 1;
-      const fromBefore = before >= 0 && joinsNext(point(before));
-      const toAfter = forms.initial !== undefined && after < characters.length && joinsPrevious(point(after));
-      const chosen =
-        fromBefore && toAfter && forms.medial !== undefined
-          ? forms.medial
-          : toAfter
-            ? forms.initial
-            : fromBefore
-              ? forms.final
-              : forms.isolated;
-      return String.fromCodePoint(chosen);
-    })
-    .join('');
+  let out = '';
+  for (let at = 0; at < characters.length; at += 1) {
+    const character = characters[at] ?? '';
+    const forms = FORMS.get(point(at));
+    if (forms === undefined) {
+      out += character;
+      continue;
+    }
+    let before = at - 1;
+    while (before >= 0 && transparent(before)) before -= 1;
+    let after = at + 1;
+    while (after < characters.length && transparent(after)) after += 1;
+    const fromBefore = before >= 0 && joinsNext(point(before));
+    // A LAM AND AN ALEF NEXT TO EACH OTHER ARE ONE GLYPH, the ligature the face carries for the pair, not the two
+    // letters joined: the shaper's own choice (HarfBuzz answers the pair as one drawing of the width of the ligature, and
+    // the face's cmap holds it as one code point). The lam takes the joining of the letter before it, so the ligature is
+    // the isolated one or the final one by that.
+    const ligature = point(at) === LAM ? LAM_ALEF.get(point(at + 1)) : undefined;
+    if (ligature !== undefined) {
+      out += String.fromCodePoint(fromBefore ? ligature.final : ligature.isolated);
+      at += 1;
+      continue;
+    }
+    const toAfter = forms.initial !== undefined && after < characters.length && joinsPrevious(point(after));
+    const chosen =
+      fromBefore && toAfter && forms.medial !== undefined
+        ? forms.medial
+        : toAfter
+          ? forms.initial
+          : fromBefore
+            ? forms.final
+            : forms.isolated;
+    out += String.fromCodePoint(chosen);
+  }
+  return out;
 }
 
 /** The code points of the blocks {@link arabicForms} writes into, for a text page's reading of them to be undone. */

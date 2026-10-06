@@ -364,10 +364,20 @@ export function reorderedFrom(text: string, direction: TextDirection): { readonl
   let out = '';
   const from: number[] = [];
   for (const { start, end, rtl } of lineSpans(paragraph, 0, text.length)) {
-    const units = rtl ? rightToLeftUnits(text.slice(start, end)) : [{ text: text.slice(start, end), at: 0 }];
+    const units = rtl ? rightToLeftUnits(text.slice(start, end)) : [{ text: text.slice(start, end), at: 0, flipped: false }];
     for (const unit of units) {
       out += unit.text;
-      for (let offset = 0; offset < unit.text.length; offset += 1) from.push(start + unit.at + offset);
+      // A flipped cluster is its own characters reversed by code point, so each result unit comes from the one at the
+      // mirrored place; a pair of UTF-16 units stays in its own order.
+      if (!unit.flipped) {
+        for (let offset = 0; offset < unit.text.length; offset += 1) from.push(start + unit.at + offset);
+        continue;
+      }
+      let place = unit.text.length;
+      for (const point of Array.from(unit.text)) {
+        place -= point.length;
+        for (let offset = 0; offset < point.length; offset += 1) from.push(start + unit.at + place + offset);
+      }
     }
   }
   return { text: out, from };
@@ -385,12 +395,19 @@ export function drawnRightToLeft(span: string): string {
 }
 
 /** The units of a right-to-left span in drawing order: each cluster, mirrored where it has a mirror image, and where it stood. */
-function rightToLeftUnits(span: string): { readonly text: string; readonly at: number }[] {
+function rightToLeftUnits(span: string): { readonly text: string; readonly at: number; readonly flipped: boolean }[] {
   // A LETTER AND ITS MARKS ARE ONE UNIT, marks after the letter as typed: a mark is drawn at the pen where the letter
   // ended and sits over it through its own offset, so a mark set BEFORE its letter in the drawn order would stand over
   // the letter beside it. A text page reverses by character, which {@link readBackOf} models separately.
   const clusters = [...span.matchAll(/\P{M}\p{M}*|\p{M}+/gu)].map((match) => ({ text: match[0], at: match.index }));
-  return clusters.reverse().map(({ text, at }) => ({ text: BIDI.getMirroredCharacter(text) ?? text, at }));
+  return clusters.reverse().map(({ text, at }) => {
+    // A LETTER'S MARKS ARE DRAWN BEFORE IT, in the order a shaper sets them: HarfBuzz answers a right-to-left cluster with
+    // its glyphs reversed, `مُ` as the damma then the meem (measured 2026-10-06 on the bundled Naskh face), and a mark is a
+    // glyph of no advance that sits where the pen is, so a mark drawn first stands at the letter's own left edge, where
+    // the shaper's offset begins. Drawn after the letter it stood a whole letter's advance away from where it belongs.
+    const flipped = /^\P{M}\p{M}+$/u.test(text);
+    return { text: flipped ? Array.from(text).reverse().join('') : (BIDI.getMirroredCharacter(text) ?? text), at, flipped };
+  });
 }
 
 /**

@@ -269,7 +269,7 @@ const failures = [];
 // edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
 // marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
 // with the control that separates the mark from the fixture.
-const roster = createRoster(failures, { cases: 198 });
+const roster = createRoster(failures, { cases: 213 });
 
 /**
  * @param {string} name
@@ -3573,6 +3573,121 @@ async function directionCases() {
       again !== undefined && again.text.trim() === arabic,
       JSON.stringify(again?.text),
     );
+
+    // THE LAM-ALEF LIGATURE (ADR-0186): a lam beside an alef is one glyph of the face's own, and the line reads back as typed.
+    for (const typed of ['لا', 'بلا', 'الله', 'لأن', 'لإ', 'السلام عليكم']) {
+      const written = await type(typed).then(
+        (bytes) => bytes,
+        (error) => error,
+      );
+      const read = written instanceof Uint8Array ? await lineOf(written) : undefined;
+      record(
+        `the line “${typed}” with a lam beside an alef is read back as typed`,
+        read !== undefined && read.text.trim() === typed,
+        written instanceof Uint8Array ? JSON.stringify(read?.text) : `refused: ${String(written instanceof Error ? written.message : written)}`,
+      );
+    }
+    // THE ADVANCE IS THE DIFFERENCE OF TWO WIDTHS: a text page reports a glyph's box, whose edges are not the pen's, so one
+    // ligature's width is not its advance, but two of them minus one is exactly one advance, the bearings cancelling.
+    const widthOf = async (/** @type {string} */ typed) => {
+      const done = await type(typed).then(lineOf, () => undefined);
+      return done === undefined || done.runs.length === 0 ? 0 : Math.max(...done.runs.map((run) => run.right)) - Math.min(...done.runs.map((run) => run.left));
+    };
+    const pairAdvance = (await widthOf('لالا')) - (await widthOf('لا'));
+    const shapedPair = face.shape('لا', true).reduce((sum, glyph) => sum + glyph.advance, 0);
+    const shapedPoints = (shapedPair / face.unitsPerEm) * 11;
+    const twoLetters = advance('ﻟﺎ');
+    record(
+      'the lam and the alef are drawn as the shaper draws the pair: one glyph advancing the pen as far as HarfBuzz answers for it',
+      Math.abs(pairAdvance - shapedPoints) < 0.4,
+      `${pairAdvance.toFixed(2)} pt against the shaper’s ${shapedPoints.toFixed(2)} pt`,
+    );
+    record(
+      'CONTROL: two letters joined to each other are NARROWER than the ligature, so the width above tells the two drawings apart',
+      twoLetters < shapedPoints - 0.5,
+      `${twoLetters.toFixed(2)} pt joined against ${shapedPoints.toFixed(2)} pt ligature`,
+    );
+
+    // THE PLAN MEASURES THE SHAPES DRAWN (ADR-0186): a paragraph is wrapped by the width of the forms and the ligature, not
+    // of each letter alone, which is wider. A sentence that fits the block in its forms and not as isolated letters stays
+    // on one line.
+    const wide = await aTypeset({ lines: ['Hello world, a line of words long enough here'] });
+    const wideRead = await blocksOf(wide);
+    const [wideBlock] = wideRead.blocks;
+    const wideRuns = wideRead.runs;
+    const room = wideRuns.length === 0 ? 0 : Math.max(...wideRuns.map((run) => run.right)) - Math.min(...wideRuns.map((run) => run.left));
+    const sentences = ['مرحبا بالعالم السلام عليكم ورحمة الله وبركاته', 'السلام عليكم ورحمة الله وبركاته مرحبا بالعالم جميعا', 'الله لا إله إلا هو الحي القيوم لا تأخذه سنة'];
+    const fitting = sentences.find((sentence) => advance(arabicForms(sentence)) < room - 2 && advance(sentence) > room);
+    record(
+      'PREMISE: a sentence exists whose joined forms fit the block and whose letters drawn alone would not',
+      fitting !== undefined && room > 0,
+      `block ${room.toFixed(1)} pt; ${sentences.map((sentence) => `${advance(arabicForms(sentence)).toFixed(0)}/${advance(sentence).toFixed(0)}`).join(' ')}`,
+    );
+    if (wideBlock !== undefined && fitting !== undefined) {
+      const wideLines = wideBlock.lines.map((line) => line.runs.map((run) => run.index));
+      const written = await localPdfiumExecution
+        .apply({
+          session: wide,
+          command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+            kind: 'editTextBlock',
+            page: 0,
+            ...blockEditOf([{ lines: wideLines, soft: wideLines.map(() => false), text: fitting }]),
+            fit: 'reflow',
+            version: 1,
+          }),
+          sources: [],
+          reads: undefined,
+        })
+        .then(
+          (bytes) => bytes,
+          () => undefined,
+        );
+      const after = written === undefined ? undefined : await blocksOf(written);
+      const rows = after?.blocks.flatMap((each) => each.lines) ?? [];
+      record(
+        'a sentence that fits the block in its joined forms is one line: the plan measures what is drawn',
+        rows.length === 1,
+        `${String(rows.length)} line(s) at ${room.toFixed(1)} pt for ${advance(arabicForms(fitting)).toFixed(1)} pt of forms against ${advance(fitting).toFixed(1)} pt of letters: ${JSON.stringify((after?.runs ?? []).map((run) => [run.text, Math.round(run.left), Math.round(run.right)]))}`,
+      );
+    }
+
+    // THE MARKS (ADR-0186): the shaper answers a right-to-left letter with its marks first, a mark being a glyph of no
+    // advance, and the writer draws them in that order; a line of marks reads back as typed.
+    const markPairs = ['بَ', 'مُ', 'حَ', 'دِ', 'مّ', 'سْ'];
+    // A letter's own dots are glyphs of no advance too, so "the first glyph has none" says nothing; what the mark adds is
+    // one more glyph BEFORE the one that advances the pen.
+    const before = (/** @type {string} */ text) => face.shape(text, true).findLastIndex((glyph) => glyph.advance !== 0);
+    const marksFirst = markPairs.every((pair) => {
+      const [base, ...marks] = Array.from(pair);
+      return before(pair) === before(base ?? '') + marks.length;
+    });
+    record('the shaper answers each base and mark of the sample with the marks before the glyph that advances', marksFirst, markPairs.map((pair) => before(pair)).join(' '));
+    record(
+      'CONTROL: a bare letter and the same letter with a mark differ in what precedes the advancing glyph, so the test above is about the mark',
+      markPairs.every((pair) => before(pair) !== before(Array.from(pair)[0] ?? '')),
+      markPairs.map((pair) => `${before(Array.from(pair)[0] ?? '')}→${before(pair)}`).join(' '),
+    );
+    const { drawnRightToLeft } = await import('../../packages/kernel/dist/bidiOrder.js');
+    record(
+      'the writer draws a mark before its letter, in the shaper’s order, and a bare letter is unchanged',
+      markPairs.every((pair) => {
+        const [base, ...marks] = Array.from(pair);
+        return drawnRightToLeft(pair) === [...marks.reverse(), base].join('');
+      }) && drawnRightToLeft('بب') === 'بب',
+      markPairs.map((pair) => JSON.stringify(drawnRightToLeft(pair))).join(' '),
+    );
+    for (const typed of ['مُحَمَّد', 'بِسْمِ اللَّهِ']) {
+      const written = await type(typed).then(
+        (bytes) => bytes,
+        (error) => error,
+      );
+      const read = written instanceof Uint8Array ? await lineOf(written) : undefined;
+      record(
+        `the line “${typed}” with marks is read back as typed`,
+        read !== undefined && read.text.trim() === typed,
+        written instanceof Uint8Array ? JSON.stringify(read?.text) : `refused: ${String(written instanceof Error ? written.message : written)}`,
+      );
+    }
   } finally {
     bindEditFaces(null);
   }

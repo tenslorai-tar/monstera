@@ -1967,11 +1967,13 @@ function trySetText(bindings: Bound, object: unknown, text: string, rtl?: boolea
  * every character, which is the question it exists for.
  */
 function drawing(text: string, rtl: boolean | undefined): { readonly drawn: string; readonly reads: string } {
-  // THE LETTERS ARE SET IN THEIR JOINING FORMS first (`arabicForms`), and a text page normalises the forms back to the
-  // letters before it reverses a run, so the reading is taken of the letters.
+  // THE LETTERS ARE SET IN THEIR JOINING FORMS first (`arabicForms`, the lam-alef pair as its ligature), and a text page
+  // reverses a run by its characters and normalises each form back to its letters AFTER: measured 2026-10-06 on PDFium
+  // 155.0.8044.0's Linux build, a lone ligature glyph reads `لا`, lam then alef as typed, where letters expanded first
+  // and reversed would read `ال`. For a form of one letter the order makes no difference; for a ligature it does.
   const shaped = arabicForms(text);
   const drawn = rtl === undefined ? drawnOrder(shaped) : rtl ? drawnRightToLeft(shaped) : shaped;
-  return { drawn, reads: readBackOf(lettersOfForms(drawn)) };
+  return { drawn, reads: lettersOfForms(readBackOf(drawn)) };
 }
 
 /**
@@ -3403,7 +3405,9 @@ function blockMeasure(
   const inkRight = (source: unknown, text: string, font?: unknown): number | undefined => {
     const probe = makeTextLike(bindings, document, source, 0, font);
     try {
-      return trySetText(bindings, probe, text) ? boundsOf(bindings, probe).right : undefined;
+      // LEFT TO RIGHT, AS GIVEN: the probe is two characters set side by side and a width is the second's, so a
+      // right-to-left pair put in drawing order would stand the other way round and measure the first (ADR-0186).
+      return trySetText(bindings, probe, text, false) ? boundsOf(bindings, probe).right : undefined;
     } finally {
       bindings.destroyObject(probe);
     }
@@ -3463,7 +3467,7 @@ function blockMeasure(
   };
   /** The width of `text` in a face a mark asked for: every character through the resolver's face, or the standard twin. */
   const restyledWidth = (run: HeldRun, restyle: Restyle, text: string): number => {
-    const each = Array.from(text);
+    const each = Array.from(arabicForms(text));
     if (pen.inPieces) return each.reduce((sum, character) => sum + piecesAdvance(run, character, restyle), 0);
     const twin = pen.standardFontRestyled(run.object, restyle);
     const widths = each.map((character) => advanceOf('twin', run, character, twin, ['x'], JSON.stringify(restyle)));
@@ -3472,7 +3476,10 @@ function blockMeasure(
   };
   /** The width of `text` in the run's own style: its font, then the pieces a character it lacks is set in. */
   const plainWidth = (run: HeldRun, text: string): number => {
-    const each = Array.from(text);
+    // THE SHAPES THE WRITER DRAWS, not the letters: Arabic is set in its joining forms and the ligature, which are
+    // narrower together than each letter drawn alone, so a plan measured by the letters wrapped a paragraph early
+    // (measured 2026-10-06 on the bundled Naskh face: 135 pt planned for a line drawn in 64).
+    const each = Array.from(arabicForms(text));
     const own = each.map((character) => advanceOf('own', run, character));
     if (own.every((width) => width !== null)) return own.reduce((sum, width) => sum + width, 0);
     if (pen.inPieces) {

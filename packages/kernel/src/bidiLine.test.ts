@@ -38,11 +38,11 @@ describe('reorderedFrom', () => {
     expect(reorderedFrom('Hello world', 'ltr')).toStrictEqual({ text: 'Hello world', from: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] });
   });
 
-  it('keeps a letter and its marks together, marks after the letter', () => {
-    // ب + fatha, then ا: drawn right to left as ا, then ب with its mark after it.
+  it('keeps a letter and its marks together, the marks first as the shaper answers a right-to-left cluster', () => {
+    // ب + fatha, then ا: drawn right to left as ا, then the fatha, then ب.
     const { text, from } = reorderedFrom('بَا', 'rtl');
-    expect(text).toBe('ابَ');
-    expect(from).toStrictEqual([2, 0, 1]);
+    expect(text).toBe('اَب');
+    expect(from).toStrictEqual([2, 1, 0]);
   });
 });
 

@@ -31,6 +31,26 @@ describe('arabicForms', () => {
     expect(points(arabicForms('بَب'))).toBe('fe91 64e fe90');
   });
 
+  it('sets a lam followed by an alef as the one ligature glyph, isolated or final by what joins the lam from before', () => {
+    expect(points(arabicForms('لا'))).toBe('fefb');
+    // a beh before the lam reaches it, so the ligature takes its final shape
+    expect(points(arabicForms('بلا'))).toBe('fe91 fefc');
+    // the alef variants have their own ligatures
+    expect(points(arabicForms('لأ'))).toBe('fef7');
+    expect(points(arabicForms('لإ'))).toBe('fef9');
+    expect(points(arabicForms('لآ'))).toBe('fef5');
+  });
+
+  // THE CONTROL: a lam NOT followed by an alef is a letter of four forms and no ligature, so the table is not matching every lam
+  it('leaves a lam before any other letter as a letter', () => {
+    expect(points(arabicForms('لب'))).toBe('fedf fe90');
+  });
+
+  it('reads a ligature back as the two letters, lam then alef', () => {
+    expect(lettersOfForms(arabicForms('الله'))).toBe('الله');
+    expect(lettersOfForms(arabicForms('لا'))).toBe('لا');
+  });
+
   it('is its own fixed point: a form is not a letter, so a second pass changes nothing', () => {
     const once = arabicForms('السلام عليكم');
     expect(arabicForms(once)).toBe(once);
