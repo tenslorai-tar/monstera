@@ -206,6 +206,93 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(editorIn(view.container).querySelectorAll('.m-text-editor__line')).toHaveLength(2);
   });
 
+  it('sets the editor in the SHAPE the read found: a centred block is centred, an indented first line is indented (ADR-0179)', () => {
+    const [heading, paragraph] = BLOCKS.blocks;
+    if (heading === undefined || paragraph === undefined) throw new Error('the fixture lost a block');
+    const shaped: PageBlocks = {
+      ...BLOCKS,
+      blocks: [
+        { ...heading, shape: { align: 'center', firstIndent: 0 } },
+        { ...paragraph, shape: { align: 'left', firstIndent: 24 } },
+      ],
+    };
+    const { view } = mount({ blocks: shaped });
+    fireEvent.click(find(view.container, '[data-text-block="0"]'));
+    expect(editorIn(view.container).style.textAlign).toBe('center');
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    const indented = editorIn(view.container);
+    expect(indented.style.textAlign).toBe('left');
+    expect(indented.style.textIndent).toBe('24px');
+  });
+
+  it('a HANGING indent pads the block in and takes the first line back out, since the box starts at that line', () => {
+    const [heading, paragraph] = BLOCKS.blocks;
+    if (heading === undefined || paragraph === undefined) throw new Error('the fixture lost a block');
+    const { view } = mount({
+      blocks: { ...BLOCKS, blocks: [heading, { ...paragraph, shape: { align: 'left', firstIndent: -12 } }] },
+    });
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    const editor = editorIn(view.container);
+    expect(editor.style.paddingLeft).toBe('12px');
+    expect(editor.style.textIndent).toBe('-12px');
+  });
+
+  it('CONTROL: a block with no indent has none, so the case above is the shape and not a default', () => {
+    const { view } = mount();
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    const editor = editorIn(view.container);
+    expect(editor.style.textAlign).toBe('left');
+    expect(editor.style.textIndent).toBe('');
+  });
+
+  it('opens with the caret WHERE THE PERSON CLICKED, and at the end for a key', () => {
+    const where = vi.fn(() => {
+      const spans = [...document.querySelectorAll('.m-text-editor__run')];
+      const span = spans.at(-1);
+      if (span?.firstChild === null || span?.firstChild === undefined) throw new Error('the editor holds no words');
+      return { offsetNode: span.firstChild, offset: 3 };
+    });
+    Object.defineProperty(document, 'caretPositionFromPoint', { configurable: true, value: where });
+    try {
+      const { view } = mount();
+      fireEvent.click(find(view.container, '[data-text-block="1"]'), { detail: 1, clientX: 10, clientY: 20 });
+      expect(where).toHaveBeenCalledWith(10, 20);
+      const selection = document.getSelection();
+      expect(selection?.anchorNode?.textContent).toBe('at every stage.');
+      expect(selection?.anchorOffset).toBe(3);
+      view.unmount();
+      // CONTROL: a key's activation reports no point (`detail` 0), and the browser is not asked; the caret is at the end.
+      where.mockClear();
+      const keyed = mount();
+      fireEvent.click(find(keyed.view.container, '[data-text-block="1"]'), { detail: 0 });
+      expect(where).not.toHaveBeenCalled();
+      expect(document.getSelection()?.anchorNode).toBe(editorIn(keyed.view.container));
+    } finally {
+      Reflect.deleteProperty(document, 'caretPositionFromPoint');
+    }
+  });
+
+  it('draws the editor’s paper as a gradient where the page behind it is shaded, and flat where it is not', () => {
+    const shaded = mount({ paperAt: (_x, y) => (y < 170 ? 'rgb(200, 200, 200)' : 'rgb(100, 100, 100)') });
+    fireEvent.click(find(shaded.view.container, '[data-text-block="1"]'));
+    const editor = editorIn(shaded.view.container);
+    expect(editor.style.backgroundImage).toBe('linear-gradient(to bottom, rgb(200, 200, 200), rgb(100, 100, 100))');
+    expect(editor.style.backgroundColor).toBe('');
+    shaded.view.unmount();
+    // CONTROL: three of four agreeing is flat paper with a stray neighbour, as before.
+    const flat = mount({ paperAt: (x, y) => (x < 70 && y < 140 ? 'rgb(0, 0, 0)' : 'rgb(250, 250, 250)') });
+    fireEvent.click(find(flat.view.container, '[data-text-block="1"]'));
+    expect(editorIn(flat.view.container).style.backgroundColor).toBe('rgb(250, 250, 250)');
+    expect(editorIn(flat.view.container).style.backgroundImage).toBe('');
+  });
+
+  it('stacks the outlines by area, the smallest on top, so a block inside another is the one clicked', () => {
+    const { view } = mount();
+    const heading = find(view.container, '[data-text-block="0"]');
+    const paragraph = find(view.container, '[data-text-block="1"]');
+    expect(Number(heading.style.zIndex)).toBeGreaterThan(Number(paragraph.style.zIndex));
+  });
+
   it('EACH RUN is drawn in its own style, at the zoom — not the block’s one (ADR-0145)', () => {
     const { view } = mount({ geometry: { ...GEOMETRY, zoom: 2 } });
     fireEvent.click(find(view.container, '[data-text-block="1"]'));

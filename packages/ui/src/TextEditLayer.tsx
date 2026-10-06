@@ -143,6 +143,40 @@ function overlaps(a: TextBlock['box'], b: TextBlock['box']): boolean {
   return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
 }
 
+/** Where a person clicked, in the window's pixels. */
+interface Click {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** A box's area in PDF points squared: the order outlines are stacked in. */
+function area(box: TextBlock['box']): number {
+  return (box.x1 - box.x0) * (box.y1 - box.y0);
+}
+
+/**
+ * Puts the caret where the person clicked, in the words just built: the browser's own answer to *which character is
+ * under this point*, so it is right for wrapped, aligned and indented lines alike. Where it names nothing in the editor
+ * (the point is outside the words, or the browser has no such call), the caret stays where the caller left it.
+ */
+function caretAt(element: HTMLElement, click: Click): boolean {
+  const owner = element.ownerDocument;
+  const place = (node: Node, offset: number): boolean => {
+    if (!element.contains(node)) return false;
+    const range = owner.createRange();
+    range.setStart(node, offset);
+    range.collapse(true);
+    const selection = owner.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    return true;
+  };
+  // THE CALL CHROMIUM 128 ADDED; an engine without it (the test DOM) leaves the caret where the caller put it.
+  const position = (owner as Partial<Document>).caretPositionFromPoint?.call(owner, click.x, click.y);
+  if (position === null || position === undefined) return false;
+  return place(position.offsetNode, position.offset);
+}
+
 /** The CSS a placed box is drawn with. */
 function boxStyle(placed: Placed): React.CSSProperties {
   return {
@@ -167,14 +201,15 @@ function boxStyle(placed: Placed): React.CSSProperties {
 function paperAround(
   placed: Placed,
   paperAt: (x: number, y: number) => string | undefined,
-): string | undefined {
+): React.CSSProperties | undefined {
   const margin = 3;
-  const samples = [
+  const at = [
     paperAt(placed.left - margin, placed.top - margin),
     paperAt(placed.left + placed.width + margin, placed.top - margin),
     paperAt(placed.left - margin, placed.top + placed.height + margin),
     paperAt(placed.left + placed.width + margin, placed.top + placed.height + margin),
-  ].filter((sample): sample is string => sample !== undefined);
+  ];
+  const samples = at.filter((sample): sample is string => sample !== undefined);
   let best: string | undefined;
   let most = 0;
   for (const sample of samples) {
@@ -184,7 +219,29 @@ function paperAround(
       most = count;
     }
   }
-  return best;
+  if (best === undefined) return undefined;
+  // THREE OF FOUR AGREEING is flat paper with a stray neighbour at the fourth. PAPER THAT IS NOT ONE COLOUR is shading,
+  // and a flat patch of its commonest sample would be a visible rectangle over it: where no three agree, the editor's
+  // paper is the gradient between the top pair and the bottom pair, which is how a page shades (a fill that varies
+  // across the block's height), and it ends at the same colours.
+  if (most >= Math.min(3, samples.length)) return { backgroundColor: best };
+  const top = averageColour(at[0], at[1]) ?? averageColour(at[2], at[3]);
+  const bottom = averageColour(at[2], at[3]) ?? top;
+  if (top === undefined || bottom === undefined) return { backgroundColor: best };
+  return { backgroundImage: `linear-gradient(to bottom, ${top}, ${bottom})` };
+}
+
+/** The mean of two sampled `rgb(r, g, b)` colours, or of the one there is; `undefined` where neither reads. */
+function averageColour(a: string | undefined, b: string | undefined): string | undefined {
+  const read = (sample: string | undefined): readonly number[] | undefined => {
+    const found = /^rgb\((\d+), (\d+), (\d+)\)$/u.exec(sample ?? '');
+    return found === null ? undefined : [Number(found[1]), Number(found[2]), Number(found[3])];
+  };
+  const x = read(a);
+  const y = read(b);
+  const mixed = x === undefined ? y : y === undefined ? x : x.map((value, at) => (value + (y[at] ?? value)) / 2);
+  if (mixed === undefined) return undefined;
+  return `rgb(${mixed.map((value) => String(Math.round(value))).join(', ')})`;
 }
 
 /**
@@ -242,7 +299,9 @@ export function TextEditLayer({
 }: TextEditLayerProps): ReactElement {
   const { _ } = useLingui();
   /** The open block: its position in the answer, and the version that answer was read at. */
-  const [opened, setOpened] = useState<{ readonly at: number; readonly version: DocVersion } | undefined>();
+  const [opened, setOpened] = useState<
+    { readonly at: number; readonly version: DocVersion; readonly click: Click | undefined } | undefined
+  >();
   // A NEW READ CLOSES THE EDITOR, and it is DERIVED rather than reset in an
   // effect: an open block's indices describe the version it was read at, so an
   // editor over a newer answer would write words over objects the page no
@@ -261,9 +320,9 @@ export function TextEditLayer({
       ? -1
       : blocks.blocks.findIndex((block) => overlaps(block.box, written.box) && pastItsPage(block.box, geometry.crop));
   const open = chosen ?? (regrown === -1 ? undefined : regrown);
-  const setOpen = (at: number | undefined): void => {
+  const setOpen = (at: number | undefined, click?: Click): void => {
     setWritten(undefined);
-    setOpened(at === undefined || blocks === undefined ? undefined : { at, version: blocks.version });
+    setOpened(at === undefined || blocks === undefined ? undefined : { at, version: blocks.version, click });
   };
 
   const onKeyDown = useCallback(
@@ -309,6 +368,7 @@ export function TextEditLayer({
           return (
             <BlockEditor
               block={block}
+              click={chosen === undefined ? undefined : opened?.click}
               geometry={geometry}
               // THE BLOCK'S POSITION AND THE VERSION, so a new read — or the
               // same slot holding a different block — is a new editor rather
@@ -343,10 +403,13 @@ export function TextEditLayer({
             className={past ? 'm-text-block m-text-block--past' : 'm-text-block'}
             data-text-block={String(at)}
             key={`block-${String(blocks.version)}-${String(at)}`}
-            onClick={() => {
-              setOpen(at);
+            onClick={(event) => {
+              // A KEY'S ACTIVATION reports a click at no point (`detail` 0): the caret then goes to the end, as before.
+              setOpen(at, event.detail === 0 ? undefined : { x: event.clientX, y: event.clientY });
             }}
-            style={boxStyle(placed)}
+            // A SMALLER BLOCK ABOVE A LARGER ONE that holds it, so the click on a heading inside a column's box is the
+            // heading's, and the larger is reached where the smaller is not: stacked by area, the smallest on top.
+            style={{ ...boxStyle(placed), zIndex: 1 + blocks.blocks.filter((other) => area(other.box) > area(block.box)).length }}
             type="button"
           />
         );
@@ -444,7 +507,9 @@ interface BlockEditorProps {
   readonly block: TextBlock;
   readonly geometry: OverlayPage;
   readonly placed: Placed;
-  readonly paper: string | undefined;
+  readonly paper: React.CSSProperties | undefined;
+  /** Where the person clicked to open it, in the window's pixels: the caret goes there. None for a key. */
+  readonly click: { readonly x: number; readonly y: number } | undefined;
   /** Whether the block's words run past the page as read, which the editor says beside them (the owner's Q7). */
   readonly past: boolean;
   readonly onCommit: (text: string) => Promise<BlockCommit>;
@@ -551,6 +616,7 @@ function drawRun(span: HTMLElement, style: TextBlock['style'], zoom: number): vo
  */
 function BlockEditor({
   block,
+  click,
   geometry,
   placed,
   paper,
@@ -608,13 +674,16 @@ function BlockEditor({
       }),
     );
     element.focus();
+    // WHERE THE PERSON CLICKED, when they clicked: the character under that point, which is why a click in the middle of
+    // a paragraph opens it there and not at its end. A key, or a point outside the words, leaves it at the end.
+    if (click !== undefined && caretAt(element, click)) return;
     const range = owner.createRange();
     range.selectNodeContents(element);
     range.collapse(false);
     const selection = owner.getSelection();
     selection?.removeAllRanges();
     selection?.addRange(range);
-  }, [block]);
+  }, [block, click]);
 
   // AT THE ZOOM ON SCREEN: each run's size times the zoom, again whenever the zoom moves, on the runs as they are now
   // — what the person typed stays.
@@ -692,7 +761,16 @@ function BlockEditor({
           fontWeight: block.style.bold ? 700 : 400,
           fontStyle: block.style.italic ? 'italic' : 'normal',
           color: `rgb(${String(r)}, ${String(g)}, ${String(b)})`,
-          ...(paper === undefined ? {} : { backgroundColor: paper }),
+          ...paper,
+          // THE PARAGRAPHS' SHAPE (ADR-0179): the alignment the lines keep, and a first line set in or out from the rest.
+          // A hanging indent is a negative one, drawn as padding on the block and the first line taken back out.
+          textAlign: block.shape.align,
+          ...(block.shape.align === 'left' && block.shape.firstIndent !== 0
+            ? {
+                paddingLeft: Math.max(0, -block.shape.firstIndent) * geometry.zoom,
+                textIndent: block.shape.firstIndent * geometry.zoom,
+              }
+            : {}),
         }}
       />
       {/* THE HANDLES, a mark and not a control — see the file's header. */}

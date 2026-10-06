@@ -11,7 +11,7 @@ Edit text lets you change the words already on a page, in place, keeping their f
 ## Steps
 
 1. In the rail, choose **Edit**, then **Edit text** in the **Text** group (its full name is **Edit text on the page**).
-2. Every block of text you can edit is outlined. Click the block you want.
+2. Every block of text you can edit is outlined. Click the block you want, and the cursor opens where you clicked.
 3. Type your changes. If a line gets longer than its block, it wraps onto a new line and the text below moves down.
 4. Press **Esc** or click away to finish. The change is written into the page.
 
@@ -20,6 +20,10 @@ Edit text lets you change the words already on a page, in place, keeping their f
 ## Good to know
 
 - Undo with **Ctrl+Z** puts the text back as it was.
+- A paragraph is edited as a paragraph. A line that wraps at the edge of the block is part of the same paragraph, so the words flow as you type, and only the lines from your change onward are set again; the lines above and below stay as they were. A new paragraph starts only where you press **Enter**.
+- Each word keeps its own look. A bold word that moves to the next line is still bold, and a word you type takes the look of the word you typed it into. A centred or right-aligned paragraph stays that way, and so does an indented first line.
+- A single word wider than the block is broken between letters at the block's edge, so it never runs across what sits beside it.
+- Where the page behind the block is shaded, the box you type in is shaded to match rather than a flat patch. Where two blocks overlap, a click chooses the smaller one.
 - While you type, the words are shown in the page's own font wherever the document carries that font and Monstera can confirm its letters are the ones on the page. Otherwise they are shown in a similar font of the same kind, and the page itself still gets its own font when you finish.
 - If the page's font cannot show a word you type, that word is set in another copy of the same font already on the page where one can show it, and otherwise in the closest font Monstera brings with it or one installed on this computer whose licence allows editing. The rest of the line keeps the page's font.
 - If none of those fonts can show a character, it is drawn as a small empty box (□) and your change is still made. The text keeps the real character, so copying or searching finds it, and Monstera tells you which characters are shown as boxes and on which page.
