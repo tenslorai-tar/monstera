@@ -61,6 +61,14 @@ export class ShapingFace {
    * @param faceIndex which face of a collection
    * @param axes where each variation axis is pinned; an axis not named stays at its default
    */
+  /**
+   * The first face of `bytes` at its default instance, or `null` where they hold none HarfBuzz can read — the one case
+   * the constructor throws for, asked first, so a caller for which an unreadable program is an answer needs no `catch`.
+   */
+  static readable(bytes: Uint8Array): ShapingFace | null {
+    return new Face(new HarfBuzzBlob(bytes), 0).upem === 0 ? null : new ShapingFace(bytes, 0, {});
+  }
+
   constructor(bytes: Uint8Array, faceIndex: number, axes: Readonly<Record<string, number>>) {
     this.#face = new Face(new HarfBuzzBlob(bytes), faceIndex);
     if (this.#face.upem === 0) throw new Error('the bytes hold no font face HarfBuzz can read');
@@ -140,6 +148,11 @@ export class ShapingFace {
   /** The face's PostScript name (name 6), `''` where it states none. */
   postscriptName(): string {
     return this.#face.getName(6, 'en');
+  }
+
+  /** Every code point the face's `cmap` maps. */
+  unicodes(): readonly number[] {
+    return Array.from(this.#face.collectUnicodes());
   }
 
   /** The glyph the face maps `codePoint` to, `undefined` where it maps none. */

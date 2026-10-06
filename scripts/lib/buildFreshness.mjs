@@ -137,6 +137,8 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/boxFont.ts', 'packages/kernel/dist/boxFont.js', 'tsc'],
   // AND THE ONE RULE for a subset's name, by which an edit finds a sibling (Decision 4).
   ['packages/kernel/src/subsetName.ts', 'packages/kernel/dist/subsetName.js', 'tsc'],
+  // AND THE CHECK a run's font passes before it is offered to the editor (ADR-0175).
+  ['packages/kernel/src/runFont.ts', 'packages/kernel/dist/runFont.js', 'tsc'],
 ];
 
 /**

@@ -49,6 +49,8 @@ interface SubsetExports {
 const MEMORY_MODE_WRITABLE = 2;
 /** `HB_SUBSET_FLAGS_RETAIN_GIDS`: a glyph keeps its id, so ids a shaper produced from the whole face stay valid. */
 const RETAIN_GIDS = 0x2;
+/** `HB_SUBSET_FLAGS_NO_HINTING`: the hinting tables and each glyph's instructions are left out (`hb-subset.h`). */
+const NO_HINTING = 0x1;
 
 /**
  * The part of Node's `WebAssembly` global this module uses, written out: this build's libraries declare no
@@ -113,6 +115,12 @@ export interface SubsetRequest {
   readonly glyphs?: Iterable<number>;
   /** Keep every glyph's id, so ids taken from the whole face stay valid in the subset. */
   readonly retainGlyphIds?: boolean;
+  /**
+   * Leave out the hinting: TrueType's bytecode (`fpgm`, `prep`, `cvt`, each glyph's instructions) and CFF's hints. For a
+   * font built from a document's program for another parser (ADR-0175), since bytecode is how a hostile font attacks the
+   * rasteriser that runs it.
+   */
+  readonly dropHinting?: boolean;
   /** Which face of a collection (`.ttc`) the subset is made from; the first where the file holds one face. */
   readonly faceIndex?: number;
   /**
@@ -144,6 +152,9 @@ export function subsetFont(font: Uint8Array, request: SubsetRequest): Uint8Array
     for (const glyph of request.glyphs ?? []) hb.hb_set_add(glyphs, glyph);
     if (request.retainGlyphIds === true) {
       hb.hb_subset_input_set_flags(input, hb.hb_subset_input_get_flags(input) | RETAIN_GIDS);
+    }
+    if (request.dropHinting === true) {
+      hb.hb_subset_input_set_flags(input, hb.hb_subset_input_get_flags(input) | NO_HINTING);
     }
     // EVERY AXIS AT ITS DEFAULT FIRST, then the named ones where they were asked: a later pin of one axis replaces
     // that axis' default, and an axis left unpinned would leave the subset variable.

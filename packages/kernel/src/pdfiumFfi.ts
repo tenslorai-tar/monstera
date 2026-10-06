@@ -9,6 +9,7 @@ import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { readFace } from './fontFaces.js';
 import { BOX, boxFont } from './boxFont.js';
 import { namedSubset } from './fontSubset.js';
+import { type DrawnGlyph, runFontFor } from './runFont.js';
 import { withoutSubsetTag } from './subsetName.js';
 import { ShapingFace } from './textShaping.js';
 import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
@@ -130,6 +131,11 @@ interface Bound {
   readonly fontData: Native;
   readonly fontAscent: Native;
   readonly fontDescent: Native;
+  readonly glyphWidth: Native;
+  readonly glyphPath: Native;
+  readonly glyphPathSegments: Native;
+  readonly glyphPathSegment: Native;
+  readonly segmentPoint: Native;
   readonly loadStandardFont: Native;
   readonly loadFont: Native;
   readonly pageBox: Native;
@@ -428,6 +434,16 @@ export function openPdfium(libraryPath: string): void {
     // measure a pitch from.
     fontAscent: native(library.func('int FPDFFont_GetAscent(void *font, float size, _Out_ float *ascent)')),
     fontDescent: native(library.func('int FPDFFont_GetDescent(void *font, float size, _Out_ float *descent)')),
+    // WHAT PDFium DRAWS FOR A CHARACTER, the readings a run's font is checked against (ADR-0175). Both take a CODE POINT
+    // where their header says "glyph", measured 2026-10-06: the path is in ems whatever the size, and the width in
+    // thousandths at a size of 1000. The path is PDFium's, owned by the font, and freed with it.
+    glyphWidth: native(
+      library.func('int FPDFFont_GetGlyphWidth(void *font, uint32_t glyph, float size, _Out_ float *width)'),
+    ),
+    glyphPath: native(library.func('void *FPDFFont_GetGlyphPath(void *font, uint32_t glyph, float size)')),
+    glyphPathSegments: native(library.func('int FPDFGlyphPath_CountGlyphSegments(void *path)')),
+    glyphPathSegment: native(library.func('void *FPDFGlyphPath_GetGlyphPathSegment(void *path, int index)')),
+    segmentPoint: native(library.func('int FPDFPathSegment_GetPoint(void *segment, _Out_ float *x, _Out_ float *y)')),
     // ONE OF THE FOURTEEN STANDARD FONTS, for a write the page's own font cannot
     // carry (ADR-0097). Loaded by name and never embedded — every conforming
     // reader supplies them. THIS handle IS ours, unlike `textFont`'s, so
@@ -1213,21 +1229,95 @@ const MAX_FONT_PROGRAM_BYTES = 32 * 1024 * 1024;
 function programOf(bindings: Bound, font: unknown, programs: Map<string, ProgramFace | undefined>): ProgramFace | undefined {
   const key = String(koffi.address(font));
   if (programs.has(key)) return programs.get(key);
-  let face: ProgramFace | undefined;
-  if (numberFrom(bindings.fontIsEmbedded(font), 'FPDFFont_GetIsEmbedded') === 1) {
-    const needed = [0];
-    if (numberFrom(bindings.fontData(font, null, 0, needed), 'FPDFFont_GetFontData') === 1) {
-      const length = needed[0] ?? 0;
-      if (length > 0 && length <= MAX_FONT_PROGRAM_BYTES) {
-        const bytes = new Uint8Array(length);
-        if (numberFrom(bindings.fontData(font, bytes, length, needed), 'FPDFFont_GetFontData') === 1) {
-          face = programFace(bytes);
-        }
-      }
-    }
-  }
+  const bytes = embeddedProgramOf(bindings, font);
+  const face = bytes === null ? undefined : programFace(bytes);
   programs.set(key, face);
   return face;
+}
+
+/**
+ * An EMBEDDED font's program, decoded, or `null` where the font is not embedded or the program is past
+ * {@link MAX_FONT_PROGRAM_BYTES}. Never a substitute's: for a font that is not embedded `FPDFFont_GetFontData` answers
+ * the program PDFium draws with instead, which is PDFium's choice and not the document's.
+ */
+function embeddedProgramOf(bindings: Bound, font: unknown): Uint8Array | null {
+  if (numberFrom(bindings.fontIsEmbedded(font), 'FPDFFont_GetIsEmbedded') !== 1) return null;
+  const needed = [0];
+  if (numberFrom(bindings.fontData(font, null, 0, needed), 'FPDFFont_GetFontData') !== 1) return null;
+  const length = needed[0] ?? 0;
+  if (length <= 0 || length > MAX_FONT_PROGRAM_BYTES) return null;
+  const bytes = new Uint8Array(length);
+  return numberFrom(bindings.fontData(font, bytes, length, needed), 'FPDFFont_GetFontData') === 1 ? bytes : null;
+}
+
+/**
+ * The font the editor draws the run whose first object is `index` in, rebuilt from its own program, or `null` where it
+ * has none (ADR-0175, `runFont.ts`). Checked against every character drawn in that font ON THE PAGE, the run's and every
+ * other object's in it: a joined run spans several objects, and a letter the person types may be one another line holds.
+ */
+export function runFont(session: PdfiumSession, page: number, index: number): Promise<Uint8Array | null> {
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const font: unknown = bindings.textFont(textObjectAt(bindings, handle, page, index));
+      if (font === null) return null;
+      const program = embeddedProgramOf(bindings, font);
+      if (program === null) return null;
+      const wanted = String(koffi.address(font));
+      const inFont: unknown[] = [];
+      const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+      for (let at = 0; at < count; at += 1) {
+        const object: unknown = bindings.getObject(handle, at);
+        if (object === null || numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') !== TEXT_OBJECT) continue;
+        const own: unknown = bindings.textFont(object);
+        if (own !== null && String(koffi.address(own)) === wanted) inFont.push(object);
+      }
+      const textPage: unknown = bindings.loadTextPage(handle);
+      if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read a run’s characters');
+      let text: string;
+      try {
+        text = drawnTextOn(bindings, textPage, inFont).join('');
+      } finally {
+        bindings.closeTextPage(textPage);
+      }
+      const drawn = new Map<number, DrawnGlyph>();
+      for (const character of text) {
+        const point = character.codePointAt(0) ?? 0;
+        if (drawn.has(point)) continue;
+        const glyph = drawnGlyphOf(bindings, font, point);
+        if (glyph === null) return null;
+        drawn.set(point, glyph);
+      }
+      return runFontFor(program, drawn);
+    }),
+  );
+}
+
+/**
+ * What PDFium draws for `point` in `font`, in thousandths of an em: its width, and the box of its path's points, `null`
+ * for a glyph with no path (a space). `null` where PDFium answers no width, which no check can stand in for.
+ */
+function drawnGlyphOf(bindings: Bound, font: unknown, point: number): DrawnGlyph | null {
+  const width = [0];
+  if (numberFrom(bindings.glyphWidth(font, point, 1000, width), 'FPDFFont_GetGlyphWidth') !== 1) return null;
+  const path: unknown = bindings.glyphPath(font, point, 1000);
+  const segments = path === null ? 0 : numberFrom(bindings.glyphPathSegments(path), 'FPDFGlyphPath_CountGlyphSegments');
+  let box: DrawnGlyph['box'] = null;
+  for (let at = 0; at < segments; at += 1) {
+    const x = [0];
+    const y = [0];
+    if (numberFrom(bindings.segmentPoint(bindings.glyphPathSegment(path, at), x, y), 'FPDFPathSegment_GetPoint') !== 1) {
+      continue;
+    }
+    // IN EMS, measured, so a thousand times each point is the thousandths the program's reading is in.
+    const px = (x[0] ?? 0) * 1000;
+    const py = (y[0] ?? 0) * 1000;
+    box =
+      box === null
+        ? { x0: px, y0: py, x1: px, y1: py }
+        : { x0: Math.min(box.x0, px), y0: Math.min(box.y0, py), x1: Math.max(box.x1, px), y1: Math.max(box.y1, py) };
+  }
+  return { advance: width[0] ?? 0, box };
 }
 
 /** The most bytes of one base name read: a name is a PDF name, and one this long is not a font's (CR-NAT-12). */

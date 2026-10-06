@@ -105,12 +105,23 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 14);
+refuseStaleBuild(root, PDFIUM_COMMAND, 15);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
-const { objectRuns, openPdfium, pdfiumWriter, pageText, renderPageBitmap, replaceTextObjects, textObjectIndices, textRuns } =
-  await import('../../packages/kernel/dist/pdfiumFfi.js');
+const {
+  objectRuns,
+  openPdfium,
+  pdfiumWriter,
+  pageText,
+  renderPageBitmap,
+  replaceTextObjects,
+  runFont,
+  textObjectIndices,
+  textRuns,
+} = await import('../../packages/kernel/dist/pdfiumFfi.js');
+// THE ONE HARFBUZZ READER, to read a rebuilt run font back (ADR-0175).
+const { ShapingFace } = await import('../../packages/kernel/dist/textShaping.js');
 const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
 const specs = await import('../../packages/kernel/dist/pdfiumSpecs.js');
 // OVER BYTES THAT OPEN WITH NO PASSWORD, as every fixture here but the encrypted one does (`withNoPassword`).
@@ -241,7 +252,7 @@ const failures = [];
 // ADR-0173's pieces: a word saved in a bundled face, its object, its wrap, the word the twin refused, an unreadable
 // catalogue either way, and a control either side, and 97 from its correction: a character past the BMP and its premise,
 // and 100 from the box: its premise, its reading, and its answer (ADR-0174).
-const roster = createRoster(failures, { cases: 113 });
+const roster = createRoster(failures, { cases: 115 });
 
 /**
  * @param {string} name
@@ -527,6 +538,7 @@ async function main() {
   await pieceCases();
   await replacePieceCases();
   await siblingCases();
+  await runFontCases();
 
   process.stdout.write(
     failures.length > 0
@@ -1194,6 +1206,68 @@ async function siblingCases() {
   } finally {
     bindEditFaces(null);
   }
+}
+
+/**
+ * The font the editor draws a run in, rebuilt by the host from the run's own program
+ * ([ADR-0175](../../docs/DECISIONS/0175-the-typing-box-draws-a-run-in-its-own-font-rebuilt-in-the-host.md)), against the
+ * real library: a run in an Arimo subset an edit embedded has one, and its glyphs are the program's. THE CONTROL is the
+ * Helvetica run on the same page, which is not embedded, so PDFium's substitute is all there is and nothing is offered.
+ */
+async function runFontCases() {
+  const fonts = fontsDirectory(root);
+  if (!existsSync(fonts)) {
+    record('the bundled fonts are provisioned for the run font cases', false, `${fonts} is absent; run scripts/provision/fonts.mjs`);
+    return;
+  }
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  /** @type {Uint8Array} */
+  let edited;
+  try {
+    const original = await aParagraph();
+    const lines = ((await blocksOf(original)).blocks[0]?.lines ?? []).map((line) => line.runs.map((run) => run.index));
+    edited = await localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines, text: [`${BLOCK_LINES[0] ?? ''} Привет`, BLOCK_LINES[1], BLOCK_LINES[2]].join('\n') }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  } finally {
+    bindEditFaces(null);
+  }
+  const session = await pdfiumWriter.open(edited);
+  try {
+    const runs = (await objectRuns(session, 0)).runs;
+    const piece = runs.find((run) => run.text.includes('Привет'));
+    const helvetica = runs.find((run) => run.style.font === 'Helvetica');
+    const pieceFont = piece === undefined ? null : await runFont(session, 0, piece.index);
+    const helveticaFont = helvetica === undefined ? 'no Helvetica run' : await runFont(session, 0, helvetica.index);
+    // THE REBUILT FONT DRAWS THE RUN: every character of the piece maps to a glyph in it.
+    const mapped = pieceFont === null ? [] : Array.from((piece?.text ?? '').trim(), (c) => runFontGlyph(pieceFont, c));
+    record(
+      'a run in an embedded subset has a font rebuilt from its program, mapping every character the run holds',
+      pieceFont !== null && mapped.length > 0 && mapped.every((glyph) => glyph > 0),
+      `${String(pieceFont?.length ?? 'no font')} bytes; glyphs ${JSON.stringify(mapped)}`,
+    );
+    record(
+      'CONTROL: a run in a font that is not embedded has none, PDFium’s substitute being all there is',
+      helveticaFont === null,
+      helveticaFont === null ? 'none' : typeof helveticaFont === 'string' ? helveticaFont : `${String(helveticaFont.length)} bytes`,
+    );
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+}
+
+/** The glyph `font` maps `character` to, read by the one HarfBuzz reader. @param {Uint8Array} font @param {string} character */
+function runFontGlyph(font, character) {
+  return new ShapingFace(font, 0, {}).glyphFor(character.codePointAt(0) ?? 0) ?? 0;
 }
 
 /**
