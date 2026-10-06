@@ -4921,6 +4921,35 @@ for (const look of LOOKS) {
     expect(runs.map((run) => run.weight)).toStrictEqual(['400', '700', '400']);
     const sizes = [BODY_RUN.size, SET_APART_RUN.size, BODY_RUN.size];
     expect(runs.map((run, at) => Math.abs(run.size - (sizes[at] ?? 0) * scale) < 0.05)).toStrictEqual([true, true, true]);
+    // EVERY HANDLE'S TARGET LIES OUTSIDE THE BLOCK'S FRAME and is 24 px a side, so a press on a letter can never land on a
+    // handle. Eight handles are required first: no handle at all would leave the overlap list empty for the wrong reason.
+    // CONTROL: the target the handles had before, 24 px centred on the frame's corner, overlaps the frame by a quarter of
+    // itself, which is what this measure reports for it.
+    const placerBox = await page.locator('.m-text-editor-placer').boundingBox();
+    expect(placerBox).not.toBeNull();
+    const frame = placerBox ?? { x: 0, y: 0, width: 0, height: 0 };
+    const overlap = (a: { x: number; y: number; width: number; height: number }, b: typeof frame) =>
+      Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) *
+      Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+    const targets = await page.locator('[data-handle]').evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const rect = button.getBoundingClientRect();
+        return { handle: button.getAttribute('data-handle') ?? '', x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      }),
+    );
+    expect(targets.map((target) => target.handle).sort()).toStrictEqual(['e', 'n', 'ne', 'nw', 'r', 'se', 'sw', 'w']);
+    expect(targets.filter((target) => overlap(target, frame) > 0.5).map((target) => target.handle)).toStrictEqual([]);
+    expect(targets.filter((target) => target.width < 23.5 || target.height < 23.5).map((target) => target.handle)).toStrictEqual([]);
+    expect(overlap({ x: frame.x - 12, y: frame.y - 12, width: 24, height: 24 }, frame)).toBeCloseTo(144, 0);
+    // THE FIRST LETTERS OF EACH LINE are the editor's, read at the point four pixels in from the line's start.
+    const startsOfLines = await editor.locator('.m-text-editor__line').evaluateAll((lines) =>
+      lines.map((line) => {
+        const rect = line.getBoundingClientRect();
+        const found = document.elementFromPoint(rect.x + 4, rect.y + rect.height / 2);
+        return found !== null && found.closest('[data-text-editor]') !== null;
+      }),
+    );
+    expect(startsOfLines).toStrictEqual([true, true]);
     // TYPED AT THE END, the words go into the last run and take its style, and are read back as typed. THE CARET IS
     // MOVED THERE: the editor opens with it where the page was pressed (ADR-0179), which is the middle of the block
     // for `outline.click()`, and typing there put the words inside the first line.
@@ -5049,10 +5078,10 @@ for (const look of LOOKS) {
           found: found === null ? 'nothing' : `${found.tagName} ${String(found.getAttribute('class'))}`,
         };
       },
-      // ACROSS THE LINE'S MIDDLE, not four pixels in from its start: the block's south-west resize handle is a 24 px
-      // target centred on the frame's corner, so the line's first letters belong to it by design, and that is no
-      // clipping below the foot. The handle is named in the message when it is the thing found.
-      { x: (last?.x ?? 0) + (last?.width ?? 0) / 2, y: (last?.y ?? 0) + (last?.height ?? 0) / 2 },
+      // FOUR PIXELS IN FROM THE LINE'S START, where the south-west handle's target used to reach (a 24 px target centred
+      // on the frame's corner, measured 2026-10-06 on Chromium 151: this point answered that handle). The handles lie
+      // outside the frame now, so it answers the editor; the element is named in the message when it does not.
+      { x: (last?.x ?? 0) + 4, y: (last?.y ?? 0) + (last?.height ?? 0) / 2 },
     );
     expect(hit.editors, `the point at the last line's middle belongs to ${hit.found}`).toBe(true);
 
@@ -5219,6 +5248,53 @@ for (const look of LOOKS) {
     await page.keyboard.press('Delete');
     await expect.poll(() => sent.length).toBe(2);
     expect((sent[1] as { command: unknown }).command).toMatchObject({ kind: 'deletePageObjects', indices: [2] });
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+  });
+}
+
+// THE COMPONENTS DIALOG'S TALLEST STATE, in a 760 by 560 window: a component whose files changed, with the note that
+// every file was checked and the repair line, beside the other six rows. The dialog pattern bounds a dialog at four
+// fifths of the window (the owner, 2026-09-25), which is 448 px here, and this body asked for 481: the repair line
+// was cut by 33 px and had to be scrolled to (the owner's item R4). Nothing in the body may scroll now.
+for (const look of LOOKS) {
+  test(`${look.name}: the COMPONENTS dialog's changed state fits a 760 by 560 window with nothing to scroll to`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 760, height: 560 });
+    await bridgeUnder(page, look, { changedComponents: ['ghostscript'] });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await startScreenListening(page);
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Components');
+    await page.keyboard.press('Enter');
+
+    const dialog = page.getByRole('dialog', { name: 'Components' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Verify files' }).click();
+    // THE REOPENED DIALOG, with the changed row and both notes: the state under test, not the cheap first look.
+    await expect(dialog.getByText('1 missing, 2 altered, 0 unexpected')).toBeVisible();
+    const repair = dialog.getByText(/repair or reinstall Monstera/u);
+    await expect(repair).toBeVisible();
+    await expect(dialog.getByText('Every file was checked against the list this build of Monstera was made with.')).toBeVisible();
+
+    // NOTHING INSIDE IT SCROLLS: every element of the dialog that can scroll has no surplus. The premise that the dialog
+    // has a scroller at all is not asserted; the surplus is read off every element whose overflow could produce one.
+    const surpluses = await dialog.evaluate((element) =>
+      [...element.querySelectorAll('*'), element]
+        .filter((candidate) => ['auto', 'scroll'].includes(getComputedStyle(candidate).overflowY))
+        .map((candidate) => candidate.scrollHeight - candidate.clientHeight),
+    );
+    expect(Math.max(0, ...surpluses), `scroll surplus of each scrolling element: ${JSON.stringify(surpluses)}`).toBeLessThanOrEqual(1);
+    // THE LAST LINE IS WHOLLY IN THE WINDOW, which a clipped scroller would fail: the viewport check counts clipping.
+    await expect(repair).toBeInViewport({ ratio: 1 });
+    await expect(dialog.getByRole('button', { name: 'Verify files' })).toBeInViewport({ ratio: 1 });
 
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));

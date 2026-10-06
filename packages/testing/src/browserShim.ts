@@ -29,6 +29,7 @@ import {
   TEXT_BLOCKS_PART,
   type LibraryEntry,
   NATIVE_COMPONENT_IDS,
+  type NativeComponentId,
   SECRET_SETTING_IDS,
   channels,
   createClient,
@@ -250,6 +251,14 @@ export interface BrowserShimOptions {
    * the unavailable dialog is the one that asks for it.
    */
   readonly ocrLanguages?: readonly OcrLanguage[];
+  /**
+   * The native components whose files do not match the manifest once *Verify files* hashes them, by id.
+   *
+   * The Components dialog's tallest state is a changed component with every row beside it, and a browser holds no
+   * file that could differ, so a case about that state names the component, as `ocrLanguages` names a machine's models.
+   * Answered `changed` only to a verify, as the shell does: the cheap first look reads what is present.
+   */
+  readonly changedComponents?: readonly NativeComponentId[];
   /**
    * Documents whose lane is saturated, by id.
    *
@@ -1047,15 +1056,18 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'app.components': ({ verify }) =>
       Promise.resolve(
         ok({
-          components: NATIVE_COMPONENT_IDS.map((id) => ({
-            id,
-            name: id,
-            version: 'shim',
-            state: verify ? ('verified' as const) : ('present' as const),
-            missing: 0,
-            altered: 0,
-            extra: 0,
-          })),
+          components: NATIVE_COMPONENT_IDS.map((id) => {
+            const changed = verify && (options.changedComponents ?? []).includes(id);
+            return {
+              id,
+              name: id,
+              version: 'shim',
+              state: changed ? ('changed' as const) : verify ? ('verified' as const) : ('present' as const),
+              missing: changed ? 1 : 0,
+              altered: changed ? 2 : 0,
+              extra: 0,
+            };
+          }),
         }),
       ),
 
