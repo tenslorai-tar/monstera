@@ -124,14 +124,7 @@ export async function bridge(
     // `false` is what a Skip stores. The first run itself is its own case in `renderedScreen.pw.ts`,
     // which seeds `true`. The id is the contract's, which the setting and the Electron canvas harness
     // take too — one spelling, so no harness can start on the first run by a rename it did not see.
-    // AND A TIP THAT NAMES NO SCREEN: the status bar's tip (ADR-0159) picks one of several candidates
-    // through `Math.random`, which nothing here can seed — so the words, and therefore their width,
-    // differ by page load. A baseline captured against one tip and compared against another differs at
-    // exactly the status bar, which is what `section-home` did (669-815 pixels, 2026-10-06, before this
-    // line existed) whatever the capture otherwise waited on. `'appearance.status-tips'` is the setting's
-    // own id (`packages/ui/src/settings/appearance.ts`), not re-exported from `@monstera/contract` since
-    // nothing else outside `packages/ui` reads it.
-    settings: { [AI_SETUP_AT_START_SETTING_ID]: false, 'appearance.status-tips': false, ...options.settings },
+    settings: { [AI_SETUP_AT_START_SETTING_ID]: false, ...options.settings },
   });
 
   // The client is keyed by channel; the bridge is keyed by string. The cast is

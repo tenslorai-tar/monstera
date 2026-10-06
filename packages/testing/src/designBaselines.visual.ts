@@ -59,6 +59,13 @@ async function openedOn(page: Page, look: Look): Promise<void> {
       { kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Baseline.pdf' },
     ],
     documentBytes: new Map([[docId, bytes]]),
+    // OFF, FOR THIS SUITE ONLY: the status bar's tip (ADR-0159) picks one of several candidates through
+    // `Math.random`, which nothing here can seed, so the words — and their width — differ by page load. A
+    // baseline captured against one tip and compared against another differs at exactly the status bar,
+    // which is what `section-home` did (669-815 pixels, 2026-10-06) whatever the capture otherwise waited
+    // on. Scoped here rather than in `pageBridge.ts`'s shared default: `statusTips.pw.ts` tests the tip
+    // itself and needs it on.
+    settings: { 'appearance.status-tips': false },
   });
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
@@ -338,6 +345,8 @@ for (const look of LOOKS) {
         [LEFT, [['The quick brown fox jumps over the lazy dog.']]],
         [RIGHT, [['The quick red fox leaps over the lazy dog.']]],
       ]),
+      // OFF: `openedOn`'s reason above.
+      settings: { 'appearance.status-tips': false },
     });
     await page.goto('/');
     await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);

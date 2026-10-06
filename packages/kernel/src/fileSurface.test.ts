@@ -104,7 +104,7 @@ describe('the save writes nothing through an object planted at a sibling name', 
     expect(temps.size).toBe(50);
   });
 
-  it('a directory link planted at .bak receives nothing; on Windows it refuses the save at its backup', async () => {
+  it('a directory link planted at .bak receives nothing; the save lands either way, keeping the previous version aside', async () => {
     const { target, outside } = scene();
     const names = siblingNames(target, 1);
     const pointed = join(outside, 'pointed');
@@ -114,15 +114,20 @@ describe('the save writes nothing through an object planted at a sibling name', 
     const saved = await save(target, names);
 
     expect(readdirSync(pointed)).toStrictEqual([]);
-    // BY PLATFORM, because the rename's answer is the platform's: Windows refuses a file renamed onto a junction
-    // (measured 2026-10-03), so the save stops at its backup with the original as it was; POSIX replaces the link
-    // itself, so the save lands and `.bak` becomes a plain file. Neither writes into what the link pointed at.
+    // THE SAVE LANDS EITHER WAY (ADR-0164): the copy-aside goes to `names.previous`, never to `.bak` directly, so
+    // a junction planted at `.bak` cannot block the save itself — only the later rotate-in, which moves
+    // `previous` into `.bak`'s name once the rename has landed. BY PLATFORM, because that rotate's answer is the
+    // platform's: Windows refuses a rename onto a junction (measured 2026-10-03), so the previous version stays
+    // at `names.previous`; POSIX replaces the link itself, so the rotate lands and `.bak` becomes a plain file.
+    // Neither writes into what the link pointed at.
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) throw new Error('unreachable: asserted above');
+    expect(readFileSync(target)).toStrictEqual(NEW);
     if (process.platform === 'win32') {
-      expect(saved.ok).toBe(false);
-      if (!saved.ok) expect(saved.error.stage).toBe('backup');
-      expect(readFileSync(target)).toStrictEqual(OLD);
+      expect(saved.value.previousKeptAt).toBe(names.previous);
+      expect(readFileSync(names.previous)).toStrictEqual(OLD);
     } else {
-      expect(saved.ok).toBe(true);
+      expect(saved.value.previousKeptAt).toBe(names.backups[0]);
       expect(lstatSync(names.backups[0] ?? '').isFile()).toBe(true);
     }
   });
