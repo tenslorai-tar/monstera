@@ -34,6 +34,7 @@ import {
   type CommandDeclaration,
   type DeclaredCommands,
   type WriterOf,
+  type WriterOfRecord,
   declaredCommands,
 } from './commandDeclarations.js';
 // `import type`, NOT `import { type … }` — the second keeps the statement and
@@ -51,8 +52,11 @@ import type { CommandWriter, DocumentContext } from './documentService.js';
 // document, and `engineSeam.ts`'s every other import is `import type`, so the
 // edge costs an importer the object literal and nothing else (ADR-0039).
 import {
+  type AppliedImage,
   type ByteImage,
   type CommandTargets,
+  type DrawnBoxes,
+  NO_BOXES,
   type PreReadAccess,
   type PreReadValue,
   type SessionsByWriter,
@@ -272,7 +276,7 @@ interface WriterFor<K extends CommandKind> {
   // What the request removed is the bus's ability to leave a field out
   // (ADR-0069): every key is required, so `source` and `reads` are decisions
   // taken here rather than arguments that may go unwritten.
-  apply(request: ApplyRequest<WriterOf<K>, K>): Promise<ByteImage | StagedImage | undefined>;
+  apply(request: ApplyRequest<WriterOf<K>, K>): Promise<AppliedImage | StagedImage | undefined>;
   capture(
     session: ExecutionSession<WriterOf<K>>,
     command: CommandOfKind<K>,
@@ -281,7 +285,7 @@ interface WriterFor<K extends CommandKind> {
     session: ExecutionSession<WriterOf<K>>,
     kind: K,
     inverse: CommandPrior[K],
-  ): Promise<ByteImage | StagedImage | undefined>;
+  ): Promise<AppliedImage | StagedImage | undefined>;
 }
 
 /**
@@ -626,6 +630,11 @@ export interface Executed<K extends CommandKind = CommandKind> {
    * answer and it still has to be read.
    */
   readonly trimmed: LogTrim;
+  /**
+   * The characters the operation drew as the missing-character box (ADR-0174). Required for `trimmed`'s reason: the
+   * person is owed them, and {@link NO_BOXES} is the ordinary answer that still has to be read.
+   */
+  readonly drawn: DrawnBoxes;
 }
 
 /**
@@ -641,6 +650,12 @@ export interface Executed<K extends CommandKind = CommandKind> {
  * literal that looked harmless.
  */
 const NO_TRIM: LogTrim = { droppedEntries: 0, droppedBytes: 0 };
+
+/**
+ * What undo and redo report for {@link Executed.drawn}: none, ADR-0174 Decision 3. The person was told which characters
+ * are boxes when the edit was made; an undo takes them away, and a redo puts back what they were told about.
+ */
+const TOLD_AT_THE_EDIT = NO_BOXES;
 
 /** What one undo or redo did. */
 export type Undone = Executed;
@@ -760,7 +775,7 @@ export class CommandBus {
   async #install<K extends CommandKind>(
     kind: K,
     writer: WriterOf<K>,
-    applied: ByteImage | StagedImage | undefined,
+    applied: AppliedImage | StagedImage | undefined,
     context: DocumentContext,
     bytes: ByteImageAccess,
   ): Promise<((destination: string) => Promise<number>) | null> {
@@ -776,7 +791,9 @@ export class CommandBus {
     // BY THE DECLARATION, never by the value — the rule this method's header gives. The casts are `#writerFor`'s
     // correlation: `writerShapes` says which of the two an apply of this writer answers.
     if (shape === 'byte-image') {
-      const image = applied as ByteImage;
+      // THE IMAGE OUT OF THE ANSWER, never the answer itself: a byte-image apply answers the image and what it drew as
+      // boxes (ADR-0174), and installing the answer as bytes is the silent failure this method exists to refuse.
+      const { image } = applied as AppliedImage;
       await bytes.adopt((destination) => context.writeImage(COMMAND_WRITER, image, destination));
       context.replaceCanonicalImage(COMMAND_WRITER, image);
       return (destination) => context.writeImage(COMMAND_WRITER, image, destination);
@@ -793,6 +810,16 @@ export class CommandBus {
       context.writeHeld(COMMAND_WRITER, held, destination),
     );
     return (destination) => context.writeHeld(COMMAND_WRITER, held, destination);
+  }
+
+  /**
+   * The characters an operation drew as boxes (ADR-0174), read BY THE DECLARATION as {@link CommandBus.#install} reads
+   * the image: a byte-image writer answers them beside its image, and the other shapes set no text that can be boxed.
+   */
+  #boxesIn(writer: WriterOfRecord, applied: AppliedImage | StagedImage | undefined): DrawnBoxes {
+    if (writerShapes[writer] !== 'byte-image' || applied === undefined) return NO_BOXES;
+    const { boxed, more } = applied as AppliedImage;
+    return { boxed, more };
   }
 
   /**
@@ -1185,7 +1212,12 @@ export class CommandBus {
     // The bus decides WHEN and never how much — the target is the service's,
     // computed from §9.17's ceiling.
     const trimmed = context.enforceRetention(COMMAND_WRITER);
-    return { entry: recorded, trimmed, version: context.bumpVersion(COMMAND_WRITER) };
+    return {
+      entry: recorded,
+      trimmed,
+      drawn: this.#boxesIn(spec.writer, applied),
+      version: context.bumpVersion(COMMAND_WRITER),
+    };
   }
 
   /**
@@ -1283,7 +1315,7 @@ export class CommandBus {
       // NEVER `installed` here, for either shape: a restore rebuilds the session and replaces no
       // image, so undoing a watermark left main's image watermarked until this line existed.
       await this.#show(entry.command.kind, context, bytes, false);
-      return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
+      return { entry, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
     }
 
     const spec = declaredCommands[entry.command.kind];
@@ -1311,7 +1343,7 @@ export class CommandBus {
 
     log.undo();
     await this.#show(entry.command.kind, context, bytes, writerShapes[spec.writer] !== 'live-session');
-    return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
+    return { entry, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
   }
 
   /**
@@ -1426,7 +1458,7 @@ export class CommandBus {
       this.#recordIfRemoval(spec, context);
       log.redo();
       await this.#show(entry.command.kind, context, inputs, true);
-      return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
+      return { entry, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
     }
     const command = reapplicable(entry, this.#held);
 
@@ -1481,6 +1513,6 @@ export class CommandBus {
 
     log.redo();
     await this.#show(entry.command.kind, context, inputs, writerShapes[spec.writer] !== 'live-session');
-    return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
+    return { entry, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
   }
 }

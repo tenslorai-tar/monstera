@@ -146,7 +146,8 @@ const written = await localPdfiumExecution.apply({
   sources: [],
   reads: undefined,
 });
-const reopened = await pdfiumWriter.open(written);
+// THE IMAGE OUT OF THE ANSWER, beside which the apply names any box it drew (ADR-0174).
+const reopened = await pdfiumWriter.open(written.image);
 const after = (await pageText(reopened, 0)).replace(/\s+/gu, ' ');
 await pdfiumWriter.close(reopened);
 

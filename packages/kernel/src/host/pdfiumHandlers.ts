@@ -1,4 +1,5 @@
 import type { Handlers } from '@monstera/contract';
+import { cappedBoxes } from '@monstera/contract/host';
 import { HeldPassword } from '@monstera/shared';
 
 import type { CommandExecution } from '../commandRouting.js';
@@ -323,8 +324,9 @@ export function createPdfiumHandlers({
         if (error instanceof ReplaceMovesLineError) return failed('replace-moves-line');
         return refusedBy(error);
       }
-      const written = await files.writeOutput(held.outputDirectory, into, applied);
-      return { ok: true, value: { bytes: written } };
+      const written = await files.writeOutput(held.outputDirectory, into, applied.image);
+      // WHAT IT DREW AS BOXES TRAVELS WITH THE COUNT (ADR-0174), through the one cap.
+      return { ok: true, value: { bytes: written, ...cappedBoxes(applied) } };
     },
 
     'engine/invert': async ({ session, inverse, from, password, into }) => {
@@ -351,8 +353,8 @@ export function createPdfiumHandlers({
         }
         return refusedBy(error);
       }
-      const written = await files.writeOutput(held.outputDirectory, into, inverted);
-      return { ok: true, value: { bytes: written } };
+      const written = await files.writeOutput(held.outputDirectory, into, inverted.image);
+      return { ok: true, value: { bytes: written, ...cappedBoxes(inverted) } };
     },
 
     'engine/text-runs': async ({ session, from, password, page }) => {

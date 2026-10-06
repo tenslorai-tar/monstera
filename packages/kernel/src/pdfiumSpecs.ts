@@ -3,7 +3,7 @@ import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
 import type { ApplyRequest, CommandExecution, KindsRoutedTo } from './commandRouting.js';
-import type { ByteImage, Capture, ImageSession, Invert } from './engineSeam.js';
+import type { AppliedImage, Capture, ImageSession, Invert } from './engineSeam.js';
 import {
   applyDeletePageObjects,
   applyPlacePageObject,
@@ -169,7 +169,7 @@ type PdfiumKind = keyof typeof pdfiumSpecs;
 type PdfiumApply<K extends CommandKind> = (
   image: ImageSession,
   command: CommandOfKind<K>,
-) => Promise<ByteImage>;
+) => Promise<AppliedImage>;
 
 /**
  * One PDFium spec, narrowed to the command it was declared for.
@@ -223,7 +223,7 @@ export const localPdfiumExecution: CommandExecution<'pdfium'> = {
   apply<K extends KindsRoutedTo<'pdfium'>>({
     session: image,
     command,
-  }: ApplyRequest<'pdfium', K>): Promise<ByteImage> {
+  }: ApplyRequest<'pdfium', K>): Promise<AppliedImage> {
     return (specFor(command).apply as PdfiumApply<K>)(image, command);
   },
   capture<K extends CommandKind>(
@@ -236,7 +236,7 @@ export const localPdfiumExecution: CommandExecution<'pdfium'> = {
     image: ImageSession,
     kind: K,
     inverse: CommandPrior[K],
-  ): Promise<ByteImage> {
+  ): Promise<AppliedImage> {
     // The mirror-image narrowing both siblings carry: indexing over a generic
     // `kind` yields the union of specs, whose `invert` parameter is the
     // intersection of every prior-state type.

@@ -97,6 +97,7 @@ import {
   MIN_IMAGE_QUALITY,
   MAX_IMAGE_QUALITY,
   FAILURE_DETAIL_SCHEMAS,
+  drawnBoxesShape,
 } from './schemas.js';
 
 /**
@@ -2140,6 +2141,12 @@ export const channels = {
        * figure in megabytes answers a question they did not ask.
        */
       historyDropped: z.number().int().nonnegative(),
+      /**
+       * The characters the command drew as the missing-character box, each with its page, and how many more past
+       * the named ones ([ADR-0174](../../../docs/DECISIONS/0174-a-pdfium-apply-answers-the-characters-it-drew-as-boxes.md)).
+       * REQUIRED and empty when there is none, `historyDropped`'s reason: the person is owed them.
+       */
+      ...drawnBoxesShape,
     }),
     // `stale-target` IS ON THIS CHANNEL ALONE, because a command is the only
     // thing that names existing state (ADR-0041 Decision 2). A read answers with
@@ -3069,7 +3076,8 @@ export const channels = {
     'Writes a copy of an open document where the user picks, opens it, and applies one command to the copy.',
     z.object({ docId: docIdSchema, command: renderableCommandSchema }),
     z.discriminatedUnion('kind', [
-      openedSchema.extend({ kind: z.literal('edited'), historyDropped: z.number().int().nonnegative() }),
+      // AND THE BOXES THE EDIT DREW ON THE COPY, `document.execute`'s list on the copy route (ADR-0174).
+      openedSchema.extend({ kind: z.literal('edited'), historyDropped: z.number().int().nonnegative(), ...drawnBoxesShape }),
       openedSchema.extend({
         kind: z.literal('edit-refused'),
         // A FAILURE'S OWN SHAPE, so a refusal that carries a detail carries it here as on `document.execute`

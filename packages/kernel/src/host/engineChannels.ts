@@ -76,6 +76,7 @@ import {
   drawableSignatureSchema,
   signDocumentSchema,
   signaturePlacementSchema,
+  drawnBoxesShape,
 } from '@monstera/contract/host';
 import { z } from 'zod';
 
@@ -1684,7 +1685,8 @@ export const byteImageWire = {
   // that leaves it out is a compile error rather than a document opened without its key (ADR-0069's rule).
   read: { from: outputNameSchema, password: documentPasswordSchema.nullable() },
   write: { into: outputNameSchema },
-  wrote: z.object({ bytes: z.number().int().nonnegative() }).strict(),
+  // AND WHAT IT DREW AS BOXES (ADR-0174): only the apply knows, so its answer carries them, capped and counted.
+  wrote: z.object({ bytes: z.number().int().nonnegative(), ...drawnBoxesShape }).strict(),
   transferFailures: ['asset-missing', 'engine-refused'],
 } as const satisfies WireShape<
   z.ZodRawShape,

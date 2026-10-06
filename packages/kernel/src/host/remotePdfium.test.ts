@@ -168,7 +168,8 @@ describe('main’s PDFium writer', () => {
         // every assertion made afterwards.
         expect(transfer.snapshots.get(sent.from)).toStrictEqual(new Uint8Array([1, 2]));
         transfer.outputs.set(sent.into, result);
-        return { ok: true, value: { bytes: result.length } };
+        // A BOX AND A COUNT PAST IT (ADR-0174): both must reach the writer's answer, beside the image.
+        return { ok: true, value: { bytes: result.length, boxed: [{ character: '中', page: 0 }], more: 4 } };
       },
     };
     const { writer } = harness(peer, transfer);
@@ -180,7 +181,7 @@ describe('main’s PDFium writer', () => {
         sources: [],
         reads: undefined,
       }),
-    ).toStrictEqual(result);
+    ).toStrictEqual({ image: result, boxed: [{ character: '中', page: 0 }], more: 4 });
     // AND THE INPUT IS GONE. A file that outlives the call is one nothing holds
     // a name for, in a directory nothing sweeps until the host ends.
     expect(transfer.snapshots.size).toBe(0);
@@ -201,7 +202,7 @@ describe('main’s PDFium writer', () => {
         const sent = params as { from: string; into: string };
         expect(transfer.snapshots.get(sent.from)).toStrictEqual(new Uint8Array([7, 7]));
         transfer.outputs.set(sent.into, result);
-        return { ok: true, value: { bytes: result.length } };
+        return { ok: true, value: { bytes: result.length, boxed: [], more: 0 } };
       },
     };
     const { writer } = harness(peer, transfer, keep);
@@ -220,7 +221,7 @@ describe('main’s PDFium writer', () => {
         const frame = params as { into: string; password: unknown };
         sent.push(frame.password);
         transfer.outputs.set(frame.into, new Uint8Array([9]));
-        return { ok: true, value: { bytes: 1 } };
+        return { ok: true, value: { bytes: 1, boxed: [], more: 0 } };
       },
     };
     const { writer } = harness(peer, transfer, keep);
@@ -242,7 +243,7 @@ describe('main’s PDFium writer', () => {
         const sent = params as { from: string; into: string };
         expect(transfer.snapshots.get(sent.from)).toStrictEqual(new Uint8Array([1, 2]));
         transfer.outputs.set(sent.into, new Uint8Array([9]));
-        return { ok: true, value: { bytes: 1 } };
+        return { ok: true, value: { bytes: 1, boxed: [], more: 0 } };
       },
     };
     const { writer } = harness(peer, transfer, keep);
@@ -261,7 +262,7 @@ describe('main’s PDFium writer', () => {
           return { ok: true, value: { captured: true, value: { kind: 'replaceTextObject', prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] } } } };
         }
         transfer.outputs.set((params as { into: string }).into, new Uint8Array([9]));
-        return { ok: true, value: { bytes: 1 } };
+        return { ok: true, value: { bytes: 1, boxed: [], more: 0 } };
       },
     };
     const { writer } = harness(peer, transfer, keep);
@@ -356,7 +357,7 @@ describe('main’s PDFium writer', () => {
         // A COUNT THAT IS NOT THE FILE'S LENGTH. The host answers a number and
         // main reads a file, so "the host wrote nothing" and "the read found
         // nothing" are otherwise the same empty buffer.
-        return { ok: true, value: { bytes: 99 } };
+        return { ok: true, value: { bytes: 99, boxed: [], more: 0 } };
       },
     };
     const { writer } = harness(peer, transfer);

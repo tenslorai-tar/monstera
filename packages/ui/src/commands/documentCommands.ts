@@ -61,6 +61,7 @@ import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { FLAT_FIELDS_DIALOG_ID } from '../dialogs/flatFields.js';
 import type { FlatFieldsAnswer } from '../dialogs/flatFieldsResult.js';
 import { type EditableObject, OBJECT_FILTERS, type ObjectFilter, type PageObjects } from '../objectEditing.js';
+import { BOXED_CHARACTERS_DIALOG_ID } from '../dialogs/boxedCharacters.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG_ID } from '../dialogs/importFormDataProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
@@ -651,6 +652,11 @@ export async function applyDocumentCommand(
   if (answer.value.historyDropped > 0) {
     void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
   }
+  // THE CHARACTERS IT DREW AS BOXES (ADR-0174), told once, here where every command's answer arrives, and guarded on a
+  // list that names one for the same reason: the dialog's schema refuses an empty one.
+  if (answer.value.boxed.length > 0) {
+    void deps.ask(BOXED_CHARACTERS_DIALOG_ID, { from: 'edit', boxed: answer.value.boxed, more: answer.value.more });
+  }
   return true;
 }
 
@@ -679,8 +685,15 @@ async function editOnCopy(deps: DocumentCommandDeps, docId: DocId, command: Rend
       });
       // THE COPY IS OPEN EITHER WAY, and a refusal of the edit there is said over it: the file is where the person
       // put it, unchanged, and closing its tab is theirs.
-      if (outcome.kind === 'edit-refused') reportProblem(deps, outcome.problem);
-      else if (outcome.historyDropped > 0) void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: outcome.historyDropped });
+      if (outcome.kind === 'edit-refused') {
+        reportProblem(deps, outcome.problem);
+        return true;
+      }
+      if (outcome.historyDropped > 0) void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: outcome.historyDropped });
+      // THE BOXES ON THE COPY, told as the direct route tells them (ADR-0174).
+      if (outcome.boxed.length > 0) {
+        void deps.ask(BOXED_CHARACTERS_DIALOG_ID, { from: 'edit', boxed: outcome.boxed, more: outcome.more });
+      }
       return true;
     }
     case 'cancelled':

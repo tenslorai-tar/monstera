@@ -125,7 +125,7 @@ function clientOver(
         return Promise.resolve(err({ code: 'document-busy' }));
       }
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 1024, historyDropped: 0 }),
+        ok({ version: asDocVersion(2), byteLength: 1024, historyDropped: 0, boxed: [], more: 0 }),
       );
     }
     if (id === 'document.saveCopy') {

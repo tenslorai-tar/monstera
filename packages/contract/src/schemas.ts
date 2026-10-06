@@ -568,6 +568,46 @@ export const boxedCharacterSchema = z
 export type BoxedCharacter = z.infer<typeof boxedCharacterSchema>;
 
 /**
+ * A character an EDIT drew as the missing-character box, and the 0-based page it is on
+ * ([ADR-0174](../../../docs/DECISIONS/0174-a-pdfium-apply-answers-the-characters-it-drew-as-boxes.md)). The character is
+ * {@link boxedCharacterSchema}'s one code point; the place is a page, which is where an edit's text is.
+ *
+ * Declared here for {@link boxedCharacterSchema}'s reason: the PDFium host's answer and `document.execute`'s carry it.
+ */
+export const boxedInEditSchema = z
+  .object({
+    character: boxedCharacterSchema.shape.character,
+    page: z.number().int().nonnegative(),
+  })
+  .strict();
+
+/** One of {@link boxedInEditSchema}. */
+export type BoxedInEditEntry = z.infer<typeof boxedInEditSchema>;
+
+/**
+ * The boxes an operation drew, as a boundary carries them: at most {@link MAX_BOXED_CHARACTERS} named and the rest
+ * counted (ADR-0174 Decision 2). Both REQUIRED, `historyDropped`'s rule.
+ */
+export const drawnBoxesShape = {
+  boxed: z.array(boxedInEditSchema).max(MAX_BOXED_CHARACTERS),
+  more: z.number().int().nonnegative(),
+};
+
+/**
+ * `boxed` and `more` capped for a boundary: the first {@link MAX_BOXED_CHARACTERS} named, every other one counted with
+ * those already counted past an earlier boundary. THE ONE CAP, so the host and `main` cannot cut a list two ways.
+ */
+export function cappedBoxes<T>(drawn: { readonly boxed: readonly T[]; readonly more: number }): {
+  boxed: T[];
+  more: number;
+} {
+  return {
+    boxed: drawn.boxed.slice(0, MAX_BOXED_CHARACTERS),
+    more: drawn.more + Math.max(0, drawn.boxed.length - MAX_BOXED_CHARACTERS),
+  };
+}
+
+/**
  * Whether an open document's own file could be written over now (cloud-4 7b) — the kernel's probe answers exactly these.
  */
 export const FILE_ACCESS = [

@@ -91,6 +91,38 @@ import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
  */
 export type ByteImage = Uint8Array;
 
+/** A character an apply drew as the missing-character box, and the 0-based page it is on (ADR-0174). */
+export interface BoxedInEdit {
+  readonly character: string;
+  readonly page: number;
+}
+
+/**
+ * The characters an operation drew as boxes (ADR-0174). `boxed` is REQUIRED and empty when there is none,
+ * `historyDropped`'s rule: a field a person is owed is one a forwarding site cannot drop in silence. `more` counts the
+ * boxes past a list a boundary capped (`MAX_BOXED_CHARACTERS`); an apply in this process lists every one and answers 0.
+ */
+export interface DrawnBoxes {
+  readonly boxed: readonly BoxedInEdit[];
+  readonly more: number;
+}
+
+/** No box drawn: what every operation answers that sets no new text. */
+export const NO_BOXES: DrawnBoxes = { boxed: [], more: 0 };
+
+/** What a BYTE-IMAGE writer's apply and invert answer (ADR-0174): the new image, and the characters it drew as boxes. */
+export interface AppliedImage extends DrawnBoxes {
+  readonly image: ByteImage;
+}
+
+/** `image` with nothing drawn as a box. */
+export function imageAlone(image: ByteImage): AppliedImage {
+  return { image, ...NO_BOXES };
+}
+
+/** What a spec's apply answers by shape: a byte-image writer's {@link AppliedImage}, a hosted one's bytes (ADR-0174). */
+type SpecImage<W extends keyof WriterSession> = WriterShapeOf[W] extends 'byte-image' ? AppliedImage : ByteImage;
+
 /**
  * How a writer of record applies a command.
  *
@@ -838,8 +870,8 @@ export type Apply<
           image: WriterSession[W],
           command: CommandOfKind<K>,
           read: PreRead[R],
-        ) => Promise<ByteImage>
-      : (image: WriterSession[W], command: CommandOfKind<K>) => Promise<ByteImage>
+        ) => Promise<SpecImage<W>>
+      : (image: WriterSession[W], command: CommandOfKind<K>) => Promise<SpecImage<W>>
     : never
   : S extends 'one' | 'several'
     ? R extends keyof PreRead
@@ -879,5 +911,5 @@ export type Apply<
  */
 export type Invert<W extends keyof WriterSession, K extends CommandKind> =
   WriterShapeOf[W] extends 'byte-image' | 'hosted-image'
-    ? (image: WriterSession[W], inverse: CommandPrior[K]) => Promise<ByteImage>
+    ? (image: WriterSession[W], inverse: CommandPrior[K]) => Promise<SpecImage<W>>
     : (session: WriterSession[W], inverse: CommandPrior[K]) => Promise<void>;

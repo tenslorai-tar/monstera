@@ -1,7 +1,7 @@
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { ByteImage, ImageSession } from './engineSeam.js';
+import { type AppliedImage, type ImageSession, imageAlone } from './engineSeam.js';
 import { onImage, pdfiumWriter, promoteFormObjects } from './pdfiumFfi.js';
 
 /**
@@ -63,7 +63,7 @@ export function capturePromoteFormObjects(): Promise<CaptureResult<never>> {
  * Throwing rather than resolving keeps a widened type from landing as an undo
  * that did nothing.
  */
-export function invertPromoteFormObjects(): Promise<ByteImage> {
+export function invertPromoteFormObjects(): Promise<AppliedImage> {
   throw new Error(
     'a promotion has no inverse; undo restores the checkpoint the bus took (ADR-0037)',
   );
@@ -78,9 +78,9 @@ export function invertPromoteFormObjects(): Promise<ByteImage> {
 export async function applyPromoteFormObjects(
   image: ImageSession,
   command: CommandOfKind<'promoteFormObjects'>,
-): Promise<ByteImage> {
+): Promise<AppliedImage> {
   return onImage(image, async (session) => {
     await promoteFormObjects(session, command.page);
-    return pdfiumWriter.serialise(session);
+    return imageAlone(await pdfiumWriter.serialise(session));
   });
 }

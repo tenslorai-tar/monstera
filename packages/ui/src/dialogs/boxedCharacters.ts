@@ -1,4 +1,4 @@
-import { MAX_BOXED_CHARACTERS, boxedCharacterSchema } from '@monstera/contract';
+import { MAX_BOXED_CHARACTERS, boxedCharacterSchema, boxedInEditSchema } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -15,13 +15,28 @@ export const BOXED_CHARACTERS_DIALOG_ID = 'dialog.boxed-characters';
  *
  * Its own dialog and not a reason of the import problem's, whose title says the import did not finish: this one did,
  * and the document is open beside it. `workbookIncomplete.ts`' reason, for rows a workbook lacks.
+ *
+ * ## And an EDIT that drew one, named by page (ADR-0174)
+ *
+ * One finding, two kinds of place: an import's source has lines and columns, an edit's text is on a page. The kind is a
+ * field, `from`, rather than read off the entries, so each says its own sentence and a list cannot mix the two.
  */
-export const boxedCharactersSchema = z
-  .object({
-    boxed: z.array(boxedCharacterSchema).min(1).max(MAX_BOXED_CHARACTERS),
-    more: z.number().int().min(0),
-  })
-  .strict();
+export const boxedCharactersSchema = z.discriminatedUnion('from', [
+  z
+    .object({
+      from: z.literal('import'),
+      boxed: z.array(boxedCharacterSchema).min(1).max(MAX_BOXED_CHARACTERS),
+      more: z.number().int().min(0),
+    })
+    .strict(),
+  z
+    .object({
+      from: z.literal('edit'),
+      boxed: z.array(boxedInEditSchema).min(1).max(MAX_BOXED_CHARACTERS),
+      more: z.number().int().min(0),
+    })
+    .strict(),
+]);
 
 export type BoxedCharacters = z.infer<typeof boxedCharactersSchema>;
 

@@ -636,6 +636,8 @@ export const BOXED_CHARACTERS_SAID = messageKey('dialog.boxed-characters.said');
 export const BOXED_CHARACTERS_AT = messageKey('dialog.boxed-characters.at');
 export const BOXED_CHARACTERS_AT_LINE = messageKey('dialog.boxed-characters.at-line');
 export const BOXED_CHARACTERS_MORE = messageKey('dialog.boxed-characters.more');
+export const BOXED_CHARACTERS_SAID_EDIT = messageKey('dialog.boxed-characters.said-edit');
+export const BOXED_CHARACTERS_ON_PAGE = messageKey('dialog.boxed-characters.on-page');
 export const MARKDOWN_IMPORT_ABSENT = messageKey('dialog.markdown-import-problem.absent');
 export const MARKDOWN_IMPORT_AT_CAPACITY = messageKey('dialog.markdown-import-problem.at-capacity');
 export const MARKDOWN_IMPORT_IMAGE_UNREADABLE = messageKey(
@@ -4829,6 +4831,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [BOXED_CHARACTERS_AT]: '“{character}” ({code}), line {line, number}, column {column, number}',
   [BOXED_CHARACTERS_AT_LINE]: '“{character}” ({code}), in the block that starts on line {line, number}',
   [BOXED_CHARACTERS_MORE]: '{count, plural, one {And # more place.} other {And # more places.}}',
+  [BOXED_CHARACTERS_SAID_EDIT]:
+    'Your change is made. No font here can draw the characters below, so each one is shown as a box on the page. ' +
+    'The text is kept: copying or searching it finds the characters as you typed them.',
+  [BOXED_CHARACTERS_ON_PAGE]: '“{character}” ({code}), page {page, number}',
   [MARKDOWN_IMPORT_CONVERSION_FAILED]:
     'That file could not be turned into a PDF. It may be damaged, or not the kind of file its name says. ' +
     'Nothing was imported.',

@@ -267,8 +267,10 @@ describe('the core channel set', () => {
     // refusal is what says the parameter was used rather than defaulted to
     // `z.object({})`, which accepts an empty object and would pass on both.
     const applied = coreEngineChannels(OTHER)['engine/apply'].result;
-    expect(applied.safeParse({ bytes: 12 }).success).toBe(true);
+    expect(applied.safeParse({ bytes: 12, boxed: [], more: 0 }).success).toBe(true);
     expect(applied.safeParse({}).success).toBe(false);
+    // AND THE BOXES ARE REQUIRED (ADR-0174): a count with no list is a host that dropped what the person is owed.
+    expect(applied.safeParse({ bytes: 12 }).success).toBe(false);
   });
 
   it('takes the engine’s command union rather than closing over MuPDF’s', () => {

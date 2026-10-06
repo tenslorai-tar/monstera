@@ -141,7 +141,7 @@ describe('newFromMarkdownCommand', () => {
     // THE ORDER IS THE ASSERTION: the list is read beside the document, so the tab comes first.
     expect(calls).toStrictEqual([
       { name: 'opened', value: opened },
-      { name: 'ask', value: { id: 'dialog.boxed-characters', props: { boxed, more: 3 } } },
+      { name: 'ask', value: { id: 'dialog.boxed-characters', props: { from: 'import', boxed, more: 3 } } },
     ]);
 
     const plain = recording({ 'document.newFromMarkdown': ok({ kind: 'opened', ...opened }) });
@@ -243,7 +243,10 @@ describe('appendMarkdownCommand', () => {
     }).run(CONTEXT);
 
     expect(calls.map((call) => call.name)).toStrictEqual(['applied', 'opened', 'activate', 'ask']);
-    expect(calls.at(-1)).toStrictEqual({ name: 'ask', value: { id: 'dialog.boxed-characters', props: { boxed, more: 0 } } });
+    expect(calls.at(-1)).toStrictEqual({
+      name: 'ask',
+      value: { id: 'dialog.boxed-characters', props: { from: 'import', boxed, more: 0 } },
+    });
   });
 
   it('CONTROL: a file past the bound rebuilds nothing and carries the limit', async () => {
@@ -357,7 +360,7 @@ describe('newFromCsvCommand', () => {
     await newFromCsvCommand({ client, ask, onOpened: record('opened'), onAlreadyOpen: record('already-open') }).run(CONTEXT);
     expect(calls).toStrictEqual([
       { name: 'opened', value: opened },
-      { name: 'ask', value: { id: 'dialog.boxed-characters', props: { boxed, more: 0 } } },
+      { name: 'ask', value: { id: 'dialog.boxed-characters', props: { from: 'import', boxed, more: 0 } } },
     ]);
   });
 });

@@ -53,7 +53,7 @@ async function run(options: {
   const answers: Readonly<Record<string, unknown>> = {
     'ai.models': { source: 'fetched', models: [{ id: 'first-model', label: 'First', capabilities: { vision: null, streaming: null } }] },
     'ai.translatePage': { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS) },
-    'document.execute': { version: asDocVersion(5), byteLength: 900, historyDropped: 0 },
+    'document.execute': { version: asDocVersion(5), byteLength: 900, historyDropped: 0, boxed: [], more: 0 },
     ...options.answers,
   };
   const client = createClient(channels, (id, params) => {

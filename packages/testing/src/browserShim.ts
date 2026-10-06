@@ -35,6 +35,7 @@ import {
   isFollowable,
   shownSchemeOf,
   wrapHandlers,
+  type BoxedInEditEntry,
 } from '@monstera/contract';
 import {
   type DeclaredFailure,
@@ -265,6 +266,11 @@ export interface BrowserShimOptions {
    * number this side computed would be arithmetic nothing ships.
    */
   readonly trims?: ReadonlyMap<string, number>;
+  /**
+   * The characters each document's next command reports drawn as boxes, by id (ADR-0174) — a value a test supplies,
+   * `trims`' reason: the shim has no fonts to draw with.
+   */
+  readonly boxes?: ReadonlyMap<string, readonly BoxedInEditEntry[]>;
   /**
    * Documents whose save answers something other than `saved`, by id.
    *
@@ -1283,6 +1289,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           version: asDocVersion(next),
           byteLength: byteLengthOf(docId),
           historyDropped: options.trims?.get(docId) ?? 0,
+          // NONE BY DEFAULT and a set a test controls, `trims`' reasons: the shim draws nothing (ADR-0174).
+          boxed: [...(options.boxes?.get(docId) ?? [])],
+          more: 0,
         }),
       );
     },

@@ -185,12 +185,15 @@ async function passwordCases() {
     let saved;
     let answer = 'saved';
     try {
-      saved = await specs.localPdfiumExecution.apply({
-        session: { bytes, opensWith: new HeldPassword(password) },
-        command,
-        sources: [],
-        reads: undefined,
-      });
+      // THE IMAGE OUT OF THE ANSWER, beside which the apply names any box it drew (ADR-0174).
+      saved = (
+        await specs.localPdfiumExecution.apply({
+          session: { bytes, opensWith: new HeldPassword(password) },
+          command,
+          sources: [],
+          reads: undefined,
+        })
+      ).image;
     } catch (error) {
       answer = error instanceof Error ? error.message : String(error);
     }

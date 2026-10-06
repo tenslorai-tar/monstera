@@ -1342,7 +1342,7 @@ export const handlers: ContractHandlers = {
   'document.sign': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.signatures': () => Promise.resolve(ok({ signatures: [], unreadable: false })),
   'document.execute': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
+    Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0, boxed: [], more: 0 })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), cleared: null, held: [] })),
@@ -3296,10 +3296,30 @@ export const execution: CommandExecution<'pdfium'> = {
   //
   // THE IMAGE ARRIVES AS THE REQUEST'S session FIELD SINCE ADR-0069: the
   // execution takes one named request, and this writer's session HOLDS the
-  // bytes, beside the key that opens them since ADR-0171's addendum.
-  apply: ({ session }) => Promise.resolve(new Uint8Array(session.bytes)),
+  // bytes, beside the key that opens them since ADR-0171's addendum. AND IT ANSWERS
+  // WHAT IT DREW AS BOXES BESIDE THE IMAGE since ADR-0174, none here.
+  apply: ({ session }) => Promise.resolve({ image: new Uint8Array(session.bytes), boxed: [], more: 0 }),
   capture: (_image, _command) => Promise.resolve({ captured: false, reason: 'none' }),
-  invert: (image, _kind, _inverse) => Promise.resolve(new Uint8Array(image.bytes)),
+  invert: (image, _kind, _inverse) => Promise.resolve({ image: new Uint8Array(image.bytes), boxed: [], more: 0 }),
+};
+`,
+  },
+  {
+    name: "a byte-image writer's EXECUTION may not answer the bare image (ADR-0174)",
+    expect: 'reject',
+    code: 'TS2322',
+    // THE HAZARD THE BUS HAD: its widened view casts a byte-image answer by the
+    // declaration, so an execution that answered bytes where the seam owes the
+    // image AND its boxes would be installed as if the bytes were the answer, with
+    // the person never told what was drawn as a box. Refused here, at the
+    // execution, where the compiler can see it.
+    because: /Type 'Uint8Array<ArrayBuffer>' is missing the following properties from type 'AppliedImage': image, boxed, more/u,
+    notBecause: null,
+    source: `
+import type { CommandExecution } from '@monstera/kernel';
+
+export const execution: Pick<CommandExecution<'pdfium'>, 'apply'> = {
+  apply: ({ session }) => Promise.resolve(new Uint8Array(session.bytes)),
 };
 `,
   },
@@ -3325,7 +3345,7 @@ export const execution: CommandExecution<'pdfium'> = {
     // `(image: ByteImage, command:` — the two diagnostics agree line for line
     // otherwise, and the harness refuses to certify either verdict while one
     // matcher accepts the other's reason.
-    because: /request: ApplyRequest<"pdfium", K>\)[\s\S]*Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
+    because: /request: ApplyRequest<"pdfium", K>\)[\s\S]*Type 'void' is not assignable to type 'Promise<AppliedImage>'/u,
     notBecause: null,
     source: `
 import type { CommandExecution } from '@monstera/kernel';

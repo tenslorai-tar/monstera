@@ -1,5 +1,5 @@
 import type { Handlers } from '@monstera/contract';
-import { MAX_BOXED_CHARACTERS } from '@monstera/contract/host';
+import { cappedBoxes } from '@monstera/contract/host';
 
 import type { FaceSource } from '../fontCatalogue.js';
 import { type ComposePageSize, ComposeRefused, type ComposedSource } from '../composeOutcome.js';
@@ -187,8 +187,8 @@ export function createComposeHandlers({
         value: {
           kind: 'composed',
           bytes,
-          boxed: composed.boxed.slice(0, MAX_BOXED_CHARACTERS),
-          more: Math.max(0, composed.boxed.length - MAX_BOXED_CHARACTERS),
+          // THE ONE CAP (`cappedBoxes`), which the PDFium host's answer takes too: two would cut a list two ways.
+          ...cappedBoxes({ boxed: composed.boxed, more: 0 }),
         },
       };
     };

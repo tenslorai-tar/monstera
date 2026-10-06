@@ -9,7 +9,7 @@ import {
   replacementFieldsOf,
 } from '@monstera/contract';
 
-import type { ByteImage, ImageSession } from '../engineSeam.js';
+import { type ByteImage, type DrawnBoxes, type ImageSession, NO_BOXES } from '../engineSeam.js';
 import {
   EditRefusedError,
   NothingToReplaceError,
@@ -174,9 +174,10 @@ function seen(session: ImageSession): string {
 
 /**
  * @param files what `readSnapshot` will find, and where `writeOutput` records.
- * @param applied what the stubbed execution's `apply` answers.
+ * @param applied the image the stubbed execution's `apply` answers.
+ * @param drawn the boxes it answers beside it (ADR-0174).
  */
-function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
+function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9]), drawn: DrawnBoxes = NO_BOXES) {
   const calls: string[] = [];
   // NAMED, as the entry names it: a file-routed answer is written into the area this table holds (ADR-0125).
   const areas = createHostSessions<HostArea>(() => new Uint8Array(TOKEN_BYTES).fill(7));
@@ -215,7 +216,7 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         if (image.length === 4) throw new NothingToReplaceError();
         // FIVE BYTES ARE A REPLACEMENT THAT WOULD MOVE THE TEXT AFTER IT ON ITS LINE (`replaceLineRule.ts`).
         if (image.length === 5) throw new ReplaceMovesLineError();
-        return Promise.resolve(applied);
+        return Promise.resolve({ image: applied, ...drawn });
       },
       capture: (session) => {
         calls.push(`capture:${seen(session)}`);
@@ -231,7 +232,7 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         if (session.bytes.length === 3) throw new EditRefusedError('generate', 6, 'FPDFPage_GenerateContent failed');
         // SIX BYTES ARE A PAGE WHOSE FONT DOES NOT CARRY THE TEXT THE UNDO WRITES BACK (RRRRRRR-6).
         if (session.bytes.length === 6) throw new TextNotWritableError('A');
-        return Promise.resolve(applied);
+        return Promise.resolve({ image: applied, ...drawn });
       },
     },
     files: surface,
@@ -357,8 +358,9 @@ const ANSWER = 'a0b1c2d3';
 /** Registers the area and returns the id the host minted. */
 async function openArea(
   files: Files,
+  drawn: DrawnBoxes = NO_BOXES,
 ): Promise<{ session: string; calls: string[]; body: ReturnType<typeof start>['body'] }> {
-  const { calls, body } = start(files);
+  const { calls, body } = start(files, undefined, drawn);
   stream.feed(
     request('o1', 'engine/open', {
       snapshotDirectory: AREA.snapshotDirectory,
@@ -553,6 +555,34 @@ describe('the PDFium host body', () => {
     expect(calls.filter((entry) => entry.startsWith('incident:'))).toStrictEqual([]);
   });
 
+  /**
+   * THE BOXES TRAVEL WITH THE ANSWER, through the one cap (ADR-0174 Decision 2): seventy drawn, the first sixty-four
+   * named in order and six counted. A handler that dropped them answers `boxed: []`, which the schema accepts and the
+   * case below would not; one that sent all seventy is refused by the schema at the host's own outbound check.
+   */
+  it('answers the characters the apply drew as boxes, sixty-four named and the rest counted', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const drawn = Array.from({ length: 70 }, (_, at) => ({ character: String.fromCodePoint(0x4e00 + at), page: 0 }));
+    const { session } = await openArea(files, { boxed: drawn, more: 0 });
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([4, 5]));
+    stream.feed(
+      request('a1', 'engine/apply', {
+        session,
+        sources: [],
+        command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: 1 },
+        from: IN,
+        password: null,
+        into: OUT,
+      }, undefined, files),
+    );
+    await stream.whenSent(2);
+    const answer = answerIn(stream.sent[1]) as { body: { ok: boolean; value: { boxed: unknown[]; more: number } } };
+    expect(answer.body.ok, JSON.stringify(answer)).toBe(true);
+    expect(answer.body.value.boxed).toStrictEqual(drawn.slice(0, 64));
+    expect(answer.body.value.more).toBe(6);
+  });
+
   it('applies from the named file and writes the result into the granted directory', async () => {
     stream = stubStream();
     const files = emptyFiles();
@@ -578,8 +608,8 @@ describe('the PDFium host body', () => {
     await stream.whenSent(2);
 
     // A COUNT, which is `engine/serialise`'s own answer — this handler is that
-    // channel's job and this engine's apply in one call.
-    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { bytes: 3 } } });
+    // channel's job and this engine's apply in one call — and no box, stated (ADR-0174).
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { bytes: 3, boxed: [], more: 0 } } });
     // AND THE BYTES LANDED IN THE GRANTED DIRECTORY, under the name main chose.
     // Asserting the count alone would pass on a handler that wrote nowhere.
     expect(files.written.get(`${AREA.outputDirectory}|${OUT}`)).toStrictEqual(

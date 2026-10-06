@@ -2,7 +2,7 @@ import { compileQuery } from '@monstera/shared';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { ByteImage, ImageSession } from './engineSeam.js';
+import { type AppliedImage, type ImageSession, imageAlone } from './engineSeam.js';
 import { objectRuns, onImage, pdfiumWriter, removesItsObject, replaceTextObjects } from './pdfiumFfi.js';
 import { EMPTIED, type PriorTextObjects } from './pdfiumTextEdit.js';
 import { NothingToReplaceError, TextNotInPlaceError } from './textEditRefusals.js';
@@ -92,7 +92,7 @@ export async function captureReplaceTextAt(
 export async function applyReplaceTextAt(
   image: ImageSession,
   command: CommandOfKind<'replaceTextAt'>,
-): Promise<ByteImage> {
+): Promise<AppliedImage> {
   return onImage(image, async (session) => {
     const { runs } = await objectRuns(session, command.page);
     const picked = occurrenceAt(runs, command);
@@ -101,6 +101,6 @@ export async function applyReplaceTextAt(
     // rule (ADR-0169 Decision 6): refused before the serialise, so the bus records nothing.
     if (picked.after === picked.before) throw new NothingToReplaceError();
     await replaceTextObjects(session, command.page, [{ index: picked.index, text: picked.after }], 'held');
-    return pdfiumWriter.serialise(session);
+    return imageAlone(await pdfiumWriter.serialise(session));
   });
 }

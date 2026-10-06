@@ -122,7 +122,7 @@ function harness(script: Script): {
   const version = (): ReturnType<typeof asDocVersion> => asDocVersion(script.version);
   const moved = (): unknown => {
     script.version += 1;
-    return ok({ version: version(), byteLength: 1, historyDropped: 0 });
+    return ok({ version: version(), byteLength: 1, historyDropped: 0, boxed: [], more: 0 });
   };
   const client = createClient(channels, (id, raw) => {
     const params = raw as Record<string, unknown>;

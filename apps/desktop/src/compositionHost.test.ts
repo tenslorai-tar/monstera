@@ -1062,7 +1062,7 @@ interface PdfiumPeerLog {
  * file is gone by then either way. The only moment the input can be observed is
  * from inside the peer, which is where this looks.
  */
-function pdfiumPeer(): PdfiumPeerLog {
+function pdfiumPeer(drawn: readonly { character: string; page: number }[] = []): PdfiumPeerLog {
   let area: { snapshot: string; output: string } | null = null;
   const inputs: string[] = [];
   const inputsPresent: boolean[] = [];
@@ -1082,7 +1082,8 @@ function pdfiumPeer(): PdfiumPeerLog {
     const { into } = params as { into: string };
     const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
     writeFileSync(join(area.output, into), bytes);
-    return { ok: true, value: { bytes: bytes.length } };
+    // AND THE BOXES IT DREW, which a case hands it (ADR-0174), none by default.
+    return { ok: true, value: { bytes: bytes.length, boxed: [...drawn], more: 0 } };
   };
 
   return {
@@ -1250,7 +1251,8 @@ describe('the composition root, with BOTH engine hosts', () => {
     // is indistinguishable from two at this layer. The separation is asserted
     // where it lives, on the monikers; this case asserts the ROUTING.
     const mupdf = platformAnswering(serialisingEngine());
-    const pdfium = pdfiumPeer();
+    // A BOX THE HOST DREW (ADR-0174), so the answer below says whether the composition root carries it to the renderer.
+    const pdfium = pdfiumPeer([{ character: '中', page: 0 }]);
     const second = platformAnswering(pdfium.peer);
 
     const { handlers } = createShellDependencies({
@@ -1282,6 +1284,10 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(executed.ok, JSON.stringify(executed)).toBe(true);
     if (!executed.ok) throw new Error('the edit should have succeeded');
     expect(executed.value.version).toBeGreaterThan(opened.value.version);
+    // THE HOST'S BOX REACHED THE ANSWER, across every hop between the host's frame and `document.execute`: the remote
+    // writer, the bus, main's commands and the handler (ADR-0174). The kernel and renderer halves cannot see these.
+    expect(executed.value.boxed).toStrictEqual([{ character: '中', page: 0 }]);
+    expect(executed.value.more).toBe(0);
 
     // THE SECOND HOST WAS BUILT AND PROBED. Its own containment verdict, not
     // the first host's — the two run under different profiles, so a verdict

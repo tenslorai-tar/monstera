@@ -10,7 +10,7 @@ import type {
 } from '../commandRouting.js';
 import { serialiseIntoFile } from '../checkpointFile.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
-import type { ByteImage, ImageSession } from '../engineSeam.js';
+import type { AppliedImage, ByteImage, DrawnBoxes, ImageSession } from '../engineSeam.js';
 import type { TextRun } from '../pdfiumFfi.js';
 import {
   EditRefusedError,
@@ -259,14 +259,15 @@ export function remotePdfiumExecution(
   const wrote = (
     image: ImageSession,
     regenerates: 'all' | number,
-    send: (from: string, into: string, session: string, password: string | null) => Promise<{ bytes: number }>,
-  ): Promise<ByteImage> =>
+    send: (from: string, into: string, session: string, password: string | null) => Promise<{ bytes: number } & DrawnBoxes>,
+  ): Promise<AppliedImage> =>
     withImage(
       image,
       async (from, area, session, password) => {
         const into = transfer.mintName();
         const answer = await send(from, into, session, password);
-        return takeAnnounced(transfer, area, into, answer.bytes);
+        // THE BOXES BESIDE THE IMAGE, as the host answered them (ADR-0174): named, and the rest counted.
+        return { image: await takeAnnounced(transfer, area, into, answer.bytes), boxed: answer.boxed, more: answer.more };
       },
       regenerates,
     );
@@ -280,7 +281,7 @@ export function remotePdfiumExecution(
     apply: async <K extends KindsRoutedTo<'pdfium'>>({
       session: image,
       command,
-    }: ApplyRequest<'pdfium', K>): Promise<ByteImage> =>
+    }: ApplyRequest<'pdfium', K>): Promise<AppliedImage> =>
       wrote(image, regeneratedBy(command), async (from, into, session, password) =>
         answered(
           'engine/apply',
@@ -346,7 +347,7 @@ export function remotePdfiumExecution(
       image: ImageSession,
       kind: K,
       inverse: CommandPrior[K],
-    ): Promise<ByteImage> =>
+    ): Promise<AppliedImage> =>
       // THE PAGE A PRIOR RESTORES, read through the same tagged prior the host is sent: every PDFium prior carries
       // the page its command touched, and restoring it regenerates that page as the command did.
       wrote(image, pdfiumTaggedPrior(kind, inverse).prior.page, async (from, into, session, password) =>

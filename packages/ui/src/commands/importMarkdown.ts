@@ -422,7 +422,7 @@ function tellBoxed(
   boxed: readonly BoxedCharacter[],
   more: number,
 ): void {
-  if (boxed.length > 0) void deps.ask(BOXED_CHARACTERS_DIALOG_ID, { boxed: [...boxed], more });
+  if (boxed.length > 0) void deps.ask(BOXED_CHARACTERS_DIALOG_ID, { from: 'import', boxed: [...boxed], more });
 }
 
 /**

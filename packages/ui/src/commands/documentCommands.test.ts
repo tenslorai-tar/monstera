@@ -211,7 +211,7 @@ function sourcesClient(): { readonly client: ContractClient; readonly executed: 
       return Promise.resolve(ok({ version: asDocVersion(1), pageCount, rotations: [0] }));
     }
     executed.push(params);
-    return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+    return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }));
   });
   return { client, executed };
 }
@@ -340,6 +340,8 @@ describe('rotate page', () => {
       version: asDocVersion(2),
       byteLength: 2048,
       historyDropped: 0,
+      boxed: [],
+      more: 0,
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -348,7 +350,29 @@ describe('rotate page', () => {
     // visible in any state: the version alone rebinds the renderer's transport
     // to the previous image's length, which is a RangeError past the end of the
     // new document or a parse of a truncated one.
-    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 0 }]);
+    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }]);
+  });
+
+  /**
+   * ADR-0174's renderer half: the characters a command drew as boxes are told, by page, through the one dialog. The
+   * kernel half is `proof:pdfiumcommand`'s boxed cases. CONTROL: the declared-failure case below answers no box and
+   * opens nothing, so the dialog here is the list's doing.
+   */
+  it('tells the person which characters the command drew as boxes, and on which page', async () => {
+    const { shown, onApplied, ask } = recorder();
+    const client = clientAnswering('document.execute', {
+      version: asDocVersion(2),
+      byteLength: 2048,
+      historyDropped: 0,
+      boxed: [{ character: '中', page: 3 }],
+      more: 2,
+    });
+
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([
+      { id: 'dialog.boxed-characters', props: { from: 'edit', boxed: [{ character: '中', page: 3 }], more: 2 } },
+    ]);
   });
 
   /**
@@ -362,6 +386,8 @@ describe('rotate page', () => {
       version: asDocVersion(2),
       byteLength: 2048,
       historyDropped: 3,
+      boxed: [],
+      more: 0,
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -372,7 +398,7 @@ describe('rotate page', () => {
     // AND THE VIEW STILL MOVED. The command succeeded; a version reported to
     // nobody would leave the renderer showing the page as it was while a dialog
     // explains what the rotation cost.
-    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 3 }]);
+    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 3, boxed: [], more: 0 }]);
   });
 
   it('a declared failure changes nothing, so the view is not rebuilt', async () => {
@@ -417,6 +443,8 @@ describe('rotate page', () => {
       version: asDocVersion(2),
       byteLength: 2048,
       historyDropped: 0,
+      boxed: [],
+      more: 0,
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -473,7 +501,7 @@ describe('move page up / down — Organize › Arrange', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }));
     });
     return { client, sent };
   }
@@ -917,7 +945,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       const answer = answers[id];
       if (answer !== undefined) return Promise.resolve(ok(answer));
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }),
+        ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }),
       );
     });
     return { client, sent };
@@ -1377,7 +1405,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         );
       }
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0 }),
+        ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0 }),
       );
     });
 
@@ -1514,7 +1542,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0 }));
     });
     const applied: Applied[] = [];
     const outcome = await commitTextBlock(
@@ -1557,7 +1585,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: string[] = [];
     const client = createClient(channels, (id) => {
       sent.push(id);
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0 }));
     });
     const outcome = await commitTextBlock(
       { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
@@ -1605,7 +1633,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: unknown[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0 }));
     });
     await promoteTextOnPage({ client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures }, DOC, 3);
     expect(sent).toStrictEqual([
@@ -4015,7 +4043,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         ok(
           id === 'document.duplicatePages'
             ? { version: asDocVersion(1), groups: [{ pages: [0, 4] }], truncated: false }
-            : { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+            : { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 },
         ),
       );
     });
@@ -4132,7 +4160,7 @@ describe('generate table of contents', () => {
         return Promise.resolve(ok({ version: asDocVersion(1), destinations, next: null, truncated: false }));
       }
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 8192, historyDropped: 0 }),
+        ok({ version: asDocVersion(2), byteLength: 8192, historyDropped: 0, boxed: [], more: 0 }),
       );
     });
     return { client, sent };
@@ -4161,7 +4189,7 @@ describe('generate table of contents', () => {
       { id: 'document.execute', params: { docId: DOC, command: { kind: 'generateToc', at: 0 } } },
     ]);
     expect(record.applied).toStrictEqual([
-      { version: 2, byteLength: 8192, historyDropped: 0 },
+      { version: 2, byteLength: 8192, historyDropped: 0, boxed: [], more: 0 },
     ]);
     expect(record.shown).toStrictEqual([]);
   });
@@ -4243,7 +4271,7 @@ describe('protectDocumentCommand', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }));
     });
     return { client, sent };
   }
@@ -4375,7 +4403,7 @@ describe('protectDocumentCommand', () => {
             }),
           );
         }
-        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }));
       });
       return { client, sent };
     }
@@ -4953,7 +4981,7 @@ describe('protectDocumentCommand', () => {
           );
           return library.filter((call) => call.id === 'library.keepSignature').map((call) => call.params);
         };
-        expect(await keeping({ kind: 'signed', version: asDocVersion(2), byteLength: 10, historyDropped: 0 })).toStrictEqual([
+        expect(await keeping({ kind: 'signed', version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0 })).toStrictEqual([
           { mark: TYPED },
         ]);
         expect(await keeping({ kind: 'wrong-passphrase' })).toStrictEqual([]);
@@ -5366,7 +5394,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
     const sent: unknown[] = [];
     const client = createClient(channels, (_id, params) => {
       sent.push((params as { command: unknown }).command);
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0 }));
     });
     return { client, sent };
   }
@@ -5762,7 +5790,7 @@ describe('every file write confirms, and its Show in folder reveals the file the
 describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
   const SANITIZE: DispatchableCommand = { kind: 'sanitizeDocument', parts: ['javascript'] };
   const COPY = asDocId('doc-copy');
-  const APPLIED = { version: asDocVersion(5), byteLength: 4096, historyDropped: 0 };
+  const APPLIED = { version: asDocVersion(5), byteLength: 4096, historyDropped: 0, boxed: [], more: 0 };
 
   /** Main as ADR-0149 has it: `breaks-signatures` until the edit is sent agreed, and `editCopy` answering `copy`. */
   function signedMain(copy: unknown = { kind: 'cancelled' }): {
@@ -5821,7 +5849,16 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
   });
 
   it('WORK ON A COPY sends the command to a copy, opens it as a tab, and never sends it to the original again', async () => {
-    const copy = { kind: 'edited', docId: COPY, version: 2, byteLength: 2048, name: 'signed copy.pdf', historyDropped: 0 };
+    const copy = {
+      kind: 'edited',
+      docId: COPY,
+      version: 2,
+      byteLength: 2048,
+      name: 'signed copy.pdf',
+      historyDropped: 0,
+      boxed: [],
+      more: 0,
+    };
     const { client, sent } = signedMain(copy);
     const { ask, asked } = answering('copy');
     const applied: Applied[] = [];

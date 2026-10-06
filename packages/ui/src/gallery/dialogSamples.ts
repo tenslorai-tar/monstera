@@ -747,6 +747,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     {
       state: 'opened',
       props: {
+        from: 'import',
         boxed: [
           { character: '中', line: 3, column: 8 },
           { character: '文', line: 3, column: 9 },
@@ -758,12 +759,26 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     {
       state: 'long',
       props: {
+        from: 'import',
         boxed: Array.from({ length: 64 }, (_unused, at) => ({
           character: String.fromCodePoint(0x4e00 + at),
           line: 1_000 + at * 37,
           column: at % 5 === 0 ? null : 10_000 + at,
         })),
         more: 1_250,
+      },
+    },
+    // AN EDIT'S BOXES, named by page (ADR-0174).
+    {
+      state: 'edited',
+      props: {
+        from: 'edit',
+        boxed: [
+          { character: '中', page: 0 },
+          { character: String.fromCodePoint(0x1f600), page: 0 },
+          { character: 'ก', page: 11 },
+        ],
+        more: 0,
       },
     },
   ],

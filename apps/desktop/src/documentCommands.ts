@@ -51,6 +51,8 @@ import {
   keptLookOf,
   placedMarkOf,
   sourceIdsOf,
+  type BoxedInEditEntry,
+  cappedBoxes,
 } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
 // importing the spec table would bind the MuPDF native library **in main** —
@@ -2144,6 +2146,10 @@ export interface Applied {
   readonly byteLength: number;
   /** Undo steps this command cost to the checkpoint budget (§4, invariant 18). */
   readonly historyDropped: number;
+  /** The characters it drew as boxes, each with its page, capped for the boundary (ADR-0174). */
+  readonly boxed: BoxedInEditEntry[];
+  /** How many boxes past the named ones. */
+  readonly more: number;
 }
 
 /**
@@ -3429,7 +3435,7 @@ export class DocumentCommands {
         }
       }
 
-      const { trimmed, entry } = await this.#bus.execute<K>(
+      const { trimmed, entry, drawn } = await this.#bus.execute<K>(
         sessions,
         context,
         command,
@@ -3455,7 +3461,8 @@ export class DocumentCommands {
       // The trim travels with the length for the same reason: it is what THIS
       // command cost, and a second command's trim attributed to this one would
       // tell the user their history shrank at the wrong moment.
-      return { byteLength: context.byteLength, historyDropped: trimmed.droppedEntries };
+      // AND WHAT IT DREW AS BOXES (ADR-0174), for the trim's reason: this command's, through the one cap.
+      return { byteLength: context.byteLength, historyDropped: trimmed.droppedEntries, ...cappedBoxes(drawn) };
     });
 
     // A PICTURE OF A PROTECTED PAGE cannot be encrypted, so it is retaken: deleted, and kept again only if the document
@@ -3551,7 +3558,8 @@ export class DocumentCommands {
     // so nothing is ever shed for it — `CommandBus` names that fact `NO_TRIM`
     // and this is the same statement at the boundary. A field omitted here
     // would make the renderer's obligation optional on one path.
-    return stepped.yes ? { version, byteLength, historyDropped: 0 } : undefined;
+    // NO BOXES, the bus's `TOLD_AT_THE_EDIT` at the boundary (ADR-0174 Decision 3).
+    return stepped.yes ? { version, byteLength, historyDropped: 0, boxed: [], more: 0 } : undefined;
   }
 
   /**
@@ -3623,7 +3631,8 @@ export class DocumentCommands {
 
     // `execute`'s retake, for a redone protect.
     if (protectedAt.path !== undefined) void this.#recentPicture.retake(docId, protectedAt.path);
-    return stepped.yes ? { version, byteLength, historyDropped: 0 } : undefined;
+    // NO BOXES, the bus's `TOLD_AT_THE_EDIT` at the boundary (ADR-0174 Decision 3).
+    return stepped.yes ? { version, byteLength, historyDropped: 0, boxed: [], more: 0 } : undefined;
   }
 
   /**

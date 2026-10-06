@@ -2,7 +2,7 @@ import { compileQuery } from '@monstera/shared';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { ByteImage, ImageSession } from './engineSeam.js';
+import { type AppliedImage, type ImageSession, imageAlone } from './engineSeam.js';
 import { objectRuns, onImage, pageCount, pdfiumWriter, replaceTextObjects } from './pdfiumFfi.js';
 import { NothingToReplaceError } from './textEditRefusals.js';
 
@@ -79,7 +79,7 @@ export function captureReplaceAllText(): Promise<CaptureResult<never>> {
  * throwing rather than resolving keeps a widened type from landing as an undo
  * that did nothing.
  */
-export function invertReplaceAllText(): Promise<ByteImage> {
+export function invertReplaceAllText(): Promise<AppliedImage> {
   throw new Error(
     'a document-wide replacement has no inverse; undo restores the checkpoint the bus took (ADR-0037)',
   );
@@ -131,7 +131,7 @@ function replacedIn(
 export async function applyReplaceAllText(
   image: ImageSession,
   command: CommandOfKind<'replaceAllText'>,
-): Promise<ByteImage> {
+): Promise<AppliedImage> {
   const compiled = compileQuery(command.find, {
     ...(command.caseSensitive === undefined ? {} : { caseSensitive: command.caseSensitive }),
     ...(command.wholeWord === undefined ? {} : { wholeWord: command.wholeWord }),
@@ -181,6 +181,6 @@ export async function applyReplaceAllText(
     // the person reads that nothing matched. Serialised, an unchanged document came back as new bytes and a new version
     // with an undo step that did nothing.
     if (rewritten === 0) throw new NothingToReplaceError();
-    return pdfiumWriter.serialise(session);
+    return imageAlone(await pdfiumWriter.serialise(session));
   });
 }

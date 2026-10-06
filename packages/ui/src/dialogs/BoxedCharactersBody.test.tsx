@@ -22,6 +22,7 @@ describe('BoxedCharactersBody', () => {
     render(
       <Wrapped>
         <BoxedCharactersBody
+          from="import"
           boxed={[
             { character: '中', line: 1_204, column: 8 },
             { character: String.fromCodePoint(0x13000), line: 3, column: null },
@@ -43,7 +44,7 @@ describe('BoxedCharactersBody', () => {
   it('COUNTS the places past the named ones, outside the list that scrolls', () => {
     render(
       <Wrapped>
-        <BoxedCharactersBody boxed={[{ character: '中', line: 1, column: 1 }]} more={12} />
+        <BoxedCharactersBody from="import" boxed={[{ character: '中', line: 1, column: 1 }]} more={12} />
       </Wrapped>,
     );
 
@@ -51,5 +52,24 @@ describe('BoxedCharactersBody', () => {
     // OUTSIDE THE SCROLL, so it stays beside the footer however long the list is.
     expect(count.closest('.m-dialog-scroll')).toBeNull();
     expect(screen.getByRole('list').closest('.m-dialog-scroll')).not.toBeNull();
+  });
+
+  /**
+   * AN EDIT'S PLACES ARE PAGES, counted from 1, and its sentence is the edit's (ADR-0174). CONTROL: the import's
+   * sentence, which says the PDF is open, is not shown for an edit; the cases above show it for an import.
+   */
+  it('names an edit’s places by page, counted as the person counts them, with the edit’s own sentence', () => {
+    render(
+      <Wrapped>
+        <BoxedCharactersBody from="edit" boxed={[{ character: '中', page: 0 }, { character: '文', page: 11 }]} more={0} />
+      </Wrapped>,
+    );
+
+    expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toStrictEqual([
+      '“中” (U+4E2D), page 1',
+      '“文” (U+6587), page 12',
+    ]);
+    expect(screen.getByText(/^Your change is made\./u)).toBeTruthy();
+    expect(screen.queryByText(/^The PDF is open\./u)).toBeNull();
   });
 });

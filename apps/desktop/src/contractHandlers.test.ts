@@ -1065,8 +1065,15 @@ describe('document.editCopy — an edit of a signed document made on a copy (ADR
   }
 
   it('writes the copy, opens it by the one route, and applies the SAME edit there, its version re-bound and agreed', async () => {
+    // A BOX THE EDIT DREW ON THE COPY, which the copy route carries as the direct route does (ADR-0174).
     const { commands, executed, copied } = commandsFor(() =>
-      Promise.resolve({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }),
+      Promise.resolve({
+        version: asDocVersion(2),
+        byteLength: 2048,
+        historyDropped: 0,
+        boxed: [{ character: '中', page: 0 }],
+        more: 1,
+      }),
     );
     const { capabilities, handlers, opened, sessioned, closed } = harness(OPENED, NO_PICKER, undefined, { commands });
 
@@ -1074,7 +1081,16 @@ describe('document.editCopy — an edit of a signed document made on a copy (ADR
 
     expect(result).toStrictEqual({
       ok: true,
-      value: { kind: 'edited', docId: COPY, version: 2, byteLength: 2048, name: 'signed copy.pdf', historyDropped: 0 },
+      value: {
+        kind: 'edited',
+        docId: COPY,
+        version: 2,
+        byteLength: 2048,
+        name: 'signed copy.pdf',
+        historyDropped: 0,
+        boxed: [{ character: '中', page: 0 }],
+        more: 1,
+      },
     });
     // THE ORIGINAL IS ASKED FOR A COPY, AND NOTHING ELSE: no `execute` names it.
     expect(copied).toStrictEqual([[A_DOC, NAMED]]);

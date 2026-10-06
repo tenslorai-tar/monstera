@@ -3,7 +3,7 @@ import type { CommandKind, CommandOfKind } from '@monstera/contract';
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import type { WriterOf, WriterOfRecord } from './commandDeclarations.js';
 import type {
-  ByteImage,
+  AppliedImage,
   EngineWriter,
   ExecutionSession,
   PreReadValue,
@@ -239,12 +239,13 @@ export interface CommandExecution<W extends WriterOfRecord> {
 }
 
 /**
- * What an execution's `apply` and `invert` answer, by shape: the new image for a byte-image writer, nothing for a
+ * What an execution's `apply` and `invert` answer, by shape: the new image and the characters it drew as boxes for a
+ * byte-image writer ([ADR-0174](../../../docs/DECISIONS/0174-a-pdfium-apply-answers-the-characters-it-drew-as-boxes.md)), nothing for a
  * live-session one, and for a HOSTED one the new image **staged where the host wrote it** — `main` places it without
  * reading it ([ADR-0121](../../../docs/DECISIONS/0121-main-never-holds-two-images.md) Decision 3).
  */
 export type Applied<W extends WriterOfRecord> = WriterShapeOf[W] extends 'byte-image'
-  ? Promise<ByteImage>
+  ? Promise<AppliedImage>
   : WriterShapeOf[W] extends 'hosted-image'
     ? Promise<StagedImage>
     : Promise<void>;
