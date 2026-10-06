@@ -2961,11 +2961,11 @@ async function joinSplitCases() {
     record('the join fixture reads as two blocks', false, `${String(read.blocks.length)} block(s)`);
     return;
   }
-  const entry = (/** @type {typeof upper} */ block, /** @type {string} */ text, /** @type {object | undefined} */ extra) => ({
+  const entry = (/** @type {typeof upper} */ block, /** @type {string} */ text, /** @type {object} */ extra = {}) => ({
     lines: block.lines.map((line) => line.runs.map((run) => run.index)),
     soft: block.lines.map((line) => line.soft),
     text,
-    ...(extra ?? {}),
+    ...extra,
   });
   const wordsOf = (/** @type {typeof upper} */ block) =>
     paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
@@ -3024,11 +3024,11 @@ async function joinSplitCases() {
     return;
   }
   const pitch = firstLine.box.y1 - secondLine.box.y1;
-  const half = (/** @type {typeof firstLine} */ line, /** @type {object | undefined} */ extra) => ({
+  const half = (/** @type {typeof firstLine} */ line, /** @type {object} */ extra = {}) => ({
     lines: [line.runs.map((run) => run.index)],
     soft: [false],
     text: lineText(line.runs),
-    ...(extra ?? {}),
+    ...extra,
   });
   const split = await send([half(firstLine), half(secondLine, { place: { move: { x: 0, y: -pitch } } })], two);
   const splitRead = await blocksOf(split);
