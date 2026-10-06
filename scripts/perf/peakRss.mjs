@@ -47,6 +47,31 @@ import { spawnSync } from 'node:child_process';
 /** Marker for the line carrying the measurement, so ordinary output cannot be mistaken for it. */
 const MARKER = '__MONSTERA_PEAK__';
 
+/**
+ * THE ONE SANCTIONED NOT-APPLICABLE EXIT. A measured role script that cannot run
+ * on this runner at all — `--host` off Windows, a role that needs a binary this
+ * platform has no AppContainer for — exits with this code and prints its reason
+ * first. Every OTHER non-zero exit is a role that SHOULD have measured and did
+ * not, which the gate must treat as a failure, never as "not applicable" (R29).
+ */
+export const NOT_APPLICABLE_EXIT = 2;
+
+/**
+ * Thrown by {@link measurePeak} when, and only when, the measured script exits
+ * with {@link NOT_APPLICABLE_EXIT}. A caller distinguishes it from a plain
+ * `Error` to keep "this platform cannot measure this role" apart from "this
+ * role was broken" — the distinction R29 turns on, because the two produced one
+ * "could not be measured" string and a broken real host read as a platform
+ * limit for a whole release range.
+ */
+export class MeasurementNotApplicable extends Error {
+  /** @param {string} message */
+  constructor(message) {
+    super(message);
+    this.name = 'MeasurementNotApplicable';
+  }
+}
+
 /** @returns {number} This process's peak RSS in bytes, from the kernel. */
 export function peakRssBytes() {
   // maxRSS is kilobytes. Converting at the single point of use rather than at
@@ -201,12 +226,16 @@ export function measurePeak(scriptPath, args = [], options = {}) {
     // spawn that never happened and a script that exited non-zero arrive here
     // identically, and only the runtime line separates "there is no such
     // interpreter" from "the measured script failed".
-    throw new Error(
+    const message =
       `Measured run failed (exit ${String(result.status)}) under runtime ${runtime}\n` +
-        `  ${scriptPath} ${args.join(' ')}\n` +
-        `  ${result.error === undefined ? 'the process ran and exited non-zero' : `spawn error: ${result.error.message}`}\n` +
-        `${output.slice(-4000)}`,
-    );
+      `  ${scriptPath} ${args.join(' ')}\n` +
+      `  ${result.error === undefined ? 'the process ran and exited non-zero' : `spawn error: ${result.error.message}`}\n` +
+      `${output.slice(-4000)}`;
+    // EXIT 2 IS THE ONLY NOT-APPLICABLE SIGNAL (R29). A spawn that never happened
+    // has `status === null` and `result.error` set, which is a failure and never
+    // the sanctioned refusal, so the guard reads the code alone.
+    if (result.status === NOT_APPLICABLE_EXIT) throw new MeasurementNotApplicable(message);
+    throw new Error(message);
   }
 
   const line = `${result.stdout ?? ''}`.split('\n').find((candidate) => candidate.startsWith(MARKER));
