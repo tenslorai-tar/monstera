@@ -1,4 +1,5 @@
 import type { BlockFormatting, BlockMarkSet } from '@monstera/contract';
+import { tokensOf } from '@monstera/shared';
 
 /**
  * The in-place editor's formatting, kept in the DOM it is drawn in
@@ -272,6 +273,55 @@ function settingOf(element: HTMLElement): ParagraphSetting {
     ...(spacing === undefined ? {} : { lineSpacing: Number(spacing) }),
     ...(before === undefined ? {} : { spaceBefore: Number(before) }),
   };
+}
+
+/**
+ * The word at a point of the editor: the paragraph's words cut by `tokensOf` (the one segmenter every word of this
+ * application is cut by) and the one holding `offset` of the text node `node`, as a range over the nodes it spans. A word
+ * a mark split across nodes is still one word, which is why the paragraph is read as one text. `undefined` where the point
+ * is in no word.
+ */
+export function wordAt(root: HTMLElement, node: Node, offset: number): { word: string; range: Range } | undefined {
+  const { paragraphs } = paragraphsOf(root);
+  const owner = paragraphs.find((paragraph) => paragraph.nodes.some((each) => each === node));
+  if (owner === undefined || !(node instanceof Text)) return undefined;
+  const text = owner.nodes.map((each) => each.data).join('');
+  let caret = offset;
+  for (const each of owner.nodes) {
+    if (each === node) break;
+    caret += each.data.length;
+  }
+  const token = [...tokensOf(text)].find((each) => each.isWord && each.index <= caret && caret <= each.index + each.text.length);
+  if (token === undefined) return undefined;
+  /** The node and offset that character position `at` of the paragraph's text is in. */
+  const place = (at: number, atEnd: boolean): { node: Text; offset: number } | undefined => {
+    let before = 0;
+    for (const each of owner.nodes) {
+      const end = before + each.data.length;
+      if (at < end || (atEnd && at === end)) return { node: each, offset: at - before };
+      before = end;
+    }
+    return undefined;
+  };
+  const start = place(token.index, false);
+  const end = place(token.index + token.text.length, true);
+  if (start === undefined || end === undefined) return undefined;
+  const range = root.ownerDocument.createRange();
+  range.setStart(start.node, start.offset);
+  range.setEnd(end.node, end.offset);
+  return { word: token.text, range };
+}
+
+/** Replaces the words a range covers with `text`, in the style of its first node, and tells the editor it changed. */
+export function replaceRange(root: HTMLElement, range: Range, text: string): void {
+  const first = range.startContainer;
+  if (first instanceof Text && range.endContainer === first) {
+    first.replaceData(range.startOffset, range.endOffset - range.startOffset, text);
+  } else {
+    range.deleteContents();
+    range.insertNode(root.ownerDocument.createTextNode(text));
+  }
+  root.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 /** The paragraph elements a range touches, in order. */

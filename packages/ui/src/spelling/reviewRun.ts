@@ -24,13 +24,10 @@ import type { DocumentStore } from '../documentStores.js';
 import {
   PROBLEM_COMMENT_TOO_LONG,
   SPELLING_CHANGED,
-  SPELLING_DICTIONARY_FULL,
   SPELLING_NOT_SHOWN,
-  SPELLING_WORD_TOO_LONG,
 } from '../messages/en.js';
 import { readWholeList } from '../readWholeList.js';
 import {
-  MAX_PERSONAL_WORDS,
   PERSONAL_DICTIONARY_SETTING,
   SPELLING_COMMENTS_SETTING,
   SPELLING_FIELDS_SETTING,
@@ -38,6 +35,7 @@ import {
 import type { SettingsStore } from '../settingsStore.js';
 import { type SpellChecker, buildChecker } from './checker.js';
 import { activeLanguage } from './languages.js';
+import { keepWord } from './personalWords.js';
 import {
   type SpellingOccurrence,
   type SpellingPlace,
@@ -323,18 +321,11 @@ export function addToDictionary(deps: SpellingDeps, store: DocumentStore): void 
   const checker = checkerOf(store, held.run);
   if (checker === undefined) return;
   const word = held.current.word;
-  // RE-READ rather than held: the review may have been open for an hour, and another review or the Settings dialog may
-  // have changed the list since.
-  const current = PERSONAL_DICTIONARY_SETTING.schema.parse(deps.settings.get(PERSONAL_DICTIONARY_SETTING.id));
-  if (!current.some((each) => skipKey(each) === skipKey(word))) {
-    // SAID RATHER THAN DROPPED: the setting's schema refuses a word past 128 characters and a list past its bound, and
-    // a set it refused would leave a person believing the word was kept.
-    const refusal = word.length > 128 ? SPELLING_WORD_TOO_LONG : current.length >= MAX_PERSONAL_WORDS ? SPELLING_DICTIONARY_FULL : undefined;
-    if (refusal !== undefined) {
-      store.getState().reviewSpelling({ ...held, notice: refusal });
-      return;
-    }
-    deps.settings.set(PERSONAL_DICTIONARY_SETTING.id, [...current, word]);
+  // THE PERSONAL DICTIONARY'S ONE WRITER (`keepWord`), shared with the editor's right-click menu: said when it refuses.
+  const refusal = keepWord(deps.settings, word);
+  if (refusal !== undefined) {
+    store.getState().reviewSpelling({ ...held, notice: refusal });
+    return;
   }
   const skipped = [...held.skipped, skipKey(word)];
   store

@@ -366,6 +366,7 @@ import { AUTOSAVE_SETTING, CONFIRM_REDACTION_SETTING, WARN_SIGNATURE_BREAK_SETTI
 import { FIRST_PAGE, kernelPageOf } from './pageNumbering.js';
 import { OpeningState, PageList, type PageListProps } from './PageList.js';
 import type { TextEditing } from './TextEditLayer.js';
+import { keepWord, lookUp } from './spelling/personalWords.js';
 import { type Side, SideBySide, type SidePreferences, drawForComparison } from './SideBySide.js';
 import { SplitView } from './SplitView.js';
 import { SpellingPanel, useSpellingReview } from './SpellingPanel.js';
@@ -2719,6 +2720,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     () => settings.hydrated,
   );
 
+  // THE BROWSER'S OWN VERB, run by main on this window — the one call the page's text copy, a field's verbs and the
+  // in-place editor's right-click menu all make (B3a). A COPY CONFIRMS on main's answer that it ran (`done`), through
+  // every copy's one confirmation.
+  const windowEdit = useCallback(
+    (action: WindowEditAction): void => {
+      void client['window.edit']({ action }).then((answer) => {
+        if (action === 'copy' && answer.ok && answer.value.done) confirmCopied({ toast });
+      });
+    },
+    [client, toast],
+  );
+
   const registry = useMemo(() => {
     // THE SHORTCUTS COMMAND LISTS THE REGISTRY THAT CONTAINS IT. The holder is LOCAL to this memo, filled before the
     // memo returns, and read only when the command runs — never during render (the refs rule that refused G1's first
@@ -2728,13 +2741,6 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       defaults?: readonly UiCommand[];
       dropped?: readonly string[];
     } = {};
-    // THE BROWSER'S OWN VERB, run by main on this window — the one call both the page's text copy and a field's verbs
-    // make. A COPY CONFIRMS on main's answer that it ran (`done`), through every copy's one confirmation.
-    const windowEdit = (action: WindowEditAction): void => {
-      void client['window.edit']({ action }).then((answer) => {
-        if (action === 'copy' && answer.ok && answer.value.done) confirmCopied({ toast });
-      });
-    };
     const textDeps: TextSelectionDeps = {
       selection: () => textSelection,
       place: dispatch,
@@ -3173,6 +3179,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   }, [
       // THE KEYS A PERSON CHOSE, so a change in the shortcuts dialog rebuilds the registry and the new key works at once.
       chosenShortcuts,
+      windowEdit,
       startSignature,
       startSpelling,
       // THE ZOOM STEP, through the function `+` and `−` ask: a changed step rebuilds them, or they would step by the old.
@@ -3396,6 +3403,13 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       },
       onCommit: (page, block, text, read, formatting) => commitTextBlock(deps, docId, page, block, text, read, formatting),
       runFonts: (page, block, version) => readRunFonts(client, docId, page, block, version),
+      // THE RIGHT-CLICK MENU'S TWO HALVES: the browser's own verbs (the Edit menu's, through the one `windowEdit`) and the
+      // spelling checker's answers (the review's, through the one personal dictionary).
+      native: windowEdit,
+      spell: {
+        look: (word) => lookUp({ client, settings }, word),
+        keep: (word) => keepWord(settings, word),
+      },
       onInsert: (page, insert, read) => commitPageInsert(deps, docId, page, insert, read),
       // ONE BOX, then back to editing what is on the page.
       onAdded: () => {
@@ -3408,7 +3422,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         setToolId(undefined);
       },
     };
-  }, [applied, ask, client, inEditText, open, signatures, stamp]);
+  }, [applied, ask, client, inEditText, open, settings, signatures, stamp, windowEdit]);
   // THE ADD FLAVOUR BESIDE THE MODE, not inside it: choosing Add text from Edit text, or leaving it, must not hand every
   // page a new reader and read them all again, which is what a value inside the memo above would do.
   const editing = useMemo<PageListProps['editing']>(

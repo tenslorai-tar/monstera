@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import type { BlockFormatting, PageInsert } from '@monstera/contract';
+import type { BlockFormatting, PageInsert, WindowEditAction } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import {
   type DocVersion,
@@ -38,6 +38,7 @@ import {
   TEXT_HANDLE_WIDTH,
 } from './messages/en.js';
 import { composing } from './surfaces/shortcuts.js';
+import { TextEditorMenu, type EditorSpelling } from './TextEditorMenu.js';
 import { TextFormatBar } from './TextFormatBar.js';
 import { formatOpenEditor, registerEditor } from './textEditorControl.js';
 import { insertTab, readEditor } from './textFormatting.js';
@@ -106,6 +107,10 @@ export interface TextEditLayerProps {
   readonly onInsert?: (insert: PageInsert, read: BlocksRead) => Promise<BlockCommit>;
   /** Called when a box was added or abandoned, so the mode goes back to editing what is there. */
   readonly onAdded?: () => void;
+  /** The browser's own edit verbs, run by main on the window, for the editor's right-click menu. */
+  readonly native?: (action: WindowEditAction) => void;
+  /** The spelling checker's answers for the editor's right-click menu. */
+  readonly spell?: EditorSpelling;
   /** Writes one block's new words, at the version the blocks were read at and by the writer that read named. */
   readonly onCommit: (block: TextBlock, text: string, read: BlocksRead, formatting?: BlockFormatting) => Promise<BlockCommit>;
   /** The fonts the open block's runs are drawn in, rebuilt by the host, at the version it was read at (ADR-0175). */
@@ -335,6 +340,8 @@ export function TextEditLayer({
   adding = false,
   onInsert,
   onAdded,
+  native,
+  spell,
   onCommit,
   runFonts,
   onPromote,
@@ -448,6 +455,8 @@ export function TextEditLayer({
               click={chosen === undefined ? (handed === at ? next?.click : undefined) : opened?.click}
               finishingRef={finishingRef}
               geometry={geometry}
+              native={native}
+              spell={spell}
               stuckRef={stuckRef}
               // THE BLOCK'S POSITION AND THE VERSION, so a new read — or the
               // same slot holding a different block — is a new editor rather
@@ -559,6 +568,8 @@ export function TextEditLayer({
           finishingRef={finishingRef}
           geometry={geometry}
           key={`fresh-${String(blocks.version)}`}
+          native={native}
+          spell={spell}
           onClose={(outcome) => {
             const waiting = nextRef.current;
             setFresh(undefined);
@@ -669,6 +680,10 @@ export interface TextEditing {
   readonly onInsert: (page: number, insert: PageInsert, read: BlocksRead) => Promise<BlockCommit>;
   /** A box was added or abandoned: back to editing what is on the page. */
   readonly onAdded: () => void;
+  /** The browser's own edit verbs, run by main on the window. */
+  readonly native: (action: WindowEditAction) => void;
+  /** The spelling checker's answers for the editor's right-click menu. */
+  readonly spell: EditorSpelling;
 }
 
 /**
@@ -719,6 +734,8 @@ export function TextEditPage({
       onLeave={editing.onLeave}
       adding={editing.adding}
       onAdded={editing.onAdded}
+      native={editing.native}
+      spell={editing.spell}
       onInsert={(insert, read) => editing.onInsert(page, insert, read)}
       runFonts={(block, at) => editing.runFonts(page, block, at)}
       onPromote={() => {
@@ -749,6 +766,10 @@ interface BlockEditorProps {
    * begun and which can be moved once it is on the page like any block.
    */
   readonly placeable?: boolean;
+  /** The browser's own edit verbs, for the right-click menu (`window.edit`). */
+  readonly native?: ((action: WindowEditAction) => void) | undefined;
+  /** The spelling checker's answers, for the right-click menu. */
+  readonly spell?: EditorSpelling | undefined;
   /** Where this editor puts the function that writes it, so a click on another block can ask for the write. */
   readonly finishingRef: React.RefObject<(() => Promise<void>) | undefined>;
   /** Where this editor says whether it holds words it could not write. */
@@ -873,6 +894,8 @@ function BlockEditor({
   onClose,
   runFonts,
   placeable = true,
+  native,
+  spell,
   finishingRef,
   stuckRef,
 }: BlockEditorProps): ReactElement {
@@ -975,6 +998,10 @@ function BlockEditor({
 
   /** Whether a write is in flight: the words are not editable meanwhile, so nothing is typed into a block already sent. */
   const [busy, setBusy] = useState(false);
+  /** Whether the right-click menu is open, which has the focus in a popup outside this element. */
+  const menuOpen = useRef(false);
+  /** A sentence a menu item says beside the words, cleared by the next thing typed. */
+  const [notice, setNotice] = useState<MessageKey | undefined>(undefined);
   /** Where the block is being put (ADR-0180, corrected): shown over the editor and sent with its words when it writes. */
   const [placement, setPlacement] = useState<Placement>(NOT_PLACED);
   const finishWith = useCallback(
@@ -1148,6 +1175,8 @@ function BlockEditor({
       // colour) without writing, and writes only when it leaves both.
       onBlur={(event) => {
         if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+        // THE RIGHT-CLICK MENU HAS THE FOCUS while it is open, in a popup outside this element: the words are not finished.
+        if (menuOpen.current) return;
         if (problem === undefined) void finish();
       }}
       style={{ ...boxStyle(placed), height: 'auto', minHeight: placed.height }}
@@ -1163,6 +1192,15 @@ function BlockEditor({
           transform: placeTransform(placement, { width: placed.width, height: placed.height }, geometry.zoom),
         }}
       >
+      <TextEditorMenu
+        native={native}
+        onNotice={setNotice}
+        onOpenChange={(now) => {
+          menuOpen.current = now;
+        }}
+        root={area}
+        spell={spell}
+      >
       <div
         aria-label={_(TEXT_EDIT_EDITOR_LABEL)}
         aria-multiline="true"
@@ -1173,6 +1211,7 @@ function BlockEditor({
         onInput={(event) => {
           setText(readEditor(event.currentTarget).text);
           setProblem(undefined);
+          setNotice(undefined);
         }}
         onKeyDown={onKeyDown}
         ref={area}
@@ -1198,6 +1237,7 @@ function BlockEditor({
             : {}),
         }}
       />
+      </TextEditorMenu>
       {/* THE HANDLES, each one doing what it looks like it does (the wired-tools rule): the sides set the width, the
           corners scale, the top grip moves and the one to the right turns. The same placements are made by keys. */}
       {(placeable ? HANDLES : []).map(({ handle, label }) => (
@@ -1215,6 +1255,11 @@ function BlockEditor({
       </div>
       {problem !== undefined ? (
         <EditorProblem problem={problem} />
+      ) : notice !== undefined ? (
+        // WHAT A MENU ITEM COULD NOT DO, said beside the words (the dictionary's refusal of a word), until they are typed in.
+        <div className="m-text-editor-problem" role="status">
+          <p>{_(notice)}</p>
+        </div>
       ) : past ? (
         // THE WORDS ARE ALL WRITTEN and some are past the page's edge: said as a status and not a refusal, since
         // nothing was refused and the way to make them fit is this editor. ABOVE the words, where they begin on the

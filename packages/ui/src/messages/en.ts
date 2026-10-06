@@ -1207,6 +1207,9 @@ export const TEXT_FORMAT_INDENT_MORE = messageKey('command.text.format.indent-mo
 export const TEXT_FORMAT_INDENT_LESS = messageKey('command.text.format.indent-less');
 export const TEXT_FORMAT_BAR_LABEL = messageKey('surface.text-format.bar');
 export const TEXT_BLOCK_REMOVE = messageKey('surface.text-block.remove');
+export const TEXT_MENU_LABEL = messageKey('surface.text-editor.menu');
+export const TEXT_MENU_NO_SUGGESTIONS = messageKey('surface.text-editor.menu.no-suggestions');
+export const TEXT_MENU_ADD_WORD = messageKey('surface.text-editor.menu.add-word');
 export const ADD_TEXT_COMMAND_TITLE = messageKey('command.text.add');
 export const HINT_ADD_TEXT = messageKey('tool.hint.add-text');
 export const TEXT_ADD_SURFACE = messageKey('surface.text-add.surface');
@@ -3531,6 +3534,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_FORMAT_INDENT_LESS]: 'Decrease indent',
   [TEXT_FORMAT_BAR_LABEL]: 'Text formatting',
   [TEXT_BLOCK_REMOVE]: 'Remove this text',
+  [TEXT_MENU_LABEL]: 'Text editing',
+  [TEXT_MENU_NO_SUGGESTIONS]: 'No suggestions',
+  [TEXT_MENU_ADD_WORD]: 'Add “{word}” to the dictionary',
   [ADD_TEXT_COMMAND_TITLE]: 'Add text',
   [HINT_ADD_TEXT]: 'Click the page where the new text should go, then type.',
   [TEXT_ADD_SURFACE]: 'Click where the new text should go',

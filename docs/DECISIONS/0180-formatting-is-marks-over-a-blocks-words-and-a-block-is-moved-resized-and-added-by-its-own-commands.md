@@ -116,3 +116,15 @@ A block rotated by `places` is no longer upright, and an upright block is what e
 the writer keeps); P4 reopens that.
 
 Decisions 7 and 8 stand: join and split are an edit, and the editor's keys are ordered.
+
+## Correction, 2026-10-06: the editor's right-click menu is the editor's own, not a projection (Decision 8)
+
+The brief asks for a right-click menu with spelling. `docs/ARCHITECTURE.md` §7 draws every context menu as a projection of
+the command registry, and this one cannot be: its first section is the replacements for the word under the pointer, which
+are a different set at every right-click, and a command per replacement would register something that is not a command.
+So it is the editor's own, as the status bar's zoom and the editor's bar are (ADR-0067): the part that takes a value
+belongs to the control that has it. Its other half is not new. Cut, Copy, Paste and Select all are the Edit menu's verbs
+through the one `window.edit` call, so a Paste here is the Paste there, and the personal dictionary is written by the one
+function the spelling review writes it by (`keepWord`). The page's own context menu is not opened over the words. Whether
+`window.edit`'s paste reaches the in-place editor in the packaged application has not been measured from here: the Edit
+menu's Paste is the same call, and the menu is not claimed done on that path until it has been run there.

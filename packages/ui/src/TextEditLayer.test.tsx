@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import type { BlockFormatting, PageInsert } from '@monstera/contract';
-import { asDocVersion } from '@monstera/shared';
-import { act, fireEvent, render } from '@testing-library/react';
+import { asDocVersion, type MessageKey } from '@monstera/shared';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -14,7 +14,7 @@ import {
   type TextBlock,
 } from './commands/documentCommands.js';
 import { activateCatalogue, i18n } from './i18n.js';
-import { EN } from './messages/en.js';
+import { EN, SPELLING_DICTIONARY_FULL } from './messages/en.js';
 import { type PageBlocks, TextEditLayer } from './TextEditLayer.js';
 
 /**
@@ -514,6 +514,136 @@ describe('Edit text on the page (ADR-0096)', () => {
         await Promise.resolve();
       });
       expect(sent.map((one) => one.text)).toStrictEqual(['']);
+    });
+  });
+
+  describe('the right-click menu (ADR-0180 Decision 8)', () => {
+    const NO_ANSWER = Promise.resolve(undefined);
+    /** The editor open on block 1 with `text` typed, the caret at `at`, and the menu's two halves recorded. */
+    function openWithCaret(text: string, at: number) {
+      const looked: string[] = [];
+      const kept: string[] = [];
+      const native: string[] = [];
+      let refusal: MessageKey | undefined;
+      const spell = {
+        look: (word: string) => {
+          looked.push(word);
+          return word === 'quikc' ? Promise.resolve({ suggestions: ['quick', 'quirk'] }) : NO_ANSWER;
+        },
+        keep: (word: string) => {
+          kept.push(word);
+          return refusal;
+        },
+      };
+      const made = mount({ spell, native: (action) => native.push(action) });
+      fireEvent.click(find(made.view.container, '[data-text-block="1"]'));
+      const editor = editorIn(made.view.container);
+      typeInto(editor, text);
+      const node = editor.querySelector('div')?.firstChild;
+      if (!(node instanceof Text)) throw new Error('no text typed');
+      const range = document.createRange();
+      range.setStart(node, at);
+      range.collapse(true);
+      document.getSelection()?.removeAllRanges();
+      document.getSelection()?.addRange(range);
+      return { ...made, editor, looked, kept, native, refuseWith: (message: MessageKey | undefined) => (refusal = message) };
+    }
+    const rightClick = async (editor: HTMLElement) => {
+      await act(async () => {
+        fireEvent.contextMenu(editor, { clientX: 10, clientY: 10 });
+        await Promise.resolve();
+      });
+    };
+
+    it('over a misspelt word offers its replacements, and choosing one replaces that word and no other', async () => {
+      const { editor, looked } = openWithCaret('the quikc fox', 6);
+      await rightClick(editor);
+      expect(looked).toStrictEqual(['quikc']);
+      const choice = await screen.findByRole('menuitem', { name: 'quick' });
+      expect(await screen.findByRole('menuitem', { name: 'quirk' })).toBeDefined();
+      await act(async () => {
+        fireEvent.click(choice);
+        await Promise.resolve();
+      });
+      expect(editor.textContent).toBe('the quick fox');
+    });
+
+    it('CONTROL: over a correct word the menu has no replacements, only the editing verbs', async () => {
+      const { editor } = openWithCaret('the quikc fox', 1);
+      await rightClick(editor);
+      await screen.findByRole('menuitem', { name: 'Paste' });
+      expect(screen.queryByRole('menuitem', { name: 'quick' })).toBeNull();
+      expect(screen.queryByRole('menuitem', { name: /Add .* to the dictionary/u })).toBeNull();
+    });
+
+    it('Add to the dictionary keeps the word, and says why when the dictionary refuses', async () => {
+      const { editor, kept, refuseWith, view } = openWithCaret('the quikc fox', 6);
+      await rightClick(editor);
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('menuitem', { name: 'Add “quikc” to the dictionary' }));
+        await Promise.resolve();
+      });
+      expect(kept).toStrictEqual(['quikc']);
+      expect(view.container.querySelector('[role="status"]')).toBeNull();
+      // THE SENTENCE OF A REFUSAL, beside the words, until the next thing is typed.
+      refuseWith(SPELLING_DICTIONARY_FULL);
+      await rightClick(editor);
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('menuitem', { name: 'Add “quikc” to the dictionary' }));
+        await Promise.resolve();
+      });
+      expect(view.container.querySelector('[role="status"]')?.textContent).toContain('dictionary is full');
+    });
+
+    it('the verbs are the browser’s own through the one native call: Paste always, Cut and Copy only over a selection', async () => {
+      const { editor, native } = openWithCaret('the quikc fox', 1);
+      await rightClick(editor);
+      expect(screen.getByRole('menuitem', { name: 'Cut' }).getAttribute('aria-disabled')).toBe('true');
+      expect(screen.getByRole('menuitem', { name: 'Copy' }).getAttribute('aria-disabled')).toBe('true');
+      await act(async () => {
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste' }));
+        await Promise.resolve();
+      });
+      expect(native).toStrictEqual(['paste']);
+    });
+
+    it('does not finish the words while the menu has the focus, and the page’s own menu is not opened over them', async () => {
+      const committed: string[] = [];
+      const onCommit = vi.fn((_block: TextBlock, text: string) => {
+        committed.push(text);
+        return Promise.resolve<BlockCommit>('written');
+      });
+      const pageMenu = vi.fn();
+      render(
+        <div onContextMenu={pageMenu}>
+          <Wrapped>
+            <TextEditLayer
+              blocks={BLOCKS}
+              geometry={GEOMETRY}
+              onCommit={onCommit}
+              onLeave={vi.fn()}
+              onPromote={vi.fn()}
+              page={2}
+              paperAt={() => undefined}
+              runFonts={() => Promise.resolve(NO_RUN_FONTS)}
+            />
+          </Wrapped>
+        </div>,
+      );
+      fireEvent.click(find(document.body, '[data-text-block="1"]'));
+      const editor = editorIn(document.body);
+      await act(async () => {
+        fireEvent.contextMenu(editor, { clientX: 10, clientY: 10 });
+        await Promise.resolve();
+      });
+      await screen.findByRole('menuitem', { name: 'Paste' });
+      // THE POPUP HAS THE FOCUS, which blurs the editor: a write now would finish the words under the menu.
+      await act(async () => {
+        fireEvent.blur(editor);
+        await Promise.resolve();
+      });
+      expect(committed).toStrictEqual([]);
+      expect(pageMenu).not.toHaveBeenCalled();
     });
   });
 

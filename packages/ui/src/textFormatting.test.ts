@@ -8,9 +8,11 @@ import {
   INDENT_STEP,
   isFormatted,
   readEditor,
+  replaceRange,
   setParagraphs,
   stateAt,
   toggleList,
+  wordAt,
 } from './textFormatting.js';
 
 /**
@@ -201,6 +203,42 @@ describe('toggleList', () => {
     toggleList(root, all, 'bullet');
     toggleList(root, all, 'number');
     expect(readEditor(root).text).toBe('1. one\n2. two');
+  });
+});
+
+describe('wordAt and replaceRange', () => {
+  it('finds the word a point is in, by the same segmenter every word here is cut by', () => {
+    const root = editorOf('the quikc brown fox');
+    const found = wordAt(root, firstText(root), 7);
+    expect(found?.word).toBe('quikc');
+    expect(found?.range.toString()).toBe('quikc');
+    // CONTROL: a point in the space between words is in none, so a right-click there offers no spelling.
+    expect(wordAt(root, firstText(root), 3 + 0)?.word).toBe('the');
+    expect(wordAt(root, editorOf('a  b').firstElementChild?.firstChild as Text, 2)).toBeUndefined();
+  });
+
+  it('keeps a word one when a mark split it across nodes, and replaces it whole', () => {
+    const root = editorOf('a quikc fox');
+    // BOLD "ik" so the word is three text nodes.
+    formatRange(root, rangeOver(firstText(root), 3, 5), { bold: true });
+    const found = wordAt(root, firstText(root), 3);
+    expect(found?.word).toBe('quikc');
+    if (found === undefined) throw new Error('no word');
+    replaceRange(root, found.range, 'quick');
+    expect(readEditor(root).text).toBe('a quick fox');
+  });
+
+  it('replacing tells the editor it changed, as typing does', () => {
+    const root = editorOf('teh cat');
+    let heard = 0;
+    root.addEventListener('input', () => {
+      heard += 1;
+    });
+    const found = wordAt(root, firstText(root), 1);
+    if (found === undefined) throw new Error('no word');
+    replaceRange(root, found.range, 'the');
+    expect(heard).toBe(1);
+    expect(readEditor(root).text).toBe('the cat');
   });
 });
 
