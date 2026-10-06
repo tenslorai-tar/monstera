@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { logicalLine } from './bidiLine.js';
+import { logicalLine, readInLineOrder } from './bidiLine.js';
 import { logicalFromDrawn, reorderedFrom, strongDirections } from './bidiOrder.js';
-import { groupIntoBlocks, readInLineOrder } from './textLines.js';
+import { groupIntoBlocks } from './textLines.js';
 import { visualUnits } from './visualPieces.js';
 
 /**

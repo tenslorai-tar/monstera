@@ -1,4 +1,5 @@
 import { hasRightToLeftLetter, logicalFromDrawn } from './bidiOrder.js';
+import { type LineableRun, piecesOf } from './textLines.js';
 
 /**
  * A run as the reading of a line needs it: the glyphs it draws in the order they are drawn, the text it says on its own,
@@ -87,4 +88,35 @@ export function logicalLine<T extends DrawnRun>(runs: readonly T[]): LogicalLine
     runs: ordered.map((place) => place.run),
     texts: ordered.map((place) => text.slice(place.low, place.high + 1)),
   };
+}
+
+/**
+ * The page's runs with each LINE that runs both ways read as it was typed
+ * ([ADR-0185](../../../docs/DECISIONS/0185-a-line-of-several-objects-is-read-and-written-as-one-line.md)): the runs of a
+ * piece in the order of the words they hold, and each run's text the line's own words over its glyphs
+ * ({@link logicalLine}). A run with no right-to-left letter in its line is returned exactly as it came, and every run
+ * keeps its place in the list, so a piece's runs are rearranged among the slots they already filled.
+ *
+ * The pieces are the grouping's (`piecesOf`, `textLines.ts`) over the runs the grouping is given: the runs a person can
+ * edit in place, which is why `editable` names them. Text set at an angle has no line in this sense and is left as it
+ * stands. It lives here and not beside the pieces because the bidirectional algorithm is shaped in a host and never loaded
+ * into `main` (ADR-0172 Decision 5), and `textLines.ts` is reachable from `main`.
+ *
+ * @param runs the page's runs, in reading order
+ * @param editable whether a run is one the grouping is given (`isEditedInPlace`)
+ */
+export function readInLineOrder<T extends LineableRun & DrawnRun>(runs: readonly T[], editable: (run: T) => boolean): T[] {
+  const out = [...runs];
+  const slots = new Map<T, number>(runs.map((run, at) => [run, at]));
+  for (const piece of piecesOf(runs.filter(editable))) {
+    if (piece.runs.length === 0) continue;
+    const { runs: ordered, texts } = logicalLine(piece.runs);
+    // A LINE READ AS IT CAME is left as it came: the same runs, the same words.
+    if (ordered === piece.runs) continue;
+    const where = piece.runs.map((run) => slots.get(run) ?? 0).sort((a, b) => a - b);
+    ordered.forEach((run, at) => {
+      out[where[at] ?? 0] = { ...run, text: texts[at] ?? run.text };
+    });
+  }
+  return out;
 }

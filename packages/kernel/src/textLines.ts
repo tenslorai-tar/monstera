@@ -50,7 +50,6 @@
  * 238.0**, so equality splits the very case the grouping exists for.
  */
 
-import { type DrawnRun, logicalLine } from './bidiLine.js';
 import { blockShape } from './paragraphShape.js';
 
 /** How a text object's matrix sets it (`orientationOf`, `pdfiumFfi.ts`): `upright` is the only one an editor is placed along. */
@@ -234,10 +233,11 @@ interface Piece<S> {
 /**
  * The pieces of a page's runs: each line split where the gap between the piece so far and the next run is wider than the
  * line is tall (step 2 of {@link groupIntoBlocks}), in the order the runs came. The ONE place a piece is decided, which
- * the block grouping and the line reading ({@link readInLineOrder}) both take (B3a): two readings of which runs are one
- * line would put a run's words in one and its place in the other.
+ * the block grouping and the line reading (`readInLineOrder`, in `bidiLine.ts`, which takes the bidirectional algorithm
+ * this module must not load into `main`) both take (B3a): two readings of which runs are one line would put a run's words
+ * in one and its place in the other.
  */
-function piecesOf<T extends LineableRun>(
+export function piecesOf<T extends LineableRun>(
   runs: readonly T[],
 ): { runs: T[]; order: number; left: number; right: number; bottom: number; top: number }[] {
   const pieces: { runs: T[]; order: number; left: number; right: number; bottom: number; top: number }[] = [];
@@ -287,38 +287,6 @@ function piecesOf<T extends LineableRun>(
     pieces.push(...made);
   }
   return pieces;
-}
-
-/**
- * The page's runs with each LINE that runs both ways read as it was typed
- * ([ADR-0185](../../../docs/DECISIONS/0185-a-line-of-several-objects-is-read-and-written-as-one-line.md)): the runs of a
- * piece in the order of the words they hold, and each run's text the line's own words over its glyphs
- * ({@link logicalLine}). A run with no right-to-left letter in its line is returned exactly as it came, and every run
- * keeps its place in the list, so a piece's runs are rearranged among the slots they already filled.
- *
- * The pieces are the grouping's ({@link piecesOf}) over the runs the grouping is given: the runs a person can edit in
- * place, which is why `editable` names them. Text set at an angle has no line in this sense and is left as it stands.
- *
- * @param runs the page's runs, in reading order
- * @param editable whether a run is one the grouping is given (`isEditedInPlace`)
- */
-export function readInLineOrder<T extends LineableRun & DrawnRun>(
-  runs: readonly T[],
-  editable: (run: T) => boolean,
-): T[] {
-  const out = [...runs];
-  const slots = new Map<T, number>(runs.map((run, at) => [run, at]));
-  for (const piece of piecesOf(runs.filter(editable))) {
-    if (piece.runs.length === 0) continue;
-    const { runs: ordered, texts } = logicalLine(piece.runs);
-    // A LINE READ AS IT CAME is left as it came: the same runs, the same words.
-    if (ordered === piece.runs) continue;
-    const where = piece.runs.map((run) => slots.get(run) ?? 0).sort((a, b) => a - b);
-    ordered.forEach((run, at) => {
-      out[where[at] ?? 0] = { ...run, text: texts[at] ?? run.text };
-    });
-  }
-  return out;
 }
 
 /**

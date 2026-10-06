@@ -31,7 +31,8 @@ import { ShapingFace } from './textShaping.js';
 import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
 import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
 import { EditRefusedError, ReplaceMovesLineError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
-import { type Orientation, isEditedInPlace, readInLineOrder } from './textLines.js';
+import { readInLineOrder } from './bidiLine.js';
+import { type Orientation, isEditedInPlace } from './textLines.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
 /**
