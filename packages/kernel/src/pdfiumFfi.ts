@@ -10,7 +10,11 @@ import type { EditStep } from '@monstera/shared';
 import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
 import { editFaces, editFacesBound } from './editFaces.js';
-import { editPieces } from './editPieces.js';
+import { arabicForms, lettersOfForms } from './arabicForms.js';
+import { drawnOrder, drawnRightToLeft, drewTheGlyphs, isBidirectional, logicalOf, readBackOf } from './bidiOrder.js';
+import { resolveRuns } from './fontResolver.js';
+import { type EditPiece, editPieces } from './editPieces.js';
+import { inDrawingOrder } from './visualPieces.js';
 import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import type { PageRuns } from './operatorEdit.js';
@@ -811,6 +815,21 @@ function asTextPageReads(text: string): string {
   return collapsed.trim() === '' ? '' : collapsed;
 }
 
+/**
+ * The writes a live read-back did not give back, as the pairs {@link unwritableCharacters} names characters from: the
+ * ONE comparison both read-backs make (B3a). Exact for text that runs left to right; for text with right-to-left
+ * characters, by glyph, because a text page reads such an object in the direction of the line it stands in
+ * ({@link drewTheGlyphs}).
+ */
+function misreadWrites(
+  said: readonly string[],
+  drawn: readonly string[],
+): { readonly written: string; readonly read: string }[] {
+  return said
+    .map((text, at) => ({ written: asTextPageReads(text), read: drawn[at] ?? '' }))
+    .filter(({ written, read }) => written !== read && !drewTheGlyphs(written, read));
+}
+
 /** One object's own string, read through a text page the caller holds. */
 function objectTextOn(bindings: Bound, object: unknown, textPage: unknown): string {
   const bytes = numberFrom(bindings.textObjectText(object, textPage, null, 0), 'FPDFTextObj_GetText');
@@ -1216,7 +1235,14 @@ function walkRuns(
       // A RUN OF SPACES ALONE HAS NO BOX, and it has nothing to edit either:
       // leaving it out keeps an infinite extent from reaching a grouping whose
       // every comparison it would answer falsely.
-      runs: new Map([...runs.entries()].filter(([, run]) => Number.isFinite(run.left))),
+      // AND IN THE ORDER TYPED: a text page reads each word of a right-to-left object reversed in place and leaves the
+      // words in the order they are drawn, so the reading is turned back into the line as it was typed here, once, and
+      // every reader of a run's text sees that (`logicalOf`, ADR-0181).
+      runs: new Map(
+        [...runs.entries()]
+          .filter(([, run]) => Number.isFinite(run.left))
+          .map(([index, run]) => [index, { ...run, text: logicalOf(run.text) }] as const),
+      ),
       unaddressable,
       ends,
     };
@@ -1610,7 +1636,7 @@ export function replaceTextObjects(
           }
           // A PROCESS GIVEN NO FONTS sets the string in the object's own font, as Replace always has, and the read-back
           // below refuses what that font cannot draw: Replace never had the block edit's standard twin.
-          if (numberFrom(bindings.setText(object, wideString(replacement.text)), 'FPDFText_SetText') !== 1) {
+          if (!trySetText(bindings, object, replacement.text)) {
             throw refusedAt('set-text', `FPDFText_SetText refused the replacement for object ${String(replacement.index)}`);
           }
           pen.record(object, replacement.text);
@@ -1650,9 +1676,12 @@ export function replaceTextObjects(
             textPage,
             pen.written.map(({ object }) => object),
           );
-          const pairs = pen.written.map(({ text }, at) => ({ written: asTextPageReads(text), read: drawn[at] ?? '' }));
-          if (pairs.some(({ written, read }) => written !== read)) {
-            throw new TextNotWritableError(unwritableCharacters(pairs));
+          const misread = misreadWrites(
+            pen.written.map(({ text }) => text),
+            drawn,
+          );
+          if (misread.length > 0) {
+            throw new TextNotWritableError(unwritableCharacters(misread));
           }
         } finally {
           bindings.closeTextPage(textPage);
@@ -1701,7 +1730,8 @@ export function replacementsKeepTheirObjects(
 
 /** Every distinct code point the texts hold: what one subset per face must carry (ADR-0173 Decision 5). */
 function charactersOf(texts: readonly string[]): number[] {
-  return [...new Set(texts.flatMap((text) => Array.from(text, (character) => character.codePointAt(0) ?? 0)))];
+  // THE FORMS A LETTER IS DRAWN IN, not the letter (`drawing`): an Arabic letter is set as one of four code points.
+  return [...new Set(texts.flatMap((text) => Array.from(arabicForms(text), (character) => character.codePointAt(0) ?? 0)))];
 }
 
 /** Each object on the page by its handle's address, to its index in the page's order now. */
@@ -1830,8 +1860,28 @@ function moveBy(bindings: Bound, object: unknown, dx: number, dy: number): void 
  * where a throw here had made it an internal error in place of the refusal the edit is designed to
  * give.
  */
-function trySetText(bindings: Bound, object: unknown, text: string): boolean {
-  return numberFrom(bindings.setText(object, wideString(text)), 'FPDFText_SetText') === 1;
+function trySetText(bindings: Bound, object: unknown, text: string, rtl?: boolean): boolean {
+  return numberFrom(bindings.setText(object, wideString(drawing(text, rtl).drawn)), 'FPDFText_SetText') === 1;
+}
+
+/**
+ * The string an object is set to for `text`, and the string a text page reads from it
+ * ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)).
+ *
+ * A content stream is in drawing order and a text page reverses an object it takes as right to left, so what is set is
+ * the drawing order and what is read is the text as typed. `rtl` is the direction of the object's span where the
+ * caller cut the line by direction (`inDrawingOrder`), and absent where the object is a whole line, ordered here.
+ *
+ * `reads` is {@link readBackOf} the drawn string, which is the text as typed except where an edge neutral of a right to
+ * left piece reads on the other side of its word, and a read-back compares against it: it asks whether the font drew
+ * every character, which is the question it exists for.
+ */
+function drawing(text: string, rtl: boolean | undefined): { readonly drawn: string; readonly reads: string } {
+  // THE LETTERS ARE SET IN THEIR JOINING FORMS first (`arabicForms`), and a text page normalises the forms back to the
+  // letters before it reverses a run, so the reading is taken of the letters.
+  const shaped = arabicForms(text);
+  const drawn = rtl === undefined ? drawnOrder(shaped) : rtl ? drawnRightToLeft(shaped) : shaped;
+  return { drawn, reads: readBackOf(lettersOfForms(drawn)) };
 }
 
 /**
@@ -2046,12 +2096,12 @@ function pieceWriter(
        * itself (ADR-0173's correction). Any other object is set by `FPDFText_SetText`, as before. False where the font
        * has no glyph for a character, or PDFium refuses.
        */
-      const setOn = (object: unknown, text: string): boolean => {
+      const setOn = (object: unknown, text: string, rtl?: boolean): boolean => {
         const font: unknown = bindings.textFont(object);
         const glyphs = font === null ? undefined : faceGlyphs.get(String(koffi.address(font)));
-        if (glyphs === undefined) return trySetText(bindings, object, text);
+        if (glyphs === undefined) return trySetText(bindings, object, text, rtl);
         const codes: number[] = [];
-        for (const character of text) {
+        for (const character of drawing(text, rtl).drawn) {
           const glyph = glyphs.glyphFor(character.codePointAt(0) ?? 0);
           if (glyph === undefined || glyph === 0) return false;
           codes.push(glyph);
@@ -2113,9 +2163,14 @@ function pieceWriter(
        * call by call on a corpus page on 2026-09-24. So the probe goes on a blank page appended for
        * this edit and deleted before anything is generated or saved (`scratch`, below).
        */
-      const carries = (object: unknown, text: string, font: unknown = bindings.textFont(object)): boolean => {
+      const carries = (
+        object: unknown,
+        text: string,
+        font: unknown = bindings.textFont(object),
+        rtl?: boolean,
+      ): boolean => {
         const probe = makeTextLike(bindings, document, object, 0, font);
-        if (!setOn(probe, text)) {
+        if (!setOn(probe, text, rtl)) {
           bindings.destroyObject(probe);
           return false;
         }
@@ -2129,7 +2184,7 @@ function pieceWriter(
           const textPage: unknown = bindings.loadTextPage(sheet);
           if (textPage === null) throw refusedAt('page', 'PDFium could not load the scratch page to read a probe');
           try {
-            return drawnTextOn(bindings, textPage, [probe])[0] === asTextPageReads(text);
+            return drawnTextOn(bindings, textPage, [probe])[0] === asTextPageReads(drawing(text, rtl).reads);
           } finally {
             bindings.closeTextPage(textPage);
           }
@@ -2218,7 +2273,9 @@ function pieceWriter(
           bindings.destroyObject(twin);
         }
       };
-      const record = (object: unknown, text: string): void => {
+      /** Names what an object was written to say, as a text page will read it back ({@link drawing}). */
+      const record = (object: unknown, said: string, rtl?: boolean): void => {
+        const text = drawing(said, rtl).reads;
         const entry = written.find((write) => write.object === object);
         if (entry === undefined) written.push({ object, text });
         else entry.text = text;
@@ -2436,33 +2493,49 @@ function pieceWriter(
             return answer;
           },
         }));
-        const pieces = editPieces(
-          text,
-          ownCarries,
-          {
-            family: restyle?.family ?? style.font,
-            bold: restyle?.bold ?? style.bold,
-            italic: restyle?.italic ?? style.italic,
-            own: [],
-          },
-          faces().faces,
-          siblings,
-        );
+        const request = {
+          family: restyle?.family ?? style.font,
+          bold: restyle?.bold ?? style.bold,
+          italic: restyle?.italic ?? style.italic,
+          own: [],
+        };
+        const split = editPieces(text, ownCarries, request, faces().faces, siblings);
+        // A LINE THAT RUNS BOTH WAYS IS ONE OBJECT where one face carries all of it. A text page reads the objects of a
+        // line in the order they stand and each object in its own direction, so a line split between two fonts reads
+        // back with its parts in drawing order (measured 2026-10-06: `Hello שלום` drawn as two objects reads back as
+        // `Helloשלום`), where one object is read back as typed. The cost is that the line's Latin words are not in the
+        // document's own font, which only a line with right-to-left letters in it pays (ADR-0181 Decision 5).
+        const whole = split.length > 1 && isBidirectional(text) ? resolveRuns(text, request, faces().faces) : [];
+        const only = whole.length === 1 && whole[0]?.face != null && whole[0].missing.length === 0 ? whole[0] : undefined;
+        const onlyFace = only === undefined ? undefined : faces().faces.find((each) => each.id === only.face?.id);
+        const pieces: EditPiece[] =
+          only === undefined || onlyFace === undefined
+            ? split
+            : [{ text, face: onlyFace, sibling: null, weight: only.weight, boxed: [] }];
         // A BOXED PIECE IS ONE OBJECT PER CHARACTER, each in a box font of its own (Decision 7): one glyph has one code,
         // and one code reads as one text.
-        const units = pieces.flatMap((piece) => {
-          const { face, weight } = piece;
+        const carried = (piece: EditPiece, said: string): boolean =>
+          piece.face !== null
+            ? Array.from(said).every((character) => piece.face?.unicodes.has(character.codePointAt(0) ?? 0) === true)
+            : piece.sibling !== null
+              ? (siblings[piece.sibling]?.carries(said) ?? false)
+              : ownCarries(said);
+        const units = inDrawingOrder(text, pieces, carried).flatMap((piece) => {
+          const { face, weight, rtl } = piece;
           if (piece.boxed.length > 0) {
-            return Array.from(piece.text, (character) => ({
+            // ONE GLYPH EACH IN DRAWING ORDER: a right-to-left piece's characters are placed last typed first.
+            const characters = Array.from(piece.text);
+            return (rtl ? characters.reverse() : characters).map((character) => ({
               text: character,
+              rtl: false,
               font: (): unknown => boxFontLike(face, weight, character),
               box: true,
             }));
           }
           // A SIBLING'S PIECE in the document's own font handle, which is the document's and not ours to close.
           const sibling = piece.sibling === null ? undefined : fonts[piece.sibling];
-          if (sibling !== undefined) return [{ text: piece.text, font: (): unknown => sibling, box: false }];
-          return [{ text: piece.text, font: face === null ? null : (): unknown => faceFont(face, weight), box: false }];
+          if (sibling !== undefined) return [{ text: piece.text, rtl, font: (): unknown => sibling, box: false }];
+          return [{ text: piece.text, rtl, font: face === null ? null : (): unknown => faceFont(face, weight), box: false }];
         });
         const objects: unknown[] = [];
         let left = matrixOn(bindings, object).e;
@@ -2471,12 +2544,12 @@ function pieceWriter(
           const unitFont = unit.font === null ? bindings.textFont(object) : unit.font();
           if (unitFont === null) throw new TextNotWritableError(unit.text.trim());
           const made = reuse ? object : makeTextLike(bindings, document, object, left, unitFont);
-          if (!setOn(made, unit.text) || (mode === 'write' && !carries(made, unit.text))) {
+          if (!setOn(made, unit.text, unit.rtl) || (mode === 'write' && !carries(made, unit.text, undefined, unit.rtl))) {
             if (!reuse) bindings.destroyObject(made);
             throw new TextNotWritableError(unit.text.trim());
           }
           if (!reuse) insertAfter(made, objects.at(-1) ?? object);
-          if (mode === 'write') record(made, unit.text);
+          if (mode === 'write') record(made, unit.text, unit.rtl);
           pieceTexts.set(made, unit.text);
           if (unit.box) boxObjects.set(made, unit.text);
           objects.push(made);
@@ -3037,9 +3110,12 @@ function layOutBlocks(
             textPage,
             written.map((write) => write.object),
           );
-          const pairs = written.map((write, at) => ({ written: asTextPageReads(write.text), read: drawn[at] ?? '' }));
-          if (pairs.some(({ written: wrote, read }) => wrote !== read)) {
-            throw new TextNotWritableError(unwritableCharacters(pairs));
+          const misread = misreadWrites(
+            written.map((write) => write.text),
+            drawn,
+          );
+          if (misread.length > 0) {
+            throw new TextNotWritableError(unwritableCharacters(misread));
           }
         } finally {
           bindings.closeTextPage(textPage);

@@ -265,7 +265,7 @@ const failures = [];
 // edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
 // marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
 // with the control that separates the mark from the fixture.
-const roster = createRoster(failures, { cases: 162 });
+const roster = createRoster(failures, { cases: 176 });
 
 /**
  * @param {string} name
@@ -547,6 +547,7 @@ async function main() {
   await formatCases();
   await placeCases();
   await joinSplitCases();
+  await directionCases();
   await pastThePageCases();
   await glyphLineCases();
   await settingCases();
@@ -3044,6 +3045,112 @@ async function joinSplitCases() {
     (await blocksOf(barely)).blocks.length === 1,
     `${String((await blocksOf(barely)).blocks.length)} block(s)`,
   );
+}
+
+/**
+ * RIGHT-TO-LEFT TEXT (ADR-0181): a line typed in Hebrew or Arabic is written in drawing order and read back as it was
+ * typed, a mixed line is read back as typed, and an Arabic line is set in its joining forms. Every read is from reopened
+ * bytes. The control for the order is PDFium itself: a text page reverses what it takes as right to left, so a write
+ * that drew the typed order would be read back as another string and refused.
+ */
+async function directionCases() {
+  const fonts = fontsDirectory(root);
+  if (!existsSync(fonts)) {
+    record('the bundled fonts are provisioned for the right-to-left cases', false, `${fonts} is absent`);
+    return;
+  }
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  try {
+    const original = await aTypeset({ lines: ['Hello world'] });
+    const [block] = (await blocksOf(original)).blocks;
+    if (block === undefined) {
+      record('the right-to-left fixture reads as a block', false, 'no block');
+      return;
+    }
+    const lines = block.lines.map((line) => line.runs.map((run) => run.index));
+    const type = (/** @type {string} */ text) =>
+      localPdfiumExecution.apply({
+        session: original,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+          kind: 'editTextBlock',
+          page: 0,
+          ...blockEditOf([{ lines, soft: lines.map(() => false), text }]),
+          fit: 'reflow',
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      });
+    const lineOf = async (/** @type {Uint8Array} */ bytes) => {
+      const after = await blocksOf(bytes);
+      return { runs: after.runs, text: after.blocks.map((each) => each.lines.map((line) => lineText(line.runs)).join('\n')).join('\n') };
+    };
+    for (const typed of [
+      'שלום עולם',
+      'שלום (עולם)',
+      'שלום, 123 עולם',
+      'Hello (שלום)',
+      'שלום Hello',
+      'abc שלום def עולם xyz',
+      'مرحبا بالعالم',
+      'السلام عليكم',
+      'مرحبا (عالم)',
+    ]) {
+      const written = await type(typed).then(
+        (bytes) => bytes,
+        (error) => error,
+      );
+      const read = written instanceof Uint8Array ? await lineOf(written) : undefined;
+      record(
+        `the line “${typed}” is written in drawing order and read back as typed`,
+        read !== undefined && read.text.trim() === typed,
+        written instanceof Uint8Array ? JSON.stringify(read?.text) : `refused: ${String(written instanceof Error ? written.message : written)}`,
+      );
+    }
+
+    // THE ONE OBJECT: a line one face carries is written as one object, so a text page cannot read its parts in the order
+    // they stand. The control is the line no face carries whole, which is written as two and reads in drawing order.
+    const mixed = await type('שלום Hello').then(lineOf, () => undefined);
+    record(
+      'a line that runs both ways and one face carries is ONE object',
+      mixed !== undefined && mixed.runs.length === 1,
+      `${String(mixed?.runs.length)} run(s)`,
+    );
+    const split = await type('مرحبا World').then(lineOf, () => undefined);
+    record(
+      'CONTROL: a line no one face carries is written as separate objects, and its parts read in the order they stand — the limit the decision records',
+      split !== undefined && split.text.trim() !== 'مرحبا World',
+      JSON.stringify(split?.text),
+    );
+
+    // ARABIC IS JOINED: the same letters set isolated are 40% wider, so a line written as bare letters fails this.
+    const arabic = 'مرحبا بالعالم';
+    const joined = await type(arabic).then(lineOf, () => undefined);
+    const { arabicForms } = await import('../../packages/kernel/dist/arabicForms.js');
+    const face = new ShapingFace(new Uint8Array(readFileSync(`${fonts}/NotoNaskhArabic[wght].ttf`)), 0, {});
+    const advance = (/** @type {string} */ text) =>
+      (Array.from(text).reduce((sum, character) => sum + face.nominalAdvance(face.glyphFor(character.codePointAt(0) ?? 0) ?? 0), 0) / face.unitsPerEm) * 11;
+    const width = joined === undefined ? 0 : Math.max(...joined.runs.map((run) => run.right)) - Math.min(...joined.runs.map((run) => run.left));
+    record(
+      'an Arabic line is set in its joining forms: narrower than the same letters isolated',
+      joined !== undefined && width > 0 && width < 0.8 * advance(arabic),
+      `${width.toFixed(1)} pt against ${advance(arabic).toFixed(1)} isolated, ${advance(arabicForms(arabic)).toFixed(1)} joined`,
+    );
+    record(
+      'CONTROL: the isolated letters ARE wider than the joined forms in this face, so the threshold separates the two',
+      advance(arabic) * 0.8 > advance(arabicForms(arabic)) * 1.0,
+      `${advance(arabic).toFixed(1)} against ${advance(arabicForms(arabic)).toFixed(1)}`,
+    );
+    // A LINE TYPED AGAIN CHANGES NOTHING: what was read is what a person edits, so writing it back is the identity.
+    const again = joined === undefined ? undefined : await lineOf(await type(joined.text.trim()));
+    record(
+      'writing a read line back changes nothing: the order a text page gives is turned back into the order typed',
+      again !== undefined && again.text.trim() === arabic,
+      JSON.stringify(again?.text),
+    );
+  } finally {
+    bindEditFaces(null);
+  }
 }
 
 /**

@@ -195,3 +195,178 @@ function paragraphLineSpans(paragraph: ParagraphLevels, base: number, start: num
   }
   return spans.map((span) => ({ start: span.start, end: span.end, rtl: span.rtl }));
 }
+
+/**
+ * One line's text in the order a PDF text object holds it: left to right as drawn, each right-to-left span reversed
+ * (rules L1 and L2).
+ *
+ * ## A content stream is in VISUAL order, and a text page reads it back to LOGICAL
+ *
+ * Measured 2026-10-06 on PDFium 155.0.8044.0's Linux build, an object set to `אב` and read from a text page reads
+ * `בא`, and `שלום` reads `םולש`: the extractor assumes the stream is in drawing order and reverses a right-to-left run
+ * to give the text as typed. So text written in the order typed is DRAWN backwards and read back as another string,
+ * and the write was refused because the read-back did not match it. Written through this, the glyphs are drawn in the
+ * order a reader sees and the read-back is the text typed.
+ *
+ * A character past the BMP stays whole, because it is reversed by code point; a combining mark is reversed with its
+ * letter's neighbours and so precedes its base, which a text page reverses back and a renderer draws at the mark's own
+ * advance (a mark's glyph is positioned by its font, not by the stream's order).
+ */
+export function drawnOrder(text: string): string {
+  return reordered(text, lineDirection(text));
+}
+
+/**
+ * The direction a line is laid out in: that of the MAJORITY of its letters, and of its first strong letter where the two
+ * are level.
+ *
+ * ## Not the algorithm's own choice (rules P2 and P3), because the text is read back
+ *
+ * A PDF stores the drawn order and no paragraph direction, so a line read from a page has to be given one again, and
+ * the first strong letter of what is read is the wrong place to ask: a right-to-left line that begins with a Latin word
+ * reads, in drawing order, as left to right. The majority is the same set of letters in either order, so it is the same
+ * answer for the line as typed and for the line as drawn, which is what makes writing what was read change nothing
+ * ({@link logicalOf}). A line mostly of Hebrew with an English word in it is right to left whichever word comes first.
+ */
+export function lineDirection(text: string): TextDirection {
+  let right = 0;
+  let left = 0;
+  for (const character of text) {
+    const kind = BIDI.getBidiCharTypeName(character);
+    if (kind === 'R' || kind === 'AL') right += 1;
+    else if (kind === 'L') left += 1;
+  }
+  if (right === left) return paragraphDirection(text);
+  return right > left ? 'rtl' : 'ltr';
+}
+
+/** Whether a character is of class R or AL: what a text page takes as a letter to be read right to left. */
+function isRightToLeftLetter(character: string): boolean {
+  const kind = BIDI.getBidiCharTypeName(character);
+  return kind === 'R' || kind === 'AL';
+}
+
+/**
+ * What a text page reads from an object whose glyphs are drawn as `drawn`: each unbroken run of right-to-left letters
+ * reversed in place, a run of neutrals BETWEEN two of them reversed and mirrored with them, and everything else —
+ * a neutral at an edge, digits, Latin — left where it stands.
+ *
+ * Measured 2026-10-06 on PDFium 155.0.8044.0's Linux build: ` םולש` reads ` שלום`, `םלוע םולש` reads `עולם שלום` (each
+ * WORD reversed and the words left in the order drawn: a text page reverses SEGMENTS of one kind, not the whole run
+ * the algorithm would), and `(םלוע) םולש` reads `(עולם (שלום` (the leading bracket stays, the one between two words is
+ * reversed and mirrored). So a text page does not give the order typed for a line of more than one word, and the
+ * reading is its own inverse: applied to what it read, it gives what was drawn.
+ *
+ * This is a MODEL of PDFium's rule and not the algorithm's, and a read-back compares against it: where the model is
+ * not what PDFium does the comparison fails and the edit is refused, since a character drawn and not read back is never
+ * accepted for it.
+ */
+export function readBackOf(drawn: string): string {
+  const segments: { kind: 'R' | 'N' | 'O'; text: string }[] = [];
+  for (const character of drawn) {
+    const name = BIDI.getBidiCharTypeName(character);
+    const kind = isRightToLeftLetter(character) ? 'R' : DIRECTIONLESS.has(name) ? 'N' : 'O';
+    const last = segments.at(-1);
+    if (last?.kind === kind) last.text += character;
+    else segments.push({ kind, text: character });
+  }
+  return segments
+    .map(({ kind, text }, at) => {
+      if (kind === 'R') return reversedByCodePoint(text);
+      // A NEUTRAL RUN AFTER A WORD AND BEFORE ANOTHER, OR BEFORE THE END, is read as part of the right-to-left text it
+      // follows; one before a word, or next to a number or a Latin letter, is read where it stands.
+      const follows = segments[at - 1]?.kind === 'R';
+      const next = segments[at + 1];
+      return kind === 'N' && follows && (next === undefined || next.kind === 'R') ? drawnRightToLeft(text) : text;
+    })
+    .join('');
+}
+
+/**
+ * The classes a text page takes as having no direction of their own: white space, other neutrals and separators. The
+ * weak classes (numbers and their separators, `:` `,` `.` `-`) are not among them: measured 2026-10-06, `םלוע :םולש`
+ * reads `עולם :שלום` with the colon left where it is drawn, while `(םלוע) םולש` reads `(עולם (שלום`.
+ */
+const DIRECTIONLESS: ReadonlySet<BidiCharTypeName> = new Set(['WS', 'ON', 'S', 'B']);
+
+function reversedByCodePoint(span: string): string {
+  return Array.from(span).reverse().join('');
+}
+
+/**
+ * A line as it was typed, from what a text page read of an object drawn in the order a reader sees: the drawn string
+ * rebuilt by undoing the reading ({@link readBackOf} is its own inverse), then ordered back by the algorithm in the
+ * line's direction ({@link lineDirection}), mirroring included. The inverse of {@link drawnOrder} for the lines this
+ * module draws, and the best reading of one it did not.
+ */
+export function logicalOf(read: string): string {
+  if (!Array.from(read).some(isRightToLeftLetter)) return read;
+  const drawn = readBackOf(read);
+  return reordered(drawn, lineDirection(drawn));
+}
+
+function reordered(text: string, direction: TextDirection): string {
+  const paragraph = paragraphLevels(text, direction);
+  // THE ALGORITHM SAYS WHETHER ANYTHING IS RIGHT TO LEFT, not a range of code points listed here: text with no odd
+  // level is returned as it came.
+  if (!paragraph.levels.levels.some((level) => level % 2 === 1)) return text;
+  return lineSpans(paragraph, 0, text.length)
+    .map(({ start, end, rtl }) => (rtl ? drawnRightToLeft(text.slice(start, end)) : text.slice(start, end)))
+    .join('');
+}
+
+/**
+ * `span`, one right-to-left span of a line, in the order and shape its glyphs are drawn: reversed by code point, and
+ * each character that has a mirror image replaced by it (rule L4), so the opening bracket of a Hebrew phrase is drawn
+ * facing the phrase it opens.
+ */
+export function drawnRightToLeft(span: string): string {
+  // A LETTER AND ITS MARKS ARE ONE UNIT, marks after the letter as typed: a mark is drawn at the pen where the letter
+  // ended and sits over it through its own offset, so a mark set BEFORE its letter in the drawn order would stand over
+  // the letter beside it. A text page reverses by character, which {@link readBackOf} models separately.
+  const clusters = span.match(/\P{M}\p{M}*|\p{M}+/gu) ?? [];
+  return clusters
+    .reverse()
+    .map((cluster) => BIDI.getMirroredCharacter(cluster) ?? cluster)
+    .join('');
+}
+
+/**
+ * Whether `read`, from a live text page, holds the glyphs of `written`: a bracket and its mirror image counted as one,
+ * and for a text with right-to-left characters in it the same characters in any order.
+ *
+ * ## Why the live read-back cannot be exact for these
+ *
+ * Measured 2026-10-06: an object read alone reads as {@link readBackOf} says, and read among the line's other objects
+ * it reads in the line's own direction, with a bracket mirrored and a space on the other side of its word
+ * (`) םולש` alone, ` (שלום` in the line). The read-back exists to find a character the font did not draw, which reads
+ * as another character or none, and that is a difference of CHARACTERS and not of order, so for these texts it asks
+ * the question it was written for.
+ */
+export function drewTheGlyphs(written: string, read: string): boolean {
+  const fold = (text: string): string[] =>
+    Array.from(text, (character) => {
+      const mirror = BIDI.getMirroredCharacter(character);
+      return mirror !== null && mirror < character ? mirror : character;
+    });
+  // A BRACKET NEXT TO RIGHT-TO-LEFT TEXT is read mirrored even in an object with no such letter in it (`)` beside a
+  // Hebrew word reads `(`), so the mirror image is the same glyph for every text; the ORDER is let go only for a text
+  // that has right-to-left characters in it.
+  const wanted = fold(written);
+  const got = fold(read);
+  if (isBidirectional(written)) return wanted.sort().join('') === got.sort().join('');
+  return wanted.join('') === got.join('');
+}
+
+/** Whether the algorithm gives any character of `text` an odd level in a paragraph laid out in {@link lineDirection}. */
+export function isBidirectional(text: string): boolean {
+  return paragraphLevels(text, lineDirection(text)).levels.levels.some((level) => level % 2 === 1);
+}
+
+/** The classes that take their direction from their neighbours: white space, separators and other neutrals. */
+const NEUTRAL: ReadonlySet<BidiCharTypeName> = new Set(['WS', 'ON', 'S', 'B', 'CS', 'ES', 'ET']);
+
+/** Whether every character of `text` is a neutral, so that the text has no direction of its own. */
+export function isNeutralOnly(text: string): boolean {
+  return text !== '' && Array.from(forTheAlgorithm(text)).every((character) => NEUTRAL.has(BIDI.getBidiCharTypeName(character)));
+}
