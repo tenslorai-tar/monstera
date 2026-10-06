@@ -207,7 +207,7 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(editorIn(view.container).querySelectorAll('.m-text-editor__line')).toHaveLength(2);
   });
 
-  it('sets the editor in the SHAPE the read found: a centred block is centred, an indented first line is indented (ADR-0179)', () => {
+  it('sets the editor in the SHAPE the read found: a centred block is centred, an indented first line is indented (ADR-0179)', async () => {
     const [heading, paragraph] = BLOCKS.blocks;
     if (heading === undefined || paragraph === undefined) throw new Error('the fixture lost a block');
     const shaped: PageBlocks = {
@@ -217,10 +217,16 @@ describe('Edit text on the page (ADR-0096)', () => {
         { ...paragraph, shape: { align: 'left', firstIndent: 24 } },
       ],
     };
-    const { view } = mount({ blocks: shaped });
+    const { view, answerWith } = mount({ blocks: shaped });
+    // NOTHING TYPED, so the open block writes nothing and the next opens at once.
+    answerWith('unchanged');
     fireEvent.click(find(view.container, '[data-text-block="0"]'));
     expect(editorIn(view.container).style.textAlign).toBe('center');
-    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    // THE OPEN BLOCK IS WRITTEN FIRST, even when there is nothing to write, and the next opens after it (ADR-0180 Decision 8).
+    await act(async () => {
+      fireEvent.click(find(view.container, '[data-text-block="1"]'));
+      await Promise.resolve();
+    });
     const indented = editorIn(view.container);
     expect(indented.style.textAlign).toBe('left');
     expect(indented.style.textIndent).toBe('24px');
@@ -418,6 +424,76 @@ describe('Edit text on the page (ADR-0096)', () => {
     const said = view.container.querySelector('[role="alert"]')?.textContent ?? '';
     expect(said).toContain('This page uses a font Monstera can’t rewrite yet, so nothing was changed.');
     expect(said).toContain('read-back 0');
+  });
+
+  describe('a click from block to block (ADR-0180 Decision 8)', () => {
+    /** A commit the test settles itself, so the sequence between the click and the answer can be looked at. */
+    function mountDeferred() {
+      const settle: { resolve: (outcome: BlockCommit) => void } = { resolve: () => undefined };
+      const commits: string[] = [];
+      const onCommit = vi.fn((_block: TextBlock, text: string) => {
+        commits.push(text);
+        return new Promise<BlockCommit>((resolve) => {
+          settle.resolve = resolve;
+        });
+      });
+      const made = mount({ onCommit });
+      return { ...made, commits, settle };
+    }
+
+    it('writes the open block FIRST, keeps its words on screen meanwhile, and opens the next in the read that follows', async () => {
+      const { view, commits, settle, show } = mountDeferred();
+      fireEvent.click(find(view.container, '[data-text-block="0"]'));
+      typeInto(editorIn(view.container), 'WORK HISTORY');
+      await act(async () => {
+        fireEvent.click(find(view.container, '[data-text-block="1"]'));
+        await Promise.resolve();
+      });
+      // THE WORDS ARE STILL THE ONES TYPED, in the one editor there is, which is not editable while they are in flight.
+      const editors = view.container.querySelectorAll('[data-text-editor]');
+      expect(editors).toHaveLength(1);
+      expect(editors[0]?.textContent).toBe('WORK HISTORY');
+      expect(editors[0]?.getAttribute('contenteditable')).toBe('false');
+      expect(commits).toStrictEqual(['WORK HISTORY']);
+      await act(async () => {
+        settle.resolve('written');
+        await Promise.resolve();
+      });
+      // THE READ AFTER THE WRITE, the same blocks at the next version: the block that was clicked opens, with its own words.
+      await act(async () => {
+        show({ ...BLOCKS, version: asDocVersion(8) });
+        await Promise.resolve();
+      });
+      const opened = editorIn(view.container);
+      expect(opened.textContent).toContain('Helps with care and support');
+      expect(commits).toHaveLength(1);
+    });
+
+    it('CONTROL: a block clicked with nothing open opens at once, as it always did', () => {
+      const { view } = mountDeferred();
+      fireEvent.click(find(view.container, '[data-text-block="1"]'));
+      expect(editorIn(view.container).textContent).toContain('Helps with care and support');
+    });
+
+    it('a REFUSED write keeps the open block and its words, and the block clicked does not open over them', async () => {
+      const { view, settle } = mountDeferred();
+      fireEvent.click(find(view.container, '[data-text-block="0"]'));
+      typeInto(editorIn(view.container), 'WORK HISTORY');
+      await act(async () => {
+        fireEvent.click(find(view.container, '[data-text-block="1"]'));
+        await Promise.resolve();
+      });
+      await act(async () => {
+        settle.resolve({ refused: { code: 'edit-refused', detail: { step: 'read-back', engineError: 0 } } });
+        await Promise.resolve();
+      });
+      expect(view.container.querySelectorAll('[data-text-editor]')).toHaveLength(1);
+      expect(view.container.querySelector('[data-text-editor]')?.textContent).toBe('WORK HISTORY');
+      expect(view.container.querySelector('[role="alert"]')).not.toBeNull();
+      // AND A FURTHER CLICK on that other block changes nothing either: the words are kept until the person decides.
+      fireEvent.click(find(view.container, '[data-text-block="1"]'));
+      expect(view.container.querySelector('[data-text-editor]')?.textContent).toBe('WORK HISTORY');
+    });
   });
 
   it('CONTROL: a block WRITTEN closes the editor, through the same finish', async () => {

@@ -327,9 +327,33 @@ export function TextEditLayer({
     written === undefined || blocks === undefined || blocks.version === written.version
       ? -1
       : blocks.blocks.findIndex((block) => overlaps(block.box, written.box) && pastItsPage(block.box, geometry.crop));
-  const open = chosen ?? (regrown === -1 ? undefined : regrown);
+  /**
+   * The block a click chose WHILE ANOTHER WAS OPEN, held until that one is written and the page read again, and then
+   * opened where it now is (ADR-0180 Decision 8): the open editor is written first and the next opens after it, one
+   * ordered sequence, so nothing typed is replaced unwritten by the block clicked next.
+   */
+  const [next, setNext] = useState<
+    { readonly box: TextBlock['box']; readonly click: Click | undefined; readonly version: DocVersion } | undefined
+  >();
+  /** The same request, readable by the close of an editor that began before the click was seen. */
+  const nextRef = useRef(next);
+  useEffect(() => {
+    nextRef.current = next;
+  }, [next]);
+  // THE BLOCK HANDED TO, in the read after the write: DERIVED for `regrown`'s reason, so it is the editor that is drawn
+  // when the read arrives and not a second render with none.
+  const handed =
+    next === undefined || blocks === undefined || blocks.version === next.version
+      ? -1
+      : blocks.blocks.findIndex((block) => overlaps(block.box, next.box));
+  const open = chosen ?? (handed === -1 ? (regrown === -1 ? undefined : regrown) : handed);
+  /** Finishes the open editor: the write its blur began, or one begun here when no blur preceded the click. */
+  const finishingRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  /** Whether the open editor holds words it could not write, which a click elsewhere must not replace. */
+  const stuckRef = useRef(false);
   const setOpen = (at: number | undefined, click?: Click): void => {
     setWritten(undefined);
+    setNext(undefined);
     setOpened(at === undefined || blocks === undefined ? undefined : { at, version: blocks.version, click });
   };
 
@@ -377,8 +401,10 @@ export function TextEditLayer({
           return (
             <BlockEditor
               block={block}
-              click={chosen === undefined ? undefined : opened?.click}
+              click={chosen === undefined ? (handed === at ? next?.click : undefined) : opened?.click}
+              finishingRef={finishingRef}
               geometry={geometry}
+              stuckRef={stuckRef}
               // THE BLOCK'S POSITION AND THE VERSION, so a new read — or the
               // same slot holding a different block — is a new editor rather
               // than old words in a new place.
@@ -389,11 +415,25 @@ export function TextEditLayer({
               // A WRITE KEEPS `written` for the read after it; any other close ends the reopening.
               onClose={(outcome) => {
                 if (outcome !== 'written') setWritten(undefined);
+                // THE BLOCK CLICKED WHILE THIS ONE WAS OPEN, when this wrote nothing: the page is as it was, so the
+                // block opens where it is. After a WRITE it opens in the read that follows (`handed`).
+                const waiting = nextRef.current;
+                if (outcome === 'unchanged' && waiting !== undefined) {
+                  const target = blocks.blocks.findIndex((other, place) => place !== at && overlaps(other.box, waiting.box));
+                  if (target !== -1) {
+                    setOpen(target, waiting.click);
+                    return;
+                  }
+                }
+                // THE HANDED-TO EDITOR CLOSING ends the hand-over; the one being written closing does not.
+                if (at === handed || outcome === 'put-back') setNext(undefined);
                 setOpened((current) => (current?.at === at ? undefined : current));
               }}
               onCommit={async (text, formatting) => {
                 const outcome = await onCommit(block, text, blocks, formatting);
                 if (outcome === 'written') setWritten({ box: block.box, version: blocks.version });
+                // A REFUSED WRITE KEEPS ITS EDITOR AND ITS WORDS, so the block clicked meanwhile does not open over them.
+                else if (outcome !== 'unchanged') setNext(undefined);
                 return outcome;
               }}
               paper={paperAround(placed, paperAt)}
@@ -414,7 +454,16 @@ export function TextEditLayer({
             key={`block-${String(blocks.version)}-${String(at)}`}
             onClick={(event) => {
               // A KEY'S ACTIVATION reports a click at no point (`detail` 0): the caret then goes to the end, as before.
-              setOpen(at, event.detail === 0 ? undefined : { x: event.clientX, y: event.clientY });
+              const click = event.detail === 0 ? undefined : { x: event.clientX, y: event.clientY };
+              if (open !== undefined && open !== at) {
+                // ANOTHER BLOCK IS OPEN: its words are written first and this one opens after it (`next`). One that holds
+                // words it could not write is left as it is: the editor says why, and a click elsewhere replaces nothing.
+                if (stuckRef.current) return;
+                setNext({ box: block.box, click, version: blocks.version });
+                void finishingRef.current?.();
+                return;
+              }
+              setOpen(at, click);
             }}
             // A SMALLER BLOCK ABOVE A LARGER ONE that holds it, so the click on a heading inside a column's box is the
             // heading's, and the larger is reached where the smaller is not: stacked by area, the smallest on top.
@@ -535,6 +584,10 @@ interface BlockEditorProps {
   readonly onClose: (outcome: 'written' | 'unchanged' | 'put-back') => void;
   /** The fonts this block's runs are drawn in, read once when the editor opens (ADR-0175). */
   readonly runFonts: () => Promise<RunFonts>;
+  /** Where this editor puts the function that writes it, so a click on another block can ask for the write. */
+  readonly finishingRef: React.RefObject<(() => Promise<void>) | undefined>;
+  /** Where this editor says whether it holds words it could not write. */
+  readonly stuckRef: React.RefObject<boolean>;
 }
 
 /**
@@ -642,6 +695,8 @@ function BlockEditor({
   onCommit,
   onClose,
   runFonts,
+  finishingRef,
+  stuckRef,
 }: BlockEditorProps): ReactElement {
   const { _ } = useLingui();
   const original = wordsOf(block);
@@ -723,13 +778,17 @@ function BlockEditor({
     }
   }, [geometry.zoom]);
 
+  /** Whether a write is in flight: the words are not editable meanwhile, so nothing is typed into a block already sent. */
+  const [busy, setBusy] = useState(false);
   const finish = useCallback(async (): Promise<void> => {
     if (writing.current) return;
     writing.current = true;
+    setBusy(true);
     // THE FORMATTING FROM THE EDITOR AS IT STANDS, read in the one walk that gave the words (`readEditor`).
     const element = area.current;
     const outcome = await onCommit(text, element === null ? {} : readEditor(element).formatting);
     writing.current = false;
+    setBusy(false);
     if (outcome !== 'written' && outcome !== 'unchanged') {
       // THE EDITOR STAYS on EVERY refusal (ADR-0169 Decision 5), with the words
       // and the sentence beside them: the person can change what was refused, or
@@ -738,11 +797,28 @@ function BlockEditor({
       // again, so a focus the closing dialog moves cannot ask the same question
       // twice.
       setProblem(outcome);
-      area.current?.focus();
       return;
     }
     onClose(outcome);
   }, [onClose, onCommit, text]);
+  // READABLE BY THE LAYER, which asks for this write when another block is clicked and must not replace words that were
+  // refused (`stuckRef`).
+  useEffect(() => {
+    finishingRef.current = finish;
+    return () => {
+      if (finishingRef.current === finish) finishingRef.current = undefined;
+    };
+  }, [finish, finishingRef]);
+  useEffect(() => {
+    stuckRef.current = problem !== undefined;
+    return () => {
+      stuckRef.current = false;
+    };
+  }, [problem, stuckRef]);
+  // THE WORDS COME BACK TO THE PERSON after a refusal, once they are editable again: a write in flight made them not.
+  useEffect(() => {
+    if (!busy && problem !== undefined) area.current?.focus();
+  }, [busy, problem]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
     if (composing(event)) return;
@@ -798,7 +874,8 @@ function BlockEditor({
         aria-label={_(TEXT_EDIT_EDITOR_LABEL)}
         aria-multiline="true"
         className={`m-text-editor ${faceOf(block.style)}`}
-        contentEditable="plaintext-only"
+        aria-busy={busy}
+        contentEditable={busy ? false : 'plaintext-only'}
         data-text-editor=""
         onInput={(event) => {
           setText(readEditor(event.currentTarget).text);
