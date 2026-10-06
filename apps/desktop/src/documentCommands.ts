@@ -98,6 +98,7 @@ import {
   type StructureOutline,
   type RecognitionRequest,
   type RecognisedPage,
+  type PageRuns,
   type SaveDependencies,
   type CopyOutcome,
   type CopyTargetVerdict,
@@ -1582,6 +1583,14 @@ export type DocumentOcrReader = (
   request: RecognitionRequest,
 ) => Promise<RecognisedPage>;
 
+/**
+ * One page's joined runs with their members, through the PDFium host: `editTextOperators`' pre-read
+ * ([ADR-0176](../../../docs/DECISIONS/0176-a-page-holding-type-3-text-is-edited-in-its-own-content-stream-by-mupdf.md)'s
+ * correction). {@link DocumentOcrReader}'s shape, per page for its reason, and read from the bytes the bus is about to
+ * apply to, so the runs it names are the ones on the page the edit writes.
+ */
+export type DocumentPageRunsReader = (docId: DocId, sessions: DocumentSessions, page: number) => Promise<PageRuns>;
+
 /** The outline, stamped with the version the lane read it at. */
 export interface DocumentDestinations {
   readonly version: DocVersion;
@@ -2225,6 +2234,8 @@ export interface DocumentCommandsParts {
   readonly destinations: DocumentDestinationsReader;
   /** How a page becomes characters — `ocrPage`'s pre-read (ADR-0051). */
   readonly ocr: DocumentOcrReader;
+  /** Which objects a page's runs are, through the PDFium host — `editTextOperators`' pre-read (ADR-0176). */
+  readonly pageRuns: DocumentPageRunsReader;
   readonly layers: DocumentLayersReader;
   /**
    * Reads and verifies the document's signatures, in the contained host.
@@ -2462,6 +2473,7 @@ export class DocumentCommands {
   readonly #wordBoxes: DocumentWordBoxesReader;
   readonly #destinations: DocumentDestinationsReader;
   readonly #ocr: DocumentOcrReader;
+  readonly #pageRuns: DocumentPageRunsReader;
   readonly #layers: DocumentLayersReader;
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   readonly #signaturesKept: (session: MupdfSession) => Promise<NextSave>;
@@ -2554,6 +2566,7 @@ export class DocumentCommands {
     this.#wordBoxes = parts.wordBoxes;
     this.#destinations = parts.destinations;
     this.#ocr = parts.ocr;
+    this.#pageRuns = parts.pageRuns;
     this.#layers = parts.layers;
     this.#signatures = parts.signatures;
     this.#signaturesKept = parts.signaturesKept;
@@ -3806,6 +3819,8 @@ export class DocumentCommands {
       // command's own — the declaration builds it — and this closure adds the
       // document, which is what the bus cannot name.
       ocr: (request) => this.#ocr(docId, live(), request),
+      // ADR-0176's member: the page the command names, and this closure adds the document, as `ocr`'s does.
+      pageRuns: ({ page }) => this.#pageRuns(docId, live(), page),
       sources: this.#sourcesFor(named),
     };
   }

@@ -3,6 +3,7 @@ import type { AnnotationDataFormat, CommandOfKind, FormDataFormat, Handlers, Pag
 import type { KindsRoutedTo } from '../commandRouting.js';
 import type { CommandExecution } from '../commandSpecs.js';
 import type { ByteImage, DocumentAccess, EngineWriter, MupdfSession, PreReadValue } from '../engineSeam.js';
+import { EditRefusedError, TextNotWritableError } from '../textEditRefusals.js';
 // A VALUE IMPORT for the same reason the two below it are: `DocumentLocked` is
 // how this handler tells an encrypted document from an unreadable one, and the
 // alternative was keying on the wording of an error message. `engineSeam.ts`
@@ -1222,6 +1223,32 @@ export function createEngineHandlers({
       // the same fact was expressed by a call that simply stopped at three
       // arguments — indistinguishable from the drop that cost four rows.
       await execution.apply({ session: held.session, command: whole, sources: from, reads: undefined });
+      return { ok: true, value: {} };
+    },
+
+    // `engine/apply`'s body for the kinds that can outgrow a frame, with the pre-read they declare (ADR-0176): no asset
+    // (none of them carries one), the sources looked up and refused the same way, and the pre-read handed on. The two
+    // refusals a person is told about cross as their codes; anything else is `internal`, as there.
+    'engine/apply-file': async ({ session, command, sources, reads }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      const from: MupdfSession[] = [];
+      for (const source of sources) {
+        const heldSource = sessions.lookup(source);
+        if (heldSource === undefined) return gone;
+        from.push(heldSource.session);
+      }
+      try {
+        await execution.apply({ session: held.session, command, sources: from, reads });
+      } catch (error) {
+        if (error instanceof TextNotWritableError) {
+          return { ok: false, error: { code: 'text-not-writable', detail: { characters: error.characters } } } as const;
+        }
+        if (error instanceof EditRefusedError) {
+          return { ok: false, error: { code: 'edit-refused', detail: { step: error.step, engineError: error.engineError } } } as const;
+        }
+        throw error;
+      }
       return { ok: true, value: {} };
     },
 

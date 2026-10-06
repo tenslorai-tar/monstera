@@ -122,6 +122,7 @@ import {
   remotePdfiumPageObjects,
   remotePdfiumRenderPage,
   remotePdfiumRunFonts,
+  remotePdfiumPageRuns,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
   remoteMupdfGeometry,
@@ -1424,6 +1425,13 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // EACH COPIED INTO A BUFFER OF ITS OWN: they are views cut from one file read, and structured clone sends a view's
       // whole buffer to the renderer, so a font sent as a view would carry its neighbours with it (`DocumentRunFontsReader`).
       return { fonts: fonts.map((font) => new Uint8Array(font)), runs };
+    },
+    // A PAGE'S RUNS WITH THEIR MEMBERS, `editTextOperators`' pre-read (ADR-0176): `textBlocks`' two forced steps, the
+    // current image and the PDFium host. A process with no PDFium host cannot name which objects a run is, so the edit
+    // is refused for the engine that is missing rather than written against a guess.
+    pageRuns: async (docId, sessions, page) => {
+      if (pdfiumHost === null) throw new EngineUnavailableError('reading which objects a page’s text is made of');
+      return pdfiumHost.pageRuns(await currentImage(docId, sessions), page);
     },
     // THE DUPLICATE REPORT, composed here for the reads above's reason: the
     // reader and the session are both in scope on this line and nowhere else.
@@ -3009,6 +3017,7 @@ type PdfiumRenderPage = ReturnType<typeof remotePdfiumRenderPage>;
 
 /** A block's run fonts rebuilt, over the same wire (ADR-0175). */
 type PdfiumRunFonts = ReturnType<typeof remotePdfiumRunFonts>;
+type PdfiumPageRuns = ReturnType<typeof remotePdfiumPageRuns>;
 
 /**
  * The PDFium host's lifetime, its one granted area, and the writer the bus
@@ -3062,6 +3071,7 @@ function pdfiumHostBinding(
   readonly pageObjects: PdfiumPageObjects;
   readonly renderPage: PdfiumRenderPage;
   readonly runFonts: PdfiumRunFonts;
+  readonly pageRuns: PdfiumPageRuns;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -3072,6 +3082,7 @@ function pdfiumHostBinding(
   readonly pageObjects: PdfiumPageObjects;
   readonly renderPage: PdfiumRenderPage;
   readonly runFonts: PdfiumRunFonts;
+  readonly pageRuns: PdfiumPageRuns;
     /** The granted pair, so `close` can remove exactly what `connect` created. */
     readonly paths: { readonly snapshot: DirectoryPath; readonly output: DirectoryPath };
     readonly session: string;
@@ -3202,6 +3213,7 @@ function pdfiumHostBinding(
       pageObjects: remotePdfiumPageObjects(client, held, transfer),
       renderPage: remotePdfiumRenderPage(client, held, transfer),
       runFonts: remotePdfiumRunFonts(client, held, transfer),
+      pageRuns: remotePdfiumPageRuns(client, held, transfer),
       paths,
       session: opened.value.session,
     };
@@ -3243,6 +3255,7 @@ function pdfiumHostBinding(
     renderPage: async (image, page, width, height) =>
       (await ensure()).renderPage(image, page, width, height),
     runFonts: async (image, page, indices) => (await ensure()).runFonts(image, page, indices),
+    pageRuns: async (image, page) => (await ensure()).pageRuns(image, page),
     close: async () => {
       const live = host;
       host = null;

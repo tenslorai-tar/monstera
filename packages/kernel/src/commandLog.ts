@@ -725,6 +725,8 @@ export interface CommandPrior {
    * would undo the text and keep the lines (ADR-0096 Decision 6).
    */
   readonly editTextBlock: never;
+  /** A checkpoint until Decision 7's prior lands (ADR-0176). */
+  readonly editTextOperators: never;
 }
 
 /**

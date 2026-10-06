@@ -10,7 +10,10 @@ import type { CommandExecution, KindsRoutedTo } from '../commandSpecs.js';
 import type { HUMAN_CHECKS } from '../accessibilityRules.js';
 import type { FoundBarcode } from '../barcodeReader.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
-import type { MupdfSession } from '../engineSeam.js';
+import { declaredCommands } from '../commandDeclarations.js';
+import type { MupdfSession, PreReadValue } from '../engineSeam.js';
+import type { PageRuns } from '../operatorEdit.js';
+import { EditRefusedError, TextNotWritableError } from '../textEditRefusals.js';
 import type { NextSave } from '../mupdfWriter.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
@@ -20,6 +23,7 @@ import type { SignatureHost } from '../documentSign.js';
 import {
   type EngineChannels,
   type MupdfWireCommand,
+  isFileRouted,
   splitAsset,
   splitPdfLibAsset,
   splitPlaceholderAsset,
@@ -261,6 +265,16 @@ function answered<T>(
   if (result.error.code === 'no-such-session') throw new EngineSessionGone(channel);
   throw new EngineCallFailed(channel, result.error.code);
 }
+
+// NO pdf-lib KIND READS A PAGE'S RUNS: `engine/applyPdfLib` carries an outline or a recognition and nothing else.
+const _noPdfLibKindReadsRuns: Extract<(typeof declaredCommands)[KindsRoutedTo<'pdf-lib'>]['reads'], 'pageRuns'> extends never
+  ? true
+  : never = true;
+void _noPdfLibKindReadsRuns;
+
+/** Why a file-routed kind's capture records nothing: its route, which `engineChannels.ts` ties to a checkpoint undo. */
+const FILE_ROUTED_CAPTURE =
+  'a command carried by engine/apply-file is undone by its checkpoint, since engine/capture is framed and cannot carry it';
 
 /**
  * A capture that answered `answer-too-large` (ADR-0125), as the bus's own outcome for a prior it cannot record.
@@ -712,13 +726,17 @@ export function remotePdfLibHost(
     if (asset !== undefined && split.asset !== undefined) {
       await assets.write(area.snapshotDirectory, asset, split.asset);
     }
+    // A PAGE'S RUNS ARE A MuPDF WRITER'S PRE-READ (ADR-0176), and this channel carries pdf-lib's two. No pdf-lib kind
+    // can declare it: `_noPdfLibKindReadsRuns` below fails to compile the day one does, so this cast is that
+    // assertion's conclusion, which the checker cannot carry from a kind's declaration to the value the bus resolved.
+    const carried = reads as Exclude<PreReadValue, PageRuns> | undefined;
     let byteLength: number;
     try {
       const result = await client['engine/applyPdfLib']({
         session: sessions.handleFor(session),
         command: split.command,
         asset,
-        reads,
+        reads: carried,
         into,
       });
       // A REFUSAL A PERSON CAN ACT ON comes back as the class it was thrown as (`hostRefusals.ts`).
@@ -817,15 +835,35 @@ export function remoteMupdfExecution(
   };
 
   return {
-    // `reads` IS NOT NAMED AND THE CHANNEL CARRIES NO SLOT FOR IT, which is a
-    // fact about this table rather than a drop: no MuPDF command declares
-    // `reads`, because ADR-0040's extension exists for a writer with no session
-    // to read an outline through and this writer holds one. The day a MuPDF
-    // command declares it, `engine/apply`'s schema is what has to grow — the
-    // request makes that a visible edit here rather than a value that silently
-    // fails to cross (ADR-0069).
-    apply: async ({ session, command, sources }) => {
+    // `reads` CROSSES ON `engine/apply-file` ONLY, the channel of the kinds that declare it (ADR-0176's note on
+    // Decision 2). `engine/apply` still carries no slot for it, because no framed kind declares one: a framed kind that
+    // did would reach the `reads !== undefined` refusal below rather than lose its pre-read on the way (ADR-0069).
+    apply: async ({ session, command, sources, reads }) => {
+      const split = splitAsset(command);
+      if (isFileRouted(split.command)) {
+        if (reads === undefined || split.asset !== undefined) {
+          throw new Error(`"${split.command.kind}" is file-routed and must carry its pre-read and no asset.`);
+        }
+        const result = await client['engine/apply-file']({
+          session: sessions.handleFor(session),
+          command: split.command,
+          sources: sources.map((source) => sessions.handleFor(source)),
+          // THE ONE PRE-READ A MuPDF COMMAND DECLARES, so the value the bus resolved is a page's runs: the schema
+          // the channel checks it against is the one it was checked against when the PDFium host answered it.
+          reads: reads as PageRuns,
+        });
+        // THE TWO REFUSALS A PERSON IS TOLD ABOUT come back as the classes they were thrown as, so main turns them into
+        // the sentence the PDFium writer's own refusals give.
+        if (!result.ok && result.error.code === 'text-not-writable') throw new TextNotWritableError(result.error.detail.characters);
+        if (!result.ok && result.error.code === 'edit-refused') {
+          throw new EditRefusedError(result.error.detail.step, result.error.detail.engineError, 'the MuPDF host refused the operator edit');
+        }
+        answered('engine/apply-file', result);
+        return;
+      }
+      if (reads !== undefined) throw new Error(`"${split.command.kind}" carries a pre-read, which engine/apply has no slot for.`);
       await withAsset(session, command, async (wire, asset) => {
+        if (isFileRouted(wire)) throw new Error(`"${wire.kind}" is file-routed, and is applied above.`);
         answered(
           'engine/apply',
           await client['engine/apply']({
@@ -847,7 +885,11 @@ export function remoteMupdfExecution(
       session: MupdfSession,
       command: CommandOfKind<K>,
     ): Promise<CaptureResult<CommandPrior[K]>> => {
+      // A FILE-ROUTED KIND IS UNDONE BY ITS CHECKPOINT, which `engineChannels.ts` holds at compile time for every kind
+      // `engine/apply-file` carries, so its capture is answered here: `engine/capture` is framed and cannot carry it.
+      if (isFileRouted(splitAsset(command).command)) return { captured: false, reason: FILE_ROUTED_CAPTURE };
       const answer = await withAsset(session, command, async (wire, asset) => {
+        if (isFileRouted(wire)) throw new Error(`"${wire.kind}" is file-routed, and its capture is answered above.`);
         const result = await client['engine/capture']({ session: sessions.handleFor(session), command: wire, asset });
         return priorTooLargeToRecord(result) ?? answered('engine/capture', result);
       });

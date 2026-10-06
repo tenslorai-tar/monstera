@@ -3,7 +3,7 @@ import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
 import type { ApplyRequest, CommandExecution, KindsRoutedTo } from './commandRouting.js';
-import type { Capture, Invert, MupdfSession } from './engineSeam.js';
+import type { Capture, Invert, MupdfSession, PreReadValue } from './engineSeam.js';
 import {
   applyImportPageAsLayer,
   applySetLayerVisibility,
@@ -118,6 +118,7 @@ import {
   invertSetPageTransition,
 } from './pageTransition.js';
 import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
+import { applyEditTextOperators, captureEditTextOperators, invertEditTextOperators } from './textOperatorEdit.js';
 
 /**
  * MuPDF's commands: what each one does, and executing them in this process.
@@ -408,6 +409,13 @@ export const mupdfSpecs = {
     capture: captureImportAnnotations,
     invert: invertImportAnnotations,
   },
+  // THE ONE ENTRY TAKING A PRE-READ (ADR-0176): its third parameter is PDFium's reading of the page, not sources.
+  editTextOperators: {
+    ...declaredCommands.editTextOperators,
+    apply: applyEditTextOperators,
+    capture: captureEditTextOperators,
+    invert: invertEditTextOperators,
+  },
 };
 
 /** A command kind this table executes. */
@@ -467,6 +475,13 @@ type MupdfApply<K extends CommandKind> = (
   sources: readonly MupdfSession[],
 ) => Promise<void>;
 
+/** A spec declaring a pre-read: its third parameter is the value the bus resolved. */
+type MupdfReadingApply<K extends CommandKind> = (
+  session: MupdfSession,
+  command: CommandOfKind<K>,
+  read: PreReadValue,
+) => Promise<void>;
+
 /**
  * Executing MuPDF commands **in this process** — the contained MuPDF host, and main's
  * tests.
@@ -482,15 +497,20 @@ export const localMupdfExecution: CommandExecution<'mupdf'> = {
   apply<K extends KindsRoutedTo<'mupdf'>>({
     session,
     command,
-    // DESTRUCTURED RATHER THAN NAMED WHOLE, and `reads` is deliberately absent
-    // from this list: that is a fact about MuPDF rather than an omission.
-    // `reads: 'outline'` is pdf-lib's, because ADR-0040's extension exists
-    // precisely for a writer with no session to read an outline through, and a
-    // MuPDF apply that wanted one already holds the session `readDestinations`
-    // takes. Under ADR-0069 the request still CARRIES the field — what it
-    // cannot do is arrive without one.
     sources,
+    // `reads` IS HANDED ON for the one MuPDF spec that declares it (ADR-0176's `pageRuns`): a reading only PDFium can
+    // make, which this session cannot. `reads: 'outline'` stays pdf-lib's, because a MuPDF apply that wanted an outline
+    // already holds the session `readDestinations` takes. Under ADR-0069 the request carries the field either way.
+    reads,
   }: ApplyRequest<'mupdf', K>): Promise<void> {
+    // A SPEC DECLARING A PRE-READ TAKES IT where every other takes its sources: `Apply`'s shape for a live-session
+    // writer with sources `'none'` and a read. The bus has resolved it against this command, so its absence here is
+    // the bus's defect and is refused by name rather than handed on as `undefined`.
+    const spec = specFor(command);
+    if (spec.reads !== 'none') {
+      if (reads === undefined) throw new Error(`"${spec.kind}" declares a pre-read and was applied without one.`);
+      return (spec.apply as MupdfReadingApply<K>)(session, command, reads);
+    }
     // THE CAST NAMES THE PLAIN LIST, the widest of the three shapes this table
     // holds, and the call passes `sources` through whatever the command
     // declared. `pdfLibWriter.ts` explains why this is not a guard: an apply

@@ -94,6 +94,7 @@ const inputs = {
   },
   outline: () => Promise.reject(new Error('the watermark reads no outline')),
   ocr: () => Promise.reject(new Error('the watermark recognises nothing')),
+  pageRuns: () => Promise.reject(new Error('the watermark reads no text runs')),
   sources: new Map(),
 };
 

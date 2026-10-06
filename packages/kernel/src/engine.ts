@@ -209,6 +209,7 @@ export {
   type FlatFieldCandidate,
   MAX_FLAT_CANDIDATES,
 } from './flatFields.js';
+export { applyEditTextOperators, captureEditTextOperators, invertEditTextOperators } from './textOperatorEdit.js';
 export {
   NamelessFieldError,
   readXfdf,

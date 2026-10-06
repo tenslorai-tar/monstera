@@ -5146,32 +5146,46 @@ export function blocksOfEdit(edit: BlockEdit): EditedBlock[] {
  * An object named in two lines is two opinions about which line it is in, and
  * the boundary refuses it, as `replaceTextObjectSchema` refuses one named twice.
  */
-export const editTextBlockSchema = z
-  .object({
-    kind: z.literal('editTextBlock'),
-    /** Zero-based index of the page the blocks are on. */
-    page: z.number().int().nonnegative(),
-    /**
-     * The blocks this edit writes — one for a person typing, every block of the page for a translation (ADR-0097).
-     * One command, so one checkpoint and one undo either way. In {@link blockEditSchema}'s wire form (ADR-0142): built
-     * by {@link blockEditOf}, read by {@link blocksOfEdit}.
-     */
-    ...blockEditSchema.shape,
-    /**
-     * How the blocks take words that no longer fit (ADR-0097 4b): `reflow` grows downward, which is what a person
-     * typing sees; `shrink` scales each block to the box it had, which is what a translation keeps. ONE for the
-     * command, because no caller mixes them (ADR-0142), and REQUIRED, so a caller cannot write a translation without
-     * deciding what happens to the page's layout.
-     */
-    fit: z.enum(TEXT_FIT_MODES),
-    /** The version the blocks were read at. Refused if the document has moved. */
-    version: docVersionSchema,
-  })
-  .strict()
-  // ACROSS BLOCKS, not only within one: a run in two blocks would be written twice.
-  .refine((command) => blockEditAgrees(command), {
-    message: 'the starts must describe the lists, and an object may be named once in a block edit',
-  });
+export const editTextBlockSchema = blockEditCommandSchema('editTextBlock');
+
+/**
+ * {@link editTextBlockSchema}'s intent for a page whose text includes a Type 3 font, which PDFium cannot regenerate
+ * ([ADR-0176](../../../docs/DECISIONS/0176-a-page-holding-type-3-text-is-edited-in-its-own-content-stream-by-mupdf.md)):
+ * written by MuPDF into the page's own content stream, changing only the instructions it edits. The SAME fields, built
+ * by one function, so the editor sends one block wire to either writer and the two kinds cannot drift apart; the reading
+ * says per page which one the page needs (Decision 1), and the renderer picks the kind from it.
+ */
+export const editTextOperatorsSchema = blockEditCommandSchema('editTextOperators');
+
+/** A block edit command of `kind`: {@link editTextBlockSchema}'s fields, declared once for both kinds. */
+function blockEditCommandSchema<K extends 'editTextBlock' | 'editTextOperators'>(kind: K) {
+  return z
+    .object({
+      kind: z.literal(kind),
+      /** Zero-based index of the page the blocks are on. */
+      page: z.number().int().nonnegative(),
+      /**
+       * The blocks this edit writes — one for a person typing, every block of the page for a translation (ADR-0097).
+       * One command, so one checkpoint and one undo either way. In {@link blockEditSchema}'s wire form (ADR-0142):
+       * built by {@link blockEditOf}, read by {@link blocksOfEdit}.
+       */
+      ...blockEditSchema.shape,
+      /**
+       * How the blocks take words that no longer fit (ADR-0097 4b): `reflow` grows downward, which is what a person
+       * typing sees; `shrink` scales each block to the box it had, which is what a translation keeps. ONE for the
+       * command, because no caller mixes them (ADR-0142), and REQUIRED, so a caller cannot write a translation without
+       * deciding what happens to the page's layout.
+       */
+      fit: z.enum(TEXT_FIT_MODES),
+      /** The version the blocks were read at. Refused if the document has moved. */
+      version: docVersionSchema,
+    })
+    .strict()
+    // ACROSS BLOCKS, not only within one: a run in two blocks would be written twice.
+    .refine((command) => blockEditAgrees(command), {
+      message: 'the starts must describe the lists, and an object may be named once in a block edit',
+    });
+}
 
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
@@ -5227,6 +5241,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   replaceAllTextSchema,
   replaceTextAtSchema,
   editTextBlockSchema,
+  editTextOperatorsSchema,
 ]);
 
 /**
@@ -5440,6 +5455,8 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // new one goes — the renderer does not have the page's fonts, so those are
   // the kernel's (ADR-0096).
   editTextBlockSchema,
+  // RENDERABLE for the same reason, the same fields: the reading said this page needs its own content written (ADR-0176).
+  editTextOperatorsSchema,
 ]);
 
 /** A command a renderer may send. */
@@ -5633,6 +5650,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'recolorPageObjects') return command.version;
   if (command.kind === 'deletePageObjects') return command.version;
   if (command.kind === 'editTextBlock') return command.version;
+  if (command.kind === 'editTextOperators') return command.version;
   if (command.kind === 'replacePage') return command.version;
   if (command.kind === 'importPageAsLayer') return command.version;
   return undefined;
@@ -5723,7 +5741,9 @@ export type NamesATextObject =
   | 'placePageObject'
   | 'recolorPageObjects'
   | 'deletePageObjects'
-  | 'editTextBlock';
+  | 'editTextBlock'
+  // PDFium's page object indices too: the writer is MuPDF, the names are the reading's (ADR-0176's correction).
+  | 'editTextOperators';
 const _theObjectNameIsACommandKind: NamesATextObject extends CommandKind ? true : never = true;
 void _theObjectNameIsACommandKind;
 

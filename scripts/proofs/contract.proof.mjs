@@ -787,6 +787,24 @@ const EDIT_BLOCK_SPEC = `  editTextBlock: {
   },`;
 
 /**
+ * The newest kind (ADR-0176), kept separate for {@link MOVE_SPEC}'s reason: `editTextBlock`'s intent written by MuPDF,
+ * terminal until its prior lands, and the one MuPDF spec declaring a pre-read, so its `apply` takes the read third.
+ */
+const EDIT_OPERATORS_SPEC = `  editTextOperators: {
+    kind: 'editTextOperators',
+    writer: 'mupdf',
+    apply: applyEditTextOperators,
+    capture: captureEditTextOperators,
+    invert: invertEditTextOperators,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'pageRuns',
+  },`;
+
+/**
  * Filler, kept separate for {@link MOVE_SPEC}'s reason; it was the newest kind until
  * `importPageAsLayer`.
  *
@@ -1229,6 +1247,9 @@ const SPEC_IMPORTS = `import {
   applyImportFormData,
   captureImportFormData,
   invertImportFormData,
+  applyEditTextOperators,
+  captureEditTextOperators,
+  invertEditTextOperators,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: watermarkPages routes to a byte-image writer that runs in
@@ -2121,6 +2142,7 @@ ${EDIT_BLOCK_SPEC}
 ${SET_ANNOTATION_AUTHOR_SPEC}
 ${PLACE_SIGNATURE_MARK_SPEC}
 ${PLACE_SIGNATURE_PICTURE_SPEC}
+${EDIT_OPERATORS_SPEC}
 };
 `,
   },
@@ -2245,6 +2267,7 @@ ${REPLY_TO_ANNOTATION_SPEC}
 ${EDIT_BLOCK_SPEC}
 ${SET_ANNOTATION_AUTHOR_SPEC}
 ${PLACE_SIGNATURE_MARK_SPEC}
+${EDIT_OPERATORS_SPEC}
 };
 `,
   },
@@ -3834,8 +3857,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     //
     // 52 since `placeSignatureMark` and `placeSignaturePicture` (2026-10-02, ADR-0133): three spelt, 48 counted, one.
     // 53 since `replaceTextAt` (2026-10-04, ADR-0156): three spelt, 49 counted, one.
+    // 54 since `editTextOperators` (2026-10-06, ADR-0176): three spelt, 50 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 49 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 50 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

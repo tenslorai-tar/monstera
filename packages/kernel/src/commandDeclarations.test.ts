@@ -242,7 +242,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('replacePage');
   });
 
-  it('CONTROL: exactly fifteen kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly sixteen kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -272,6 +272,8 @@ describe('the declaration table', () => {
       'deletePageObjects',
       // A BLOCK EDIT names the runs a read answered, at that read's version (ADR-0096).
       'editTextBlock',
+      // AND THE SAME BLOCKS on a Type 3 page, the same read's names and version (ADR-0176).
+      'editTextOperators',
     ]);
     // `'page'` IS THE FOURTH MEMBER (ADR-0062's correction, 2026-09-14): a page
     // index is a position in the page tree, which is none of the three walks below.

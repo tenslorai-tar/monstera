@@ -57,6 +57,9 @@ const MUPDF_READS = [
   // session's serialise, taken in the process that holds it, and the result goes to the output directory
   // (ADR-0121 Decision 3). A second engine holds no such session and owes none of it.
   'engine/applyPdfLib',
+  // A MuPDF COMMAND PAST THE FRAME is MuPDF's own: `engine/apply`'s request for the kinds that outgrow a frame, with
+  // the pre-read they declare (ADR-0176's note on Decision 2). A second engine routes none of them.
+  'engine/apply-file',
   // A SIGNATURE'S PLACEHOLDER is MuPDF's for pdf-lib's reason: written on this session's serialise (ADR-0148).
   'engine/prepareSignature',
   'engine/snapshotRegion',

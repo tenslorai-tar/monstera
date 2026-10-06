@@ -347,6 +347,9 @@ const noByteImageExpected: CommandInputs = {
   ocr: () => {
     throw new Error('this case runs a command declaring reads: none and must not recognise');
   },
+  pageRuns: () => {
+    throw new Error('this case runs a command declaring reads: none and must not read a page’s runs');
+  },
   // EMPTY RATHER THAN THROWING, and it is the one member here that cannot use
   // the trick above. `sources` is data the bus indexes, not a function it
   // calls, so there is no call to refuse — an empty map is the only way to say
@@ -1754,6 +1757,9 @@ describe('CommandBus and the reads axis', () => {
       ocr: () => {
         throw new Error('no command in this block declares reads: ocr');
       },
+      pageRuns: () => {
+        throw new Error('no command in this block declares reads: pageRuns');
+      },
       // EMPTY, for `noByteImageExpected`'s reason: every command in this block
       // declares `sources: 'none'`, and a map with an entry in it would be a
       // caller resolving a document nothing asked about.
@@ -1868,6 +1874,9 @@ describe('CommandBus and a parameterised pre-read', () => {
       ...host,
       outline: () => {
         throw new Error('no command in this block declares reads: outline');
+      },
+      pageRuns: () => {
+        throw new Error('no command in this block declares reads: pageRuns');
       },
       // ECHOES THE LANGUAGE IT WAS ASKED FOR, which is what a real reader does:
       // `RecognisedPage.language` is the model that read the page. A stub that

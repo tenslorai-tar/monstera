@@ -25,6 +25,7 @@ import {
   coreEngineChannels,
   sessionSchema,
 } from './engineChannels.js';
+import { pageRunsSchema } from './pageRunsWire.js';
 
 /**
  * The channel set of the **PDFium** host
@@ -141,14 +142,6 @@ export const ENGINE_TEXT_OBJECTS_MAX = 43_400;
  * Measured by `pdfiumChannels.test.ts` against the schema's own shape, and the divisor of {@link ENGINE_TEXT_OBJECTS_MAX}.
  */
 export const SMALLEST_RUN_BYTES = 192;
-
-/**
- * How many text objects, or one run's members, `engine/page-runs` may name: the most single-digit indices with their
- * commas an answer within `ENGINE_ANSWER_FILE_MAX_BYTES` (8 MiB) could hold, 8,388,608 / 2. A bound against a hostile
- * host, as {@link ENGINE_TEXT_OBJECTS_MAX} is; a literal held to the division by `pdfiumChannels.test.ts`, for that
- * constant's reason.
- */
-export const PAGE_TEXT_OBJECTS_MAX = 4_194_304;
 
 /**
  * How long a captured run's text may be on this wire.
@@ -712,28 +705,7 @@ export const pdfiumChannels = {
   'engine/page-runs': fileAnswered(
     'Answers a page’s joined text runs with the objects each is, and the page indices of its text objects.',
     z.object({ session: sessionSchema, ...byteImageWire.read, page: z.number().int().nonnegative() }).strict(),
-    z
-      .object({
-        textObjects: z.array(z.number().int().nonnegative()).max(PAGE_TEXT_OBJECTS_MAX),
-        runs: z
-          .array(
-            z
-              .object({
-                index: z.number().int().nonnegative(),
-                members: z.array(z.number().int().nonnegative()).min(1).max(PAGE_TEXT_OBJECTS_MAX),
-                text: z.string().max(PDFIUM_PRIOR_TEXT_MAX),
-                left: z.number(),
-                right: z.number(),
-                bottom: z.number(),
-                top: z.number(),
-              })
-              .strict()
-              // A RUN IS NAMED BY ITS FIRST OBJECT, which is how the editor's wire names it.
-              .refine((run) => run.members[0] === run.index, { message: 'a run is named by its first object' }),
-          )
-          .max(ENGINE_TEXT_OBJECTS_MAX),
-      })
-      .strict(),
+    pageRunsSchema,
     ['no-such-session', 'asset-missing', 'engine-refused'],
   ),
 } as const;

@@ -370,6 +370,7 @@ export {
   replacementFieldsOf,
   replacementsOf,
   editTextBlockSchema,
+  editTextOperatorsSchema,
   MAX_EDITED_OBJECTS,
   MAX_FIND_TEXT,
   MAX_OBJECT_SCALE,

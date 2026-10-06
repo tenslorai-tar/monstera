@@ -2069,6 +2069,36 @@ const declarations = {
     // and `FPDF_SaveAsCopy` has none.
     purpose: 'ordinary',
   },
+  // A PAGE WHOSE TEXT INCLUDES A TYPE 3 FONT, written by MuPDF into its own content
+  // stream (ADR-0176). `editTextBlock`'s intent with another writer, because PDFium
+  // regenerates such a page without its Type 3 text.
+  editTextOperators: {
+    kind: 'editTextOperators',
+    display: 'image',
+    writer: 'mupdf',
+    // NOT INVERTIBLE YET, and a checkpoint is the undo: Decision 7's prior (the
+    // page's content and the fonts the edit added) is the next piece of this
+    // writer, and until it lands the checkpoint restores the whole document, which
+    // loses nothing an inverse would have put back.
+    invertible: false,
+    undo: 'checkpoint',
+    // THE SAME BLOCKS AGAINST THE SAME CONTENT LAY OUT THE SAME WAY: widths come
+    // from the page's own fonts and nothing mints an identifier or reads a clock.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // PDFIUM'S OBJECT INDICES, as `editTextBlock` names them: the version is
+    // checked against the read that produced them.
+    targets: 'text-object',
+    // THE FIRST MuPDF COMMAND TO DECLARE A PRE-READ (the correction to ADR-0176):
+    // which objects each run is, which only the engine that walked them can say.
+    reads: 'pageRuns',
+    read: (access, command) => access.pageRuns({ page: command.page }),
+    asset: 'none',
+    // ORDINARY, so an incremental save: a removal's collecting save would rewrite
+    // every object, where this changes one page's content and adds nothing else.
+    purpose: 'ordinary',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

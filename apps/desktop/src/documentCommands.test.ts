@@ -141,6 +141,7 @@ import {
   type DocumentGeometry,
   type DocumentDestinationsReader,
   type DocumentOcrReader,
+  type DocumentPageRunsReader,
   type DocumentExtractReader,
   type DocumentPageImageReader,
   type DocumentWordExport,
@@ -405,6 +406,9 @@ const noDestinations: DocumentDestinationsReader = () =>
 
 const noOcr: DocumentOcrReader = () =>
   Promise.reject(new Error('this case does not recognise a page'));
+
+const noPageRuns: DocumentPageRunsReader = () =>
+  Promise.reject(new Error('this case does not read which objects a page’s runs are'));
 
 const noLayers: DocumentLayersReader = () =>
   Promise.reject(new Error('this case does not read the layers'));
@@ -867,6 +871,7 @@ const INERT = {
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
   runFonts: noRunFonts,
+  pageRuns: noPageRuns,
   duplicates: noDuplicates,
   copy: noCopying,
   image: noImages,
@@ -959,6 +964,7 @@ const LOCAL_READS = {
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
   runFonts: noRunFonts,
+  pageRuns: noPageRuns,
   duplicates: localDuplicates,
   copies: {
     // THE KERNEL'S ONE RULE, `sealCopy`, over MuPDF in this process: the host's sealing without a host.

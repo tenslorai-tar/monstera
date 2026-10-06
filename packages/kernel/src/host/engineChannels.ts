@@ -29,6 +29,7 @@ import {
   formFieldKindSchema,
   importFormDataSchema,
   importAnnotationsSchema,
+  editTextOperatorsSchema,
   type AnswerRoute,
   channel,
   fileAnswered,
@@ -88,6 +89,7 @@ import { COPY_STANDINGS } from '../openCopy.js';
 import type { PlaceholderRequest } from '../signatureHole.js';
 import { PAGE_TEXT_READS } from '../textStructure.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
+import { pageRunsSchema } from './pageRunsWire.js';
 
 /**
  * The engine host's channels (ADR-0023 Decision 11).
@@ -1140,8 +1142,33 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   importAnnotationsSchema.omit({ bytes: true }),
 ]);
 
-/** What travels in place of a command, once its asset has been taken out. */
-export type MupdfWireCommand = z.infer<typeof mupdfCommandSchema>;
+/**
+ * The MuPDF kinds whose intent can outgrow a frame, carried by `engine/apply-file` with their pre-read (ADR-0176's note
+ * on Decision 2). DECLARED PER KIND, ADR-0138's rule: a kind is here because its schema was measured past the frame,
+ * never because one message happened to be large, and a framed kind that grows still turns the request rule red.
+ *
+ * `editTextOperators` carries `editTextBlock`'s block wire, which ADR-0138 Decision 4 measured past the frame.
+ */
+// A UNION OF ONE, so it is read as every command channel's union is: by its options (`hostRoutes.test.ts`).
+const mupdfFileCommandSchema = z.discriminatedUnion('kind', [editTextOperatorsSchema]);
+
+/** The MuPDF kinds `engine/apply-file` carries. */
+export const MUPDF_FILE_KINDS: ReadonlySet<string> = new Set<MupdfFileKind>(['editTextOperators']);
+type MupdfFileKind = z.infer<typeof mupdfFileCommandSchema>['kind'];
+
+// A FILE-ROUTED KIND IS UNDONE BY ITS CHECKPOINT, because `engine/capture` is framed and cannot carry it: main answers
+// its capture without a round trip (`remoteEngine.ts`). A file-routed kind declared invertible is a compile error here,
+// and the repair is a file-requested capture, never a quiet one.
+const _fileRoutedKindsAreCheckpointed: (typeof declaredCommands)[MupdfFileKind]['invertible'] extends false ? true : never = true;
+void _fileRoutedKindsAreCheckpointed;
+
+/** What travels in place of a command, once its asset has been taken out: by frame, or for a file-routed kind by file. */
+export type MupdfWireCommand = z.infer<typeof mupdfCommandSchema> | z.infer<typeof mupdfFileCommandSchema>;
+
+/** Whether a wire command is one `engine/apply-file` carries: the set above, read once. */
+export function isFileRouted(command: MupdfWireCommand): command is z.infer<typeof mupdfFileCommandSchema> {
+  return MUPDF_FILE_KINDS.has(command.kind);
+}
 
 /**
  * Splits a command into what crosses the wire and what does not.
@@ -1261,7 +1288,11 @@ export function joinAsset(
  */
 type Covers<Whole, Listed extends Whole> = Listed;
 type Excludes<Listed, Whole extends Listed> = Whole;
-type ChannelKind = z.infer<typeof mupdfCommandSchema>['kind'];
+// BOTH OF THE MuPDF HOST'S COMMAND CHANNELS, framed and file-requested: together they carry every kind routed here.
+type ChannelKind = z.infer<typeof mupdfCommandSchema>['kind'] | MupdfFileKind;
+// AND NO KIND ON BOTH: a file-routed kind on the framed union would be a kind with two routes.
+const _noKindHasTwoRoutes: Extract<z.infer<typeof mupdfCommandSchema>['kind'], MupdfFileKind> extends never ? true : never = true;
+void _noKindHasTwoRoutes;
 export type MupdfChannelCoversEveryRoutedKind = Covers<ChannelKind, KindsRoutedTo<'mupdf'>>;
 export type MupdfChannelExcludesEveryOtherKind = Excludes<ChannelKind, KindsRoutedTo<'mupdf'>>;
 
@@ -2114,6 +2145,32 @@ export const engineChannels = {
   // THE LIVE-SESSION CHANNEL. MuPDF holds a parse between commands, so it owes
   // the channel that hands the parse's bytes back (ADR-0048's correction).
   ...liveSessionChannels(),
+
+  /**
+   * One MuPDF command whose intent can outgrow a frame, with the pre-read it declares (ADR-0176's note on Decision 2):
+   * `engine/apply`'s request for the kinds {@link MUPDF_FILE_KINDS} names, file-requested by ADR-0125 Decision 7's
+   * route. The pre-read is PDFium's `engine/page-runs` answer, which crossed under the same 8 MiB ceiling and is checked
+   * here by the same schema it was checked by there.
+   *
+   * Its refusals are the person's to be told, and an edit's own two: words no font on the page carries, and a page this
+   * writer cannot rewrite, with the step the owner's sentence names. Nothing else a throw can say crosses: it is
+   * `internal` with an incident id, as on `engine/apply`.
+   */
+  'engine/apply-file': fileRequested(
+    'Applies one MuPDF command whose intent can outgrow a frame, with its pre-read, to a session this host holds.',
+    z
+      .object({
+        session: sessionSchema,
+        command: mupdfFileCommandSchema,
+        // `engine/apply`'s field, for its reason: required and empty for a command naming no other document.
+        sources: z.array(sessionSchema).max(MAX_MERGE_DOCUMENTS),
+        // REQUIRED: every file-routed kind declares this pre-read. One that did not would change this line visibly.
+        reads: pageRunsSchema,
+      })
+      .strict(),
+    z.object({}).strict(),
+    ['no-such-session', 'text-not-writable', 'edit-refused'],
+  ),
 
   /**
    * A pdf-lib command, run BESIDE the session it rewrites

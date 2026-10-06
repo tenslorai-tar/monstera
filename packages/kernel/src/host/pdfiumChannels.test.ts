@@ -1,7 +1,8 @@
 import { ENGINE_ANSWER_FILE_MAX_BYTES } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
-import { ENGINE_TEXT_OBJECTS_MAX, PAGE_TEXT_OBJECTS_MAX, SMALLEST_RUN_BYTES, pdfiumChannels } from './pdfiumChannels.js';
+import { PAGE_RUN_TEXT_MAX, PAGE_TEXT_OBJECTS_MAX } from './pageRunsWire.js';
+import { ENGINE_TEXT_OBJECTS_MAX, PDFIUM_PRIOR_TEXT_MAX, SMALLEST_RUN_BYTES, pdfiumChannels } from './pdfiumChannels.js';
 
 /**
  * The text read's bound is DERIVED (ADR-0130 Decision 3): the most runs an answer within the 8 MiB answer ceiling
@@ -54,6 +55,10 @@ describe('engine/page-runs’ answer', () => {
 
   it('PAGE_TEXT_OBJECTS_MAX is the answer ceiling over the smallest index and its comma', () => {
     expect(PAGE_TEXT_OBJECTS_MAX).toBe(ENGINE_ANSWER_FILE_MAX_BYTES / 2);
+  });
+
+  it('PAGE_RUN_TEXT_MAX bounds a run’s text as engine/text-runs does, so the two reads of one run agree', () => {
+    expect(PAGE_RUN_TEXT_MAX).toBe(PDFIUM_PRIOR_TEXT_MAX);
   });
 
   it('accepts a run named by its first object, and refuses one named by any other (the control)', () => {
