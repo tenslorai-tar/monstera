@@ -83,3 +83,36 @@ than taken:
 - **Resize as scale only.** A text box's width is what a person means by resizing it; scale is the corner handle's.
 - **A stored grouping for join and split.** Grouping is geometry (ADR-0049); a stored override is a second opinion
   about what a block is (B3a).
+
+## Correction, 2026-10-06: placement and added text ride the block wire; there is no `transformTextBlock` or `insertPageText` (Decisions 5 and 6)
+
+Decisions 5 and 6 named two new commands. Building the first showed what each would cost and what it would do twice.
+
+- **Each new command is a routing entry in seven places** (its declaration, the writer's spec, the host's channel
+  schema, the remote switch, `typedBy`, the command log's prior table and the contract's union), and every one of them
+  would carry the same block wire `editTextBlock` already carries, because a move that also reformats, or a box that
+  also bolds, needs the paragraphs, the marks and the measure.
+- **The layout is `layOutBlocks`' and a second command would call it a second way.** A resize is a layout at a new
+  measure; an added box is a layout with no old lines. A separate command for either would duplicate the plan, the
+  reflow, the read-back and the box for a character no face carries (B3a), or reach into them from outside.
+- **Two commands are two undo steps.** This ADR rejected formatting as its own command for exactly that reason (*a word
+  typed and bolded in one gesture is one change*); a box dragged and widened in one gesture is the same.
+
+So the block wire gains two more optional fields, absent meaning nothing placed and nothing added, and a command that
+sends neither is byte for byte what it was:
+
+- **`places`**: per block, `{block, move?, scale?, rotate?, width?}`. `move` is points added to every object of the
+  block; `scale` multiplies the block about its top left; `rotate` is degrees about its centre; `width` is the measure
+  the block is laid out at (`blockRight` becomes `blockLeft + width`), which re-plans every paragraph even where its
+  words are the same. They are applied after the layout, to every object the block ended as (its kept lines, the lines
+  set afresh and the rules under underlined words), as ONE matrix per object, so the block moves as the one thing it
+  is.
+- **`inserts`**: per added box, `{left, baseline, measure, size, family?, colour?, text, marks?, paragraphs?}`. The
+  writer makes one seed text object in the standard face the family names and lays the words out as an edit of that
+  one run, so the box reflows, reads back and boxes a character no face carries as any edit does, and its marks are
+  Decision 4's. An edit may hold only inserts.
+
+A block rotated by `places` is no longer upright, and an upright block is what edits are offered for (the stated limit
+the writer keeps); P4 reopens that.
+
+Decisions 7 and 8 stand: join and split are an edit, and the editor's keys are ordered.
