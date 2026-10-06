@@ -162,12 +162,13 @@ function fontDictionaryOf(document: PDFDocument, leaf: PDFObject): PDFObject {
 }
 
 /**
- * Decision 7's prior is the page's content and the fonts the edit added, and it is not built yet: until it is, the
- * bus takes a checkpoint, which restores the whole document and loses nothing an inverse would have put back.
+ * The checkpoint IS the undo for this command, by the owner's decision of 2026-10-06 (ADR-0176 Decision 7, corrected):
+ * the whole-document copy the bus takes restores the page's content and the fonts the edit added and loses nothing an
+ * inverse would have put back, so Decision 7's content-and-fonts prior is kept as the rejected alternative, not built.
  */
 export const CHECKPOINTED = {
   captured: false,
-  reason: 'an operator edit is undone by its checkpoint until its prior (the page content and added fonts) is recorded',
+  reason: 'an operator edit is undone by its checkpoint, the whole-document copy the owner chose over a recorded prior',
 } as const satisfies CaptureResult<never>;
 
 export function captureEditTextOperators(): Promise<CaptureResult<never>> {
@@ -176,5 +177,5 @@ export function captureEditTextOperators(): Promise<CaptureResult<never>> {
 
 /** Unreachable, for `invertAddAnnotation`'s reason: a command that never captures has no inverse to apply. */
 export const invertEditTextOperators: Invert<'mupdf', 'editTextOperators'> = (): Promise<void> => {
-  throw new Error('an operator edit has no inverse yet; undo restores the checkpoint the bus took (ADR-0176 Decision 7)');
+  throw new Error('an operator edit has no inverse; undo restores the checkpoint the bus took (ADR-0176 Decision 7, owner 2026-10-06)');
 };

@@ -2076,10 +2076,10 @@ const declarations = {
     kind: 'editTextOperators',
     display: 'image',
     writer: 'mupdf',
-    // NOT INVERTIBLE YET, and a checkpoint is the undo: Decision 7's prior (the
-    // page's content and the fonts the edit added) is the next piece of this
-    // writer, and until it lands the checkpoint restores the whole document, which
-    // loses nothing an inverse would have put back.
+    // NOT INVERTIBLE, and a checkpoint is the undo BY DECISION (owner, 2026-10-06):
+    // the whole-document copy the checkpoint restores loses nothing an inverse
+    // would have put back, so Decision 7's content-and-fonts prior is kept as the
+    // rejected alternative rather than built. ADR-0176 carries the dated note.
     invertible: false,
     undo: 'checkpoint',
     // THE SAME BLOCKS AGAINST THE SAME CONTENT LAY OUT THE SAME WAY: widths come

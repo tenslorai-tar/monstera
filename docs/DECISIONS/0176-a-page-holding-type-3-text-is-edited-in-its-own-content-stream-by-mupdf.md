@@ -152,3 +152,14 @@ exceptions for the same reason. One schema, `host/pageRunsWire.ts`, is that answ
 **Rejected:** moving every MuPDF kind to a file route (a file write per rotation, for the one kind that needs it); a
 pre-read slot on the framed `engine/apply` (the kind is past the frame without it); the host computing the runs (it has
 no PDFium, and the join reads PDFium's glyph boxes).
+
+## Correction, 2026-10-06 — Decision 7's prior is not built; the checkpoint is the undo
+
+The owner decided, asked directly, that the whole-document checkpoint the bus already takes for this command is its
+undo and stays so. Decision 7's content-and-fonts prior — restoring only the page's content and the fonts the edit
+added, with the checkpoint as the fallback past the undo log's bound — is not built. The reason given: the checkpoint
+restores the whole document and loses nothing an inverse would have put back, and "safe over small." So Decision 7
+above records the prior as the **rejected** alternative rather than owed work; `captureEditTextOperators` answers
+`CHECKPOINTED` and `invertEditTextOperators` is unreachable, by decision rather than pending a next piece. This changes
+no behaviour — the command has always checkpointed — only the standing of the prior, which until now read as owed in
+this ADR, `docs/ARCHITECTURE.md` §9's in-place editing row, and the two kernel sites named above.
