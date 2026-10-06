@@ -85,8 +85,12 @@ export async function applyEditTextOperators(
     const stream = document.addStream(edit.content, document.newDictionary());
     leaf.put('Contents', stream);
     // MuPDF'S OWN READING of the page as it now is, the second read-back: each block's words where the block was.
+    // `clip=no` READS PAST THE PAGE'S EDGE. MuPDF's text device drops every glyph outside the page by default
+    // (`FZ_STEXT_CLIP`, MuPDF 1.28.0), so a word wider than the page lost its end to the reading and the edit was
+    // refused, where the owner's rule keeps the text and says it no longer fits (Q7). The question here is whether the
+    // content holds the words, not whether they are on the page.
     const page = document.loadPage(command.page);
-    const reading = squeezed(page.toStructuredText().asText());
+    const reading = squeezed(page.toStructuredText('clip=no').asText());
     const missing = edit.written.filter((words) => !reading.includes(squeezed(words)));
     if (missing.length > 0) {
       leaf.put('Contents', before);
