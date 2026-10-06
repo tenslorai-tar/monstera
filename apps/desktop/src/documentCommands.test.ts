@@ -2907,9 +2907,10 @@ describe('pageStructure — a tagged page’s elements, never its words (ADR-006
     const answer = await structureCommands().pageStructure(tagged, 0);
 
     expect(answer.nodes).toStrictEqual([
-      { role: 'Document', raw: 'Document', depth: 0, lines: 0 },
-      { role: 'P', raw: 'P', depth: 1, lines: 1 },
-      { role: 'P', raw: 'P', depth: 1, lines: 1 },
+      // THE BOXES ARE THE ENGINE'S OWN LINES' UNION (ADR-0183): the document covers both paragraphs, each paragraph its line.
+      { role: 'Document', raw: 'Document', depth: 0, lines: 0, box: { x0: 72, y0: 176, x1: 159, y1: 595 } },
+      { role: 'P', raw: 'P', depth: 1, lines: 1, box: { x0: 72, y0: 176, x1: 159, y1: 195 } },
+      { role: 'P', raw: 'P', depth: 1, lines: 1, box: { x0: 72, y0: 576, x1: 136, y1: 595 } },
     ]);
     expect(answer.untaggedLines).toBe(0);
     expect(answer.truncated).toBe(false);

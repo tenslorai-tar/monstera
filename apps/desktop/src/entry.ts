@@ -26,7 +26,8 @@ import {
   createSettingsPicker,
   createTextPicker,
 } from './destinationPicker.js';
-import { createDocumentPicker, createDocumentsPicker } from './documentPicker.js';
+import { createDocumentPicker } from './documentPicker.js';
+import { createDocumentsPicker } from './documentsPicker.js';
 import { createDirectoryPicker } from './directoryPicker.js';
 import {
   createAnnotationDataOpenPicker,

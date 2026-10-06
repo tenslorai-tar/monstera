@@ -67,3 +67,12 @@ open they have since replaced) — together, five files with two failures told t
   the third still opened — the control is `opened` having three calls), and `App.test.tsx` (the dialog's list becomes
   tabs; a drop with a failure in the middle; the failures named, each with its own sentence).
 - A harness that supplies only `pickDocument` still works; the shipped build supplies `pickDocuments`.
+
+## Correction, 2026-10-06 (same day)
+
+Decision 1 said `documentPicker.ts` *gains* `createDocumentsPicker`. It does not: `documentPicker.ts` is the subject of
+`proof:pickerprobe`'s record, whose digest a person's run certifies, and the first push edited it — the Guards job's
+document-scope proof read *recorded* against *current* and went red. The multiple-selection dialog is
+`documentsPicker.ts`, a module of its own, and `documentPicker.ts` is byte-for-byte what it was. The cost is stated
+rather than hidden: **the multiple-selection dialog has not been driven by a person**; the installed build is where it
+first is.
