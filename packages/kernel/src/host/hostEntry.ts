@@ -7,6 +7,7 @@ import {
   serialiseAnnotationData,
 } from '../annotationInterchange.js';
 import { readPageBarcodes } from '../barcodeReader.js';
+import { bindEditFolders } from '../editFaces.js';
 import { localMupdfExecution } from '../mupdfSpecs.js';
 import { accessFor, mupdfWriter, signaturesKeptBySave } from '../mupdfWriter.js';
 import { readSignatures } from '../signatureRead.js';
@@ -116,6 +117,13 @@ function libraryPathFrom(argv: readonly string[]): string {
 // BOUND BEFORE ANY HANDLER RUNS, for `pdfiumHostEntry.ts`' reason: a first bind inside a handler would put a load
 // failure inside a document's first answer rather than in this host's start.
 openMupdfShim(libraryPathFrom(process.argv));
+
+// THE BUNDLED FONTS' FOLDER THIRD and THE INSTALLED FONTS' FOURTH, each empty where there is none (ADR-0177 Decision
+// 1), `pdfiumHostEntry.ts`' arguments: a word a Type 3 page's own fonts cannot draw is set in a face the resolver
+// chooses from them. Bound by their folders, so neither the catalogue nor HarfBuzz loads until a word needs a face.
+const fontsPath = process.argv[4] === undefined || process.argv[4].length === 0 ? null : process.argv[4];
+const installedPath = process.argv[5] === undefined || process.argv[5].length === 0 ? null : process.argv[5];
+if (fontsPath !== null) bindEditFolders(fontsPath, installedPath);
 
 /**
  * MuPDF's channel set and its handlers, composed HERE rather than in the body

@@ -60,6 +60,14 @@ export type EngineHostProgram =
        * without it can do nothing, and the union refuses to express one. PDFium's rule for its library.
        */
       readonly libraryPath: string;
+      /**
+       * The bundled fonts' folder, or `null` where the launcher passed none (ADR-0177 Decision 1): a word a Type 3
+       * page's own fonts cannot draw is set in a face the resolver chooses from it. `null` is a host that edits such a
+       * page with its own letters alone and refuses the rest by name, a decided state rather than a fault.
+       */
+      readonly fontsPath: string | null;
+      /** The machine's installed fonts' folder (ADR-0172 Decision 2), or `null`: `installedFonts.ts`' answer. */
+      readonly installedFontsPath: string | null;
     }
   | {
       readonly kind: 'compose';
@@ -149,9 +157,11 @@ export function hostCommandArguments(
   entryPath: string,
   pipeName: string,
 ): readonly string[] {
-  if (program.kind === 'mupdf') return [entryPath, pipeName, program.libraryPath];
-  // THE FONTS THIRD and THE INSTALLED FONTS FOURTH, each EMPTY where there is none: `pdfiumHostEntry.ts` reads `argv[4]`
-  // and `argv[5]` and takes an empty one as absent.
+  // THE FONTS THIRD and THE INSTALLED FONTS FOURTH, each EMPTY where there is none: `hostEntry.ts` and
+  // `pdfiumHostEntry.ts` read `argv[4]` and `argv[5]` and take an empty one as absent.
+  if (program.kind === 'mupdf') {
+    return [entryPath, pipeName, program.libraryPath, program.fontsPath ?? '', program.installedFontsPath ?? ''];
+  }
   if (program.kind === 'pdfium') {
     return [entryPath, pipeName, program.libraryPath, program.fontsPath ?? '', program.installedFontsPath ?? ''];
   }

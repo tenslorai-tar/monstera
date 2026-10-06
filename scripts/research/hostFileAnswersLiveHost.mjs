@@ -60,7 +60,10 @@ const EDITED = 'Edited through the real host';
  * The CJK ideograph for "middle", which no bundled face carries and Windows' installed CJK faces do, then U+0378, which
  * Unicode leaves unassigned and no font carries: the control that the box still draws in the same edit. By number.
  */
-const INSTALLED_ONLY = `${String.fromCodePoint(0x4e2d)} ${String.fromCodePoint(0x378)}`;
+/** The Chromium print committed as Part B's starting material, its heading in a Type 3 font (ADR-0176). */
+const TYPE3_PRINT = join(ROOT, 'packages', 'testing', 'fixtures', 'text-edit', 'chromium-type3.pdf');
+
+const INSTALLED_ONLY =`${String.fromCodePoint(0x4e2d)} ${String.fromCodePoint(0x378)}`;
 
 /**
  * How many text fields the generated form has: enough that its field list exceeds a frame (3,000 fields measured
@@ -657,7 +660,48 @@ async function main() {
       freshBoxes = freshOpened;
     }
 
+    // THE MuPDF HOST'S FONTS, in its own container (ADR-0177): the Chromium print's heading is set in a Type 3 font,
+    // so the page is rewritten in its own content stream by the MuPDF host. The new words need letters the print's
+    // subset lacks (z, p), which go to a bundled face, and a code point no font carries, which is drawn as the box.
+    // The answer's boxes are the MuPDF host's (ADR-0177 Decision 7), so one box here is a host that read its fonts.
+    picked.path = join(scratch, 'chromium-type3.pdf');
+    writeFileSync(picked.path, readFileSync(TYPE3_PRINT));
+    const type3Opened = await observed(() => handlers['document.open']({}));
+    /** @type {any} */
+    let type3Boxes = null;
+    if (type3Opened?.ok === true && type3Opened.value.kind === 'opened') {
+      const docId = type3Opened.value.docId;
+      const type3Blocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0, from: 0 }));
+      const heading = type3Blocks?.ok === true ? type3Blocks.value.blocks[0] : undefined;
+      if (heading !== undefined && type3Blocks.value.rewrite === 'operators') {
+        const answered = await observed(() =>
+          handlers['document.execute']({
+            docId,
+            command: {
+              kind: 'editTextOperators',
+              page: 0,
+              ...blockEditOf([
+                {
+                  lines: heading.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                  text: `Monstera fixture zap ${String.fromCodePoint(0x378)}.`,
+                },
+              ]),
+              fit: 'reflow',
+              version: type3Blocks.value.version,
+            },
+          }),
+        );
+        type3Boxes = answered?.ok === true ? { boxed: answered.value.boxed, more: answered.value.more } : answered;
+      } else {
+        type3Boxes = type3Blocks?.ok === true ? { rewrite: type3Blocks.value.rewrite } : type3Blocks;
+      }
+      await observed(() => handlers['document.close']({ docId }));
+    } else {
+      type3Boxes = type3Opened;
+    }
+
     const report = {
+      type3Boxes,
       freshBoxes,
       wordExported: wordExported?.ok === true ? wordExported.value.kind : wordExported,
       wordPictures,

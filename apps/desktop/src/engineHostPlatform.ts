@@ -225,7 +225,20 @@ export function createEngineHostPlatform(sessionRoot: string, packageData: Packa
           program: {
             runs: 'electron-node',
             executablePath: binary,
-            commandArguments: [...hostCommandArguments({ kind: 'mupdf', libraryPath }, entry, pipeName)],
+            // THE FONT FOLDERS, as the PDFium host's (ADR-0177 Decision 1): the bundled set beside the system's, both
+            // readable from every AppContainer (`ALL APPLICATION PACKAGES`), so this grants nothing new.
+            commandArguments: [
+              ...hostCommandArguments(
+                {
+                  kind: 'mupdf',
+                  libraryPath,
+                  fontsPath: nativeComponentPath('fonts'),
+                  installedFontsPath: installedFontsFolder(),
+                },
+                entry,
+                pipeName,
+              ),
+            ],
           },
           // Inside the grant set, for the reason the acceptance test's is: a
           // working directory of our own would be a path whose rights differ

@@ -2,7 +2,7 @@ import { type CommandOfKind, blocksOfEdit } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
 import type { DrawnBoxes, Invert, MupdfSession } from './engineSeam.js';
-import { editFaces, editFacesBound } from './editFaces.js';
+import { editFaces, editFacesBound, loadEditFaces } from './editFaces.js';
 import type { FaceSource } from './fontCatalogue.js';
 import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 import { withDocument } from './mupdfWriter.js';
@@ -60,7 +60,10 @@ export async function applyEditTextOperators(
   // HarfBuzz, +6.4 MB of resident set at import (measured 2026-10-06, Node 22.22.0 on Linux, three runs against a control
   // that imports nothing), which every MuPDF host would otherwise pay at start against a 100 MB fixed-cost budget.
   // Loaded only when the page's own fonts cannot carry the edit and this process was given a catalogue.
-  const faceSet = editFacesBound() && (await needsAFace(session, command, read)) ? (await import('./operatorFaces.js')).OperatorFaceSet : null;
+  const needed = editFacesBound() && (await needsAFace(session, command, read));
+  // THE CATALOGUE'S MODULE TOO, where the host bound its folders (`bindEditFolders`): it brings HarfBuzz as well.
+  if (needed) await loadEditFaces();
+  const faceSet = needed ? (await import('./operatorFaces.js')).OperatorFaceSet : null;
   return await withDocument(session, (document) => {
     const leaf = document.findPage(command.page);
     const content = joinedContent(pageContentStreams(leaf));

@@ -84,12 +84,13 @@ const CASES = [
   'the real PDFium host set the ideograph in an installed face, and boxed only the code point no font carries',
   'the real PDFium host boxed the code point no font carries in a bundled face, in the same container',
   'the real PDFium host boxed it as the FIRST edit of a fresh open, in the same container',
+  'the real MuPDF host set a Type 3 page’s new letters in a bundled face and boxed only the code point no font carries',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 19 });
-if (CASES.length !== 19) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 19`);
+const roster = createRoster(failures, { cases: 20 });
+if (CASES.length !== 20) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 20`);
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -286,6 +287,14 @@ if (!runnable) {
     `the fresh open's first edit, the box alone, answered ${JSON.stringify(seen.freshBoxes)}. Refused here, as the two ` +
       'cases above on the reopened document are, is a host that misreads a font it adds; saved here is one that misreads ' +
       'the document reopened after a save (SSSSSSS-1).',
+  );
+  check(
+    CASES[19] ?? '',
+    JSON.stringify(seen.type3Boxes) ===
+      JSON.stringify({ boxed: [{ character: String.fromCodePoint(0x378), page: 0 }], more: 0 }),
+    `the Type 3 edit answered ${JSON.stringify(seen.type3Boxes)}. A text-not-writable naming z and p is a MuPDF host ` +
+      'given no fonts or unable to read them in its container; a rewrite other than "operators" is the page sent to ' +
+      'the PDFium writer, so this case measured nothing about the MuPDF host (ADR-0177).',
   );
 
   process.stdout.write(

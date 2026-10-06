@@ -62,13 +62,22 @@ describe('the engine host programs', () => {
     // `toContain` — a writer that emitted the two arguments in the other
     // order satisfies a containment check and starts a host that binds a pipe
     // name as a library.
+    // THE FONTS FOURTH and THE INSTALLED FONTS FIFTH for MuPDF too (ADR-0177 Decision 1), where `hostEntry.ts` reads
+    // them, each EMPTY where there are none.
     expect(
       hostCommandArguments(
-        { kind: 'mupdf', libraryPath: 'C:\\s\\monstera_mupdf.dll' },
+        { kind: 'mupdf', libraryPath: 'C:\\s\\monstera_mupdf.dll', fontsPath: 'C:\\f', installedFontsPath: 'C:\\Windows\\Fonts' },
         'C:\\k\\hostEntry.js',
         '\\\\.\\pipe\\p',
       ),
-    ).toStrictEqual(['C:\\k\\hostEntry.js', '\\\\.\\pipe\\p', 'C:\\s\\monstera_mupdf.dll']);
+    ).toStrictEqual(['C:\\k\\hostEntry.js', '\\\\.\\pipe\\p', 'C:\\s\\monstera_mupdf.dll', 'C:\\f', 'C:\\Windows\\Fonts']);
+    expect(
+      hostCommandArguments(
+        { kind: 'mupdf', libraryPath: 'C:\\s\\monstera_mupdf.dll', fontsPath: null, installedFontsPath: 'C:\\Windows\\Fonts' },
+        'e.js',
+        'p',
+      ),
+    ).toStrictEqual(['e.js', 'p', 'C:\\s\\monstera_mupdf.dll', '', 'C:\\Windows\\Fonts']);
 
     // THE FONTS FOURTH and THE INSTALLED FONTS FIFTH for PDFium (ADR-0173, ADR-0172 Decision 2), where
     // `pdfiumHostEntry.ts` reads them, each EMPTY where there are none — and a missing bundled folder does not move the
