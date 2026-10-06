@@ -162,3 +162,10 @@ The first limit above is removed by [ADR-0185](0185-a-line-of-several-objects-is
 several objects is read as one line and written in the order it is seen, so its parts are not reordered by an edit. The
 control in `pdfiumCommand.proof.mjs` that pinned it now pins the mechanism the fix removes (each object read alone is not
 the line). Decision 5's one-object rule stays, and the owner accepted it as decided (R39, 2026-10-06).
+
+## Correction, 2026-10-06 (later still): Decision 4's *not done* clause is removed
+
+[ADR-0186](0186-arabic-is-set-as-the-shaper-sets-it-the-ligature-the-marks-first-and-a-plan-measured-by-the-drawn-forms.md)
+sets a lam beside an alef as the face's ligature glyph and draws a letter's marks before it, in the order the shaper answers.
+The reason given for leaving the ligature out was a reading model that expanded a form before reversing; a text page
+expands after, so the pair reads back as typed. What stays a limit is the mark's exact anchor.
