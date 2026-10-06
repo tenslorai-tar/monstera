@@ -32,7 +32,7 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
 import { withNoPassword } from '../lib/pdfiumNoPassword.mjs';
 import { fontsDirectory } from '../provision/fonts.mjs';
@@ -55,6 +55,9 @@ const { faceSourceOf, fontFoldersOf, readCatalogue } = await import('../../packa
 const { candidatesFor } = await import('../../packages/kernel/dist/fontResolver.js');
 const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
 const { installedFontsFolder } = await import('../../apps/desktop/dist/installedFonts.js');
+// MuPDF IN THIS PROCESS, where the shim is built, for the round trip the live case's document makes between its edits.
+const { bindNativeEngine } = await import('../lib/nativeEngine.mjs');
+const mupdf = bindNativeEngine() === null ? null : await import('../../packages/kernel/dist/mupdfWriter.js');
 
 const library = pdfiumLibrary(root);
 if (!existsSync(library)) throw new Error(`${library} is absent: node scripts/provision/pdfium.mjs fetches it.`);
@@ -97,15 +100,62 @@ async function edit(image, text) {
 
 const document = await PDFDocument.create();
 document.addPage([300, 300]).drawText('Text to edit', { x: 20, y: 250, size: 12, font: await document.embedFont(StandardFonts.Helvetica) });
-const original = await document.save();
+const oneLine = await document.save();
 
-/** The Latin edit, then `addition` after it, with the faces `source` holds. @param {any} source @param {string} addition */
-async function twoEdits(source, addition) {
+/**
+ * `hostFileAnswersLiveHost.mjs`' page, which the live case edits: 1,600 glyphs, each its own text object, alternating
+ * two colours so the host's join keeps each its own run. The live case's first edit replaces the page's first block
+ * with one line, and the second edit lands on what that wrote.
+ */
+async function onePerGlyphPage() {
+  const made = await PDFDocument.create();
+  const font = await made.embedFont(StandardFonts.Helvetica);
+  const page = made.addPage([595, 842]);
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+  for (let index = 0; index < 1600; index += 1) {
+    const column = index % 80;
+    const row = Math.floor(index / 80);
+    page.drawText(alphabet[index % alphabet.length] ?? 'a', {
+      x: 20 + column * 7,
+      y: 820 - row * 30,
+      size: 9,
+      font,
+      color: index % 2 === 0 ? rgb(0, 0, 0) : rgb(0.2, 0, 0),
+    });
+  }
+  return made.save();
+}
+const perGlyph = await onePerGlyphPage();
+let original = oneLine;
+
+/**
+ * Through MuPDF and back, as the live case's document goes between its two edits: the first edit's image is adopted
+ * into the MuPDF session, saved, reopened and flushed before PDFium sees it again. `null` where this checkout has no
+ * native shim, and the variant is then not measured.
+ * @param {Uint8Array} image
+ */
+async function throughMupdf(image) {
+  if (mupdf === null) return null;
+  const session = await mupdf.mupdfWriter.open(image);
+  try {
+    return await mupdf.mupdfWriter.serialise(session);
+  } finally {
+    await mupdf.mupdfWriter.close(session);
+  }
+}
+
+/**
+ * The Latin edit, then `addition` after it, with the faces `source` holds, the document going through MuPDF between the
+ * two where `viaMupdf`. @param {any} source @param {string} addition @param {boolean} [viaMupdf]
+ */
+async function twoEdits(source, addition, viaMupdf = false) {
   bindEditFaces(() => source);
   try {
     const first = await edit(original, LATIN);
     if (first.image === null) return `first edit ${first.outcome}`;
-    return (await edit(first.image, `${LATIN} ${addition}`)).outcome;
+    const between = viaMupdf ? await throughMupdf(first.image) : first.image;
+    if (between === null) return 'not measured: no native MuPDF shim in this checkout';
+    return (await edit(between, `${LATIN} ${addition}`)).outcome;
   } finally {
     bindEditFaces(null);
   }
@@ -130,6 +180,16 @@ if (carrying.length === 0) throw new Error(`No installed face carries ${IDEOGRAP
 
 const everything = faceSourceOf(fontFoldersOf(bundled, installed));
 process.stdout.write(`all installed faces, as the hosts read them: ${await twoEdits(everything, `${IDEOGRAPH} ${UNASSIGNED}`)}\n`);
+// THE LIVE CASE'S OWN PAGE, which differs from the line above in every way but the edit: a page of glyph objects. Then
+// each character alone, so a refusal names which of the two it is.
+original = perGlyph;
+process.stdout.write(`the live case's page, all installed faces: ${await twoEdits(everything, `${IDEOGRAPH} ${UNASSIGNED}`)}\n`);
+process.stdout.write(`  ${IDEOGRAPH} alone: ${await twoEdits(everything, IDEOGRAPH)}\n`);
+process.stdout.write(`  U+0378 alone: ${await twoEdits(everything, UNASSIGNED)}\n`);
+process.stdout.write(`  the bundled set alone, both: ${await twoEdits(bundledSource, `${IDEOGRAPH} ${UNASSIGNED}`)}\n`);
+process.stdout.write(`  through MuPDF between the edits, both: ${await twoEdits(everything, `${IDEOGRAPH} ${UNASSIGNED}`, true)}\n`);
+process.stdout.write(`  through MuPDF between the edits, Latin only (control): ${await twoEdits(everything, 'again', true)}\n`);
+original = oneLine;
 for (const face of carrying.slice(0, TRIED)) {
   // THE BUNDLED SET AND THIS ONE FACE, read the way the host's catalogue reads them.
   const alone = { faces: [...bundledSource.faces, face], read: everything.read };
