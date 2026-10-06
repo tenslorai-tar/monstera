@@ -128,3 +128,10 @@ through the one `window.edit` call, so a Paste here is the Paste there, and the 
 function the spelling review writes it by (`keepWord`). The page's own context menu is not opened over the words. Whether
 `window.edit`'s paste reaches the in-place editor in the packaged application has not been measured from here: the Edit
 menu's Paste is the same call, and the menu is not claimed done on that path until it has been run there.
+
+## Correction, 2026-10-06 (later still): a Type 3 page moves, resizes, turns and adds text (Decisions 5 and 6)
+
+The statement that a Type 3 page *says it does not move or add text yet* is removed by
+[ADR-0188](0188-a-type-3-page-is-moved-resized-turned-added-to-joined-and-split-by-the-operator-writer.md): the operator writer
+applies `places` (a move, a scale about the top left, a turn about the centre, a measure) and `inserts` through the same
+block wire, and a join and a split, which were always edits, work on such a page.

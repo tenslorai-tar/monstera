@@ -163,3 +163,12 @@ above records the prior as the **rejected** alternative rather than owed work; `
 `CHECKPOINTED` and `invertEditTextOperators` is unreachable, by decision rather than pending a next piece. This changes
 no behaviour — the command has always checkpointed — only the standing of the prior, which until now read as owed in
 this ADR, `docs/ARCHITECTURE.md` §9's in-place editing row, and the two kernel sites named above.
+
+## Correction, 2026-10-06 (later): where a block's object goes, and what the writer now carries (Decisions 4 to 6)
+
+[ADR-0188](0188-a-type-3-page-is-moved-resized-turned-added-to-joined-and-split-by-the-operator-writer.md) changes two
+things this ADR states. The object a block's added lines are written as goes **after its last run's text object** where only
+lines were added below the block, and not before that object's `BT`: measured, a join of two Type 3 headings was read by
+MuPDF in the wrong order and refused by the structural read-back. And the writer now places a block (one `cm` in front of
+its object, the lines it did not change carried as their operators were) and writes a box added to the page, which
+Decision 5's *changing only the instructions it edits* did not mention because neither was asked of it then.
