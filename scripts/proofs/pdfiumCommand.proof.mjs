@@ -105,7 +105,7 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 13);
+refuseStaleBuild(root, PDFIUM_COMMAND, 14);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
@@ -241,7 +241,7 @@ const failures = [];
 // ADR-0173's pieces: a word saved in a bundled face, its object, its wrap, the word the twin refused, an unreadable
 // catalogue either way, and a control either side, and 97 from its correction: a character past the BMP and its premise,
 // and 100 from the box: its premise, its reading, and its answer (ADR-0174).
-const roster = createRoster(failures, { cases: 110 });
+const roster = createRoster(failures, { cases: 113 });
 
 /**
  * @param {string} name
@@ -526,6 +526,7 @@ async function main() {
   // LAST, because they bind the process's catalogue, and unbind it before returning.
   await pieceCases();
   await replacePieceCases();
+  await siblingCases();
 
   process.stdout.write(
     failures.length > 0
@@ -1068,6 +1069,127 @@ async function replacePieceCases() {
       'CONTROL: a Latin replace-all with the catalogue bound answers no box',
       JSON.stringify(latinBoxes) === JSON.stringify({ boxed: [], more: 0 }),
       JSON.stringify(latinBoxes),
+    );
+  } finally {
+    bindEditFaces(null);
+  }
+}
+
+/**
+ * A word the run's font lacks goes into a SIBLING already in the document before any bundled face
+ * ([ADR-0173](../../docs/DECISIONS/0173-an-edits-word-its-font-cannot-carry-is-its-own-piece-in-the-resolvers-face.md)
+ * Decision 4): another embedded subset of the same font, by its name less the subset tag.
+ *
+ * The fixture is made by this writer's own edits, so it is generated: {@link aParagraph}'s first line typed to end in
+ * `Привет` makes subset S1 of Arimo, and the block far below typed to end in `Дом` makes S2, each named `TAG+` the same
+ * name. Then the S1 piece is replaced by ` Привет Дом`, which S1 cannot draw and S2 can. THE CONTROL is the same
+ * replacement on the document before S2 existed, which must load a face of its own: so the reuse is the sibling's
+ * doing, and not every replacement landing in an Arimo font whatever the document holds.
+ */
+async function siblingCases() {
+  const fonts = fontsDirectory(root);
+  if (!existsSync(fonts)) {
+    record('the bundled fonts are provisioned for the sibling cases', false, `${fonts} is absent; run scripts/provision/fonts.mjs`);
+    return;
+  }
+  /** Page 0's runs one per object, from bytes. @param {Uint8Array} bytes */
+  const objectRunsOf = async (bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      return (await objectRuns(session, 0)).runs;
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  /** One block retyped, by the block that holds `starts`. @param {Uint8Array} bytes @param {string} starts @param {string} text */
+  const retype = async (bytes, starts, text) => {
+    const block = (await blocksOf(bytes)).blocks.find((each) => (each.lines[0]?.runs[0]?.text ?? '').startsWith(starts));
+    if (block === undefined) throw new Error(`no block begins ${JSON.stringify(starts)}`);
+    return localPdfiumExecution.apply({
+      session: bytes,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  };
+  /** The S1 piece replaced, as Replace writes it. @param {Uint8Array} bytes */
+  const replaceTheFirst = async (bytes) => {
+    const piece = (await objectRunsOf(bytes)).find((run) => run.text.includes('Привет'));
+    if (piece === undefined) throw new Error('the first piece is not on the page');
+    return {
+      piece,
+      bytes: await localPdfiumExecution.apply({
+        session: bytes,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextObject'>} */ ({
+          kind: 'replaceTextObject',
+          page: 0,
+          ...replacementFieldsOf([{ index: piece.index, text: ' Привет Дом' }]),
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      }),
+    };
+  };
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  try {
+    const first = await retype(await aParagraph(), 'The first', [`${BLOCK_LINES[0] ?? ''} Привет`, BLOCK_LINES[1], BLOCK_LINES[2]].join('\n'));
+    const both = await retype(first, 'A separate', `${FAR_BELOW} Дом`);
+    const named = (await objectRunsOf(both)).map((run) => [run.text, run.style.font]);
+    const s1 = named.find(([text]) => String(text).includes('Привет'))?.[1] ?? '';
+    const s2 = named.find(([text]) => String(text).includes('Дом'))?.[1] ?? '';
+    record(
+      'PREMISE: two edits made two Arimo subsets whose names differ by the subset tag alone',
+      /^[A-Z]{6}\+Arimo/u.test(s1) && /^[A-Z]{6}\+Arimo/u.test(s2) && s1 !== s2 && s1.slice(7) === s2.slice(7),
+      JSON.stringify([s1, s2]),
+    );
+
+    let read = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let after = [];
+    try {
+      const { bytes } = await replaceTheFirst(both);
+      read = await pageOf(bytes, 0);
+      after = await objectRunsOf(bytes);
+    } catch (error) {
+      read = `refused: ${error instanceof Error ? `${error.name} ${error.message}` : String(error)}`;
+    }
+    // TWO RUNS SAY `Дом` now, S2's own and the new one, and BOTH must be in S2: a lookup of the first would find S2's own
+    // piece and pass whatever the replacement did.
+    const doms = after.filter((run) => run.text.trim() === 'Дом');
+    const arimos = new Set(after.map((run) => run.style.font).filter((font) => /Arimo/u.test(font)));
+    record(
+      'a word the run’s subset lacks and a sibling subset in the document carries is written in that sibling, loading no face',
+      read.includes('Привет Дом') && doms.length === 2 && doms.every((run) => run.style.font === s2) && arimos.size === 2,
+      `${JSON.stringify(read.slice(0, 80))}; Дом in ${JSON.stringify(doms.map((run) => run.style.font))}; Arimo fonts ${JSON.stringify([...arimos])}`,
+    );
+
+    // CONTROL: before S2 existed the same replacement has no sibling, so it loads a face of its own.
+    let control = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let controlRuns = [];
+    try {
+      const { bytes } = await replaceTheFirst(first);
+      control = await pageOf(bytes, 0);
+      controlRuns = await objectRunsOf(bytes);
+    } catch (error) {
+      control = `refused: ${error instanceof Error ? error.name : String(error)}`;
+    }
+    const controlDom = controlRuns.find((run) => run.text.trim() === 'Дом');
+    record(
+      'CONTROL: with no sibling carrying it, the same replacement loads a face of its own',
+      control.includes('Привет Дом') &&
+        controlDom !== undefined &&
+        /^[A-Z]{6}\+Arimo/u.test(controlDom.style.font) &&
+        controlDom.style.font !== s1 &&
+        controlDom.style.font !== s2,
+      `${JSON.stringify(control.slice(0, 80))}; Дом in ${JSON.stringify(controlDom?.style.font ?? null)}`,
     );
   } finally {
     bindEditFaces(null);

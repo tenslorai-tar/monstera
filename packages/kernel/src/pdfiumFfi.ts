@@ -9,6 +9,7 @@ import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { readFace } from './fontFaces.js';
 import { BOX, boxFont } from './boxFont.js';
 import { namedSubset } from './fontSubset.js';
+import { withoutSubsetTag } from './subsetName.js';
 import { ShapingFace } from './textShaping.js';
 import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
 import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
@@ -1877,7 +1878,7 @@ function pieceWriter(
         return made;
       };
       /**
-       * Whether `object`'s font carries `text` — asked of a throwaway object, never of `object`.
+       * Whether `object`'s font, or `font` set like it, carries `text` — asked of a throwaway object, never of `object`.
        *
        * ## Apart from everything, because a text page reads by position
        *
@@ -1895,8 +1896,8 @@ function pieceWriter(
        * call by call on a corpus page on 2026-09-24. So the probe goes on a blank page appended for
        * this edit and deleted before anything is generated or saved (`scratch`, below).
        */
-      const carries = (object: unknown, text: string): boolean => {
-        const probe = makeTextLike(bindings, document, object, 0);
+      const carries = (object: unknown, text: string, font: unknown = bindings.textFont(object)): boolean => {
+        const probe = makeTextLike(bindings, document, object, 0, font);
         if (!setOn(probe, text)) {
           bindings.destroyObject(probe);
           return false;
@@ -2013,8 +2014,42 @@ function pieceWriter(
       const facePrograms: Uint8Array[] = [];
       /** The text each piece object holds, so a wrap can trim a run's pieces from their end. */
       const pieceTexts = new Map<unknown, string>();
-      /** Whether a run's own font draws a segment, asked once per font and segment of this edit. */
+      /** Whether a run's own font, or a sibling of it, draws a segment, asked once per font and segment of this edit. */
       const ownAnswers = new Map<string, boolean>();
+      /** Each font's siblings on this page, by the font's address, found once per edit. */
+      const siblingFonts = new Map<string, readonly unknown[]>();
+      /**
+       * The run's SIBLINGS (ADR-0173 Decision 4): every other EMBEDDED font on this page whose name, less its subset tag
+       * (`withoutSubsetTag`), is the run's own font's, each once, in the page's order. So `ABCDEF+Calibri` lacking `é`
+       * finds `GHIJKL+Calibri` drawing it, and the word stays in the document's own font. Embedded only: a standard font
+       * of the same name is the twin trap — measured 2026-09-24, Helvetica in StandardEncoding reads `é` on the live page
+       * and `Ø` once saved — and would turn an edit the catalogue can make into a refusal. The page, not the document:
+       * the other pages' fonts are reached only by loading them, which an edit of one page does not do.
+       */
+      const siblingsOf = (object: unknown): readonly unknown[] => {
+        const own: unknown = bindings.textFont(object);
+        if (own === null) return [];
+        const key = String(koffi.address(own));
+        const known = siblingFonts.get(key);
+        if (known !== undefined) return known;
+        const name = withoutSubsetTag(baseNameOf(bindings, own));
+        const found: unknown[] = [];
+        const seen = new Set([key]);
+        const count = name === '' ? 0 : numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+        for (let index = 0; index < count; index += 1) {
+          const each: unknown = bindings.getObject(handle, index);
+          if (each === null || numberFrom(bindings.objectType(each), 'FPDFPageObj_GetType') !== TEXT_OBJECT) continue;
+          const font: unknown = bindings.textFont(each);
+          if (font === null) continue;
+          const address = String(koffi.address(font));
+          if (seen.has(address)) continue;
+          seen.add(address);
+          if (numberFrom(bindings.fontIsEmbedded(font), 'FPDFFont_GetIsEmbedded') !== 1) continue;
+          if (withoutSubsetTag(baseNameOf(bindings, font)) === name) found.push(font);
+        }
+        siblingFonts.set(key, found);
+        return found;
+      };
 
       /** `face` at `weight`, loaded once for this edit as a uniquely named subset, or `null` where it cannot be. */
       const faceFont = (face: CatalogueFace, weight: number): unknown => {
@@ -2105,7 +2140,26 @@ function pieceWriter(
           return answer;
         };
         const style = styleOf(bindings, object, programs);
-        const pieces = editPieces(text, ownCarries, { family: style.font, bold: style.bold, italic: style.italic, own: [] }, faces().faces);
+        // EACH SIBLING ASKED AS THE RUN'S OWN FONT IS, by the probe, and once per segment.
+        const fonts = siblingsOf(object);
+        const siblings = fonts.map((sibling) => ({
+          carries: (segment: string): boolean => {
+            const asked = `${String(koffi.address(sibling))}|${segment}`;
+            let answer = ownAnswers.get(asked);
+            if (answer === undefined) {
+              answer = carries(object, segment, sibling);
+              ownAnswers.set(asked, answer);
+            }
+            return answer;
+          },
+        }));
+        const pieces = editPieces(
+          text,
+          ownCarries,
+          { family: style.font, bold: style.bold, italic: style.italic, own: [] },
+          faces().faces,
+          siblings,
+        );
         // A BOXED PIECE IS ONE OBJECT PER CHARACTER, each in a box font of its own (Decision 7): one glyph has one code,
         // and one code reads as one text.
         const units = pieces.flatMap((piece) => {
@@ -2117,6 +2171,9 @@ function pieceWriter(
               box: true,
             }));
           }
+          // A SIBLING'S PIECE in the document's own font handle, which is the document's and not ours to close.
+          const sibling = piece.sibling === null ? undefined : fonts[piece.sibling];
+          if (sibling !== undefined) return [{ text: piece.text, font: (): unknown => sibling, box: false }];
           return [{ text: piece.text, font: face === null ? null : (): unknown => faceFont(face, weight), box: false }];
         });
         const objects: unknown[] = [];

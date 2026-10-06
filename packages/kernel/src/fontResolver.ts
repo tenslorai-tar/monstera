@@ -24,6 +24,7 @@
  */
 
 import type { FontEmbedding } from './fontFaces.js';
+import { withoutSubsetTag } from './subsetName.js';
 
 /** Where a face came from, in the order the resolver tries them. */
 export type FaceOrigin = 'own' | 'sibling' | 'installed' | 'bundled';
@@ -103,8 +104,7 @@ export const CLASS_FAMILIES: Readonly<Record<FamilyClass, string>> = { sans: 'Ar
  * `ABCDEF+TimesNewRomanPS-BoldItalicMT` is `timesnewroman`.
  */
 export function normaliseFamily(name: string): string {
-  return name
-    .replace(/^[A-Z]{6}\+/u, '')
+  return withoutSubsetTag(name)
     .replace(/[-,](?:Bold|Italic|Oblique|Regular|Roman|Book|Medium|Light|Semibold|Black)\w*$/iu, '')
     .replace(/(?:PS)?MT$/u, '')
     .replace(/PS$/u, '')

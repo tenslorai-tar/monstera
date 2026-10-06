@@ -135,6 +135,8 @@ export const PDFIUM_COMMAND = [
   ['packages/kernel/src/textShaping.ts', 'packages/kernel/dist/textShaping.js', 'tsc'],
   // AND THE BOX a character no face carries is drawn in (ADR-0173 Decision 7): a stale one would draw yesterday's box.
   ['packages/kernel/src/boxFont.ts', 'packages/kernel/dist/boxFont.js', 'tsc'],
+  // AND THE ONE RULE for a subset's name, by which an edit finds a sibling (Decision 4).
+  ['packages/kernel/src/subsetName.ts', 'packages/kernel/dist/subsetName.js', 'tsc'],
 ];
 
 /**

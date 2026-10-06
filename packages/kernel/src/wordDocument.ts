@@ -2,6 +2,7 @@ import type { WordMode } from '@monstera/contract/host';
 
 import { type OoxmlPart, XML_DECLARATION, xmlText } from './ooxmlPackage.js';
 import type { PageSize } from './pageGeometry.js';
+import { withoutSubsetTag } from './subsetName.js';
 import type { PagePicture, PageText, TextLine } from './textStructure.js';
 
 /**
@@ -105,7 +106,7 @@ const FLOW_MARGIN = 72;
  * so the suffix would only prevent the substitution Word makes for a family.
  */
 export function baseFontName(name: string): string {
-  const unsubset = name.replace(/^[A-Z]{6}\+/u, '');
+  const unsubset = withoutSubsetTag(name);
   const hyphen = unsubset.indexOf('-');
   const base = hyphen > 0 ? unsubset.slice(0, hyphen) : unsubset;
   return base.length > 0 ? base : 'Calibri';
