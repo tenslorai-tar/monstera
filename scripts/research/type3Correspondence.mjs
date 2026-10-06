@@ -33,8 +33,8 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 
@@ -44,7 +44,6 @@ import { CHROMIUM_FIXTURE } from './chromiumType3Fixture.mjs';
 import { buildFixture } from './fontKindFixtures.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const built = (/** @type {string} */ relative) => import(pathToFileURL(join(ROOT, relative)).href);
 
 /**
  * @param {string} label
@@ -111,8 +110,9 @@ if (library === null || !existsSync(library)) {
   process.stdout.write('UNVERIFIABLE: PDFium is not provisioned (scripts/provision/pdfium.mjs)\n');
   process.exit(0);
 }
-const pdfium = await built('packages/kernel/dist/pdfiumFfi.js');
-const operators = await built('packages/kernel/dist/textOperators.js');
+// LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads.
+const pdfium = await import('../../packages/kernel/dist/pdfiumFfi.js');
+const operators = await import('../../packages/kernel/dist/textOperators.js');
 pdfium.openPdfium(library);
 
 const ordinary = await measure('control: type1-standard14', await buildFixture('type1-standard14'), pdfium, operators);

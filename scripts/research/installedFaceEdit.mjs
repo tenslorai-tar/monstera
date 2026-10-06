@@ -30,7 +30,7 @@
 
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 
@@ -39,7 +39,6 @@ import { fontsDirectory } from '../provision/fonts.mjs';
 import { pdfiumLibrary } from '../provision/pdfium.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const built = (/** @type {string} */ relative) => import(pathToFileURL(resolve(root, relative)).href);
 
 const IDEOGRAPH = String.fromCodePoint(0x4e2d);
 const UNASSIGNED = String.fromCodePoint(0x378);
@@ -47,14 +46,15 @@ const LATIN = 'Edited through the real host';
 /** How many installed faces are tried one by one: the resolver's first choices are the ones an edit meets. */
 const TRIED = 5;
 
-const { blockEditOf } = await built('packages/contract/dist/commands.js');
-const { openPdfium, pdfiumWriter, textRuns } = await built('packages/kernel/dist/pdfiumFfi.js');
-const specs = await built('packages/kernel/dist/pdfiumSpecs.js');
-const { bindEditFaces } = await built('packages/kernel/dist/editFaces.js');
-const { faceSourceOf, fontFoldersOf, readCatalogue } = await built('packages/kernel/dist/fontCatalogue.js');
-const { candidatesFor } = await built('packages/kernel/dist/fontResolver.js');
-const { groupIntoBlocks, settingOf } = await built('packages/kernel/dist/textLines.js');
-const { installedFontsFolder } = await built('apps/desktop/dist/installedFonts.js');
+// LITERAL SPECIFIERS, so `proof:electronimports` can read what this loads: none of it may reach Electron.
+const { blockEditOf } = await import('../../packages/contract/dist/commands.js');
+const { openPdfium, pdfiumWriter, textRuns } = await import('../../packages/kernel/dist/pdfiumFfi.js');
+const specs = await import('../../packages/kernel/dist/pdfiumSpecs.js');
+const { bindEditFaces } = await import('../../packages/kernel/dist/editFaces.js');
+const { faceSourceOf, fontFoldersOf, readCatalogue } = await import('../../packages/kernel/dist/fontCatalogue.js');
+const { candidatesFor } = await import('../../packages/kernel/dist/fontResolver.js');
+const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
+const { installedFontsFolder } = await import('../../apps/desktop/dist/installedFonts.js');
 
 const library = pdfiumLibrary(root);
 if (!existsSync(library)) throw new Error(`${library} is absent: node scripts/provision/pdfium.mjs fetches it.`);
