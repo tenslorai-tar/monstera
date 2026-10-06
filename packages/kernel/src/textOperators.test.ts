@@ -81,6 +81,15 @@ describe('showOperators', () => {
     expect(operators.map((operator) => operator.positionedAt)).toStrictEqual([0, 0, 0, 3]);
   });
 
+  it('follows cm into the CTM each operator shows under, and Q restores it', () => {
+    const operators = showOperators(bytes('2 0 0 2 0 0 cm q 1 0 0 1 10 20 cm BT (in) Tj ET Q BT (out) Tj ET'));
+    // `cm` PRE-MULTIPLIES: the translation is applied in the scaled space, so (10, 20) lands at (20, 40).
+    expect(operators.map((operator) => operator.state.ctm)).toStrictEqual([
+      [2, 0, 0, 2, 20, 40],
+      [2, 0, 0, 2, 0, 0],
+    ]);
+  });
+
   it('keeps the text state a q saved, and restores it at Q', () => {
     const operators = showOperators(bytes('/F1 9 Tf 3 Tc q /F2 20 Tf 1 Tc BT (in) Tj ET Q BT (out) Tj ET'));
     expect(operators.map((operator) => [operator.state.font, operator.state.size, operator.state.charSpacing])).toStrictEqual([

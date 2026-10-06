@@ -223,6 +223,8 @@ export interface TextState {
   readonly matrix: Matrix;
   /** The text line matrix as the operator begins to show. */
   readonly line: Matrix;
+  /** The current transformation matrix the operator shows under: every `cm` before it, through `q` and `Q`. */
+  readonly ctm: Matrix;
 }
 
 /** One text-showing operator. */
@@ -286,11 +288,12 @@ export function joinedContent(streams: readonly Uint8Array[]): Uint8Array {
 /** Every text-showing operator of a page's joined content, in order, numbered by PDFium's rule. */
 export function showOperators(content: Uint8Array): readonly ShowOperator[] {
   const found: ShowOperator[] = [];
-  let state: Omit<TextState, 'matrix' | 'line'> = {
+  let state: Omit<TextState, 'matrix' | 'line' | 'ctm'> = {
     font: null, size: 0, charSpacing: 0, wordSpacing: 0, scale: 1, leading: 0, rise: 0, render: 0,
   };
-  /** The graphics states `q` saved, text state included (§8.4.1). */
-  const saved: (typeof state)[] = [];
+  let ctm: Matrix = IDENTITY;
+  /** The graphics states `q` saved, text state and CTM included (§8.4.1). */
+  const saved: { readonly state: typeof state; readonly ctm: Matrix }[] = [];
   let matrix: Matrix = IDENTITY;
   let line: Matrix = IDENTITY;
   let textObject = -1;
@@ -319,10 +322,18 @@ export function showOperators(content: Uint8Array): readonly ShowOperator[] {
     const start = operands[0]?.start ?? token.start;
     switch (op) {
       case 'q':
-        saved.push(state);
+        saved.push({ state, ctm });
         break;
-      case 'Q':
-        state = saved.pop() ?? state;
+      case 'Q': {
+        const restored = saved.pop();
+        if (restored !== undefined) {
+          state = restored.state;
+          ctm = restored.ctm;
+        }
+        break;
+      }
+      case 'cm':
+        ctm = multiply([number(0), number(1), number(2), number(3), number(4), number(5)], ctm);
         break;
       case 'BT':
         matrix = IDENTITY;
@@ -403,7 +414,7 @@ export function showOperators(content: Uint8Array): readonly ShowOperator[] {
         end: token.end,
         codes,
         elements,
-        state: { ...state, matrix, line },
+        state: { ...state, matrix, line, ctm },
         positionedAt,
         textObject,
         settings: [...settings],
