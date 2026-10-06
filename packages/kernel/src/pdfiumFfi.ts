@@ -118,6 +118,12 @@ interface Bound {
   readonly transform: Native;
   readonly getFillColour: Native;
   readonly setFillColour: Native;
+  readonly getRenderMode: Native;
+  readonly setRenderMode: Native;
+  readonly getStrokeColour: Native;
+  readonly setStrokeColour: Native;
+  readonly getStrokeWidth: Native;
+  readonly setStrokeWidth: Native;
   readonly removeObject: Native;
   readonly destroyObject: Native;
   readonly countFormObjects: Native;
@@ -366,6 +372,23 @@ export function openPdfium(libraryPath: string): void {
         'int FPDFPageObj_SetFillColor(void *object, unsigned int r, unsigned int g, unsigned int b, unsigned int a)',
       ),
     ),
+    // HOW A TEXT OBJECT IS PAINTED (`Tr`), and the stroke a mode of 1 or 2 paints with: a line set again must be painted
+    // as the line it replaces, or an invisible layer (mode 3, an OCR'd scan's words) becomes visible text over its own
+    // picture, and outlined text loses its outline (ADR-0179's keep list).
+    getRenderMode: native(library.func('int FPDFTextObj_GetTextRenderMode(void *object)')),
+    setRenderMode: native(library.func('int FPDFTextObj_SetTextRenderMode(void *object, int mode)')),
+    getStrokeColour: native(
+      library.func(
+        'int FPDFPageObj_GetStrokeColor(void *object, _Out_ unsigned int *r, _Out_ unsigned int *g, _Out_ unsigned int *b, _Out_ unsigned int *a)',
+      ),
+    ),
+    setStrokeColour: native(
+      library.func(
+        'int FPDFPageObj_SetStrokeColor(void *object, unsigned int r, unsigned int g, unsigned int b, unsigned int a)',
+      ),
+    ),
+    getStrokeWidth: native(library.func('int FPDFPageObj_GetStrokeWidth(void *object, _Out_ float *width)')),
+    setStrokeWidth: native(library.func('int FPDFPageObj_SetStrokeWidth(void *object, float width)')),
     // REMOVE UNLINKS AND HANDS OWNERSHIP BACK; `FPDFPageObj_Destroy` is what
     // frees it. Calling the first without the second leaks the object for the
     // life of the process, and calling the second on an object still on a page
@@ -2881,6 +2904,25 @@ function makeTextLike(
   const alpha = [0];
   if (numberFrom(bindings.getFillColour(source, red, green, blue, alpha), 'FPDFPageObj_GetFillColor') === 1) {
     bindings.setFillColour(object, red[0] ?? 0, green[0] ?? 0, blue[0] ?? 0, alpha[0] ?? 255);
+  }
+  // HOW IT IS PAINTED: the mode, and the stroke a stroking mode paints with. A new text object is mode 0, filled; a
+  // line that replaced an invisible one (mode 3) would be drawn over the picture it was recognised from.
+  const mode = numberFrom(bindings.getRenderMode(source), 'FPDFTextObj_GetTextRenderMode');
+  if (mode > 0 && numberFrom(bindings.setRenderMode(object, mode), 'FPDFTextObj_SetTextRenderMode') !== 1) {
+    throw refusedAt('object', 'FPDFTextObj_SetTextRenderMode refused the mode of the line a new one stands in for');
+  }
+  if (mode === 1 || mode === 2 || mode === 5 || mode === 6) {
+    const width = [0];
+    const r = [0];
+    const g = [0];
+    const b = [0];
+    const a = [0];
+    if (numberFrom(bindings.getStrokeColour(source, r, g, b, a), 'FPDFPageObj_GetStrokeColor') === 1) {
+      bindings.setStrokeColour(object, r[0] ?? 0, g[0] ?? 0, b[0] ?? 0, a[0] ?? 255);
+    }
+    if (numberFrom(bindings.getStrokeWidth(source, width), 'FPDFPageObj_GetStrokeWidth') === 1) {
+      bindings.setStrokeWidth(object, width[0] ?? 1);
+    }
   }
   return object;
 }

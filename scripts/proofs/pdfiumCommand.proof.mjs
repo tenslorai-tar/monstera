@@ -80,6 +80,7 @@ import {
   setFillingRgbColor,
   setFontAndSize,
   setTextMatrix,
+  setTextRenderingMode,
   showText,
 } from '@cantoo/pdf-lib';
 
@@ -259,8 +260,9 @@ const failures = [];
 // and 100 from the box: its premise, its reading, and its answer (ADR-0174), and 117 from ADR-0176's pageRuns: the
 // Chromium print's members against the kernel's own numbering, and the ruled page's object indices as the control, and
 // 126 from ADR-0179's paragraphs: the fixture's soft ends and its words, a letter that moves one line, a bold word that
-// wraps bold, a centred line and an indented first line kept, and a control beside each.
-const roster = createRoster(failures, { cases: 126 });
+// wraps bold, a centred line and an indented first line kept, and a control beside each, and 129 from the render mode an
+// edit keeps: invisible text stays invisible, with a visible control and the fixture's own.
+const roster = createRoster(failures, { cases: 129 });
 
 /**
  * @param {string} name
@@ -2700,11 +2702,14 @@ async function blockEditCases() {
  * font (the words named in `bold` in Helvetica-Bold), the first line starting `indent` points in. `lines` instead sets
  * each given line on its own, centred on `centre` when that is given.
  *
- * @param {{ text?: string; lines?: string[]; bold?: string[]; limit?: number; indent?: number; centre?: number }} options
+ * @param {{ text?: string; lines?: string[]; bold?: string[]; limit?: number; indent?: number; centre?: number; invisible?: boolean }} options
  */
-async function aTypeset({ text = '', lines, bold = [], limit = 200, indent = 0, centre }) {
+async function aTypeset({ text = '', lines, bold = [], limit = 200, indent = 0, centre, invisible = false }) {
   const document = await PDFDocument.create();
   const page = document.addPage([400, 400]);
+  // RENDER MODE 3, an OCR'd scan's invisible words: set before the text, so each `q BT ... ET Q` the drawing writes
+  // inherits it (`Tr` is graphics state).
+  if (invisible) page.pushOperators(setTextRenderingMode(3));
   const regular = await document.embedFont(StandardFonts.Helvetica);
   const strong = await document.embedFont(StandardFonts.HelveticaBold);
   const size = 11;
@@ -2876,6 +2881,42 @@ async function paragraphCases() {
     longerLines.length > (indentedBlock?.lines.length ?? 0) && firstLeft !== undefined &&
       restLefts.every((left) => Math.abs(left - 72) < 1.5) && Math.abs(firstLeft - 96) < 1.5,
     `first ${String(firstLeft)}; rest ${JSON.stringify(restLefts)}`,
+  );
+  // INVISIBLE TEXT STAYS INVISIBLE (render mode 3, an OCR'd scan's words): a line set again is painted as the line it
+  // replaced, or the recognised words appear over the picture they were read from.
+  /** @param {Uint8Array} bytes */
+  const darkPixels = async (bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      const bitmap = await renderPageBitmap(session, 0, 400, 400);
+      let count = 0;
+      for (let at = 0; at < bitmap.bgra.length; at += 4) if ((bitmap.bgra[at] ?? 255) < 128) count += 1;
+      return count;
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const hidden = await aTypeset({ text: PARAGRAPH, invisible: true });
+  const hiddenBlock = (await blocksOf(hidden)).blocks[0];
+  const hiddenLines = hiddenBlock?.lines.map((line) => line.runs.map((run) => run.index)) ?? [];
+  const hiddenSoft = hiddenBlock?.lines.map((line) => line.soft) ?? [];
+  const hiddenWords = paragraphsOfLines((hiddenBlock?.lines ?? []).map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  const widenedHidden = await edit(hiddenWords.replace('brown fox', 'brown unmistakably fox'), hidden, hiddenLines, hiddenSoft);
+  const shown = await edit(words.replace('brown fox', 'brown unmistakably fox'));
+  record(
+    'text drawn invisibly (render mode 3) is still invisible after an edit that wraps it, and its words are there',
+    (await textOf(widenedHidden)).includes('unmistakably') && (await darkPixels(widenedHidden)) === 0,
+    `${String(await darkPixels(widenedHidden))} dark pixel(s)`,
+  );
+  record(
+    'CONTROL: the same edit to visible text paints it, so the invisible case above is the render mode and not an empty render',
+    (await darkPixels(shown)) > 100 && (await darkPixels(original)) > 100,
+    `${String(await darkPixels(shown))} dark pixel(s) after, ${String(await darkPixels(original))} before`,
+  );
+  record(
+    'CONTROL: the invisible fixture itself draws nothing, so the edit did not hide anything that was showing',
+    (await darkPixels(hidden)) === 0,
+    `${String(await darkPixels(hidden))} dark pixel(s)`,
   );
   record(
     'CONTROL: the indent was in the fixture, so a writer that flushed every line left would have failed the case above',
