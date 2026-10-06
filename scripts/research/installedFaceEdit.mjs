@@ -82,6 +82,7 @@ async function blockOf(image) {
 /** The edit's outcome: saved with its boxes, or the refusal's name and characters. @param {Uint8Array} image @param {string} text */
 async function edit(image, text) {
   const block = await blockOf(image);
+  if (block === undefined) throw new Error('The page to edit has no block of text, so the instrument measured nothing.');
   const command = {
     kind: 'editTextBlock',
     page: 0,
@@ -169,9 +170,10 @@ if (control !== `saved, boxed ${JSON.stringify([UNASSIGNED])}`) {
 }
 
 const catalogue = readCatalogue([{ path: installed, origin: 'installed' }]);
-const carrying = candidatesFor({ family: 'Helvetica', bold: false, italic: false, own: [] }, catalogue.faces).filter(
-  (/** @type {any} */ face) => face.origin === 'installed' && face.unicodes.has(0x4e2d),
-);
+// THE RESOLVER'S ORDER, each candidate taken back to the catalogue face it was made from, which knows its file.
+const carrying = candidatesFor({ family: 'Helvetica', bold: false, italic: false, own: [] }, catalogue.faces)
+  .filter((face) => face.origin === 'installed' && face.unicodes.has(0x4e2d))
+  .flatMap((face) => catalogue.faces.filter((made) => made.id === face.id));
 process.stdout.write(
   `installed folder ${installed}: ${String(catalogue.faces.length)} faces, ${String(catalogue.unreadable.length)} unreadable; ` +
     `${String(carrying.length)} carry ${IDEOGRAPH}\n`,
