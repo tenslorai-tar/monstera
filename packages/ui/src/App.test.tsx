@@ -1604,11 +1604,17 @@ describe('App', () => {
       });
     });
 
-    it('THE DELETE CONTROL SENDS deletePages FOR THE PAGE ON SCREEN', async () => {
+    it('THE DELETE CONTROL ASKS FIRST, then sends deletePages FOR THE PAGE ON SCREEN', async () => {
       // The UI half of delete's wired pair. The kernel half is
       // `pageOrder.test.ts`, which reads a saved document back with pdf-lib and
       // says the right pages went; this says a person can reach it and that the
       // index it carries is the one being displayed.
+      //
+      // IT ASKS FIRST since CR-COR-06 (2026-10-06): *Delete page* opens the
+      // **Delete pages** dialog with the page on screen filled in, and nothing
+      // is dispatched until the person confirms — the same gate the Delete key
+      // and *Delete…* have. A control that still deleted on the first click
+      // would send the command without the dialog ever appearing.
       //
       // THE COMMAND KIND IS PART OF THE ASSERTION. A control wired to
       // `rotatePages` dispatches `document.execute` just as correctly, and the
@@ -1622,6 +1628,14 @@ describe('App', () => {
       await withDocumentOpen();
 
       await pressCommand('Delete page');
+
+      // THE DIALOG, not a dispatch — the page on screen (1-based `1`) filled in.
+      const field = await screen.findByLabelText('Pages to delete');
+      expect((field as HTMLInputElement).value).toBe('1');
+      await act(async () => {
+        screen.getByRole('button', { name: 'Delete pages' }).click();
+        await Promise.resolve();
+      });
 
       const executed = sent.filter((call) => call.id === 'document.execute');
       expect(executed).toHaveLength(1);

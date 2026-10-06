@@ -5509,49 +5509,76 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
     ]);
   });
 
-  it('ROTATE and DELETE act on the pages ticked in the Organize grid, and on the page on show without any', async () => {
-    // ADR-0104's `targetPages`, as the two commands read it. The ticked pages exclude the page on show (2), so
-    // a command still reading `page` sends [2] here and reads differently.
-    for (const [factory, kind] of [
-      [rotatePageCommand, 'rotatePages'],
-      [deletePageCommand, 'deletePages'],
-    ] as const) {
-      const ticked = sending();
-      await factory({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
-        ...CONTEXT,
-        page: 2,
-        selectedPages: [0, 3],
-      });
-      expect(ticked.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[0, 3]]);
+  it('ROTATE acts on the pages ticked in the Organize grid, and on the page on show without any', async () => {
+    // ADR-0104's `targetPages`, as a direct-dispatch command reads it. The ticked pages exclude the page on show (2),
+    // so a command still reading `page` sends [2] here and reads differently. `deletePageCommand` reads the same
+    // `targetPages` but now asks first (CR-COR-06), so its coverage is the dialog-opening loop below, not this one.
+    const factory = rotatePageCommand;
+    const kind = 'rotatePages';
 
-      const none = sending();
-      await factory({ client: none.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
-        ...CONTEXT,
-        page: 2,
-        selectedPages: [],
-      });
-      expect(none.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[2]]);
-    }
+    const ticked = sending();
+    await factory({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
+      ...CONTEXT,
+      page: 2,
+      selectedPages: [0, 3],
+    });
+    expect(ticked.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[0, 3]]);
+
+    const none = sending();
+    await factory({ client: none.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
+      ...CONTEXT,
+      page: 2,
+      selectedPages: [],
+    });
+    expect(none.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[2]]);
+  });
+
+  it('DELETE PAGE asks first and deletes nothing on a dismissal (CR-COR-06, owner 2026-10-06)', async () => {
+    // R12. The context-menu *Delete page* and the ribbon's secondary *Delete page* button dispatched `deletePages`
+    // on the first click, while the Delete key and the ribbon's *Delete…* asked. This proves the menu command now
+    // shares `askToDeletePages`: it OPENS the dialog with the target pages, and — the control — a dismissal sends
+    // nothing. Asserted as the call that was not made, because the document is untouched either way.
+    const openedThenDismissed = sending();
+    const dismissedOpens: unknown[] = [];
+    await deletePageCommand({
+      client: openedThenDismissed.client,
+      ask: (id, props) => {
+        dismissedOpens.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+      onApplied: () => undefined,
+      stamp,
+      signatures,
+    }).run({ ...CONTEXT, page: 2, selectedPages: [0, 3] });
+    expect(dismissedOpens).toStrictEqual([{ id: 'dialog.delete-pages', props: { pageCount: CONTEXT.pageCount, pages: [0, 3] } }]);
+    expect(openedThenDismissed.sent).toStrictEqual([]);
+
+    // AND ON AN ANSWER it dispatches exactly the answered pages, through the one path.
+    const confirmed = sending();
+    await deletePageCommand({
+      client: confirmed.client,
+      ask: () => Promise.resolve({ pages: [0, 3] }),
+      onApplied: () => undefined,
+      stamp,
+      signatures,
+    }).run({ ...CONTEXT, page: 2, selectedPages: [0, 3] });
+    expect(confirmed.sent).toStrictEqual([{ kind: 'deletePages', pages: [0, 3] }]);
   });
 
   /**
    * DECISION D, at the one place every command leaves the renderer: a ticked stretch crosses as a RUN. The fixture has
    * a stretch and a lone page, so a dispatcher that sent the list as it came — the build before D — sends five numbers
-   * where this asserts two entries.
+   * where this asserts two entries. Read through `rotatePages`, the direct-dispatch command: `deletePages` crosses the
+   * same `targetPages` run, now by way of the dialog field, which the dialog-opening loop below asserts.
    */
   it('a ticked stretch of pages crosses as one run, and a lone page as its number', async () => {
-    for (const [factory, kind] of [
-      [rotatePageCommand, 'rotatePages'],
-      [deletePageCommand, 'deletePages'],
-    ] as const) {
-      const ticked = sending();
-      await factory({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
-        ...CONTEXT,
-        page: 2,
-        selectedPages: [4, 5, 6, 7, 9],
-      });
-      expect(ticked.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[[4, 7], 9]]);
-    }
+    const ticked = sending();
+    await rotatePageCommand({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
+      ...CONTEXT,
+      page: 2,
+      selectedPages: [4, 5, 6, 7, 9],
+    });
+    expect(ticked.sent.map((command) => (command as { pages?: unknown }).pages)).toStrictEqual([[[4, 7], 9]]);
   });
 
   it('THE REST OF ORGANIZE reads `targetPages` too: duplicate and insert act, and the dialogs open on the ticked pages', async () => {
@@ -5599,8 +5626,10 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
         expect(quiet.sent).toStrictEqual([]);
       }
 
-      // THE RANGE DIALOGS start with the same pages, and keep the bound beside them.
-      for (const factory of [deletePagesCommand, extractPagesCommand]) {
+      // THE RANGE DIALOGS start with the same pages, and keep the bound beside them. `deletePageCommand` joins them
+      // since CR-COR-06 (2026-10-06): the *Delete page* menu item and secondary button open the same dialog filled
+      // with the target pages rather than deleting on the first click.
+      for (const factory of [deletePagesCommand, deletePageCommand, extractPagesCommand]) {
         const opened: unknown[] = [];
         const quiet = sending();
         await factory({

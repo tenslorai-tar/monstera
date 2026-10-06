@@ -1397,13 +1397,22 @@ export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
  * command in the build does not get the key that is about to be contested — D3
  * decides that, with a focus rule rather than a first-come registration.
  *
- * ## It is undone by a CHECKPOINT, which is the reason this row waited
+ * ## It ASKS FIRST, through the same dialog the Delete key opens
+ *
+ * This command, the page grid's Delete key, and the ribbon's *Delete…* are now
+ * the one way a page is removed: all three open **Delete pages** filled with the
+ * target pages, and nothing is deleted until the person confirms (owner,
+ * 2026-10-06, CR-COR-06 — the key already asked since 2026-10-05, and a menu or
+ * secondary button that still deleted on the first click was the half of the
+ * ruling left standing). A right-click *Delete page* and a mis-aimed secondary
+ * button now cost a **Cancel**, never a page. `askToDeletePages` is that one
+ * path, so this run collects no answer of its own.
+ *
+ * ## It is undone by a CHECKPOINT
  *
  * `deletePages` is the first command declaring `invertible: false`, so its log
  * entry is terminal and undoing it restores the bytes the bus snapshotted
  * ([ADR-0037](../../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
- * Nothing about this dispatch says so, and that is the point — the surface is
- * the same four steps every other command's is.
  */
 export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
@@ -1418,13 +1427,11 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      // `targetPages`' pages (ADR-0104): the ticked ones in the grid, else the page on show.
+      // `targetPages`' pages (ADR-0104): the ticked ones in the grid, else the page on show. The dialog needs the
+      // bound, and `askToDeletePages` holds the one `undefined`-is-a-dismissal gate — so a Cancel here deletes nothing.
       const pages = targetPages(context);
-      if (context.docId === undefined || pages.length === 0) return;
-      await applyDocumentCommand(deps, context.docId, {
-        kind: 'deletePages',
-        pages: [...pages],
-      });
+      if (context.docId === undefined || context.pageCount === undefined || pages.length === 0) return;
+      await askToDeletePages(deps, context.docId, context.pageCount, pages);
     },
   };
 }
@@ -1477,8 +1484,10 @@ export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
 
 /**
  * Opens the Delete pages dialog with `pages` in its field, and deletes what it answers — or nothing, when it is
- * dismissed. The one way a page is deleted after asking: this command's, and the page grid's Delete key, which asks
- * first by the owner's ruling (2026-10-05, CR-COR-06), so a key pressed by mistake costs a Cancel and never a page.
+ * dismissed. The one way a page is deleted after asking, shared by every surface that removes a page: the ribbon's
+ * *Delete…* (`deletePagesCommand`), the *Delete page* button and right-click item (`deletePageCommand`), and the page
+ * grid's Delete key — all ask first by the owner's ruling (CR-COR-06, 2026-10-05 for the key, 2026-10-06 for the rest),
+ * so a key pressed or a button clicked by mistake costs a Cancel and never a page.
  */
 export async function askToDeletePages(
   deps: DocumentCommandDeps,
