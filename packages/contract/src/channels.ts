@@ -2164,7 +2164,7 @@ export const channels = {
        * a plaintext copy of a protected document is the person's to be told of (invariant 18's *never silent*), and
        * an optional field is one a renderer satisfies by not reading it. Every other command answers `[]`.
        */
-      unsealedCopies: z.array(z.string()).readonly(),
+      unsealedCopies: heldCopiesSchema.readonly(),
     }),
     // `stale-target` IS ON THIS CHANNEL ALONE, because a command is the only
     // thing that names existing state (ADR-0041 Decision 2). A read answers with
