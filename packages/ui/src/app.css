@@ -5516,9 +5516,10 @@ optgroup {
 
 /* A RUN IN ITS OWN FONT, the one the host rebuilt from the run's program (ADR-0175): that font first, and its kind of
    face for a character the person types that the font does not carry. Two classes, so it outranks the kind's rule
-   whatever order the two are declared in. */
+   whatever order the two are declared in. `--m-run-font` is set on the run from script, per run, so no stylesheet
+   declares it: its own fallback is the kind, which keeps the declaration valid on a run that has none. */
 .m-text-editor__run.m-text-editor__run--own {
-  font-family: var(--m-run-font), var(--m-kind-face);
+  font-family: var(--m-run-font, var(--m-kind-face)), var(--m-kind-face);
 }
 
 /*
