@@ -106,7 +106,7 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 15);
+refuseStaleBuild(root, PDFIUM_COMMAND, 19);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
@@ -1094,17 +1094,6 @@ async function replacePieceCases() {
 }
 
 /**
- * A word the run's font lacks goes into a SIBLING already in the document before any bundled face
- * ([ADR-0173](../../docs/DECISIONS/0173-an-edits-word-its-font-cannot-carry-is-its-own-piece-in-the-resolvers-face.md)
- * Decision 4): another embedded subset of the same font, by its name less the subset tag.
- *
- * The fixture is made by this writer's own edits, so it is generated: {@link aParagraph}'s first line typed to end in
- * `Привет` makes subset S1 of Arimo, and the block far below typed to end in `Дом` makes S2, each named `TAG+` the same
- * name. Then the S1 piece is replaced by ` Привет Дом`, which S1 cannot draw and S2 can. THE CONTROL is the same
- * replacement on the document before S2 existed, which must load a face of its own: so the reuse is the sibling's
- * doing, and not every replacement landing in an Arimo font whatever the document holds.
- */
-/**
  * ADR-0176's `pageRuns`, through this PDFium, joined against the kernel's own numbering of the same content
  * (`textOperators.ts`): what the operator writer finds a run's glyphs by. On the committed Chromium print every member of
  * every run is an operator that shows a code, and the inkless spaces between glyphs are members of none. CONTROL: a page
@@ -1151,6 +1140,17 @@ async function pageRunsCases() {
   );
 }
 
+/**
+ * A word the run's font lacks goes into a SIBLING already in the document before any bundled face
+ * ([ADR-0173](../../docs/DECISIONS/0173-an-edits-word-its-font-cannot-carry-is-its-own-piece-in-the-resolvers-face.md)
+ * Decision 4): another embedded subset of the same font, by its name less the subset tag.
+ *
+ * The fixture is made by this writer's own edits, so it is generated: {@link aParagraph}'s first line typed to end in
+ * `Привет` makes subset S1 of Arimo, and the block far below typed to end in `Дом` makes S2, each named `TAG+` the same
+ * name. Then the S1 piece is replaced by ` Привет Дом`, which S1 cannot draw and S2 can. THE CONTROL is the same
+ * replacement on the document before S2 existed, which must load a face of its own: so the reuse is the sibling's
+ * doing, and not every replacement landing in an Arimo font whatever the document holds.
+ */
 async function siblingCases() {
   const fonts = fontsDirectory(root);
   if (!existsSync(fonts)) {

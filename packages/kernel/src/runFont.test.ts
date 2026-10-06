@@ -80,14 +80,15 @@ describe('runFontFor', () => {
     const e = 'e'.codePointAt(0) ?? 0;
     const glyph = wide.get(e);
     if (glyph?.box == null) throw new Error('the fixture has no ink for e');
-    wide.set(e, { ...glyph, advance: glyph.advance + 2 });
+    // A QUARTER EITHER SIDE OF THE TOLERANCE (SSSSSSS-7): +2 and +0.5 left any tolerance from 0.5 to 2 green.
+    wide.set(e, { ...glyph, advance: glyph.advance + 1.25 });
     expect(runFontFor(program(), wide)).toBeNull();
     const shifted = drawnAsTheProgram('Hello');
-    shifted.set(e, { ...glyph, box: { ...glyph.box, x0: glyph.box.x0 + 2 } });
+    shifted.set(e, { ...glyph, box: { ...glyph.box, x0: glyph.box.x0 + 1.25 } });
     expect(runFontFor(program(), shifted)).toBeNull();
-    // CONTROL: half a thousandth is the same glyph, so the declines above are the tolerance's and not any difference.
+    // CONTROL: three quarters of a thousandth is the same glyph, so the declines above are the tolerance's.
     const near = drawnAsTheProgram('Hello');
-    near.set(e, { ...glyph, advance: glyph.advance + 0.5, box: { ...glyph.box, x0: glyph.box.x0 + 0.5 } });
+    near.set(e, { ...glyph, advance: glyph.advance + 0.75, box: { ...glyph.box, x0: glyph.box.x0 + 0.75 } });
     expect(runFontFor(program(), near)).not.toBeNull();
   });
 

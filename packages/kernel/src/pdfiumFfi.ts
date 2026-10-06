@@ -813,11 +813,12 @@ function fromUtf16Units(units: Uint16Array): string {
 /**
  * How a run is set, as far as an editor drawn over it needs to know.
  *
- * ## Only what the renderer can USE, because the page's font cannot travel
+ * ## Only what the renderer can USE, because the page's font program cannot travel
  *
- * The renderer cannot load an embedded font — it would be a second parser of
- * the document's bytes — so it sets an editor in a family of the same KIND.
- * These are the facts that choose the kind: the font descriptor's own flags,
+ * The renderer cannot load the document's embedded program — it would be a
+ * second parser of the document's bytes. It draws a run in a font the host
+ * rebuilt and checked where there is one (ADR-0175, `document.runFonts`), and
+ * otherwise in a family of the same KIND. These are the facts that choose the kind: the font descriptor's own flags,
  * its weight, and whether its name says bold. The size is the size the page
  * DRAWS at, the object's font size times its matrix's scale, which is what the
  * editor must match to sit over the words.

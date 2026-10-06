@@ -126,7 +126,9 @@ const operators = await import('../../packages/kernel/dist/textOperators.js');
 pdfium.openPdfium(library);
 
 const ordinary = await measure('control: type1-standard14', await buildFixture('type1-standard14'), pdfium, operators);
-if (ordinary.objects !== ordinary.operators || ordinary.agreeingLengths !== ordinary.objects) {
+// ZERO OF ZERO IS NOT AGREEMENT (SSSSSSS-3): an empty object list and an empty stream read agree perfectly, so the
+// control requires the page's text to have been seen at all.
+if (ordinary.objects === 0 || ordinary.objects !== ordinary.operators || ordinary.agreeingLengths !== ordinary.objects) {
   throw new Error(`the positive control disagrees, so the instrument is wrong: ${JSON.stringify(ordinary)}`);
 }
 const rows = [ordinary, await measure('type3 (hand-built)', await buildFixture('type3'), pdfium, operators)];

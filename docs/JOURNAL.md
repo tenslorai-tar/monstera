@@ -892,6 +892,108 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-06 — Stage audit of `389cc010..f278ec74` — findings SSSSSSS-1 to SSSSSSS-22
+
+53 commits, 192 files, all work/cloud-5-text-edit: ADR-0172's corrections and the composers (P1.5), RRRRRRR-1's
+credential lift, ADR-0173 to ADR-0175 built (pieces, the box, Replace in pieces, Q7, the sibling, the run font in the
+editor), installed fonts in both hosts, and ADR-0176's Type 3 writer up to `editTextOperators`. Owed because the next
+commit (the page's writer on `document.textBlocks`) would take the range to 204 files. Label S: R is the highest on main
+and on every branch. Three readers took the modified proofs and instruments, the kernel and desktop tests, and the UI
+tests with the documents; I checked each finding below at its file at `f278ec74` before recording it. Closed findings are
+closed in this commit, each with its mutation run red where it is a test.
+
+**SSSSSSS-1** (medium, open, decided with the Windows reading): an edit or Replace that needs an installed face is
+refused by the contained PDFium host on Windows (run 37407876114, case 17), while the same edit outside the host saves
+(run 37412094234, 176 faces, 36 carrying 中) and the compose host reaches the same folder. `edit-text.md` and
+`find-and-replace.md` tell the person installed fonts are used; on Windows that is not yet true for these two. The
+instrument's variants (f3bf4bb6) read on f278ec74's run decide whether it is containment's, and the articles are
+corrected with that fix or with ADR-0172 Decision 2's correction, never with a wider grant.
+
+**SSSSSSS-2** (medium, closed): eight imports of a built module across five registered proofs were in none of their
+stale-build edges, among them `textOperators.js`, which `proof:pdfiumcommand` compares PDFium's runs against, and the
+built `schemas.js` enum `proof:ocrmodels` executes while its edges watched `.d.ts` files. Both lists are kept by hand
+beside the imports they describe and nothing compared them. `buildFreshness.proof.mjs` now checks every registered
+proof's imports by path against its edges, with a control that names an import when its edge is removed (mutation run
+red); the five lists are completed and `installedFaceEdit.mjs` takes `PDFIUM_COMMAND` instead of its own copy. Stated
+limit: bare `@monstera/...` specifiers are not read, since which file one reaches is the package map's answer.
+
+**SSSSSSS-3** (low, closed): `type3Correspondence.mjs`' positive control passed on zero objects and zero operators,
+the agreement an empty read produces. It now requires the page's text to be seen.
+
+**SSSSSSS-4** (low, closed): the Q7 rendered case's "the last line can be seen" read a point outside the window as the
+editor, since `undefined !== null`. It now requires an element.
+
+**SSSSSSS-5** (medium, closed): `operatorEdit.test.ts`' "refuses a byte changed outside the edit" flipped a byte inside a
+show operator and asserted only `ok: false`, so deleting the outside-byte check left it green through the operator
+comparison. It flips the page's `cm` and asserts the refusal's words (mutation run red).
+
+**SSSSSSS-6** (low, closed): `textOperatorEdit.test.ts`' refusal "naming its characters" asserted only the class. It
+asserts `zp`.
+
+**SSSSSSS-7** (low, closed): `runFont.test.ts` nudged by +2 to decline and +0.5 to accept, so any tolerance from 0.5 to 2
+passed. +1.25 and +0.75 now.
+
+**SSSSSSS-8** (low, closed): two name-record comparisons could compare absences: name 14 was never shown to exist on the
+face (`fontSubset.test.ts`), and two empty id sets were equal (`boxFont.test.ts`). Each asserts presence first.
+
+**SSSSSSS-9** (low, closed): `siblingCases`' doc comment sat above `pageRunsCases`' since fa252bf6, the inserted function
+taking it. Moved back. Two counts in prose stay as written: acaff560's message says seven cases where the roster went
+87 to 95, and `kernelLoad.proof.mjs` names three of the four font modules it forbids; the figures in code are right.
+
+**SSSSSSS-10** (medium, closed): the index row for ADR-0173 said the read-back reads by code point, which f70604fb
+withdrew, and carried neither later note; ADR-0176's row lacked both notes, including `engine/apply-file`, a new pinned
+exception to ADR-0138. Both rows now say what the ADRs do.
+
+**SSSSSSS-11** (low, closed): ARCHITECTURE's in-place editing row stated ADR-0176's per-page field and the renderer's
+choice as built. It now says what is built and what is owed, dated.
+
+**SSSSSSS-12** (low, closed): `find-and-replace.md` said an empty replacement deletes the word wherever it appears; the
+line rule refuses one with text after it on its line in another piece. Corrected.
+
+**SSSSSSS-13** (low, closed): `RunStyle`'s header in `pdfiumFfi.ts` still said the renderer always sets an editor in a
+family of the same kind, the half of a compound claim ADR-0175 ended. Corrected.
+
+**SSSSSSS-14** (medium, open): against the real library, the run-font cases never reach the check `runFont.ts` calls the
+decision, the program's glyph against what PDFium draws: the positive case asserts every character maps, and the
+control is refused earlier for not being embedded. That path is proven only on pure fixtures. Owed: an embedded subset
+whose cmap disagrees with PDFium's drawing, as a generated fixture.
+
+**SSSSSSS-15** (medium, open, stated in 7f17b295): the branch of `applyEditTextOperators` that puts the old `/Contents`
+back when MuPDF's own read-back fails after the write is reached by no case; both refusal cases stop before the write.
+
+**SSSSSSS-16** (medium, open): no fixture in `operatorEdit.test.ts` has a sibling the weight or face clause excludes
+(every built font is weight 400 named `Face`, and the print's two fonts agree), so either clause can be replaced by
+`true` and the file stays green.
+
+**SSSSSSS-17** (low, open): "breaks a long Thai paragraph between its words" checks only that no line starts with a
+mark, which a breaker splitting inside a word passes.
+
+**SSSSSSS-18** (low, open, owed with the Type 3 writer's boxes): ADR-0176 Decision 5 promises the box on a page MuPDF
+writes, and ADR-0174 and `CommandBus.#boxesIn` carry boxes for byte-image writers only. The step that draws a box on
+such a page amends ADR-0174 first (B4).
+
+**SSSSSSS-19** (low, open): ARCHITECTURE's count of MuPDF document-model reads says twenty-one; `coreChannels.test.ts`
+lists 28. It was six behind before this range and `engine/apply-file` did not reopen it.
+
+**SSSSSSS-20** (low, open, found in passing): the composition root clears only the geometry and text readers when its
+host ends or closes; the link, fill, word-box and other holders stay bound to a settled client. Read, not run.
+
+**SSSSSSS-21** (low, open, item 3): 7bb1d3ad changed two research scripts that `buildFreshness.proof.mjs` scans, and only
+Guards found it. `affectedProofs.mjs` follows imports, so a proof that scans a file it never imports is invisible to it;
+its header states the neighbouring limit (a proof that shells out) and not this one.
+
+**SSSSSSS-22** (low, open): seven small test gaps, each read: `cappedBoxes`' `more` term has no case with `more > 0`
+(documentation today, since the in-process engine answers 0); `remotePdfium.test.ts` asserts the input file's removal on
+success only; `sealCopy.test.ts` does not assert the owner-only copy's session is closed; a Markdown import is stubbed
+with `malformed-csv`, a reason it cannot produce; `BoxedCharactersBody.test.tsx`' edit-only sentence has no positive
+partner; a comment in `documentCommands.test.ts` names the wrong control; `editOnCopy`'s boxed-characters branch is
+reached by no case. And `installedFaceEdit.mjs` prints its MuPDF round trip's Latin control rather than asserting it.
+
+**Items.** 1: every fix in the range states its mechanism; none regenerates. 2: the hard shape that bit is the one item
+2 names, the contained host on Windows against Linux plain Node (SSSSSSS-1). 3: SSSSSSS-21. 4 and 4b: SSSSSSS-2 to -8,
+-14 to -16. 5: SSSSSSS-15 and -20 are read, not run. 6: every ADR and correction in the range landed before the code it
+governs (f7cf22da measured before Decisions 6 to 8 were built; e93b67f1 before 7f17b295). 7: SSSSSSS-10 to -13, -19.
+
 ## 2026-10-05 — Stage audit of `974df9f5..389cc010` — findings RRRRRRR-1 to RRRRRRR-19
 
 54 commits, 197 files, all work/cloud-5-text-edit: Part B Phase 0 (ADR-0169's read-back, step codes, Replace's line

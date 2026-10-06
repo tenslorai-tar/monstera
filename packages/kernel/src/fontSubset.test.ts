@@ -158,6 +158,8 @@ describe('namedSubset and withPostScriptName', () => {
     const original = nameRecordsOf(whole, 0, KEPT_NAME_IDS);
     expect(text(original, 0)).toMatch(/Copyright/u);
     expect(text(original, 13)).toMatch(/SIL Open Font License/u);
+    // AND THE LICENCE ADDRESS, or the loop below compares two absences for name 14 (SSSSSSS-8).
+    expect(text(original, 14)).toMatch(/^https?:\/\//u);
     expect(text(nameRecordsOf(subsetFont(whole, { unicodes: [0x41] }) ?? new Uint8Array(), 0, KEPT_NAME_IDS), 13)).toBeUndefined();
 
     const named = namedSubset(whole, 'Arimo-Regular', { unicodes: [0x41] });

@@ -59,6 +59,8 @@ describe('boxFont', () => {
     const font = boxFont(ARIMO, 0, { wght: 400 }, 'Arimo-Regular-wght400', ZHONG);
     if (font === null) throw new Error('the box font should have been made');
     const ids = nameRecordsOf(font.bytes, 0, KEPT_NAME_IDS).map((record) => record.id);
+    // NOT TWO EMPTY SETS (SSSSSSS-8): the copyright notice and the licence are among what is compared.
+    expect(ids).toEqual(expect.arrayContaining([0, 13]));
     expect(new Set(ids)).toStrictEqual(new Set(nameRecordsOf(ARIMO, 0, KEPT_NAME_IDS).map((record) => record.id)));
   });
 

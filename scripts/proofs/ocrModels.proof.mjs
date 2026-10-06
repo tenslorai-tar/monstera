@@ -34,7 +34,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CONTRACT_TYPES, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { OCR_MODELS, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { partialOutcome } from '../lib/unverifiable.mjs';
 import {
@@ -48,7 +48,7 @@ const REQUIRE_MODELS = process.argv.includes('--require-models');
 
 // The enum this compares against is the BUILT one, so a stale build would tie
 // the provisioning table to yesterday's language set.
-refuseStaleBuild(root, CONTRACT_TYPES, 2);
+refuseStaleBuild(root, OCR_MODELS, 1);
 
 // FROM `schemas.js`, where the set moved on 2026-09-11: `ocrPage`'s payload needs
 // it and `channels.ts` imports `commands.ts`, so the command schema could not

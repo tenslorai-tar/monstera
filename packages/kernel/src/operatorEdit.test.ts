@@ -277,9 +277,14 @@ describe('checkOperatorEdit', () => {
   const edit = made.value;
 
   it('refuses a byte changed outside the edit', () => {
+    // A BYTE NO SHOW OPERATOR HOLDS, the page's `cm` (SSSSSSS-5): a byte inside `(def) Tj` would be refused by the
+    // operator comparison too, so the check under test could be deleted and the case still pass.
     const changed = new Uint8Array(edit.content);
-    changed[changed.indexOf(0x64)] = 0x65;
-    expect(checkOperatorEdit(content, { ...edit, content: changed }, fonts)).toMatchObject({ ok: false });
+    changed[latin1(changed).indexOf('792') + 1] = 0x38;
+    expect(checkOperatorEdit(content, { ...edit, content: changed }, fonts)).toStrictEqual({
+      ok: false,
+      error: 'a byte outside the edit changed',
+    });
   });
 
   it('refuses an emptied operator that still shows its glyphs', () => {

@@ -1054,7 +1054,11 @@ test('a drag PAST A SHORT LINE and on into the side panel holds its selection ra
   }
   await page.mouse.up();
   // THE PANEL WAS REACHED, or this is a drag across the page alone.
-  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest('.m-context-panel') !== null, [
+  // AN ELEMENT FIRST: a point outside the window finds none, and `undefined !== null` would read as the panel (SSSSSSS-4).
+  expect(await page.evaluate(([x, y]) => {
+    const found = document.elementFromPoint(x ?? 0, y ?? 0);
+    return found !== null && found.closest('.m-context-panel') !== null;
+  }, [
     panel.x + panel.width / 2,
     panel.y + panel.height / 2,
   ])).toBe(true);
@@ -5007,7 +5011,11 @@ for (const look of LOOKS) {
     const last = await lastLine.boundingBox();
     expect(last).not.toBeNull();
     const hit = await page.evaluate(
-      ({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-text-editor]') !== null,
+      // A POINT OUTSIDE THE WINDOW finds no element, and `undefined !== null` would read that as the editor (SSSSSSS-4).
+      ({ x, y }) => {
+        const found = document.elementFromPoint(x, y);
+        return found !== null && found.closest('[data-text-editor]') !== null;
+      },
       { x: (last?.x ?? 0) + 4, y: (last?.y ?? 0) + (last?.height ?? 0) / 2 },
     );
     expect(hit).toBe(true);

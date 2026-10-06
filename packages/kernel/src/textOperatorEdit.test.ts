@@ -77,9 +77,13 @@ describe('applyEditTextOperators', () => {
   it('refuses a word no font of the page carries, naming its characters, and leaves the page as it came', async () => {
     await withChromium(async (session, content) => {
       const runs = headingRuns(content);
-      await expect(applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture zap.'), runs)).rejects.toThrow(
-        TextNotWritableError,
+      const refusal = await applyEditTextOperators(session, command(runs.runs[0]?.index ?? 0, 'Monstera fixture zap.'), runs).then(
+        () => null,
+        (error: unknown) => error,
       );
+      expect(refusal).toBeInstanceOf(TextNotWritableError);
+      // THE CHARACTERS THE PERSON IS TOLD, which the case's name claims (SSSSSSS-6): the print's subset holds no z and no p.
+      expect((refusal as TextNotWritableError).characters).toBe('zp');
       const after = await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))));
       expect(after).toStrictEqual(content);
     });
