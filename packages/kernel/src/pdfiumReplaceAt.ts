@@ -2,9 +2,16 @@ import { compileQuery } from '@monstera/shared';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import { type AppliedImage, type ImageSession, imageAlone } from './engineSeam.js';
-import { objectRuns, onImage, pdfiumWriter, removesItsObject, replaceTextObjects } from './pdfiumFfi.js';
-import { EMPTIED, type PriorTextObjects } from './pdfiumTextEdit.js';
+import type { AppliedImage, ImageSession } from './engineSeam.js';
+import {
+  objectRuns,
+  onImage,
+  pdfiumWriter,
+  removesItsObject,
+  replaceTextObjects,
+  replacementsKeepTheirObjects,
+} from './pdfiumFfi.js';
+import { EMPTIED, PIECED, type PriorTextObjects } from './pdfiumTextEdit.js';
 import { NothingToReplaceError, TextNotInPlaceError } from './textEditRefusals.js';
 
 /**
@@ -81,6 +88,9 @@ export async function captureReplaceTextAt(
     }
     // THE WORD WAS THE OBJECT'S WHOLE TEXT and the replacement is nothing, so the object is removed: a checkpoint.
     if (removesItsObject(picked.after)) return EMPTIED;
+    // A WORD ITS OBJECT'S FONT CANNOT CARRY is written in pieces, which renumber the page: a checkpoint (`PIECED`).
+    const replacement = [{ index: picked.index, text: picked.after }];
+    if (!(await replacementsKeepTheirObjects(session, command.page, replacement))) return PIECED;
     return { captured: true, prior: { page: command.page, objects: [{ index: picked.index, text: picked.before }] } };
   });
 }
@@ -100,7 +110,8 @@ export async function applyReplaceTextAt(
     // A REPLACEMENT THAT CHANGES NOTHING — the word for itself — writes nothing and makes no version, `replaceAllText`'s
     // rule (ADR-0169 Decision 6): refused before the serialise, so the bus records nothing.
     if (picked.after === picked.before) throw new NothingToReplaceError();
-    await replaceTextObjects(session, command.page, [{ index: picked.index, text: picked.after }], 'held');
-    return imageAlone(await pdfiumWriter.serialise(session));
+    const boxed = await replaceTextObjects(session, command.page, [{ index: picked.index, text: picked.after }], 'held');
+    // AND WHAT IT DREW AS BOXES (ADR-0174): the word is written in pieces as the editor writes it (ADR-0173 Decision 9).
+    return { image: await pdfiumWriter.serialise(session), boxed, more: 0 };
   });
 }

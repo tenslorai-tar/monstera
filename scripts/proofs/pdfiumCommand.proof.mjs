@@ -241,7 +241,7 @@ const failures = [];
 // ADR-0173's pieces: a word saved in a bundled face, its object, its wrap, the word the twin refused, an unreadable
 // catalogue either way, and a control either side, and 97 from its correction: a character past the BMP and its premise,
 // and 100 from the box: its premise, its reading, and its answer (ADR-0174).
-const roster = createRoster(failures, { cases: 100 });
+const roster = createRoster(failures, { cases: 107 });
 
 /**
  * @param {string} name
@@ -522,8 +522,9 @@ async function main() {
   await glyphLineCases();
   await settingCases();
   await passwordCases();
-  // LAST, because it binds the process's catalogue, and unbinds it before returning.
+  // LAST, because they bind the process's catalogue, and unbind it before returning.
   await pieceCases();
+  await replacePieceCases();
 
   process.stdout.write(
     failures.length > 0
@@ -815,6 +816,182 @@ async function pieceCases() {
         latin.includes('Helvetica') &&
         JSON.stringify(latinBoxes) === JSON.stringify({ boxed: [], more: 0 }),
       `${String(latinObjects)} text object(s); fonts ${latin}; boxes ${JSON.stringify(latinBoxes)}`,
+    );
+  } finally {
+    bindEditFaces(null);
+  }
+}
+
+/**
+ * Replace takes the editor's pieces ([ADR-0173](../../docs/DECISIONS/0173-an-edits-word-its-font-cannot-carry-is-its-own-piece-in-the-resolvers-face.md)
+ * Decision 9): a word the object's font cannot carry is its own piece, a character no face carries its box, and the
+ * line rule (`replaceLineRule.ts`) still refuses a replacement that would move the text after it.
+ *
+ * Against {@link threePagesOfWidgets}, whose Helvetica is WinAnsi and carries no Cyrillic: each whole line is one
+ * object with nothing after it, and page 0's third line is `WID` then `GET`. THE CONTROL for the save is the same
+ * command with no catalogue bound, refused naming the word, so the save is the pieces' doing.
+ */
+async function replacePieceCases() {
+  const fonts = fontsDirectory(root);
+  if (!existsSync(fonts)) {
+    record('the bundled fonts are provisioned for the replace piece cases', false, `${fonts} is absent; run scripts/provision/fonts.mjs`);
+    return;
+  }
+  const original = await threePagesOfWidgets();
+  const WORD = 'Привет';
+  /**
+   * @param {string} find @param {string} replace @param {{ x: number, y: number }} point
+   * @returns {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextAt'>}
+   */
+  const at = (find, replace, point) => ({ kind: 'replaceTextAt', page: 0, find, replace, at: point });
+  /** @param {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextAt' | 'replaceAllText'>} command */
+  const drawing = (command) => localPdfiumExecution.applyDrawing({ session: original, command, sources: [], reads: undefined });
+  /** The refusal's name and characters, or null where it was saved. @param {() => Promise<unknown>} work */
+  const refusal = async (work) => {
+    try {
+      await work();
+      return null;
+    } catch (error) {
+      return error instanceof Error ? `${error.name}${'characters' in error ? ` ${String(error.characters)}` : ''}` : String(error);
+    }
+  };
+  /** Page 0's runs one per object, from bytes. @param {Uint8Array} bytes */
+  const objectRunsOf = async (bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      return (await objectRuns(session, 0)).runs;
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  // ON THE FIRST LINE, as `replaceAtCases` points: the whole line is one object, so nothing follows the word's object.
+  const first = at('WIDGET', WORD, { x: 80, y: 233 });
+
+  bindEditFaces(null);
+  const unbound = await refusal(() => drawing(first));
+  record(
+    'CONTROL: with no catalogue, a Cyrillic replacement in a Helvetica line is refused naming it, and no twin is made',
+    unbound !== null && unbound.startsWith('TextNotWritableError') && unbound.includes('П'),
+    unbound ?? 'it was SAVED',
+  );
+
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  try {
+    let read = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let objects = [];
+    try {
+      const drawn = await drawing(first);
+      read = await pageOf(drawn.image, 0);
+      objects = await objectRunsOf(drawn.image);
+    } catch (error) {
+      read = `refused: ${error instanceof Error ? error.name : String(error)}`;
+    }
+    const word = objects.find((run) => run.text.includes(WORD));
+    const rest = objects.filter((run) => !run.text.includes(WORD) && run.text.trim() !== '');
+    record(
+      'with the bundled fonts bound, the replacement is saved, the word in its own object in a bundled face and the rest in Helvetica',
+      read.includes(`The ${WORD} is on this page`) &&
+        read.includes('and the WIDGET again below') &&
+        word !== undefined &&
+        word.text.trimEnd() === ` ${WORD}` &&
+        /^[A-Z]{6}\+Arimo/u.test(word.style.font) &&
+        rest.length > 0 &&
+        rest.every((run) => run.style.font === 'Helvetica'),
+      `${JSON.stringify(read.slice(0, 90))}; ${JSON.stringify(objects.slice(0, 4).map((run) => [run.text, run.style.font]))}`,
+    );
+
+    // ITS UNDO IS A CHECKPOINT: the pieces are new objects after the run, so a string put back by index would land in
+    // the wrong object. By either command; CONTROL: a Latin replacement with the catalogue bound still captures.
+    const lastObject = (await textIndicesOf(original)).at(-1) ?? -1;
+    const replacing = (/** @type {string} */ text) =>
+      /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextObject'>} */ ({
+        kind: 'replaceTextObject',
+        page: 0,
+        ...replacementFieldsOf([{ index: lastObject, text }]),
+        version: 1,
+      });
+    const pointPieced = await localPdfiumExecution.capture(original, first);
+    const dialogPieced = await localPdfiumExecution.capture(original, replacing(WORD));
+    const pointLatin = await localPdfiumExecution.capture(original, at('WIDGET', 'GADGET', { x: 80, y: 233 }));
+    const dialogLatin = await localPdfiumExecution.capture(original, replacing('GOT'));
+    record(
+      'a replacement written in pieces takes a checkpoint, by either command, and a Latin one still captures its string',
+      !pointPieced.captured &&
+        pointPieced.reason.includes('renumbers') &&
+        !dialogPieced.captured &&
+        dialogPieced.reason.includes('renumbers') &&
+        pointLatin.captured &&
+        dialogLatin.captured,
+      `point: ${pointPieced.captured ? 'captured' : pointPieced.reason}; dialog: ${dialogPieced.captured ? 'captured' : dialogPieced.reason}; ` +
+        `Latin: ${String(pointLatin.captured)}, ${String(dialogLatin.captured)}`,
+    );
+
+    // THE LINE RULE HOLDS ON THE PIECES' WIDTH: `WID Дом` would draw into `GET`. Its first piece is `WID` in the run's
+    // own object at its own width, and only the piece after it moves the line, so a rule that measured the old index
+    // reads an object that did not move and saves the overlap; a wholly Cyrillic word does not separate the two, since
+    // the run's own object is set to it before the probe sends it to a piece. `replaceAtCases`' `WDI` is the control
+    // that the rule does not refuse every edit on such a line.
+    const moving = await refusal(() => drawing(at('WID', 'WID Дом', { x: 35, y: 173 })));
+    record(
+      'a replacement in pieces that would move the text after it on its line is refused, measured on its pieces',
+      moving === 'ReplaceMovesLineError',
+      moving ?? 'it was SAVED',
+    );
+
+    // A CHARACTER NO FACE CARRIES IS ITS BOX, and the apply answers it with its page (ADR-0174), at a point and across
+    // the document. `page` ends page 0's first line and page 1's: both are boxed, each on its own page, in order.
+    const NONE_CARRY = String.fromCodePoint(0x4e2d);
+    /** @type {unknown} */
+    let pointBoxes = null;
+    let pointRead = '';
+    try {
+      const drawn = await drawing(at('WIDGET', NONE_CARRY, { x: 80, y: 233 }));
+      pointBoxes = { boxed: drawn.boxed, more: drawn.more };
+      pointRead = await pageOf(drawn.image, 0);
+    } catch (error) {
+      pointRead = `refused: ${error instanceof Error ? error.name : String(error)}`;
+    }
+    record(
+      'one occurrence replaced by a character no face carries is saved as its box, reading the character, and answered',
+      pointRead.includes(`The ${NONE_CARRY} is on this page`) &&
+        JSON.stringify(pointBoxes) === JSON.stringify({ boxed: [{ character: NONE_CARRY, page: 0 }], more: 0 }),
+      `${JSON.stringify(pointRead.slice(0, 60))}; ${JSON.stringify(pointBoxes)}`,
+    );
+    /** @param {string} find @param {string} replace */
+    const everywhere = (find, replace) =>
+      /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceAllText'>} */ ({
+        kind: 'replaceAllText',
+        find,
+        replace,
+        version: 1,
+      });
+    /** @type {unknown} */
+    let allBoxes = null;
+    try {
+      const drawn = await drawing(everywhere('page', NONE_CARRY));
+      allBoxes = { boxed: drawn.boxed, more: drawn.more };
+    } catch (error) {
+      allBoxes = `refused: ${error instanceof Error ? error.name : String(error)}`;
+    }
+    record(
+      'a replace-all to a character no face carries answers every box with its own page, across the document',
+      JSON.stringify(allBoxes) ===
+        JSON.stringify({ boxed: [{ character: NONE_CARRY, page: 0 }, { character: NONE_CARRY, page: 1 }], more: 0 }),
+      JSON.stringify(allBoxes),
+    );
+    /** @type {unknown} */
+    let latinBoxes = null;
+    try {
+      const drawn = await drawing(everywhere('WIDGET', 'GADGET'));
+      latinBoxes = { boxed: drawn.boxed, more: drawn.more };
+    } catch (error) {
+      latinBoxes = `refused: ${error instanceof Error ? error.name : String(error)}`;
+    }
+    record(
+      'CONTROL: a Latin replace-all with the catalogue bound answers no box',
+      JSON.stringify(latinBoxes) === JSON.stringify({ boxed: [], more: 0 }),
+      JSON.stringify(latinBoxes),
     );
   } finally {
     bindEditFaces(null);

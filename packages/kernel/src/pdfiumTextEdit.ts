@@ -8,6 +8,7 @@ import {
   pdfiumWriter,
   removesItsObject,
   replaceTextObjects,
+  replacementsKeepTheirObjects,
   textObjectText,
 } from './pdfiumFfi.js';
 
@@ -83,6 +84,18 @@ export const EMPTIED = {
 } as const satisfies CaptureResult<never>;
 
 /**
+ * Why a replacement written in pieces has no prior (ADR-0173 Decision 9): its pieces are new objects inserted after
+ * the run, so every index after them moves, and strings recorded by index would be put back into other objects. The
+ * bus takes a checkpoint, so the undo still puts the page back.
+ */
+export const PIECED = {
+  captured: false,
+  reason:
+    'a word its object’s font cannot carry is written as new objects beside it, which renumbers the page, so ' +
+    'strings recorded by index are not enough to put the page back',
+} as const satisfies CaptureResult<never>;
+
+/**
  * The string the named object currently holds.
  *
  * ## It captures BEFORE the bus applies, and a failed read is an outcome
@@ -135,6 +148,10 @@ export async function captureReplaceTextObject(
         };
       }
     }
+    // A REPLACEMENT WRITTEN IN PIECES renumbers the page, so the strings just read would be put back into the wrong
+    // objects: a checkpoint. Asked of the writer that will make the pieces (ADR-0173 Decision 9), once every index is
+    // known to name a text object.
+    if (!(await replacementsKeepTheirObjects(session, command.page, replacements))) return PIECED;
     return { captured: true, prior: { page: command.page, objects } };
   });
 }
@@ -158,8 +175,9 @@ export async function applyReplaceTextObject(
   return onImage(image, async (session) => {
     // READ BACK THROUGH THE CONTRACT'S DECODER, the one inverse of the wire form (ADR-0142). THE LINE IS HELD: strings
     // set object by object carry no knowledge of the line, a Replace's position (`replaceLineRule.ts`).
-    await replaceTextObjects(session, command.page, replacementsOf(command), 'held');
-    return imageAlone(await pdfiumWriter.serialise(session));
+    const boxed = await replaceTextObjects(session, command.page, replacementsOf(command), 'held');
+    // AND WHAT IT DREW AS BOXES (ADR-0174), since a Replace writes in pieces as the editor does (ADR-0173 Decision 9).
+    return { image: await pdfiumWriter.serialise(session), boxed, more: 0 };
   });
 }
 

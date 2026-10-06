@@ -1374,10 +1374,13 @@ function textObjectAt(bindings: Bound, handle: unknown, page: number, index: num
  * upstream that a silent success would hide.
  * @throws when an index is not a text object, rather than editing whatever is
  * there. `FPDFText_SetText` on a path object is undefined behaviour.
- * @throws TextNotWritableError when a write reads back as something other than what was written: the run's font
- * cannot draw it, and nothing is generated.
- * @throws ReplaceMovesLineError under `line: 'held'` when a replacement changes its object's width and text follows it
- * on its line, before anything is generated.
+ * @throws TextNotWritableError when a write reads back as something other than what was written, and nothing is
+ * generated. Where this process has the bundled fonts, a word the object's font cannot carry is written as its own
+ * piece first (ADR-0173 Decision 9), so this is a font that drew wrong rather than one that lacked a letter.
+ * @throws ReplaceMovesLineError under `line: 'held'` when a replacement changes its width and text follows it on its
+ * line, before anything is generated: its pieces' width where it was written in pieces.
+ *
+ * @returns the characters it drew as boxes, with the page (ADR-0174).
  *
  * @param line `'held'` for a Replace, which has no knowledge of the line and refuses an edit that would move the text
  *   after it (`replaceLineRule.ts`); `'as-written'` where the strings are already what the line should hold: an undo
@@ -1389,8 +1392,8 @@ export function replaceTextObjects(
   page: number,
   replacements: readonly TextReplacement[],
   line: 'held' | 'as-written',
-): Promise<void> {
-  return promised(() => {
+): Promise<readonly BoxedInEdit[]> {
+  return promised(() =>
     onPage(session, page, (handle) => {
       const bindings = api();
       if (replacements.length === 0) {
@@ -1405,64 +1408,127 @@ export function replaceTextObjects(
         replacement,
         object: textObjectAt(bindings, handle, page, replacement.index),
       }));
-      // AN EMPTIED OBJECT IS REMOVED, never set to nothing, which PDFium refuses ({@link removesItsObject}). Removed
-      // after every set, as the block edit removes, so no index above was read from a page already renumbered.
-      const kept = resolved.filter(({ replacement }) => !removesItsObject(replacement.text));
-      const removed = resolved.filter(({ replacement }) => removesItsObject(replacement.text));
       // THE LINE AS IT WAS, read before any write and only where it is held: each object's ink and advance end.
       const before = line === 'held' ? lineBoxes(walkRuns(bindings, handle)) : undefined;
-      for (const { replacement, object } of kept) {
-        if (numberFrom(bindings.setText(object, wideString(replacement.text)), 'FPDFText_SetText') !== 1) {
-          throw refusedAt('set-text', `FPDFText_SetText refused the replacement for object ${String(replacement.index)}`);
-        }
-      }
-      // MEASURED AFTER THE SETS AND BEFORE THE REMOVALS, so every index still names the object it named above. An object
-      // with no characters read back has no box here and is the read-back's to refuse.
-      if (before !== undefined) {
-        const now = lineBoxes(walkRuns(bindings, handle));
-        const after = new Map<number, RunBox | null>();
-        for (const { replacement } of resolved) {
-          const box = removesItsObject(replacement.text) ? null : now.get(replacement.index);
-          if (box !== undefined) after.set(replacement.index, box);
-        }
-        if (replacementsMovingTheirLine(before, after).length > 0) throw new ReplaceMovesLineError();
-      }
-      for (const { replacement, object } of removed) {
-        if (numberFrom(bindings.removeObject(handle, object), 'FPDFPage_RemoveObject') !== 1) {
-          throw refusedAt('object', `FPDFPage_RemoveObject refused object ${String(replacement.index)}, emptied by its replacement`);
-        }
-        bindings.destroyObject(object);
-      }
-      // EVERY WRITE IS READ BACK before anything is generated, by the block edit's rule (`editTextBlocks`): a 1 from
-      // FPDFText_SetText says the string was set, not that the run's font can draw it, and a subset font missing a
-      // character drew it as nothing while Replace All reported success (CR-NAT-10). A throw here leaves the document
-      // as it came, since nothing has been generated and the page is discarded.
-      const textPage: unknown = bindings.loadTextPage(handle);
-      if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read the replacement back');
+      // THE BLOCK EDIT'S WRITER (ADR-0173 Decision 9): a word the object's font cannot carry is its own piece in the
+      // resolver's face, and a character no face carries its box, so Replace and the editor answer one question once.
+      const pen = pieceWriter(session, handle, page, 'write', charactersOf(replacements.map(({ text }) => text)));
       try {
-        const drawn = drawnTextOn(
-          bindings,
-          textPage,
-          kept.map(({ object }) => object),
-        );
-        const pairs = kept.map(({ replacement }, at) => ({
-          written: asTextPageReads(replacement.text),
-          read: drawn[at] ?? '',
-        }));
-        if (pairs.some(({ written, read }) => written !== read)) {
-          throw new TextNotWritableError(unwritableCharacters(pairs));
+        /** The objects each replacement now says itself in, by the index it named: one, or its pieces in order. */
+        const wrote = new Map<number, readonly unknown[]>();
+        for (const { replacement, object } of resolved) {
+          // AN EMPTIED OBJECT IS REMOVED, never set to nothing, which PDFium refuses ({@link removesItsObject}). Removed
+          // after every write, as the block edit removes, so no handle above is read after it is freed.
+          if (removesItsObject(replacement.text)) {
+            pen.removed.push(object);
+            continue;
+          }
+          if (pen.inPieces) {
+            wrote.set(replacement.index, pen.writePieces(object, replacement.text));
+            continue;
+          }
+          // A PROCESS GIVEN NO FONTS sets the string in the object's own font, as Replace always has, and the read-back
+          // below refuses what that font cannot draw: Replace never had the block edit's standard twin.
+          if (numberFrom(bindings.setText(object, wideString(replacement.text)), 'FPDFText_SetText') !== 1) {
+            throw refusedAt('set-text', `FPDFText_SetText refused the replacement for object ${String(replacement.index)}`);
+          }
+          pen.record(object, replacement.text);
+          wrote.set(replacement.index, [object]);
         }
+        // MEASURED AFTER THE WRITES AND BEFORE THE REMOVALS. A replacement ends where its LAST object ends, found by
+        // handle, since pieces are inserted after the run and every index after them moved. An object with no
+        // characters read back has no box here and is the read-back's to refuse.
+        if (before !== undefined) {
+          const now = lineBoxes(walkRuns(bindings, handle));
+          const indexOf = objectIndices(bindings, handle);
+          const after = new Map<number, RunBox | null>();
+          for (const { replacement } of resolved) {
+            const objects = wrote.get(replacement.index);
+            const last = objects?.at(-1);
+            const at = last === undefined ? undefined : indexOf.get(String(koffi.address(last)));
+            const box = objects === undefined ? null : at === undefined ? undefined : now.get(at);
+            if (box !== undefined) after.set(replacement.index, box);
+          }
+          if (replacementsMovingTheirLine(before, after).length > 0) throw new ReplaceMovesLineError();
+        }
+        for (const object of pen.removed) {
+          if (numberFrom(bindings.removeObject(handle, object), 'FPDFPage_RemoveObject') !== 1) {
+            throw refusedAt('object', `FPDFPage_RemoveObject refused an object a replacement removes on page ${String(page)}`);
+          }
+          bindings.destroyObject(object);
+        }
+        // EVERY WRITE IS READ BACK before anything is generated, by the block edit's rule (`editTextBlocks`): a 1 from
+        // FPDFText_SetText says the string was set, not that the run's font can draw it, and a subset font missing a
+        // character drew it as nothing while Replace All reported success (CR-NAT-10). A throw here leaves the document
+        // as it came, since nothing has been generated and the page is discarded.
+        const textPage: unknown = bindings.loadTextPage(handle);
+        if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read the replacement back');
+        try {
+          const drawn = drawnTextOn(
+            bindings,
+            textPage,
+            pen.written.map(({ object }) => object),
+          );
+          const pairs = pen.written.map(({ text }, at) => ({ written: asTextPageReads(text), read: drawn[at] ?? '' }));
+          if (pairs.some(({ written, read }) => written !== read)) {
+            throw new TextNotWritableError(unwritableCharacters(pairs));
+          }
+        } finally {
+          bindings.closeTextPage(textPage);
+        }
+        generate(
+          session,
+          page,
+          handle,
+          pen.written.map(({ object }) => object),
+        );
+        return pen.boxed();
       } finally {
-        bindings.closeTextPage(textPage);
+        pen.close();
       }
-      generate(
-        session,
-        page,
-        handle,
-        kept.map(({ object }) => object),
-      );
-    });
-  });
+    }),
+  );
+}
+
+/**
+ * Whether every replacement stays in the object it names, rather than becoming pieces (ADR-0173 Decision 9): asked by
+ * a capture before it records strings by index, since pieces renumber the page and an inverse by index would then write
+ * into the wrong objects. Answered by the writer's own {@link PieceWriter.keepsItsObject} on a page that is closed
+ * without being generated, which discards nothing it did not already discard. True in a process given no fonts, where
+ * a replacement is never written in pieces.
+ */
+export function replacementsKeepTheirObjects(
+  session: PdfiumSession,
+  page: number,
+  replacements: readonly TextReplacement[],
+): Promise<boolean> {
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const pen = pieceWriter(session, handle, page, 'trial', charactersOf(replacements.map(({ text }) => text)));
+      try {
+        if (!pen.inPieces) return true;
+        return replacements.every(
+          ({ index, text }) => removesItsObject(text) || pen.keepsItsObject(textObjectAt(bindings, handle, page, index), text),
+        );
+      } finally {
+        pen.close();
+      }
+    }),
+  );
+}
+
+/** Every distinct code point the texts hold: what one subset per face must carry (ADR-0173 Decision 5). */
+function charactersOf(texts: readonly string[]): number[] {
+  return [...new Set(texts.flatMap((text) => Array.from(text, (character) => character.codePointAt(0) ?? 0)))];
+}
+
+/** Each object on the page by its handle's address, to its index in the page's order now. */
+function objectIndices(bindings: Bound, handle: unknown): ReadonlyMap<string, number> {
+  const indices = new Map<string, number>();
+  const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  for (let index = 0; index < count; index += 1) indices.set(String(koffi.address(bindings.getObject(handle, index))), index);
+  return indices;
 }
 
 /** Each walked run as the line rule reads it: its ink's start and height, and its advance's end. */
@@ -1695,81 +1761,47 @@ async function fitScales(session: PdfiumSession, page: number, edits: readonly B
 }
 
 /**
- * One pass over a page's block edits: `write` makes the edit and generates the page, naming its writes to the
- * generation; `trial` lays the blocks out at the scales given, writes without reading back, generates nothing. Both
- * answer which blocks ended above their original last line.
+ * What {@link pieceWriter} hands its caller: the one way an edit's text is written into a page's objects.
+ *
+ * `written` and `removed` are the caller's to read and to add to: the read-back reads `written`, the generation names
+ * it, and an object the caller removes for its own reason (a line the person deleted, a run the diff emptied) joins
+ * `removed`, which is unlinked LAST.
  */
-function layOutBlocks(
+interface PieceWriter {
+  /** Whether this process sets a word its run's font cannot carry in a catalogue face, or keeps the standard twin. */
+  readonly inPieces: boolean;
+  readonly written: { object: unknown; text: string }[];
+  readonly removed: unknown[];
+  readonly insertAfter: (object: unknown, anchor: unknown) => void;
+  readonly write: (object: unknown, text: string) => unknown;
+  readonly writePieces: (object: unknown, text: string) => unknown[];
+  readonly trimPieces: (objects: readonly unknown[], text: string) => unknown[];
+  readonly record: (object: unknown, text: string) => void;
+  readonly standardFontLike: (object: unknown) => unknown;
+  readonly uncarriedIn: (source: unknown, text: string) => string;
+  readonly keepsItsObject: (object: unknown, text: string) => boolean;
+  /** The characters drawn as boxes that are still on the page, in the order they were drawn (ADR-0174). */
+  readonly boxed: () => BoxedInEdit[];
+  /** Closes the fonts this writer loaded and deletes its scratch page: before the caller generates or saves. */
+  readonly close: () => void;
+}
+
+/**
+ * THE ONE WRITER of an edit's text into a page's objects, the block edit's and Replace's (ADR-0173 Decision 9), so
+ * which font carries which word has one answer whichever command asks it (B3a).
+ *
+ * @param mode `trial` lays text out without reading it back and records nothing, for a block fitted to its box
+ * @param characters every character the command writes: one subset per face carries all of them (Decision 5)
+ */
+function pieceWriter(
   session: PdfiumSession,
   handle: unknown,
   page: number,
-  edits: readonly BlockEdit[],
-  scales: readonly number[],
   mode: 'write' | 'trial',
-): { readonly fits: readonly boolean[]; readonly boxed: readonly BoxedInEdit[] } {
+  characters: readonly number[],
+): PieceWriter {
       const bindings = api();
       const document = documentFor(session);
-      const walked = walkRuns(bindings, handle);
-      /** Per block: did its layout end above its original last line? */
-      const fits = edits.map(() => true);
-      // THE PAGE'S BOX, for a one-line block's column (ADR-0097 4a).
-      const box: Record<string, number> = {};
-      const hasBox = numberFrom(bindings.pageBox(handle, box), 'FPDF_GetPageBoundingBox') === 1;
-      const pageLeft = hasBox ? (box['left'] ?? 0) : 0;
-      const pageRight = hasBox ? (box['right'] ?? 0) : Number.NEGATIVE_INFINITY;
-
-      // EVERY BLOCK RESOLVED IN FULL FIRST, against the untouched page, so a bad
-      // index refuses before anything is written — and so a later block's
-      // indices are the page's own, not whatever an earlier block left behind.
-      // A NAMED RUN IS ITS OBJECTS: the same join the read answered (`joinedWalk`, ADR-0130) expands each run an edit
-      // names into the objects it is, in order — so a line drawn one glyph per object is written as the person saw it.
-      const joined = joinedWalk(bindings, handle, walked);
-      const blocks = edits.map((edit) => ({
-        text: edit.text,
-        fit: edit.fit,
-        lines: edit.lines.map((line) =>
-          line.map((named): HeldRun => {
-            const members = membersOf(joined, named);
-            if (members === undefined) {
-              throw refusedAt(
-                'object',
-                `Object ${String(named)} on page ${String(page)} begins no run this page's reading answered`,
-              );
-            }
-            const held = members.map((index) => {
-              const run = walked.runs.get(index);
-              if (run === undefined) {
-                throw refusedAt(
-                  'object',
-                  `Object ${String(index)} on page ${String(page)} carries no text this page's reading can place`,
-                );
-              }
-              return { object: textObjectAt(bindings, handle, page, index), run };
-            });
-            const [first, ...rest] = held;
-            if (first === undefined) throw refusedAt('object', `Run ${String(named)} on page ${String(page)} has no object`);
-            return {
-              index: named,
-              object: first.object,
-              text: held.map((member) => member.run.text).join(''),
-              extras: rest.map((member) => member.object),
-              span: {
-                left: Math.min(...held.map((member) => member.run.left)),
-                right: Math.max(...held.map((member) => member.run.right)),
-              },
-            };
-          }),
-        ),
-      }));
-      if (blocks.length === 0) throw new Error(`A block edit on page ${String(page)} named no block.`);
-      // A RUN IN TWO BLOCKS would be written twice, the second write undoing
-      // the first's layout. The contract refuses it; this is the write keeping
-      // the rule for a caller that did not ask.
-      const named = blocks.flatMap((block) => block.lines.flat().map((run) => run.index));
-      if (new Set(named).size !== named.length) {
-        throw new Error(`A block edit on page ${String(page)} names one run in two blocks.`);
-      }
-
       /** Every object this edit wrote, and what it wrote, for the read-back. */
       const written: { object: unknown; text: string }[] = [];
       /**
@@ -1887,6 +1919,12 @@ function layOutBlocks(
           if (numberFrom(bindings.removeObject(sheet, probe), 'FPDFPage_RemoveObject') === 1) bindings.destroyObject(probe);
         }
       };
+      /**
+       * Whether `text` written as the run `object` heads stays in `object` alone, or becomes pieces: the one answer to
+       * that question, which {@link writePieces} takes and a capture asks before it records strings by index, since
+       * pieces are objects inserted after the run and renumber the page (ADR-0173 Decision 9).
+       */
+      const keepsItsObject = (object: unknown, text: string): boolean => carries(object, text);
       /** The standard font nearest `object`'s, loaded once per edit and closed with it. */
       const standardFontLike = (object: unknown): unknown => {
         const name = standardFontFor(styleOf(bindings, object, programs));
@@ -1973,8 +2011,6 @@ function layOutBlocks(
       const faceFonts = new Map<string, unknown>();
       /** Their programs, held for the edit's length, because PDFium is handed a pointer to them. */
       const facePrograms: Uint8Array[] = [];
-      /** Every character this edit writes: ONE subset per face carries all of them (Decision 5). */
-      const editCharacters = [...new Set(edits.flatMap((edit) => Array.from(edit.text, (c) => c.codePointAt(0) ?? 0)))];
       /** The text each piece object holds, so a wrap can trim a run's pieces from their end. */
       const pieceTexts = new Map<unknown, string>();
       /** Whether a run's own font draws a segment, asked once per font and segment of this edit. */
@@ -1990,7 +2026,7 @@ function layOutBlocks(
         // A VARIABLE FACE'S NAME says which instance it is, as the composers name one (`composeFonts.ts`).
         const postscript = face.weights === null ? named : `${named === '' ? 'Font' : named}-wght${String(weight)}`;
         const subset = namedSubset(whole, postscript, {
-          unicodes: editCharacters.filter((point) => face.unicodes.has(point)),
+          unicodes: characters.filter((point) => face.unicodes.has(point)),
           faceIndex: face.faceIndex,
           axes: face.weights === null ? {} : { wght: weight },
         });
@@ -2044,15 +2080,16 @@ function layOutBlocks(
        * carry in the resolver's face, the rest in its own, each placed at the measured right edge of the one before
        * and inserted after it. Where this process has no catalogue, the standard twin of {@link write} as before.
        *
-       * Every piece is read back as it is written, `write`'s reason. A piece whose face cannot be loaded, or a
-       * character no face carries, refuses the edit by name: the box and its ToUnicode are ADR-0173's next part.
+       * Every piece is read back as it is written, `write`'s reason. A character no face carries is a box, one object
+       * per character in a box font of its own (Decision 7 as corrected); a piece whose face cannot be loaded, or a
+       * box where no face has one, refuses the edit by name.
        *
        * A TRIAL PROBES TOO, unlike `write`'s: which words become pieces decides the line's width, and a trial that
        * measured the run's own font where the write sets another would fit a block to text that is not drawn.
        */
       const writePieces = (object: unknown, text: string): unknown[] => {
         if (!inPiecesHere) return [write(object, text)];
-        if (setOn(object, text) && carries(object, text)) {
+        if (setOn(object, text) && keepsItsObject(object, text)) {
           if (mode === 'write') record(object, text);
           pieceTexts.set(object, text);
           return [object];
@@ -2136,6 +2173,117 @@ function layOutBlocks(
         }
         return kept;
       };
+      return {
+        inPieces: inPiecesHere,
+        written,
+        removed,
+        insertAfter,
+        write,
+        writePieces,
+        trimPieces,
+        record,
+        standardFontLike,
+        uncarriedIn,
+        keepsItsObject,
+        boxed: () => {
+          // A box a wrap trimmed off one line was drawn again on the next, and is told once, where it is.
+          const gone = new Set(removed);
+          return [...boxObjects].flatMap(([object, character]) => (gone.has(object) ? [] : [{ character, page }]));
+        },
+        close: () => {
+          // OURS TO CLOSE, and only ours: each object holds its own reference to
+          // the font it was made in, so closing the caller's handle frees nothing
+          // the page still draws.
+          for (const font of standardFonts.values()) bindings.closeFont(font);
+          for (const font of faceFonts.values()) bindings.closeFont(font);
+          // THE SCRATCH PAGE GOES before the caller can generate or save anything.
+          if (scratch !== undefined) {
+            bindings.closePage(scratch.handle);
+            bindings.deletePage(document, scratch.index);
+          }
+        },
+      };
+}
+
+/**
+ * One pass over a page's block edits: `write` makes the edit and generates the page, naming its writes to the
+ * generation; `trial` lays the blocks out at the scales given, writes without reading back, generates nothing. Both
+ * answer which blocks ended above their original last line.
+ */
+function layOutBlocks(
+  session: PdfiumSession,
+  handle: unknown,
+  page: number,
+  edits: readonly BlockEdit[],
+  scales: readonly number[],
+  mode: 'write' | 'trial',
+): { readonly fits: readonly boolean[]; readonly boxed: readonly BoxedInEdit[] } {
+      const bindings = api();
+      const document = documentFor(session);
+      const walked = walkRuns(bindings, handle);
+      /** Per block: did its layout end above its original last line? */
+      const fits = edits.map(() => true);
+      // THE PAGE'S BOX, for a one-line block's column (ADR-0097 4a).
+      const box: Record<string, number> = {};
+      const hasBox = numberFrom(bindings.pageBox(handle, box), 'FPDF_GetPageBoundingBox') === 1;
+      const pageLeft = hasBox ? (box['left'] ?? 0) : 0;
+      const pageRight = hasBox ? (box['right'] ?? 0) : Number.NEGATIVE_INFINITY;
+
+      // EVERY BLOCK RESOLVED IN FULL FIRST, against the untouched page, so a bad
+      // index refuses before anything is written — and so a later block's
+      // indices are the page's own, not whatever an earlier block left behind.
+      // A NAMED RUN IS ITS OBJECTS: the same join the read answered (`joinedWalk`, ADR-0130) expands each run an edit
+      // names into the objects it is, in order — so a line drawn one glyph per object is written as the person saw it.
+      const joined = joinedWalk(bindings, handle, walked);
+      const blocks = edits.map((edit) => ({
+        text: edit.text,
+        fit: edit.fit,
+        lines: edit.lines.map((line) =>
+          line.map((named): HeldRun => {
+            const members = membersOf(joined, named);
+            if (members === undefined) {
+              throw refusedAt(
+                'object',
+                `Object ${String(named)} on page ${String(page)} begins no run this page's reading answered`,
+              );
+            }
+            const held = members.map((index) => {
+              const run = walked.runs.get(index);
+              if (run === undefined) {
+                throw refusedAt(
+                  'object',
+                  `Object ${String(index)} on page ${String(page)} carries no text this page's reading can place`,
+                );
+              }
+              return { object: textObjectAt(bindings, handle, page, index), run };
+            });
+            const [first, ...rest] = held;
+            if (first === undefined) throw refusedAt('object', `Run ${String(named)} on page ${String(page)} has no object`);
+            return {
+              index: named,
+              object: first.object,
+              text: held.map((member) => member.run.text).join(''),
+              extras: rest.map((member) => member.object),
+              span: {
+                left: Math.min(...held.map((member) => member.run.left)),
+                right: Math.max(...held.map((member) => member.run.right)),
+              },
+            };
+          }),
+        ),
+      }));
+      if (blocks.length === 0) throw new Error(`A block edit on page ${String(page)} named no block.`);
+      // A RUN IN TWO BLOCKS would be written twice, the second write undoing
+      // the first's layout. The contract refuses it; this is the write keeping
+      // the rule for a caller that did not ask.
+      const named = blocks.flatMap((block) => block.lines.flat().map((run) => run.index));
+      if (new Set(named).size !== named.length) {
+        throw new Error(`A block edit on page ${String(page)} names one run in two blocks.`);
+      }
+
+      const pen = pieceWriter(session, handle, page, mode, charactersOf(edits.map(({ text }) => text)));
+      const { inPieces: inPiecesHere, written, removed, insertAfter, write, writePieces, trimPieces, record } = pen;
+      const { standardFontLike, uncarriedIn } = pen;
       /**
        * The runs written by {@link writePieces}, each with the object it was written FROM: a continuation of the run
        * is made in that object's style, never in a piece's face, so the line it wraps onto keeps the document's font
@@ -2431,22 +2579,10 @@ function layOutBlocks(
           handle,
           written.map((write) => write.object),
         );
-        // THE BOXES STILL ON THE PAGE, in the order they were drawn: a box a wrap trimmed off one line was drawn again on
-        // the next, and is told once, where it is (ADR-0174).
-        const gone = new Set(removed);
-        const boxed = [...boxObjects].flatMap(([object, character]) => (gone.has(object) ? [] : [{ character, page }]));
-        return { fits, boxed };
+        // THE BOXES STILL ON THE PAGE (ADR-0174).
+        return { fits, boxed: pen.boxed() };
       } finally {
-        // OURS TO CLOSE, and only ours: each object holds its own reference to
-        // the font it was made in, so closing the caller's handle frees nothing
-        // the page still draws.
-        for (const font of standardFonts.values()) bindings.closeFont(font);
-        for (const font of faceFonts.values()) bindings.closeFont(font);
-        // THE SCRATCH PAGE GOES before the caller can generate or save anything.
-        if (scratch !== undefined) {
-          bindings.closePage(scratch.handle);
-          bindings.deletePage(document, scratch.index);
-        }
+        pen.close();
       }
 }
 
