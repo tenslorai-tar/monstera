@@ -132,6 +132,14 @@ So a Replace that will be written in pieces records no strings and takes a check
 answer the writer takes (`keepsItsObject`), and the line rule reads a replacement's end from its last piece, found by
 handle. A Replace whose own font carries it still captures and undoes by strings, as before. Built in 57a80d0d.
 
+**Note on Decision 4, 2026-10-06, as built (974e004f):** a sibling is looked for on the page being edited, not in the
+whole document: the other pages' fonts are reached only by loading those pages, which an edit of one page does not do.
+And it is an EMBEDDED font only, whose name less its subset tag is the run's own: a standard font of the same name is
+where the twin trap lived (ADR-0097's measurement of 2026-09-24), and a sibling that read right live and wrong once
+saved would turn an edit the catalogue can make into a refusal. A sibling is asked by the same probe as the run's own
+font, measured on PDFium 155.0.8044.0's Linux build: a word one Arimo subset lacks and another in the document carries
+is saved in the second and reads back, and no face is loaded.
+
 **Rejected, in addition:** writing a ToUnicode after the save. It makes a character past the BMP read right while it
 draws as `.notdef`, it needs the saved bytes of a password document decrypted and encrypted again, and it is a second
 writer of the bytes PDFium has just written (B3).
