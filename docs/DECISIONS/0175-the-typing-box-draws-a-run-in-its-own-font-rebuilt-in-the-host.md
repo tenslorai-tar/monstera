@@ -86,3 +86,23 @@ PDFium 155.0.8044.0's Linux build, generated fixtures (scratch probe `fontProgra
 - The renderer parses a font the host built from the document's glyphs, sanitised twice. `textBlockStyleSchema`'s and
   `RunStyle.font`'s comments are corrected to say what crosses and what does not.
 - A third byte crossing, with its cap in the schema's own predicate, where `payloadBounds.test.ts` can name it.
+
+## Correction, 2026-10-06: one read per block, each font once (Decisions 4 and 5)
+
+Decision 4 said *per run*, and I wrote it before wiring the read. Wiring it showed the cost: every PDFium read writes the
+document's whole image into the host's snapshot directory and the host opens it there (`remotePdfium.ts`, its four steps),
+so a read per run costs a block's run count in whole-image writes, and a producer that writes a word per text object makes
+paragraphs of hundreds of runs. The check and the rebuild also depend on the FONT alone, never on the run: the check
+already reads every character the page draws in that font (`runFonts` in `pdfiumFfi.ts`). So:
+
+- **One read per block**, `document.runFonts`, naming the block's runs (at most `MAX_FONT_RUNS`, 4,096, per read; a longer
+  block asks in reads of that many). The host answers each distinct font once, keyed by PDFium's font handle, with each
+  run's place among them or `null`, at most `MAX_BLOCK_FONTS`, 16, per answer, so an answer is at most 16 MiB. A run in a
+  font past the sixteenth is drawn in its kind of face.
+- The host writes the fonts one after another into its one output file and answers their sizes; main checks the answer
+  against the question (one place per run asked, none past the fonts answered), since the schema bounds each field and
+  sees neither the request nor the other field.
+- **Decision 5's names are per editor**, not per document and version: one `FontFace` per font the open editor's block
+  uses, named for that editor and the font's place, added when the editor opens and removed when it closes. An editor
+  closes when the document closes and whenever its version moves (it is keyed by the version), so the faces live no
+  longer than Decision 5 allowed, and a name unique to the editor cannot meet another document's.
