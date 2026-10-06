@@ -18,7 +18,7 @@ import { inDrawingOrder } from './visualPieces.js';
 import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import type { PageRuns } from './operatorEdit.js';
-import { type FlowLine, type Measure, NO_MARK, planBlock } from './paragraphFlow.js';
+import { FIT_STEPS, type FlowLine, MIN_FIT, type Measure, NO_MARK, planBlock } from './paragraphFlow.js';
 import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { readFace } from './fontFaces.js';
@@ -1848,19 +1848,6 @@ export interface BlockEdit {
    */
   readonly fit: 'reflow' | 'shrink';
 }
-
-/**
- * The smallest a fitted block is scaled to: 11-point text at 0.6 is 6.6 points, the size of fine
- * print, and smaller is not a translation anyone can read (ADR-0097 4b). A block needing more is
- * written at this and may overlap what is below it.
- */
-const MIN_FIT = 0.6;
-
-/**
- * How many bisection steps find a block's scale: the interval [0.6, 1] halved six times is 0.00625
- * wide — at 11 points, under a tenth of a point of size, which no reader sees.
- */
-const FIT_STEPS = 6;
 
 /** Characters as a person sees them, for naming the ones a font cannot carry: an accent typed as a mark stays on its letter. */
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });

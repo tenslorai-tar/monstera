@@ -4365,7 +4365,12 @@ for (const look of LOOKS) {
       // A STORED KEY IS WHAT OFFERS A PROVIDER; the value is a fixture no provider sees.
       secrets: { 'ai.openai-key': 'a-fixture-key' },
       aiModels: { source: 'fetched', models: [{ id: 'fixture-model', label: 'Fixture', capabilities: { vision: null, streaming: null } }] },
-      translation: { kind: 'translated', version: asDocVersion(1), edit: blockEditOf([{ lines: [[3]], soft: [false], text: 'Bonjour' }]) },
+      translation: {
+        kind: 'translated',
+        version: asDocVersion(1),
+        edit: blockEditOf([{ lines: [[3]], soft: [false], text: 'Bonjour' }]),
+        rewrite: 'objects',
+      },
     });
     await page.goto('/');
     await page.getByRole('button', { name: 'Open PDF…' }).click();

@@ -2,7 +2,7 @@ import type { BlockMarkSet, EditedBlock } from '@monstera/contract/host';
 import { type Result, err, ok } from '@monstera/shared';
 
 import type { PageFont } from './pageFonts.js';
-import { type FlowLine, type Measure, NO_MARK, planBlock } from './paragraphFlow.js';
+import { type BlockPlan, type FlowLine, type Measure, NO_MARK, type Row, largestFit, planBlock } from './paragraphFlow.js';
 import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
 import { type Matrix, type ShowOperator, multiply, showOperators, textObjectCount } from './textOperators.js';
 import { codesFor } from './toUnicode.js';
@@ -277,9 +277,10 @@ export function editOperators(
   page: PageRuns,
   blocks: readonly EditedBlock[],
   faces: OperatorFaces | null = null,
+  fit: 'reflow' | 'shrink' = 'reflow',
 ): Result<OperatorEdit, OperatorRefusal> {
   try {
-    return ok(write(content, fonts, page, blocks, faces));
+    return ok(write(content, fonts, page, blocks, faces, fit));
   } catch (error) {
     if (error instanceof Refused) return err(error.refusal);
     throw error;
@@ -292,6 +293,7 @@ function write(
   page: PageRuns,
   blocks: readonly EditedBlock[],
   faces: OperatorFaces | null,
+  fit: 'reflow' | 'shrink',
 ): OperatorEdit {
   const ops = showOperators(content);
   const indexOf = new Map(ops.map((op, at) => [op, at]));
@@ -444,6 +446,13 @@ function write(
 
     const visual: VisualLine[] = [];
     const laid: string[] = [];
+    /**
+     * The scale the block is set at: 1 for `reflow`, and for `shrink` the largest that ends the block no lower than its
+     * old last line did (ADR-0181 Decision 10). Every size, every width and every gap between lines is multiplied by it,
+     * so the block is the page's block made smaller as one picture is, and the plan wraps at the width the words then
+     * measure.
+     */
+    let shrink = 1;
     // THE BLOCK AS PARAGRAPHS (ADR-0179): the soft-ended lines are one paragraph, and `planBlock` says which lines stay,
     // which are set again and in which run's state each word is, the PDFium writer's own plan (B3a).
     const soft = lines.map((_, at) => at < lines.length - 1 && block.soft[at] === true);
@@ -552,7 +561,7 @@ function write(
       const run = byId.get(id) ?? firstRun;
       const source = sourceOf(run);
       const marked = mark === NO_MARK ? undefined : markStyle(run, mark);
-      const unit = placed(run.first).unit * (marked?.factor ?? 1);
+      const unit = placed(run.first).unit * (marked?.factor ?? 1) * shrink;
       return tokens(text).reduce((sum, token) => {
         const pieces = piecesOf(source, token, marked?.restyle);
         return pieces === null ? sum : sum + widthOfPieces(source, pieces, unit);
@@ -570,15 +579,15 @@ function write(
       line: VisualLine,
       marked?: ReturnType<typeof markStyle>,
     ): number => {
-      const unit = placed(indexOf.get(source) ?? -1).unit * (marked?.factor ?? 1);
+      const unit = placed(indexOf.get(source) ?? -1).unit * (marked?.factor ?? 1) * shrink;
       const style: SegmentStyle | undefined =
-        marked === undefined
+        marked === undefined && shrink === 1
           ? undefined
           : {
-              colour: marked.set.colour === undefined ? undefined : [marked.set.colour.r, marked.set.colour.g, marked.set.colour.b],
-              factor: marked.factor,
-              rise: marked.rise,
-              underline: marked.set.underline === true,
+              colour: marked?.set.colour === undefined ? undefined : [marked.set.colour.r, marked.set.colour.g, marked.set.colour.b],
+              factor: (marked?.factor ?? 1) * shrink,
+              rise: (marked?.rise ?? 0) * shrink,
+              underline: marked?.set.underline === true,
             };
       let cursor = x;
       for (const token of tokens(words)) {
@@ -651,11 +660,47 @@ function write(
         )
         .map((setting) => setting.paragraph),
     );
-    const plan = planBlock(flow, block.text.replace(/\r\n?/gu, '\n'), measure, limits, {
-      marks: (block.marks ?? []).map(({ from, to }) => ({ from, to })),
-      changes,
-      forced,
-    });
+    const text = block.text.replace(/\r\n?/gu, '\n');
+    const formatting = { marks: (block.marks ?? []).map(({ from, to }) => ({ from, to })), changes, forced };
+    const oldGap = (line: number): number => (baselines[line - 1] ?? 0) - (baselines[line] ?? 0);
+    /**
+     * Where each row's baseline falls at `scale`: the first where the block's first line was, and each after it a gap
+     * lower. THE GAP ABOVE A LINE is the person's own where they set the paragraph's spacing, else the gap the line it
+     * stands in had, else the block's pitch (and its paragraph spacing where it opens a paragraph); at a scale below 1 it
+     * is that much smaller. The ONE place a row's baseline is worked out, asked by the fit as well as the layout (B3a).
+     */
+    const rowTargets = (rows: readonly Row[], scale: number): number[] => {
+      const targets: number[] = [];
+      let above = baselines[0] ?? 0;
+      for (const [at, row] of rows.entries()) {
+        const given = row.kind === 'new' ? settings.get(row.paragraph) : undefined;
+        const spaced = given?.lineSpacing !== undefined || given?.spaceBefore !== undefined;
+        const gap =
+          row.kind === 'old'
+            ? oldGap(row.line)
+            : row.kind === 'blank'
+              ? pitch + (row.opens ? spacing : 0)
+              : spaced
+                ? pitch * (given.lineSpacing ?? 1) + (row.first && at > 0 ? (given.spaceBefore ?? spacing) : 0)
+                : row.replaces > 0
+                  ? oldGap(row.replaces)
+                  : pitch + (row.opens ? spacing : 0);
+        above = at === 0 ? (baselines[0] ?? 0) : above - gap * scale;
+        targets.push(above);
+      }
+      return targets;
+    };
+    const planAt = (scale: number): BlockPlan => {
+      shrink = scale;
+      return planBlock(flow, text, measure, limits, formatting);
+    };
+    // A BLOCK FITS when its last line sits no lower than its old last line did (a baseline, not a bounding box: a
+    // descender is not a line), which is the PDFium writer's own rule, and its bounds and steps are the same ones.
+    if (fit === 'shrink') {
+      shrink = largestFit((scale) => (rowTargets(planAt(scale).rows, scale).at(-1) ?? 0) >= (baselines.at(-1) ?? 0) - SAME);
+    }
+    const plan = planAt(shrink);
+    const targets = rowTargets(plan.rows, shrink);
 
     /** The old lines the plan keeps exactly as they are: their operators are not touched. */
     const kept = new Set<number>();
@@ -663,22 +708,8 @@ function write(
     const keptRuns = new Map<number, number>();
     let previous = baselines[0] ?? 0;
     for (const [at, row] of plan.rows.entries()) {
-      const oldGap = (line: number): number => (baselines[line - 1] ?? 0) - (baselines[line] ?? 0);
-      // THE GAP ABOVE A LINE: the person's own where they set the paragraph's spacing, else the gap the line it stands in
-      // had, else the block's pitch (and its paragraph spacing where it opens a paragraph).
       const given = row.kind === 'new' ? settings.get(row.paragraph) : undefined;
-      const spaced = given?.lineSpacing !== undefined || given?.spaceBefore !== undefined;
-      const gap =
-        row.kind === 'old'
-          ? oldGap(row.line)
-          : row.kind === 'blank'
-            ? pitch + (row.opens ? spacing : 0)
-            : spaced
-              ? pitch * (given.lineSpacing ?? 1) + (row.first && at > 0 ? (given.spaceBefore ?? spacing) : 0)
-              : row.replaces > 0
-                ? oldGap(row.replaces)
-                : pitch + (row.opens ? spacing : 0);
-      const target = at === 0 ? (baselines[0] ?? 0) : previous - gap;
+      const target = targets[at] ?? previous;
       previous = target;
       if (row.kind === 'blank') {
         laid.push('');
@@ -690,7 +721,7 @@ function write(
         const text = line.map((run) => run.run.text).join('');
         // A LINE AN EARLIER WRAP MOVED DOWN is set again whole at its new baseline, keeping the gap each run had to the
         // one before it; one that did not move is not touched.
-        if (Math.abs(target - (baselines[row.line] ?? 0)) <= SAME) {
+        if (shrink === 1 && Math.abs(target - (baselines[row.line] ?? 0)) <= SAME) {
           kept.add(row.line);
           laid.push(text);
           continue;
@@ -700,7 +731,7 @@ function write(
         let cursor = line[0]?.origin.x ?? 0;
         let previousEnd: number | null = null;
         for (const [index, run] of line.entries()) {
-          if (previousEnd !== null) cursor += run.origin.x - previousEnd;
+          if (previousEnd !== null) cursor += (run.origin.x - previousEnd) * shrink;
           // A TRAILING SPACE OF A RUN WITH A RUN AFTER IT is the gap that run keeps.
           const words = index === line.length - 1 ? run.run.text : run.run.text.replace(/ +$/u, '');
           cursor = layOut(sourceOf(run), words, cursor, placedLine);
@@ -717,7 +748,7 @@ function write(
       let untouched = 0;
       const set = setFor(row.paragraph);
       const keepsItsLine = given?.leftIndent === undefined && given?.firstIndent === undefined;
-      if (replaced !== undefined && set.align === 'left' && keepsItsLine && Math.abs(target - (baselines[row.replaces] ?? 0)) <= SAME) {
+      if (shrink === 1 && replaced !== undefined && set.align === 'left' && keepsItsLine && Math.abs(target - (baselines[row.replaces] ?? 0)) <= SAME) {
         while (untouched < replaced.length - 1) {
           const piece = row.pieces[untouched];
           const run = replaced[untouched];

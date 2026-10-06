@@ -24,6 +24,7 @@ Translate this page sends the page's text to the AI provider you have set up, an
 - One page at a time.
 - Only languages written in the Latin alphabet are offered.
 - Where the page's font lacks a letter, that text is set in a standard font. Text may be made smaller to fit its space.
+- Pages printed from a web browser, whose text is drawn from shapes stored in the page, are translated too. Each block is made smaller where the translation is longer, no smaller than about six tenths of its size, and a block that still does not fit at that size runs on past its space.
 - **Undo** (**Ctrl+Z**) puts the original text back.
 
 <!--

@@ -52,7 +52,7 @@ async function run(options: {
   const applied: unknown[] = [];
   const answers: Readonly<Record<string, unknown>> = {
     'ai.models': { source: 'fetched', models: [{ id: 'first-model', label: 'First', capabilities: { vision: null, streaming: null } }] },
-    'ai.translatePage': { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS) },
+    'ai.translatePage': { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS), rewrite: 'objects' },
     'document.execute': { version: asDocVersion(5), byteLength: 900, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
     ...options.answers,
   };
@@ -111,6 +111,20 @@ describe('translatePageCommand', () => {
     ]);
     expect(said).toStrictEqual([{ kind: 'done', message: TOAST_PAGE_TRANSLATED }]);
     expect(applied).toHaveLength(1);
+  });
+
+  it('writes the translation of a page whose text is in a Type 3 font with editTextOperators, shrunk the same way (ADR-0181)', async () => {
+    const { sent } = await run({
+      answers: { 'ai.translatePage': { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS), rewrite: 'operators' } },
+    });
+    expect(sent.at(-1)).toStrictEqual({
+      id: 'document.execute',
+      params: { docId: DOC, command: { kind: 'editTextOperators', page: 2, ...blockEditOf(BLOCKS), fit: 'shrink', version: 4 } },
+    });
+    // CONTROL: the page whose writer is PDFium's is still written by `editTextBlock`, so the choice is the page's and
+    // not a default that changed.
+    const objects = await run({});
+    expect(objects.sent.at(-1)).toMatchObject({ params: { command: { kind: 'editTextBlock' } } });
   });
 
   it('offers the dialog ONLY the providers with a stored key', async () => {

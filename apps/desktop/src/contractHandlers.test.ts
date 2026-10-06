@@ -1866,7 +1866,12 @@ describe('ai.translatePage (ADR-0097)', () => {
    * Handlers whose page holds `blocks` and whose provider answers `reply` as a streamed OpenAI-format
    * answer (or `status` when not 200), recording what it was asked.
    */
-  function translating(blocks: readonly unknown[], replies: string | readonly string[], status = 200) {
+  function translating(
+    blocks: readonly unknown[],
+    replies: string | readonly string[],
+    status = 200,
+    rewrite: 'objects' | 'operators' = 'objects',
+  ) {
     /** One reply per ask, the last repeated — so a case can make the first answer unreadable. */
     const sequence = typeof replies === 'string' ? [replies] : replies;
     const secrets = createEphemeralSecrets();
@@ -1891,7 +1896,7 @@ describe('ai.translatePage (ADR-0097)', () => {
     const commands = {
       textBlocks: (docId: DocId) =>
         docId === DOC
-          ? Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, angled: NOT_ANGLED, unaddressable: 0 })
+          ? Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, angled: NOT_ANGLED, unaddressable: 0, rewrite })
           : Promise.reject(new DocumentNotOpenError(docId, 'read its text blocks')),
     } as unknown as DocumentCommands;
     const handlers = createContractHandlers({
@@ -1943,7 +1948,12 @@ settings: createEphemeralSettings(),
 
     expect(result).toStrictEqual({
       ok: true,
-      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], soft: [false], text: 'Facture' }]) },
+      value: {
+        kind: 'translated',
+        version: 7,
+        edit: blockEditOf([{ lines: [[3]], soft: [false], text: 'Facture' }]),
+        rewrite: 'objects',
+      },
     });
     expect(asked).toHaveLength(1);
     // THE BLOCKS AS THE KERNEL WILL DIFF THEM: runs joined as they are, lines by a line break.
@@ -1959,8 +1969,16 @@ settings: createEphemeralSettings(),
     const { handlers } = translating(BLOCKS, JSON.stringify([long, 'Payment is due\nwithin 30 days.']));
     expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
       ok: true,
-      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], soft: [false], text: long }]) },
+      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], soft: [false], text: long }]), rewrite: 'objects' },
     });
+  });
+
+  it('answers which writer the page belongs to, so a Type 3 page is translated by the operator writer (ADR-0181)', async () => {
+    const { handlers } = translating(BLOCKS, JSON.stringify(['Facture', 'Payment is due\nwithin 30 days.']), 200, 'operators');
+    expect(await handlers['ai.translatePage'](ASK)).toMatchObject({ ok: true, value: { kind: 'translated', rewrite: 'operators' } });
+    // CONTROL: the same page read as PDFium's answers `objects`, so the answer follows the read and is not a constant.
+    const plain = translating(BLOCKS, JSON.stringify(['Facture', 'Payment is due\nwithin 30 days.']));
+    expect(await plain.handlers['ai.translatePage'](ASK)).toMatchObject({ ok: true, value: { rewrite: 'objects' } });
   });
 
   it('an answer of the WRONG LENGTH is refused as unreadable — after ONE more ask, never matched by guess', async () => {
@@ -1977,7 +1995,12 @@ settings: createEphemeralSettings(),
     const { handlers, asked } = translating(BLOCKS, ['not an array', JSON.stringify(['Facture', 'Payment is due\nwithin 30 days.'])]);
     expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
       ok: true,
-      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], soft: [false], text: 'Facture' }]) },
+      value: {
+        kind: 'translated',
+        version: 7,
+        edit: blockEditOf([{ lines: [[3]], soft: [false], text: 'Facture' }]),
+        rewrite: 'objects',
+      },
     });
     expect(asked).toHaveLength(2);
   });

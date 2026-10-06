@@ -53,12 +53,14 @@ const CASES = [
   'CONTROL: a reading that numbers one more text object than the page has is refused, and nothing is written',
   'with the bundled fonts bound by folder, MuPDF sets the letters the print lacks in a face and answers the one box',
   'PDFium, reading those saved bytes, finds every new letter and the boxed code point as itself',
+  'with fit shrink, a heading made half as long again again is set smaller on its OWN baseline, and PDFium reads it back whole',
+  'CONTROL: the same words with fit reflow are not written on that row: they wrap onto the heading below it and are refused, or leave only a part of them there',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 7 });
-if (CASES.length !== 7) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 7`);
+const roster = createRoster(failures, { cases: 9 });
+if (CASES.length !== 9) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 9`);
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
@@ -108,24 +110,24 @@ async function run(pdfium, kernel) {
   );
   if (line.length === 0) return;
 
-  /** @param {any} pageReading @param {string} text */
-  const command = (pageReading, text) => ({
+  /** @param {any} pageReading @param {string} text @param {'reflow' | 'shrink'} fit */
+  const command = (pageReading, text, fit) => ({
     kind: 'editTextOperators',
     page: 0,
     ...kernel.blockEditOf([{ lines: [line.map((/** @type {any} */ each) => each.index)], soft: [false], text }]),
-    fit: 'reflow',
+    fit,
     version: 1,
     _reading: pageReading,
   });
 
-  /** @param {Uint8Array} image @param {any} pageReading @param {string} text */
-  const edited = async (image, pageReading, text) => {
+  /** @param {Uint8Array} image @param {any} pageReading @param {string} text @param {'reflow' | 'shrink'} fit */
+  const edited = async (image, pageReading, text, fit = 'reflow') => {
     const session = await kernel.mupdfWriter.open(image);
     try {
       const before = await kernel.withDocument(session, (/** @type {any} */ document) =>
         kernel.joinedContent(kernel.pageContentStreams(document.findPage(0))),
       );
-      const { _reading, ...wire } = command(pageReading, text);
+      const { _reading, ...wire } = command(pageReading, text, fit);
       const outcome = await kernel.applyEditTextOperators(session, wire, _reading).then(
         (/** @type {any} */ drawn) => ({ ok: true, error: null, drawn }),
         (/** @type {unknown} */ error) => ({ ok: false, error, drawn: null }),
@@ -178,6 +180,40 @@ async function run(pdfium, kernel) {
       refused.outcome.error.step === 'read-back' &&
       latin1(refused.after) === latin1(refused.before),
     `the edit with a wrong reading answered ${refused.outcome.ok ? 'ok' : String(refused.outcome.error)}.`,
+  );
+
+  // A TRANSLATION KEEPS THE PAGE'S LAYOUT (ADR-0181 Decision 10): the heading made longer, written with fit shrink, is one
+  // line at a smaller size on the row it stood on; the same words reflowed wrap and leave only a part of them there. The
+  // row is the vertical extent of the heading as PDFium read it before the edit, and what stands on it is read from the
+  // saved bytes by PDFium, not by the writer.
+  // THE PRINT'S OWN LETTERS ONLY, so no face is needed and the case asks about the layout alone.
+  const LONGER = 'Monstera fixture heading. Monstera';
+  /** @param {Uint8Array | null} saved */
+  const rowAfter = async (saved) => {
+    if (saved === null || first === undefined) return null;
+    const read = await readRuns(saved);
+    return squeezed(
+      read.runs
+        .filter((/** @type {any} */ each) => each.bottom < first.top && each.top > first.bottom)
+        .map((/** @type {any} */ each) => each.text)
+        .join(''),
+    );
+  };
+  const shrunk = await edited(bytes, reading, LONGER, 'shrink');
+  const shrunkRow = await rowAfter(shrunk.saved);
+  check(
+    CASES[7] ?? '',
+    shrunk.outcome.ok && shrunkRow !== null && shrunkRow.includes(squeezed(LONGER)),
+    `with shrink the row read ${JSON.stringify(shrunkRow)} (${shrunk.outcome.ok ? 'written' : String(shrunk.outcome.error)}).`,
+  );
+  const reflowed = await edited(bytes, reading, LONGER, 'reflow');
+  const reflowedRow = await rowAfter(reflowed.saved);
+  check(
+    CASES[8] ?? '',
+    // EITHER WAY IT DOES NOT STAY ON THE ROW: written wrapped, or refused by MuPDF's own reading because the second line
+    // lands on the heading below it, which has no room. The same words are written on the row only with shrink.
+    !reflowed.outcome.ok || (reflowedRow !== null && !reflowedRow.includes(squeezed(LONGER))),
+    `with reflow the row read ${JSON.stringify(reflowedRow)} (${reflowed.outcome.ok ? 'written' : String(reflowed.outcome.error)}).`,
   );
 
   // THE RESOLVER'S FACE AND THE BOX (ADR-0177), bound as the MuPDF host binds them, by their folders. The new words need

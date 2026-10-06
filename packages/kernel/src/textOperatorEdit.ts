@@ -81,7 +81,7 @@ export async function applyEditTextOperators(
     // THE RESOLVER'S FACES AND THE BOX (ADR-0177): read on the first word that needs one, so an edit the page's own
     // fonts carry never reads a font file.
     const faces = faceSet === null ? null : new faceSet(document, lazyFaces(), fonts);
-    const made = editOperators(content, fonts, read, blocksOfEdit(command), faces?.faces ?? null);
+    const made = editOperators(content, fonts, read, blocksOfEdit(command), faces?.faces ?? null, command.fit);
     if (!made.ok) {
       const refusal = made.error;
       if (refusal.reason === 'needs-a-face') throw new TextNotWritableError(refusal.characters.join(''));
@@ -129,7 +129,7 @@ export async function applyEditTextOperators(
 function needsAFace(session: MupdfSession, command: CommandOfKind<'editTextOperators'>, read: PageRuns): Promise<boolean> {
   return withDocument(session, (document) => {
     const leaf = document.findPage(command.page);
-    const made = editOperators(joinedContent(pageContentStreams(leaf)), pageFonts(leaf), read, blocksOfEdit(command), null);
+    const made = editOperators(joinedContent(pageContentStreams(leaf)), pageFonts(leaf), read, blocksOfEdit(command), null, command.fit);
     return !made.ok && made.error.reason === 'needs-a-face';
   });
 }

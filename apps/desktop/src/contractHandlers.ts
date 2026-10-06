@@ -2834,7 +2834,7 @@ function translatePageHandler(deps: {
     // The page's text past `MAX_EDIT_TEXT` is a model that wrote far more than it was given, which that refusal names.
     const edit = blockEditOf(blocks);
     if (edit.text.length > MAX_EDIT_TEXT) return ok({ kind: 'refused', problem: 'unreadable' } as const);
-    return ok({ kind: 'translated', version: read.version, edit } as const);
+    return ok({ kind: 'translated', version: read.version, edit, rewrite: read.rewrite } as const);
   };
 }
 

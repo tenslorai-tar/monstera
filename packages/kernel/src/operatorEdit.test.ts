@@ -251,6 +251,54 @@ describe('editOperators on a page of lines', () => {
     expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
   });
 
+  describe('a translation keeps the page’s layout: fit shrink (ADR-0181 Decision 10)', () => {
+    const edit = (text: string, fit: 'reflow' | 'shrink') => {
+      const result = editOperators(content, fonts, page, block(text), null, fit);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      const drawn = inserted(result.value)[0] ?? '';
+      return {
+        edit: result.value,
+        sizes: [...drawn.matchAll(/ (\d+(?:\.\d+)?) Tf/gu)].map((match) => Number(match[1])),
+        baselines: [...drawn.matchAll(/ (\d+(?:\.\d+)?) Tm/gu)].map((match) => Number(match[1])),
+      };
+    };
+    // A FOURTH LINE where the page has three: at the page's own pitch it ends a line below the old last (390, where the
+    // old last stands at 360), so a block that is to keep its box must be set smaller.
+    const LONGER = 'abc abc\ndef\nghi';
+
+    it('sets a block that would end below its old last line smaller, so it ends no lower, and no smaller than the floor', () => {
+      const shrunk = edit(LONGER, 'shrink');
+      const last = shrunk.baselines.at(-1) ?? Number.POSITIVE_INFINITY;
+      expect(last).toBeLessThanOrEqual(360 + 0.01);
+      // THE SMALLEST SIZE SET is the scale: the first `Tf` replays the source's own state before the scaled one.
+      const smallest = Math.min(...shrunk.sizes);
+      expect(smallest).toBeLessThan(20);
+      expect(smallest).toBeGreaterThanOrEqual(0.6 * 20 - 0.01);
+      expect(checkOperatorEdit(content, shrunk.edit, fonts).ok).toBe(true);
+      // EVERY LINE IS SET AGAIN, the first included: a line at the old size would stand beside lines at the new one.
+      expect(shrunk.edit.drawn).toStrictEqual(['abcabcdefghi']);
+    });
+
+    // THE CONTROL: the same words in the reflow mode end a line below the old last, which is what shrink exists to avoid.
+    it('CONTROL: the same words reflowed end below the old last line, and at the page’s own size', () => {
+      const reflowed = edit(LONGER, 'reflow');
+      expect(reflowed.baselines.at(-1)).toBe(390);
+      expect(reflowed.sizes.every((size) => size === 20)).toBe(true);
+    });
+
+    it('does not shrink what already fits, which is written exactly as a reflow writes it', () => {
+      const same = edit('abc\ndef\nghx', 'shrink');
+      const reflowed = edit('abc\ndef\nghx', 'reflow');
+      expect(latin1(same.edit.content)).toBe(latin1(reflowed.edit.content));
+    });
+
+    it('stops at the floor where a block cannot fit even there, rather than writing it smaller', () => {
+      const many = Array.from({ length: 9 }, () => 'abc').join('\n');
+      const floored = edit(many, 'shrink');
+      expect(Math.min(...floored.sizes)).toBeCloseTo(0.6 * 20, 5);
+    });
+  });
+
   it('refuses a content whose count of text objects is not PDFium’s, and edits with it', () => {
     expect(editOperators(content, fonts, { ...page, textObjects: [...page.textObjects, 9] }, block('abc\ndef\nghx'))).toMatchObject({
       ok: false,

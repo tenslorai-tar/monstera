@@ -121,7 +121,9 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
           deps,
           docId,
           {
-            kind: 'editTextBlock',
+            // THE PAGE'S OWN WRITER (ADR-0181 Decision 10): main read which command writes this page, as it does for an
+            // edit by hand, so a page printed with a Type 3 font is translated rather than refused for its font.
+            kind: result.rewrite === 'operators' ? 'editTextOperators' : 'editTextBlock',
             page,
             // MAIN'S EDIT AS IT CAME, already in the command's wire form (ADR-0142).
             ...result.edit,

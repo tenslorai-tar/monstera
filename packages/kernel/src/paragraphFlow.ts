@@ -596,6 +596,37 @@ export interface BlockPlan {
   readonly rows: readonly Row[];
 }
 
+/**
+ * The smallest a fitted block is scaled to: 11-point text at 0.6 is 6.6 points, the size of fine
+ * print, and smaller is not a translation anyone can read (ADR-0097 4b). A block needing more is
+ * written at this and may overlap what is below it.
+ */
+export const MIN_FIT = 0.6;
+
+/**
+ * How many bisection steps find a block's scale: the interval [0.6, 1] halved six times is 0.00625
+ * wide — at 11 points, under a tenth of a point of size, which no reader sees.
+ */
+export const FIT_STEPS = 6;
+
+/**
+ * The largest scale in [{@link MIN_FIT}, 1] at which a block `fits`, by bisection: 1 where it fits whole, and the floor,
+ * accepted without a trial, where it does not fit even at it (ADR-0097 4b, and ADR-0181 Decision 10 for the writer that
+ * has no trial pages and asks the plan itself). The PDFium writer asks the same question of a thrown-away page and
+ * shares the bounds and the step count, so a translation shrinks to the same size on either writer.
+ */
+export function largestFit(fits: (scale: number) => boolean): number {
+  if (fits(1)) return 1;
+  let low = MIN_FIT;
+  let high = 1;
+  for (let step = 0; step < FIT_STEPS; step += 1) {
+    const middle = (low + high) / 2;
+    if (fits(middle)) low = middle;
+    else high = middle;
+  }
+  return low;
+}
+
 /** The line of `old` that holds `offset`. */
 function lineAt(old: OldWords, offset: number): number {
   let line = 0;

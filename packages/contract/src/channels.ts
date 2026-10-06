@@ -5868,6 +5868,13 @@ export const channels = {
         edit: blockEditSchema.refine((edit) => blockEditAgrees(edit), {
           message: 'the starts must describe the lists, and an object may be named once',
         }),
+        /**
+         * Which command writes the page ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
+         * Decision 10), as the read answers it for an edit by hand: `objects` for `editTextBlock`, `operators` for
+         * `editTextOperators`. A page whose text is in a Type 3 font is translated by the second, which the block wire
+         * serves unchanged, so a translation is not refused for the kind of font a page was printed with.
+         */
+        rewrite: textRewriteSchema,
       }),
       z.object({ kind: z.literal('nothing-to-translate') }),
       z.object({ kind: z.literal('refused'), problem: z.enum(AI_ANSWER_REFUSALS) }),
