@@ -254,8 +254,8 @@ const handlers: ContractHandlers = {
       ok({
         version: asDocVersion(1),
         nodes: [
-          { role: 'H1', raw: 'Heading1', depth: 0, lines: 1 },
-          { role: 'P', raw: 'Body', depth: 1, lines: 3 },
+          { role: 'H1', depth: 0, lines: 1, box: { x0: 10, y0: 20, x1: 200, y1: 44 } },
+          { role: 'P', depth: 1, lines: 3, box: null },
         ],
         truncated: true,
         untaggedLines: 2,

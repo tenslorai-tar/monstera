@@ -8,6 +8,7 @@ import {
 } from '@monstera/shared';
 import { type StoreApi, createStore } from 'zustand/vanilla';
 
+import type { AccessibilityView } from './accessibility/view.js';
 import type { ReplyTarget } from './assistantRequest.js';
 import type { SpellingReview } from './spelling/review.js';
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
@@ -228,6 +229,12 @@ export interface DocumentState {
    * another.
    */
   readonly spelling: SpellingReview | undefined;
+  /**
+   * This document's Accessibility tab (ADR-0183): the check's findings, the reading order of the page last read, and
+   * the place marked on the page — or `undefined` before the tab was used. Per document for {@link spelling}'s reason:
+   * findings that followed a tab switch would mark one file's problems on another's pages.
+   */
+  readonly accessibility: AccessibilityView | undefined;
 }
 
 export interface DocumentActions {
@@ -335,6 +342,9 @@ export interface DocumentActions {
   /** Replaces this document's spelling review — `reviewRun.ts` is its one writer. */
   readonly reviewSpelling: (review: SpellingReview | undefined) => void;
 
+  /** Replaces this document's Accessibility view — `accessibility/run.ts` is its one writer. */
+  readonly viewAccessibility: (view: AccessibilityView | undefined) => void;
+
   /**
    * Records how many pages the parser found.
    *
@@ -389,6 +399,7 @@ export function createDocumentStore(
     sides: undefined,
     selectedPages: [],
     spelling: undefined,
+    accessibility: undefined,
     observed: (next) => {
       if (next <= get().version) return false;
       // THE SELECTION GOES WITH THE VERSION IT WAS MADE AT (ADR-0104): a page number means nothing across a
@@ -478,6 +489,9 @@ export function createDocumentStore(
     },
     reviewSpelling: (review) => {
       set({ spelling: review });
+    },
+    viewAccessibility: (view) => {
+      set({ accessibility: view });
     },
     choseSides: (sides) => {
       set({ sides });

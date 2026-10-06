@@ -359,6 +359,9 @@ import { OpeningState, PageList, type PageListProps } from './PageList.js';
 import { type Side, SideBySide, type SidePreferences, drawForComparison } from './SideBySide.js';
 import { SplitView } from './SplitView.js';
 import { SpellingPanel, useSpellingReview } from './SpellingPanel.js';
+import { AccessibilityPanel, useAccessibilityView } from './AccessibilityPanel.js';
+import { runCheck as runAccessibilityCheck, showSection as showAccessibilitySection } from './accessibility/run.js';
+import type { Spot } from './accessibility/view.js';
 import { type SpellingDeps, startReview } from './spelling/reviewRun.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { type MenuAt, NO_MENU, menuGroups } from './surfaces/ContextMenu.js';
@@ -2081,6 +2084,49 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [presence, settings, spellingDeps, stores],
   );
 
+  /** What the Accessibility tab's reads need: the client, and nothing the document's own commands do. */
+  const accessibilityDeps = useMemo(() => ({ client }), [client]);
+  /** Accessibility check: the tab, shown at its check section, and the check run (ADR-0183). */
+  const showAccessibilityCheck = useCallback(
+    (docId: DocId): void => {
+      settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'accessibility');
+      presence.show('end');
+      const held = stores.get(docId);
+      if (held === undefined) return;
+      showAccessibilitySection(held, 'check');
+      void runAccessibilityCheck(accessibilityDeps, held);
+    },
+    [accessibilityDeps, presence, settings, stores],
+  );
+  /** Reading order: the tab, shown at its reading-order section, which reads the page the person is on. */
+  const showReadingOrder = useCallback(
+    (docId: DocId): void => {
+      settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'accessibility');
+      presence.show('end');
+      const held = stores.get(docId);
+      if (held !== undefined) showAccessibilitySection(held, 'order');
+    },
+    [presence, settings, stores],
+  );
+  /**
+   * The place the tab marked, drawn on its page and shown (ADR-0183). Only while the Accessibility tab is the one
+   * showing, so the page carries no mark for a tab nobody can see — Spelling's rule for its word. The page is taken to
+   * the mark on each choice, keyed on the choice's own `arrival`: choosing the same place again, after scrolling away,
+   * takes the reader back to it.
+   */
+  const accessibilityView = useAccessibilityView(store);
+  const panelTab = useSetting(settings, CONTEXT_PANEL_TAB_SETTING);
+  const marked = panelTab === 'accessibility' ? accessibilityView?.marked : undefined;
+  const spotlights = useMemo<ReadonlyMap<number, readonly Spot[]> | undefined>(
+    () => (marked === undefined ? undefined : new Map([[marked.spot.page, [marked.spot]]])),
+    [marked],
+  );
+  const markedArrival = marked?.arrival;
+  const markedPage = marked?.spot.page;
+  useEffect(() => {
+    if (markedArrival !== undefined && markedPage !== undefined) navigator.jumpTo(markedPage);
+  }, [markedArrival, markedPage, navigator]);
+
   /**
    * The review's word, painted on the page through the find highlight (ADR-0156's 2026-10-04 correction): the word as
    * the query, exactly as written and whole, and the occurrence as the active match, by the text layer line and
@@ -2853,8 +2899,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         showWordCountCommand({ client, ask, track }),
         compareDocumentsCommand({ client, show: showSideBySide }),
         translatePageCommand({ client, onApplied: applied, ask, stamp, signatures, toast, track, storedSecrets: () => storedSecrets }),
-        inspectPageStructureCommand({ client, ask }),
-        accessibilityCheckCommand({ client, ask }),
+        // THE TWO REPORTS ARE THE PANEL'S (ADR-0183): each command opens the Accessibility tab at its own section.
+        inspectPageStructureCommand({ show: showReadingOrder }),
+        accessibilityCheckCommand({ show: showAccessibilityCheck }),
         readBarcodesCommand({ client, ask }),
         // THE REVIEW IS THE PANEL'S (ADR-0156): the command opens the Spelling tab and starts it.
         checkSpellingCommand({ start: startSpelling }),
@@ -3160,6 +3207,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       chosenShortcuts,
       startSignature,
       startSpelling,
+      showAccessibilityCheck,
+      showReadingOrder,
       // THE ZOOM STEP, through the function `+` and `−` ask: a changed step rebuilds them, or they would step by the old.
       stepZoomBy,
       activate,
@@ -3746,6 +3795,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // THE REVIEW'S WORD OVER THE FIND BAR'S MATCHES while a review shows one: one highlight on the page, and App
           // its one writer (ADR-0156's correction). The find bar's own state is untouched.
           search={spellingHighlight ?? search ?? undefined}
+          // THE ACCESSIBILITY TAB'S MARK (ADR-0183), drawn over the page it is on.
+          spotlights={spotlights}
           secondRenderer={secondRenderer}
           tileAbove={tileAbove}
           quality={quality} pageBadges={pageBadges} smoothScroll={smoothScroll} layout={layout}
@@ -3797,6 +3848,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               }
               // THE SPELLING TAB (ADR-0156), over the focused document's review, which its store holds.
               spelling={store === undefined ? null : <SpellingPanel deps={spellingDeps} store={store} settings={settings} />}
+              // THE ACCESSIBILITY TAB (ADR-0183), over the focused document's findings, which its store holds.
+              accessibility={store === undefined ? null : <AccessibilityPanel deps={accessibilityDeps} store={store} />}
               settings={settings}
               presence={presence}
             >
@@ -4230,11 +4283,12 @@ const DocumentLayer = memo(function DocumentLayer({
             writing={undefined}
             panning={false}
             search={undefined}
+            spotlights={undefined}
             autoscroll={undefined}
             onAutoscrollEnd={IGNORE}
             panels={NO_PANELS}
             contextPanel={
-              <ContextPanel settings={background.settings} presence={background.presence} assistant={null} spelling={null}>
+              <ContextPanel settings={background.settings} presence={background.presence} assistant={null} spelling={null} accessibility={null}>
                 {null}
               </ContextPanel>
             }
@@ -4298,6 +4352,7 @@ function PageCanvas({
   writing,
   panning,
   search,
+  spotlights,
   secondRenderer,
   tileAbove,
   quality,
@@ -4383,6 +4438,8 @@ function PageCanvas({
   readonly panning: boolean;
   /** What the find bar last answered, painted over both panes' text layers. */
   readonly search: SearchHighlight | undefined;
+  /** The place the Accessibility tab marked, by page (ADR-0183), painted over both panes. */
+  readonly spotlights: ReadonlyMap<number, readonly Spot[]> | undefined;
   /** Whether §6.1's second engine draws the pages. `viewing.second-renderer`. */
   readonly secondRenderer: boolean;
   /** The zoom above which pages draw in tiles (E1), as a scale. `rendering.tile-threshold`. */
@@ -4705,6 +4762,7 @@ function PageCanvas({
       writing={writing}
       panning={panning}
       search={search}
+      spotlights={spotlights}
       // NO DIFFERENCES: a comparison's marks are Side by Side's, over its own halves.
       differences={undefined}
       // `undefined` WHERE THE SETTING IS OFF, which is what makes the setting
@@ -4755,6 +4813,7 @@ function PageCanvas({
       writing={writing}
       panning={panning}
       search={search}
+      spotlights={spotlights}
       // NO DIFFERENCES: a comparison's marks are Side by Side's, over its own halves.
       differences={undefined}
       secondRasteriser={secondRenderer ? secondRasteriser : undefined}

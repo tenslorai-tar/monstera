@@ -644,11 +644,23 @@ export function plainTextOf(page: PageText): string {
  */
 export const SEGMENTATION_RAW_ROLE = 'Split';
 
+/**
+ * A box in the page's display space at scale 1 — `TextLine.box`'s space, which is what `engineBoxOnScreen` places —
+ * as four numbers, because it crosses a channel.
+ */
+export interface StructureBox {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
 /** One element of a tagged page's structure, in tree order. */
 export interface StructureNode {
   /**
    * The standard role — `P`, `H1`, `Table` — as MuPDF resolved it through the
-   * document's role map. Empty where it gave none.
+   * document's role map, spelled as the standard spells it ({@link structureTypeName}).
+   * Empty where it gave none.
    */
   readonly role: string;
   /** The document's own name for the element, before the role map. */
@@ -657,7 +669,33 @@ export interface StructureNode {
   readonly depth: number;
   /** Text lines directly inside this element, not inside a tagged child of it. */
   readonly lines: number;
+  /**
+   * Where the element is on the page: the union of every text line inside it, in a tagged child or not, so a section
+   * covers what it holds. `null` for an element with no text line anywhere inside — a figure, or an empty tag.
+   */
+  readonly box: StructureBox | null;
 }
+
+/**
+ * The standard's name for a structure type the ENGINE named.
+ *
+ * ## One opinion about how MuPDF spells a type (B3a)
+ *
+ * MuPDF's `fz_structure_to_string` (`source/fitz/device.c`, 1.28.0, line 966) returns `"NonDtruct"` for
+ * `FZ_STRUCTURE_NONSTRUCT`, a misspelling of ISO 32000's `NonStruct` that the same file's parser spells correctly
+ * (line 1096). Read 2026-10-06 in the source this build compiles. Every other name in that function is the
+ * standard's own, so this is the whole table; it maps the engine's spelling to the standard's and leaves the
+ * standard's own spelling alone, which is what keeps it correct the day MuPDF fixes the typo.
+ *
+ * Read where the name is read, so nothing downstream — a surface, a report, a copy to the clipboard — can show the
+ * engine's spelling because it never holds it.
+ */
+export function structureTypeName(engineName: string): string {
+  return ENGINE_MISSPELLINGS.get(engineName) ?? engineName;
+}
+
+/** The names MuPDF's `fz_structure_to_string` spells wrongly, each with the standard's spelling. */
+const ENGINE_MISSPELLINGS: ReadonlyMap<string, string> = new Map([['NonDtruct', 'NonStruct']]);
 
 /** A page's structure as the engine read it under the structure read. */
 export interface PageStructure {
@@ -690,7 +728,7 @@ export interface PageStructure {
  * @throws for {@link parsePageText}'s reasons
  */
 export function parsePageStructure(json: string): PageStructure {
-  const found: { role: string; raw: string; depth: number; lines: number }[] = [];
+  const found: { role: string; raw: string; depth: number; lines: number; box: StructureBox | null }[] = [];
   // ONE ENTRY PER OPEN BLOCK, `null` for a block that is not an element — so
   // `leave` knows whether the block it closes moved the depth.
   const open: (number | null)[] = [];
@@ -705,7 +743,7 @@ export function parsePageStructure(json: string): PageStructure {
         open.push(null);
         return;
       }
-      found.push({ role: str(field(block, 'std')) ?? '', raw: raw ?? '', depth, lines: 0 });
+      found.push({ role: structureTypeName(str(field(block, 'std')) ?? ''), raw: raw ?? '', depth, lines: 0, box: null });
       open.push(found.length - 1);
       depth += 1;
     },
@@ -730,11 +768,38 @@ export function parsePageStructure(json: string): PageStructure {
       const element = owner === undefined ? undefined : found[owner];
       if (element === undefined) untaggedLines += lines.length;
       else element.lines += lines.length;
+      // EVERY OPEN ELEMENT COVERS THESE LINES, not only the nearest: a section is where what it holds is, and an item a
+      // person picks in the reading order is shown by the whole of it.
+      for (const index of open) {
+        const each = index === null ? undefined : found[index];
+        if (each !== undefined) each.box = unionOfLines(each.box, lines);
+      }
     },
     grid: () => undefined,
   });
 
   return { nodes: found, untaggedLines, images };
+}
+
+/** `box` grown to cover `lines`, which have a corner at each end in either order. */
+function unionOfLines(box: StructureBox | null, lines: readonly TextLine[]): StructureBox | null {
+  let covered = box;
+  for (const { box: line } of lines) {
+    const x0 = Math.min(line.topLeft.x, line.bottomRight.x);
+    const y0 = Math.min(line.topLeft.y, line.bottomRight.y);
+    const x1 = Math.max(line.topLeft.x, line.bottomRight.x);
+    const y1 = Math.max(line.topLeft.y, line.bottomRight.y);
+    covered =
+      covered === null
+        ? { x0, y0, x1, y1 }
+        : {
+            x0: Math.min(covered.x0, x0),
+            y0: Math.min(covered.y0, y0),
+            x1: Math.max(covered.x1, x1),
+            y1: Math.max(covered.y1, y1),
+          };
+  }
+  return covered;
 }
 
 /** One cell of a found table: the lines the engine moved into it, in its order. */

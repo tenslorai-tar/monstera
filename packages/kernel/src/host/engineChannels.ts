@@ -1,6 +1,7 @@
 import {
   type CommandKind,
   type CommandOfKind,
+  accessibilitySpotsSchema,
   DOCUMENT_ACCESS_VALUES,
   DOCUMENT_PASSWORD_MAX_CHARS,
   MAX_MERGE_DOCUMENTS,
@@ -2948,6 +2949,7 @@ export const engineChannels = {
                 verdict: z.enum(['passed', 'failed', 'not-applicable', 'not-determined']),
                 count: z.number().int().nonnegative(),
                 pages: z.array(z.number().int().nonnegative()).max(16).readonly(),
+                spots: accessibilitySpotsSchema,
               })
               .strict(),
           )

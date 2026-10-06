@@ -1,9 +1,9 @@
-import { PDFDocument, PDFHexString, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDocument, PDFHexString, PDFName, PDFString, StandardFonts, degrees } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
 import { checkAccessibility } from './accessibilityCheck.js';
 import { type AccessibilityVerdict, HUMAN_CHECKS } from './accessibilityRules.js';
-import { mupdfWriter } from './mupdfWriter.js';
+import { mupdfWriter, withDocument } from './mupdfWriter.js';
 
 /**
  * The PDF/UA-1 object rules against documents built with pdf-lib, a writer that is not the one
@@ -188,9 +188,73 @@ describe('checkAccessibility — PDF/UA-1 object rules, and what they cannot see
     try {
       const report = await checkAccessibility(session);
       expect(report.rules.filter((rule) => rule.clause === '7.1' && rule.test === 5 || rule.clause === '7.3')).toStrictEqual([
-        { clause: '7.1', test: 5, verdict: 'failed', count: 1, pages: [0] },
-        { clause: '7.3', test: 1, verdict: 'failed', count: 1, pages: [0] },
+        // THE TAG TREE NAMES A PAGE AND NOT A PLACE ON IT, so each is the page itself and has no box.
+        { clause: '7.1', test: 5, verdict: 'failed', count: 1, pages: [0], spots: [{ page: 0, box: null }] },
+        { clause: '7.3', test: 1, verdict: 'failed', count: 1, pages: [0], spots: [{ page: 0, box: null }] },
       ]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('places an annotation failure where the page DRAWS it — its /Rect through the page’s own frame, y down (ADR-0183)', async () => {
+    const { bare } = await accessibilityFixtures();
+    const session = await mupdfWriter.open(bare);
+    try {
+      const report = await checkAccessibility(session);
+      const rule = (clause: string, test: number) => report.rules.find((each) => each.clause === clause && each.test === test);
+      // THE LINK [100 10 160 30] on a 400-high page is drawn from y = 370 to 390: the PDF's y is up, the page's is down.
+      expect(rule('7.18.5', 2)?.spots).toStrictEqual([{ page: 0, box: { x0: 100, y0: 370, x1: 160, y1: 390 } }]);
+      // BOTH THE SQUARE AND THE LINK LACK A DESCRIPTION, each in its own box and in the order the page lists them.
+      expect(rule('7.18.1', 2)?.spots).toStrictEqual([
+        { page: 0, box: { x0: 10, y0: 340, x1: 60, y1: 390 } },
+        { page: 0, box: { x0: 100, y0: 370, x1: 160, y1: 390 } },
+      ]);
+      // A RULE ABOUT THE PAGE (Tab order) IS THE PAGE'S: no box.
+      expect(rule('7.18.3', 1)?.spots).toStrictEqual([{ page: 0, box: null }]);
+      // A DOCUMENT-WIDE RULE HAS NO PLACE ON ANY PAGE.
+      expect(rule('6.2', 1)?.spots).toStrictEqual([]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('a box on a TURNED, CROPPED page is MuPDF’s own place for the same object — the link’s bounds', async () => {
+    // THE CONTROL FOR THE CONVERSION. A box computed with an unrotated page's assumptions agrees with an unrotated
+    // fixture and with nothing else, so the case turns the page and moves its crop: the expected box is read from
+    // MuPDF's own `Link.getBounds()` of the same link, in the space the renderer already places links in.
+    const document = await PDFDocument.create();
+    const page = document.addPage([400, 500]);
+    page.setCropBox(50, 60, 300, 380);
+    page.setRotation(degrees(90));
+    const link = document.context.register(
+      document.context.obj({
+        Type: 'Annot',
+        Subtype: 'Link',
+        Rect: [120, 150, 220, 210],
+        Border: [0, 0, 0],
+        A: { S: 'URI', URI: PDFString.of('https://example.com/') },
+      }),
+    );
+    page.node.set(PDFName.of('Annots'), document.context.obj([link]));
+    const session = await mupdfWriter.open(await document.save());
+    try {
+      const report = await checkAccessibility(session);
+      const placed = report.rules.find((each) => each.clause === '7.18.5' && each.test === 2)?.spots[0]?.box;
+      const engine = await withDocument(session, (opened) => {
+        const links = opened.loadPage(0).getLinks();
+        const first = links[0];
+        if (first === undefined) throw new Error('the fixture has a link');
+        return first.getBounds();
+      });
+      expect(placed).toBeDefined();
+      const [x0, y0, x1, y1] = engine;
+      expect(placed?.x0).toBeCloseTo(x0, 3);
+      expect(placed?.y0).toBeCloseTo(y0, 3);
+      expect(placed?.x1).toBeCloseTo(x1, 3);
+      expect(placed?.y1).toBeCloseTo(y1, 3);
+      // AND IT IS NOT WHERE AN UNROTATED, UNCROPPED PAGE WOULD PUT IT, which is what makes the agreement mean something.
+      expect(placed).not.toStrictEqual({ x0: 120, y0: 290, x1: 220, y1: 350 });
     } finally {
       await mupdfWriter.close(session);
     }

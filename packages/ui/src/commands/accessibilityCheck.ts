@@ -1,45 +1,31 @@
-import type { ContractClient } from '@monstera/contract';
+import type { DocId } from '@monstera/shared';
 
-import { ACCESSIBILITY_DIALOG_ID } from '../dialogs/accessibilityCheck.js';
 import { ACCESSIBILITY_COMMAND_TITLE, GROUP_ACCESSIBILITY } from '../messages/en.js';
-import { pdfjsPageOf } from '../pageNumbering.js';
-import { type CommandContext, RESULT_DIALOG, type UiCommand } from '../registries/commands.js';
+import { type CommandContext, type UiCommand, VISIBLE } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 
 /**
- * Review › Accessibility › *Accessibility check* (ADR-0078), beside *Reading order*, which reads
- * the same structure a page at a time.
+ * Review › Accessibility › *Accessibility check* (ADR-0078), beside *Reading order*.
  *
- * `inspectPageStructureCommand`'s shape: the command reads and the dialog displays, a refusal
- * opens the dialog too, and every page index is turned into the number a person reads through
- * `pageNumbering.ts`, the one place the two meet.
+ * It opens no dialog (ADR-0183): the context panel's Accessibility tab shows the findings beside the page, so a result
+ * can be marked where it is. `show` is App's, which holds the panel and the document stores; it opens the tab at the
+ * check section and starts the check.
  */
 export function accessibilityCheckCommand(deps: {
-  readonly client: ContractClient;
-  readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  /** Opens the Accessibility tab on its check and runs it for `docId`. */
+  readonly show: (docId: DocId) => void;
 }): UiCommand {
   return {
     id: 'document.accessibility-check',
-    feedback: RESULT_DIALOG,
+    feedback: VISIBLE,
     icon: 'ShieldCheck',
     title: ACCESSIBILITY_COMMAND_TITLE,
     placements: [{ surface: 'ribbon', section: 'review', group: GROUP_ACCESSIBILITY, order: 20 }],
     when: hasDocument,
-    run: async (context: CommandContext): Promise<void> => {
+    run: (context: CommandContext): void => {
       const { docId } = context;
       if (docId === undefined) return;
-      const answer = await deps.client['document.accessibilityCheck']({ docId });
-      // Voided for `showWordCount`'s reason: the dialog declares no result.
-      void deps.ask(
-        ACCESSIBILITY_DIALOG_ID,
-        answer.ok
-          ? {
-              kind: 'checked',
-              rules: answer.value.rules.map((rule) => ({ ...rule, pages: rule.pages.map(pdfjsPageOf) })),
-              humanChecks: answer.value.humanChecks,
-            }
-          : { kind: 'refused' },
-      );
+      deps.show(docId);
     },
   };
 }

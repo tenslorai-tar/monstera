@@ -569,8 +569,11 @@ export {
   FAILURE_DETAIL_SCHEMAS,
   FILE_HANDLE_MAX_CHARS,
   INCIDENT_ID_MAX_CHARS,
+  // Where an accessibility failure is, for showing it on the page (ADR-0183): the bound and the one schema.
+  MAX_ACCESSIBILITY_SPOTS,
   UNWRITABLE_CHARACTERS_MAX,
   UNWRITABLE_CHARACTERS_MAX_UNITS,
+  accessibilitySpotsSchema,
   docIdSchema,
   docVersionSchema,
   envelopeSchema,

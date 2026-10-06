@@ -1,28 +1,31 @@
 ---
 id: reading-order
-title: See a page's reading order and tags
-summary: Show the tagged structure of the page you are on, as screen readers would follow it.
+title: See a page's reading order
+summary: List the items on the page you are on in the order a screen reader reads them, and see each one on the page.
 keywords: [reading order, tags, tagged pdf, structure, accessibility, screen reader, headings]
 commands: [document.inspect-page-structure]
-contexts: [dialog.pageStructure, review]
+contexts: [review]
 ---
-Accessible PDFs carry tags that tell screen readers what each part of a page is (a heading, a paragraph, a table) and in what order to read it. This shows the tags on one page.
+Accessible PDFs carry tags that tell screen readers what each part of a page is, such as a heading, a paragraph or a table, and in what order to read it. This shows them for the page you are on.
 
 ## Steps
 
 1. Go to the page.
-2. In the rail, choose **Review**, then **Reading order** in the **Accessibility** group.
-3. The **Reading order and tags** window lists each tag in the document's order, indented to show nesting, with how many lines it holds. It also counts lines outside every tag and the images on the page.
+2. In the rail, choose **Review**, then **Reading order** in the **Accessibility** group. The **Accessibility** tab opens on **Reading order**.
+3. The tab lists each item in the order a screen reader reads it, with plain names such as Heading 1, Paragraph or List label, indented to show nesting, and how many lines of text each holds.
+4. Choose an item. The page marks the text it covers. Choose **Clear the mark on the page** to remove the mark.
+5. Turn to another page and the list follows you.
 
-![The Reading order and tags window](screenshot:reading-order-1)
+![The Accessibility tab on Reading order, with one item marked on the page](screenshot:reading-order-1)
 
 ## Good to know
 
-- One page at a time.
-- A page with no tags says **This page has no tags.**
-- It does not say whether the tag order matches the order on the page; check that by reading.
+- An item with no text, such as a picture, is listed but has nothing to mark.
+- A page with no tags says so: a screen reader has no reading order to follow there.
+- Text that is in no tag is counted, because a screen reader may skip it.
+- It does not say whether the order matches the order on the page; check that by reading.
 
 <!--
 Screenshots to capture:
-1. reading-order-1 — A tagged report page; dialog.pageStructure. Frame the dialog.
+1. reading-order-1 — A tagged report page; the Accessibility tab on Reading order with one item chosen. Frame the panel and the page.
 -->

@@ -6,9 +6,9 @@ import type { PageStructure } from './textStructure.js';
 /** Three elements with DIFFERENT names and depths, so a case can say which survived. */
 const PAGE: PageStructure = {
   nodes: [
-    { role: 'Document', raw: 'Document', depth: 0, lines: 0 },
-    { role: 'H1', raw: 'Heading1', depth: 1, lines: 1 },
-    { role: 'P', raw: 'Body', depth: 1, lines: 3 },
+    { role: 'Document', raw: 'Document', depth: 0, lines: 0, box: null },
+    { role: 'H1', raw: 'Heading1', depth: 1, lines: 1, box: null },
+    { role: 'P', raw: 'Body', depth: 1, lines: 3, box: null },
   ],
   untaggedLines: 2,
   images: 1,

@@ -326,7 +326,7 @@ describe('PageList', () => {
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
-        search={undefined} differences={undefined} writing={undefined}
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
       />,
@@ -360,7 +360,7 @@ describe('PageList', () => {
           rulers={false}
           showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
-          search={undefined} differences={undefined} writing={undefined}
+          search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
           secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
           menuAt={undefined}
           panning={panning}
@@ -419,7 +419,7 @@ describe('PageList', () => {
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
-        search={undefined} differences={undefined} writing={undefined}
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
       />,
@@ -457,7 +457,7 @@ describe('PageList', () => {
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
-        search={undefined} differences={undefined} writing={undefined}
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined}
         tileAbove={2}
         quality={2}
@@ -497,7 +497,7 @@ describe('PageList', () => {
           rulers={false}
           showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
-          search={undefined} differences={undefined} writing={undefined}
+          search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
           secondRasteriser={undefined}
           tileAbove={2}
           quality={1}
@@ -542,7 +542,7 @@ describe('PageList', () => {
           rulers={false}
           showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
-          search={undefined} differences={undefined} writing={undefined}
+          search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
           secondRasteriser={undefined}
           tileAbove={1.5}
           quality={quality}
@@ -603,7 +603,7 @@ describe('PageList', () => {
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
-        search={undefined} differences={undefined} writing={undefined}
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
       />,
@@ -639,7 +639,7 @@ describe('PageList', () => {
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
-        search={undefined} differences={undefined} writing={undefined}
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
       />,
@@ -682,7 +682,7 @@ describe('PageList', () => {
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
-        search={undefined} differences={undefined} writing={undefined}
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
       />,
@@ -716,7 +716,7 @@ describe('PageList', () => {
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
-        search={undefined} differences={undefined} writing={undefined}
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
       />,
@@ -746,7 +746,7 @@ describe('PageList', () => {
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
-        search={undefined} differences={undefined} writing={undefined}
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
       />,
@@ -788,7 +788,7 @@ describe('PageList', () => {
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
-        search={undefined} differences={undefined} writing={undefined}
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
       />,
@@ -821,7 +821,7 @@ describe('PageList', () => {
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
-        search={undefined} differences={undefined} writing={undefined}
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
       />,
@@ -867,7 +867,7 @@ describe('PageList', () => {
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
-        search={undefined} differences={undefined} writing={undefined}
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
       />,
@@ -928,7 +928,7 @@ describe('PageList', () => {
       rulers: false,
       showGrid: false, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
-      search: undefined, differences: undefined, writing: undefined,
+      search: undefined, differences: undefined, spotlights: undefined, writing: undefined,
       secondRasteriser: undefined,
       tileAbove: 2,
       quality: 1,
@@ -975,7 +975,7 @@ describe('PageList', () => {
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
-        search={undefined} differences={undefined} writing={undefined}
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
       />,
@@ -1014,7 +1014,7 @@ describe('PageList', () => {
       rulers: false,
       showGrid: false, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
-      search: undefined, differences: undefined, writing: undefined,
+      search: undefined, differences: undefined, spotlights: undefined, writing: undefined,
       secondRasteriser: undefined,
       tileAbove: 2,
       quality: 1,
@@ -1052,7 +1052,7 @@ describe('PageList', () => {
       rulers: false,
       showGrid: false, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
-      search: undefined, differences: undefined, writing: undefined,
+      search: undefined, differences: undefined, spotlights: undefined, writing: undefined,
       secondRasteriser: undefined,
       tileAbove: 2,
       quality: 1,
@@ -1100,7 +1100,7 @@ describe('PageList', () => {
       rulers: false,
       showGrid: false, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
-      search: undefined, differences: undefined, writing: undefined,
+      search: undefined, differences: undefined, spotlights: undefined, writing: undefined,
       secondRasteriser: undefined,
       tileAbove: 2,
       quality: 1,
@@ -1151,7 +1151,7 @@ describe('PageList', () => {
         rulers: false,
         showGrid: false, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
         unit: 'in' as const,
-        search: undefined, differences: undefined, writing: undefined,
+        search: undefined, differences: undefined, spotlights: undefined, writing: undefined,
         secondRasteriser: undefined,
         tileAbove: 2,
         quality: 1,
@@ -1218,7 +1218,7 @@ describe('PageList', () => {
           rulers={false}
           showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
-          search={undefined} differences={undefined} writing={undefined}
+          search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
         />,
@@ -1247,7 +1247,7 @@ describe('PageList', () => {
             rulers={false}
             showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
             unit="in"
-            search={undefined} differences={undefined} writing={undefined}
+            search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
           />,
@@ -1287,7 +1287,7 @@ describe('PageList', () => {
             rulers={false}
             showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
             unit="in"
-            search={undefined} differences={undefined} writing={undefined}
+            search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
           />,
@@ -1314,7 +1314,7 @@ describe('PageList', () => {
             rulers={false}
             showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
             unit="in"
-            search={undefined} differences={undefined} writing={undefined}
+            search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
           />,
@@ -1359,7 +1359,7 @@ describe('PageList', () => {
         rulers={false}
         showGrid={false} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
         unit="in"
-        search={undefined} differences={undefined} writing={undefined}
+        search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
         secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
         menuAt={undefined}
       />,
@@ -1401,7 +1401,7 @@ describe('PageList', () => {
       rulers: false,
       showGrid: false, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
-      search: undefined, differences: undefined, writing: undefined,
+      search: undefined, differences: undefined, spotlights: undefined, writing: undefined,
       secondRasteriser: undefined,
       tileAbove: 2,
       quality: 1,
@@ -1681,7 +1681,7 @@ describe('PageList', () => {
           rulers={false}
           showGrid={showGrid} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
-          search={undefined} differences={undefined} writing={undefined}
+          search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
           secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
           menuAt={undefined}
         />,
@@ -1732,7 +1732,7 @@ describe('PageList', () => {
           rulers={true}
           showGrid={true} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
-          search={undefined} differences={undefined} writing={undefined}
+          search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
           secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
           menuAt={undefined}
         />,

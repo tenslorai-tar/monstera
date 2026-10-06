@@ -364,6 +364,11 @@ export interface BrowserShimOptions {
     readonly verdict: 'passed' | 'failed' | 'not-applicable' | 'not-determined';
     readonly count: number;
     readonly pages: readonly number[];
+    /** Where the first failures are (ADR-0183); a rule with no place on any page has none. */
+    readonly spots: readonly {
+      readonly page: number;
+      readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null;
+    }[];
   }[];
 
   /** What `document.pageBarcodes` reads on any page. Absent is none. */

@@ -73,8 +73,11 @@ function client(options: {
     sent.push({ id, params });
     const docId = (params as { docId?: DocId }).docId;
     switch (id) {
-      case 'document.open':
-        return Promise.resolve(ok(opens.shift() ?? { kind: 'cancelled' as const }));
+      // THE OPEN COMMAND IS THE SEVERAL-FILES CHANNEL (ADR-0182): one file per ask here, an empty list for a dismissal.
+      case 'document.openSeveral': {
+        const next = opens.shift();
+        return Promise.resolve(ok({ opened: next === undefined ? [] : [{ name: next.name, outcome: next }] }));
+      }
       case 'document.unsaved':
         return Promise.resolve(ok({ unsaved: docId !== undefined && unsaved.has(docId) }));
       case 'document.annotations': {

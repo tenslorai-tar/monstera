@@ -106,6 +106,15 @@ function answeringClient(model?: Readonly<Record<string, unknown>>): ContractCli
       byteLength: 1024,
       name: 'annual.pdf',
     },
+    // THE OPEN COMMAND IS THE SEVERAL-FILES CHANNEL (ADR-0182), answering the same one document.
+    'document.openSeveral': {
+      opened: [
+        {
+          name: 'annual.pdf',
+          outcome: { kind: 'opened' as const, docId: DOC, version: asDocVersion(1), byteLength: 1024, name: 'annual.pdf' },
+        },
+      ],
+    },
     'document.viewModel': model ?? {
       version: asDocVersion(1),
       pageCount: 1,

@@ -95,6 +95,7 @@ import {
   MIN_IMAGE_QUALITY,
   MAX_IMAGE_QUALITY,
   FAILURE_DETAIL_SCHEMAS,
+  accessibilitySpotsSchema,
 } from './schemas.js';
 
 /**
@@ -3585,6 +3586,8 @@ export const channels = {
             verdict: z.enum(['passed', 'failed', 'not-applicable', 'not-determined']),
             count: z.number().int().nonnegative(),
             pages: z.array(z.number().int().nonnegative()).max(16).readonly(),
+            /** Where the first failures are, for showing one on the page (ADR-0183). */
+            spots: accessibilitySpotsSchema,
           }),
         )
         .max(32)
@@ -4495,13 +4498,20 @@ export const channels = {
       nodes: z
         .array(
           z.object({
-            /** The standard role, `P` or `H1`; empty where the engine resolved none. */
+            /**
+             * The standard role, `P` or `H1`, spelled as the standard spells it; empty where the engine resolved none.
+             * **The document's own name for the element is not sent** (ADR-0183): it is the document's private
+             * vocabulary, and a name nothing on screen may show is a name nothing should carry.
+             */
             role: z.string().max(MAX_STRUCTURE_NAME),
-            /** The document's own name for the element. */
-            raw: z.string().max(MAX_STRUCTURE_NAME),
             depth: z.number().int().nonnegative().max(MAX_STRUCTURE_NODES),
             /** Text lines directly inside this element. */
             lines: z.number().int().nonnegative(),
+            /**
+             * Where the element is: the union of the text lines inside it, in the page's display space at scale 1,
+             * or `null` for an element with no text line anywhere inside.
+             */
+            box: z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() }).nullable(),
           }),
         )
         .max(MAX_STRUCTURE_NODES)

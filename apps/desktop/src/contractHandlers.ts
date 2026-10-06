@@ -2539,7 +2539,15 @@ function pageStructureHandler(
         docId,
         page,
       );
-      return ok({ version, nodes, truncated, untaggedLines, images });
+      // NAMED FIELD BY FIELD: the document's own name for an element (`raw`) is held by the kernel and never sent, so a
+      // field added to a node there is not on the wire until somebody decides it should be (ADR-0183).
+      return ok({
+        version,
+        nodes: nodes.map(({ role, depth, lines, box }) => ({ role, depth, lines, box })),
+        truncated,
+        untaggedLines,
+        images,
+      });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

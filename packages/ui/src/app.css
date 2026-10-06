@@ -4977,6 +4977,142 @@ optgroup {
 }
 
 /*
+ * The place the Accessibility tab marked (ADR-0183), inert, in the page's own box. A box is drawn as a solid ring with a
+ * soft halo, so it reads without colour; the page itself is a frame inset from its edge.
+ */
+.m-spotlight-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.m-spotlight {
+  position: absolute;
+  box-sizing: border-box;
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.m-spotlight--page {
+  inset: 0;
+  outline-offset: -3px;
+  background: none;
+  box-shadow: none;
+}
+
+/* The Accessibility tab (ADR-0183): one column, so the panel's width is the only width. */
+.m-accessibility {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  min-inline-size: 0;
+}
+
+.m-accessibility p,
+.m-accessibility h3,
+.m-accessibility ul,
+.m-accessibility ol {
+  margin: 0;
+}
+
+.m-accessibility__heading {
+  font-size: var(--font-chrome-13);
+  font-weight: 600;
+}
+
+.m-accessibility__rules,
+.m-accessibility__order,
+.m-accessibility__passed-list,
+.m-accessibility__human {
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.m-accessibility__rule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.m-accessibility__rule-title {
+  font-weight: 600;
+}
+
+.m-accessibility__count,
+.m-accessibility__lines,
+.m-accessibility__explain,
+.m-accessibility__whole {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-accessibility__count {
+  margin-inline-start: var(--space-6);
+}
+
+.m-accessibility__places {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.m-accessibility__place,
+.m-accessibility__item-button {
+  padding: var(--space-2) var(--space-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-chrome-12);
+  cursor: pointer;
+}
+
+.m-accessibility__place:focus-visible,
+.m-accessibility__item-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.m-accessibility__place[aria-pressed='true'],
+.m-accessibility__item-button[aria-pressed='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.m-accessibility__item-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  text-align: start;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.m-accessibility__item-button {
+  inline-size: 100%;
+}
+
+.m-accessibility__role {
+  font-weight: 600;
+}
+
+.m-accessibility__actions,
+.m-accessibility__mark {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  align-items: center;
+}
+
+/*
  * The open documents' tab strip.
  *
  * ONE ROW, never wrapped: a second line of tabs moves everything below it down as documents open, and a document

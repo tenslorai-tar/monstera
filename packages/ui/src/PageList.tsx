@@ -35,12 +35,15 @@ export interface PageWriting {
 import { TextLayer, type TextLayerLine, readTextSelection } from './TextLayer.js';
 import { type FollowedLink, LinkLayer } from './LinkLayer.js';
 import { type DifferenceMark, DifferenceLayer } from './DifferenceLayer.js';
+import type { Spot } from './accessibility/view.js';
+import { SpotlightLayer } from './SpotlightLayer.js';
 
 /** What a mark over a page sits on: the paper. */
 const ON_PAPER: readonly string[] = ['--page'];
 
 /** No marks on a page, one identity for every page without any. */
 const NO_MARKS: readonly DifferenceMark[] = [];
+const NO_SPOTS: readonly Spot[] = [];
 import { type PageAnnotation, usePageAnnotations } from './usePageAnnotations.js';
 import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
@@ -315,6 +318,10 @@ export interface PageListProps {
    */
   readonly differences: ReadonlyMap<number, readonly DifferenceMark[]> | undefined;
   /**
+   * The place the Accessibility tab marked, by page (ADR-0183), or `undefined` for none. Required for `search`'s reason.
+   */
+  readonly spotlights: ReadonlyMap<number, readonly Spot[]> | undefined;
+  /**
    * §6.1's second engine, or `undefined` where the setting is off.
    *
    * Handed straight to each slot, `search`'s reason: this scroller decides
@@ -461,6 +468,7 @@ export function PageList({
   panning = false,
   search,
   differences,
+  spotlights,
   secondRasteriser,
   tileAbove,
   quality,
@@ -1266,6 +1274,7 @@ export function PageList({
           // ONE MAP FOR THE LIST, the slot taking its own page's marks: an absent page is no marks, never a lookup the
           // slot has to know to skip.
           differences={differences}
+          spotlights={spotlights}
           secondRasteriser={secondRasteriser}
           tiled={renderZoom * quality > tileAbove}
           quality={quality}
@@ -1463,6 +1472,7 @@ function PageSlot({
   annotations,
   search,
   differences,
+  spotlights,
   secondRasteriser,
   tiled,
   quality,
@@ -1505,6 +1515,8 @@ function PageSlot({
    * Required for `search`'s reason: a mark crossing three components and dropped at one leaves every case green.
    */
   readonly differences: ReadonlyMap<number, readonly DifferenceMark[]> | undefined;
+  /** The Accessibility tab's mark (ADR-0183), by page; this slot takes its own page's. */
+  readonly spotlights: ReadonlyMap<number, readonly Spot[]> | undefined;
   /**
    * §6.1's second engine, or `undefined` where the setting is off.
    *
@@ -1772,6 +1784,15 @@ function PageSlot({
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
           marks={differences.get(page) ?? NO_MARKS}
           page={page}
+        />
+      )}
+      {/* THE ACCESSIBILITY TAB'S MARK (ADR-0183), over the text and the comparison's marks and under the annotations, gated
+          on the slot's own measurement for the same reason. */}
+      {spotlights === undefined || size === undefined ? null : (
+        <SpotlightLayer
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          page={page}
+          spots={spotlights.get(page) ?? NO_SPOTS}
         />
       )}
       {/* OVER THE TEXT LAYER AND UNDER THE SELECTION: a preview of what a burn-in removes covers

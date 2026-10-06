@@ -3,11 +3,16 @@ import type { PDFDocument, PDFObject } from './mupdfRaw.js';
 import {
   type AccessibilityReport,
   type AccessibilityRuleResult,
+  type AccessibilitySpot,
+  type AccessibilitySpotBox,
   HUMAN_CHECKS,
   MAX_REPORTED_PAGES,
+  MAX_REPORTED_SPOTS,
 } from './accessibilityRules.js';
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
+import { frameOf, placedRect } from './pageAnnotations.js';
+import type { PageTransform } from '@monstera/shared';
 
 /**
  * D8's *accessibility check*: the PDF/UA-1 rules a machine can decide from a document's objects,
@@ -55,7 +60,7 @@ export function checkAccessibility(session: MupdfSession): Promise<Accessibility
     const catalog = document.getTrailer().get('Root');
     const rules: AccessibilityRuleResult[] = [];
     const whole = (clause: string, test: number, passed: boolean): void => {
-      rules.push({ clause, test, verdict: passed ? 'passed' : 'failed', count: passed ? 0 : 1, pages: [] });
+      rules.push({ clause, test, verdict: passed ? 'passed' : 'failed', count: passed ? 0 : 1, pages: [], spots: [] });
     };
 
     const metadata = metadataText(catalog);
@@ -63,7 +68,7 @@ export function checkAccessibility(session: MupdfSession): Promise<Accessibility
     // them to test and they do not apply — 7.1-8 is the rule that fails. Measured 2026-09-17: veraPDF
     // reports neither on a document with no XMP, and failing them here disagreed on 11 files.
     const onXmp = (clause: string, test: number, passed: (xmp: string) => boolean): void => {
-      if (metadata === null) rules.push({ clause, test, verdict: 'not-applicable', count: 0, pages: [] });
+      if (metadata === null) rules.push({ clause, test, verdict: 'not-applicable', count: 0, pages: [], spots: [] });
       else whole(clause, test, passed(metadata));
     };
     // 5-1: `containsPDFUAIdentification`. The identification schema's `part`, as an element or
@@ -99,7 +104,7 @@ export function checkAccessibility(session: MupdfSession): Promise<Accessibility
       const permissions = encryption.get('P');
       whole('7.16', 1, permissions.isNumber() && (permissions.asNumber() & 512) === 512);
     } else {
-      rules.push({ clause: '7.16', test: 1, verdict: 'not-applicable', count: 0, pages: [] });
+      rules.push({ clause: '7.16', test: 1, verdict: 'not-applicable', count: 0, pages: [], spots: [] });
     }
 
     rules.push(...pageRules(document));
@@ -129,8 +134,8 @@ function metadataText(catalog: PDFObject): string | null {
 function structureRules(treeRoot: PDFObject, pageIndexOf: ReadonlyMap<number, number>): AccessibilityRuleResult[] {
   if (!treeRoot.isDictionary()) {
     return [
-      { clause: '7.1', test: 5, verdict: 'not-applicable', count: 0, pages: [] },
-      { clause: '7.3', test: 1, verdict: 'not-applicable', count: 0, pages: [] },
+      { clause: '7.1', test: 5, verdict: 'not-applicable', count: 0, pages: [], spots: [] },
+      { clause: '7.3', test: 1, verdict: 'not-applicable', count: 0, pages: [], spots: [] },
     ];
   }
   const roleMap = treeRoot.get('RoleMap');
@@ -171,8 +176,8 @@ function structureRules(treeRoot: PDFObject, pageIndexOf: ReadonlyMap<number, nu
     visited += 1;
     if (visited > MAX_STRUCTURE_ELEMENTS) {
       return [
-        { clause: '7.1', test: 5, verdict: 'not-determined', count: 0, pages: [] },
-        { clause: '7.3', test: 1, verdict: 'not-determined', count: 0, pages: [] },
+        { clause: '7.1', test: 5, verdict: 'not-determined', count: 0, pages: [], spots: [] },
+        { clause: '7.3', test: 1, verdict: 'not-determined', count: 0, pages: [], spots: [] },
       ];
     }
     const standard = standardFor(type.asName());
@@ -191,15 +196,31 @@ function structureRules(treeRoot: PDFObject, pageIndexOf: ReadonlyMap<number, nu
     stack.push(node.get('K'));
   }
   return [
-    { clause: '7.1', test: 5, verdict: unmapped === 0 ? 'passed' : 'failed', count: unmapped, pages: unmappedPages },
+    {
+      clause: '7.1',
+      test: 5,
+      verdict: unmapped === 0 ? 'passed' : 'failed',
+      count: unmapped,
+      pages: unmappedPages,
+      spots: pageSpots(unmappedPages),
+    },
     {
       clause: '7.3',
       test: 1,
       verdict: figures === 0 ? 'not-applicable' : figuresWithoutAlt === 0 ? 'passed' : 'failed',
       count: figuresWithoutAlt,
       pages: figurePages,
+      spots: pageSpots(figurePages),
     },
   ];
+}
+
+/**
+ * The failures a rule can place on a PAGE and not on it: one spot per page, with no box — the tag tree names a page
+ * for a figure or a tag (`/Pg`), and nothing in the object model says where on it, so a surface shows the page.
+ */
+function pageSpots(pages: readonly number[]): AccessibilitySpot[] {
+  return pages.slice(0, MAX_REPORTED_SPOTS).map((page) => ({ page, box: null }));
 }
 
 /** Records an element's page index, from its `/Pg`, while the list has room. An element without one names no page. */
@@ -217,12 +238,46 @@ function notePage(pages: number[], element: PDFObject, pageIndexOf: ReadonlyMap<
  * (embedded fonts).
  */
 function pageRules(document: PDFDocument): AccessibilityRuleResult[] {
-  const tally = (): { count: number; undetermined: number; pages: number[]; applicable: boolean } => ({
+  const tally = (): {
+    count: number;
+    undetermined: number;
+    pages: number[];
+    /** Where each ANNOTATION failure is, for the rules that fail on one; the others place a page and build theirs. */
+    spots: AccessibilitySpot[];
+    applicable: boolean;
+  } => ({
     count: 0,
     undetermined: 0,
     pages: [],
+    spots: [],
     applicable: false,
   });
+  /** Each page's frame at scale 1, read when a failure on it needs placing and never for a page that has none. */
+  const frames = new Map<number, PageTransform | null>();
+  const frameFor = (index: number): PageTransform | null => {
+    if (!frames.has(index)) frames.set(index, frameOf(document.loadPage(index)));
+    return frames.get(index) ?? null;
+  };
+  /**
+   * An annotation's `/Rect` in the page's DISPLAYED space (`pageAnnotations.ts`' `placedRect` over the page's own frame —
+   * the conversion every annotation here takes, so a turned or cropped page lands where the page draws it). `null` for
+   * a rectangle that is not four numbers or a page that displays no region: the failure is still the page's.
+   */
+  const boxOf = (annotation: PDFObject, index: number): AccessibilitySpotBox | null => {
+    const rect = annotation.get('Rect');
+    if (!rect.isArray() || rect.length !== 4) return null;
+    const corners: number[] = [];
+    for (let at = 0; at < 4; at += 1) {
+      const corner = rect.get(at);
+      if (!corner.isNumber()) return null;
+      corners.push(corner.asNumber());
+    }
+    const frame = frameFor(index);
+    if (frame === null) return null;
+    const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = corners;
+    const [left, top, right, bottom] = placedRect({ x0, y0, x1, y1 }, frame);
+    return { x0: left, y0: top, x1: right, y1: bottom };
+  };
   const tabs = tally();
   const annotationAlt = tally();
   const widgetTu = tally();
@@ -234,9 +289,13 @@ function pageRules(document: PDFDocument): AccessibilityRuleResult[] {
   const blameAt = (entry: ReturnType<typeof tally>, page: number): void => {
     if (entry.pages.length < MAX_REPORTED_PAGES && !entry.pages.includes(page)) entry.pages.push(page);
   };
-  const failAt = (entry: ReturnType<typeof tally>, page: number): void => {
+  const failAt = (entry: ReturnType<typeof tally>, page: number, annotation?: PDFObject): void => {
     entry.count += 1;
     blameAt(entry, page);
+    // THE FIRST FAILURES ARE PLACED, one spot each, and the box is read only while there is room for it.
+    if (annotation !== undefined && entry.spots.length < MAX_REPORTED_SPOTS) {
+      entry.spots.push({ page, box: boxOf(annotation, page) });
+    }
   };
   /** An unembedded font met on `page`: counted the first time its object is seen, blamed every time. */
   const fontFailsAt = (page: number) => (firstSight: boolean): void => {
@@ -274,17 +333,17 @@ function pageRules(document: PDFDocument): AccessibilityRuleResult[] {
           if (textOf(field.get('TU')) !== '') continue;
           // THE ALT MAY BE ON THE ENCLOSING STRUCTURE ELEMENT, which this walk does not resolve.
           if (inStructure) widgetTu.undetermined += 1;
-          else failAt(widgetTu, index);
+          else failAt(widgetTu, index, annotation);
           continue;
         }
         if (subtype === 'Link') {
           linkContents.applicable = true;
-          if (!hasContents) failAt(linkContents, index);
+          if (!hasContents) failAt(linkContents, index, annotation);
         }
         annotationAlt.applicable = true;
         if (hasContents) continue;
         if (inStructure) annotationAlt.undetermined += 1;
-        else failAt(annotationAlt, index);
+        else failAt(annotationAlt, index, annotation);
       }
     }
     collectFonts(page.get('Resources'), 0, fontsSeen, () => {
@@ -292,7 +351,16 @@ function pageRules(document: PDFDocument): AccessibilityRuleResult[] {
     }, fontFailsAt(index));
   }
 
-  const result = (clause: string, test: number, entry: ReturnType<typeof tally>): AccessibilityRuleResult => ({
+  /**
+   * `places` says what a failure of this rule can be placed by: `'annotation'` — the annotation's own box, collected as
+   * the walk failed it — or `'page'` — a font or a page's tab order belongs to the page, so the page is the place.
+   */
+  const result = (
+    clause: string,
+    test: number,
+    entry: ReturnType<typeof tally>,
+    places: 'annotation' | 'page',
+  ): AccessibilityRuleResult => ({
     clause,
     test,
     verdict: !entry.applicable
@@ -304,13 +372,14 @@ function pageRules(document: PDFDocument): AccessibilityRuleResult[] {
           : 'passed',
     count: entry.count > 0 ? entry.count : entry.undetermined,
     pages: entry.pages,
+    spots: places === 'annotation' ? entry.spots : pageSpots(entry.pages),
   });
   return [
-    result('7.18.1', 2, annotationAlt),
-    result('7.18.1', 3, widgetTu),
-    result('7.18.3', 1, tabs),
-    result('7.18.5', 2, linkContents),
-    result('7.21.4.1', 1, fonts),
+    result('7.18.1', 2, annotationAlt, 'annotation'),
+    result('7.18.1', 3, widgetTu, 'annotation'),
+    result('7.18.3', 1, tabs, 'page'),
+    result('7.18.5', 2, linkContents, 'annotation'),
+    result('7.21.4.1', 1, fonts, 'page'),
   ];
 }
 

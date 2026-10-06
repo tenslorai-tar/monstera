@@ -3,6 +3,7 @@ import { useLingui } from '@lingui/react';
 import { useCallback, type ReactElement, type ReactNode } from 'react';
 
 import {
+  CONTEXT_PANEL_TAB_ACCESSIBILITY,
   CONTEXT_PANEL_COLLAPSE,
   CONTEXT_PANEL_LABEL,
   CONTEXT_PANEL_REOPEN,
@@ -51,6 +52,8 @@ export interface ContextPanelProps {
   readonly assistant: ReactNode;
   /** The Spelling tab (ADR-0156), built where the focused document's store is. */
   readonly spelling: ReactNode;
+  /** The Accessibility tab (ADR-0183), built where the focused document's store is. */
+  readonly accessibility: ReactNode;
 }
 
 /**
@@ -62,9 +65,18 @@ const TABS = [
   { id: 'properties', title: CONTEXT_PANEL_TAB_PROPERTIES, icon: 'Info' },
   { id: 'assistant', title: CONTEXT_PANEL_TAB_ASSISTANT, icon: 'Sparkles' },
   { id: 'spelling', title: CONTEXT_PANEL_TAB_SPELLING, icon: 'SpellCheck' },
+  // THE ACCESSIBILITY COMMAND'S OWN GLYPH, for Spelling's reason (ADR-0183).
+  { id: 'accessibility', title: CONTEXT_PANEL_TAB_ACCESSIBILITY, icon: 'ShieldCheck' },
 ] as const;
 
-export function ContextPanel({ settings, presence, children, assistant, spelling }: ContextPanelProps): ReactElement {
+export function ContextPanel({
+  settings,
+  presence,
+  children,
+  assistant,
+  spelling,
+  accessibility,
+}: ContextPanelProps): ReactElement {
   const { i18n } = useLingui();
   const form = usePanelForm(presence, 'end');
   const tab = useSetting(settings, CONTEXT_PANEL_TAB_SETTING);
@@ -113,7 +125,7 @@ export function ContextPanel({ settings, presence, children, assistant, spelling
       {/* ONE TAB IS MOUNTED, the document panel's rule and its reason: the other would keep
           asking for what nobody can see, and keep its controls in the tab order. */}
       <Tabs.Panel className="m-context-panel__body" data-context-panel={tab} value={tab}>
-        {tab === 'properties' ? children : tab === 'assistant' ? assistant : spelling}
+        {tab === 'properties' ? children : tab === 'assistant' ? assistant : tab === 'spelling' ? spelling : accessibility}
       </Tabs.Panel>
     </Tabs.Root>
   );

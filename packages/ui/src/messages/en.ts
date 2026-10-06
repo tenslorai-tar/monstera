@@ -498,6 +498,47 @@ export const ACCESSIBILITY_HUMAN_TABLES = messageKey('dialog.accessibility-check
 export const ACCESSIBILITY_HUMAN_COLOUR = messageKey('dialog.accessibility-check.human.colour-not-sole-means');
 export const ACCESSIBILITY_HUMAN_LANGUAGE = messageKey('dialog.accessibility-check.human.language-of-passages');
 export const ACCESSIBILITY_HUMAN_LINKS = messageKey('dialog.accessibility-check.human.link-text-meaningful');
+// THE ACCESSIBILITY TAB (ADR-0183): the two reports as one context-panel tab, in plain words.
+export const CONTEXT_PANEL_TAB_ACCESSIBILITY = messageKey('surface.context-panel.tab-accessibility');
+export const ACCESSIBILITY_SECTIONS_LABEL = messageKey('surface.accessibility.sections');
+export const ACCESSIBILITY_SECTION_CHECK = messageKey('surface.accessibility.section-check');
+export const ACCESSIBILITY_SECTION_ORDER = messageKey('surface.accessibility.section-order');
+export const ACCESSIBILITY_INTRO = messageKey('surface.accessibility.intro');
+export const ACCESSIBILITY_RUN = messageKey('surface.accessibility.run');
+export const ACCESSIBILITY_RUN_AGAIN = messageKey('surface.accessibility.run-again');
+export const ACCESSIBILITY_RUNNING = messageKey('surface.accessibility.running');
+export const ACCESSIBILITY_STALE = messageKey('surface.accessibility.stale');
+export const ACCESSIBILITY_ALL_CLEAR = messageKey('surface.accessibility.all-clear');
+export const ACCESSIBILITY_FIX_HEADING = messageKey('surface.accessibility.fix-heading');
+export const ACCESSIBILITY_PERSON_RESULT_HEADING = messageKey('surface.accessibility.person-result-heading');
+export const ACCESSIBILITY_PASSED_HEADING = messageKey('surface.accessibility.passed-heading');
+export const ACCESSIBILITY_WHOLE_FILE = messageKey('surface.accessibility.whole-file');
+export const ACCESSIBILITY_UNDECIDED = messageKey('surface.accessibility.undecided');
+export const ACCESSIBILITY_SHOW_PROBLEM = messageKey('surface.accessibility.show-problem');
+export const ACCESSIBILITY_SHOW_PROBLEM_LABEL = messageKey('surface.accessibility.show-problem-label');
+export const ACCESSIBILITY_SHOWN_ON_PAGE = messageKey('surface.accessibility.shown-on-page');
+export const ACCESSIBILITY_HIDE_MARK = messageKey('surface.accessibility.hide-mark');
+export const ACCESSIBILITY_COUNT = messageKey('surface.accessibility.count');
+export const ORDER_READING = messageKey('surface.accessibility.order-reading');
+export const ORDER_INTRO = messageKey('surface.accessibility.order-intro');
+export const ORDER_NO_TEXT = messageKey('surface.accessibility.order-no-text');
+export const ORDER_SHOW_ITEM = messageKey('surface.accessibility.order-show-item');
+export const STRUCTURE_ROLE_NAME = messageKey('surface.accessibility.structure-role');
+export const ACCESSIBILITY_EXPLAIN_5_1 = messageKey('dialog.accessibility-check.explain.5-1');
+export const ACCESSIBILITY_EXPLAIN_6_2_1 = messageKey('dialog.accessibility-check.explain.6.2-1');
+export const ACCESSIBILITY_EXPLAIN_7_1_4 = messageKey('dialog.accessibility-check.explain.7.1-4');
+export const ACCESSIBILITY_EXPLAIN_7_1_5 = messageKey('dialog.accessibility-check.explain.7.1-5');
+export const ACCESSIBILITY_EXPLAIN_7_1_8 = messageKey('dialog.accessibility-check.explain.7.1-8');
+export const ACCESSIBILITY_EXPLAIN_7_1_9 = messageKey('dialog.accessibility-check.explain.7.1-9');
+export const ACCESSIBILITY_EXPLAIN_7_1_10 = messageKey('dialog.accessibility-check.explain.7.1-10');
+export const ACCESSIBILITY_EXPLAIN_7_1_11 = messageKey('dialog.accessibility-check.explain.7.1-11');
+export const ACCESSIBILITY_EXPLAIN_7_3_1 = messageKey('dialog.accessibility-check.explain.7.3-1');
+export const ACCESSIBILITY_EXPLAIN_7_16_1 = messageKey('dialog.accessibility-check.explain.7.16-1');
+export const ACCESSIBILITY_EXPLAIN_7_18_1_2 = messageKey('dialog.accessibility-check.explain.7.18.1-2');
+export const ACCESSIBILITY_EXPLAIN_7_18_1_3 = messageKey('dialog.accessibility-check.explain.7.18.1-3');
+export const ACCESSIBILITY_EXPLAIN_7_18_3_1 = messageKey('dialog.accessibility-check.explain.7.18.3-1');
+export const ACCESSIBILITY_EXPLAIN_7_18_5_2 = messageKey('dialog.accessibility-check.explain.7.18.5-2');
+export const ACCESSIBILITY_EXPLAIN_7_21_4_1_1 = messageKey('dialog.accessibility-check.explain.7.21.4.1-1');
 export const EXPORT_ANNOTATIONS_JSON_TITLE = messageKey('command.export-annotations.json');
 export const EXPORT_ANNOTATIONS_XFDF_TITLE = messageKey('command.export-annotations.xfdf');
 export const EXPORT_ANNOTATIONS_FDF_TITLE = messageKey('command.export-annotations.fdf');
@@ -1783,6 +1824,7 @@ export const CONTEXT_PANEL_TAB_TITLES = {
   properties: CONTEXT_PANEL_TAB_PROPERTIES,
   assistant: CONTEXT_PANEL_TAB_ASSISTANT,
   spelling: CONTEXT_PANEL_TAB_SPELLING,
+  accessibility: CONTEXT_PANEL_TAB_ACCESSIBILITY,
 } as const;
 export const QUICK_TOOLBAR_OPEN_TITLE = messageKey('setting.appearance-quick-toolbar-open.title');
 export const NEXT_PANE_TITLE = messageKey('command.next-pane.title');
@@ -2969,19 +3011,19 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [WORD_COUNT_PARTIAL]:
     'Counted {counted} of {total, plural, one {# page} other {# pages}} — these totals are incomplete.',
   [PAGE_STRUCTURE_COMMAND_TITLE]: 'Reading order',
-  [PAGE_STRUCTURE_TITLE]: 'Reading order and tags',
-  [PAGE_STRUCTURE_PAGE]: 'Tags on page {page}, in the order the document gives them.',
-  [PAGE_STRUCTURE_UNTAGGED]: 'This page has no tags.',
-  [PAGE_STRUCTURE_LINES]: '{count, plural, one {# line} other {# lines}}',
+  [PAGE_STRUCTURE_TITLE]: 'Reading order',
+  [PAGE_STRUCTURE_PAGE]: 'Items on page {page}, in the order a screen reader reads them.',
+  [PAGE_STRUCTURE_UNTAGGED]: 'This page has no tags, so a screen reader has no reading order to follow here.',
+  [PAGE_STRUCTURE_LINES]: '{count, plural, one {# line of text} other {# lines of text}}',
   [PAGE_STRUCTURE_UNTAGGED_LINES]:
-    '{count, plural, one {One line of text is outside every tag.} other {# lines of text are outside every tag.}}',
+    '{count, plural, one {One line of text is not in any tag, so a screen reader may skip it.} other {# lines of text are not in any tag, so a screen reader may skip them.}}',
   [PAGE_STRUCTURE_IMAGES]:
     '{count, plural, one {One image on this page.} other {# images on this page.}}',
   // A LIST THAT STOPS EARLY SAYS SO: a page shown tagged that far reads as a
   // page tagged that far.
-  [PAGE_STRUCTURE_TRUNCATED]: 'This page has more tags than can be shown here, so the list stops early.',
+  [PAGE_STRUCTURE_TRUNCATED]: 'This page has more items than can be shown here, so the list stops early.',
   [PAGE_STRUCTURE_REFUSED]:
-    'The tags on page {page} could not be read. The document may be busy or no longer open.',
+    'The reading order of page {page} could not be read. The document may be busy or no longer open.',
   [SPELL_CHECK_COMMAND_TITLE]: 'Spell check',
   // NAMES THE PAGE, because the command acts on the one in front of the reader
   // and the ribbon has no other way to say so. "Replace text" alone reads as
@@ -4620,7 +4662,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ACCESSIBILITY_COMMAND_TITLE]: 'Accessibility check',
   [ACCESSIBILITY_TITLE]: 'Accessibility check',
   [ACCESSIBILITY_SUMMARY]:
-    '{failed, plural, =0 {None of the automatic checks failed.} one {One automatic check failed.} other {# automatic checks failed.}} {undetermined, plural, =0 {} one {One could not be decided.} other {# could not be decided.}}',
+    '{failed, plural, =0 {No automatic check found a problem.} one {One check found a problem.} other {# checks found a problem.}} {undetermined, plural, =0 {} one {One more needs a person to look at it.} other {# more need a person to look at them.}}',
   [ACCESSIBILITY_NOT_CONFORMANCE]:
     'These are the PDF/UA checks a computer can make from the file. They do not show the document is accessible: the checks below need a person.',
   [ACCESSIBILITY_REFUSED]: 'The document could not be checked. It may be busy or no longer open.',
@@ -4654,6 +4696,69 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ACCESSIBILITY_HUMAN_COLOUR]: 'Colour is never the only way something is shown',
   [ACCESSIBILITY_HUMAN_LANGUAGE]: 'Passages in another language are marked as such',
   [ACCESSIBILITY_HUMAN_LINKS]: 'Link text says where each link goes',
+  // THE ACCESSIBILITY TAB (ADR-0183). Plain words: what is wrong, why it matters, and what to do — and where Monstera
+  // cannot make the repair, whose it is (the program that made the file), never a promise of a tool that does not exist.
+  [CONTEXT_PANEL_TAB_ACCESSIBILITY]: 'Accessibility',
+  [ACCESSIBILITY_SECTIONS_LABEL]: 'Accessibility tools',
+  [ACCESSIBILITY_SECTION_CHECK]: 'Check',
+  [ACCESSIBILITY_SECTION_ORDER]: 'Reading order',
+  [ACCESSIBILITY_INTRO]:
+    'Checks whether this document works for people who use a screen reader, and lists what to fix. The document is not changed.',
+  [ACCESSIBILITY_RUN]: 'Check this document',
+  [ACCESSIBILITY_RUN_AGAIN]: 'Check again',
+  [ACCESSIBILITY_RUNNING]: 'Checking the document…',
+  [ACCESSIBILITY_STALE]: 'The document has changed since this check. Check again to see where things stand now.',
+  [ACCESSIBILITY_ALL_CLEAR]:
+    'No automatic check found a problem. That does not mean the document is accessible: the checks at the bottom still need a person.',
+  [ACCESSIBILITY_FIX_HEADING]: 'Needs fixing',
+  [ACCESSIBILITY_PERSON_RESULT_HEADING]: 'Needs a person to check',
+  [ACCESSIBILITY_PASSED_HEADING]: '{count, plural, one {# check passed} other {# checks passed}}',
+  [ACCESSIBILITY_WHOLE_FILE]: 'This is about the whole file, so there is nothing to point to on a page.',
+  [ACCESSIBILITY_UNDECIDED]:
+    'Monstera cannot tell whether this is a problem, because the description may be kept on a tag it does not read. Check it by hand.',
+  [ACCESSIBILITY_SHOW_PROBLEM]: 'Page {page}',
+  [ACCESSIBILITY_SHOW_PROBLEM_LABEL]: 'Show problem {number} of {total}, on page {page}',
+  [ACCESSIBILITY_SHOWN_ON_PAGE]: 'Marked on page {page}.',
+  [ACCESSIBILITY_HIDE_MARK]: 'Clear the mark on the page',
+  [ACCESSIBILITY_COUNT]: '{count, plural, one {# problem} other {# problems}}',
+  [ORDER_READING]: 'Reading the items on page {page}…',
+  [ORDER_INTRO]: 'A screen reader reads this page in the order below. Choose an item to see where it is on the page.',
+  [ORDER_NO_TEXT]: 'No text',
+  [ORDER_SHOW_ITEM]: 'Show {name} on the page',
+  // EVERY NAME A PERSON SEES FOR A STRUCTURE TYPE, in one message: the `other` branch is the fallback, so a type this
+  // table does not know — an engine's own spelling, a name a document invented — is *Other element*, never the string.
+  [STRUCTURE_ROLE_NAME]:
+    '{role, select, Document {Document} Part {Part} Art {Article} Sect {Section} Div {Group} BlockQuote {Block quote} Caption {Caption} TOC {Table of contents} TOCI {Table of contents entry} Index {Index} NonStruct {Container} Private {Private element} DocumentFragment {Document fragment} Aside {Side note} Title {Title} FENote {Footnote} Sub {Sub-part} P {Paragraph} H {Heading} H1 {Heading 1} H2 {Heading 2} H3 {Heading 3} H4 {Heading 4} H5 {Heading 5} H6 {Heading 6} L {List} LI {List item} Lbl {List label} LBody {List text} Table {Table} TR {Table row} TH {Table header cell} TD {Table cell} THead {Table header rows} TBody {Table body} TFoot {Table footer} Span {Inline text} Quote {Quotation} Note {Note} Reference {Reference} BibEntry {Bibliography entry} Code {Code} Link {Link} Annot {Annotation} Em {Emphasis} Strong {Strong text} Ruby {Ruby annotation} RB {Ruby base} RT {Ruby text} RP {Ruby punctuation} Warichu {Warichu note} WT {Warichu text} WP {Warichu punctuation} Figure {Figure} Formula {Formula} Form {Form field} Artifact {Page decoration} other {Other element}}',
+  [ACCESSIBILITY_EXPLAIN_5_1]:
+    'The file does not say it follows the PDF/UA accessibility standard, so checkers cannot tell it was built for screen readers. Export it again from the program that made it, with the PDF/UA option switched on.',
+  [ACCESSIBILITY_EXPLAIN_6_2_1]:
+    'The file is not marked as tagged, so a screen reader treats each page as a flat picture of text and may read it in the wrong order. Add tags in the program that made the file, then export it again.',
+  [ACCESSIBILITY_EXPLAIN_7_1_4]:
+    'The tags are marked as suspect: the program that made them was not sure they are right. Check the tags in that program, then export the file again.',
+  [ACCESSIBILITY_EXPLAIN_7_1_5]:
+    'A tag has a made-up name that does not map to a standard one, so a screen reader does not know what it is. In the program that made the file, map each custom tag to a standard one.',
+  [ACCESSIBILITY_EXPLAIN_7_1_8]:
+    'The file has no document information, so assistive software cannot read out its title or details. Fill in the title in the program that made the file, then export it again.',
+  [ACCESSIBILITY_EXPLAIN_7_1_9]:
+    'The document has no title, so a screen reader announces the file name instead. Give the document a title in the program that made it.',
+  [ACCESSIBILITY_EXPLAIN_7_1_10]:
+    'The window title shows the file name instead of the document’s title. In the program that made the file, turn on the option to show the document title.',
+  [ACCESSIBILITY_EXPLAIN_7_1_11]:
+    'The file has no tags at all, so a screen reader cannot find its headings, lists or tables. Add tags in the program that made the file, then export it again.',
+  [ACCESSIBILITY_EXPLAIN_7_3_1]:
+    'A picture has no description, so a screen reader cannot say what it shows. Add alternative text to each picture in the program that made the file.',
+  [ACCESSIBILITY_EXPLAIN_7_16_1]:
+    'The password protection stops assistive software from reading the text. When you set a password, leave “text access for screen readers” allowed.',
+  [ACCESSIBILITY_EXPLAIN_7_18_1_2]:
+    'A comment or mark has no description, so a screen reader cannot say what it is. Give each one a short description in the program that made it.',
+  [ACCESSIBILITY_EXPLAIN_7_18_1_3]:
+    'A form field has no label, so a screen reader user cannot tell what to type in it. Give each field a short description, such as its tooltip, in the program that made the form.',
+  [ACCESSIBILITY_EXPLAIN_7_18_3_1]:
+    'A page with comments or form fields does not follow the tag order when you press Tab, so keyboard users jump around. Set the page’s tab order to follow the document structure, in the program that made the file.',
+  [ACCESSIBILITY_EXPLAIN_7_18_5_2]:
+    'A link has no description: screen readers can’t say where it goes. Give each link a short description in the program that made the file.',
+  [ACCESSIBILITY_EXPLAIN_7_21_4_1_1]:
+    'A font is not stored inside the file, so another computer may show different letters, or none. Export the file again with the fonts embedded.',
   [EXPORT_ANNOTATIONS_JSON_TITLE]: 'Export comments as JSON…',
   [EXPORT_ANNOTATIONS_XFDF_TITLE]: 'Export comments as XFDF…',
   [EXPORT_ANNOTATIONS_FDF_TITLE]: 'Export comments as FDF…',

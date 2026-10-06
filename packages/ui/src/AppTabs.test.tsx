@@ -98,8 +98,12 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
 
   const built = createClient(channels, (id, params) => {
     sent.push({ id, params });
-    if (id === 'document.open') {
-      return Promise.resolve(ok(opens.shift() ?? { kind: 'cancelled' as const }));
+    // THE OPEN COMMAND IS THE SEVERAL-FILES CHANNEL (ADR-0182): one file per ask here, an empty list for a dismissal.
+    if (id === 'document.openSeveral') {
+      const next = opens.shift();
+      return Promise.resolve(
+        ok({ opened: next === undefined ? [] : [{ name: next.kind === 'opened' ? next.name : 'annual.pdf', outcome: next }] }),
+      );
     }
     if (id === 'document.close') return Promise.resolve(ok({ closed: true }));
     // CLEAN: these cases are about tabs, and closing one here must not stop to ask.

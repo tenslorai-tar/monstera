@@ -118,31 +118,40 @@ test('accessibility-check-1', async ({ page }) => {
   // unembedded standard fonts shared by all eight pages. Pages are the kernel's 0-based indices; the command turns
   // them into the numbers a person reads.
   const everyPage = [0, 1, 2, 3, 4, 5, 6, 7];
+  /** A rule's answer; a failure on pages is placed on each page as a whole, as the kernel places a font. */
+  const rule = (
+    clause: string,
+    test: number,
+    verdict: 'passed' | 'failed' | 'not-applicable',
+    count: number,
+    pages: readonly number[],
+  ) => ({ clause, test, verdict, count, pages, spots: pages.map((each) => ({ page: each, box: null })) });
   await openApp(page, {
     accessibilityRules: [
-      { clause: '5', test: 1, verdict: 'not-applicable', count: 0, pages: [] },
-      { clause: '6.2', test: 1, verdict: 'failed', count: 1, pages: [] },
-      { clause: '7.1', test: 4, verdict: 'passed', count: 0, pages: [] },
-      { clause: '7.1', test: 8, verdict: 'failed', count: 1, pages: [] },
-      { clause: '7.1', test: 9, verdict: 'not-applicable', count: 0, pages: [] },
-      { clause: '7.1', test: 10, verdict: 'failed', count: 1, pages: [] },
-      { clause: '7.1', test: 11, verdict: 'failed', count: 1, pages: [] },
-      { clause: '7.1', test: 5, verdict: 'not-applicable', count: 0, pages: [] },
-      { clause: '7.3', test: 1, verdict: 'not-applicable', count: 0, pages: [] },
-      { clause: '7.16', test: 1, verdict: 'not-applicable', count: 0, pages: [] },
-      { clause: '7.18.1', test: 2, verdict: 'not-applicable', count: 0, pages: [] },
-      { clause: '7.18.1', test: 3, verdict: 'not-applicable', count: 0, pages: [] },
-      { clause: '7.18.3', test: 1, verdict: 'not-applicable', count: 0, pages: [] },
-      { clause: '7.18.5', test: 2, verdict: 'not-applicable', count: 0, pages: [] },
-      { clause: '7.21.4.1', test: 1, verdict: 'failed', count: 2, pages: everyPage },
+      rule('5', 1, 'not-applicable', 0, []),
+      rule('6.2', 1, 'failed', 1, []),
+      rule('7.1', 4, 'passed', 0, []),
+      rule('7.1', 8, 'failed', 1, []),
+      rule('7.1', 9, 'not-applicable', 0, []),
+      rule('7.1', 10, 'failed', 1, []),
+      rule('7.1', 11, 'failed', 1, []),
+      rule('7.1', 5, 'not-applicable', 0, []),
+      rule('7.3', 1, 'not-applicable', 0, []),
+      rule('7.16', 1, 'not-applicable', 0, []),
+      rule('7.18.1', 2, 'not-applicable', 0, []),
+      rule('7.18.1', 3, 'not-applicable', 0, []),
+      rule('7.18.3', 1, 'not-applicable', 0, []),
+      rule('7.18.5', 2, 'not-applicable', 0, []),
+      rule('7.21.4.1', 1, 'failed', 2, everyPage),
     ],
   });
   await openDocument(page);
   await openSection(page, 'Review');
   await runCommand(page, 'Accessibility check');
-  const dialog = page.getByRole('dialog', { name: 'Accessibility check' });
-  await expect(dialog).toBeVisible();
-  await shoot(page, 'accessibility-check-1', dialog);
+  const panel = page.locator('[data-context-panel="accessibility"]');
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText('Needs fixing')).toBeVisible();
+  await shoot(page, 'accessibility-check-1', panel);
 });
 
 test('bates-numbering-1', async ({ page }) => {

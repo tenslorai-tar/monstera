@@ -41,6 +41,7 @@ function drawn(settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS)))
       <ContextPanel
         assistant={<p>assistant content</p>}
         spelling={<p>spelling content</p>}
+        accessibility={<p>accessibility content</p>}
         settings={settings}
         presence={presence}
       >
@@ -106,9 +107,14 @@ describe('ContextPanel', () => {
     expect(screen.getByText('assistant content')).toBeDefined();
   });
 
-  it('THREE TABS, each showing its own content and only its own, and a click moves the one setting (ADR-0156)', async () => {
+  it('FOUR TABS, each showing its own content and only its own, and a click moves the one setting (ADR-0156, ADR-0183)', async () => {
     const settings = drawn();
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toStrictEqual(['Properties', 'Assistant', 'Spelling']);
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toStrictEqual([
+      'Properties',
+      'Assistant',
+      'Spelling',
+      'Accessibility',
+    ]);
     await act(async () => {
       screen.getByRole('tab', { name: 'Spelling' }).click();
       await Promise.resolve();
@@ -118,6 +124,14 @@ describe('ContextPanel', () => {
     // CONTROL: neither of the other two is drawn beside it, so the content above is the tab's and not a list of all.
     expect(screen.queryByText('properties content')).toBeNull();
     expect(screen.queryByText('assistant content')).toBeNull();
+    // AND THE FOURTH IS ITS OWN, reached the same way.
+    await act(async () => {
+      screen.getByRole('tab', { name: 'Accessibility' }).click();
+      await Promise.resolve();
+    });
+    expect(settings.get(CONTEXT_PANEL_TAB_SETTING.id)).toBe('accessibility');
+    expect(screen.getByText('accessibility content')).toBeDefined();
+    expect(screen.queryByText('spelling content')).toBeNull();
   });
 
   it('a STORED collapse is what opens', () => {

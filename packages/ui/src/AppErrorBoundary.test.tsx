@@ -81,6 +81,15 @@ const ANSWERS: Readonly<Record<string, unknown>> = {
     byteLength: 1024,
     name: 'annual.pdf',
   },
+  // THE OPEN COMMAND IS THE SEVERAL-FILES CHANNEL (ADR-0182), answering the same one document.
+  'document.openSeveral': {
+    opened: [
+      {
+        name: 'annual.pdf',
+        outcome: { kind: 'opened' as const, docId: DOC, version: asDocVersion(1), byteLength: 1024, name: 'annual.pdf' },
+      },
+    ],
+  },
   'document.readRange': { kind: 'bytes' as const, bytes: new Uint8Array(8) },
   'document.viewModel': { version: asDocVersion(1), pageCount: 2, rotations: [90] },
   // The scroller asks every visible page for its selectable text; these cases

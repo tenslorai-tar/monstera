@@ -7,7 +7,7 @@ import {
 } from '@monstera/contract';
 
 import type { CommandExecution, KindsRoutedTo } from '../commandSpecs.js';
-import type { HUMAN_CHECKS } from '../accessibilityRules.js';
+import type { AccessibilitySpot, HUMAN_CHECKS } from '../accessibilityRules.js';
 import type { FoundBarcode } from '../barcodeReader.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { MupdfSession } from '../engineSeam.js';
@@ -631,6 +631,7 @@ export interface AccessibilityReportOnWire {
     readonly verdict: 'passed' | 'failed' | 'not-applicable' | 'not-determined';
     readonly count: number;
     readonly pages: readonly number[];
+    readonly spots: readonly AccessibilitySpot[];
   }[];
   readonly humanChecks: readonly (typeof HUMAN_CHECKS)[number][];
 }

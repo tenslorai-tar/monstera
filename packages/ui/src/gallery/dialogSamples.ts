@@ -1,5 +1,4 @@
 import {
-  ACCESSIBILITY_HUMAN_CHECKS,
   MAX_SIGNATURE_FIELD,
   OCR_LANGUAGES,
 } from '@monstera/contract';
@@ -168,18 +167,6 @@ const SHORTCUTS = [
 ];
 
 
-const STRUCTURE = [
-  { role: 'Document', raw: 'Document', depth: 0, lines: 0 },
-  { role: 'H1', raw: 'H1', depth: 1, lines: 1 },
-  { role: 'P', raw: 'P', depth: 1, lines: 6 },
-  { role: 'H2', raw: 'Heading2', depth: 1, lines: 1 },
-  { role: 'P', raw: 'P', depth: 1, lines: 4 },
-  { role: 'Table', raw: 'Table', depth: 1, lines: 0 },
-  { role: 'TR', raw: 'TR', depth: 2, lines: 0 },
-  { role: 'TD', raw: 'TD', depth: 3, lines: 1 },
-  { role: 'Figure', raw: 'Figure', depth: 1, lines: 0 },
-];
-
 const SIGNATURES = [
   {
     signer: 'Example Signer',
@@ -239,21 +226,6 @@ const EXCEL = {
   edits: [],
   range: { every: true, text: '' },
 };
-
-const RULES = [
-  { clause: '7.1', test: 4, verdict: 'passed', count: 0, pages: [] },
-  { clause: '7.1', test: 8, verdict: 'passed', count: 0, pages: [] },
-  { clause: '7.3', test: 1, verdict: 'failed', count: 2, pages: [1, 5] },
-  { clause: '7.18.1', test: 2, verdict: 'not-determined', count: 0, pages: [] },
-  { clause: '7.21.4.1', test: 1, verdict: 'not-applicable', count: 0, pages: [] },
-];
-const EVERY_RULE = [
-  '5-1', '6.2-1', '7.1-4', '7.1-5', '7.1-8', '7.1-9', '7.1-10', '7.1-11', '7.3-1', '7.16-1', '7.18.1-2', '7.18.1-3',
-  '7.18.3-1', '7.18.5-2', '7.21.4.1-1',
-].map((rule) => {
-  const [clause = '', test = '1'] = rule.split('-');
-  return { clause, test: Number(test), verdict: 'failed', count: 14, pages: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] };
-});
 
 const SETTINGS = {
   values: {},
@@ -446,27 +418,6 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
         pageCount: 12,
       },
     },
-  ],
-  'dialog.pageStructure': [
-    { state: 'opened', props: { kind: 'read', page: 2, nodes: STRUCTURE, truncated: false, untaggedLines: 0, images: 1 } },
-    { state: 'untagged', props: { kind: 'read', page: 2, nodes: [], truncated: false, untaggedLines: 38, images: 2 } },
-    {
-      state: 'long',
-      props: {
-        kind: 'read',
-        page: 4,
-        nodes: Array.from({ length: 60 }, (_unused, at) => ({
-          role: at % 3 === 0 ? 'H2' : 'P',
-          raw: at % 3 === 0 ? 'SectionHeadingWithAVeryLongCustomTagNameFromTheAuthoringTool' : 'P',
-          depth: (at % 4) + 1,
-          lines: at % 3 === 0 ? 1 : 5,
-        })),
-        truncated: true,
-        untaggedLines: 3,
-        images: 4,
-      },
-    },
-    { state: 'refused', props: { kind: 'refused', page: 2 } },
   ],
   'dialog.ocr': [
     { state: 'opened', props: { pages: [0], languages: ['eng', 'fra', 'deu', 'spa'], chosen: ['eng'], servicesReady: false } },
@@ -747,7 +698,14 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'refused', props: {}, steps: [type('Address', 'http://example.com/reports/quarterly-report.pdf')] },
   ],
   'dialog.url-open-problem': [{ state: 'opened', props: { reason: 'not-a-pdf' } }],
-  'dialog.open-problem': [{ state: 'opened', props: { reason: 'busy' } }],
+  'dialog.open-problem': [
+    { state: 'opened', props: { problems: [{ reason: 'busy' }] } },
+    // SEVERAL FILES (ADR-0182): each by name, with its own sentence.
+    {
+      state: 'several',
+      props: { problems: [{ reason: 'absent', name: 'quarterly-report.pdf' }, { reason: 'busy', name: 'contract.pdf' }] },
+    },
+  ],
   'dialog.read-only-file': [
     { state: 'opened', props: { access: 'read-only' } },
     { state: 'held', props: { access: 'held' } },
@@ -923,11 +881,6 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       },
     },
     { state: 'refused', props: { kind: 'refused', page: 1 } },
-  ],
-  'dialog.accessibility-check': [
-    { state: 'opened', props: { kind: 'checked', rules: RULES, humanChecks: [...ACCESSIBILITY_HUMAN_CHECKS] } },
-    { state: 'long', props: { kind: 'checked', rules: EVERY_RULE, humanChecks: [...ACCESSIBILITY_HUMAN_CHECKS] } },
-    { state: 'refused', props: { kind: 'refused' } },
   ],
   'dialog.place-barcode': [
     { state: 'opened', props: {} },

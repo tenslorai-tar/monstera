@@ -147,8 +147,8 @@ is not available.
 
 ## Ribbon › Review
 
-- [ ] **Reading order** — Accessibility · `document.inspect-page-structure` · Shows: a result dialog · Help: *See a page's reading order and tags*
-- [ ] **Accessibility check** — Accessibility · `document.accessibility-check` · Shows: a result dialog · Help: *Run an accessibility check*
+- [ ] **Reading order** — Accessibility · `document.inspect-page-structure` · Shows: on screen · Help: *See a page's reading order*
+- [ ] **Accessibility check** — Accessibility · `document.accessibility-check` · Shows: on screen · Help: *Run an accessibility check*
 - [ ] **Open the assistant** — AI · `ai.open-assistant` · Shows: on screen · Help: *Ask the AI assistant about a document*
 - [ ] **Set up AI…** — AI · `ai.setup` · Shows: a toast · Help: *Get and add keys for AI and online reading services*
 - [ ] **Summarise comments** — AI · `ai.summarise-comments` · Shows: on screen · Help: *Summarise a document's comments with AI*

@@ -4033,7 +4033,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
         // PAGE 2 TAGGED, page 1 not: a check of the first page alone is red here.
         structure: (page) => {
           asked.push(page);
-          return page === 1 ? [{ role: 'P', raw: 'P', depth: 0, lines: 1 }] : [];
+          return page === 1 ? [{ role: 'P', raw: 'P', depth: 0, lines: 1, box: null }] : [];
         },
       });
 

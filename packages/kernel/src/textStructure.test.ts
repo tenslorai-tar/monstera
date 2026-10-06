@@ -8,6 +8,7 @@ import {
   STEXT_OPTIONS,
   linesOf,
   parsePageStructure,
+  structureTypeName,
   parsePageTables,
   parsePageText,
   plainTextOf,
@@ -302,13 +303,38 @@ describe('parsePageStructure', () => {
   it('reads the elements in TREE order, with their depth and their own lines', () => {
     expect(parsePageStructure(taggedPage())).toStrictEqual({
       nodes: [
-        { role: 'Document', raw: 'Document', depth: 0, lines: 0 },
-        { role: 'P', raw: 'P', depth: 1, lines: 1 },
-        { role: 'P', raw: 'P', depth: 1, lines: 1 },
+        // THE DOCUMENT COVERS BOTH PARAGRAPHS: an element is where what it holds is, and an item picked in the reading
+        // order is shown by the whole of it — the union, not the (empty) set of its own direct lines.
+        { role: 'Document', raw: 'Document', depth: 0, lines: 0, box: { x0: 72, y0: 180, x1: 152, y1: 596 } },
+        { role: 'P', raw: 'P', depth: 1, lines: 1, box: { x0: 72, y0: 180, x1: 152, y1: 196 } },
+        { role: 'P', raw: 'P', depth: 1, lines: 1, box: { x0: 72, y0: 580, x1: 152, y1: 596 } },
       ],
       untaggedLines: 0,
       images: 0,
     });
+  });
+
+  it('spells the engine’s misspelt type as the standard does — NonDtruct is NonStruct (MuPDF 1.28.0, device.c:966)', () => {
+    // THE ENGINE'S OWN OUTPUT, not ours: `fz_structure_to_string` returns this for FZ_STRUCTURE_NONSTRUCT.
+    const json = (std: string): string =>
+      JSON.stringify({
+        blocks: [
+          { type: 'structure', raw: 'NonStruct', std, contents: [{ type: 'text', lines: [{ bbox: { x: 0, y: 0, w: 1, h: 1 }, x: 0, y: 0, text: 'a' }] }] },
+        ],
+      });
+    expect(parsePageStructure(json('NonDtruct')).nodes.map((node) => node.role)).toStrictEqual(['NonStruct']);
+    // CONTROL: the standard's own spelling is left alone, which is what keeps this correct the day MuPDF fixes the typo.
+    expect(parsePageStructure(json('NonStruct')).nodes.map((node) => node.role)).toStrictEqual(['NonStruct']);
+    // AND AN ORDINARY NAME PASSES THROUGH UNCHANGED, so the table is not a rewrite of every name.
+    expect(structureTypeName('P')).toBe('P');
+    expect(structureTypeName('')).toBe('');
+  });
+
+  it('an element with no text line inside it has no box', () => {
+    const json = JSON.stringify({
+      blocks: [{ type: 'structure', raw: 'Figure', std: 'Figure', contents: [{ type: 'image', bbox: { x: 5, y: 5, w: 40, h: 40 } }] }],
+    });
+    expect(parsePageStructure(json).nodes).toStrictEqual([{ role: 'Figure', raw: 'Figure', depth: 0, lines: 0, box: null }]);
   });
 
   it('walks THROUGH segmentation’s blocks: an untagged page has no elements', () => {
@@ -356,7 +382,7 @@ describe('parsePageStructure', () => {
     // beside it belongs to no element, so it is counted as untagged rather than
     // given to the element that happened to close just before it.
     expect(parsePageStructure(json)).toStrictEqual({
-      nodes: [{ role: 'Caption', raw: 'Caption', depth: 0, lines: 1 }],
+      nodes: [{ role: 'Caption', raw: 'Caption', depth: 0, lines: 1, box: { x0: 0, y0: 0, x1: 1, y1: 1 } }],
       untaggedLines: 1,
       images: 1,
     });

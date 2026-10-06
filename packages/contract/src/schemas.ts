@@ -690,3 +690,25 @@ export const DOCUMENT_ACCESS_VALUES = [1, 2, 4, 6] as const;
 
 /** One of {@link DOCUMENT_ACCESS_VALUES}. */
 export type DocumentAccess = (typeof DOCUMENT_ACCESS_VALUES)[number];
+
+/** How many failures of one accessibility rule show their place on the page (ADR-0183). A bound, not a measurement. */
+export const MAX_ACCESSIBILITY_SPOTS = 32;
+
+/**
+ * Where an accessibility failure is: a zero-based page, and a box on it in the page's display space at scale 1 — the
+ * space the text layer and the links are reported in — or `null` where the object model places it on the page only
+ * (ADR-0183).
+ *
+ * In this leaf for {@link DOCUMENT_ACCESS_VALUES}' reason: the engine host's wire and the renderer's channel take ONE
+ * schema, so the two cannot differ about a box — and the host may load this module, which it may not do the channel
+ * map (`host.ts`).
+ */
+export const accessibilitySpotsSchema = z
+  .array(
+    z.object({
+      page: z.number().int().nonnegative(),
+      box: z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() }).nullable(),
+    }),
+  )
+  .max(MAX_ACCESSIBILITY_SPOTS)
+  .readonly();

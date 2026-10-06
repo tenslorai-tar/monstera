@@ -1,5 +1,4 @@
 import { ABOUT_DIALOG } from '../dialogs/about.js';
-import { ACCESSIBILITY_DIALOG } from '../dialogs/accessibilityCheck.js';
 import { AI_SETUP_DIALOG } from '../dialogs/aiSetup.js';
 import { APPLY_REDACTIONS_DIALOG } from '../dialogs/applyRedactions.js';
 import { BATES_NUMBER_DIALOG } from '../dialogs/batesNumber.js';
@@ -47,7 +46,6 @@ import { OCR_OUTCOME_DIALOG } from '../dialogs/ocrOutcome.js';
 import { OPEN_FROM_URL_DIALOG } from '../dialogs/openFromUrl.js';
 import { OPTIMIZE_DIALOG } from '../dialogs/optimize.js';
 import { PAGE_BARCODES_DIALOG } from '../dialogs/pageBarcodes.js';
-import { PAGE_STRUCTURE_DIALOG } from '../dialogs/pageStructure.js';
 import { PAGE_TRANSITION_DIALOG } from '../dialogs/pageTransition.js';
 import { PDFA_REMOVALS_DIALOG } from '../dialogs/pdfaRemovals.js';
 import { PENDING_REDACTIONS_DIALOG } from '../dialogs/pendingRedactions.js';
@@ -104,7 +102,6 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   KEYBOARD_SHORTCUTS_DIALOG,
   HELP_DIALOG,
   WORD_COUNT_DIALOG,
-  PAGE_STRUCTURE_DIALOG,
   OCR_DIALOG,
   TRANSLATE_PAGE_DIALOG,
   OCR_OUTCOME_DIALOG,
@@ -173,7 +170,6 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   PDFA_REMOVALS_DIALOG,
   OPTIMIZE_DIALOG,
   PAGE_BARCODES_DIALOG,
-  ACCESSIBILITY_DIALOG,
   PLACE_BARCODE_DIALOG,
   DUPLICATE_PAGES_DIALOG,
   SETTINGS_PROBLEM_DIALOG,
