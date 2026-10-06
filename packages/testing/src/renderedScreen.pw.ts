@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
 // THE NAMED EXPORT. `@axe-core/playwright` publishes
 // `export { AxeBuilder, AxeBuilder as default }`, and under this repository's
 // `verbatimModuleSyntax` the default import resolves to the namespace rather
@@ -5015,6 +5018,80 @@ for (const look of LOOKS) {
       blocking,
       blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
     ).toEqual([]);
+  });
+}
+
+// A RUN DRAWN IN ITS OWN FONT (ADR-0175), in a real browser and every look: the font crosses as bytes, loads as a face
+// under the renderer's own policy, and the run is DRAWN in it, while the run beside it with none keeps its kind of face.
+// LIBERATION SANS from pdfjs-dist, which every install has, given to a MONO run: a proportional face and a monospace one
+// set the same words to different widths, so the width says which face drew them — a family name alone would pass for a
+// face that never loaded.
+const RUN_FONT = new Uint8Array(
+  readFileSync(createRequire(import.meta.url).resolve('pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf')),
+);
+const MONO_RUN = { ...BODY_RUN, mono: true };
+
+for (const look of LOOKS) {
+  test(`${look.name}: a run is DRAWN in the font the host rebuilt, its neighbour in its kind, and the face leaves with the editor`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000e3');
+    const words = 'iiiiiiii WWWW';
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'fonts.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      textBlocks: [
+        {
+          box: { x0: 100, y0: 600, x1: 400, y1: 700 },
+          lines: [
+            { runs: [{ index: 1, text: words, style: MONO_RUN }], box: { x0: 100, y0: 680, x1: 400, y1: 700 } },
+            { runs: [{ index: 2, text: words, style: MONO_RUN }], box: { x0: 100, y0: 650, x1: 400, y1: 670 } },
+          ],
+          style: MONO_RUN,
+        },
+      ],
+      runFonts: { fonts: [RUN_FONT], runs: new Map([[1, 0]]) },
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Edit text on the page');
+    await page.keyboard.press('Enter');
+    await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').click();
+
+    const own = page.locator('[data-text-editor] .m-text-editor__run[data-run="1"]');
+    const kind = page.locator('[data-text-editor] .m-text-editor__run[data-run="2"]');
+    await expect(own).toHaveAttribute('data-run-font', /^m-run-[a-zA-Z0-9]+-0$/u);
+    const family = (await own.getAttribute('data-run-font')) ?? '';
+    const faceOf = (run: typeof own) =>
+      run.evaluate((element) => ({ family: getComputedStyle(element).fontFamily, width: element.getBoundingClientRect().width }));
+    const drawn = await faceOf(own);
+    const kept = await faceOf(kind);
+    // ITS OWN FONT FIRST and the kind behind it; the neighbour with none is the kind alone.
+    expect(drawn.family.startsWith(family)).toBe(true);
+    expect(drawn.family).toContain('monospace');
+    expect(kept.family.startsWith('Consolas')).toBe(true);
+    // DRAWN IN IT: the same words, set proportionally, are at least a fifth narrower than the kind's monospace.
+    expect(drawn.width).toBeLessThan(kept.width * 0.8);
+    const loaded = (name: string) =>
+      page.evaluate((wanted) => [...document.fonts].some((face) => face.family === wanted && face.status === 'loaded'), name);
+    expect(await loaded(family)).toBe(true);
+
+    await page.screenshot({ path: test.info().outputPath(`run-font-${look.name}.png`) });
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+
+    // THE FACE LEAVES WITH THE EDITOR: Escape with nothing changed closes it, and the document holds the face no more.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-text-editor]')).toHaveCount(0);
+    expect(await loaded(family)).toBe(false);
   });
 }
 

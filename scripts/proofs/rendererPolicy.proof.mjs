@@ -93,6 +93,8 @@ const RUNTIME_CASES = [
   'the renderer RECEIVES the policy the shell declares',
   'CONTROL: a policy the renderer does NOT have is not reported as delivered',
   'the renderer OBEYS it: no network under connect-src none, no eval',
+  'a font from BYTES loads under the policy with no violation, which is how a run font arrives (ADR-0175)',
+  'CONTROL: the SAME font by a data: URL is refused under font-src',
   'style-src ADMITS the splitter drag cursor by its granted hash, and the style APPLIES',
   'CONTROL: the same style one space longer is REFUSED and does not apply',
   'the React shell MOUNTS under the pinned policy, so script-src self permits the bundle',
@@ -289,6 +291,7 @@ function pinnedPolicy(markdown) {
  *   delivered: string | null,
  *   connectBlocked: boolean,
  *   evalBlocked: boolean,
+ *   fonts: { fromBytes: string, byBytes: number, byUrl: string, violated: string[] },
  *   styleElements: {
  *     hashed: { blocked: boolean, cursor: string },
  *     altered: { blocked: boolean, cursor: string },
@@ -534,6 +537,22 @@ try {
         `A header can arrive and be IGNORED — Chromium drops a directive list it cannot parse, ` +
         `and a dropped policy is indistinguishable from an enforced one if all you compare is ` +
         `the string. This is the set-versus-enforced distinction invariant 25 refuses to elide.`,
+    );
+
+    check(
+      'a font from BYTES loads under the policy with no violation, which is how a run font arrives (ADR-0175)',
+      seen.fonts.fromBytes === 'loaded' && seen.fonts.byBytes === 0,
+      `the face built from bytes ended "${seen.fonts.fromBytes}" with ${String(seen.fonts.byBytes)} violation(s). ` +
+        `The editor draws a run in a font that crosses as bytes and loads as a FontFace from them; refused here, ` +
+        `every run would draw in its kind of face and nothing would say so.`,
+    );
+
+    check(
+      'CONTROL: the SAME font by a data: URL is refused under font-src',
+      seen.fonts.byUrl === 'error' && seen.fonts.violated.includes('font-src'),
+      `the face named by a data: URL ended "${seen.fonts.byUrl}" with violations ${JSON.stringify(seen.fonts.violated)}. ` +
+        `The bytes are the ones that loaded above, so a refusal here is the policy's and not a font Chromium could not ` +
+        `read; a policy that admitted data: or blob: fonts would let this one through, which ADR-0175 rejected.`,
     );
 
     check(

@@ -5494,19 +5494,31 @@ optgroup {
   outline: none;
 }
 
+/* EACH KIND NAMES ITS FACES ONCE, as a property, so a run drawn in its own font can put that font first and keep its
+   kind behind it (ADR-0175) without a second copy of the list. */
 .m-text-editor--sans,
 .m-inline-writer__block--sans {
-  font-family: Arial, Helvetica, sans-serif;
+  --m-kind-face: Arial, Helvetica, sans-serif;
+  font-family: var(--m-kind-face);
 }
 
 .m-text-editor--serif,
 .m-inline-writer__block--serif {
-  font-family: 'Times New Roman', Times, serif;
+  --m-kind-face: 'Times New Roman', Times, serif;
+  font-family: var(--m-kind-face);
 }
 
 .m-text-editor--mono,
 .m-inline-writer__block--mono {
-  font-family: Consolas, 'Courier New', monospace;
+  --m-kind-face: Consolas, 'Courier New', monospace;
+  font-family: var(--m-kind-face);
+}
+
+/* A RUN IN ITS OWN FONT, the one the host rebuilt from the run's program (ADR-0175): that font first, and its kind of
+   face for a character the person types that the font does not carry. Two classes, so it outranks the kind's rule
+   whatever order the two are declared in. */
+.m-text-editor__run.m-text-editor__run--own {
+  font-family: var(--m-run-font), var(--m-kind-face);
 }
 
 /*

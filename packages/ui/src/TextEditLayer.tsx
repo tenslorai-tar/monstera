@@ -1,11 +1,11 @@
 import { useLingui } from '@lingui/react';
 import { type DocVersion, lineText, pdfPoint, toViewport } from '@monstera/shared';
 import type React from 'react';
-import { type ReactElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform } from './annotations/annotationSpace.js';
-import type { BlockCommit, TextBlock } from './commands/documentCommands.js';
+import type { BlockCommit, RunFonts, TextBlock } from './commands/documentCommands.js';
 import { problemMessage, problemParticulars } from './dialogs/problemMessages.js';
 import {
   TEXT_EDIT_BLOCK_LABEL,
@@ -69,6 +69,8 @@ export interface TextEditLayerProps {
   readonly blocks: PageBlocks | undefined;
   /** Writes one block's new words, at the version the blocks were read at. */
   readonly onCommit: (block: TextBlock, text: string, version: DocVersion) => Promise<BlockCommit>;
+  /** The fonts the open block's runs are drawn in, rebuilt by the host, at the version it was read at (ADR-0175). */
+  readonly runFonts: (block: TextBlock, version: DocVersion) => Promise<RunFonts>;
   /** Unpacks the page's blocked-in text so it can be edited. */
   readonly onPromote: () => void;
   /** Leaves the mode: Escape pressed with no block open. */
@@ -216,6 +218,7 @@ export function TextEditLayer({
   geometry,
   blocks,
   onCommit,
+  runFonts,
   onPromote,
   onLeave,
   paperAt,
@@ -310,6 +313,7 @@ export function TextEditLayer({
               paper={paperAround(placed, paperAt)}
               past={pastItsPage(block.box, geometry.crop)}
               placed={placed}
+              runFonts={() => runFonts(block, blocks.version)}
             />
           );
         }
@@ -360,6 +364,8 @@ export interface TextEditing {
   /** Reads one page's blocks, or `undefined` where the read was refused. */
   readonly read: (page: number) => Promise<PageBlocks | undefined>;
   readonly onCommit: (page: number, block: TextBlock, text: string, version: DocVersion) => Promise<BlockCommit>;
+  /** The fonts one block's runs are drawn in, as the host rebuilt them, at the version the block was read at (ADR-0175). */
+  readonly runFonts: (page: number, block: TextBlock, version: DocVersion) => Promise<RunFonts>;
   readonly onPromote: (page: number) => void;
   readonly onLeave: () => void;
 }
@@ -407,6 +413,7 @@ export function TextEditPage({
       geometry={geometry}
       onCommit={(block, text, at) => editing.onCommit(page, block, text, at)}
       onLeave={editing.onLeave}
+      runFonts={(block, at) => editing.runFonts(page, block, at)}
       onPromote={() => {
         editing.onPromote(page);
       }}
@@ -426,6 +433,69 @@ interface BlockEditorProps {
   readonly onCommit: (text: string) => Promise<BlockCommit>;
   /** Closes the editor: after a write, after nothing to write, or put back with Escape after a refusal. */
   readonly onClose: (outcome: 'written' | 'unchanged' | 'put-back') => void;
+  /** The fonts this block's runs are drawn in, read once when the editor opens (ADR-0175). */
+  readonly runFonts: () => Promise<RunFonts>;
+}
+
+/**
+ * The family a rebuilt font is loaded under: this editor's and the font's place, so two editors, two documents or two
+ * versions never share a name (ADR-0175's correction). `useId`'s punctuation is dropped, since the name is written into
+ * a CSS value and a family of letters and digits needs no quoting rule.
+ */
+function familyOf(editor: string, place: number): string {
+  return `m-run-${editor.replace(/[^a-zA-Z0-9]/gu, '')}-${String(place)}`;
+}
+
+/**
+ * Loads `fonts` as faces of this editor and draws every run that has one in it, removing the faces when the editor
+ * closes. A face the browser refuses to load — its own sanitiser declining the bytes — leaves its runs in their kind of
+ * face and marks them `data-run-font="refused"`, so the outcome is on the element rather than nowhere.
+ */
+function useRunFonts(
+  area: React.RefObject<HTMLDivElement | null>,
+  read: () => Promise<RunFonts>,
+  editor: string,
+): void {
+  useEffect(() => {
+    const element = area.current;
+    if (element === null) return;
+    const owner = element.ownerDocument;
+    let current = true;
+    const added: FontFace[] = [];
+    void read().then(async ({ fonts, runs }) => {
+      if (fonts.length === 0) return;
+      const faces = await Promise.all(
+        fonts.map((bytes, place) => {
+          const face = new FontFace(familyOf(editor, place), bytes);
+          return face.load().then(
+            () => face,
+            () => undefined,
+          );
+        }),
+      );
+      if (!current) return;
+      for (const face of faces) {
+        if (face === undefined) continue;
+        owner.fonts.add(face);
+        added.push(face);
+      }
+      for (const span of element.querySelectorAll<HTMLElement>('.m-text-editor__run[data-run]')) {
+        const place = runs.get(Number(span.dataset['run']));
+        if (place === undefined) continue;
+        if (faces[place] === undefined) {
+          span.dataset['runFont'] = 'refused';
+          continue;
+        }
+        span.dataset['runFont'] = familyOf(editor, place);
+        span.classList.add('m-text-editor__run--own');
+        span.style.setProperty('--m-run-font', familyOf(editor, place));
+      }
+    });
+    return () => {
+      current = false;
+      for (const face of added) owner.fonts.delete(face);
+    };
+  }, [area, editor, read]);
 }
 
 /** What a run is drawn in: the page's own values — size, fill, weight, slant — and the face kind by class. */
@@ -462,7 +532,16 @@ function drawRun(span: HTMLElement, style: TextBlock['style'], zoom: number): vo
  * types, the DOM is theirs, and a render that reconciled the runs over it would
  * put the page's words back over what they typed.
  */
-function BlockEditor({ block, geometry, placed, paper, past, onCommit, onClose }: BlockEditorProps): ReactElement {
+function BlockEditor({
+  block,
+  geometry,
+  placed,
+  paper,
+  past,
+  onCommit,
+  onClose,
+  runFonts,
+}: BlockEditorProps): ReactElement {
   const { _ } = useLingui();
   const original = wordsOf(block);
   const [text, setText] = useState(original);
@@ -471,6 +550,10 @@ function BlockEditor({ block, geometry, placed, paper, past, onCommit, onClose }
   const area = useRef<HTMLDivElement>(null);
   /** Set while a write is in flight, so a blur during it does not write twice. */
   const writing = useRef(false);
+  // THE READ THIS EDITOR OPENED WITH, kept for its life: the layer hands a new function each render, and the block it
+  // reads for is this editor's until it closes (`key`), so a second read would only load the same fonts again.
+  const [readFonts] = useState(() => runFonts);
+  useRunFonts(area, readFonts, useId());
 
   // THE RUNS, each in its own style, and the caret at the end. The block is this editor's for its whole life — a new
   // read or another block is a new editor (`key`) — so this runs once.
@@ -486,6 +569,8 @@ function BlockEditor({ block, geometry, placed, paper, past, onCommit, onClose }
           const span = owner.createElement('span');
           span.textContent = run.text;
           drawRun(span, run.style, 1);
+          // THE RUN'S FIRST OBJECT, which its font is answered by (`useRunFonts`).
+          span.dataset['run'] = String(run.index);
           row.append(span);
         }
         return row;

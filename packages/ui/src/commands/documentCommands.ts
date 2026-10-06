@@ -14,6 +14,7 @@ import {
   type RenderableCommand,
   type RequestedSignatureMark,
   type SignaturePlacement,
+  MAX_FONT_RUNS,
   blockEditOf,
   pageSetOf,
   withPageRuns,
@@ -3907,6 +3908,52 @@ export async function promoteTextOnPage(deps: DocumentCommandDeps, docId: DocId,
 
 /** One block as `document.textBlocks` answers it. */
 export type TextBlock = ChannelResult<'document.textBlocks'>['blocks'][number];
+
+/** A block's run fonts as the editor draws them: each font once, and each run's font by the run's first object. */
+export interface RunFonts {
+  readonly fonts: readonly Uint8Array<ArrayBuffer>[];
+  /** A run's place in `fonts`, by its first object. A run absent here has none and is drawn in its kind of face. */
+  readonly runs: ReadonlyMap<number, number>;
+}
+
+/** No run has a font: the editor draws every run in its kind of face, as it did before ADR-0175. */
+export const NO_RUN_FONTS: RunFonts = { fonts: [], runs: new Map() };
+
+/**
+ * The fonts the PDFium host rebuilt for `block`'s runs (ADR-0175), read in as few reads as `MAX_FONT_RUNS` allows —
+ * one for any block but a very long one, since every read costs the host a write of the document's image.
+ *
+ * ## Anything but an answer at `version` is NO FONTS, and that is the feature's own outcome rather than a loss
+ *
+ * A run without its font is drawn in its kind of face, which is how every run was drawn before ADR-0175 and how a run
+ * in a font the host declines is drawn now. An answer at another version describes objects the open block no longer
+ * names. A refusal is a document not open or poisoned, which the edit the person makes next says in its own words, or
+ * an incident `main` has already recorded; the editor is not the place to say either a second time, and the words the
+ * person types are untouched by it.
+ */
+export async function readRunFonts(
+  client: ContractClient,
+  docId: DocId,
+  page: number,
+  block: TextBlock,
+  version: DocVersion,
+): Promise<RunFonts> {
+  const indices = [...new Set(block.lines.flatMap((line) => line.runs.map((run) => run.index)))];
+  const fonts: Uint8Array<ArrayBuffer>[] = [];
+  const runs = new Map<number, number>();
+  for (let from = 0; from < indices.length; from += MAX_FONT_RUNS) {
+    const asked = indices.slice(from, from + MAX_FONT_RUNS);
+    const answer = await client['document.runFonts']({ docId, page, indices: asked });
+    if (!answer.ok || answer.value.version !== version) return NO_RUN_FONTS;
+    const base = fonts.length;
+    fonts.push(...answer.value.fonts);
+    asked.forEach((index, at) => {
+      const place = answer.value.runs[at];
+      if (place !== null && place !== undefined) runs.set(index, base + place);
+    });
+  }
+  return { fonts, runs };
+}
 
 /**
  * How writing one block ended, as far as the editor over it has to act: written, nothing to write, a signed document

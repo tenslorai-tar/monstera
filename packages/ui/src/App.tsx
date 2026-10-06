@@ -66,6 +66,7 @@ import {
   flattenFormCommand,
   EDIT_TEXT_TOOL_ID,
   commitTextBlock,
+  readRunFonts,
   editTextCommand,
   handToolCommand,
   HAND_TOOL_ID,
@@ -3368,6 +3369,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       },
       onCommit: (page, block, text, version) =>
         commitTextBlock(deps, docId, page, block, text, version),
+      runFonts: (page, block, version) => readRunFonts(client, docId, page, block, version),
       onPromote: (page) => {
         void promoteTextOnPage(deps, docId, page);
       },

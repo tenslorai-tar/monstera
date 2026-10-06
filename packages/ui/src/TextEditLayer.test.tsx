@@ -5,7 +5,7 @@ import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { BlockCommit, TextBlock } from './commands/documentCommands.js';
+import { type BlockCommit, NO_RUN_FONTS, type RunFonts, type TextBlock } from './commands/documentCommands.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import { type PageBlocks, TextEditLayer } from './TextEditLayer.js';
@@ -110,6 +110,7 @@ function mount(overrides: Partial<Parameters<typeof TextEditLayer>[0]> = {}) {
         onPromote={onPromote}
         page={2}
         paperAt={() => 'rgb(250, 250, 250)'}
+        runFonts={() => Promise.resolve(NO_RUN_FONTS)}
         {...overrides}
       />
     </Wrapped>
@@ -412,5 +413,128 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(packed.onPromote).toHaveBeenCalledTimes(1);
     // CONTROL: a page with blocks and nothing packed says neither sentence.
     expect(packed.view.container.textContent).not.toContain('no text that can be edited');
+  });
+});
+
+/**
+ * A run drawn in the font the host rebuilt from its own program (ADR-0175), through the editor's one read of them.
+ *
+ * The browser's font loading is a fake here, recording what is built, added and removed — happy-dom loads no font, and
+ * what these cases own is which runs take which face and that the faces leave with the editor. That a face built from
+ * bytes DRAWS under the pinned policy is the rendered case's, on Chromium.
+ */
+describe('Edit text draws each run in its own font where the host rebuilt one (ADR-0175)', () => {
+  class FakeFace {
+    static built: FakeFace[] = [];
+    static refuse = false;
+    constructor(
+      readonly family: string,
+      readonly bytes: Uint8Array,
+    ) {
+      FakeFace.built.push(this);
+    }
+    load(): Promise<this> {
+      return FakeFace.refuse ? Promise.reject(new Error('the sanitiser refused the font')) : Promise.resolve(this);
+    }
+  }
+
+  function withFonts(): { readonly added: unknown[]; readonly removed: unknown[] } {
+    FakeFace.built = [];
+    FakeFace.refuse = false;
+    const added: unknown[] = [];
+    const removed: unknown[] = [];
+    vi.stubGlobal('FontFace', FakeFace);
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { add: (face: unknown) => added.push(face), delete: (face: unknown) => removed.push(face) },
+    });
+    return { added, removed };
+  }
+
+  /** The paragraph's first and last runs share one font; the grey run between them has none. */
+  const FONT = new Uint8Array([0, 1, 0, 0, 7]);
+  const SHARED: RunFonts = { fonts: [FONT], runs: new Map([[8, 0], [11, 0]]) };
+
+  /** Each run of the open editor: its first object, whether it took its own face, and the face it names. */
+  function runsOf(root: ParentNode): [string | undefined, boolean, string][] {
+    return Array.from(root.querySelectorAll<HTMLElement>('.m-text-editor__run'), (span) => [
+      span.dataset['run'],
+      span.classList.contains('m-text-editor__run--own'),
+      span.style.getPropertyValue('--m-run-font'),
+    ]);
+  }
+
+  async function settle(): Promise<void> {
+    await act(async () => {
+      for (let turn = 0; turn < 5; turn += 1) await Promise.resolve();
+    });
+  }
+
+  it('reads the open block’s fonts ONCE, and draws the runs that share one in it while the run with none keeps its kind', async () => {
+    const { added } = withFonts();
+    const read = vi.fn((_block: TextBlock, _version: number) => Promise.resolve(SHARED));
+    const { view, show } = mount({ runFonts: read });
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read.mock.calls[0]?.[0].lines.map((line) => line.runs.map((run) => run.index))).toStrictEqual([[8, 9], [11]]);
+    expect(read.mock.calls[0]?.[1]).toBe(7);
+    // ONE FACE for the one font, built from its bytes, and added to the document's fonts.
+    expect(FakeFace.built.map((face) => Array.from(face.bytes))).toStrictEqual([[0, 1, 0, 0, 7]]);
+    expect(added).toStrictEqual(FakeFace.built);
+    const family = FakeFace.built[0]?.family ?? '';
+    expect(family).toMatch(/^m-run-[a-zA-Z0-9]+-0$/u);
+    expect(runsOf(view.container)).toStrictEqual([
+      ['8', true, family],
+      ['9', false, ''],
+      ['11', true, family],
+    ]);
+    // CONTROL: a render with the editor still open — the layer hands it a new function — reads nothing again.
+    show(BLOCKS);
+    fireEvent.input(editorIn(view.container));
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('the faces LEAVE WITH THE EDITOR: removed when it closes, and none before', async () => {
+    const { added, removed } = withFonts();
+    const { view } = mount({ runFonts: () => Promise.resolve(SHARED) });
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    await settle();
+    expect(added).toHaveLength(1);
+    expect(removed).toHaveLength(0);
+    await act(async () => {
+      fireEvent.keyDown(editorIn(view.container), { key: 'Escape' });
+      await Promise.resolve();
+    });
+    expect(view.container.querySelector('[data-text-editor]')).toBeNull();
+    expect(removed).toStrictEqual(added);
+  });
+
+  it('a face the browser REFUSES to load leaves its runs in their kind and says so on them, adding nothing', async () => {
+    const { added } = withFonts();
+    FakeFace.refuse = true;
+    const { view } = mount({ runFonts: () => Promise.resolve(SHARED) });
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    await settle();
+    expect(added).toHaveLength(0);
+    expect(runsOf(view.container).map(([, own]) => own)).toStrictEqual([false, false, false]);
+    expect(
+      Array.from(view.container.querySelectorAll<HTMLElement>('.m-text-editor__run'), (span) => span.dataset['runFont'] ?? null),
+    ).toStrictEqual(['refused', null, 'refused']);
+  });
+
+  it('CONTROL: with no fonts answered nothing is built and every run keeps its kind', async () => {
+    const { added } = withFonts();
+    const { view } = mount();
+    fireEvent.click(find(view.container, '[data-text-block="1"]'));
+    await settle();
+    expect(FakeFace.built).toHaveLength(0);
+    expect(added).toHaveLength(0);
+    expect(runsOf(view.container)).toStrictEqual([
+      ['8', false, ''],
+      ['9', false, ''],
+      ['11', false, ''],
+    ]);
   });
 });
