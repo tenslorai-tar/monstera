@@ -1,9 +1,9 @@
-import type { EditedBlock } from '@monstera/contract/host';
+import type { BlockMarkSet, EditedBlock } from '@monstera/contract/host';
 import { type Result, err, ok } from '@monstera/shared';
 
 import type { PageFont } from './pageFonts.js';
-import { type FlowLine, type Measure, planBlock } from './paragraphFlow.js';
-import { blockShape, paragraphSpacing } from './paragraphShape.js';
+import { type FlowLine, type Measure, NO_MARK, planBlock } from './paragraphFlow.js';
+import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
 import { type Matrix, type ShowOperator, multiply, showOperators, textObjectCount } from './textOperators.js';
 import { codesFor } from './toUnicode.js';
 
@@ -188,12 +188,35 @@ export interface OperatorFaces {
    * `word`, set in `source`'s state, as the pieces that draw it in order, or `null` where nothing can. `own` sets a
    * stretch in the run's own font or a sibling as this module would, so a word partly carried keeps that part there.
    */
-  set(word: string, source: ShowOperator, own: (stretch: string) => FacePiece | null): readonly FacePiece[] | null;
+  set(
+    word: string,
+    source: ShowOperator,
+    own: (stretch: string) => FacePiece | null,
+    /** A weight, slant or family the person asked (ADR-0180): the word is then set in a face that is that. */
+    restyle?: { readonly bold?: boolean; readonly italic?: boolean; readonly family?: string },
+  ): readonly FacePiece[] | null;
   /**
    * `pieces` were drawn, once, where the edit puts them. Separate from {@link set} because the plan MEASURES a word as
    * often as it likes and draws it once, and the boxes a person is told about are the drawn ones.
    */
   drawn(pieces: readonly FacePiece[]): void;
+}
+
+/** What a mark asks of the face a word is set in (ADR-0180 Decision 4). */
+interface Restyle {
+  readonly bold?: boolean;
+  readonly italic?: boolean;
+  readonly family?: string;
+}
+
+/** How a mark restyles a segment (ADR-0180 Decision 4): what is written beside the words' own state. */
+interface SegmentStyle {
+  readonly colour: readonly [number, number, number] | undefined;
+  /** The factor the run's size is multiplied by, size and rise together. */
+  readonly factor: number;
+  /** How far above the line's baseline, in user space. */
+  readonly rise: number;
+  readonly underline: boolean;
 }
 
 interface Segment {
@@ -203,7 +226,15 @@ interface Segment {
   readonly text: string;
   /** Where it starts, in user space. */
   readonly x: number;
+  readonly style: SegmentStyle | undefined;
 }
+
+/** How a superscript or subscript is set, and the rule under underlined words: the PDFium writer's figures. */
+const RISE_SCALE = 0.65;
+const SUPERSCRIPT_RISE = 0.33;
+const SUBSCRIPT_DROP = 0.12;
+const UNDERLINE_THICKNESS = 0.06;
+const UNDERLINE_DROP = 0.12;
 
 interface VisualLine {
   readonly baseline: number;
@@ -457,18 +488,57 @@ function write(
      * caller records: the plan measures a word and the layout writes it, and both must hear the same answer.
      */
     const answers = new Map<string, readonly FacePiece[] | null>();
-    const piecesOf = (source: ShowOperator, token: string): readonly FacePiece[] | null => {
-      const key = `${String(indexOf.get(source))}|${token}`;
+    const piecesOf = (source: ShowOperator, token: string, restyle?: Restyle): readonly FacePiece[] | null => {
+      const key = `${String(indexOf.get(source))}|${JSON.stringify(restyle ?? null)}|${token}`;
       if (answers.has(key)) return answers.get(key) ?? null;
       const font = fontOf(source);
-      const found = carrier(font, token);
+      // A RESTYLED WORD is not looked for in the run's own font: only white space is, which has no style to be wrong in.
+      const found = restyle !== undefined && token !== ' ' ? null : carrier(font, token);
       const pieces: readonly FacePiece[] | null =
-        found !== null ? [found] : token === ' ' ? [] : (faces?.set(token, source, (stretch) => carrier(font, stretch)) ?? null);
+        found !== null
+          ? [found]
+          : token === ' '
+            ? []
+            : (faces?.set(token, source, restyle === undefined ? (stretch) => carrier(font, stretch) : () => null, restyle) ?? null);
       if (pieces === null) {
-        for (const character of token) if (carrier(font, character) === null) uncarried.add(character);
+        for (const character of token) if (restyle !== undefined || carrier(font, character) === null) uncarried.add(character);
       }
       answers.set(key, pieces);
       return pieces;
+    };
+    /** What a mark makes of the words of run `run`: the face it asks, the size it ends at, and where it sits. */
+    const markStyle = (run: (typeof firstLine)[number], mark: number) => {
+      const set: BlockMarkSet = block.marks?.[mark]?.set ?? {};
+      const source = sourceOf(run);
+      const font = fontOf(source);
+      const unit = placed(run.first).unit;
+      const sizePt = source.state.size * unit;
+      const restyle: Restyle | undefined =
+        set.bold === undefined && set.italic === undefined && set.family === undefined
+          ? undefined
+          : {
+              ...(set.bold === undefined ? {} : { bold: set.bold }),
+              ...(set.italic === undefined ? {} : { italic: set.italic }),
+              ...(set.family === undefined ? {} : { family: set.family }),
+            };
+      const size = set.size ?? sizePt;
+      const factor = (size / Math.max(sizePt, 0.01)) * (set.rise === undefined ? 1 : RISE_SCALE);
+      const rise =
+        set.rise === 'superscript' ? SUPERSCRIPT_RISE * size : set.rise === 'subscript' ? -SUBSCRIPT_DROP * size : 0;
+      return { set, source, font, sizePt, restyle, size, factor, rise };
+    };
+    const changes = (runId: number, mark: number): boolean => {
+      const { set, font, sizePt } = markStyle(byId.get(runId) ?? firstRun, mark);
+      // WHAT A PAGE'S OPERATORS DO NOT SAY — its slant, its colour, whether a line is under it — a mark that names is a change.
+      return (
+        (set.bold !== undefined && set.bold !== (font.weight !== null && font.weight >= 600)) ||
+        set.italic === true ||
+        (set.size !== undefined && Math.abs(set.size - sizePt) > 0.05) ||
+        set.colour !== undefined ||
+        (set.family !== undefined && !(font.face ?? '').toLowerCase().includes(set.family.toLowerCase())) ||
+        set.underline === true ||
+        set.rise !== undefined
+      );
     };
     /** How far the pen moves for `pieces` in `source`'s state: a space no font carries moves it by a nominal space. */
     const pieceWidths = (source: ShowOperator, pieces: readonly FacePiece[], unit: number): number[] =>
@@ -478,22 +548,41 @@ function write(
         ? (SPACE_EM * source.state.size + source.state.charSpacing + source.state.wordSpacing) * source.state.scale * unit
         : pieceWidths(source, pieces, unit).reduce((total, each) => total + each, 0);
     /** How wide `text` is when it is set in the state of run `id`: the plan's one question. */
-    const measure: Measure = (id, text) => {
+    const measure: Measure = (id, mark, text) => {
       const run = byId.get(id) ?? firstRun;
       const source = sourceOf(run);
-      const unit = placed(run.first).unit;
+      const marked = mark === NO_MARK ? undefined : markStyle(run, mark);
+      const unit = placed(run.first).unit * (marked?.factor ?? 1);
       return tokens(text).reduce((sum, token) => {
-        const pieces = piecesOf(source, token);
+        const pieces = piecesOf(source, token, marked?.restyle);
         return pieces === null ? sum : sum + widthOfPieces(source, pieces, unit);
       }, 0);
     };
 
-    /** Lays out `words` set in `source`'s state from `x` on `line`, answering where it ended. */
-    const layOut = (source: ShowOperator, words: string, x: number, line: VisualLine): number => {
-      const unit = placed(indexOf.get(source) ?? -1).unit;
+    /**
+     * Lays out `words` set in `source`'s state from `x` on `line`, answering where it ended. `marked` is the mark that
+     * styles them, where one does: its face, its size and rise, its colour and its rule.
+     */
+    const layOut = (
+      source: ShowOperator,
+      words: string,
+      x: number,
+      line: VisualLine,
+      marked?: ReturnType<typeof markStyle>,
+    ): number => {
+      const unit = placed(indexOf.get(source) ?? -1).unit * (marked?.factor ?? 1);
+      const style: SegmentStyle | undefined =
+        marked === undefined
+          ? undefined
+          : {
+              colour: marked.set.colour === undefined ? undefined : [marked.set.colour.r, marked.set.colour.g, marked.set.colour.b],
+              factor: marked.factor,
+              rise: marked.rise,
+              underline: marked.set.underline === true,
+            };
       let cursor = x;
       for (const token of tokens(words)) {
-        const pieces = piecesOf(source, token);
+        const pieces = piecesOf(source, token, marked?.restyle);
         if (pieces === null) continue;
         faces?.drawn(pieces);
         const widths = pieceWidths(source, pieces, unit);
@@ -505,11 +594,16 @@ function write(
           const text = texts[k] ?? '';
           const last = line.segments.at(-1);
           // ONE SEGMENT for words that follow on in one font and state: a glyph's advance places the next exactly there.
-          if (last?.source === source && last.font === piece.font && Math.abs(last.x + segmentWidth(last) - at) <= SAME) {
+          if (
+            last?.source === source &&
+            last.font === piece.font &&
+            last.style === style &&
+            Math.abs(last.x + segmentWidth(last) - at) <= SAME
+          ) {
             last.codes.push(...piece.codes);
             line.segments[line.segments.length - 1] = { ...last, text: last.text + text };
           } else {
-            line.segments.push({ source, font: piece.font, codes: [...piece.codes], text, x: at });
+            line.segments.push({ source, font: piece.font, codes: [...piece.codes], text, x: at, style });
           }
           at += widths[k] ?? 0;
         }
@@ -518,21 +612,50 @@ function write(
       return cursor;
     };
     const segmentWidth = (segment: Segment): number =>
-      (advanceOf(segment.font, segment.codes, segment.source.state) ?? 0) * placed(indexOf.get(segment.source) ?? -1).unit;
+      (advanceOf(segment.font, segment.codes, segment.source.state) ?? 0) *
+      placed(indexOf.get(segment.source) ?? -1).unit *
+      (segment.style?.factor ?? 1);
 
-    const limits =
-      shape.align === 'center'
-        ? (() => {
-            const across = Math.max(1, 2 * Math.min(blockRight - shape.centre, shape.centre - blockLeft));
-            return { first: across, rest: across };
-          })()
-        : shape.align === 'right'
-          ? { first: Math.max(1, blockRight - blockLeft), rest: Math.max(1, blockRight - blockLeft) }
-          : {
-              first: Math.max(1, blockRight - (restOrigin + shape.firstIndent)),
-              rest: Math.max(1, blockRight - restOrigin),
-            };
-    const plan = planBlock(flow, block.text.replace(/\r\n?/gu, '\n'), measure, limits);
+    // HOW EACH PARAGRAPH IS SET: the block's shape with what the person set over it (ADR-0180 Decision 2), as the PDFium
+    // writer reads it. Edges are origins here, since an operator is placed by where its glyph is drawn from.
+    const settings = new Map((block.paragraphs ?? []).map((setting) => [setting.paragraph, setting]));
+    const setFor = (place: number): { align: Alignment; leftEdge: number; first: number; centre: number } => {
+      const given = settings.get(place);
+      const align = given?.align ?? shape.align;
+      const leftEdge = given?.leftIndent === undefined ? restOrigin : blockLeft + given.leftIndent;
+      const first = given?.firstIndent ?? (given?.leftIndent === undefined ? shape.firstIndent : 0);
+      const centre = given?.align === undefined && shape.align === 'center' ? shape.centre : (leftEdge + blockRight) / 2;
+      return { align, leftEdge, first, centre };
+    };
+    const limits = (place: number): { first: number; rest: number } => {
+      const set = setFor(place);
+      if (set.align === 'center') {
+        const across = Math.max(1, 2 * Math.min(blockRight - set.centre, set.centre - set.leftEdge));
+        return { first: across, rest: across };
+      }
+      if (set.align === 'right') {
+        const across = Math.max(1, blockRight - set.leftEdge);
+        return { first: across, rest: across };
+      }
+      return { first: Math.max(1, blockRight - (set.leftEdge + set.first)), rest: Math.max(1, blockRight - set.leftEdge) };
+    };
+    const forced = new Set(
+      (block.paragraphs ?? [])
+        .filter(
+          (setting) =>
+            (setting.align !== undefined && setting.align !== shape.align) ||
+            (setting.leftIndent !== undefined && Math.abs(blockLeft + setting.leftIndent - restOrigin) > 0.5) ||
+            (setting.firstIndent !== undefined && Math.abs(setting.firstIndent - shape.firstIndent) > 0.5) ||
+            (setting.lineSpacing !== undefined && Math.abs(setting.lineSpacing - 1) > 0.01) ||
+            (setting.spaceBefore !== undefined && setting.spaceBefore > 0.5),
+        )
+        .map((setting) => setting.paragraph),
+    );
+    const plan = planBlock(flow, block.text.replace(/\r\n?/gu, '\n'), measure, limits, {
+      marks: (block.marks ?? []).map(({ from, to }) => ({ from, to })),
+      changes,
+      forced,
+    });
 
     /** The old lines the plan keeps exactly as they are: their operators are not touched. */
     const kept = new Set<number>();
@@ -541,14 +664,20 @@ function write(
     let previous = baselines[0] ?? 0;
     for (const [at, row] of plan.rows.entries()) {
       const oldGap = (line: number): number => (baselines[line - 1] ?? 0) - (baselines[line] ?? 0);
+      // THE GAP ABOVE A LINE: the person's own where they set the paragraph's spacing, else the gap the line it stands in
+      // had, else the block's pitch (and its paragraph spacing where it opens a paragraph).
+      const given = row.kind === 'new' ? settings.get(row.paragraph) : undefined;
+      const spaced = given?.lineSpacing !== undefined || given?.spaceBefore !== undefined;
       const gap =
         row.kind === 'old'
           ? oldGap(row.line)
           : row.kind === 'blank'
             ? pitch + (row.opens ? spacing : 0)
-            : row.replaces > 0
-              ? oldGap(row.replaces)
-              : pitch + (row.opens ? spacing : 0);
+            : spaced
+              ? pitch * (given.lineSpacing ?? 1) + (row.first && at > 0 ? (given.spaceBefore ?? spacing) : 0)
+              : row.replaces > 0
+                ? oldGap(row.replaces)
+                : pitch + (row.opens ? spacing : 0);
       const target = at === 0 ? (baselines[0] ?? 0) : previous - gap;
       previous = target;
       if (row.kind === 'blank') {
@@ -586,28 +715,37 @@ function write(
       // where it did and is set from its left, each leading piece that is exactly an old run is that run, untouched.
       // At least one old run is set again, which is where the rest of the line begins.
       let untouched = 0;
-      if (replaced !== undefined && shape.align === 'left' && Math.abs(target - (baselines[row.replaces] ?? 0)) <= SAME) {
+      const set = setFor(row.paragraph);
+      const keepsItsLine = given?.leftIndent === undefined && given?.firstIndent === undefined;
+      if (replaced !== undefined && set.align === 'left' && keepsItsLine && Math.abs(target - (baselines[row.replaces] ?? 0)) <= SAME) {
         while (untouched < replaced.length - 1) {
           const piece = row.pieces[untouched];
           const run = replaced[untouched];
-          if (piece?.run !== run?.run.index || piece?.text !== run?.run.text) break;
+          if (piece?.run !== run?.run.index || piece?.text !== run?.run.text || piece?.mark !== NO_MARK) break;
           untouched += 1;
         }
         keptRuns.set(row.replaces, untouched);
       }
       const x =
-        shape.align === 'center'
-          ? shape.centre - row.width / 2
-          : shape.align === 'right'
+        set.align === 'center'
+          ? set.centre - row.width / 2
+          : set.align === 'right'
             ? blockRight - row.width
-            : replaced === undefined
-              ? restOrigin + (row.first ? shape.firstIndent : 0)
-              : (replaced[untouched]?.origin.x ?? restOrigin);
+            : replaced !== undefined && keepsItsLine
+              ? (replaced[untouched]?.origin.x ?? restOrigin)
+              : set.leftEdge + (row.first ? set.first : 0);
       const placedLine: VisualLine = { baseline: target, segments: [] };
       visual.push(placedLine);
       let cursor = x;
       for (const piece of row.pieces.slice(untouched)) {
-        cursor = layOut(sourceOf(byId.get(piece.run) ?? firstRun), piece.text, cursor, placedLine);
+        const run = byId.get(piece.run) ?? firstRun;
+        cursor = layOut(
+          sourceOf(run),
+          piece.text,
+          cursor,
+          placedLine,
+          piece.mark === NO_MARK ? undefined : markStyle(run, piece.mark),
+        );
       }
       laid.push(row.pieces.map((piece) => piece.text).join(''));
     }
@@ -635,21 +773,52 @@ function write(
     const parts = ['q BT'];
     let replayed: ShowOperator | null = null;
     let font: string | null = null;
+    let fontSize = 0;
+    /** Whether the fill colour in force is a mark's, so the next segment starts from the source's own again. */
+    let tinted = false;
+    /** The rules under underlined words, drawn after the text object, in the same space. */
+    const rules: string[] = [];
     for (const segment of segments) {
-      if (segment.source !== replayed) {
-        for (const setting of segment.source.settings) parts.push(decoder.decode(content.subarray(setting.start, setting.end)));
+      const style = segment.style;
+      if (segment.source !== replayed || tinted) {
+        const settings = segment.source.settings.map((setting) => decoder.decode(content.subarray(setting.start, setting.end)));
+        parts.push(...settings);
+        // A PAGE THAT NEVER SET A FILL COLOUR draws in the default, which is black; leaving a mark's colour in force would
+        // paint every word after it in that colour, so the default is said where the source says nothing.
+        if (tinted && !settings.some((setting) => /(^|\s)(g|rg|k|sc|scn)(\s|$)/u.test(setting))) parts.push('0 g');
         replayed = segment.source;
         font = segment.source.state.font;
+        fontSize = segment.source.state.size;
+        tinted = false;
       }
-      if (segment.font.resource !== font) {
-        parts.push(`${pdfName(segment.font.resource)} ${num(segment.source.state.size)} Tf`);
+      if (style?.colour !== undefined) {
+        parts.push(`${style.colour.map((channel) => num(channel / 255)).join(' ')} rg`);
+        tinted = true;
+      }
+      const size = segment.source.state.size * (style?.factor ?? 1);
+      if (segment.font.resource !== font || Math.abs(size - fontSize) > SAME) {
+        parts.push(`${pdfName(segment.font.resource)} ${num(size)} Tf`);
         font = segment.font.resource;
+        fontSize = size;
       }
       const [a, b, c, d] = segment.source.state.matrix;
-      const [e, f] = apply(toBt, segment.x, segment.baseline);
+      const raised = segment.baseline + (style?.rise ?? 0);
+      const [e, f] = apply(toBt, segment.x, raised);
       parts.push(`${[a, b, c, d, e, f].map(num).join(' ')} Tm ${hexOf(segment.font, segment.codes)} Tj`);
+      if (style?.underline === true) {
+        // THE RULE: this wide, a little under the baseline, in the words' colour where a mark set one and else black —
+        // the page's own fill is not something its operators can be asked.
+        const pointSize = segment.source.state.size * placed(indexOf.get(segment.source) ?? -1).unit * (style.factor === 0 ? 1 : style.factor);
+        const thickness = Math.max(0.5, UNDERLINE_THICKNESS * pointSize);
+        const [x0, y0] = apply(toBt, segment.x, raised - UNDERLINE_DROP * pointSize - thickness);
+        const [x1, y1] = apply(toBt, segment.x + segmentWidth(segment), raised - UNDERLINE_DROP * pointSize);
+        const colour = style.colour ?? [0, 0, 0];
+        rules.push(
+          `q ${colour.map((channel) => num(channel / 255)).join(' ')} rg ${[Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)].map(num).join(' ')} re f Q`,
+        );
+      }
     }
-    parts.push('ET Q\n');
+    parts.push(...(rules.length === 0 ? ['ET Q\n'] : ['ET', ...rules, 'Q\n']));
     // BEFORE THE FIRST EDITED OPERATOR'S BT, so inside its marked content; for lines only added below the block, before
     // its last run's, whose marked content they continue.
     const anchors = own.size > 0 ? [...own] : [lastRun.last];

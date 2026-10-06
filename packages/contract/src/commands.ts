@@ -5031,11 +5031,83 @@ export const replaceTextAtSchema = z
 export const TEXT_FIT_MODES = ['reflow', 'shrink'] as const;
 
 /**
+ * The most marks and paragraph settings one edit may carry (invariant L11): a person formats spans by hand, so a
+ * thousand is two orders over any real edit, and a translation sends none.
+ */
+export const MAX_BLOCK_MARKS = 1024;
+
+/** What a mark makes its words: the properties it names, and only those ([ADR-0180](../../../docs/DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md) Decision 1). */
+export const blockMarkSetSchema = z
+  .object({
+    bold: z.boolean(),
+    italic: z.boolean(),
+    underline: z.boolean(),
+    /** Absolute, in points. */
+    size: z.number().min(1).max(400),
+    colour: z
+      .object({ r: z.number().int().min(0).max(255), g: z.number().int().min(0).max(255), b: z.number().int().min(0).max(255) })
+      .strict(),
+    /** A family the resolver knows, by name. */
+    family: z.string().min(1).max(128),
+    rise: z.enum(['superscript', 'subscript']),
+  })
+  .partial()
+  .strict();
+
+/** See {@link blockMarkSetSchema}. */
+export type BlockMarkSet = z.infer<typeof blockMarkSetSchema>;
+
+/**
+ * One mark: the words from `from` to `to` (UTF-16 offsets into that block's text) ARE `set` after the edit. `block` is
+ * the block's place in the edit. A mark names what the words are, not what changed (ADR-0180 Decision 1).
+ */
+export const blockMarkSchema = z
+  .object({
+    block: z.number().int().min(0).max(MAX_EDIT_RUNS),
+    from: z.number().int().min(0).max(MAX_EDIT_TEXT),
+    to: z.number().int().min(1).max(MAX_EDIT_TEXT),
+    set: blockMarkSetSchema,
+  })
+  .strict();
+
+export type BlockMark = z.infer<typeof blockMarkSchema>;
+
+/** The alignments a paragraph may be set in. */
+export const PARAGRAPH_ALIGNMENTS = ['left', 'center', 'right'] as const;
+
+/**
+ * How one paragraph is set, where the person said: absent means as the read found it (ADR-0180 Decision 2). `block` and
+ * `paragraph` name it, the paragraph by its place among the block text's line breaks.
+ */
+export const paragraphPropsSchema = z
+  .object({
+    block: z.number().int().min(0).max(MAX_EDIT_RUNS),
+    paragraph: z.number().int().min(0).max(MAX_EDIT_TEXT),
+    align: z.enum(PARAGRAPH_ALIGNMENTS).optional(),
+    firstIndent: z.number().min(-1000).max(1000).optional(),
+    leftIndent: z.number().min(0).max(1000).optional(),
+    /** A multiple of the block's pitch. */
+    lineSpacing: z.number().min(0.5).max(5).optional(),
+    spaceBefore: z.number().min(0).max(500).optional(),
+  })
+  .strict();
+
+export type ParagraphProps = z.infer<typeof paragraphPropsSchema>;
+
+/** A block's marks and paragraph settings, as an edit names them before the wire form (ADR-0180). */
+export interface BlockFormatting {
+  /** Offsets into this block's `text`, ascending and not overlapping. */
+  readonly marks?: readonly Omit<BlockMark, 'block'>[];
+  /** By paragraph, ascending. */
+  readonly paragraphs?: readonly Omit<ParagraphProps, 'block'>[];
+}
+
+/**
  * One block as an edit names it before it is put in its wire form: its lines' runs, whether each line ENDED in a soft
  * wrap when the block was read, and its words after the edit
  * ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)).
  */
-export interface EditedBlock {
+export interface EditedBlock extends BlockFormatting {
   readonly lines: readonly (readonly number[])[];
   /** Per line: whether its end was a soft wrap. The last line's is `false`: it ends nothing. */
   readonly soft: readonly boolean[];
@@ -5072,6 +5144,13 @@ export const blockEditSchema = z
     softLines: z.array(z.number().int().min(0).max(MAX_EDIT_RUNS)).max(MAX_EDIT_RUNS),
     /** Where each block's words begin in `text`. */
     textStarts: z.array(z.number().int().min(0).max(MAX_EDIT_TEXT)).min(1).max(MAX_EDIT_RUNS),
+    /**
+     * What spans of the person's words ARE after the edit (ADR-0180 Decision 1). OPTIONAL: an edit that formats
+     * nothing sends none, and a writer treats absence as *every word in the style of the run that wrote it*.
+     */
+    marks: z.array(blockMarkSchema).max(MAX_BLOCK_MARKS).optional(),
+    /** How named paragraphs are set (ADR-0180 Decision 2). Optional, absence meaning as the read found them. */
+    paragraphs: z.array(paragraphPropsSchema).max(MAX_BLOCK_MARKS).optional(),
   })
   .strict();
 
@@ -5084,7 +5163,31 @@ export type BlockEdit = z.infer<typeof blockEditSchema>;
  * written twice. Order and agreement only; no size depends on them.
  */
 export function blockEditAgrees(edit: BlockEdit): boolean {
-  const { runs, lineStarts, blockStarts, text, textStarts, softLines } = edit;
+  const { runs, lineStarts, blockStarts, text, textStarts, softLines, marks = [], paragraphs = [] } = edit;
+  // A BLOCK'S WORDS, to bound its marks and its paragraphs by.
+  const wordsOf = (block: number): string => text.slice(textStarts[block] ?? 0, textStarts[block + 1] ?? text.length);
+  // MARKS ASCEND BY (block, from), each non-empty and inside its block's words, none overlapping the one before it: a
+  // word with two opinions about its style is one the writer would have to pick between.
+  const marksAgree = marks.every((mark, at) => {
+    const before = marks[at - 1];
+    const sameBlock = before?.block === mark.block;
+    return (
+      mark.block < blockStarts.length &&
+      mark.from < mark.to &&
+      mark.to <= wordsOf(mark.block).length &&
+      (before === undefined || mark.block > before.block || (sameBlock && mark.from >= before.to))
+    );
+  });
+  const paragraphsAgree = paragraphs.every((setting, at) => {
+    const before = paragraphs[at - 1];
+    return (
+      setting.block < blockStarts.length &&
+      setting.paragraph <= wordsOf(setting.block).split('\n').length - 1 &&
+      (before === undefined ||
+        setting.block > before.block ||
+        (setting.block === before.block && setting.paragraph > before.paragraph))
+    );
+  });
   const strictlyInside = (starts: readonly number[], length: number): boolean =>
     startsAscendFrom0(starts) && starts.every((start, at) => start < (starts[at + 1] ?? length));
   // A SOFT LINE IS A LINE OF THE LIST THAT DOES NOT END ITS BLOCK: a block's last line ends nothing, and a soft end on it
@@ -5100,7 +5203,9 @@ export function blockEditAgrees(edit: BlockEdit): boolean {
     startsAscendFrom0(textStarts) &&
     (textStarts.at(-1) ?? 0) <= text.length &&
     new Set(runs).size === runs.length &&
-    softAgrees
+    softAgrees &&
+    marksAgree &&
+    paragraphsAgree
   );
 }
 
@@ -5111,18 +5216,32 @@ export function blockEditOf(blocks: readonly EditedBlock[]): BlockEdit {
   const blockStarts: number[] = [];
   const textStarts: number[] = [];
   const softLines: number[] = [];
+  const marks: BlockMark[] = [];
+  const paragraphs: ParagraphProps[] = [];
   let text = '';
-  for (const block of blocks) {
+  for (const [place, block] of blocks.entries()) {
     blockStarts.push(lineStarts.length);
     textStarts.push(text.length);
     text += block.text;
+    for (const mark of block.marks ?? []) marks.push({ ...mark, block: place });
+    for (const setting of block.paragraphs ?? []) paragraphs.push({ ...setting, block: place });
     for (const [at, line] of block.lines.entries()) {
       if (block.soft[at] === true && at < block.lines.length - 1) softLines.push(lineStarts.length);
       lineStarts.push(runs.length);
       runs.push(...line);
     }
   }
-  return { runs, lineStarts, blockStarts, text, textStarts, softLines };
+  // ABSENT where there are none, so an edit that formats nothing is byte for byte what it was before ADR-0180.
+  return {
+    runs,
+    lineStarts,
+    blockStarts,
+    text,
+    textStarts,
+    softLines,
+    ...(marks.length === 0 ? {} : { marks }),
+    ...(paragraphs.length === 0 ? {} : { paragraphs }),
+  };
 }
 
 /** The blocks again, for the writer that lays them out — {@link blockEditOf}'s inverse. */
@@ -5132,10 +5251,14 @@ export function blocksOfEdit(edit: BlockEdit): EditedBlock[] {
   const soft = new Set(edit.softLines);
   return edit.blockStarts.map((first, block) => {
     const end = edit.blockStarts[block + 1] ?? edit.lineStarts.length;
+    const marks = (edit.marks ?? []).filter((mark) => mark.block === block).map(({ block: _block, ...mark }) => mark);
+    const paragraphs = (edit.paragraphs ?? []).filter((setting) => setting.block === block).map(({ block: _block, ...rest }) => rest);
     return {
       lines: Array.from({ length: end - first }, (_, at) => lineOf(first + at)),
       soft: Array.from({ length: end - first }, (_, at) => soft.has(first + at)),
       text: edit.text.slice(edit.textStarts[block] ?? 0, edit.textStarts[block + 1] ?? edit.text.length),
+      ...(marks.length === 0 ? {} : { marks }),
+      ...(paragraphs.length === 0 ? {} : { paragraphs }),
     };
   });
 }

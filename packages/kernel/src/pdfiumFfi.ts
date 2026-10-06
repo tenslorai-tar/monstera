@@ -1,4 +1,4 @@
-import { MAX_BLOCK_FONTS } from '@monstera/contract/host';
+import { type BlockMark, type BlockMarkSet, MAX_BLOCK_FONTS, type ParagraphProps } from '@monstera/contract/host';
 import type { EditStep } from '@monstera/shared';
 import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
@@ -7,8 +7,8 @@ import { editPieces } from './editPieces.js';
 import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import type { PageRuns } from './operatorEdit.js';
-import { type FlowLine, type Measure, planBlock } from './paragraphFlow.js';
-import { blockShape, paragraphSpacing } from './paragraphShape.js';
+import { type FlowLine, type Measure, NO_MARK, planBlock } from './paragraphFlow.js';
+import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { readFace } from './fontFaces.js';
 import { BOX, boxFont } from './boxFont.js';
@@ -124,6 +124,8 @@ interface Bound {
   readonly setStrokeColour: Native;
   readonly getStrokeWidth: Native;
   readonly setStrokeWidth: Native;
+  readonly newRect: Native;
+  readonly setDrawMode: Native;
   readonly removeObject: Native;
   readonly destroyObject: Native;
   readonly countFormObjects: Native;
@@ -389,6 +391,10 @@ export function openPdfium(libraryPath: string): void {
     ),
     getStrokeWidth: native(library.func('int FPDFPageObj_GetStrokeWidth(void *object, _Out_ float *width)')),
     setStrokeWidth: native(library.func('int FPDFPageObj_SetStrokeWidth(void *object, float width)')),
+    // A FILLED RECTANGLE, for the line under underlined words: a page has no underline of its own to set on text, so it is
+    // what every producer draws (ADR-0180 Decision 4).
+    newRect: native(library.func('void *FPDFPageObj_CreateNewRect(float x, float y, float w, float h)')),
+    setDrawMode: native(library.func('int FPDFPath_SetDrawMode(void *path, int fillmode, int stroke)')),
     // REMOVE UNLINKS AND HANDS OWNERSHIP BACK; `FPDFPageObj_Destroy` is what
     // frees it. Calling the first without the second leaks the object for the
     // life of the process, and calling the second on an object still on a page
@@ -1721,6 +1727,9 @@ export interface BlockEdit {
   /** Whether each line ends in a soft wrap (ADR-0179): the paragraphs the text is laid out as. */
   readonly soft: readonly boolean[];
   readonly text: string;
+  /** What spans of `text` are, and how named paragraphs are set (ADR-0180). */
+  readonly marks?: readonly Omit<BlockMark, 'block'>[];
+  readonly paragraphs?: readonly Omit<ParagraphProps, 'block'>[];
   /**
    * `reflow`: a person typing — the block grows downward (ADR-0096). `shrink`: a translation — the
    * block is scaled uniformly to end above its original last line, never below {@link MIN_FIT}
@@ -1917,6 +1926,27 @@ async function fitScales(session: PdfiumSession, page: number, edits: readonly B
 }
 
 /**
+ * How a superscript or subscript is set (ADR-0180 Decision 4): at this fraction of the size the words would have, raised
+ * or dropped by these fractions of it, the figures word processors use.
+ */
+const RISE_SCALE = 0.65;
+const SUPERSCRIPT_RISE = 0.33;
+const SUBSCRIPT_DROP = 0.12;
+/** The rule under underlined words: this fraction of their size thick, this far below the baseline. */
+const UNDERLINE_THICKNESS = 0.06;
+const UNDERLINE_DROP = 0.12;
+
+/**
+ * What a mark asks of the face a word is set in (ADR-0180 Decision 4): a weight, a slant or a family, each only where it
+ * is named. The size, the colour, the underline and the rise are applied to the objects after they are written.
+ */
+interface Restyle {
+  readonly bold?: boolean;
+  readonly italic?: boolean;
+  readonly family?: string;
+}
+
+/**
  * What {@link pieceWriter} hands its caller: the one way an edit's text is written into a page's objects.
  *
  * `written` and `removed` are the caller's to read and to add to: the read-back reads `written`, the generation names
@@ -1930,7 +1960,11 @@ interface PieceWriter {
   readonly removed: unknown[];
   readonly insertAfter: (object: unknown, anchor: unknown) => void;
   readonly write: (object: unknown, text: string) => unknown;
-  readonly writePieces: (object: unknown, text: string) => unknown[];
+  readonly writePieces: (object: unknown, text: string, restyle?: Restyle) => unknown[];
+  /** The standard font a restyled word is set in where no catalogue is bound. */
+  readonly standardFontRestyled: (object: unknown, restyle: Restyle) => unknown;
+  /** An object's own style, as the editor reads it: what a mark is compared against. */
+  readonly styleOfObject: (object: unknown) => RunStyle;
   readonly trimPieces: (objects: readonly unknown[], text: string) => unknown[];
   readonly record: (object: unknown, text: string) => void;
   readonly standardFontLike: (object: unknown) => unknown;
@@ -2082,8 +2116,7 @@ function pieceWriter(
        */
       const keepsItsObject = (object: unknown, text: string): boolean => carries(object, text);
       /** The standard font nearest `object`'s, loaded once per edit and closed with it. */
-      const standardFontLike = (object: unknown): unknown => {
-        const name = standardFontFor(styleOf(bindings, object, programs));
+      const standardFontNamed = (name: string): unknown => {
         let font = standardFonts.get(name);
         if (font === undefined) {
           font = bindings.loadStandardFont(document, name);
@@ -2092,6 +2125,23 @@ function pieceWriter(
         }
         return font;
       };
+      const standardFontLike = (object: unknown): unknown =>
+        standardFontNamed(standardFontFor(styleOf(bindings, object, programs)));
+      /**
+       * The standard font a restyled word is set in where no catalogue is bound: the kind of face the family names, in the
+       * weight and slant asked. A family the standard fonts have no name for keeps the run's own kind.
+       */
+      const standardFontRestyled = (object: unknown, restyle: Restyle): unknown => {
+        const style = styleOf(bindings, object, programs);
+        const asked = (restyle.family ?? '').toLowerCase();
+        const mono = asked === '' ? style.mono : /courier|mono|consolas/u.test(asked);
+        const serif = asked === '' ? style.serif : /times|serif|georgia|garamond|cambria/u.test(asked) && !asked.includes('sans');
+        return standardFontNamed(
+          standardFontFor({ ...style, mono, serif, bold: restyle.bold ?? style.bold, italic: restyle.italic ?? style.italic }),
+        );
+      };
+      /** The run's own object, as the style it is read as: the base a mark is compared against. */
+      const styleOfObject = (object: unknown): RunStyle => styleOf(bindings, object, programs);
       /**
        * The characters of `text` that neither `source`'s font nor its standard twin carries, each asked ALONE — the
        * names a refusal gives (ADR-0169 Decision 4). Only reached on the way to a refusal, so its probes cost an edit
@@ -2147,6 +2197,25 @@ function pieceWriter(
         removed.push(object);
         if (mode === 'write') {
           const at = written.findIndex((write) => write.object === object);
+          if (at !== -1) written.splice(at, 1);
+          record(twin, text);
+        }
+        return twin;
+      };
+      /**
+       * A restyled word where no catalogue is bound: a new object in the standard font of the style asked, taking the
+       * place of `object`, which goes. The twin's own refusal is `write`'s (a character the font cannot carry).
+       */
+      const writeRestyledTwin = (object: unknown, text: string, restyle: Restyle): unknown => {
+        const twin = makeTextLike(bindings, document, object, matrixOn(bindings, object).e, standardFontRestyled(object, restyle));
+        if (!trySetText(bindings, twin, text) || (mode === 'write' && !carries(twin, text))) {
+          bindings.destroyObject(twin);
+          throw new TextNotWritableError(uncarriedIn(object, text));
+        }
+        insertAfter(twin, object);
+        removed.push(object);
+        if (mode === 'write') {
+          const at = written.findIndex((entry) => entry.object === object);
           if (at !== -1) written.splice(at, 1);
           record(twin, text);
         }
@@ -2277,15 +2346,20 @@ function pieceWriter(
        * A TRIAL PROBES TOO, unlike `write`'s: which words become pieces decides the line's width, and a trial that
        * measured the run's own font where the write sets another would fit a block to text that is not drawn.
        */
-      const writePieces = (object: unknown, text: string): unknown[] => {
+      const writePieces = (object: unknown, text: string, restyle?: Restyle): unknown[] => {
+        // A WORD THE PERSON MADE BOLD, ITALIC OR ANOTHER FAMILY is set in a face that is that, whichever font the run is
+        // in (ADR-0180 Decision 4): the run's own font is not preferred, because it is the wrong one by definition.
+        if (restyle !== undefined && !inPiecesHere) return [writeRestyledTwin(object, text, restyle)];
         if (!inPiecesHere) return [write(object, text)];
-        if (setOn(object, text) && keepsItsObject(object, text)) {
+        if (restyle === undefined && setOn(object, text) && keepsItsObject(object, text)) {
           if (mode === 'write') record(object, text);
           pieceTexts.set(object, text);
           return [object];
         }
         const font = String(koffi.address(bindings.textFont(object)));
         const ownCarries = (segment: string): boolean => {
+          // RESTYLED: only white space stays in the run's font; a word goes to the resolver for the style asked.
+          if (restyle !== undefined) return segment.trim() === '';
           const key = `${font}|${segment}`;
           let answer = ownAnswers.get(key);
           if (answer === undefined) {
@@ -2295,8 +2369,9 @@ function pieceWriter(
           return answer;
         };
         const style = styleOf(bindings, object, programs);
-        // EACH SIBLING ASKED AS THE RUN'S OWN FONT IS, by the probe, and once per segment.
-        const fonts = siblingsOf(object);
+        // EACH SIBLING ASKED AS THE RUN'S OWN FONT IS, by the probe, and once per segment. A restyled word has none: a
+        // sibling is the run's own face under another subset tag.
+        const fonts = restyle === undefined ? siblingsOf(object) : [];
         const siblings = fonts.map((sibling) => ({
           carries: (segment: string): boolean => {
             const asked = `${String(koffi.address(sibling))}|${segment}`;
@@ -2311,7 +2386,12 @@ function pieceWriter(
         const pieces = editPieces(
           text,
           ownCarries,
-          { family: style.font, bold: style.bold, italic: style.italic, own: [] },
+          {
+            family: restyle?.family ?? style.font,
+            bold: restyle?.bold ?? style.bold,
+            italic: restyle?.italic ?? style.italic,
+            own: [],
+          },
           faces().faces,
           siblings,
         );
@@ -2395,6 +2475,8 @@ function pieceWriter(
         trimPieces,
         record,
         standardFontLike,
+        standardFontRestyled,
+        styleOfObject,
         uncarriedIn,
         keepsItsObject,
         boxed: () => {
@@ -2450,6 +2532,8 @@ function layOutBlocks(
       const blocks = edits.map((edit) => ({
         text: edit.text,
         soft: edit.soft,
+        marks: edit.marks ?? [],
+        paragraphs: edit.paragraphs ?? [],
         fit: edit.fit,
         lines: edit.lines.map((line) =>
           line.map((named): HeldRun => {
@@ -2572,18 +2656,46 @@ function layOutBlocks(
           const spacing = paragraphSpacing(baselines, soft);
           // A SCALED BLOCK'S LEFT EDGE MOVED with the scale about its corner; its right edge did not (ADR-0097 4b).
           const scaledX = (x: number): number => blockLeft + (x - blockLeft) * scale;
-          const limits =
-            shape.align === 'center'
-              ? (() => {
-                  const across = Math.max(1, 2 * Math.min(blockRight - shape.centre, shape.centre - blockLeft));
-                  return { first: across, rest: across };
-                })()
-              : shape.align === 'right'
-                ? { first: Math.max(1, blockRight - blockLeft), rest: Math.max(1, blockRight - blockLeft) }
-                : {
-                    first: Math.max(1, blockRight - scaledX(shape.left + shape.firstIndent)),
-                    rest: Math.max(1, blockRight - scaledX(shape.left)),
-                  };
+          // HOW EACH PARAGRAPH IS SET: the block's shape with what the person set over it (ADR-0180 Decision 2).
+          const settings = new Map(block.paragraphs.map((setting) => [setting.paragraph, setting]));
+          const setFor = (place: number): { align: Alignment; leftEdge: number; first: number; centre: number } => {
+            const own = settings.get(place);
+            const align = own?.align ?? shape.align;
+            const leftEdge = own?.leftIndent === undefined ? shape.left : blockLeft + own.leftIndent;
+            const first = own?.firstIndent ?? (own?.leftIndent === undefined ? shape.firstIndent : 0);
+            // THE CENTRE the block's own lines keep where it was centred and the person did not move it; otherwise the
+            // middle of the paragraph's column.
+            const centre = own?.align === undefined && shape.align === 'center' ? shape.centre : (leftEdge + blockRight) / 2;
+            return { align, leftEdge, first, centre };
+          };
+          const limits = (place: number): { first: number; rest: number } => {
+            const set = setFor(place);
+            if (set.align === 'center') {
+              const across = Math.max(1, 2 * Math.min(blockRight - set.centre, set.centre - set.leftEdge));
+              return { first: across, rest: across };
+            }
+            if (set.align === 'right') {
+              const across = Math.max(1, blockRight - set.leftEdge);
+              return { first: across, rest: across };
+            }
+            return {
+              first: Math.max(1, blockRight - scaledX(set.leftEdge + set.first)),
+              rest: Math.max(1, blockRight - scaledX(set.leftEdge)),
+            };
+          };
+          /** The paragraphs whose settings the person changed from how the block was found: set again, words or not. */
+          const forced = new Set(
+            block.paragraphs
+              .filter(
+                (setting) =>
+                  (setting.align !== undefined && setting.align !== shape.align) ||
+                  (setting.leftIndent !== undefined && Math.abs(blockLeft + setting.leftIndent - shape.left) > 0.5) ||
+                  (setting.firstIndent !== undefined && Math.abs(setting.firstIndent - shape.firstIndent) > 0.5) ||
+                  (setting.lineSpacing !== undefined && Math.abs(setting.lineSpacing - 1) > 0.01) ||
+                  (setting.spaceBefore !== undefined && setting.spaceBefore > 0.5),
+              )
+              .map((setting) => setting.paragraph),
+          );
           const runsById = new Map(lines.flat().map((run) => [run.index, run]));
           const lineOfRun = new Map(lines.flatMap((line, at) => line.map((run): [HeldRun, number] => [run, at])));
           // WHERE A LINE SET AFRESH STARTS, as an object's own origin: the line that keeps the paragraph's left edge, read
@@ -2592,8 +2704,48 @@ function layOutBlocks(
           const restLines = lines.length > 1 ? lines.slice(1).map((_, at) => at + 1) : [0];
           const restAt = restLines.reduce((best, at) => ((lefts[at] ?? 0) < (lefts[best] ?? 0) ? at : best), restLines[0] ?? 0);
           const restOrigin = matrixOn(bindings, (lines[restAt]?.[0] ?? firstRun).object).e;
-          const measure = blockMeasure(bindings, document, pen, runsById, firstRun, lines.flat());
-          const plan = planBlock(flow, block.text.replace(/\r\n?/gu, '\n'), measure, limits);
+          // WHAT A MARK MAKES OF A RUN'S WORDS (ADR-0180 Decision 4), read from the run's own object: the face it asks, the
+          // size it ends at against the size the run is, and where it rises to.
+          const markStyle = (run: HeldRun, mark: number) => {
+            const set: BlockMarkSet = block.marks[mark]?.set ?? {};
+            const style = pen.styleOfObject(run.object);
+            const restyle: Restyle | undefined =
+              set.bold === undefined && set.italic === undefined && set.family === undefined
+                ? undefined
+                : {
+                    ...(set.bold === undefined ? {} : { bold: set.bold }),
+                    ...(set.italic === undefined ? {} : { italic: set.italic }),
+                    ...(set.family === undefined ? {} : { family: set.family }),
+                  };
+            const size = set.size ?? style.size;
+            const factor = (size / Math.max(style.size, 0.01)) * (set.rise === undefined ? 1 : RISE_SCALE);
+            return { set, style, restyle, size, factor };
+          };
+          const changes = (run: number, mark: number): boolean => {
+            const { set, style } = markStyle(runsById.get(run) ?? firstRun, mark);
+            return (
+              (set.bold !== undefined && set.bold !== style.bold) ||
+              (set.italic !== undefined && set.italic !== style.italic) ||
+              (set.size !== undefined && Math.abs(set.size - style.size) > 0.05) ||
+              (set.colour !== undefined &&
+                (set.colour.r !== style.colour.r || set.colour.g !== style.colour.g || set.colour.b !== style.colour.b)) ||
+              (set.family !== undefined && !style.font.toLowerCase().includes(set.family.toLowerCase())) ||
+              // NOT READABLE, so a mark that asks for it is a change: an underline is a line the page may or may not have.
+              set.underline === true ||
+              set.rise !== undefined
+            );
+          };
+          const measure = blockMeasure(bindings, document, pen, runsById, firstRun, lines.flat(), (run, mark) => {
+            const { restyle, factor } = markStyle(run, mark);
+            return { restyle, factor };
+          });
+          const plan = planBlock(flow, block.text.replace(/\r\n?/gu, '\n'), measure, limits, {
+            marks: block.marks.map(({ from, to }) => ({ from, to })),
+            changes,
+            forced,
+          });
+          /** The lines to draw under underlined words, made once the baselines are known. */
+          const underlines: { left: number; width: number; size: number; colour: [number, number, number]; first: unknown; last: unknown }[] = [];
 
           /** The visual lines the block will have, top to bottom. `rise` is a run's offset from its line's baseline. */
           const visual: {
@@ -2624,18 +2776,23 @@ function layOutBlocks(
               visual.push({ objects: [], oldBaseline: undefined, gapAbove: pitch + (row.opens ? spacing : 0) });
               continue;
             }
+            const set = setFor(row.paragraph);
+            const own = settings.get(row.paragraph);
             // A LINE SET AFRESH, one object per run of words it holds, each in its own run's style and at the width the
             // plan measured: made, inserted after the line before it and written as it is made, because the read-back
             // that decides whether a word needs another face reads a text page, which holds only what is on the page.
             const replaced = row.replaces >= 0 ? lines[row.replaces] : undefined;
+            // A PARAGRAPH THE PERSON LEFT ALONE keeps the line it stood in; one they set takes the edge they chose.
+            const keepsItsLine =
+              replaced !== undefined && own?.leftIndent === undefined && own?.firstIndent === undefined;
             const x =
-              shape.align === 'center'
-                ? shape.centre - row.width / 2
-                : shape.align === 'right'
-                  ? shape.right - row.width
-                  : replaced === undefined
-                    ? restOrigin + (row.first ? shape.firstIndent * scale : 0)
-                    : matrixOn(bindings, (replaced[0] ?? firstRun).object).e;
+              set.align === 'center'
+                ? set.centre - row.width / 2
+                : set.align === 'right'
+                  ? blockRight - row.width
+                  : keepsItsLine
+                    ? matrixOn(bindings, (replaced[0] ?? firstRun).object).e
+                    : restOrigin + (set.leftEdge - shape.left) * scale + (row.first ? set.first * scale : 0);
             const objects: { object: unknown; rise: number }[] = [];
             let left = x;
             let after = replaced === undefined ? anchor : (objectsOf(replaced).at(-1) ?? anchor);
@@ -2643,18 +2800,58 @@ function layOutBlocks(
               const source = runsById.get(piece.run) ?? firstRun;
               const made = makeTextLike(bindings, document, source.object, left);
               insertAfter(made, after);
-              const rise = matrixOn(bindings, source.object).f - (baselines[lineOfRun.get(source) ?? 0] ?? 0);
-              const laid = writePieces(made, piece.text);
+              let rise = matrixOn(bindings, source.object).f - (baselines[lineOfRun.get(source) ?? 0] ?? 0);
+              const marked = piece.mark === NO_MARK ? undefined : markStyle(source, piece.mark);
+              const laid = writePieces(made, piece.text, marked?.restyle);
+              if (marked !== undefined) {
+                // THE SIZE AND THE COLOUR the mark gives, on every object the piece became, about the first one's origin so
+                // the pieces of one word keep their places.
+                const origin = matrixOn(bindings, laid[0] ?? made).e;
+                for (const object of laid) {
+                  if (Math.abs(marked.factor - 1) > 1e-6) {
+                    const m = matrixOn(bindings, object);
+                    setMatrixOn(bindings, object, {
+                      a: m.a * marked.factor,
+                      b: m.b * marked.factor,
+                      c: m.c * marked.factor,
+                      d: m.d * marked.factor,
+                      e: origin + (m.e - origin) * marked.factor,
+                      f: m.f,
+                    });
+                  }
+                  if (marked.set.colour !== undefined) {
+                    bindings.setFillColour(object, marked.set.colour.r, marked.set.colour.g, marked.set.colour.b, 255);
+                  }
+                }
+                if (marked.set.rise === 'superscript') rise += SUPERSCRIPT_RISE * marked.size;
+                if (marked.set.rise === 'subscript') rise -= SUBSCRIPT_DROP * marked.size;
+                if (marked.set.underline === true) {
+                  const colour = marked.set.colour ?? marked.style.colour;
+                  underlines.push({
+                    left,
+                    width: piece.width,
+                    size: marked.size * (marked.set.rise === undefined ? 1 : RISE_SCALE),
+                    colour: [colour.r, colour.g, colour.b],
+                    first: laid[0] ?? made,
+                    last: laid.at(-1) ?? made,
+                  });
+                }
+              }
               for (const object of laid) objects.push({ object, rise });
               after = laid.at(-1) ?? made;
               left += piece.width;
             }
             anchor = after;
+            // THE GAP ABOVE THIS LINE: the person's own where they set the paragraph's spacing, else the gap the line it
+            // stands in had, else the block's pitch (and its paragraph spacing where it opens a paragraph).
+            const lineGap = pitch * (own?.lineSpacing ?? 1);
+            const spaced = own?.lineSpacing !== undefined || own?.spaceBefore !== undefined;
             visual.push({
               objects,
               oldBaseline: undefined,
-              gapAbove:
-                row.replaces > 0
+              gapAbove: spaced
+                ? lineGap + (row.first && visual.length > 0 ? (own.spaceBefore ?? spacing) : 0)
+                : row.replaces > 0
                   ? (baselines[row.replaces - 1] ?? 0) - (baselines[row.replaces] ?? 0)
                   : pitch + (row.opens ? spacing : 0),
             });
@@ -2676,6 +2873,20 @@ function layOutBlocks(
                 setMatrixOn(bindings, object, { ...matrix, f: baseline + rise });
               }
             }
+          }
+          // THE LINES UNDER UNDERLINED WORDS, now that the baselines are where they end: a filled rectangle a little below
+          // the baseline, as long as the words are wide, inserted after the last object it underlines so the page reads
+          // in the order it is seen.
+          for (const line of underlines) {
+            const thickness = Math.max(0.5, UNDERLINE_THICKNESS * line.size);
+            const baselineAt = matrixOn(bindings, line.first).f;
+            const rule: unknown = bindings.newRect(line.left, baselineAt - UNDERLINE_DROP * line.size - thickness, line.width, thickness);
+            if (rule === null) throw refusedAt('object', 'FPDFPageObj_CreateNewRect refused the line under underlined words');
+            bindings.setFillColour(rule, line.colour[0], line.colour[1], line.colour[2], 255);
+            if (numberFrom(bindings.setDrawMode(rule, 1, 0), 'FPDFPath_SetDrawMode') !== 1) {
+              throw refusedAt('object', 'FPDFPath_SetDrawMode refused the line under underlined words');
+            }
+            insertAfter(rule, line.last);
           }
           // A FITTED BLOCK FITS when its last line sits no lower than its old last line did. A
           // baseline, not a bounding box: a descender is not a line, and comparing bottoms would
@@ -2759,6 +2970,8 @@ function blockMeasure(
   runs: ReadonlyMap<number, HeldRun>,
   fallback: HeldRun,
   block: readonly HeldRun[],
+  /** What a mark makes of a run's words: the face it asks and the factor its size and rise scale a width by. */
+  styleFor: (run: HeldRun, mark: number) => { readonly restyle: Restyle | undefined; readonly factor: number },
 ): Measure {
   const inkRight = (source: unknown, text: string, font?: unknown): number | undefined => {
     const probe = makeTextLike(bindings, document, source, 0, font);
@@ -2783,12 +2996,14 @@ function blockMeasure(
     character: string,
     font?: unknown,
     among?: readonly string[],
+    /** Which restyled face `font` is, so a bold twin and a plain one are not one answer. */
+    variant = '',
   ): number | null => {
-    const key = `${kind}|${String(run.index)}|${character}`;
+    const key = `${kind}${variant}|${String(run.index)}|${character}`;
     const known = advances.get(key);
     if (known !== undefined) return known;
     const source = run.object;
-    const reference = referenceFor(`${kind}|${String(run.index)}`, source, font, among);
+    const reference = referenceFor(`${kind}${variant}|${String(run.index)}`, source, font, among);
     let answer: number | null = null;
     if (reference !== undefined) {
       const both = inkRight(source, character + reference, font);
@@ -2799,14 +3014,14 @@ function blockMeasure(
     return answer;
   };
   /** One character set as pieces on the page and taken off again: its width is the second write less the first. */
-  const piecesAdvance = (run: HeldRun, character: string): number => {
-    const key = `pieces|${String(run.index)}|${character}`;
+  const piecesAdvance = (run: HeldRun, character: string, restyle?: Restyle): number => {
+    const key = `pieces${JSON.stringify(restyle ?? null)}|${String(run.index)}|${character}`;
     const known = advances.get(key);
     if (known !== undefined && known !== null) return known;
     const rightOf = (text: string): number => {
       const object = makeTextLike(bindings, document, run.object, 0);
       pen.insertAfter(object, run.object);
-      const objects = pen.writePieces(object, text);
+      const objects = pen.writePieces(object, text, restyle);
       const right = spanOf(bindings, objects).right;
       for (const each of [object, ...objects]) {
         if (!pen.removed.includes(each)) pen.removed.push(each);
@@ -2819,8 +3034,17 @@ function blockMeasure(
     advances.set(key, width);
     return width;
   };
-  return (id, text) => {
-    const run = runs.get(id) ?? fallback;
+  /** The width of `text` in a face a mark asked for: every character through the resolver's face, or the standard twin. */
+  const restyledWidth = (run: HeldRun, restyle: Restyle, text: string): number => {
+    const each = Array.from(text);
+    if (pen.inPieces) return each.reduce((sum, character) => sum + piecesAdvance(run, character, restyle), 0);
+    const twin = pen.standardFontRestyled(run.object, restyle);
+    const widths = each.map((character) => advanceOf('twin', run, character, twin, ['x'], JSON.stringify(restyle)));
+    if (widths.some((width) => width === null)) throw new TextNotWritableError(pen.uncarriedIn(run.object, text));
+    return widths.reduce<number>((sum, width) => sum + (width ?? 0), 0);
+  };
+  /** The width of `text` in the run's own style: its font, then the pieces a character it lacks is set in. */
+  const plainWidth = (run: HeldRun, text: string): number => {
     const each = Array.from(text);
     const own = each.map((character) => advanceOf('own', run, character));
     if (own.every((width) => width !== null)) return own.reduce((sum, width) => sum + width, 0);
@@ -2831,6 +3055,16 @@ function blockMeasure(
     const widths = each.map((character) => advanceOf('twin', run, character, twin, ['x']));
     if (widths.some((width) => width === null)) throw new TextNotWritableError(pen.uncarriedIn(run.object, text));
     return widths.reduce<number>((sum, width) => sum + (width ?? 0), 0);
+  };
+  return (id, mark, text) => {
+    const run = runs.get(id) ?? fallback;
+    // A MARKED PIECE: the face it asks (where it asks one), scaled by its size and its rise. The size is applied to the
+    // objects after they are written, so the width is the unscaled one times the factor.
+    if (mark !== NO_MARK) {
+      const { restyle, factor } = styleFor(run, mark);
+      return factor * (restyle === undefined ? plainWidth(run, text) : restyledWidth(run, restyle, text));
+    }
+    return plainWidth(run, text);
   };
 }
 

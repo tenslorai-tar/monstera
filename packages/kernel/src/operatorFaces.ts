@@ -53,7 +53,7 @@ export class OperatorFaceSet {
   /** The hook {@link editOperators} asks for a word its run's fonts cannot carry. */
   get faces(): OperatorFaces {
     return {
-      set: (word, op, own) => this.#set(word, op.state.font, own),
+      set: (word, op, own, restyle) => this.#set(word, op.state.font, own, restyle),
       drawn: (pieces) => {
         for (const piece of pieces) if (piece.boxed !== undefined) this.boxed.push(piece.boxed);
       },
@@ -77,10 +77,22 @@ export class OperatorFaceSet {
     return names;
   }
 
-  #set(word: string, runFont: string | null, own: (stretch: string) => FacePiece | null): readonly FacePiece[] | null {
+  #set(
+    word: string,
+    runFont: string | null,
+    own: (stretch: string) => FacePiece | null,
+    restyle?: { readonly bold?: boolean; readonly italic?: boolean; readonly family?: string },
+  ): readonly FacePiece[] | null {
     const font = runFont === null ? undefined : this.fonts.get(runFont);
-    const request = { family: font?.face ?? null, bold: (font?.weight ?? 400) >= BOLD, italic: false, own: [] };
-    const pieces = editPieces(word, (stretch) => own(stretch) !== null, request, this.source.faces, []);
+    // A RESTYLED WORD (ADR-0180) asks the resolver for the weight, slant and family the person chose, and the run's own
+    // font is not tried: it is the wrong face by definition.
+    const request = {
+      family: restyle?.family ?? font?.face ?? null,
+      bold: restyle?.bold ?? (font?.weight ?? 400) >= BOLD,
+      italic: restyle?.italic ?? false,
+      own: [],
+    };
+    const pieces = editPieces(word, (stretch) => restyle === undefined && own(stretch) !== null, request, this.source.faces, []);
     const out: FacePiece[] = [];
     for (const piece of pieces) {
       if (piece.boxed.length > 0) {

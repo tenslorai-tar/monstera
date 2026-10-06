@@ -116,6 +116,7 @@ const {
   objectRuns,
   openPdfium,
   pdfiumWriter,
+  pageObjects,
   pageRuns,
   pageText,
   renderPageBitmap,
@@ -261,8 +262,10 @@ const failures = [];
 // Chromium print's members against the kernel's own numbering, and the ruled page's object indices as the control, and
 // 126 from ADR-0179's paragraphs: the fixture's soft ends and its words, a letter that moves one line, a bold word that
 // wraps bold, a centred line and an indented first line kept, and a control beside each, and 129 from the render mode an
-// edit keeps: invisible text stays invisible, with a visible control and the fixture's own.
-const roster = createRoster(failures, { cases: 129 });
+// edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
+// marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
+// with the control that separates the mark from the fixture.
+const roster = createRoster(failures, { cases: 143 });
 
 /**
  * @param {string} name
@@ -541,6 +544,7 @@ async function main() {
   await nestedPromotionCases();
   await blockEditCases();
   await paragraphCases();
+  await formatCases();
   await pastThePageCases();
   await glyphLineCases();
   await settingCases();
@@ -551,6 +555,7 @@ async function main() {
   await replacePieceCases();
   await siblingCases();
   await runFontCases();
+  await formatPieceCases();
 
   process.stdout.write(
     failures.length > 0
@@ -2754,6 +2759,241 @@ async function aTypeset({ text = '', lines, bold = [], limit = 200, indent = 0, 
     }
   }
   return document.save();
+}
+
+/**
+ * A bold mark with the catalogue bound: the words are set in the resolver's bold face, not in a standard font, and the
+ * width the plan measured is the width drawn (the line's right edge stays inside the block's).
+ */
+async function formatPieceCases() {
+  const fonts = fontsDirectory(root);
+  if (!existsSync(fonts)) {
+    record('the bundled fonts are provisioned for the formatting piece cases', false, `${fonts} is absent`);
+    return;
+  }
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  try {
+    const PARAGRAPH = 'The quick brown fox jumps over the lazy dog while the keen reviewer reads every single line twice more today';
+    const original = await aTypeset({ text: PARAGRAPH });
+    const [block] = (await blocksOf(original)).blocks;
+    if (block === undefined) {
+      record('the piece formatting fixture reads as a block', false, 'no block');
+      return;
+    }
+    const words = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+    const from = words.indexOf('quick');
+    const edited = await localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([
+          {
+            lines: block.lines.map((line) => line.runs.map((run) => run.index)),
+            soft: block.lines.map((line) => line.soft),
+            text: words,
+            marks: [{ from, to: from + 'quick'.length, set: { bold: true } }],
+          },
+        ]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+    const after = await blocksOf(edited);
+    const quick = after.runs.find((run) => run.text.trim() === 'quick');
+    const brown = after.runs.find((run) => run.text.includes('brown'));
+    record(
+      'with a catalogue, a bold mark sets its words in a bold face of the resolver’s, and the rest of the line keeps its font',
+      quick?.style.bold === true && !/helvetica/iu.test(quick.style.font) && brown?.style.bold === false && /helvetica/iu.test(brown.style.font),
+      `quick ${String(quick?.style.font)} bold ${String(quick?.style.bold)}; brown ${String(brown?.style.font)}`,
+    );
+    record(
+      'and no line reaches past the block’s right edge: the width the plan measured is the width the face draws',
+      Math.max(...after.runs.map((run) => run.right)) <= block.box.x1 + 1,
+      `widest ${Math.max(...after.runs.map((run) => run.right)).toFixed(2)} against ${block.box.x1.toFixed(2)}`,
+    );
+  } finally {
+    bindEditFaces(null);
+  }
+}
+
+/**
+ * FORMATTING as marks over a block's words (ADR-0180), written by the PDFium writer: each style the contract names, read
+ * back from reopened bytes against what the same edit without the mark leaves, which is the control every case carries.
+ */
+async function formatCases() {
+  const PARAGRAPH = 'The quick brown fox jumps over the lazy dog while the keen reviewer reads every single line twice more today';
+  const original = await aTypeset({ text: PARAGRAPH });
+  const read = await blocksOf(original);
+  const [block] = read.blocks;
+  if (block === undefined) {
+    record('the formatting fixture reads as a block', false, 'no block');
+    return;
+  }
+  const lines = block.lines.map((line) => line.runs.map((run) => run.index));
+  const soft = block.lines.map((line) => line.soft);
+  const words = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  /**
+   * @param {{ marks?: { from: number; to: number; set: object }[]; paragraphs?: { paragraph: number; align?: 'left' | 'center' | 'right'; leftIndent?: number; firstIndent?: number; lineSpacing?: number; spaceBefore?: number }[]; text?: string }} extra
+   */
+  const format = (extra) =>
+    localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines, soft, text: extra.text ?? words, marks: extra.marks ?? [], paragraphs: extra.paragraphs ?? [] }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  /** The run holding `word`, in a reading of the saved bytes. */
+  const runOf = async (/** @type {Uint8Array} */ bytes, /** @type {string} */ word) => {
+    const { runs } = await blocksOf(bytes);
+    // THE WORD'S OWN OBJECT where a mark made it one, else the line's run that holds it.
+    return runs.find((run) => run.text.trim() === word) ?? runs.find((run) => run.text.includes(word));
+  };
+  const at = (/** @type {string} */ word) => ({ from: words.indexOf(word), to: words.indexOf(word) + word.length });
+
+  // BOLD: the words are in a bold face, their neighbours are not.
+  const bolded = await format({ marks: [{ ...at('quick'), set: { bold: true } }] });
+  const quick = await runOf(bolded, 'quick');
+  const brown = await runOf(bolded, 'brown');
+  record(
+    'a bold mark sets its words in a bold face and leaves the words beside them as they were',
+    quick?.style.bold === true && brown?.style.bold === false,
+    `quick bold ${String(quick?.style.bold)}, brown bold ${String(brown?.style.bold)}`,
+  );
+  record(
+    'CONTROL: the same edit with no mark leaves the page as it was, so the bold above is the mark’s',
+    (await runOf(original, 'quick'))?.style.bold === false,
+    `bold before ${String((await runOf(original, 'quick'))?.style.bold)}`,
+  );
+
+  // COLOUR.
+  const coloured = await format({ marks: [{ ...at('fox'), set: { colour: { r: 200, g: 20, b: 20 } } }] });
+  const fox = await runOf(coloured, 'fox');
+  const dog = await runOf(coloured, 'dog');
+  record(
+    'a colour mark paints its words in that colour, and not the words after them',
+    fox?.style.colour.r === 200 && fox.style.colour.g === 20 && dog?.style.colour.r === 0,
+    `fox ${JSON.stringify(fox?.style.colour)}, dog ${JSON.stringify(dog?.style.colour)}`,
+  );
+
+  // SIZE.
+  const sized = await format({ marks: [{ ...at('jumps'), set: { size: 20 } }] });
+  const jumps = await runOf(sized, 'jumps');
+  const neighbour = await runOf(sized, 'quick');
+  record(
+    'a size mark sets its words at that size, and the line it is on takes room for it',
+    jumps !== undefined && Math.abs(jumps.style.size - 20) < 0.6 && Math.abs((neighbour?.style.size ?? 0) - 11) < 0.6,
+    `jumps ${String(jumps?.style.size)}, quick ${String(neighbour?.style.size)}`,
+  );
+
+  // UNDERLINE: a rule, one object, the width of the words.
+  const objectKinds = async (/** @type {Uint8Array} */ bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      return (await pageObjects(session, 0)).filter((object) => object.kind === 'path');
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const metrics = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
+  const reviewerWidth = metrics.widthOfTextAtSize('reviewer', 11);
+  const underlined = await format({ marks: [{ ...at('reviewer'), set: { underline: true } }] });
+  const rules = await objectKinds(underlined);
+  const reviewer = await runOf(underlined, 'reviewer');
+  record(
+    'an underline mark draws one rule under its words, as wide as they are, a little below their baseline',
+    rules.length === 1 && reviewer !== undefined && rules[0] !== undefined &&
+      // THE WORD'S OWN WIDTH, from the font's metrics (the reading's run is the whole line the object joined into).
+      Math.abs(rules[0].right - rules[0].left - reviewerWidth) < 1 &&
+      rules[0].bottom >= reviewer.bottom - 1 &&
+      rules[0].top <= reviewer.top,
+    `${String(rules.length)} rule(s); ${JSON.stringify(rules[0])} against a ${reviewerWidth.toFixed(2)} wide word in a line ${String(reviewer?.bottom)}..${String(reviewer?.top)}`,
+  );
+  record('CONTROL: with no underline mark the page has no rule', (await objectKinds(original)).length === 0, 'rules before the edit');
+
+  // SUPERSCRIPT: smaller, and higher than the words beside it.
+  const raised = await format({ marks: [{ ...at('lazy'), set: { rise: 'superscript' } }] });
+  const lazy = await runOf(raised, 'lazy');
+  const dogs = await runOf(raised, 'dog');
+  record(
+    'a superscript mark sets its words smaller and above the baseline of the words beside them',
+    lazy !== undefined && dogs !== undefined && lazy.style.size < 0.8 * 11 && lazy.top > dogs.top - 0.5 * 11 && lazy.bottom > dogs.bottom + 1,
+    `lazy ${JSON.stringify(lazy && { size: lazy.style.size, bottom: lazy.bottom })}, dog bottom ${String(dogs?.bottom)}`,
+  );
+
+  // A MARK THAT RESTATES THE RUN IS NO EDIT: the same bold, sent again, writes nothing (the page's own words are already bold).
+  const doubly = await localPdfiumExecution.apply({
+    session: bolded,
+    command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+      kind: 'editTextBlock',
+      page: 0,
+      ...blockEditOf([
+        {
+          lines: (await blocksOf(bolded)).blocks[0]?.lines.map((line) => line.runs.map((run) => run.index)) ?? [],
+          soft: (await blocksOf(bolded)).blocks[0]?.lines.map((line) => line.soft) ?? [],
+          text: words,
+          marks: [{ ...at('quick'), set: { bold: true } }],
+        },
+      ]),
+      fit: 'reflow',
+      version: 1,
+    }),
+    sources: [],
+    reads: undefined,
+  }).then(
+    () => 'wrote',
+    (error) => (error instanceof Error ? error.message : String(error)),
+  );
+  record(
+    'a mark that restates what its words already are changes nothing, so the edit says so and writes nothing',
+    doubly.includes('changed nothing'),
+    doubly,
+  );
+
+  // PARAGRAPH SETTINGS: alignment, indent and spacing.
+  const centred = await format({ paragraphs: [{ paragraph: 0, align: 'center' }] });
+  const centredBlock = (await blocksOf(centred)).blocks[0];
+  const middles = centredBlock?.lines.map((line) => (line.box.x0 + line.box.x1) / 2) ?? [];
+  record(
+    'a centre setting sets every line of the paragraph about one middle',
+    middles.length >= 3 && Math.max(...middles) - Math.min(...middles) < 3,
+    `middles ${JSON.stringify(middles.map((middle) => Math.round(middle * 10) / 10))}`,
+  );
+  const lefts = block.lines.map((line) => line.box.x0);
+  record(
+    'CONTROL: the lines were flush left before, so the centred spread is the setting’s and not the fixture’s',
+    Math.max(...lefts) - Math.min(...lefts) < 1.5,
+    `lefts ${JSON.stringify(lefts)}`,
+  );
+  const spaced = await format({ paragraphs: [{ paragraph: 0, lineSpacing: 2 }] });
+  // THE GAP BETWEEN THE FIRST TWO LINES, from the runs themselves: a doubled gap may read as two blocks, which is the
+  // reading's grouping and not what is being asked.
+  const gap = async (/** @type {Uint8Array} */ bytes) => {
+    const rows = [...new Set((await blocksOf(bytes)).runs.map((run) => Math.round(run.bottom * 10) / 10))].sort((a, b) => b - a);
+    return rows.length < 2 ? 0 : (rows[0] ?? 0) - (rows[1] ?? 0);
+  };
+  const beforeGap = await gap(original);
+  const afterGap = await gap(spaced);
+  record(
+    'a line-spacing setting of two doubles the gap between the paragraph’s lines',
+    beforeGap > 0 && Math.abs(afterGap / beforeGap - 2) < 0.15,
+    `gap ${beforeGap.toFixed(2)} before, ${afterGap.toFixed(2)} after`,
+  );
+  const indented = await format({ paragraphs: [{ paragraph: 0, leftIndent: 30 }] });
+  const indentedBlock = (await blocksOf(indented)).blocks[0];
+  record(
+    'a left indent of 30 points moves every line of the paragraph in by 30',
+    indentedBlock !== undefined && indentedBlock.lines.every((line) => Math.abs(line.box.x0 - (lefts[0] ?? 0) - 30) < 2),
+    `lefts ${JSON.stringify(indentedBlock?.lines.map((line) => Math.round(line.box.x0 * 10) / 10))} against ${String(lefts[0])}`,
+  );
 }
 
 /**

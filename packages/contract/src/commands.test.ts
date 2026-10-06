@@ -160,6 +160,54 @@ describe('the block edit payload (ADR-0142)', () => {
     expect(editTextBlockSchema.safeParse({ ...command, softLines: [0] }).success).toBe(true);
   });
 
+  describe('marks and paragraph settings (ADR-0180)', () => {
+    const formatted = [
+      {
+        lines: [[3, 4], [7]],
+        soft: [true, false],
+        text: 'First block second line\nNext',
+        marks: [
+          { from: 0, to: 5, set: { bold: true } },
+          { from: 6, to: 11, set: { colour: { r: 200, g: 0, b: 0 }, size: 14 } },
+        ],
+        paragraphs: [{ paragraph: 1, align: 'center' as const, leftIndent: 18 }],
+      },
+      { lines: [[9]], soft: [false], text: 'Second' },
+    ];
+    const withMarks = { kind: 'editTextBlock' as const, page: 2, ...blockEditOf(formatted), fit: 'reflow' as const, version };
+
+    it('round-trips marks and paragraph settings to the block each belongs to', () => {
+      expect(editTextBlockSchema.safeParse(withMarks).success).toBe(true);
+      expect(blocksOfEdit(withMarks)).toStrictEqual(formatted);
+    });
+
+    it('CONTROL: an edit that formats nothing carries neither field, byte for byte what it was before', () => {
+      const plain = blockEditOf(blocks);
+      expect('marks' in plain).toBe(false);
+      expect('paragraphs' in plain).toBe(false);
+    });
+
+    it('REFUSES overlapping marks, an empty one, one past the words, one for a block that is not there, and ones out of order', () => {
+      const marks = (list: readonly object[]) => ({ ...withMarks, marks: list });
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 6, set: {} }, { block: 0, from: 4, to: 8, set: {} }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 3, to: 3, set: {} }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 999, set: {} }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 5, from: 0, to: 1, set: {} }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 1, from: 0, to: 2, set: {} }, { block: 0, from: 0, to: 2, set: {} }])).success).toBe(false);
+      // CONTROL: marks that touch end to end are accepted, so the overlap refusal is the overlap's.
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 5, set: {} }, { block: 0, from: 5, to: 8, set: {} }])).success).toBe(true);
+    });
+
+    it('REFUSES a style the contract does not name, a size no page holds, and a paragraph the words do not have', () => {
+      const marks = (list: readonly object[]) => ({ ...withMarks, marks: list });
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 2, set: { strike: true } }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(marks([{ block: 0, from: 0, to: 2, set: { size: 4000 } }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse({ ...withMarks, paragraphs: [{ block: 0, paragraph: 2, align: 'left' }] }).success).toBe(false);
+      // CONTROL: the second paragraph of that block is there.
+      expect(editTextBlockSchema.safeParse({ ...withMarks, paragraphs: [{ block: 0, paragraph: 1, align: 'left' }] }).success).toBe(true);
+    });
+  });
+
   it('REFUSES a command with no `softLines` at all, so a caller cannot satisfy it by not reading it', () => {
     const { softLines: _omitted, ...without } = command;
     expect(editTextBlockSchema.safeParse(without).success).toBe(false);

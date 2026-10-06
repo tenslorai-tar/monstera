@@ -288,7 +288,25 @@ export function attribute(lines: readonly FlowLine[], text: string): Attribution
 /** A stretch of one paragraph's characters set by one run. */
 export interface Part {
   readonly run: number;
+  /** The mark whose style these words take ({@link NO_MARK} for the run's own), ADR-0180. */
+  readonly mark: number;
   readonly text: string;
+}
+
+/** A word no mark names: set in the style of the run that wrote it. */
+export const NO_MARK = -1;
+
+/** Which of a block's marks covers each unit of its words, and whether a mark changes what a run already is. */
+export interface Formatting {
+  /** The span each mark covers, `[from, to)` in UTF-16 units of the new words. */
+  readonly marks: readonly { readonly from: number; readonly to: number }[];
+  /**
+   * Whether mark `mark` changes the style of run `run`. A mark that restates what a run already is changes nothing, and
+   * its words are set as the run's, so a re-sent block with every style it already had writes no line again.
+   */
+  readonly changes: (run: number, mark: number) => boolean;
+  /** Paragraphs (by place in the new words) whose settings changed, which are set again even where their words did not. */
+  readonly forced?: ReadonlySet<number>;
 }
 
 /** The smallest thing a line is filled with: a word, or a word of a script written without spaces, and its spaces. */
@@ -308,34 +326,60 @@ export interface FlowParagraph {
   readonly chunks: readonly Chunk[];
 }
 
-/** Runs of consecutive units with one owner, as parts. */
-function partsOf(text: string, owners: readonly number[]): Part[] {
+/** Runs of consecutive units with one owner and one mark, as parts. */
+function partsOf(text: string, owners: readonly number[], marks: readonly number[]): Part[] {
   const parts: Part[] = [];
   for (const [at, owner] of owners.entries()) {
     const unit = text[at] ?? '';
+    const mark = marks[at] ?? NO_MARK;
     const last = parts.at(-1);
-    if (last?.run === owner) parts[parts.length - 1] = { run: owner, text: last.text + unit };
-    else parts.push({ run: owner, text: unit });
+    if (last?.run === owner && last.mark === mark) parts[parts.length - 1] = { run: owner, mark, text: last.text + unit };
+    else parts.push({ run: owner, mark, text: unit });
   }
   return parts;
 }
 
+/**
+ * Which mark each unit of the new words takes: the one covering it where it changes the style of the run the unit's
+ * word is in, and {@link NO_MARK} everywhere else. Asked per unit, so a mark across two runs applies to the one it
+ * changes and not to the one it restates.
+ */
+function styleOfUnits(attribution: Attribution, formatting: Formatting | undefined): number[] {
+  const styles = Array.from({ length: attribution.text.length }, () => NO_MARK);
+  if (formatting === undefined) return styles;
+  let previous = JOIN;
+  const effective = attribution.owner.map((own) => {
+    const run = own === JOIN ? previous : own;
+    previous = run;
+    return run;
+  });
+  const first = effective.find((run) => run !== JOIN) ?? JOIN;
+  for (const [mark, span] of formatting.marks.entries()) {
+    for (let at = span.from; at < Math.min(span.to, styles.length); at += 1) {
+      const run = effective[at] === JOIN ? first : (effective[at] ?? first);
+      if (formatting.changes(run, mark)) styles[at] = mark;
+    }
+  }
+  return styles;
+}
+
 /** The paragraphs of the new words, each as chunks a line is filled with. */
-export function paragraphsOf(attribution: Attribution): FlowParagraph[] {
+export function paragraphsOf(attribution: Attribution, formatting?: Formatting): FlowParagraph[] {
   const { text, owner } = attribution;
+  const styles = styleOfUnits(attribution, formatting);
   const paragraphs: FlowParagraph[] = [];
   let start = 0;
   for (;;) {
     const newline = text.indexOf('\n', start);
     const end = newline === -1 ? text.length : newline;
-    paragraphs.push({ start, end, chunks: chunksOf(text, owner, start, end) });
+    paragraphs.push({ start, end, chunks: chunksOf(text, owner, styles, start, end) });
     if (newline === -1) break;
     start = newline + 1;
   }
   return paragraphs;
 }
 
-function chunksOf(text: string, owner: readonly number[], start: number, end: number): Chunk[] {
+function chunksOf(text: string, owner: readonly number[], styles: readonly number[], start: number, end: number): Chunk[] {
   const paragraph = text.slice(start, end);
   if (paragraph === '') return [];
   // A JOIN UNIT TAKES THE RUN BEFORE IT, or the one after at the start: it is a space between two words and the
@@ -359,19 +403,22 @@ function chunksOf(text: string, owner: readonly number[], start: number, end: nu
     const piece = paragraph.slice(from, to);
     const spaces = /\s+$/u.exec(piece)?.[0].length ?? 0;
     const coreEnd = to - spaces;
-    const core = partsOf(paragraph.slice(from, coreEnd), effective.slice(from, coreEnd));
-    const trail = spaces === 0 ? undefined : partsOf(paragraph.slice(coreEnd, to), effective.slice(coreEnd, to))[0];
+    const marks = styles.slice(start, end);
+    const core = partsOf(paragraph.slice(from, coreEnd), effective.slice(from, coreEnd), marks.slice(from, coreEnd));
+    const trail =
+      spaces === 0 ? undefined : partsOf(paragraph.slice(coreEnd, to), effective.slice(coreEnd, to), marks.slice(coreEnd, to))[0];
     chunks.push({ start: start + from, core, trail });
   }
   return chunks;
 }
 
-/** How wide `text` is when it is set in the style of `run`. */
-export type Measure = (run: number, text: string) => number;
+/** How wide `text` is when it is set in the style of `run`, with the style `mark` makes of it ({@link NO_MARK}: none). */
+export type Measure = (run: number, mark: number, text: string) => number;
 
-/** One piece of a line: consecutive words of one run, which are one object. */
+/** One piece of a line: consecutive words of one run and one mark, which are one object. */
 export interface Piece {
   readonly run: number;
+  readonly mark: number;
   readonly text: string;
   readonly width: number;
 }
@@ -388,7 +435,7 @@ export interface FlowLineOut {
 const WITHIN = 1e-6;
 
 function widthOf(parts: readonly Part[], measure: Measure): number {
-  return parts.reduce((sum, part) => sum + measure(part.run, part.text), 0);
+  return parts.reduce((sum, part) => sum + measure(part.run, part.mark, part.text), 0);
 }
 
 /**
@@ -396,20 +443,20 @@ function widthOf(parts: readonly Part[], measure: Measure): number {
  * inside one, and never leaving the head empty.
  */
 function breakWide(chunk: Chunk, limit: number, measure: Measure): { head: Chunk; rest: Chunk | undefined } {
-  const units: { run: number; text: string; at: number }[] = [];
+  const units: { run: number; mark: number; text: string; at: number }[] = [];
   let offset = 0;
   for (const part of chunk.core) {
     const boundaries = [0, ...graphemeBoundaries(part.text), part.text.length];
     for (let at = 0; at < boundaries.length - 1; at += 1) {
       const text = part.text.slice(boundaries[at] ?? 0, boundaries[at + 1] ?? part.text.length);
-      units.push({ run: part.run, text, at: offset + (boundaries[at] ?? 0) });
+      units.push({ run: part.run, mark: part.mark, text, at: offset + (boundaries[at] ?? 0) });
     }
     offset += part.text.length;
   }
   let width = 0;
   let take = 0;
   for (const unit of units) {
-    const next = width + measure(unit.run, unit.text);
+    const next = width + measure(unit.run, unit.mark, unit.text);
     if (take > 0 && next > limit + WITHIN) break;
     width = next;
     take += 1;
@@ -420,8 +467,9 @@ function breakWide(chunk: Chunk, limit: number, measure: Measure): { head: Chunk
     const parts: Part[] = [];
     for (const unit of taken) {
       const last = parts.at(-1);
-      if (last?.run === unit.run) parts[parts.length - 1] = { run: unit.run, text: last.text + unit.text };
-      else parts.push({ run: unit.run, text: unit.text });
+      if (last?.run === unit.run && last.mark === unit.mark) {
+        parts[parts.length - 1] = { run: unit.run, mark: unit.mark, text: last.text + unit.text };
+      } else parts.push({ run: unit.run, mark: unit.mark, text: unit.text });
     }
     return parts;
   };
@@ -434,15 +482,16 @@ function breakWide(chunk: Chunk, limit: number, measure: Measure): { head: Chunk
   };
 }
 
-/** The pieces of a line's parts: consecutive parts of one run are one. */
+/** The pieces of a line's parts: consecutive parts of one run and one mark are one. */
 function piecesOf(parts: readonly Part[], measure: Measure): Piece[] {
-  const pieces: { run: number; text: string }[] = [];
+  const pieces: { run: number; mark: number; text: string }[] = [];
   for (const part of parts) {
     const last = pieces.at(-1);
-    if (last?.run === part.run) pieces[pieces.length - 1] = { run: part.run, text: last.text + part.text };
-    else pieces.push({ run: part.run, text: part.text });
+    if (last?.run === part.run && last.mark === part.mark) {
+      pieces[pieces.length - 1] = { run: part.run, mark: part.mark, text: last.text + part.text };
+    } else pieces.push({ run: part.run, mark: part.mark, text: part.text });
   }
-  return pieces.map((piece) => ({ ...piece, width: measure(piece.run, piece.text) }));
+  return pieces.map((piece) => ({ ...piece, width: measure(piece.run, piece.mark, piece.text) }));
 }
 
 /** Where a paragraph's layout begins, and when it may stop. */
@@ -506,7 +555,7 @@ export function layOutParagraph(
       parts.push(...chunk.core);
       width += word;
       trail = chunk.trail;
-      trailWidth = trail === undefined ? 0 : measure(trail.run, trail.text);
+      trailWidth = trail === undefined ? 0 : measure(trail.run, trail.mark, trail.text);
     }
     lines.push({ start, pieces: piecesOf(parts, measure), width });
     number += 1;
@@ -529,9 +578,17 @@ export type Row =
       readonly opens: boolean;
       /** The old line it stands in for, whose gap above it it keeps, or -1. */
       readonly replaces: number;
+      /** The paragraph it belongs to, by place in the new words, for the settings that paragraph has. */
+      readonly paragraph: number;
     }
   /** A paragraph with no words: a blank line the person left, kept at the pitch. */
-  | { readonly kind: 'blank'; readonly opens: boolean };
+  | { readonly kind: 'blank'; readonly opens: boolean; readonly paragraph: number };
+
+/** The widths a paragraph's first line, and every other, may fill. */
+export interface Limits {
+  readonly first: number;
+  readonly rest: number;
+}
 
 /** What an edit does to a block. */
 export interface BlockPlan {
@@ -554,26 +611,33 @@ function lineAt(old: OldWords, offset: number): number {
  * @param lines the block's lines as the read answered them
  * @param text the words after the edit
  * @param measure how wide a piece of text is in a run's style
- * @param limits the width a paragraph's first line, and every other, may fill
+ * @param limits the width a paragraph's first line, and every other, may fill; or, per paragraph (by place in the new
+ * words), where the person set one differently (ADR-0180 Decision 2)
+ * @param formatting what spans of the words are, and which paragraphs' settings changed (ADR-0180 Decision 1)
  */
 export function planBlock(
   lines: readonly FlowLine[],
   text: string,
   measure: Measure,
-  limits: { readonly first: number; readonly rest: number },
+  limits: Limits | ((paragraph: number) => Limits),
+  formatting?: Formatting,
 ): BlockPlan {
   const attribution = attribute(lines, text);
   const { old, from } = attribution;
   const rows: Row[] = [];
+  const styles = styleOfUnits(attribution, formatting);
   /** The old paragraphs a new one already stands for: a split gives the second half to nobody, it is set afresh. */
   const claimed = new Set<number>();
-  for (const paragraph of paragraphsOf(attribution)) {
+  for (const [place, paragraph] of paragraphsOf(attribution, formatting).entries()) {
     const { start, end } = paragraph;
     const opens = rows.length > 0;
+    const limitsHere = typeof limits === 'function' ? limits(place) : limits;
     if (paragraph.chunks.length === 0) {
-      rows.push({ kind: 'blank', opens });
+      rows.push({ kind: 'blank', opens, paragraph: place });
       continue;
     }
+    // A PARAGRAPH THE PERSON FORMATTED OR RE-SET is laid out again whole, where an unformatted one keeps what it can.
+    const formatted = formatting?.forced?.has(place) === true || styles.slice(start, end).some((style) => style !== NO_MARK);
     // THE OLD PARAGRAPH THIS ONE IS, by its first unit that was not typed: the words were written over it or in front of
     // it, and its lines are the ones to keep or set again.
     let anchor = -1;
@@ -584,10 +648,10 @@ export function planBlock(
     // WHERE THE PARAGRAPH FIRST DIFFERS FROM THE OLD ONE, in new units: the first unit that is not the next old one, or
     // the end where the old paragraph goes on past it.
     let change = start;
-    if (held !== undefined) {
+    if (held !== undefined && !formatted) {
       while (change < end && from[change] === held.start + (change - start)) change += 1;
     }
-    const identical = held !== undefined && change === end && held.start + (end - start) === held.end;
+    const identical = held !== undefined && !formatted && change === end && held.start + (end - start) === held.end;
     if (identical) {
       for (let line = held.firstLine; line <= held.lastLine; line += 1) rows.push({ kind: 'old', line });
       continue;
@@ -616,7 +680,7 @@ export function planBlock(
 
     // A LINE THAT STARTS ON AN OLD LINE'S FIRST UNIT, with the rest of the paragraph exactly as it was, ends the layout.
     const resumes = (offset: number): boolean => {
-      if (held === undefined) return false;
+      if (held === undefined || formatted) return false;
       const origin = from[offset] ?? -1;
       if (origin < 0 || !old.lineStarts.includes(origin) || origin <= (old.lineStarts[relaidFrom] ?? 0)) return false;
       for (let unit = offset; unit < end; unit += 1) {
@@ -624,7 +688,7 @@ export function planBlock(
       }
       return origin + (end - offset) === held.end;
     };
-    const { lines: laid, stoppedAt } = layOutParagraph(paragraph, measure, limits, {
+    const { lines: laid, stoppedAt } = layOutParagraph(paragraph, measure, limitsHere, {
       chunk: begin,
       line: lineNumber,
       stopAt: resumes,
@@ -633,7 +697,8 @@ export function planBlock(
     if (stoppedAt !== undefined) rejoin = lineAt(old, from[stoppedAt] ?? 0);
     for (const [at, line] of laid.entries()) {
       const stands = relaidFrom < 0 ? -1 : relaidFrom + at < rejoin ? relaidFrom + at : -1;
-      if (stands >= 0 && sameLine(lines[stands], line)) rows.push({ kind: 'old', line: stands });
+      // A FORMATTED OR RE-SET PARAGRAPH IS NEVER KEPT by saying the same words: where its lines stand is what changed.
+      if (stands >= 0 && !formatted && sameLine(lines[stands], line)) rows.push({ kind: 'old', line: stands });
       else {
         rows.push({
           kind: 'new',
@@ -642,6 +707,7 @@ export function planBlock(
           first: lineNumber + at === 0,
           opens: at === 0 && relaidFrom < 0 && opens,
           replaces: stands,
+          paragraph: place,
         });
       }
     }
@@ -659,6 +725,6 @@ function sameLine(old: FlowLine | undefined, line: FlowLineOut): boolean {
   if (runs.length !== line.pieces.length) return false;
   return line.pieces.every((piece, at) => {
     const run = runs[at];
-    return run?.id === piece.run && run.text === piece.text;
+    return run?.id === piece.run && run.text === piece.text && piece.mark === NO_MARK;
   });
 }

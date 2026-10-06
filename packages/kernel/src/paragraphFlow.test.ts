@@ -5,6 +5,7 @@ import {
   type FlowLine,
   type Measure,
   attribute,
+  NO_MARK,
   layOutParagraph,
   oldWordsOf,
   paragraphsOf,
@@ -13,7 +14,7 @@ import {
 
 /** Six points a character in every run but 7, the bold one, which sets eight. */
 const BOLD = 7;
-const measure: Measure = (run, text) => text.length * (run === BOLD ? 8 : 6);
+const measure: Measure = (run, mark, text) => text.length * (run === BOLD || mark !== NO_MARK ? 8 : 6);
 
 /** The limit a line of twelve regular characters fills. */
 const TWELVE = 72;
@@ -150,9 +151,69 @@ describe('the chunks a line is filled with (ADR-0179 Decision 4)', () => {
     const lines = block([['foo', 'bar baz']], []);
     const [paragraph] = paragraphsOf(attribute(lines, 'foobar baz'));
     expect(paragraph?.chunks[0]?.core).toStrictEqual([
-      { run: 1, text: 'foo' },
-      { run: 2, text: 'bar' },
+      { run: 1, mark: NO_MARK, text: 'foo' },
+      { run: 2, mark: NO_MARK, text: 'bar' },
     ]);
+  });
+});
+
+describe('marks (ADR-0180)', () => {
+  const always = (): boolean => true;
+  const lines = (): FlowLine[] => block([['aaa bbb ccc ddd eee']], []);
+
+  it('splits a run’s words into pieces at a mark, each piece knowing the mark that styles it', () => {
+    const plan = planBlock(lines(), 'aaa bbb ccc ddd eee', measure, { first: 600, rest: 600 }, {
+      marks: [{ from: 4, to: 7 }],
+      changes: always,
+    });
+    const row = plan.rows[0];
+    if (row?.kind !== 'new') throw new Error('a marked paragraph is set again');
+    expect(row.pieces.map((piece) => [piece.text, piece.mark])).toStrictEqual([
+      ['aaa ', NO_MARK],
+      ['bbb', 0],
+      [' ccc ddd eee', NO_MARK],
+    ]);
+  });
+
+  it('measures the marked words in the marked style, so a bolder word wraps where a plain one would fit', () => {
+    // Twelve regular characters fill 72; `aaa bbb ccc` is eleven characters, 66 plain and 72 + 2 more when bbb is marked.
+    const plain = planBlock(lines(), 'aaa bbb ccc ddd eee', measure, { first: 72, rest: 72 }, { marks: [], changes: always });
+    const marked = planBlock(lines(), 'aaa bbb ccc ddd eee', measure, { first: 72, rest: 72 }, {
+      marks: [{ from: 0, to: 11 }],
+      changes: always,
+    });
+    const count = (rows: readonly { kind: string }[]): number => rows.filter((row) => row.kind === 'new').length;
+    expect(count(marked.rows)).toBeGreaterThan(count(plain.rows));
+  });
+
+  it('CONTROL: a mark that restates what its run already is changes nothing, so the block stays as it was', () => {
+    const plan = planBlock(lines(), 'aaa bbb ccc ddd eee', measure, { first: 600, rest: 600 }, {
+      marks: [{ from: 4, to: 7 }],
+      changes: () => false,
+    });
+    expect(plan.rows).toStrictEqual([{ kind: 'old', line: 0 }]);
+  });
+
+  it('sets a paragraph the person re-set (forced) again though its words did not change, and not its neighbour', () => {
+    const two = block([['aaa bbb'], ['ccc ddd']], [false]);
+    const plan = planBlock(two, 'aaa bbb\nccc ddd', measure, { first: 600, rest: 600 }, {
+      marks: [],
+      changes: always,
+      forced: new Set([1]),
+    });
+    expect(plan.rows.map((row) => row.kind)).toStrictEqual(['old', 'new']);
+  });
+
+  it('takes a limit per paragraph, so one paragraph the person indented wraps where its neighbour does not', () => {
+    const two = block([['aaa bbb ccc'], ['aaa bbb ccc']], [false]);
+    const plan = planBlock(two, 'aaa bbb ccc\naaa bbb ccc', measure, (paragraph) => (paragraph === 1 ? { first: 36, rest: 36 } : { first: 600, rest: 600 }), {
+      marks: [],
+      changes: always,
+      forced: new Set([0, 1]),
+    });
+    const perParagraph = [0, 1].map((place) => plan.rows.filter((row) => row.kind === 'new' && row.paragraph === place).length);
+    // The narrow paragraph's three words stand alone: `aaa bbb` is 42 points against 36.
+    expect(perParagraph).toStrictEqual([1, 3]);
   });
 });
 

@@ -374,6 +374,61 @@ describe('editOperators on paragraphs (ADR-0179)', () => {
     expect(fontAt('<636363>')).toBe('F1');
   });
 
+  describe('marks (ADR-0180)', () => {
+    const content = bytes('BT /F1 10 Tf 1 0 0 1 72 100 Tm (aaa bbb ccc) Tj ET');
+    const page: PageRuns = { textObjects: [0], runs: [inked(0, 'aaa bbb ccc', 72, 127)] };
+    const marked = (set: object, faces: OperatorFaces | null = null) =>
+      editOperators(content, fonts, page, [{ lines: [[0]], soft: [false], text: 'aaa bbb ccc', marks: [{ from: 4, to: 7, set }] }], faces);
+    const object = (set: object): string => {
+      const result = marked(set);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      expect(checkOperatorEdit(content, result.value, fonts).ok).toBe(true);
+      return inserted(result.value)[0] ?? '';
+    };
+
+    it('sets a marked colour and size on its words, and puts the words after them back as they were', () => {
+      const written = object({ colour: { r: 255, g: 0, b: 0 }, size: 20 });
+      expect(written).toContain('1 0 0 rg');
+      expect(written).toContain('/F1 20 Tf');
+      // THE WORDS AFTER: size 10 again and the default fill, since the page set none.
+      expect(written.indexOf('0 g')).toBeGreaterThan(written.indexOf('1 0 0 rg'));
+      expect(written.lastIndexOf('/F1 10 Tf')).toBeGreaterThan(written.indexOf('/F1 20 Tf'));
+    });
+
+    it('CONTROL: the same words with no mark change nothing, so the marked case wrote because of the mark', () => {
+      const plain = editOperators(content, fonts, page, [{ lines: [[0]], soft: [false], text: 'aaa bbb ccc' }]);
+      expect(plain).toStrictEqual({ ok: false, error: { reason: 'unchanged' } });
+    });
+
+    it('lifts a superscript to a smaller size above the baseline, and draws a rule under underlined words', () => {
+      const raised = object({ rise: 'superscript' });
+      expect(raised).toContain('/F1 6.5 Tf');
+      expect(raised).toContain(' 103.3 Tm');
+      // 'bbb' sits after 'aaa ' (20 units) and is three letters at 6.5: the rule starts there and is as wide as they are.
+      const under = object({ underline: true });
+      expect(under).toMatch(/q 0 0 0 rg 92 [\d.]+ 15 [\d.]+ re f Q/u);
+    });
+
+    it('asks the faces for the weight a bold mark names, and refuses by name where there are none', () => {
+      const asked: unknown[] = [];
+      const face: PageFont = { ...font('Face1', 'abcdefghijklmnopqrstuvwxyz'), face: 'Arimo', weight: 700 };
+      const faces: OperatorFaces = {
+        set: (word, _source, _own, restyle) => {
+          asked.push(restyle);
+          return Array.from(word, (character) => ({ font: face, codes: [character.charCodeAt(0)] }));
+        },
+        drawn: () => undefined,
+      };
+      const result = marked({ bold: true }, faces);
+      if (!result.ok) throw new Error(`refused: ${JSON.stringify(result.error)}`);
+      expect(asked.length).toBeGreaterThan(0);
+      expect(asked.every((restyle) => JSON.stringify(restyle) === '{"bold":true}')).toBe(true);
+      expect(inserted(result.value)[0]).toContain('/Face1 10 Tf');
+      // CONTROL: with no faces the page cannot set a word bold, and says which letters.
+      expect(marked({ bold: true })).toStrictEqual({ ok: false, error: { reason: 'needs-a-face', characters: ['b'] } });
+    });
+  });
+
   it('keeps a centred line centred when its words change', () => {
     const content = bytes(
       [
