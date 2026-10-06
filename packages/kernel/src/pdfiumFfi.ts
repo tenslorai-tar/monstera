@@ -1,5 +1,5 @@
 import { MAX_BLOCK_FONTS } from '@monstera/contract/host';
-import { type EditStep, replacementsForLine } from '@monstera/shared';
+import type { EditStep } from '@monstera/shared';
 import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
 import { editFaces, editFacesBound } from './editFaces.js';
@@ -7,6 +7,8 @@ import { editPieces } from './editPieces.js';
 import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
 import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
 import type { PageRuns } from './operatorEdit.js';
+import { type FlowLine, type Measure, planBlock } from './paragraphFlow.js';
+import { blockShape, paragraphSpacing } from './paragraphShape.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
 import { readFace } from './fontFaces.js';
 import { BOX, boxFont } from './boxFont.js';
@@ -1693,6 +1695,8 @@ function lineBoxes(walked: ReturnType<typeof walkRuns>): ReadonlyMap<number, Run
  */
 export interface BlockEdit {
   readonly lines: readonly (readonly number[])[];
+  /** Whether each line ends in a soft wrap (ADR-0179): the paragraphs the text is laid out as. */
+  readonly soft: readonly boolean[];
   readonly text: string;
   /**
    * `reflow`: a person typing — the block grows downward (ADR-0096). `shrink`: a translation — the
@@ -1773,12 +1777,6 @@ function moveBy(bindings: Bound, object: unknown, dx: number, dy: number): void 
   setMatrixOn(bindings, object, { ...matrix, e: matrix.e + dx, f: matrix.f + dy });
 }
 
-function setTextOn(bindings: Bound, object: unknown, text: string): void {
-  if (!trySetText(bindings, object, text)) {
-    throw refusedAt('set-text', 'FPDFText_SetText refused a block edit');
-  }
-}
-
 /**
  * Sets an object's text, answering whether PDFium would.
  *
@@ -1793,14 +1791,6 @@ function setTextOn(bindings: Bound, object: unknown, text: string): void {
  */
 function trySetText(bindings: Bound, object: unknown, text: string): boolean {
   return numberFrom(bindings.setText(object, wideString(text)), 'FPDFText_SetText') === 1;
-}
-
-/**
- * Where the text of a line may break: after a space, at the last one that
- * leaves something on both sides.
- */
-function lastBreak(text: string): number {
-  return text.trimEnd().lastIndexOf(' ');
 }
 
 /**
@@ -2436,6 +2426,7 @@ function layOutBlocks(
       const joined = joinedWalk(bindings, handle, walked);
       const blocks = edits.map((edit) => ({
         text: edit.text,
+        soft: edit.soft,
         fit: edit.fit,
         lines: edit.lines.map((line) =>
           line.map((named): HeldRun => {
@@ -2481,15 +2472,7 @@ function layOutBlocks(
       }
 
       const pen = pieceWriter(session, handle, page, mode, charactersOf(edits.map(({ text }) => text)));
-      const { inPieces: inPiecesHere, written, removed, insertAfter, write, writePieces, trimPieces, record } = pen;
-      const { standardFontLike, uncarriedIn } = pen;
-      /**
-       * The runs written by {@link writePieces}, each with the object it was written FROM: a continuation of the run
-       * is made in that object's style, never in a piece's face, so the line it wraps onto keeps the document's font
-       * as the owner's Q6 keeps the rest of the line. Removed objects stay readable until the end (`removed`).
-       */
-      const pieced = new Map<HeldRun, unknown>();
-      const styleOfRun = (run: HeldRun): unknown => pieced.get(run) ?? run.object;
+      const { written, removed, insertAfter, writePieces } = pen;
 
       try {
         for (const [blockAt, block] of blocks.entries()) {
@@ -2547,180 +2530,127 @@ function layOutBlocks(
           const baselines = lines.map((line) => matrixOn(bindings, (line[0] ?? firstRun).object).f);
           const pitch = blockPitch(bindings, firstRun.object, baselines);
 
-          const typed = block.text.replace(/\r\n?/gu, '\n').split('\n');
+          // THE BLOCK AS PARAGRAPHS (ADR-0179): which lines end a paragraph, how it is set, and what its words say.
+          const soft = lines.map((_, at) => at < lines.length - 1 && block.soft[at] === true);
+          const flow: FlowLine[] = lines.map((line, at) => ({
+            runs: line.map((run) => ({ id: run.index, text: run.text })),
+            soft: soft[at] === true,
+          }));
+          // THE SHAPE FROM THE RUNS' OWN EXTENTS, read before anything moved, by the one function the read answers it
+          // with, so the editor's box and this layout are one shape (B3a).
+          const shape = blockShape(
+            lines.map((line) => ({
+              x0: Math.min(...line.map((run) => run.span.left)),
+              x1: Math.max(...line.map((run) => run.span.right)),
+              characters: line.reduce((sum, run) => sum + run.text.length, 0),
+            })),
+            soft,
+          );
+          const spacing = paragraphSpacing(baselines, soft);
+          // A SCALED BLOCK'S LEFT EDGE MOVED with the scale about its corner; its right edge did not (ADR-0097 4b).
+          const scaledX = (x: number): number => blockLeft + (x - blockLeft) * scale;
+          const limits =
+            shape.align === 'center'
+              ? (() => {
+                  const across = Math.max(1, 2 * Math.min(blockRight - shape.centre, shape.centre - blockLeft));
+                  return { first: across, rest: across };
+                })()
+              : shape.align === 'right'
+                ? { first: Math.max(1, blockRight - blockLeft), rest: Math.max(1, blockRight - blockLeft) }
+                : {
+                    first: Math.max(1, blockRight - scaledX(shape.left + shape.firstIndent)),
+                    rest: Math.max(1, blockRight - scaledX(shape.left)),
+                  };
+          const runsById = new Map(lines.flat().map((run) => [run.index, run]));
+          const lineOfRun = new Map(lines.flatMap((line, at) => line.map((run): [HeldRun, number] => [run, at])));
+          // WHERE A LINE SET AFRESH STARTS, as an object's own origin: the line that keeps the paragraph's left edge, read
+          // off its first object, since the shape's edge is where ink begins and an origin is where the glyph is drawn from.
+          const lefts = lines.map((line) => Math.min(...line.map((run) => run.span.left)));
+          const restLines = lines.length > 1 ? lines.slice(1).map((_, at) => at + 1) : [0];
+          const restAt = restLines.reduce((best, at) => ((lefts[at] ?? 0) < (lefts[best] ?? 0) ? at : best), restLines[0] ?? 0);
+          const restOrigin = matrixOn(bindings, (lines[restAt]?.[0] ?? firstRun).object).e;
+          const measure = blockMeasure(bindings, document, pen, runsById, firstRun, lines.flat());
+          const plan = planBlock(flow, block.text.replace(/\r\n?/gu, '\n'), measure, limits);
 
-          /** The visual lines the block will have, top to bottom. */
-          const visual: { objects: unknown[]; oldBaseline: number | undefined; gapAbove: number }[] = [];
-          /** The object the block's reading order currently ends at, for lines typed below it. */
-          let blockEnd: unknown = firstRun.object;
-
-          /**
-           * Makes a continuation line in `source`'s style holding `text`,
-           * starting at `left`, and wraps it again if it does not fit. Appends
-           * each to `visual`.
-           *
-           * INSERTED AS IT IS MADE, not once the layout is known, because the
-           * read-back that decides whether it needs a twin reads a text page,
-           * and a text page holds only what is on the page. An insertion
-           * appends, so no index this edit resolved moves.
-           */
-          const continueWith = (source: unknown, text: string, left: number, after: unknown): unknown => {
-            let rest = text;
-            // EACH NEW LINE FOLLOWS THE ONE BEFORE IT in the page's order, starting after `after`.
-            let anchor = after;
-            while (rest !== '') {
-              let tail = '';
-              // IN PIECES WHERE THERE IS A CATALOGUE (ADR-0173): the line is made in `source`'s own font, written
-              // whole, and wrapped on its pieces — the last one's right edge — since a word in another face is wider or
-              // narrower than the run's own font would measure it. No standard twin: ADR-0172 withdrew it.
-              if (inPiecesHere) {
-                const object = makeTextLike(bindings, document, source, left);
-                insertAfter(object, anchor);
-                let objects = writePieces(object, rest);
-                while (boundsOf(bindings, objects.at(-1) ?? object).right > blockRight && lastBreak(rest) > 0) {
-                  const cut = lastBreak(rest);
-                  tail = tail === '' ? rest.slice(cut + 1).trimEnd() : `${rest.slice(cut + 1).trimEnd()} ${tail}`;
-                  rest = rest.slice(0, cut);
-                  objects = trimPieces(objects, rest);
-                }
-                anchor = objects.at(-1) ?? object;
-                visual.push({ objects, oldBaseline: undefined, gapAbove: pitch });
-                rest = tail;
-                continue;
-              }
-              let object = makeTextLike(bindings, document, source, left);
-              // A FONT THAT REFUSES THE WORDS makes the line in its standard twin from the start, so
-              // the wrap below measures the font that will be drawn.
-              if (!trySetText(bindings, object, rest)) {
-                bindings.destroyObject(object);
-                object = makeTextLike(bindings, document, source, left, standardFontLike(source));
-                if (!trySetText(bindings, object, rest)) {
-                  bindings.destroyObject(object);
-                  throw new TextNotWritableError(uncarriedIn(source, rest));
-                }
-              }
-              // THE SAME WRAP AS AN OLD LINE'S, on the object's own bounds.
-              while (boundsOf(bindings, object).right > blockRight && lastBreak(rest) > 0) {
-                const cut = lastBreak(rest);
-                tail = tail === '' ? rest.slice(cut + 1).trimEnd() : `${rest.slice(cut + 1).trimEnd()} ${tail}`;
-                rest = rest.slice(0, cut);
-                setTextOn(bindings, object, rest);
-              }
-              insertAfter(object, anchor);
-              anchor = write(object, rest);
-              visual.push({ objects: [anchor], oldBaseline: undefined, gapAbove: pitch });
-              rest = tail;
-            }
-            return anchor;
-          };
-
-          for (const [k, line] of lines.entries()) {
-            const next = typed[k];
-            if (next === undefined) {
-              // THE PERSON REMOVED THIS LINE; its objects go at the end — a joined run's every object.
-              removed.push(...line.flatMap((run) => [run.object, ...run.extras]));
+          /** The visual lines the block will have, top to bottom. `rise` is a run's offset from its line's baseline. */
+          const visual: {
+            objects: { object: unknown; rise: number }[];
+            oldBaseline: number | undefined;
+            gapAbove: number;
+          }[] = [];
+          const objectsOf = (line: readonly HeldRun[]): unknown[] => line.flatMap((run) => [run.object, ...run.extras]);
+          /** The old lines the plan keeps as they stand. */
+          const kept = new Set<number>();
+          /** The object the block's reading order has reached, so a new line is inserted where it is seen. */
+          let anchor: unknown = firstRun.object;
+          for (const row of plan.rows) {
+            if (row.kind === 'old') {
+              const line = lines[row.line];
+              if (line === undefined) continue;
+              kept.add(row.line);
+              const objects = objectsOf(line);
+              visual.push({
+                objects: objects.map((object) => ({ object, rise: 0 })),
+                oldBaseline: baselines[row.line],
+                gapAbove: row.line === 0 ? 0 : (baselines[row.line - 1] ?? 0) - (baselines[row.line] ?? 0),
+              });
+              anchor = objects.at(-1) ?? anchor;
               continue;
             }
-            const replacements = new Map(
-              replacementsForLine(line, next).map((replacement) => [replacement.index, replacement.text]),
-            );
-            // PUSHED ALONG THE LINE by what the runs before grew.
-            let push = 0;
-            /** Runs the diff emptied — removed with the edit's other removals, never set to nothing. */
-            const emptied = new Set<number>();
-            for (const run of line) {
-              moveBy(bindings, run.object, push, 0);
-              for (const extra of run.extras) moveBy(bindings, extra, push, 0);
-              const text = replacements.get(run.index);
-              if (text === undefined) continue;
-              // THE WHOLE RUN'S WIDTH, a joined run's every object: measured off its first object alone, a write
-              // into a run of glyphs would read as growing by the whole line and push everything after it away.
-              const before = run.extras.length === 0 ? boundsOf(bindings, run.object) : run.span;
-              // AN EMPTIED RUN IS REMOVED. `lineEdit`'s diff empties the runs an edit crossed, and
-              // `FPDFText_SetText` REFUSES the empty string (measured 2026-09-24) — so a translation,
-              // or a person retyping across a bold word, was refused where nothing was wrong.
-              if (text === '') {
-                emptied.add(run.index);
-                removed.push(run.object, ...run.extras);
-                run.extras = [];
-                push -= before.right - before.left;
-                continue;
-              }
-              // A JOINED RUN IS WRITTEN WHOLE into its first object; its other objects go (`HeldRun.extras`).
-              removed.push(...run.extras);
-              run.extras = [];
-              // THE RUN NOW NAMES WHATEVER SAYS IT — itself, its twin, or its pieces (ADR-0173), the first as its
-              // object and the rest as its extras, so they move and are removed with it as a joined run's are.
-              const own = run.object;
-              const [head, ...pieces] = inPiecesHere ? writePieces(own, text) : [write(own, text)];
-              if (head === undefined) throw new Error(`A block edit on page ${String(page)} wrote a run as nothing.`);
-              run.object = head;
-              run.extras = pieces;
-              if (inPiecesHere) pieced.set(run, own);
-              const after = spanOf(bindings, [head, ...pieces]);
-              push += after.right - after.left - (before.right - before.left);
+            if (row.kind === 'blank') {
+              visual.push({ objects: [], oldBaseline: undefined, gapAbove: pitch + (row.opens ? spacing : 0) });
+              continue;
             }
-            // THE LINE ENDS AT ITS LAST RUN WITH TEXT: an emptied run after it is going, and a wrap
-            // that looked at it would never wrap the words the first run now carries.
-            const kept = line.filter((run) => !emptied.has(run.index));
-            const last = kept[kept.length - 1] ?? line[line.length - 1] ?? firstRun;
-            const start = matrixOn(bindings, (line[0] ?? firstRun).object).e;
-            let lastText = replacements.get(last.index) ?? last.text;
-            let tail = '';
-            // A RUN WRITTEN IN PIECES ends at its last piece, and is cut by trimming them (`trimPieces`).
-            const inPieces = pieced.has(last);
-            const lastRight = (): number => boundsOf(bindings, inPieces ? (last.extras.at(-1) ?? last.object) : last.object).right;
-            // A LINE THAT GREW PAST THE BLOCK WRAPS; one that did not grow never
-            // does, however its rewrite measures.
-            while (push > 0 && lastRight() > blockRight && lastBreak(lastText) > 0) {
-              const cut = lastBreak(lastText);
-              tail = tail === '' ? lastText.slice(cut + 1).trimEnd() : `${lastText.slice(cut + 1).trimEnd()} ${tail}`;
-              lastText = lastText.slice(0, cut);
-              if (inPieces) {
-                const [head, ...pieces] = trimPieces([last.object, ...last.extras], lastText);
-                if (head === undefined) throw new Error(`A block edit on page ${String(page)} wrapped a run to nothing.`);
-                last.object = head;
-                last.extras = pieces;
-              } else {
-                setTextOn(bindings, last.object, lastText);
-              }
+            // A LINE SET AFRESH, one object per run of words it holds, each in its own run's style and at the width the
+            // plan measured: made, inserted after the line before it and written as it is made, because the read-back
+            // that decides whether a word needs another face reads a text page, which holds only what is on the page.
+            const replaced = row.replaces >= 0 ? lines[row.replaces] : undefined;
+            const x =
+              shape.align === 'center'
+                ? shape.centre - row.width / 2
+                : shape.align === 'right'
+                  ? shape.right - row.width
+                  : replaced === undefined
+                    ? restOrigin + (row.first ? shape.firstIndent * scale : 0)
+                    : matrixOn(bindings, (replaced[0] ?? firstRun).object).e;
+            const objects: { object: unknown; rise: number }[] = [];
+            let left = x;
+            let after = replaced === undefined ? anchor : (objectsOf(replaced).at(-1) ?? anchor);
+            for (const piece of row.pieces) {
+              const source = runsById.get(piece.run) ?? firstRun;
+              const made = makeTextLike(bindings, document, source.object, left);
+              insertAfter(made, after);
+              const rise = matrixOn(bindings, source.object).f - (baselines[lineOfRun.get(source) ?? 0] ?? 0);
+              const laid = writePieces(made, piece.text);
+              for (const object of laid) objects.push({ object, rise });
+              after = laid.at(-1) ?? made;
+              left += piece.width;
             }
-            if (tail !== '' && !inPieces) record(last.object, lastText);
-            const lineEnd = inPieces ? (last.extras.at(-1) ?? last.object) : last.object;
+            anchor = after;
             visual.push({
-              // A joined run the edit left alone still has all its objects, and they move down with the line.
-              objects: line.flatMap((run) => [run.object, ...run.extras]),
-              oldBaseline: baselines[k],
-              gapAbove: k === 0 ? 0 : (baselines[k - 1] ?? 0) - (baselines[k] ?? 0),
+              objects,
+              oldBaseline: undefined,
+              gapAbove:
+                row.replaces > 0
+                  ? (baselines[row.replaces - 1] ?? 0) - (baselines[row.replaces] ?? 0)
+                  : pitch + (row.opens ? spacing : 0),
             });
-            if (tail !== '') blockEnd = continueWith(styleOfRun(last), tail, start, lineEnd);
-            else blockEnd = lineEnd;
           }
-
-          // LINES TYPED BELOW THE BLOCK'S LAST, in its last line's last run's style, after whatever
-          // the block's last line now ends with in the page's order.
-          const lastLine = lines[lines.length - 1] ?? firstLine;
-          const lastRunOfBlock = lastLine[lastLine.length - 1] ?? firstRun;
-          const blockStart = matrixOn(bindings, (lastLine[0] ?? firstRun).object).e;
-          for (const extra of typed.slice(lines.length)) {
-            if (extra === '') {
-              visual.push({ objects: [], oldBaseline: undefined, gapAbove: pitch });
-              continue;
-            }
-            blockEnd = continueWith(styleOfRun(lastRunOfBlock), extra, blockStart, blockEnd);
-          }
+          // EVERY OLD LINE THE PLAN DID NOT KEEP goes at the end: a line set afresh stands in for it, or the person
+          // removed it — a joined run's every object.
+          for (const [at, line] of lines.entries()) if (!kept.has(at)) removed.push(...objectsOf(line));
 
           // THE LAYOUT, top to bottom: the first line stays where it is, and
           // each line after it sits its own gap below the one above.
           let baseline = baselines[0] ?? 0;
           for (const [at, line] of visual.entries()) {
             if (at > 0) baseline -= line.gapAbove;
-            if (line.oldBaseline !== undefined) {
-              for (const object of line.objects) moveBy(bindings, object, 0, baseline - line.oldBaseline);
-            } else {
-              for (const object of line.objects) {
+            for (const { object, rise } of line.objects) {
+              if (line.oldBaseline !== undefined) {
+                moveBy(bindings, object, 0, baseline - line.oldBaseline);
+              } else {
                 const matrix = matrixOn(bindings, object);
-                setMatrixOn(bindings, object, { ...matrix, f: baseline });
+                setMatrixOn(bindings, object, { ...matrix, f: baseline + rise });
               }
             }
           }
@@ -2783,6 +2713,102 @@ function layOutBlocks(
       } finally {
         pen.close();
       }
+}
+
+/**
+ * How wide a piece of text is in a run's style, for {@link planBlock}.
+ *
+ * PDFium sets no kerning and no shaping: an object's width is the sum of its characters' advances, so the width of a
+ * word is the sum over its characters, and each character is measured once per run. `FPDFPageObj_GetBounds` is the ink
+ * box, not the advance, so one character's advance is read as a DIFFERENCE of two ink right edges that share a
+ * reference character the font carries: the right edge of `character` then `reference`, less that of `reference`
+ * alone. That is exact for any character, a space included, whose own ink box is empty.
+ *
+ * Where the run's font cannot carry a character: in a process with a catalogue, the character is written as pieces on
+ * the page for an instant, twice, and measured by the same difference (the face and box fonts the write will use); in
+ * one without, the whole text is measured in the standard twin the write will use, and a character it refuses is the
+ * refusal the write would give.
+ */
+function blockMeasure(
+  bindings: Bound,
+  document: unknown,
+  pen: PieceWriter,
+  runs: ReadonlyMap<number, HeldRun>,
+  fallback: HeldRun,
+  block: readonly HeldRun[],
+): Measure {
+  const inkRight = (source: unknown, text: string, font?: unknown): number | undefined => {
+    const probe = makeTextLike(bindings, document, source, 0, font);
+    try {
+      return trySetText(bindings, probe, text) ? boundsOf(bindings, probe).right : undefined;
+    } finally {
+      bindings.destroyObject(probe);
+    }
+  };
+  const characters = Array.from(new Set(block.flatMap((run) => Array.from(run.text)).filter((each) => each.trim() !== '')));
+  const references = new Map<string, string | undefined>();
+  const referenceFor = (key: string, source: unknown, font?: unknown, among: readonly string[] = characters): string | undefined => {
+    if (references.has(key)) return references.get(key);
+    const found = among.find((each) => inkRight(source, each, font) !== undefined);
+    references.set(key, found);
+    return found;
+  };
+  const advances = new Map<string, number | null>();
+  const advanceOf = (
+    kind: 'own' | 'twin',
+    run: HeldRun,
+    character: string,
+    font?: unknown,
+    among?: readonly string[],
+  ): number | null => {
+    const key = `${kind}|${String(run.index)}|${character}`;
+    const known = advances.get(key);
+    if (known !== undefined) return known;
+    const source = run.object;
+    const reference = referenceFor(`${kind}|${String(run.index)}`, source, font, among);
+    let answer: number | null = null;
+    if (reference !== undefined) {
+      const both = inkRight(source, character + reference, font);
+      const alone = inkRight(source, reference, font);
+      answer = both === undefined || alone === undefined ? null : both - alone;
+    }
+    advances.set(key, answer);
+    return answer;
+  };
+  /** One character set as pieces on the page and taken off again: its width is the second write less the first. */
+  const piecesAdvance = (run: HeldRun, character: string): number => {
+    const key = `pieces|${String(run.index)}|${character}`;
+    const known = advances.get(key);
+    if (known !== undefined && known !== null) return known;
+    const rightOf = (text: string): number => {
+      const object = makeTextLike(bindings, document, run.object, 0);
+      pen.insertAfter(object, run.object);
+      const objects = pen.writePieces(object, text);
+      const right = spanOf(bindings, objects).right;
+      for (const each of [object, ...objects]) {
+        if (!pen.removed.includes(each)) pen.removed.push(each);
+        const at = pen.written.findIndex((entry) => entry.object === each);
+        if (at !== -1) pen.written.splice(at, 1);
+      }
+      return right;
+    };
+    const width = rightOf(character + character) - rightOf(character);
+    advances.set(key, width);
+    return width;
+  };
+  return (id, text) => {
+    const run = runs.get(id) ?? fallback;
+    const each = Array.from(text);
+    const own = each.map((character) => advanceOf('own', run, character));
+    if (own.every((width) => width !== null)) return own.reduce((sum, width) => sum + width, 0);
+    if (pen.inPieces) {
+      return each.reduce((sum, character, at) => sum + (own[at] ?? piecesAdvance(run, character)), 0);
+    }
+    const twin = pen.standardFontLike(run.object);
+    const widths = each.map((character) => advanceOf('twin', run, character, twin, ['x']));
+    if (widths.some((width) => width === null)) throw new TextNotWritableError(pen.uncarriedIn(run.object, text));
+    return widths.reduce<number>((sum, width) => sum + (width ?? 0), 0);
+  };
 }
 
 /**

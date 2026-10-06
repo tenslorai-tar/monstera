@@ -110,6 +110,7 @@ refuseStaleBuild(root, PDFIUM_COMMAND, 19);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
+const { lineText, paragraphsOfLines } = await import('../../packages/shared/dist/index.js');
 const {
   objectRuns,
   openPdfium,
@@ -256,8 +257,10 @@ const failures = [];
 // ADR-0173's pieces: a word saved in a bundled face, its object, its wrap, the word the twin refused, an unreadable
 // catalogue either way, and a control either side, and 97 from its correction: a character past the BMP and its premise,
 // and 100 from the box: its premise, its reading, and its answer (ADR-0174), and 117 from ADR-0176's pageRuns: the
-// Chromium print's members against the kernel's own numbering, and the ruled page's object indices as the control.
-const roster = createRoster(failures, { cases: 117 });
+// Chromium print's members against the kernel's own numbering, and the ruled page's object indices as the control, and
+// 126 from ADR-0179's paragraphs: the fixture's soft ends and its words, a letter that moves one line, a bold word that
+// wraps bold, a centred line and an indented first line kept, and a control beside each.
+const roster = createRoster(failures, { cases: 126 });
 
 /**
  * @param {string} name
@@ -535,6 +538,7 @@ async function main() {
   await promotionCases();
   await nestedPromotionCases();
   await blockEditCases();
+  await paragraphCases();
   await pastThePageCases();
   await glyphLineCases();
   await settingCases();
@@ -2688,6 +2692,195 @@ async function blockEditCases() {
     'and the refusal names exactly the characters the font cannot show',
     named === 'é',
     named === null ? 'it named nothing' : `it named ${JSON.stringify(named)}`,
+  );
+}
+
+/**
+ * A page typeset as a person would: `text` filled greedily into lines of at most `limit` points, each word in its own
+ * font (the words named in `bold` in Helvetica-Bold), the first line starting `indent` points in. `lines` instead sets
+ * each given line on its own, centred on `centre` when that is given.
+ *
+ * @param {{ text?: string; lines?: string[]; bold?: string[]; limit?: number; indent?: number; centre?: number }} options
+ */
+async function aTypeset({ text = '', lines, bold = [], limit = 200, indent = 0, centre }) {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 400]);
+  const regular = await document.embedFont(StandardFonts.Helvetica);
+  const strong = await document.embedFont(StandardFonts.HelveticaBold);
+  const size = 11;
+  /** @param {string} word */
+  const fontOf = (word) => (bold.includes(word) ? strong : regular);
+  /** @param {string} word */
+  const widthOf = (word) => fontOf(word).widthOfTextAtSize(`${word} `, size);
+  /** @type {string[]} */
+  let rows = lines ?? [];
+  if (lines === undefined) {
+    rows = [];
+    let current = [];
+    let used = 0;
+    for (const word of text.split(' ')) {
+      const room = limit - (rows.length === 0 ? indent : 0);
+      if (current.length > 0 && used + widthOf(word) > room) {
+        rows.push(current.join(' '));
+        current = [];
+        used = 0;
+      }
+      current.push(word);
+      used += widthOf(word);
+    }
+    rows.push(current.join(' '));
+  }
+  for (const [at, row] of rows.entries()) {
+    /** @type {{ text: string; font: typeof regular }[]} */
+    const segments = [];
+    const words = row.split(' ');
+    for (const [index, word] of words.entries()) {
+      const font = fontOf(word);
+      const piece = index < words.length - 1 ? `${word} ` : word;
+      const last = segments.at(-1);
+      if (last?.font === font) last.text += piece;
+      else segments.push({ text: piece, font });
+    }
+    const width = segments.reduce((sum, segment) => sum + segment.font.widthOfTextAtSize(segment.text, size), 0);
+    let cursor = centre === undefined ? 72 + (at === 0 ? indent : 0) : centre - width / 2;
+    for (const segment of segments) {
+      page.drawText(segment.text, { x: cursor, y: 300 - at * 14, size, font: segment.font });
+      cursor += segment.font.widthOfTextAtSize(segment.text, size);
+    }
+  }
+  return document.save();
+}
+
+/**
+ * A block edited as PARAGRAPHS (ADR-0179): a paragraph's words flow, each in the style it was typed or drawn in, and a
+ * paragraph is set as its first lines were. Every reading is from reopened bytes; every case names what only the
+ * correct write produces, and the controls are the edits that must move more or less than the case under test.
+ */
+async function paragraphCases() {
+  const PARAGRAPH =
+    'The quick brown fox jumps over the lazy dog while the keen reviewer reads every single line twice more today';
+  const original = await aTypeset({ text: PARAGRAPH, bold: ['jumps'] });
+  const before = await blocksOf(original);
+  const [block] = before.blocks;
+  record(
+    'the typeset paragraph reads as ONE block of soft-ended lines, and its last line is a hard end',
+    before.blocks.length === 1 && block !== undefined && block.lines.length >= 3 &&
+      block.lines.every((line, at) => line.soft === (at < block.lines.length - 1)),
+    `${String(before.blocks.length)} block(s); soft ${JSON.stringify(block?.lines.map((line) => line.soft))}`,
+  );
+  if (block === undefined) return;
+  const lines = block.lines.map((line) => line.runs.map((run) => run.index));
+  const soft = block.lines.map((line) => line.soft);
+  const words = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  record(
+    'PREMISE: the paragraph’s words are the sentence drawn, joined across the soft wraps by single spaces',
+    words === PARAGRAPH,
+    JSON.stringify(words),
+  );
+  /**
+   * @param {string} text
+   * @param {Uint8Array} bytes
+   * @param {typeof lines} on
+   * @param {typeof soft} ends
+   */
+  const edit = (text, bytes = original, on = lines, ends = soft) =>
+    localPdfiumExecution.apply({
+      session: bytes,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines: on, soft: ends, text }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  /** @param {Uint8Array} bytes */
+  const runsAfter = async (bytes) => (await blocksOf(bytes)).runs;
+  const right = block.box.x1;
+
+  // A LETTER TYPED INTO A LINE THAT HAS ROOM sets that line again and nothing else: the lines below stay as they
+  // were, objects and places. The first line's last word is the one that gains the letter.
+  const [firstWord] = words.split(' ');
+  const typedFirst = await edit(words.replace(`${firstWord ?? ''} `, `${firstWord ?? ''}s `));
+  const afterFirst = await runsAfter(typedFirst);
+  const lastBefore = before.runs.find((run) => run.text.includes('twice more today') || run.text.includes('today'));
+  const lastAfter = afterFirst.find((run) => run.text.includes('today'));
+  record(
+    'a letter typed into the first line is on the page, and the last line stands where it was',
+    (await textOf(typedFirst)).includes(`${firstWord ?? ''}s`) &&
+      lastBefore !== undefined && lastAfter !== undefined &&
+      Math.abs(lastAfter.left - lastBefore.left) < 0.01 && Math.abs(lastAfter.bottom - lastBefore.bottom) < 0.01,
+    `last line ${JSON.stringify(lastAfter && { left: lastAfter.left, bottom: lastAfter.bottom })} against ${JSON.stringify(lastBefore && { left: lastBefore.left, bottom: lastBefore.bottom })}`,
+  );
+
+  // A LONG WORD TYPED IN FRONT OF THE BOLD ONE makes it wrap, and it WRAPS BOLD: every word keeps its own style.
+  const widened = await edit(words.replace('brown fox', 'brown unmistakably fox'));
+  const afterWide = await runsAfter(widened);
+  const boldRun = afterWide.find((run) => run.text.includes('jumps'));
+  const plainRun = afterWide.find((run) => run.text.includes('quick'));
+  const boldBefore = before.runs.find((run) => run.text.includes('jumps'));
+  record(
+    'a word wrapped by a longer line keeps its style: the bold word is bold on its new line, its neighbour is not',
+    boldRun !== undefined && plainRun !== undefined && boldBefore !== undefined &&
+      boldRun.style.bold === true && plainRun.style.bold === false &&
+      Math.max(...afterWide.map((run) => run.right)) <= right + 0.5,
+    `bold ${String(boldRun?.style.bold)}, plain ${String(plainRun?.style.bold)}, widest ${Math.max(...afterWide.map((run) => run.right)).toFixed(2)} against ${right.toFixed(2)}`,
+  );
+  const lineBelow = afterWide.find((run) => run.text.includes('today'));
+  record(
+    'CONTROL: that same edit DOES move the last line, so the unchanged lines above were kept by the plan and not by the edit being small',
+    lastBefore !== undefined && lineBelow !== undefined &&
+      (Math.abs(lineBelow.left - lastBefore.left) > 0.01 || Math.abs(lineBelow.bottom - lastBefore.bottom) > 0.01),
+    `last line at ${String(lineBelow?.left)},${String(lineBelow?.bottom)} against ${String(lastBefore?.left)},${String(lastBefore?.bottom)}`,
+  );
+
+  // A CENTRED BLOCK STAYS CENTRED when a line grows: the lines are set about the centre they kept.
+  const centred = await aTypeset({ lines: ['Annual report', 'prepared for the board', 'March'], centre: 200 });
+  const centredBlock = (await blocksOf(centred)).blocks[0];
+  const centredLines = centredBlock?.lines.map((line) => line.runs.map((run) => run.index)) ?? [];
+  const grown = await edit(
+    'Annual report of 2026\nprepared for the board\nMarch',
+    centred,
+    centredLines,
+    centredLines.map(() => false),
+  );
+  const centres = (await blocksOf(grown)).blocks[0]?.lines.map((line) => (line.box.x0 + line.box.x1) / 2) ?? [];
+  record(
+    'a centred line that grows is still centred, and so are the lines beside it',
+    centres.length === 3 && centres.every((centre) => Math.abs(centre - 200) < 1.5),
+    `centres ${JSON.stringify(centres.map((centre) => Number(centre.toFixed(2))))}`,
+  );
+  record(
+    'CONTROL: the lines were centred on the same point before the edit and were not the same width, so the case above measured the writer',
+    (centredBlock?.lines ?? []).every((line) => Math.abs((line.box.x0 + line.box.x1) / 2 - 200) < 1.5) &&
+      new Set((centredBlock?.lines ?? []).map((line) => Math.round(line.box.x1 - line.box.x0))).size === 3,
+    `before ${JSON.stringify((centredBlock?.lines ?? []).map((line) => Number(((line.box.x0 + line.box.x1) / 2).toFixed(2))))}`,
+  );
+
+  // A FIRST-LINE INDENT IS KEPT: the first line starts where it did, and the lines after it start at the paragraph's own edge.
+  const indented = await aTypeset({ text: PARAGRAPH, indent: 24 });
+  const indentedBlock = (await blocksOf(indented)).blocks[0];
+  const indentedLines = indentedBlock?.lines.map((line) => line.runs.map((run) => run.index)) ?? [];
+  const indentedSoft = indentedBlock?.lines.map((line) => line.soft) ?? [];
+  const indentedWords = paragraphsOfLines(
+    (indentedBlock?.lines ?? []).map((line) => ({ text: lineText(line.runs), soft: line.soft })),
+  );
+  const longer = await edit(`${indentedWords} Thank you very much indeed for reading all of it.`, indented, indentedLines, indentedSoft);
+  const longerLines = (await blocksOf(longer)).blocks[0]?.lines ?? [];
+  const firstLeft = longerLines[0]?.box.x0;
+  const restLefts = longerLines.slice(1).map((line) => line.box.x0);
+  record(
+    'a paragraph that grows keeps its first-line indent: the first line is 24 points in, every other line is at the edge',
+    longerLines.length > (indentedBlock?.lines.length ?? 0) && firstLeft !== undefined &&
+      restLefts.every((left) => Math.abs(left - 72) < 1.5) && Math.abs(firstLeft - 96) < 1.5,
+    `first ${String(firstLeft)}; rest ${JSON.stringify(restLefts)}`,
+  );
+  record(
+    'CONTROL: the indent was in the fixture, so a writer that flushed every line left would have failed the case above',
+    Math.abs((indentedBlock?.lines[0]?.box.x0 ?? 0) - 96) < 1.5 && Math.abs((indentedBlock?.lines[1]?.box.x0 ?? 0) - 72) < 1.5,
+    `fixture first ${String(indentedBlock?.lines[0]?.box.x0)}, second ${String(indentedBlock?.lines[1]?.box.x0)}`,
   );
 }
 
