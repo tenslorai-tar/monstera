@@ -104,6 +104,8 @@ export function ContextPanel({
               className="m-context-panel__tab"
               data-context-tab={entry.id}
               key={entry.id}
+              // THE NAME FOR A TAB THAT SHOWS ITS GLYPH ALONE (a narrow panel), where hovering says what it is.
+              title={i18n._(entry.title)}
               value={entry.id}
             >
               {/* THE GLYPH IS DECORATION beside the name, which stays the tab's accessible name. */}

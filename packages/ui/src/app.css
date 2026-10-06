@@ -7271,15 +7271,43 @@ body {
   container: context-tabs / inline-size;
 }
 
-@container context-tabs (inline-size < 363px) {
+/*
+ * FOUR TABS (ADR-0183 added Accessibility). The words are about 277 px in all with its 13-letter name, estimated from the
+ * three measured above at their characters' average width and to be re-measured on the production build: with glyphs
+ * the header's content must be about 479 px, with the words alone at 10 px padding 399, and at 2 px padding 327 — more
+ * than the default panel's 326 and the minimum's 250. So the switches move up, and below the last the words cannot all
+ * fit at any padding: the tabs that are NOT the selected one show their glyph alone, named by their `title` and
+ * still by their text for assistive technology (`.m-context-panel__tab-label` is hidden by clipping, not removed), and
+ * the selected one keeps its words. Each switch is set 16 px above its need.
+ */
+@container context-tabs (inline-size < 495px) {
   .m-context-panel__tab > svg {
     display: none;
   }
 }
 
-@container context-tabs (inline-size < 303px) {
+@container context-tabs (inline-size < 415px) {
   .m-context-panel__tab {
     padding-inline: var(--space-2);
+  }
+}
+
+@container context-tabs (inline-size < 343px) {
+  .m-context-panel__tab > svg {
+    display: block;
+  }
+
+  .m-context-panel__tab:not([data-active]) .m-context-panel__tab-label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .m-context-panel__tab {
+    padding-inline: var(--space-6);
   }
 }
 
