@@ -1,4 +1,11 @@
-import { type BlockMark, type BlockMarkSet, MAX_BLOCK_FONTS, type ParagraphProps } from '@monstera/contract/host';
+import {
+  type BlockMark,
+  type BlockMarkSet,
+  type BlockPlace,
+  MAX_BLOCK_FONTS,
+  type PageInsert,
+  type ParagraphProps,
+} from '@monstera/contract/host';
 import type { EditStep } from '@monstera/shared';
 import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
@@ -1730,6 +1737,8 @@ export interface BlockEdit {
   /** What spans of `text` are, and how named paragraphs are set (ADR-0180). */
   readonly marks?: readonly Omit<BlockMark, 'block'>[];
   readonly paragraphs?: readonly Omit<ParagraphProps, 'block'>[];
+  /** How the block is placed once laid out: moved, scaled, rotated, or set at a new measure (ADR-0180, corrected). */
+  readonly place?: Omit<BlockPlace, 'block'>;
   /**
    * `reflow`: a person typing — the block grows downward (ADR-0096). `shrink`: a translation — the
    * block is scaled uniformly to end above its original last line, never below {@link MIN_FIT}
@@ -1875,11 +1884,13 @@ export async function editTextBlocks(
   session: PdfiumSession,
   page: number,
   edits: readonly BlockEdit[],
+  /** Boxes of new text the page is given, laid out by the same pass (ADR-0180, corrected 2026-10-06). */
+  inserts: readonly PageInsert[] = [],
 ): Promise<readonly BoxedInEdit[]> {
-  const scales = await fitScales(session, page, edits);
+  const scales = await fitScales(session, page, edits, inserts);
   // THE CHARACTERS IT DREW AS BOXES (ADR-0174): the write pass's, never a trial's, which draws on a page thrown away.
   const { boxed } = await promised(() =>
-    onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, scales, 'write')),
+    onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, inserts, scales, 'write')),
   );
   return boxed;
 }
@@ -1897,10 +1908,17 @@ export async function editTextBlocks(
  * trials however many blocks it has. A trial writes without reading back: it asks where the words
  * land, and whether a font can carry them is the real pass's question.
  */
-async function fitScales(session: PdfiumSession, page: number, edits: readonly BlockEdit[]): Promise<number[]> {
+async function fitScales(
+  session: PdfiumSession,
+  page: number,
+  edits: readonly BlockEdit[],
+  inserts: readonly PageInsert[],
+): Promise<number[]> {
   const scales = edits.map(() => 1);
   const trial = (candidate: readonly number[]) =>
-    promised(() => onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, candidate, 'trial')));
+    promised(() =>
+      onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, inserts, candidate, 'trial')),
+    );
   if (!edits.some((edit) => edit.fit === 'shrink')) return scales;
   const first = await trial(scales);
   // KNOWN TO FIT is `low`, known not to is `high`. The floor is accepted without a trial: a block
@@ -1963,6 +1981,16 @@ interface PieceWriter {
   readonly writePieces: (object: unknown, text: string, restyle?: Restyle) => unknown[];
   /** The standard font a restyled word is set in where no catalogue is bound. */
   readonly standardFontRestyled: (object: unknown, restyle: Restyle) => unknown;
+  /** A new text object appended to the page for an added box, in the standard face its family names. */
+  readonly seed: (spec: {
+    readonly family?: string | undefined;
+    readonly bold?: boolean | undefined;
+    readonly italic?: boolean | undefined;
+    readonly size: number;
+    readonly colour?: { readonly r: number; readonly g: number; readonly b: number } | undefined;
+    readonly left: number;
+    readonly baseline: number;
+  }) => unknown;
   /** An object's own style, as the editor reads it: what a mark is compared against. */
   readonly styleOfObject: (object: unknown) => RunStyle;
   readonly trimPieces: (objects: readonly unknown[], text: string) => unknown[];
@@ -2133,12 +2161,37 @@ function pieceWriter(
        */
       const standardFontRestyled = (object: unknown, restyle: Restyle): unknown => {
         const style = styleOf(bindings, object, programs);
-        const asked = (restyle.family ?? '').toLowerCase();
-        const mono = asked === '' ? style.mono : /courier|mono|consolas/u.test(asked);
-        const serif = asked === '' ? style.serif : /times|serif|georgia|garamond|cambria/u.test(asked) && !asked.includes('sans');
+        const { mono, serif } = kindOfFamily(restyle.family, style);
         return standardFontNamed(
-          standardFontFor({ ...style, mono, serif, bold: restyle.bold ?? style.bold, italic: restyle.italic ?? style.italic }),
+          standardFontFor({ mono, serif, bold: restyle.bold ?? style.bold, italic: restyle.italic ?? style.italic }),
         );
+      };
+      /**
+       * A text object of its own on the page, in the standard face the family names, for an added box (ADR-0180 Decision
+       * 6): the one run its words are laid out from, since a layout takes its style from a run. Its single character is
+       * what the box's words replace, and it is appended, so the page reads it last.
+       */
+      const seed = (spec: {
+        readonly family?: string | undefined;
+        readonly bold?: boolean | undefined;
+        readonly italic?: boolean | undefined;
+        readonly size: number;
+        readonly colour?: { readonly r: number; readonly g: number; readonly b: number } | undefined;
+        readonly left: number;
+        readonly baseline: number;
+      }): unknown => {
+        const { mono, serif } = kindOfFamily(spec.family, { mono: false, serif: false });
+        const font = standardFontNamed(standardFontFor({ mono, serif, bold: spec.bold ?? false, italic: spec.italic ?? false }));
+        const object: unknown = bindings.createTextObject(document, font, spec.size);
+        if (object === null) throw refusedAt('object', 'FPDFPageObj_CreateTextObj refused the font of an added box');
+        setMatrixOn(bindings, object, { a: 1, b: 0, c: 0, d: 1, e: spec.left, f: spec.baseline });
+        if (!trySetText(bindings, object, SEED_TEXT)) throw refusedAt('set-text', 'PDFium refused the character an added box starts from');
+        const colour = spec.colour ?? { r: 0, g: 0, b: 0 };
+        bindings.setFillColour(object, colour.r, colour.g, colour.b, 255);
+        if (numberFrom(bindings.insertObject(handle, object), 'FPDFPage_InsertObject') !== 1) {
+          throw refusedAt('object', `FPDFPage_InsertObject refused an added box on page ${String(page)}`);
+        }
+        return object;
       };
       /** The run's own object, as the style it is read as: the base a mark is compared against. */
       const styleOfObject = (object: unknown): RunStyle => styleOf(bindings, object, programs);
@@ -2476,6 +2529,7 @@ function pieceWriter(
         record,
         standardFontLike,
         standardFontRestyled,
+        seed,
         styleOfObject,
         uncarriedIn,
         keepsItsObject,
@@ -2508,12 +2562,52 @@ function layOutBlocks(
   session: PdfiumSession,
   handle: unknown,
   page: number,
-  edits: readonly BlockEdit[],
+  given: readonly BlockEdit[],
+  inserts: readonly PageInsert[],
   scales: readonly number[],
   mode: 'write' | 'trial',
 ): { readonly fits: readonly boolean[]; readonly boxed: readonly BoxedInEdit[] } {
       const bindings = api();
       const document = documentFor(session);
+      const pen = pieceWriter(
+        session,
+        handle,
+        page,
+        mode,
+        charactersOf([...given.map(({ text }) => text), ...inserts.map(({ text }) => text)]),
+      );
+      try {
+      // AN ADDED BOX IS AN EDIT OF ONE RUN: a text object appended to the page in the box's own face and place, which the
+      // layout then replaces with the box's words at the measure it was given (ADR-0180 Decision 6, corrected). It is
+      // made BEFORE the page is read, so it is one of the runs the reading answers and is named as any run is.
+      const seeds = inserts.map((insert) =>
+        pen.seed({
+          family: insert.base?.family,
+          bold: insert.base?.bold,
+          italic: insert.base?.italic,
+          size: insert.size,
+          colour: insert.base?.colour,
+          left: insert.left,
+          baseline: insert.baseline,
+        }),
+      );
+      const seeded = objectIndices(bindings, handle);
+      const edits: readonly BlockEdit[] = [
+        ...given,
+        ...inserts.map((insert, at): BlockEdit => {
+          const index = seeded.get(String(koffi.address(seeds[at])));
+          if (index === undefined) throw refusedAt('object', `An added box on page ${String(page)} is not on the page it was added to`);
+          return {
+            lines: [[index]],
+            soft: [false],
+            text: insert.text,
+            ...(insert.marks === undefined ? {} : { marks: insert.marks }),
+            ...(insert.paragraphs === undefined ? {} : { paragraphs: insert.paragraphs }),
+            place: { width: insert.measure },
+            fit: 'reflow',
+          };
+        }),
+      ];
       const walked = walkRuns(bindings, handle);
       /** Per block: did its layout end above its original last line? */
       const fits = edits.map(() => true);
@@ -2534,6 +2628,7 @@ function layOutBlocks(
         soft: edit.soft,
         marks: edit.marks ?? [],
         paragraphs: edit.paragraphs ?? [],
+        place: edit.place,
         fit: edit.fit,
         lines: edit.lines.map((line) =>
           line.map((named): HeldRun => {
@@ -2578,10 +2673,10 @@ function layOutBlocks(
         throw new Error(`A block edit on page ${String(page)} names one run in two blocks.`);
       }
 
-      const pen = pieceWriter(session, handle, page, mode, charactersOf(edits.map(({ text }) => text)));
       const { written, removed, insertAfter, writePieces } = pen;
+      /** Whether any block was placed, which is a change the page's generation must be told of though no word moved. */
+      let placed = false;
 
-      try {
         for (const [blockAt, block] of blocks.entries()) {
           const { lines } = block;
           const [firstLine] = lines;
@@ -2612,8 +2707,13 @@ function layOutBlocks(
           // never narrower than the block itself. A block of several lines keeps the measure its
           // paragraph was set to.
           const ownRight = Math.max(...edges.map((edge) => edge.right));
+          // A MEASURE THE PERSON GAVE (a resized box, an added one) is the measure, from the block's own left edge.
           const blockRight =
-            lines.length === 1 ? Math.max(ownRight, pageRight - (blockLeft - pageLeft)) : ownRight;
+            block.place?.width !== undefined
+              ? blockLeft + block.place.width
+              : lines.length === 1
+                ? Math.max(ownRight, pageRight - (blockLeft - pageLeft))
+                : ownRight;
           // WHERE THE BLOCK ENDED, before anything moves: a fitted block must end above it.
           const lastBaselineBefore = matrixOn(bindings, (lines[lines.length - 1]?.[0] ?? firstRun).object).f;
 
@@ -2684,18 +2784,21 @@ function layOutBlocks(
             };
           };
           /** The paragraphs whose settings the person changed from how the block was found: set again, words or not. */
-          const forced = new Set(
-            block.paragraphs
-              .filter(
-                (setting) =>
-                  (setting.align !== undefined && setting.align !== shape.align) ||
-                  (setting.leftIndent !== undefined && Math.abs(blockLeft + setting.leftIndent - shape.left) > 0.5) ||
-                  (setting.firstIndent !== undefined && Math.abs(setting.firstIndent - shape.firstIndent) > 0.5) ||
-                  (setting.lineSpacing !== undefined && Math.abs(setting.lineSpacing - 1) > 0.01) ||
-                  (setting.spaceBefore !== undefined && setting.spaceBefore > 0.5),
-              )
-              .map((setting) => setting.paragraph),
-          );
+          const changedSettings = block.paragraphs
+            .filter(
+              (setting) =>
+                (setting.align !== undefined && setting.align !== shape.align) ||
+                (setting.leftIndent !== undefined && Math.abs(blockLeft + setting.leftIndent - shape.left) > 0.5) ||
+                (setting.firstIndent !== undefined && Math.abs(setting.firstIndent - shape.firstIndent) > 0.5) ||
+                (setting.lineSpacing !== undefined && Math.abs(setting.lineSpacing - 1) > 0.01) ||
+                (setting.spaceBefore !== undefined && setting.spaceBefore > 0.5),
+            )
+            .map((setting) => setting.paragraph);
+          // A NEW MEASURE SETS EVERY PARAGRAPH AGAIN, words or not: the lines the old measure broke are not the lines the
+          // new one does.
+          const everyParagraph =
+            block.place?.width === undefined ? [] : Array.from({ length: block.text.split('\n').length }, (_, paragraph) => paragraph);
+          const forced = new Set([...changedSettings, ...everyParagraph]);
           const runsById = new Map(lines.flat().map((run) => [run.index, run]));
           const lineOfRun = new Map(lines.flatMap((line, at) => line.map((run): [HeldRun, number] => [run, at])));
           // WHERE A LINE SET AFRESH STARTS, as an object's own origin: the line that keeps the paragraph's left edge, read
@@ -2877,6 +2980,7 @@ function layOutBlocks(
           // THE LINES UNDER UNDERLINED WORDS, now that the baselines are where they end: a filled rectangle a little below
           // the baseline, as long as the words are wide, inserted after the last object it underlines so the page reads
           // in the order it is seen.
+          const rules: unknown[] = [];
           for (const line of underlines) {
             const thickness = Math.max(0.5, UNDERLINE_THICKNESS * line.size);
             const baselineAt = matrixOn(bindings, line.first).f;
@@ -2887,6 +2991,15 @@ function layOutBlocks(
               throw refusedAt('object', 'FPDFPath_SetDrawMode refused the line under underlined words');
             }
             insertAfter(rule, line.last);
+            rules.push(rule);
+          }
+          // THE BLOCK PLACED, now that it ends as it will: every object it is made of, its kept lines, the lines set
+          // afresh and the rules under them, so it moves as the one thing it is. A trial lays out for a fit and places nothing.
+          if (mode === 'write' && block.place !== undefined) {
+            const mine = [...visual.flatMap((line) => line.objects.map(({ object }) => object)), ...rules];
+            if (mine.length > 0) {
+              if (placeObjects(bindings, mine, block.place, { x: blockLeft, y: blockTop })) placed = true;
+            }
           }
           // A FITTED BLOCK FITS when its last line sits no lower than its old last line did. A
           // baseline, not a bounding box: a descender is not a line, and comparing bottoms would
@@ -2898,7 +3011,7 @@ function layOutBlocks(
         // closed and its changes go with it.
         if (mode === 'trial') return { fits, boxed: [] };
 
-        if (written.length === 0 && removed.length === 0) {
+        if (written.length === 0 && removed.length === 0 && !placed && inserts.length === 0) {
           throw new Error(
             `A block edit on page ${String(page)} changed nothing. Regenerating a page's content ` +
               'stream is the whole cost of an edit, and this one would change nothing.',
@@ -3074,12 +3187,31 @@ function blockMeasure(
  * twelve of the fourteen that set text (ADR-0097). Read from {@link styleOf},
  * the one reading of a run's style, rather than from the flags again.
  */
-function standardFontFor(style: RunStyle): string {
+function standardFontFor(style: Pick<RunStyle, 'bold' | 'italic' | 'mono' | 'serif'>): string {
   const { bold, italic } = style;
   if (style.mono) return `Courier${bold && italic ? '-BoldOblique' : bold ? '-Bold' : italic ? '-Oblique' : ''}`;
   if (style.serif) return `Times${bold && italic ? '-BoldItalic' : bold ? '-Bold' : italic ? '-Italic' : '-Roman'}`;
   return `Helvetica${bold && italic ? '-BoldOblique' : bold ? '-Bold' : italic ? '-Oblique' : ''}`;
 }
+
+/**
+ * Whether a family a person asked for is a fixed-pitch or a serif kind, where it names one, and the run's own kind where
+ * it does not: the ONE reading of a family's name that a restyled word and an added box both take (B3a).
+ */
+function kindOfFamily(
+  family: string | undefined,
+  own: Pick<RunStyle, 'mono' | 'serif'>,
+): { readonly mono: boolean; readonly serif: boolean } {
+  const asked = (family ?? '').toLowerCase();
+  if (asked === '') return { mono: own.mono, serif: own.serif };
+  return {
+    mono: /courier|mono|consolas/u.test(asked),
+    serif: /times|serif|georgia|garamond|cambria/u.test(asked) && !asked.includes('sans'),
+  };
+}
+
+/** The one character an added box's text object starts from, which its words replace. */
+const SEED_TEXT = '.';
 
 /**
  * The distance between a block's lines: its first two baselines where it has
@@ -3244,6 +3376,62 @@ function boundsOf(
     throw refusedAt('object', 'FPDFPageObj_GetBounds refused an object this page handed back');
   }
   return { left: left[0] ?? 0, bottom: bottom[0] ?? 0, right: right[0] ?? 0, top: top[0] ?? 0 };
+}
+
+/**
+ * Moves, scales and rotates a block's objects as ONE thing (ADR-0180, corrected 2026-10-06): scaled about `anchor` (its
+ * top left), then turned about the centre of what that left, then moved. The three are composed into one matrix and
+ * applied to each object once, so the block never stands half placed between steps.
+ *
+ * Measured against `FPDFPageObj_Transform` (2026-09-10): a matrix scales about the origin, so the anchor is composed
+ * into the matrix here rather than left to the caller.
+ */
+function placeObjects(
+  bindings: Bound,
+  objects: readonly unknown[],
+  place: Omit<BlockPlace, 'block'>,
+  anchor: { readonly x: number; readonly y: number },
+): boolean {
+  const scale = place.scale ?? 1;
+  const degrees = place.rotate ?? 0;
+  const move = place.move ?? { x: 0, y: 0 };
+  // A PLACEMENT THAT PLACES NOTHING is no change, so a page is not regenerated for it.
+  if (scale === 1 && degrees === 0 && move.x === 0 && move.y === 0) return false;
+  const edges = objects.map((object) => boundsOf(bindings, object));
+  const centre = {
+    x: (Math.min(...edges.map((edge) => edge.left)) + Math.max(...edges.map((edge) => edge.right))) / 2,
+    y: (Math.min(...edges.map((edge) => edge.bottom)) + Math.max(...edges.map((edge) => edge.top))) / 2,
+  };
+  // THE CENTRE AFTER THE SCALE, which is what the turn is about.
+  const turned = { x: anchor.x + (centre.x - anchor.x) * scale, y: anchor.y + (centre.y - anchor.y) * scale };
+  const radians = (degrees * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const scaling: Matrix = { a: scale, b: 0, c: 0, d: scale, e: anchor.x * (1 - scale), f: anchor.y * (1 - scale) };
+  const turning: Matrix = {
+    a: cos,
+    b: sin,
+    c: -sin,
+    d: cos,
+    e: turned.x - turned.x * cos + turned.y * sin,
+    f: turned.y - turned.x * sin - turned.y * cos,
+  };
+  const moving: Matrix = { a: 1, b: 0, c: 0, d: 1, e: move.x, f: move.y };
+  const whole = then(then(scaling, turning), moving);
+  for (const object of objects) setMatrixOn(bindings, object, then(matrixOn(bindings, object), whole));
+  return true;
+}
+
+/** `first` followed by `second`, in the row-vector order a PDF matrix composes in. */
+function then(first: Matrix, second: Matrix): Matrix {
+  return {
+    a: first.a * second.a + first.b * second.c,
+    b: first.a * second.b + first.b * second.d,
+    c: first.c * second.a + first.d * second.c,
+    d: first.c * second.b + first.d * second.d,
+    e: first.e * second.a + first.f * second.c + second.e,
+    f: first.e * second.b + first.f * second.d + second.f,
+  };
 }
 
 /** The left and right edges of a run written as several objects (ADR-0173's pieces), from each one's own bounds. */

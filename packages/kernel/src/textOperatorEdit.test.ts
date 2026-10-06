@@ -91,6 +91,34 @@ describe('applyEditTextOperators', () => {
     });
   });
 
+  it('SAYS a placement or an added box is not written on a Type 3 page, rather than accepting it and doing nothing', async () => {
+    await withChromium(async (session, content) => {
+      const runs = headingRuns(content);
+      const index = runs.runs[0]?.index ?? 0;
+      const words = 'Monstera fixture heading.';
+      const moved: CommandOfKind<'editTextOperators'> = {
+        ...command(index, words),
+        ...blockEditOf([{ lines: [[index]], soft: [false], text: words, place: { move: { x: 10, y: 0 } } }]),
+      };
+      const added: CommandOfKind<'editTextOperators'> = {
+        ...command(index, words),
+        ...blockEditOf([{ lines: [[index]], soft: [false], text: words }], [{ left: 72, baseline: 600, measure: 100, size: 12, text: 'Added' }]),
+      };
+      for (const refused of [moved, added]) {
+        const refusal = await applyEditTextOperators(session, refused, runs).then(
+          () => null,
+          (error: unknown) => error,
+        );
+        expect(refusal).toBeInstanceOf(EditRefusedError);
+        expect((refusal as EditRefusedError).step).toBe('matrix');
+      }
+      // CONTROL: the same words with no place and no box are written, so the refusal above is the placement's.
+      await applyEditTextOperators(session, command(index, 'Monstera fixture reading.'), runs);
+      const after = await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))));
+      expect(after).not.toStrictEqual(content);
+    });
+  });
+
   it('keeps words that run past the page edge, rather than refusing the edit (Q7)', async () => {
     await withChromium(async (session, content) => {
       const runs = headingRuns(content);

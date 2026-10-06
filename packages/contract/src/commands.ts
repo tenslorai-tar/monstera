@@ -5094,12 +5094,72 @@ export const paragraphPropsSchema = z
 
 export type ParagraphProps = z.infer<typeof paragraphPropsSchema>;
 
+/** The most blocks one edit may place (invariant L11): a person drags one, so this is an order over a real edit; bounded where the whole edit's worst encoding still fits the
+ * 8 MiB file a PDFium command crosses in (`commands.test.ts`). */
+export const MAX_BLOCK_PLACES = 64;
+
+/**
+ * How a block is placed after its words are laid out
+ * ([ADR-0180](../../../docs/DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md),
+ * corrected 2026-10-06): moved, scaled about its top left, rotated about its centre, and laid out at a new measure.
+ * Every field is optional and at least one is named; each is an INTENT in points and degrees, for the reason
+ * `placePageObject` is: a matrix on this wire would make every caller compose the anchor.
+ */
+export const blockPlaceSchema = z
+  .object({
+    block: z.number().int().min(0).max(MAX_EDIT_RUNS),
+    /** Points added to every object of the block, in PDF user space. */
+    move: z
+      .object({
+        x: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+        y: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+      })
+      .strict()
+      .optional(),
+    /** A factor about the block's top left; one is a pure move. */
+    scale: z.number().min(MIN_OBJECT_SCALE).max(MAX_OBJECT_SCALE).optional(),
+    /** Degrees about the block's centre, counter-clockwise as PDF measures them. */
+    rotate: z.number().min(-360).max(360).optional(),
+    /** The measure the block is laid out at, in points: how a text box is resized. */
+    width: z.number().min(1).max(MAX_PAGE_COORDINATE).optional(),
+  })
+  .strict();
+
+export type BlockPlace = z.infer<typeof blockPlaceSchema>;
+
+/** The most boxes one edit may add, and the most words in each (invariant L11): an added box is typed by hand. */
+export const MAX_PAGE_INSERTS = 2;
+export const MAX_INSERT_TEXT = 4096;
+
+/**
+ * A box of new text, on a page that has no run to take its style from (ADR-0180 Decision 6, corrected 2026-10-06): its
+ * left edge and first baseline in PDF user space, the measure it wraps at, the size it is set in, and the style the
+ * family, weight, slant and colour of `base` name. Its words, marks and paragraphs are an edit's, and it is laid out by
+ * the same writer as one.
+ */
+export const pageInsertSchema = z
+  .object({
+    left: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+    baseline: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+    measure: z.number().min(1).max(MAX_PAGE_COORDINATE),
+    size: z.number().min(1).max(400),
+    base: blockMarkSetSchema.optional(),
+    text: z.string().min(1).max(MAX_INSERT_TEXT),
+    marks: z.array(blockMarkSchema.omit({ block: true })).max(32).optional(),
+    paragraphs: z.array(paragraphPropsSchema.omit({ block: true })).max(32).optional(),
+  })
+  .strict();
+
+export type PageInsert = z.infer<typeof pageInsertSchema>;
+
 /** A block's marks and paragraph settings, as an edit names them before the wire form (ADR-0180). */
 export interface BlockFormatting {
   /** Offsets into this block's `text`, ascending and not overlapping. */
   readonly marks?: readonly Omit<BlockMark, 'block'>[];
   /** By paragraph, ascending. */
   readonly paragraphs?: readonly Omit<ParagraphProps, 'block'>[];
+  /** How the block is placed once its words are laid out (ADR-0180, corrected 2026-10-06). */
+  readonly place?: Omit<BlockPlace, 'block'>;
 }
 
 /**
@@ -5125,11 +5185,11 @@ export interface EditedBlock extends BlockFormatting {
 export const blockEditSchema = z
   .object({
     /** Every run every block names: blocks in order, lines in order, runs in reading order. */
-    runs: z.array(objectIndexSchema).min(1).max(MAX_EDIT_RUNS),
+    runs: z.array(objectIndexSchema).max(MAX_EDIT_RUNS),
     /** Where each line begins in `runs`. */
-    lineStarts: z.array(z.number().int().min(0).max(MAX_EDIT_RUNS)).min(1).max(MAX_EDIT_RUNS),
+    lineStarts: z.array(z.number().int().min(0).max(MAX_EDIT_RUNS)).max(MAX_EDIT_RUNS),
     /** Where each block begins in `lineStarts`. */
-    blockStarts: z.array(z.number().int().min(0).max(MAX_EDIT_RUNS)).min(1).max(MAX_EDIT_RUNS),
+    blockStarts: z.array(z.number().int().min(0).max(MAX_EDIT_RUNS)).max(MAX_EDIT_RUNS),
     /**
      * Every block's words after the edit, blocks joined: each block's PARAGRAPHS, a hard break a line break and a soft
      * wrap one space (ADR-0179 Decision 1), so the words are what the block says and not how the page happened to break
@@ -5143,7 +5203,7 @@ export const blockEditSchema = z
      */
     softLines: z.array(z.number().int().min(0).max(MAX_EDIT_RUNS)).max(MAX_EDIT_RUNS),
     /** Where each block's words begin in `text`. */
-    textStarts: z.array(z.number().int().min(0).max(MAX_EDIT_TEXT)).min(1).max(MAX_EDIT_RUNS),
+    textStarts: z.array(z.number().int().min(0).max(MAX_EDIT_TEXT)).max(MAX_EDIT_RUNS),
     /**
      * What spans of the person's words ARE after the edit (ADR-0180 Decision 1). OPTIONAL: an edit that formats
      * nothing sends none, and a writer treats absence as *every word in the style of the run that wrote it*.
@@ -5151,6 +5211,10 @@ export const blockEditSchema = z
     marks: z.array(blockMarkSchema).max(MAX_BLOCK_MARKS).optional(),
     /** How named paragraphs are set (ADR-0180 Decision 2). Optional, absence meaning as the read found them. */
     paragraphs: z.array(paragraphPropsSchema).max(MAX_BLOCK_MARKS).optional(),
+    /** How named blocks are moved, scaled, rotated and set at a new measure (ADR-0180, corrected 2026-10-06). */
+    places: z.array(blockPlaceSchema).max(MAX_BLOCK_PLACES).optional(),
+    /** Boxes of new text, laid out by the same writer as a block's words. An edit may hold only these. */
+    inserts: z.array(pageInsertSchema).max(MAX_PAGE_INSERTS).optional(),
   })
   .strict();
 
@@ -5163,7 +5227,44 @@ export type BlockEdit = z.infer<typeof blockEditSchema>;
  * written twice. Order and agreement only; no size depends on them.
  */
 export function blockEditAgrees(edit: BlockEdit): boolean {
-  const { runs, lineStarts, blockStarts, text, textStarts, softLines, marks = [], paragraphs = [] } = edit;
+  const { runs, lineStarts, blockStarts, text, textStarts, softLines, marks = [], paragraphs = [], places = [], inserts = [] } = edit;
+  // AN ADDED BOX'S MARKS AND PARAGRAPHS ARE BOUNDED BY ITS OWN WORDS, as a block's are, and ascend the same way.
+  const insertsAgree = inserts.every((insert) => {
+    const lines = insert.text.split('\n').length;
+    return (
+      (insert.marks ?? []).every((mark, at, all) => {
+        const before = all[at - 1];
+        return mark.from < mark.to && mark.to <= insert.text.length && (before === undefined || mark.from >= before.to);
+      }) &&
+      (insert.paragraphs ?? []).every(
+        (setting, at, all) => setting.paragraph < lines && (at === 0 || setting.paragraph > (all[at - 1]?.paragraph ?? -1)),
+      )
+    );
+  });
+  // AN EDIT OF ADDED BOXES ALONE names no block, and then nothing that belongs to a block either: an edit with neither
+  // blocks nor boxes says nothing, and a writer handed it would regenerate a page for no change.
+  if (blockStarts.length === 0) {
+    return (
+      insertsAgree &&
+      inserts.length > 0 &&
+      runs.length === 0 &&
+      lineStarts.length === 0 &&
+      textStarts.length === 0 &&
+      text === '' &&
+      softLines.length === 0 &&
+      marks.length === 0 &&
+      paragraphs.length === 0 &&
+      places.length === 0
+    );
+  }
+  // PLACES ASCEND BY BLOCK, name a block of the edit, and each says something: a place that names nothing is a block the
+  // writer would re-lay out for no change.
+  const placesAgree = places.every(
+    (place, at) =>
+      place.block < blockStarts.length &&
+      (at === 0 || place.block > (places[at - 1]?.block ?? -1)) &&
+      (place.move !== undefined || place.scale !== undefined || place.rotate !== undefined || place.width !== undefined),
+  );
   // A BLOCK'S WORDS, to bound its marks and its paragraphs by.
   const wordsOf = (block: number): string => text.slice(textStarts[block] ?? 0, textStarts[block + 1] ?? text.length);
   // MARKS ASCEND BY (block, from), each non-empty and inside its block's words, none overlapping the one before it: a
@@ -5205,12 +5306,14 @@ export function blockEditAgrees(edit: BlockEdit): boolean {
     new Set(runs).size === runs.length &&
     softAgrees &&
     marksAgree &&
-    paragraphsAgree
+    paragraphsAgree &&
+    placesAgree &&
+    insertsAgree
   );
 }
 
 /** Blocks in their wire form — the ONE place they are flattened (B3a); {@link blocksOfEdit} is its inverse. */
-export function blockEditOf(blocks: readonly EditedBlock[]): BlockEdit {
+export function blockEditOf(blocks: readonly EditedBlock[], inserts: PageInsert[] = []): BlockEdit {
   const runs: number[] = [];
   const lineStarts: number[] = [];
   const blockStarts: number[] = [];
@@ -5218,6 +5321,7 @@ export function blockEditOf(blocks: readonly EditedBlock[]): BlockEdit {
   const softLines: number[] = [];
   const marks: BlockMark[] = [];
   const paragraphs: ParagraphProps[] = [];
+  const places: BlockPlace[] = [];
   let text = '';
   for (const [place, block] of blocks.entries()) {
     blockStarts.push(lineStarts.length);
@@ -5225,6 +5329,7 @@ export function blockEditOf(blocks: readonly EditedBlock[]): BlockEdit {
     text += block.text;
     for (const mark of block.marks ?? []) marks.push({ ...mark, block: place });
     for (const setting of block.paragraphs ?? []) paragraphs.push({ ...setting, block: place });
+    if (block.place !== undefined) places.push({ ...block.place, block: place });
     for (const [at, line] of block.lines.entries()) {
       if (block.soft[at] === true && at < block.lines.length - 1) softLines.push(lineStarts.length);
       lineStarts.push(runs.length);
@@ -5241,6 +5346,8 @@ export function blockEditOf(blocks: readonly EditedBlock[]): BlockEdit {
     softLines,
     ...(marks.length === 0 ? {} : { marks }),
     ...(paragraphs.length === 0 ? {} : { paragraphs }),
+    ...(places.length === 0 ? {} : { places }),
+    ...(inserts.length === 0 ? {} : { inserts }),
   };
 }
 
@@ -5253,12 +5360,14 @@ export function blocksOfEdit(edit: BlockEdit): EditedBlock[] {
     const end = edit.blockStarts[block + 1] ?? edit.lineStarts.length;
     const marks = (edit.marks ?? []).filter((mark) => mark.block === block).map(({ block: _block, ...mark }) => mark);
     const paragraphs = (edit.paragraphs ?? []).filter((setting) => setting.block === block).map(({ block: _block, ...rest }) => rest);
+    const placed = (edit.places ?? []).find((setting) => setting.block === block);
     return {
       lines: Array.from({ length: end - first }, (_, at) => lineOf(first + at)),
       soft: Array.from({ length: end - first }, (_, at) => soft.has(first + at)),
       text: edit.text.slice(edit.textStarts[block] ?? 0, edit.textStarts[block + 1] ?? edit.text.length),
       ...(marks.length === 0 ? {} : { marks }),
       ...(paragraphs.length === 0 ? {} : { paragraphs }),
+      ...(placed === undefined ? {} : { place: (({ block: _block, ...rest }) => rest)(placed) }),
     };
   });
 }

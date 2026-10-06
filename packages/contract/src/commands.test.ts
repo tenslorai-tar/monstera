@@ -208,6 +208,50 @@ describe('the block edit payload (ADR-0142)', () => {
     });
   });
 
+  describe('placement and added boxes (ADR-0180, corrected 2026-10-06)', () => {
+    const placed = [
+      { lines: [[3, 4], [7]], soft: [true, false], text: 'First block second line', place: { move: { x: 10, y: -4 }, rotate: 90 } },
+      { lines: [[9]], soft: [false], text: 'Second', place: { width: 120 } },
+    ];
+    const withPlaces = { kind: 'editTextBlock' as const, page: 2, ...blockEditOf(placed), fit: 'reflow' as const, version };
+    const box = { left: 72, baseline: 600, measure: 200, size: 12, text: 'A note' };
+
+    it('round-trips a place to the block it belongs to, and sends none for a block with none', () => {
+      expect(editTextBlockSchema.safeParse(withPlaces).success).toBe(true);
+      expect(blocksOfEdit(withPlaces)).toStrictEqual(placed);
+      // CONTROL: an edit that places nothing carries neither field.
+      expect('places' in blockEditOf(blocks)).toBe(false);
+      expect('inserts' in blockEditOf(blocks)).toBe(false);
+    });
+
+    it('REFUSES a place for a block that is not there, one out of order, one that says nothing, and a scale no page holds', () => {
+      const places = (list: readonly object[]) => ({ ...withPlaces, places: list });
+      expect(editTextBlockSchema.safeParse(places([{ block: 5, scale: 2 }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(places([{ block: 1, scale: 2 }, { block: 0, scale: 2 }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(places([{ block: 0 }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(places([{ block: 0, scale: 0 }])).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(places([{ block: 0, width: 0 }])).success).toBe(false);
+      // CONTROL: the same two blocks placed in order, each saying something, are accepted.
+      expect(editTextBlockSchema.safeParse(places([{ block: 0, scale: 2 }, { block: 1, width: 80 }])).success).toBe(true);
+    });
+
+    it('takes an edit of added boxes alone, and refuses one that names nothing at all', () => {
+      expect(editTextBlockSchema.safeParse({ kind: 'editTextBlock', page: 0, ...blockEditOf([], [box]), fit: 'reflow', version }).success).toBe(true);
+      expect(editTextBlockSchema.safeParse({ kind: 'editTextBlock', page: 0, ...blockEditOf([]), fit: 'reflow', version }).success).toBe(false);
+      // CONTROL: a box beside a block is accepted too, so the refusal is the empty edit's.
+      expect(editTextBlockSchema.safeParse({ kind: 'editTextBlock', page: 0, ...blockEditOf(blocks, [box]), fit: 'reflow', version }).success).toBe(true);
+    });
+
+    it('REFUSES a box with no words, one past its words with a mark, and an empty-block edit that still names a place', () => {
+      const edit = (insert: object) => ({ kind: 'editTextBlock' as const, page: 0, ...blockEditOf([], [insert as never]), fit: 'reflow' as const, version });
+      expect(editTextBlockSchema.safeParse(edit({ ...box, text: '' })).success).toBe(false);
+      expect(editTextBlockSchema.safeParse(edit({ ...box, marks: [{ from: 0, to: 99, set: { bold: true } }] })).success).toBe(false);
+      expect(editTextBlockSchema.safeParse({ ...edit(box), places: [{ block: 0, scale: 2 }] }).success).toBe(false);
+      // CONTROL: a mark inside the box's words is accepted.
+      expect(editTextBlockSchema.safeParse(edit({ ...box, marks: [{ from: 0, to: 1, set: { bold: true } }] })).success).toBe(true);
+    });
+  });
+
   it('REFUSES a command with no `softLines` at all, so a caller cannot satisfy it by not reading it', () => {
     const { softLines: _omitted, ...without } = command;
     expect(editTextBlockSchema.safeParse(without).success).toBe(false);

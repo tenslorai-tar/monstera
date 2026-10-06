@@ -184,9 +184,7 @@ export function typedBy(command: CommandOfKind<KindsRoutedTo<'pdfium'>>): string
         .map((replacement) => replacement.text)
         .join('');
     case 'editTextBlock':
-      return blocksOfEdit(command)
-        .map((block) => block.text)
-        .join('');
+      return [...blocksOfEdit(command).map((block) => block.text), ...(command.inserts ?? []).map((insert) => insert.text)].join('');
     case 'replaceTextAt':
     case 'replaceAllText':
       return command.replace;

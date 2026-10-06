@@ -56,6 +56,16 @@ export async function applyEditTextOperators(
   command: CommandOfKind<'editTextOperators'>,
   read: PageRuns,
 ): Promise<DrawnBoxes> {
+  // A PLACEMENT OR AN ADDED BOX IS NOT WRITTEN BY THIS WRITER YET, and is said so rather than dropped: the block wire is
+  // shared by both writers, so a field this one does not apply would otherwise be accepted and do nothing (ADR-0180,
+  // corrected 2026-10-06). The refusal names the page's kind of text, and the document is exactly what it was.
+  if ((command.places?.length ?? 0) > 0 || (command.inserts?.length ?? 0) > 0) {
+    throw new EditRefusedError(
+      'matrix',
+      0,
+      'a page whose text is drawn in a Type 3 font is not moved, resized, rotated or added to yet',
+    );
+  }
   // THE FACE WRITER ON FIRST NEED, by a literal `import()` as the host loads pdf-lib (ADR-0121 Decision 3): it brings
   // HarfBuzz, +6.4 MB of resident set at import (measured 2026-10-06, Node 22.22.0 on Linux, three runs against a control
   // that imports nothing), which every MuPDF host would otherwise pay at start against a 100 MB fixed-cost budget.

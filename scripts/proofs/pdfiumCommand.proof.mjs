@@ -265,7 +265,7 @@ const failures = [];
 // edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
 // marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
 // with the control that separates the mark from the fixture.
-const roster = createRoster(failures, { cases: 143 });
+const roster = createRoster(failures, { cases: 157 });
 
 /**
  * @param {string} name
@@ -545,6 +545,7 @@ async function main() {
   await blockEditCases();
   await paragraphCases();
   await formatCases();
+  await placeCases();
   await pastThePageCases();
   await glyphLineCases();
   await settingCases();
@@ -2759,6 +2760,190 @@ async function aTypeset({ text = '', lines, bold = [], limit = 200, indent = 0, 
     }
   }
   return document.save();
+}
+
+/** A page of two blocks, one above the other with a gap no line rule joins, each of two lines. */
+async function twoBlocks() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 400]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  for (const [at, row] of ['Upper block first line', 'Upper block second line'].entries()) {
+    page.drawText(row, { x: 72, y: 340 - at * 14, size: 11, font });
+  }
+  for (const [at, row] of ['Lower block first line', 'Lower block second line'].entries()) {
+    page.drawText(row, { x: 72, y: 200 - at * 14, size: 11, font });
+  }
+  return document.save();
+}
+
+/**
+ * PLACEMENT AND ADDED BOXES on the block wire (ADR-0180, corrected 2026-10-06): a block moved, scaled, rotated and set at
+ * a new measure as one thing, and a box of new text laid out by the same writer. Each case reads the reopened bytes, and
+ * carries the control the bug would also pass: the block that was not named stays where it was.
+ */
+async function placeCases() {
+  const original = await twoBlocks();
+  const read = await blocksOf(original);
+  const upper = read.blocks.find((block) => block.lines[0]?.runs[0]?.text.startsWith('Upper'));
+  const lower = read.blocks.find((block) => block.lines[0]?.runs[0]?.text.startsWith('Lower'));
+  if (upper === undefined || lower === undefined) {
+    record('the two-block fixture reads as two blocks', false, `${String(read.blocks.length)} block(s)`);
+    return;
+  }
+  /** One block as the wire names it, with what is done to its place. */
+  const entry = (/** @type {typeof upper} */ block, /** @type {object | undefined} */ place) => ({
+    lines: block.lines.map((line) => line.runs.map((run) => run.index)),
+    soft: block.lines.map((line) => line.soft),
+    text: paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft }))),
+    ...(place === undefined ? {} : { place }),
+  });
+  const send = (
+    /** @type {ReturnType<typeof entry>[]} */ blocks,
+    /** @type {object[]} */ inserts = [],
+    /** @type {Uint8Array} */ session = original,
+  ) =>
+    localPdfiumExecution.apply({
+      session,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf(blocks, /** @type {never} */ (inserts)),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  const runStarting = async (/** @type {Uint8Array} */ bytes, /** @type {string} */ words) =>
+    (await blocksOf(bytes)).runs.find((run) => run.text.startsWith(words));
+  const before = await runStarting(original, 'Upper block first');
+  const lowerBefore = await runStarting(original, 'Lower block first');
+
+  // MOVE: every object of the block, by one amount.
+  const moved = await send([entry(upper, { move: { x: 50, y: -40 } }), entry(lower, undefined)]);
+  const after = await runStarting(moved, 'Upper block first');
+  const secondAfter = await runStarting(moved, 'Upper block second');
+  const secondBefore = await runStarting(original, 'Upper block second');
+  record(
+    'a move shifts every line of the block by the same amount, in points',
+    before !== undefined && after !== undefined && secondBefore !== undefined && secondAfter !== undefined &&
+      Math.abs(after.left - before.left - 50) < 0.05 && Math.abs(after.bottom - before.bottom + 40) < 0.05 &&
+      Math.abs(secondAfter.left - secondBefore.left - 50) < 0.05 && Math.abs(secondAfter.bottom - secondBefore.bottom + 40) < 0.05,
+    `first ${JSON.stringify(after && [after.left - (before?.left ?? 0), after.bottom - (before?.bottom ?? 0)])}, second ${JSON.stringify(secondAfter && [secondAfter.left - (secondBefore?.left ?? 0), secondAfter.bottom - (secondBefore?.bottom ?? 0)])}`,
+  );
+  const lowerAfter = await runStarting(moved, 'Lower block first');
+  record(
+    'CONTROL: the block that was named in the same edit with no place stays exactly where it was',
+    lowerBefore !== undefined && lowerAfter !== undefined &&
+      Math.abs(lowerAfter.left - lowerBefore.left) < 0.001 && Math.abs(lowerAfter.bottom - lowerBefore.bottom) < 0.001,
+    `lower ${JSON.stringify(lowerAfter && [lowerAfter.left - (lowerBefore?.left ?? 0), lowerAfter.bottom - (lowerBefore?.bottom ?? 0)])}`,
+  );
+  record(
+    'and a move keeps the words: the moved block says what it said',
+    after?.text.trim() === 'Upper block first line' && secondAfter?.text.trim() === 'Upper block second line',
+    `${JSON.stringify(after?.text)} ${JSON.stringify(secondAfter?.text)}`,
+  );
+
+  // SCALE, about the block's top left.
+  const scaled = await send([entry(upper, { scale: 2 })]);
+  const big = await runStarting(scaled, 'Upper block first');
+  record(
+    'a scale of two sets the block at twice its size',
+    before !== undefined && big !== undefined && Math.abs(big.style.size / before.style.size - 2) < 0.05,
+    `size ${String(before?.style.size)} then ${String(big?.style.size)}`,
+  );
+  record(
+    'about its top left: its left edge and its top stay where they were',
+    before !== undefined && big !== undefined && Math.abs(big.left - before.left) < 0.5 && Math.abs(big.top - before.top) < 0.5,
+    `left ${String(before?.left)} then ${String(big?.left)}, top ${String(before?.top)} then ${String(big?.top)}`,
+  );
+
+  // ROTATE: a quarter turn swaps the block's width and height, about its centre.
+  const extentOf = async (/** @type {Uint8Array} */ bytes, /** @type {string} */ first) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      const objects = (await pageObjects(session, 0)).filter((object) => object.kind === 'text' && object.top > (first === 'Upper' ? 250 : 0));
+      const left = Math.min(...objects.map((object) => object.left));
+      const right = Math.max(...objects.map((object) => object.right));
+      const bottom = Math.min(...objects.map((object) => object.bottom));
+      const top = Math.max(...objects.map((object) => object.top));
+      return { width: right - left, height: top - bottom, centre: [(left + right) / 2, (bottom + top) / 2] };
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const flat = await extentOf(original, 'Upper');
+  const turned = await extentOf(await send([entry(upper, { rotate: 90 })]), 'Upper');
+  record(
+    'a quarter turn swaps the block’s width and height',
+    Math.abs(turned.width - flat.height) < 1.5 && Math.abs(turned.height - flat.width) < 1.5,
+    `${flat.width.toFixed(1)} by ${flat.height.toFixed(1)} became ${turned.width.toFixed(1)} by ${turned.height.toFixed(1)}`,
+  );
+  record(
+    'about its centre: the middle of the block does not move',
+    Math.abs((turned.centre[0] ?? 0) - (flat.centre[0] ?? 0)) < 1.5 && Math.abs((turned.centre[1] ?? 0) - (flat.centre[1] ?? 0)) < 1.5,
+    `centre ${JSON.stringify(flat.centre)} became ${JSON.stringify(turned.centre)}`,
+  );
+
+  // A PLACEMENT THAT PLACES NOTHING is no edit.
+  const nothing = await send([entry(upper, { scale: 1, move: { x: 0, y: 0 } })]).then(
+    () => 'wrote',
+    (error) => (error instanceof Error ? error.message : String(error)),
+  );
+  record('a place that moves, scales and turns nothing changes nothing, and the edit says so', nothing.includes('changed nothing'), nothing);
+
+  // WIDTH: the block laid out again at a new measure.
+  const narrow = await send([entry(upper, { width: 60 })]);
+  const narrowRuns = (await blocksOf(narrow)).runs.filter((run) => run.top > 250);
+  const wordsOf = (/** @type {{ text: string }[]} */ runs) => runs.map((run) => run.text).join(' ').replace(/\s+/gu, ' ').trim();
+  record(
+    'a width of sixty sets the block in lines no wider than that, with every word kept',
+    narrowRuns.length > 2 && Math.max(...narrowRuns.map((run) => run.right)) - Math.min(...narrowRuns.map((run) => run.left)) <= 61 &&
+      wordsOf(narrowRuns) === 'Upper block first line Upper block second line',
+    `${String(narrowRuns.length)} runs, width ${(Math.max(...narrowRuns.map((run) => run.right)) - Math.min(...narrowRuns.map((run) => run.left))).toFixed(1)}, words ${JSON.stringify(wordsOf(narrowRuns))}`,
+  );
+  const wide = await send([entry(upper, { width: 300 })]).then(
+    () => 'wrote',
+    (error) => (error instanceof Error ? error.message : String(error)),
+  );
+  record(
+    'CONTROL: a width as wide as the block already was lays out the same lines and writes nothing new',
+    wide.includes('changed nothing') || wide === 'wrote',
+    wide,
+  );
+
+  // AN ADDED BOX: a text object made for it and laid out as an edit of it.
+  const added = await send([], [{ left: 100, baseline: 120, measure: 150, size: 14, text: 'A note added to the page' }]);
+  const note = await runStarting(added, 'A note');
+  record(
+    'an added box writes its words at its left edge and baseline, in its size',
+    note !== undefined && Math.abs(note.left - 100) < 2 && Math.abs(note.bottom - 120) < 6 && Math.abs(note.style.size - 14) < 0.3 &&
+      // WRAPPED AT ITS MEASURE of 150 (a fourteen-point line of that sentence is wider), so the words are across its lines.
+      wordsOf((await blocksOf(added)).runs.filter((run) => run.top < 140 && run.left >= 99)) === 'A note added to the page',
+    `${JSON.stringify(note && { text: note.text, left: note.left, bottom: note.bottom, size: note.style.size })}`,
+  );
+  const untouched = await runStarting(added, 'Upper block first');
+  record(
+    'CONTROL: the blocks already on the page are exactly where they were, and the page without the box has no such words',
+    untouched !== undefined && before !== undefined && Math.abs(untouched.bottom - before.bottom) < 0.001 &&
+      (await runStarting(original, 'A note')) === undefined,
+    `upper ${String(untouched?.bottom)} against ${String(before?.bottom)}`,
+  );
+  const wrapped = await send([], [{ left: 100, baseline: 120, measure: 70, size: 11, text: 'a long note that must wrap at its measure' }]);
+  const wrappedRuns = (await blocksOf(wrapped)).runs.filter((run) => run.top < 140 && run.bottom > 0 && run.left >= 99);
+  record(
+    'an added box wraps its words at the measure it was given',
+    wrappedRuns.length >= 3 && Math.max(...wrappedRuns.map((run) => run.right)) - 100 <= 72,
+    `${String(wrappedRuns.length)} lines, right edge ${Math.max(...wrappedRuns.map((run) => run.right)).toFixed(1)}`,
+  );
+  const marked = await send([], [{ left: 100, baseline: 120, measure: 200, size: 12, text: 'plain heavy plain', marks: [{ from: 6, to: 11, set: { bold: true } }] }]);
+  const heavy = (await blocksOf(marked)).runs.find((run) => run.text.trim() === 'heavy');
+  const plain = (await blocksOf(marked)).runs.find((run) => run.text.includes('plain'));
+  record(
+    'an added box takes marks as an edit does: its bold word is bold and the rest of it is not',
+    heavy?.style.bold === true && plain?.style.bold === false,
+    `heavy ${String(heavy?.style.bold)}, plain ${String(plain?.style.bold)}`,
+  );
 }
 
 /**
