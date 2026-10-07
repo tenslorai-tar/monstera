@@ -207,6 +207,9 @@ async function joined(formFields: HostFormFieldsReader): Promise<{
       word: () => {
         throw new Error('a field read must not export a Word file');
       },
+      formImportPlan: () => {
+        throw new Error('a field list read must not plan an import');
+      },
       fieldProperties: () => {
         throw new Error('a field list read must not read field properties');
       },

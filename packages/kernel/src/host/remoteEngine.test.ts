@@ -35,6 +35,7 @@ import {
 } from '../annotationInterchange.js';
 import { readPageBarcodes } from '../barcodeReader.js';
 import { detectFlatFields } from '../flatFields.js';
+import { readFormImportPlan } from '../formData.js';
 import { readFieldProperties } from '../formFieldRead.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
@@ -368,6 +369,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       word: composeWordDocument,
       flatFields: detectFlatFields,
       fieldProperties: readFieldProperties,
+      formImportPlan: readFormImportPlan,
       barcodes: readPageBarcodes,
       exportAnnotationData: async (session, format) =>
         serialiseAnnotationData(await readInterchangeAnnotations(session), format),
@@ -888,6 +890,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         word: () => {
           throw new Error('unused');
         },
+        formImportPlan: () => {
+          throw new Error('a refused-host case must not plan an import');
+        },
         fieldProperties: () => {
           throw new Error('a refused-host case must not read field properties');
         },
@@ -1044,6 +1049,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         word: () => {
           throw new Error('the rotation-refusal case must not export a Word file');
+        },
+        formImportPlan: () => {
+          throw new Error('a refused-host case must not plan an import');
         },
         fieldProperties: () => {
           throw new Error('a refused-host case must not read field properties');

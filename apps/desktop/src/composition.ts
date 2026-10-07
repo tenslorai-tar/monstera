@@ -75,6 +75,7 @@ import {
   type BarcodeReport,
   type AccessibilityReportOnWire,
   type HostFieldPropertiesReader,
+  type RemoteFormImportPlanner,
   type HostFlatFieldsReader,
   type HostFormDataExport,
   type HostAnnotationDataExport,
@@ -138,6 +139,7 @@ import {
   remoteMupdfAccessibility,
   remoteMupdfDuplicateReport,
   remoteMupdfFieldProperties,
+  remoteMupdfFormImportPlan,
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfLayers,
@@ -1303,6 +1305,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.flatFields(session, page);
     },
+    // WHAT AN IMPORT WOULD DO (ADR-0193's neighbour), composed the same way: the file goes to the host as an asset.
+    formImportPlan: (docId, sessions, bytes, format) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.formImportPlan(session, bytes, format);
+    },
     // THE PROPERTIES PANE'S READ, composed the same way (ADR-0193), for the handles it names.
     fieldProperties: (docId, sessions, handles) => {
       const session = sessions.mupdf;
@@ -1969,6 +1977,8 @@ function engineSessionOpener(
   readonly flatFields: HostFlatFieldsReader;
   /** The named fields' properties, from whichever host is live (ADR-0193). */
   readonly fieldProperties: HostFieldPropertiesReader;
+  /** What importing a data file would do to the form, from whichever host is live. */
+  readonly formImportPlan: RemoteFormImportPlanner;
   /** One page's barcodes, from whichever host is live. */
   readonly barcodes: BarcodeReport;
   /** The accessibility check, from whichever host is live. */
@@ -2412,6 +2422,20 @@ function engineSessionOpener(
     return fieldProperties(session, handles);
   };
 
+  /** The import plan's half of the same registration. See {@link pageText}. */
+  let formImportPlan: RemoteFormImportPlanner | null = null;
+
+  const planFormImportThroughHost: RemoteFormImportPlanner = (session, bytes, format) => {
+    if (formImportPlan === null) {
+      throw new Error(
+        'An import plan reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return formImportPlan(session, bytes, format);
+  };
+
   /** The accessibility check's half of the same registration. See {@link pageText}. */
   let accessibility: ((session: MupdfSession) => Promise<AccessibilityReportOnWire>) | null = null;
 
@@ -2655,6 +2679,7 @@ function engineSessionOpener(
     formFields = remoteMupdfFormFields(client, remote);
     flatFields = remoteMupdfFlatFields(client, remote);
     fieldProperties = remoteMupdfFieldProperties(client, remote);
+    formImportPlan = remoteMupdfFormImportPlan(client, remote, sessionAssets());
     barcodes = remoteMupdfBarcodes(client, remote);
     accessibility = remoteMupdfAccessibility(client, remote);
     duplicates = remoteMupdfDuplicateReport(client, remote);
@@ -3034,6 +3059,7 @@ function engineSessionOpener(
     formFields: readFormFieldsThroughHost,
     flatFields: readFlatFieldsThroughHost,
     fieldProperties: readFieldPropertiesThroughHost,
+    formImportPlan: planFormImportThroughHost,
     barcodes: readBarcodesThroughHost,
     accessibility: checkAccessibilityThroughHost,
     duplicates: readDuplicatesThroughHost,

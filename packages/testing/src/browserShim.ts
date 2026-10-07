@@ -12,6 +12,7 @@ import {
   type FileAccess,
   type FormFieldKind,
   type FormFieldRead,
+  type ImportSkipped,
   type SaveWriteCause,
   type Incident,
   type OcrLanguage,
@@ -388,7 +389,18 @@ export interface BrowserShimOptions {
    * accepting for channels that really do run one path in production. These two
    * do not: the import reads a data file and the placement reads a picture.
    */
-  readonly importedFormData?: 'unreadable' | 'too-large' | { readonly byteLength: number };
+  readonly importedFormData?:
+    | 'unreadable'
+    | 'too-large'
+    | { readonly matchedNothing: number }
+    | {
+        readonly byteLength: number;
+        /** How many fields it filled. Absent is one. */
+        readonly filled?: number;
+        /** The fields it left alone, each with a reason. Absent is none. */
+        readonly skipped?: readonly { readonly name: string; readonly reason: ImportSkipped['reason'] }[];
+        readonly more?: number;
+      };
   /** What `document.importAnnotations` answers — its own switch, for `importedFormData`'s reason. */
   readonly importedAnnotations?: 'unreadable' | { readonly byteLength: number };
   /**
@@ -1650,6 +1662,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (chosen === 'too-large') {
         return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_FORM_DATA_BYTES }));
       }
+      if ('matchedNothing' in chosen) {
+        return Promise.resolve(ok({ kind: 'matched-nothing' as const, named: chosen.matchedNothing }));
+      }
       const version = asDocVersion(current + 1);
       versions.set(docId, version);
       return Promise.resolve(
@@ -1658,6 +1673,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           version,
           byteLength: chosen.byteLength,
           historyDropped: 0,
+          filled: chosen.filled ?? 1,
+          skipped: chosen.skipped ?? [],
+          more: chosen.more ?? 0,
         }),
       );
     },

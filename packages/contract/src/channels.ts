@@ -59,6 +59,8 @@ import {
   formFieldHandleSchema,
   formFieldReadSchema,
   MAX_READ_FIELDS,
+  MAX_IMPORT_SKIPS,
+  importSkippedSchema,
   renderableCommandSchema,
 } from './commands.js';
 import {
@@ -4000,10 +4002,21 @@ export const channels = {
         version: docVersionSchema,
         byteLength: z.number().int().nonnegative(),
         historyDropped: z.number().int().nonnegative(),
+        /**
+         * WHAT IT DID, which a person is owed whatever it did (ADR-0193's neighbour): how many fields it filled, and the
+         * fields it left alone with a reason each, up to {@link MAX_IMPORT_SKIPS}, and how many more past those. REQUIRED
+         * and empty when nothing was left, `historyDropped`'s reason: a surface that read a missing list as *none left*
+         * would be saying so about a file it never looked at.
+         */
+        filled: z.number().int().nonnegative(),
+        skipped: z.array(importSkippedSchema).max(MAX_IMPORT_SKIPS).readonly(),
+        more: z.number().int().nonnegative(),
       }),
       z.object({ kind: z.literal('cancelled') }),
-      /** Not form data, or naming nothing here, or holding a refused value. */
+      /** Not form data, or holding a value the form refused after it was read. */
       z.object({ kind: z.literal('unreadable') }),
+      /** Form data, and none of the fields it names is in this form: the wrong file, and nothing was changed. */
+      z.object({ kind: z.literal('matched-nothing'), named: z.number().int().nonnegative() }),
       /** Past {@link MAX_FORM_DATA_BYTES} — refused before it is read. */
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
     ]),

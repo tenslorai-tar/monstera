@@ -26,6 +26,7 @@ import {
   serialiseAnnotationData,
 } from '../annotationInterchange.js';
 import { detectFlatFields } from '../flatFields.js';
+import { readFormImportPlan } from '../formData.js';
 import { readFieldProperties } from '../formFieldRead.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { rasterisePageImage } from '../pageImages.js';
@@ -304,6 +305,7 @@ function joined(
       word: composeWordDocument,
       flatFields: detectFlatFields,
       fieldProperties: readFieldProperties,
+      formImportPlan: readFormImportPlan,
       barcodes: () => {
         throw new Error('the lifecycle half must not read barcodes');
       },
@@ -690,6 +692,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         exportFormData: () => {
           throw new Error('the byte-size case must not export form data');
+        },
+        formImportPlan: () => {
+          throw new Error('a lifecycle case must not plan an import');
         },
         fieldProperties: () => {
           throw new Error('a lifecycle case must not read field properties');

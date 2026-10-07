@@ -2,10 +2,11 @@ import * as mupdf from './mupdfRaw.js';
 import type { PDFObject, PDFWidget } from './mupdfRaw.js';
 import { z } from 'zod';
 
-import type { FieldFill, FormDataFormat, FormDataImportFormat } from '@monstera/contract';
+import type { FieldFill, FormDataFormat, FormDataImportFormat, IMPORT_SKIP_REASONS } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
+import { ENGINE_IMPORT_SKIPS_MAX, ENGINE_IMPORT_SKIP_NAME_MAX } from './host/engineChannels.js';
 import { fieldValues, fillWidget, onState, onStateKey, refuseUnfillable } from './formFields.js';
 import { fdfFile, pdfName, pdfString, xmlCanCarry, xmlEscaped } from './interchangeEncoding.js';
 import { withDocument } from './mupdfWriter.js';
@@ -506,18 +507,17 @@ function fillFor(widget: PDFWidget, values: readonly string[]): FieldFill {
   return { set: 'text', text: values[0] ?? '' };
 }
 
-/** Why an import left a field as the document had it. The words a person reads for each are the surface's. */
-export type ImportSkipReason =
-  /** The file names a field this document does not have. */
-  | 'not-in-document'
-  /** The document marks the field read-only and the file's value differs from what it holds. */
-  | 'read-only'
-  /** The file gives a choice field several values, and a fill carries one. */
-  | 'several-values'
-  /** The file's value is not one of the options the document offers. */
-  | 'option-not-offered'
-  /** The field's kind takes no value of this sort. */
-  | 'cannot-be-filled';
+/**
+ * Why an import left a field as the document had it. The words a person reads for each are the surface's, and the LIST is
+ * the contract's (`IMPORT_SKIP_REASONS`), so the plan, the wire and the surface read one:
+ *
+ * - `not-in-document`: the file names a field this document does not have.
+ * - `read-only`: the document marks the field read-only and the file's value differs from what it holds.
+ * - `several-values`: the file gives a choice field several values, and a fill carries one.
+ * - `option-not-offered`: the file's value is not one of the options the document offers.
+ * - `cannot-be-filled`: the field's kind takes no value of this sort.
+ */
+export type ImportSkipReason = (typeof IMPORT_SKIP_REASONS)[number];
 
 /** One field an import did not fill, and why. */
 export interface ImportSkip {
@@ -616,6 +616,53 @@ export function planFormImport(
   for (const name of named.keys()) if (!found.has(name)) skip(name, 'not-in-document');
 
   return { fills, skipped, named: named.size };
+}
+
+/** How many skipped fields one report names. Past it the rest are counted and not listed. */
+export const MAX_REPORTED_SKIPS = ENGINE_IMPORT_SKIPS_MAX;
+
+/** How long a skipped field's name may be in a report: shown, never matched, so a long one is cut for the wire. */
+const MAX_REPORTED_NAME = ENGINE_IMPORT_SKIP_NAME_MAX;
+
+/** What an import will do, as a person is told it: how many fields it fills, which it leaves and why. */
+export interface ImportReport {
+  /** The fields it fills, each field once however many widgets it has. */
+  readonly filled: number;
+  /** How many fields the file names. */
+  readonly named: number;
+  /**
+   * How many of those the form HAS. Counted before the list is cut, so a file naming a thousand fields the form lacks is
+   * still `0` here, which is what makes it the wrong file and not a short list.
+   */
+  readonly matched: number;
+  /** The fields it leaves, up to {@link MAX_REPORTED_SKIPS}. */
+  readonly skipped: readonly ImportSkip[];
+  /** How many more it leaves, past the ones listed. */
+  readonly more: number;
+}
+
+/**
+ * What an import would do, without doing it: the same plan {@link applyImportFormData} follows, read for a report.
+ *
+ * ONE PLAN, TWO READERS (B3a): the fill and the report both ask {@link planFormImport}, so what a person is told it will
+ * fill and what it does cannot disagree. The names come from the file, so each is cut to a field name's bound.
+ */
+export function readFormImportPlan(
+  session: MupdfSession,
+  bytes: Uint8Array,
+  format: FormDataImportFormat,
+): Promise<ImportReport> {
+  return withDocument(session, (document) => {
+    const plan = planFormImport(document, bytes, format);
+    const filled = new Set(plan.fills.map((fill) => fill.widget.getName())).size;
+    return {
+      filled,
+      named: plan.named,
+      matched: plan.named - plan.skipped.filter((skip) => skip.reason === 'not-in-document').length,
+      skipped: plan.skipped.slice(0, MAX_REPORTED_SKIPS).map((skip) => ({ ...skip, name: skip.name.slice(0, MAX_REPORTED_NAME) })),
+      more: Math.max(0, plan.skipped.length - MAX_REPORTED_SKIPS),
+    };
+  });
 }
 
 /**

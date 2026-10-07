@@ -97,6 +97,7 @@ import {
   readPageWordBoxes,
   detectFlatFields,
   readFieldProperties,
+  readFormImportPlan,
   readInterchangeAnnotations,
   serialiseAnnotationData,
   checkAccessibility,
@@ -867,6 +868,7 @@ const INERT = {
   formFields: noFormFields,
   flatFields: noFlatFields,
   fieldProperties: () => Promise.reject(new Error('this case does not read field properties')),
+  formImportPlan: () => Promise.reject(new Error('this case does not plan an import')),
   barcodes: noBarcodes,
   writeBarcode: noBarcodeWriter,
   accessibility: () => Promise.reject(new Error('this case does not check accessibility')),
@@ -957,6 +959,12 @@ const LOCAL_READS = {
     const held = sessions.mupdf;
     if (held === undefined) throw new MissingSessionError(id, 'mupdf');
     return readFieldProperties(held, handles);
+  },
+  // THE HOST'S ANSWER AS MAIN READS IT: a file that is not form data is `unreadable`, never a throw.
+  formImportPlan: async (id, sessions, bytes, format) => {
+    const held = sessions.mupdf;
+    if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+    return readFormImportPlan(held, bytes, format).catch((): 'unreadable' => 'unreadable');
   },
   barcodes: localBarcodes,
   accessibility: async (id, sessions) => {
@@ -3077,6 +3085,53 @@ describe('the form data export carries the format all the way to the file', () =
     // shape a wrong session or an empty read produces.
     expect(fdf).toContain('Ada \\) Lovelace');
     expect(json).toContain('Ada ) Lovelace');
+  });
+
+  /** An import that picks a file holding `bytes`, through the production composition. */
+  function importing(bytes: Uint8Array): DocumentCommands {
+    const held = new EngineSessions();
+    held.hold(formDoc, { mupdf: formSession });
+    return new DocumentCommands({
+      ...LOCAL_READS,
+      // AN IMPORT IS DRAWN FROM THE BYTES, so applying one stages the session (ADR-0121's addendum).
+      save: { ...noSaving, flush: sessionFlush, stage: stagingFrom(sessionFlush) },
+      documents: formService,
+      bus: bus(),
+      engine: held,
+      formData: {
+        ...localFormData,
+        open: () => Promise.resolve('picked'),
+        read: () => Promise.resolve({ kind: 'read', bytes }),
+      },
+    });
+  }
+
+  it('an import is told what it did: how many it filled, and each field it left alone, with its reason', async () => {
+    const file = serialiseFormData(
+      [
+        { name: 'applicant.name', values: ['Grace Hopper'], asName: false },
+        { name: 'no_such_field', values: ['x'], asName: false },
+      ],
+      'json',
+    );
+    const outcome = await importing(file).importFormData(formDoc, 'json');
+    expect(outcome).toMatchObject({
+      kind: 'imported',
+      filled: 1,
+      skipped: [{ name: 'no_such_field', reason: 'not-in-document' }],
+      more: 0,
+    });
+  });
+
+  it('CONTROL: a file naming none of the form’s fields is the wrong file, and the form is not changed', async () => {
+    const file = serialiseFormData([{ name: 'something_else', values: ['x'], asName: false }], 'json');
+    expect(await importing(file).importFormData(formDoc, 'json')).toStrictEqual({ kind: 'matched-nothing', named: 1 });
+  });
+
+  it('CONTROL: a file that is not form data is unreadable, which is the file’s fault and not a field’s', async () => {
+    expect(await importing(new TextEncoder().encode('this is not form data')).importFormData(formDoc, 'json')).toStrictEqual({
+      kind: 'unreadable',
+    });
   });
 
   it('CONTROL: the picker runs FIRST, so a dismissal writes nothing', async () => {

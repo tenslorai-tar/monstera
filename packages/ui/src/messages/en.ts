@@ -288,6 +288,17 @@ export const IMPORT_FORM_DATA_FDF_TITLE = messageKey('command.import-form-data.f
 export const IMPORT_FORM_DATA_PROBLEM_TITLE = messageKey('dialog.import-form-data.title');
 export const IMPORT_FORM_DATA_UNREADABLE = messageKey('dialog.import-form-data.unreadable');
 export const IMPORT_FORM_DATA_TOO_LARGE = messageKey('dialog.import-form-data.too-large');
+export const IMPORT_FORM_DATA_MATCHED_NOTHING = messageKey('dialog.import-form-data.matched-nothing');
+// WHAT AN IMPORT DID: the fields it left alone, each with its reason (the owner's Part C).
+export const IMPORT_RESULT_TITLE = messageKey('dialog.import-form-data-result.title');
+export const IMPORT_RESULT_FILLED = messageKey('dialog.import-form-data-result.filled');
+export const IMPORT_RESULT_LEFT = messageKey('dialog.import-form-data-result.left');
+export const IMPORT_RESULT_MORE = messageKey('dialog.import-form-data-result.more');
+export const IMPORT_SKIP_NOT_IN_DOCUMENT = messageKey('dialog.import-form-data-result.not-in-document');
+export const IMPORT_SKIP_READ_ONLY = messageKey('dialog.import-form-data-result.read-only');
+export const IMPORT_SKIP_SEVERAL_VALUES = messageKey('dialog.import-form-data-result.several-values');
+export const IMPORT_SKIP_OPTION_NOT_OFFERED = messageKey('dialog.import-form-data-result.option-not-offered');
+export const IMPORT_SKIP_CANNOT_BE_FILLED = messageKey('dialog.import-form-data-result.cannot-be-filled');
 export const PAGE_TRANSITION_TITLE = messageKey('dialog.page-transition.title');
 export const PAGE_TRANSITION_REPLACE = messageKey('dialog.page-transition.replace');
 export const PAGE_TRANSITION_DISSOLVE = messageKey('dialog.page-transition.dissolve');
@@ -4754,7 +4765,20 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // does not cross that boundary. Claiming one of the three would be a guess
   // wearing a diagnosis's clothes, and the reader would act on it.
   [IMPORT_FORM_DATA_UNREADABLE]:
-    'Nothing was changed. The file may not be form data in that format, it may name fields this document does not have, or it may hold a value one of those fields will not take.',
+    'Nothing was changed. That file is not form data in the format you chose, so Monstera could not read it. Check that you picked the right format for the file.',
+  [IMPORT_FORM_DATA_MATCHED_NOTHING]:
+    'Nothing was changed. The file names {named, plural, one {# field} other {# fields}}, and this form has none of them. It may be the data of a different form.',
+  [IMPORT_RESULT_TITLE]: 'Form data imported',
+  [IMPORT_RESULT_FILLED]:
+    '{count, plural, =0 {Every field the file names already held those values, so nothing needed filling.} one {Filled # field.} other {Filled # fields.}}',
+  [IMPORT_RESULT_LEFT]:
+    '{count, plural, one {# field was left as it was:} other {# fields were left as they were:}}',
+  [IMPORT_RESULT_MORE]: '…and {count, plural, one {# more} other {# more}}.',
+  [IMPORT_SKIP_NOT_IN_DOCUMENT]: 'This form has no field with that name.',
+  [IMPORT_SKIP_READ_ONLY]: 'The field is locked, and the file holds a different value.',
+  [IMPORT_SKIP_SEVERAL_VALUES]: 'The file gives several values, and this field takes one.',
+  [IMPORT_SKIP_OPTION_NOT_OFFERED]: 'The value is not one of the field’s choices.',
+  [IMPORT_SKIP_CANNOT_BE_FILLED]: 'This kind of field cannot take that value.',
   [IMPORT_FORM_DATA_TOO_LARGE]:
     'Nothing was changed. Monstera reads form data files up to {megabytes} MB, and that one is larger.',
   [PAGE_TRANSITION_TITLE]: 'Page transition',

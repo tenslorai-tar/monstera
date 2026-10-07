@@ -15,6 +15,7 @@ import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
 import { detectFlatFields } from '../flatFields.js';
+import { readFormImportPlan } from '../formData.js';
 import { readFieldProperties } from '../formFieldRead.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
@@ -200,6 +201,8 @@ const engineHandlers = createEngineHandlers({
   flatFields: detectFlatFields,
   // THE PROPERTIES PANE'S READ (ADR-0193), here for the field list's reason: it walks the document through MuPDF.
   fieldProperties: readFieldProperties,
+  // WHAT AN IMPORT WOULD DO, planned here for the field list's reason: the file is hostile input and the plan walks the form.
+  formImportPlan: readFormImportPlan,
   exportFormData: async (session, format) =>
     serialiseFormData(await readFormData(session), format),
   // AND A FOURTH, the snapshot's reason for a whole page: §3 assigns export

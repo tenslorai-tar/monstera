@@ -50,6 +50,7 @@ import {
   type FileAccess,
   type FormFieldHandle,
   type FormFieldRead,
+  type ImportSkipped,
   keptLookOf,
   placedMarkOf,
   sourceIdsOf,
@@ -80,6 +81,7 @@ import {
   copyNames,
   type CommandBus,
   type FlatFieldCandidate,
+  type RemoteImportPlan,
   type FoundBarcode,
   DocumentNotOpenError,
   type DocumentContext,
@@ -1754,9 +1756,16 @@ export type FormDataRead =
 
 /** What {@link DocumentCommands.importFormData} answers. */
 export type ImportFormDataOutcome =
-  | ({ readonly kind: 'imported' } & Applied)
+  | ({
+      readonly kind: 'imported';
+      /** How many fields it filled, and the fields it left alone with a reason each (ADR-0193's neighbour). */
+      readonly filled: number;
+      readonly skipped: readonly ImportSkipped[];
+      readonly more: number;
+    } & Applied)
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'unreadable' }
+  | { readonly kind: 'matched-nothing'; readonly named: number }
   | { readonly kind: 'too-large'; readonly limitBytes: number };
 
 /**
@@ -1833,6 +1842,14 @@ export const lazyBarcodeWriter: BarcodeWriter = async (text, format) => {
 export type PlaceBarcodeOutcome =
   | ({ readonly kind: 'placed' } & Applied)
   | { readonly kind: 'refused' };
+
+/** Plans an import of a data file against the document's form, through whichever host is live. */
+export type DocumentFormImportPlanner = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  bytes: Uint8Array,
+  format: FormDataImportFormat,
+) => Promise<RemoteImportPlan>;
 
 /** The named fields' properties, through whichever host is live (ADR-0193). */
 export type DocumentFieldPropertiesReader = (
@@ -2305,6 +2322,8 @@ export interface DocumentCommandsParts {
   readonly flatFields: DocumentFlatFieldsReader;
   /** The named fields' properties, read in the engine host (ADR-0193). */
   readonly fieldProperties: DocumentFieldPropertiesReader;
+  /** What importing a data file would do to the form, planned in the engine host. */
+  readonly formImportPlan: DocumentFormImportPlanner;
   /** One page's barcodes, read in the engine host (ADR-0076). */
   readonly barcodes: DocumentBarcodesReader;
   /** How a protect replaces the document's plaintext copies with encrypted ones (ADR-0171 Decision 8). */
@@ -2541,6 +2560,7 @@ export class DocumentCommands {
   readonly #formFields: DocumentFormFieldsReader;
   readonly #flatFields: DocumentFlatFieldsReader;
   readonly #fieldProperties: DocumentFieldPropertiesReader;
+  readonly #formImportPlan: DocumentFormImportPlanner;
   readonly #barcodes: DocumentBarcodesReader;
   readonly #copies: ProtectedCopies;
   readonly #accessibility: DocumentAccessibilityReader;
@@ -2621,6 +2641,7 @@ export class DocumentCommands {
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
     this.#fieldProperties = parts.fieldProperties;
+    this.#formImportPlan = parts.formImportPlan;
     this.#barcodes = parts.barcodes;
     this.#copies = parts.copies;
     this.#accessibility = parts.accessibility;
@@ -4534,12 +4555,25 @@ export class DocumentCommands {
     if (read.kind === 'unreadable') return { kind: 'unreadable' };
 
     try {
+      // WHAT IT WOULD DO, PLANNED FIRST (ADR-0193's neighbour): the same plan the fill follows, in the host that holds the
+      // form, so a person is told which fields were filled and which were left and why, and a file that names nothing
+      // this form has is the wrong file and not a reason that never crossed the host boundary.
+      const { value: plan } = await this.#documents.run(docId, async () => {
+        const failures = this.#engine.poisoned(docId);
+        if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+        const sessions = this.#engine.sessions(docId);
+        if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+        return this.#formImportPlan(docId, sessions, read.bytes, format);
+      });
+      if (plan === 'unreadable') return { kind: 'unreadable' };
+      if (plan.matched === 0) return { kind: 'matched-nothing', named: plan.named };
+
       const applied = await this.execute(docId, {
         kind: 'importFormData',
         format,
         bytes: read.bytes,
       });
-      return { kind: 'imported', ...applied };
+      return { kind: 'imported', ...applied, filled: plan.filled, skipped: plan.skipped, more: plan.more };
     } catch (error) {
       // `placeImage`'s catch and its reason: the classes the handler already
       // turns into declared codes are rethrown, and everything else is this

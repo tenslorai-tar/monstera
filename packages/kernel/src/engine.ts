@@ -211,6 +211,7 @@ export {
   MAX_FLAT_CANDIDATES,
 } from './flatFields.js';
 export { readFieldProperties } from './formFieldRead.js';
+export { type ImportReport, readFormImportPlan } from './formData.js';
 export { applyEditTextOperators, captureEditTextOperators, invertEditTextOperators } from './textOperatorEdit.js';
 export {
   NamelessFieldError,

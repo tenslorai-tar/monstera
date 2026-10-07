@@ -2,6 +2,7 @@ import type {
   AnnotationDataFormat,
   CommandOfKind,
   FormDataFormat,
+  FormDataImportFormat,
   FormFieldHandle,
   FormFieldRead,
   Handlers,
@@ -24,6 +25,7 @@ import type { ListedLayers } from '../layers.js';
 import type { ReadSignature } from '../signatureRead.js';
 import type { PlaceholderRequest, PreparedSignature } from '../signatureHole.js';
 import type { FlatFieldCandidate } from '../flatFields.js';
+import type { ImportReport } from '../formData.js';
 import type { ListedField } from '../formFields.js';
 import type { NextSave } from '../mupdfWriter.js';
 import type { ListedAnnotation } from '../pageAnnotations.js';
@@ -321,6 +323,13 @@ export type HostFlatFieldsReader = (
   readonly alreadyFields: number;
 }>;
 
+/** What importing a data file would do to this form (ADR-0193's neighbour): the plan, read for a report. */
+export type HostFormImportPlanner = (
+  session: MupdfSession,
+  bytes: Uint8Array,
+  format: FormDataImportFormat,
+) => Promise<ImportReport>;
+
 /** The named fields' properties (ADR-0193), `null` for a handle that no longer names its field. */
 export type HostFieldPropertiesReader = (
   session: MupdfSession,
@@ -543,6 +552,8 @@ export interface EngineHandlerParts {
   readonly flatFields: HostFlatFieldsReader;
   /** How this process reads the properties of named fields. `engine/field-properties`. */
   readonly fieldProperties: HostFieldPropertiesReader;
+  /** How this process plans an import of form data. `engine/form-import-plan`. */
+  readonly formImportPlan: HostFormImportPlanner;
   /** How this process reads a page's barcodes. `engine/page-barcodes`. */
   readonly barcodes: HostBarcodesReader;
 }
@@ -582,6 +593,7 @@ export function createEngineHandlers({
   word,
   flatFields,
   fieldProperties,
+  formImportPlan,
   barcodes,
 }: EngineHandlerParts): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
@@ -1093,6 +1105,26 @@ export function createEngineHandlers({
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       return { ok: true, value: { fields: [...(await fieldProperties(held.session, fields))] } };
+    },
+
+    'engine/form-import-plan': async ({ session, format, asset }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // THE FILE IS AN ASSET in this session's own snapshot directory, `engine/applyPdfLib`'s door, never a path.
+      let bytes: Uint8Array;
+      try {
+        bytes = await files.readSnapshot(held.snapshotDirectory, asset);
+      } catch (error) {
+        return failed('asset-missing', error);
+      }
+      try {
+        const report = await formImportPlan(held.session, bytes, format);
+        return { ok: true, value: { ...report, skipped: [...report.skipped] } };
+      } catch (error) {
+        // A FILE THAT IS NOT FORM DATA is the file's fault and the document's is untouched: its own code, so the
+        // supervisor does not count it as the host failing.
+        return failed('plan-failed', error);
+      }
     },
 
     'engine/exportFormData': async ({ session, format, into }) => {

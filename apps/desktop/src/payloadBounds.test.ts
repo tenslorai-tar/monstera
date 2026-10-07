@@ -386,6 +386,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // removed — so the payload here is the same size for a one-field form and a
   // four-thousand-field one.
   'document.importFormData': 'needs an engine session and an open dialog',
+  // THE ASK IS HANDLES AND THE ANSWER IS THEIR PROPERTIES, at most `MAX_READ_FIELDS` (16) of each: a four-thousand-field
+  // form answers the same sixteen at most, so the payload is bounded by the request and not by the document (ADR-0193).
+  'document.formFieldProperties': 'needs an engine session; bounded by its sixteen handles, not by the form',
   'document.split': 'needs an engine session and a folder dialog',
   // THE ASK IS PAGES AND THREE NUMBERS, bounded by the split's own part count;
   // the images are written in the host and never cross.

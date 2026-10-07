@@ -1715,6 +1715,7 @@ function importFormDataHandler(
       const outcome = await commands.importFormData(docId, format);
       if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
+      if (outcome.kind === 'matched-nothing') return ok({ kind: 'matched-nothing', named: outcome.named } as const);
       if (outcome.kind === 'too-large') {
         return ok({ kind: 'too-large', limitBytes: outcome.limitBytes } as const);
       }
@@ -1723,6 +1724,9 @@ function importFormDataHandler(
         version: outcome.version,
         byteLength: outcome.byteLength,
         historyDropped: outcome.historyDropped,
+        filled: outcome.filled,
+        skipped: outcome.skipped,
+        more: outcome.more,
       } as const);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });

@@ -55,6 +55,8 @@ const MUPDF_READS = [
   'engine/extract',
   // THE PROPERTIES PANE'S READ (ADR-0193): MuPDF's own, for the field list's reason.
   'engine/field-properties',
+  // WHAT AN IMPORT WOULD DO, planned beside the form it fills: the data file is hostile input MuPDF's host parses.
+  'engine/form-import-plan',
   // pdf-lib RUN ON THIS ENGINE'S SESSION is MuPDF's for `engine/extract`'s reason: the image it rewrites is this
   // session's serialise, taken in the process that holds it, and the result goes to the output directory
   // (ADR-0121 Decision 3). A second engine holds no such session and owes none of it.

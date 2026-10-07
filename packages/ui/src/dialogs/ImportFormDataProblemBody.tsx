@@ -1,7 +1,11 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
 
-import { IMPORT_FORM_DATA_TOO_LARGE, IMPORT_FORM_DATA_UNREADABLE } from '../messages/en.js';
+import {
+  IMPORT_FORM_DATA_MATCHED_NOTHING,
+  IMPORT_FORM_DATA_TOO_LARGE,
+  IMPORT_FORM_DATA_UNREADABLE,
+} from '../messages/en.js';
 
 /**
  * The import-form-data problem dialog's body.
@@ -15,9 +19,18 @@ import { IMPORT_FORM_DATA_TOO_LARGE, IMPORT_FORM_DATA_UNREADABLE } from '../mess
 export default function ImportFormDataProblemBody(
   props:
     | { readonly reason: 'unreadable' }
+    | { readonly reason: 'matched-nothing'; readonly named: number }
     | { readonly reason: 'too-large'; readonly limitBytes: number },
 ): ReactElement {
   const { _ } = useLingui();
+
+  if (props.reason === 'matched-nothing') {
+    return (
+      <div className="m-import-form-data-problem">
+        <p>{_(IMPORT_FORM_DATA_MATCHED_NOTHING, { named: props.named })}</p>
+      </div>
+    );
+  }
 
   if (props.reason === 'unreadable') {
     return (

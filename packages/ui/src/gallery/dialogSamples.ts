@@ -729,7 +729,35 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'outside', props: { pageCount: 6, from: 0 }, steps: [type('Pages', '9')] },
   ],
   'dialog.tab-order': [{ state: 'opened', props: {} }],
-  'dialog.import-form-data-problem': [{ state: 'opened', props: { reason: 'unreadable' } }],
+  'dialog.import-form-data-result': [
+    {
+      state: 'left-some',
+      props: {
+        filled: 12,
+        skipped: [
+          { name: 'order_ref', reason: 'read-only' },
+          { name: 'loyalty_number', reason: 'not-in-document' },
+          { name: 'region', reason: 'option-not-offered' },
+          { name: 'interests', reason: 'several-values' },
+          { name: 'submit', reason: 'cannot-be-filled' },
+        ],
+        more: 0,
+      },
+    },
+    {
+      state: 'many',
+      props: {
+        filled: 3,
+        skipped: Array.from({ length: 100 }, (_unused, at) => ({ name: `missing_field_${String(at + 1)}`, reason: 'not-in-document' as const })),
+        more: 240,
+      },
+    },
+    { state: 'nothing-needed-filling', props: { filled: 0, skipped: [{ name: 'order_ref', reason: 'read-only' }], more: 0 } },
+  ],
+  'dialog.import-form-data-problem': [
+    { state: 'opened', props: { reason: 'unreadable' } },
+    { state: 'wrong-file', props: { reason: 'matched-nothing', named: 7 } },
+  ],
   'dialog.import-annotations-problem': [{ state: 'opened', props: { reason: 'unreadable' } }],
   'dialog.insert-image-problem': [{ state: 'opened', props: { reason: 'too-large', limitBytes: 50 * 1024 * 1024 } }],
   'dialog.markdown-import-problem': [

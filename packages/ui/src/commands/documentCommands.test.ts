@@ -1319,7 +1319,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
       return Promise.resolve(
-        ok({ kind: 'imported', version: asDocVersion(2), byteLength: 99, historyDropped: 0 }),
+        ok({ kind: 'imported', version: asDocVersion(2), byteLength: 99, historyDropped: 0, filled: 1, skipped: [], more: 0 }),
       );
     });
     const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures, toast: () => undefined };
@@ -1340,7 +1340,15 @@ describe('delete pages — the mutation-dialog gate', () => {
     // any answer — or before the answer — fails here as surely as a missing one.
     const saidFor: Record<string, unknown[]> = {};
     const answers = {
-      imported: ok({ kind: 'imported' as const, version: asDocVersion(2), byteLength: 99, historyDropped: 0 }),
+      imported: ok({
+        kind: 'imported' as const,
+        version: asDocVersion(2),
+        byteLength: 99,
+        historyDropped: 0,
+        filled: 1,
+        skipped: [],
+        more: 0,
+      }),
       cancelled: ok({ kind: 'cancelled' as const }),
       unreadable: ok({ kind: 'unreadable' as const }),
     };
@@ -1358,6 +1366,72 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
   });
 
+  it('SAYS which fields an import left alone and why, and opens that only when it left some (control: a clean import opens nothing)', async () => {
+    const asked: { id: string; props: unknown }[] = [];
+    const run = async (value: Record<string, unknown>): Promise<void> => {
+      const client = createClient(channels, () =>
+        Promise.resolve(
+          ok({ kind: 'imported' as const, version: asDocVersion(3), byteLength: 10, historyDropped: 0, ...value } as never),
+        ),
+      );
+      await importFormDataJsonCommand({
+        client,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve(undefined);
+        },
+        toast: () => undefined,
+      }).run(CONTEXT);
+    };
+
+    await run({ filled: 4, skipped: [], more: 0 });
+    expect(asked, 'the application’s own export leaves nothing, so nothing opens').toStrictEqual([]);
+
+    await run({
+      filled: 4,
+      skipped: [
+        { name: 'order_ref', reason: 'read-only' },
+        { name: 'no_such_field', reason: 'not-in-document' },
+      ],
+      more: 3,
+    });
+    expect(asked).toStrictEqual([
+      {
+        id: 'dialog.import-form-data-result',
+        props: {
+          filled: 4,
+          skipped: [
+            { name: 'order_ref', reason: 'read-only' },
+            { name: 'no_such_field', reason: 'not-in-document' },
+          ],
+          more: 3,
+        },
+      },
+    ]);
+  });
+
+  it('says a file naming none of the form’s fields is the wrong file, in its own sentence and without a toast', async () => {
+    const asked: { id: string; props: unknown }[] = [];
+    const { toast, said } = saving();
+    const client = createClient(channels, () => Promise.resolve(ok({ kind: 'matched-nothing' as const, named: 7 })));
+    await importFormDataJsonCommand({
+      client,
+      stamp,
+      signatures,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        asked.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+      toast,
+    }).run(CONTEXT);
+    expect(asked).toStrictEqual([{ id: 'dialog.import-form-data-problem', props: { reason: 'matched-nothing', named: 7 } }]);
+    expect(said).toStrictEqual([]);
+  });
+
   it('REPORTS the document moved after an import, which is what makes it a mutation', async () => {
     // The import answers a version and a byte length exactly as a mutation
     // does, because it is one — main mints the command. A renderer that treated
@@ -1367,7 +1441,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const applied: unknown[] = [];
     const client = createClient(channels, () =>
       Promise.resolve(
-        ok({ kind: 'imported', version: asDocVersion(7), byteLength: 4096, historyDropped: 0 }),
+        ok({ kind: 'imported', version: asDocVersion(7), byteLength: 4096, historyDropped: 0, filled: 1, skipped: [], more: 0 }),
       ),
     );
 

@@ -69,6 +69,7 @@ import { BOXED_CHARACTERS_DIALOG_ID } from '../dialogs/boxedCharacters.js';
 import { UNSEALED_COPIES_DIALOG_ID } from '../dialogs/unsealedCopies.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG_ID } from '../dialogs/importFormDataProblem.js';
+import { IMPORT_FORM_DATA_RESULT_DIALOG_ID } from '../dialogs/importFormDataResult.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
 import { EXTRACT_PAGES_DIALOG_ID } from '../dialogs/extractPages.js';
 import type { ExtractPagesAnswer } from '../dialogs/extractPagesResult.js';
@@ -3612,8 +3613,22 @@ function importFormDataCommand(
         });
         return;
       }
+      // THE WRONG FILE: form data, and none of its fields is in this form. Nothing was changed.
+      if (answer.value.kind === 'matched-nothing') {
+        void deps.ask(IMPORT_FORM_DATA_PROBLEM_DIALOG_ID, { reason: 'matched-nothing', named: answer.value.named });
+        return;
+      }
       deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
       confirmDone(deps, TOAST_FORM_DATA_IMPORTED);
+      // WHAT IT LEFT ALONE, said with its reasons whenever there is something: the application's own export leaves
+      // nothing, so this opens only for a file that did not fit the form field for field.
+      if (answer.value.skipped.length > 0 || answer.value.more > 0) {
+        void deps.ask(IMPORT_FORM_DATA_RESULT_DIALOG_ID, {
+          filled: answer.value.filled,
+          skipped: [...answer.value.skipped],
+          more: answer.value.more,
+        });
+      }
       // INVARIANT 18, after `onApplied` and guarded on a positive count, which
       // is `applyDocumentCommand`'s ordering — this command takes the same
       // route through the bus and can trim the same history.

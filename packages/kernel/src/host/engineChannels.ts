@@ -26,6 +26,7 @@ import {
   annotationKindNameSchema,
   annotationRectSchema,
   formDataFormatSchema,
+  formDataImportFormatSchema,
   annotationDataFormatSchema,
   formFieldKindSchema,
   importFormDataSchema,
@@ -77,6 +78,9 @@ import {
   editFormFieldsSchema,
   formFieldHandleSchema,
   formFieldReadSchema,
+  importSkippedSchema,
+  MAX_IMPORT_SKIPS,
+  MAX_IMPORT_SKIP_NAME,
   MAX_READ_FIELDS,
   setTabOrderSchema,
   ocrPageSchema,
@@ -429,6 +433,9 @@ export const ENGINE_FORM_FIELDS_MAX = 66_500;
 /** The fewest bytes one form field serialises to on this wire. Measured by `engineChannels.test.ts`. */
 export const SMALLEST_FORM_FIELD_BYTES = 125;
 export const ENGINE_FORM_FIELD_TEXT_MAX = 512;
+/** How many skipped fields an import's report names, and how much of each name: shown, so cut to what a row can hold. */
+export const ENGINE_IMPORT_SKIPS_MAX = MAX_IMPORT_SKIPS;
+export const ENGINE_IMPORT_SKIP_NAME_MAX = MAX_IMPORT_SKIP_NAME;
 export const ENGINE_FORM_FIELD_OPTIONS_MAX = 512;
 /** How many values one field may carry. The contract's bound, on this wire. */
 export const ENGINE_FORM_FIELD_VALUES_MAX = 256;
@@ -3062,6 +3069,29 @@ export const engineChannels = {
     z.object({ session: sessionSchema, fields: z.array(formFieldHandleSchema).min(1).max(MAX_READ_FIELDS).readonly() }).strict(),
     z.object({ fields: z.array(formFieldReadSchema.nullable()).max(MAX_READ_FIELDS).readonly() }).strict(),
     ['no-such-session'],
+  ),
+
+  /**
+   * What importing a data file would do to this form, without doing it: how many fields it fills, which it leaves and why.
+   *
+   * A READ that parses a file, so it runs here for invariant 20's reason: the file is hostile input. The file crosses
+   * as an ASSET in the session's snapshot directory, `engine/applyPdfLib`'s door, and is read from there. Bounded where
+   * the wire is: {@link ENGINE_IMPORT_SKIPS_MAX} names, each cut to {@link ENGINE_IMPORT_SKIP_NAME_MAX}, and the rest
+   * counted.
+   */
+  'engine/form-import-plan': channel(
+    'Plans what a form data file would fill in this session’s form, and reports it.',
+    z.object({ session: sessionSchema, format: formDataImportFormatSchema, asset: outputNameSchema }).strict(),
+    z
+      .object({
+        filled: z.number().int().nonnegative(),
+        named: z.number().int().nonnegative(),
+        matched: z.number().int().nonnegative(),
+        skipped: z.array(importSkippedSchema).max(ENGINE_IMPORT_SKIPS_MAX).readonly(),
+        more: z.number().int().nonnegative(),
+      })
+      .strict(),
+    ['no-such-session', 'asset-missing', 'plan-failed'],
   ),
 
   /**

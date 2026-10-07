@@ -4,7 +4,9 @@ import {
   type Command,
   type CommandOfKind,
   ENGINE_ANSWER_FILE_MAX_BYTES,
+  type FormDataImportFormat,
 } from '@monstera/contract';
+import type { ImportReport } from '../formData.js';
 
 import type { CommandExecution, KindsRoutedTo } from '../commandSpecs.js';
 import type { HUMAN_CHECKS } from '../accessibilityRules.js';
@@ -628,6 +630,42 @@ export function remoteMupdfFlatFields(
       await client['engine/flat-fields']({ session: sessions.handleFor(session), page }),
     );
     return { candidates: answer.candidates, truncated: answer.truncated, alreadyFields: answer.alreadyFields };
+  };
+}
+
+/** What the import plan answers over the boundary, or `unreadable` for a file that is not form data. */
+export type RemoteImportPlan = ImportReport | 'unreadable';
+
+/** Plans an import of a form data file in the host that holds the session. */
+export type RemoteFormImportPlanner = (
+  session: MupdfSession,
+  bytes: Uint8Array,
+  format: FormDataImportFormat,
+) => Promise<RemoteImportPlan>;
+
+/**
+ * What a form data file would do to a document, planned in the engine host (ADR-0193's neighbour).
+ *
+ * The file crosses as an asset in the session's snapshot directory for the length of the call and is removed whatever
+ * it did, `remotePdfLibHost`'s rule. A file the plan could not read answers `unreadable`, the file's fault and not the
+ * host's; any other refusal is a defect and throws.
+ */
+export function remoteMupdfFormImportPlan(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+  assets: SessionAssets,
+): RemoteFormImportPlanner {
+  return async (session, bytes, format) => {
+    const area = sessions.areaFor(session);
+    const asset = assets.name();
+    await assets.write(area.snapshotDirectory, asset, bytes);
+    try {
+      const result = await client['engine/form-import-plan']({ session: sessions.handleFor(session), format, asset });
+      if (!result.ok && result.error.code === 'plan-failed') return 'unreadable';
+      return answered('engine/form-import-plan', result);
+    } finally {
+      await assets.remove(area.snapshotDirectory, asset);
+    }
   };
 }
 

@@ -4371,6 +4371,27 @@ export const importFormDataSchema = z.object({
   ),
 }).strict();
 
+/** Why an import left a field as the document had it. The words a person reads for each are the surface's. */
+export const IMPORT_SKIP_REASONS = [
+  'not-in-document',
+  'read-only',
+  'several-values',
+  'option-not-offered',
+  'cannot-be-filled',
+] as const;
+
+/** How many skipped fields an import's report names, and how much of each name: shown, so cut to what a row can hold. */
+export const MAX_IMPORT_SKIPS = 100;
+export const MAX_IMPORT_SKIP_NAME = 128;
+
+/** One field an import left alone, and why. */
+export const importSkippedSchema = z
+  .object({ name: z.string().max(MAX_IMPORT_SKIP_NAME), reason: z.enum(IMPORT_SKIP_REASONS) })
+  .strict();
+
+/** See {@link importSkippedSchema}. */
+export type ImportSkipped = z.infer<typeof importSkippedSchema>;
+
 /**
  * How long a created field's name may be.
  *
