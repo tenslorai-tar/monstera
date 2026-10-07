@@ -892,6 +892,64 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-08 — Stage audit of `2056c7fa..7d4f345d` — findings VVVVVVV-1 to VVVVVVV-7
+
+33 commits, 197 files (`npm run audit:scope`), owed because the next commit would take the range past 200 files. Label V:
+the next free after U, read from this file's newest entry. The range is the end of 2026-10-07's run (ADR-0191's keyboard
+page, ADR-0192's saved conversations, the Updates page, Compare, the recovery card, the new logo and its `.ico`, the
+baselines and the three reds on the branch) and 2026-10-08's first ten items (status-bar tips, the title bar's search,
+ADR-0194's small ribbon tools, Donate and Rate Us in the owner's words, ADR-0195's merge pages, Claude image limits by
+model, ADR-0196 proposed, translate scopes, the armed tool and the barcode moves, the barcode reader, ADR-0197's
+contents review). One local reader, me, over the diffs. Nothing here was run in the installed build, and nothing was
+observed by a person.
+
+**VVVVVVV-1** (medium, closed in the commit after this one): ADR-0197 was committed (`7d4f345d`) with a bound it had not
+measured. `MAX_TOC_ENTRIES` was written as 4,096 rows of 512 characters, taken from the outline read's old whole-outline
+bound, and `hostRoutes.test.ts` reddened it at once: `generateToc` is a pdf-lib command and crosses the engine host's
+262,144-byte frame, and 4,096 rows at the worst of six bytes a character is about 12 MB. The mechanism is the frame, which
+the same outline had already failed once (the 3,600-bookmark case in `pageToc.test.ts`). The bound is now 300 rows of 100
+characters, which the proof reads from the schema, and an outline past it is not refused: the review says so and Insert
+writes the bookmarks as they are. The stale figure was in one local commit and was never pushed; the ADR's text is corrected
+in place for that reason, which is the one case where editing an ADR is not editing a record.
+
+**VVVVVVV-2** (low, open): four things the owner's brief asked for are not built, each said where a person meets it and in
+the report. Item 4's page-picker with thumbnails (a dialog is given plain data and never a client, so it cannot draw a
+source document's pages; ADR-0195 says so). Item 9's *click a row to highlight the barcode on the page* and *Save contact
+(.vcf)* (the first needs the barcode's box from the engine host and a layer over the page behind a modal dialog, the second a
+save-file route). Item 3's *expand arrow* on the Shapes grid (a group's *More* is what opens the rest). Item 7's *replace the
+selection in place* and *one undo for a whole-document translation* (both are the in-place editor's and the command bus's, not
+this run's). They are limits, not defects: no control is drawn that does nothing.
+
+**VVVVVVV-3** (low, closed): `ribbonFoldStable.pw.ts` was moved from 1280 to 960. ADR-0194's small tools made the Comment
+section fit whole at 1280, so the case, which exists to hold the fold still while the selection moves, would have passed for a
+row that never folds. It still asserts that the row's *More* is drawn, which is its control, and that assertion is what failed
+at 1280 and what the new width restores. A retargeted width reads as a loosened check, so it is said here. What is lost is the
+Comment fold at the owner's own width; Tools and Organize still fold at 1280, and the twenty ribbon cases of
+`renderedScreen.pw.ts` pass.
+
+**VVVVVVV-4** (low, closed): `claudeImageLimits` answers the standard tier for a model id it cannot place, which is a
+reduction and is stated: a model this build does not know is sent a raster every model reads unresized, at a cost in detail and
+never a refusal. The two tiers are Anthropic's own table read on 2026-10-08, and `ocrClaude.test.ts` pins both the placed ids
+and the unplaced one. The owner's 400 is reproduced in the case (a 1191 by 1684 raster refused for Haiku 4.5 with no request
+made, sent for Opus 5.5); it was not reproduced against the live API, which the owner's rule limits to Haiku 4.5 and which was
+not run.
+
+**VVVVVVV-5** (info, executed): the new rendered proof `armedToolOwnsPage.pw.ts` was mutation-run. With the one-line change in
+`App.tsx` reverted it failed at *the pages are the canvas now*, and with it restored it passes; its first assertion, the grid
+with nothing armed, is the control. Recorded because a green case for a fix is the shape this section exists to doubt.
+
+**VVVVVVV-6** (low, closed): `dialog.generate-toc-problem` stopped being reachable the moment ADR-0197 opened the review
+empty for a document with no bookmarks, and a dialog nothing opens is the display-only shape. It was deleted with its body,
+its messages, its gallery sample and its registration, not left registered. The sweep for the retired words was
+`GENERATE_TOC_PROBLEM`, `generateTocProblem` and `generate-toc-problem` over `packages`, `apps`, `scripts` and `docs`; the
+journal's older entries name it and are left as the record.
+
+**VVVVVVV-7** (info): would CI have seen it? The rendered ribbon cases, the status-bar cases and the title-bar case were run
+here and pass; the whole accessibility gate was not run here, by the owner's rule of 2026-10-01, so the new icon-only ribbon
+buttons, the Translate scope control and the barcode dialog's icon buttons meet axe for the first time on GitHub. They carry
+accessible names by construction (`aria-label` for an icon, a label for every field). If the board is red on axe, that is where
+to look first.
+
 ## 2026-10-07 — Stage audit of `83751d8b..2056c7fa` — findings UUUUUUU-1 to UUUUUUU-6
 
 22 commits, 191 files (`npm run audit:scope`), owed because the next commit would take the range to 202 (one batch is
