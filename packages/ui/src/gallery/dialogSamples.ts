@@ -286,6 +286,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'no-storage', props: { secretsAvailable: false } },
   ],
   'dialog.donate': [{ state: 'opened', props: {} }],
+  'dialog.rate-us': [{ state: 'opened', props: {} }],
   'dialog.security-update': [{ state: 'opened', props: { version: '0.2.0' } }],
   'dialog.cloud-storage': [
     {

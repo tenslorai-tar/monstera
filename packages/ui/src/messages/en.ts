@@ -210,10 +210,15 @@ export const REVIEW_PROMPT_NEVER = messageKey('surface.review-prompt.never');
 export const REVIEW_STORE_NOT_OPENED = messageKey('toast.review-store-not-opened');
 export const REVIEW_PROMPTS_SETTING_TITLE = messageKey('setting.advanced-review-prompts.title');
 export const REVIEW_PROMPTS_SETTING_DESCRIPTION = messageKey('setting.advanced-review-prompts.description');
-export const DONATE_LICENCE = messageKey('dialog.donate.licence');
-export const DONATE_WHERE = messageKey('dialog.donate.where');
+export const DONATE_THANKS = messageKey('dialog.donate.thanks');
+export const DONATE_ONGOING = messageKey('dialog.donate.ongoing');
 export const DONATE_OPEN = messageKey('dialog.donate.open');
 export const DONATE_LATER = messageKey('dialog.donate.later');
+export const RATE_US_TITLE = messageKey('dialog.rate-us.title');
+export const RATE_US_THANKS = messageKey('dialog.rate-us.thanks');
+export const RATE_US_INVITE = messageKey('dialog.rate-us.invite');
+export const RATE_US_OPEN = messageKey('dialog.rate-us.open');
+export const RATE_US_LATER = messageKey('dialog.rate-us.later');
 export const REVEAL_LOG_TITLE = messageKey('command.reveal-log.title');
 export const HISTORY_TRIMMED_TITLE = messageKey('dialog.history-trimmed.title');
 export const HISTORY_TRIMMED_APPLIED = messageKey('dialog.history-trimmed.applied');
@@ -2850,14 +2855,19 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [REVIEW_PROMPTS_SETTING_TITLE]: 'Ask me to rate Monstera',
   [REVIEW_PROMPTS_SETTING_DESCRIPTION]:
     'Now and then, and never more than five times, a note at the bottom of the window asks for a Store rating.',
-  // BOTH SENTENCES ARE CHECKABLE, which is why they are these two and not a plea.
-  // The licence is ADR-0001's; the second is a fact about the code — the button
-  // hands one address to the browser and nothing else leaves.
-  [DONATE_LICENCE]: 'Monstera is free software under the AGPL-3.0 licence, made by a small team.',
-  [DONATE_WHERE]:
-    'A donation pays for the time that goes into it. The page opens in your browser — Monstera never sees your payment details.',
-  [DONATE_OPEN]: 'Open the donation page',
-  [DONATE_LATER]: 'Not now',
+  // A THANK-YOU AND AN INVITATION, in a person's words: the owner's order of 2026-10-07 replaced the licence and the
+  // account of where the money goes, which read as rules. The page still opens in the browser, which does the payment.
+  [DONATE_THANKS]: 'Thank you for wanting to support Monstera.',
+  [DONATE_ONGOING]:
+    'Monstera is an ongoing project, and we work to keep it free for everyone. If you would like to help, you can donate once, or every month.',
+  [DONATE_OPEN]: 'Donate now',
+  [DONATE_LATER]: 'Donate later',
+  [RATE_US_TITLE]: 'Rate Monstera',
+  [RATE_US_THANKS]: 'Thank you for choosing Monstera.',
+  [RATE_US_INVITE]:
+    'If you have a moment, we would love to hear about your experience. A rating in the Microsoft Store tells us what is working, and helps other people find Monstera.',
+  [RATE_US_OPEN]: 'Go to Microsoft Store',
+  [RATE_US_LATER]: 'Not now',
   // "Reveal" and not "Open": the command shows the folder in the file manager,
   // and a name promising to open a log would be a name that fails the moment
   // there are five rotated files and no one of them is *the* log.

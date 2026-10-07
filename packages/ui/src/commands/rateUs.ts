@@ -1,5 +1,6 @@
 import type { ContractClient } from '@monstera/contract';
 
+import { RATE_US_DIALOG_ID, type RateUsAnswer } from '../dialogs/rateUs.js';
 import { RATE_US_COMMAND_TITLE, REVIEW_STORE_NOT_OPENED } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { ShowToast } from '../toasts.js';
@@ -21,12 +22,20 @@ export async function rateOnStore(client: ContractClient, toast: ShowToast): Pro
  * *Rate Us* — the violet button beside *Donate* at the centre of the menu row (v5-01 and v5-02 drew both in the
  * title bar; the owner moved them on 2026-09-27, ADR-0113).
  *
+ * **It opens a dialog first, never the Store** (the owner's order, 2026-10-07): the dialog thanks the person and says
+ * where *Go to Microsoft Store* sends them, and *Not now* — or dismissing it — leaves everything as it was, the Donate
+ * command's rule. Only `open` goes on.
+ *
  * **Through `app.review`, the rating prompt's own channel**, so a rating given from here and one given from
  * the prompt are the same fact in main's record — E3's `reviewedAt` has one writer, and a person who rated
  * from the title bar is not asked again. Main opens the Store's review page (the Store application's in a
  * Store build, the web listing otherwise); the page names no address.
  */
-export function rateUsCommand(deps: { readonly client: ContractClient; readonly toast: ShowToast }): UiCommand {
+export function rateUsCommand(deps: {
+  readonly client: ContractClient;
+  readonly toast: ShowToast;
+  readonly ask: (id: string, props: unknown) => Promise<unknown>;
+}): UiCommand {
   return {
     id: 'app.rate',
     // THE STORE OPENS on the review; only a Store that did not open is said.
@@ -37,6 +46,11 @@ export function rateUsCommand(deps: { readonly client: ContractClient; readonly 
       { surface: 'menu-bar-commands', tone: 'violet', order: 2 },
       { surface: 'menu-bar', menu: 'help', group: 1, order: 20 },
     ],
-    run: () => rateOnStore(deps.client, deps.toast),
+    run: async (): Promise<void> => {
+      const answer = (await deps.ask(RATE_US_DIALOG_ID, {})) as RateUsAnswer | undefined;
+      // `later` AND DISMISSAL ARE ONE ANSWER: anything but `open` records nothing and opens nothing.
+      if (answer !== 'open') return;
+      await rateOnStore(deps.client, deps.toast);
+    },
   };
 }

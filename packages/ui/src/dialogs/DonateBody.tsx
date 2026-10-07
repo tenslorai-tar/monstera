@@ -1,20 +1,21 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
 
-import { DONATE_LATER, DONATE_LICENCE, DONATE_OPEN, DONATE_WHERE } from '../messages/en.js';
+import { DONATE_LATER, DONATE_ONGOING, DONATE_OPEN, DONATE_THANKS } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { DonateAnswer } from './donate.js';
 
 /**
- * *Support Monstera*: what the money is for, where the button sends you, and two answers.
+ * *Support Monstera*: a thank-you, an invitation, and two answers.
  *
- * ## Two sentences, and both of them are checkable
+ * ## What it does not say
  *
- * The licence is ADR-0001's. *Monstera never sees your payment details* is a fact about this
- * application's code rather than a promise: the only thing it does is hand one address to
- * `shell.openExternal` through `app.openWebPage`, and the browser does the rest.
+ * It does not give the licence or account for the money: both read as rules to a person who only wanted to help, and
+ * the owner asked for words a person would say (2026-10-07). *Monstera never sees your payment details* is still true
+ * and still a fact about the code — the only thing a press does is hand one address to `shell.openExternal` through
+ * `app.openWebPage` — it is simply not this dialog's business to recite.
  *
  * A default export because `declareDialog` takes a `lazy()` component.
  */
@@ -22,10 +23,10 @@ export default function DonateBody({ resolve }: DialogAnswering<DonateAnswer>): 
   const { _ } = useLingui();
   return (
     <div className="m-donate">
-      <p>{_(DONATE_LICENCE)}</p>
-      <p>{_(DONATE_WHERE)}</p>
-      {/* THE PATTERN'S FOOTER WITHOUT A CANCEL: *Later* is this dialog's own word for not now, and a Cancel beside it
-          would say the same thing twice. The primary is last. */}
+      <p>{_(DONATE_THANKS)}</p>
+      <p>{_(DONATE_ONGOING)}</p>
+      {/* THE PATTERN'S FOOTER WITHOUT A CANCEL: *Donate later* is this dialog's own word for not now, and a Cancel
+          beside it would say the same thing twice. The primary is last. */}
       <DialogFooter dismissal="own">
         <Button
           label={DONATE_LATER}

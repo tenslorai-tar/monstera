@@ -2,6 +2,7 @@ import { type ContractClient, channels, createClient } from '@monstera/contract'
 import { type MessageKey, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
+import { RATE_US_DIALOG_ID, type RateUsAnswer } from '../dialogs/rateUs.js';
 import { REVIEW_STORE_NOT_OPENED } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
 import type { ToastKind } from '../primitives/Toast.js';
@@ -26,9 +27,16 @@ type Answer = 'opened' | 'not-opened' | 'refused' | 'rejected';
 
 async function run(
   answer: Answer,
-): Promise<{ readonly sent: { id: string; params: unknown }[]; readonly said: { kind: ToastKind; message: MessageKey }[] }> {
+  /** What the dialog answers, `open` unless the case is about the dialog; `dismissed` settles it with nothing. */
+  chose: RateUsAnswer | 'dismissed' = 'open',
+): Promise<{
+  readonly sent: { id: string; params: unknown }[];
+  readonly said: { kind: ToastKind; message: MessageKey }[];
+  readonly asked: string[];
+}> {
   const sent: { id: string; params: unknown }[] = [];
   const said: { kind: ToastKind; message: MessageKey }[] = [];
+  const asked: string[] = [];
   const client: ContractClient = createClient(channels, (id, params) => {
     sent.push({ id, params });
     if (id !== 'app.review') throw new Error(`this case does not answer ${id}`);
@@ -43,11 +51,32 @@ async function run(
     toast: (kind, message) => {
       said.push({ kind, message });
     },
+    ask: (id) => {
+      asked.push(id);
+      return Promise.resolve(chose === 'dismissed' ? undefined : chose);
+    },
   }).run(ANYWHERE);
-  return { sent, said };
+  return { sent, said, asked };
 }
 
 describe('rateUsCommand', () => {
+  it('opens a DIALOG first, and the Store only on its *Go to Microsoft Store*', async () => {
+    const { sent, asked } = await run('opened');
+    expect(asked).toStrictEqual([RATE_US_DIALOG_ID]);
+    expect(sent).toStrictEqual([{ id: 'app.review', params: { action: 'rate' } }]);
+  });
+
+  it('*Not now* asks nothing of main, and so does DISMISSAL — the two are one answer', async () => {
+    // THE CONTRAST WITH THE CASE ABOVE: a command that opened the Store unconditionally passes neither of these.
+    expect((await run('opened', 'later')).sent).toStrictEqual([]);
+    expect((await run('opened', 'dismissed')).sent).toStrictEqual([]);
+    // CONTROL: the dialog was opened in both, so an empty `sent` is the answer honoured and not a command that
+    // failed before it asked; and nothing is toasted for a Store that was never asked to open.
+    const dismissed = await run('opened', 'dismissed');
+    expect(dismissed.asked).toStrictEqual([RATE_US_DIALOG_ID]);
+    expect(dismissed.said).toStrictEqual([]);
+  });
+
   it('asks main to RATE, through the prompt’s own channel, and says nothing when the Store opened', async () => {
     const { sent, said } = await run('opened');
 
@@ -68,7 +97,11 @@ describe('rateUsCommand', () => {
   });
 
   it('is the menu row’s second button, in violet beside Donate, and Help’s — and needs no document', () => {
-    const command = rateUsCommand({ client: createClient(channels, () => Promise.reject(new Error('unused'))), toast: () => undefined });
+    const command = rateUsCommand({
+      client: createClient(channels, () => Promise.reject(new Error('unused'))),
+      toast: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    });
 
     expect(command.when).toBeUndefined();
     expect(command.placements).toStrictEqual([

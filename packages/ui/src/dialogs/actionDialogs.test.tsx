@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -25,6 +25,7 @@ import FlatFieldsBody from './FlatFieldsBody.js';
 import HeaderFooterBody from './HeaderFooterBody.js';
 import { InDialog } from './inDialog.js';
 import PageTransitionBody from './PageTransitionBody.js';
+import RateUsBody from './RateUsBody.js';
 import ProtectDocumentBody from './ProtectDocumentBody.js';
 import RedactMatchesBody from './RedactMatchesBody.js';
 import SanitizeDocumentBody from './SanitizeDocumentBody.js';
@@ -152,7 +153,31 @@ describe('the text forms and button dialogs in the dialog pattern', () => {
     cleanup();
     render(<InDialog><DonateBody resolve={ignore} update={ignore} /></InDialog>);
     const donate = [...(document.querySelector('.m-dialog-footer')?.querySelectorAll('button') ?? [])];
-    expect(donate.map((button) => button.textContent)).toStrictEqual(['Not now', 'Open the donation page']);
+    expect(donate.map((button) => button.textContent)).toStrictEqual(['Donate later', 'Donate now']);
+    cleanup();
+    render(<InDialog><RateUsBody resolve={ignore} update={ignore} /></InDialog>);
+    const rate = [...(document.querySelector('.m-dialog-footer')?.querySelectorAll('button') ?? [])];
+    expect(rate.map((button) => button.textContent)).toStrictEqual(['Not now', 'Go to Microsoft Store']);
+  });
+
+  it('Donate and Rate Us each THANK the person and invite them, in a person’s words, with no licence or rules (2026-10-07)', () => {
+    render(<InDialog><DonateBody resolve={ignore} update={ignore} /></InDialog>);
+    expect(document.body.textContent).toContain('Thank you for wanting to support Monstera.');
+    expect(document.body.textContent).toContain('donate once, or every month');
+    // CONTROL: the words that read as legal rules are gone, so the sentence above is the replacement and not an addition.
+    expect(document.body.textContent).not.toMatch(/AGPL|licence|payment details/u);
+    cleanup();
+    render(<InDialog><RateUsBody resolve={ignore} update={ignore} /></InDialog>);
+    expect(document.body.textContent).toContain('Thank you for choosing Monstera.');
+    expect(document.body.textContent).toContain('hear about your experience');
+  });
+
+  it('each answer resolves with its own word: later for the soft button, open for the primary', () => {
+    const answers: string[] = [];
+    render(<InDialog><RateUsBody resolve={(answer) => answers.push(answer)} update={ignore} /></InDialog>);
+    fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Go to Microsoft Store' }));
+    expect(answers).toStrictEqual(['later', 'open']);
   });
 });
 

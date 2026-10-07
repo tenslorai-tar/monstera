@@ -15,6 +15,7 @@ import { DOCUMENT_PASSWORD_DIALOG } from '../dialogs/documentPassword.js';
 import { DOCUSIGN_NOTICE_DIALOG } from '../dialogs/docusignNotice.js';
 import { DOCUSIGN_SEND_DIALOG } from '../dialogs/docusignSend.js';
 import { DONATE_DIALOG } from '../dialogs/donate.js';
+import { RATE_US_DIALOG } from '../dialogs/rateUs.js';
 import { DUPLICATE_PAGES_DIALOG } from '../dialogs/duplicatePages.js';
 import { ENHANCE_OUTCOME_DIALOG } from '../dialogs/enhanceOutcome.js';
 import { EXPORT_EXCEL_DIALOG } from '../dialogs/exportExcel.js';
@@ -95,6 +96,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   COMPONENTS_DIALOG,
   AI_SETUP_DIALOG,
   DONATE_DIALOG,
+  RATE_US_DIALOG,
   SECURITY_UPDATE_DIALOG,
   CLOUD_DIALOG,
   CLOUD_OUTCOME_DIALOG,

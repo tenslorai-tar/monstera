@@ -152,7 +152,8 @@ async function runCommand(page: Page, title: string): Promise<void> {
 const DIALOGS: readonly { command: string; title: string; file: string; ready: string }[] = [
   { command: 'Delete pages…', title: 'Delete pages', file: 'delete-pages', ready: 'Delete pages' },
   { command: 'Watermark…', title: 'Watermark', file: 'watermark', ready: 'Add watermark' },
-  { command: 'Donate', title: 'Support Monstera', file: 'donate', ready: 'Open the donation page' },
+  { command: 'Donate', title: 'Support Monstera', file: 'donate', ready: 'Donate now' },
+  { command: 'Rate Us', title: 'Rate Monstera', file: 'rate-us', ready: 'Go to Microsoft Store' },
   { command: 'Word count', title: 'Word count', file: 'word-count', ready: 'Close' },
   { command: 'About', title: 'About Monstera', file: 'about', ready: 'Close' },
   { command: 'Components', title: 'Components', file: 'components', ready: 'Close' },

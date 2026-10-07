@@ -666,7 +666,34 @@ describe('App', () => {
       await Promise.resolve();
     });
 
+    // A DIALOG FIRST, and nothing sent to main while it is open: the Store is the answer to a button, not to *Rate Us*.
+    const dialog = await screen.findByRole('dialog', { name: 'Rate Monstera' });
+    expect(commandCalls(calls)).toStrictEqual([]);
+    await act(async () => {
+      within(dialog).getByRole('button', { name: 'Go to Microsoft Store' }).click();
+      await Promise.resolve();
+    });
+
     expect(commandCalls(calls)).toStrictEqual(['app.review']);
+  });
+
+  it('*Rate Us* then *Not now* sends NOTHING to main, and closes the dialog', async () => {
+    const { client, calls } = recordingClient({ opened: true });
+    render(<App client={client} settings={freshSettings()} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      screen.getByRole('button', { name: 'Rate Us' }).click();
+      await Promise.resolve();
+    });
+    const dialog = await screen.findByRole('dialog', { name: 'Rate Monstera' });
+    await act(async () => {
+      within(dialog).getByRole('button', { name: 'Not now' }).click();
+      await Promise.resolve();
+    });
+    expect(commandCalls(calls)).toStrictEqual([]);
+    expect(screen.queryByRole('dialog', { name: 'Rate Monstera' })).toBeNull();
   });
 
   it('the rating prompt is MOUNTED, and drawn only when main says one is due', async () => {

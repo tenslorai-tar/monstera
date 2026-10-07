@@ -4,14 +4,15 @@ title: Rate Monstera
 summary: Leave a rating in the Microsoft Store, and control the occasional reminder.
 keywords: [rate, rating, review, microsoft store, feedback, stars, reminder]
 commands: [app.rate]
-contexts: [dialog.settings]
+contexts: [dialog.settings, dialog.rate-us]
 ---
 A rating in the Microsoft Store helps other people find Monstera.
 
 ## Steps
 
-1. In the middle of the window's top row, beside **Donate**, choose **Rate Us**. The Microsoft Store's review page opens. It is also in the **Help** menu.
-2. Now and then a note at the bottom of the window asks whether Monstera is working for you. Choose **Rate now**, **Already reviewed**, **Later** or **Don't ask again**.
+1. In the middle of the window's top row, beside **Donate**, choose **Rate Us**. It is also in the **Help** menu. A window thanks you for choosing Monstera.
+2. Choose **Go to Microsoft Store** to open the Store's review page, or **Not now** to close the window and change nothing.
+3. Now and then a note at the bottom of the window asks whether Monstera is working for you. Choose **Rate now**, **Already reviewed**, **Later** or **Don't ask again**.
 
 ![The rating note at the bottom of the window with its four answers](screenshot:rate-monstera-1)
 

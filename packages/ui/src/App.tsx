@@ -2892,7 +2892,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         showAboutCommand({ client, ask }),
         showComponentsCommand({ client, ask }),
         donateCommand({ client, ask }),
-        rateUsCommand({ client, toast }),
+        rateUsCommand({ client, toast, ask }),
         // ADR-0018's INDICATOR, present only while main has offered an update (ADR-0110).
         updateAvailableCommand({ client, status: readUpdateStatus }),
         // RE-ASKS MAIN WHICH SECRETS ARE STORED when a key moved, so the cloud
