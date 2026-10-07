@@ -428,8 +428,8 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'unavailable', props: { pages: [0], languages: [], chosen: ['eng'], servicesReady: false } },
   ],
   'dialog.translate-page': [
-    { state: 'opened', props: { providers: ['anthropic', 'openai'] } },
-    { state: 'no-provider', props: { providers: [] } },
+    { state: 'opened', props: { providers: ['anthropic', 'openai'], pageCount: 12, hasSelection: true } },
+    { state: 'no-provider', props: { providers: [], pageCount: 12, hasSelection: false } },
   ],
   'dialog.ocr-outcome': [
     { state: 'opened', props: { recognised: 4, skipped: 0, stopped: false } },

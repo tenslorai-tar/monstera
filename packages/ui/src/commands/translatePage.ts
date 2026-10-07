@@ -1,5 +1,12 @@
-import { AI_PROVIDERS, AI_PROVIDER_IDS, type ChannelResult } from '@monstera/contract';
-import type { MessageKey } from '@monstera/shared';
+import {
+  AI_PROVIDERS,
+  AI_PROVIDER_IDS,
+  type AiProviderId,
+  type ChannelResult,
+  MAX_TRANSLATE_TEXT,
+  type TranslationLanguage,
+} from '@monstera/contract';
+import type { DocId, MessageKey } from '@monstera/shared';
 
 import { TRANSLATE_PAGE_DIALOG_ID, type TranslatePageAnswer } from '../dialogs/translatePage.js';
 import {
@@ -11,8 +18,13 @@ import {
   ASSISTANT_PROBLEM_UNREACHABLE,
   GROUP_LANGUAGE,
   RIBBON_TRANSLATE_PAGE,
+  TOAST_NOTHING_SELECTED,
   TOAST_NOTHING_TO_TRANSLATE,
+  TOAST_PAGES_TRANSLATED,
+  TOAST_PAGES_TRANSLATED_PARTLY,
   TOAST_PAGE_TRANSLATED,
+  TOAST_TEXT_TRANSLATED,
+  TRANSLATE_PAGES_PROGRESS,
   TOAST_TRANSLATE_NOT_WRITABLE,
   TOAST_TRANSLATE_NO_MODEL,
   TOAST_TRANSLATE_REJECTED,
@@ -44,6 +56,8 @@ export interface TranslatePageDeps extends DocumentCommandDeps {
   readonly track: TrackTask;
   /** The secret settings stored, read when the command runs — which providers have a key. */
   readonly storedSecrets: () => readonly string[];
+  /** The words selected on the page, read when the command runs; the browser's selection where absent. */
+  readonly selectedText?: (() => string) | undefined;
 }
 
 /**
@@ -80,14 +94,21 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
     run: async (context): Promise<void> => {
       const { docId, page } = context;
       if (docId === undefined || page === undefined) return;
+      // THE WORDS SELECTED, read BEFORE the dialog opens: a dialog takes focus and a selection goes with it.
+      const selected = (deps.selectedText ?? selectedTextOnPage)().trim().slice(0, MAX_TRANSLATE_TEXT);
       const stored = deps.storedSecrets();
       const providers = AI_PROVIDER_IDS.filter((id) => stored.includes(AI_PROVIDERS[id].keySetting));
       // THE NARROWING `ask`'S `unknown` LEAVES: the answer has been through the dialog's own result
       // schema, which is the only thing that can produce it.
-      const answer = (await deps.ask(TRANSLATE_PAGE_DIALOG_ID, { providers })) as TranslatePageAnswer | undefined;
+      const answer = (await deps.ask(TRANSLATE_PAGE_DIALOG_ID, {
+        providers,
+        pageCount: context.pageCount ?? 1,
+        hasSelection: selected !== '',
+      })) as TranslatePageAnswer | undefined;
       if (answer === undefined) return;
 
-      const task = deps.track(TRANSLATE_PAGE_PROGRESS, 1);
+      const pages = answer.what.scope === 'pages' ? answer.what.pages : [page];
+      const task = deps.track(answer.what.scope === 'pages' ? TRANSLATE_PAGES_PROGRESS : TRANSLATE_PAGE_PROGRESS, pages.length);
       try {
         const listed = await deps.client['ai.models']({ provider: answer.provider });
         const model = listed.ok ? listed.value.models[0]?.id : undefined;
@@ -95,53 +116,136 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
           deps.toast('problem', TOAST_TRANSLATE_NO_MODEL);
           return;
         }
-        const translated = await deps.client['ai.translatePage']({
-          docId,
-          page,
-          provider: answer.provider,
-          model,
-          language: answer.language,
-        });
-        if (task.signal.aborted) return;
-        if (!translated.ok) {
-          reportProblem(deps, translated.error);
+
+        if (answer.what.scope === 'selection') {
+          await translateSelection(deps, task.signal, selected, { provider: answer.provider, model, language: answer.language });
           return;
         }
-        const result = translated.value;
-        if (result.kind === 'refused') {
-          deps.toast('problem', REFUSALS[result.problem]);
-          return;
+
+        // PAGE BY PAGE through the one per-page command (`ai.translatePage` and its `editTextBlock`), so the writers are
+        // exactly what *Translate this page* uses and none is changed here. Each page is read at ITS OWN version, since
+        // the write before it moved the document's.
+        let written = 0;
+        for (const each of pages) {
+          if (task.signal.aborted) break;
+          const outcome = await translateOne(
+            deps,
+            docId,
+            each,
+            { provider: answer.provider, model, language: answer.language },
+            task.signal,
+            answer.what.scope === 'page',
+          );
+          task.step(1);
+          if (outcome === 'written') written += 1;
+          // A REFUSAL STOPS THE RUN, already said: the same provider would refuse the next page and be paid for it.
+          if (outcome === 'stopped') break;
         }
-        if (result.kind === 'nothing-to-translate') {
-          confirmDone(deps, TOAST_NOTHING_TO_TRANSLATE);
-          return;
+        if (answer.what.scope === 'page') return;
+        // THE SUMMARY OF A RUN, and what it left: pages already written stay written, each its own step to undo.
+        if (written > 0) {
+          confirmDone(deps, written === pages.length ? TOAST_PAGES_TRANSLATED : TOAST_PAGES_TRANSLATED_PARTLY);
         }
-        const kept = { unwritable: false };
-        const applied = await applyDocumentCommand(
-          deps,
-          docId,
-          {
-            kind: 'editTextBlock',
-            page,
-            // MAIN'S EDIT AS IT CAME, already in the command's wire form (ADR-0142).
-            ...result.edit,
-            // SHRINK: a translation keeps the page's layout — each block fitted to the box it had.
-            fit: 'shrink',
-            version: result.version,
-          },
-          {
-            keep: (error) => {
-              kept.unwritable = error.code === 'text-not-writable';
-              return kept.unwritable;
-            },
-          },
-        );
-        if (applied) confirmDone(deps, TOAST_PAGE_TRANSLATED);
-        else if (kept.unwritable) deps.toast('problem', TOAST_TRANSLATE_NOT_WRITABLE);
       } finally {
-        task.step(1);
         task.end();
       }
     },
   };
+}
+
+type Chosen = { readonly provider: AiProviderId; readonly model: string; readonly language: TranslationLanguage };
+
+/** What one page's translation came to: written, nothing in it to write, or stopped after saying why. */
+type Outcome = 'written' | 'nothing' | 'stopped';
+
+/**
+ * One page, by the per-page command: read and translated in `main`, written as ONE `editTextBlock`. On a single page it
+ * says what happened; in a run it says only what stops the run, and the summary says the rest.
+ */
+async function translateOne(
+  deps: TranslatePageDeps,
+  docId: DocId,
+  page: number,
+  chosen: Chosen,
+  signal: AbortSignal,
+  single = false,
+): Promise<Outcome> {
+  const translated = await deps.client['ai.translatePage']({ docId, page, ...chosen });
+  if (signal.aborted) return 'stopped';
+  if (!translated.ok) {
+    reportProblem(deps, translated.error);
+    return 'stopped';
+  }
+  const result = translated.value;
+  if (result.kind === 'refused') {
+    deps.toast('problem', REFUSALS[result.problem]);
+    return 'stopped';
+  }
+  if (result.kind === 'nothing-to-translate') {
+    if (single) confirmDone(deps, TOAST_NOTHING_TO_TRANSLATE);
+    return 'nothing';
+  }
+  const kept = { unwritable: false };
+  const applied = await applyDocumentCommand(
+    deps,
+    docId,
+    {
+      kind: 'editTextBlock',
+      page,
+      // MAIN'S EDIT AS IT CAME, already in the command's wire form (ADR-0142).
+      ...result.edit,
+      // SHRINK: a translation keeps the page's layout — each block fitted to the box it had.
+      fit: 'shrink',
+      version: result.version,
+    },
+    {
+      keep: (error) => {
+        kept.unwritable = error.code === 'text-not-writable';
+        return kept.unwritable;
+      },
+    },
+  );
+  if (applied) {
+    if (single) confirmDone(deps, TOAST_PAGE_TRANSLATED);
+    return 'written';
+  }
+  // A PAGE ITS FONTS CANNOT CARRY is said on its own and skipped in a run, which goes on to the pages that can be written.
+  if (kept.unwritable) {
+    if (single) deps.toast('problem', TOAST_TRANSLATE_NOT_WRITABLE);
+    return single ? 'stopped' : 'nothing';
+  }
+  return 'stopped';
+}
+
+/**
+ * The selected words translated and COPIED. They are not written back: a block's lines are rewritten whole by the in-place
+ * editor, which is not this command's to change, so what a selection offers is the translation to paste where it belongs.
+ */
+async function translateSelection(
+  deps: TranslatePageDeps,
+  signal: AbortSignal,
+  text: string,
+  chosen: Chosen,
+): Promise<void> {
+  if (text === '') {
+    deps.toast('problem', TOAST_NOTHING_SELECTED);
+    return;
+  }
+  const translated = await deps.client['ai.translateText']({ text, ...chosen });
+  if (signal.aborted) return;
+  if (!translated.ok) {
+    reportProblem(deps, translated.error);
+    return;
+  }
+  if (translated.value.kind === 'refused') {
+    deps.toast('problem', REFUSALS[translated.value.problem]);
+    return;
+  }
+  const copied = await deps.client['window.copyText']({ text: translated.value.text });
+  if (copied.ok && copied.value.copied) confirmDone(deps, TOAST_TEXT_TRANSLATED);
+}
+
+/** The words selected on the page, from the browser's own selection. A dependency in the tests, which have none. */
+function selectedTextOnPage(): string {
+  return globalThis.document.getSelection()?.toString() ?? '';
 }

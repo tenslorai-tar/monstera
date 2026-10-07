@@ -63,9 +63,62 @@ describe('the translation dialog', () => {
     fireEvent.change(language, { target: { value: 'de' } });
     fireEvent.click(screen.getByRole('button', { name: english(TRANSLATE_PAGE_START) }));
     expect(answered).toStrictEqual([
-      { language: 'fr', provider: 'openai' },
-      { language: 'de', provider: 'anthropic' },
+      { language: 'fr', provider: 'openai', what: { scope: 'page' } },
+      { language: 'de', provider: 'anthropic', what: { scope: 'page' } },
     ]);
+  });
+
+  describe('what is translated (ADR-0097\'s scopes)', () => {
+    const open = (props: { pageCount?: number; hasSelection?: boolean } = {}): TranslatePageAnswer[] => {
+      const answered: TranslatePageAnswer[] = [];
+      render(
+        <Wrapped>
+          <TranslatePageBody providers={['openai']} resolve={(answer) => answered.push(answer)} update={() => undefined} {...props} />
+        </Wrapped>,
+      );
+      const language = document.querySelector<HTMLSelectElement>('[data-translate-language]');
+      if (language === null) throw new Error('the dialog drew no language select');
+      fireEvent.change(language, { target: { value: 'fr' } });
+      return answered;
+    };
+    const start = (): void => {
+      fireEvent.click(screen.getByRole('button', { name: english(TRANSLATE_PAGE_START) }));
+    };
+
+    it('offers the four scopes, with Selected text drawn but not choosable until words are selected', () => {
+      open();
+      expect(['This page', 'Selected text', 'Whole document', 'Pages'].map((name) => screen.getByRole('button', { name }))).toHaveLength(4);
+      expect(screen.getByRole('button', { name: 'Selected text' }).hasAttribute('disabled')).toBe(true);
+      cleanup();
+      open({ hasSelection: true });
+      expect(screen.getByRole('button', { name: 'Selected text' }).hasAttribute('disabled')).toBe(false);
+    });
+
+    it('answers Selected text, and Whole document as EVERY page of the document', () => {
+      const selection = open({ hasSelection: true });
+      fireEvent.click(screen.getByRole('button', { name: 'Selected text' }));
+      start();
+      expect(selection).toStrictEqual([{ language: 'fr', provider: 'openai', what: { scope: 'selection' } }]);
+      cleanup();
+      const whole = open({ pageCount: 3 });
+      fireEvent.click(screen.getByRole('button', { name: 'Whole document' }));
+      start();
+      expect(whole).toStrictEqual([{ language: 'fr', provider: 'openai', what: { scope: 'pages', pages: [0, 1, 2] } }]);
+    });
+
+    it('answers the pages typed, zero-based, and NAMES a page the document does not have, sending nothing', () => {
+      const answered = open({ pageCount: 8 });
+      fireEvent.click(screen.getByRole('button', { name: 'Pages' }));
+      const box = screen.getByRole('textbox', { name: 'Pages to translate' });
+      fireEvent.change(box, { target: { value: '2-9' } });
+      start();
+      expect(answered).toStrictEqual([]);
+      expect(screen.getByRole('alert').textContent).toContain('2-9');
+      // CONTROL: the same box with pages the document has answers.
+      fireEvent.change(box, { target: { value: '1-3, 5' } });
+      start();
+      expect(answered).toStrictEqual([{ language: 'fr', provider: 'openai', what: { scope: 'pages', pages: [0, 1, 2, 4] } }]);
+    });
   });
 
   it('offers only providers with a key, and with none says where to add one — and offers no start', () => {

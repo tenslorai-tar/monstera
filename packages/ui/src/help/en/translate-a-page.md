@@ -6,25 +6,27 @@ keywords: [translate, translation, language, french, german, spanish, ai transla
 commands: [edit.translate-page]
 contexts: [dialog.translate-page, edit]
 ---
-Translate this page sends the page's text to the AI provider you have set up, and puts the translation back into the page where the original text was.
+Translate sends the text you choose to the AI provider you have set up. A page's translation is put back into the page where the original text was.
 
 ## Steps
 
-1. Go to the page.
+1. Go to the page, or select some words on it.
 2. In the rail, choose **Edit**, then **Translate** in the **Language** group (**Translate this page…**).
-3. In **Translate into**, choose a language.
-4. In **Using**, choose the provider. The window says that the page's text will be sent to it.
-5. Choose **Translate**.
+3. Under **Translate**, choose **This page**, **Selected text**, **Whole document** or **Pages**. For **Pages**, type the pages, like **1-3, 5**.
+4. In **Translate into**, choose a language.
+5. In **Using**, choose the provider. The window says that the text will be sent to it.
+6. Choose **Translate**.
 
-![The Translate this page window with Translate into and Using](screenshot:translate-a-page-1)
+![The Translate window with Translate into and Using](screenshot:translate-a-page-1)
 
 ## Good to know
 
 - You need a key for an AI provider first. If none is set up, the window says so. See "Get and add keys for AI and online reading services". The provider bills you directly.
-- One page at a time.
+- **Whole document** and **Pages** translate one page after another. The status bar shows the progress and a **Cancel**. Pages already translated stay translated.
+- **Selected text** is copied rather than written into the page, so you can paste it where you want it. **Selected text** is available when words are selected.
 - Only languages written in the Latin alphabet are offered.
 - Where the page's font lacks a letter, that text is set in a standard font. Text may be made smaller to fit its space.
-- **Undo** (**Ctrl+Z**) puts the original text back.
+- **Undo** (**Ctrl+Z**) puts one page's original text back. Each translated page is its own step.
 
 <!--
 Screenshots to capture:

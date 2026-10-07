@@ -975,6 +975,19 @@ export const TRANSLATE_PAGE_LIMITS = messageKey('dialog.translate-page.limits');
 export const TRANSLATE_PAGE_NO_PROVIDER = messageKey('dialog.translate-page.no-provider');
 export const TRANSLATE_PAGE_START = messageKey('dialog.translate-page.start');
 export const TRANSLATE_PAGE_PROGRESS = messageKey('task.translate-page');
+export const TRANSLATE_PAGES_PROGRESS = messageKey('task.translate-pages');
+export const TRANSLATE_SCOPE_LABEL = messageKey('dialog.translate-page.scope');
+export const TRANSLATE_SCOPE_PAGE = messageKey('dialog.translate-page.scope-page');
+export const TRANSLATE_SCOPE_SELECTION = messageKey('dialog.translate-page.scope-selection');
+export const TRANSLATE_SCOPE_DOCUMENT = messageKey('dialog.translate-page.scope-document');
+export const TRANSLATE_SCOPE_PAGES = messageKey('dialog.translate-page.scope-pages');
+export const TRANSLATE_SCOPE_PAGES_FIELD = messageKey('dialog.translate-page.scope-pages-field');
+export const TRANSLATE_SCOPE_PAGES_EMPTY = messageKey('dialog.translate-page.scope-pages-empty');
+export const TRANSLATE_SCOPE_SELECTION_NOTE = messageKey('dialog.translate-page.scope-selection-note');
+export const TOAST_TEXT_TRANSLATED = messageKey('toast.text-translated');
+export const TOAST_PAGES_TRANSLATED = messageKey('toast.pages-translated');
+export const TOAST_PAGES_TRANSLATED_PARTLY = messageKey('toast.pages-translated-partly');
+export const TOAST_NOTHING_SELECTED = messageKey('toast.translate-nothing-selected');
 export const TOAST_PAGE_TRANSLATED = messageKey('toast.page-translated');
 export const TOAST_NOTHING_TO_TRANSLATE = messageKey('toast.nothing-to-translate');
 export const TOAST_NOTHING_MARKED = messageKey('toast.nothing-marked-for-redaction');
@@ -3209,9 +3222,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OCR_LANGUAGE_NAMES.chi_sim]: 'Chinese (Simplified)',
   [TRANSLATE_PAGE_TITLE]: 'Translate this page…',
   [RIBBON_TRANSLATE_PAGE]: 'Translate',
-  [TRANSLATE_PAGE_DIALOG_TITLE]: 'Translate this page',
+  [TRANSLATE_PAGE_DIALOG_TITLE]: 'Translate',
   [TRANSLATE_PAGE_INTRO]:
-    'The text on this page is sent to the AI provider below, translated, and written back into the page where it was. Undo puts the original back.',
+    'The text you choose below is sent to the AI provider named here and translated. A page’s text is written back into it where it was, and Undo puts the original back.',
   [TRANSLATE_PAGE_LANGUAGE]: 'Translate into',
   [TRANSLATE_PAGE_CHOOSE_LANGUAGE]: 'Choose a language',
   [TRANSLATE_PAGE_PROVIDER]: 'Using',
@@ -3221,6 +3234,21 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Translating uses an AI provider, and none is set up yet. Add a key in Settings › AI, then come back.',
   [TRANSLATE_PAGE_START]: 'Translate',
   [TRANSLATE_PAGE_PROGRESS]: 'Translating the page',
+  [TRANSLATE_PAGES_PROGRESS]: 'Translating pages',
+  [TRANSLATE_SCOPE_LABEL]: 'Translate',
+  [TRANSLATE_SCOPE_PAGE]: 'This page',
+  [TRANSLATE_SCOPE_SELECTION]: 'Selected text',
+  [TRANSLATE_SCOPE_DOCUMENT]: 'Whole document',
+  [TRANSLATE_SCOPE_PAGES]: 'Pages',
+  [TRANSLATE_SCOPE_PAGES_FIELD]: 'Pages to translate',
+  [TRANSLATE_SCOPE_PAGES_EMPTY]: 'Type the pages to translate, like 1-3, 5.',
+  [TRANSLATE_SCOPE_SELECTION_NOTE]:
+    'The translation is copied, ready to paste where you want it. The page itself is not changed.',
+  [TOAST_TEXT_TRANSLATED]: 'Translated, and copied.',
+  [TOAST_PAGES_TRANSLATED]: 'Translated. Each page is its own step to undo.',
+  [TOAST_PAGES_TRANSLATED_PARTLY]:
+    'Stopped early. The pages already translated stay translated, and each is its own step to undo.',
+  [TOAST_NOTHING_SELECTED]: 'Select some text on the page first, then translate it.',
   [TOAST_PAGE_TRANSLATED]: 'Page translated. Undo puts the original back.',
   [TOAST_NOTHING_TO_TRANSLATE]: 'Nothing on this page needed translating.',
   [TOAST_NOTHING_MARKED]:

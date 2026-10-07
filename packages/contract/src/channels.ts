@@ -463,17 +463,17 @@ export type StorePage = (typeof STORE_PAGES)[number];
  * channels that already carry page text.
  */
 export const MAX_MODEL_ID = 128;
-
-/**
- * The most characters of selected text one translation takes, and of the answer: a selection is a few paragraphs, and a
- * larger one is a page, which has its own channel. The answer may run longer than the question in another language, so
- * its bound is wider — both inside the channel frame's room at six bytes a character.
- */
-export const MAX_TRANSLATE_TEXT = 20_000;
-export const MAX_TRANSLATED_TEXT = 60_000;
 export const MAX_MODELS = 512;
 export const MAX_CHAT_TEXT = 16_384;
 export const MAX_CHAT_TURNS = 64;
+
+/**
+ * The most characters of selected text one translation takes, and of the answer. The answer is held to the one bound
+ * anything is COPIED at (`window.copyText`, the assistant's turn bound), so a translation is never one that cannot be
+ * put on the clipboard; the question is half of it, since a translation may run longer than its source.
+ */
+export const MAX_TRANSLATE_TEXT = MAX_CHAT_TEXT / 2;
+export const MAX_TRANSLATED_TEXT = MAX_CHAT_TEXT;
 
 /**
  * Why asking a provider for its models did not answer a list — the one set a list and a key check both carry.

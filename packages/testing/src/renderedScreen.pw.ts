@@ -4372,11 +4372,14 @@ for (const look of LOOKS) {
     await page.keyboard.press('Control+K');
     await page.keyboard.type('Translate this page');
     await page.keyboard.press('Enter');
-    const dialog = page.getByRole('dialog', { name: 'Translate this page' });
+    const dialog = page.getByRole('dialog', { name: 'Translate', exact: true });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByText('The text on this page is sent to the AI provider below', { exact: false })).toBeVisible();
+    await expect(dialog.getByText('The text you choose below is sent to the AI provider named here', { exact: false })).toBeVisible();
+    // THE FOUR SCOPES (2026-10-08), with the selected text not choosable while no words are selected.
+    for (const scope of ['This page', 'Whole document', 'Pages']) await expect(dialog.getByRole('button', { name: scope })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Selected text' })).toBeDisabled();
     // NO LANGUAGE CHOSEN FOR THE PERSON: the start waits.
-    await expect(dialog.getByRole('button', { name: 'Translate' })).toBeDisabled();
+    await expect(dialog.getByRole('button', { name: 'Translate', exact: true })).toBeDisabled();
 
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
@@ -4386,7 +4389,7 @@ for (const look of LOOKS) {
     ).toEqual([]);
 
     await dialog.locator('[data-translate-language]').selectOption('fr');
-    await dialog.getByRole('button', { name: 'Translate' }).click();
+    await dialog.getByRole('button', { name: 'Translate', exact: true }).click();
     // THE WRITE'S OWN TOAST, which only a document.execute that answered produces.
     await expect(page.getByText('Page translated. Undo puts the original back.')).toBeVisible();
   });
