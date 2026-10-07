@@ -237,6 +237,9 @@ import {
   GROUP_QUICK_TOOLS,
   RIBBON_FLATTEN_FORM,
   RIBBON_TAB_ORDER,
+  DETECT_FIELDS_TIP,
+  FLATTEN_FORM_TIP,
+  TAB_ORDER_TIP,
   TAB_ORDER_COMMAND_TITLE,
   TOAST_TAB_ORDER_SET,
   RIBBON_FORM_DATA_EXPORT,
@@ -3716,6 +3719,8 @@ export function flattenFormCommand(deps: DocumentCommandDeps & WritesAFile): UiC
     icon: 'Layers',
     title: FORMS_FLATTEN,
     ribbonTitle: RIBBON_FLATTEN_FORM,
+    // THE FIRST THING A PERSON ASKS OF *FLATTEN*, answered before they press it.
+    tip: FLATTEN_FORM_TIP,
     placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_MANAGE, order: 82 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -3739,6 +3744,7 @@ export function tabOrderCommand(deps: DocumentCommandDeps & WritesAFile): UiComm
     icon: 'ListOrdered',
     title: TAB_ORDER_COMMAND_TITLE,
     ribbonTitle: RIBBON_TAB_ORDER,
+    tip: TAB_ORDER_TIP,
     placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_MANAGE, order: 84 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -3760,6 +3766,8 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
     title: FLAT_FIELDS_COMMAND_TITLE,
     // v5-08's Forms › Manage › *Detect*: this proposes fields where a page has only drawn boxes.
     ribbonTitle: RIBBON_DETECT_FIELDS,
+    // WHAT IT DOES IN ONE SENTENCE, because *Detect* alone says nothing to a person who has not met it.
+    tip: DETECT_FIELDS_TIP,
     placements: [
       { surface: 'ribbon', section: 'forms', group: GROUP_MANAGE, order: 80 },
     ],

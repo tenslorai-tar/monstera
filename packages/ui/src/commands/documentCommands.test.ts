@@ -13,6 +13,10 @@ import { describe, expect, it } from 'vitest';
 import { PAGE_BACKGROUND_DIALOG_ID } from '../dialogs/pageBackground.js';
 import type { ObjectFilter } from '../objectEditing.js';
 import {
+  DETECT_FIELDS_TIP,
+  EN,
+  FLATTEN_FORM_TIP,
+  TAB_ORDER_TIP,
   TOAST_ACTIVE_CONTENT_REMOVED,
   TOAST_FORM_FLATTENED,
   TOAST_TAB_ORDER_SET,
@@ -5664,6 +5668,18 @@ describe('protectDocumentCommand', () => {
 
       expect(said).toStrictEqual([]);
       expect(asked).toStrictEqual(['dialog.flatten-form', 'dialog.command-problem']);
+    });
+  });
+
+  describe('what Detect, Flatten and Tab order say they do', () => {
+    it('each carries a one sentence tip that names it, so the ribbon can show what the control does before it is pressed', () => {
+      const { client } = recordingClient();
+      const deps = { client, toast: () => undefined, stamp, signatures, onApplied: () => undefined, ask: () => Promise.resolve(undefined) };
+      const tips = [detectFlatFieldsCommand(deps), flattenFormCommand(deps), tabOrderCommand(deps)].map((command) => command.tip);
+      expect(tips).toStrictEqual([DETECT_FIELDS_TIP, FLATTEN_FORM_TIP, TAB_ORDER_TIP]);
+      expect(EN[DETECT_FIELDS_TIP]).toMatch(/^Detect: /u);
+      expect(EN[FLATTEN_FORM_TIP]).toMatch(/^Flatten: /u);
+      expect(EN[TAB_ORDER_TIP]).toMatch(/^Tab order: /u);
     });
   });
 

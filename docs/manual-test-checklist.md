@@ -145,7 +145,7 @@ is not available.
 - [ ] **Fields list** — Fields · `view.show-fields` · Shows: on screen · Help: *Delete a form field*
 - [ ] **Find fields on this page…** — Manage · `document.find-flat-fields` · Shows: a result dialog · Help: *Find fields on a flat form*
 - [ ] **Flatten form** — Manage · `document.flatten-form` · Shows: a toast · Help: *Flatten a form*
-- [ ] **Tab order…** — Manage · `document.tab-order` · Shows: a toast
+- [ ] **Tab order…** — Manage · `document.tab-order` · Shows: a toast · Help: *Change a form field*
 
 ## Ribbon › Protect
 
@@ -273,8 +273,8 @@ is not available.
 
 ## Properties tab
 
-- [ ] **Copy to other pages…** · `forms.copy-to-pages` · Shows: on screen
-- [ ] **Align left edges** · `forms.arrange.align-left` · Shows: on screen
+- [ ] **Copy to other pages…** · `forms.copy-to-pages` · Shows: on screen · Help: *Change a form field*
+- [ ] **Align left edges** · `forms.arrange.align-left` · Shows: on screen · Help: *Change a form field*
 - [ ] **Align right edges** · `forms.arrange.align-right` · Shows: on screen
 - [ ] **Align tops** · `forms.arrange.align-top` · Shows: on screen
 - [ ] **Align bottoms** · `forms.arrange.align-bottom` · Shows: on screen
@@ -282,7 +282,7 @@ is not available.
 - [ ] **Centre down the first field** · `forms.arrange.centre-vertically` · Shows: on screen
 - [ ] **Same width as the first field** · `forms.arrange.same-width` · Shows: on screen
 - [ ] **Same height as the first field** · `forms.arrange.same-height` · Shows: on screen
-- [ ] **Same size as the first field** · `forms.arrange.same-size` · Shows: on screen
+- [ ] **Same size as the first field** · `forms.arrange.same-size` · Shows: on screen · Help: *Change a form field*
 
 ## Start screen
 

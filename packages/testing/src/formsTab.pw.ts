@@ -269,6 +269,17 @@ test.describe('the Forms tab', () => {
     });
   });
 
+  test('Detect, Flatten and Tab order each say what they do before they are pressed', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openForms(page, sent);
+    await openSection(page, 'Forms');
+    await expect(page.getByRole('button', { name: 'Detect' }).first()).toHaveAccessibleDescription(/finds empty lines and boxes beside a label/u);
+    await expect(page.getByRole('button', { name: 'Flatten' }).first()).toHaveAccessibleDescription(/prints what is typed in every field/u);
+    await expect(page.getByRole('button', { name: 'Tab order' }).first()).toHaveAccessibleDescription(/how the Tab key moves/u);
+    // NOTHING WAS SENT BY LOOKING.
+    expect(sent.filter((call) => call.channel === 'document.execute')).toStrictEqual([]);
+  });
+
   test('Tab order asks which of three orders and sends ONE setTabOrder for every page', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openForms(page, sent, [LISTED], 2);

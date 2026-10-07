@@ -1177,6 +1177,10 @@ export const FLAT_FIELDS_TITLE = messageKey('dialog.flat-fields.title');
 export const FLAT_FIELDS_GUESSED = messageKey('dialog.flat-fields.guessed');
 export const FLAT_FIELDS_NONE = messageKey('dialog.flat-fields.none');
 export const FLAT_FIELDS_TRUNCATED = messageKey('dialog.flat-fields.truncated');
+// WHAT DETECT, FLATTEN AND TAB ORDER DO, in one plain sentence each: the ribbon's tooltip and the control's description.
+export const DETECT_FIELDS_TIP = messageKey('command.forms.detect.tip');
+export const FLATTEN_FORM_TIP = messageKey('command.forms.flatten.tip');
+export const TAB_ORDER_TIP = messageKey('command.forms.tab-order.tip');
 // THE ORDER THE TAB KEY WALKS A FORM'S FIELDS (ADR-0193).
 export const TAB_ORDER_COMMAND_TITLE = messageKey('command.forms.tab-order.title');
 export const RIBBON_TAB_ORDER = messageKey('surface.ribbon.tab-order');
@@ -3608,6 +3612,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLAT_FIELDS_TITLE]: 'Fields this page could have',
   [FLAT_FIELDS_GUESSED]:
     'Monstera looked for ruled lines and boxes with a label beside them and nothing written in them. An empty box in a table looks the same, so check the list before accepting it.',
+  [DETECT_FIELDS_TIP]:
+    'Detect: finds empty lines and boxes beside a label on this page and offers each one as a field. You see how many it found and choose which to add before anything changes.',
+  [FLATTEN_FORM_TIP]:
+    'Flatten: prints what is typed in every field onto the page and removes the fields, so the form can no longer be filled in. You are asked first.',
+  [TAB_ORDER_TIP]: 'Tab order: choose how the Tab key moves from field to field when someone fills in this form.',
   [TAB_ORDER_COMMAND_TITLE]: 'Tab order…',
   [RIBBON_TAB_ORDER]: 'Tab order',
   [TAB_ORDER_TITLE]: 'Tab order',

@@ -18,6 +18,7 @@ Flattening turns a filled form into ordinary page content. What is in the fields
 
 ## Good to know
 
+- Each field is drawn onto the page as it looks now: its text, and its border and fill as well, so an empty box or circle stays on the page.
 - Comments are not affected; they stay editable.
 - You can undo it with **Ctrl+Z** until you close the document. After saving and closing, the fields are gone for good.
 - To flatten comments as well, see "Sanitize a document".

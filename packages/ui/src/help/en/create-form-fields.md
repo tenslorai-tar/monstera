@@ -22,9 +22,12 @@ You can turn any document into a fillable form by drawing fields on it.
 
 ## Good to know
 
+- Choosing a field tool draws ONE field and then returns to filling. Double click the tool to draw several in a row, and press **Esc** to stop. For radio options, drag one box for each option: the group's name is asked once and kept until you press **Esc**, and each option needs a value of its own.
+- A new field has a thin dark border so you can see it, and a tick box or radio button also has a white fill.
+- A name another field already has, or a name that starts another's, is said in the name box before anything is drawn.
 - A dot in a name groups fields: "owner.first" and "owner.second" belong together.
 - Signature fields cannot be created yet.
-- New fields start empty; fill them from the **Forms** tab.
+- New fields start empty; fill them from the **Forms** tab. To change a field afterwards, select it in the **Fields** list and use the **Properties** tab. See "Change a form field".
 - Undo with **Ctrl+Z**.
 
 <!--
