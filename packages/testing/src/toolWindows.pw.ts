@@ -175,5 +175,6 @@ test('a long list scrolls inside the window while its footer and title stay in v
   });
   expect(await scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(100);
   expect(await dialog.locator('.m-dialog-footer').boundingBox()).toStrictEqual(before);
-  await expect(dialog.getByRole('button', { name: 'Reset all shortcuts' })).toBeInViewport();
+  // THE FOOTER'S OWN CLOSE: the list is read-only here (ADR-0191), and Reset all is Settings'.
+  await expect(dialog.locator('.m-dialog-footer').getByRole('button', { name: 'Close' })).toBeInViewport();
 });

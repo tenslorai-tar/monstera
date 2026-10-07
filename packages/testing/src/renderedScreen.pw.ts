@@ -3277,9 +3277,12 @@ test('KEYBOARD SHORTCUTS: the changes end under their header, each key is its ow
   await bridge(page);
   await page.goto('/');
   await startScreenListening(page);
-  await page.keyboard.press('Control+Slash');
-  const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+  // THE EDITING LIST is Settings' Keyboard page since ADR-0191; Help's is read-only, which `the keyboard shortcuts list`
+  // case above holds.
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Settings' });
   await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Keyboard' }).click();
 
   // THE PROMPT FIRST, then a key for it: a changed row gains *Reset*, which widens the column of changes, and only then
   // does a row with two buttons have room to sit at the start. With every row alike the column hugs them, start and end

@@ -393,9 +393,19 @@ export function DialogActions({ children, apart }: { readonly children?: ReactNo
 /**
  * The part of a browsed window that scrolls. A body built of this and a `DialogFooter` side by side keeps its footer
  * (and anything placed before this, such as a search field) in view while the list moves.
+ *
+ * A REGION WITH NOTHING FOCUSABLE IN IT gives a keyboard no way to scroll it (axe's `scrollable-region-focusable`), so a
+ * body whose list is only to be read passes `label` and the region takes the Tab stop itself, named. A body with buttons
+ * in the list does not need it: they are the way in.
  */
-export function DialogScroll({ children }: { readonly children: ReactNode }): ReactElement {
-  return <div className="m-dialog-scroll">{children}</div>;
+export function DialogScroll({ children, label }: { readonly children: ReactNode; readonly label?: string }): ReactElement {
+  return label === undefined ? (
+    <div className="m-dialog-scroll">{children}</div>
+  ) : (
+    <div className="m-dialog-scroll" role="region" aria-label={label} tabIndex={0}>
+      {children}
+    </div>
+  );
 }
 
 /**

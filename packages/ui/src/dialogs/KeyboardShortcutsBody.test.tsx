@@ -52,6 +52,14 @@ describe('KeyboardShortcutsBody', () => {
     expect(screen.getByText('None')).toBeDefined();
   });
 
+  it('its scrolling list is a named region that takes a Tab stop, since nothing in a read-only list can be focused', () => {
+    drawn();
+    const region = screen.getByRole('region', { name: i18n._(KEYBOARD_SHORTCUTS_TITLE) });
+    // WITHOUT IT a keyboard has no way to scroll the list (axe's `scrollable-region-focusable`, which the rendered gate found).
+    expect(region.getAttribute('tabindex')).toBe('0');
+    expect(region.querySelector('table')).not.toBeNull();
+  });
+
   it('draws NO editing column: two column headers, no Change, Reset, Remove or Reset all (ADR-0191)', () => {
     drawn();
     expect(screen.getAllByRole('columnheader')).toHaveLength(2);

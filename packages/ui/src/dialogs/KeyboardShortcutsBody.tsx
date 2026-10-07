@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
 
-import { SHORTCUTS_DROPPED } from '../messages/en.js';
+import { KEYBOARD_SHORTCUTS_TITLE, SHORTCUTS_DROPPED } from '../messages/en.js';
 import { DialogFooter, DialogScroll } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { KeyboardShortcutsAnswer } from './keyboardShortcuts.js';
@@ -34,7 +34,7 @@ export default function KeyboardShortcutsBody({
       {dropped.length === 0 ? null : (
         <p className="m-shortcuts-editor__note">{_(SHORTCUTS_DROPPED, { commands: dropped.map(titleOf).join(', ') })}</p>
       )}
-      <DialogScroll>
+      <DialogScroll label={_(KEYBOARD_SHORTCUTS_TITLE)}>
         <ShortcutList rows={rows} editor={undefined} />
       </DialogScroll>
       <DialogFooter dismissal="close" />
