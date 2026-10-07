@@ -30,7 +30,10 @@ async function drawnButtons(page: Page): Promise<number> {
 }
 
 test('the COMMENT ribbon keeps one fold while a text selection changes', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
+  // 960, NOT THE OWNER'S 1280: ADR-0194's small tools (2026-10-08) made the Comment section fit whole at 1280, so the
+  // width that exercises the fold is narrower. The row's More is asserted below, which is what keeps this case from
+  // passing for a row that never folds.
+  await page.setViewportSize({ width: 960, height: 800 });
   const bytes = await blockedPages([612, 792], 1);
   await bridge(page, {
     opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'words.pdf' }],
