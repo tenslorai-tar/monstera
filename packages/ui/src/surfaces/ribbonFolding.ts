@@ -24,11 +24,16 @@ import type { MessageKey } from '@monstera/shared';
 export interface GroupWidths {
   /** Each button's natural width, in the order the projection put them. */
   readonly buttons: readonly number[];
-  /**
-   * What the group costs besides its buttons: padding, the hairline separator, and the caption if
-   * the caption is wider than the buttons that remain.
-   */
+  /** What the group costs besides what is inside it: its padding and the hairline separator, and nothing else. */
   readonly chrome: number;
+  /**
+   * The caption's own text width, which is the group's floor: a group is as wide as its buttons OR its caption,
+   * whichever is wider. **Charged since ADR-0194's icon-only columns**, whose three 22 px buttons sit under a caption
+   * like *Measure* that is wider than all of them — the group is then as wide as the word, and a fold that counted only
+   * the buttons believed it 35 px narrower than it drew (measured under WCAG's text spacing, which a wider font also
+   * reaches). It was never measured before, because every group's buttons had been at least as wide as its caption.
+   */
+  readonly caption: number;
   /**
    * The space between two adjacent buttons in the group's row, a More included.
    *
@@ -57,12 +62,14 @@ export interface GroupFold {
  * like any other — a fold that forgot it would free exactly the space it then spends.
  */
 function widthOf(group: GroupWidths, shown: number, moreWidth: number): number {
-  let total = group.chrome;
-  for (let index = 0; index < shown; index += 1) total += group.buttons[index] ?? 0;
+  let buttons = 0;
+  for (let index = 0; index < shown; index += 1) buttons += group.buttons[index] ?? 0;
   const folded = shown < group.buttons.length;
-  if (folded) total += moreWidth;
+  if (folded) buttons += moreWidth;
   const items = shown + (folded ? 1 : 0);
-  return total + group.gap * Math.max(items - 1, 0);
+  buttons += group.gap * Math.max(items - 1, 0);
+  // THE WIDER OF THE TWO, not their sum: the caption sits beneath the buttons, not beside them.
+  return group.chrome + Math.max(buttons, group.caption);
 }
 
 /**

@@ -58,6 +58,7 @@ export interface RibbonFold {
  */
 interface GroupFrame {
   readonly chrome: number;
+  readonly caption: number;
   readonly gap: number;
 }
 
@@ -101,7 +102,11 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
       const element = groups.current[index] ?? null;
       if (element === null) return;
       frames.set(group.group, {
-        chrome: Math.max(element.getBoundingClientRect().width - buttonsWidth(element), 0),
+        // THE GROUP'S OWN PADDING AND EDGE, from the one rule for a box's content (`innerWidthOf`). It was the group's
+        // width less its buttons row, and that row stretches to the group, so a caption wider than the buttons was
+        // inside the "buttons" and never charged.
+        chrome: Math.max(element.getBoundingClientRect().width - innerWidthOf(element), 0),
+        caption: captionWidth(element),
         gap: buttonGap(element),
       });
       // THE ROW'S BUTTONS, from the one function that defines them: the primaries, a named menu as one, then the
@@ -188,7 +193,7 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
         if (width === undefined) return null;
         buttons.push(width);
       }
-      widths.push({ buttons, chrome: frame.chrome, gap: frame.gap });
+      widths.push({ buttons, chrome: frame.chrome, caption: frame.caption, gap: frame.gap });
     }
     return foldRow(widths, metrics.room, metrics.more, metrics.gap);
   }, [metrics, section]);
@@ -224,7 +229,7 @@ function same<T>(left: T | undefined, right: T): boolean {
   if (typeof right === 'object' && right !== null && typeof left === 'object' && left !== null) {
     const a = left as unknown as GroupFrame;
     const b = right as unknown as GroupFrame;
-    return a.chrome === b.chrome && a.gap === b.gap;
+    return a.chrome === b.chrome && a.caption === b.caption && a.gap === b.gap;
   }
   return left === right;
 }
@@ -281,8 +286,14 @@ function buttonGap(group: HTMLElement | null): number {
   return buttons === null ? 0 : Number.parseFloat(getComputedStyle(buttons).columnGap) || 0;
 }
 
-/** The buttons row inside a group, so the rest of the group's width is its chrome and caption. */
-function buttonsWidth(group: HTMLElement): number {
-  const buttons = group.querySelector<HTMLElement>('.m-ribbon__buttons');
-  return buttons === null ? 0 : buttons.getBoundingClientRect().width;
+/**
+ * The caption's TEXT width. The caption's box is a flex row that stretches to the group, so its own width is the group's
+ * and says nothing about the word; a range over its contents is the text's own box.
+ */
+function captionWidth(group: HTMLElement): number {
+  const caption = group.querySelector<HTMLElement>('.m-ribbon__caption');
+  if (caption === null) return 0;
+  const range = document.createRange();
+  range.selectNodeContents(caption);
+  return range.getBoundingClientRect().width;
 }
