@@ -48,6 +48,8 @@ import {
   type WordMode,
   type SaveWriteCause,
   type FileAccess,
+  type FormFieldHandle,
+  type FormFieldRead,
   keptLookOf,
   placedMarkOf,
   sourceIdsOf,
@@ -1832,6 +1834,19 @@ export type PlaceBarcodeOutcome =
   | ({ readonly kind: 'placed' } & Applied)
   | { readonly kind: 'refused' };
 
+/** The named fields' properties, through whichever host is live (ADR-0193). */
+export type DocumentFieldPropertiesReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  handles: readonly FormFieldHandle[],
+) => Promise<readonly (FormFieldRead | null)[]>;
+
+/** The named fields' properties, stamped with the version the lane read them at. */
+export interface DocumentFieldProperties {
+  readonly version: DocVersion;
+  readonly fields: readonly (FormFieldRead | null)[];
+}
+
 /** The candidates, stamped with the version the lane read them at. */
 export interface DocumentFlatFields {
   readonly version: DocVersion;
@@ -2288,6 +2303,8 @@ export interface DocumentCommandsParts {
   readonly linkAddress: DocumentLinkAddressReader;
   readonly formFields: DocumentFormFieldsReader;
   readonly flatFields: DocumentFlatFieldsReader;
+  /** The named fields' properties, read in the engine host (ADR-0193). */
+  readonly fieldProperties: DocumentFieldPropertiesReader;
   /** One page's barcodes, read in the engine host (ADR-0076). */
   readonly barcodes: DocumentBarcodesReader;
   /** How a protect replaces the document's plaintext copies with encrypted ones (ADR-0171 Decision 8). */
@@ -2523,6 +2540,7 @@ export class DocumentCommands {
     null;
   readonly #formFields: DocumentFormFieldsReader;
   readonly #flatFields: DocumentFlatFieldsReader;
+  readonly #fieldProperties: DocumentFieldPropertiesReader;
   readonly #barcodes: DocumentBarcodesReader;
   readonly #copies: ProtectedCopies;
   readonly #accessibility: DocumentAccessibilityReader;
@@ -2602,6 +2620,7 @@ export class DocumentCommands {
     this.#linkAddress = parts.linkAddress;
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
+    this.#fieldProperties = parts.fieldProperties;
     this.#barcodes = parts.barcodes;
     this.#copies = parts.copies;
     this.#accessibility = parts.accessibility;
@@ -3228,6 +3247,26 @@ export class DocumentCommands {
       truncated: value.truncated,
       alreadyFields: value.alreadyFields,
     };
+  }
+
+  /**
+   * What the named fields' properties are (ADR-0193).
+   *
+   * {@link flatFieldCandidates}' body and its lane, for its reason: the walk reads the document the adapter holds, which
+   * a command mutates in place. The version comes back with the answer, so a pane built from it can tell when the
+   * document has moved on.
+   */
+  async formFieldProperties(docId: DocId, handles: readonly FormFieldHandle[]): Promise<DocumentFieldProperties> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#fieldProperties(docId, sessions, handles);
+    });
+    return { version, fields: value };
   }
 
   /**

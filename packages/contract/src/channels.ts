@@ -56,6 +56,9 @@ import {
   formDataImportFormatSchema,
   annotationDataFormatSchema,
   formFieldKindSchema,
+  formFieldHandleSchema,
+  formFieldReadSchema,
+  MAX_READ_FIELDS,
   renderableCommandSchema,
 } from './commands.js';
 import {
@@ -4959,6 +4962,25 @@ export const channels = {
       truncated: z.boolean(),
       /** How many places that look like a field already hold one: left out, and said, so none is made twice. */
       alreadyFields: z.number().int().nonnegative(),
+    }),
+    ['document-not-open', 'document-poisoned'],
+  ),
+
+  /**
+   * What the named form fields' properties are (ADR-0193): the Properties pane's read.
+   *
+   * A channel of its own and not members of `document.formFields`, whose answer is a LIST of every field bounded by the
+   * smallest one: a tooltip and a list of choices on each would put its worst case past the answer ceiling. This is
+   * bounded by the handles asked for, and `null` is a handle that no longer names its field.
+   *
+   * No `document-busy`, for `document.flatFieldCandidates`' reason: it mutates nothing.
+   */
+  'document.formFieldProperties': channel(
+    'Reads the properties of the named form fields.',
+    z.object({ docId: docIdSchema, fields: z.array(formFieldHandleSchema).min(1).max(MAX_READ_FIELDS).readonly() }),
+    z.object({
+      version: docVersionSchema,
+      fields: z.array(formFieldReadSchema.nullable()).max(MAX_READ_FIELDS).readonly(),
     }),
     ['document-not-open', 'document-poisoned'],
   ),

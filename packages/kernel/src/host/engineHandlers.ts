@@ -1,4 +1,12 @@
-import type { AnnotationDataFormat, CommandOfKind, FormDataFormat, Handlers, PageSet } from '@monstera/contract';
+import type {
+  AnnotationDataFormat,
+  CommandOfKind,
+  FormDataFormat,
+  FormFieldHandle,
+  FormFieldRead,
+  Handlers,
+  PageSet,
+} from '@monstera/contract';
 import { cappedBoxes } from '@monstera/contract/host';
 
 import type { KindsRoutedTo } from '../commandRouting.js';
@@ -313,6 +321,12 @@ export type HostFlatFieldsReader = (
   readonly alreadyFields: number;
 }>;
 
+/** The named fields' properties (ADR-0193), `null` for a handle that no longer names its field. */
+export type HostFieldPropertiesReader = (
+  session: MupdfSession,
+  handles: readonly FormFieldHandle[],
+) => Promise<readonly (FormFieldRead | null)[]>;
+
 /**
  * The engine host's side of Decision 10: it looks the spec up and calls it
  * against a session **it** holds.
@@ -527,6 +541,8 @@ export interface EngineHandlerParts {
   readonly word: HostWordExport;
   /** How this process proposes fields on a flat page. `detectFlatFields`. */
   readonly flatFields: HostFlatFieldsReader;
+  /** How this process reads the properties of named fields. `engine/field-properties`. */
+  readonly fieldProperties: HostFieldPropertiesReader;
   /** How this process reads a page's barcodes. `engine/page-barcodes`. */
   readonly barcodes: HostBarcodesReader;
 }
@@ -565,6 +581,7 @@ export function createEngineHandlers({
   pageImage,
   word,
   flatFields,
+  fieldProperties,
   barcodes,
 }: EngineHandlerParts): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
@@ -1070,6 +1087,12 @@ export function createEngineHandlers({
         ok: true,
         value: { candidates: [...found.candidates], truncated: found.truncated, alreadyFields: found.alreadyFields },
       };
+    },
+
+    'engine/field-properties': async ({ session, fields }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      return { ok: true, value: { fields: [...(await fieldProperties(held.session, fields))] } };
     },
 
     'engine/exportFormData': async ({ session, format, into }) => {

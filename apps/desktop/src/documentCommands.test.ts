@@ -96,6 +96,7 @@ import {
   readPageTextJson,
   readPageWordBoxes,
   detectFlatFields,
+  readFieldProperties,
   readInterchangeAnnotations,
   serialiseAnnotationData,
   checkAccessibility,
@@ -865,6 +866,7 @@ const INERT = {
   linkAddress: noLinkAddress,
   formFields: noFormFields,
   flatFields: noFlatFields,
+  fieldProperties: () => Promise.reject(new Error('this case does not read field properties')),
   barcodes: noBarcodes,
   writeBarcode: noBarcodeWriter,
   accessibility: () => Promise.reject(new Error('this case does not check accessibility')),
@@ -951,6 +953,11 @@ const LOCAL_READS = {
   linkAddress: localLinkAddress,
   formFields: localFormFields,
   flatFields: localFlatFields,
+  fieldProperties: (id, sessions, handles) => {
+    const held = sessions.mupdf;
+    if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+    return readFieldProperties(held, handles);
+  },
   barcodes: localBarcodes,
   accessibility: async (id, sessions) => {
     const held = sessions.mupdf;

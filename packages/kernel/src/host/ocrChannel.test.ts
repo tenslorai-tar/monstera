@@ -189,6 +189,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       word: () => {
         throw new Error('a recognition must not export a Word file');
       },
+      fieldProperties: () => {
+        throw new Error('an OCR case must not read field properties');
+      },
       flatFields: () => {
         throw new Error('a recognition must not propose fields');
       },

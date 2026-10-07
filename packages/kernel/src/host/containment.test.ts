@@ -581,6 +581,9 @@ describe('the engine host answers a containment probe', () => {
     word: () => {
       throw new Error('a containment probe must not export a Word file');
     },
+    fieldProperties: () => {
+      throw new Error('a containment probe must not read field properties');
+    },
     flatFields: () => {
       throw new Error('a containment probe must not walk a page');
     },

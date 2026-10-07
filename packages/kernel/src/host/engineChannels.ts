@@ -75,6 +75,9 @@ import {
   createFormFieldSchema,
   duplicateFormFieldSchema,
   editFormFieldsSchema,
+  formFieldHandleSchema,
+  formFieldReadSchema,
+  MAX_READ_FIELDS,
   setTabOrderSchema,
   ocrPageSchema,
   generateTocSchema,
@@ -3043,6 +3046,21 @@ export const engineChannels = {
         alreadyFields: z.number().int().nonnegative(),
       })
       .strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * What each named field's properties are (ADR-0193): the Properties pane's read.
+   *
+   * A SEPARATE CHANNEL and not members of `engine/form-fields`, whose answer is bounded by the smallest field: a tooltip
+   * and a list of choices per field would put its worst case past the answer ceiling. This one is bounded by the handles
+   * it is asked for (`MAX_READ_FIELDS`), so an answer cannot outgrow the request. `null` is a handle that no longer
+   * names its field.
+   */
+  'engine/field-properties': fileAnswered(
+    'Reads the properties of the named form fields.',
+    z.object({ session: sessionSchema, fields: z.array(formFieldHandleSchema).min(1).max(MAX_READ_FIELDS).readonly() }).strict(),
+    z.object({ fields: z.array(formFieldReadSchema.nullable()).max(MAX_READ_FIELDS).readonly() }).strict(),
     ['no-such-session'],
   ),
 

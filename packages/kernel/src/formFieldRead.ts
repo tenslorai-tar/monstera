@@ -1,4 +1,4 @@
-import type { AnnotationColour, FormFieldHandle, FormFieldRead } from '@monstera/contract';
+import { type AnnotationColour, type FormFieldHandle, type FormFieldRead, MAX_READ_FIELDS } from '@monstera/contract';
 import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
@@ -178,9 +178,6 @@ function readOne(document: PDFDocument, widget: PDFWidget, page: number, index: 
     calculationPosition: calculation === null && calculationScript === undefined ? null : calculationPositionOf(document, name),
   };
 }
-
-/** How many fields one read answers: the edit's own bound, so a selection that can be edited can be read. */
-export const MAX_READ_FIELDS = 256;
 
 /**
  * The properties of each named field, in the order named, `null` for a handle that no longer names its field.

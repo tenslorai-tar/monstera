@@ -53,6 +53,8 @@ const LIVE_SESSION = ['engine/serialise'] as const;
 /** MuPDF's document model, which is the half a second engine owes none of. */
 const MUPDF_READS = [
   'engine/extract',
+  // THE PROPERTIES PANE'S READ (ADR-0193): MuPDF's own, for the field list's reason.
+  'engine/field-properties',
   // pdf-lib RUN ON THIS ENGINE'S SESSION is MuPDF's for `engine/extract`'s reason: the image it rewrites is this
   // session's serialise, taken in the process that holds it, and the result goes to the output directory
   // (ADR-0121 Decision 3). A second engine holds no such session and owes none of it.

@@ -210,6 +210,7 @@ export {
   type FlatFieldCandidate,
   MAX_FLAT_CANDIDATES,
 } from './flatFields.js';
+export { readFieldProperties } from './formFieldRead.js';
 export { applyEditTextOperators, captureEditTextOperators, invertEditTextOperators } from './textOperatorEdit.js';
 export {
   NamelessFieldError,

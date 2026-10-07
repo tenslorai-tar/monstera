@@ -95,6 +95,7 @@ async function joined(parts: {
       pageImage: refuse('export a page image'),
       word: refuse('export a Word file'),
       flatFields: refuse('propose fields'),
+      fieldProperties: refuse('read field properties'),
       barcodes: refuse('read barcodes'),
       exportAnnotationData: refuse('export annotations'),
       accessibility: refuse('check accessibility'),

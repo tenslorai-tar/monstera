@@ -11,6 +11,7 @@ import {
   type DeclaredOf,
   type FileAccess,
   type FormFieldKind,
+  type FormFieldRead,
   type SaveWriteCause,
   type Incident,
   type OcrLanguage,
@@ -615,6 +616,11 @@ export interface BrowserShimOptions {
   }[];
   /** How many places `document.flatFieldCandidates` says already hold a field. Absent is none. */
   readonly flatFieldsAlready?: number;
+  /**
+   * What `document.formFieldProperties` answers beyond a list's own members, by field name: a tooltip, a format, a
+   * calculation. Absent is the defaults of a field that has none of them.
+   */
+  readonly fieldProperties?: Readonly<Record<string, Partial<FormFieldRead>>>;
   /**
    * The editable blocks `document.textBlocks` answers, on every page.
    *
@@ -2280,6 +2286,50 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           candidates: (options.flatFieldCandidates ?? []).map((candidate) => ({ ...candidate, kind: candidate.kind ?? 'text' })),
           truncated: false,
           alreadyFields: options.flatFieldsAlready ?? 0,
+        }),
+      );
+    },
+
+    /**
+     * The named fields' properties, built from the field list the case seeded (the channel's own shape, defaults for
+     * what a list does not say) and overridden by name from `fieldProperties`, so a case can start a field with a
+     * tooltip, a format or a calculation without a document behind it.
+     */
+    'document.formFieldProperties': ({ docId, fields: handles }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      const listed = fieldLists[0] ?? [];
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(current),
+          fields: handles.map((handle) => {
+            const found = listed.find((field) => field.page === handle.page && field.index === handle.index);
+            if (found?.name !== handle.name) return null;
+            return {
+              page: found.page,
+              index: found.index,
+              kind: found.kind,
+              name: found.name,
+              tooltip: null,
+              required: false,
+              readOnly: found.readOnly,
+              defaultValue: null,
+              font: 'helvetica' as const,
+              fontSize: 0,
+              borderColour: [0.2, 0.2, 0.2] as [number, number, number],
+              fillColour: null,
+              borderWidth: 1,
+              options: found.options,
+              multiline: found.multiline,
+              rect: found.rect,
+              format: null,
+              customFormat: false,
+              calculation: null,
+              customCalculation: false,
+              calculationPosition: null,
+              ...(options.fieldProperties?.[found.name] ?? {}),
+            };
+          }),
         }),
       );
     },

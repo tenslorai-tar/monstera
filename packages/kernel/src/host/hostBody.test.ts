@@ -197,6 +197,9 @@ function start(stream: HostByteStream) {
     word: () => {
       throw new Error('no case here exports a Word file');
     },
+    fieldProperties: () => {
+      throw new Error('a host body case must not read field properties');
+    },
     flatFields: () => {
       throw new Error('no case here proposes fields');
     },

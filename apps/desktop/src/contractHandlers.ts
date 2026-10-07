@@ -546,6 +546,7 @@ export function createContractHandlers(deps: {
     'document.annotations': annotationsHandler(deps.commands),
     'document.formFields': formFieldsHandler(deps.commands),
     'document.flatFieldCandidates': flatFieldCandidatesHandler(deps.commands),
+    'document.formFieldProperties': formFieldPropertiesHandler(deps.commands),
     'document.textBlocks': textBlocksHandler(deps.commands),
     'document.pageObjects': pageObjectsHandler(deps.commands),
     'document.renderPage': renderPageHandler(deps.commands),
@@ -2725,6 +2726,20 @@ function flatFieldCandidatesHandler(
     try {
       const { version, candidates, truncated, alreadyFields } = await commands.flatFieldCandidates(docId, page);
       return ok({ version, candidates, truncated, alreadyFields });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The named fields' properties: {@link flatFieldCandidatesHandler}'s body and its refusals (ADR-0193). */
+function formFieldPropertiesHandler(commands: DocumentCommands): ContractHandlers['document.formFieldProperties'] {
+  return async ({ docId, fields }): Promise<Awaited<ReturnType<ContractHandlers['document.formFieldProperties']>>> => {
+    try {
+      const { version, fields: read } = await commands.formFieldProperties(docId, fields);
+      return ok({ version, fields: read });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });

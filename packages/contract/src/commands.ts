@@ -4779,6 +4779,14 @@ export const formFieldReadSchema = z
 /** See {@link formFieldReadSchema}. */
 export type FormFieldRead = z.infer<typeof formFieldReadSchema>;
 
+/**
+ * How many fields one properties read may name. The pane shows the FIRST selected field's values (a control averaged over
+ * several would be a value nothing in the document holds), so a read needs few; and 16 handles at a field name's worst
+ * encoding fit one frame of the host's pipe, where 256 would not (measured 2026-10-07 by `hostRoutes.test.ts`: 803,296
+ * bytes against 262,144).
+ */
+export const MAX_READ_FIELDS = 16;
+
 /** How many fields one edit may change: a form's worth, since selecting all of them is one decision. */
 export const MAX_EDITED_FIELDS = 256;
 

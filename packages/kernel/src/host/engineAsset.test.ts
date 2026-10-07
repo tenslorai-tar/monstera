@@ -201,6 +201,9 @@ async function joined(): Promise<{
       word: () => {
         throw new Error('unused');
       },
+      fieldProperties: () => {
+        throw new Error('an asset case must not read field properties');
+      },
       flatFields: () => {
         throw new Error('unused');
       },

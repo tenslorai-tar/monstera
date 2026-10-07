@@ -245,6 +245,7 @@ describe('browser shim', () => {
       'document.extract',
       'document.fileAccess',
       'document.flatFieldCandidates',
+      'document.formFieldProperties',
       'document.formFields',
       'document.importAnnotations',
       'document.importFormData',

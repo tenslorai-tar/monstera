@@ -15,6 +15,7 @@ import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
 import { detectFlatFields } from '../flatFields.js';
+import { readFieldProperties } from '../formFieldRead.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
 import { readAnnotationWords, readAnnotations } from '../pageAnnotations.js';
@@ -197,6 +198,8 @@ const engineHandlers = createEngineHandlers({
   // A READ, and it runs here for the field list's reason: the walk reaches
   // MuPDF, which invariant 20 keeps out of main.
   flatFields: detectFlatFields,
+  // THE PROPERTIES PANE'S READ (ADR-0193), here for the field list's reason: it walks the document through MuPDF.
+  fieldProperties: readFieldProperties,
   exportFormData: async (session, format) =>
     serialiseFormData(await readFormData(session), format),
   // AND A FOURTH, the snapshot's reason for a whole page: §3 assigns export

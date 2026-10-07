@@ -36,6 +36,7 @@ import type {
   HostAnnotationsReader,
   HostAnnotationRecordsReader,
   HostAnnotationWordsReader,
+  HostFieldPropertiesReader,
   HostFlatFieldsReader,
   HostFormFieldsReader,
   HostLayersReader,
@@ -627,6 +628,20 @@ export function remoteMupdfFlatFields(
       await client['engine/flat-fields']({ session: sessions.handleFor(session), page }),
     );
     return { candidates: answer.candidates, truncated: answer.truncated, alreadyFields: answer.alreadyFields };
+  };
+}
+
+/** The named fields' properties, over the boundary (ADR-0193). */
+export function remoteMupdfFieldProperties(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostFieldPropertiesReader {
+  return async (session, handles) => {
+    const answer = answered(
+      'engine/field-properties',
+      await client['engine/field-properties']({ session: sessions.handleFor(session), fields: handles }),
+    );
+    return answer.fields;
   };
 }
 
