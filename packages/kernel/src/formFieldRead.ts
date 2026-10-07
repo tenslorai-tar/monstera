@@ -1,4 +1,5 @@
-import { type AnnotationColour, type FormFieldHandle, type FormFieldRead, MAX_READ_FIELDS } from '@monstera/contract';
+import { MAX_READ_FIELDS } from '@monstera/contract/host';
+import type { AnnotationColour, FormFieldHandle, FormFieldRead } from '@monstera/contract';
 import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
