@@ -3654,6 +3654,33 @@ export const channels = {
     ['document-not-open', 'document-poisoned'],
   ),
 
+  /**
+   * Opens the web address a barcode on a page SAYS, in the person's browser — only when they pressed *Open link* on that
+   * row. The `document.openLink` rule for a symbol: the renderer names the barcode by its place at the version it read, and
+   * `main` reads the page's barcodes again, takes the text of that one and opens it only when `isFollowable` allows its
+   * scheme. So the renderer can choose only among the addresses the document already holds, and a barcode never opens
+   * anything on its own — reading one shows its text (invariant 24).
+   */
+  'document.openBarcodeLink': channel(
+    'Opens the web address one barcode on a page says, read by main from the document.',
+    z
+      .object({
+        docId: docIdSchema,
+        version: docVersionSchema,
+        page: z.number().int().nonnegative(),
+        index: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('opened') }),
+      z.object({ kind: z.literal('stale') }),
+      z.object({ kind: z.literal('no-such-link') }),
+      z.object({ kind: z.literal('scheme-refused'), scheme: z.string().max(SHOWN_SCHEME_MAX).nullable() }),
+      z.object({ kind: z.literal('not-opened') }),
+    ]),
+    ['document-not-open', 'document-poisoned'],
+  ),
+
   'document.placeImage': channel(
     'Places an image on pages of an open document, from a file the user picks or a picture in their stamp library.',
     z.object({

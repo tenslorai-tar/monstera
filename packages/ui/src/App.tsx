@@ -2921,7 +2921,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // THE TWO REPORTS ARE ONE TOOL'S (ADR-0183, ADR-0189): each command opens it in the document panel at its own section.
         inspectPageStructureCommand({ show: showReadingOrder }),
         accessibilityCheckCommand({ show: showAccessibilityCheck }),
-        readBarcodesCommand({ client, ask }),
+        readBarcodesCommand({ client, ask, toast, track }),
         // THE REVIEW IS THE PANEL'S (ADR-0156): the command opens the Spelling tab and starts it.
         checkSpellingCommand({ start: startSpelling }),
         revealLogCommand({ client }),

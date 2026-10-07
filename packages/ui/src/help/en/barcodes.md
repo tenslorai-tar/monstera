@@ -19,7 +19,7 @@ To add a barcode:
 To read barcodes:
 
 1. Go to the page.
-2. In the rail, choose **Tools**, then **Read barcodes** in the **OCR** group (under the group's **More** in a narrower window). The window lists each barcode's **Type** and **What it says**.
+2. In the rail, choose **Tools**, then **Read barcodes** in the **OCR** group (under the group's **More** in a narrower window). The window lists each barcode's **Type** (like **QR code** or **Code 128**) and **What it says**, with what it is above it: a **Web link**, **Phone number**, **Email address**, **Contact card** or **Text**. A contact card is shown as name, title, company, phone, email and address lines. Choose **Copy** on a row, or **Copy all**. Choose **Read barcodes on all pages** to list the barcodes of every page, each with its page number.
 
 ![The Add a barcode window with Text or link and Barcode type](screenshot:barcodes-1)
 
@@ -27,7 +27,7 @@ To read barcodes:
 
 - If a barcode type cannot hold your text, the window stays open so you can change the text or type.
 - EAN-13 takes up to 13 digits; a shorter number gets leading zeros.
-- A link in a barcode that is read is shown, never opened.
+- A link in a barcode that is read is shown, and opened only when you choose its **Open the link** button.
 - A placed barcode can be moved, resized or deleted like an image. Undo with **Ctrl+Z**.
 
 <!--

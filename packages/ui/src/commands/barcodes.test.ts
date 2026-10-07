@@ -37,6 +37,16 @@ function recordingAsk(answers: readonly unknown[] = []): {
   };
 }
 
+/** The read's dependencies over a recording ask, with a toast and a task nothing in the plain cases listens to. */
+function depsOf(client: ContractClient, ask: (id: string, props: unknown) => Promise<unknown>): Parameters<typeof readBarcodesCommand>[0] {
+  return {
+    client,
+    ask,
+    toast: () => undefined,
+    track: () => ({ signal: new AbortController().signal, step: () => undefined, end: () => undefined }),
+  };
+}
+
 describe('Read barcodes', () => {
   function clientAnswering(outcome: 'read' | 'refused'): { client: ContractClient; asked: unknown[] } {
     const asked: unknown[] = [];
@@ -55,12 +65,19 @@ describe('Read barcodes', () => {
   it('asks for the page ON SCREEN by its index, and shows it by the number a person reads', async () => {
     const { client, asked } = clientAnswering('read');
     const { ask, opened } = recordingAsk();
-    await readBarcodesCommand({ client, ask }).run(contextOn(2));
+    await readBarcodesCommand(depsOf(client, ask)).run(contextOn(2));
     expect(asked).toStrictEqual([{ docId: DOC, page: 2 }]);
     expect(opened).toStrictEqual([
       {
         id: PAGE_BARCODES_DIALOG_ID,
-        props: { kind: 'read', page: 3, barcodes: [{ format: 'QRCode', text: 'https://example.org' }], truncated: true },
+        props: {
+          kind: 'read',
+          page: 3,
+          all: false,
+          pageCount: 5,
+          barcodes: [{ format: 'QRCode', text: 'https://example.org', page: 3, index: 0 }],
+          truncated: true,
+        },
       },
     ]);
   });
@@ -68,22 +85,105 @@ describe('Read barcodes', () => {
   it('a refusal still opens the dialog, naming the page', async () => {
     const { client } = clientAnswering('refused');
     const { ask, opened } = recordingAsk();
-    await readBarcodesCommand({ client, ask }).run(contextOn(0));
+    await readBarcodesCommand(depsOf(client, ask)).run(contextOn(0));
     expect(opened).toStrictEqual([{ id: PAGE_BARCODES_DIALOG_ID, props: { kind: 'refused', page: 1 } }]);
   });
 
   it('CONTROL: asks nothing with no page on screen', async () => {
     const { client, asked } = clientAnswering('read');
     const { ask, opened } = recordingAsk();
-    await readBarcodesCommand({ client, ask }).run(contextOn(undefined));
+    await readBarcodesCommand(depsOf(client, ask)).run(contextOn(undefined));
     expect(asked).toStrictEqual([]);
     expect(opened).toStrictEqual([]);
+  });
+
+  describe('what the dialog reports (the owner’s list of 2026-10-07)', () => {
+    /** A client over three pages, recording every call: page 2 (index 1) says a link, the others plain words. */
+    function threePages(): { client: ContractClient; calls: { id: string; params: unknown }[] } {
+      const calls: { id: string; params: unknown }[] = [];
+      const client = createClient(channels, (id, params) => {
+        calls.push({ id, params });
+        if (id === 'window.copyText') return Promise.resolve(ok({ copied: true }));
+        if (id === 'document.openBarcodeLink') return Promise.resolve(ok({ kind: 'opened' as const }));
+        if (id !== 'document.pageBarcodes') throw new Error(`unexpected channel ${id}`);
+        const page = (params as { page: number }).page;
+        const barcodes =
+          page === 1
+            ? [{ format: 'QRCode', text: 'plain words' }, { format: 'QRCode', text: 'https://example.org/menu' }]
+            : [{ format: 'Code128', text: `ticket ${String(page + 1)}` }];
+        return Promise.resolve(ok({ version: asDocVersion(3), barcodes, truncated: false }));
+      });
+      return { client, calls };
+    }
+    /** Opens the dialog on page 2 and hands back what the opener was given to report to. */
+    async function opened(): Promise<{ report: (what: unknown) => void; replies: unknown[]; calls: { id: string; params: unknown }[]; said: string[] }> {
+      const { client, calls } = threePages();
+      const replies: unknown[] = [];
+      let reporting: ((what: unknown, reply: (props: unknown) => void) => void) | undefined;
+      const said: string[] = [];
+      await readBarcodesCommand({
+        client,
+        ask: (_id, _props, onUpdate) => {
+          reporting = onUpdate;
+          return new Promise(() => undefined);
+        },
+        toast: (_kind, message) => said.push(message),
+        track: () => ({ signal: new AbortController().signal, step: () => undefined, end: () => undefined }),
+      }).run(contextOn(1));
+      calls.length = 0;
+      return { report: (what) => reporting?.(what, (props) => replies.push(props)), replies, calls, said };
+    }
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+    it('COPY puts that row’s text through main, and COPY ALL every row’s, blank line between', async () => {
+      const { report, calls } = await opened();
+      report({ kind: 'copy', text: 'plain words' });
+      report({ kind: 'copy-all' });
+      await settle();
+      expect(calls.map((call) => call.params)).toStrictEqual([
+        { text: 'plain words' },
+        { text: 'plain words\n\nhttps://example.org/menu' },
+      ]);
+    });
+
+    it('OPEN LINK names the barcode by its page and place at the version it was read — never by its text', async () => {
+      const { report, calls } = await opened();
+      report({ kind: 'open', page: 2, index: 1 });
+      await settle();
+      expect(calls).toStrictEqual([
+        { id: 'document.openBarcodeLink', params: { docId: DOC, version: asDocVersion(3), page: 1, index: 1 } },
+      ]);
+      // A PAGE THAT WAS NEVER READ has no version, so nothing is sent.
+      calls.length = 0;
+      report({ kind: 'open', page: 3, index: 0 });
+      await settle();
+      expect(calls).toStrictEqual([]);
+    });
+
+    it('READ ALL PAGES reads each page in turn and answers the dialog with every barcode, by its page', async () => {
+      const { report, replies, calls } = await opened();
+      report({ kind: 'read-all' });
+      await settle();
+      await settle();
+      expect(calls.map((call) => (call.params as { page: number }).page)).toStrictEqual([0, 1, 2, 3, 4]);
+      expect(replies).toHaveLength(1);
+      const reply = replies[0] as { all: boolean; barcodes: { page: number; index: number; text: string }[] };
+      expect(reply.all).toBe(true);
+      expect(reply.barcodes.map((barcode) => `${String(barcode.page)}:${String(barcode.index)}:${barcode.text}`)).toStrictEqual([
+        '1:0:ticket 1',
+        '2:0:plain words',
+        '2:1:https://example.org/menu',
+        '3:0:ticket 3',
+        '4:0:ticket 4',
+        '5:0:ticket 5',
+      ]);
+    });
   });
 
   it('sits in Tools › OCR, with the other recognition — and not in Organize, which is about pages (2026-10-07)', () => {
     const { client } = clientAnswering('read');
     const { ask } = recordingAsk();
-    expect(readBarcodesCommand({ client, ask }).placements).toStrictEqual([
+    expect(readBarcodesCommand(depsOf(client, ask)).placements).toStrictEqual([
       { surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 50, size: 'small' },
     ]);
   });

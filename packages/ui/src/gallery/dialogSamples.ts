@@ -865,22 +865,50 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       props: {
         kind: 'read',
         page: 1,
+        all: false,
+        pageCount: 6,
         barcodes: [
-          { format: 'QRCode', text: 'https://example.com/invoices/2026-0412' },
-          { format: 'Code128', text: 'INV-2026-0412' },
+          { format: 'QRCode', text: 'https://example.com/invoices/2026-0412', page: 1, index: 0 },
+          { format: 'Code128', text: 'INV-2026-0412', page: 1, index: 1 },
         ],
         truncated: false,
       },
     },
-    { state: 'empty', props: { kind: 'read', page: 1, barcodes: [], truncated: false } },
+    // EVERY TYPE OF CONTENT, and a contact card as its lines, over every page (the owner's list of 2026-10-07).
+    {
+      state: 'all-pages',
+      props: {
+        kind: 'read',
+        page: 1,
+        all: true,
+        pageCount: 6,
+        barcodes: [
+          { format: 'QRCode', text: 'https://example.com/invoices/2026-0412', page: 1, index: 0 },
+          { format: 'Code128', text: 'INV-2026-0412', page: 2, index: 0 },
+          { format: 'QRCode', text: 'tel:+442079460958', page: 2, index: 1 },
+          {
+            format: 'QRCode',
+            text: 'BEGIN:VCARD\nVERSION:3.0\nFN:Dr. Ada Okafor\nORG:Monstera Labs\nTITLE:Head of Design\nTEL;TYPE=CELL:+44 20 7946 0958\nEMAIL:ada@example.org\nADR:;;1 High Street;Leeds;;LS1 1AA;United Kingdom\nEND:VCARD',
+            page: 4,
+            index: 0,
+          },
+        ],
+        truncated: false,
+      },
+    },
+    { state: 'empty', props: { kind: 'read', page: 1, all: false, pageCount: 1, barcodes: [], truncated: false } },
     {
       state: 'long',
       props: {
         kind: 'read',
         page: 1,
+        all: false,
+        pageCount: 6,
         barcodes: Array.from({ length: 64 }, (_unused, at) => ({
           format: at % 2 === 0 ? 'QRCode' : 'DataMatrix',
           text: at === 0 ? prose(400).slice(0, 400) : `https://example.com/parcels/2026/${String(100_000 + at)}`,
+          page: 1,
+          index: at,
         })),
         truncated: true,
       },

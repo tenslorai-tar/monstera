@@ -427,6 +427,7 @@ const handlers: ContractHandlers = {
   'ai.openSource': () => Promise.resolve(ok({ opened: false })),
   'ai.translatePage': () => Promise.resolve(ok({ kind: 'nothing-to-translate' as const })),
   'ai.translateText': () => Promise.resolve(ok({ kind: 'translated' as const, text: '' })),
+  'document.openBarcodeLink': () => Promise.resolve(ok({ kind: 'stale' as const })),
   'cloud.status': () => Promise.resolve(ok({ providers: [{ provider: 'onedrive' as const, state: 'signed-out' as const }] })),
   'cloud.signIn': () => Promise.resolve(ok({ kind: 'done' as const })),
   'cloud.signOut': () => Promise.resolve(ok({ state: 'signed-out' as const })),

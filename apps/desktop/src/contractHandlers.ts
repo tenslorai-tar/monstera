@@ -540,6 +540,7 @@ export function createContractHandlers(deps: {
     'library.remove': ({ id }) => Promise.resolve(ok({ removed: deps.library.store.remove(id) })),
     'document.placeBarcode': placeBarcodeHandler(deps.commands),
     'document.pageBarcodes': pageBarcodesHandler(deps.commands),
+    'document.openBarcodeLink': openBarcodeLinkHandler(deps.commands, deps.openLink),
     'document.accessibilityCheck': accessibilityCheckHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
     'docusign.send': docusignSendHandler(deps.commands),
@@ -1535,6 +1536,36 @@ function pageBarcodesHandler(commands: DocumentCommands): ContractHandlers['docu
     try {
       const { version, barcodes, truncated } = await commands.pageBarcodes(docId, page);
       return ok({ version, barcodes, truncated });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * A barcode's web address opened, read by main from the page and refused unless its scheme is one that is followed
+ * (`openLinkHandler`'s rule for a symbol). The version and the position name the barcode; the text never crosses from the
+ * renderer, so what is opened is what the document says.
+ */
+function openBarcodeLinkHandler(
+  commands: DocumentCommands,
+  openLink: (address: string) => Promise<boolean>,
+): ContractHandlers['document.openBarcodeLink'] {
+  return async ({
+    docId,
+    version,
+    page,
+    index,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.openBarcodeLink']>>> => {
+    try {
+      const read = await commands.pageBarcodes(docId, page);
+      if (read.version !== version) return ok({ kind: 'stale' } as const);
+      const address = read.barcodes[index]?.text.trim();
+      if (address === undefined || address === '') return ok({ kind: 'no-such-link' } as const);
+      if (!isFollowable(address)) return ok({ kind: 'scheme-refused', scheme: shownSchemeOf(address) } as const);
+      return ok({ kind: (await openLink(address)) ? 'opened' : 'not-opened' } as const);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });

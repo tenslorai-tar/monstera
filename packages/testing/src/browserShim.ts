@@ -2448,6 +2448,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'ai.translatePage': () =>
       Promise.resolve(ok(options.translation ?? { kind: 'refused' as const, problem: 'no-key' as const })),
     'ai.translateText': () => Promise.resolve(ok({ kind: 'refused' as const, problem: 'no-key' as const })),
+    // NO BROWSER TO OPEN: what `main` answers when the system opened nothing.
+    'document.openBarcodeLink': () => Promise.resolve(ok({ kind: 'not-opened' as const })),
     // NO CLOUD IN A BROWSER: no client values and no `main` to sign in through, so every provider
     // is what a build without its values is — not configured (ADR-0091 Decision 2).
     'cloud.status': () =>

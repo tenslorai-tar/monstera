@@ -569,6 +569,28 @@ export const PAGE_BARCODES_TRUNCATED = messageKey('dialog.page-barcodes.truncate
 export const PAGE_BARCODES_REFUSED = messageKey('dialog.page-barcodes.refused');
 export const PAGE_BARCODES_TYPE = messageKey('dialog.page-barcodes.type');
 export const PAGE_BARCODES_CONTENT = messageKey('dialog.page-barcodes.content');
+export const PAGE_BARCODES_PAGE = messageKey('dialog.page-barcodes.page');
+export const PAGE_BARCODES_FOUND_ALL = messageKey('dialog.page-barcodes.found-all');
+export const PAGE_BARCODES_NONE_ALL = messageKey('dialog.page-barcodes.none-all');
+export const PAGE_BARCODES_COPY = messageKey('dialog.page-barcodes.copy');
+export const PAGE_BARCODES_COPY_ALL = messageKey('dialog.page-barcodes.copy-all');
+export const PAGE_BARCODES_OPEN = messageKey('dialog.page-barcodes.open');
+export const PAGE_BARCODES_READ_ALL = messageKey('dialog.page-barcodes.read-all');
+export const PAGE_BARCODES_KIND_LINK = messageKey('dialog.page-barcodes.kind-link');
+export const PAGE_BARCODES_KIND_PHONE = messageKey('dialog.page-barcodes.kind-phone');
+export const PAGE_BARCODES_KIND_EMAIL = messageKey('dialog.page-barcodes.kind-email');
+export const PAGE_BARCODES_KIND_CONTACT = messageKey('dialog.page-barcodes.kind-contact');
+export const PAGE_BARCODES_KIND_TEXT = messageKey('dialog.page-barcodes.kind-text');
+export const PAGE_BARCODES_FIELD_NAME = messageKey('dialog.page-barcodes.field-name');
+export const PAGE_BARCODES_FIELD_TITLE = messageKey('dialog.page-barcodes.field-title');
+export const PAGE_BARCODES_FIELD_COMPANY = messageKey('dialog.page-barcodes.field-company');
+export const PAGE_BARCODES_FIELD_PHONE = messageKey('dialog.page-barcodes.field-phone');
+export const PAGE_BARCODES_FIELD_EMAIL = messageKey('dialog.page-barcodes.field-email');
+export const PAGE_BARCODES_FIELD_ADDRESS = messageKey('dialog.page-barcodes.field-address');
+export const PAGE_BARCODES_FIELD_WEB = messageKey('dialog.page-barcodes.field-web');
+export const TOAST_BARCODE_LINK_STALE = messageKey('toast.barcode-link-stale');
+export const TOAST_BARCODE_LINK_NOT_OPENED = messageKey('toast.barcode-link-not-opened');
+export const TOAST_BARCODES_READING = messageKey('task.barcodes-reading');
 export const PLACE_BARCODE_TITLE = messageKey('dialog.place-barcode.title');
 export const PLACE_BARCODE_TEXT = messageKey('dialog.place-barcode.text');
 export const PLACE_BARCODE_EMPTY = messageKey('dialog.place-barcode.empty');
@@ -4934,6 +4956,28 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PAGE_BARCODES_REFUSED]: 'The barcodes on page {page} could not be read. The document may be busy or no longer open.',
   [PAGE_BARCODES_TYPE]: 'Type',
   [PAGE_BARCODES_CONTENT]: 'What it says',
+  [PAGE_BARCODES_PAGE]: 'Page',
+  [PAGE_BARCODES_FOUND_ALL]: '{count, plural, one {One barcode in this document.} other {# barcodes in this document.}}',
+  [PAGE_BARCODES_NONE_ALL]: 'No barcodes were found in this document.',
+  [PAGE_BARCODES_COPY]: 'Copy barcode {number}',
+  [PAGE_BARCODES_COPY_ALL]: 'Copy all',
+  [PAGE_BARCODES_OPEN]: 'Open the link in barcode {number}',
+  [PAGE_BARCODES_READ_ALL]: 'Read barcodes on all pages',
+  [PAGE_BARCODES_KIND_LINK]: 'Web link',
+  [PAGE_BARCODES_KIND_PHONE]: 'Phone number',
+  [PAGE_BARCODES_KIND_EMAIL]: 'Email address',
+  [PAGE_BARCODES_KIND_CONTACT]: 'Contact card',
+  [PAGE_BARCODES_KIND_TEXT]: 'Text',
+  [PAGE_BARCODES_FIELD_NAME]: 'Name',
+  [PAGE_BARCODES_FIELD_TITLE]: 'Title',
+  [PAGE_BARCODES_FIELD_COMPANY]: 'Company',
+  [PAGE_BARCODES_FIELD_PHONE]: 'Phone',
+  [PAGE_BARCODES_FIELD_EMAIL]: 'Email',
+  [PAGE_BARCODES_FIELD_ADDRESS]: 'Address',
+  [PAGE_BARCODES_FIELD_WEB]: 'Web page',
+  [TOAST_BARCODE_LINK_STALE]: 'The document changed since the barcodes were read. Read them again, then open the link.',
+  [TOAST_BARCODE_LINK_NOT_OPENED]: 'The link could not be opened.',
+  [TOAST_BARCODES_READING]: 'Reading barcodes',
   [PLACE_BARCODE_TITLE]: 'Add a barcode',
   [PLACE_BARCODE_TEXT]: 'Text or link',
   [PLACE_BARCODE_EMPTY]: 'Type the text or link the barcode should hold.',

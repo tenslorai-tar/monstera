@@ -648,6 +648,60 @@ describe('document.openLink (ADR-0167)', () => {
   });
 });
 
+describe('document.openBarcodeLink', () => {
+  /** Commands whose barcode read answers `barcodes` at `version`, recording the pages it was asked for. */
+  function barcodeCommands(barcodes: readonly { format: string; text: string }[], version = 4): { commands: DocumentCommands; asked: number[] } {
+    const asked: number[] = [];
+    const commands = {
+      pageBarcodes: (_docId: DocId, page: number) => {
+        asked.push(page);
+        return Promise.resolve({ version: asDocVersion(version), barcodes, truncated: false });
+      },
+    } as unknown as DocumentCommands;
+    return { commands, asked };
+  }
+  const request = { docId: A_DOC, version: asDocVersion(4), page: 2, index: 1 };
+  const SAYS = [
+    { format: 'QRCode', text: 'plain words' },
+    { format: 'QRCode', text: 'https://example.org/menu' },
+  ];
+
+  it('OPENS the address main read from the page for the barcode the renderer named — the text never crosses', async () => {
+    const { commands, asked } = barcodeCommands(SAYS);
+    const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    expect(await handlers['document.openBarcodeLink'](request)).toStrictEqual({ ok: true, value: { kind: 'opened' } });
+    expect(linksOpened).toStrictEqual(['https://example.org/menu']);
+    expect(asked).toStrictEqual([2]);
+  });
+
+  it('NEVER OPENS a scheme a person may not follow, plain words, a moved document or a barcode that is not there', async () => {
+    for (const [text, scheme] of [
+      ['javascript:alert(1)', 'javascript:'],
+      ['file:///C:/Windows/System32/calc.exe', 'file:'],
+      ['plain words', null],
+    ] as const) {
+      const { commands } = barcodeCommands([SAYS[0] ?? { format: 'x', text: '' }, { format: 'QRCode', text }]);
+      const { handlers, linksOpened } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+      expect(await handlers['document.openBarcodeLink'](request)).toStrictEqual({
+        ok: true,
+        value: { kind: 'scheme-refused', scheme },
+      });
+      expect(linksOpened).toStrictEqual([]);
+    }
+    const moved = barcodeCommands(SAYS, 9);
+    const staleHarness = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: moved.commands });
+    expect(await staleHarness.handlers['document.openBarcodeLink'](request)).toStrictEqual({ ok: true, value: { kind: 'stale' } });
+    const none = barcodeCommands(SAYS);
+    const goneHarness = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: none.commands });
+    expect(await goneHarness.handlers['document.openBarcodeLink']({ ...request, index: 7 })).toStrictEqual({
+      ok: true,
+      value: { kind: 'no-such-link' },
+    });
+    expect(staleHarness.linksOpened).toStrictEqual([]);
+    expect(goneHarness.linksOpened).toStrictEqual([]);
+  });
+});
+
 /**
  * Decision C at the channel: rows of a workbook the PDF does not hold ride with the open, so the person is told — and a
  * document that arrived whole answers exactly what `document.open` does.

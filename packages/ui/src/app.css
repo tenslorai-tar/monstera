@@ -2225,6 +2225,48 @@ optgroup {
   user-select: text;
 }
 
+/* WHAT A BARCODE IS (a web link, a contact card, text), small and muted above what it says. */
+.m-page-barcodes__kind {
+  display: block;
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+}
+
+.m-page-barcodes__text {
+  white-space: pre-wrap;
+}
+
+/* A CONTACT CARD as lines: the field's name in the muted small type, then its value. */
+.m-page-barcodes__contact {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.m-page-barcodes__contact > div {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  gap: var(--space-8);
+}
+
+.m-page-barcodes__contact dt {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-page-barcodes__contact dd {
+  margin: 0;
+}
+
+/* THE ROW'S TWO BUTTONS, side by side at its end. */
+.m-page-barcodes__actions {
+  white-space: nowrap;
+}
+
+.m-page-barcodes__actions > * + * {
+  margin-inline-start: var(--space-2);
+}
+
 /*
  * The accessibility check's two lists: the list exception's rules, and each rule's row in TWO COLUMNS, the verdict
  * and what the rule says, with the pages under the rule's words. A wrapping row dropped the pages to the verdict's
