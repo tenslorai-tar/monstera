@@ -935,6 +935,14 @@ all eight passed. A slow runner can therefore fail this proof for a reason that 
 here: a fix has to wait for the zoom to settle, not for the time to pass, and the proof's own header forbids deriving the
 expected size from the answer.
 
+*Note, 2026-10-07, on UUUUUUU-3, recorded as an open finding at the owner's order.* The weak spot is in how the proof decides
+the page has settled: it reads the first width that differs from the one before the clicks, so a slow run can catch the page
+part-way through a zoom. The figures from the failing ubuntu run, as the owner read them from its log: `0 painted of 2003960`
+canvas pixels, settled by `bound`, `557 of 557` frames, worker bitmap ink `500990`. They show a white canvas at the right size
+after the wait gave up, with the worker's bitmap holding ink; they do not show which draw wrote the canvas last. The two
+findings may be one: a settle that reads the page early would also explain a canvas read before the last draw landed, and no
+run here could separate them. Open.
+
 **UUUUUUU-4** (low, closed in this commit): two gaps in the range's own proofs. (a) ADR-0189's shell half had no case:
 `AccessibilityPanel.test.tsx` and `DocumentPanel.test.tsx` held the tool and the body, and nothing showed the command
 registered in the shell reached the left panel with the right one gaining no fourth tab; `App.test.tsx` now runs *Accessibility
