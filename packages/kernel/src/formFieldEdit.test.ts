@@ -201,7 +201,7 @@ describe('editing a field that exists', () => {
     });
   });
 
-  it('renames a field, refuses a name another field holds, and refuses to move a field into another group', async () => {
+  it('renames a field, refuses a name another field holds, and refuses a name with an empty part (a move into a group is formFieldMove.test.ts)', async () => {
     const original = await buildFormTestPdf();
     const handle = await handleOf(original, 'email');
     const renamed = await applyEditFormFields(original, editing(handle, { name: 'mail_address' }));
@@ -209,7 +209,7 @@ describe('editing a field that exists', () => {
     expect(after.name).toBe('mail_address');
     await expect(applyEditFormFields(original, editing(handle, { name: 'phone' }))).rejects.toMatchObject({ reason: 'name-taken' });
     await expect(applyEditFormFields(original, editing(handle, { name: 'phone.second' }))).rejects.toMatchObject({ reason: 'name-taken' });
-    await expect(applyEditFormFields(original, editing(handle, { name: 'a.b' }))).rejects.toMatchObject({ reason: 'name-parent' });
+    await expect(applyEditFormFields(original, editing(handle, { name: 'a..b' }))).rejects.toMatchObject({ reason: 'name-parent' });
   });
 
   it('refuses a handle whose field has moved, and edits the same handle when it has not (control)', async () => {

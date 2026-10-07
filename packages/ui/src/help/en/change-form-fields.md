@@ -17,7 +17,7 @@ Every field has properties you can change after it is drawn: its name, what it l
 
 ## What you can change
 
-- **Name** (one field at a time), **Tooltip**, **Required** and **Read only**.
+- **Name** (one field at a time), **Tooltip**, **Required** and **Read only**. A dot in a name makes a group, so renaming "a.b" to "c.b" moves the field under the group "c", which is made if the form has none. A group left empty is taken away, and a calculation Monstera wrote that adds the field up follows its new name. A name another field already has, or runs through, is said in the name box and not sent.
 - **Default value** for a text field, dropdown or list box.
 - **Font**, **Size (0 is automatic)**, **Border colour**, **Border width** and **Fill colour**. Choose **None** to take a colour away.
 - **Several lines** for a text field.

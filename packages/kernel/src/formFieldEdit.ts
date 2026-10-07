@@ -384,7 +384,126 @@ function renameOnState(widget: PDFDict, old: PDFName, wanted: PDFName): void {
   if (state instanceof PDFName && state.decodeText() === old.decodeText()) widget.set(PDFName.of('AS'), wanted);
 }
 
-/** Renames a field, keeping the parent it already has. */
+/** A field dictionary's partial name (`/T`), or `undefined` where it has none. */
+function partialNameOf(dict: PDFDict): string | undefined {
+  const named = dict.lookup(PDFName.of('T'));
+  return named instanceof PDFString || named instanceof PDFHexString ? named.decodeText() : undefined;
+}
+
+/** Whether a dictionary is a group of fields rather than one field: it has kids, and a kid is itself named. */
+function isGroup(dict: PDFDict): boolean {
+  const kids = dict.lookupMaybe(PDFName.of('Kids'), PDFArray);
+  if (kids === undefined) return false;
+  for (let at = 0; at < kids.size(); at += 1) {
+    const kid = kids.lookupMaybe(at, PDFDict);
+    if (kid !== undefined && (kid.has(PDFName.of('T')) || kid.has(PDFName.of('Kids')))) return true;
+  }
+  return false;
+}
+
+/** The array of fields a node holds: a group's `/Kids`, or the form's `/Fields` for the root. */
+function listOf(form: ReturnType<PDFDocument['getForm']>, group: PDFDict | undefined): PDFArray {
+  const holder = group ?? form.acroForm.dict;
+  const key = PDFName.of(group === undefined ? 'Fields' : 'Kids');
+  const existing = holder.lookupMaybe(key, PDFArray);
+  if (existing !== undefined) return existing;
+  const made = holder.context.obj([]);
+  holder.set(key, made);
+  return made;
+}
+
+/** The reference a group is stored under: a field's `/Parent` names it, so a group held inline could not be one. */
+function objectRefOf(group: PDFDict): PDFRef {
+  const ref = group.context.getObjectRef(group);
+  if (ref === undefined) {
+    throw new FieldEditRefusedError('not-found', 'A group of this form is not stored as an object of its own, so a field cannot be moved under it.');
+  }
+  return ref;
+}
+
+function indexOfRef(list: PDFArray, ref: PDFRef): number {
+  for (let at = 0; at < list.size(); at += 1) if (list.get(at).toString() === ref.toString()) return at;
+  return -1;
+}
+
+/**
+ * What a field inherits from its groups, written onto the field itself before it leaves them: its type, flags, value,
+ * default, text settings and choices (ISO 32000-1, 12.7.3.1, Table 220). A field that took its type from a group it is
+ * leaving would be left typeless in the new one.
+ */
+const INHERITED: readonly string[] = ['FT', 'Ff', 'V', 'DV', 'DA', 'Q', 'MaxLen', 'Opt', 'TI', 'I'];
+
+function keepInherited(field: PDFDict): void {
+  let above = field.lookupMaybe(PDFName.of('Parent'), PDFDict);
+  for (let hop = 0; above !== undefined && hop < 32; hop += 1) {
+    for (const key of INHERITED) {
+      const name = PDFName.of(key);
+      const value = above.get(name);
+      if (!field.has(name) && value !== undefined) field.set(name, value);
+    }
+    above = above.lookupMaybe(PDFName.of('Parent'), PDFDict);
+  }
+}
+
+/**
+ * Moves a field under the groups its new name spells, making the groups it needs, and takes it out of the ones it left.
+ *
+ * `a.b` renamed `c.b` is the field `b` under a group `c`, and `c` is the group that already has that name or a new one
+ * (a name is how a form addresses a field, and the tree is only how it is stored). A group the move empties is removed,
+ * so the document is not left holding a name with nothing under it. A name another FIELD holds, or one that runs
+ * through one, is refused before this runs ({@link rename}), since a group cannot be made where a field is.
+ */
+function moveField(form: ReturnType<PDFDocument['getForm']>, field: PDFField, wanted: string): void {
+  const parts = wanted.split('.');
+  const dict = field.acroField.dict;
+  const context = dict.context;
+  keepInherited(dict);
+
+  // Out of the old group, and every group that leaves empty.
+  let leaving = dict.lookupMaybe(PDFName.of('Parent'), PDFDict);
+  const from = listOf(form, leaving);
+  const was = indexOfRef(from, field.ref);
+  if (was >= 0) from.remove(was);
+  let emptied: PDFDict | undefined = leaving;
+  while (emptied !== undefined && listOf(form, emptied).size() === 0) {
+    leaving = emptied.lookupMaybe(PDFName.of('Parent'), PDFDict);
+    const parentList = listOf(form, leaving);
+    const ref = context.getObjectRef(emptied);
+    const at = ref === undefined ? -1 : indexOfRef(parentList, ref);
+    if (at >= 0) parentList.remove(at);
+    emptied = leaving;
+  }
+
+  // Into the new one, through each group the name spells.
+  let group: PDFDict | undefined;
+  for (const part of parts.slice(0, -1)) {
+    const list = listOf(form, group);
+    let next: PDFDict | undefined;
+    for (let at = 0; at < list.size() && next === undefined; at += 1) {
+      const candidate = list.lookupMaybe(at, PDFDict);
+      if (candidate !== undefined && partialNameOf(candidate) === part && isGroup(candidate)) next = candidate;
+    }
+    if (next === undefined) {
+      next = context.obj({ T: text(part), Kids: [] });
+      if (group !== undefined) next.set(PDFName.of('Parent'), objectRefOf(group));
+      list.push(context.register(next));
+    }
+    group = next;
+  }
+  const last = parts[parts.length - 1] ?? wanted;
+  dict.set(PDFName.of('T'), text(last));
+  if (group === undefined) dict.delete(PDFName.of('Parent'));
+  else dict.set(PDFName.of('Parent'), objectRefOf(group));
+  listOf(form, group).push(field.ref);
+}
+
+/**
+ * Renames a field, and moves it into another group where the name says so (`a.b` to `c.b`), the way a form editor does.
+ *
+ * A name another field holds, or one that starts with another field's whole name or is the start of one, is refused as
+ * taken; a name with an empty part is refused by name. A calculation of ours that names the field follows it, since a
+ * script left naming the old name would add up a field that is not there.
+ */
 function rename(form: ReturnType<PDFDocument['getForm']>, field: PDFField, wanted: string): void {
   const current = field.getName();
   if (current === wanted) return;
@@ -396,16 +515,27 @@ function rename(form: ReturnType<PDFDocument['getForm']>, field: PDFField, wante
   if (clash !== undefined) {
     throw new FieldEditRefusedError('name-taken', `A field called "${wanted}" cannot be named, because this document already has "${clash}".`);
   }
+  if (wanted.split('.').some((part) => part === '')) {
+    throw new FieldEditRefusedError('name-parent', `"${wanted}" has an empty part between its dots, so no group can be named for it.`);
+  }
   const parent = field.acroField.getParent()?.getFullyQualifiedName();
   const prefix = parent === undefined ? '' : `${parent}.`;
   const partial = wanted.startsWith(prefix) ? wanted.slice(prefix.length) : undefined;
-  if (partial === undefined || partial === '' || partial.includes('.')) {
-    throw new FieldEditRefusedError(
-      'name-parent',
-      `"${wanted}" would move this field into another group, which a rename does not do. Keep ${prefix === '' ? 'a name without a dot' : `the start "${prefix}"`}.`,
-    );
+  if (partial === undefined || partial.includes('.')) moveField(form, field, wanted);
+  else field.acroField.setPartialName(partial);
+  followCalculations(form, current, wanted);
+}
+
+/** Every calculation this application wrote that names `was` names `now` instead; a script it did not write is left as it is. */
+function followCalculations(form: ReturnType<PDFDocument['getForm']>, was: string, now: string): void {
+  for (const each of form.getFields()) {
+    const aa = each.acroField.dict.lookupMaybe(PDFName.of('AA'), PDFDict);
+    const action = aa?.lookupMaybe(PDFName.of('C'), PDFDict);
+    const script = scriptOf(action);
+    const parsed = script === undefined ? undefined : parseCalculation(script);
+    if (aa === undefined || !parsed?.fields.includes(was)) continue;
+    aa.set(PDFName.of('C'), scriptAction(aa.context, calculationScript({ ...parsed, fields: parsed.fields.map((name) => (name === was ? now : name)) })));
   }
-  field.acroField.setPartialName(partial);
 }
 
 /** What changing a field's members asks of its appearance. */

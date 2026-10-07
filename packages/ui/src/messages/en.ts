@@ -5949,7 +5949,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // EACH SAYS WHAT STOPPED IT AND THAT NOTHING WAS CHANGED, and the three a person can fix say how.
   [FIELD_EDIT_NOT_FOUND]: 'That field has moved since the list was read, so nothing was changed. Select it again and try once more.',
   [FIELD_EDIT_NAME_TAKEN]: 'Another field already has that name, or a name that starts with it, so nothing was changed. Choose a different name.',
-  [FIELD_EDIT_NAME_PARENT]: 'A rename cannot move a field into another group, so nothing was changed. Keep the start of the name as it is.',
+  [FIELD_EDIT_NAME_PARENT]: 'A name cannot have an empty part between its dots, so nothing was changed. Each part of a name needs a word.',
   [FIELD_EDIT_OPTIONS_COUNT]: 'The group has a different number of options than the values given, so nothing was changed.',
   [FIELD_EDIT_OPTIONS_DUPLICATE]: 'Two options have the same value, so nothing was changed. Give each option its own value.',
   [FIELD_EDIT_OPTIONS_RADIO_LABELS]: 'A radio group keeps only the value of each option, not a separate text to show, so nothing was changed.',
