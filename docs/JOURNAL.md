@@ -892,6 +892,220 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-07 — Stage audit of `f278ec74..a7c1f387` — findings VVVVVVV-1 to VVVVVVV-36
+
+70 commits on work/cloud-5-text-edit, ADR-0176's Type 3 writer through ADR-0188 (the Type 3 writer's faces, paragraphs and
+reflow, formatting, right-to-left and Arabic, scan covers, a Type 3 page moved and split), with ADR-0178 (a protect's
+unsealed copies) and the Delete page confirmation. **Written by the cloud session building the forms rebuild on top of
+that branch** (work/cloud-6-forms), because the forms commits cannot pass the pre-commit batch gate without it: the base
+alone is 188 files and the gate is 200. The forms commits themselves (`1a207ed0` onward) are NOT in this range and are
+for the next audit. Label V: U is the highest on main (`2056c7fa`) and on every branch.
+
+**How it was done, and what that is worth.** Four read-only readers took the range by subject (the Type 3 writer and its
+proofs; protect, Delete page and the paragraph model; the formatting commands and the editor's controls; right-to-left,
+Arabic, scan covers and the Type 3 move and split). Each applied the checklist to its commits and reported what it READ
+and what it RAN. **I re-read at their files, before recording them, VVVVVVV-1, -6, -7, -27 and -33 only;** the others are
+the readers' reads, recorded as reported and marked so. Almost nothing was run: one reader ran `textOperatorEdit.test.ts`
+(VVVVVVV-3), two ran test files that passed, and no native proof (`proof:pdfiumcommand`, `proof:type3edit`, the live host
+harnesses) was run, because they need PDFium, the shim and fonts, and the Windows ones cannot run here. No finding is
+closed in this commit: this session was asked not to touch text editing, so every one is **open** and is the local
+agent's or the owner's to take, with the mutation runs that would close the test findings.
+
+**VVVVVVV-1** (medium, open, checked): ADR-0177 still says the MuPDF host's live case "is owed with the build" and carries
+"Not measured, and owed before this ships: SSSSSSS-1", and that whether the MuPDF host is handed the installed folder
+"follows that finding's answer". `12e2adef` withdrew that reading (the hosts were given no fonts folder) and `77f588ef`
+hands both folders. The ADR has no correction, where ADR-0176 got one in `f275c712`. Half of a compound claim is dead.
+
+**VVVVVVV-2** (medium, process, read): `7e927345` and `9cfa3eeb` wrote a hypothesis ("misreads what it sets") into case
+details and commit text, and cases 18 and 19 were added to chase it; `12e2adef` says plainly that neither was measured.
+The mechanism was the harness's environment lacking `MONSTERA_FONTS_DIRECTORY`, found on the third Windows run. B1 said
+investigate first.
+
+**VVVVVVV-3** (low-medium, open, run): three of `textOperatorEdit.test.ts`' eleven cases throw ("no readable font face in
+`.tools/fonts/...`, ENOENT") where the bundled fonts are not provisioned, instead of reporting that they could not look.
+Red on a cold machine, green on a provisioned one; whether CI provisions before vitest was not read.
+
+**VVVVVVV-4** (low, open, read): `perfBudget.proof.mjs`' R29 cases assert the classifier lands in `failures` or
+`unasserted`; nothing asserts the exit that reddens the gate, so deleting it leaves both green. Exit code 2 is shared by
+*this platform cannot* and a usage error.
+
+**VVVVVVV-5** (low, open, read): `textOperatorEdit.ts` runs `editOperators` twice when fonts are bound, and no case
+asserts that an earlier refusal wins over `needs-a-face`.
+
+**VVVVVVV-6** (high, open, checked): a REDONE protect discards the result of `#sealPlaintextCopies`
+(`documentCommands.ts`, in `redo`) and answers `unsealedCopies: []` under a comment that says redo seals nothing, two lines
+below the call that seals. Since `trySeal` turns every throw into `'unsealed'`, a redo whose copy cannot be sealed
+succeeds with no warning, the silent linger ADR-0178 rejects. Undo calls no seal, so its `[]` is right. No case covers redo.
+
+**VVVVVVV-7** (medium, open, checked): `unsealedCopies` is bounded by `heldCopiesSchema`, capped at `MAX_BACKUP_COPIES`
+(10), while the list holds checkpoint paths from `log.checkpointPaths()` as well as backups. More than ten names fails the
+answer's own schema and reports the applied protect as failed again. No case has more than ten.
+
+**VVVVVVV-8** (medium, open, read): ADR-0179 Decision 8 says a spacing, colour-space or render-mode loss is a refusal that
+names it, never a silent change. `d293fbb4` keeps the render mode and stroke, but a fill is still copied as RGB only (a CMYK
+or spot colour shifts) and `Tc`/`Tw` are dropped, silently; `setStrokeColour` and `setStrokeWidth` results are unchecked
+where `setRenderMode`'s is; the stroke branch (modes 1, 2, 5, 6) has no fixture. The FEATURES row says "stated limits",
+which contradicts the ADR's word.
+
+**VVVVVVV-9** (medium, open, read): FEATURES row 149 still says continuation lines take the last run's style and that the
+kernel diffs each line; ARCHITECTURE §3's row says the operator writer changes only from a line's first changed run to its
+end. ADR-0179 replaced both. Both are specification bodies, so the body is the thing to edit.
+
+**VVVVVVV-10** (low-medium, open, read): the paragraph model's headline proof (a letter typed into line 1 leaves the rest
+as the same objects) checks only that the last run stays where it was, which the line-by-line writer it replaced also does;
+the ADR's promised control, the old writer put back, has no case.
+
+**VVVVVVV-11** (low, open, read): caret-at-click is proven against a `caretPositionFromPoint` stub that returns a fixed node
+whatever the point; the gradient and stacking behaviours are unit-only. `renderedScreen.pw.ts` was not changed.
+
+**VVVVVVV-12** (low, open, read): `trySeal`'s `catch { return 'unsealed' }` reports a dead host and "another program holds
+the copy" the same and logs nothing.
+
+**VVVVVVV-13** (low, open, read): ADR-0179's proof bullet says `softEnds` calls `paragraphText`, which `4ef4f776` deleted;
+the translation join changed from `trimEnd() + ' '` to keeping every trailing space (`lineEdit.ts`), and no case pins it.
+
+**VVVVVVV-14** (low, open, read): the Q7 case in `textOperatorEdit.test.ts` changed its input from one over-wide word to 400
+words, so the sideways-overflow shape of "never refused" is no longer exercised, and the test does not say so.
+
+**VVVVVVV-15** (medium, open, read): the only un-bold path emits `{bold:false}` and `proof:pdfiumcommand` never sends
+`bold:false` or `underline:false`; its fixture has no bold word.
+
+**VVVVVVV-16** (medium, open, read): a net-zero gesture (bold on then off) leaves `data-fmt={"bold":false}` on a non-bold
+run, `isFormatted` is true for any mark, so the editor sends it and the kernel refuses "changed nothing". That is a
+person refused because of what they did to a document, against the owner's principle. No UI case.
+
+**VVVVVVV-17** (medium, open, read): the wire accepts and the UI emits italic, subscript, a `family` mark on a block,
+`firstIndent`, `spaceBefore`, `align:'right'` and a mark crossing runs, and none is exercised by a PDFium case; FEATURES
+says done.
+
+**VVVVVVV-18** (medium, open, read): the join proof sends `entry(upper, joinedWords), entry(lower, '')` with no marks on a
+fixture whose blocks share one style, where the UI sends the lower block's looks as marks (`styleMarks`, which has no
+family). The marks-on-join path is proven nowhere end to end, and `textBlockOps.ts`' "words and their looks both survive" is
+false across a family change.
+
+**VVVVVVV-19** (medium, open, read): `80fc922b`'s refused-click case ends on the editor still showing the words, which is
+also what deleting the `stuckRef` guard produces; the property is a call not made (`commits` stays one).
+
+**VVVVVVV-20** (medium, open, read): `7184de35` keeps Edit text on for "any other refusal... one page's", but
+`document.textBlocks` declares only `document-not-open`, `document-poisoned` and `engine-unavailable`, all document-wide, so
+a poisoned document leaves the mode on with every page saying "Other pages can".
+
+**VVVVVVV-21** (medium, open, read): the right-click menu departs from ARCHITECTURE §7 (context menus are derived from
+placements); the departure is only an ADR-0180 correction inside feature commit `7ec632f7`, and `docs/ARCHITECTURE.md` has
+no diff in it (B4 order).
+
+**VVVVVVV-22** (low-medium, open, read): FEATURES row 152's status cell says a Type 3 page does not move, add or split while
+its body says ADR-0188 makes it do all of them; and it marks Paste, which the ADR correction says is unmeasured, done.
+
+**VVVVVVV-23** (low, open, read): the `pdfiumCommand.proof.mjs` roster's prose ledger stops at 143 (the count is 222);
+`CONTROL: a width as wide as the block already was` accepts `changed nothing` or `wrote`, nearly every outcome.
+
+**VVVVVVV-24** (low, open, read): the preview's rotation (`placeTransform`, about the box centre) and the writer's
+(`placeObjects`, about the objects' bounds) are written twice with no rotated-then-scaled case naming both.
+
+**VVVVVVV-25** (low, open, read): a split moves only the second half down one pitch, so it can overlap the next block; the
+proof's fixture has nothing below.
+
+**VVVVVVV-26** (low, open, read): `blockMarkSetSchema` accepts an empty `set:{}` mark and the contract tests use it.
+
+**VVVVVVV-27** (medium, open, checked): `edit-text.md` line 27 says a Type 3 page's blocks can be joined and split; line 32
+still says a split on such a page is refused and changes nothing. `843c1aaf` rewrote one sentence. No UI refusal of a split
+on `rewrite === 'operators'` was found.
+
+**VVVVVVV-28** (medium, open, read): `copyMarks` (`pdfiumFfi.ts`) skips a mark whose name cannot be read, skips an array or
+dictionary parameter, and writes a NAME parameter back as a string, silently; ADR-0181 Decision 8 said an uncopyable
+parameter is named in a refusal, and `ae450152` reverses it. The proof covers a numeric MCID only; continuation lines repeat
+one MCID, which the specification expects to be unique. The owner's rule is preserve, never drop.
+
+**VVVVVVV-29** (low-medium, open, read): `lineDirection`'s comment says the majority is the same answer for the line as typed
+and as drawn; on a tie it falls back to the first strong letter, which differs, as ADR-0185 Decision 7 measured. A compound
+claim with the dead clause the one that matters.
+
+**VVVVVVV-30** (low, open, read): if the page-to-device mapping is degenerate the scan cover is a plain white rectangle,
+the patch ADR-0187 exists to prevent, and nothing reports it; the Recognise button calls `registry.get('document.ocr')` and
+runs it without its `when`.
+
+**VVVVVVV-31** (low, open, read): `joinRuns`' two new rules (opposite directions are two runs; a run's text is
+`logicalOfDrawn(run.drawn)`) have no unit test; only the native proof reaches them.
+
+**VVVVVVV-32** (low, open, read): proof controls that do not separate what they name: the left-to-right Hello case asserts
+the outcome a constant "Latin left" also gives; `type3Edit` case 9 passes on any refusal.
+
+**VVVVVVV-33** (low, open, checked): the ADR-0142 index row still says the host's bound on a page's runs is 43,400;
+`pdfiumChannels.ts` says 41,700, and ADR-0181's host-pipe change was recorded after the build, in `ae450152` (B4 order).
+
+**VVVVVVV-34** (low, open, read): `arabicForms.ts` ligates lam-alef only when the alef is the next code point, so lam, mark,
+alef is not ligated although the joining lookups skip marks.
+
+**VVVVVVV-35** (low, open, read): every "measured" reading of the Type 3 and scan work is PDFium 155.0.8044.0 on Linux and the
+product ships on Windows; no control says the two agree. The `type3edit` step requires its engines on Windows only.
+
+**VVVVVVV-36** (low, open, read): the case count is a literal written twice in `type3Edit.proof.mjs` (21, in the roster and
+in a `CASES.length` check) and moved by hand in `hostFileAnswersLive.mjs` (17 to 21 across five commits); each is an
+independent claim beside a list of names and so the safe direction, but two places keep it in step.
+
+### 1. Root cause or workaround?
+
+No workaround and no loosened check found. Mechanisms are stated and sound for `c6ed62e3` (the text device clips glyphs
+outside the page), `12e2adef` (the harness env lacked the fonts folder; fixed by taking the launcher's one answer),
+`1b40bb36` (a missing required `sources`), `7067efe4` (+6.4 MB from harfbuzzjs, measured), `6fcb9cea`, `80fc922b`, and
+`a7c1f387` (bidi moved out of `main`). The exceptions are VVVVVVV-2 (a hypothesis written before the measurement), -6 (a
+fix that is half for redo), -20 (a fix on a false premise) and -28.
+
+### 2. Verified against the easy shape only?
+
+Yes in several places: the protect cases never exceed ten names (VVVVVVV-7), the proof fixtures have no bold word, italic,
+family or different-family join (-15, -17, -18), the split fixture has nothing below it (-25), the OCR fixture covers
+render mode 3 only (-8), and every reading is Linux where the product is Windows (-35).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+`7067efe4` moved the harfbuzz question into `proof:hostload`'s dynamic-import walk with a positive control and a reported
+mutation. The Q7 case's input changed from one word to 400 (VVVVVVV-14). The mark-order expectations flipped in `79d60cfc`,
+justified by ADR-0186. Nothing was stated as a weakening.
+
+### 3. Would CI have caught it?
+
+Read, not run: the vitest files run in the unit suite; `proof:type3edit` runs on both legs with engines required on Windows
+only (VVVVVVV-35); `hostFileAnswersLive` is Windows-only; `proof:pdfiumcommand` is registered (`ci.yml`). A red unit
+suite on a machine without fonts is VVVVVVV-3. The "Visual baselines" job will be red for the screens `2eae7fd4` and
+`6a868b89` changed, as the cloud rules expect.
+
+### 4. Are the proofs non-vacuous?
+
+Open cases that survive their own mutation by reading: VVVVVVV-4, -10, -19, -23, -31, -32. Cases reported good: the
+move, scale, rotate and width proofs carry named controls; the scan cases carry premises and an unmoved neighbour. None of
+the mutation claims in the commit messages was re-run.
+
+### 4a. Has every instrument passed a resolution test?
+
+The proof's tolerances read sound (move 0.05, rotate 1.5, scale 0.05); the gradient premise (20 against `closeTo` 10)
+sits at its own threshold. Nothing else new in the range.
+
+### 4b. Does every search carry a positive control?
+
+`proof:hostload` gained its control in `7067efe4`; `wordAt`, `paragraphsOf` and `neighbourOf` are lookups with none, and no
+defect was found in them.
+
+### 4c. Does a count derive from the set it governs?
+
+The roster counts (129, 143, 157, 162, 176, 198, 222; `type3Edit` 21) are independent literals, which is the safe
+direction; the ledger comment lags (VVVVVVV-23, -36).
+
+### 5. Executed, or asserted?
+
+Asserted: every finding marked read, the commit messages' mutation and Windows run claims (run ids named in them), and
+all PDFium readings. Run: VVVVVVV-3 and two passing test files.
+
+### 6. Did architecture change before the feature?
+
+Yes for ADR-0177 to ADR-0188 (ADR commits precede their builds). Not for the right-click menu (VVVVVVV-21), for ADR-0181's
+host-pipe change (-33), or for ADR-0178's claimed §5 row, which `63106ddb` does not change (the ADR overstates, harmlessly).
+
+### 7. Do the documents still match the code?
+
+No, in the places named: VVVVVVV-1, -9, -13, -22, -27, -29, -33.
+
 ## 2026-10-06 — Stage audit of `389cc010..f278ec74` — findings SSSSSSS-1 to SSSSSSS-22
 
 53 commits, 192 files, all work/cloud-5-text-edit: ADR-0172's corrections and the composers (P1.5), RRRRRRR-1's
