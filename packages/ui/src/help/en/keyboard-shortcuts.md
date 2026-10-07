@@ -11,8 +11,8 @@ Monstera lists every command in one window with the keys that run it, and any of
 ## Steps
 
 1. Press **Ctrl+/**. Or open the **Help** menu and choose **Keyboard shortcuts**.
-2. The **Keyboard shortcuts** window lists each **Command** and its **Shortcut**. A command with no keys says **None**.
-3. To change a command's keys, choose **Change** on its row, then press the new keys. Press **Esc** to stop without changing anything.
+2. The **Keyboard shortcuts** window lists each **Command** and its **Shortcut**. A command with no keys says **None**. This list is for reading.
+3. To change a command's keys, open **Settings** and choose **Keyboard**. It lists the same commands with **Change** and **Remove** on each row. Choose **Change**, then press the new keys. Press **Esc** to stop without changing anything.
 4. If the keys you pressed already belong to another command, or Windows or a text box keeps them, Monstera says so and changes nothing. Choose other keys.
 5. **Reset** puts one command back to its usual keys, and **Remove** leaves it with none. **Reset all shortcuts** puts every command back.
 
@@ -28,5 +28,5 @@ Monstera lists every command in one window with the keys that run it, and any of
 
 <!--
 Screenshots to capture:
-1. keyboard-shortcuts-1 — A document open, press Ctrl+/. Frame dialog.keyboard-shortcuts with one row waiting for keys.
+1. keyboard-shortcuts-1 — A document open, press Ctrl+/. Frame dialog.keyboard-shortcuts, the list to read.
 -->

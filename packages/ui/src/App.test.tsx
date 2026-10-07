@@ -790,6 +790,45 @@ describe('App', () => {
     expect(container.querySelector('.m-start-screen')).toBeNull();
   });
 
+  it('*Accessibility check* opens the tool in the LEFT document panel, not a tab of the right one, and closing it restores the panel (ADR-0189)', async () => {
+    // THE SHELL'S HALF of the pair: `AccessibilityPanel.test.tsx` proves what the tool shows and `DocumentPanel.test.tsx`
+    // that a tool takes the body; this is that the command registered in the shell reaches the left panel, over a
+    // document, and that the right panel never gains a fourth tab.
+    const { client, sent } = answeringClient({
+      ...OPEN_DOCUMENT_ANSWERS,
+      'document.accessibilityCheck': {
+        version: asDocVersion(1),
+        rules: [{ clause: '6.2', test: 1, verdict: 'failed' as const, count: 1, pages: [], spots: [] }],
+        humanChecks: [],
+      },
+    });
+    render(<App client={client} settings={freshSettings()} />);
+    await withDocumentOpen();
+    expect(document.querySelector('[data-panel-tool]')).toBeNull();
+
+    await pressCommand('Accessibility check', 'Review');
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const tool = document.querySelector('[data-panel-tool="open"]');
+    expect(tool).not.toBeNull();
+    // IN THE LEFT PANEL: it is inside the document panel and the right panel carries no such tab.
+    expect(tool?.closest('[data-pane="document-panel"]')).not.toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Accessibility' })).toBeNull();
+    expect(within(tool as HTMLElement).getByRole('heading', { name: 'Accessibility' })).toBeTruthy();
+    expect(sent.map((call) => call.id)).toContain('document.accessibilityCheck');
+    expect(within(tool as HTMLElement).getByText('Needs fixing')).toBeTruthy();
+
+    await act(async () => {
+      within(tool as HTMLElement).getByRole('button', { name: 'Close' }).click();
+      await Promise.resolve();
+    });
+    // CLOSED: the panel is as it was, with its own tabs again.
+    expect(document.querySelector('[data-panel-tool]')).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Pages' })).toBeTruthy();
+  });
+
   it('a cancelled pick leaves the start screen alone', async () => {
     // ASSERT THE STATE THAT DID NOT CHANGE. A user dismissing a picker is an
     // outcome, and the App's correct response is to do nothing — which is also

@@ -2089,7 +2089,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     [presence, settings, spellingDeps, stores],
   );
 
-  /** What the Accessibility tab's reads need: the client, and nothing the document's own commands do. */
+  /** What the accessibility tools' reads need: the client, and nothing the document's own commands do. */
   const accessibilityDeps = useMemo(() => ({ client }), [client]);
   /** Accessibility check: the tool, opened in the document panel at its check section, and the check run (ADR-0189). */
   const showAccessibilityCheck = useCallback(
@@ -2867,7 +2867,6 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           rows: () =>
             holder.registry === undefined ? [] : shortcutRows(holder.defaults ?? [], holder.registry),
           dropped: () => holder.dropped ?? [],
-          settings,
         }),
         // THE HELP CENTRE ON F1 (ADR-0112): where the person is, read when it runs; *Show me* only where the ribbon is
         // drawn — Focus draws none — and only for a command it holds, brought to the front before it is rung.
@@ -2909,12 +2908,17 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             setRecentReads((reads) => reads + 1);
           },
           toast,
+          // THE KEYBOARD PAGE'S ROWS, the registry's, read when Settings opens (ADR-0191) — the same ones Help's list reads.
+          shortcuts: {
+            rows: () => (holder.registry === undefined ? [] : shortcutRows(holder.defaults ?? [], holder.registry)),
+            dropped: () => holder.dropped ?? [],
+          },
         }),
         aiSetup,
         showWordCountCommand({ client, ask, track }),
         compareDocumentsCommand({ client, show: showSideBySide }),
         translatePageCommand({ client, onApplied: applied, ask, stamp, signatures, toast, track, storedSecrets: () => storedSecrets }),
-        // THE TWO REPORTS ARE THE PANEL'S (ADR-0183): each command opens the Accessibility tab at its own section.
+        // THE TWO REPORTS ARE ONE TOOL'S (ADR-0183, ADR-0189): each command opens it in the document panel at its own section.
         inspectPageStructureCommand({ show: showReadingOrder }),
         accessibilityCheckCommand({ show: showAccessibilityCheck }),
         readBarcodesCommand({ client, ask }),
@@ -4455,7 +4459,7 @@ function PageCanvas({
   readonly panning: boolean;
   /** What the find bar last answered, painted over both panes' text layers. */
   readonly search: SearchHighlight | undefined;
-  /** The place the Accessibility tab marked, by page (ADR-0183), painted over both panes. */
+  /** The place an accessibility tool marked, by page (ADR-0183), painted over both panes. */
   readonly spotlights: ReadonlyMap<number, readonly Spot[]> | undefined;
   /** Whether §6.1's second engine draws the pages. `viewing.second-renderer`. */
   readonly secondRenderer: boolean;

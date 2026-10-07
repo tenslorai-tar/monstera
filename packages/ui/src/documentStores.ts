@@ -230,9 +230,9 @@ export interface DocumentState {
    */
   readonly spelling: SpellingReview | undefined;
   /**
-   * This document's Accessibility tab (ADR-0183): the check's findings, the reading order of the page last read, and
-   * the place marked on the page — or `undefined` before the tab was used. Per document for {@link spelling}'s reason:
-   * findings that followed a tab switch would mark one file's problems on another's pages.
+   * This document's accessibility tools (ADR-0183, ADR-0189): whether they are open, the check's findings, the reading
+   * order of the page last read, and the place marked on the page — or `undefined` before they were used. Per document
+   * for {@link spelling}'s reason: findings that followed a tab switch would mark one file's problems on another's pages.
    */
   readonly accessibility: AccessibilityView | undefined;
 }

@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import { STARTING_STYLE_COLOUR } from '../annotations/annotationStyle.js';
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN, STYLE_COLOUR_AUTO } from '../messages/en.js';
+import { EN, GRID_TITLE, STYLE_COLOUR_AUTO } from '../messages/en.js';
 import { AZURE_OPENAI_ENDPOINT_SETTING } from '../settings/ai.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { THEME_SETTING } from '../settings/appearance.js';
@@ -291,6 +291,45 @@ describe('SettingsBody', () => {
     // CONTROL: a page that is not the OCR one carries neither link.
     goTo('viewing');
     expect(screen.queryByRole('button', { name: 'Where to find the endpoint and key' })).toBeNull();
+  });
+
+  it('the KEYBOARD page lists every command with Change and Remove, reports a change as a shortcut, and keeps it across pages (ADR-0191)', () => {
+    const reported: SettingsAnswer[] = [];
+    render(
+      <Wrapped>
+        <SettingsBody
+          models={{}}
+          resolve={() => undefined}
+          secretsAvailable
+          shortcuts={{
+            rows: [{ id: 'view.toggle-grid', title: GRID_TITLE, chord: 'Ctrl+G', fallback: 'Ctrl+G', also: [] }],
+            dropped: [],
+          }}
+          storedSecrets={[]}
+          update={(answer) => {
+            reported.push(answer);
+          }}
+          values={DEFAULTS}
+        />
+      </Wrapped>,
+    );
+    goTo('keyboard');
+    expect(screen.getByRole('button', { name: 'Reset all shortcuts' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(reported).toStrictEqual([
+      { values: {}, secrets: {}, shortcut: { kind: 'choose', id: 'view.toggle-grid', chord: null } },
+    ]);
+    // ANOTHER PAGE AND BACK: the key stays removed, rather than the editor starting again from the key the dialog opened with.
+    goTo('privacy');
+    goTo('keyboard');
+    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+    expect(screen.getByText('None')).toBeDefined();
+  });
+
+  it('CONTROL: no page but Keyboard draws the list', () => {
+    opened({});
+    goTo('viewing');
+    expect(screen.queryByRole('button', { name: 'Reset all shortcuts' })).toBeNull();
   });
 
   it('EVERY stored key has the button — a provider’s beside its Check — and a field with no key stored has none', () => {

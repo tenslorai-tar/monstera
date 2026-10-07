@@ -4,7 +4,7 @@ import { type OverlayPage, engineBoxOnScreen } from './annotations/annotationSpa
 import type { Spot } from './accessibility/view.js';
 
 /**
- * The place the Accessibility tab marked, drawn over one page (ADR-0183).
+ * The place an accessibility tool marked, drawn over one page (ADR-0183, ADR-0189).
  *
  * ## Placed as every engine box is
  *

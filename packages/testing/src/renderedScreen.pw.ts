@@ -1738,7 +1738,8 @@ test('a DIALOG taller than the window stays inside it, and its body scrolls to t
   const saveBox = await save.boundingBox();
   expect((saveBox?.y ?? -1) >= 0 && (saveBox?.y ?? 0) + (saveBox?.height ?? 0) <= 420).toBe(true);
   await expect(dialog.getByRole('heading', { name: 'Keyboard shortcuts' })).toBeInViewport();
-  await expect(dialog.getByRole('button', { name: 'Reset all shortcuts' })).toBeInViewport();
+  // THE FOOTER'S OWN CLOSE, the dialog's last control now that the list is read-only (ADR-0191): Reset all is Settings'.
+  await expect(dialog.locator('.m-dialog-footer').getByRole('button', { name: 'Close' })).toBeInViewport();
 });
 
 test('NOTHING DRAWS OVER A DIALOG: every stacked element of the window sits under the modal layer', async ({ page }) => {

@@ -889,6 +889,12 @@ optgroup {
   margin: 0;
 }
 
+/* RESET ALL, apart under the list on the Keyboard page. */
+.m-shortcuts-editor__reset {
+  display: flex;
+  padding-block: var(--space-8);
+}
+
 /* THE OCR DIALOG'S HANDWRITING NOTE, above the footer; the link to the article on getting a key is in the footer's
    aside while no key is stored. */
 .m-ocr__handwriting {
@@ -5018,7 +5024,7 @@ optgroup {
 }
 
 /*
- * The place the Accessibility tab marked (ADR-0183), inert, in the page's own box. A box is drawn as a solid ring with a
+ * The place an accessibility tool marked (ADR-0183), inert, in the page's own box. A box is drawn as a solid ring with a
  * soft halo, so it reads without colour; the page itself is a frame inset from its edge.
  */
 .m-spotlight-layer {
@@ -5043,7 +5049,7 @@ optgroup {
   box-shadow: none;
 }
 
-/* The Accessibility tab (ADR-0183): one column, so the panel's width is the only width. */
+/* The accessibility tools (ADR-0183), in the document panel (ADR-0189): one column, so the panel's width is the only width. */
 .m-accessibility {
   display: flex;
   flex-direction: column;

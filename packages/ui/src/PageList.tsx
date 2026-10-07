@@ -318,7 +318,7 @@ export interface PageListProps {
    */
   readonly differences: ReadonlyMap<number, readonly DifferenceMark[]> | undefined;
   /**
-   * The place the Accessibility tab marked, by page (ADR-0183), or `undefined` for none. Required for `search`'s reason.
+   * The place an accessibility tool marked, by page (ADR-0183), or `undefined` for none. Required for `search`'s reason.
    */
   readonly spotlights: ReadonlyMap<number, readonly Spot[]> | undefined;
   /**
@@ -1515,7 +1515,7 @@ function PageSlot({
    * Required for `search`'s reason: a mark crossing three components and dropped at one leaves every case green.
    */
   readonly differences: ReadonlyMap<number, readonly DifferenceMark[]> | undefined;
-  /** The Accessibility tab's mark (ADR-0183), by page; this slot takes its own page's. */
+  /** The accessibility tool's mark (ADR-0183), by page; this slot takes its own page's. */
   readonly spotlights: ReadonlyMap<number, readonly Spot[]> | undefined;
   /**
    * §6.1's second engine, or `undefined` where the setting is off.

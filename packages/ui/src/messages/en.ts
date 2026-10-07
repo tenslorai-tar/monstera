@@ -4337,7 +4337,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_ACTION_CLEARED]: 'Saved conversations were cleared.',
   // NAMES NO KEY: any key can be changed (ADR-0111), and a sentence naming one goes false the day a person moves it.
   [SETTINGS_KEYBOARD_NOTE]:
-    'Every shortcut, and a way to change any of them, is in Help › Keyboard shortcuts. The command palette finds any tool by name.',
+    'Every command with its shortcut. Change or remove any of them here. Help › Keyboard shortcuts shows the same list to read. The command palette finds any tool by name.',
   [SETTINGS_UPDATES_NOTE]:
     'Monstera is installed from the Microsoft Store, and Windows updates it. Monstera never installs anything itself.',
   // EVERY PAGE INTRODUCES ITSELF, as the owner's settings.png does. Each says what the page is

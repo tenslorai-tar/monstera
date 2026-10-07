@@ -53,7 +53,7 @@ async function run(answer: DonateAnswer | undefined): Promise<{ readonly sent: S
 }
 
 describe('donateCommand', () => {
-  it('opens the dialog first, and on *Open the donation page* names the PLACE — never an address', async () => {
+  it('opens the dialog first, and on *Donate now* names the PLACE — never an address', async () => {
     const { sent, asked } = await run('open');
 
     expect(asked).toStrictEqual([DONATE_DIALOG_ID]);

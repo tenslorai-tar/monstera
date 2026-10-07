@@ -157,7 +157,8 @@ test('keyboard-shortcuts-1', async ({ page }) => {
   await page.keyboard.press('Control+Slash');
   const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
   await expect(dialog).toBeVisible();
-  await dialog.getByRole('row').nth(1).getByRole('button', { name: 'Change' }).click();
+  // THE LIST TO READ (ADR-0191): it has no Change to press, so what is shown is the commands against their keys.
+  await expect(dialog.getByRole('row').nth(1)).toBeVisible();
   await shoot(page, 'keyboard-shortcuts-1', dialog);
 });
 

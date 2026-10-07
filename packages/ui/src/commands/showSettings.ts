@@ -21,9 +21,11 @@ import {
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import type { DialogReports } from '../registries/dialogs.js';
 import type { SettingsStore } from '../settingsStore.js';
+import type { ShortcutRow } from '../surfaces/shortcutChoice.js';
 import type { ShowToast } from '../toasts.js';
 import { confirmDone, confirmWritten } from './confirmWritten.js';
 import { reportProblem } from './documentCommands.js';
+import { applyShortcutAnswer } from './keyboardShortcuts.js';
 
 /** The props the Settings dialog opens with, and replies carry (ADR-0158). */
 type SettingsProps = z.infer<typeof SETTINGS_DIALOG.props>;
@@ -67,6 +69,14 @@ export function showSettingsCommand(deps: {
   readonly onRecentCleared: () => void;
   /** Says what an import did — imported, partly, or a file that was not a settings file. */
   readonly toast: ShowToast;
+  /**
+   * The Keyboard page's list (ADR-0191), read from the finished registry WHEN SETTINGS OPENS — the registry is built after
+   * this command is, which is why they are functions (`keyboardShortcutsCommand`'s reason).
+   */
+  readonly shortcuts: {
+    readonly rows: () => readonly ShortcutRow[];
+    readonly dropped: () => readonly string[];
+  };
 }): UiCommand {
   return {
     id: 'app.settings',
@@ -148,7 +158,15 @@ export function showSettingsCommand(deps: {
         }
       };
 
+      // EACH COMMAND'S REGISTERED KEY, by id, which a reported change is compared against (`applyShortcutAnswer`).
+      const shortcutRows = deps.shortcuts.rows();
+      const fallbacks = new Map(shortcutRows.map((row) => [row.id, row.fallback]));
+
       let shown: SettingsProps = {
+        shortcuts: {
+          rows: shortcutRows.map((row) => ({ ...row, also: [...row.also] })),
+          dropped: [...deps.shortcuts.dropped()],
+        },
         values,
         storedSecrets: secrets.ok ? secrets.value.stored : [],
         // A LOAD THAT FAILED IS NOT AVAILABLE STORAGE. Offering a field whose save cannot be known
@@ -203,6 +221,8 @@ export function showSettingsCommand(deps: {
           // A LINK ON THE PAGE: the place is named and main opens its address. Whether it opened is not read — a page
           // this build has an address for is the only kind these are, and the browser's own failure is the browser's.
           if (report.openPage !== undefined) await deps.client['app.openWebPage']({ page: report.openPage });
+          // A KEY CHANGED ON THE KEYBOARD PAGE: written by the one function that writes `keyboard.shortcuts`.
+          if (report.shortcut !== undefined) applyShortcutAnswer(deps.settings, fallbacks, report.shortcut);
         });
         queue = next.then(
           () => undefined,

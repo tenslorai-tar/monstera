@@ -513,7 +513,7 @@ function Half({
           // NOTHING TYPED HERE: a comparison's halves take no tool, so nothing asks either one for words.
           writing={undefined}
           differences={differences}
-          // NO SPOTLIGHT: the Accessibility tab marks the document in the tab, not a comparison's half.
+          // NO SPOTLIGHT: the accessibility tools mark the document in its own view, not a comparison's half.
           spotlights={undefined}
           // PDF.JS, ALWAYS: a difference a reader sees has to be one between the DOCUMENTS, and §6.1's second engine
           // draws measurably differently (12.716 levels over inked pixels), which one half could show and not the other.

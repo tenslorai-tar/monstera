@@ -1,5 +1,5 @@
 import { AI_PROVIDER_IDS, AZURE_KEY_SETTING_ID, type AiModelListAnswer, channels, createClient } from '@monstera/contract';
-import { type FileHandle, asFileHandle, err, ok } from '@monstera/shared';
+import { type FileHandle, asFileHandle, err, messageKey, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { SETTINGS_DIALOG, SETTINGS_DIALOG_ID } from '../dialogs/settings.js';
@@ -18,6 +18,8 @@ import {
 } from '../messages/en.js';
 import type { ToastAction } from '../primitives/Toast.js';
 import { SettingsStore } from '../settingsStore.js';
+import type { ShortcutRow } from '../surfaces/shortcutChoice.js';
+import { SHORTCUTS_SETTING } from '../settings/keyboard.js';
 import { showSettingsCommand } from './showSettings.js';
 
 /**
@@ -33,6 +35,14 @@ const HELD_OPENAI = {
   models: [{ id: 'gpt-held', label: 'GPT held', capabilities: { vision: null, streaming: null } }],
 };
 const HELD_FALLBACK = { source: 'fallback' as const, models: [] };
+/** The one command the Keyboard page lists in these cases, registered on Ctrl+G. */
+const GRID_ROW: ShortcutRow = {
+  id: 'view.toggle-grid',
+  title: messageKey('command.grid.title'),
+  chord: 'Ctrl+G',
+  fallback: 'Ctrl+G',
+  also: [],
+};
 
 function harness(options: {
   readonly stored?: readonly (typeof AZURE_KEY_SETTING_ID)[];
@@ -107,6 +117,7 @@ function harness(options: {
       if (options.listed === undefined || options.listed === 'refuse') return Promise.resolve(err({ code: 'internal', incident: 'test' }));
       return Promise.resolve(ok(options.listed));
     }
+    if (id === 'app.openWebPage') return Promise.resolve(ok({ opened: true }));
     if (id === 'ai.history.clear') return Promise.resolve(ok({ cleared: 2 }));
     if (id === 'settings.export') return Promise.resolve(ok(options.exported ?? { kind: 'cancelled' as const }));
     if (id === 'file.reveal') return Promise.resolve(ok({ revealed: true }));
@@ -139,6 +150,7 @@ function harness(options: {
       toasts.push(`${kind} ${message}`);
       actions.push(action);
     },
+    shortcuts: { rows: () => [GRID_ROW], dropped: () => ['view.toggle-rulers'] },
   });
   return {
     run: async () => {
@@ -318,6 +330,54 @@ describe('showSettingsCommand', () => {
 
     expect(asked[0]?.id).toBe(SETTINGS_DIALOG_ID);
     expect((asked[0]?.props as { models: unknown }).models).toStrictEqual({});
+  });
+
+  describe('the KEYBOARD page (ADR-0191)', () => {
+    it('opens with the registry’s rows and the dropped choices, read when Settings opens', async () => {
+      const { run, asked } = harness({});
+      await run();
+      expect((asked[0]?.props as { shortcuts: unknown }).shortcuts).toStrictEqual({
+        rows: [GRID_ROW],
+        dropped: ['view.toggle-rulers'],
+      });
+    });
+
+    it('a reported key is stored NORMALISED, as a difference from the default, by the one writer', async () => {
+      const chosen = harness({ reports: [{ values: {}, secrets: {}, shortcut: { kind: 'choose', id: 'view.toggle-grid', chord: 'Ctrl+Shift+M' } }] });
+      await chosen.run();
+      expect(chosen.settings.get(SHORTCUTS_SETTING.id)).toStrictEqual({ 'view.toggle-grid': 'ctrl+shift+m' });
+
+      // BACK TO THE DEFAULT removes the entry, so a default a later build changes still reaches this person.
+      const restored = harness({
+        reports: [
+          { values: {}, secrets: {}, shortcut: { kind: 'choose', id: 'view.toggle-grid', chord: 'Ctrl+Shift+M' } },
+          { values: {}, secrets: {}, shortcut: { kind: 'choose', id: 'view.toggle-grid', chord: 'Ctrl+G' } },
+        ],
+      });
+      await restored.run();
+      expect(restored.settings.get(SHORTCUTS_SETTING.id)).toStrictEqual({});
+    });
+
+    it('no key is stored as null, and Reset all empties the choices', async () => {
+      const removed = harness({ reports: [{ values: {}, secrets: {}, shortcut: { kind: 'choose', id: 'view.toggle-grid', chord: null } }] });
+      await removed.run();
+      expect(removed.settings.get(SHORTCUTS_SETTING.id)).toStrictEqual({ 'view.toggle-grid': null });
+
+      const reset = harness({
+        reports: [
+          { values: {}, secrets: {}, shortcut: { kind: 'choose', id: 'view.toggle-grid', chord: null } },
+          { values: {}, secrets: {}, shortcut: { kind: 'reset' } },
+        ],
+      });
+      await reset.run();
+      expect(reset.settings.get(SHORTCUTS_SETTING.id)).toStrictEqual({});
+    });
+
+    it('CONTROL: a report with no shortcut writes none', async () => {
+      const untouched = harness({ reports: [{ values: { [THEME_SETTING.id]: 'dark' }, secrets: {} }] });
+      await untouched.run();
+      expect(untouched.settings.get(SHORTCUTS_SETTING.id)).toStrictEqual({});
+    });
   });
 
   describe('a KEY CHECK (ADR-0158)', () => {

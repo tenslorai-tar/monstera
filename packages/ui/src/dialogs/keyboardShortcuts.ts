@@ -12,10 +12,14 @@ export const KEYBOARD_SHORTCUTS_DIALOG_ID = 'dialog.keyboard-shortcuts';
 const CHORD = z.string().min(1).max(64);
 
 /**
- * What the dialog reports as a person changes keys
+ * What is reported as a person changes keys
  * ([ADR-0094](../../../../docs/DECISIONS/0094-a-dialog-may-report-before-it-answers.md)): one command given a key or
  * none, or every key back to its default. The OPENER writes it to the setting — the mutation stays with the command,
- * as ADR-0038 put it — and the dialog has no *Save*, like Settings.
+ * as ADR-0038 put it — and there is no *Save*.
+ *
+ * **Since ADR-0191 it is SETTINGS that reports it** (Settings › Keyboard carries the editing), as its `shortcut`; Help's
+ * dialog below is a list to read and reports nothing. The shape stays here because it is the one description of a key
+ * change, and both the editor and the writer take it from here.
  */
 export const KEYBOARD_SHORTCUTS_RESULT = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('choose'), id: z.string().min(1).max(128), chord: CHORD.nullable() }).strict(),
@@ -23,6 +27,28 @@ export const KEYBOARD_SHORTCUTS_RESULT = z.discriminatedUnion('kind', [
 ]);
 
 export type KeyboardShortcutsAnswer = z.infer<typeof KEYBOARD_SHORTCUTS_RESULT>;
+
+/**
+ * The rows both surfaces draw (ADR-0191): each command, the key it has, the key it is registered with, and the further
+ * keys it answers. Written once because Help's dialog and Settings' Keyboard page validate the same list, and two spellings
+ * of it would agree until one grew a field.
+ */
+export const SHORTCUT_ROWS = z
+  .array(
+    z
+      .object({
+        id: z.string().min(1).max(128),
+        title: z.custom<MessageKey>((value) => typeof value === 'string' && value.length > 0),
+        chord: CHORD.nullable(),
+        fallback: CHORD.nullable(),
+        also: z.array(CHORD).max(8),
+      })
+      .strict(),
+  )
+  .max(512);
+
+/** The commands whose stored key went back to its default when the registry was built. */
+export const SHORTCUT_DROPPED = z.array(z.string().min(1).max(128)).max(512);
 
 /**
  * Every command and its key, where any key can be changed (the founding record's D12 *"keyboard shortcut reference"*,
@@ -46,24 +72,7 @@ export type KeyboardShortcutsAnswer = z.infer<typeof KEYBOARD_SHORTCUTS_RESULT>;
 export const KEYBOARD_SHORTCUTS_DIALOG = declareDialog({
   id: KEYBOARD_SHORTCUTS_DIALOG_ID,
   title: KEYBOARD_SHORTCUTS_TITLE,
-  props: z
-    .object({
-      rows: z
-        .array(
-          z
-            .object({
-              id: z.string().min(1).max(128),
-              title: z.custom<MessageKey>((value) => typeof value === 'string' && value.length > 0),
-              chord: CHORD.nullable(),
-              fallback: CHORD.nullable(),
-              also: z.array(CHORD).max(8),
-            })
-            .strict(),
-        )
-        .max(512),
-      dropped: z.array(z.string().min(1).max(128)).max(512),
-    })
-    .strict(),
+  props: z.object({ rows: SHORTCUT_ROWS, dropped: SHORTCUT_DROPPED }).strict(),
   result: KEYBOARD_SHORTCUTS_RESULT,
   component: lazy(() => import('./KeyboardShortcutsBody.js')),
 });

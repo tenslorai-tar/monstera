@@ -8,6 +8,7 @@ import type { SettingCategory, SettingDefinition } from '../registries/settings.
 import { colourKindOf, enumeratedOf } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { SETTINGS_PAGES, type SettingsPage } from '../settings/pages.js';
+import { KEYBOARD_SHORTCUTS_RESULT, SHORTCUT_DROPPED, SHORTCUT_ROWS } from './keyboardShortcuts.js';
 
 /** The id the Settings command opens. */
 export const SETTINGS_DIALOG_ID = 'dialog.settings';
@@ -118,6 +119,11 @@ export const SETTINGS_RESULT = z
      * the address, so nothing here composes one). Never answered: the dialog stays where it was.
      */
     openPage: z.enum(AZURE_DI_PAGES).optional(),
+    /**
+     * A key a person changed on the Keyboard page, or every key put back (ADR-0191): the answer the shortcuts dialog used
+     * to report, reported here for the opener to write to `keyboard.shortcuts` through the one function that does.
+     */
+    shortcut: KEYBOARD_SHORTCUTS_RESULT.optional(),
   })
   .strict();
 
@@ -150,6 +156,11 @@ export const SETTINGS_DIALOG = declareDialog({
       checked: z.partialRecord(z.enum(AI_PROVIDER_IDS), z.number().int().positive()).optional(),
       /** How many of each provider's {@link SETTINGS_RESULT} `refresh` reads have been answered, `checked`'s way. */
       refreshed: z.partialRecord(z.enum(AI_PROVIDER_IDS), z.number().int().positive()).optional(),
+      /**
+       * The Keyboard page's rows: every command against its key, read from the registry when Settings opens, and the
+       * commands whose chosen key went back to its default (ADR-0191). Titles cross as keys, as in Help's dialog.
+       */
+      shortcuts: z.object({ rows: SHORTCUT_ROWS, dropped: SHORTCUT_DROPPED }).strict().optional(),
     })
     .strict(),
   result: SETTINGS_RESULT,

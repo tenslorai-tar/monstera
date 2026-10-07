@@ -71,6 +71,21 @@ describe('placementFor', () => {
     });
   });
 
+  it('a screen LEFT of the primary has negative coordinates, and a window left on it is restored there', () => {
+    // THE HARD SHAPE: every other case here has its screens at positive coordinates. Windows numbers a screen to the left
+    // of the primary from below zero, and a window left on it has a negative x.
+    const LEFT_SCREEN: Box = { x: -1920, y: 0, width: 1920, height: 1040 };
+    const onLeft = { ...LEFT, x: -1700 };
+    expect(placementFor(onLeft, [LEFT_SCREEN, PRIMARY], FLOOR).bounds).toStrictEqual({
+      x: -1700,
+      y: 80,
+      width: 1400,
+      height: 900,
+    });
+    // CONTROL: the same record with that screen gone is a first launch.
+    expect(placementFor(onLeft, [PRIMARY], FLOOR)).toStrictEqual(FIRST_LAUNCH);
+  });
+
   it('a window with too little of it on a screen to grab is not restored; exactly enough is', () => {
     // ONLY ITS CORNER ON THE SCREEN: the window's left edge is MIN_VISIBLE.width − 1 short of the screen's right edge.
     const edge = PRIMARY.x + PRIMARY.width;

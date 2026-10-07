@@ -89,6 +89,8 @@ import { ACCENT_SETTING } from '../settings/accent.js';
 import { ACCENT_PRESETS, accentUsable } from '../settings/accentPresets.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING, AZURE_OPENAI_ENDPOINT_SETTING } from '../settings/ai.js';
 import { AZURE_DI_ENDPOINT_SETTING } from '../settings/editing.js';
+import { ShortcutEditor } from './ShortcutEditor.js';
+import type { ShortcutListRow } from './ShortcutList.js';
 import type { SettingsAnswer } from './settings.js';
 import { controlFor, DIALOG_SETTINGS, listedPages } from './settings.js';
 
@@ -819,6 +821,7 @@ export default function SettingsBody({
   models,
   checked = {},
   refreshed = {},
+  shortcuts,
   resolve,
   update,
 }: {
@@ -828,6 +831,8 @@ export default function SettingsBody({
   readonly models: Readonly<Partial<Record<AiProviderId, AiModelListAnswer>>>;
   readonly checked?: Readonly<Partial<Record<AiProviderId, number>>> | undefined;
   readonly refreshed?: Readonly<Partial<Record<AiProviderId, number>>> | undefined;
+  /** The Keyboard page's rows and the commands whose chosen key went back; absent where nothing supplies them. */
+  readonly shortcuts?: { readonly rows: readonly ShortcutListRow[]; readonly dropped: readonly string[] } | undefined;
 } & DialogAnswering<SettingsAnswer>): ReactElement {
   const { _ } = useLingui();
   const [drafts, setDrafts] = useState<Readonly<Record<string, unknown>>>(() =>
@@ -837,6 +842,11 @@ export default function SettingsBody({
         return [setting.id, controlFor(setting) === 'number' ? String(value) : value];
       }),
     ),
+  );
+  // EACH COMMAND'S KEY AS IT STANDS, held here and not by the editor: one page shows at a time, so an editor that held
+  // them itself would start again from the keys the dialog opened with every time the page was returned to.
+  const [shortcutChords, setShortcutChords] = useState<Readonly<Record<string, string | null>>>(() =>
+    Object.fromEntries((shortcuts?.rows ?? []).map((row) => [row.id, row.chord])),
   );
   const [secrets, setSecrets] = useState<Readonly<Record<string, SecretDraft>>>({});
   const [query, setQuery] = useState('');
@@ -1075,6 +1085,19 @@ export default function SettingsBody({
               )}
 
               {page === undefined ? null : onPage(page.id).map((setting) => rowFor(setting))}
+
+              {/* EVERY COMMAND AGAINST ITS KEY, with Change and Remove on each and Reset all under it (ADR-0191). */}
+              {page?.id === 'keyboard' && shortcuts !== undefined && (
+                <ShortcutEditor
+                  chords={shortcutChords}
+                  dropped={shortcuts.dropped}
+                  report={(answer) => {
+                    report({ shortcut: answer });
+                  }}
+                  rows={shortcuts.rows}
+                  setChords={setShortcutChords}
+                />
+              )}
 
               {page?.id === 'privacy' && (
                 <ActionRow

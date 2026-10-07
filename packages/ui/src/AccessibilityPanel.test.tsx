@@ -13,7 +13,7 @@ import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 
 /**
- * The Accessibility tab (ADR-0183): the UI half of the wired pair. The kernel's cases prove the check places each failure
+ * The accessibility tools (ADR-0183, ADR-0189): the UI half of the wired pair. The kernel's cases prove the check places each failure
  * and the reading order boxes each element; these prove what the panel SHOWS of it — plain names, one line saying what a
  * failure means and what to do, and that choosing a result marks exactly the place the channel gave.
  */
