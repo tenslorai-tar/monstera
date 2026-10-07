@@ -1166,8 +1166,19 @@ export const FLAT_FIELDS_TITLE = messageKey('dialog.flat-fields.title');
 export const FLAT_FIELDS_GUESSED = messageKey('dialog.flat-fields.guessed');
 export const FLAT_FIELDS_NONE = messageKey('dialog.flat-fields.none');
 export const FLAT_FIELDS_TRUNCATED = messageKey('dialog.flat-fields.truncated');
+// ALIGNING SELECTED FORM FIELDS AND MAKING THEM ONE SIZE (ADR-0193), the foot of the Properties tab.
+export const FIELD_ARRANGE_ALIGN_LEFT = messageKey('command.forms.align-left.title');
+export const FIELD_ARRANGE_ALIGN_RIGHT = messageKey('command.forms.align-right.title');
+export const FIELD_ARRANGE_ALIGN_TOP = messageKey('command.forms.align-top.title');
+export const FIELD_ARRANGE_ALIGN_BOTTOM = messageKey('command.forms.align-bottom.title');
+export const FIELD_ARRANGE_CENTRE_HORIZONTALLY = messageKey('command.forms.centre-horizontally.title');
+export const FIELD_ARRANGE_CENTRE_VERTICALLY = messageKey('command.forms.centre-vertically.title');
+export const FIELD_ARRANGE_SAME_WIDTH = messageKey('command.forms.same-width.title');
+export const FIELD_ARRANGE_SAME_HEIGHT = messageKey('command.forms.same-height.title');
+export const FIELD_ARRANGE_SAME_SIZE = messageKey('command.forms.same-size.title');
 // THE PROPERTIES PANE FOR SELECTED FORM FIELDS (ADR-0193).
 export const FIELD_PROPS_LABEL = messageKey('properties.field.label');
+export const FIELD_PROPS_ACTIONS = messageKey('properties.field.actions');
 export const FIELD_PROPS_HEADING_ONE = messageKey('properties.field.heading-one');
 export const FIELD_PROPS_HEADING_MANY = messageKey('properties.field.heading-many');
 export const FIELD_PROPS_WHERE = messageKey('properties.field.where');
@@ -3565,9 +3576,19 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLAT_FIELDS_TITLE]: 'Fields this page could have',
   [FLAT_FIELDS_GUESSED]:
     'Monstera looked for ruled lines and boxes with a label beside them and nothing written in them. An empty box in a table looks the same, so check the list before accepting it.',
+  [FIELD_ARRANGE_ALIGN_LEFT]: 'Align left edges',
+  [FIELD_ARRANGE_ALIGN_RIGHT]: 'Align right edges',
+  [FIELD_ARRANGE_ALIGN_TOP]: 'Align tops',
+  [FIELD_ARRANGE_ALIGN_BOTTOM]: 'Align bottoms',
+  [FIELD_ARRANGE_CENTRE_HORIZONTALLY]: 'Centre across the first field',
+  [FIELD_ARRANGE_CENTRE_VERTICALLY]: 'Centre down the first field',
+  [FIELD_ARRANGE_SAME_WIDTH]: 'Same width as the first field',
+  [FIELD_ARRANGE_SAME_HEIGHT]: 'Same height as the first field',
+  [FIELD_ARRANGE_SAME_SIZE]: 'Same size as the first field',
   [FIELD_PROPS_LABEL]: 'Field properties',
+  [FIELD_PROPS_ACTIONS]: 'Selected fields',
   [FIELD_PROPS_HEADING_ONE]: 'Field',
-  [FIELD_PROPS_HEADING_MANY]: '{count} fields',
+  [FIELD_PROPS_HEADING_MANY]: '{count, plural, one {# field} other {# fields}}',
   [FIELD_PROPS_WHERE]: 'Page {page}',
   [FIELD_PROPS_FIRST_SHOWN]: 'This shows the first selected field. A change you make applies to every selected field.',
   [FIELD_PROPS_ONE_ONLY]: 'The name, the choices and the calculation belong to one field. Select a single field to change them.',

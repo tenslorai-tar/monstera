@@ -8,6 +8,7 @@ import {
   type ContractClient,
   DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
   type SecretSettingId,
+  type CommandOfKind,
   type FieldFill,
   type FormFieldHandle,
   type FormFieldProperties,
@@ -281,6 +282,8 @@ import {
   select as chooseField,
 } from './forms/fieldSelection.js';
 import { FieldPropertiesPanel } from './forms/FieldPropertiesPanel.js';
+import type { PlacedField } from './forms/arrange.js';
+import { fieldArrangeCommands } from './commands/fieldArrangeCommands.js';
 import { useFormFieldList } from './forms/useFormFieldList.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
@@ -1189,20 +1192,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * one field and ride in the single-edit shape (`editFormFieldsSchema`); everything else is the shared shape.
    * The selection is carried across it, since a change to a field's dictionary moves no widget.
    */
-  const editSelectedFields = useCallback(
-    (set: FormFieldProperties): void => {
-      const first = selectedHandles[0];
-      if (activeId === undefined || openVersion === undefined || first === undefined) return;
+  const sendFieldEdits = useCallback(
+    (edits: CommandOfKind<'editFormFields'>['edits']): void => {
+      if (activeId === undefined || openVersion === undefined) return;
       const version = openVersion;
-      const { options, calculation, ...shared } = set;
-      const lists = options !== undefined || calculation !== undefined;
-      const command: DispatchableCommand = {
-        kind: 'editFormFields',
-        edits: lists
-          ? ([{ field: first, set }] as const)
-          : selectedHandles.map((field) => ({ field, set: shared })),
-        version,
-      };
+      const command: DispatchableCommand = { kind: 'editFormFields', edits, version };
       void applyDocumentCommand(
         {
           client,
@@ -1218,7 +1212,31 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         command,
       );
     },
-    [activeId, applied, ask, client, openVersion, selectedHandles, signatures, stamp],
+    [activeId, applied, ask, client, openVersion, signatures, stamp],
+  );
+  const editSelectedFields = useCallback(
+    (set: FormFieldProperties): void => {
+      const first = selectedHandles[0];
+      if (first === undefined) return;
+      const { options, calculation, ...shared } = set;
+      const lists = options !== undefined || calculation !== undefined;
+      sendFieldEdits(lists ? ([{ field: first, set }] as const) : selectedHandles.map((field) => ({ field, set: shared })));
+    },
+    [selectedHandles, sendFieldEdits],
+  );
+  /** The selected fields and where each is, for *align* and *same size* (`forms/arrange.ts`). A field with no place is left out. */
+  const placedFields = useMemo((): readonly PlacedField[] => {
+    const byKey = new Map(formFieldList.fields.map((field) => [fieldKey(field.page, field.index), field]));
+    return selectedHandles.flatMap((field) => {
+      const rect = byKey.get(fieldKey(field.page, field.index))?.rect;
+      return rect === null || rect === undefined ? [] : [{ field, rect }];
+    });
+  }, [formFieldList.fields, selectedHandles]);
+  const arrangeSelectedFields = useCallback(
+    (moved: readonly PlacedField[]): void => {
+      sendFieldEdits(moved.map((each) => ({ field: each.field, set: { rect: each.rect } })));
+    },
+    [sendFieldEdits],
   );
   // ESCAPE AND A PRESS ON EMPTY PAGE DESELECT, only while something is selected: a press on a field's own control is the
   // selection's and a press on the page's paper is not.
@@ -3255,6 +3273,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         exportAnnotationsFdfCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         exportAnnotationsJsonCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        // ALIGN AND SAME SIZE for the selected form fields (ADR-0193), at the Properties tab's foot.
+        ...fieldArrangeCommands({ placed: () => placedFields, apply: arrangeSelectedFields }),
         flattenFormCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
@@ -3453,6 +3473,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       openAssistant,
       // WHO IS MAKING A MARK AND WHEN (ADR-0103): changes when the person's name for comments does.
       stamp,
+      // THE SELECTED FORM FIELDS AND WHERE THEY ARE (ADR-0193), which align and same size read.
+      placedFields,
+      arrangeSelectedFields,
       // THE MENU BAR'S (ADR-0107): the window's one close, the focused field, and the page's marks for Select all.
       closeWindow,
       focusedField,

@@ -20,6 +20,7 @@ import { type KnownField, fieldNameProblemAmong } from '../annotations/fieldName
 import { colourFromHex, hexFromColour } from '../annotations/annotationStyle.js';
 import { FIELD_COLOURS, FIELD_COLOUR_FALLBACK } from './fieldColours.js';
 import {
+  FIELD_PROPS_ACTIONS,
   FIELD_PROPS_BORDER_COLOUR,
   FIELD_PROPS_BORDER_WIDTH,
   FIELD_PROPS_CALCULATION,
@@ -76,7 +77,6 @@ import {
   FIELD_PROPS_TOOLTIP,
   FIELD_PROPS_UNREADABLE,
   FIELD_PROPS_WHERE,
-  PROPERTIES_ACTIONS,
   PROPERTIES_CUSTOM_COLOUR,
 } from '../messages/en.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
@@ -213,7 +213,7 @@ export function FieldPropertiesPanel({
       )}
       {single ? null : <p className="m-properties__meta">{i18n._(FIELD_PROPS_ONE_ONLY)}</p>}
       {foot.length === 0 ? null : (
-        <div aria-label={i18n._(PROPERTIES_ACTIONS)} className="m-properties__foot" role="group">
+        <div aria-label={i18n._(FIELD_PROPS_ACTIONS)} className="m-properties__foot" role="group">
           {foot.map((entry) => (
             <Button
               key={entry.command.id}

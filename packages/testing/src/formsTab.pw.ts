@@ -45,7 +45,11 @@ const LISTED: ShimFormField = {
   rect: FIELD_RECT,
 };
 
-async function openForms(page: Page, sent: { channel: string; params: unknown }[]): Promise<void> {
+async function openForms(
+  page: Page,
+  sent: { channel: string; params: unknown }[],
+  fields: readonly ShimFormField[] = [LISTED],
+): Promise<void> {
   const bytes = await formPdf();
   await page.setViewportSize({ width: 1280, height: 860 });
   await bridgeUnder(
@@ -54,7 +58,7 @@ async function openForms(page: Page, sent: { channel: string; params: unknown }[
     {
       opens: [{ kind: 'opened' as const, docId: ID, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'Form.pdf' }],
       documentBytes: new Map([[ID, bytes]]),
-      formFields: [[LISTED]],
+      formFields: [fields],
     },
     (channel, params) => {
       sent.push({ channel, params });
@@ -209,6 +213,36 @@ test.describe('the Forms tab', () => {
     // AND THE SELECTION SURVIVED IT, so the next control is used on the same field.
     await expect(page.locator('[data-form-selected="0"]')).toBeVisible();
     await expect(pane).toBeVisible();
+  });
+
+  test('two selected fields can be aligned: the button at the foot of the tab sends ONE editFormFields with the new place of the one that moves', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    const second: ShimFormField = {
+      ...LISTED,
+      index: 1,
+      name: 'Surname',
+      rect: { x0: 220, y0: 590, x1: 520, y1: 610 },
+    };
+    await openForms(page, sent, [LISTED, second]);
+    await openSection(page, 'Forms');
+    await runCommand(page, 'Fields list');
+    const rows = page.locator('.m-forms-jump');
+    await rows.filter({ hasText: 'Full name' }).click();
+    // A CTRL CLICK joins the second field to the selection.
+    await rows.filter({ hasText: 'Surname' }).click({ modifiers: ['Control'] });
+    const foot = page.locator('[data-field-properties]').getByRole('group', { name: 'Selected fields' });
+    // WITH ONE FIELD SELECTED NOTHING WAS OFFERED, which is the `when`: the first click left no foot.
+    await expect(foot.getByRole('button', { name: 'Align left edges' })).toBeVisible();
+    await foot.getByRole('button', { name: 'Align left edges' }).click();
+    const edits = sent.filter((call) => call.channel === 'document.execute');
+    expect(edits.length).toBe(1);
+    // The first field is the leftmost (180), so the second moves to it, keeping its width of 300.
+    expect(edits[0]?.params).toMatchObject({
+      command: {
+        kind: 'editFormFields',
+        edits: [{ field: { page: 0, index: 1, name: 'Surname' }, set: { rect: { x0: 180, y0: 590, x1: 480, y1: 610 } } }],
+      },
+    });
   });
 
   test('a name the form already has is said where it is typed, in words, and nothing is sent', async ({ page }) => {
