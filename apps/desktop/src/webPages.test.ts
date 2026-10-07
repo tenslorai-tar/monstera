@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { AI_KEY_PAGE_OF, AI_PROVIDER_IDS, type AiKeyPage } from '@monstera/contract';
+import { AI_KEY_PAGE_OF, AI_PROVIDER_IDS, AZURE_DI_PAGES, type AiKeyPage } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import { openWebPage, STORE_PRODUCT_ID, STORE_URIS } from './webPages.js';
@@ -74,6 +74,8 @@ describe('openWebPage', () => {
           AiKeyPage,
           string
         >),
+        'azure-di-create': 'https://example.com/',
+        'azure-di-keys': 'https://example.com/',
         donate: 'https://monsterapdf.com/donate',
         'store-listing': '',
         source: 'https://github.com/tenslorai-tar/monstera',
@@ -84,6 +86,16 @@ describe('openWebPage', () => {
     // ASSERT THE CALL, not the answer: a version that handed `''` to the opener would also resolve
     // `false` if the opener refused it, and would have reached `shell.openExternal` on the way.
     expect(opened).toStrictEqual([]);
+  });
+
+  it('opens the two Azure Document Intelligence pages, each at its own HTTPS address', async () => {
+    const { open, opened } = opener();
+    for (const page of AZURE_DI_PAGES) await expect(openWebPage(page, open)).resolves.toBe(true);
+    expect(opened).toStrictEqual([
+      'https://portal.azure.com/#create/Microsoft.CognitiveServicesFormRecognizer',
+      'https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/how-to-guides/create-document-intelligence-resource',
+    ]);
+    for (const url of opened) expect(new URL(url).protocol).toBe('https:');
   });
 
   it('opens each AI provider’s key page, and every provider has one at its own address (ADR-0184)', async () => {

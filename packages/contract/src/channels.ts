@@ -1,7 +1,7 @@
 import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { z } from 'zod';
 
-import { AI_KEY_PAGES, AI_PROVIDER_IDS } from './aiProviders.js';
+import { AI_KEY_PAGES, AI_PROVIDER_IDS, AZURE_DI_PAGES } from './aiProviders.js';
 import {
   MAX_ASK_ATTACHMENTS,
   MAX_ASK_CONTEXT,
@@ -6174,7 +6174,7 @@ export const channels = {
     'Opens one of this project’s own pages in the person’s browser.',
     // `source` and `licences` are About's (AGPL's source offer and the third-party notices).
     // THE SETUP WINDOW'S *where do I get a key* (ADR-0184): one place per provider, still a name and never an address.
-    z.object({ page: z.enum(['donate', 'store-listing', 'source', 'licences', ...AI_KEY_PAGES]) }).strict(),
+    z.object({ page: z.enum(['donate', 'store-listing', 'source', 'licences', ...AI_KEY_PAGES, ...AZURE_DI_PAGES]) }).strict(),
     z.object({ opened: z.boolean() }),
   ),
 

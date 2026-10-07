@@ -34,6 +34,12 @@ body {
   /* THE NATIVE CONTROLS TAKE THE BRAND'S ACCENT — a checkbox's tick, a slider's track — where they
      drew the platform's blue beside green everywhere else. A token, so each theme's own accent. */
   accent-color: var(--accent);
+  /* NO ONE WORD ALONE ON A PARAGRAPH'S LAST LINE, for every intro and description in the application: Settings'
+     Viewing page ended on *document.* and Integrations on *need.* (the owner's review, 2026-10-06). `pretty` is an
+     inherited property, so one rule here is the class and a new description needs nothing — fixing the two strings, or
+     the two columns' widths, would leave the next paragraph to do the same. A heading or a balanced block that sets
+     its own `text-wrap` still wins, being more specific. */
+  text-wrap: pretty;
 }
 
 /* CONTROLS INHERIT IT. Chromium gives `button`, `input`, `select` and `textarea` a font of
@@ -6552,13 +6558,33 @@ optgroup {
   min-inline-size: 0;
 }
 
-/* A PROVIDER KEY'S CHECK, under the key: the button, then what the provider said. The answer wraps under the button
-   rather than pushing the row wider. */
-.m-key-check {
+/* UNDER A KEY: Check where the key has one, the red button that removes it, then what the provider said. One row that
+   wraps, so the answer drops under the buttons rather than pushing the row wider. */
+.m-settings-row__key-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4) var(--space-8);
+}
+
+/* A PROVIDER KEY'S CHECK: its button and its answer are the row's own items, so the remove button sits beside Check
+   and the answer follows both (`order`). */
+.m-key-check {
+  display: contents;
+}
+
+.m-key-check__answer {
+  order: 1;
+}
+
+/* THE QUESTION BEFORE A KEY IS REMOVED, in the row, beside the two answers. */
+.m-settings-row__remove-ask {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  color: var(--text);
+  font-size: var(--font-chrome-12);
 }
 
 .m-key-check__answer {

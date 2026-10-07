@@ -1871,6 +1871,13 @@ export const SETTINGS_INVALID = messageKey('dialog.settings.invalid');
 export const SETTINGS_SECRET_STORED = messageKey('dialog.settings.secret-stored');
 export const SETTINGS_SECRET_PLACEHOLDER = messageKey('dialog.settings.secret-placeholder');
 export const SETTINGS_SECRET_REMOVE = messageKey('dialog.settings.secret-remove');
+export const SETTINGS_AZURE_DI_RESOURCE = messageKey('dialog.settings.azure-di.resource');
+export const SETTINGS_AZURE_DI_CREATE = messageKey('dialog.settings.azure-di.create');
+export const SETTINGS_AZURE_DI_FIND = messageKey('dialog.settings.azure-di.find');
+export const SETTINGS_SECRET_REMOVE_ASK = messageKey('dialog.settings.secret-remove-ask');
+export const SETTINGS_SECRET_REMOVE_YES = messageKey('dialog.settings.secret-remove-yes');
+export const SETTINGS_SECRET_REMOVE_KEEP = messageKey('dialog.settings.secret-remove-keep');
+export const SETTINGS_SECRET_REMOVED = messageKey('dialog.settings.secret-removed');
 export const SETTINGS_SECRET_UNAVAILABLE = messageKey('dialog.settings.secret-unavailable');
 // EACH MEMBER IS ITS OWN EXPORTED KEY, and the records below name them: the
 // catalogue's reachability case finds keys by their exports, so a key minted
@@ -4219,6 +4226,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_SECRET_STORED]: 'A key is stored. Type a new one to replace it.',
   [SETTINGS_SECRET_PLACEHOLDER]: '••••••••',
   [SETTINGS_SECRET_REMOVE]: 'Remove the stored key',
+  [SETTINGS_AZURE_DI_RESOURCE]:
+    'This needs an Azure resource of the type Azure AI Document Intelligence (older Azure pages call it Form Recognizer). Create one in your Azure account, then copy its endpoint and one of its keys from its Keys and Endpoint page into the two boxes here.',
+  [SETTINGS_AZURE_DI_CREATE]: 'Create an Azure AI Document Intelligence resource',
+  [SETTINGS_AZURE_DI_FIND]: 'Where to find the endpoint and key',
+  [SETTINGS_SECRET_REMOVE_ASK]: 'Remove this key from this computer?',
+  [SETTINGS_SECRET_REMOVE_YES]: 'Remove it',
+  [SETTINGS_SECRET_REMOVE_KEEP]: 'Keep it',
+  [SETTINGS_SECRET_REMOVED]: 'The stored key was removed. Type a new one to add another.',
   [SETTINGS_SECRET_UNAVAILABLE]:
     'This computer has no secure place to keep a key, so one cannot be saved here.',
   [SETTINGS_CATEGORY_TITLES.general]: 'General',

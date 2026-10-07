@@ -117,6 +117,16 @@ export const AI_KEY_PAGES = [
   'ai-key-deepseek',
 ] as const;
 
+/**
+ * The two pages the OCR page's Azure Document Intelligence setup links to, as `app.openWebPage` names them: where the
+ * resource is created, and where its endpoint and key are read. PLACES, as {@link AI_KEY_PAGES} are, and held by
+ * `main` for the same reason.
+ */
+export const AZURE_DI_PAGES = ['azure-di-create', 'azure-di-keys'] as const;
+
+/** One of {@link AZURE_DI_PAGES}. */
+export type AzureDiPage = (typeof AZURE_DI_PAGES)[number];
+
 /** One of {@link AI_KEY_PAGES}. */
 export type AiKeyPage = (typeof AI_KEY_PAGES)[number];
 

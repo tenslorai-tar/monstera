@@ -103,12 +103,26 @@ const AI_KEY_ADDRESSES = {
   'ai-key-deepseek': 'https://platform.deepseek.com/api_keys',
 } as const;
 
+/**
+ * Where the OCR page sends a person to set up Azure Document Intelligence. Read on 2026-10-07: the Azure portal's create
+ * blade for the Document Intelligence resource (type `Microsoft.CognitiveServicesFormRecognizer`) answered 403 to
+ * `curl -sIL`, which is the portal's bot screen and not the page being absent, as the keys' pages above; Microsoft's guide
+ * to creating the resource answered 200 at the address below (the `?view=` suffix it redirects to is dropped) and
+ * carries the *Keys and Endpoint* step, found by fetching the page and reading that heading.
+ */
+const AZURE_DI_ADDRESSES = {
+  'azure-di-create': 'https://portal.azure.com/#create/Microsoft.CognitiveServicesFormRecognizer',
+  'azure-di-keys':
+    'https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/how-to-guides/create-document-intelligence-resource',
+} as const;
+
 const ADDRESSES: WebAddresses = {
   donate: DONATE,
   'store-listing': STORE_LISTING,
   source: SOURCE,
   licences: LICENCES,
   ...AI_KEY_ADDRESSES,
+  ...AZURE_DI_ADDRESSES,
 };
 
 /**

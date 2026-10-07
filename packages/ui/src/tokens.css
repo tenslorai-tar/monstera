@@ -125,6 +125,9 @@
  * @role violet-top surface
  * @role violet-bottom surface
  * @role on-violet text @on violet-top violet-bottom
+ * @role danger-top surface
+ * @role danger-bottom surface
+ * @role on-danger text @on danger-top danger-bottom
  * ─────────────────────────────────────────────────────────────────────────── */
 
 :root,
@@ -191,6 +194,11 @@
   --violet-top: #a78bfa;
   --violet-bottom: #9775f8;
   --on-violet: #160b33;
+  /* THE RED OF A BUTTON THAT REMOVES SOMETHING (a stored key), a tone of its own like gold and violet: its dark label
+     clears both stops, 6.7:1 and 4.95:1 (WCAG's formula, computed 2026-10-07; check:tokencontrast holds the pair). */
+  --danger-top: #f87171;
+  --danger-bottom: #ef4444;
+  --on-danger: #2a0606;
 
   /* THE PAINT, built from the roles above wherever a text sits on it. */
   --ambient: linear-gradient(135deg, var(--ground-start) 0%, var(--ground-mid) 50%, var(--ground-end) 100%);
@@ -293,6 +301,10 @@
   --violet-top: #7c3aed;
   --violet-bottom: #6d28d9;
   --on-violet: #ffffff;
+  /* Deeper in light; white clears both stops, 4.84:1 and 6.5:1 (computed 2026-10-07, as dark's are). */
+  --danger-top: #dc2626;
+  --danger-bottom: #b91c1c;
+  --on-danger: #ffffff;
 
   --ambient: linear-gradient(135deg, var(--ground-start), var(--ground-end));
   --grain-opacity: 0.04;
@@ -383,6 +395,9 @@
   --violet-top: #c4b5fd;
   --violet-bottom: #c4b5fd;
   --on-violet: #000000;
+  --danger-top: #ff8a80;
+  --danger-bottom: #ff8a80;
+  --on-danger: #000000;
 
   --ambient: none;
   --grain-opacity: 0;

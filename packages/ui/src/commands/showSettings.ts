@@ -200,6 +200,9 @@ export function showSettingsCommand(deps: {
           await apply(report);
           if (report.check !== undefined) await check(report.check, reply);
           if (report.refresh !== undefined) await refresh(report.refresh, reply);
+          // A LINK ON THE PAGE: the place is named and main opens its address. Whether it opened is not read — a page
+          // this build has an address for is the only kind these are, and the browser's own failure is the browser's.
+          if (report.openPage !== undefined) await deps.client['app.openWebPage']({ page: report.openPage });
         });
         queue = next.then(
           () => undefined,

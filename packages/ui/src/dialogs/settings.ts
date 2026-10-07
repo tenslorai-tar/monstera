@@ -1,4 +1,4 @@
-import { AI_PROVIDER_IDS, SECRET_SETTING_IDS, aiModelListSchema } from '@monstera/contract';
+import { AI_PROVIDER_IDS, AZURE_DI_PAGES, SECRET_SETTING_IDS, aiModelListSchema } from '@monstera/contract';
 import { lazy } from 'react';
 import { z } from 'zod';
 
@@ -113,6 +113,11 @@ export const SETTINGS_RESULT = z
      * never only the build's.
      */
     refresh: z.enum(AI_PROVIDER_IDS).optional(),
+    /**
+     * A page the OCR setup links to, reported for the opener to open (`app.openWebPage` takes the PLACE and `main` holds
+     * the address, so nothing here composes one). Never answered: the dialog stays where it was.
+     */
+    openPage: z.enum(AZURE_DI_PAGES).optional(),
   })
   .strict();
 

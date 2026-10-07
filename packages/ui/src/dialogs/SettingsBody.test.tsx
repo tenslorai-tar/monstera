@@ -253,14 +253,58 @@ describe('SettingsBody', () => {
     expect(reported).toStrictEqual([{ values: {}, secrets: { [AZURE_KEY_SETTING_ID]: 'a new key' } }]);
   });
 
-  it('removing a stored key reports an empty value, and CONTROL: touching nothing reports nothing', () => {
+  it('removing a stored key is a RED button that ASKS first, and only the answer reports the removal (2026-10-07)', () => {
     const { reported } = opened({ storedSecrets: [AZURE_KEY_SETTING_ID] });
     goTo(AZURE_DI_KEY_SETTING.category);
-    fireEvent.click(screen.getByLabelText('Remove the stored key'));
+    const button = screen.getByRole('button', { name: 'Remove the stored key' });
+    expect(button.className).toContain('m-button--danger');
+    fireEvent.click(button);
+    // THE QUESTION, with nothing reported yet: a press that removed at once is a loss that cannot be taken back.
+    expect(screen.getByText('Remove this key from this computer?')).toBeDefined();
+    expect(reported).toStrictEqual([]);
+    // *Keep it* leaves the key where it was, and the button comes back.
+    fireEvent.click(screen.getByRole('button', { name: 'Keep it' }));
+    expect(reported).toStrictEqual([]);
+    expect(screen.getByRole('button', { name: 'Remove the stored key' })).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove the stored key' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove it' }));
     expect(reported).toStrictEqual([{ values: {}, secrets: { [AZURE_KEY_SETTING_ID]: '' } }]);
+    // SAID, and the button is gone since there is no key left to remove; a new one may be typed.
+    expect(screen.getByText('The stored key was removed. Type a new one to add another.')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Remove the stored key' })).toBeNull();
 
     const untouched = opened({ storedSecrets: [AZURE_KEY_SETTING_ID] });
     expect(untouched.reported).toStrictEqual([]);
+  });
+
+  it('the OCR page names the exact Azure resource and reports each link as a PLACE, never an address (2026-10-07)', () => {
+    const { reported } = opened({});
+    goTo('ocr');
+    expect(screen.getByText(/Azure AI Document Intelligence \(older Azure pages call it Form Recognizer\)/u)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Create an Azure AI Document Intelligence resource' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Where to find the endpoint and key' }));
+    expect(reported).toStrictEqual([
+      { values: {}, secrets: {}, openPage: 'azure-di-create' },
+      { values: {}, secrets: {}, openPage: 'azure-di-keys' },
+    ]);
+    // CONTROL: a page that is not the OCR one carries neither link.
+    goTo('viewing');
+    expect(screen.queryByRole('button', { name: 'Where to find the endpoint and key' })).toBeNull();
+  });
+
+  it('EVERY stored key has the button — a provider’s beside its Check — and a field with no key stored has none', () => {
+    opened({ storedSecrets: [ANTHROPIC_KEY_SETTING_ID, AZURE_KEY_SETTING_ID] });
+    goTo('ai');
+    expect(screen.getByRole('button', { name: 'Remove the stored key' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Check' })).toBeDefined();
+    cleanup();
+    // CONTROL: nothing stored, nothing to remove.
+    opened({ storedSecrets: [] });
+    goTo('ai');
+    expect(screen.queryByRole('button', { name: 'Remove the stored key' })).toBeNull();
+    goTo(AZURE_DI_KEY_SETTING.category);
+    expect(screen.queryByRole('button', { name: 'Remove the stored key' })).toBeNull();
   });
 
   it('a setting that NEEDS the credential store is disabled with it missing, and says why', () => {

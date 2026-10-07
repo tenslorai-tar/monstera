@@ -5,6 +5,7 @@ import {
   AI_PROVIDER_IDS,
   type AiModelListAnswer,
   type AiProviderId,
+  type AzureDiPage,
   type SecretSettingId,
   choiceReadsImages,
   defaultModel,
@@ -12,7 +13,7 @@ import {
 } from '@monstera/contract';
 import { type MessageKey, channels } from '@monstera/shared';
 import type { ReactElement } from 'react';
-import { useId, useMemo, useState } from 'react';
+import { Fragment, useId, useMemo, useState } from 'react';
 import { z } from 'zod';
 
 import {
@@ -65,7 +66,14 @@ import {
   SETTINGS_RESET,
   SETTINGS_SEARCH,
   SETTINGS_SECRET_PLACEHOLDER,
+  SETTINGS_AZURE_DI_CREATE,
+  SETTINGS_AZURE_DI_FIND,
+  SETTINGS_AZURE_DI_RESOURCE,
   SETTINGS_SECRET_REMOVE,
+  SETTINGS_SECRET_REMOVE_ASK,
+  SETTINGS_SECRET_REMOVE_KEEP,
+  SETTINGS_SECRET_REMOVE_YES,
+  SETTINGS_SECRET_REMOVED,
   SETTINGS_SECRET_STORED,
   SETTINGS_SECRET_UNAVAILABLE,
   SETTINGS_UPDATES_NOTE,
@@ -80,6 +88,7 @@ import { colourKindOf, enumeratedOf } from '../registries/settings.js';
 import { ACCENT_SETTING } from '../settings/accent.js';
 import { ACCENT_PRESETS, accentUsable } from '../settings/accentPresets.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING, AZURE_OPENAI_ENDPOINT_SETTING } from '../settings/ai.js';
+import { AZURE_DI_ENDPOINT_SETTING } from '../settings/editing.js';
 import type { SettingsAnswer } from './settings.js';
 import { controlFor, DIALOG_SETTINGS, listedPages } from './settings.js';
 
@@ -377,33 +386,37 @@ function SettingControl({
     return (
       <div className="m-settings-row__secret">
         <Input
-          disabled={!available || secret.remove}
+          disabled={!available}
           label={setting.title}
           labelShownBeside
           onValueChange={(value) => {
-            onSecret({ ...secret, replace: value });
+            // TYPING A NEW KEY AFTER REMOVING THE OLD ONE is a replacement, so the removal is no longer the state.
+            onSecret({ replace: value, remove: false });
           }}
-          placeholder={stored ? SETTINGS_SECRET_PLACEHOLDER : undefined}
+          placeholder={stored && !secret.remove ? SETTINGS_SECRET_PLACEHOLDER : undefined}
           // A KEY OR A TOKEN, which every secret setting is: it runs long (ADR-0157).
           runsLong
           secret
           value={secret.replace}
         />
-        {stored ? (
-          <label className="m-settings-row__unset">
-            <input
-              checked={secret.remove}
-              data-setting-remove={setting.id}
+        {/* ONE ROW OF ACTIONS UNDER THE KEY, for every stored key — a provider's, Azure's, DocuSign's: the check where
+            the key has one, and the red button that removes it. */}
+        <div className="m-settings-row__key-actions">
+          {keyCheck}
+          {stored && !secret.remove ? (
+            <RemoveKey
               disabled={!available}
-              onChange={(event) => {
-                onSecret({ replace: '', remove: event.target.checked });
+              onRemove={() => {
+                onSecret({ replace: '', remove: true });
               }}
-              type="checkbox"
             />
-            {_(SETTINGS_SECRET_REMOVE)}
-          </label>
+          ) : null}
+        </div>
+        {stored && secret.remove ? (
+          <span className="m-settings-row__note" role="status">
+            {_(SETTINGS_SECRET_REMOVED)}
+          </span>
         ) : null}
-        {keyCheck}
       </div>
     );
   }
@@ -511,6 +524,79 @@ function keyCheckWords(answer: AiModelListAnswer | undefined): MessageKey {
   if (answer.source === 'fetched') return SETTINGS_KEY_WORKS;
   if (answer.source === 'no-list') return SETTINGS_KEY_UNCHECKED;
   return answer.problem === undefined ? SETTINGS_KEY_NONE : KEY_PROBLEM_WORDS[answer.problem];
+}
+
+/**
+ * What the Azure Document Intelligence boxes need, said once under the first of them: the exact kind of Azure resource,
+ * and the two places to go — where it is created, and where its endpoint and key are read. The pages are PLACES a press
+ * reports (`openPage`); `main` holds the addresses.
+ */
+function AzureDocumentIntelligenceHelp({ onOpen }: { readonly onOpen: (page: AzureDiPage) => void }): ReactElement {
+  const { _ } = useLingui();
+  return (
+    <div className="m-settings-row m-settings-row--help">
+      <div className="m-settings-row__text">
+        <span className="m-settings-row__note">{_(SETTINGS_AZURE_DI_RESOURCE)}</span>
+        <div className="m-settings-row__key-actions">
+          <Button
+            label={SETTINGS_AZURE_DI_CREATE}
+            onClick={() => {
+              onOpen('azure-di-create');
+            }}
+          />
+          <Button
+            label={SETTINGS_AZURE_DI_FIND}
+            onClick={() => {
+              onOpen('azure-di-keys');
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The red button that removes a stored key, and the question it asks first.
+ *
+ * Pressing it does not remove: it asks *Remove this key from this computer?* in the row, beside two answers, and only
+ * *Remove it* reports the removal. A key is not recoverable from here — the value is held by `main` and never crosses
+ * — so a press that removed at once would be a loss a person could not take back.
+ */
+function RemoveKey({ disabled, onRemove }: { readonly disabled: boolean; readonly onRemove: () => void }): ReactElement {
+  const { _ } = useLingui();
+  const [asking, setAsking] = useState(false);
+  if (!asking) {
+    return (
+      <Button
+        disabled={disabled}
+        label={SETTINGS_SECRET_REMOVE}
+        onClick={() => {
+          setAsking(true);
+        }}
+        variant="danger"
+      />
+    );
+  }
+  return (
+    <span className="m-settings-row__remove-ask" role="group" aria-label={_(SETTINGS_SECRET_REMOVE_ASK)}>
+      <span>{_(SETTINGS_SECRET_REMOVE_ASK)}</span>
+      <Button
+        label={SETTINGS_SECRET_REMOVE_YES}
+        onClick={() => {
+          setAsking(false);
+          onRemove();
+        }}
+        variant="danger"
+      />
+      <Button
+        label={SETTINGS_SECRET_REMOVE_KEEP}
+        onClick={() => {
+          setAsking(false);
+        }}
+      />
+    </span>
+  );
 }
 
 /**
@@ -881,7 +967,21 @@ export default function SettingsBody({
         }}
         provider={provider}
       />
+    ) : setting.id === AZURE_DI_ENDPOINT_SETTING.id ? (
+      // THE HELP UNDER THE FIRST OF THE TWO BOXES, where a person looking at the empty address finds what to create.
+      <Fragment key={setting.id}>
+        <AzureDocumentIntelligenceHelp
+          onOpen={(page) => {
+            report({ openPage: page });
+          }}
+        />
+        {plainRow(setting)}
+      </Fragment>
     ) : (
+      plainRow(setting)
+    );
+
+  const plainRow = (setting: SettingDefinition): ReactElement => (
     <SettingRow
       available={secretsAvailable}
       draft={draftFor(setting)}
@@ -897,7 +997,7 @@ export default function SettingsBody({
       stored={storedSecrets.some((id) => id === setting.id)}
       keyCheck={keyCheckFor(setting)}
     />
-    );
+  );
 
   /** A provider key's Check, which needs a key stored or typed and not being removed, and a store to keep it in. */
   function keyCheckFor(setting: SettingDefinition): ReactElement | undefined {

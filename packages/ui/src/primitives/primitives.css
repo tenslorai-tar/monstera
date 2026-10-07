@@ -116,6 +116,13 @@
   --tone-label: var(--on-violet);
 }
 
+/* A BUTTON THAT REMOVES SOMETHING: red, a fill like every tone, so a person can see what it does before reading it. */
+.m-button--danger {
+  --tone-top: var(--danger-top);
+  --tone-bottom: var(--danger-bottom);
+  --tone-label: var(--on-danger);
+}
+
 /* THE GLYPH ALONE (a row out of room for words): square, the label kept as the name and the tooltip. */
 .m-button--icon-only {
   padding-inline: var(--space-6);
@@ -970,6 +977,17 @@
   margin-inline: calc(-1 * var(--space-4));
   padding-inline: var(--space-4);
   overflow-y: auto;
+}
+
+/* EVERY OTHER SCROLLER INSIDE A DIALOG HAS THE SAME INSET, and it is written once here. A scroll container clips what is
+   drawn outside its padding box, and a focus ring is drawn outside its control — 2 px of outline and up to 2 px of
+   offset — so a control that reaches a scroller's edge loses its ring there. Settings' page was the one that showed it
+   (a select's ring cut on the right, the owner's review of 2026-10-06); the inset is `.m-dialog-scroll`'s, given back as
+   a negative margin so the rows still line up. A scroller added to a dialog joins this list rather than finding the
+   clip again. */
+:is(.m-settings__page, .m-settings__pages) {
+  margin-inline: calc(-1 * var(--space-4));
+  padding-inline: var(--space-4);
 }
 
 /* ONE WIDTH FOR EVERY BODY IN THE PATTERN. The popup shrinks to its content, so without a definite width each dialog

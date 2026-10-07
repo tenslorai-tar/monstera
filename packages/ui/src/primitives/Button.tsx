@@ -50,7 +50,7 @@ import { useOnColor } from './useOnColor.js';
  * stylesheet holds the names once and this reads them back through the cascade, so there is no second list of a
  * tone's tokens here to drift from it (B3a).
  */
-type Variant = 'primary' | 'default' | 'quiet' | 'gold' | 'violet';
+type Variant = 'primary' | 'default' | 'quiet' | 'gold' | 'violet' | 'danger';
 
 /** What a filled variant's label is solved FROM, and every stop of the fill it must clear. */
 interface Fill {
@@ -75,6 +75,7 @@ const FILLS: Readonly<Record<Variant, Fill | null>> = {
   quiet: null,
   gold: TONE_FILL,
   violet: TONE_FILL,
+  danger: TONE_FILL,
 };
 
 export interface ButtonProps {

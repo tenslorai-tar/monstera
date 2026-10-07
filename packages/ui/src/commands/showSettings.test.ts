@@ -389,6 +389,16 @@ describe('showSettingsCommand', () => {
       expect(reply.checked).toBeUndefined();
     });
 
+    it('an OPEN-PAGE report names the PLACE to main and replies nothing, asking no provider', async () => {
+      const { run, sent, replies } = harness({ reports: [{ values: {}, secrets: {}, openPage: 'azure-di-keys' }], listed: FETCHED });
+      await run();
+      expect(sent.filter((call) => call.id === 'app.openWebPage').map((call) => call.params)).toStrictEqual([
+        { page: 'azure-di-keys' },
+      ]);
+      expect(sent.map((call) => call.id)).not.toContain('ai.models');
+      expect(replies).toStrictEqual([]);
+    });
+
     it('CONTROL: a report without a check asks no provider and replies nothing', async () => {
       const { run, sent, replies } = harness({ reports: [{ values: { [THEME_SETTING.id]: 'dark' }, secrets: {} }], listed: FETCHED });
       await run();
