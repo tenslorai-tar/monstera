@@ -134,7 +134,7 @@ function ArticleList({
  * ## Where it opens
  *
  * On the article the opener named, when there is one; else on the list, with the articles for the opener's context
- * first under *For what you are doing*. Searching always searches everything.
+ * first under *Suggested for you*. Searching always searches everything.
  *
  * ## *Show me* answers, and the opener rings the control
  *

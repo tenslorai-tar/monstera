@@ -61,13 +61,15 @@ describe('the Help centre’s body', () => {
     drawn({ context: 'organize' });
     const here = HELP_ARTICLES.filter((article) => article.contexts.includes('organize')).map((article) => article.id);
     expect(here.length).toBeGreaterThan(0);
-    expect(screen.getByRole('heading', { name: 'For what you are doing' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Suggested for you' })).toBeDefined();
+    // THE OLD WORDS ARE GONE, so the heading above is the rename and not an addition beside the old one.
+    expect(screen.queryByRole('heading', { name: 'For what you are doing' })).toBeNull();
     expect(listed()).toStrictEqual([...here, ...HELP_ARTICLES.map((article) => article.id)]);
   });
 
-  it('CONTROL: with no context, no *For what you are doing* — only every article', () => {
+  it('CONTROL: with no context, no *Suggested for you* — only every article', () => {
     drawn({});
-    expect(screen.queryByRole('heading', { name: 'For what you are doing' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Suggested for you' })).toBeNull();
     expect(listed()).toStrictEqual(HELP_ARTICLES.map((article) => article.id));
   });
 
@@ -78,7 +80,7 @@ describe('the Help centre’s body', () => {
     expect(listed()[0]).toBe('rotate-pages');
     expect(screen.getByRole('status').textContent).toMatch(/\d+ articles|One article/u);
     // THE CONTEXT'S LIST GOES while searching: a search answers the words typed, not the place.
-    expect(screen.queryByRole('heading', { name: 'For what you are doing' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Suggested for you' })).toBeNull();
 
     fireEvent.change(field, { target: { value: 'rotate zzzznotaword' } });
     expect(listed()).toStrictEqual([]);

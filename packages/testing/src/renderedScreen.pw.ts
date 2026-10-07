@@ -3252,7 +3252,7 @@ test('F1 opens the HELP CENTRE, Ctrl+/ the keyboard shortcuts, and the start scr
   const help = page.getByRole('dialog', { name: 'Help centre' });
   await expect(help).toBeVisible();
   // THE START SCREEN'S ARTICLES FIRST, then every article: the list is the bundled articles, not an empty shell.
-  await expect(help.getByRole('heading', { name: 'For what you are doing' })).toBeVisible();
+  await expect(help.getByRole('heading', { name: 'Suggested for you' })).toBeVisible();
   await expect(help.locator('.m-help__item').first()).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(help).toHaveCount(0);

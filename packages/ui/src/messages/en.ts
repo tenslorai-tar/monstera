@@ -3314,7 +3314,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HELP_COMMAND_TITLE]: 'Help centre',
   [HELP_TITLE]: 'Help centre',
   [HELP_SEARCH]: 'Search help',
-  [HELP_HERE]: 'For what you are doing',
+  // WHAT THE HEADING PROMISES IS ITS OWN LIST: the articles for the part of Monstera the person is in. *For what you are
+  // doing* said nothing a reader could act on (the owner's review, 2026-10-06).
+  [HELP_HERE]: 'Suggested for you',
   [HELP_ALL]: 'All articles',
   [HELP_NONE]: 'No article matches that. Try fewer or different words.',
   [HELP_BACK]: 'Back to the list',

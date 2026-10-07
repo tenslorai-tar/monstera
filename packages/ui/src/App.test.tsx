@@ -2680,7 +2680,7 @@ describe('App', () => {
     });
 
     const dialog = await screen.findByRole('dialog', { name: 'Help centre' }, { timeout: 2000 });
-    const here = within(dialog).getByRole('heading', { name: 'For what you are doing' });
+    const here = within(dialog).getByRole('heading', { name: 'Suggested for you' });
     const listed = [...(here.closest('section')?.querySelectorAll('[data-article]') ?? [])].map((item) =>
       item.getAttribute('data-article'),
     );

@@ -11,7 +11,7 @@ The Help centre explains how to do each thing Monstera can do, in numbered steps
 ## Steps
 
 1. Press **F1**. Or open the **Help** menu and choose **Help centre**, or choose **Help centre** at the foot of the start screen.
-2. If a tool is in use, the Help centre opens on that tool's article. Otherwise it lists the articles for the part of Monstera you are in under **For what you are doing**, then **All articles**.
+2. If a tool is in use, the Help centre opens on that tool's article. Otherwise it lists the articles for the part of Monstera you are in under **Suggested for you**, then **All articles**.
 3. To find something else, type a few words in **Search help**. Every word you type must appear in an article for it to be listed.
 4. Choose an article to read it. **Back to the list** returns to the list.
 5. Where an article's tool has a button on screen, **Show me** lists it. Choose it and the Help centre closes, the part of the rail that holds the button comes to the front, and the button is outlined for a few seconds and takes the keyboard focus.
