@@ -106,3 +106,11 @@ Built:
 - **`listModels` is bounded** (`MODEL_LIST_TIMEOUT_MS`, ten seconds, one signal over the request and the body): the gap
   the correction above named. A provider that never answers is outside this repository, so a stated bound is the
   correct response; on expiry the answer is the fallback with `unreachable`.
+
+## Correction, 2026-10-07 — the row does not stay on what `main` holds
+
+The second correction above left the Settings row on the list `main` already held, and a launch holds only the build's
+fallback: the owner's recording of 2026-10-06 showed a saved model marked *not offered now* and a provider with *no
+models*, until the Assistant had asked. The dialog still opens on the held lists, and then asks each provider with a
+stored key for its own, through the opener's reply; a saved model is marked only by a list the provider gave.
+[ADR-0190](0190-settings-asks-the-provider-for-its-models-and-a-saved-model-is-never-called-not-offered-unasked.md).
