@@ -950,6 +950,68 @@ buttons, the Translate scope control and the barcode dialog's icon buttons meet 
 accessible names by construction (`aria-label` for an icon, a label for every field). If the board is red on axe, that is where
 to look first.
 
+### 1. Root cause or workaround?
+
+Every fix names its mechanism. The merge dialog could not choose pages because the contract's several-documents alternative
+had no per-part page set (ADR-0195), not because the dialog was missing a field. The 400 on a table read was the raster being
+larger than the model's own limit, so the raster is sized from one table of the models' limits (`claudeImageLimits`) rather
+than shrunk by a guessed constant. The barcode drag was the page grid keeping the pointer while a tool was armed: the grid is
+no longer given the organize handlers then. VVVVVVV-1 is the one fix that was a bound chosen before it was measured, and is
+said there.
+
+### 2. Verified against the easy shape only?
+
+The hard shapes were run: merge pages 2 and 4 of an eight-page file, with an invalid range named; a Haiku 4.5 raster over the
+standard limit against an Opus 5.5 control that is sent; a vCard whose lines are folded; an outline longer than the review
+holds. A model id the table cannot place is answered with the standard tier (VVVVVVV-4).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+One: `ribbonFoldStable.pw.ts` moved from 1280 to 960 (VVVVVVV-3). Nothing else was turned from an assertion into a derivation.
+
+### 3. Would CI have caught it?
+
+The vitest cases run in CI on both platforms. The first board read for the pushed branch was red on lint in nine files of
+my own earlier commits (a tree-wide lint, which this machine ran only on the files changed) and on this entry for lacking
+these answers; both are fixed in the commit after. The rendered ribbon, dialog and baseline cases are Playwright and are read
+on GitHub's visual job after the baselines were regenerated here.
+
+### 4. Are the proofs non-vacuous?
+
+Mutation-run: the armed-tool case (VVVVVVV-5). The merge, translate, barcode, contents and link cases each carry a control
+beside the case (an unticked default, an unarmed grid, a line that has no side handle, a kind with no outline), and the
+claude-limits case carries the Opus control that is sent. Not every one was mutated.
+
+### 4a. Resolution test before measuring?
+
+No measuring instrument arrived. The logo's fill was measured at 16 to 256 pixels by reading the generated files back, which
+distinguishes the previous 78.2 by 86.0 percent from the new 100 by 100.
+
+### 4b. A search with a positive control?
+
+The sweep for the retired dialog (VVVVVVV-6) was run with `grep` over four trees and found the places it listed, so it can see.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+`SIDE_RESIZABLE_KINDS` and `MAX_TOC_ENTRIES` are literals with a case each; neither is derived from the set it limits.
+
+### 5. Executed, or asserted?
+
+Executed: the changed files' vitest cases, ESLint on the changed files (and, after the red board, the whole tree), typecheck,
+the build, the visual regeneration, and the mutation in VVVVVVV-5. Asserted: VVVVVVV-7. Not run: the live Haiku check.
+
+### 6. Architecture before the feature, or underneath it?
+
+ADR-0194, 0195, 0196 and 0197 were each committed before the code they govern. Item 14's eight handles register into the
+select tool's existing placement and draw seams and need no ADR; the cursor change that would need the controller seam is not
+built and is said in the report.
+
+### 7. Do the documents still match the code?
+
+The Donate and Rate texts, the barcode and translate help articles, the table-of-contents article and the new article on
+formatting text in a text box were written with their changes. `docs/FEATURES.md` rows owed for this range are not yet updated
+and are named in the report.
+
 ## 2026-10-07 — Stage audit of `83751d8b..2056c7fa` — findings UUUUUUU-1 to UUUUUUU-6
 
 22 commits, 191 files (`npm run audit:scope`), owed because the next commit would take the range to 202 (one batch is
