@@ -87,7 +87,9 @@ function linkTool(
       // A VALUE THE RULE PASSED AND THIS CANNOT USE means the two disagree; refusing quietly leaves the page as it was.
       if (where === undefined) return undefined;
 
-      return { kind: 'addLink', page, rect, target: where };
+      // A THIN OUTLINE BY DEFAULT, in the document itself: a link with none is invisible in most viewers, so a link that
+      // was "added" and shows nothing reads as broken (the owner's review of 2026-10-07). Web and page links alike.
+      return { kind: 'addLink', page, rect, target: where, border: 'thin' };
     },
     preview: (gesture: Gesture): ToolPreview | undefined => {
       if (!drawn(gesture)) return undefined;

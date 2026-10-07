@@ -258,6 +258,7 @@ import {
 import { annotationTools } from './annotations/annotationTools.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
+import { LINK_ADDRESS_TOOL_ID, LINK_PAGE_TOOL_ID } from './annotations/linkTools.js';
 import { MEASURE_TOOL_IDS } from './annotations/measureTools.js';
 import { stickyNoteCommand } from './annotations/pointTools.js';
 import { type WordsMark, type WordsToEdit, wordsToEdit } from './annotations/markWords.js';
@@ -3382,8 +3383,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     },
     [ask, client, navigator.jumpTo, open, toast],
   );
-  // OUTLINED WHERE LINKS ARE MADE: the Comment section, whose ribbon holds the two link tools.
-  const linksOutlined = useSetting(settings, RIBBON_SECTION_SETTING) === 'comment';
+  // OUTLINED WHERE LINKS ARE MADE: the Comment section, whose ribbon holds the two link tools — and WHILE EITHER IS ARMED,
+  // wherever the person went since (the owner's review of 2026-10-07: every link on the page shows while one is being made).
+  const linksOutlined =
+    useSetting(settings, RIBBON_SECTION_SETTING) === 'comment' || toolId === LINK_ADDRESS_TOOL_ID || toolId === LINK_PAGE_TOOL_ID;
 
   /**
    * What the tool that is on waits for, for the status bar's tool line (ADR-0154 Decision 4). A drawing tool's hint is

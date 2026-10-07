@@ -323,6 +323,51 @@ describe('readPageLinks', () => {
     }
   });
 
+  describe('the link’s own OUTLINE, so it shows in any viewer (the owner’s review of 2026-10-07)', () => {
+    /** Every `/Link` of page 0 as the saved bytes say: its `/Border` and `/C`, read back by ANOTHER library. */
+    async function outlines(bytes: Uint8Array): Promise<{ border: number[] | undefined; colour: number[] | undefined }[]> {
+      const document = await PDFDocument.load(bytes);
+      const annots = document.getPage(0).node.lookup(PDFName.of('Annots'), PDFArray);
+      const numbersOf = (value: unknown): number[] | undefined =>
+        value instanceof PDFArray ? value.asArray().map((entry) => (entry instanceof PDFNumber ? entry.asNumber() : Number.NaN)) : undefined;
+      return annots.asArray().flatMap((entry) => {
+        const dictionary = document.context.lookup(entry);
+        if (!(dictionary instanceof Object) || !('get' in dictionary)) return [];
+        const dict = dictionary as { get: (name: PDFName) => unknown };
+        return [{ border: numbersOf(dict.get(PDFName.of('Border'))), colour: numbersOf(dict.get(PDFName.of('C'))) }];
+      });
+    }
+    const link = (border?: 'none' | 'thin', target: CommandOfKind<'addLink'>['target'] = { kind: 'uri', uri: 'https://example.org/a' }): CommandOfKind<'addLink'> => ({
+      kind: 'addLink',
+      page: 0,
+      rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
+      target,
+      ...(border === undefined ? {} : { border }),
+    });
+
+    it('a THIN link is written with a one-point blue border, and it SURVIVES the save', async () => {
+      const [only] = await outlines(await written(link('thin')));
+      expect(only).toStrictEqual({ border: [0, 0, 1], colour: [0, 0.4, 0.8] });
+    });
+
+    it('the same for a PAGE link — one fix for every link, not two', async () => {
+      const [only] = await outlines(await written(link('thin', { kind: 'page', page: 2 })));
+      expect(only).toStrictEqual({ border: [0, 0, 1], colour: [0, 0.4, 0.8] });
+    });
+
+    it('CONTROL: NONE writes an explicit zero-width border and no colour, which is what separates it from thin', async () => {
+      const [only] = await outlines(await written(link('none')));
+      expect(only?.border).toStrictEqual([0, 0, 0]);
+      expect(only?.colour).toBeUndefined();
+    });
+
+    it('CONTROL: with no border asked the engine’s own entries are left, so the field is what writes it', async () => {
+      const [only] = await outlines(await written(link()));
+      expect(only?.border).not.toStrictEqual([0, 0, 1]);
+      expect(only?.colour).toBeUndefined();
+    });
+  });
+
   it('is INVISIBLE to the annotation walk, which is what made it its own command', async () => {
     // MEASURED 2026-09-06: `createLink` makes an object `getAnnotations()` does
     // not return, and `createAnnotation('Link')` makes a different one that it

@@ -231,7 +231,35 @@ export const applyAddLink: Apply<'mupdf', 'addLink'> = (
     // destroyed rather than left to a finaliser; the object has done its work
     // by the time `createLink` returns.
     link.destroy();
+    if (command.border !== undefined) writeLinkBorder(document, loaded, command.border);
   });
+
+/**
+ * The outline of a link: a one-point blue `/Border` for `thin`, an explicit zero-width one for `none`.
+ *
+ * ## The link just made is the LAST entry of the page's `/Annots`
+ *
+ * `createLink` appends, and the page's annotation walk never lists a link (`addLinkSchema`), so the array's last entry is the
+ * one this command made. It is found by that, asserted by the proof reading it back from the saved bytes, and a page whose
+ * `/Annots` is not an array of dictionaries is left alone rather than guessed at.
+ */
+function writeLinkBorder(document: mupdf.PDFDocument, page: mupdf.PDFPage, border: 'none' | 'thin'): void {
+  const annots = page.getObject().get('Annots');
+  if (!annots.isArray() || annots.length === 0) return;
+  const made = annots.get(annots.length - 1);
+  if (!made.isDictionary()) return;
+  const numbers = (values: readonly number[]): mupdf.PDFObject => {
+    const array = document.newArray();
+    for (const value of values) array.push(document.newReal(value));
+    return array;
+  };
+  made.put('Border', numbers([0, 0, border === 'thin' ? LINK_BORDER_WIDTH : 0]));
+  if (border === 'thin') made.put('C', numbers(LINK_BORDER_COLOUR));
+}
+
+/** A thin link outline: one point wide, in a blue that reads on white paper (the accent's family). */
+const LINK_BORDER_WIDTH = 1;
+const LINK_BORDER_COLOUR: readonly number[] = [0, 0.4, 0.8];
 
 /**
  * Reports that a link's addition records no prior state.

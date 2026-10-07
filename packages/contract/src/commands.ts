@@ -2772,6 +2772,14 @@ export const addLinkSchema = z.object({
   /** The rectangle it covers, in PDF user space. */
   rect: annotationRectSchema,
   target: linkTargetSchema,
+  /**
+   * Whether the link has a VISIBLE outline in the document itself (the owner's review of 2026-10-07, item 11): `thin` writes
+   * a one-point `/Border` in blue, `none` writes an explicit zero-width one, and absent leaves what the engine wrote.
+   * **Both are written because a PDF link with no `/Border` is drawn by many viewers as a black rectangle**, and one with
+   * none of its own is invisible in others, so a link that is "added" and shows nothing is the standard behaviour that reads as
+   * broken. The same field serves a web link and a page link: they are one command.
+   */
+  border: z.enum(['none', 'thin']).optional(),
 }).strict();
 
 /**

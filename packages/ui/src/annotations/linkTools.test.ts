@@ -64,7 +64,14 @@ describe('linkTools', () => {
     expect(requests.map(({ check: _rule, ...request }) => request)).toStrictEqual([
       { page: 3, box: rect, shape: 'line', initial: '', label: LINK_ADDRESS_LABEL },
     ]);
-    expect(command).toStrictEqual({ kind: 'addLink', page: 3, rect, target: { kind: 'uri', uri: 'https://example.org/a' } });
+    expect(command).toStrictEqual({
+      kind: 'addLink',
+      page: 3,
+      rect,
+      target: { kind: 'uri', uri: 'https://example.org/a' },
+      // A VISIBLE OUTLINE, which a link without one is not (item 11).
+      border: 'thin',
+    });
   });
 
   it('carries the ADDRESS rule: a scheme this build allows passes, a bare host is refused', async () => {
@@ -80,6 +87,8 @@ describe('linkTools', () => {
     const { tools, requests } = built('3');
     expect(await drag(toolFor(tools, LINK_PAGE_TOOL_ID), [20, 20], [100, 60])).toMatchObject({
       target: { kind: 'page', page: 2 },
+      // THE PAGE LINK HAS THE OUTLINE TOO: one fix for every link annotation, not two.
+      border: 'thin',
     });
     expect(requests[0]?.label).toBe(LINK_PAGE_LABEL);
     expect([requests[0]?.check?.('3'), requests[0]?.check?.('four'), requests[0]?.check?.('1e3')]).toStrictEqual([
