@@ -9,6 +9,10 @@ import {
   DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
   type SecretSettingId,
   type FieldFill,
+  type FormFieldHandle,
+  type FormFieldProperties,
+  type FormFieldRead,
+  MAX_READ_FIELDS,
   type MeasureScale,
   type DispatchableCommand,
   type UpdateStatus,
@@ -272,9 +276,12 @@ import {
   type FieldSelection,
   type SelectMode,
   fieldKey,
+  carry as carryFieldSelection,
   liveKeys,
   select as chooseField,
 } from './forms/fieldSelection.js';
+import { FieldPropertiesPanel } from './forms/FieldPropertiesPanel.js';
+import { useFormFieldList } from './forms/useFormFieldList.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
 import { MEASURE_TOOL_IDS } from './annotations/measureTools.js';
@@ -1154,6 +1161,64 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       },
     }),
     [fieldReveal, selectField, selectedFieldKeys],
+  );
+  /**
+   * THE SELECTED FIELDS, NAMED (ADR-0193): the keys of the selection joined to the list the document has at this version,
+   * in the order they were chosen. A key the list does not hold is dropped, never named by guesswork.
+   */
+  const formFieldList = useFormFieldList(client, activeId, openVersion);
+  const selectedHandles = useMemo((): readonly FormFieldHandle[] => {
+    const byKey = new Map(formFieldList.fields.map((field) => [fieldKey(field.page, field.index), field]));
+    const handles: FormFieldHandle[] = [];
+    for (const key of liveKeys(fieldSelection, openVersion)) {
+      const field = byKey.get(key);
+      if (field !== undefined) handles.push({ page: field.page, index: field.index, name: field.name });
+    }
+    return handles;
+  }, [fieldSelection, formFieldList.fields, openVersion]);
+  const readFieldProperties = useCallback(
+    async (handles: readonly FormFieldHandle[]): Promise<readonly (FormFieldRead | null)[]> => {
+      if (activeId === undefined) return handles.map(() => null);
+      const answer = await client['document.formFieldProperties']({ docId: activeId, fields: handles.slice(0, MAX_READ_FIELDS) });
+      return answer.ok ? answer.value.fields : handles.map(() => null);
+    },
+    [activeId, client],
+  );
+  /**
+   * One change to every selected field: ONE command and one undo step. The name, the choices and the calculation belong to
+   * one field and ride in the single-edit shape (`editFormFieldsSchema`); everything else is the shared shape.
+   * The selection is carried across it, since a change to a field's dictionary moves no widget.
+   */
+  const editSelectedFields = useCallback(
+    (set: FormFieldProperties): void => {
+      const first = selectedHandles[0];
+      if (activeId === undefined || openVersion === undefined || first === undefined) return;
+      const version = openVersion;
+      const { options, calculation, ...shared } = set;
+      const lists = options !== undefined || calculation !== undefined;
+      const command: DispatchableCommand = {
+        kind: 'editFormFields',
+        edits: lists
+          ? ([{ field: first, set }] as const)
+          : selectedHandles.map((field) => ({ field, set: shared })),
+        version,
+      };
+      void applyDocumentCommand(
+        {
+          client,
+          onApplied: (answer) => {
+            applied(answer);
+            setFieldSelection((current) => carryFieldSelection(current, version, answer.version));
+          },
+          ask,
+          stamp,
+          signatures,
+        },
+        activeId,
+        command,
+      );
+    },
+    [activeId, applied, ask, client, openVersion, selectedHandles, signatures, stamp],
   );
   // ESCAPE AND A PRESS ON EMPTY PAGE DESELECT, only while something is selected: a press on a field's own control is the
   // selection's and a press on the page's paper is not.
@@ -4008,18 +4073,32 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
             >
               {/* THE SELECTED MARKS' STYLE, changed as each control is used, or with nothing
                   selected the authoring settings (ADR-0102). */}
-              <PropertiesPanel
-                measuring={toolId !== undefined && MEASURE_TOOL_IDS.has(toolId)}
-                context={context}
-                onComment={commentSelection}
-                wordsOf={wordsOf}
-                onAuthor={authorSelection}
-                onRestyle={restyleSelection}
-                registry={registry}
-                selection={selection}
-                settings={settings}
-                object={objectSelection === undefined ? undefined : { pick: objectSelection, onRecolour: recolourObject }}
-              />
+              {/* SELECTED FORM FIELDS take the tab while no mark or object is selected (ADR-0193): the tool slot
+                  holds one of them at a time, and a field is selected from the Fields list or the page. */}
+              {selectedHandles.length > 0 && selection === undefined && objectSelection === undefined ? (
+                <FieldPropertiesPanel
+                  context={context}
+                  known={formFieldList.fields.map((field) => ({ name: field.name, kind: field.kind, options: field.options }))}
+                  onEdit={editSelectedFields}
+                  read={readFieldProperties}
+                  registry={registry}
+                  selected={selectedHandles}
+                  version={open.version}
+                />
+              ) : (
+                <PropertiesPanel
+                  measuring={toolId !== undefined && MEASURE_TOOL_IDS.has(toolId)}
+                  context={context}
+                  onComment={commentSelection}
+                  wordsOf={wordsOf}
+                  onAuthor={authorSelection}
+                  onRestyle={restyleSelection}
+                  registry={registry}
+                  selection={selection}
+                  settings={settings}
+                  object={objectSelection === undefined ? undefined : { pick: objectSelection, onRecolour: recolourObject }}
+                />
+              )}
             </ContextPanel>
           }
           // §10.3's DOCUMENT PANELS other than Pages, built here where their state lives.

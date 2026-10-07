@@ -1,7 +1,7 @@
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { type FieldSelection, fieldKey, liveKeys, modeOf, select } from './fieldSelection.js';
+import { type FieldSelection, carry, fieldKey, liveKeys, modeOf, select } from './fieldSelection.js';
 
 const V1 = asDocVersion(1);
 const V2 = asDocVersion(2);
@@ -39,6 +39,20 @@ describe('field selection', () => {
     expect(liveKeys(held, V2)).toStrictEqual([]);
     // AND A CLICK AT THE NEW VERSION STARTS FRESH rather than adding to the stale one.
     expect(liveKeys(select(held, V2, ORDER[1] ?? '', 'toggle', ORDER), V2)).toStrictEqual([fieldKey(0, 1)]);
+  });
+
+  it('is carried across a command that keeps the walk, so the pane can be used again on the same fields', () => {
+    const held = select(select(undefined, V1, ORDER[0] ?? '', 'replace', ORDER), V1, ORDER[2] ?? '', 'toggle', ORDER);
+    const carried = carry(held, V1, V2);
+    expect(liveKeys(carried, V2)).toStrictEqual([fieldKey(0, 0), fieldKey(0, 2)]);
+    expect(liveKeys(carried, V1), 'and names nothing at the version it left').toStrictEqual([]);
+  });
+
+  it('CONTROL: a selection from another version than the one the command was made at is left alone, and none stays none', () => {
+    const stale = select(undefined, V1, ORDER[0] ?? '', 'replace', ORDER);
+    expect(carry(stale, V2, asDocVersion(3))).toBe(stale);
+    expect(carry(undefined, V1, V2)).toBeUndefined();
+    expect(liveKeys(carry(stale, V2, asDocVersion(3)), asDocVersion(3))).toStrictEqual([]);
   });
 
   it('reads the modifier keys: Shift before Ctrl, neither is a plain click', () => {

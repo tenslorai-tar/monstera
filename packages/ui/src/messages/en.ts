@@ -1166,6 +1166,65 @@ export const FLAT_FIELDS_TITLE = messageKey('dialog.flat-fields.title');
 export const FLAT_FIELDS_GUESSED = messageKey('dialog.flat-fields.guessed');
 export const FLAT_FIELDS_NONE = messageKey('dialog.flat-fields.none');
 export const FLAT_FIELDS_TRUNCATED = messageKey('dialog.flat-fields.truncated');
+// THE PROPERTIES PANE FOR SELECTED FORM FIELDS (ADR-0193).
+export const FIELD_PROPS_LABEL = messageKey('properties.field.label');
+export const FIELD_PROPS_HEADING_ONE = messageKey('properties.field.heading-one');
+export const FIELD_PROPS_HEADING_MANY = messageKey('properties.field.heading-many');
+export const FIELD_PROPS_WHERE = messageKey('properties.field.where');
+export const FIELD_PROPS_FIRST_SHOWN = messageKey('properties.field.first-shown');
+export const FIELD_PROPS_ONE_ONLY = messageKey('properties.field.one-only');
+export const FIELD_PROPS_UNREADABLE = messageKey('properties.field.unreadable');
+export const FIELD_PROPS_NAME = messageKey('properties.field.name');
+export const FIELD_PROPS_TOOLTIP = messageKey('properties.field.tooltip');
+export const FIELD_PROPS_REQUIRED = messageKey('properties.field.required');
+export const FIELD_PROPS_READ_ONLY = messageKey('properties.field.read-only');
+export const FIELD_PROPS_DEFAULT = messageKey('properties.field.default');
+export const FIELD_PROPS_FONT = messageKey('properties.field.font');
+export const FIELD_PROPS_FONT_HELVETICA = messageKey('properties.field.font.helvetica');
+export const FIELD_PROPS_FONT_TIMES = messageKey('properties.field.font.times');
+export const FIELD_PROPS_FONT_COURIER = messageKey('properties.field.font.courier');
+export const FIELD_PROPS_FONT_SIZE = messageKey('properties.field.font-size');
+export const FIELD_PROPS_BORDER_COLOUR = messageKey('properties.field.border-colour');
+export const FIELD_PROPS_FILL_COLOUR = messageKey('properties.field.fill-colour');
+export const FIELD_PROPS_COLOUR_NONE = messageKey('properties.field.colour-none');
+export const FIELD_PROPS_COLOUR_BLACK = messageKey('properties.field.colour-black');
+export const FIELD_PROPS_COLOUR_WHITE = messageKey('properties.field.colour-white');
+export const FIELD_PROPS_BORDER_WIDTH = messageKey('properties.field.border-width');
+export const FIELD_PROPS_MULTILINE = messageKey('properties.field.multiline');
+export const FIELD_PROPS_OPTIONS = messageKey('properties.field.options');
+export const FIELD_PROPS_OPTIONS_HINT = messageKey('properties.field.options-hint');
+export const FIELD_PROPS_FORMAT = messageKey('properties.field.format');
+export const FIELD_PROPS_FORMAT_NONE = messageKey('properties.field.format.none');
+export const FIELD_PROPS_FORMAT_NUMBER = messageKey('properties.field.format.number');
+export const FIELD_PROPS_FORMAT_PERCENT = messageKey('properties.field.format.percent');
+export const FIELD_PROPS_FORMAT_DATE = messageKey('properties.field.format.date');
+export const FIELD_PROPS_FORMAT_TIME = messageKey('properties.field.format.time');
+export const FIELD_PROPS_FORMAT_CUSTOM = messageKey('properties.field.format.custom');
+export const FIELD_PROPS_DECIMALS = messageKey('properties.field.decimals');
+export const FIELD_PROPS_SEPARATORS = messageKey('properties.field.separators');
+export const FIELD_PROPS_SEPARATORS_COMMA_DOT = messageKey('properties.field.separators.comma-dot');
+export const FIELD_PROPS_SEPARATORS_NONE_DOT = messageKey('properties.field.separators.none-dot');
+export const FIELD_PROPS_SEPARATORS_DOT_COMMA = messageKey('properties.field.separators.dot-comma');
+export const FIELD_PROPS_SEPARATORS_NONE_COMMA = messageKey('properties.field.separators.none-comma');
+export const FIELD_PROPS_SEPARATORS_APOSTROPHE_DOT = messageKey('properties.field.separators.apostrophe-dot');
+export const FIELD_PROPS_NEGATIVE = messageKey('properties.field.negative');
+export const FIELD_PROPS_NEGATIVE_MINUS = messageKey('properties.field.negative.minus');
+export const FIELD_PROPS_NEGATIVE_RED = messageKey('properties.field.negative.red');
+export const FIELD_PROPS_NEGATIVE_PARENS = messageKey('properties.field.negative.parens');
+export const FIELD_PROPS_CURRENCY = messageKey('properties.field.currency');
+export const FIELD_PROPS_CURRENCY_BEFORE = messageKey('properties.field.currency-before');
+export const FIELD_PROPS_DATE_PATTERN = messageKey('properties.field.date-pattern');
+export const FIELD_PROPS_TIME_PATTERN = messageKey('properties.field.time-pattern');
+export const FIELD_PROPS_CALCULATION = messageKey('properties.field.calculation');
+export const FIELD_PROPS_CALCULATION_NONE = messageKey('properties.field.calculation.none');
+export const FIELD_PROPS_CALCULATION_SUM = messageKey('properties.field.calculation.sum');
+export const FIELD_PROPS_CALCULATION_PRODUCT = messageKey('properties.field.calculation.product');
+export const FIELD_PROPS_CALCULATION_AVERAGE = messageKey('properties.field.calculation.average');
+export const FIELD_PROPS_CALCULATION_MIN = messageKey('properties.field.calculation.min');
+export const FIELD_PROPS_CALCULATION_MAX = messageKey('properties.field.calculation.max');
+export const FIELD_PROPS_CALCULATION_FIELDS = messageKey('properties.field.calculation-fields');
+export const FIELD_PROPS_CALCULATION_CUSTOM = messageKey('properties.field.calculation-custom');
+export const FIELD_PROPS_CALCULATION_ORDER = messageKey('properties.field.calculation-order');
 export const FLAT_FIELDS_ALL_TEXT = messageKey('dialog.flat-fields.all-text');
 export const FLAT_FIELDS_ACCEPT = messageKey('dialog.flat-fields.accept');
 export const FLAT_FIELDS_FOUND = messageKey('dialog.flat-fields.found');
@@ -3506,6 +3565,64 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLAT_FIELDS_TITLE]: 'Fields this page could have',
   [FLAT_FIELDS_GUESSED]:
     'Monstera looked for ruled lines and boxes with a label beside them and nothing written in them. An empty box in a table looks the same, so check the list before accepting it.',
+  [FIELD_PROPS_LABEL]: 'Field properties',
+  [FIELD_PROPS_HEADING_ONE]: 'Field',
+  [FIELD_PROPS_HEADING_MANY]: '{count} fields',
+  [FIELD_PROPS_WHERE]: 'Page {page}',
+  [FIELD_PROPS_FIRST_SHOWN]: 'This shows the first selected field. A change you make applies to every selected field.',
+  [FIELD_PROPS_ONE_ONLY]: 'The name, the choices and the calculation belong to one field. Select a single field to change them.',
+  [FIELD_PROPS_UNREADABLE]: 'This field has changed since it was selected. Select it again to see its properties.',
+  [FIELD_PROPS_NAME]: 'Name',
+  [FIELD_PROPS_TOOLTIP]: 'Tooltip',
+  [FIELD_PROPS_REQUIRED]: 'Required',
+  [FIELD_PROPS_READ_ONLY]: 'Read only',
+  [FIELD_PROPS_DEFAULT]: 'Default value',
+  [FIELD_PROPS_FONT]: 'Font',
+  [FIELD_PROPS_FONT_HELVETICA]: 'Helvetica',
+  [FIELD_PROPS_FONT_TIMES]: 'Times',
+  [FIELD_PROPS_FONT_COURIER]: 'Courier',
+  [FIELD_PROPS_FONT_SIZE]: 'Size (0 is automatic)',
+  [FIELD_PROPS_BORDER_COLOUR]: 'Border colour',
+  [FIELD_PROPS_FILL_COLOUR]: 'Fill colour',
+  [FIELD_PROPS_COLOUR_NONE]: 'None',
+  [FIELD_PROPS_COLOUR_BLACK]: 'Black',
+  [FIELD_PROPS_COLOUR_WHITE]: 'White',
+  [FIELD_PROPS_BORDER_WIDTH]: 'Border width',
+  [FIELD_PROPS_MULTILINE]: 'Several lines',
+  [FIELD_PROPS_OPTIONS]: 'Choices',
+  [FIELD_PROPS_OPTIONS_HINT]: 'One choice on each line. For a radio group these are the values of its options, in the order they sit.',
+  [FIELD_PROPS_FORMAT]: 'Format',
+  [FIELD_PROPS_FORMAT_NONE]: 'None',
+  [FIELD_PROPS_FORMAT_NUMBER]: 'Number',
+  [FIELD_PROPS_FORMAT_PERCENT]: 'Percentage',
+  [FIELD_PROPS_FORMAT_DATE]: 'Date',
+  [FIELD_PROPS_FORMAT_TIME]: 'Time',
+  [FIELD_PROPS_FORMAT_CUSTOM]: 'A script from another program. It is kept as it is.',
+  [FIELD_PROPS_DECIMALS]: 'Decimal places',
+  [FIELD_PROPS_SEPARATORS]: 'Separators',
+  [FIELD_PROPS_SEPARATORS_COMMA_DOT]: '1,234.56',
+  [FIELD_PROPS_SEPARATORS_NONE_DOT]: '1234.56',
+  [FIELD_PROPS_SEPARATORS_DOT_COMMA]: '1.234,56',
+  [FIELD_PROPS_SEPARATORS_NONE_COMMA]: '1234,56',
+  [FIELD_PROPS_SEPARATORS_APOSTROPHE_DOT]: '1’234.56',
+  [FIELD_PROPS_NEGATIVE]: 'Negative numbers',
+  [FIELD_PROPS_NEGATIVE_MINUS]: 'With a minus sign',
+  [FIELD_PROPS_NEGATIVE_RED]: 'In red',
+  [FIELD_PROPS_NEGATIVE_PARENS]: 'In brackets',
+  [FIELD_PROPS_CURRENCY]: 'Currency sign',
+  [FIELD_PROPS_CURRENCY_BEFORE]: 'Sign before the number',
+  [FIELD_PROPS_DATE_PATTERN]: 'Date pattern',
+  [FIELD_PROPS_TIME_PATTERN]: 'Time pattern',
+  [FIELD_PROPS_CALCULATION]: 'Calculation',
+  [FIELD_PROPS_CALCULATION_NONE]: 'None',
+  [FIELD_PROPS_CALCULATION_SUM]: 'Sum',
+  [FIELD_PROPS_CALCULATION_PRODUCT]: 'Product',
+  [FIELD_PROPS_CALCULATION_AVERAGE]: 'Average',
+  [FIELD_PROPS_CALCULATION_MIN]: 'Smallest',
+  [FIELD_PROPS_CALCULATION_MAX]: 'Largest',
+  [FIELD_PROPS_CALCULATION_FIELDS]: 'Fields it works from',
+  [FIELD_PROPS_CALCULATION_CUSTOM]: 'A script from another program. It is kept as it is.',
+  [FIELD_PROPS_CALCULATION_ORDER]: 'Calculation order (1 is first)',
   [FLAT_FIELDS_NONE]: 'Nothing on this page looks like a place to write.',
   [FLAT_FIELDS_TRUNCATED]: 'There were more than Monstera lists here, so this page may have others.',
   [FLAT_FIELDS_ALL_TEXT]:

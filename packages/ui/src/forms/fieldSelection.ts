@@ -69,6 +69,21 @@ export function select(
   return { version, keys: [key], anchor: key };
 }
 
+/**
+ * The selection carried across a command that keeps the widget walk, so the Properties pane can be used again on the
+ * same fields (the annotation selection's `carrySelection`, ADR-0102).
+ *
+ * `editFormFields` changes a field's dictionary and moves no widget, so the position of every field is where it was and
+ * only the version moved. A selection made at another version than `from` is left as it is, and so is none.
+ */
+export function carry(
+  selection: FieldSelection | undefined,
+  from: DocVersion,
+  to: DocVersion,
+): FieldSelection | undefined {
+  return selection?.version === from ? { ...selection, version: to } : selection;
+}
+
 /** The mode a click's modifier keys ask for. Ctrl and Cmd toggle, Shift takes a run, and neither replaces. */
 export function modeOf(event: { readonly ctrlKey: boolean; readonly metaKey: boolean; readonly shiftKey: boolean }): SelectMode {
   if (event.shiftKey) return 'range';

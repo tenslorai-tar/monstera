@@ -184,6 +184,33 @@ test.describe('the Forms tab', () => {
     await expect(page.locator('[data-form-selected]')).toHaveCount(0);
   });
 
+  test('a selected field shows its properties in the Properties tab, and a control sends exactly one editFormFields for it', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openForms(page, sent);
+    await openSection(page, 'Forms');
+    await runCommand(page, 'Fields list');
+    await page.locator('.m-forms-jump', { hasText: 'Full name' }).click();
+
+    const pane = page.locator('[data-field-properties]');
+    await expect(pane).toBeVisible();
+    // THE PANE READ THE FIELD, by its handle.
+    expect(sent.filter((call) => call.channel === 'document.formFieldProperties').length).toBeGreaterThan(0);
+    await pane.getByLabel('Tooltip').fill('Your full legal name');
+    await pane.getByLabel('Tooltip').blur();
+    const edits = sent.filter((call) => call.channel === 'document.execute');
+    expect(edits.length).toBe(1);
+    expect(edits[0]?.params).toMatchObject({
+      docId: ID,
+      command: {
+        kind: 'editFormFields',
+        edits: [{ field: { page: 0, index: 0, name: 'Full name' }, set: { tooltip: 'Your full legal name' } }],
+      },
+    });
+    // AND THE SELECTION SURVIVED IT, so the next control is used on the same field.
+    await expect(page.locator('[data-form-selected="0"]')).toBeVisible();
+    await expect(pane).toBeVisible();
+  });
+
   test('a name the form already has is said where it is typed, in words, and nothing is sent', async ({ page }) => {
     const sent: { channel: string; params: unknown }[] = [];
     await openForms(page, sent);
