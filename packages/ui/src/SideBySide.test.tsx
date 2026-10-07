@@ -245,6 +245,42 @@ describe('Compare — the walk runs when asked, and its list jumps to each chang
     expect(screen.getByText('No differences found.')).toBeTruthy();
   });
 
+  it('says WHAT is compared, and when NO page matches says the documents have nothing in common (the owner’s review, 2026-10-06)', async () => {
+    // TWO UNRELATED FILES, as the owner compared: one page each and no words shared, so the alignment matches nothing and
+    // the list is one page removed and one added — true, and read as an error without a word of explanation.
+    const { client } = clientFor(
+      new Map([
+        [LEFT, 'Invoice number 4471 for the month of March totals three hundred'],
+        [RIGHT, 'Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod'],
+      ]),
+    );
+    const { container } = mount(client);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
+    await settle();
+    expect(container.querySelector('[data-side-what]')?.textContent).toContain('Pages are matched by what is on them');
+    expect(container.querySelector('[data-side-what]')?.textContent).toContain('“Page removed”');
+    expect(container.querySelector('[data-side-no-common]')?.textContent).toBe(
+      'These documents have no pages in common. They look like different documents.',
+    );
+    expect(container.querySelectorAll('[data-side-row]').length).toBeGreaterThan(0);
+  });
+
+  it('CONTROL: documents that share a page get the explanation of what is compared and NOT the no-pages-in-common sentence', async () => {
+    const { client } = clientFor(
+      new Map([
+        [LEFT, 'The quick brown fox jumps over'],
+        [RIGHT, 'The quick red fox jumps over'],
+      ]),
+    );
+    const { container } = mount(client);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
+    await settle();
+    expect(container.querySelector('[data-side-what]')).not.toBeNull();
+    expect(container.querySelector('[data-side-no-common]')).toBeNull();
+  });
+
   // THE OWNER'S REVIEW OF 0.1.9.0: the panel had no close, Cancel sat beside Compare, a second Compare walked again,
   // and Esc left Side by Side with the panel still open.
   it('the Differences close hides the panel; Compare then shows the HELD list again without reading anything', async () => {

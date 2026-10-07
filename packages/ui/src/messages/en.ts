@@ -784,6 +784,8 @@ export const SIDE_DIFFERENCES = messageKey('surface.side-by-side.differences');
 export const SIDE_DIFFERENCES_CLOSE = messageKey('surface.side-by-side.differences-close');
 export const SIDE_COUNT = messageKey('surface.side-by-side.count');
 export const SIDE_NONE = messageKey('surface.side-by-side.none');
+export const SIDE_WHAT = messageKey('surface.side-by-side.what');
+export const SIDE_NO_COMMON = messageKey('surface.side-by-side.no-common');
 export const SIDE_MORE = messageKey('surface.side-by-side.more');
 export const SIDE_CLIPPED = messageKey('surface.side-by-side.clipped');
 export const SIDE_REFUSED = messageKey('surface.side-by-side.refused');
@@ -2982,6 +2984,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIDE_DIFFERENCES_CLOSE]: 'Close Differences',
   [SIDE_COUNT]: '{count, plural, one {# difference} other {# differences}}',
   [SIDE_NONE]: 'No differences found.',
+  [SIDE_WHAT]:
+    'Pages are matched by what is on them. Each matched pair is then compared for text, layout, notes and pictures. A page only the left document has is “Page removed”, and a page only the right has is “Page added”.',
+  [SIDE_NO_COMMON]: 'These documents have no pages in common. They look like different documents.',
   [SIDE_MORE]: 'There are more differences than can be listed. Only the first {count} are shown.',
   [SIDE_CLIPPED]:
     '{count, plural, one {One page has more text than can be compared at once, so part of its text was not compared.} other {# pages have more text than can be compared at once, so part of their text was not compared.}}',

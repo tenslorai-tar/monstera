@@ -4977,6 +4977,12 @@ optgroup {
   color: var(--muted);
 }
 
+/* THE ONE SENTENCE THE LIST HINGES ON (no page in common) reads in the text colour, above the rows it explains. */
+.m-side__note--lead {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .m-side__rows {
   list-style: none;
   margin: 0;

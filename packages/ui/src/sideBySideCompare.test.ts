@@ -135,7 +135,29 @@ function comparable(page: FakePage): ComparePage {
 describe('Side by Side — the four fixtures ADR-0131 names, through the walk the overlay runs', () => {
   it('an INSERTED PAGE is one row, and the pages after it are matched to their counterparts and report nothing', async () => {
     const rows = await compare([intro, terms, close], [intro, appendix, terms, close]);
-    expect(rows).toStrictEqual([{ kind: 'inserted', right: 1, box: { x0: 0, y0: 0, x1: PAGE, y1: PAGE } }]);
+    // `near: 1` IS WHERE THE LEFT HALF GOES: the left page that comes next in the alignment, the one the added page sits
+    // before, so choosing the row takes BOTH halves to the same place.
+    expect(rows).toStrictEqual([{ kind: 'inserted', right: 1, near: 1, box: { x0: 0, y0: 0, x1: PAGE, y1: PAGE } }]);
+  });
+
+  it('a REMOVED PAGE names where the right half goes, and CONTROL: one past the end goes to the end', async () => {
+    const rows = await compare([intro, appendix, terms], [intro, terms]);
+    expect(rows).toStrictEqual([{ kind: 'removed', left: 1, near: 1, box: { x0: 0, y0: 0, x1: PAGE, y1: PAGE } }]);
+    // THE LAST PAGE REMOVED: the right document has no page after its last, so the half goes to that last page.
+    const atEnd = await compare([intro, terms, appendix], [intro, terms]);
+    expect(atEnd).toStrictEqual([{ kind: 'removed', left: 2, near: 1, box: { x0: 0, y0: 0, x1: PAGE, y1: PAGE } }]);
+  });
+
+  it('two documents with NO PAGE IN COMMON match nothing, and say so in the result the panel reads', async () => {
+    const { client } = clientFor(new Map([[LEFT, [intro]], [RIGHT, [appendix]]]));
+    const outcome = await compareSides(client, side(LEFT, [intro]), side(RIGHT, [appendix]), new AbortController().signal, () => undefined);
+    if (outcome.kind !== 'done') throw new Error(outcome.kind);
+    expect([outcome.result.matched, outcome.result.removed, outcome.result.inserted]).toStrictEqual([0, 1, 1]);
+    // CONTROL: the same page in both is one match and no difference, so a zero above is the fixture's doing.
+    const twin = clientFor(new Map([[LEFT, [intro]], [RIGHT, [intro]]]));
+    const same = await compareSides(twin.client, side(LEFT, [intro]), side(RIGHT, [intro]), new AbortController().signal, () => undefined);
+    if (same.kind !== 'done') throw new Error(same.kind);
+    expect([same.result.matched, same.result.found]).toStrictEqual([1, 0]);
   });
 
   it('CONTROL: the same documents paired page by NUMBER differ on every page after the insertion, and on none before it', () => {

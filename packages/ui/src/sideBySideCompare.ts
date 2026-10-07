@@ -54,8 +54,14 @@ export type CompareRow =
       readonly right: number;
       readonly change: PairChange;
     }
-  | { readonly kind: 'removed'; readonly left: number; readonly box: CompareBox }
-  | { readonly kind: 'inserted'; readonly right: number; readonly box: CompareBox };
+  /**
+   * A page only the left document has. `near` is where the OTHER half is taken when the row is chosen: the right page
+   * that comes next in the alignment, since there is no matching one to go to — so choosing the row moves both halves
+   * to the same place in the two documents and not one half alone.
+   */
+  | { readonly kind: 'removed'; readonly left: number; readonly near: number; readonly box: CompareBox }
+  /** A page only the right document has; `near` is the left page that comes next, as {@link CompareRow}'s removed row's. */
+  | { readonly kind: 'inserted'; readonly right: number; readonly near: number; readonly box: CompareBox };
 
 /** What a finished comparison found. */
 export interface ComparisonResult {
@@ -170,6 +176,10 @@ async function walk(
     if (rows.length < MAX_COMPARE_CHANGES) rows.push(row);
   };
 
+  // THE NEXT PAGE OF EACH DOCUMENT NOT YET REACHED in the alignment, which is where the other half goes for a page only
+  // one side has. Clamped to the last page, so a page past the end of the other document goes to that document's end.
+  let nextLeft = 0;
+  let nextRight = 0;
   for (const entry of alignment) {
     if (aborted()) return { kind: 'cancelled' };
     if (entry.kind === 'removed' || entry.kind === 'inserted') {
@@ -179,10 +189,18 @@ async function walk(
       if (aborted()) return { kind: 'cancelled' };
       const size = displaySize(drawn);
       const box = { x0: 0, y0: 0, x1: size.width, y1: size.height };
-      add(entry.kind === 'removed' ? { kind: 'removed', left: page, box } : { kind: 'inserted', right: page, box });
+      if (entry.kind === 'removed') {
+        add({ kind: 'removed', left: page, near: Math.min(nextRight, Math.max(0, right.pageCount - 1)), box });
+        nextLeft = entry.left + 1;
+      } else {
+        add({ kind: 'inserted', right: page, near: Math.min(nextLeft, Math.max(0, left.pageCount - 1)), box });
+        nextRight = entry.right + 1;
+      }
       step();
       continue;
     }
+    nextLeft = entry.left + 1;
+    nextRight = entry.right + 1;
     const [before, after] = await Promise.all([linesOf(client, left, entry.left), linesOf(client, right, entry.right)]);
     if (aborted()) return { kind: 'cancelled' };
     if (before.kind !== 'read') return { kind: before.kind };

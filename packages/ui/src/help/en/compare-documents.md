@@ -12,8 +12,8 @@ In Side by Side, **Compare** reads both documents and lists every difference, ma
 
 1. Open Side by Side with the two documents (**Review** › **Compare…**). See "Compare two documents side by side".
 2. Choose **Compare**. While it works, the bar shows how far it has got; choose **Cancel** to stop.
-3. The **Differences** list shows each change with the pages it is on, left and right.
-4. Choose a change to take both halves to it. Its marks are drawn stronger than the others.
+3. The **Differences** list opens with a short note on what is compared, then shows each change with the pages it is on, left and right.
+4. Choose a change to take both halves to it. Its marks are drawn stronger than the others. For a page only one document has, the other half goes to the place the page would be.
 
 ![Side by Side with the Differences list and a changed sentence marked on both pages](screenshot:compare-documents-1)
 
@@ -28,6 +28,7 @@ In Side by Side, **Compare** reads both documents and lists every difference, ma
 ## Good to know
 
 - Pages are matched by what is on them, not by their number. Scanned pages with no text are matched by how they look.
+- If no page matches, the list says so: **These documents have no pages in common. They look like different documents.** Every page is then listed as added or removed, which is true, and not a fault in either file.
 - A word is marked by its share of its line, so in some fonts a mark can sit slightly off the word.
 - Very small changes to pictures can be missed.
 - Up to 1,000 differences are listed.

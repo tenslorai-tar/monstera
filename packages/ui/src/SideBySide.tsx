@@ -22,6 +22,8 @@ import {
   SIDE_MORE,
   SIDE_MOVED,
   SIDE_NONE,
+  SIDE_NO_COMMON,
+  SIDE_WHAT,
   SIDE_OPEN,
   SIDE_REFUSED,
   SIDE_RIGHT,
@@ -284,7 +286,15 @@ export function SideBySide({
 
   const choose = (index: number, row: CompareRow): void => {
     setChosen(index);
-    setGoTo({ left: 'left' in row ? row.left : undefined, right: 'right' in row ? row.right : undefined });
+    // BOTH HALVES GO, always: a page only one document has takes the other half to the place it would be (`near`), so a
+    // chosen row never leaves one half where it was.
+    setGoTo(
+      row.kind === 'removed'
+        ? { left: row.left, right: row.near }
+        : row.kind === 'inserted'
+          ? { left: row.near, right: row.right }
+          : { left: row.left, right: row.right },
+    );
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
@@ -562,9 +572,27 @@ function Differences({
       ) : state.kind === 'failed' ? (
         <p className="m-side__note">{i18n._(SIDE_FAILED)}</p>
       ) : state.result.rows.length === 0 ? (
-        <p className="m-side__note">{i18n._(SIDE_NONE)}</p>
+        <>
+          <p className="m-side__note" data-side-what="">
+            {i18n._(SIDE_WHAT)}
+          </p>
+          <p className="m-side__note">{i18n._(SIDE_NONE)}</p>
+        </>
       ) : (
         <>
+          {/* WHAT IS COMPARED, said first: the owner compared two unrelated files and read *Page removed* and *Page added*
+              as an error (2026-10-06). Pages are matched by what is on them before anything else is compared, and a
+              page with no match is added or removed — which is a finding about the two documents, not a fault. */}
+          <p className="m-side__note" data-side-what="">
+            {i18n._(SIDE_WHAT)}
+          </p>
+          {/* NO PAGE IN COMMON is its own sentence, above a list that would otherwise read as one removal and one
+              addition per page: two documents that share nothing are different documents, and the list says so. */}
+          {state.result.matched === 0 ? (
+            <p className="m-side__note m-side__note--lead" data-side-no-common="" role="note">
+              {i18n._(SIDE_NO_COMMON)}
+            </p>
+          ) : null}
           <p className="m-side__note" data-side-count="">
             {i18n._(SIDE_COUNT, { count: state.result.found })}
           </p>
