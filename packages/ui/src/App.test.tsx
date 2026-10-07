@@ -319,6 +319,8 @@ function answeringClient(answers: Readonly<Record<string, unknown>>): {
  */
 const SETTINGS_OPEN_ANSWERS = {
   'settings.loadSecrets': { stored: [], available: true },
+  // The Updates page's installed version (item 6): the dialog asks `app.info` as it opens.
+  'app.info': { version: '0.0.0', installChannel: 'development', userName: 'A. Tester' },
   'ai.models.held': Object.fromEntries(AI_PROVIDER_IDS.map((provider) => [provider, { source: 'fallback', models: [] }])),
 };
 
