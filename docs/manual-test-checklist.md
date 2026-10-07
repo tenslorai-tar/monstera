@@ -52,8 +52,6 @@ is not available.
 - [ ] **Watermark…** — Marks · `document.watermark-pages` · Shows: on screen · Help: *Add a watermark*
 - [ ] **Add page background…** — Marks · `document.page-background` · Shows: on screen · Help: *Add a page background*
 - [ ] **Table of contents** — Marks · `document.generate-toc` · Shows: on screen · Help: *Add a table of contents*
-- [ ] **Add a barcode** — Marks · `organize.barcode` · Shows: on screen · Help: *Add and read barcodes and QR codes*
-- [ ] **Read barcodes** — Marks · `document.read-barcodes` · Shows: a result dialog · Help: *Add and read barcodes and QR codes*
 - [ ] **Delete pages…** — Pages · `document.delete-pages` · Shows: on screen · Help: *Delete pages*
 - [ ] **Insert from PDF…** — Pages · `document.insert-from-pdf` · Shows: on screen · Help: *Insert pages from another PDF*
 - [ ] **Insert blank page** — Pages · `document.insert-blank-page` · Shows: on screen · Help: *Insert a blank page*
@@ -83,6 +81,7 @@ is not available.
 - [ ] **Edit images** — Text · `edit.objects-images` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Edit shapes** — Text · `edit.objects-shapes` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Copy** — Text · `edit.copy` · Shows: a toast · Help: *Select and copy text*
+- [ ] **Add a barcode** — Text · `organize.barcode` · Shows: on screen · Help: *Add and read barcodes and QR codes*
 
 ## Ribbon › Comment
 
@@ -192,6 +191,7 @@ is not available.
 - [ ] **Export a searchable copy** — OCR · `document.export-searchable` · Shows: a toast · Help: *Save a searchable copy of a scan*
 - [ ] **Clean up scanned pages** — OCR · `document.enhance-scans` · Shows: on screen · Help: *Clean up scanned pages*
 - [ ] **Straighten photographed pages** — OCR · `document.straighten-scans` · Shows: on screen · Help: *Straighten photographed pages*
+- [ ] **Read barcodes** — OCR · `document.read-barcodes` · Shows: a result dialog · Help: *Add and read barcodes and QR codes*
 - [ ] **Recognise text in a box** — OCR · `tools.ocr-region` · Shows: on screen · Help: *Recognise text in part of a page*
 - [ ] **Send a box to Azure to recognise** — OCR · `tools.cloud-region` · Shows: on screen · Help: *Get and add keys for AI and online reading services*
 - [ ] **Send a box to Claude to recognise** — OCR · `annotate.claude-region` · Shows: on screen · Help: *Get and add keys for AI and online reading services*
