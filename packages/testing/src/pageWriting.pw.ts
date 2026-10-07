@@ -468,7 +468,7 @@ test('THE TOOL LINE says what the tool waits for, and Escape with nothing in fli
   await opened(page, LOOKS[0], 1, executed);
   await expect(toolLine(page)).toHaveCount(0);
   await chooseTool(page, 'Note');
-  await expect(toolLine(page)).toHaveText('Click where the comment goes. Esc to stop.');
+  await expect(toolLine(page)).toHaveText('Click where the comment should sit. Esc gets you out.');
 
   await page.keyboard.press('Escape');
   await expect(toolLine(page)).toHaveCount(0);
@@ -489,7 +489,7 @@ test('CONTROL: Escape in an open box FINISHES the words and leaves the tool on',
   await page.keyboard.type('kept');
   await page.keyboard.press('Escape');
   await expect.poll(() => executed.length).toBe(1);
-  await expect(toolLine(page)).toHaveText('Drag the box the words go in. Esc to stop.');
+  await expect(toolLine(page)).toHaveText('Drag out a box, then type your words in it. Esc gets you out.');
   await expect(surface(page)).toBeVisible();
 });
 
@@ -499,7 +499,7 @@ test('ESCAPE IS INNERMOST FIRST: marks selected are let go, then the select tool
   const properties = page.getByRole('complementary', { name: 'Properties' });
   await page.keyboard.press('Escape');
   await expect(properties.getByRole('heading', { name: 'Highlight' })).toHaveCount(0);
-  await expect(toolLine(page)).toHaveText('Click a mark to select it, or drag around several. Esc to stop.');
+  await expect(toolLine(page)).toHaveText('Click a mark to pick it, or drag around a few at once. Esc gets you out.');
   await page.keyboard.press('Escape');
   await expect(toolLine(page)).toHaveCount(0);
 });

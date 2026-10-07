@@ -148,7 +148,7 @@ describe('StatusBar', () => {
 
   it('says what the TOOL THAT IS ON waits for at the bar’s start, and that Escape stops it, and nothing when none is', () => {
     const on = drawn({ toolHint: HINT_NOTE });
-    expect(on.container.querySelector('.m-status-mode')?.textContent).toBe('Click where the comment goes. Esc to stop.');
+    expect(on.container.querySelector('.m-status-mode')?.textContent).toBe('Click where the comment should sit. Esc gets you out.');
     // CONTROL: with no tool, no line at all rather than an empty one.
     expect(drawn().container.querySelector('.m-status-mode')).toBeNull();
   });
