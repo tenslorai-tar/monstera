@@ -669,7 +669,7 @@ describe('App', () => {
     });
 
     // A DIALOG FIRST, and nothing sent to main while it is open: the Store is the answer to a button, not to *Rate Us*.
-    const dialog = await screen.findByRole('dialog', { name: 'Rate Monstera' });
+    const dialog = await screen.findByRole('dialog', { name: 'Thank you for choosing Monstera.' });
     expect(commandCalls(calls)).toStrictEqual([]);
     await act(async () => {
       within(dialog).getByRole('button', { name: 'Go to Microsoft Store' }).click();
@@ -689,13 +689,13 @@ describe('App', () => {
       screen.getByRole('button', { name: 'Rate Us' }).click();
       await Promise.resolve();
     });
-    const dialog = await screen.findByRole('dialog', { name: 'Rate Monstera' });
+    const dialog = await screen.findByRole('dialog', { name: 'Thank you for choosing Monstera.' });
     await act(async () => {
-      within(dialog).getByRole('button', { name: 'Not now' }).click();
+      within(dialog).getByRole('button', { name: 'Not Now' }).click();
       await Promise.resolve();
     });
     expect(commandCalls(calls)).toStrictEqual([]);
-    expect(screen.queryByRole('dialog', { name: 'Rate Monstera' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Thank you for choosing Monstera.' })).toBeNull();
   });
 
   it('the rating prompt is MOUNTED, and drawn only when main says one is due', async () => {

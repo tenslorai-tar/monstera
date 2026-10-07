@@ -1,14 +1,15 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
 
-import { DONATE_LATER, DONATE_ONGOING, DONATE_OPEN, DONATE_THANKS } from '../messages/en.js';
+import { DONATE_CLICK, DONATE_LATER, DONATE_ONGOING, DONATE_OPEN } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { DonateAnswer } from './donate.js';
 
 /**
- * *Support Monstera*: a thank-you, an invitation, and two answers.
+ * *Thank you for supporting Monstera.* (the dialog's title): an invitation, the line that says what the primary does,
+ * and two answers.
  *
  * ## What it does not say
  *
@@ -23,8 +24,8 @@ export default function DonateBody({ resolve }: DialogAnswering<DonateAnswer>): 
   const { _ } = useLingui();
   return (
     <div className="m-donate">
-      <p>{_(DONATE_THANKS)}</p>
       <p>{_(DONATE_ONGOING)}</p>
+      <p>{_(DONATE_CLICK)}</p>
       {/* THE PATTERN'S FOOTER WITHOUT A CANCEL: *Donate later* is this dialog's own word for not now, and a Cancel
           beside it would say the same thing twice. The primary is last. */}
       <DialogFooter dismissal="own">

@@ -11,9 +11,9 @@ If you would like to support the people who make Monstera, you can make a donati
 ## Steps
 
 1. In the middle of the window's top row, beside the menus, choose the gold **Donate** button. It is also in the **Help** menu.
-2. The **Support Monstera** window thanks you and says you can donate once, or every month. Choose **Donate now** to continue in your browser, or **Donate later**.
+2. A window thanks you for supporting Monstera and says you can donate once, or every month. Choose **Donate Now** to continue in your browser, or **Donate Later**.
 
-![The Support Monstera window](screenshot:donate-1)
+![The window that thanks you for supporting Monstera](screenshot:donate-1)
 
 ## Good to know
 

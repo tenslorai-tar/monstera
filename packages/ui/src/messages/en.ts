@@ -210,13 +210,13 @@ export const REVIEW_PROMPT_NEVER = messageKey('surface.review-prompt.never');
 export const REVIEW_STORE_NOT_OPENED = messageKey('toast.review-store-not-opened');
 export const REVIEW_PROMPTS_SETTING_TITLE = messageKey('setting.advanced-review-prompts.title');
 export const REVIEW_PROMPTS_SETTING_DESCRIPTION = messageKey('setting.advanced-review-prompts.description');
-export const DONATE_THANKS = messageKey('dialog.donate.thanks');
 export const DONATE_ONGOING = messageKey('dialog.donate.ongoing');
+export const DONATE_CLICK = messageKey('dialog.donate.click');
 export const DONATE_OPEN = messageKey('dialog.donate.open');
 export const DONATE_LATER = messageKey('dialog.donate.later');
 export const RATE_US_TITLE = messageKey('dialog.rate-us.title');
-export const RATE_US_THANKS = messageKey('dialog.rate-us.thanks');
 export const RATE_US_INVITE = messageKey('dialog.rate-us.invite');
+export const RATE_US_CLICK = messageKey('dialog.rate-us.click');
 export const RATE_US_OPEN = messageKey('dialog.rate-us.open');
 export const RATE_US_LATER = messageKey('dialog.rate-us.later');
 export const REVEAL_LOG_TITLE = messageKey('command.reveal-log.title');
@@ -2876,7 +2876,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LEAVE_FOCUS_COMMAND_TITLE]: 'Leave Focus',
   [ABOUT_TITLE]: 'About Monstera',
   [ABOUT_COMMAND_TITLE]: 'About',
-  [DONATE_TITLE]: 'Support Monstera',
+  [DONATE_TITLE]: 'Thank you for supporting Monstera.',
   [DONATE_COMMAND_TITLE]: 'Donate',
   // v5-01's second button beside Donate, word for word.
   [RATE_US_COMMAND_TITLE]: 'Rate Us',
@@ -2892,17 +2892,19 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Now and then, and never more than five times, a note at the bottom of the window asks for a Store rating.',
   // A THANK-YOU AND AN INVITATION, in a person's words: the owner's order of 2026-10-07 replaced the licence and the
   // account of where the money goes, which read as rules. The page still opens in the browser, which does the payment.
-  [DONATE_THANKS]: 'Thank you for wanting to support Monstera.',
+  // THE OWNER'S OWN WORDS, 2026-10-08: each dialog's title is its thank-you, the body is one paragraph, and the last line
+  // says what the primary button does.
   [DONATE_ONGOING]:
-    'Monstera is an ongoing project, and we work to keep it free for everyone. If you would like to help, you can donate once, or every month.',
-  [DONATE_OPEN]: 'Donate now',
-  [DONATE_LATER]: 'Donate later',
-  [RATE_US_TITLE]: 'Rate Monstera',
-  [RATE_US_THANKS]: 'Thank you for choosing Monstera.',
+    'Monstera is an ongoing project, and we are committed to keeping it free and available to everyone. Your support helps us continue improving the software, developing new features, maintaining the project, and making Monstera available to more people. You can make a one-time donation or choose a recurring monthly donation to provide ongoing support.',
+  [DONATE_CLICK]: 'Click Donate Now to visit our donation page.',
+  [DONATE_OPEN]: 'Donate Now',
+  [DONATE_LATER]: 'Donate Later',
+  [RATE_US_TITLE]: 'Thank you for choosing Monstera.',
   [RATE_US_INVITE]:
-    'If you have a moment, we would love to hear about your experience. A rating in the Microsoft Store tells us what is working, and helps other people find Monstera.',
+    'If you have a moment, we would appreciate your feedback. A rating or review in the Microsoft Store helps us understand what you think of Monstera and helps others discover the project.',
+  [RATE_US_CLICK]: 'Click Go to Microsoft Store to leave a rating or review.',
   [RATE_US_OPEN]: 'Go to Microsoft Store',
-  [RATE_US_LATER]: 'Not now',
+  [RATE_US_LATER]: 'Not Now',
   // "Reveal" and not "Open": the command shows the folder in the file manager,
   // and a name promising to open a log would be a name that fails the moment
   // there are five rotated files and no one of them is *the* log.

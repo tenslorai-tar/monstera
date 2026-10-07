@@ -196,7 +196,7 @@ test('donate-1', async ({ page }) => {
   await openDocument(page);
   const donate = page.getByRole('button', { name: 'Donate', exact: true });
   await donate.click();
-  const dialog = page.getByRole('dialog', { name: 'Support Monstera' });
+  const dialog = page.getByRole('dialog', { name: 'Thank you for supporting Monstera.' });
   await expect(dialog).toBeVisible();
   // THE BUTTON IS INERT UNDER THE MODAL, so the accessibility tree hides it; it is still where it was.
   await shootAround(page, 'donate-1', [dialog, page.getByRole('button', { name: 'Donate', exact: true, includeHidden: true })]);
