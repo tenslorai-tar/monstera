@@ -2972,6 +2972,9 @@ for (const [theme, offers] of [
       };
     });
     expect(fit).toStrictEqual({ placeholder: true, chord: true, row: true });
+    // NARROW: the owner's review (2026-10-08) found the field wider than what it does, which only opens the palette.
+    const searchWidth = (await bar.locator('.m-command-search').boundingBox())?.width ?? 0;
+    expect(searchWidth).toBeLessThanOrEqual(210);
 
     // A CLICK writes the other theme, through View › Theme's command.
     await bar.getByRole('button', { name: offers }).click();

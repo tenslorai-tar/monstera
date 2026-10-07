@@ -505,7 +505,9 @@
      close. Chosen for this build, not a v5 figure: 112 leaves about five characters of a 12 px name. */
   --title-tab-min: 112px;
   --title-control: 26px;
-  --command-search: 300px;
+  /* Narrowed from 300 on 2026-10-08 at the owner's review: the field only opens the palette, so the tabs keep the room.
+     200 holds the placeholder and its Ctrl+K chord whole at the chrome's 12 px (the title-bar case in renderedScreen.pw.ts). */
+  --command-search: 200px;
   --ribbon: 100px;
   --ribbon-caption: 22px;
   --control-ribbon: 52px;
