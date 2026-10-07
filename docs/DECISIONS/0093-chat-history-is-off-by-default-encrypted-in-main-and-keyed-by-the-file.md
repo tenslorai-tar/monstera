@@ -55,3 +55,11 @@ about a question the kernel already answers: `documentIdentity.ts` decides which
 characters. The key is `DocumentService.historyKeyOf`: a SHA-256 of the record's
 `openedIdentity.canonicalPath`, exactly as that module produces it. Found while building, before any
 conversation was saved under the other rule.
+
+## Correction, 2026-10-07 — the store can be listed, and a conversation read or removed without its file
+
+Decision 4's three channels answered a conversation only for an OPEN document, and Decision 2's entry held turns and
+nothing else, so the only way back to a conversation was to reopen its file and nothing could say what was kept. An entry now
+carries the file's name and when it was saved inside its ciphertext, and three channels list the store, read one
+conversation and remove one, by the same digest and without a path. The decisions about the setting, the cipher, the key and
+the bound stand. [ADR-0192](0192-saved-assistant-conversations-are-listed-by-file-name-and-read-or-deleted-without-their-file.md).
