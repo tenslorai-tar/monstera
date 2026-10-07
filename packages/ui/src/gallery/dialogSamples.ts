@@ -725,7 +725,11 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
         draft: {
           placement: 'end',
           page: '1',
-          documents: [...SOURCES, ...SOURCES.slice(0, 1)].map((source) => source.docId),
+          // THE FIRST TAKES ONLY SOME OF ITS PAGES (ADR-0195), the rest every page.
+          documents: [...SOURCES, ...SOURCES.slice(0, 1)].map((source, at) => ({
+            docId: source.docId,
+            pages: at === 0 ? '1-3, 5' : '',
+          })),
         },
       },
     },
