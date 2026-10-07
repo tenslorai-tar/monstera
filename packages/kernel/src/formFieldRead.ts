@@ -1,5 +1,5 @@
-import { MAX_READ_FIELDS } from '@monstera/contract/host';
-import type { AnnotationColour, FormFieldHandle, FormFieldRead } from '@monstera/contract';
+import { MAX_READ_FIELDS, choiceOf } from '@monstera/contract/host';
+import type { AnnotationColour, FieldChoice, FormFieldHandle, FormFieldRead } from '@monstera/contract';
 import type { PDFDocument, PDFObject, PDFWidget } from './mupdfRaw.js';
 
 import type { MupdfSession } from './engineSeam.js';
@@ -96,8 +96,12 @@ function qualifiedName(object: PDFObject): string {
   return parts.join('.');
 }
 
-/** The export values of a radio group's options in the order the widgets sit, or the choices of a choice field. */
-function optionsOf(widget: PDFWidget, object: PDFObject): readonly string[] {
+/**
+ * The export values of a radio group's options in the order the widgets sit, or the choices of a choice field: each a
+ * string, or the value AND the text shown where a document lists the two apart (`/Opt` pairs), so an edit that sends
+ * them back keeps both.
+ */
+function optionsOf(widget: PDFWidget, object: PDFObject): readonly FieldChoice[] {
   if (widget.isRadioButton()) {
     // The group is the nearest object holding `/Kids`: the widget's parent for a group, and nothing for a lone button.
     const parent = object.get('Parent');
@@ -120,7 +124,10 @@ function optionsOf(widget: PDFWidget, object: PDFObject): readonly string[] {
     }
     return values;
   }
-  return widget.getOptions(true);
+  // The engine answers the two lists apart, by position: the values a form stores, and the text a person reads.
+  const values = widget.getOptions(true);
+  const labels = widget.getOptions(false);
+  return values.map((value, at) => choiceOf(value, labels[at] ?? value));
 }
 
 /** An entry of the AcroForm dictionary, by path. A path form, because a step off a null object has no document to ask. */

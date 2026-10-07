@@ -116,6 +116,30 @@ export const MAX_FIELD_ANCESTRY = 32;
  * until 2026-10-04, so an export wrote a long field cut and an undo of a fill restored the cut value.
  */
 export function fieldValues(widget: PDFWidget): readonly string[] {
+  const stored = storedValues(widget);
+  return widget.isChoice() ? stored.map((value) => choiceTextOf(widget, value)) : stored;
+}
+
+/**
+ * The text a person reads for a value a choice field STORES, or the value itself where the field lists no such choice.
+ *
+ * `/Opt` may list each choice as [value, text] (ISO 32000-1, 12.7.4.4) and `/V` holds the VALUE. Everything in this
+ * module offers, compares and records a choice by its text, so the one place a stored value is turned into one is here,
+ * and {@link choiceStoredOf} is its inverse: a form written by another program reads as its choices, and a choice
+ * written here is stored as that program stores it.
+ */
+export function choiceTextOf(widget: PDFWidget, stored: string): string {
+  const at = widget.getOptions(true).indexOf(stored);
+  return at < 0 ? stored : (widget.getOptions(false)[at] ?? stored);
+}
+
+/** {@link choiceTextOf}'s inverse: the value a form stores for the choice a person reads as `shown`. */
+export function choiceStoredOf(widget: PDFWidget, shown: string): string {
+  const at = widget.getOptions(false).indexOf(shown);
+  return at < 0 ? shown : (widget.getOptions(true)[at] ?? shown);
+}
+
+function storedValues(widget: PDFWidget): readonly string[] {
   let object: PDFObject = widget.getObject();
   let value = object.get('V');
   // `/V` IS INHERITABLE and pdf-lib puts it on the parent, which is where the
@@ -520,7 +544,7 @@ export function fillWidget(widget: PDFWidget, value: FieldFill): void {
 function fill(widget: PDFWidget, value: FieldFill): void {
   refuseUnfillable(widget, value);
   if (value.set === 'text') widget.setTextValue(value.text);
-  else if (value.set === 'choice') widget.setChoiceValue(value.option);
+  else if (value.set === 'choice') widget.setChoiceValue(choiceStoredOf(widget, value.option));
   else setButton(widget, value.on);
 }
 

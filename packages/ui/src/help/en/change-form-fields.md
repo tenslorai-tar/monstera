@@ -22,6 +22,7 @@ Every field has properties you can change after it is drawn: its name, what it l
 - **Font**, **Size (0 is automatic)**, **Border colour**, **Border width** and **Fill colour**. Choose **None** to take a colour away.
 - **Several lines** for a text field.
 - **Choices** for a dropdown, a list box or a radio group, one on each line. For a radio group these are the values of its options in the order they sit.
+- **Stored values** for a dropdown or a list box, when the document keeps something other than the text people read. Each line belongs to the choice on the same line above, and a line left empty keeps the choice itself. Changing a choice's text keeps what is stored for it.
 - **Format**: a number (decimal places, separators, negative numbers and a currency sign), a percentage, a date or a time.
 - **Calculation**: the sum, product, average, smallest or largest of other fields you name, and where it falls in the calculation order.
 

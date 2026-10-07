@@ -1441,6 +1441,7 @@ export const FIELD_EDIT_REFUSALS = [
   'field-edit-name-parent',
   'field-edit-options-count',
   'field-edit-options-duplicate',
+  'field-edit-options-radio-labels',
   'field-edit-duplicate-radio',
   'field-edit-duplicate-signature',
   'field-edit-encrypted',

@@ -4410,6 +4410,36 @@ export const MAX_FIELD_OPTIONS = 256;
 export const MAX_FIELD_OPTION = 512;
 
 /**
+ * One choice of a dropdown or a list: a plain string where the value a form stores and the text a person reads are the
+ * same, and a pair where they are not (`/Opt` entries of two strings: the export value, then the text shown).
+ *
+ * A string is the common case and stays one, so a document with no pairs sends and reads exactly what it did before.
+ */
+export const fieldChoiceSchema = z.union([
+  z.string().min(1).max(MAX_FIELD_OPTION),
+  z.object({ value: z.string().min(1).max(MAX_FIELD_OPTION), label: z.string().max(MAX_FIELD_OPTION) }).strict(),
+]);
+
+/** See {@link fieldChoiceSchema}. */
+export type FieldChoice = z.infer<typeof fieldChoiceSchema>;
+
+/** The value a form stores for a choice. */
+export function choiceValueOf(choice: FieldChoice): string {
+  return typeof choice === 'string' ? choice : choice.value;
+}
+
+/** The text a person reads for a choice; an empty label is the value, as a reader shows it. */
+export function choiceLabelOf(choice: FieldChoice): string {
+  if (typeof choice === 'string') return choice;
+  return choice.label === '' ? choice.value : choice.label;
+}
+
+/** The one spelling of a choice: a string when the text is the value, a pair when it is not. */
+export function choiceOf(value: string, label: string): FieldChoice {
+  return label === '' || label === value ? value : { value, label };
+}
+
+/**
  * A field name, as this boundary defines one.
  *
  * **The empty-segment refusal is this boundary's opinion, not the format's** —
@@ -4728,7 +4758,7 @@ export const formFieldPropertiesSchema = z
     /** The border's width in points (`/BS /W`). */
     borderWidth: z.number().min(0).max(12),
     /** The choices of a dropdown or a list, or the export values of a radio group's options in the order they sit. */
-    options: z.array(z.string().min(1).max(MAX_FIELD_OPTION)).min(1).max(MAX_FIELD_OPTIONS).readonly(),
+    options: z.array(fieldChoiceSchema).min(1).max(MAX_FIELD_OPTIONS).readonly(),
     /** Whether a text field takes line breaks. */
     multiline: z.boolean(),
     /** Where the field is, in PDF user space: how a field is moved, resized, aligned or made the size of another. */
@@ -4785,7 +4815,16 @@ export const formFieldReadSchema = z
     borderColour: annotationColourSchema.nullable(),
     fillColour: annotationColourSchema.nullable(),
     borderWidth: z.number().min(0).max(12),
-    options: z.array(z.string().max(MAX_FIELD_OPTION)).max(MAX_FIELD_OPTIONS).readonly(),
+    // A document may hold an empty value, so a read is as lenient as the file; an edit is not (fieldChoiceSchema).
+    options: z
+      .array(
+        z.union([
+          z.string().max(MAX_FIELD_OPTION),
+          z.object({ value: z.string().max(MAX_FIELD_OPTION), label: z.string().max(MAX_FIELD_OPTION) }).strict(),
+        ]),
+      )
+      .max(MAX_FIELD_OPTIONS)
+      .readonly(),
     multiline: z.boolean(),
     rect: annotationRectSchema.nullable(),
     format: fieldFormatSchema.nullable(),

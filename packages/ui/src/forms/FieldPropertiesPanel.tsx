@@ -5,12 +5,16 @@ import {
   FIELD_FONTS,
   FIELD_SEPARATORS,
   type FieldCalculation,
+  type FieldChoice,
   type FieldFormat,
   type FormFieldHandle,
   type FormFieldProperties,
   type FormFieldRead,
   MAX_FIELD_DEFAULT,
   MAX_FIELD_TOOLTIP,
+  choiceLabelOf,
+  choiceOf,
+  choiceValueOf,
 } from '@monstera/contract';
 import type { DocVersion, MessageKey } from '@monstera/shared';
 import { type ReactElement, useEffect, useId, useState } from 'react';
@@ -65,6 +69,8 @@ import {
   FIELD_PROPS_ONE_ONLY,
   FIELD_PROPS_OPTIONS,
   FIELD_PROPS_OPTIONS_HINT,
+  FIELD_PROPS_OPTION_VALUES,
+  FIELD_PROPS_OPTION_VALUES_HINT,
   FIELD_PROPS_READ_ONLY,
   FIELD_PROPS_REQUIRED,
   FIELD_PROPS_SEPARATORS,
@@ -349,6 +355,7 @@ function Controls({
       {single && kind.choices ? (
         <OptionsRow
           options={props.options}
+          withValues={props.kind !== 'radio'}
           onCommit={(options) => {
             onEdit({ options });
           }}
@@ -568,40 +575,93 @@ function ColourRow({
   );
 }
 
-/** The choices, one a line, sent on leaving the box when they changed and none is empty or repeated. */
+/** The lines of a box, each trimmed, without the empty ones that trail. */
+function linesOf(draft: string): string[] {
+  const lines = draft.split('\n').map((line) => line.trim());
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  return lines;
+}
+
+/**
+ * What the two boxes say, as the choices an edit sends, or `null` while they cannot be sent: a choice with no text, two
+ * with the same stored value, or more stored values than choices. The values are lines aligned with the texts, and a
+ * line left empty stores the text itself, so a document that never listed the two apart sees nothing change.
+ */
+export function choicesOfDrafts(texts: string, values: string | null): readonly FieldChoice[] | null {
+  const shown = linesOf(texts);
+  if (shown.length === 0 || shown.some((line) => line === '')) return null;
+  const stored = values === null ? [] : linesOf(values);
+  if (stored.length > shown.length) return null;
+  const choices = shown.map((text, at) => choiceOf(stored[at] === undefined || stored[at] === '' ? text : stored[at], text));
+  return new Set(choices.map(choiceValueOf)).size === choices.length ? choices : null;
+}
+
+/**
+ * The choices: the text a person reads on each line, and for a dropdown or a list a second box with what the document
+ * stores for the same line. Sent on leaving a box when they changed and can be sent.
+ *
+ * A radio group has no text apart from its value, so it has the one box.
+ */
 function OptionsRow({
   options,
+  withValues,
   onCommit,
 }: {
-  readonly options: readonly string[];
-  readonly onCommit: (options: readonly string[]) => void;
+  readonly options: readonly FieldChoice[];
+  readonly withValues: boolean;
+  readonly onCommit: (options: readonly FieldChoice[]) => void;
 }): ReactElement {
   const { i18n } = useLingui();
-  const id = useId();
-  const [draft, setDraft] = useState(options.join('\n'));
-  const parsed = draft
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '');
-  const unchanged = parsed.length === options.length && parsed.every((line, at) => line === options[at]);
+  const textId = useId();
+  const valueId = useId();
+  const [texts, setTexts] = useState(options.map(choiceLabelOf).join('\n'));
+  // A line is empty where the text is the value, so a list without pairs shows an empty box and says so.
+  const [values, setValues] = useState(options.map((choice) => (typeof choice === 'string' ? '' : choice.value)).join('\n'));
+  const sendable = choicesOfDrafts(texts, withValues ? values : null);
+  const unchanged =
+    sendable !== null &&
+    sendable.length === options.length &&
+    sendable.every((choice, at) => {
+      const was = options[at];
+      return was !== undefined && choiceValueOf(choice) === choiceValueOf(was) && choiceLabelOf(choice) === choiceLabelOf(was);
+    });
+  const commit = (): void => {
+    if (sendable !== null && !unchanged) onCommit(sendable);
+  };
   return (
     <div className="m-properties__row">
-      <label className="m-properties__label" htmlFor={id}>
+      <label className="m-properties__label" htmlFor={textId}>
         {i18n._(FIELD_PROPS_OPTIONS)}
       </label>
       <textarea
         className="m-properties__comment"
-        id={id}
-        onBlur={() => {
-          if (!unchanged && parsed.length > 0 && new Set(parsed).size === parsed.length) onCommit(parsed);
-        }}
+        id={textId}
+        onBlur={commit}
         onChange={(event) => {
-          setDraft(event.target.value);
+          setTexts(event.target.value);
         }}
         rows={4}
-        value={draft}
+        value={texts}
       />
       <p className="m-properties__meta">{i18n._(FIELD_PROPS_OPTIONS_HINT)}</p>
+      {withValues ? (
+        <>
+          <label className="m-properties__label" htmlFor={valueId}>
+            {i18n._(FIELD_PROPS_OPTION_VALUES)}
+          </label>
+          <textarea
+            className="m-properties__comment"
+            id={valueId}
+            onBlur={commit}
+            onChange={(event) => {
+              setValues(event.target.value);
+            }}
+            rows={4}
+            value={values}
+          />
+          <p className="m-properties__meta">{i18n._(FIELD_PROPS_OPTION_VALUES_HINT)}</p>
+        </>
+      ) : null}
     </div>
   );
 }

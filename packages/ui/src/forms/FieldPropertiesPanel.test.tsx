@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { activateCatalogue, i18n } from '../i18n.js';
 import { EN } from '../messages/en.js';
 import { CommandRegistry, type CommandContext } from '../registries/commands.js';
-import { FieldPropertiesPanel } from './FieldPropertiesPanel.js';
+import { FieldPropertiesPanel, choicesOfDrafts } from './FieldPropertiesPanel.js';
 
 /**
  * The Properties tab for selected form fields (ADR-0193).
@@ -236,6 +236,44 @@ describe('the field properties pane', () => {
     fireEvent.change(choices, { target: { value: 'North\nSouth\nEast' } });
     fireEvent.blur(choices);
     expect(seen.edits).toStrictEqual([{ options: ['North', 'South', 'East'] }]);
+  });
+
+  it('shows the text a person reads and the value apart, and an edit of the text keeps the value (control: a plain list shows none)', async () => {
+    const plain: FormFieldRead = { ...TEXT, kind: 'listbox', name: 'plain', options: ['one', 'two'] };
+    mounted(plain);
+    expect((await screen.findByLabelText<HTMLTextAreaElement>('Stored values')).value, 'control: a list with no pairs has no stored values').toBe('\n');
+    cleanup();
+    const paired: FormFieldRead = {
+      ...TEXT,
+      kind: 'listbox',
+      name: 'colours',
+      options: [{ value: 'r', label: 'Red' }, { value: 'g', label: 'Green' }, 'plain'],
+    };
+    const seen = mounted(paired);
+    const texts = await screen.findByLabelText<HTMLTextAreaElement>('Choices');
+    const values = await screen.findByLabelText<HTMLTextAreaElement>('Stored values');
+    expect(texts.value).toBe('Red\nGreen\nplain');
+    expect(values.value).toBe('r\ng\n');
+    fireEvent.blur(texts);
+    expect(seen.edits, 'leaving a box with nothing changed sends nothing').toStrictEqual([]);
+    fireEvent.change(texts, { target: { value: 'Crimson\nGreen\nplain' } });
+    fireEvent.blur(texts);
+    expect(seen.edits).toStrictEqual([{ options: [{ value: 'r', label: 'Crimson' }, { value: 'g', label: 'Green' }, 'plain'] }]);
+  });
+
+  it('chooses what the two boxes send: a line with no value stores its text, and what cannot be sent is not', () => {
+    expect(choicesOfDrafts('Red\nGreen', 'r\n')).toStrictEqual([{ value: 'r', label: 'Red' }, 'Green']);
+    expect(choicesOfDrafts('Red\nGreen', null)).toStrictEqual(['Red', 'Green']);
+    expect(choicesOfDrafts('Red\nGreen', 'r\ng\nb'), 'more values than choices').toBeNull();
+    expect(choicesOfDrafts('Red\nGreen', 'x\nx'), 'the same value twice').toBeNull();
+    expect(choicesOfDrafts('Red\n\nGreen', null), 'a choice with no text').toBeNull();
+    expect(choicesOfDrafts('', null), 'no choices').toBeNull();
+  });
+
+  it('a radio group has the one box, the values, and no stored values', async () => {
+    mounted({ ...TEXT, kind: 'radio', name: 'plan', options: ['basic', 'plus'] });
+    await screen.findByLabelText('Choices');
+    expect(screen.queryByLabelText('Stored values')).toBeNull();
   });
 
   it('CONTROL: a text field has no choices to set, and a tick box has no font', async () => {

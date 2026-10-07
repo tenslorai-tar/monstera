@@ -1240,6 +1240,8 @@ export const FIELD_PROPS_BORDER_WIDTH = messageKey('properties.field.border-widt
 export const FIELD_PROPS_MULTILINE = messageKey('properties.field.multiline');
 export const FIELD_PROPS_OPTIONS = messageKey('properties.field.options');
 export const FIELD_PROPS_OPTIONS_HINT = messageKey('properties.field.options-hint');
+export const FIELD_PROPS_OPTION_VALUES = messageKey('properties.field.option-values');
+export const FIELD_PROPS_OPTION_VALUES_HINT = messageKey('properties.field.option-values-hint');
 export const FIELD_PROPS_FORMAT = messageKey('properties.field.format');
 export const FIELD_PROPS_FORMAT_NONE = messageKey('properties.field.format.none');
 export const FIELD_PROPS_FORMAT_NUMBER = messageKey('properties.field.format.number');
@@ -2760,6 +2762,7 @@ export const FIELD_EDIT_NAME_TAKEN = messageKey('dialog.command-problem.field-ed
 export const FIELD_EDIT_NAME_PARENT = messageKey('dialog.command-problem.field-edit.name-parent');
 export const FIELD_EDIT_OPTIONS_COUNT = messageKey('dialog.command-problem.field-edit.options-count');
 export const FIELD_EDIT_OPTIONS_DUPLICATE = messageKey('dialog.command-problem.field-edit.options-duplicate');
+export const FIELD_EDIT_OPTIONS_RADIO_LABELS = messageKey('dialog.command-problem.field-edit.options-radio-labels');
 export const FIELD_EDIT_DUPLICATE_RADIO = messageKey('dialog.command-problem.field-edit.duplicate-radio');
 export const FIELD_EDIT_DUPLICATE_SIGNATURE = messageKey('dialog.command-problem.field-edit.duplicate-signature');
 export const FIELD_EDIT_ENCRYPTED = messageKey('dialog.command-problem.field-edit.encrypted');
@@ -3672,7 +3675,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIELD_PROPS_BORDER_WIDTH]: 'Border width',
   [FIELD_PROPS_MULTILINE]: 'Several lines',
   [FIELD_PROPS_OPTIONS]: 'Choices',
-  [FIELD_PROPS_OPTIONS_HINT]: 'One choice on each line. For a radio group these are the values of its options, in the order they sit.',
+  [FIELD_PROPS_OPTIONS_HINT]: 'One choice on each line, as people read it. For a radio group these are the values of its options, in the order they sit.',
+  [FIELD_PROPS_OPTION_VALUES]: 'Stored values',
+  [FIELD_PROPS_OPTION_VALUES_HINT]: 'Optional. On each line, what the document keeps for the choice on the same line above. Leave a line empty to keep the choice itself.',
   [FIELD_PROPS_FORMAT]: 'Format',
   [FIELD_PROPS_FORMAT_NONE]: 'None',
   [FIELD_PROPS_FORMAT_NUMBER]: 'Number',
@@ -5947,6 +5952,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIELD_EDIT_NAME_PARENT]: 'A rename cannot move a field into another group, so nothing was changed. Keep the start of the name as it is.',
   [FIELD_EDIT_OPTIONS_COUNT]: 'The group has a different number of options than the values given, so nothing was changed.',
   [FIELD_EDIT_OPTIONS_DUPLICATE]: 'Two options have the same value, so nothing was changed. Give each option its own value.',
+  [FIELD_EDIT_OPTIONS_RADIO_LABELS]: 'A radio group keeps only the value of each option, not a separate text to show, so nothing was changed.',
   [FIELD_EDIT_DUPLICATE_RADIO]: 'A radio option belongs to its group, so it cannot be copied on its own. Nothing was changed.',
   [FIELD_EDIT_DUPLICATE_SIGNATURE]: 'A signature field is signed once, so it cannot be copied. Nothing was changed.',
   [FIELD_EDIT_ENCRYPTED]: 'This document is encrypted, and form fields cannot be changed in an encrypted document. Nothing was changed.',

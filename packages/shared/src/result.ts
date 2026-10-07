@@ -86,6 +86,7 @@ export const FIELD_EDIT_REASONS = [
   'name-parent',
   'options-count',
   'options-duplicate',
+  'options-radio-labels',
   'duplicate-radio',
   'duplicate-signature',
   'encrypted',

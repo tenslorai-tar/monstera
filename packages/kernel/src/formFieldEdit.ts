@@ -17,7 +17,8 @@ import {
 } from '@cantoo/pdf-lib';
 import type { PDFDocument, PDFField, PDFFont, PDFPage } from '@cantoo/pdf-lib';
 
-import type { AnnotationRect, CommandOfKind, FieldFormat, FormFieldHandle, FormFieldProperties } from '@monstera/contract';
+import { choiceLabelOf, choiceValueOf } from '@monstera/contract/host';
+import type { AnnotationRect, CommandOfKind, FieldChoice, FieldFormat, FormFieldHandle, FormFieldProperties } from '@monstera/contract';
 import { type FieldEditReason, fieldNameClash } from '@monstera/shared';
 
 import type { FieldFace } from './fieldActions.js';
@@ -316,15 +317,29 @@ function setDefault(field: PDFField, value: string | null): void {
   dict.set(PDFName.of('DV'), isButton ? PDFName.of(value) : text(value));
 }
 
-function setOptions(field: PDFField, options: readonly string[]): void {
+function setOptions(field: PDFField, choices: readonly FieldChoice[]): void {
+  const options = choices.map(choiceValueOf);
   if (new Set(options).size !== options.length) {
     throw new FieldEditRefusedError('options-duplicate', 'Two choices carry the same value, so a reader could not tell them apart.');
   }
   if (field instanceof PDFDropdown || field instanceof PDFOptionList) {
-    field.setOptions([...options]);
+    // EACH CHOICE KEEPS ITS TEXT: `/Opt` is written as [value, text] pairs, as the acroform layer writes them, where the
+    // field's own `setOptions` takes strings and would write the value twice, dropping every text a document listed apart.
+    field.acroField.setOptions(
+      choices.map((choice) => ({
+        value: text(choiceValueOf(choice)),
+        display: text(choiceLabelOf(choice)),
+      })),
+    );
     return;
   }
   if (field instanceof PDFRadioGroup) {
+    if (choices.some((choice) => typeof choice !== 'string')) {
+      throw new FieldEditRefusedError(
+        'options-radio-labels',
+        'A radio group names its options by value alone, so a separate text to show for one cannot be kept.',
+      );
+    }
     const widgets = field.acroField.getWidgets();
     if (widgets.length !== options.length) {
       throw new FieldEditRefusedError(
