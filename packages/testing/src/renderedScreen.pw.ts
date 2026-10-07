@@ -329,7 +329,7 @@ for (const look of LOOKS) {
       ],
     });
 
-    await expectNoSeriousViolations(page, look, 'Monstera closed unexpectedly. These documents were open:');
+    await expectNoSeriousViolations(page, look, 'These documents were open:');
 
     // THE UNAVAILABLE CARD'S WORDS READ AT THE THEME'S TEXT FLOOR, its name and its "Unavailable" line, against what
     // is drawn behind them (`inkOnScreen.ts`): the card is translucent, so its own background colour is not that.

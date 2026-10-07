@@ -359,9 +359,10 @@ test('reopen-after-a-crash-1', async ({ page }) => {
     lastExitClean: false,
     lastSession: recent.slice(0, 2).map(({ handle, name, availability }) => ({ handle, name, availability })),
   });
-  const offer = page.locator('.m-recent-recover');
+  const offer = page.locator('[data-recover-card]');
   await offer.scrollIntoViewIfNeeded();
-  await expect(offer.getByRole('button', { name: /^Reopen/u })).toHaveCount(2);
+  // TWO REOPENS, one per document, and Reopen all beside Dismiss: three buttons begin with the word.
+  await expect(offer.getByRole('button', { name: /^Reopen/u })).toHaveCount(3);
   await shoot(page, 'reopen-after-a-crash-1', offer);
 });
 

@@ -3715,7 +3715,9 @@ describe('App', () => {
         await Promise.resolve();
       });
 
-      expect(screen.getByText('Monstera closed unexpectedly. These documents were open:')).toBeDefined();
+      // A CARD: its heading and its lead-in, not one loose sentence.
+      expect(screen.getByRole('heading', { name: 'Monstera closed unexpectedly' })).toBeDefined();
+      expect(screen.getByText('These documents were open:')).toBeDefined();
       // BOTH, named. One control per document, each carrying the file it
       // reopens — a column of buttons all called "Reopen" is a column a
       // screen-reader user cannot tell apart.
@@ -3733,6 +3735,75 @@ describe('App', () => {
       ]);
     });
 
+    it('Reopen all opens every available document in order, and Dismiss closes the card and asks nothing', async () => {
+      const { client, sent } = withRecent({
+        entries: [row('handle-a', 'annual.pdf')],
+        lastExitClean: false,
+        lastSession: [
+          { handle: 'handle-b', name: 'draft.pdf', availability: 'available' },
+          { handle: 'handle-c', name: 'notes.pdf', availability: 'available' },
+          // GONE, and so not part of *all*: a file that cannot open is not asked to.
+          { handle: 'handle-x', name: 'gone.pdf', availability: 'unavailable' },
+        ],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Reopen all' }).click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(sent.filter((call) => call.id === 'document.openRecent').map((call) => call.params)).toStrictEqual([
+        { handle: 'handle-b' },
+        { handle: 'handle-c' },
+      ]);
+    });
+
+    it('Dismiss puts the card away and asks main for nothing, and the list under it stays', async () => {
+      const { client, sent } = withRecent({
+        entries: [row('handle-a', 'annual.pdf')],
+        lastExitClean: false,
+        lastSession: [
+          { handle: 'handle-b', name: 'draft.pdf', availability: 'available' },
+          { handle: 'handle-c', name: 'notes.pdf', availability: 'available' },
+        ],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.getByRole('heading', { name: 'Monstera closed unexpectedly' })).toBeDefined();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Dismiss' }).click();
+        await Promise.resolve();
+      });
+      expect(screen.queryByRole('heading', { name: 'Monstera closed unexpectedly' })).toBeNull();
+      expect(sent.filter((call) => call.id === 'document.openRecent')).toStrictEqual([]);
+      // THE RECENT LIST IS NOT THE OFFER: it is still there.
+      expect(screen.getByRole('button', { name: /annual\.pdf/u })).toBeDefined();
+    });
+
+    it('CONTROL: with ONE document to reopen there is no Reopen all, only its own Reopen and Dismiss', async () => {
+      const { client } = withRecent({
+        entries: [row('handle-a', 'annual.pdf')],
+        lastExitClean: false,
+        lastSession: [{ handle: 'handle-b', name: 'draft.pdf', availability: 'available' }],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.queryByRole('button', { name: 'Reopen all' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Reopen draft.pdf' })).toBeDefined();
+      expect(screen.getByRole('button', { name: 'Dismiss' })).toBeDefined();
+    });
+
     it('the offer SKIPS a document that has gone, and shows one still being looked for as such (7c)', async () => {
       const { client } = withRecent({
         entries: [row('handle-a', 'annual.pdf')],
@@ -3748,7 +3819,7 @@ describe('App', () => {
         await Promise.resolve();
       });
 
-      expect(screen.getByText('Monstera closed unexpectedly. These documents were open:')).toBeDefined();
+      expect(screen.getByText('These documents were open:')).toBeDefined();
       expect(screen.queryByRole('button', { name: 'Reopen draft.pdf' })).toBeNull();
       expect(screen.getByRole('button', { name: 'Reopen notes.pdf' })).toBeDefined();
       // NOT YET OFFERED, and saying why: a file on a slow drive is neither offered nor dropped until main answers.
@@ -3769,13 +3840,15 @@ describe('App', () => {
         await Promise.resolve();
       });
 
+      expect(screen.getByRole('heading', { name: 'Monstera closed unexpectedly' })).toBeDefined();
       expect(
-        screen.getByText(
-          'Monstera closed unexpectedly. The documents that were open are no longer where they were, so there is nothing to reopen.',
-        ),
+        screen.getByText('The documents that were open are no longer where they were, so there is nothing to reopen.'),
       ).toBeDefined();
-      expect(screen.queryByText('Monstera closed unexpectedly. These documents were open:')).toBeNull();
+      expect(screen.queryByText('These documents were open:')).toBeNull();
       expect(screen.queryByRole('button', { name: /^Reopen / })).toBeNull();
+      // NOTHING THAT CANNOT WORK, but the card can still be put away.
+      expect(screen.queryByRole('button', { name: 'Reopen all' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Dismiss' })).toBeDefined();
     });
 
     it('a card STILL BEING LOOKED FOR says so, opens nothing, and the list is asked again until it resolves (7d)', async () => {

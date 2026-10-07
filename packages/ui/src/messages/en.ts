@@ -1170,6 +1170,10 @@ export const RECENT_UNAVAILABLE_AT = messageKey('surface.recent.unavailable-at')
 export const RECENT_CHECKING = messageKey('surface.recent.checking');
 export const RECENT_CHECKING_NAMED = messageKey('surface.recent.checking-named');
 export const RECOVER_OFFER = messageKey('surface.recent.recover-offer');
+export const RECOVER_HEADING = messageKey('surface.recent.recover-heading');
+export const RECOVER_SHOWN = messageKey('surface.recent.recover-shown');
+export const RECOVER_ALL = messageKey('surface.recent.recover-all');
+export const RECOVER_DISMISS = messageKey('surface.recent.recover-dismiss');
 /** A document in the crash offer that is still being looked for, on its disabled button. */
 export const RECOVER_CHECKING = messageKey('surface.recent.recover-checking');
 /** The crash offer when every document that was open has gone from where it was. */
@@ -3422,10 +3426,16 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // {name}?" while one document could be open and the newest recent entry was
   // that document; with tabs the offer is a recorded set, and a sentence
   // naming one of several would be the inference tabs ended, in a string.
-  [RECOVER_OFFER]: 'Monstera closed unexpectedly. These documents were open:',
+  // THE HEADING NOW CARRIES *closed unexpectedly* and the sentence under it the list's lead-in, since the offer is a card
+  // with a heading of its own (the owner's review, 2026-10-06).
+  [RECOVER_HEADING]: 'Monstera closed unexpectedly',
+  [RECOVER_OFFER]: 'These documents were open:',
+  [RECOVER_SHOWN]: 'Reopen',
+  [RECOVER_ALL]: 'Reopen all',
+  [RECOVER_DISMISS]: 'Dismiss',
   [RECOVER_CHECKING]: 'Looking for {name}…',
   [RECOVER_ALL_MISSING]:
-    'Monstera closed unexpectedly. The documents that were open are no longer where they were, so there is nothing to reopen.',
+    'The documents that were open are no longer where they were, so there is nothing to reopen.',
   // ONE CONTROL PER DOCUMENT, each named with the file it reopens — a column
   // of buttons all called "Reopen" is a column a screen-reader user cannot
   // tell apart, which is the tab strip's close control one surface over.

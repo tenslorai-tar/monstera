@@ -16,11 +16,16 @@ import {
   RECENT_PLACEHOLDER,
   RECENT_UNAVAILABLE,
   RECENT_UNAVAILABLE_AT,
+  RECOVER_ALL,
   RECOVER_ALL_MISSING,
   RECOVER_CHECKING,
+  RECOVER_DISMISS,
+  RECOVER_HEADING,
   RECOVER_LABEL,
   RECOVER_OFFER,
+  RECOVER_SHOWN,
 } from './messages/en.js';
+import { Icon } from './primitives/Icon.js';
 
 /**
  * How many recent files the START SCREEN shows: the first four of the list main keeps (the owner, 2026-10-02, item
@@ -106,6 +111,8 @@ export function RecentFiles({
           session: answer.value.lastSession,
           // A SENTENCE ALREADY SHOWN STAYS through the read it caused: it answers what the reader just did.
           missing: current.kind === 'listed' && current.missing,
+          // AND SO DOES A DISMISSED OFFER, which a read of the same list must not bring back.
+          offerDismissed: current.kind === 'listed' && current.offerDismissed,
         }));
       },
       () => {
@@ -154,33 +161,25 @@ export function RecentFiles({
           what can be reopened, a file still being looked for is shown as such
           until main answers, and when every one has gone the offer says so
           rather than listing buttons that cannot work. */}
-      {!state.lastExitClean && state.session.length > 0 ? (
-        <div className="m-recent-recover">
-          {state.session.every((entry) => entry.availability === 'unavailable') ? (
-            <p>{_(RECOVER_ALL_MISSING)}</p>
-          ) : (
-            <>
-              <p>{_(RECOVER_OFFER)}</p>
-              <ul className="m-recover-list">
-                {state.session
-                  .filter((entry) => entry.availability !== 'unavailable')
-                  .map((entry) => (
-                    <li key={entry.handle}>
-                      <Button
-                        label={entry.availability === 'checking' ? RECOVER_CHECKING : RECOVER_LABEL}
-                        values={{ name: entry.name }}
-                        variant="primary"
-                        disabled={entry.availability === 'checking'}
-                        onClick={() => {
-                          void open(entry.handle);
-                        }}
-                      />
-                    </li>
-                  ))}
-              </ul>
-            </>
-          )}
-        </div>
+      {!state.lastExitClean && state.session.length > 0 && !state.offerDismissed ? (
+        <RecoveryCard
+          session={state.session}
+          onOpen={(handle) => {
+            void open(handle);
+          }}
+          onOpenAll={(handles) => {
+            // ONE AFTER ANOTHER, through the same route a single Reopen takes: each settles its own open, and a file that
+            // has gone since is said by the route as it is for one (a tab per document, in the order they were open).
+            void (async (): Promise<void> => {
+              for (const handle of handles) await open(handle);
+            })();
+          }}
+          onDismiss={() => {
+            // FOR THIS RUN: the offer is about the run that did not finish, and the next clean exit makes the next start
+            // not ask. Nothing is recorded in main, so a person who dismissed it and then crashes again is asked again.
+            setState((current) => (current.kind === 'listed' ? { ...current, offerDismissed: true } : current));
+          }}
+        />
       ) : null}
       {state.missing ? <p className="m-recent-problem">{_(RECENT_MISSING)}</p> : null}
       {state.entries.length === 0 ? null : (
@@ -235,6 +234,83 @@ export function RecentFiles({
 
 /** One row, as the contract carries it. */
 type RecentRow = ChannelResult<'document.recent'>['lastSession'][number];
+
+/**
+ * The offer after a run that did not finish, as a card of its own: an icon, a heading, the documents that were open each
+ * with its own *Reopen*, *Reopen all*, and *Dismiss*.
+ *
+ * It was a loose sentence and one primary button per file between the feature cards and Recent, which read as part of
+ * neither (the owner's review, 2026-10-06). The rules are unchanged: a file that has gone is not offered, one still being
+ * looked for is shown as such and cannot be pressed, and when every file has gone the card says so and offers nothing
+ * that cannot work. **Reopen all** is offered only where there is more than one thing to reopen, and opens only the files
+ * available now.
+ */
+function RecoveryCard({
+  session,
+  onOpen,
+  onOpenAll,
+  onDismiss,
+}: {
+  readonly session: readonly RecentRow[];
+  readonly onOpen: (handle: FileHandle) => void;
+  readonly onOpenAll: (handles: readonly FileHandle[]) => void;
+  readonly onDismiss: () => void;
+}): ReactElement {
+  const { _ } = useLingui();
+  const headingId = useId();
+  const offered = session.filter((entry) => entry.availability !== 'unavailable');
+  const ready = offered.filter((entry) => entry.availability === 'available');
+  return (
+    <section aria-labelledby={headingId} className="m-recover-card" data-recover-card="">
+      <span aria-hidden="true" className="m-recover-card__icon">
+        <Icon name="History" size="ribbon" />
+      </span>
+      <div className="m-recover-card__body">
+        <h2 className="m-recover-card__heading" id={headingId}>
+          {_(RECOVER_HEADING)}
+        </h2>
+        {offered.length === 0 ? (
+          <p>{_(RECOVER_ALL_MISSING)}</p>
+        ) : (
+          <>
+            <p>{_(RECOVER_OFFER)}</p>
+            <ul className="m-recover-list">
+              {offered.map((entry) => (
+                <li className="m-recover-list__item" key={entry.handle}>
+                  <Icon name="FileText" size="dense" />
+                  <span className="m-recover-list__name">{entry.name}</span>
+                  <Button
+                    label={entry.availability === 'checking' ? RECOVER_CHECKING : RECOVER_LABEL}
+                    // THE WORD SHOWN IS *Reopen*, the name stays the file's (WCAG 2.5.3: it begins with the shown word),
+                    // so each button of a column is told apart by a screen reader.
+                    shown={entry.availability === 'checking' ? undefined : RECOVER_SHOWN}
+                    values={{ name: entry.name }}
+                    disabled={entry.availability === 'checking'}
+                    onClick={() => {
+                      onOpen(entry.handle);
+                    }}
+                  />
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        <div className="m-recover-card__actions">
+          {ready.length > 1 ? (
+            <Button
+              label={RECOVER_ALL}
+              variant="primary"
+              onClick={() => {
+                onOpenAll(ready.map((entry) => entry.handle));
+              }}
+            />
+          ) : null}
+          <Button label={RECOVER_DISMISS} onClick={onDismiss} />
+        </div>
+      </div>
+    </section>
+  );
+}
 
 /** An entry of the list, as `document.recent` answers it. */
 type ListedRow = ChannelResult<'document.recent'>['entries'][number];
@@ -360,4 +436,6 @@ type RecentState =
       readonly session: readonly RecentRow[];
       /** Set when a row's handle was refused, and cleared by nothing: the list is read again and the row stays. */
       readonly missing: boolean;
+      /** Set when the person dismissed the recovery offer: held through every later read, for this run. */
+      readonly offerDismissed: boolean;
     };
