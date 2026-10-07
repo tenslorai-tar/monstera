@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { PlacedField } from '../forms/arrange.js';
 import type { CommandContext } from '../registries/commands.js';
-import { fieldArrangeCommands } from './fieldArrangeCommands.js';
+import { copyFieldToPagesCommand, fieldArrangeCommands } from './fieldArrangeCommands.js';
 
 /**
  * The nine arrange commands are registered with a `when` and a `run` that sends what the table's rule answers.
@@ -36,6 +36,52 @@ function built(placed: readonly PlacedField[]): { readonly sent: (readonly Place
   });
   return { sent, commands };
 }
+
+describe('the copy-to-pages command', () => {
+  const TWO_PAGES: CommandContext = { ...CONTEXT, pageCount: 2 };
+  const text = { field: { page: 0, index: 1, name: 'email' }, kind: 'text' as const };
+
+  function copying(chosen: Parameters<typeof copyFieldToPagesCommand>[0]['single'], answer: unknown): {
+    readonly command: ReturnType<typeof copyFieldToPagesCommand>;
+    readonly applied: unknown[];
+    readonly asked: unknown[];
+  } {
+    const applied: unknown[] = [];
+    const asked: unknown[] = [];
+    const command = copyFieldToPagesCommand({
+      single: chosen,
+      ask: (id, props) => {
+        asked.push({ id, props });
+        return Promise.resolve(answer);
+      },
+      apply: (field, pages) => {
+        applied.push({ field, pages });
+      },
+    });
+    return { command, applied, asked };
+  }
+
+  it('asks which pages of THIS document and sends one copy with the answer', async () => {
+    const { command, applied, asked } = copying(() => text, { pages: [1] });
+    await command.run(TWO_PAGES);
+    expect(asked).toStrictEqual([{ id: 'dialog.field-copy', props: { pageCount: 2, from: 0 } }]);
+    expect(applied).toStrictEqual([{ field: text.field, pages: [1] }]);
+  });
+
+  it('CONTROL: a dismissed dialog sends nothing', async () => {
+    const { command, applied } = copying(() => text, undefined);
+    await command.run(TWO_PAGES);
+    expect(applied).toStrictEqual([]);
+  });
+
+  it('is hidden for several or no fields, a radio option, a signature and a one-page document, and shown for a text field', () => {
+    expect(copying(() => text, undefined).command.when?.(TWO_PAGES)).toBe(true);
+    expect(copying(() => undefined, undefined).command.when?.(TWO_PAGES)).toBe(false);
+    expect(copying(() => ({ ...text, kind: 'radio' as const }), undefined).command.when?.(TWO_PAGES)).toBe(false);
+    expect(copying(() => ({ ...text, kind: 'signature' as const }), undefined).command.when?.(TWO_PAGES)).toBe(false);
+    expect(copying(() => text, undefined).command.when?.({ ...CONTEXT, pageCount: 1 })).toBe(false);
+  });
+});
 
 describe('the arrange commands', () => {
   it('registers nine, each at the Properties tab and each with a title', () => {

@@ -17,7 +17,7 @@ const ID = asDocId('00000000-0000-4000-8000-000000000001');
 
 const FIELD_RECT = { x0: 180, y0: 626, x1: 520, y1: 646 } as const;
 
-async function formPdf(): Promise<Uint8Array> {
+async function formPdf(pages = 1): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   const font = await document.embedFont(StandardFonts.Helvetica);
   const page = document.addPage([612, 792]);
@@ -29,6 +29,8 @@ async function formPdf(): Promise<Uint8Array> {
     height: FIELD_RECT.y1 - FIELD_RECT.y0,
     font,
   });
+  // MORE PAGES ARE BLANK and follow the form's, so the field stays on page 0.
+  for (let more = 1; more < pages; more += 1) document.addPage([612, 792]);
   return document.save();
 }
 
@@ -49,8 +51,9 @@ async function openForms(
   page: Page,
   sent: { channel: string; params: unknown }[],
   fields: readonly ShimFormField[] = [LISTED],
+  pages = 1,
 ): Promise<void> {
-  const bytes = await formPdf();
+  const bytes = await formPdf(pages);
   await page.setViewportSize({ width: 1280, height: 860 });
   await bridgeUnder(
     page,
@@ -243,6 +246,42 @@ test.describe('the Forms tab', () => {
         edits: [{ field: { page: 0, index: 1, name: 'Surname' }, set: { rect: { x0: 180, y0: 590, x1: 480, y1: 610 } } }],
       },
     });
+  });
+
+  test('one selected field is copied onto other pages: the button asks which, and sends ONE duplicateFormField', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openForms(page, sent, [LISTED], 3);
+    await openSection(page, 'Forms');
+    await runCommand(page, 'Fields list');
+    await page.locator('.m-forms-jump', { hasText: 'Full name' }).click();
+    await page.locator('[data-field-properties]').getByRole('button', { name: 'Copy to other pages…' }).click();
+    // IT STARTS WITH EVERY OTHER PAGE, and the field's own is refused if it is typed.
+    const pages = page.getByRole('textbox', { name: 'Pages' });
+    await expect(pages).toHaveValue('2-3');
+    await pages.fill('1');
+    await expect(page.getByText('The field is already on that page.')).toBeVisible();
+    await pages.fill('3');
+    await page.getByRole('button', { name: 'Copy the field' }).click();
+    const copies = sent.filter((call) => call.channel === 'document.execute');
+    expect(copies.length).toBe(1);
+    expect(copies[0]?.params).toMatchObject({
+      command: { kind: 'duplicateFormField', field: { page: 0, index: 0, name: 'Full name' }, pages: [2] },
+    });
+  });
+
+  test('Tab order asks which of three orders and sends ONE setTabOrder for every page', async ({ page }) => {
+    const sent: { channel: string; params: unknown }[] = [];
+    await openForms(page, sent, [LISTED], 2);
+    await openSection(page, 'Forms');
+    await page.getByRole('button', { name: 'Tab order' }).first().click();
+    await expect(page.getByText('Left to right along a line of fields')).toBeVisible();
+    // NOTHING IS SENT UNTIL A PERSON CHOOSES (control), and the first order is the default.
+    expect(sent.filter((call) => call.channel === 'document.execute')).toStrictEqual([]);
+    await page.getByLabel(/Down each column/u).check();
+    await page.getByRole('button', { name: 'Set the tab order' }).click();
+    const orders = sent.filter((call) => call.channel === 'document.execute');
+    expect(orders.length).toBe(1);
+    expect(orders[0]?.params).toMatchObject({ command: { kind: 'setTabOrder', pages: 'all', order: 'column' } });
   });
 
   test('a name the form already has is said where it is typed, in words, and nothing is sent', async ({ page }) => {

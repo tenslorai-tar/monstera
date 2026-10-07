@@ -280,11 +280,17 @@ function textForm(field: string, text: string): readonly DialogSample[] {
 }
 
 /** A form-field dialog that lists choices: opened, filled, and with several choice rows. */
+/** The fields the form already has, which a new field's name is asked against (`fieldNameCheck.ts`). */
+const KNOWN_FIELDS = [{ name: 'full_name', kind: 'text' as const, options: [] }];
+
 function choiceField(name: string): readonly DialogSample[] {
+  const props = { known: KNOWN_FIELDS };
   return [
-    { state: 'opened', props: {} },
-    { state: 'filled', props: {}, steps: [type('Field name', name), type('Choice', 'Standard delivery')] },
-    { state: 'choices', props: {}, steps: [press('Add a choice'), press('Add a choice'), press('Add a choice')] },
+    { state: 'opened', props },
+    { state: 'filled', props, steps: [type('Field name', name), type('Choice', 'Standard delivery')] },
+    { state: 'choices', props, steps: [press('Add a choice'), press('Add a choice'), press('Add a choice')] },
+    // A NAME THE FORM ALREADY HAS, said where it is typed (the refusal that once reached a person as an incident).
+    { state: 'name-taken', props, steps: [type('Field name', 'full_name')] },
   ];
 }
 
@@ -717,6 +723,12 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       },
     },
   ],
+  'dialog.field-copy': [
+    { state: 'opened', props: { pageCount: 6, from: 0 } },
+    { state: 'own-page', props: { pageCount: 6, from: 0 }, steps: [type('Pages', '1-3')] },
+    { state: 'outside', props: { pageCount: 6, from: 0 }, steps: [type('Pages', '9')] },
+  ],
+  'dialog.tab-order': [{ state: 'opened', props: {} }],
   'dialog.import-form-data-problem': [{ state: 'opened', props: { reason: 'unreadable' } }],
   'dialog.import-annotations-problem': [{ state: 'opened', props: { reason: 'unreadable' } }],
   'dialog.insert-image-problem': [{ state: 'opened', props: { reason: 'too-large', limitBytes: 50 * 1024 * 1024 } }],
@@ -1021,15 +1033,16 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'no-match', props: SETTINGS, steps: [type('Search settings', 'xylophone')] },
   ],
   'dialog.form-field-radio': [
-    { state: 'opened', props: {} },
+    { state: 'opened', props: { known: KNOWN_FIELDS } },
     {
       state: 'filled',
-      props: {},
+      props: { known: KNOWN_FIELDS },
       steps: [
         type('Group name', 'delivery'),
         type('This option’s value', 'Standard'),
       ],
     },
+    { state: 'name-taken', props: { known: KNOWN_FIELDS }, steps: [type('Group name', 'full_name')] },
   ],
   'dialog.form-field-dropdown': choiceField('delivery_method'),
   'dialog.form-field-listbox': choiceField('preferred_days'),

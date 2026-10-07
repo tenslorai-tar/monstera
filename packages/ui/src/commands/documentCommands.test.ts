@@ -15,6 +15,7 @@ import type { ObjectFilter } from '../objectEditing.js';
 import {
   TOAST_ACTIVE_CONTENT_REMOVED,
   TOAST_FORM_FLATTENED,
+  TOAST_TAB_ORDER_SET,
   TOAST_FORM_DATA_IMPORTED,
   TOAST_PROTECTION_SET,
   TOAST_COPY_SAVED,
@@ -116,6 +117,7 @@ import {
   redactMatchesCommand,
   sanitizeDocumentCommand,
   flattenFormCommand,
+  tabOrderCommand,
   signDocument,
   signDocumentCommand,
   signaturesCommand,
@@ -5588,6 +5590,47 @@ describe('protectDocumentCommand', () => {
 
       expect(said).toStrictEqual([]);
       expect(asked).toStrictEqual(['dialog.flatten-form', 'dialog.command-problem']);
+    });
+  });
+
+  describe('tabOrderCommand (ADR-0193)', () => {
+    it('ASKS which order, then sets it on every page with ONE setTabOrder, then says it did', async () => {
+      const { client, sent } = recordingClient();
+      const said: unknown[] = [];
+      const asked: string[] = [];
+      await tabOrderCommand({
+        client,
+        toast: (_kind, message) => said.push(message),
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id) => {
+          asked.push(`${id} after ${String(sent.length)} sent`);
+          return Promise.resolve({ order: 'column' });
+        },
+      }).run(CONTEXT);
+
+      expect(asked).toStrictEqual(['dialog.tab-order after 0 sent']);
+      expect(sent).toStrictEqual([
+        { id: 'document.execute', params: { docId: DOC, command: { kind: 'setTabOrder', pages: 'all', order: 'column' } } },
+      ]);
+      expect(said).toStrictEqual([TOAST_TAB_ORDER_SET]);
+    });
+
+    it('CONTROL: a dismissed question, and an answer that is not one of the three orders, send nothing', async () => {
+      for (const answer of [undefined, { order: 'diagonal' }, {}]) {
+        const { client, sent } = recordingClient();
+        const said: unknown[] = [];
+        await tabOrderCommand({
+          client,
+          toast: (_kind, message) => said.push(message),
+          stamp,
+          signatures,
+          onApplied: () => undefined,
+          ask: () => Promise.resolve(answer),
+        }).run(CONTEXT);
+        expect([sent, said]).toStrictEqual([[], []]);
+      }
     });
   });
 

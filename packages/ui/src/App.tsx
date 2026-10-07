@@ -9,6 +9,7 @@ import {
   DOCUSIGN_INTEGRATION_KEY_SETTING_ID,
   type SecretSettingId,
   type CommandOfKind,
+  pageSetOf,
   type FieldFill,
   type FormFieldHandle,
   type FormFieldProperties,
@@ -67,6 +68,7 @@ import {
   importFormDataJsonCommand,
   importFormDataXfdfCommand,
   detectFlatFieldsCommand,
+  tabOrderCommand,
   flattenForm,
   flattenFormCommand,
   EDIT_TEXT_TOOL_ID,
@@ -283,7 +285,7 @@ import {
 } from './forms/fieldSelection.js';
 import { FieldPropertiesPanel } from './forms/FieldPropertiesPanel.js';
 import type { PlacedField } from './forms/arrange.js';
-import { fieldArrangeCommands } from './commands/fieldArrangeCommands.js';
+import { type FieldToCopy, copyFieldToPagesCommand, fieldArrangeCommands } from './commands/fieldArrangeCommands.js';
 import { useFormFieldList } from './forms/useFormFieldList.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
@@ -1192,11 +1194,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * one field and ride in the single-edit shape (`editFormFieldsSchema`); everything else is the shared shape.
    * The selection is carried across it, since a change to a field's dictionary moves no widget.
    */
-  const sendFieldEdits = useCallback(
-    (edits: CommandOfKind<'editFormFields'>['edits']): void => {
+  const sendFieldCommand = useCallback(
+    (build: (version: DocVersion) => DispatchableCommand): void => {
       if (activeId === undefined || openVersion === undefined) return;
       const version = openVersion;
-      const command: DispatchableCommand = { kind: 'editFormFields', edits, version };
+      const command = build(version);
       void applyDocumentCommand(
         {
           client,
@@ -1214,6 +1216,26 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     },
     [activeId, applied, ask, client, openVersion, signatures, stamp],
   );
+  const sendFieldEdits = useCallback(
+    (edits: CommandOfKind<'editFormFields'>['edits']): void => {
+      sendFieldCommand((version) => ({ kind: 'editFormFields', edits, version }));
+    },
+    [sendFieldCommand],
+  );
+  /** Copies the one selected field onto the pages named (ADR-0193): one command, and the selection stays on the field. */
+  const copyFieldToPages = useCallback(
+    (field: FormFieldHandle, pages: readonly number[]): void => {
+      sendFieldCommand((version) => ({ kind: 'duplicateFormField', field, pages: pageSetOf(pages), version }));
+    },
+    [sendFieldCommand],
+  );
+  /** The one selected field, with its kind, for *Copy to other pages*; none for several or for none. */
+  const singleField = useMemo((): FieldToCopy | undefined => {
+    const [only, ...rest] = selectedHandles;
+    if (only === undefined || rest.length > 0) return undefined;
+    const kind = formFieldList.fields.find((field) => field.page === only.page && field.index === only.index)?.kind;
+    return kind === undefined ? undefined : { field: only, kind };
+  }, [formFieldList.fields, selectedHandles]);
   const editSelectedFields = useCallback(
     (set: FormFieldProperties): void => {
       const first = selectedHandles[0];
@@ -3275,7 +3297,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         detectFlatFieldsCommand({ client, onApplied: applied, ask, stamp, signatures }),
         // ALIGN AND SAME SIZE for the selected form fields (ADR-0193), at the Properties tab's foot.
         ...fieldArrangeCommands({ placed: () => placedFields, apply: arrangeSelectedFields }),
+        copyFieldToPagesCommand({ single: () => singleField, ask, apply: copyFieldToPages }),
         flattenFormCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
+        tabOrderCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         // EDIT TEXT, a MODE in the tool slot (ADR-0096): it toggles as a drawing
         // tool's command does, and `editing` below is what the mode draws.
         editTextCommand({ activeTool: readTool, onSelect: setToolId }),
@@ -3476,6 +3500,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // THE SELECTED FORM FIELDS AND WHERE THEY ARE (ADR-0193), which align and same size read.
       placedFields,
       arrangeSelectedFields,
+      singleField,
+      copyFieldToPages,
       // THE MENU BAR'S (ADR-0107): the window's one close, the focused field, and the page's marks for Select all.
       closeWindow,
       focusedField,

@@ -24,6 +24,8 @@ import { EXPORT_LAYOUT_TEXT_DIALOG, EXPORT_POWERPOINT_DIALOG, EXPORT_TEXT_DIALOG
 import { EXPORT_WORD_DIALOG } from '../dialogs/exportWord.js';
 import { EXTERNAL_EDIT_PROBLEM_DIALOG } from '../dialogs/externalEditProblem.js';
 import { EXTRACT_PAGES_DIALOG } from '../dialogs/extractPages.js';
+import { FIELD_COPY_DIALOG } from '../dialogs/fieldCopy.js';
+import { TAB_ORDER_DIALOG } from '../dialogs/tabOrder.js';
 import { FLAT_FIELDS_DIALOG } from '../dialogs/flatFields.js';
 import { FLATTEN_FORM_DIALOG } from '../dialogs/flattenForm.js';
 import { FOLLOW_LINK_DIALOG } from '../dialogs/followLink.js';
@@ -165,6 +167,8 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   REIMPORT_EXTERNAL_EDIT_DIALOG,
   EXTERNAL_EDIT_PROBLEM_DIALOG,
   EXTRACT_PAGES_DIALOG,
+  FIELD_COPY_DIALOG,
+  TAB_ORDER_DIALOG,
   SPLIT_DOCUMENT_DIALOG,
   EXPORT_PAGE_IMAGES_DIALOG,
   EXPORT_WORD_DIALOG,

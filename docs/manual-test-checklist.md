@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 239 — and the checks only the installed window can answer.
+Every command the application registers — 250 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -145,6 +145,7 @@ is not available.
 - [ ] **Fields list** — Fields · `view.show-fields` · Shows: on screen · Help: *Delete a form field*
 - [ ] **Find fields on this page…** — Manage · `document.find-flat-fields` · Shows: a result dialog · Help: *Find fields on a flat form*
 - [ ] **Flatten form** — Manage · `document.flatten-form` · Shows: a toast · Help: *Flatten a form*
+- [ ] **Tab order…** — Manage · `document.tab-order` · Shows: a toast
 
 ## Ribbon › Protect
 
@@ -269,6 +270,19 @@ is not available.
 - [ ] **Donate** · `app.donate` · Shows: on screen · Help: *Support Monstera with a donation*
 - [ ] **Rate Us** · `app.rate` · Shows: on screen · Help: *Rate Monstera*
 - [ ] **Update available** · `app.update-available` · Shows: on screen
+
+## Properties tab
+
+- [ ] **Copy to other pages…** · `forms.copy-to-pages` · Shows: on screen
+- [ ] **Align left edges** · `forms.arrange.align-left` · Shows: on screen
+- [ ] **Align right edges** · `forms.arrange.align-right` · Shows: on screen
+- [ ] **Align tops** · `forms.arrange.align-top` · Shows: on screen
+- [ ] **Align bottoms** · `forms.arrange.align-bottom` · Shows: on screen
+- [ ] **Centre across the first field** · `forms.arrange.centre-horizontally` · Shows: on screen
+- [ ] **Centre down the first field** · `forms.arrange.centre-vertically` · Shows: on screen
+- [ ] **Same width as the first field** · `forms.arrange.same-width` · Shows: on screen
+- [ ] **Same height as the first field** · `forms.arrange.same-height` · Shows: on screen
+- [ ] **Same size as the first field** · `forms.arrange.same-size` · Shows: on screen
 
 ## Start screen
 

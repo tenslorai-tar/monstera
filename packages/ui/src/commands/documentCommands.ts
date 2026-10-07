@@ -111,6 +111,7 @@ import { KEPT_BACKUPS_DIALOG_ID } from '../dialogs/keptBackups.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
 import { FLATTEN_FORM_DIALOG_ID, FLATTEN_FORM_RESULT } from '../dialogs/flattenForm.js';
+import { TAB_ORDER_DIALOG_ID, TAB_ORDER_RESULT } from '../dialogs/tabOrder.js';
 import { PAGE_BACKGROUND_DIALOG_ID, PAGE_BACKGROUND_RESULT } from '../dialogs/pageBackground.js';
 import { SIGNED_EDIT_DIALOG_ID, SIGNED_EDIT_RESULT } from '../dialogs/signedEdit.js';
 import type { OpenedDocument } from './importMarkdown.js';
@@ -234,6 +235,9 @@ import {
   RIBBON_TEXT,
   GROUP_QUICK_TOOLS,
   RIBBON_FLATTEN_FORM,
+  RIBBON_TAB_ORDER,
+  TAB_ORDER_COMMAND_TITLE,
+  TOAST_TAB_ORDER_SET,
   RIBBON_FORM_DATA_EXPORT,
   RIBBON_EXPORT_OFFICE,
   RIBBON_FORM_DATA_IMPORT,
@@ -3702,6 +3706,33 @@ export function flattenFormCommand(deps: DocumentCommandDeps & WritesAFile): UiC
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
       await flattenForm(deps, context.docId);
+    },
+  };
+}
+
+/**
+ * *Tab order…* (ADR-0193): how the Tab key walks the form's fields, set on every page by one `setTabOrder`.
+ *
+ * Asked first, for the flatten's reason in the other direction: a person has to say which of three orders, and dismissing
+ * the question sets nothing. The toast says it ran, since a tab order changes nothing the page shows.
+ */
+export function tabOrderCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+  return {
+    id: 'document.tab-order',
+    // OUT OF SIGHT: the order shows only when Tab is pressed, so the toast is the sign that it ran.
+    feedback: TOASTS,
+    icon: 'ListOrdered',
+    title: TAB_ORDER_COMMAND_TITLE,
+    ribbonTitle: RIBBON_TAB_ORDER,
+    placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_MANAGE, order: 84 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const answer = TAB_ORDER_RESULT.safeParse(await deps.ask(TAB_ORDER_DIALOG_ID, {}));
+      if (!answer.success) return;
+      if (await applyDocumentCommand(deps, context.docId, { kind: 'setTabOrder', pages: 'all', order: answer.data.order })) {
+        confirmDone(deps, TOAST_TAB_ORDER_SET);
+      }
     },
   };
 }

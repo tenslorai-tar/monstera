@@ -1166,6 +1166,27 @@ export const FLAT_FIELDS_TITLE = messageKey('dialog.flat-fields.title');
 export const FLAT_FIELDS_GUESSED = messageKey('dialog.flat-fields.guessed');
 export const FLAT_FIELDS_NONE = messageKey('dialog.flat-fields.none');
 export const FLAT_FIELDS_TRUNCATED = messageKey('dialog.flat-fields.truncated');
+// THE ORDER THE TAB KEY WALKS A FORM'S FIELDS (ADR-0193).
+export const TAB_ORDER_COMMAND_TITLE = messageKey('command.forms.tab-order.title');
+export const RIBBON_TAB_ORDER = messageKey('surface.ribbon.tab-order');
+export const TAB_ORDER_TITLE = messageKey('dialog.tab-order.title');
+export const TAB_ORDER_LABEL = messageKey('dialog.tab-order.label');
+export const TAB_ORDER_ROW = messageKey('dialog.tab-order.row');
+export const TAB_ORDER_ROW_NOTE = messageKey('dialog.tab-order.row.note');
+export const TAB_ORDER_COLUMN = messageKey('dialog.tab-order.column');
+export const TAB_ORDER_COLUMN_NOTE = messageKey('dialog.tab-order.column.note');
+export const TAB_ORDER_STRUCTURE = messageKey('dialog.tab-order.structure');
+export const TAB_ORDER_STRUCTURE_NOTE = messageKey('dialog.tab-order.structure.note');
+export const TAB_ORDER_APPLY = messageKey('dialog.tab-order.apply');
+export const TOAST_TAB_ORDER_SET = messageKey('toast.tab-order-set');
+// COPYING A FORM FIELD ONTO OTHER PAGES (ADR-0193).
+export const FIELD_COPY_COMMAND_TITLE = messageKey('command.forms.copy-to-pages.title');
+export const FIELD_COPY_TITLE = messageKey('dialog.field-copy.title');
+export const FIELD_COPY_LABEL = messageKey('dialog.field-copy.label');
+export const FIELD_COPY_NOTE = messageKey('dialog.field-copy.note');
+export const FIELD_COPY_EMPTY = messageKey('dialog.field-copy.empty');
+export const FIELD_COPY_OWN_PAGE = messageKey('dialog.field-copy.own-page');
+export const FIELD_COPY_APPLY = messageKey('dialog.field-copy.apply');
 // ALIGNING SELECTED FORM FIELDS AND MAKING THEM ONE SIZE (ADR-0193), the foot of the Properties tab.
 export const FIELD_ARRANGE_ALIGN_LEFT = messageKey('command.forms.align-left.title');
 export const FIELD_ARRANGE_ALIGN_RIGHT = messageKey('command.forms.align-right.title');
@@ -3576,6 +3597,26 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLAT_FIELDS_TITLE]: 'Fields this page could have',
   [FLAT_FIELDS_GUESSED]:
     'Monstera looked for ruled lines and boxes with a label beside them and nothing written in them. An empty box in a table looks the same, so check the list before accepting it.',
+  [TAB_ORDER_COMMAND_TITLE]: 'Tab order…',
+  [RIBBON_TAB_ORDER]: 'Tab order',
+  [TAB_ORDER_TITLE]: 'Tab order',
+  [TAB_ORDER_LABEL]: 'When someone presses Tab in this form, go',
+  [TAB_ORDER_ROW]: 'Across each row, then down',
+  [TAB_ORDER_ROW_NOTE]: 'Left to right along a line of fields, then to the next line.',
+  [TAB_ORDER_COLUMN]: 'Down each column, then across',
+  [TAB_ORDER_COLUMN_NOTE]: 'Top to bottom in one column of fields, then to the next column.',
+  [TAB_ORDER_STRUCTURE]: 'In the order the document was made',
+  [TAB_ORDER_STRUCTURE_NOTE]: 'Follow the document’s own structure, which is what a screen reader reads.',
+  [TAB_ORDER_APPLY]: 'Set the tab order',
+  [TOAST_TAB_ORDER_SET]: 'Tab order set on every page. Save to keep the change.',
+  [FIELD_COPY_COMMAND_TITLE]: 'Copy to other pages…',
+  [FIELD_COPY_TITLE]: 'Copy this field to other pages',
+  [FIELD_COPY_LABEL]: 'Pages',
+  [FIELD_COPY_NOTE]:
+    'Each copy goes in the same place on its page and is a new field with a name of its own, so filling one does not fill the others.',
+  [FIELD_COPY_EMPTY]: 'Type the pages to copy to, for example 2-4, 6. The form is not changed.',
+  [FIELD_COPY_OWN_PAGE]: 'The field is already on that page. Leave it out of the list.',
+  [FIELD_COPY_APPLY]: 'Copy the field',
   [FIELD_ARRANGE_ALIGN_LEFT]: 'Align left edges',
   [FIELD_ARRANGE_ALIGN_RIGHT]: 'Align right edges',
   [FIELD_ARRANGE_ALIGN_TOP]: 'Align tops',

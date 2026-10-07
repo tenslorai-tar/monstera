@@ -1,6 +1,11 @@
+import type { FormFieldHandle, FormFieldKind } from '@monstera/contract';
+
+import { FIELD_COPY_DIALOG_ID } from '../dialogs/fieldCopy.js';
+import type { FieldCopyAnswer } from '../dialogs/fieldCopyResult.js';
 import type { IconName } from '../primitives/icons.js';
 import { type Arrangement, type PlacedField, arrange } from '../forms/arrange.js';
 import {
+  FIELD_COPY_COMMAND_TITLE,
   FIELD_ARRANGE_ALIGN_BOTTOM,
   FIELD_ARRANGE_ALIGN_LEFT,
   FIELD_ARRANGE_ALIGN_RIGHT,
@@ -42,6 +47,49 @@ const ARRANGEMENTS: readonly { readonly kind: Arrangement; readonly title: Messa
   { kind: 'same-height', title: FIELD_ARRANGE_SAME_HEIGHT, icon: 'MoveVertical' },
   { kind: 'same-size', title: FIELD_ARRANGE_SAME_SIZE, icon: 'Maximize2' },
 ];
+
+/** The one selected field, and what kind it is. */
+export interface FieldToCopy {
+  readonly field: FormFieldHandle;
+  readonly kind: FormFieldKind;
+}
+
+export interface FieldCopyDeps {
+  /** The one selected field, or `undefined` for none or several. */
+  readonly single: () => FieldToCopy | undefined;
+  readonly ask: (id: string, props: unknown) => Promise<unknown>;
+  /** Sends the copy: the field and the zero-based pages it goes onto. */
+  readonly apply: (field: FormFieldHandle, pages: readonly number[]) => void;
+}
+
+/**
+ * *Copy to other pages…* for the one selected form field (ADR-0193): asks which pages and sends ONE `duplicateFormField`.
+ *
+ * Offered only where a copy is a thing the writer does. A radio option belongs to its group and a signature is signed
+ * once, so for those the command is hidden and not present and refused (`FieldEditRefusal`'s `duplicate-radio` and
+ * `duplicate-signature` are the writer's own backstop).
+ */
+export function copyFieldToPagesCommand(deps: FieldCopyDeps): UiCommand {
+  return {
+    id: 'forms.copy-to-pages',
+    feedback: VISIBLE,
+    title: FIELD_COPY_COMMAND_TITLE,
+    icon: 'CopyPlus',
+    placements: [{ surface: 'properties', order: 20 }],
+    when: (context) => {
+      const chosen = deps.single();
+      return chosen !== undefined && chosen.kind !== 'radio' && chosen.kind !== 'signature' && (context.pageCount ?? 0) > 1;
+    },
+    run: async (context): Promise<void> => {
+      const chosen = deps.single();
+      if (chosen === undefined || context.pageCount === undefined) return;
+      const answer = (await deps.ask(FIELD_COPY_DIALOG_ID, { pageCount: context.pageCount, from: chosen.field.page })) as
+        | FieldCopyAnswer
+        | undefined;
+      if (answer !== undefined) deps.apply(chosen.field, answer.pages);
+    },
+  };
+}
 
 /** The arrange commands. */
 export function fieldArrangeCommands(deps: FieldArrangeDeps): readonly UiCommand[] {
