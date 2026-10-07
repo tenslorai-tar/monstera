@@ -441,14 +441,19 @@ export async function reportRendererPolicy(): Promise<void> {
    */
   let waiter: { event: ShellFailure['event']; resolve: () => void } | null = null;
 
-  const window = createMainWindow(session.defaultSession, (failure) => {
-    received.push(failure);
-    if (waiter !== null && failure.event === waiter.event) {
-      const { resolve } = waiter;
-      waiter = null;
-      resolve();
-    }
-  });
+  const window = createMainWindow(
+    session.defaultSession,
+    (failure) => {
+      received.push(failure);
+      if (waiter !== null && failure.event === waiter.event) {
+        const { resolve } = waiter;
+        waiter = null;
+        resolve();
+      }
+    },
+    // NO MEMORY: the harness opens the same way every run.
+    undefined,
+  );
   const { webContents } = window;
 
   /**

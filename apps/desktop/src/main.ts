@@ -7,6 +7,7 @@ import { registerContractHandlers } from './registerHandlers.js';
 import { type ShellFailureSink, reportProcessFailures } from './shellFailure.js';
 import { quitAfterShutdown } from './shellShutdown.js';
 import { createMainWindow, senderCheckFor } from './window.js';
+import type { WindowMemory } from './windowState.js';
 
 /**
  * Brings up the hardened window and registers the contract over it.
@@ -119,8 +120,10 @@ export interface ShellWindow {
 
 /**
  * @param build The graph, DEFERRED — see the single-instance section above.
+ * @param memory Where the window was left, from `entry.ts`, the one file entitled to say where `userData` is. Only a
+ *   document's path is held, so nothing is read or written until the window is made, after the lock.
  */
-export function startShell(build: () => ShellDependencies): void {
+export function startShell(build: () => ShellDependencies, memory: WindowMemory | undefined): void {
   if (!app.requestSingleInstanceLock()) {
     app.quit();
     return;
@@ -160,7 +163,8 @@ export function startShell(build: () => ShellDependencies): void {
   Menu.setApplicationMenu(null);
 
   void app.whenReady().then(() => {
-    const window = createMainWindow(session.defaultSession, deps.failures);
+    // WHERE THE WINDOW WAS LEFT is kept under `userData` beside the other records, and a first launch opens maximised.
+    const window = createMainWindow(session.defaultSession, deps.failures, memory);
     deps.attachWindow({
       setTitleBarOverlay: (overlay) => {
         window.setTitleBarOverlay(overlay);

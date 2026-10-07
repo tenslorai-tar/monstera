@@ -64,6 +64,7 @@ import { STORE_URIS } from './webPages.js';
 import { createChatHistory } from './chatHistory.js';
 import { type SecretCipher, createSecretStore } from './secretStore.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
+import { WINDOW_STATE_FILE, windowMemory } from './windowState.js';
 import { createShellLog } from './shellLog.js';
 import { createCrashReports, crashReportsOn, logFilesIn } from './crashReports.js';
 import { createWin32PrintSurface } from './win32PrintSurface.js';
@@ -556,4 +557,4 @@ startShell(() => {
     // Built above, beside the platform, because the retired-cache removal writes to it too.
     log,
   });
-});
+}, windowMemory(createJsonFile(app.getPath('userData'), WINDOW_STATE_FILE)));

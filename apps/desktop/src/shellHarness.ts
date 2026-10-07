@@ -396,7 +396,8 @@ startShell(() => {
   // asserts the whole close sequence in order. Neither half is evidence for the
   // other, and this comment is here so the substitution is not mistaken for one.
   return { ...dependencies, shutdown: quitProbe.shutdown };
-});
+  // NO WINDOW MEMORY: the harness opens the same way every run, whatever a person left a window at on this machine.
+}, undefined);
 
 // THE QUIT IS REQUESTED AFTER `startShell`, AND THE ORDER IS THE WHOLE FIX.
 //

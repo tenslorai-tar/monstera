@@ -974,7 +974,8 @@ export async function reportCanvasPixels(
     // the dialog is the only thing this proof does not reach.
     pickDocument: () => Promise.resolve(fixture),
   });
-  const window = createMainWindow(session.defaultSession, deps.failures);
+  // NO MEMORY: the harness opens the same way every run, whatever a person left a window at on this machine.
+  const window = createMainWindow(session.defaultSession, deps.failures, undefined);
   // THE SHIPPED ORDER includes the attach, so the overlay this harness reads is the one the product paints —
   // recorded on the way through and passed to the real window unchanged.
   const overlaysPainted: TitleBarOverlay[] = [];

@@ -5,6 +5,7 @@ import { minimumWindowFor } from '@monstera/shared';
 import { BrowserWindow, type Session, type WebContents, app, screen } from 'electron';
 
 import { type ShellFailureSink, reportRendererFailures } from './shellFailure.js';
+import { PLATFORM_DEFAULT, type WindowMemory, placementFor } from './windowState.js';
 import {
   CONTENT_SECURITY_POLICY,
   RENDERER_WEB_PREFERENCES,
@@ -36,6 +37,9 @@ const PRELOAD = join(HERE, 'preload.cjs');
 // build overwrites, so the file git keeps and the file Electron loads are the
 // same path and neither is authoritative.
 export const RENDERER_HTML = join(HERE, 'renderer', 'index.html');
+
+/** How long after the last move or resize the window's place is written: a drag is one write, not hundreds. */
+const REMEMBER_AFTER_MS = 400;
 
 /**
  * Applies the deny-all permission policy to a session.
@@ -128,12 +132,26 @@ export function lockNavigation(contents: WebContents, loaded: string): void {
  * is the white flash every Electron app ships with by default, and §10 bans
  * spinner-only loading states on surfaces whose shape is known.
  */
-export function createMainWindow(target: Session, failures: ShellFailureSink): BrowserWindow {
+export function createMainWindow(
+  target: Session,
+  failures: ShellFailureSink,
+  /** Where the window was left, or `undefined` for one that opens the platform's way every run (a harness's). */
+  memory: WindowMemory | undefined,
+): BrowserWindow {
   applyPermissionPolicy(target);
   applyContentSecurityPolicy(target);
 
   const initialFloor = minimumWindowFor(screen.getPrimaryDisplay().workAreaSize);
+  const placement =
+    memory === undefined
+      ? PLATFORM_DEFAULT
+      : placementFor(
+          memory.read(),
+          screen.getAllDisplays().map((display) => display.workArea),
+          initialFloor,
+        );
   const window = new BrowserWindow({
+    ...(placement.bounds ?? {}),
     show: false,
     backgroundColor: WINDOW_BACKGROUND,
     // THE FLOOR THE CHROME FITS IN (`MINIMUM_WINDOW`, measured 2026-09-23), and NEVER MORE THAN THE SCREEN'S
@@ -156,6 +174,35 @@ export function createMainWindow(target: Session, failures: ShellFailureSink): B
       session: target,
     },
   });
+
+  // MAXIMISED BEFORE IT IS SHOWN, so the first frame is the maximised one and not a small window that grows.
+  if (placement.maximize) window.maximize();
+
+  // WHERE IT IS LEFT is kept: the size and place it has when not maximised, and whether it is maximised, written a moment
+  // after the last move or resize and once more as it closes. `getNormalBounds` is the restored rectangle, so a window
+  // closed maximised comes back to the size it unmaximises to.
+  if (memory !== undefined) {
+    let pending: NodeJS.Timeout | undefined;
+    const remember = (): void => {
+      if (window.isDestroyed()) return;
+      memory.write({ ...window.getNormalBounds(), maximized: window.isMaximized() });
+    };
+    const soon = (): void => {
+      clearTimeout(pending);
+      pending = setTimeout(remember, REMEMBER_AFTER_MS);
+    };
+    window.on('resize', soon);
+    window.on('move', soon);
+    window.on('maximize', soon);
+    window.on('unmaximize', soon);
+    window.on('close', () => {
+      clearTimeout(pending);
+      remember();
+    });
+    window.once('closed', () => {
+      clearTimeout(pending);
+    });
+  }
 
   // Subscribed HERE, where the contents is born, so a window that exists is a
   // window that reports. At the composition root instead, a window could be
