@@ -3,11 +3,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inspect } from 'node:util';
 
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFString } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString } from '@cantoo/pdf-lib';
 import forge from 'node-forge';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { type Command, type CommandOfKind, NETWORK_OCR_ENGINES, type PageSet, outlineOpCodes } from '@monstera/contract';
+import {
+  type Command,
+  type CommandOfKind,
+  type FormFieldHandle,
+  NETWORK_OCR_ENGINES,
+  type PageSet,
+  outlineOpCodes,
+} from '@monstera/contract';
 import { type DocVersion, asDocVersion } from '@monstera/shared';
 
 import {
@@ -33,6 +40,8 @@ import { localMupdfWriter, localSignpdfWriter } from './localEngine.js';
 import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
 import * as mupdf from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
+import { buildFormTestPdf } from './formTestForm.js';
+import { readFormFields } from './formFields.js';
 import { applyAddAnnotation, readAnnotations } from './pageAnnotations.js';
 import { localPdfLibWriter } from './localEngine.js';
 import { shownOn } from './shownText.js';
@@ -2686,5 +2695,98 @@ describe('CommandBus and a command whose intent is a password', () => {
     } finally {
       await mupdfWriter.close(session);
     }
+  });
+});
+
+describe('a form-field change is ONE undo step', () => {
+  /** The tooltip, required flag and name of every field, as a second library reads the held bytes. */
+  async function summary(image: ByteImage): Promise<readonly string[]> {
+    const document = await PDFDocument.load(image);
+    return document
+      .getForm()
+      .getFields()
+      .map((field) => {
+        const tip = field.acroField.dict.lookup(PDFName.of('TU'));
+        return `${field.getName()}|${tip instanceof PDFString || tip instanceof PDFHexString ? tip.decodeText() : ''}|${String(field.isRequired())}`;
+      })
+      .sort();
+  }
+
+  /**
+   * One real execution of a command on the held form, through the bus, as the application runs it. The session is
+   * opened on what the host model holds NOW, because the model stands for a host that rebuilds its session after each
+   * command (`adopt`) and a session opened once would be the document as it was first read.
+   */
+  async function run(
+    bus: CommandBus,
+    context: ReturnType<typeof contextStub>,
+    inputs: CommandInputs & { readonly current: () => Promise<ByteImage> },
+    build: (version: DocVersion) => Command,
+  ): Promise<void> {
+    const session = await mupdfWriter.open(await inputs.current());
+    try {
+      await bus.execute({ mupdf: session }, context, build(context.version), inputs);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('undoes exactly the last command, whether it changed one property, several fields or copied a field to pages', async () => {
+    const form = await buildFormTestPdf();
+    const host = hostModel(form);
+    const inputs = { ...noByteImageExpected, ...host };
+    const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
+    const context = contextStub(true);
+    const session = await mupdfWriter.open(form);
+    let handles: { readonly email: FormFieldHandle; readonly phone: FormFieldHandle };
+    try {
+      const { fields } = await readFormFields(session);
+      const email = fields.find((field) => field.name === 'email');
+      const phone = fields.find((field) => field.name === 'phone');
+      if (email === undefined || phone === undefined) throw new Error('the fixture has no email or phone');
+      handles = { email: { page: email.page, index: email.index, name: 'email' }, phone: { page: phone.page, index: phone.index, name: 'phone' } };
+    } finally {
+      await mupdfWriter.close(session);
+    }
+    const states: (readonly string[])[] = [await summary(await host.current())];
+
+    // 1. ONE PROPERTY of one field.
+    await run(bus, context, inputs, (version) => ({
+      kind: 'editFormFields',
+      edits: [{ field: handles.email, set: { tooltip: 'first' } }],
+      version,
+    }));
+    states.push(await summary(await host.current()));
+    // 2. SEVERAL FIELDS in one command, which an align or a shared change sends.
+    await run(bus, context, inputs, (version) => ({
+      kind: 'editFormFields',
+      edits: [
+        { field: handles.email, set: { required: true } },
+        { field: handles.phone, set: { required: true, tooltip: 'second' } },
+      ],
+      version,
+    }));
+    states.push(await summary(await host.current()));
+    // 3. A COPY onto two pages, which adds two fields.
+    await run(bus, context, inputs, (version) => ({
+      kind: 'duplicateFormField',
+      field: handles.email,
+      pages: [1, 2],
+      version,
+    }));
+    states.push(await summary(await host.current()));
+
+    // CONTROL: the four states differ from each other, so an undo that went too far or not far enough reads as different.
+    expect(new Set(states.map((state) => state.join('\n'))).size).toBe(4);
+    for (let step = states.length - 2; step >= 0; step -= 1) {
+      const open = await mupdfWriter.open(await host.current());
+      try {
+        await bus.undo({ mupdf: open }, context, host.restore, inputs);
+      } finally {
+        await mupdfWriter.close(open);
+      }
+      expect(await summary(await host.current()), `after undoing back to state ${String(step)}`).toStrictEqual(states[step]);
+    }
+    expect(context.mutableLog.canUndo, 'nothing is left to undo once the document is as it was opened').toBe(false);
   });
 });
