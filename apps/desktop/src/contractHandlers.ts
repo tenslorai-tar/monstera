@@ -27,6 +27,7 @@ import {
   MAX_RASTER_BYTES,
   MAX_RASTER_PIXELS,
   MAX_EDIT_TEXT,
+  MAX_TRANSLATED_TEXT,
   blockEditOf,
   MAX_SETTINGS_FILE_BYTES,
   RECENT_CHECK_CAP_MS,
@@ -794,6 +795,7 @@ export function createContractHandlers(deps: {
     'ai.stop': ({ subscription }) => Promise.resolve(ok(deps.assistant.stop(subscription))),
     'ai.openSource': async ({ answer, index }) => ok(await deps.assistant.openSource(answer, index)),
     'ai.translatePage': translatePageHandler(deps),
+    'ai.translateText': translateTextHandler(deps),
     ...cloudHandlers(deps),
 
     'settings.loadSecrets': () => {
@@ -2860,6 +2862,29 @@ function translatePageHandler(deps: {
     const edit = blockEditOf(blocks);
     if (edit.text.length > MAX_EDIT_TEXT) return ok({ kind: 'refused', problem: 'unreadable' } as const);
     return ok({ kind: 'translated', version: read.version, edit } as const);
+  };
+}
+
+/**
+ * A selection's words translated through the page translation's own instruction and reading of the answer, so the two
+ * cannot differ about what a translation is (B3a). One block, one ask, asked again only when the answer could not be read.
+ */
+function translateTextHandler(deps: { readonly assistant: Assistant }): ContractHandlers['ai.translateText'] {
+  return async ({ text, provider, model, language }) => {
+    let translated: readonly string[] | undefined;
+    for (let attempt = 0; attempt < 2 && translated === undefined; attempt += 1) {
+      const answer = await deps.assistant.complete({
+        provider,
+        model,
+        system: translationInstruction(TRANSLATION_LANGUAGES[language]),
+        messages: [{ role: 'user', text: translationRequest([text]) }],
+      });
+      if (answer.refusal !== undefined) return ok({ kind: 'refused', problem: answer.refusal } as const);
+      translated = readTranslation(answer.text, 1);
+    }
+    const first = translated?.[0];
+    if (first === undefined) return ok({ kind: 'refused', problem: 'unreadable' } as const);
+    return ok({ kind: 'translated', text: first.slice(0, MAX_TRANSLATED_TEXT) } as const);
   };
 }
 

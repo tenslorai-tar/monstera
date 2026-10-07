@@ -463,6 +463,14 @@ export type StorePage = (typeof STORE_PAGES)[number];
  * channels that already carry page text.
  */
 export const MAX_MODEL_ID = 128;
+
+/**
+ * The most characters of selected text one translation takes, and of the answer: a selection is a few paragraphs, and a
+ * larger one is a page, which has its own channel. The answer may run longer than the question in another language, so
+ * its bound is wider — both inside the channel frame's room at six bytes a character.
+ */
+export const MAX_TRANSLATE_TEXT = 20_000;
+export const MAX_TRANSLATED_TEXT = 60_000;
 export const MAX_MODELS = 512;
 export const MAX_CHAT_TEXT = 16_384;
 export const MAX_CHAT_TURNS = 64;
@@ -5848,6 +5856,33 @@ export const channels = {
       z.object({ kind: z.literal('refused'), problem: z.enum(AI_ANSWER_REFUSALS) }),
     ]),
     ['document-not-open', 'document-poisoned', 'engine-unavailable'],
+  ),
+
+  /**
+   * Translates a piece of text a person selected, and answers the translation as text — which the renderer COPIES
+   * ([ADR-0097](../../../docs/DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md)'s
+   * provider route, for words rather than a page).
+   *
+   * **Text and not a write**, because replacing a selection's words inside a block is the in-place editor's, and a block's
+   * lines are rewritten whole (`editTextBlock`). What this channel can honestly give a person who selected a sentence is
+   * the sentence in the other language, to paste where they want it. It shares the page translation's instruction, its
+   * reading of the answer and its refusals, so the two cannot differ about what counts as a translation (B3a).
+   */
+  'ai.translateText': channel(
+    'Translates a selected piece of text and answers it as text.',
+    z
+      .object({
+        text: z.string().min(1).max(MAX_TRANSLATE_TEXT),
+        provider: z.enum(AI_PROVIDER_IDS),
+        model: z.string().min(1).max(MAX_MODEL_ID),
+        language: z.enum(TRANSLATION_LANGUAGE_IDS),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('translated'), text: z.string().max(MAX_TRANSLATED_TEXT) }),
+      z.object({ kind: z.literal('refused'), problem: z.enum(AI_ANSWER_REFUSALS) }),
+    ]),
+    [],
   ),
 
   'settings.loadSecrets': channel(

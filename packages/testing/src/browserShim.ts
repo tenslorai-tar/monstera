@@ -2447,6 +2447,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // unless a case hands one in to drive the write that follows.
     'ai.translatePage': () =>
       Promise.resolve(ok(options.translation ?? { kind: 'refused' as const, problem: 'no-key' as const })),
+    'ai.translateText': () => Promise.resolve(ok({ kind: 'refused' as const, problem: 'no-key' as const })),
     // NO CLOUD IN A BROWSER: no client values and no `main` to sign in through, so every provider
     // is what a build without its values is — not configured (ADR-0091 Decision 2).
     'cloud.status': () =>

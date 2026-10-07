@@ -111,6 +111,8 @@ export {
   MAX_CHAT_TEXT,
   MAX_CHAT_TURNS,
   MAX_MODEL_ID,
+  MAX_TRANSLATE_TEXT,
+  MAX_TRANSLATED_TEXT,
   // ONE LIST SHAPE for `ai.models` and the Settings dialog's props (ADR-0117).
   AI_LIST_PROBLEMS,
   type AiModelListAnswer,

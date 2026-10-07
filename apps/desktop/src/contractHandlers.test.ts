@@ -2057,6 +2057,24 @@ settings: createEphemeralSettings(),
     });
   });
 
+  it('translates SELECTED TEXT through the page translation’s own instruction, and answers it as text', async () => {
+    const { handlers, asked } = translating(BLOCKS, JSON.stringify(['Le paiement est dû']));
+    expect(
+      await handlers['ai.translateText']({ text: 'Payment is due', provider: 'openai', model: 'm', language: 'fr' }),
+    ).toStrictEqual({ ok: true, value: { kind: 'translated', text: 'Le paiement est dû' } });
+    // THE SAME INSTRUCTION AND THE SAME REQUEST SHAPE as a page: one text, as a one-element list.
+    expect(asked[0]?.system).toContain('into French');
+    expect(JSON.parse(asked[0]?.user ?? '[]')).toStrictEqual(['Payment is due']);
+  });
+
+  it('CONTROL: selected text whose answer cannot be read is refused as unreadable after one more ask', async () => {
+    const { handlers, asked } = translating(BLOCKS, 'not json');
+    expect(
+      await handlers['ai.translateText']({ text: 'Payment is due', provider: 'openai', model: 'm', language: 'fr' }),
+    ).toStrictEqual({ ok: true, value: { kind: 'refused', problem: 'unreadable' } });
+    expect(asked).toHaveLength(2);
+  });
+
   it('an answer of the WRONG LENGTH is refused as unreadable — after ONE more ask, never matched by guess', async () => {
     const { handlers, asked } = translating(BLOCKS, JSON.stringify(['Facture']));
     expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
