@@ -73,3 +73,11 @@ and a failed check said what was required and never what it meant or what to do.
   table lacks renders as *Other element*, and the engine's misspelling is read as `NonStruct` (the control — without the
   correction the case reads `NonDtruct` and fails).
 - The visual baselines that show either dialog are replaced by the panel's; `docs/FEATURES.md` rows for both tools change.
+
+## Correction, 2026-10-07
+
+Decision 2 made the two tools a fourth tab of the right panel. The owner's review of 0.1.12.0 refused it: four tabs do
+not fit the panel's default width, so the Assistant — the panel's main tool — was drawn as an icon, to give room to a
+tool opened once per file. [ADR-0189](0189-the-accessibility-tools-open-in-the-document-panel-while-in-use-not-as-a-fourth-tab.md)
+moves the tools to the left document panel, shown only while they are in use. Decisions 1, 3, 4 and 5 stand unchanged,
+and the click-to-highlight in particular is kept.
