@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { MAX_MERGE_PART_ENTRIES, mergeDocumentSchema } from './commands.js';
 import { ENGINE_HOST_FRAME_MAX_BYTES } from './hostProtocol.js';
 import {
   MAX_PAGE_INDEX,
@@ -121,5 +122,28 @@ describe('withPageRuns — the renderer’s one place a command’s pages are wr
       at: 2,
     });
     expect(written.documents[1]).toBe(short);
+  });
+});
+
+describe('mergeDocumentSchema — a merge of several documents may choose pages of each (ADR-0195)', () => {
+  const DOC = '00000000-0000-4000-8000-000000000001';
+  const merge = (documents: readonly { source: string; sourcePages: unknown }[]): unknown => ({ kind: 'mergeDocument', documents, at: 0 });
+
+  it('takes each part whole or with its own pages, and a part’s set up to the bound', () => {
+    expect(mergeDocumentSchema.safeParse(merge([{ source: DOC, sourcePages: [1, 3] }, { source: DOC, sourcePages: 'all' }])).success).toBe(true);
+    const atBound = Array.from({ length: MAX_MERGE_PART_ENTRIES }, (_, page) => page * 2);
+    expect(mergeDocumentSchema.safeParse(merge([{ source: DOC, sourcePages: atBound }, { source: DOC, sourcePages: 'all' }])).success).toBe(true);
+  });
+
+  it('REFUSES a part with more entries than the bound, and CONTROL: a single document may still hold the paired bound', () => {
+    const past = Array.from({ length: MAX_MERGE_PART_ENTRIES + 1 }, (_, page) => page * 2);
+    expect(mergeDocumentSchema.safeParse(merge([{ source: DOC, sourcePages: past }, { source: DOC, sourcePages: 'all' }])).success).toBe(false);
+    // The ONE-document shape is Insert from PDF's, and its bound is the paired set's — unchanged.
+    expect(mergeDocumentSchema.safeParse(merge([{ source: DOC, sourcePages: past }])).success).toBe(true);
+  });
+
+  it('the worst message a merge can be fits the frame with the margin one page set has', () => {
+    const worst = maxEncodedBytes(mergeDocumentSchema, WORST_BYTES_PER_CHAR, 'input');
+    expect(worst).toBeLessThan((ENGINE_HOST_FRAME_MAX_BYTES * 3) / 4);
   });
 });

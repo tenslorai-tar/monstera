@@ -56,11 +56,16 @@ export type PageSet = z.infer<typeof pageSetSchema>;
  */
 export const MAX_PAIRED_PAGE_SET_ENTRIES = MAX_PAGE_SET_ENTRIES / 2;
 
+/**
+ * A page set held to `max` entries — the one shape a bounded page set is spelt in, so a set that shares the frame with
+ * others is a number chosen at its call site and never a second definition of what an entry is.
+ */
+export function pageSetOfAtMost(max: number): z.ZodArray<z.ZodUnion<readonly [typeof pageIndexSchema, typeof pageRunSchema]>> {
+  return z.array(z.union([pageIndexSchema, pageRunSchema])).min(1).max(max);
+}
+
 /** A page set in a command that carries two, each bounded by {@link MAX_PAIRED_PAGE_SET_ENTRIES}. */
-export const pairedPageSetSchema = z
-  .array(z.union([pageIndexSchema, pageRunSchema]))
-  .min(1)
-  .max(MAX_PAIRED_PAGE_SET_ENTRIES);
+export const pairedPageSetSchema = pageSetOfAtMost(MAX_PAIRED_PAGE_SET_ENTRIES);
 
 /**
  * Pages as the shortest page set that names them in the same order: each stretch of consecutive ascending pages

@@ -343,6 +343,7 @@ export {
   insertImagePageSchema,
   mergeDocumentSchema,
   MAX_MERGE_DOCUMENTS,
+  MAX_MERGE_PART_ENTRIES,
   POINTS_PER_UNIT,
   movePageSchema,
   type NamesAnAnnotation,

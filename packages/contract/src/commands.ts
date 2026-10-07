@@ -1,7 +1,7 @@
 import type { DocId, DocVersion } from '@monstera/shared';
 import { z } from 'zod';
 
-import { MAX_PAGE_INDEX, pageSetSchema, pairedPageSetSchema } from './pageSet.js';
+import { MAX_PAGE_INDEX, MAX_PAGE_SET_ENTRIES, pageSetOfAtMost, pageSetSchema, pairedPageSetSchema } from './pageSet.js';
 import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   OCR_ENGINES,
@@ -820,6 +820,13 @@ export const sourcePagesSchema = z.union([z.literal('all'), pairedPageSetSchema]
 export const MAX_MERGE_DOCUMENTS = 32;
 
 /**
+ * The most entries the page set of ONE part of a merge holds (ADR-0195): a page set's own bound shared out among the
+ * parts, so thirty-two parts at their worst are one set's worst and fit the host frame by the same margin as one set
+ * does. The bound is in the shape because `maxEncodedBytes` reads the shape; a refine on the sum would be invisible to it.
+ */
+export const MAX_MERGE_PART_ENTRIES = MAX_PAGE_SET_ENTRIES / MAX_MERGE_DOCUMENTS;
+
+/**
  * Append another OPEN document's pages into this one.
  *
  * ## The source is a `DocId`, and it is a document the user has open
@@ -853,12 +860,11 @@ export const mergeDocumentSchema = z
      * one log entry however many files the person chose, so a failure on any of them changes nothing.
      */
     //
-    // TWO SHAPES, and the bound is why: ONE document with the pages chosen of it (*Insert from PDF*), or one to
-    // `MAX_MERGE_DOCUMENTS` documents each taken whole (*Merge*). A list of parts each free to carry a page set has a
-    // worst of 32 sets, past the hosts' frame, and a refine holding their total to one set's is invisible to
-    // `maxEncodedBytes`, which reads the shape — so the check that owns the message's size would read it as too large,
-    // correctly by its own rule (B3a). A merge of several documents with pages chosen of each is a widening of this
-    // union, made on purpose.
+    // TWO SHAPES, and the bound is why: ONE document with the pages chosen of it (*Insert from PDF*), whose set may
+    // hold the paired bound, or one to `MAX_MERGE_DOCUMENTS` documents (*Merge*), each taken whole or with its own pages
+    // chosen (ADR-0195). A list of parts each free to carry a full set has a worst of 32 sets, past the hosts' frame,
+    // and a refine holding their total to one set's is invisible to `maxEncodedBytes`, which reads the shape — so each
+    // part's set is held to `MAX_MERGE_PART_ENTRIES`, which makes the thirty-two parts' worst one set's worst.
     documents: z.union([
       z.tuple([
         z
@@ -876,8 +882,11 @@ export const mergeDocumentSchema = z
             .object({
               /** An open document. The same one may appear more than once. */
               source: docIdSchema,
-              /** Every page, in its own order. */
-              sourcePages: z.literal('all'),
+              /**
+               * Every page, in its own order, or the pages chosen of this document in the order they land
+               * (ADR-0195), held to {@link MAX_MERGE_PART_ENTRIES} so the whole message stays inside the frame.
+               */
+              sourcePages: z.union([z.literal('all'), pageSetOfAtMost(MAX_MERGE_PART_ENTRIES)]),
             })
             .strict(),
         )

@@ -135,6 +135,14 @@ function mergeWhole(at: number, count: number): CommandOfKind<'mergeDocument'> {
   return { kind: 'mergeDocument', documents, at };
 }
 
+/** A merge at `at` of several documents, each with its own pages chosen or `'all'` — ADR-0195's shape. */
+function mergeParts(
+  at: number,
+  parts: readonly { readonly pages: SourcePages }[],
+): CommandOfKind<'mergeDocument'> {
+  return { kind: 'mergeDocument', documents: parts.map((part) => ({ source: asDocId('s'), sourcePages: part.pages })), at };
+}
+
 /** Runs a replace and hands back the target's saved bytes. */
 async function replaced(
   targetBytes: Uint8Array,
@@ -264,6 +272,56 @@ describe('mergeDocument', () => {
     try {
       await applyMergeDocument(target, mergeWhole(1, 2), [second, first]);
       expect(await widthsOf(await mupdfWriter.serialise(target))).toEqual([100, 300, 310, 320, 200, 210, 110]);
+    } finally {
+      for (const session of [target, first, second]) await mupdfWriter.close(session);
+    }
+  });
+
+  it('takes CHOSEN pages of each of several documents, exactly those and in the order chosen (ADR-0195)', async () => {
+    // THE OWNER'S CASE: pages 2 and 4 of an eight-page file. DRAWN pages for the graft map's reason (above). The second
+    // document's pages are chosen out of order, so a merge that sorted the choice, or took the first of each, gives
+    // other widths; and the first document has EIGHT, so a merge that ignored the choice gives eight pages of it.
+    const eight = [200, 210, 220, 230, 240, 250, 260, 270];
+    const target = await mupdfWriter.open(await flatDocument([100, 110]));
+    const first = await mupdfWriter.open(await drawnDocument(eight));
+    const second = await mupdfWriter.open(await drawnDocument([300, 310, 320, 330]));
+    try {
+      await applyMergeDocument(
+        target,
+        mergeParts(1, [
+          { pages: [1, 3] },
+          { pages: [3, [0, 1]] },
+        ]),
+        [first, second],
+      );
+      expect(await widthsOf(await mupdfWriter.serialise(target))).toEqual([100, 210, 230, 330, 300, 310, 110]);
+    } finally {
+      for (const session of [target, first, second]) await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: the same parts with every page chosen take all of each, so the choice above is what narrowed them', async () => {
+    const target = await mupdfWriter.open(await flatDocument([100]));
+    const first = await mupdfWriter.open(await drawnDocument([200, 210, 220, 230]));
+    const second = await mupdfWriter.open(await drawnDocument([300, 310]));
+    try {
+      await applyMergeDocument(target, mergeParts(1, [{ pages: 'all' }, { pages: 'all' }]), [first, second]);
+      expect(await widthsOf(await mupdfWriter.serialise(target))).toEqual([100, 200, 210, 220, 230, 300, 310]);
+    } finally {
+      for (const session of [target, first, second]) await mupdfWriter.close(session);
+    }
+  });
+
+  it('refuses a LATER part’s page the document does not have before placing the part before it', async () => {
+    const target = await mupdfWriter.open(await flatDocument([100]));
+    const first = await mupdfWriter.open(await drawnDocument([200, 210]));
+    const second = await mupdfWriter.open(await drawnDocument([300, 310]));
+    try {
+      await expect(
+        applyMergeDocument(target, mergeParts(1, [{ pages: [0] }, { pages: [1, 2] }]), [first, second]),
+      ).rejects.toThrow(/Page 2 is outside this document, which has 2 page/u);
+      // NOTHING OF THE FIRST PART LANDED.
+      expect(await widthsOf(await mupdfWriter.serialise(target))).toEqual([100]);
     } finally {
       for (const session of [target, first, second]) await mupdfWriter.close(session);
     }
