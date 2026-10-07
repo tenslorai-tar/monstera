@@ -278,7 +278,7 @@ function kindOf(widget: PDFWidget): FormFieldKind {
  * That is the only reading that works for both, and it is robust to the stale
  * `/AS` above rather than being confused by it.
  */
-function onState(widget: PDFWidget): boolean {
+export function onState(widget: PDFWidget): boolean {
   const key = onStateKey(widget);
   // THE FIELD'S VALUE, not the widget's — measured, and it is what makes this
   // comparison meaningful: both widgets of a group answer the same string, and

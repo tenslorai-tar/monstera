@@ -6,7 +6,7 @@ import type { FieldFill, FormDataFormat, FormDataImportFormat } from '@monstera/
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
-import { fieldValues, fillWidget, onStateKey, refuseUnfillable } from './formFields.js';
+import { fieldValues, fillWidget, onState, onStateKey, refuseUnfillable } from './formFields.js';
 import { fdfFile, pdfName, pdfString, xmlCanCarry, xmlEscaped } from './interchangeEncoding.js';
 import { withDocument } from './mupdfWriter.js';
 import { readXfdf } from './xfdfReader.js';
@@ -499,88 +499,142 @@ function fillFor(widget: PDFWidget, values: readonly string[]): FieldFill {
     const key = onStateKey(widget);
     return { set: 'button', on: key !== undefined && values[0] === key };
   }
-  // SEVERAL VALUES IS A REFUSAL, and it is the third place this build says the
-  // same sentence: it READS a multi-select and WRITES one value. `FieldFill`
-  // carries one option, so importing two would put the first in and drop the
-  // second — silently, into a document the person then saves. The panel refuses
-  // to offer a control for such a field and the capture refuses to record one
-  // as a prior, for the same reason and with the same words.
-  if (values.length > 1) {
-    throw new MultiValuedImportError(widget.getName(), values.length);
-  }
+  // THE CALLER HAS ALREADY SEPARATED OUT SEVERAL VALUES ({@link planFormImport}): a fill carries one option, so a file
+  // naming two for one field is a field this build skips and NAMES, never one it fills with the first and drops the
+  // second from.
   if (widget.isChoice()) return { set: 'choice', option: values[0] ?? '' };
   return { set: 'text', text: values[0] ?? '' };
 }
 
-/** A file naming more values for one field than a fill can carry. */
-export class MultiValuedImportError extends Error {
-  constructor(name: string, count: number) {
-    super(
-      `The file gives ${String(count)} values for the field "${name}", and this build writes one ` +
-        'per field. Nothing was changed: importing the first and dropping the rest would be a ' +
-        'loss with no report, which is worse than a refusal.',
-    );
-    this.name = 'MultiValuedImportError';
-  }
+/** Why an import left a field as the document had it. The words a person reads for each are the surface's. */
+export type ImportSkipReason =
+  /** The file names a field this document does not have. */
+  | 'not-in-document'
+  /** The document marks the field read-only and the file's value differs from what it holds. */
+  | 'read-only'
+  /** The file gives a choice field several values, and a fill carries one. */
+  | 'several-values'
+  /** The file's value is not one of the options the document offers. */
+  | 'option-not-offered'
+  /** The field's kind takes no value of this sort. */
+  | 'cannot-be-filled';
+
+/** One field an import did not fill, and why. */
+export interface ImportSkip {
+  readonly name: string;
+  readonly reason: ImportSkipReason;
+}
+
+/** What an import will write and what it leaves, decided once. */
+export interface FormImportPlan {
+  readonly fills: readonly { readonly widget: PDFWidget; readonly value: FieldFill }[];
+  /** Named once per field and reason, in the order the document's widgets come. A radio group is one entry. */
+  readonly skipped: readonly ImportSkip[];
+  /** How many fields the file names, which is what a file that matched nothing is told. */
+  readonly named: number;
 }
 
 /**
- * Fills every field the file names, or changes nothing at all.
+ * Whether a field already holds what the file says. An empty value and no value are the same thing here, and a button
+ * is compared as the state each widget would be set to, since one value of a radio group is on for exactly one of them.
+ */
+function alreadyHolds(widget: PDFWidget, values: readonly string[]): boolean {
+  if (widget.isCheckbox() || widget.isRadioButton()) {
+    const key = onStateKey(widget);
+    return (key !== undefined && values[0] === key) === onState(widget);
+  }
+  const held = fieldValues(widget);
+  if (values.length <= 1 && held.length <= 1) return (values[0] ?? '') === (held[0] ?? '');
+  return values.length === held.length && values.every((value, at) => value === held[at]);
+}
+
+/**
+ * What an import does with each field the file names: the ONE answer to *which fields does this file fill*, taken by
+ * the write and by anything that reports it (B3a).
  *
- * ## Two passes, and the first one is the point
+ * ## A field the import cannot fill is skipped and named, and never costs the file
  *
- * Everything is resolved and refused before anything is written, so a value the
- * document forbids leaves the form exactly as it was rather than partly filled
- * with no report. `fillWidget` refuses on its own terms — a read-only field, a
- * dropdown option the document does not offer, text aimed at a tick box — and
- * those refusals are what the first pass is collecting.
+ * A file from somewhere else names fields this document lacks, locks a field the app's own export wrote, or gives a
+ * value a field cannot hold. Refusing the whole file for one of them made the app's own export unreadable by the app:
+ * the export writes every field including a read-only one, so every round trip met the lock.
  *
- * ## A push button and a signature are skipped rather than refused
+ * - **A field that already holds the file's value is no skip at all**, read-only or not. A lock the file agrees with is
+ *   not something a person needs told, and the app's own export imported back reports nothing.
+ * - **A read-only field the file would change keeps the document's value** and is named: the document decided about
+ *   that field, and an import is not the person asking to unlock it.
+ * - A push button and a signature are passed over without a mention: they are absent from every file this build writes
+ *   and carry no value a file could set.
+ */
+export function planFormImport(
+  document: mupdf.PDFDocument,
+  bytes: Uint8Array,
+  format: FormDataImportFormat,
+): FormImportPlan {
+  const named = new Map<string, readonly string[]>();
+  for (const field of parseFormData(bytes, format)) named.set(field.name, field.values);
+
+  const fills: { widget: PDFWidget; value: FieldFill }[] = [];
+  const skipped: ImportSkip[] = [];
+  const said = new Set<string>();
+  const skip = (name: string, reason: ImportSkipReason): void => {
+    const key = `${name}\u0000${reason}`;
+    if (said.has(key)) return;
+    said.add(key);
+    skipped.push({ name, reason });
+  };
+
+  const found = new Set<string>();
+  const pages = document.countPages();
+  for (let page = 0; page < pages; page += 1) {
+    for (const widget of document.loadPage(page).getWidgets()) {
+      const name = widget.getName();
+      const values = named.get(name);
+      if (values === undefined) continue;
+      found.add(name);
+      if (widget.isPushButton() || widget.getFieldType() === 'signature') continue;
+      if (alreadyHolds(widget, values)) continue;
+      if (widget.isReadOnly()) {
+        skip(name, 'read-only');
+        continue;
+      }
+      if (!(widget.isCheckbox() || widget.isRadioButton()) && values.length > 1) {
+        skip(name, 'several-values');
+        continue;
+      }
+      const value = fillFor(widget, values);
+      // THE SAME RULES THE WRITE APPLIES, consulted before it: a value the document forbids is a skip with its reason
+      // here and not a throw that unwinds fills already planned (B3a, one set of type rules).
+      try {
+        refuseUnfillable(widget, value);
+      } catch {
+        skip(name, value.set === 'choice' ? 'option-not-offered' : 'cannot-be-filled');
+        continue;
+      }
+      fills.push({ widget, value });
+    }
+  }
+  for (const name of named.keys()) if (!found.has(name)) skip(name, 'not-in-document');
+
+  return { fills, skipped, named: named.size };
+}
+
+/**
+ * Fills every field the file names that the document lets it fill, and leaves the rest as they were.
  *
- * They are absent from every file this build writes, and a file from elsewhere
- * may carry them: a push button's value means nothing and a signature's is a
- * dictionary. Refusing the import over one would make a foreign export
- * unusable for the fields that are fine.
+ * ## A file that names nothing this document has is still refused
+ *
+ * Every other shortfall is one field's, skipped and named by {@link planFormImport}. A file in which not one name is in
+ * the document is the wrong file, and filling nothing and reporting success would be indistinguishable from importing
+ * it.
  */
 export const applyImportFormData: Apply<'mupdf', 'importFormData'> = (session, command) =>
   withDocument(session, (document) => {
-    const named = new Map<string, readonly string[]>();
-    for (const field of parseFormData(command.bytes, command.format)) {
-      named.set(field.name, field.values);
-    }
-
-    const planned: { widget: PDFWidget; value: FieldFill }[] = [];
-    const pages = document.countPages();
-    for (let page = 0; page < pages; page += 1) {
-      for (const widget of document.loadPage(page).getWidgets()) {
-        const values = named.get(widget.getName());
-        if (values === undefined) continue;
-        // SKIPPED, NOT REFUSED. See the note above: a foreign file may name
-        // them and they carry nothing this build could write.
-        if (widget.isPushButton() || widget.getFieldType() === 'signature') continue;
-        const value = fillFor(widget, values);
-        // REFUSED HERE AND NOT AT THE WRITE, which is what makes the two passes
-        // mean anything. The claim *nothing is written until everything is
-        // resolved* was a comment and not a mechanism until this line existed:
-        // `fillWidget` validates on its way in, so a plan pass that only built
-        // values left the first entries applied and the document half filled.
-        // A mutation writing inside this loop was supposed to find that and
-        // could not, because the case re-read the fixture BYTES — which no
-        // apply can change. Both defects are fixed here.
-        //
-        // The same function the write calls, so this is one set of type rules
-        // consulted twice rather than two sets (B3a).
-        refuseUnfillable(widget, value);
-        planned.push({ widget, value });
-      }
-    }
-
-    if (planned.length === 0) throw new NoMatchingFieldsError(named.size);
-    // THE SECOND PASS WRITES. `fillWidget` throws on the first value the
-    // document forbids, and because nothing has been written yet the form is
-    // untouched when it does — which is what makes *refuse the whole import*
-    // true rather than aspirational.
-    for (const { widget, value } of planned) fillWidget(widget, value);
+    const plan = planFormImport(document, command.bytes, command.format);
+    const matched = plan.named - plan.skipped.filter((skip) => skip.reason === 'not-in-document').length;
+    if (matched === 0) throw new NoMatchingFieldsError(plan.named);
+    // THE PLAN WAS MADE BEFORE ANYTHING WAS WRITTEN, so a fill's own refusal cannot leave the form half filled: each
+    // planned value has already passed the rules `fillWidget` applies.
+    for (const { widget, value } of plan.fills) fillWidget(widget, value);
   });
 
 /**

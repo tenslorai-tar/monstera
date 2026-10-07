@@ -11,10 +11,11 @@ import {
   UnreadableFormDataError,
   UnrepresentableFormDataError,
   parseFormData,
+  planFormImport,
   readFormData,
   serialiseFormData,
 } from './formData.js';
-import { mupdfWriter } from './mupdfWriter.js';
+import { mupdfWriter, withDocument } from './mupdfWriter.js';
 
 /**
  * Writing a document's form data out.
@@ -376,17 +377,20 @@ describe('applyImportFormData', () => {
     );
   });
 
-  it('REFUSES A FIELD THE FILE GIVES TWO VALUES FOR, which this build cannot write', async () => {
-    // THE ASYMMETRY, STATED RATHER THAN DISCOVERED: the export writes both
-    // values of a multi-select faithfully and the import cannot put them back,
-    // because a fill carries one option. Importing the first and dropping the
-    // second would be a loss with no report — into a document the person then
-    // saves — so it refuses, which is the same sentence the panel and the
-    // capture say about the same shape.
+  it('SKIPS AND NAMES A FIELD THE FILE GIVES TWO VALUES FOR, and still fills every other field', async () => {
+    // THE ASYMMETRY, STATED RATHER THAN DISCOVERED: the export writes both values of a multi-select faithfully and the
+    // import cannot put them back, because a fill carries one option. Importing the first and dropping the second
+    // would be a loss with no report, so the field is skipped and named; the rest of the file is not refused for it.
     const both = serialiseFormData(await exported(await form()), 'json');
-    await expect(
-      afterImport(await form({ ticked: false, filled: false }), both, 'json'),
-    ).rejects.toThrow(/writes one per field/u);
+    const empty = await form({ ticked: false, filled: false });
+    const { plan, after } = await onSession(empty, async (session) => {
+      const planned = await withDocument(session, (document) => planFormImport(document, both, 'json'));
+      await applyImportFormData(session, { kind: 'importFormData', format: 'json', bytes: both });
+      return { plan: planned, after: await readFormData(session) };
+    });
+    expect(plan.skipped).toStrictEqual([{ name: 'applicant.languages', reason: 'several-values' }]);
+    expect(after.find((field) => field.name === 'hostile.fdf')?.values).toStrictEqual([HOSTILE['hostile.fdf']]);
+    expect(after.find((field) => field.name === 'applicant.languages')?.values).toStrictEqual([]);
   });
 
   it('ROUND-TRIPS THROUGH XFDF, which is the format with a reader of ours', async () => {
@@ -451,48 +455,29 @@ describe('applyImportFormData', () => {
     );
   });
 
-  it('CHANGES NOTHING when one value is refused — the whole import or none of it', async () => {
-    // A partial fill with no report is this row's own subject. The listbox
-    // offers `English, Dutch, Welsh`, so `Klingon` is a value the fill row
-    // refuses — and the entry BEFORE it in the file is one that would have
-    // applied, which is what makes this a case about atomicity rather than
-    // about the refusal. The order matters: an import that wrote as it went
-    // would have landed the first before meeting the second.
+  it('SKIPS AND NAMES THE ONE VALUE A FIELD REFUSES, and fills the entries either side of it', async () => {
+    // The listbox offers `English, Dutch, Welsh`, so `Klingon` is a value the fill row refuses. The entry BEFORE it
+    // and the entry AFTER it are ones that apply, which is what makes this a case about one field not costing the
+    // file: an import that refused the whole file, or stopped at the refusal, would leave one of them unfilled.
     const document = await form({ ticked: false, filled: false });
-    const before = await exported(document);
     const mixed = serialiseFormData(
       [
-        { name: 'hostile.fdf', values: ['would have applied'], asName: false },
+        { name: 'hostile.fdf', values: ['applied before'], asName: false },
         { name: 'applicant.languages', values: ['Klingon'], asName: false },
+        { name: 'hostile.quote', values: ['applied after'], asName: false },
       ],
       'json',
     );
-
-    // ONE SESSION FOR THE APPLY AND THE READ, and that is the whole case. The
-    // first spelling re-opened the fixture BYTES afterwards — which no apply
-    // can change, since a session holds the parsed document — so it compared
-    // the original with itself and passed for an import that wrote as it went.
-    // The mutation that writes inside the planning loop is what found it.
-    const { refused, after } = await onSession(document, async (session) => {
-      let thrown: unknown;
-      try {
-        await applyImportFormData(session, {
-          kind: 'importFormData',
-          format: 'json',
-          bytes: mixed,
-        });
-      } catch (error) {
-        thrown = error;
-      }
-      return { refused: thrown, after: await readFormData(session) };
+    // ONE SESSION FOR THE APPLY AND THE READ: the fixture BYTES cannot change under an apply.
+    const { plan, after } = await onSession(document, async (session) => {
+      const planned = await withDocument(session, (opened) => planFormImport(opened, mixed, 'json'));
+      await applyImportFormData(session, { kind: 'importFormData', format: 'json', bytes: mixed });
+      return { plan: planned, after: await readFormData(session) };
     });
-
-    expect(refused).toBeInstanceOf(Error);
-    expect((refused as Error).message).toMatch(/does not offer the option/u);
-    // AND THE FIRST ENTRY DID NOT LAND. Without this the case passes for an
-    // import that applied everything up to the failure — which is the state the
-    // two passes exist to prevent, and the one a throw alone says nothing about.
-    expect(after).toStrictEqual(before);
+    expect(plan.skipped).toStrictEqual([{ name: 'applicant.languages', reason: 'option-not-offered' }]);
+    expect(after.find((field) => field.name === 'hostile.fdf')?.values).toStrictEqual(['applied before']);
+    expect(after.find((field) => field.name === 'hostile.quote')?.values).toStrictEqual(['applied after']);
+    expect(after.find((field) => field.name === 'applicant.languages')?.values).toStrictEqual([]);
   });
 
   it('IGNORES an entry naming a field this document does not have', async () => {
