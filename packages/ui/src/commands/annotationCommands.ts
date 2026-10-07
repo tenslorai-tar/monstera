@@ -144,7 +144,7 @@ import type { ObjectPick } from '../objectEditing.js';
 import type { Write } from '../pageWriting.js';
 import type { IconName } from '../primitives/icons.js';
 import { type CommandContext, TOASTS, type UiCommand, VISIBLE } from '../registries/commands.js';
-import type { SectionId } from '../registries/placement.js';
+import type { RibbonSize, SectionId } from '../registries/placement.js';
 import type { ShowToast } from '../toasts.js';
 import { confirmCopied } from './confirmWritten.js';
 import { hasDocument } from './documentCommands.js';
@@ -258,7 +258,7 @@ function toolCommand(
   icon: IconName,
   order: number,
   deps: ToolCommandDeps,
-  where: { readonly section: SectionId; readonly group: MessageKey } = {
+  where: { readonly section: SectionId; readonly group: MessageKey; readonly size?: RibbonSize } = {
     section: 'comment',
     group: GROUP_MARKUP,
   },
@@ -286,7 +286,9 @@ function toolCommand(
     // annotation context menu"* — those are places a reader meets the command
     // at different moments; a ribbon section and the floating pill are both on
     // screen at once, so a tool on both is the same button twice.
-    placements: [{ surface: 'ribbon', section: where.section, group: where.group, order }],
+    placements: [
+      { surface: 'ribbon', section: where.section, group: where.group, order, ...(where.size === undefined ? {} : { size: where.size }) },
+    ],
     // A page to draw on is what this needs, which is what `hasDocument` says.
     when: also === undefined ? hasDocument : (context) => hasDocument(context) && also(),
     // THE TOOL THAT IS ON, which every surface draws and announces as pressed (WCAG 4.1.2), read through the function
@@ -313,16 +315,23 @@ function toolCommand(
  * group by its earliest member: Shapes from 40, Stamps 52, Measure 56, Links 60, Redact 62. A tool
  * renumbered past a later group's first number moves its whole group.
  */
-const SHAPES = { section: 'comment', group: GROUP_SHAPES } as const;
-const STAMPS = { section: 'comment', group: GROUP_STAMPS } as const;
-const MEASURE = { section: 'comment', group: GROUP_MEASURE } as const;
-const LINKS = { section: 'comment', group: GROUP_LINKS } as const;
-const REDACT_MARKS = { section: 'comment', group: GROUP_REDACT } as const;
+/**
+ * THE SIZES (ADR-0194, the owner's review of 2026-10-05): shapes, measures and links are glyph grids, each named by its
+ * tooltip; the stamps and redactions are labelled rows; Markup's text markups and its writing tools are labelled rows
+ * in runs of three, the selection, freehand and the Comments list staying large between them. A run is gathered by
+ * `ribbonUnits` from consecutive `order`s, so a tool renumbered out of its run ends the run.
+ */
+const SHAPES = { section: 'comment', group: GROUP_SHAPES, size: 'icon' } as const;
+const STAMPS = { section: 'comment', group: GROUP_STAMPS, size: 'small' } as const;
+const MEASURE = { section: 'comment', group: GROUP_MEASURE, size: 'icon' } as const;
+const LINKS = { section: 'comment', group: GROUP_LINKS, size: 'icon' } as const;
+const REDACT_MARKS = { section: 'comment', group: GROUP_REDACT, size: 'small' } as const;
+const MARKUP_SMALL = { section: 'comment', group: GROUP_MARKUP, size: 'small' } as const;
 /**
  * The recognition tools are D6's, whose ribbon is Tools › OCR — beside *OCR pages*, where a person
  * looking for recognition looks. They sat in Comment by the factory's default, not by a decision.
  */
-const OCR_TOOLS = { section: 'tools', group: GROUP_OCR } as const;
+const OCR_TOOLS = { section: 'tools', group: GROUP_OCR, size: 'small' } as const;
 
 /**
  * A tool command with a SECOND ribbon placement. §7: a command may sit in more than one surface,
@@ -391,7 +400,7 @@ export function redactToolCommand(deps: ToolCommandDeps): UiCommand {
  */
 export function textBoxToolCommand(deps: ToolCommandDeps): UiCommand {
   // AND ON EDIT › TEXT, beside Edit text: a text box is how new words are put on a page.
-  return alsoOn(toolCommand(TEXT_BOX_TOOL_ID, TOOL_TEXT_BOX_TITLE, 'TextCursorInput', 46, deps), {
+  return alsoOn(toolCommand(TEXT_BOX_TOOL_ID, TOOL_TEXT_BOX_TITLE, 'TextCursorInput', 46, deps, MARKUP_SMALL), {
     surface: 'ribbon',
     section: 'edit',
     group: GROUP_TEXT,
@@ -412,7 +421,10 @@ export function stickyNoteToolCommand(deps: ToolCommandDeps): UiCommand {
   // AND HOME › QUICK TOOLS as v5-02's *Comment* — a note is how a comment is put on a page.
   return alsoOn(
     // LAST ON THE STRIP (80), as v5-02 draws the comment there.
-    alsoOnThePill(toolCommand(STICKY_NOTE_TOOL_ID, { full: TOOL_STICKY_NOTE_TITLE, ribbon: RIBBON_COMMENT }, 'StickyNote', 47, deps), 80),
+    alsoOnThePill(
+      toolCommand(STICKY_NOTE_TOOL_ID, { full: TOOL_STICKY_NOTE_TITLE, ribbon: RIBBON_COMMENT }, 'StickyNote', 47, deps, MARKUP_SMALL),
+      80,
+    ),
     { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 106 },
   );
 }
@@ -425,7 +437,7 @@ export function stickyNoteToolCommand(deps: ToolCommandDeps): UiCommand {
  * selecting a tool never depended on what the tool needs.
  */
 export function caretToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(CARET_TOOL_ID, TOOL_CARET_TITLE, 'ChevronUp', 48, deps);
+  return toolCommand(CARET_TOOL_ID, TOOL_CARET_TITLE, 'ChevronUp', 48, deps, MARKUP_SMALL);
 }
 
 /**
@@ -459,7 +471,7 @@ export function polylineToolCommand(deps: ToolCommandDeps): UiCommand {
  */
 export function highlightToolCommand(deps: ToolCommandDeps): UiCommand {
   // AND HOME › QUICK TOOLS, §7's own example of one command in two groups.
-  return alsoOn(toolCommand(HIGHLIGHT_TOOL_ID, { full: HIGHLIGHT_TOOL_TITLE, ribbon: RIBBON_HIGHLIGHT }, 'Highlighter', 36, deps), {
+  return alsoOn(toolCommand(HIGHLIGHT_TOOL_ID, { full: HIGHLIGHT_TOOL_TITLE, ribbon: RIBBON_HIGHLIGHT }, 'Highlighter', 36, deps, MARKUP_SMALL), {
     surface: 'ribbon',
     section: 'home',
     group: GROUP_QUICK_TOOLS,
@@ -468,7 +480,7 @@ export function highlightToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 export function underlineToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(UNDERLINE_TOOL_ID, UNDERLINE_TOOL_TITLE, 'Underline', 37, deps);
+  return toolCommand(UNDERLINE_TOOL_ID, UNDERLINE_TOOL_TITLE, 'Underline', 37, deps, MARKUP_SMALL);
 }
 
 export function strikeoutToolCommand(deps: ToolCommandDeps): UiCommand {
@@ -478,6 +490,7 @@ export function strikeoutToolCommand(deps: ToolCommandDeps): UiCommand {
     'Strikethrough',
     38,
     deps,
+    MARKUP_SMALL,
   );
 }
 
@@ -497,7 +510,7 @@ export function strikeoutToolCommand(deps: ToolCommandDeps): UiCommand {
  * on never learns how many presses it takes.
  */
 export function calloutToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(CALLOUT_TOOL_ID, CALLOUT_TOOL_TITLE, 'MessageSquareQuote', 55, deps);
+  return toolCommand(CALLOUT_TOOL_ID, CALLOUT_TOOL_TITLE, 'MessageSquareQuote', 55, deps, MARKUP_SMALL);
 }
 
 /**
@@ -512,7 +525,7 @@ export function calloutToolCommand(deps: ToolCommandDeps): UiCommand {
  */
 export function typewriterToolCommand(deps: ToolCommandDeps): UiCommand {
   // AND ON EDIT › TEXT, where the record's D4 lists it too.
-  return alsoOn(toolCommand(TYPEWRITER_TOOL_ID, TYPEWRITER_TOOL_TITLE, 'Keyboard', 46.5, deps), {
+  return alsoOn(toolCommand(TYPEWRITER_TOOL_ID, TYPEWRITER_TOOL_TITLE, 'Keyboard', 46.5, deps, MARKUP_SMALL), {
     surface: 'ribbon',
     section: 'edit',
     group: GROUP_TEXT,

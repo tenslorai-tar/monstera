@@ -153,7 +153,7 @@ export function signatureCommand(deps: SignatureCommandDeps): UiCommand {
       // HOME'S QUICK TOOLS AT 108, the slot *Sign with certificate* held until this existed; it is under Protect only now.
       { surface: 'ribbon', section: 'home', group: GROUP_QUICK_TOOLS, order: 108 },
       // BESIDE THE STAMPS, between Stamp (50) and Image (52): a signature is placed as they are, and moved as they are.
-      { surface: 'ribbon', section: 'comment', group: GROUP_STAMPS, order: 51 },
+      { surface: 'ribbon', section: 'comment', group: GROUP_STAMPS, order: 51, size: 'small' },
     ],
     when: hasDocument,
     checked: () => deps.activeTool() === SIGNATURE_TOOL_ID,

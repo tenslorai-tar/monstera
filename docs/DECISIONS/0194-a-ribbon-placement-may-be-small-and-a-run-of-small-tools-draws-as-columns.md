@@ -32,8 +32,9 @@ on the placement too, and the surface holds no list.
    A column is **one unit**: the fold measures it as one width and folds it as one, from the end, and its members then
    appear in the group's *More* one command per line, as every folded unit's do. A column is measured by `data-stack`
    where a button is measured by `data-command`; nothing else about the measurement changes.
-3. **A run does not cross a boundary the order already has:** it ends at a different size, at a named menu, and at the
-   first secondary. A secondary is a unit of its own whatever its size, so *More* keeps listing the secondaries last.
+3. **A run does not cross a boundary the order already has:** it ends at a large tool, at a different small size and at
+   a named menu, and the secondaries are gathered among themselves, after every primary. So the secondaries still fold
+   first — a column of them at a time — and *More* still lists them last.
 4. **The registry holds one more rule:** a command placed `icon` must have a `ribbonTitle` or a `title` (it always has
    one) and a glyph (it is refused without one already), so an icon-only control cannot be unnamed. There is no case to
    add that the type does not already close.

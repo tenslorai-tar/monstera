@@ -259,52 +259,53 @@ function columnsOf(count: number): readonly number[] {
  */
 export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonly RibbonUnit<T>[] {
   type Open = { key: string; menu: MessageKey | undefined; stack: StackSize | undefined; entries: T[] };
-  /** A RUN of one small size, still whole: it becomes columns once the group's entries are all read. */
+  /** A RUN of one small size, still whole: it becomes columns once the list is all read. */
   type Run = { run: StackSize; entries: T[] };
-  const items: (Open | Run)[] = [];
-  const byMenu = new Map<MessageKey, Open>();
-  const secondaries: Open[] = [];
-  let run: Run | undefined;
-  for (const entry of entries) {
-    const stack = entry.size === 'small' || entry.size === 'icon' ? entry.size : undefined;
-    if (entry.secondary) {
-      // A SECONDARY IS A UNIT OF ITS OWN whatever its size: it folds first and alone, so More lists it last.
-      secondaries.push({ key: entry.command.id, menu: undefined, stack, entries: [entry] });
-      continue;
-    }
-    if (entry.menu === undefined) {
-      if (stack === undefined) {
-        items.push({ key: entry.command.id, menu: undefined, stack: undefined, entries: [entry] });
-        run = undefined;
-      } else if (run?.run === stack) {
-        run.entries.push(entry);
-      } else {
-        run = { run: stack, entries: [entry] };
-        items.push(run);
+
+  /** One list's units: the primaries, or the secondaries, each gathered on its own so a run never crosses between them. */
+  const gather = (list: readonly T[]): Open[] => {
+    const items: (Open | Run)[] = [];
+    const byMenu = new Map<MessageKey, Open>();
+    let run: Run | undefined;
+    for (const entry of list) {
+      const stack = entry.size === 'small' || entry.size === 'icon' ? entry.size : undefined;
+      if (entry.menu === undefined) {
+        if (stack === undefined) {
+          items.push({ key: entry.command.id, menu: undefined, stack: undefined, entries: [entry] });
+          run = undefined;
+        } else if (run?.run === stack) {
+          run.entries.push(entry);
+        } else {
+          run = { run: stack, entries: [entry] };
+          items.push(run);
+        }
+        continue;
       }
-      continue;
+      // A MENU ENDS A RUN: its members are one large button, and a run does not cross one.
+      run = undefined;
+      const existing = byMenu.get(entry.menu);
+      if (existing !== undefined) {
+        existing.entries.push(entry);
+        continue;
+      }
+      const unit: Open = { key: entry.command.id, menu: entry.menu, stack: undefined, entries: [entry] };
+      byMenu.set(entry.menu, unit);
+      items.push(unit);
     }
-    // A MENU ENDS A RUN: its members are one large button, and a run does not cross one.
-    run = undefined;
-    const existing = byMenu.get(entry.menu);
-    if (existing !== undefined) {
-      existing.entries.push(entry);
-      continue;
-    }
-    const unit: Open = { key: entry.command.id, menu: entry.menu, stack: undefined, entries: [entry] };
-    byMenu.set(entry.menu, unit);
-    items.push(unit);
-  }
-  const units = items.flatMap((item): readonly Open[] => {
-    if (!('run' in item)) return [item];
-    let from = 0;
-    return columnsOf(item.entries.length).map((count) => {
-      const column = item.entries.slice(from, from + count);
-      from += count;
-      return { key: column[0]?.command.id ?? '', menu: undefined, stack: item.run, entries: column };
+    return items.flatMap((item): readonly Open[] => {
+      if (!('run' in item)) return [item];
+      let from = 0;
+      return columnsOf(item.entries.length).map((count) => {
+        const column = item.entries.slice(from, from + count);
+        from += count;
+        return { key: column[0]?.command.id ?? '', menu: undefined, stack: item.run, entries: column };
+      });
     });
-  });
-  return [...units, ...secondaries];
+  };
+
+  // THE SECONDARIES ARE GATHERED AMONG THEMSELVES, after every primary: they fold first, a column of them at a time,
+  // and a column of secondaries is the same unit to the fold as a column of primaries.
+  return [...gather(entries.filter((entry) => !entry.secondary)), ...gather(entries.filter((entry) => entry.secondary))];
 }
 
 /**

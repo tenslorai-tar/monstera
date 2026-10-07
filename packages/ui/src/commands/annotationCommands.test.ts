@@ -301,7 +301,7 @@ describe('rectangleToolCommand', () => {
     // none of them.
     // SHAPES since the Comment ribbon took the owner's groups (2026-09-23).
     expect(built(undefined).command.placements).toStrictEqual([
-      { surface: 'ribbon', section: 'comment', group: GROUP_SHAPES, order: 40 },
+      { surface: 'ribbon', section: 'comment', group: GROUP_SHAPES, order: 40, size: 'icon' },
     ]);
   });
 });

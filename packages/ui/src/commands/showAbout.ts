@@ -34,7 +34,7 @@ export function showAboutCommand(deps: {
     placements: [
       { surface: 'start-screen', slot: 'footer', order: 2 },
       // SECONDARY since Help › About exists (ADR-0107).
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 920, prominence: 'secondary' },
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 920, prominence: 'secondary', size: 'small' },
       { surface: 'menu-bar', menu: 'help', group: 2, order: 30 },
     ],
     run: async (): Promise<void> => {

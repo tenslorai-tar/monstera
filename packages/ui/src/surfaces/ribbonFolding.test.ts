@@ -344,13 +344,18 @@ describe('ribbonUnits — a run of small tools is columns of at most three (ADR-
     expect(shape(entries)).toStrictEqual(['small[a,b]', 'big', 'small[c]', 'icon[d,e]']);
   });
 
-  it('a NAMED MENU ends a run, and a SECONDARY is a unit of its own, last, whatever its size', () => {
+  it('a NAMED MENU ends a run, and the SECONDARIES are gathered among themselves, after every primary', () => {
     const MENU = messageKey('test.menu.convert');
     const entries = [tool('a', 'small'), tool('x', 'small', false, MENU), tool('b', 'small'), tool('later', 'small', true), tool('c', 'small')];
+    // `a` and `b` are not one run — the menu between them ended it — and `c` joins `b`'s column, so `b` is a column of two.
     expect(ribbonUnits(entries).map((unit) => unit.key)).toStrictEqual(['a', 'x', 'b', 'later']);
+    expect(ribbonUnits(entries).map((unit) => unit.entries.length)).toStrictEqual([1, 1, 2, 1]);
     expect(ribbonUnits(entries).map((unit) => unit.stack)).toStrictEqual(['small', undefined, 'small', 'small']);
-    // The secondary is not gathered with the primaries around it; `b` and `c` are one run only once the menu is gone.
-    expect(shape([tool('a', 'small'), tool('later', 'small', true), tool('b', 'small')])).toStrictEqual(['small[a,b]', 'small[later]']);
+    // A secondary is not gathered with the primaries around it, and two secondaries of one size are one column.
+    expect(shape([tool('a', 'small'), tool('s1', 'small', true), tool('b', 'small'), tool('s2', 'small', true)])).toStrictEqual([
+      'small[a,b]',
+      'small[s1,s2]',
+    ]);
   });
 
   it('a folded column puts EVERY member in the More, one command per line, and nothing is in both', () => {

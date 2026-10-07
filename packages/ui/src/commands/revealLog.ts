@@ -38,7 +38,7 @@ export function revealLogCommand(deps: { readonly client: ContractClient }): UiC
     // a document — the palette and the menu bar reach it with none open — and Tools › Diagnostics keeps it on the ribbon.
     placements: [
       // SECONDARY since Help › Diagnostics exists (ADR-0107): Tools › Application keeps Settings on the row.
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 910, prominence: 'secondary' },
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 910, prominence: 'secondary', size: 'small' },
       { surface: 'menu-bar', menu: 'help', group: 2, order: 20 },
     ],
     run: async (): Promise<void> => {

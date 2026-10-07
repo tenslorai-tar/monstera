@@ -150,7 +150,7 @@ export function newFromMarkdownCommand(deps: {
     icon: 'FileCode',
     title: NEW_FROM_MARKDOWN_COMMAND_TITLE,
     ribbonTitle: RIBBON_NEW_FROM_MARKDOWN,
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 10 }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 10, size: 'small' }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.newFromMarkdown']({});
       if (!answer.ok) {
@@ -196,7 +196,7 @@ export function newFromCsvCommand(deps: {
     icon: 'Sheet',
     title: NEW_FROM_CSV_COMMAND_TITLE,
     ribbonTitle: RIBBON_NEW_FROM_CSV,
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 30 }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 30, size: 'small' }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.newFromCsv']({});
       if (!answer.ok) {
@@ -243,7 +243,7 @@ export function newFromOfficeCommand(deps: {
     icon: 'FileText',
     title: NEW_FROM_OFFICE_COMMAND_TITLE,
     ribbonTitle: RIBBON_NEW_FROM_OFFICE,
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 5 }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 5, size: 'small' }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.newFromOffice']({});
       if (!answer.ok) {
@@ -292,7 +292,7 @@ export function newFromImagesCommand(deps: {
     icon: 'Images',
     title: NEW_FROM_IMAGES_COMMAND_TITLE,
     ribbonTitle: RIBBON_NEW_FROM_IMAGES,
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 40 }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 40, size: 'small' }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.newFromImages']({});
       if (!answer.ok) {
@@ -338,7 +338,7 @@ export function newFromCaptureCommand(deps: {
     icon: 'Webcam',
     title: NEW_FROM_CAMERA_COMMAND_TITLE,
     ribbonTitle: RIBBON_NEW_FROM_CAMERA,
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 60 }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 60, size: 'small' }],
     run: async (): Promise<void> => {
       const taken = CAMERA_CAPTURE_RESULT.safeParse(await deps.ask(CAMERA_CAPTURE_DIALOG_ID, {}));
       if (!taken.success) return;
@@ -395,7 +395,7 @@ export function appendMarkdownCommand(
     icon: 'ListPlus',
     title: APPEND_MARKDOWN_COMMAND_TITLE,
     ribbonTitle: RIBBON_APPEND_MARKDOWN,
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 20 }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 20, size: 'small' }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.pageCount === undefined) return;

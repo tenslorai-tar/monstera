@@ -65,7 +65,7 @@ export function openFromUrlCommand(deps: {
     title: OPEN_FROM_URL_COMMAND_TITLE,
     ribbonTitle: RIBBON_OPEN_FROM_URL,
     placements: [
-      { surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 50 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_CREATE, order: 50, size: 'small' },
       { surface: 'menu-bar', menu: 'file', group: 0, order: 20 },
     ],
     run: async (): Promise<void> => {

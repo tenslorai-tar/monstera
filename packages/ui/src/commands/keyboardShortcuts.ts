@@ -41,7 +41,7 @@ export function keyboardShortcutsCommand(deps: {
     shortcut: 'Ctrl+/',
     placements: [
       // SECONDARY since Help › Keyboard shortcuts exists (ADR-0107).
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 930, prominence: 'secondary' },
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 930, prominence: 'secondary', size: 'small' },
       { surface: 'menu-bar', menu: 'help', group: 0, order: 10 },
     ],
     run: (): void => {

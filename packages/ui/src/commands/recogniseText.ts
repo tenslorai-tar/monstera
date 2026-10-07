@@ -100,7 +100,7 @@ export function recogniseTextCommand(
     title: OCR_COMMAND_TITLE,
     ribbonTitle: RIBBON_OCR,
     // TOOLS › OCR, which `BUILD-PROMPT.md`:472 names for D6.
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 10 }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 10, size: 'small' }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
       const { docId, pageCount } = context;
@@ -178,7 +178,7 @@ export function enhanceScansCommand(
     icon: 'WandSparkles',
     title: ENHANCE_COMMAND_TITLE,
     ribbonTitle: RIBBON_ENHANCE,
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 30 }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 30, size: 'small' }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
       const { docId, pageCount } = context;
@@ -259,7 +259,7 @@ export function straightenScansCommand(
     icon: 'ScanLine',
     title: SCAN_COMMAND_TITLE,
     ribbonTitle: RIBBON_STRAIGHTEN_PHOTOS,
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 40 }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 40, size: 'small' }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
       const { docId, pageCount } = context;
@@ -425,7 +425,7 @@ export function exportSearchableCommand(
     icon: 'FileSearch',
     title: OCR_EXPORT_COMMAND_TITLE,
     ribbonTitle: RIBBON_OCR_EXPORT,
-    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 20 }],
+    placements: [{ surface: 'ribbon', section: 'tools', group: GROUP_OCR, order: 20, size: 'small' }],
     when: hasDocument,
     run: async (context: CommandContext): Promise<void> => {
       const { docId, pageCount } = context;

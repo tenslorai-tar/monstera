@@ -81,7 +81,7 @@ export function toggleRulersCommand(deps: { readonly settings: SettingsStore }):
     // and a ribbon section are both on screen at once and §10.3's list for the
     // pill does not include the rulers.
     placements: [
-      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 50 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 50, size: 'small' },
       { surface: 'menu-bar', menu: 'view', group: 3, order: 10, caption: MENU_GROUP_SHOW },
     ],
     when: hasDocument,
@@ -146,7 +146,7 @@ export function toggleGridCommand(deps: { readonly settings: SettingsStore }): U
     title: GRID_TITLE,
     shortcut: 'Ctrl+G',
     placements: [
-      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 60 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 60, size: 'small' },
       { surface: 'menu-bar', menu: 'view', group: 3, order: 20, caption: MENU_GROUP_SHOW },
     ],
     when: hasDocument,
@@ -166,7 +166,7 @@ export function toggleLoupeCommand(deps: { readonly settings: SettingsStore }): 
     title: LOUPE_TITLE,
     shortcut: 'Ctrl+Shift+L',
     placements: [
-      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 80 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 80, size: 'small' },
       { surface: 'menu-bar', menu: 'view', group: 3, order: 30, caption: MENU_GROUP_SHOW },
     ],
     when: hasDocument,
@@ -192,7 +192,7 @@ export function toggleSplitViewCommand(deps: { readonly settings: SettingsStore 
     shortcut: 'Ctrl+Shift+E',
     placements: [
       // SECONDARY IN TOOLS › DISPLAY: drawn on Home › Display and in View › Show (ADR-0107).
-      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 90, prominence: 'secondary' },
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 90, prominence: 'secondary', size: 'small' },
       // AND HOME › DISPLAY, v5-02's *Split View*.
       { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 204 },
       { surface: 'menu-bar', menu: 'view', group: 3, order: 40, caption: MENU_GROUP_SHOW },
@@ -248,7 +248,7 @@ export function toggleDarkPageCommand(deps: { readonly settings: SettingsStore }
     shortcut: 'Ctrl+Shift+D',
     placements: [
       // SECONDARY IN TOOLS › DISPLAY: drawn on Home › Display and in View › Show (ADR-0107).
-      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 70, prominence: 'secondary' },
+      { surface: 'ribbon', section: 'tools', group: GROUP_DISPLAY, order: 70, prominence: 'secondary', size: 'small' },
       // AND HOME › DISPLAY as v5-02's *Dim pages*: this is the command that dims a page for a dark room.
       { surface: 'ribbon', section: 'home', group: GROUP_DISPLAY, order: 206 },
       { surface: 'menu-bar', menu: 'view', group: 3, order: 50, caption: MENU_GROUP_SHOW },

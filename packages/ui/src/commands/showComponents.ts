@@ -35,7 +35,7 @@ export function showComponentsCommand(deps: {
     icon: 'ClipboardCheck',
     title: COMPONENTS_COMMAND_TITLE,
     placements: [
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 915, prominence: 'secondary' },
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 915, prominence: 'secondary', size: 'small' },
       { surface: 'menu-bar', menu: 'help', group: 2, order: 25 },
     ],
     run: async (): Promise<void> => {

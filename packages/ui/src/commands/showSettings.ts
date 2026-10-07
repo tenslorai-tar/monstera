@@ -89,7 +89,7 @@ export function showSettingsCommand(deps: {
       { surface: 'start-screen', slot: 'footer', order: 1 },
       // 900s: Application is the LAST group on Tools. The section is for working on documents, and
       // a ribbon that opened on Settings and About put the application ahead of the work.
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 905 },
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 905, size: 'small' },
       // THE RAIL'S FOOT, where the owner's v5 design draws the gear on every document screen (ADR-0098).
       { surface: 'rail', order: 10 },
       { surface: 'menu-bar', menu: 'window', group: 2, order: 10 },

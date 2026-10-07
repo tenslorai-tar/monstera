@@ -52,7 +52,7 @@ export function helpCommand(deps: {
       { surface: 'start-screen', slot: 'footer', order: 3 },
       { surface: 'menu-bar', menu: 'help', group: 0, order: 5 },
       // SECONDARY in Tools › Application, beside the keyboard shortcuts: F1 and the menu bar are the ways in.
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 925, prominence: 'secondary' },
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 925, prominence: 'secondary', size: 'small' },
     ],
     run: async (context): Promise<void> => {
       const onStart = context.docId === undefined;
