@@ -31,6 +31,7 @@ import {
   parseFormat,
   withFontSize,
 } from './fieldActions.js';
+import { type PageFrame, placeOnPage, rotationOf } from './fieldPlacement.js';
 import { pageAt } from './formFieldCreate.js';
 import { pagesOf } from './pageScope.js';
 import type { CaptureResult } from './commandLog.js';
@@ -535,7 +536,21 @@ function freeName(taken: readonly string[], base: string): string {
   return candidate;
 }
 
-/** Copies one field onto each named page, at the same place, each copy a new field of its own. */
+/** A page's visible area and how it is turned, as {@link placeOnPage} reads it. */
+function visibleFrameOf(page: PDFPage): PageFrame {
+  const box = page.getCropBox();
+  return { x: box.x, y: box.y, width: box.width, height: box.height, rotation: rotationOf(page.getRotation().angle) };
+}
+
+/** A widget's `/Rect` as a rectangle with its corners in order, or `undefined` where the file gives none. */
+function widgetRectOf(widget: PDFDict): { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | undefined {
+  const listed = widget.lookupMaybe(PDFName.of('Rect'), PDFArray);
+  const [a, b, c, d] = [0, 1, 2, 3].map((at) => listed?.lookupMaybe(at, PDFNumber)?.asNumber());
+  if (a === undefined || b === undefined || c === undefined || d === undefined) return undefined;
+  return { x0: Math.min(a, c), y0: Math.min(b, d), x1: Math.max(a, c), y1: Math.max(b, d) };
+}
+
+/** Copies one field onto each named page, at the same PLACE on it (see {@link placeOnPage}), each copy a new field of its own. */
 export const applyDuplicateFormField: Apply<'pdf-lib', 'duplicateFormField'> = async (image, command) => {
   const document = await open(image);
   const form = document.getForm();
@@ -549,6 +564,7 @@ export const applyDuplicateFormField: Apply<'pdf-lib', 'duplicateFormField'> = a
   const context = document.context;
   const taken = form.getFields().map((each) => each.getName());
   const sourceNumber = document.getPages().indexOf(source);
+  const sourceRect = widgetRectOf(widget);
 
   for (const target of pagesOf(command.pages, document.getPageCount())) {
     if (target === sourceNumber) throw new RangeError('A field is copied onto other pages, and page ' + String(target) + ' is its own.');
@@ -568,6 +584,11 @@ export const applyDuplicateFormField: Apply<'pdf-lib', 'duplicateFormField'> = a
     if (widgetDict.get(PDFName.of('AS')) !== undefined) widgetDict.set(PDFName.of('AS'), PDFName.of('Off'));
     widgetDict.set(PDFName.of('P'), page.ref);
     widgetDict.delete(PDFName.of('Parent'));
+    // THE SAME PLACE, NOT THE SAME NUMBERS: a page of another size, origin or turn would put the copy elsewhere or off it.
+    if (sourceRect !== undefined) {
+      const placed = placeOnPage(sourceRect, visibleFrameOf(source), visibleFrameOf(page));
+      widgetDict.set(PDFName.of('Rect'), context.obj([placed.x0, placed.y0, placed.x1, placed.y1]));
+    }
     const fieldRef = context.register(fieldDict);
     if (!merged) {
       const widgetRef = context.register(widgetDict);

@@ -29,7 +29,7 @@ Every field has properties you can change after it is drawn: its name, what it l
 ## Line up and copy
 
 - With two or more fields selected, the foot of the **Properties** tab offers **Align left edges**, **Align right edges**, **Align tops**, **Align bottoms**, **Centre across the first field** and **Centre down the first field**, and also **Same width as the first field**, **Same height as the first field** and **Same size as the first field**. Fields already where you ask are left alone.
-- With one field selected, **Copy to other pages…** puts a copy at the same place on the pages you type. Each copy is a new field with its own name and starts empty. A radio option and a signature cannot be copied alone.
+- With one field selected, **Copy to other pages…** puts a copy at the same place on the pages you type. On a page of another size the place is the same fraction of the page, and the copy is kept inside it. Each copy is a new field with its own name and starts empty. A radio option and a signature cannot be copied alone.
 - In the **Forms** section, **Tab order…** chooses how the Tab key moves through the form: across each row, down each column, or in the order the document was made. It is set on every page.
 
 ## Good to know
