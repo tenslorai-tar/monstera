@@ -213,12 +213,14 @@ export {
 // runs in `main`, imports no engine, and main's composition root calls it
 // (ADR-0057).
 export {
-  CLAUDE_MAX_EDGE,
+  CLAUDE_HIGH_RESOLUTION,
   CLAUDE_MAX_IMAGE_ENCODED_BYTES,
   CLAUDE_MAX_IMAGE_SIDE,
-  CLAUDE_MAX_VISUAL_TOKENS,
+  CLAUDE_STANDARD_RESOLUTION,
+  claudeImageLimits,
   encodedLength,
   type ClaudeCredentials,
+  type ClaudeImageLimits,
   ClaudeRecognitionRefused,
   type ClaudeRefusal,
   type ClaudeRequest,

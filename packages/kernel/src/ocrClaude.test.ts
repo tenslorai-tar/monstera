@@ -2,10 +2,12 @@ import { MIN_PAGE_PICTURE_SCALE } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import {
-  CLAUDE_MAX_EDGE,
+  CLAUDE_HIGH_RESOLUTION,
   CLAUDE_MAX_IMAGE_ENCODED_BYTES,
+  CLAUDE_STANDARD_RESOLUTION,
   ClaudeRecognitionRefused,
   claudeAcceptsBytes,
+  claudeImageLimits,
   claudeRasterScale,
   fitsClaudeImage,
   pngSize,
@@ -94,49 +96,122 @@ function service(respond: () => Response | Error): {
 /** One word at a known pixel box, as Claude would answer it. */
 const ONE_WORD = { lines: [{ words: [{ text: 'MONSTERA', box: [20, 30, 80, 50] }] }] };
 
+const HIGH = CLAUDE_HIGH_RESOLUTION;
+
 describe('fitsClaudeImage — Anthropic’s resize rule', () => {
   it('fits an image at the edge limit, and CONTROL: one pixel more does not', () => {
     // 2576 is a whole number of 28 px patches (92), so it is the largest edge that
     // needs no rounding past the limit.
-    expect(fitsClaudeImage(CLAUDE_MAX_EDGE, 28)).toBe(true);
-    expect(fitsClaudeImage(CLAUDE_MAX_EDGE + 1, 28)).toBe(false);
+    expect(fitsClaudeImage(HIGH.edge, 28, HIGH)).toBe(true);
+    expect(fitsClaudeImage(HIGH.edge + 1, 28, HIGH)).toBe(false);
   });
 
   it('fits 69×69 patches, and CONTROL: 70×70 is past the 4784-token budget', () => {
-    expect(fitsClaudeImage(69 * 28, 69 * 28)).toBe(true);
-    expect(fitsClaudeImage(70 * 28, 70 * 28)).toBe(false);
+    expect(fitsClaudeImage(69 * 28, 69 * 28, HIGH)).toBe(true);
+    expect(fitsClaudeImage(70 * 28, 70 * 28, HIGH)).toBe(false);
+  });
+
+  it('holds the STANDARD tier to its own 1568 tokens: 39×39 patches fit, 40×40 do not', () => {
+    expect(fitsClaudeImage(39 * 28, 39 * 28, CLAUDE_STANDARD_RESOLUTION)).toBe(true);
+    expect(fitsClaudeImage(40 * 28, 40 * 28, CLAUDE_STANDARD_RESOLUTION)).toBe(false);
+    // CONTROL: the same 40×40 patches are inside the high-resolution tier, so the limit is the argument's.
+    expect(fitsClaudeImage(40 * 28, 40 * 28, HIGH)).toBe(true);
+  });
+});
+
+describe('claudeImageLimits — which tier a model is on', () => {
+  it('puts Claude 4.7 and later on the high-resolution tier, every other model on the standard', () => {
+    for (const model of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-opus-4-7', 'claude-opus-4-8']) {
+      expect(claudeImageLimits(model), model).toStrictEqual(CLAUDE_HIGH_RESOLUTION);
+    }
+    for (const model of [
+      'claude-haiku-4-5-20251001',
+      'claude-haiku-4-5',
+      'claude-sonnet-4-20250514',
+      'claude-opus-4-1-20250805',
+      'claude-opus-4-6',
+      'claude-3-5-sonnet-20241022',
+    ]) {
+      expect(claudeImageLimits(model), model).toStrictEqual(CLAUDE_STANDARD_RESOLUTION);
+    }
+  });
+
+  it('answers the STANDARD tier for an id it cannot place, the one every model reads unresized', () => {
+    expect(claudeImageLimits('the-model-a-person-chose')).toStrictEqual(CLAUDE_STANDARD_RESOLUTION);
+    expect(claudeImageLimits('')).toStrictEqual(CLAUDE_STANDARD_RESOLUTION);
   });
 });
 
 describe('claudeRasterScale', () => {
   it('keeps the ceiling for a letter page, which fits at 2×', () => {
-    expect(claudeRasterScale(612, 792, 2, 1)).toBe(2);
+    expect(claudeRasterScale(612, 792, 2, 1, HIGH)).toBe(2);
   });
 
   it('lowers the scale for a larger region to the LARGEST that fits', () => {
-    const scale = claudeRasterScale(842, 1191, 2, 1);
+    const scale = claudeRasterScale(842, 1191, 2, 1, HIGH);
     expect(scale).not.toBeNull();
     if (scale === null) return;
     expect(scale).toBeLessThan(2);
     // THE LARGEST, not merely one that fits: a hundredth more must not.
-    expect(fitsClaudeImage(Math.ceil(842 * scale) + 1, Math.ceil(1191 * scale) + 1)).toBe(true);
+    expect(fitsClaudeImage(Math.ceil(842 * scale) + 1, Math.ceil(1191 * scale) + 1, HIGH)).toBe(true);
     const next = scale + 0.01;
-    expect(fitsClaudeImage(Math.ceil(842 * next) + 1, Math.ceil(1191 * next) + 1)).toBe(false);
+    expect(fitsClaudeImage(Math.ceil(842 * next) + 1, Math.ceil(1191 * next) + 1, HIGH)).toBe(false);
   });
 
   it('answers null for a region too large at the smallest scale', () => {
-    expect(claudeRasterScale(3000, 3000, 2, 1)).toBeNull();
+    expect(claudeRasterScale(3000, 3000, 2, 1, HIGH)).toBeNull();
+  });
+
+  it('sizes a page for Haiku SMALLER than for Opus — the owner’s Excel export, 1191×1684 against 1568 tokens', () => {
+    // A4 at the ceiling of 2× is 1684 × 2384: far past Haiku's 1568 tokens, inside Opus's 4784 only after lowering.
+    const haiku = claudeRasterScale(595, 842, 2, 1, claudeImageLimits('claude-haiku-4-5-20251001'));
+    const opus = claudeRasterScale(595, 842, 2, 1, claudeImageLimits('claude-opus-5-5'));
+    expect(haiku).not.toBeNull();
+    expect(opus).not.toBeNull();
+    if (haiku === null || opus === null) return;
+    expect(haiku).toBeLessThan(opus);
+    // AND THE RASTER IT CHOSE FITS THE STANDARD TIER, where the one sized for Opus (1191×1684) did not.
+    expect(fitsClaudeImage(Math.ceil(595 * haiku) + 1, Math.ceil(842 * haiku) + 1, CLAUDE_STANDARD_RESOLUTION)).toBe(true);
+    expect(fitsClaudeImage(1191, 1684, CLAUDE_STANDARD_RESOLUTION)).toBe(false);
   });
 
   it('pictures an A0 drawing at the whole page’s floor, which the snapshot’s refused (table A row 11)', () => {
     // CONTROL FIRST: at the snapshot's floor of 72 dpi an A0 page has no scale — the refusal a person met.
-    expect(claudeRasterScale(2384, 3370, 2, 1)).toBeNull();
-    const scale = claudeRasterScale(2384, 3370, 2, MIN_PAGE_PICTURE_SCALE);
+    expect(claudeRasterScale(2384, 3370, 2, 1, HIGH)).toBeNull();
+    const scale = claudeRasterScale(2384, 3370, 2, MIN_PAGE_PICTURE_SCALE, HIGH);
     expect(scale).not.toBeNull();
     if (scale === null) return;
-    expect(fitsClaudeImage(Math.ceil(2384 * scale) + 1, Math.ceil(3370 * scale) + 1)).toBe(true);
+    expect(fitsClaudeImage(Math.ceil(2384 * scale) + 1, Math.ceil(3370 * scale) + 1, HIGH)).toBe(true);
     // AND THE LARGEST PAGE PDF ALLOWS, 14,400 pt an edge, so no real page reaches the refusal.
-    expect(claudeRasterScale(14_400, 14_400, 2, MIN_PAGE_PICTURE_SCALE)).not.toBeNull();
+    expect(claudeRasterScale(14_400, 14_400, 2, MIN_PAGE_PICTURE_SCALE, HIGH)).not.toBeNull();
+    expect(claudeRasterScale(14_400, 14_400, 2, MIN_PAGE_PICTURE_SCALE, CLAUDE_STANDARD_RESOLUTION)).not.toBeNull();
+  });
+});
+
+describe('a raster the MODEL would resize is refused before anything is sent (the owner’s 400 of 2026-10-07)', () => {
+  const RASTER = pngHeader(1191, 1684);
+
+  it('refuses it for Haiku 4.5 with no request made, for the text recogniser and the table reader alike', async () => {
+    const { fetchImpl, calls } = service(() => answer({ lines: [] }));
+    await expect(
+      recogniseThroughClaude(
+        { key: 'k', model: 'claude-haiku-4-5-20251001' },
+        { png: RASTER, ...FRAME, crop: [0, 0, 1191, 1684], fetchImpl },
+      ),
+    ).rejects.toMatchObject({ reason: 'too-large' });
+    await expect(
+      readTablesThroughClaude({ key: 'k', model: 'claude-haiku-4-5-20251001' }, { png: RASTER, fetchImpl }, { maxCells: 100, maxText: 100 }),
+    ).rejects.toMatchObject({ reason: 'too-large' });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('CONTROL: the same raster for Opus 5.5 IS sent, so the refusal above is the model’s limit and not the raster', async () => {
+    const { fetchImpl, calls } = service(() => answer({ lines: [] }));
+    await recogniseThroughClaude(
+      { key: 'k', model: 'claude-opus-5-5' },
+      { png: RASTER, ...FRAME, crop: [0, 0, 1191, 1684], fetchImpl },
+    );
+    expect(calls).toHaveLength(1);
   });
 });
 

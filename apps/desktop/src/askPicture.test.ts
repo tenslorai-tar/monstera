@@ -1,5 +1,5 @@
 import { MIN_SNAPSHOT_SCALE } from '@monstera/contract';
-import { fitsClaudeImage } from '@monstera/kernel';
+import { CLAUDE_STANDARD_RESOLUTION, fitsClaudeImage } from '@monstera/kernel';
 import { describe, expect, it } from 'vitest';
 
 import { pictureForAsk, type PictureEngine } from './askPicture.js';
@@ -29,7 +29,7 @@ describe('pictureForAsk', () => {
     const [scale] = drawn;
     if (scale === undefined) throw new Error('nothing was drawn');
     expect(scale).toBeLessThan(MIN_SNAPSHOT_SCALE);
-    expect(fitsClaudeImage(Math.ceil(2384 * scale), Math.ceil(3370 * scale))).toBe(true);
+    expect(fitsClaudeImage(Math.ceil(2384 * scale), Math.ceil(3370 * scale), CLAUDE_STANDARD_RESOLUTION)).toBe(true);
   });
 
   it('draws a page that fits at the ceiling at the ceiling, not lower', async () => {

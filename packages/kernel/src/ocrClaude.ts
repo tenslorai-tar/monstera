@@ -44,14 +44,53 @@ const MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 
 /**
- * The high-resolution tier's image limits (*Vision*, read 2026-09-13): a long edge
- * of 2576 px and 4784 visual tokens, one token per 28×28 patch, as every Claude
- * 4.7-or-later model is. The model is the person's choice (ADR-0117); an older one on a
- * smaller tier refuses a raster sized for this one, which reaches them as *rejected*.
+ * A model's native image resolution: the long edge and the visual tokens (one per 28×28 patch) it reads WITHOUT
+ * resizing. A picture past either is downscaled by the service — or, on a request marked `"oversized_image": "error"`
+ * as the recogniser's are, refused with a 400.
  */
-export const CLAUDE_MAX_EDGE = 2576;
-export const CLAUDE_MAX_VISUAL_TOKENS = 4784;
+export interface ClaudeImageLimits {
+  readonly edge: number;
+  readonly visualTokens: number;
+}
+
+/**
+ * THE ONE TABLE of what each model reads unresized, read from *Vision › Resolution and token cost*
+ * (platform.claude.com/docs/en/build-with-claude/vision) on 2026-10-08: two tiers, and which model is on which is
+ * {@link claudeImageLimits}'s alone. Every image request this build makes is sized from this table — the recognisers,
+ * the table reader, the Assistant's page picture — so a model is never sent a raster for another tier's limits (B3a).
+ *
+ * The recogniser was sized for the high-resolution tier whatever the model was, and the person's own choice of Haiku 4.5
+ * (ADR-0117) answered a 400: *an image of 1191x1684 exceeds the maximum image size of the model and would be downsized
+ * to 924x1307* (the owner's screenshot of 2026-10-07; 43 × 61 patches is 2623 visual tokens against Haiku's 1568).
+ */
+export const CLAUDE_HIGH_RESOLUTION: ClaudeImageLimits = { edge: 2576, visualTokens: 4784 };
+export const CLAUDE_STANDARD_RESOLUTION: ClaudeImageLimits = { edge: 1568, visualTokens: 1568 };
 const PATCH = 28;
+
+/** The first model generation on the high-resolution tier: *"Claude 4.7 and later models"* (the same page). */
+const HIGH_RESOLUTION_FROM = { major: 4, minor: 7 } as const;
+
+/**
+ * The limits for a model id: **the high-resolution tier for Claude 4.7 and later, the standard tier for every other
+ * model**, which is the documentation's own sentence.
+ *
+ * ## An id this cannot place gets the STANDARD tier
+ *
+ * The tighter of the two, so a raster sized for it is read unresized by every model; the cost of a wrong guess is fidelity,
+ * never a refusal. The generation is read from the id's `claude-<family>-<major>[-<minor>]` or `claude-<major>[-<minor>]-<family>`
+ * form; a trailing eight-digit date is not a minor.
+ */
+export function claudeImageLimits(model: string): ClaudeImageLimits {
+  const named =
+    /^claude-(?:opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-|$)/u.exec(model) ??
+    /^claude-(\d+)(?:-(\d{1,2}))?-(?:opus|sonnet|haiku|fable)(?:-|$)/u.exec(model);
+  if (named === null) return CLAUDE_STANDARD_RESOLUTION;
+  const major = Number(named[1]);
+  const minor = named[2] === undefined ? 0 : Number(named[2]);
+  const high =
+    major > HIGH_RESOLUTION_FROM.major || (major === HIGH_RESOLUTION_FROM.major && minor >= HIGH_RESOLUTION_FROM.minor);
+  return high ? CLAUDE_HIGH_RESOLUTION : CLAUDE_STANDARD_RESOLUTION;
+}
 
 /** How long the answer may run. A region's words are far below it; a cut-off is refused. */
 const MAX_OUTPUT_TOKENS = 16_000;
@@ -105,11 +144,11 @@ export interface ClaudeRequest {
  * rule, *How Claude resizes and pads images*: each side rounded up to a whole patch
  * is within the edge limit, and the patch count is within the token limit.
  */
-export function fitsClaudeImage(width: number, height: number): boolean {
+export function fitsClaudeImage(width: number, height: number, limits: ClaudeImageLimits): boolean {
   return (
-    Math.ceil(width / PATCH) * PATCH <= CLAUDE_MAX_EDGE &&
-    Math.ceil(height / PATCH) * PATCH <= CLAUDE_MAX_EDGE &&
-    Math.ceil(width / PATCH) * Math.ceil(height / PATCH) <= CLAUDE_MAX_VISUAL_TOKENS
+    Math.ceil(width / PATCH) * PATCH <= limits.edge &&
+    Math.ceil(height / PATCH) * PATCH <= limits.edge &&
+    Math.ceil(width / PATCH) * Math.ceil(height / PATCH) <= limits.visualTokens
   );
 }
 
@@ -127,7 +166,7 @@ export const CLAUDE_MAX_IMAGE_ENCODED_BYTES = 10_485_760;
 /**
  * The largest side, in pixels, the API accepts at all — *"The maximum dimensions per image are 8000x8000 px"*
  * (*Vision*, Request limits, read 2026-10-02 at platform.claude.com/docs/en/build-with-claude/vision). A picture past
- * {@link CLAUDE_MAX_EDGE} and inside this is downscaled by the service; past this it is refused. It applies while a
+ * the model's own edge (`ClaudeImageLimits`) and inside this is downscaled by the service; past this it is refused. It applies while a
  * request carries at most 20 images, which the eight attachments and a page picture stay under.
  */
 export const CLAUDE_MAX_IMAGE_SIDE = 8000;
@@ -162,6 +201,7 @@ export function claudeRasterScale(
   heightPoints: number,
   ceiling: number,
   floor: number,
+  limits: ClaudeImageLimits,
 ): number | null {
   for (
     let hundredths = Math.round(ceiling * 100);
@@ -169,7 +209,7 @@ export function claudeRasterScale(
     hundredths -= 1
   ) {
     const scale = hundredths / 100;
-    if (fitsClaudeImage(Math.ceil(widthPoints * scale) + 1, Math.ceil(heightPoints * scale) + 1)) {
+    if (fitsClaudeImage(Math.ceil(widthPoints * scale) + 1, Math.ceil(heightPoints * scale) + 1, limits)) {
       return scale;
     }
   }
@@ -309,15 +349,6 @@ export async function recogniseThroughClaude(
   credentials: ClaudeCredentials,
   request: ClaudeRequest,
 ): Promise<RecognisedPage> {
-  const { width, height } = pngSize(request.png);
-  if (!fitsClaudeImage(width, height)) {
-    throw new ClaudeRecognitionRefused(
-      'too-large',
-      `a ${String(width)}×${String(height)} raster is larger than Claude reads without resizing, ` +
-        'and the coordinates of a resized image would not be this raster’s',
-    );
-  }
-
   const parsed = await askClaudeAboutImage(credentials, request, INSTRUCTION, OUTPUT_SCHEMA, 'the region');
   const answer = answerSchema.safeParse(parsed);
   if (!answer.success) {
@@ -444,6 +475,17 @@ async function askClaudeAboutImage(
   schema: object,
   subject: string,
 ): Promise<unknown> {
+  // THE PIXEL LIMIT OF THIS MODEL, BEFORE ANYTHING IS SENT, for the text recogniser and the table reader alike: the
+  // request below says `oversized_image: error` so no box shifts, and the model's own limit is what decides whether it
+  // would be one. The caller sized the raster from the same table (`claudeImageLimits`); this refuses what it did not.
+  const { width, height } = pngSize(request.png);
+  if (!fitsClaudeImage(width, height, claudeImageLimits(credentials.model))) {
+    throw new ClaudeRecognitionRefused(
+      'too-large',
+      `a ${String(width)}×${String(height)} raster is larger than ${credentials.model} reads without resizing, ` +
+        'and the coordinates of a resized image would not be this raster’s',
+    );
+  }
   // THE BYTE LIMIT, BEFORE ANYTHING IS SENT: the API refuses an oversized image with a
   // bare 400, which reaches a reader as *rejected* and names neither number.
   if (!claudeAcceptsBytes(request.png.byteLength).ok) {

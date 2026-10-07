@@ -592,6 +592,13 @@ export const EXPORT_EXCEL_ENGINE_CLAUDE = messageKey('dialog.export-excel.engine
 export const EXPORT_EXCEL_SENDS_AZURE = messageKey('dialog.export-excel.sends.azure');
 export const EXPORT_EXCEL_SENDS_CLAUDE = messageKey('dialog.export-excel.sends.claude');
 export const EXCEL_SERVICE_REFUSED = messageKey('dialog.service-refused.body');
+export const SERVICE_DETAILS = messageKey('dialog.service-refused.details');
+export const SERVICE_WHY_REJECTED = messageKey('dialog.service-refused.why-rejected');
+export const SERVICE_WHY_TOO_LARGE = messageKey('dialog.service-refused.why-too-large');
+export const SERVICE_WHY_DECLINED = messageKey('dialog.service-refused.why-declined');
+export const SERVICE_WHY_TRUNCATED = messageKey('dialog.service-refused.why-truncated');
+export const SERVICE_WHY_UNREADABLE = messageKey('dialog.service-refused.why-unreadable');
+export const SERVICE_WHY_OTHER = messageKey('dialog.service-refused.why-other');
 export const SERVICE_REFUSED_TITLE = messageKey('dialog.service-refused.title');
 export const EXPORT_EXCEL_SHEET_PER_PAGE = messageKey('dialog.export-excel.sheet-per-page');
 export const EXPORT_EXCEL_ONE_SHEET = messageKey('dialog.export-excel.one-sheet');
@@ -4927,6 +4934,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_EXCEL_SENDS_CLAUDE]:
     '{every, select, yes {{count, plural, one {This document’s page} other {All # pages of this document}}} other {{count, plural, one {One page of this document} other {# pages of this document}}}} will be sent to Anthropic’s Claude to find its tables.',
   [EXCEL_SERVICE_REFUSED]: 'Page {page} could not be read, so nothing was written. {detail}',
+  [SERVICE_DETAILS]: 'Details',
+  [SERVICE_WHY_REJECTED]: 'The service could not use the picture of this page. Try again, or choose a different model in Settings.',
+  [SERVICE_WHY_TOO_LARGE]: 'This page is too large for the service to read.',
+  [SERVICE_WHY_DECLINED]: 'The service declined to read this page.',
+  [SERVICE_WHY_TRUNCATED]: 'The service ran out of room before it finished this page.',
+  [SERVICE_WHY_UNREADABLE]: 'The service answered in a way Monstera could not read.',
+  [SERVICE_WHY_OTHER]: 'The service could not read this page. Try again in a moment.',
   [SERVICE_REFUSED_TITLE]: 'The tables were not read',
   [EXPORT_EXCEL_SHEET_PER_PAGE]: 'A sheet for each page that has tables',
   [EXPORT_EXCEL_ONE_SHEET]: 'Every table on one sheet',

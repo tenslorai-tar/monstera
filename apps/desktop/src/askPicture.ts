@@ -1,5 +1,10 @@
 import { MIN_PAGE_PICTURE_SCALE } from '@monstera/contract';
-import { AZURE_RASTER_SCALE, claudeAcceptsBytes, claudeRasterScale } from '@monstera/kernel';
+import {
+  AZURE_RASTER_SCALE,
+  CLAUDE_STANDARD_RESOLUTION,
+  claudeAcceptsBytes,
+  claudeRasterScale,
+} from '@monstera/kernel';
 
 import { PageTooLargeToPicture } from './documentCommands.js';
 import { rasterWithinLimit } from './rasterWithinLimit.js';
@@ -24,7 +29,15 @@ export interface PictureEngine {
 export async function pictureForAsk(engine: PictureEngine, page: number): Promise<Uint8Array> {
   const size = await engine.size(page);
   if (size === undefined) throw new Error(`the engine reported no size for page ${String(page + 1)}`);
-  const scale = claudeRasterScale(size.width, size.height, AZURE_RASTER_SCALE, MIN_PAGE_PICTURE_SCALE);
+  // THE STANDARD TIER, the tighter of the two (`ocrClaude.ts`' table): one picture serves whichever model the person chose,
+  // so it is sized for the one every model reads unresized.
+  const scale = claudeRasterScale(
+    size.width,
+    size.height,
+    AZURE_RASTER_SCALE,
+    MIN_PAGE_PICTURE_SCALE,
+    CLAUDE_STANDARD_RESOLUTION,
+  );
   if (scale === null) throw new PageTooLargeToPicture(page);
   const { raster } = await rasterWithinLimit(scale, MIN_PAGE_PICTURE_SCALE, claudeAcceptsBytes, async (at) => ({
     png: await engine.draw(page, at),

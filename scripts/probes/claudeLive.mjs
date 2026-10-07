@@ -44,6 +44,7 @@ import { mupdfWriter } from '../../packages/kernel/dist/mupdfWriter.js';
 import { AZURE_RASTER_SCALE } from '../../packages/kernel/dist/ocrAzure.js';
 import {
   ClaudeRecognitionRefused,
+  claudeImageLimits,
   claudeRasterScale,
   recogniseThroughClaude,
 } from '../../packages/kernel/dist/ocrClaude.js';
@@ -96,13 +97,21 @@ if (key === '') {
   process.exit(outcome.code);
 }
 
+/**
+ * The model this probe reads with: the owner's standing rule for every live AI call (27 September list, *"Live AI
+ * tests use the cheapest Claude model (Haiku 4.5), never Fable or Opus"*). The recogniser sends whatever model its
+ * credentials name (ADR-0117), so a probe must name one; the product's own choice is the person's, in Settings.
+ */
+const PROBE_MODEL = 'claude-haiku-4-5-20251001';
+
 // THE SCALE MAIN WOULD CHOOSE, by the function main calls, within the floor the
-// host refuses below.
+// host refuses below — and for THIS MODEL'S limits, Haiku's being the standard tier (`claudeImageLimits`).
 const scale = claudeRasterScale(
   REGION.x1 - REGION.x0,
   REGION.y1 - REGION.y0,
   AZURE_RASTER_SCALE,
   MIN_SNAPSHOT_SCALE,
+  claudeImageLimits(PROBE_MODEL),
 );
 if (scale === null) {
   process.stderr.write('\nFAILED — the drawn region does not fit Claude’s image limits at any scale.\n');
@@ -122,13 +131,6 @@ async function rasterOfDrawnWord() {
     await mupdfWriter.close(session);
   }
 }
-
-/**
- * The model this probe reads with: the owner's standing rule for every live AI call (27 September list, *"Live AI
- * tests use the cheapest Claude model (Haiku 4.5), never Fable or Opus"*). The recogniser sends whatever model its
- * credentials name (ADR-0117), so a probe must name one; the product's own choice is the person's, in Settings.
- */
-const PROBE_MODEL = 'claude-haiku-4-5-20251001';
 
 /**
  * The one real call. A refusal is reported BY ITS REASON and nothing else.

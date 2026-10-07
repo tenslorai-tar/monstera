@@ -54,6 +54,7 @@ import {
   ClaudeRecognitionRefused,
   azureAcceptsBytes,
   claudeAcceptsBytes,
+  claudeImageLimits,
   claudeRasterScale,
   listModels,
   recogniseThroughClaude,
@@ -1219,7 +1220,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         isNetworkOcrEngine(candidate.engine);
       if (isNetworkRequest(request)) {
         const [x0, y0, x1, y1] = request.region;
-        const prepared = networkRecognisers(settings, secrets)[request.engine].prepare(
+        const prepared = await networkRecognisers(settings, secrets)[request.engine].prepare(
           Math.abs(x1 - x0),
           Math.abs(y1 - y0),
         );
@@ -1570,7 +1571,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       const { sizes } = await engineHost.geometry(session, [page]);
       const size = sizes[0];
       if (size === undefined) throw new Error(`the engine reported no size for page ${String(page + 1)}`);
-      const prepared = networkRecognisers(settings, secrets)[engine].prepare(size.width, size.height);
+      const prepared = await networkRecognisers(settings, secrets)[engine].prepare(size.width, size.height);
       const { raster } = await rasterWithinLimit(prepared.scale, MIN_SNAPSHOT_SCALE, prepared.accepts, async (at) => ({
         png: await engineHost.pageImage(session, { page, format: 'png', scale: at, quality: 100 }),
       }));
@@ -3797,7 +3798,7 @@ interface NetworkRecogniser {
   readonly prepare: (
     widthPoints: number,
     heightPoints: number,
-  ) => {
+  ) => Promise<{
     readonly scale: number;
     /**
      * Whether the service takes a PNG of this many bytes, and if not how much smaller
@@ -3811,7 +3812,7 @@ interface NetworkRecogniser {
      * check above already read. REQUIRED, for {@link accepts}' reason.
      */
     readonly readTables: (png: Uint8Array) => Promise<readonly RecognisedTable[]>;
-  };
+  }>;
 }
 
 /** The table bounds every service's answer is held to — the review grid's and the channel's. */
@@ -3853,7 +3854,8 @@ function networkRecognisers(
 ): Readonly<Record<NetworkOcrEngine, NetworkRecogniser>> {
   return {
     azure: {
-      prepare: () => {
+      // `async` ONLY FOR THE ROUTE'S ONE TYPE: Azure reads nothing that waits, and Claude's reads its model.
+      prepare: async () => {
         const credentials = azureCredentials(settings, secrets);
         // TYPED, so a caller can answer *no key* by what it is: the Excel export's
         // `service-refused` does. Its sentence is the one this used to throw.
@@ -3867,33 +3869,35 @@ function networkRecognisers(
       },
     },
     claude: {
-      prepare: (widthPoints, heightPoints) => {
+      prepare: async (widthPoints, heightPoints) => {
         const key = secrets?.read()[ANTHROPIC_KEY_SETTING_ID];
         if (typeof key !== 'string' || key === '') throw new NetworkKeyMissing('claude');
+        // THE MODEL THIS READ IS MADE WITH, read ONCE here: the raster is sized for ITS limits (`claudeImageLimits`, the
+        // one table), and the call below sends it to the same model — a model read again afterwards could be another tier.
+        // A choice made in Settings a moment ago is the one that reads, since this runs when a read begins.
+        const model = await claudeModel(settings, key);
         // AZURE'S SCALE AS THE CEILING, for that constant's own reason — the bytes
-        // cross the internet either way — and lowered only as far as Claude's
+        // cross the internet either way — and lowered only as far as the MODEL'S
         // image limits require, never below the floor the host refuses.
         const scale = claudeRasterScale(
           widthPoints,
           heightPoints,
           AZURE_RASTER_SCALE,
           MIN_SNAPSHOT_SCALE,
+          claudeImageLimits(model),
         );
         if (scale === null) {
           throw new ClaudeRecognitionRefused(
             'too-large',
             `a ${widthPoints.toFixed(0)}×${heightPoints.toFixed(0)} pt region is too large for ` +
-              'Claude to read without resizing, even at the smallest snapshot scale',
+              `${model} to read without resizing, even at the smallest snapshot scale`,
           );
         }
         return {
           scale,
           accepts: claudeAcceptsBytes,
-          // THE MODEL WHEN A READ IS MADE, so a choice made in Settings a moment ago is the one that reads.
-          recognise: async (raster) =>
-            recogniseThroughClaude({ key, model: await claudeModel(settings, key) }, raster),
-          readTables: async (png) =>
-            readTablesThroughClaude({ key, model: await claudeModel(settings, key) }, { png }, TABLE_BOUNDS),
+          recognise: (raster) => recogniseThroughClaude({ key, model }, raster),
+          readTables: (png) => readTablesThroughClaude({ key, model }, { png }, TABLE_BOUNDS),
         };
       },
     },
