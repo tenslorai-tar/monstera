@@ -87,3 +87,11 @@ Three sentences above said more than was built, each found while building it:
 3. **The fixed keys are not listed on the Keyboard page.** The list in *Rejected* stands as the decision; the page
    still carries its one note (press F1, or Ctrl+K), and a listing of the component keys is owed to the Help centre's
    keyboard article (the 26 September list, item 9).
+
+## Correction, 2026-10-07 — where a key is changed
+
+The dialog Help opens was also where a key was changed, and Settings › Keyboard was a sentence pointing at it; the owner
+found the Keyboard page empty and the Help list loaded with *Change* and *Remove* for a person who only wanted to read.
+[ADR-0191](0191-keys-are-changed-in-settings-keyboard-and-help-lists-them-without-the-editing.md) moves the editing to
+Settings › Keyboard and makes Help's dialog a list. The setting, its validation and its application before the registry
+is built are unchanged.
