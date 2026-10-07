@@ -1658,6 +1658,7 @@ export const ASSISTANT_WEB_UNUSED = messageKey('assistant.web.unused');
 /** An answer about a document that cites none of its pages (work list 2026-09-26, item 5c). */
 export const ASSISTANT_NO_PAGE_CITED = messageKey('assistant.no-page-cited');
 export const ASSISTANT_NO_MODELS = messageKey('assistant.no-models');
+export const ASSISTANT_MODELS_LISTING = messageKey('assistant.models-listing');
 export const ASSISTANT_PROBLEM_UNAUTHORISED = messageKey('assistant.problem-unauthorised');
 export const ASSISTANT_PROBLEM_UNREACHABLE = messageKey('assistant.problem-unreachable');
 export const ASSISTANT_PROBLEM_REJECTED = messageKey('assistant.problem-rejected');
@@ -1741,6 +1742,7 @@ export const SETTINGS_AI_MODELS_FETCHED = messageKey('dialog.settings.ai-models.
 export const SETTINGS_AI_MODELS_FALLBACK = messageKey('dialog.settings.ai-models.fallback');
 export const SETTINGS_AI_MODELS_NO_LIST = messageKey('dialog.settings.ai-models.no-list');
 export const SETTINGS_AI_MODELS_UNREAD = messageKey('dialog.settings.ai-models.unread');
+export const SETTINGS_AI_MODELS_ASKING = messageKey('dialog.settings.ai-models.asking');
 /** A fallback list that is one because the provider was ASKED and gave none — a key check's refusal (ADR-0158). */
 export const SETTINGS_AI_MODELS_NOT_LISTED = messageKey('dialog.settings.ai-models.not-listed');
 /**
@@ -4256,7 +4258,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_MODEL_NOT_OFFERED]: '{name} (not offered now)',
   [SETTINGS_AI_MODELS_FETCHED]: 'Listed by {provider} this session.',
   [SETTINGS_AI_MODELS_FALLBACK]:
-    '{provider} has not been asked this session, so this is this build’s own list. Choosing {provider} in the Assistant asks it.',
+    '{provider} has not been asked, so this is this build’s own list. Store a key above, then press Check to ask it.',
   [SETTINGS_AI_MODELS_NO_LIST]: '{provider} publishes no list of models to choose from.',
   [SETTINGS_AI_MODELS_UNREAD]: 'The list of models could not be read.',
   [SETTINGS_AI_MODELS_NOT_LISTED]: '{provider} was asked and gave no list, so this is this build’s own list.',
@@ -4272,6 +4274,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_KEY_NOT_THE_SERVICE]:
     'That is not an Azure OpenAI address, so the key was not sent. It looks like https://your-resource.openai.azure.com.',
   [AI_MODELS_NONE]: 'No models to choose from',
+  [ASSISTANT_MODELS_LISTING]: 'Loading models…',
+  [SETTINGS_AI_MODELS_ASKING]: 'Asking {provider} which models it offers…',
   [AI_SAVE_HISTORY_DESCRIPTION]:
     'Off by default. Conversations are discarded when the document closes; saved ones are encrypted on this computer.',
   [AI_AZURE_OPENAI_ENDPOINT_DESCRIPTION]: 'Your own Azure OpenAI resource address. Needed only for that provider.',

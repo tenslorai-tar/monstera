@@ -20,6 +20,7 @@ import {
   ACCENT_REJECTED,
   ACCENT_TITLE,
   AI_MODELS_NONE,
+  SETTINGS_AI_MODELS_ASKING,
   AI_PROVIDER_NAMES,
   ASSISTANT_MODEL_NO_VISION,
   ASSISTANT_MODEL_NOT_OFFERED,
@@ -566,10 +567,13 @@ const LIST_SOURCE_WORDS: Readonly<Record<AiModelListAnswer['source'], MessageKey
 function ModelRow({
   provider,
   list,
+  asking,
   chosen,
   onChoose,
 }: {
   readonly provider: AiProviderId;
+  /** Whether the provider is being asked for its list now (a key is stored and the reply has not come). */
+  readonly asking: boolean;
   /** `undefined` when the query for the held lists failed. */
   readonly list: AiModelListAnswer | undefined;
   readonly chosen: Readonly<Partial<Record<AiProviderId, string>>>;
@@ -581,7 +585,11 @@ function ModelRow({
   const readsImages = choiceReadsImages(provider);
   const stored = chosen[provider];
   const selected = stored ?? defaultModel(models, { vision: readsImages })?.id ?? '';
-  const offered = stored === undefined || models.some((entry) => entry.id === stored);
+  // *NOT OFFERED* IS SAID ONLY OF A LIST THE PROVIDER GAVE. A stored model is the person's choice, and a list that is
+  // this build's own, or is still being asked for, or could not be read, is not evidence the provider stopped offering
+  // it — it was the saved choice called *not offered now* on every launch, before anything had asked.
+  const authoritative = list?.source === 'fetched' && list.problem === undefined && !asking;
+  const known = stored === undefined || models.some((entry) => entry.id === stored);
   const name = _(AI_PROVIDER_NAMES[provider]);
   return (
     <div className="m-settings-row">
@@ -593,7 +601,9 @@ function ModelRow({
           <span className="m-settings-row__note">{_(AI_MODELS_SETTING.description)}</span>
         )}
         <span className="m-settings-row__note" data-model-source={list?.source ?? 'unread'}>
-          {list === undefined
+          {asking
+            ? i18n._(SETTINGS_AI_MODELS_ASKING, { provider: name })
+            : list === undefined
             ? _(SETTINGS_AI_MODELS_UNREAD)
             : // ASKED AND REFUSED is not *not asked*: a key check's answer carries its problem (ADR-0158), and the
               // fallback's own sentence would then say the provider was never asked.
@@ -611,7 +621,9 @@ function ModelRow({
           value={selected}
         >
           {models.length === 0 && stored === undefined ? <option value="">{_(AI_MODELS_NONE)}</option> : null}
-          {offered ? null : <option value={stored}>{i18n._(ASSISTANT_MODEL_NOT_OFFERED, { name: stored })}</option>}
+          {known ? null : (
+            <option value={stored}>{authoritative ? i18n._(ASSISTANT_MODEL_NOT_OFFERED, { name: stored }) : stored}</option>
+          )}
           {models.map((entry) => {
             const blind = readsImages && !servesVision(entry);
             return (
@@ -720,6 +732,7 @@ export default function SettingsBody({
   secretsAvailable,
   models,
   checked = {},
+  refreshed = {},
   resolve,
   update,
 }: {
@@ -728,6 +741,7 @@ export default function SettingsBody({
   readonly secretsAvailable: boolean;
   readonly models: Readonly<Partial<Record<AiProviderId, AiModelListAnswer>>>;
   readonly checked?: Readonly<Partial<Record<AiProviderId, number>>> | undefined;
+  readonly refreshed?: Readonly<Partial<Record<AiProviderId, number>>> | undefined;
 } & DialogAnswering<SettingsAnswer>): ReactElement {
   const { _ } = useLingui();
   const [drafts, setDrafts] = useState<Readonly<Record<string, unknown>>>(() =>
@@ -773,8 +787,26 @@ export default function SettingsBody({
 
   const draftFor = (setting: SettingDefinition): unknown => drafts[setting.id];
 
+  /**
+   * THE LIST A PROVIDER OFFERS IS ASKED OF IT whenever a key is stored for it, when the AI page is shown and when the
+   * provider changes — once for each provider per opening of the dialog, since the reply replaces the held list.
+   * `main`'s held list is only what it fetched earlier this session or this build's own, so a choice made from it alone
+   * is made from a list the provider never gave. A provider with no key stored has nothing to ask with, and says so.
+   */
+  const [refreshAsked, setRefreshAsked] = useState<Readonly<Partial<Record<AiProviderId, number>>>>({});
+  const ensureList = (id: AiProviderId): void => {
+    if (!secretsAvailable || refreshAsked[id] !== undefined) return;
+    if (!storedSecrets.some((held) => held === AI_PROVIDERS[id].keySetting)) return;
+    setRefreshAsked((current) => ({ ...current, [id]: 1 }));
+    report({ refresh: id });
+  };
+
   const changeValue = (setting: SettingDefinition, next: unknown): void => {
     setDrafts((current) => ({ ...current, [setting.id]: next }));
+    if (setting.id === AI_PROVIDER_SETTING.id) {
+      const chosenProvider = AI_PROVIDER_SETTING.schema.safeParse(next);
+      if (chosenProvider.success) ensureList(chosenProvider.data);
+    }
     const parsed = setting.schema.safeParse(candidateFor(controlFor(setting), next));
     // ONLY WHAT THE SCHEMA ACCEPTS travels. A half-typed number is a value on screen and not a
     // setting yet; the row says so through `invalid` below.
@@ -835,6 +867,14 @@ export default function SettingsBody({
       <ModelRow
         chosen={chosenModels}
         key={setting.id}
+        // ASKING until the reply to this provider's read arrives, so the row never says *not offered* of a model
+        // nobody has yet checked against the provider's own list.
+        asking={
+          refreshAsked[provider] !== undefined &&
+          (refreshed[provider] ?? 0) < (refreshAsked[provider] ?? 0) &&
+          // A CHECK'S ANSWER REPLACED THE LIST TOO, from the same read.
+          (checked[provider] ?? 0) === 0
+        }
         list={models[provider]}
         onChoose={(next) => {
           changeValue(setting, next);
@@ -909,6 +949,7 @@ export default function SettingsBody({
               onClick={() => {
                 setChosen(entry.id);
                 setQuery('');
+                if (entry.id === 'ai') ensureList(provider);
               }}
               type="button"
             >

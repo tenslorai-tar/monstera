@@ -165,17 +165,30 @@ export function showSettingsCommand(deps: {
        * again with it, since the check is of a key typed since the dialog opened.
        */
       const answered: Partial<Record<AiProviderId, number>> = {};
-      const check = async (provider: AiProviderId, reply: (props: unknown) => void): Promise<void> => {
+      const refreshed: Partial<Record<AiProviderId, number>> = {};
+      /**
+       * ASKS THE PROVIDER for its list and replies with it. A CHECK is one that also counts as the answer to the key
+       * (`checked`); a REFRESH is the AI page asking because a key is stored (`refreshed`), and says nothing of the key.
+       */
+      const ask = async (provider: AiProviderId, counted: Partial<Record<AiProviderId, number>>, reply: (props: unknown) => void): Promise<void> => {
         const list = await deps.client['ai.models']({ provider });
         const stored = await deps.client['settings.loadSecrets']({});
-        answered[provider] = (answered[provider] ?? 0) + 1;
+        counted[provider] = (counted[provider] ?? 0) + 1;
         // A QUERY THAT FAILED leaves the provider WITHOUT a list rather than with the one from before, so the answer
         // drawn for this check is never an earlier check's.
         const others: SettingsProps['models'] = Object.fromEntries(Object.entries(shown.models).filter(([held]) => held !== provider));
         const models = list.ok ? { ...others, [provider]: list.value } : others;
-        shown = { ...shown, models, checked: { ...answered }, ...(stored.ok ? { storedSecrets: stored.value.stored } : {}) };
+        shown = {
+          ...shown,
+          models,
+          ...(Object.keys(answered).length > 0 ? { checked: { ...answered } } : {}),
+          ...(Object.keys(refreshed).length > 0 ? { refreshed: { ...refreshed } } : {}),
+          ...(stored.ok ? { storedSecrets: stored.value.stored } : {}),
+        };
         reply(shown);
       };
+      const check = (provider: AiProviderId, reply: (props: unknown) => void): Promise<void> => ask(provider, answered, reply);
+      const refresh = (provider: AiProviderId, reply: (props: unknown) => void): Promise<void> => ask(provider, refreshed, reply);
 
       // IN THE ORDER REPORTED: a key is saved as it is typed, and a Check pressed straight after the last keystroke must
       // find that keystroke's save done, or main would ask the provider with the key before it. The chain goes on past
@@ -186,6 +199,7 @@ export function showSettingsCommand(deps: {
         const next = queue.then(async () => {
           await apply(report);
           if (report.check !== undefined) await check(report.check, reply);
+          if (report.refresh !== undefined) await refresh(report.refresh, reply);
         });
         queue = next.then(
           () => undefined,

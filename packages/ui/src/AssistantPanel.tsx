@@ -103,6 +103,7 @@ import {
   ASSISTANT_WEB_NONE_NO_SEARCH,
   ASSISTANT_WEB_NONE_TERMS,
   ASSISTANT_WEB_ON,
+  ASSISTANT_MODELS_LISTING,
   ASSISTANT_NO_MODELS,
   ASSISTANT_NO_VISION,
   ASSISTANT_PROBLEM_PAGE_TOO_LARGE,
@@ -158,6 +159,7 @@ import { Button } from './primitives/Button.js';
 import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
+import { heldModels, holdModels } from './assistantModels.js';
 import type { SettingsStore } from './settingsStore.js';
 import { composing } from './surfaces/shortcuts.js';
 import { useSetting } from './useSetting.js';
@@ -340,11 +342,20 @@ const WEB_ABSENT: Readonly<Record<WebSearchAbsence, MessageKey>> = {
  * the same thing twice. The states are ordered: no key anywhere explains itself before the chosen
  * provider does, and a missing model list only matters once there is a key to fetch it with.
  */
-export type AssistantReadiness = 'no-keys' | 'no-key' | 'no-models' | 'ready';
+export type AssistantReadiness = 'no-keys' | 'no-key' | 'listing' | 'no-models' | 'ready';
 
-export function assistantReadiness(anyKey: boolean, chosenHasKey: boolean, modelCount: number): AssistantReadiness {
+/**
+ * `modelCount` is `undefined` while the provider has not answered, which is *listing* and says nothing: a list that has
+ * not arrived is not an empty one, and *no models are listed* is only true of the second.
+ */
+export function assistantReadiness(
+  anyKey: boolean,
+  chosenHasKey: boolean,
+  modelCount: number | undefined,
+): AssistantReadiness {
   if (!anyKey) return 'no-keys';
   if (!chosenHasKey) return 'no-key';
+  if (modelCount === undefined) return 'listing';
   if (modelCount === 0) return 'no-models';
   return 'ready';
 }
@@ -361,6 +372,7 @@ const READINESS = {
  */
 type Scope = 'page' | 'page-image' | 'document' | 'comments' | 'selection' | 'comment' | 'all' | 'nothing';
 
+const NO_MODELS: readonly AiModel[] = [];
 const NO_SUBSCRIBE = (): (() => void) => () => undefined;
 const NO_TURNS: readonly ConversationTurn[] = [];
 
@@ -423,7 +435,14 @@ export function AssistantPanel({
   const chosenModels = useSetting(settings, AI_MODELS_SETTING);
   // WITH THE CAPABILITIES, because a model that cannot see is not offered a picture (ADR-0090):
   // `false` where the provider says so, `null` where it does not say.
-  const [models, setModels] = useState<readonly AiModel[]>([]);
+  // WHAT THE PROVIDER LAST ANSWERED, from this panel's own read or else the session's (`assistantModels.ts`), and
+  // `undefined` while nothing has answered: the panel is rebuilt each time its tab is chosen, and an empty list at that
+  // moment said *no models* about a provider that had not been asked yet.
+  const [answered, setAnswered] = useState<{ readonly provider: AiProviderId; readonly models: readonly AiModel[] } | undefined>(
+    undefined,
+  );
+  const listed = answered?.provider === provider ? answered.models : heldModels(provider);
+  const models = listed ?? NO_MODELS;
   // WHERE THE CHOICE READS IMAGES: the contract's rule, which the Settings row takes too (ADR-0117 Decision 4).
   const readsImages = choiceReadsImages(provider);
   const stored = chosenModels[provider];
@@ -473,9 +492,16 @@ export function AssistantPanel({
   useEffect(() => {
     let cancelled = false;
     void client['ai.models']({ provider }).then((result) => {
-      if (cancelled || !result.ok) return;
+      if (cancelled) return;
+      if (!result.ok) {
+        // A READ THAT FAILED answers with no list only where nothing has answered before: a provider that listed once
+        // keeps its list rather than losing it to one failed read.
+        if (heldModels(provider) === undefined) setAnswered({ provider, models: NO_MODELS });
+        return;
+      }
       // NO MODEL IS WRITTEN HERE: a choice is stored only when a person makes one, so the default follows the list.
-      setModels(result.value.models);
+      holdModels(provider, result.value.models);
+      setAnswered({ provider, models: result.value.models });
     });
     return () => {
       cancelled = true;
@@ -815,7 +841,7 @@ export function AssistantPanel({
     [storedSecrets],
   );
 
-  const readiness = assistantReadiness(providers.length > 0, hasKey, models.length);
+  const readiness = assistantReadiness(providers.length > 0, hasKey, listed?.length);
 
   const number = new Intl.NumberFormat(i18n.locale);
 
@@ -1013,7 +1039,7 @@ export function AssistantPanel({
           />
         </div>
       )}
-      {readiness !== 'ready' && (
+      {readiness !== 'ready' && readiness !== 'listing' && (
         <p className="m-assistant__state" data-assistant-readiness={readiness}>
           {i18n._(READINESS[readiness])}
         </p>
@@ -1363,7 +1389,7 @@ export function AssistantPanel({
             {/* A STORED CHOICE THE LIST NO LONGER NAMES stays shown and selected, marked, never silently swapped for
                 another model (ADR-0117 Decision 3). */}
             {/* NOTHING TO LIST SAYS SO, as the Settings row does, rather than drawing an empty box. */}
-            {models.length === 0 ? <option value="">{i18n._(AI_MODELS_NONE)}</option> : null}
+            {models.length === 0 ? <option value="">{i18n._(listed === undefined ? ASSISTANT_MODELS_LISTING : AI_MODELS_NONE)}</option> : null}
             {stored !== undefined && models.length > 0 && chosenEntry === undefined ? (
               <option value={stored}>{i18n._(ASSISTANT_MODEL_NOT_OFFERED, { name: stored })}</option>
             ) : null}

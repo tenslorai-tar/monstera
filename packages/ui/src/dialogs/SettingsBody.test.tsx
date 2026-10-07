@@ -402,9 +402,85 @@ describe('SettingsBody', () => {
       expect(reported.at(-1)?.values).toStrictEqual({ 'ai.models': { anthropic: 'sees', openai: 'gpt-b' } });
       expect(
         screen.getByText(
-          'OpenAI has not been asked this session, so this is this build’s own list. Choosing OpenAI in the Assistant asks it.',
+          'OpenAI has not been asked, so this is this build’s own list. Store a key above, then press Check to ask it.',
         ),
       ).toBeDefined();
+    });
+
+    it('a saved model is shown PLAINLY against this build’s own list, never called not offered (ADR-0190)', () => {
+      opened({ models: { openai: OPENAI }, values: { 'ai.provider': 'openai', 'ai.models': { openai: 'gpt-saved' } } });
+      goTo('ai');
+
+      const row = screen.getByLabelText<HTMLSelectElement>('AI model');
+      expect(row.value).toBe('gpt-saved');
+      expect(row.selectedOptions[0]?.textContent).toBe('gpt-saved');
+      expect(document.body.textContent).not.toContain('not offered now');
+    });
+
+    describe('with a key stored, the page ASKS the provider (ADR-0190)', () => {
+      const FETCHED: AiModelListAnswer = { source: 'fetched', models: [vision('opus', true)] };
+      /** The dialog as the opener drives it: props replaced by each reply. */
+      function drawn(props: { storedSecrets: readonly (typeof ANTHROPIC_KEY_SETTING_ID)[]; refreshed?: Record<string, number>; models: AiModelListAnswer }): {
+        readonly reported: SettingsAnswer[];
+        readonly view: ReturnType<typeof render>;
+        readonly again: (next: { refreshed?: Record<string, number>; models: AiModelListAnswer }) => void;
+      } {
+        const reported: SettingsAnswer[] = [];
+        const body = (next: { refreshed?: Record<string, number>; models: AiModelListAnswer }): ReactElement => (
+          <Wrapped>
+            <SettingsBody
+              models={{ anthropic: next.models }}
+              refreshed={next.refreshed ?? {}}
+              resolve={() => undefined}
+              secretsAvailable
+              storedSecrets={props.storedSecrets}
+              update={(answer) => {
+                reported.push(answer);
+              }}
+              values={{ ...DEFAULTS, 'ai.models': { anthropic: 'saved-model' } }}
+            />
+          </Wrapped>
+        );
+        const view = render(body(props));
+        return {
+          reported,
+          view,
+          again: (next) => {
+            view.rerender(body(next));
+          },
+        };
+      }
+
+      it('reports ONE refresh for the provider when the AI page is shown, says it is asking, and marks nothing meanwhile', () => {
+        const { reported, again } = drawn({ storedSecrets: [ANTHROPIC_KEY_SETTING_ID], models: ANTHROPIC });
+        goTo('ai');
+        expect(reported.filter((report) => report.refresh !== undefined)).toStrictEqual([
+          { values: {}, secrets: {}, refresh: 'anthropic' },
+        ]);
+        expect(screen.getByText('Asking Anthropic which models it offers…')).toBeDefined();
+        // ASKING, a list the build gave is not evidence: the saved choice is not called not offered yet.
+        expect(screen.getByLabelText<HTMLSelectElement>('AI model').selectedOptions[0]?.textContent).toBe('saved-model');
+
+        // THE PAGE LEFT AND SHOWN AGAIN asks nothing more: the reply replaces the list for the whole opening.
+        goTo('privacy');
+        goTo('ai');
+        expect(reported.filter((report) => report.refresh !== undefined)).toHaveLength(1);
+
+        // THE REPLY: the provider's own list, which does not name the saved model, so now it is said.
+        again({ refreshed: { anthropic: 1 }, models: FETCHED });
+        expect(screen.queryByText('Asking Anthropic which models it offers…')).toBeNull();
+        expect(screen.getByText('Listed by Anthropic this session.')).toBeDefined();
+        expect(screen.getByLabelText<HTMLSelectElement>('AI model').selectedOptions[0]?.textContent).toBe(
+          'saved-model (not offered now)',
+        );
+      });
+
+      it('CONTROL: with no key stored nothing is asked, since there is nothing to ask with', () => {
+        const { reported } = drawn({ storedSecrets: [], models: ANTHROPIC });
+        goTo('ai');
+        expect(reported.filter((report) => report.refresh !== undefined)).toStrictEqual([]);
+        expect(screen.queryByText('Asking Anthropic which models it offers…')).toBeNull();
+      });
     });
 
     it('a stored model the list no longer names stays selected, marked, never replaced', () => {
@@ -622,7 +698,11 @@ describe('SettingsBody — a provider key’s Check (ADR-0158)', () => {
   it('reports the PROVIDER and no key, says it is checking, then says Key works and lists the models it answered', () => {
     const { reported, reply } = live(true);
     fireEvent.click(check());
-    expect(reported).toStrictEqual([{ values: {}, secrets: {}, check: 'anthropic' }]);
+    // THE PAGE'S OWN ASK (ADR-0190) comes first and is not the check; the check is the report that follows it.
+    expect(reported).toStrictEqual([
+      { values: {}, secrets: {}, refresh: 'anthropic' },
+      { values: {}, secrets: {}, check: 'anthropic' },
+    ]);
     expect(answer()).toBe('Checking the key with Anthropic…');
     expect(check()).toHaveProperty('disabled', true);
 

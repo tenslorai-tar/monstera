@@ -378,6 +378,17 @@ describe('showSettingsCommand', () => {
       expect(JSON.stringify(replies)).not.toContain('example-key');
     });
 
+    it('a REFRESH (ADR-0190) asks the provider for its list and replies with it, counted apart from a check', async () => {
+      const { run, sent, replies } = harness({ reports: [{ values: {}, secrets: {}, refresh: 'openai' }], listed: FETCHED });
+      await run();
+      expect(sent.filter((call) => call.id === 'ai.models').map((call) => call.params)).toStrictEqual([{ provider: 'openai' }]);
+      const reply = replies[0] as { models: Record<string, unknown>; checked?: unknown; refreshed?: unknown };
+      expect(reply.models['openai']).toStrictEqual(FETCHED);
+      expect(reply.refreshed).toStrictEqual({ openai: 1 });
+      // IT SAYS NOTHING OF THE KEY: no answered check is counted, so no *Key works* can follow from it.
+      expect(reply.checked).toBeUndefined();
+    });
+
     it('CONTROL: a report without a check asks no provider and replies nothing', async () => {
       const { run, sent, replies } = harness({ reports: [{ values: { [THEME_SETTING.id]: 'dark' }, secrets: {} }], listed: FETCHED });
       await run();

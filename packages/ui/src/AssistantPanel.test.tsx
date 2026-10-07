@@ -13,9 +13,10 @@ import { asDocId, asDocVersion } from '@monstera/shared';
 import { I18nProvider } from '@lingui/react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { type ReactElement, type ReactNode, useState } from 'react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AssistantDocument, AssistantPanel, type AssistantPanelProps } from './AssistantPanel.js';
+import { forgetHeldModels } from './assistantModels.js';
 import type { AssistantRequest } from './assistantRequest.js';
 import { createDocumentStore } from './documentStores.js';
 import {
@@ -39,6 +40,11 @@ import { SettingsStore } from './settingsStore.js';
 
 beforeAll(() => {
   activateCatalogue('en', EN);
+});
+
+// THE SESSION'S ANSWERED LISTS (`assistantModels.ts`) belong to the window, so a case must not inherit the one before's.
+beforeEach(() => {
+  forgetHeldModels();
 });
 
 function Wrapped({ children }: { readonly children: ReactNode }): ReactElement {
@@ -431,6 +437,84 @@ describe('the assistant tab', () => {
     // CONTROL: a key and a model — Send works.
     await drawn();
     expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(false);
+  });
+
+  describe('a list not yet asked for is not an empty one (ADR-0190)', () => {
+    /** A panel whose `ai.models` read is answered when the case says, so the moment before the answer can be looked at. */
+    function pending(): {
+      readonly mount: () => void;
+      readonly answer: (models: readonly { id: string; label: string }[]) => Promise<void>;
+    } {
+      const waiting: ((value: unknown) => void)[] = [];
+      const client = createClient(channels, (id) => {
+        if (id !== 'ai.models') throw new Error(`this case does not answer ${id}`);
+        return new Promise((resolve) => {
+          waiting.push(resolve);
+        });
+      });
+      const docId = asDocId('00000000-0000-4000-8000-0000000000f1');
+      const focused = { docId, store: createDocumentStore(docId, asDocVersion(1)), page: 0 };
+      const wire = events();
+      return {
+        mount: () => {
+          render(
+            <Wrapped>
+              <Host
+                client={client}
+                focused={focused}
+                settings={new SettingsStore(new SettingsRegistry(ALL_SETTINGS))}
+                storedSecrets={[ANTHROPIC_KEY]}
+                subscribe={wire.subscribe}
+                toast={() => undefined}
+              />
+            </Wrapped>,
+          );
+        },
+        answer: async (models) => {
+          await act(async () => {
+            for (const resolve of waiting.splice(0)) {
+              resolve({
+                ok: true,
+                value: {
+                  source: 'fetched',
+                  models: models.map((entry) => ({ ...entry, capabilities: { vision: null, streaming: null } })),
+                },
+              });
+            }
+            await Promise.resolve();
+          });
+        },
+      };
+    }
+
+    it('says NOTHING while the first answer is awaited, then says what the answer was', async () => {
+      const panel = pending();
+      panel.mount();
+      // THE MOMENT BEFORE THE ANSWER: no line about models, and a picker that says it is loading.
+      expect(screen.queryByText(/No models are listed/u)).toBeNull();
+      expect(document.querySelector('.m-assistant__state')).toBeNull();
+      expect(document.querySelector<HTMLSelectElement>('[data-assistant-model]')?.selectedOptions[0]?.textContent).toBe('Loading models…');
+
+      // CONTROL: an answer that listed none still says so — the sentence is kept for what it is true of.
+      await panel.answer([]);
+      expect(screen.getByText(/No models are listed/u)).toBeTruthy();
+    });
+
+    it('a panel built AGAIN, as its tab is chosen again, starts from the list it was answered and says nothing', async () => {
+      const first = pending();
+      first.mount();
+      await first.answer([{ id: 'm-1', label: 'Model one' }]);
+      expect(screen.getByRole('option', { name: 'Model one' })).toBeTruthy();
+      cleanup();
+
+      // THE SECOND MOUNT'S READ IS STILL PENDING: what it shows is the last answer, not an empty list.
+      const second = pending();
+      second.mount();
+      expect(screen.queryByText(/No models are listed/u)).toBeNull();
+      expect(screen.getByRole('option', { name: 'Model one' })).toBeTruthy();
+      await second.answer([{ id: 'm-1', label: 'Model one' }]);
+      expect(screen.getByRole('option', { name: 'Model one' })).toBeTruthy();
+    });
   });
 
   it('says so when a provider lists no models, rather than showing an empty picker', async () => {

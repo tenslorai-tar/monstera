@@ -106,6 +106,13 @@ export const SETTINGS_RESULT = z
      * `checked`. No key travels, here or in the reply.
      */
     check: z.enum(AI_PROVIDER_IDS).optional(),
+    /**
+     * A provider whose model list the AI page asks for because a key is stored for it — the same read as {@link check}
+     * without the check's verdict: nothing is said about the key, and `checked` does not move. Reported when the page
+     * is shown and when the provider changes, so the list a person chooses a model from is the provider's own and
+     * never only the build's.
+     */
+    refresh: z.enum(AI_PROVIDER_IDS).optional(),
   })
   .strict();
 
@@ -136,6 +143,8 @@ export const SETTINGS_DIALOG = declareDialog({
        * last asked from an earlier one still arriving. Absent until a reply.
        */
       checked: z.partialRecord(z.enum(AI_PROVIDER_IDS), z.number().int().positive()).optional(),
+      /** How many of each provider's {@link SETTINGS_RESULT} `refresh` reads have been answered, `checked`'s way. */
+      refreshed: z.partialRecord(z.enum(AI_PROVIDER_IDS), z.number().int().positive()).optional(),
     })
     .strict(),
   result: SETTINGS_RESULT,
