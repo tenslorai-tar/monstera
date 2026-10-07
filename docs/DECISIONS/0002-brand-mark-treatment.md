@@ -181,3 +181,11 @@ tile; that is the one place the drawn area is smaller, and it is recorded here r
 large as the taskbar's. `generateAssets.mjs` trims the master's transparent border before fitting each of the `.ico`'s seven sizes,
 the way `storeAssets.mjs` does for the Store's icons; nothing of the mark is altered. The sentence above describes the `.ico` before
 this change. The owner also decided that the 4096 × 4096 file is not committed: the 2048 × 2048 resample is the master.
+
+**Noted 2026-10-08: the owner's next logo is the master.** `new-monstera-logo.png`, 2048 × 2048 and transparent outside the shape,
+replaces `monstera_logo.png`, and every output was regenerated from it by the same pipeline (the `.ico` and the Store's icons
+trimmed). The new art fills the square edge to edge — measured with `scripts/research/measureIconFill.mjs`, 100% wide by 100% tall,
+margins zero, where the logo it replaces drew 78.2% by 86.0% — so the trim has nothing to take and every icon size is the art at
+100% of its tile: the app-list icons at 16, 24, 32, 48 and 256 px and the Store logo, 100% by 100%; the Store's tiles keep their
+canvas at two thirds, 66.2% to 66.8% of a square tile (Small, Medium, Large) and 32.3% by 66.7% of the Wide one. The sentences above
+that give 90.6% to 93.8% describe the logo before this one. No design export beyond the one master is committed.
