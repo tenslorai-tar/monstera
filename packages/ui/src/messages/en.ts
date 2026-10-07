@@ -1956,6 +1956,10 @@ export const SETTINGS_ACTION_CLEAR_RECENT_DESCRIPTION = messageKey('dialog.setti
 export const SETTINGS_ACTION_CLEARED = messageKey('dialog.settings.clear-history.done');
 export const SETTINGS_KEYBOARD_NOTE = messageKey('dialog.settings.keyboard-note');
 export const SETTINGS_UPDATES_NOTE = messageKey('dialog.settings.updates-note');
+export const SETTINGS_UPDATES_VERSION = messageKey('dialog.settings.updates-version');
+export const SETTINGS_UPDATES_COPY = messageKey('dialog.settings.updates-copy');
+export const SETTINGS_UPDATES_CHECK = messageKey('dialog.settings.updates-check');
+export const SETTINGS_UPDATES_CHECK_NOTE = messageKey('dialog.settings.updates-check-note');
 export const SETTINGS_APPEARANCE_NOTE = messageKey('dialog.settings.appearance-note');
 export const SETTINGS_VIEWING_NOTE = messageKey('dialog.settings.viewing-note');
 export const SETTINGS_RENDERING_NOTE = messageKey('dialog.settings.rendering-note');
@@ -4340,6 +4344,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Every command with its shortcut. Change or remove any of them here. Help › Keyboard shortcuts shows the same list to read. The command palette finds any tool by name.',
   [SETTINGS_UPDATES_NOTE]:
     'Monstera is installed from the Microsoft Store, and Windows updates it. Monstera never installs anything itself.',
+  [SETTINGS_UPDATES_VERSION]: 'Installed version',
+  [SETTINGS_UPDATES_COPY]: 'Copy',
+  [SETTINGS_UPDATES_CHECK]: 'Check for updates',
+  [SETTINGS_UPDATES_CHECK_NOTE]:
+    'Opens the Microsoft Store’s Downloads and updates page, where Windows shows an update and installs it.',
   // EVERY PAGE INTRODUCES ITSELF, as the owner's settings.png does. Each says what the page is
   // about in a person's words — never how it is built, which is the sentence settings2.png shows
   // as the thing that must not ship.

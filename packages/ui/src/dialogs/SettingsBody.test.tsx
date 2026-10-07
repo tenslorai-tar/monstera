@@ -326,6 +326,42 @@ describe('SettingsBody', () => {
     expect(screen.getByText('None')).toBeDefined();
   });
 
+  it('the UPDATES page shows the installed version with Copy, and a Check for updates button; both are reported', () => {
+    const reported: SettingsAnswer[] = [];
+    render(
+      <Wrapped>
+        <SettingsBody
+          models={{}}
+          resolve={() => undefined}
+          secretsAvailable
+          storedSecrets={[]}
+          update={(answer) => {
+            reported.push(answer);
+          }}
+          values={DEFAULTS}
+          version="0.1.12.0"
+        />
+      </Wrapped>,
+    );
+    goTo('updates');
+    expect(screen.getByText('0.1.12.0')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+    expect(reported).toStrictEqual([
+      { values: {}, secrets: {}, updates: 'copy-version' },
+      { values: {}, secrets: {}, updates: 'check' },
+    ]);
+  });
+
+  it('CONTROL: with no version supplied the page has no Copy, and still the Check button; no other page has either', () => {
+    opened({});
+    goTo('updates');
+    expect(screen.queryByRole('button', { name: 'Copy' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Check for updates' })).toBeDefined();
+    goTo('viewing');
+    expect(screen.queryByRole('button', { name: 'Check for updates' })).toBeNull();
+  });
+
   it('CONTROL: no page but Keyboard draws the list', () => {
     opened({});
     goTo('viewing');

@@ -23,7 +23,7 @@ import type { DialogReports } from '../registries/dialogs.js';
 import type { SettingsStore } from '../settingsStore.js';
 import type { ShortcutRow } from '../surfaces/shortcutChoice.js';
 import type { ShowToast } from '../toasts.js';
-import { confirmDone, confirmWritten } from './confirmWritten.js';
+import { confirmCopied, confirmDone, confirmWritten } from './confirmWritten.js';
 import { reportProblem } from './documentCommands.js';
 import { applyShortcutAnswer } from './keyboardShortcuts.js';
 
@@ -158,11 +158,15 @@ export function showSettingsCommand(deps: {
         }
       };
 
+      // THE INSTALLED VERSION, for the Updates page: `app.info`'s own, never a figure written here. A failed read leaves
+      // the page without one rather than with a guess.
+      const info = await deps.client['app.info']({});
       // EACH COMMAND'S REGISTERED KEY, by id, which a reported change is compared against (`applyShortcutAnswer`).
       const shortcutRows = deps.shortcuts.rows();
       const fallbacks = new Map(shortcutRows.map((row) => [row.id, row.fallback]));
 
       let shown: SettingsProps = {
+        ...(info.ok ? { version: info.value.version } : {}),
         shortcuts: {
           rows: shortcutRows.map((row) => ({ ...row, also: [...row.also] })),
           dropped: [...deps.shortcuts.dropped()],
@@ -221,6 +225,13 @@ export function showSettingsCommand(deps: {
           // A LINK ON THE PAGE: the place is named and main opens its address. Whether it opened is not read — a page
           // this build has an address for is the only kind these are, and the browser's own failure is the browser's.
           if (report.openPage !== undefined) await deps.client['app.openWebPage']({ page: report.openPage });
+          // THE UPDATES PAGE'S TWO BUTTONS. Copy goes through main (the renderer holds no clipboard permission) and says
+          // *Copied* only on main's word; Check opens the Store's own updates page, which installs nothing (ADR-0018).
+          if (report.updates === 'copy-version' && info.ok) {
+            const copied = await deps.client['window.copyText']({ text: info.value.version });
+            if (copied.ok && copied.value.copied) confirmCopied(deps);
+          }
+          if (report.updates === 'check') await deps.client['app.openStore']({ page: 'updates' });
           // A KEY CHANGED ON THE KEYBOARD PAGE: written by the one function that writes `keyboard.shortcuts`.
           if (report.shortcut !== undefined) applyShortcutAnswer(deps.settings, fallbacks, report.shortcut);
         });

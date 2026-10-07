@@ -124,6 +124,12 @@ export const SETTINGS_RESULT = z
      * to report, reported here for the opener to write to `keyboard.shortcuts` through the one function that does.
      */
     shortcut: KEYBOARD_SHORTCUTS_RESULT.optional(),
+    /**
+     * A button on the Updates page: `copy-version` puts the installed version on the clipboard, and `check` opens the
+     * Microsoft Store's Downloads and updates page — what Help › Check for updates already does, which ADR-0018 allows
+     * because opening the Store installs nothing. Reported for the opener, which holds the client.
+     */
+    updates: z.enum(['copy-version', 'check']).optional(),
   })
   .strict();
 
@@ -161,6 +167,8 @@ export const SETTINGS_DIALOG = declareDialog({
        * commands whose chosen key went back to its default (ADR-0191). Titles cross as keys, as in Help's dialog.
        */
       shortcuts: z.object({ rows: SHORTCUT_ROWS, dropped: SHORTCUT_DROPPED }).strict().optional(),
+      /** The installed version, `app.info`'s, which the Updates page shows and copies. Absent where nothing supplies it. */
+      version: z.string().min(1).max(64).optional(),
     })
     .strict(),
   result: SETTINGS_RESULT,

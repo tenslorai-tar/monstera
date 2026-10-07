@@ -6538,6 +6538,13 @@ optgroup {
   font-size: var(--font-chrome-12);
 }
 
+/* A VALUE THE ROW SHOWS, as its own text beside the label (the installed version): selectable, in the text colour. */
+.m-settings-row__value {
+  color: var(--text);
+  font-size: var(--font-chrome-13);
+  user-select: text;
+}
+
 /* MAY SHRINK to the row, once it has wrapped onto its own line, so a wrapping control inside it can wrap. */
 .m-settings-row__control {
   display: flex;

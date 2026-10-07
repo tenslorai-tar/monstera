@@ -66,6 +66,10 @@ import {
   SETTINGS_RESET,
   SETTINGS_SEARCH,
   SETTINGS_SECRET_PLACEHOLDER,
+  SETTINGS_UPDATES_CHECK,
+  SETTINGS_UPDATES_CHECK_NOTE,
+  SETTINGS_UPDATES_COPY,
+  SETTINGS_UPDATES_VERSION,
   SETTINGS_AZURE_DI_CREATE,
   SETTINGS_AZURE_DI_FIND,
   SETTINGS_AZURE_DI_RESOURCE,
@@ -822,6 +826,7 @@ export default function SettingsBody({
   checked = {},
   refreshed = {},
   shortcuts,
+  version,
   resolve,
   update,
 }: {
@@ -833,6 +838,8 @@ export default function SettingsBody({
   readonly refreshed?: Readonly<Partial<Record<AiProviderId, number>>> | undefined;
   /** The Keyboard page's rows and the commands whose chosen key went back; absent where nothing supplies them. */
   readonly shortcuts?: { readonly rows: readonly ShortcutListRow[]; readonly dropped: readonly string[] } | undefined;
+  /** The installed version, `app.info`'s, for the Updates page; absent where nothing supplies it. */
+  readonly version?: string | undefined;
 } & DialogAnswering<SettingsAnswer>): ReactElement {
   const { _ } = useLingui();
   const [drafts, setDrafts] = useState<Readonly<Record<string, unknown>>>(() =>
@@ -1097,6 +1104,45 @@ export default function SettingsBody({
                   rows={shortcuts.rows}
                   setChords={setShortcutChords}
                 />
+              )}
+
+              {/* THE INSTALLED VERSION AND THE WAY TO ASK THE STORE ABOUT IT, on the page that says who updates the
+                  application. Neither installs anything: the Store's page is where Windows shows and takes an update. */}
+              {page?.id === 'updates' && (
+                <>
+                  {version === undefined ? null : (
+                    <div className="m-settings-row">
+                      <div className="m-settings-row__text">
+                        <span className="m-settings-row__label">{_(SETTINGS_UPDATES_VERSION)}</span>
+                        <output className="m-settings-row__value" data-installed-version="">
+                          {version}
+                        </output>
+                      </div>
+                      <div className="m-settings-row__control">
+                        <Button
+                          label={SETTINGS_UPDATES_COPY}
+                          onClick={() => {
+                            report({ updates: 'copy-version' });
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <div className="m-settings-row">
+                    <div className="m-settings-row__text">
+                      <span className="m-settings-row__label">{_(SETTINGS_UPDATES_CHECK)}</span>
+                      <span className="m-settings-row__note">{_(SETTINGS_UPDATES_CHECK_NOTE)}</span>
+                    </div>
+                    <div className="m-settings-row__control">
+                      <Button
+                        label={SETTINGS_UPDATES_CHECK}
+                        onClick={() => {
+                          report({ updates: 'check' });
+                        }}
+                      />
+                    </div>
+                  </div>
+                </>
               )}
 
               {page?.id === 'privacy' && (

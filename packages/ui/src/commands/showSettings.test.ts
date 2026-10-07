@@ -49,6 +49,10 @@ function harness(options: {
   readonly available?: boolean;
   readonly loadRefuses?: boolean;
   readonly heldRefuses?: boolean;
+  /** `app.info` fails, so the Updates page has no version to show. */
+  readonly infoRefuses?: boolean;
+  /** What `window.copyText` answers: whether the text reached the clipboard. */
+  readonly copied?: boolean;
   readonly saveRefuses?: boolean;
   readonly answer?: unknown;
   /** What the dialog reports while it is open, each delivered before it answers (ADR-0094). */
@@ -118,6 +122,16 @@ function harness(options: {
       return Promise.resolve(ok(options.listed));
     }
     if (id === 'app.openWebPage') return Promise.resolve(ok({ opened: true }));
+    // THE VERSION THE UPDATES PAGE SHOWS, `app.info`'s own, and the two channels its buttons reach.
+    if (id === 'app.info') {
+      return Promise.resolve(
+        options.infoRefuses === true
+          ? err({ code: 'internal', incident: 'test' })
+          : ok({ version: '0.1.12.0', installChannel: 'store' as const, userName: 'Tester' }),
+      );
+    }
+    if (id === 'window.copyText') return Promise.resolve(ok({ copied: options.copied ?? true }));
+    if (id === 'app.openStore') return Promise.resolve(ok({ opened: true }));
     if (id === 'ai.history.clear') return Promise.resolve(ok({ cleared: 2 }));
     if (id === 'settings.export') return Promise.resolve(ok(options.exported ?? { kind: 'cancelled' as const }));
     if (id === 'file.reveal') return Promise.resolve(ok({ revealed: true }));
@@ -306,7 +320,8 @@ describe('showSettingsCommand', () => {
     await run();
 
     expect(settings.get(THEME_SETTING.id)).toBe(before);
-    expect(sent.map((call) => call.id)).toStrictEqual(['settings.loadSecrets', 'ai.models.held']);
+    // THE THREE READS A OPENING MAKES, and nothing that writes: the version is `app.info`'s, read for the Updates page.
+    expect(sent.map((call) => call.id)).toStrictEqual(['settings.loadSecrets', 'ai.models.held', 'app.info']);
     expect(secretsChanged()).toBe(0);
   });
 
@@ -330,6 +345,38 @@ describe('showSettingsCommand', () => {
 
     expect(asked[0]?.id).toBe(SETTINGS_DIALOG_ID);
     expect((asked[0]?.props as { models: unknown }).models).toStrictEqual({});
+  });
+
+  describe('the UPDATES page', () => {
+    it('opens with the installed version, `app.info`’s own; with none read, opens without one', async () => {
+      const read = harness({});
+      await read.run();
+      expect((read.asked[0]?.props as { version?: string }).version).toBe('0.1.12.0');
+      // CONTROL: a failed read is no version on the page, never a guess.
+      const failed = harness({ infoRefuses: true });
+      await failed.run();
+      expect((failed.asked[0]?.props as { version?: string }).version).toBeUndefined();
+    });
+
+    it('Copy sends the version through main and says Copied on main’s word only', async () => {
+      const copied = harness({ reports: [{ values: {}, secrets: {}, updates: 'copy-version' }] });
+      await copied.run();
+      expect(copied.sent.filter((call) => call.id === 'window.copyText').map((call) => call.params)).toStrictEqual([
+        { text: '0.1.12.0' },
+      ]);
+      expect(copied.toasts).toStrictEqual(['done toast.copied']);
+      // CONTROL: main says it did not copy, and nothing is said — a Copied for a copy that failed is the lie.
+      const refused = harness({ copied: false, reports: [{ values: {}, secrets: {}, updates: 'copy-version' }] });
+      await refused.run();
+      expect(refused.toasts).toStrictEqual([]);
+    });
+
+    it('Check opens the Store’s updates page and nothing else', async () => {
+      const { run, sent } = harness({ reports: [{ values: {}, secrets: {}, updates: 'check' }] });
+      await run();
+      expect(sent.filter((call) => call.id === 'app.openStore').map((call) => call.params)).toStrictEqual([{ page: 'updates' }]);
+      expect(sent.map((call) => call.id)).not.toContain('window.copyText');
+    });
   });
 
   describe('the KEYBOARD page (ADR-0191)', () => {
