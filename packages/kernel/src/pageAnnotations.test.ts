@@ -560,6 +560,8 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
         colour: undefined,
         font: annotation.font,
         direction: annotation.direction,
+        // `/Q` 2 is how right-to-left is written, so it reads back as the right-hand side too (item 14b).
+        align: annotation.direction === 'right-to-left' ? 'right' : 'left',
       });
       // TO FLOAT32's PRECISION, which is what MuPDF parses a `/DA` colour into: 0.8 reads back as 0.800000011920929.
       annotation.colour.forEach((channel, at) => {
@@ -592,6 +594,7 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
       colour: [0, 0, 0],
       font: 'sans',
       direction: 'left-to-right',
+      align: 'left',
     });
   });
 
@@ -4146,4 +4149,94 @@ describe('a line break in a text mark', () => {
       expect(lines).toStrictEqual(['first second']);
     });
   }
+});
+
+describe('applyStyleAnnotation on a text box’s WORDS (the owner’s review of 2026-10-07, item 14b)', () => {
+  const BOX: Extract<AnnotationDraft, { type: 'text-box' }> = {
+    type: 'text-box',
+    rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
+    text: 'see figure 3',
+    colour: [0.1, 0.1, 0.1],
+    opacity: 1,
+    fontSize: 12,
+    font: 'sans',
+    direction: 'left-to-right',
+  };
+
+  /** Restyles annotation 0 of page 0 with `text` and serialises. */
+  async function restyled(bytes: Uint8Array, text: CommandOfKind<'styleAnnotation'>['text']): Promise<Uint8Array> {
+    return onSession(bytes, async (session) => {
+      await applyStyleAnnotation(session, { kind: 'styleAnnotation', page: 0, indices: [0], text, version: asDocVersion(1) });
+      return mupdfWriter.serialise(session);
+    });
+  }
+
+  /** The first annotation as the SAVED BYTES say it, read by another library: its `/DA`, `/Q` and the appearance's font. */
+  async function stored(bytes: Uint8Array): Promise<{ da: string; q: number | undefined; base: string | undefined }> {
+    const loaded = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = loaded.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    const [first] = annots instanceof PDFArray ? annots.asArray() : [];
+    const dict = first instanceof PDFRef ? loaded.context.lookup(first, PDFDict) : undefined;
+    if (dict === undefined) throw new Error('the annotation is not a reachable dictionary');
+    const da = dict.lookup(PDFName.of('DA'));
+    const q = dict.lookup(PDFName.of('Q'));
+    const normal = dict.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
+    const fonts = normal instanceof PDFStream ? normal.dict.lookup(PDFName.of('Resources'), PDFDict).lookup(PDFName.of('Font'), PDFDict) : undefined;
+    const [key] = fonts?.keys() ?? [];
+    return {
+      da: da instanceof PDFString ? da.asString() : '',
+      q: q instanceof PDFNumber ? q.asNumber() : undefined,
+      base: key === undefined ? undefined : fonts?.lookup(key, PDFDict).lookup(PDFName.of('BaseFont'))?.toString(),
+    };
+  }
+
+  const drawn = async (): Promise<Uint8Array> => drawnOn(await fixture(), command({ annotation: BOX }));
+
+  it('sets the FACE, the SIZE and the COLOUR in /DA, and the appearance paints in that face — read back from the saved bytes', async () => {
+    const after = await stored(await restyled(await drawn(), { font: 'serif', fontSize: 20, colour: [1, 0, 0] }));
+    expect(after.da).toContain('/TiRo 20 Tf');
+    expect(after.da).toMatch(/1 0 0 rg/u);
+    // THE APPEARANCE, which is what another viewer shows: Times, not the Helvetica the box began in.
+    expect(after.base).toBe('/Times-Roman');
+  });
+
+  it('a field NOT named is kept: a new size on a serif box keeps it serif and its colour', async () => {
+    const serif = await restyled(await drawn(), { font: 'serif', colour: [0, 0.5, 0] });
+    const after = await stored(await restyled(serif, { fontSize: 30 }));
+    expect(after.da).toContain('/TiRo 30 Tf');
+    expect(after.da).toMatch(/0 \.5 0 rg|0 0\.5 0 rg/u);
+  });
+
+  it('CENTRES and RIGHT-ALIGNS by /Q', async () => {
+    expect((await stored(await restyled(await drawn(), { align: 'center' }))).q).toBe(1);
+    expect((await stored(await restyled(await drawn(), { align: 'right' }))).q).toBe(2);
+    // CONTROL: left is /Q 0, or none, so the two above are what the field wrote.
+    const left = (await stored(await restyled(await drawn(), { align: 'left' }))).q;
+    expect(left === undefined || left === 0).toBe(true);
+  });
+
+  it('the walk READS the style back — what the Properties tab shows — and CONTROL: a plain box reads as plain', async () => {
+    const plain = await onSession(await drawn(), (session) => readAnnotations(session));
+    expect(plain.annotations[0]?.typed).toMatchObject({ font: 'sans', fontSize: 12, align: 'left' });
+    const styled = await onSession(
+      await restyled(await drawn(), { font: 'mono', fontSize: 18, align: 'center' }),
+      (session) => readAnnotations(session),
+    );
+    expect(styled.annotations[0]?.typed).toMatchObject({ font: 'mono', fontSize: 18, align: 'center' });
+  });
+
+  it('is SKIPPED on a mark that is not a text box, as the line width is, and a plain restyle writes no text style', async () => {
+    const square = await drawnOn(await fixture(), command({ annotation: SQUARE }));
+    // A RECTANGLE ASKED FOR A FONT: nothing is refused and nothing is written to it.
+    const after = await onSession(await restyled(square, { font: 'serif' }), (session) => readAnnotations(session));
+    expect(after.annotations[0]?.typed).toBeUndefined();
+    // CONTROL: a box restyled by colour alone keeps its face and size, so the text fields are what wrote them.
+    const keep = await stored(
+      await onSession(await drawn(), async (session) => {
+        await applyStyleAnnotation(session, { kind: 'styleAnnotation', page: 0, indices: [0], colour: [0, 0, 1], version: asDocVersion(1) });
+        return mupdfWriter.serialise(session);
+      }),
+    );
+    expect(keep.da).toContain('/Helv 12 Tf');
+  });
 });

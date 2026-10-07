@@ -1354,11 +1354,41 @@ export const annotationWordsStyleSchema = z
     colour: annotationColourSchema,
     font: annotationFontSchema,
     direction: textDirectionSchema,
+    // THE SIDE THE LINES SIT AGAINST, from `/Q`, which the Properties tab shows and sets (item 14b). Optional, so a walk
+    // written before it reads as it did.
+    align: z.enum(['left', 'center', 'right']).optional(),
   })
   .strict();
 
 /** See {@link annotationWordsStyleSchema}. */
 export type AnnotationWordsStyle = z.infer<typeof annotationWordsStyleSchema>;
+
+/**
+ * The side a text box's lines sit against: left, centre or right — a `/FreeText`'s `/Q` 0, 1 and 2. Justified is not here: the
+ * format's `/Q` has no fourth value, so a justified box could only be drawn by a viewer that ignored the file.
+ */
+export const ANNOTATION_ALIGNMENTS = ['left', 'center', 'right'] as const;
+export const annotationAlignSchema = z.enum(ANNOTATION_ALIGNMENTS);
+export type AnnotationAlign = z.infer<typeof annotationAlignSchema>;
+
+/**
+ * What a restyle may say about a text box's WORDS (the owner's review of 2026-10-07, item 14b): the face, size and colour
+ * (`/DA`) and the side the lines sit against (`/Q`). Every field is optional for the reason `styleAnnotation`'s are: the
+ * Properties tab changes one at a time. It applies to the WHOLE box; a run of words inside one is a rich-text edit, which this
+ * does not write. **Bold, italic and a box fill are not here because MuPDF cannot draw them in a free text** — see
+ * `writeWordsStyle` in the kernel for what was measured.
+ */
+export const annotationTextStyleSchema = z
+  .object({
+    font: annotationFontSchema.optional(),
+    fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT).optional(),
+    colour: annotationColourSchema.optional(),
+    align: annotationAlignSchema.optional(),
+  })
+  .strict();
+
+/** See {@link annotationTextStyleSchema}. */
+export type AnnotationTextStyle = z.infer<typeof annotationTextStyleSchema>;
 
 /**
  * How opaque an annotation is drawn — `/CA`, from 0.1 to 1.
@@ -2843,6 +2873,11 @@ export const styleAnnotationSchema = z
     borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER).optional(),
     /** Written to the dictionary's `/BM` and into the appearance, where viewers read it (ADR-0103). */
     blend: annotationBlendSchema.optional(),
+    /**
+     * How a text box's words are drawn, set on every text box among those named and skipped on any other mark, as the line
+     * width is skipped where a subtype has none. See {@link annotationTextStyleSchema}.
+     */
+    text: annotationTextStyleSchema.optional(),
     /** The version that answer carried. Refused if the document has moved. */
     version: docVersionSchema,
   })
@@ -2854,8 +2889,9 @@ export const styleAnnotationSchema = z
       command.colour !== undefined ||
       command.opacity !== undefined ||
       command.borderWidth !== undefined ||
-      command.blend !== undefined,
-    { message: 'a restyle names at least one of colour, opacity, line width and blend' },
+      command.blend !== undefined ||
+      (command.text !== undefined && Object.values(command.text).some((value) => value !== undefined)),
+    { message: 'a restyle names at least one of colour, opacity, line width, blend and a text property' },
   );
 
 /**

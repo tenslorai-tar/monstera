@@ -7,6 +7,7 @@ import {
   type AnnotationPoint,
   type AnnotationRect,
   type AnnotationStamp,
+  type AnnotationTextStyle,
   type AnnotationWordsStyle,
   type CommandOfKind,
   type LineEnding,
@@ -722,6 +723,9 @@ function writeDirection(annotation: PDFAnnotation, direction: TextDirection): vo
   if (direction === 'right-to-left') annotation.setQuadding(2);
 }
 
+/** `/Q` as the side it names: 0 left, 1 centre, 2 right. */
+const ALIGN_OF_Q: readonly ('left' | 'center' | 'right')[] = ['left', 'center', 'right'];
+
 /** The face each of {@link BASE14_FACE}'s names reads back as: the writer's table turned round, so the two are one. */
 const FACE_OF: ReadonlyMap<string, AnnotationFont> = new Map(
   (Object.entries(BASE14_FACE) as [AnnotationFont, string][]).map(([face, name]) => [name, face]),
@@ -749,8 +753,37 @@ function wordsStyleOf(annotation: PDFAnnotation): { readonly typed?: AnnotationW
       colour,
       font: face,
       direction: annotation.getQuadding() === 2 ? 'right-to-left' : 'left-to-right',
+      // THE SIDE THE LINES SIT AGAINST, which the Properties tab shows (item 14b); `/Q` says it, and 2 is also how
+      // right-to-left is written (`writeDirection`), so the two are one stored value read as two words.
+      align: ALIGN_OF_Q[annotation.getQuadding()] ?? 'left',
     },
   };
+}
+
+/**
+ * Sets how a text box's words are drawn, from what a restyle names (item 14b): the `/DA` for the face, size and colour and
+ * `/Q` for the side the lines sit against. **Each is changed only where the restyle names it**, and the `/DA` is rewritten from
+ * what the box has now plus what is named, so asking for a size keeps the face and the colour.
+ *
+ * ## What it does NOT write, measured 2026-10-08 (MuPDF 1.28.0)
+ *
+ * *Bold*, *italic* and a fill are not here, and the reason is the engine's, not an omission: MuPDF draws a free text's words
+ * in one of three faces — `Helv`, `TiRo`, `Cour` — and any other name in `/DA`, the base-14 variants `HeBo`, `TiBI` and the
+ * rest included, is stored and then painted in Helvetica (`/TiBI 20 Tf` stored, `/Helv` in the appearance), with the name
+ * added to the annotation's `/DR` and the form's as well; and `setInteriorColor` is refused for a FreeText (*"FreeText
+ * annotations have no IC property"*). Writing them means writing the appearance stream by hand, which is a decision of its
+ * own (ADR-0198's rejected-for-now list).
+ */
+function writeWordsStyle(annotation: PDFAnnotation, text: AnnotationTextStyle): void {
+  if (text.font !== undefined || text.fontSize !== undefined || text.colour !== undefined) {
+    const now = annotation.getDefaultAppearance();
+    annotation.setDefaultAppearance(
+      text.font === undefined ? now.font : BASE14_FACE[text.font],
+      text.fontSize ?? now.size,
+      text.colour === undefined ? [...now.color] : [...text.colour],
+    );
+  }
+  if (text.align !== undefined) annotation.setQuadding(ALIGN_OF_Q.indexOf(text.align));
 }
 
 /** A `/DA` colour as RGB: none is black, the format's default; gray and CMYK by §10.4.2; anything else is not one. */
@@ -2720,6 +2753,8 @@ export const applyStyleAnnotation: Apply<'mupdf', 'styleAnnotation'> = (
       if (command.borderWidth !== undefined && annotation.hasBorder()) {
         annotation.setBorderWidth(command.borderWidth);
       }
+      // A TEXT BOX'S WORDS, only where the mark is one: skipped elsewhere, as the width is where a subtype has none.
+      if (command.text !== undefined && annotation.getType() === 'FreeText') writeWordsStyle(annotation, command.text);
       // THE APPEARANCE IS REGENERATED, which is what makes the change visible.
       // Without it the dictionary says one colour and the `/AP` draws another —
       // and MuPDF's own renderer would still show the new one, so a proof that

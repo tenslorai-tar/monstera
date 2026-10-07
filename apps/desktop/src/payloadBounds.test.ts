@@ -228,6 +228,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // A page's blocks, each bounded by `MAX_REPLACED_TEXT`, at most `MAX_EDIT_BLOCKS` — a page's
   // words, never a document's — and it needs an engine session to read them.
   'ai.translatePage': 'needs an engine session; a page of bounded blocks',
+  'ai.translateText': 'one selected text bounded at half the copy bound in, one translation bounded at the copy bound out; no document contributes',
   'ai.checkKey': 'a provider and a key bounded by MAX_SECRET_SETTING in; accepted or one declared problem out',
   // CHAT HISTORY (ADR-0093): a conversation, never a document — MAX_CHAT_TURNS of MAX_CHAT_TEXT each.
   'ai.history.load': 'one DocId in; at most MAX_CHAT_TURNS bounded turns out, whatever the document’s size',
@@ -478,6 +479,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // A LINK NAMED BY ITS PLACE, never its address, and an answer that is a kind and at most a bounded scheme (ADR-0167):
   // nothing a document contributes reaches the renderer through it.
   'document.openLink': 'needs an engine session',
+  'document.openBarcodeLink': 'needs an engine session; answers one of five outcomes and carries no text',
   'document.pasteAnnotations': 'needs an engine session and a copy made first',
   // BOUNDED AT 64 BARCODES OF 7,089 CHARACTERS, per PAGE — `document.flatFieldCandidates`' shape.
   'document.pageBarcodes': 'needs an engine session',
