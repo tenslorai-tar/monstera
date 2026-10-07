@@ -4577,6 +4577,273 @@ export const createFormFieldSchema = z.object({
 }).strict();
 
 /**
+ * One form field, named as every field is named: its page, its place in that page's widget walk, and its own name.
+ *
+ * **The name is a CHECK and not a key.** The walk position is what finds the widget (`fillFormField`'s handle), and the
+ * name says which field it was meant to be, so a position that has moved under the renderer is refused rather than
+ * edited. The version the walk was read at rides on the command (`targets: 'field'`).
+ */
+export const formFieldHandleSchema = z
+  .object({
+    page: z.number().int().nonnegative(),
+    index: z.number().int().nonnegative(),
+    name: fieldNameSchema,
+  })
+  .strict();
+
+/** See {@link formFieldHandleSchema}. */
+export type FormFieldHandle = z.infer<typeof formFieldHandleSchema>;
+
+/** The faces a field may be set in: the standard three families, which every reader carries. */
+export const FIELD_FONTS = ['helvetica', 'times', 'courier'] as const;
+
+/** How many characters a field's tooltip or default value may hold. */
+export const MAX_FIELD_TOOLTIP = 1024;
+/** See {@link MAX_FIELD_TOOLTIP}. */
+export const MAX_FIELD_DEFAULT = 4096;
+
+/** The five separator styles `AFNumber_Format` numbers 0 to 4, so each is one a reader of the file understands. */
+export const FIELD_SEPARATORS = ['comma-dot', 'none-dot', 'dot-comma', 'none-comma', 'apostrophe-dot'] as const;
+
+const fieldSeparatorsSchema = z.enum(FIELD_SEPARATORS);
+
+/**
+ * How a field shows its value, as DATA the application writes and reads and never as a script it runs.
+ *
+ * Written as the standard `AFNumber_Format`, `AFPercent_Format`, `AFDate_FormatEx` and `AFTime_FormatEx` calls every
+ * reader understands, read back by a parser that accepts exactly that grammar, and applied by this application's own
+ * code (ADR-0193, invariant 24). A field whose format is anything else keeps it untouched and shows no format here.
+ */
+export const fieldFormatSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('number'),
+      /** Digits after the decimal point. */
+      decimals: z.number().int().min(0).max(12),
+      /** How thousands and the decimal point are written. */
+      separators: fieldSeparatorsSchema,
+      /** How a negative number is written. */
+      negative: z.enum(['minus', 'red', 'parens']),
+      /** A currency sign, or none. */
+      currency: z.string().max(8).optional(),
+      /** The sign before the number (true) or after it. */
+      currencyBefore: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('percent'),
+      decimals: z.number().int().min(0).max(12),
+      separators: fieldSeparatorsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('date'),
+      /** `d`, `dd`, `m`, `mm`, `mmm`, `mmmm`, `yy`, `yyyy` and the separators `/`, `-`, `.`, `,` and a space. */
+      pattern: z.string().min(1).max(32).regex(/^(?:d{1,2}|m{1,4}|y{2}|y{4}|[/\-., ])+$/u),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('time'),
+      pattern: z.enum(['HH:MM', 'h:MM tt', 'HH:MM:ss', 'h:MM:ss tt']),
+    })
+    .strict(),
+]);
+
+/** How a field shows its value. See {@link fieldFormatSchema}. */
+export type FieldFormat = z.infer<typeof fieldFormatSchema>;
+
+/** The simple calculations a field may be given: a function of other named fields' numbers. */
+export const FIELD_CALCULATIONS = ['sum', 'product', 'average', 'min', 'max'] as const;
+
+/** How many fields one calculation may read. */
+export const MAX_CALCULATION_FIELDS = 64;
+
+/**
+ * A field whose value is worked out from other fields', written as the standard `AFSimple_Calculate` and listed in the
+ * form's calculation order (`/CO`). DATA, like {@link fieldFormatSchema}: this application evaluates the five it knows
+ * and runs no script.
+ */
+export const fieldCalculationSchema = z
+  .object({
+    operation: z.enum(FIELD_CALCULATIONS),
+    /** The fields it reads, by name, in the order written. */
+    fields: z.array(fieldNameSchema).min(1).max(MAX_CALCULATION_FIELDS).readonly(),
+  })
+  .strict();
+
+/** See {@link fieldCalculationSchema}. */
+export type FieldCalculation = z.infer<typeof fieldCalculationSchema>;
+
+/**
+ * What one field's properties may be set to. EVERY MEMBER IS OPTIONAL and a member present is set, so a change is the
+ * members it names and nothing else: a command that restated the whole field would write back what it read, which is a
+ * stale value wearing a change's clothes.
+ *
+ * `null` where the property can be taken away: a tooltip, a default value, a border or a fill, a format, a calculation.
+ */
+export const formFieldPropertiesSchema = z
+  .object({
+    /** Renames the field. A dot makes a parent, so the same rule as a create's name applies. */
+    name: fieldNameSchema,
+    /** The text shown when the pointer rests on the field (`/TU`). */
+    tooltip: z.string().max(MAX_FIELD_TOOLTIP).nullable(),
+    /** Whether the field must be filled before the form is submitted (`/Ff` bit 2). */
+    required: z.boolean(),
+    /** Whether the field refuses to be filled (`/Ff` bit 1). */
+    readOnly: z.boolean(),
+    /** The value the field starts from, and returns to (`/DV`). */
+    defaultValue: z.string().max(MAX_FIELD_DEFAULT).nullable(),
+    /** The face the field's text is set in, one of the standard three. */
+    font: z.enum(FIELD_FONTS),
+    /** The size of its text in points; `0` is the reader's automatic size. */
+    fontSize: z.number().min(0).max(200),
+    /** The border's colour, or none (`/MK /BC`). */
+    borderColour: annotationColourSchema.nullable(),
+    /** The background's colour, or none (`/MK /BG`). */
+    fillColour: annotationColourSchema.nullable(),
+    /** The border's width in points (`/BS /W`). */
+    borderWidth: z.number().min(0).max(12),
+    /** The choices of a dropdown or a list, or the export values of a radio group's options in the order they sit. */
+    options: z.array(z.string().min(1).max(MAX_FIELD_OPTION)).min(1).max(MAX_FIELD_OPTIONS).readonly(),
+    /** Whether a text field takes line breaks. */
+    multiline: z.boolean(),
+    /** Where the field is, in PDF user space: how a field is moved, resized, aligned or made the size of another. */
+    rect: annotationRectSchema,
+    /** How it shows its value, or `null` for none. */
+    format: fieldFormatSchema.nullable(),
+    /** What it is worked out from, or `null` for nothing. */
+    calculation: fieldCalculationSchema.nullable(),
+    /** Where it sits in the form's calculation order (`/CO`), from 0; a position past the end is the end. */
+    calculationPosition: z.number().int().min(0).max(4096),
+  })
+  .partial()
+  .strict();
+
+/** See {@link formFieldPropertiesSchema}. */
+export type FormFieldProperties = z.infer<typeof formFieldPropertiesSchema>;
+
+/** How many characters a default value may hold when one command changes several fields. */
+export const MAX_SHARED_FIELD_DEFAULT = 512;
+
+/**
+ * The properties a command that changes SEVERAL fields may carry: every member but the two that are lists, and a
+ * default value under {@link MAX_SHARED_FIELD_DEFAULT}.
+ *
+ * A bound on the sum and not on each: a command crosses an engine host in one frame, and one list of 256 edits each
+ * carrying a 256-choice list and a 4,096-character default is 260 MB at its worst (measured 2026-10-07 by
+ * `hostRoutes.test.ts`). Choices and a calculation belong to ONE field, so they ride in the single-edit shape.
+ */
+export const sharedFieldPropertiesSchema = formFieldPropertiesSchema
+  .omit({ options: true, calculation: true })
+  .extend({ defaultValue: z.string().max(MAX_SHARED_FIELD_DEFAULT).nullable().optional() })
+  .strict();
+
+/**
+ * What a field's properties ARE, as the Properties pane reads them: {@link formFieldPropertiesSchema}'s members, all
+ * present, in the shape an edit writes them back in, so a value read is one an edit can send.
+ *
+ * `null` is a third answer and not an absence: a tooltip the field has none of, a border it does not draw. The two
+ * `custom` flags say a format or a calculation is there and is a script this application did not write, which is kept
+ * untouched and shown as a script (invariant 24) rather than as *none*.
+ */
+export const formFieldReadSchema = z
+  .object({
+    page: z.number().int().nonnegative(),
+    index: z.number().int().nonnegative(),
+    kind: formFieldKindSchema,
+    name: z.string().max(MAX_FIELD_NAME),
+    tooltip: z.string().max(MAX_FIELD_TOOLTIP).nullable(),
+    required: z.boolean(),
+    readOnly: z.boolean(),
+    defaultValue: z.string().max(MAX_FIELD_DEFAULT).nullable(),
+    font: z.enum(FIELD_FONTS),
+    fontSize: z.number().min(0).max(200),
+    borderColour: annotationColourSchema.nullable(),
+    fillColour: annotationColourSchema.nullable(),
+    borderWidth: z.number().min(0).max(12),
+    options: z.array(z.string().max(MAX_FIELD_OPTION)).max(MAX_FIELD_OPTIONS).readonly(),
+    multiline: z.boolean(),
+    rect: annotationRectSchema.nullable(),
+    format: fieldFormatSchema.nullable(),
+    customFormat: z.boolean(),
+    calculation: fieldCalculationSchema.nullable(),
+    customCalculation: z.boolean(),
+    /** Where it sits in the form's calculation order, or `null` for a field that is not calculated. */
+    calculationPosition: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+
+/** See {@link formFieldReadSchema}. */
+export type FormFieldRead = z.infer<typeof formFieldReadSchema>;
+
+/** How many fields one edit may change: a form's worth, since selecting all of them is one decision. */
+export const MAX_EDITED_FIELDS = 256;
+
+/**
+ * Changes the properties of fields that already exist (ADR-0193).
+ *
+ * ## A LIST OF EDITS, each its own field and its own members
+ *
+ * One change to ten selected fields is ONE command and one undo step, and aligning or resizing several is the same
+ * command with a different `rect` for each, which is why the members sit beside the handle and not above the list.
+ * `fillFormField` is singular because nobody fills two fields with one gesture; this is plural for the opposite reason.
+ *
+ * **Written by `@cantoo/pdf-lib`**, `createFormField`'s writer and for its reason: the field's dictionary is the concern
+ * and MuPDF has no setters for most of what is named here. The fill stays MuPDF's.
+ */
+export const editFormFieldsSchema = z
+  .object({
+    kind: z.literal('editFormFields'),
+    /**
+     * MANY FIELDS WITH THE SHARED MEMBERS, or ONE FIELD WITH ANY: `createFormField`'s two shapes and for its reason. The
+     * product of the two bounds was the command's whole worst case, and the only gesture that needs a list of choices or
+     * a calculation names a single field. Either shape is a list, so a reader iterates it the same way.
+     */
+    edits: z.union([
+      z
+        .array(z.object({ field: formFieldHandleSchema, set: sharedFieldPropertiesSchema }).strict())
+        .min(1)
+        .max(MAX_EDITED_FIELDS)
+        .readonly(),
+      z.tuple([z.object({ field: formFieldHandleSchema, set: formFieldPropertiesSchema }).strict()]),
+    ]),
+    /** The version the handles were read at. Refused if the document has moved. */
+    version: docVersionSchema,
+  })
+  .strict();
+
+/**
+ * Copies one field onto other pages, at the same place (ADR-0193): the owner's *duplicate a field across pages*.
+ *
+ * Each copy is a new field with a name of its own (`name_p2`, made unique), because a second widget with the SAME name
+ * is not a copy but another place for the one field, which shows one value everywhere.
+ */
+export const duplicateFormFieldSchema = z
+  .object({
+    kind: z.literal('duplicateFormField'),
+    field: formFieldHandleSchema,
+    /** The pages to copy it onto, zero-based, none of them its own: a page set, so a run of pages is one entry. */
+    pages: pageSetSchema,
+    version: docVersionSchema,
+  })
+  .strict();
+
+/** The order a reader moves through a page's fields (`/Tabs`): by row, by column or by the document's structure. */
+export const TAB_ORDERS = ['row', 'column', 'structure'] as const;
+
+/** Sets the order the Tab key moves through each named page's fields (ADR-0193). */
+export const setTabOrderSchema = z
+  .object({
+    kind: z.literal('setTabOrder'),
+    pages: z.union([z.literal('all'), pageSetSchema]),
+    order: z.enum(TAB_ORDERS),
+  })
+  .strict();
+
+/**
  * How many text objects one edit may name — a PAGE's runs, written once for both text edits
  * ([ADR-0142](../../../docs/DECISIONS/0142-a-text-edit-carries-one-list-of-objects-and-one-text.md)).
  *
@@ -5498,6 +5765,9 @@ export const commandSchema = z.discriminatedUnion('kind', [
   sanitizeDocumentSchema,
   signDocumentSchema,
   createFormFieldSchema,
+  editFormFieldsSchema,
+  duplicateFormFieldSchema,
+  setTabOrderSchema,
   importFormDataSchema,
   importAnnotationsSchema,
   replaceTextObjectSchema,
@@ -5677,6 +5947,11 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // None of that is spellable here: the surface says where the box goes and the
   // kernel, which is the only side that knows the page's `/Rotate`, says how.
   createFormFieldSchema,
+  // RENDERABLE, the three that change a field that exists (ADR-0193): each names fields by handles of an answer the
+  // renderer was given and says what they should become, whatever the document weighs.
+  editFormFieldsSchema,
+  duplicateFormFieldSchema,
+  setTabOrderSchema,
   // RENDERABLE, and `fillFormField`'s shape on the page-object walk: the
   // renderer names a row of an answer it was given and says what that row
   // should say. The payload is a page, an index, a bounded string and a
@@ -5911,6 +6186,8 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'setAnnotationAuthor') return command.version;
   if (command.kind === 'replyToAnnotation') return command.version;
   if (command.kind === 'fillFormField') return command.version;
+  if (command.kind === 'editFormFields') return command.version;
+  if (command.kind === 'duplicateFormField') return command.version;
   if (command.kind === 'deleteFormFields') return command.version;
   if (command.kind === 'replaceTextObject') return command.version;
   if (command.kind === 'placePageObject') return command.version;
@@ -5974,7 +6251,7 @@ void _thatNameIsACommandKind;
  * union of both: this package cannot import the kernel, so the half checkable
  * here is only that the name is a real kind.
  */
-export type NamesAFormField = 'fillFormField' | 'deleteFormFields';
+export type NamesAFormField = 'fillFormField' | 'deleteFormFields' | 'editFormFields' | 'duplicateFormField';
 const _theFieldNameIsACommandKind: NamesAFormField extends CommandKind ? true : never = true;
 void _theFieldNameIsACommandKind;
 

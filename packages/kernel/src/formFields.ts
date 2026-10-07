@@ -69,7 +69,7 @@ const MAX_FIELD_OPTIONS = 512;
 const MAX_FIELD_VALUES = 256;
 
 /** How far up a `/Parent` chain an inherited key is looked for. */
-const MAX_FIELD_ANCESTRY = 32;
+export const MAX_FIELD_ANCESTRY = 32;
 
 /**
  * What this field's `/V` holds, as a list — the ONE answer to *what value does
@@ -226,7 +226,7 @@ export interface ListedField {
  * the order is what separates them. Measured names, 2026-09-07: `text`,
  * `checkbox`, `radiobutton`, `combobox`, `listbox`, `signature`.
  */
-function kindOf(widget: PDFWidget): FormFieldKind {
+export function kindOf(widget: PDFWidget): FormFieldKind {
   if (widget.isPushButton()) return 'button';
   if (widget.isCheckbox()) return 'checkbox';
   if (widget.isRadioButton()) return 'radio';
@@ -297,7 +297,12 @@ export function onState(widget: PDFWidget): boolean {
  * it is currently on.
  */
 export function onStateKey(widget: PDFWidget): string | undefined {
-  const normal = widget.getObject().get('AP').get('N');
+  return onStateKeyOf(widget.getObject());
+}
+
+/** {@link onStateKey} over a widget's object, which is what reading a group's OTHER widgets has in hand. */
+export function onStateKeyOf(object: PDFObject): string | undefined {
+  const normal = object.get('AP', 'N');
   // A STREAM ANSWERS `isDictionary()` TOO, measured 2026-09-07: `/AP` `/N` is a
   // state dictionary on a checkbox or radio and a STREAM on every other kind,
   // and a walk over a stream's keys yields `BBox`, `Matrix`, `Resources` — any

@@ -629,6 +629,15 @@ export interface CommandPrior {
   readonly createFormField: never;
 
   /**
+   * The three commands that change a field that exists (ADR-0193) record no prior state, `createFormField`'s reason: an
+   * edit's prior is whole dictionaries, a rename moves a field's identity, and a duplicate adds widgets to pages. The
+   * checkpoint restores the bytes, which an inverse would have to carry a second copy of.
+   */
+  readonly editFormFields: never;
+  readonly duplicateFormField: never;
+  readonly setTabOrder: never;
+
+  /**
    * An import has no prior state, for the flatten's reason at a smaller scale
    * and with one difference worth naming.
    *

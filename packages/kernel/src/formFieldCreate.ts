@@ -150,7 +150,7 @@ function preImage(
  * `applyWatermarkPages`' shape and its wording, because a page index out of
  * range is one refusal whatever the command does with the page.
  */
-function pageAt(document: PDFDocument, index: number): PDFPage {
+export function pageAt(document: PDFDocument, index: number): PDFPage {
   const pages = document.getPages();
   const page = pages[index];
   if (!Number.isInteger(index) || index < 0 || page === undefined) {

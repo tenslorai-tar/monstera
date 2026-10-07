@@ -1767,6 +1767,57 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  // THE THREE THAT CHANGE A FIELD THAT EXISTS (ADR-0193), `createFormField`'s writer and for its reason: the field's own
+  // dictionary is the concern, and MuPDF has setters for a value and for few of the properties named here. The fill stays
+  // MuPDF's, so a property that holds a VALUE (a default) is the only place the two meet, and it is `/DV`, not `/V`.
+  editFormFields: {
+    kind: 'editFormFields',
+    display: 'image',
+    writer: 'pdf-lib',
+    // NOT INVERTIBLE, `createFormField`'s checkpoint and for a different reason: a rename moves a field's identity and a
+    // list of edits is a set of dictionaries, so a prior state would be the whole of each. The checkpoint the bus already
+    // holds costs nothing (ADR-0039) and restores the document exactly.
+    invertible: false,
+    undo: 'checkpoint',
+    // `openForWriting` pins the metadata, and nothing here mints an identifier or reads a clock.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // THE WALK'S OWN: its handles are positions in an answer `document.formFields` gave at one version.
+    targets: 'field',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
+  duplicateFormField: {
+    kind: 'duplicateFormField',
+    display: 'image',
+    writer: 'pdf-lib',
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'field',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
+  setTabOrder: {
+    kind: 'setTabOrder',
+    display: 'image',
+    writer: 'pdf-lib',
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // PAGES, which a page walk names and a field walk does not: `/Tabs` is a page's.
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   importFormData: {
     kind: 'importFormData',
     display: 'image',

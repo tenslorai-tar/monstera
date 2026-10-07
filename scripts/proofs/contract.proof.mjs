@@ -605,6 +605,28 @@ const CREATE_FIELD_SPEC = `  createFormField: {
   },`;
 
 /**
+ * The three that change a field that exists (ADR-0193): pdf-lib's, `createFormField`'s entry over again, and on the barrel
+ * for the same reason. One capture and one invert serve all three because each records no prior state.
+ */
+const EDIT_FIELD_SPECS = ['editFormFields', 'duplicateFormField', 'setTabOrder']
+  .map(
+    (kind) => `  ${kind}: {
+    kind: '${kind}',
+    writer: 'pdf-lib',
+    apply: ${{ editFormFields: 'applyEditFormFields', duplicateFormField: 'applyDuplicateFormField', setTabOrder: 'applySetTabOrder' }[kind]},
+    capture: captureFieldEdit,
+    invert: invertFieldEdit,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`,
+  )
+  .join('\n');
+
+/**
  * The newest kind, and the one the `missing a command kind` case now omits.
  *
  * **The second command to declare an asset**, which is invisible here for the
@@ -1279,6 +1301,11 @@ import {
   applyCreateFormField,
   captureCreateFormField,
   invertCreateFormField,
+  applyEditFormFields,
+  applyDuplicateFormField,
+  applySetTabOrder,
+  captureFieldEdit,
+  invertFieldEdit,
 } from '@monstera/kernel';
 // A THIRD IMPORT LINE, and it is a claim about the module graph rather than a
 // convenience. \`@monstera/kernel/engine\` means "binds a native library", and
@@ -2125,6 +2152,7 @@ ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
+${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
 ${PLACE_OBJECT_SPEC}
@@ -2251,6 +2279,7 @@ ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
+${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
 ${PLACE_OBJECT_SPEC}
@@ -2392,6 +2421,7 @@ ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
+${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
 ${PLACE_OBJECT_SPEC}
@@ -2462,6 +2492,7 @@ ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
+${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
 ${PLACE_OBJECT_SPEC}
@@ -2541,6 +2572,7 @@ ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
+${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
 ${PLACE_OBJECT_SPEC}
@@ -2616,6 +2648,7 @@ ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
+${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
 ${PLACE_OBJECT_SPEC}
@@ -3858,8 +3891,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // 52 since `placeSignatureMark` and `placeSignaturePicture` (2026-10-02, ADR-0133): three spelt, 48 counted, one.
     // 53 since `replaceTextAt` (2026-10-04, ADR-0156): three spelt, 49 counted, one.
     // 54 since `editTextOperators` (2026-10-06, ADR-0176): three spelt, 50 counted, one.
+    // 57 since `editFormFields`, `duplicateFormField` and `setTabOrder` (2026-10-07, ADR-0193): three spelt, 53 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 50 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 53 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

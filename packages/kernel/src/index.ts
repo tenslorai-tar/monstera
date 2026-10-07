@@ -597,6 +597,18 @@ export {
   captureCreateFormField,
   invertCreateFormField,
 } from './formFieldCreate.js';
+// THE THREE THAT CHANGE A FIELD THAT EXISTS (ADR-0193), on the barrel for the same check: `formFieldEdit.ts` reaches
+// `@cantoo/pdf-lib`, `formFieldCreate.ts`, the pure grammar in `fieldActions.ts` and `pageScope.ts`, and none of them
+// binds native code. Its reader, `formFieldRead.ts`, does and is behind `@monstera/kernel/engine`.
+export {
+  FieldEditRefusedError,
+  type FieldEditRefusal,
+  applyDuplicateFormField,
+  applyEditFormFields,
+  applySetTabOrder,
+  captureFieldEdit,
+  invertFieldEdit,
+} from './formFieldEdit.js';
 // ON THE BARREL for the same check: `ocrTextLayer.ts` reaches `@cantoo/pdf-lib` and `pdfLibSession.ts`, and its
 // recognition input is a TYPE import, erased — the engine that recognises is not loaded by writing the layer. The
 // byte-image cost measurement is its reader here (`scripts/perf/byteImageCost.mjs`).

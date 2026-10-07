@@ -26,6 +26,13 @@ import {
   captureCreateFormField,
   invertCreateFormField,
 } from './formFieldCreate.js';
+import {
+  applyDuplicateFormField,
+  applyEditFormFields,
+  applySetTabOrder,
+  captureFieldEdit,
+  invertFieldEdit,
+} from './formFieldEdit.js';
 import { applyOcrPage, captureOcrPage, invertOcrPage } from './ocrTextLayer.js';
 import { applyGenerateToc, captureGenerateToc, invertGenerateToc } from './pageToc.js';
 import {
@@ -154,6 +161,26 @@ export const pdfLibSpecs = {
     apply: applyCreateFormField,
     capture: captureCreateFormField,
     invert: invertCreateFormField,
+  },
+  // THE THREE THAT CHANGE A FIELD THAT EXISTS (ADR-0193), in `formFieldEdit.ts`, which imports what `formFieldCreate.ts`
+  // does and nothing that reaches MuPDF or PDFium.
+  editFormFields: {
+    ...declaredCommands.editFormFields,
+    apply: applyEditFormFields,
+    capture: captureFieldEdit,
+    invert: invertFieldEdit,
+  },
+  duplicateFormField: {
+    ...declaredCommands.duplicateFormField,
+    apply: applyDuplicateFormField,
+    capture: captureFieldEdit,
+    invert: invertFieldEdit,
+  },
+  setTabOrder: {
+    ...declaredCommands.setTabOrder,
+    apply: applySetTabOrder,
+    capture: captureFieldEdit,
+    invert: invertFieldEdit,
   },
   ocrPage: {
     ...declaredCommands.ocrPage,
