@@ -1,5 +1,11 @@
 import type { SERVICE_PROBLEMS } from '@monstera/contract';
-import { type EditStep, type FailureDetails, type MessageKey, PDFIUM_PASSWORD_ERROR } from '@monstera/shared';
+import {
+  type EditStep,
+  type FailureDetails,
+  type FieldEditReason,
+  type MessageKey,
+  PDFIUM_PASSWORD_ERROR,
+} from '@monstera/shared';
 
 import {
   ANTHROPIC_OUT_OF_CREDIT,
@@ -12,6 +18,14 @@ import {
   EDIT_REFUSED_READ_BACK,
   EDIT_REFUSED_SAVE,
   EDIT_REFUSED_SET_TEXT,
+  FIELD_EDIT_DUPLICATE_RADIO,
+  FIELD_EDIT_DUPLICATE_SIGNATURE,
+  FIELD_EDIT_ENCRYPTED,
+  FIELD_EDIT_NAME_PARENT,
+  FIELD_EDIT_NAME_TAKEN,
+  FIELD_EDIT_NOT_FOUND,
+  FIELD_EDIT_OPTIONS_COUNT,
+  FIELD_EDIT_OPTIONS_DUPLICATE,
   NOTHING_TO_REPLACE,
   REPLACE_MOVES_LINE,
   PROBLEM_SERVICE_ADDRESS,
@@ -53,6 +67,7 @@ export type CommandProblem =
   | { readonly code: 'nothing-to-replace' }
   | { readonly code: 'replace-moves-line' }
   | { readonly code: 'edit-refused'; readonly detail: FailureDetails['edit-refused'] }
+  | { readonly code: 'field-edit-refused'; readonly detail: FailureDetails['field-edit-refused'] }
   | { readonly code: 'copy-absent' }
   | { readonly code: 'copy-at-capacity' }
   | { readonly code: 'copy-busy' }
@@ -71,6 +86,7 @@ export type CommandProblem =
  * from it would load the body with it.
  */
 export function problemMessage(problem: CommandProblem): MessageKey {
+  if (problem.code === 'field-edit-refused') return FIELD_EDIT_MESSAGE[problem.detail.reason];
   if (problem.code !== 'edit-refused') return CODE_MESSAGE[problem.code];
   const { step, engineError } = problem.detail;
   return step === 'open' && engineError === PDFIUM_PASSWORD_ERROR ? EDIT_REFUSED_PASSWORD : STEP_MESSAGE[step];
@@ -99,6 +115,18 @@ export function problemParticulars(
   return undefined;
 }
 
+/** One sentence per reason a change to a form field was refused (ADR-0193), each saying nothing was changed. */
+const FIELD_EDIT_MESSAGE: Readonly<Record<FieldEditReason, MessageKey>> = {
+  'not-found': FIELD_EDIT_NOT_FOUND,
+  'name-taken': FIELD_EDIT_NAME_TAKEN,
+  'name-parent': FIELD_EDIT_NAME_PARENT,
+  'options-count': FIELD_EDIT_OPTIONS_COUNT,
+  'options-duplicate': FIELD_EDIT_OPTIONS_DUPLICATE,
+  'duplicate-radio': FIELD_EDIT_DUPLICATE_RADIO,
+  'duplicate-signature': FIELD_EDIT_DUPLICATE_SIGNATURE,
+  encrypted: FIELD_EDIT_ENCRYPTED,
+};
+
 /** One sentence per step of a PDFium rewrite, each ending in *so nothing was changed*. */
 const STEP_MESSAGE: Readonly<Record<EditStep, MessageKey>> = {
   open: EDIT_REFUSED_OPEN,
@@ -119,7 +147,7 @@ const STEP_MESSAGE: Readonly<Record<EditStep, MessageKey>> = {
  * one will open, and a missing key must land on the table rather than on a
  * return path that quietly yields `undefined`.
  */
-const CODE_MESSAGE: Readonly<Record<Exclude<CommandProblem['code'], 'edit-refused'>, MessageKey>> = {
+const CODE_MESSAGE: Readonly<Record<Exclude<CommandProblem['code'], 'edit-refused' | 'field-edit-refused'>, MessageKey>> = {
   'document-not-open': PROBLEM_NOT_OPEN,
   'document-busy': PROBLEM_BUSY,
   'document-poisoned': PROBLEM_POISONED,

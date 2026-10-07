@@ -54,7 +54,7 @@ import {
   joinPlaceholderAsset,
   taggedPrior,
 } from './engineChannels.js';
-import { pictureRefusalCodeOf, placeholderRefusalCodeOf } from './hostRefusals.js';
+import { pdfLibRefusalCodeOf, placeholderRefusalCodeOf } from './hostRefusals.js';
 import { type CopyEngine, openCopy } from '../openCopy.js';
 
 /**
@@ -782,7 +782,7 @@ export function createEngineHandlers({
       } catch (error) {
         // A PICTURE PAST THE PIXEL BOUND keeps its name across the pipe, so Insert image says so rather than calling
         // a valid picture unreadable; anything else is the document's failure.
-        return failed(pictureRefusalCodeOf(error) ?? 'apply-failed', error);
+        return failed(pdfLibRefusalCodeOf(error) ?? 'apply-failed', error);
       }
     },
 

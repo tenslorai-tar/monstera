@@ -1421,6 +1421,21 @@ export function joinPlaceholderAsset(
  */
 export const PICTURE_REFUSALS = ['picture-too-many-pixels'] as const;
 
+/**
+ * A change to a form field's refusals (ADR-0193), one wire code per reason: `field-edit-` and the reason. They are
+ * the answers of `engine/applyPdfLib` alone, since the three commands are pdf-lib's.
+ */
+export const FIELD_EDIT_REFUSALS = [
+  'field-edit-not-found',
+  'field-edit-name-taken',
+  'field-edit-name-parent',
+  'field-edit-options-count',
+  'field-edit-options-duplicate',
+  'field-edit-duplicate-radio',
+  'field-edit-duplicate-signature',
+  'field-edit-encrypted',
+] as const;
+
 /** {@link PICTURE_REFUSALS}, and the one only a signature's appearance meets. */
 export const PLACEHOLDER_REFUSALS = [
   'signature-picture-unreadable',
@@ -2210,7 +2225,7 @@ export const engineChannels = {
       })
       .strict(),
     z.object({ bytes: z.number().int().nonnegative() }).strict(),
-    ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed', ...PICTURE_REFUSALS],
+    ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed', ...PICTURE_REFUSALS, ...FIELD_EDIT_REFUSALS],
   ),
 
   /**

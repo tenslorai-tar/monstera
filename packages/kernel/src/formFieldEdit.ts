@@ -18,7 +18,7 @@ import {
 import type { PDFDocument, PDFField, PDFFont, PDFPage } from '@cantoo/pdf-lib';
 
 import type { AnnotationRect, CommandOfKind, FieldFormat, FormFieldHandle, FormFieldProperties } from '@monstera/contract';
-import { fieldNameClash } from '@monstera/shared';
+import { type FieldEditReason, fieldNameClash } from '@monstera/shared';
 
 import type { FieldFace } from './fieldActions.js';
 import {
@@ -58,16 +58,8 @@ import { appendRevision, openForWriting } from './pdfLibSession.js';
  * form-wide pass would put this command's font in front of fields it never named.
  */
 
-/** Why an edit was refused, each the person's to act on and none a defect. */
-export type FieldEditRefusal =
-  | 'not-found'
-  | 'name-taken'
-  | 'name-parent'
-  | 'options-count'
-  | 'options-duplicate'
-  | 'duplicate-radio'
-  | 'duplicate-signature'
-  | 'encrypted';
+/** Why an edit was refused, each the person's to act on and none a defect: the one list `@monstera/shared` holds. */
+export type FieldEditRefusal = FieldEditReason;
 
 /** A refusal of one of the three commands, carrying the code the surface reads. */
 export class FieldEditRefusedError extends Error {

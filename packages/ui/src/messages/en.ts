@@ -2648,6 +2648,15 @@ export const EDIT_REFUSED_MATRIX = messageKey('dialog.command-problem.edit-refus
 export const EDIT_REFUSED_GENERATE = messageKey('dialog.command-problem.edit-refused.generate');
 export const EDIT_REFUSED_SAVE = messageKey('dialog.command-problem.edit-refused.save');
 export const EDIT_REFUSED_READ_BACK = messageKey('dialog.command-problem.edit-refused.read-back');
+// A CHANGE TO A FORM FIELD THAT COULD NOT BE MADE, one sentence per reason (ADR-0193).
+export const FIELD_EDIT_NOT_FOUND = messageKey('dialog.command-problem.field-edit.not-found');
+export const FIELD_EDIT_NAME_TAKEN = messageKey('dialog.command-problem.field-edit.name-taken');
+export const FIELD_EDIT_NAME_PARENT = messageKey('dialog.command-problem.field-edit.name-parent');
+export const FIELD_EDIT_OPTIONS_COUNT = messageKey('dialog.command-problem.field-edit.options-count');
+export const FIELD_EDIT_OPTIONS_DUPLICATE = messageKey('dialog.command-problem.field-edit.options-duplicate');
+export const FIELD_EDIT_DUPLICATE_RADIO = messageKey('dialog.command-problem.field-edit.duplicate-radio');
+export const FIELD_EDIT_DUPLICATE_SIGNATURE = messageKey('dialog.command-problem.field-edit.duplicate-signature');
+export const FIELD_EDIT_ENCRYPTED = messageKey('dialog.command-problem.field-edit.encrypted');
 // CLOUD STORAGE (ADR-0091).
 export const CLOUD_TITLE = messageKey('dialog.cloud.title');
 export const CLOUD_COMMAND_TITLE = messageKey('command.cloud.storage');
@@ -5720,4 +5729,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDIT_REFUSED_GENERATE]: 'Monstera couldn’t rebuild the page with your change, so nothing was changed.',
   [EDIT_REFUSED_SAVE]: 'Monstera couldn’t save the edited page, so nothing was changed.',
   [EDIT_REFUSED_READ_BACK]: 'This page uses a font Monstera can’t rewrite yet, so nothing was changed.',
+  // EACH SAYS WHAT STOPPED IT AND THAT NOTHING WAS CHANGED, and the three a person can fix say how.
+  [FIELD_EDIT_NOT_FOUND]: 'That field has moved since the list was read, so nothing was changed. Select it again and try once more.',
+  [FIELD_EDIT_NAME_TAKEN]: 'Another field already has that name, or a name that starts with it, so nothing was changed. Choose a different name.',
+  [FIELD_EDIT_NAME_PARENT]: 'A rename cannot move a field into another group, so nothing was changed. Keep the start of the name as it is.',
+  [FIELD_EDIT_OPTIONS_COUNT]: 'The group has a different number of options than the values given, so nothing was changed.',
+  [FIELD_EDIT_OPTIONS_DUPLICATE]: 'Two options have the same value, so nothing was changed. Give each option its own value.',
+  [FIELD_EDIT_DUPLICATE_RADIO]: 'A radio option belongs to its group, so it cannot be copied on its own. Nothing was changed.',
+  [FIELD_EDIT_DUPLICATE_SIGNATURE]: 'A signature field is signed once, so it cannot be copied. Nothing was changed.',
+  [FIELD_EDIT_ENCRYPTED]: 'This document is encrypted, and form fields cannot be changed in an encrypted document. Nothing was changed.',
 };

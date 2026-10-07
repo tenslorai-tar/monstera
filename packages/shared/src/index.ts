@@ -13,6 +13,8 @@ export {
 export {
   type DeclaredFailure,
   EDIT_STEPS,
+  FIELD_EDIT_REASONS,
+  type FieldEditReason,
   type EditStep,
   type Failure,
   type FailureDetails,

@@ -1,5 +1,6 @@
 import {
   EditRefusedError,
+  FieldEditRefusedError,
   NothingToReplaceError,
   ReplaceMovesLineError,
   TextNotInPlaceError,
@@ -38,9 +39,18 @@ export function editRefusalOf(
   thrown: unknown,
 ):
   | DeclaredFailure<
-      'edit-refused' | 'text-not-writable' | 'text-not-in-place' | 'nothing-to-replace' | 'replace-moves-line' | 'engine-unavailable'
+      | 'edit-refused'
+      | 'text-not-writable'
+      | 'text-not-in-place'
+      | 'nothing-to-replace'
+      | 'replace-moves-line'
+      | 'engine-unavailable'
+      | 'field-edit-refused'
     >
   | undefined {
+  // A CHANGE TO A FORM FIELD THAT COULD NOT BE MADE (ADR-0193): a name another field holds, an encrypted document, a copy
+  // of a radio option. Nothing was written, and the reason is the whole of what the person needs.
+  if (thrown instanceof FieldEditRefusedError) return { code: 'field-edit-refused', detail: { reason: thrown.reason } };
   // A PROPERTY OF THE MACHINE: the composition root leaves a writer genuinely absent where no host for it could be built,
   // a state the shipped product is deliberately in, so it is a sentence and never an incident id. Which engine is ours.
   if (thrown instanceof UnregisteredWriterError) return { code: 'engine-unavailable' };

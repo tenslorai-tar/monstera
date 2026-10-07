@@ -81,6 +81,8 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     // AN EDIT PDFIUM REFUSED (ADR-0169): the sentence is the step's, and the step and PDFium's number are the reference,
     // where `internal` shows its incident id.
     z.object({ code: z.literal('edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['edit-refused'] }).strict(),
+    // A CHANGE TO A FORM FIELD THAT COULD NOT BE MADE (ADR-0193): the sentence is the reason's.
+    z.object({ code: z.literal('field-edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['field-edit-refused'] }).strict(),
     // A COPY MADE FOR AN EDIT OF A SIGNED DOCUMENT (ADR-0149) that was written and could not be opened: gone before
     // the open, no room beside the documents already open, or its read refused — another program holding it, or no
     // permission. The file is where the person put it, without the edit.

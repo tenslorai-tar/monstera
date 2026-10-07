@@ -1,5 +1,6 @@
 import {
   EDIT_STEPS,
+  FIELD_EDIT_REASONS,
   type FailureDetails,
   INTERNAL_FAILURE,
   asDocId,
@@ -102,6 +103,7 @@ export const FAILURE_DETAIL_SCHEMAS = {
   'edit-refused': z
     .object({ step: z.enum(EDIT_STEPS), engineError: z.number().int().min(0).max(ENGINE_ERROR_MAX) })
     .strict(),
+  'field-edit-refused': z.object({ reason: z.enum(FIELD_EDIT_REASONS) }).strict(),
 } as const satisfies { readonly [C in keyof FailureDetails]: z.ZodType<FailureDetails[C]> };
 
 /** Compiles only when `Listed` is assignable to `Whole`: `engineChannels.ts`' `Covers`, for one check here. */

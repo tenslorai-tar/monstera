@@ -2207,6 +2207,9 @@ export const channels = {
       'nothing-to-replace',
       'replace-moves-line',
       'edit-refused',
+      // `field-edit-refused` IS A CHANGE TO A FORM FIELD'S (ADR-0193): a name another field holds, an encrypted
+      // document, a copy of a radio option. Nothing was written; the reason is the sentence.
+      'field-edit-refused',
       'breaks-signatures',
       ...SERVICE_PROBLEMS,
     ],
@@ -3108,6 +3111,7 @@ export const channels = {
             .strict(),
           z.object({ code: z.literal('text-not-writable'), detail: FAILURE_DETAIL_SCHEMAS['text-not-writable'] }).strict(),
           z.object({ code: z.literal('edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['edit-refused'] }).strict(),
+          z.object({ code: z.literal('field-edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['field-edit-refused'] }).strict(),
         ]),
       }),
       z.object({ kind: z.literal('cancelled') }),
