@@ -46,6 +46,7 @@ import { usePageRotations } from './usePageRotations.js';
 import { type PageTextAnswer, usePageText } from './usePageText.js';
 import { type PageLinkOnPage, usePageLinks } from './usePageLinks.js';
 import { FormLayer, type PageFill } from './forms/FormLayer.js';
+import type { SelectMode } from './forms/fieldSelection.js';
 import type { ListedField } from './forms/fieldFill.js';
 import { usePageFormFields } from './forms/usePageFormFields.js';
 import { useSelectedTextPages } from './useSelectedTextPages.js';
@@ -208,6 +209,17 @@ export interface PageListProps {
    * its fillable fields.
    */
   readonly onFillField: ((fill: PageFill & { readonly version: DocVersion }) => void) | undefined;
+  /**
+   * The fields selected in the form, outlined on their pages, and what a press on one does to the selection
+   * (`forms/fieldSelection.ts`). `reveal` asks for one to be brought into view. Absent where this list fills no field.
+   */
+  readonly fieldSelection?:
+    | {
+        readonly selected: ReadonlySet<string>;
+        readonly reveal: { readonly page: number; readonly index: number; readonly stamp: number } | undefined;
+        readonly onSelect: (page: number, index: number, mode: SelectMode) => void;
+      }
+    | undefined;
   /**
    * What both are read in. `viewing.ruler-unit`.
    *
@@ -451,6 +463,7 @@ export function PageList({
   onFollowLink,
   linksOutlined,
   onFillField,
+  fieldSelection,
   unit,
   label,
   labelValues,
@@ -1278,6 +1291,15 @@ export function PageList({
           onFollowLink={onFollowLink}
           fields={sizes.has(page) && fillOnPage !== undefined ? pageFields.get(page) : undefined}
           onFillField={fillOnPage}
+          selectedFields={fieldSelection === undefined ? undefined : selectedOnPage(fieldSelection.selected, page)}
+          revealField={fieldSelection?.reveal?.page === page ? fieldSelection.reveal : undefined}
+          onSelectField={
+            fieldSelection === undefined
+              ? undefined
+              : (index, mode) => {
+                  fieldSelection.onSelect(page, index, mode);
+                }
+          }
           scroller={scroller}
           hidden={layout === 'single' && page !== onShow}
         />
@@ -1304,6 +1326,14 @@ export function OpeningState(): ReactElement {
 
 /** The empty visible set, one identity, for a read that must not ask yet. */
 const NOTHING_VISIBLE: ReadonlySet<number> = new Set();
+
+/** The places in one page's widget walk that a selection of `page:index` keys holds. */
+function selectedOnPage(keys: ReadonlySet<string>, page: number): ReadonlySet<number> {
+  const prefix = `${String(page)}:`;
+  const held = new Set<number>();
+  for (const key of keys) if (key.startsWith(prefix)) held.add(Number(key.slice(prefix.length)));
+  return held;
+}
 
 /**
  * The nearest measured page before `page`, as the estimate for an unvisited one.
@@ -1471,6 +1501,9 @@ function PageSlot({
   onFollowLink,
   fields,
   onFillField,
+  selectedFields,
+  revealField,
+  onSelectField,
   scroller,
   hidden,
 }: {
@@ -1526,6 +1559,10 @@ function PageSlot({
   /** This page's form fields, or `undefined` before they are known, the slot is measured, or where none are filled. */
   readonly fields: readonly ListedField[] | undefined;
   readonly onFillField: ((fill: PageFill) => void) | undefined;
+  /** Which places in this page's widget walk are selected, which one to bring into view, and what a press does. */
+  readonly selectedFields: ReadonlySet<number> | undefined;
+  readonly revealField: { readonly index: number; readonly stamp: number } | undefined;
+  readonly onSelectField: ((index: number, mode: SelectMode) => void) | undefined;
   /** The scroller the slot sits in, whose box decides which tiles are wanted. */
   readonly scroller: React.RefObject<HTMLElement | null>;
   /** Out of the layout: single page shows only the page on show, and a hidden slot is never visible, so never drawn. */
@@ -1790,7 +1827,10 @@ function PageSlot({
           fields={fields}
           geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
           onFill={onFillField}
+          onSelect={onSelectField}
           page={page}
+          reveal={revealField}
+          {...(selectedFields === undefined ? {} : { selected: selectedFields })}
         />
       )}
       {/* OVER THE TEXT AND ITS MARKS, as the drawing overlay is: while Edit text or

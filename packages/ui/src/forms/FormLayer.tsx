@@ -1,11 +1,20 @@
 import { useLingui } from '@lingui/react';
 import type { FieldFill } from '@monstera/contract';
-import { type CSSProperties, type ReactElement, useState } from 'react';
+import { type CSSProperties, type MouseEvent, type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { type OverlayPage, pdfRectOnScreen } from '../annotations/annotationSpace.js';
 import { FORM_FIELD_FILL_IN } from '../messages/en.js';
 import { ChoiceOptions, FieldTextBox } from './FieldControls.js';
 import { type ListedField, fieldFill } from './fieldFill.js';
+import { type SelectMode, modeOf } from './fieldSelection.js';
+
+/** No place on the page is selected. */
+const NO_SELECTION: ReadonlySet<number> = new Set();
+
+/** Whether a press carries a modifier that extends a selection rather than acts on the field. */
+function modified(event: MouseEvent): boolean {
+  return modeOf(event) !== 'replace';
+}
 
 /** One field to fill, named as every fill names it: page, place in the page's widget walk, and the value. */
 export interface PageFill {
@@ -50,26 +59,67 @@ export function FormLayer({
   fields,
   geometry,
   onFill,
+  selected = NO_SELECTION,
+  reveal,
+  onSelect,
 }: {
   readonly page: number;
   readonly fields: readonly ListedField[];
   readonly geometry: OverlayPage;
   readonly onFill: (fill: PageFill) => void;
+  /** The places in this page's walk that are selected, drawn as an outline over each, fillable or not. */
+  readonly selected?: ReadonlySet<number>;
+  /** A request to bring one selected field into view, stamped so asking twice scrolls twice. */
+  readonly reveal?: { readonly index: number; readonly stamp: number } | undefined;
+  /** A press on a field's control selects it, the way a click on its row in the Fields list does. */
+  readonly onSelect?: ((index: number, mode: SelectMode) => void) | undefined;
 }): ReactElement | null {
   const { i18n } = useLingui();
   // THE TEXT FIELD BEING TYPED IN, by its place in the walk. One at a time: leaving one fills it and closes it.
   const [typing, setTyping] = useState<number | undefined>(undefined);
+  const root = useRef<HTMLDivElement | null>(null);
+
+  // BROUGHT INTO VIEW WHEN ASKED, once the outline is drawn: the Fields list names a field on a page that may be off
+  // the screen, and a highlight nobody can see is no highlight.
+  const stamp = reveal?.stamp;
+  const wanted = reveal?.index;
+  useEffect(() => {
+    if (wanted === undefined) return;
+    const outline = root.current?.querySelector<HTMLElement>(`[data-form-selected="${String(wanted)}"]`);
+    if (outline !== null && outline !== undefined && typeof outline.scrollIntoView === 'function') {
+      outline.scrollIntoView({ block: 'center', inline: 'nearest' });
+    }
+  }, [stamp, wanted]);
 
   const placed = fields.flatMap((field) => {
     if (field.rect === null) return [];
     const offer = fieldFill(field);
     return offer.kind === 'none' ? [] : [{ field, offer, box: pdfRectOnScreen(field.rect, geometry) }];
   });
+  // THE OUTLINES, for every selected field with a place on this page: a field nobody can fill here is still one a person
+  // selected in the list, and is still the one the page must show.
+  const outlined = fields.flatMap((field) =>
+    field.rect !== null && selected.has(field.index) ? [{ field, box: pdfRectOnScreen(field.rect, geometry) }] : [],
+  );
   // NOTHING OVER A PAGE WITH NOTHING TO FILL, `TextLayer`'s rule: an empty layer is something that can go wrong quietly.
-  if (placed.length === 0) return null;
+  if (placed.length === 0 && outlined.length === 0) return null;
 
   return (
-    <div className="m-form-layer" data-form-layer={String(page)}>
+    <div className="m-form-layer" data-form-layer={String(page)} ref={root}>
+      {outlined.map(({ field, box }) => (
+        <div
+          aria-hidden="true"
+          className="m-page-field-selected"
+          data-form-selected={String(field.index)}
+          key={`selected-${String(field.index)}`}
+          style={{
+            left: `${String(box.left)}px`,
+            top: `${String(box.top)}px`,
+            width: `${String(box.width)}px`,
+            height: `${String(box.height)}px`,
+          }}
+        />
+      ))}
       {placed.map(({ field, offer, box }) => {
         const at: CSSProperties = {
           left: `${String(box.left)}px`,
@@ -91,10 +141,15 @@ export function FormLayer({
               aria-checked={offer.on}
               aria-label={field.name}
               className="m-page-field"
-              onClick={() => {
+              onClick={(event) => {
+                // CTRL AND SHIFT EXTEND THE SELECTION and fill nothing, as they do in the list.
+                if (modified(event)) return;
                 // A RADIO'S CHOSEN OPTION CLEARS on a press, the panel's rule: a PDF group deselects when its lit
                 // widget is toggled (measured), so an option that could not be cleared would hide a state it allows.
                 fill({ set: 'button', on: !offer.on });
+              }}
+              onPointerDown={(event) => {
+                onSelect?.(field.index, modeOf(event));
               }}
               role={offer.radio ? 'radio' : 'checkbox'}
               style={at}
@@ -112,6 +167,9 @@ export function FormLayer({
               className="m-page-field m-page-field--choice"
               onChange={(event) => {
                 fill({ set: 'choice', option: event.currentTarget.value });
+              }}
+              onPointerDown={(event) => {
+                onSelect?.(field.index, modeOf(event));
               }}
               style={at}
               value={offer.held}
@@ -151,8 +209,12 @@ export function FormLayer({
             key={field.index}
             aria-label={i18n._(FORM_FIELD_FILL_IN, { name: field.name })}
             className="m-page-field m-page-field--text"
-            onClick={() => {
+            onClick={(event) => {
+              if (modified(event)) return;
               setTyping(field.index);
+            }}
+            onPointerDown={(event) => {
+              onSelect?.(field.index, modeOf(event));
             }}
             style={at}
             type="button"

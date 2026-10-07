@@ -129,6 +129,8 @@ export {
 // `['shared', 'contract']`, so it could not import the engine subpath these
 // lived on. The kernel re-exports them, so the permutation a tree rewrite is
 // built from and the one a consumer asks about are the same function (B3a).
+// THE ONE RULE for whether a field can be called a name, taken by the create (kernel) and by the surface that asks first.
+export { fieldNameClash } from './fieldNames.js';
 export {
   type PriorPageOrder,
   keptPermutation,

@@ -48,6 +48,8 @@ export interface ToolButtonProps {
   readonly description?: MessageKey | undefined;
   readonly icon: IconName;
   readonly onClick: () => void;
+  /** What a double click does, where it is not two presses (`UiCommand.hold`). */
+  readonly onDoubleClick?: (() => void) | undefined;
   /**
    * The command this button runs, written to `data-command`.
    *
@@ -87,6 +89,7 @@ export function ToolButton({
   description,
   icon,
   onClick,
+  onDoubleClick,
   command,
   pressed,
   keepsFocus,
@@ -101,6 +104,7 @@ export function ToolButton({
       data-command={command}
       nativeButton
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       // A PRESS THAT KEEPS THE FOCUS: the words a formatting command is for are selected in an editor that closes when it
       // loses the focus.
       onMouseDown={keepsFocus === true ? (event) => { event.preventDefault(); } : undefined}

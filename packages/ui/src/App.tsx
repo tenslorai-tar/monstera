@@ -265,6 +265,16 @@ import {
   TOAST_DISMISS,
 } from './messages/en.js';
 import { annotationTools } from './annotations/annotationTools.js';
+import type { KnownField } from './annotations/fieldNameCheck.js';
+import { isFormFieldTool } from './annotations/formFieldTools.js';
+import {
+  type FieldKey,
+  type FieldSelection,
+  type SelectMode,
+  fieldKey,
+  liveKeys,
+  select as chooseField,
+} from './forms/fieldSelection.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
 import { MEASURE_TOOL_IDS } from './annotations/measureTools.js';
@@ -1115,6 +1125,65 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * than this call site: nobody fills two fields with one gesture, which is
    * also what makes the command invertible.
    */
+  /**
+   * THE SELECTED FORM FIELDS (`forms/fieldSelection.ts`): one writer, taken by the Fields list and by a press on the page.
+   * Valid for the version it was made at, DERIVED on read, so a command that moves the version leaves nothing selected
+   * rather than a position naming another field.
+   */
+  const [fieldSelection, setFieldSelection] = useState<FieldSelection | undefined>(undefined);
+  const [fieldReveal, setFieldReveal] = useState<{ page: number; index: number; stamp: number } | undefined>(undefined);
+  const openVersion = open?.version;
+  const selectedFieldKeys = useMemo(
+    () => new Set(liveKeys(fieldSelection, openVersion)),
+    [fieldSelection, openVersion],
+  );
+  const selectField = useCallback(
+    (page: number, index: number, mode: SelectMode, ordered: readonly FieldKey[] = [], reveal = false): void => {
+      if (openVersion === undefined) return;
+      setFieldSelection((current) => chooseField(current, openVersion, fieldKey(page, index), mode, ordered));
+      if (reveal) setFieldReveal((previous) => ({ page, index, stamp: (previous?.stamp ?? 0) + 1 }));
+    },
+    [openVersion],
+  );
+  const fieldSelectionForPages = useMemo(
+    () => ({
+      selected: selectedFieldKeys,
+      reveal: fieldReveal,
+      onSelect: (page: number, index: number, mode: SelectMode): void => {
+        selectField(page, index, mode);
+      },
+    }),
+    [fieldReveal, selectField, selectedFieldKeys],
+  );
+  // ESCAPE AND A PRESS ON EMPTY PAGE DESELECT, only while something is selected: a press on a field's own control is the
+  // selection's and a press on the page's paper is not.
+  useEffect(() => {
+    // REGISTERED WHETHER OR NOT ANYTHING IS SELECTED: clearing nothing is no re-render, and a listener that waited for
+    // the selection's render was one a press in the same moment could beat.
+    const onKey = (event: KeyboardEvent): void => {
+      const target = event.target;
+      const typing =
+        target instanceof HTMLElement &&
+        (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+      // NOT `defaultPrevented`: the shortcut handler claims Escape for the command that holds it before this window
+      // listener runs, so that test would never be true. A key typed in a field or inside a dialog is theirs.
+      const inDialog = target instanceof Element && target.closest('[role="dialog"]') !== null;
+      if (event.key === 'Escape' && !typing && !inDialog) setFieldSelection(undefined);
+    };
+    const onDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('.m-page-slot') !== null && target.closest('[data-form-field]') === null) {
+        setFieldSelection(undefined);
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('pointerdown', onDown, true);
+    return (): void => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('pointerdown', onDown, true);
+    };
+  }, []);
+
   const fillFormField = useCallback(
     (handle: {
       page: number;
@@ -1754,6 +1823,33 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   const [toolId, setToolId] = useState<string | undefined>(undefined);
   const readTool = useCallback(() => toolId, [toolId]);
   /**
+   * The tool a double click kept on past its one thing drawn (`UiCommand.hold`). It is the tool's id and not a flag, so
+   * choosing a different tool is not a kept one, and it is forgotten whenever no tool is on.
+   */
+  const [keptTool, setKeptTool] = useState<string | undefined>(undefined);
+  /** Chooses a tool by one press: not kept, whatever an earlier double click on the same button did. */
+  const chooseTool = useCallback((id: string | undefined): void => {
+    setKeptTool(undefined);
+    setToolId(id);
+  }, []);
+  const holdTool = useCallback((id: string): void => {
+    setToolId(id);
+    setKeptTool(id);
+  }, []);
+  /**
+   * A FIELD TOOL DOES NOT OUTLIVE THE FORMS TAB. The tool slot is the application's and not the tab's, so a field tool
+   * chosen on the Forms tab was still armed when the tab was opened again, and the drawing surface took the press a field
+   * should have had (reproduced 2026-10-07, `formsTab.pw.ts`). Leaving the tab puts it down; only the move OFF the tab,
+   * so a field tool started from the palette in another section is not undone by the section it started in.
+   */
+  const ribbonSection = useSetting(settings, RIBBON_SECTION_SETTING);
+  const previousSection = useRef(ribbonSection);
+  useEffect(() => {
+    const left = previousSection.current === 'forms' && ribbonSection !== 'forms';
+    previousSection.current = ribbonSection;
+    if (left && toolId !== undefined && isFormFieldTool(toolId)) setToolId(undefined);
+  }, [ribbonSection, toolId]);
+  /**
    * Edit object's filter (ADR-0153 Decision 2): a value BESIDE the tool slot, since the slot answers what a press on
    * the page does — the same for all four filters — and this answers which objects are outlined.
    */
@@ -1792,6 +1888,18 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       (part) => part.annotations,
     );
     return answer.ok ? { version: answer.value.version, annotations: answer.value.items } : undefined;
+  }, [activeId, client]);
+  /**
+   * The fields the open document has, for a field tool to ask a name against (`fieldNameCheck.ts`): the whole list, read
+   * when a name is about to be asked for. `undefined` when it cannot be read, which is no check and never a refusal.
+   */
+  const listFields = useCallback(async (): Promise<readonly KnownField[] | undefined> => {
+    if (activeId === undefined) return undefined;
+    const answer = await readWholeList(
+      (from) => client['document.formFields']({ docId: activeId, from }),
+      (part) => part.fields,
+    );
+    return answer.ok ? answer.value.items.map((field) => ({ name: field.name, kind: field.kind, options: field.options })) : undefined;
   }, [activeId, client]);
   /**
    * The selection, if it still describes the document on screen.
@@ -2442,6 +2550,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           ask,
           write,
           annotations: listAnnotations,
+          fields: listFields,
           // A REOPEN'S WORDS, whole where the walk cut them: the function Edit comment and the Properties field take.
           wordsOf,
           onSelect: setPicked,
@@ -2473,6 +2582,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // THE STAMP LIBRARY'S CHANNELS go through it.
       client,
       listAnnotations,
+      listFields,
       ocrLanguages,
       onPlaceBarcode,
       onPlaceImage,
@@ -2487,6 +2597,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       write,
     ],
   );
+
+  // A TOOL PUT DOWN SAYS SO, whichever way it was put down (Escape, another tool, leaving the tab, a field drawn):
+  // what it held for a run of drags, a radio group's name, is dropped with it.
+  const lastTool = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const previous = lastTool.current;
+    lastTool.current = toolId;
+    if (previous !== undefined && previous !== toolId) tools.get(previous)?.ended?.();
+  }, [toolId, tools]);
 
   const rulers = useSetting(settings, RULERS_SETTING);
   const showGrid = useSetting(settings, GRID_SETTING);
@@ -3127,7 +3246,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // tools has one place it is written down.
         ...shapeToolCommands({
           activeTool: readTool,
-          onSelect: setToolId,
+          onSelect: chooseTool,
+          onHold: holdTool,
           // THE PAIR, `azureReady` above — one name for it, not a second spelling here.
           cloudReady: () => azureReady,
           // ONE INPUT: the Anthropic API needs no endpoint setting (ADR-0057).
@@ -3180,6 +3300,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   }, [
       // THE KEYS A PERSON CHOSE, so a change in the shortcuts dialog rebuilds the registry and the new key works at once.
       chosenShortcuts,
+      chooseTool,
+      holdTool,
       windowEdit,
       startSignature,
       startSpelling,
@@ -3321,11 +3443,17 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // A LINK ADDED IS SAID (item 14c): PDF.js draws no mark for a link, and its outline is drawn only in the Comment
         // section, while the command palette starts the two link tools from any. A refusal says its own problem.
         if (moved && command.kind === 'addLink') toast('done', LINK_ADDED);
+        // A FIELD TOOL IS SPENT BY ONE FIELD (the owner, 2026-10-07): once the create has landed the drawing surface comes
+        // off and the page is for filling again, unless the person kept the tool on with a double click. A refused
+        // create leaves it on, since nothing was drawn.
+        if (moved && command.kind === 'createFormField' && tool.endsAfterOne === true && keptTool !== tool.id) {
+          setToolId(undefined);
+        }
         return moved;
       },
       selection,
     };
-  }, [open, selection, send, toast, toolId, tools]);
+  }, [keptTool, open, selection, send, toast, toolId, tools]);
 
   /**
    * A link pressed on a page or in the Links panel, followed by the one route (ADR-0167): a page link jumps, a web link
@@ -3812,6 +3940,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onFollowLink={onFollowLink}
           linksOutlined={linksOutlined}
           onFillField={fillFormField}
+          fieldSelection={fieldSelectionForPages}
           unit={unit}
           split={split}
           drawing={drawing}
@@ -3932,6 +4061,10 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                 onFill={fillFormField}
                 onFlatten={flattenActiveForm}
                 onJump={navigator.jumpTo}
+                onSelect={(page, index, mode, ordered) => {
+                  selectField(page, index, mode, ordered, true);
+                }}
+                selected={selectedFieldKeys}
                 version={open.version}
               />
             ),
@@ -4304,6 +4437,7 @@ const DocumentLayer = memo(function DocumentLayer({
             linksOutlined={false}
             // NOR ITS FIELDS (ADR-0168), for the links' reason.
             onFillField={undefined}
+            fieldSelection={undefined}
             // NOT DRAWN BEHIND: a request is drawn only while its document is on show, from its draft.
             writing={undefined}
             panning={false}
@@ -4369,6 +4503,7 @@ function PageCanvas({
   onFollowLink,
   linksOutlined,
   onFillField,
+  fieldSelection,
   unit,
   split,
   organize,
@@ -4449,6 +4584,8 @@ function PageCanvas({
   readonly linksOutlined: boolean;
   /** Fills a form field pressed on a page (ADR-0168); `undefined` behind. Both panes take it. */
   readonly onFillField: PageListProps['onFillField'];
+  /** The selected form fields, outlined on their pages (`forms/fieldSelection.ts`); `undefined` behind. */
+  readonly fieldSelection: PageListProps['fieldSelection'];
   readonly unit: RulerUnit;
   /** Whether a second viewport onto the same document is shown. */
   readonly split: boolean;
@@ -4784,6 +4921,7 @@ function PageCanvas({
       onFollowLink={onFollowLink}
       linksOutlined={linksOutlined}
       onFillField={onFillField}
+      fieldSelection={fieldSelection}
       unit={unit}
       drawing={drawing}
       editing={editing}

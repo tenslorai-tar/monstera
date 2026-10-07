@@ -63,8 +63,8 @@ const BODIES: readonly { readonly name: string; readonly body: ReactNode; readon
 
 /** Group 3: the shared text forms and the dialogs whose answers are buttons. Same shape, same assertion. */
 const GROUP_3: readonly { readonly name: string; readonly body: ReactNode; readonly firstRow: string | null }[] = [
-  { name: 'Radio button', body: <FormFieldRadioBody resolve={ignore} update={ignore} />, firstRow: '' },
-  { name: 'List box', body: <FormFieldListboxBody resolve={ignore} update={ignore} />, firstRow: '' },
+  { name: 'Radio button', body: <FormFieldRadioBody known={[]} resolve={ignore} update={ignore} />, firstRow: '' },
+  { name: 'List box', body: <FormFieldListboxBody known={[]} resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'Open from a URL', body: <OpenFromUrlBody resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'Send to DocuSign', body: <DocusignSendBody resolve={ignore} update={ignore} />, firstRow: 'Email subject' },
   { name: 'Close with changes', body: <CloseUnsavedBody name="a.pdf" resolve={ignore} update={ignore} />, firstRow: null },

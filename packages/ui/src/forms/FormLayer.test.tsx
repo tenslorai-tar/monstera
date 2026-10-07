@@ -164,6 +164,38 @@ describe('FormLayer', () => {
     expect(fills).toStrictEqual([]);
   });
 
+  it('OUTLINES a selected field where it is, fillable or not, and a press with Ctrl selects it and fills nothing', () => {
+    const picks: unknown[] = [];
+    const fills: PageFill[] = [];
+    const { container } = render(
+      <Wrapped>
+        <FormLayer
+          fields={[field({ index: 0, kind: 'checkbox', on: false }), field({ index: 1, readOnly: true })]}
+          geometry={{ crop: [0, 0, 612, 792], rotation: 0, zoom: 2 }}
+          onFill={(fill) => {
+            fills.push(fill);
+          }}
+          onSelect={(index, mode) => {
+            picks.push({ index, mode });
+          }}
+          page={2}
+          selected={new Set([1])}
+        />
+      </Wrapped>,
+    );
+    // THE READ-ONLY FIELD HAS NO CONTROL AND STILL HAS ITS OUTLINE, which is what the Fields list asked for.
+    expect(container.querySelector('[data-form-selected="1"]')).not.toBeNull();
+    expect(container.querySelector('[data-form-selected="0"]')).toBeNull();
+    const tick = must(at(container, 0));
+    fireEvent.pointerDown(tick, { ctrlKey: true });
+    fireEvent.click(tick, { ctrlKey: true });
+    expect(picks).toStrictEqual([{ index: 0, mode: 'toggle' }]);
+    // NOTHING WAS FILLED by the extending press; CONTROL: the plain one fills.
+    expect(fills).toStrictEqual([]);
+    fireEvent.click(tick);
+    expect(fills).toHaveLength(1);
+  });
+
   it('a field that takes LINE BREAKS opens a box for them', () => {
     const { container } = draw([field({ index: 0, multiline: true, values: ['1 High Street\nLeeds'] })]);
     press(at(container, 0));

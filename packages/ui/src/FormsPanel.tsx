@@ -5,6 +5,7 @@ import { type ReactElement, useEffect, useId, useState } from 'react';
 
 import { ChoiceOptions, FieldTextBox } from './forms/FieldControls.js';
 import { type ListedField, fieldFill } from './forms/fieldFill.js';
+import { type FieldKey, type SelectMode, fieldKey, modeOf } from './forms/fieldSelection.js';
 import {
   FORMS_DELETE,
   FORMS_EMPTY,
@@ -80,6 +81,8 @@ export function FormsPanel({
   docId,
   version,
   onJump,
+  selected,
+  onSelect,
   onFill,
   onDelete,
   onFlatten,
@@ -91,6 +94,13 @@ export function FormsPanel({
   readonly version: DocVersion | undefined;
   /** Takes the reader to a page, recording the jump. */
   readonly onJump: (page: number) => void;
+  /** The fields selected, by page and place in its walk (`forms/fieldSelection.ts`): the rows drawn as chosen. */
+  readonly selected: ReadonlySet<FieldKey>;
+  /**
+   * A click on a row's name: select that field (Ctrl toggles, Shift takes a run in this list's order), which also
+   * outlines it on its page and brings it into view. `ordered` is every row in the order shown.
+   */
+  readonly onSelect: (page: number, index: number, mode: SelectMode, ordered: readonly FieldKey[]) => void;
   /**
    * Fills one field, named by the handle the row was built from.
    *
@@ -196,11 +206,25 @@ export function FormsPanel({
               // its own page. They agree on a one-page form and diverge on the
               // second page, so a handle built from `at` would fill the wrong
               // field on every document but the simplest.
-              <li className="m-forms-row" key={at}>
+              <li
+                className="m-forms-row"
+                data-form-row-selected={selected.has(fieldKey(field.page, field.index)) ? 'true' : undefined}
+                key={at}
+              >
                 <button
+                  aria-pressed={selected.has(fieldKey(field.page, field.index))}
                   className="m-forms-jump"
-                  onClick={() => {
-                    onJump(field.page);
+                  onClick={(event) => {
+                    // ONE CLICK SELECTS ONE FIELD, outlines it on its page and brings it into view; a second click with
+                    // Ctrl takes it out again. The page is jumped to first so the outline has a page to be on.
+                    const mode = modeOf(event);
+                    if (mode === 'replace') onJump(field.page);
+                    onSelect(
+                      field.page,
+                      field.index,
+                      mode,
+                      state.fields.map((each) => fieldKey(each.page, each.index)),
+                    );
                   }}
                   title={i18n._(FORMS_GO_TO_PAGE, { page: pdfjsPageOf(field.page) })}
                   type="button"

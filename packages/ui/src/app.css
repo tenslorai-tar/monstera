@@ -1786,6 +1786,12 @@ optgroup {
   background: var(--surface2);
 }
 
+/* A SELECTED ROW is drawn by its edge and its weight, so it does not rest on colour alone. */
+.m-forms-jump[aria-pressed='true'] {
+  border-color: var(--accent-on-paper, var(--accent));
+  font-weight: 600;
+}
+
 /*
  * The controls fill their column, which is the same width on every row.
  *
@@ -5320,6 +5326,18 @@ optgroup {
 }
 
 .m-page-field:focus-visible {
+  outline: 2px solid var(--accent-on-paper, var(--accent));
+  outline-offset: 2px;
+}
+
+/*
+ * A SELECTED FIELD, outlined where it is on the page whether or not it can be filled (the Fields list names it, and
+ * a field a person selected must be the one the page shows). It takes no press: the control under it does.
+ */
+.m-page-field-selected {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
   outline: 2px solid var(--accent-on-paper, var(--accent));
   outline-offset: 2px;
 }

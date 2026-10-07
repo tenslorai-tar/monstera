@@ -199,6 +199,17 @@ export interface UiCommand {
    */
   readonly summary?: MessageKey;
   /**
+   * One plain sentence saying what this control does, shown as its tooltip on the ribbon and exposed as its description
+   * (the owner, 2026-10-07: every Forms tool says in words what it does). Where it is absent a command with a short
+   * `ribbonTitle` shows its full title there, and one without says nothing the caption does not.
+   */
+  readonly tip?: MessageKey;
+  /**
+   * What a DOUBLE CLICK on this command's ribbon button does, where it does something other than two presses: a drawing
+   * tool that ends after one thing drawn is kept on until Escape. Absent, a double click is two presses.
+   */
+  readonly hold?: (context: CommandContext) => void;
+  /**
    * The glyph a surface draws for this command, from the one closed set.
    *
    * **Required wherever the command is drawn as a control** — on the ribbon, the

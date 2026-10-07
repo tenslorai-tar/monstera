@@ -2,7 +2,7 @@ import { PDFRadioGroup, StandardFonts, degrees, rgb } from '@cantoo/pdf-lib';
 import type { PDFDocument, PDFFont, PDFPage } from '@cantoo/pdf-lib';
 
 import type { AnnotationRect, CommandOfKind, CreatedField } from '@monstera/contract';
-import { snapRotation } from '@monstera/shared';
+import { fieldNameClash, snapRotation } from '@monstera/shared';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
@@ -185,17 +185,11 @@ function pageAt(document: PDFDocument, index: number): PDFPage {
  * the way is `owner.first`, which reads like a bug in the caller's own code.
  */
 function collidingName(form: ReturnType<PDFDocument['getForm']>, wanted: string): string | undefined {
-  for (const field of form.getFields()) {
-    const existing = field.getName();
-    if (
-      existing === wanted ||
-      existing.startsWith(`${wanted}.`) ||
-      wanted.startsWith(`${existing}.`)
-    ) {
-      return existing;
-    }
-  }
-  return undefined;
+  // THE SHARED RULE (`fieldNameClash`): the surface asks it before it sends a name, and this refuses with it.
+  return fieldNameClash(
+    form.getFields().map((field) => field.getName()),
+    wanted,
+  );
 }
 
 /**

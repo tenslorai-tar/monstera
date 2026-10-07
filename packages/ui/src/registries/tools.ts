@@ -391,6 +391,15 @@ export interface UiTool {
    */
   readonly hint: MessageKey;
   /**
+   * That the tool is spent by ONE thing drawn, and the application puts it down once the command it made has landed
+   * (the owner, 2026-10-07: a field tool ends after one field or on Escape). A tool whose gesture is several presses of
+   * the same kind, such as a radio group's options, leaves this off and ends on Escape alone. Chosen again by a double
+   * click on its button, it stays on until Escape (`UiCommand.hold`).
+   */
+  readonly endsAfterOne?: true;
+  /** Called once when the tool is put down, whichever way (Escape, another tool, leaving the tab): what it held for a run of drags is dropped. */
+  readonly ended?: () => void;
+  /**
    * The command for a TEXT SELECTION, for a tool whose gesture is selecting text rather than dragging a shape — a
    * highlighter, Acrobat's way: the words light up as they are selected and the mark lands on release.
    *

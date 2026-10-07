@@ -1309,6 +1309,12 @@ export const FLATTEN_FORM_TITLE = messageKey('dialog.flatten-form.title');
 export const FLATTEN_FORM_EXPLAINS = messageKey('dialog.flatten-form.explains');
 export const FLATTEN_FORM_APPLY = messageKey('dialog.flatten-form.apply');
 export const FORM_FIELD_TEXT_TOOL_TITLE = messageKey('command.forms.field-text');
+/** One sentence each, the Forms tools' tooltips (the owner, 2026-10-07). */
+export const FORM_FIELD_TEXT_TIP = messageKey('command.forms.field-text.tip');
+export const FORM_FIELD_CHECKBOX_TIP = messageKey('command.forms.field-checkbox.tip');
+export const FORM_FIELD_RADIO_TIP = messageKey('command.forms.field-radio.tip');
+export const FORM_FIELD_DROPDOWN_TIP = messageKey('command.forms.field-dropdown.tip');
+export const FORM_FIELD_LISTBOX_TIP = messageKey('command.forms.field-listbox.tip');
 export const FORM_FIELD_CHECKBOX_TOOL_TITLE = messageKey('command.forms.field-checkbox');
 export const FORM_FIELD_RADIO_TOOL_TITLE = messageKey('command.forms.field-radio');
 export const FORM_FIELD_DROPDOWN_TOOL_TITLE = messageKey('command.forms.field-dropdown');
@@ -1329,6 +1335,11 @@ export const FORM_FIELD_REMOVE_OPTION = messageKey('dialog.form-field.remove-opt
 export const FORM_FIELD_NAME_EMPTY = messageKey('dialog.form-field.name-empty');
 export const FORM_FIELD_NAME_TOO_LONG = messageKey('dialog.form-field.name-too-long');
 export const FORM_FIELD_NAME_SEGMENT = messageKey('dialog.form-field.name-segment');
+export const FORM_FIELD_NAME_TAKEN = messageKey('dialog.form-field.name-taken');
+export const FORM_FIELD_NAME_PARENT = messageKey('dialog.form-field.name-parent');
+export const FORM_FIELD_OPTION_TAKEN = messageKey('dialog.form-field.option-taken');
+export const FORM_FIELD_GROUP_KNOWN = messageKey('dialog.form-field.group-known');
+export const FORM_FIELD_OPTION_SUGGESTION = messageKey('dialog.form-field.option-suggestion');
 export const FORM_FIELD_OPTIONS_EMPTY = messageKey('dialog.form-field.options-empty');
 export const FORMS_KIND_TEXT = messageKey('surface.forms.kind.text');
 export const FORMS_KIND_CHECKBOX = messageKey('surface.forms.kind.checkbox');
@@ -3678,6 +3689,16 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // from the Forms panel's controls: those fill a field that exists, these put
   // one on the page.
   [FORM_FIELD_TEXT_TOOL_TITLE]: 'Draw a text field',
+  [FORM_FIELD_TEXT_TIP]:
+    'Text field: drag a box on the page where people type, then name it. Double click to draw several in a row, and press Esc to stop.',
+  [FORM_FIELD_CHECKBOX_TIP]:
+    'Tick box: drag a small square that people tick on or off, then name it. Double click to draw several in a row, and press Esc to stop.',
+  [FORM_FIELD_RADIO_TIP]:
+    'Radio button: drag a circle for each choice. Choices given the same group name belong together and only one can be on. Press Esc when the group is done.',
+  [FORM_FIELD_DROPDOWN_TIP]:
+    'Dropdown: drag a box where people pick one choice from a list. Double click to draw several in a row, and press Esc to stop.',
+  [FORM_FIELD_LISTBOX_TIP]:
+    'List box: drag a box that shows a list of choices people pick from. Double click to draw several in a row, and press Esc to stop.',
   [FORM_FIELD_CHECKBOX_TOOL_TITLE]: 'Draw a tick box',
   [FORM_FIELD_RADIO_TOOL_TITLE]: 'Draw a radio option',
   [FORM_FIELD_DROPDOWN_TOOL_TITLE]: 'Draw a dropdown',
@@ -3708,6 +3729,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // under one parent — so an empty piece asks for a group with no name.
   [FORM_FIELD_NAME_SEGMENT]:
     'A dot groups fields, so “owner.first” and “owner.second” belong together. Every piece between dots needs a name.',
+  // THE KNOWN CAUSES a field cannot be created, said before anything is sent: a name the form already has, and a name
+  // tangled up with another's through a dot.
+  [FORM_FIELD_NAME_TAKEN]: 'This form already has a field with that name. Choose another name.',
+  [FORM_FIELD_NAME_PARENT]:
+    'That name clashes with another field, because a dot groups fields. Choose a name that is not the start of another field’s name, and does not start with one.',
+  [FORM_FIELD_OPTION_TAKEN]: 'This group already has a choice with that value. Give each choice its own value.',
+  [FORM_FIELD_GROUP_KNOWN]: 'Adding a choice to the group “{group}”.',
+  [FORM_FIELD_OPTION_SUGGESTION]: 'Option {number}',
   [FORM_FIELD_OPTIONS_EMPTY]: 'Give it at least one choice, or nobody can pick anything.',
   [FORMS_KIND_TEXT]: 'Text',
   [FORMS_KIND_CHECKBOX]: 'Tick box',

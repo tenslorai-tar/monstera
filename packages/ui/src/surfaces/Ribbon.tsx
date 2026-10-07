@@ -471,7 +471,14 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
                   // are the command's; this surface composes no string.
                   label={entry.command.ribbonTitle ?? entry.command.title}
                   description={
-                    entry.command.ribbonTitle === undefined ? undefined : entry.command.title
+                    entry.command.tip ?? (entry.command.ribbonTitle === undefined ? undefined : entry.command.title)
+                  }
+                  onDoubleClick={
+                    entry.command.hold === undefined
+                      ? undefined
+                      : () => {
+                          entry.command.hold?.(context);
+                        }
                   }
                   onClick={() => {
                     // Not awaited, for `QuickToolbar`'s reason: a handler

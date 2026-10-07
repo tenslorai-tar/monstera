@@ -11,8 +11,8 @@ import { FORM_FIELD_NAME_LABEL, HINT_FORM_FIELD } from '../messages/en.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
+import { fieldNameProblemAmong } from './fieldNameCheck.js';
 import type { TextToolDeps } from './textTools.js';
-import { fieldNameProblem } from './typedRules.js';
 
 /**
  * The five create-field tools — Stage 4's *create fields by drawing*.
@@ -91,6 +91,17 @@ export const FORM_FIELD_DROPDOWN_TOOL_ID = 'forms.field-dropdown';
 /** The id of the tool that draws a list box. */
 export const FORM_FIELD_LISTBOX_TOOL_ID = 'forms.field-listbox';
 
+/** Whether a tool id is one of the five that draw a form field. */
+export function isFormFieldTool(id: string): boolean {
+  return [
+    FORM_FIELD_TEXT_TOOL_ID,
+    FORM_FIELD_CHECKBOX_TOOL_ID,
+    FORM_FIELD_RADIO_TOOL_ID,
+    FORM_FIELD_DROPDOWN_TOOL_ID,
+    FORM_FIELD_LISTBOX_TOOL_ID,
+  ].includes(id);
+}
+
 const SHAPES: readonly FieldToolShape[] = [
   {
     id: FORM_FIELD_TEXT_TOOL_ID,
@@ -130,7 +141,29 @@ const SHAPES: readonly FieldToolShape[] = [
   },
 ];
 
+/**
+ * THE RADIO GROUP A RUN OF DRAGS IS BUILDING, remembered until the tool ends (the owner, 2026-10-07): the first option
+ * asks for the group's name and every later one only for its own value. NOT in the tool's closure, because the registry
+ * is rebuilt whenever one of its inputs moves (`App.tsx`) and a group held in a tool would be lost to a rebuild in the
+ * middle of a run; keyed by the application's `ask`, which is stable across a rebuild, so a run belongs to the
+ * application that is drawing it and not to a module every test would share. `ended` is what clears it.
+ */
+interface RadioRun {
+  group: string | undefined;
+  used: readonly string[];
+}
+const RADIO_RUNS = new WeakMap<TextToolDeps['ask'], RadioRun>();
+
+function radioRunOf(deps: TextToolDeps): RadioRun {
+  const held = RADIO_RUNS.get(deps.ask);
+  if (held !== undefined) return held;
+  const fresh: RadioRun = { group: undefined, used: [] };
+  RADIO_RUNS.set(deps.ask, fresh);
+  return fresh;
+}
+
 function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
+  const run = radioRunOf(deps);
   const drawn = (gesture: Gesture): ToolPreview | undefined => {
     const from = startOf(gesture);
     const to = endOf(gesture);
@@ -139,6 +172,7 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
     if (width < MINIMUM_BOX || height < MINIMUM_BOX) return undefined;
     return { shape: 'rect', x: Math.min(from.x, to.x), y: Math.min(from.y, to.y), width, height };
   };
+
 
   const controller: ToolController = {
     ...pointerPath,
@@ -157,6 +191,11 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
       // whatever zoom the page is at when the person finishes typing.
       const rect = draggedRect(startOf(gesture), endOf(gesture), transform);
 
+      // THE FIELDS THE DOCUMENT HAS, read now and not when the tool was chosen: a field drawn a moment ago is in it. A
+      // name the form already has is a KNOWN CAUSE and is said before anything is sent, with the rule the writer refuses
+      // by (`fieldNameClash`), where it reached a person as *something went wrong inside Monstera*.
+      const known = (await deps.fields?.()) ?? [];
+
       // THE NAME TYPED ON THE PAGE, by the rule the field dialogs take too, and parsed by the same result schema those
       // answer with, so a name reaches the command one way whichever asked for it.
       let asked: unknown;
@@ -167,11 +206,22 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
           shape: 'line',
           initial: '',
           label: FORM_FIELD_NAME_LABEL,
-          check: fieldNameProblem,
+          check: (typed) => fieldNameProblemAmong(typed, known, false),
         });
         asked = name === undefined ? undefined : { name };
+      } else if (shape.id === FORM_FIELD_RADIO_TOOL_ID) {
+        const held = new Set(
+          known.filter((field) => field.kind === 'radio' && field.name === run.group).flatMap((field) => field.options),
+        );
+        for (const used of run.used) held.add(used);
+        let nextNumber = 1;
+        while (held.has(`Option ${String(nextNumber)}`)) nextNumber += 1;
+        asked = await deps.ask(shape.asks.dialog, {
+          known,
+          ...(run.group === undefined ? {} : { group: run.group, used: run.used, nextNumber }),
+        });
       } else {
-        asked = await deps.ask(shape.asks.dialog, {});
+        asked = await deps.ask(shape.asks.dialog, { known });
       }
       const answered = FORM_FIELD_RESULT.safeParse(asked);
       // NOTHING TYPED, A DISMISSED DIALOG AND A REFUSED ANSWER are all `undefined` — the same outcome a drag too small to
@@ -180,6 +230,11 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
 
       const field = shape.build(answered.data);
       if (field === undefined) return undefined;
+
+      if (field.type === 'radio') {
+        run.group = answered.data.name;
+        run.used = [...run.used, field.option];
+      }
 
       // ONE FIELD IN A LIST, because a drag is one field and the payload became
       // plural for a different caller — flat-field detection, where accepting a
@@ -194,7 +249,21 @@ function fieldTool(shape: FieldToolShape, deps: TextToolDeps): UiTool {
     preview: drawn,
   };
 
-  return { id: shape.id, controller, hint: HINT_FORM_FIELD };
+  // A RADIO GROUP IS SEVERAL DRAWS of one tool, so it ends on Escape alone; every other field is one drawing.
+  return {
+    id: shape.id,
+    controller,
+    hint: HINT_FORM_FIELD,
+    ...(shape.id === FORM_FIELD_RADIO_TOOL_ID
+      ? {
+          // THE GROUP IS FORGOTTEN WITH THE TOOL: the next time the radio tool is chosen it starts a group of its own.
+          ended: (): void => {
+            run.group = undefined;
+            run.used = [];
+          },
+        }
+      : { endsAfterOne: true as const }),
+  };
 }
 
 /** The five, for the composition root. */
