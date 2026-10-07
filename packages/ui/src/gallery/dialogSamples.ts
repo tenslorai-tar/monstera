@@ -712,7 +712,26 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'held', props: { access: 'held' } },
   ],
   'dialog.camera-capture': [{ state: 'opened', props: {} }],
-  'dialog.generate-toc-problem': [{ state: 'opened', props: { reason: 'no-outline' } }],
+  'dialog.generate-toc': [
+    {
+      state: 'opened',
+      props: {
+        entries: [
+          { title: 'Introduction', page: 0, depth: 0 },
+          { title: 'Method', page: 2, depth: 0 },
+          { title: 'Participants', page: 3, depth: 1 },
+          { title: 'Results', page: 6, depth: 0 },
+          { title: 'Linked from elsewhere', page: null, depth: 1 },
+        ],
+        pageCount: 12,
+        tooLong: false,
+      },
+    },
+    // A DOCUMENT WITH NO BOOKMARKS: no rows, and the person adds their own.
+    { state: 'no-bookmarks', props: { entries: [], pageCount: 12, tooLong: false } },
+    // AN OUTLINE TOO LONG TO EDIT HERE: said, and Insert writes it as it is.
+    { state: 'too-long', props: { entries: [], pageCount: 400, tooLong: true } },
+  ],
   'dialog.merge-document': [
     { state: 'opened', props: { choices: SOURCES, pageCount: 12 } },
     { state: 'after-page', props: { choices: SOURCES, pageCount: 12, draft: { placement: 'after', page: '4', documents: [] } } },

@@ -27,7 +27,7 @@ To read barcodes:
 
 - If a barcode type cannot hold your text, the window stays open so you can change the text or type.
 - EAN-13 takes up to 13 digits; a shorter number gets leading zeros.
-- A link in a barcode that is read is shown, and opened only when you choose its **Open the link** button.
+- A link in a barcode that is read is shown, and opened only when you choose the link button on its row.
 - A placed barcode can be moved, resized or deleted like an image. Undo with **Ctrl+Z**.
 
 <!--

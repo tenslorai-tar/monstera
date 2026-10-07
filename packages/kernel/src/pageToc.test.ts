@@ -188,6 +188,35 @@ describe('generateToc', () => {
     ]);
   });
 
+  it('writes the ROWS THE PERSON REVIEWED, in their order and nested as they set, in place of the outline read (ADR-0197)', async () => {
+    // A renamed row, a reordered pair, one outdented, one added by hand, and one deleted (the outline's `Elsewhere on the web`
+    // is not among them). The outline read is handed in too and must NOT be what is written: a table that ignored the rows
+    // writes the outline's five titles.
+    const reviewed: OutlineEntry[] = [
+      { title: 'Chapter two, renamed', page: 6, depth: 0 },
+      { title: 'Chapter one', page: 2, depth: 0 },
+      { title: 'Added by hand', page: 4, depth: 1 },
+    ];
+    const built = await applyGenerateToc(await blankDocument(), { ...AT_FRONT, entries: reviewed }, OUTLINE);
+    // NUMBERED AS THEY WILL BE (one table page at the front): 6→8, 2→4, 4→6.
+    expect(await shownOn(built, 0)).toStrictEqual(['Chapter two, renamed', '8', 'Chapter one', '4', 'Added by hand', '6']);
+  });
+
+  it('CONTROL: the same command with no rows writes the outline it was handed — the reviewed case is what changed the table', async () => {
+    const built = await applyGenerateToc(await blankDocument(), AT_FRONT, OUTLINE);
+    expect((await shownOn(built, 0)).includes('Chapter two, renamed')).toBe(false);
+    expect((await shownOn(built, 0)).includes('Front matter')).toBe(true);
+  });
+
+  it('writes reviewed rows for a document whose OUTLINE is empty — a document with no bookmarks is not refused', async () => {
+    const built = await applyGenerateToc(
+      await blankDocument(),
+      { ...AT_FRONT, entries: [{ title: 'Only entry', page: 1, depth: 0 }] },
+      [],
+    );
+    expect(await shownOn(built, 0)).toStrictEqual(['Only entry', '3']);
+  });
+
   it('shifts only the entries at or after the insertion point', async () => {
     // Inserted at 3: pages 0 and 2 keep their numbers (1 and 3), pages 3 and 6
     // gain one (5 and 8). A table that shifted everything writes 2 and 4 for

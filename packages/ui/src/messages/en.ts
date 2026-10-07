@@ -736,8 +736,27 @@ export const MARKDOWN_IMPORT_IMAGES_TOO_LARGE = messageKey(
   'dialog.markdown-import-problem.images-too-large',
 );
 export const GENERATE_TOC_COMMAND_TITLE = messageKey('command.generate-toc.title');
-export const GENERATE_TOC_PROBLEM_TITLE = messageKey('dialog.generate-toc-problem.title');
-export const GENERATE_TOC_NO_OUTLINE = messageKey('dialog.generate-toc-problem.no-outline');
+export const GENERATE_TOC_TITLE = messageKey('dialog.generate-toc.title');
+export const GENERATE_TOC_INTRO = messageKey('dialog.generate-toc.intro');
+export const GENERATE_TOC_TOO_LONG = messageKey('dialog.generate-toc.too-long');
+export const GENERATE_TOC_PROBLEM_TITLE_LONG = messageKey('dialog.generate-toc.problem-title-long');
+export const GENERATE_TOC_LIST = messageKey('dialog.generate-toc.list');
+export const GENERATE_TOC_EMPTY = messageKey('dialog.generate-toc.empty');
+export const GENERATE_TOC_TITLE_FIELD = messageKey('dialog.generate-toc.title-field');
+export const GENERATE_TOC_PAGE = messageKey('dialog.generate-toc.page');
+export const GENERATE_TOC_OUTDENT = messageKey('dialog.generate-toc.outdent');
+export const GENERATE_TOC_INDENT = messageKey('dialog.generate-toc.indent');
+export const GENERATE_TOC_MOVE_UP = messageKey('dialog.generate-toc.move-up');
+export const GENERATE_TOC_MOVE_DOWN = messageKey('dialog.generate-toc.move-down');
+export const GENERATE_TOC_DELETE = messageKey('dialog.generate-toc.delete');
+export const GENERATE_TOC_ADD = messageKey('dialog.generate-toc.add');
+export const GENERATE_TOC_ADD_TITLE = messageKey('dialog.generate-toc.add-title');
+export const GENERATE_TOC_ADD_PAGE = messageKey('dialog.generate-toc.add-page');
+export const GENERATE_TOC_APPLY = messageKey('dialog.generate-toc.apply');
+export const GENERATE_TOC_PROBLEM_TITLE_EMPTY = messageKey('dialog.generate-toc.problem-title-empty');
+export const GENERATE_TOC_PROBLEM_PAGE = messageKey('dialog.generate-toc.problem-page');
+export const GENERATE_TOC_PROBLEM_NO_ROWS = messageKey('dialog.generate-toc.problem-no-rows');
+export const TOAST_TOC_STALE = messageKey('toast.toc-stale');
 export const DUPLICATE_PAGES_TITLE = messageKey('dialog.duplicate-pages.title');
 export const DUPLICATE_PAGES_COMPARED = messageKey('dialog.duplicate-pages.compared');
 export const DUPLICATE_PAGES_NONE = messageKey('dialog.duplicate-pages.none');
@@ -5162,13 +5181,29 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'The pictures you chose come to more than {megabytes} MB together, which is the most one ' +
     'import takes. Nothing was imported.',
   [GENERATE_TOC_COMMAND_TITLE]: 'Table of contents',
-  [GENERATE_TOC_PROBLEM_TITLE]: 'There is nothing to tabulate',
-  // NAMES WHAT IS MISSING AND WHERE IT COMES FROM. "No bookmarks" alone reads
-  // as a failure of the app; a person who has never met the word needs to know
-  // it is something the document either carries or does not.
-  [GENERATE_TOC_NO_OUTLINE]:
-    'This document has no bookmarks, so there are no headings to build a table of contents ' +
-    'from. Your document has not changed.',
+  [GENERATE_TOC_TITLE]: 'Table of contents',
+  [GENERATE_TOC_INTRO]:
+    'These are the entries the contents page will list, taken from the document’s bookmarks. Change them as you like, then choose Insert. One Undo takes the page away.',
+  [GENERATE_TOC_TOO_LONG]:
+    'This document has {limit, plural, other {more than # bookmarks}}, or a bookmark longer than {characters, plural, other {# characters}}, which is more than can be edited here. Choose Insert to list its bookmarks as they are.',
+  [GENERATE_TOC_PROBLEM_TITLE_LONG]: 'Entry {number}: shorten the title to {limit, plural, other {# characters}} or fewer.',
+  [GENERATE_TOC_LIST]: 'Contents entries',
+  [GENERATE_TOC_EMPTY]: 'This document has no bookmarks, so there are no entries yet. Add them below.',
+  [GENERATE_TOC_TITLE_FIELD]: 'Title',
+  [GENERATE_TOC_PAGE]: 'Page',
+  [GENERATE_TOC_OUTDENT]: 'Move entry {number} out a level',
+  [GENERATE_TOC_INDENT]: 'Move entry {number} in a level',
+  [GENERATE_TOC_MOVE_UP]: 'Move entry {number} up',
+  [GENERATE_TOC_MOVE_DOWN]: 'Move entry {number} down',
+  [GENERATE_TOC_DELETE]: 'Delete entry {number}',
+  [GENERATE_TOC_ADD]: 'Add entry',
+  [GENERATE_TOC_ADD_TITLE]: 'Title of the new entry',
+  [GENERATE_TOC_ADD_PAGE]: 'Page of the new entry',
+  [GENERATE_TOC_APPLY]: 'Insert',
+  [GENERATE_TOC_PROBLEM_TITLE_EMPTY]: 'Entry {number} has no title. Type one, or delete the entry.',
+  [GENERATE_TOC_PROBLEM_PAGE]: 'Entry {number}: type a page from 1 to {last}, or leave the page empty.',
+  [GENERATE_TOC_PROBLEM_NO_ROWS]: 'There are no entries. Add one, or choose Cancel.',
+  [TOAST_TOC_STALE]: 'The document changed while the contents were open, so the page was not inserted. Choose Table of contents again.',
   [DOCUMENT_TOOLS_LABEL]: 'Float bar',
   [RIBBON_RAIL_LABEL]: 'Sections',
   // THE WORD THE RIBBON AND THE MENU ROW USE for what they fold, so the three folds read alike.

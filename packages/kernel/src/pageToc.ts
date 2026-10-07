@@ -174,11 +174,14 @@ export function shownPageNumber(page: number, at: number, inserted: number): num
 export const applyGenerateToc: Apply<'pdf-lib', 'generateToc', 'none', 'outline'> = async (
   image: ByteImage,
   command: CommandOfKind<'generateToc'>,
-  outline: readonly OutlineEntry[],
+  readOutline: readonly OutlineEntry[],
 ): Promise<ByteImage> => {
+  // THE PERSON'S REVIEWED ROWS WHEN THE COMMAND CARRIES THEM (ADR-0197), the document's own outline otherwise. The outline
+  // is still read by the bus for a command that declares it, and is simply not the source when rows were handed in.
+  const outline: readonly OutlineEntry[] = command.entries ?? readOutline;
   if (outline.length === 0) {
     throw new Error(
-      'generateToc was given an empty outline, so there is nothing to tabulate. The renderer ' +
+      'generateToc was given an empty outline and no reviewed rows, so there is nothing to tabulate. The renderer ' +
         'reads document.destinations before offering this command, so reaching here means the ' +
         'outline was emptied between that read and this apply.',
     );

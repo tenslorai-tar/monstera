@@ -28,7 +28,7 @@ import { FLAT_FIELDS_DIALOG } from '../dialogs/flatFields.js';
 import { FLATTEN_FORM_DIALOG } from '../dialogs/flattenForm.js';
 import { FOLLOW_LINK_DIALOG } from '../dialogs/followLink.js';
 import { FORM_FIELD_DIALOGS } from '../dialogs/formField.js';
-import { GENERATE_TOC_PROBLEM_DIALOG } from '../dialogs/generateTocProblem.js';
+import { GENERATE_TOC_DIALOG } from '../dialogs/generateToc.js';
 import { HEADER_FOOTER_DIALOG } from '../dialogs/headerFooter.js';
 import { HELP_DIALOG } from '../dialogs/help.js';
 import { HISTORY_TRIMMED_DIALOG } from '../dialogs/historyTrimmed.js';
@@ -152,7 +152,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   OPEN_PROBLEM_DIALOG,
   READ_ONLY_FILE_DIALOG,
   CAMERA_CAPTURE_DIALOG,
-  GENERATE_TOC_PROBLEM_DIALOG,
+  GENERATE_TOC_DIALOG,
   MERGE_DOCUMENT_DIALOG,
   INSERT_FROM_PDF_DIALOG,
   REPLACE_PAGE_DIALOG,

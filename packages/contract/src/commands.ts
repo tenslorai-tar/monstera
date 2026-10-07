@@ -791,8 +791,38 @@ export const insertImagePageSchema = z.object({
  * such question. The heading arrives with this command's first dialog, which is
  * where a component can resolve a message and the user can overrule it.
  */
+/**
+ * The most rows one reviewed contents page carries ([ADR-0197](../../../docs/DECISIONS/0197-a-contents-page-is-written-from-the-list-the-person-reviewed.md)),
+ * and the longest a row's title is: what a writer's channel frame holds at the worst (`hostRoutes.test.ts` reads it from
+ * this schema, not from a figure written here). A contents page prints a title on one line, which fits about eighty
+ * characters of a page's width, so the bound loses nothing a page could show. **An outline past either bound is NOT
+ * refused**: the review says it cannot be edited here and Insert writes the document's own outline as it stands, which is
+ * the command without `entries`.
+ */
+export const MAX_TOC_ENTRIES = 300;
+export const MAX_TOC_TITLE_CHARACTERS = 100;
+
+/** The deepest a row nests: a depth no outline reaches. */
+const TOC_DEPTH_MAX = 16;
+const TOC_TITLE_MAX = MAX_TOC_TITLE_CHARACTERS;
+
+/** One row of a reviewed contents page: `outlineEntrySchema`'s shape, with the depth bounded. */
+export const tocEntrySchema = z
+  .object({
+    title: z.string().max(TOC_TITLE_MAX),
+    /** Zero-based in the document as it stands, or `null` for a row that points nowhere (kept, as an outline's is). */
+    page: z.number().int().nonnegative().nullable(),
+    depth: z.number().int().nonnegative().max(TOC_DEPTH_MAX),
+  })
+  .strict();
+
 export const generateTocSchema = z.object({
   kind: z.literal('generateToc'),
+  /**
+   * The rows the person reviewed, in the order given (ADR-0197). Absent, the table is the document's own outline,
+   * read in the lane at apply time; present, these are its rows and the outline read is not consulted for them.
+   */
+  entries: z.array(tocEntrySchema).min(1).max(MAX_TOC_ENTRIES).optional(),
   /**
    * Zero-based index the first generated page occupies afterwards.
    *

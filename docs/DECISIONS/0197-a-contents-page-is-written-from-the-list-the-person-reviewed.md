@@ -19,9 +19,14 @@ entry added by hand have no source in the document to be re-read, so they have t
 ## Decisions
 
 1. **`generateToc` may carry `entries`** — title, page and depth, the shape `outlineEntrySchema` already says — bounded at
-   `MAX_TOC_ENTRIES`, 4,096, the whole-outline bound the outline read had until 2026-10-01. Absent, the command is exactly
-   what it was, and the outline read is its source. Present, they are the table's rows **in the order given**, and the
-   outline read is not consulted for them: the apply uses `command.entries ?? outline`.
+   `MAX_TOC_ENTRIES` (300) rows of at most `MAX_TOC_TITLE_CHARACTERS` (100) characters, **which is what the writer's channel
+   frame holds at its worst** (`hostRoutes.test.ts` reads it from the schema; 4,096 rows of 512 were first written and
+   failed that proof, as the pre-read's 3,600-bookmark outline had failed the frame before). A contents page prints a title
+   on one line, which fits about eighty characters, so the title bound loses nothing a page could show. Absent, the command
+   is exactly what it was, and the outline read is its source. Present, they are the table's rows **in the order given**,
+   and the outline read is not consulted for them: the apply uses `command.entries ?? outline`.
+   **An outline past either bound is not refused.** The review says it is more than can be edited here, lists nothing, and
+   *Insert* answers no rows, so the page is written from the bookmarks as they are — a long manual still gets its contents.
 2. **Pages are zero-based in the document as it stands**, as the outline's are, so `shownPageNumber`'s shift for the pages the
    table itself inserts is unchanged and applies to a typed row exactly as to a read one. The renderer converts the number a
    person types once, through `pageNumbering.ts`.

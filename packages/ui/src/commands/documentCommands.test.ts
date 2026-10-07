@@ -36,6 +36,7 @@ import {
   TOAST_SMALLER_COPY_SAVED,
   TOAST_SNAPSHOT_SAVED,
   TOAST_TEXT_SAVED,
+  TOAST_TOC_STALE,
   TOAST_TRANSITION_SET,
   TOAST_WORD_SAVED,
   RIBBON_EDIT_OBJECT,
@@ -4148,54 +4149,122 @@ describe('generate table of contents', () => {
 
   const ONE_ENTRY = [{ title: 'Chapter one', page: 2, depth: 0 }];
 
-  it('reads the outline, then dispatches generateToc at the FRONT', async () => {
-    const { client, sent } = recording(ONE_ENTRY);
+  /** An `ask` that records each open and answers it with `answer`, so the review can be driven as a person drives it. */
+  function answering(shown: { id: string; props: unknown }[], answer: unknown): (id: string, props: unknown) => Promise<unknown> {
+    return (id, props) => {
+      shown.push({ id, props });
+      return Promise.resolve(answer);
+    };
+  }
+  const said: string[] = [];
+  const toast = (_kind: string, message: string): void => {
+    said.push(message);
+  };
+
+  it('opens the review on the outline, and Insert sends the rows as the person LEFT them — at the FRONT (ADR-0197)', async () => {
+    const { client, sent } = recording([...ONE_ENTRY, { title: 'Elsewhere', page: null, depth: 1 }]);
     const record = recorder();
+    // RENAMED, one more level in, and one added by hand: a command that sent the outline sends other rows.
+    const left = [
+      { title: 'Chapter one, renamed', page: 2, depth: 1 },
+      { title: 'Added by hand', page: 4, depth: 0 },
+    ];
 
     await generateTocCommand({
       client,
       stamp,
       signatures,
+      toast,
       onApplied: record.onApplied,
-      ask: record.ask,
+      ask: answering(record.shown, { entries: left }),
     }).run(CONTEXT);
 
-    // BOTH CALLS AND THEIR ORDER. The read has to precede the dispatch, because
-    // its whole job is to decide whether there is one — and `at: 0` rather than
-    // `CONTEXT.page + 1`, which is what every other insert here sends and would
-    // put a table of contents in the middle of the document.
-    expect(sent).toStrictEqual([
-      { id: 'document.destinations', params: { docId: DOC, from: 0 } },
-      { id: 'document.execute', params: { docId: DOC, command: { kind: 'generateToc', at: 0 } } },
+    // THE REVIEW WAS GIVEN THE OUTLINE, with the document's page count, and nothing was written until it answered. The
+    // outline is read again after it (the version check), and `at: 0` rather than the page on show: a table of contents
+    // in the middle of a document is not a placement anybody chose.
+    expect(record.shown).toStrictEqual([
+      {
+        id: 'dialog.generate-toc',
+        props: {
+          entries: [
+            { title: 'Chapter one', page: 2, depth: 0 },
+            { title: 'Elsewhere', page: null, depth: 1 },
+          ],
+          pageCount: CONTEXT.pageCount ?? 1,
+          tooLong: false,
+        },
+      },
     ]);
-    expect(record.applied).toStrictEqual([
-      { version: 2, byteLength: 8192, historyDropped: 0 },
-    ]);
-    expect(record.shown).toStrictEqual([]);
+    expect(sent.map((call) => call.id)).toStrictEqual(['document.destinations', 'document.destinations', 'document.execute']);
+    expect(sent[2]?.params).toStrictEqual({ docId: DOC, command: { kind: 'generateToc', at: 0, entries: left } });
+    expect(record.applied).toStrictEqual([{ version: 2, byteLength: 8192, historyDropped: 0 }]);
   });
 
-  it('CONTROL: an EMPTY outline is refused in the renderer, and nothing is sent', async () => {
-    // The separating case. A command that dispatched regardless would produce a
-    // blank page and pass every assertion in the case above, so what is asserted
-    // here is the call that was NOT made.
-    const { client, sent } = recording([]);
+  it('CANCEL writes nothing — the call NOT made is the write', async () => {
+    const { client, sent } = recording(ONE_ENTRY);
     const record = recorder();
+    await generateTocCommand({ client, stamp, signatures, toast, onApplied: record.onApplied, ask: answering(record.shown, undefined) }).run(CONTEXT);
+    expect(sent.map((call) => call.id)).toStrictEqual(['document.destinations']);
+    expect(record.applied).toStrictEqual([]);
+  });
 
+  it('a document with NO BOOKMARKS opens the review empty rather than being refused', async () => {
+    const { client } = recording([]);
+    const record = recorder();
+    await generateTocCommand({ client, stamp, signatures, toast, onApplied: record.onApplied, ask: answering(record.shown, undefined) }).run(CONTEXT);
+    expect(record.shown).toStrictEqual([
+      { id: 'dialog.generate-toc', props: { entries: [], pageCount: CONTEXT.pageCount ?? 1, tooLong: false } },
+    ]);
+  });
+
+  it('an outline TOO LONG TO REVIEW is not refused: the dialog says so, and Insert writes the bookmarks as they are — no rows sent', async () => {
+    // 301 bookmarks, one past `MAX_TOC_ENTRIES`: the control is the 300 above, which are reviewed.
+    const many = Array.from({ length: 301 }, (_, at) => ({ title: `Heading ${String(at)}`, page: at % 8, depth: 0 }));
+    const { client, sent } = recording(many);
+    const record = recorder();
+    await generateTocCommand({ client, stamp, signatures, toast, onApplied: record.onApplied, ask: answering(record.shown, {}) }).run(CONTEXT);
+    expect(record.shown[0]?.props).toStrictEqual({ entries: [], pageCount: CONTEXT.pageCount ?? 1, tooLong: true });
+    // THE WRITE CARRIES NO `entries`: main reads the outline in the lane, as it always did.
+    expect(sent.at(-1)).toStrictEqual({ id: 'document.execute', params: { docId: DOC, command: { kind: 'generateToc', at: 0 } } });
+  });
+
+  it('CONTROL: exactly 300 bookmarks, each of 100 characters, ARE reviewed', async () => {
+    const edge = Array.from({ length: 300 }, (_, at) => ({ title: 'x'.repeat(100), page: at % 8, depth: 0 }));
+    const { client } = recording(edge);
+    const record = recorder();
+    await generateTocCommand({ client, stamp, signatures, toast, onApplied: record.onApplied, ask: answering(record.shown, undefined) }).run(CONTEXT);
+    expect((record.shown[0]?.props as { tooLong: boolean }).tooLong).toBe(false);
+    // AND A TITLE ONE CHARACTER LONGER makes the whole outline too long, since a row it cannot carry would otherwise be cut.
+    const longTitle = recording([{ title: 'y'.repeat(101), page: 0, depth: 0 }]);
+    const again = recorder();
+    await generateTocCommand({ client: longTitle.client, stamp, signatures, toast, onApplied: again.onApplied, ask: answering(again.shown, undefined) }).run(CONTEXT);
+    expect((again.shown[0]?.props as { tooLong: boolean }).tooLong).toBe(true);
+  });
+
+  it('a document that CHANGED while the review was open is not written to, and the person is told', async () => {
+    // THE SECOND READ ANSWERS ANOTHER VERSION: the first read's rows are against a document that is no longer this one.
+    let reads = 0;
+    const sent: string[] = [];
+    const client = createClient(channels, (id) => {
+      sent.push(id);
+      if (id === 'document.destinations') {
+        reads += 1;
+        return Promise.resolve(ok({ version: asDocVersion(reads), destinations: ONE_ENTRY, next: null, truncated: false }));
+      }
+      return Promise.resolve(ok({ version: asDocVersion(9), byteLength: 1, historyDropped: 0 }));
+    });
+    const record = recorder();
+    said.length = 0;
     await generateTocCommand({
       client,
       stamp,
       signatures,
+      toast,
       onApplied: record.onApplied,
-      ask: record.ask,
+      ask: answering(record.shown, { entries: ONE_ENTRY }),
     }).run(CONTEXT);
-
-    expect(sent).toStrictEqual([{ id: 'document.destinations', params: { docId: DOC, from: 0 } }]);
-    // AND THE USER WAS TOLD. Returning quietly is the display-only failure —
-    // a control that ran and appeared to do nothing.
-    expect(record.shown).toStrictEqual([
-      { id: 'dialog.generate-toc-problem', props: { reason: 'no-outline' } },
-    ]);
-    expect(record.applied).toStrictEqual([]);
+    expect(sent).not.toContain('document.execute');
+    expect(said).toStrictEqual([TOAST_TOC_STALE]);
   });
 
   it('reports a refused outline read rather than swallowing it', async () => {
@@ -4205,13 +4274,12 @@ describe('generate table of contents', () => {
       client: clientFailing('document-busy'),
       stamp,
       signatures,
+      toast,
       onApplied: record.onApplied,
       ask: record.ask,
     }).run(CONTEXT);
 
-    // THE COMMAND-PROBLEM DIALOG, not this command's own: the channel refused,
-    // which is a failure code, where an empty outline is a fact about the
-    // document. `generateTocProblem.ts` states that distinction.
+    // THE COMMAND-PROBLEM DIALOG: the channel refused, which is a failure code.
     expect(record.shown).toStrictEqual([
       { id: 'dialog.command-problem', props: { code: 'document-busy' } },
     ]);
@@ -4226,6 +4294,7 @@ describe('generate table of contents', () => {
       client,
       stamp,
       signatures,
+      toast,
       onApplied: record.onApplied,
       ask: record.ask,
     }).run(NO_DOCUMENT);

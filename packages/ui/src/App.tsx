@@ -3092,7 +3092,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         emailCommand({ client, onApplied: applied, ask, stamp, signatures, settleMarks }),
         exportPdfaCommand(exportDeps),
         optimizeCommand({ client, onApplied: applied, ask, stamp, signatures, track, toast, settleMarks }),
-        generateTocCommand({ client, onApplied: applied, ask, stamp, signatures }),
+        generateTocCommand({ client, onApplied: applied, ask, stamp, signatures, toast }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask, stamp, signatures }),
         undoCommand({ client, onApplied: applied, ask, stamp, signatures }),
         redoCommand({ client, onApplied: applied, ask, stamp, signatures }),

@@ -14,6 +14,9 @@ import {
   type RenderableCommand,
   type RequestedSignatureMark,
   type SignaturePlacement,
+  MAX_TOC_ENTRIES,
+  MAX_TOC_TITLE_CHARACTERS,
+  type OutlineEntry,
   blockEditOf,
   pageSetOf,
   withPageRuns,
@@ -53,7 +56,7 @@ import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
 import { DUPLICATE_PAGES_DIALOG_ID } from '../dialogs/duplicatePages.js';
-import { GENERATE_TOC_PROBLEM_DIALOG_ID } from '../dialogs/generateTocProblem.js';
+import { GENERATE_TOC_DIALOG_ID, GENERATE_TOC_RESULT } from '../dialogs/generateToc.js';
 import { HEADER_FOOTER_DIALOG_ID } from '../dialogs/headerFooter.js';
 import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
@@ -246,6 +249,7 @@ import {
   OPEN_SIDE_BY_SIDE_TITLE,
   CLOSE_TAB_TITLE,
   TOAST_COPY_SAVED,
+  TOAST_TOC_STALE,
   TOAST_EXCEL_SAVED,
   TOAST_FILES_SAVED,
   TOAST_FORM_DATA_SAVED,
@@ -1828,19 +1832,13 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
 /**
  * Builds a table of contents from the document's bookmarks, at the front.
  *
- * ## IT READS THE OUTLINE FIRST, and that read is the refusal
+ * ## IT SHOWS THE ENTRIES FIRST, and what the person leaves is what is written
  *
- * A document with no bookmarks has no table of contents, and generating a blank
- * page for it is a control that appears to work — the wired-tools rule's own
- * failure. So this asks `document.destinations` before dispatching and opens
- * {@link GENERATE_TOC_PROBLEM_DIALOG_ID} when the answer is empty.
- *
- * **The entries themselves are not sent.** The command carries one index; main
- * re-reads the outline inside the document's lane at apply time (ADR-0040's
- * 2026-09-05 extension). This read decides whether to *offer* the operation,
- * and the one it decides against is a state, not a version — so nothing here
- * depends on the copy still being current. The narrow window where the outline
- * is emptied in between is closed on the other side, by a throw.
+ * The outline is read (every part, to a contents page's bound) and opened in a dialog where each entry can be renamed,
+ * moved, nested, deleted and added to; *Insert* sends the rows as they were left, in ONE `generateToc` (ADR-0197). A
+ * document with no bookmarks opens the review empty rather than being refused — a document is never refused for lacking
+ * them. The rows' pages are against the version they were read at, and a write is refused if the document's version is
+ * another by then.
  *
  * ## At the FRONT, and that is where it goes until a dialog says otherwise
  *
@@ -1850,7 +1848,7 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
  * here: a table of contents in the middle of a document is not a placement
  * anybody chose.
  */
-export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
+export function generateTocCommand(deps: DocumentCommandDeps & { readonly toast: ShowToast }): UiCommand {
   return {
     id: 'document.generate-toc',
     feedback: VISIBLE,
@@ -1864,19 +1862,61 @@ export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
 
-      // THE FIRST PART ONLY, and that is the whole question: whether the outline has any entry. The command reads the
-      // outline itself in `main` (the pre-read), so nothing here is built from a part.
-      const outline = await deps.client['document.destinations']({ docId: context.docId, from: 0 });
-      if (!outline.ok) {
-        reportProblem(deps, outline.error);
+      const { docId } = context;
+      // THE OUTLINE, every part of it up to a contents page's bound: these are the entries the person reviews (ADR-0197),
+      // and the version they were read at is what the write is checked against.
+      const entries: OutlineEntry[] = [];
+      let version: DocVersion | undefined;
+      let tooLong = false;
+      let from: number | null = 0;
+      while (from !== null && !tooLong) {
+        const part = await deps.client['document.destinations']({ docId, from });
+        if (!part.ok) {
+          reportProblem(deps, part.error);
+          return;
+        }
+        version = part.value.version;
+        entries.push(...part.value.destinations);
+        // PAST WHAT A WRITER'S CHANNEL CARRIES (`MAX_TOC_ENTRIES`, `MAX_TOC_TITLE_CHARACTERS`): not refused, and not read any
+        // further. The review says so and Insert writes the document's own bookmarks as they are.
+        tooLong =
+          entries.length > MAX_TOC_ENTRIES ||
+          part.value.truncated ||
+          entries.some((entry) => entry.title.length > MAX_TOC_TITLE_CHARACTERS);
+        from = part.value.next;
+      }
+      if (version === undefined) return;
+
+      // A DOCUMENT WITH NO BOOKMARKS IS NOT REFUSED: the review opens with no rows and the person adds their own.
+      const answer = GENERATE_TOC_RESULT.safeParse(
+        await deps.ask(GENERATE_TOC_DIALOG_ID, {
+          entries: tooLong ? [] : entries,
+          pageCount: context.pageCount ?? 1,
+          tooLong,
+        }),
+      );
+      if (!answer.success) return;
+
+      // THE DOCUMENT AS IT STANDS NOW, read again: the rows' page numbers are against `version`, and a page moved or deleted
+      // since would make a typed number wrong while it looked right. The dialog is modal, so this is the guard for what
+      // should not happen rather than a case that does (ADR-0197 Decision 3).
+      const now = await deps.client['document.destinations']({ docId, from: 0 });
+      if (!now.ok) {
+        reportProblem(deps, now.error);
         return;
       }
-      if (outline.value.destinations.length === 0) {
-        void deps.ask(GENERATE_TOC_PROBLEM_DIALOG_ID, { reason: 'no-outline' as const });
+      if (now.value.version !== version) {
+        deps.toast('problem', TOAST_TOC_STALE);
         return;
       }
 
-      await applyDocumentCommand(deps, context.docId, { kind: 'generateToc', at: 0 });
+      // NO ROWS ANSWERED is the document's own outline as it stands, which the bus reads in the lane; rows answered are
+      // the person's, written in place of it.
+      await applyDocumentCommand(deps, docId, {
+        kind: 'generateToc',
+        at: 0,
+        ...(answer.data.entries === undefined ? {} : { entries: answer.data.entries }),
+      });
     },
   };
 }
