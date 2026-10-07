@@ -335,7 +335,7 @@ describe('PropertiesPanel with marks selected', () => {
     ...SQUARE,
     index: 5,
     kind: 'text-box' as const,
-    typed: { fontSize: 12, colour: [0, 0, 0] as [number, number, number], font: 'sans' as const, direction: 'ltr' as const },
+    typed: { fontSize: 12, colour: [0, 0, 0] as [number, number, number], font: 'sans' as const, direction: 'left-to-right' as const },
   };
 
   it('a TEXT BOX shows a Text section, and each control sends ONE property of its words', () => {
