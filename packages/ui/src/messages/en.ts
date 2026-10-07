@@ -1168,6 +1168,11 @@ export const FLAT_FIELDS_NONE = messageKey('dialog.flat-fields.none');
 export const FLAT_FIELDS_TRUNCATED = messageKey('dialog.flat-fields.truncated');
 export const FLAT_FIELDS_ALL_TEXT = messageKey('dialog.flat-fields.all-text');
 export const FLAT_FIELDS_ACCEPT = messageKey('dialog.flat-fields.accept');
+export const FLAT_FIELDS_FOUND = messageKey('dialog.flat-fields.found');
+export const FLAT_FIELDS_ALREADY = messageKey('dialog.flat-fields.already');
+export const FLAT_FIELDS_NONE_NEW = messageKey('dialog.flat-fields.none-new');
+export const FLAT_FIELDS_KIND_TEXT = messageKey('dialog.flat-fields.kind-text');
+export const FLAT_FIELDS_KIND_TICK = messageKey('dialog.flat-fields.kind-tick');
 export const EDIT_TEXT_COMMAND_TITLE = messageKey('command.text.edit');
 export const TEXT_EDIT_LAYER_LABEL = messageKey('surface.text-edit.layer');
 export const TEXT_EDIT_BLOCK_LABEL = messageKey('surface.text-edit.block');
@@ -3484,8 +3489,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLAT_FIELDS_NONE]: 'Nothing on this page looks like a place to write.',
   [FLAT_FIELDS_TRUNCATED]: 'There were more than Monstera lists here, so this page may have others.',
   [FLAT_FIELDS_ALL_TEXT]:
-    'These are all created as text fields. Use the Forms tools to draw a tick box, a dropdown or a list.',
+    'A line or a wide box becomes a text field and a small square becomes a tick box. Use the Forms tools to draw a dropdown, a list or a radio button.',
   [FLAT_FIELDS_ACCEPT]: '{count, plural, one {Create # field} other {Create # fields}}',
+  [FLAT_FIELDS_FOUND]:
+    '{count, plural, =0 {Found no new places for a field.} one {Found # place for a field.} other {Found # places for fields.}}',
+  [FLAT_FIELDS_ALREADY]:
+    '{count, plural, one {# place already has a field and was left out.} other {# places already have a field and were left out.}}',
+  [FLAT_FIELDS_NONE_NEW]: 'Every place on this page that looks like a field already has one.',
+  [FLAT_FIELDS_KIND_TEXT]: 'Text field',
+  [FLAT_FIELDS_KIND_TICK]: 'Tick box',
   [EDIT_TEXT_COMMAND_TITLE]: 'Edit text on the page',
   [TEXT_EDIT_LAYER_LABEL]: 'Editable text on page {page}',
   // THE BLOCK'S OWN FIRST WORDS name it, so a person moving through the page

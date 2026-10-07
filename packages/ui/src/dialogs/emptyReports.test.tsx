@@ -34,7 +34,7 @@ const EMPTY: readonly { readonly dialog: string; readonly body: ReactElement }[]
   },
   {
     dialog: 'Fields this page could have',
-    body: <FlatFieldsBody candidates={[]} resolve={vi.fn()} truncated={false} update={vi.fn()} />,
+    body: <FlatFieldsBody alreadyFields={0} candidates={[]} resolve={vi.fn()} truncated={false} update={vi.fn()} />,
   },
 ];
 

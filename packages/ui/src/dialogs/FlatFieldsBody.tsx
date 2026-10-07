@@ -4,8 +4,13 @@ import { type ReactElement, useState } from 'react';
 import {
   FLAT_FIELDS_ACCEPT,
   FLAT_FIELDS_ALL_TEXT,
+  FLAT_FIELDS_ALREADY,
+  FLAT_FIELDS_FOUND,
   FLAT_FIELDS_GUESSED,
+  FLAT_FIELDS_KIND_TEXT,
+  FLAT_FIELDS_KIND_TICK,
   FLAT_FIELDS_NONE,
+  FLAT_FIELDS_NONE_NEW,
   FLAT_FIELDS_TRUNCATED,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
@@ -37,10 +42,12 @@ import type { FlatFieldsAnswer } from './flatFieldsResult.js';
 export default function FlatFieldsBody({
   candidates,
   truncated,
+  alreadyFields,
   resolve,
 }: {
-  readonly candidates: readonly { readonly name: string; readonly label: string }[];
+  readonly candidates: readonly { readonly name: string; readonly label: string; readonly kind: 'text' | 'checkbox' }[];
   readonly truncated: boolean;
+  readonly alreadyFields: number;
 } & DialogAnswering<FlatFieldsAnswer>): ReactElement {
   const { _ } = useLingui();
   const [rejected, setRejected] = useState<readonly string[]>([]);
@@ -51,12 +58,18 @@ export default function FlatFieldsBody({
   return (
     <div className="m-flat-fields">
       <p className="m-flat-fields__guessed">{_(FLAT_FIELDS_GUESSED)}</p>
+      {/* THE COUNT FIRST, so the window says what it found before it lists it: a window that opens on a list says nothing
+          about a page where the list is short because the form already has its fields. */}
+      <p className="m-flat-fields__found">{_(FLAT_FIELDS_FOUND, { count: candidates.length })}</p>
+      {alreadyFields > 0 ? (
+        <p className="m-flat-fields__already">{_(FLAT_FIELDS_ALREADY, { count: alreadyFields })}</p>
+      ) : null}
       {/* A FACT ABOUT THE ANSWER, there from the moment the window opens: read with the rest of it, never a live region,
           which announces only what changes after it is drawn (the gallery read the role as a warning before any step). */}
       {truncated ? <p className="m-flat-fields__truncated">{_(FLAT_FIELDS_TRUNCATED)}</p> : null}
       {candidates.length === 0 ? (
         <>
-          <p className="m-flat-fields__none">{_(FLAT_FIELDS_NONE)}</p>
+          <p className="m-flat-fields__none">{_(alreadyFields > 0 ? FLAT_FIELDS_NONE_NEW : FLAT_FIELDS_NONE)}</p>
           {/* A FOOTER IN THIS STATE TOO: with none the dialog had no button at all, only the title bar's close, and
               sat outside the pattern's width (the gallery, 2026-10-03). Nothing found, so its one button is Close. */}
           <DialogFooter dismissal="close" />
@@ -84,6 +97,9 @@ export default function FlatFieldsBody({
                       confirming a proposal needs to see both. */}
                   <span className="m-flat-fields__caption">{candidate.label}</span>
                   <span className="m-flat-fields__name">{candidate.name}</span>
+                  <span className="m-flat-fields__kind">
+                    {_(candidate.kind === 'checkbox' ? FLAT_FIELDS_KIND_TICK : FLAT_FIELDS_KIND_TEXT)}
+                  </span>
                 </label>
               </li>
             ))}

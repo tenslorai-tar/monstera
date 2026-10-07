@@ -58,12 +58,14 @@ const MAX_LABEL = 128;
  * How far to either side a label may sit, in points.
  *
  * Wide enough for the gap between a label and the rule that follows it, narrow
- * enough that the next column's heading is not read as this box's label. Not
- * tuned — the measurement used this value and reported precision 1.00 on every
- * fixture but the timesheet, and tuning it against six synthetic pages would be
- * fitting a constant to the fixtures.
+ * enough that the next column's heading is not read as this box's label. 60 was the
+ * measurement's, from six synthetic pages, and it was too short for a real form: on
+ * the owner's form-test.pdf (read 2026-10-07 from its widgets' rectangles and its
+ * labels' boxes) a field starts 55 to 75 points after the end of its label, so a
+ * 60 reached some and missed the rest. 120 is twice the largest gap read there, and
+ * is still shorter than a column of the narrowest table the fixtures draw (140).
  */
-const LABEL_REACH = 60;
+const LABEL_REACH = 120;
 
 /** How far a label's line may sit off the box's middle before it is elsewhere. */
 const LABEL_SLACK = 6;
@@ -92,8 +94,10 @@ export interface FlatFieldCandidate {
   readonly rect: AnnotationRect;
   /** The text beside it, as a person reads it. Empty when there is none. */
   readonly label: string;
-  /** A field name derived from the label, unique within this page's answer. */
+  /** A field name derived from the label, unique within this page's answer AND among the fields the document has. */
   readonly name: string;
+  /** A small square with its word beside it is a tick box; a line or a wider box is a text field. */
+  readonly kind: 'text' | 'checkbox';
 }
 
 /** A box in the page's DISPLAY space, which is what the device reports. */
@@ -148,7 +152,10 @@ function draws(loaded: PDFPage): { readonly paths: Displayed[]; readonly text: D
       paths.push({ x0, y0, x1, y1 });
     },
   });
-  loaded.run(device, mupdf.Matrix.identity);
+  // THE PAGE'S OWN CONTENT ONLY. `run` also draws the page's annotations, and a field's widget is one: its border and its
+  // background are paths, so on a form that already had fields every one of them was proposed again, beside its own
+  // label (measured 2026-10-07 on the owner's form-test.pdf: 33 candidates over three pages, none of them a new place).
+  loaded.runPageContents(device, mupdf.Matrix.identity);
   device.close();
 
   const structured = JSON.parse(loaded.toStructuredText().asJSON()) as {
@@ -162,6 +169,43 @@ function draws(loaded: PDFPage): { readonly paths: Displayed[]; readonly text: D
     }
   }
   return { paths, text };
+}
+
+/** The area two boxes share. */
+function sharedArea(a: Displayed, b: Displayed): number {
+  const width = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+  const height = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+  return width > 0 && height > 0 ? width * height : 0;
+}
+
+function areaOf(box: Displayed): number {
+  return Math.max(0, box.x1 - box.x0) * Math.max(0, box.y1 - box.y0);
+}
+
+/**
+ * Whether two boxes are the same place: each covers most of the other.
+ *
+ * A path painted with a fill AND a stroke (a rectangle with a border and a background) reaches the device twice, once
+ * for each, with the same outline. Each arrival made a candidate, so one box was proposed twice and the second was
+ * named with a `_2` (reported 2026-10-07). A box that holds another is not the same place, so the test is mutual.
+ */
+function samePlace(a: Displayed, b: Displayed): boolean {
+  const shared = sharedArea(a, b);
+  const smaller = Math.min(areaOf(a), areaOf(b));
+  if (smaller === 0) {
+    // TWO HAIRLINES (a rule drawn twice): the same place when they lie on each other along their length.
+    const along = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+    const across = Math.abs((a.y0 + a.y1) / 2 - (b.y0 + b.y1) / 2);
+    return along > 0 && across < 1 && areaOf(a) === areaOf(b);
+  }
+  return shared / Math.max(areaOf(a), areaOf(b)) > 0.8;
+}
+
+/** Whether a box is the size of a tick box: small, and about as wide as it is high. */
+function tickSized(box: Displayed): boolean {
+  const width = box.x1 - box.x0;
+  const height = box.y1 - box.y0;
+  return width >= 6 && width <= 26 && height >= 6 && height <= 26 && width / height > 0.7 && width / height < 1.43;
 }
 
 /** Whether any line of text sits inside this box. */
@@ -268,23 +312,44 @@ function asRect(box: Displayed, transform: PageTransform): AnnotationRect {
 export function detectFlatFields(
   session: MupdfSession,
   page: number,
-): Promise<{ readonly candidates: readonly FlatFieldCandidate[]; readonly truncated: boolean }> {
+): Promise<{
+  readonly candidates: readonly FlatFieldCandidate[];
+  readonly truncated: boolean;
+  /** How many places that look like a field already are one, left out so none is made twice. */
+  readonly alreadyFields: number;
+}> {
   return withDocument(session, (document) => {
     const loaded = pageAt(document, page, document.countPages());
     const transform = frameOf(loaded);
     // A PAGE THAT DISPLAYS NO REGION has nowhere to put a field, which is the
     // annotation reader's own answer to the same question.
-    if (transform === null) return { candidates: [], truncated: false };
+    if (transform === null) return { candidates: [], truncated: false, alreadyFields: 0 };
 
     const { paths, text } = draws(loaded);
     const area =
       (transform.crop.x1 - transform.crop.x0) * (transform.crop.y1 - transform.crop.y0);
+
+    // WHAT THE DOCUMENT HAS ALREADY, on this page by place and on every page by name. A place that holds a field is not
+    // proposed again, and a name a field carries is not given to a new one, since a create refuses a collision.
+    const widgets: Displayed[] = [];
     const taken = new Set<string>();
+    for (let at = 0; at < document.countPages(); at += 1) {
+      for (const widget of document.loadPage(at).getWidgets()) {
+        taken.add(widget.getName());
+        if (at === page) {
+          const [x0, y0, x1, y1] = widget.getBounds();
+          widgets.push({ x0, y0, x1, y1 });
+        }
+      }
+    }
+
     const candidates: FlatFieldCandidate[] = [];
+    const kept: Displayed[] = [];
+    let alreadyFields = 0;
 
     for (const path of paths) {
       if (candidates.length >= MAX_FLAT_CANDIDATES) {
-        return { candidates, truncated: true };
+        return { candidates, truncated: true, alreadyFields };
       }
       if (holdsText(path, text)) continue;
       const label = labelBeside(path, text);
@@ -296,14 +361,24 @@ export function detectFlatFields(
       if (width < MINIMUM_EXTENT || height < MINIMUM_EXTENT) continue;
       if (area > 0 && (width * height) / area > MAXIMUM_COVERAGE) continue;
 
+      // THE SAME PLACE TWICE is one candidate (a fill and a stroke of one box), and a place a field holds is none.
+      if (kept.some((earlier) => samePlace(earlier, box))) continue;
+      if (widgets.some((widget) => sharedArea(widget, box) > 0.3 * Math.min(areaOf(widget), areaOf(box)))) {
+        kept.push(box);
+        alreadyFields += 1;
+        continue;
+      }
+      kept.push(box);
+
       const words = labelText(label, text, loaded);
       candidates.push({
         rect: asRect(box, transform),
         label: words,
         name: unique(nameFrom(words, candidates.length), taken),
+        kind: tickSized(box) ? 'checkbox' : 'text',
       });
     }
-    return { candidates, truncated: false };
+    return { candidates, truncated: false, alreadyFields };
   });
 }
 

@@ -1767,7 +1767,11 @@ export type DocumentFlatFieldsReader = (
   docId: DocId,
   sessions: DocumentSessions,
   page: number,
-) => Promise<{ readonly candidates: readonly FlatFieldCandidate[]; readonly truncated: boolean }>;
+) => Promise<{
+  readonly candidates: readonly FlatFieldCandidate[];
+  readonly truncated: boolean;
+  readonly alreadyFields: number;
+}>;
 
 /** How one page's barcodes are read: `DocumentFlatFieldsReader`'s shape, in the engine host. */
 export type DocumentBarcodesReader = (
@@ -1833,6 +1837,7 @@ export interface DocumentFlatFields {
   readonly version: DocVersion;
   readonly candidates: readonly FlatFieldCandidate[];
   readonly truncated: boolean;
+  readonly alreadyFields: number;
 }
 
 /**
@@ -3217,7 +3222,12 @@ export class DocumentCommands {
       return this.#flatFields(docId, sessions, page);
     });
 
-    return { version, candidates: value.candidates, truncated: value.truncated };
+    return {
+      version,
+      candidates: value.candidates,
+      truncated: value.truncated,
+      alreadyFields: value.alreadyFields,
+    };
   }
 
   /**

@@ -611,7 +611,10 @@ export interface BrowserShimOptions {
     readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
     readonly label: string;
     readonly name: string;
+    readonly kind?: 'text' | 'checkbox';
   }[];
+  /** How many places `document.flatFieldCandidates` says already hold a field. Absent is none. */
+  readonly flatFieldsAlready?: number;
   /**
    * The editable blocks `document.textBlocks` answers, on every page.
    *
@@ -2274,8 +2277,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          candidates: options.flatFieldCandidates ?? [],
+          candidates: (options.flatFieldCandidates ?? []).map((candidate) => ({ ...candidate, kind: candidate.kind ?? 'text' })),
           truncated: false,
+          alreadyFields: options.flatFieldsAlready ?? 0,
         }),
       );
     },

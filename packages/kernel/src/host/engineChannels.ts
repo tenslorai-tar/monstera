@@ -3011,12 +3011,15 @@ export const engineChannels = {
                 rect: annotationRectSchema,
                 label: z.string().max(ENGINE_FLAT_LABEL_MAX),
                 name: z.string().max(ENGINE_FLAT_LABEL_MAX),
+                kind: z.enum(['text', 'checkbox']),
               })
               .strict(),
           )
           .max(ENGINE_FLAT_CANDIDATES_MAX),
         /** Whether the bound stopped the walk. See `engine/duplicate-pages`. */
         truncated: z.boolean(),
+        /** How many places that look like a field already hold one, left out so none is made twice. */
+        alreadyFields: z.number().int().nonnegative(),
       })
       .strict(),
     ['no-such-session'],

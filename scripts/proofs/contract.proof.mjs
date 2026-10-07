@@ -1375,7 +1375,7 @@ export const handlers: ContractHandlers = {
   'document.exportFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.flatFieldCandidates': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
   'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
@@ -1571,7 +1571,7 @@ export const handlers: ContractHandlers = {
   'document.exportFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.flatFieldCandidates': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
   'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
@@ -1848,7 +1848,7 @@ export const shim: ContractClient = {
   'document.exportFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.flatFieldCandidates': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 })),
   'document.textBlocks': () =>
     Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
   'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),

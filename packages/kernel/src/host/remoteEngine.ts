@@ -626,7 +626,7 @@ export function remoteMupdfFlatFields(
       'engine/flat-fields',
       await client['engine/flat-fields']({ session: sessions.handleFor(session), page }),
     );
-    return { candidates: answer.candidates, truncated: answer.truncated };
+    return { candidates: answer.candidates, truncated: answer.truncated, alreadyFields: answer.alreadyFields };
   };
 }
 

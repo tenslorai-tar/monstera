@@ -2723,8 +2723,8 @@ function flatFieldCandidatesHandler(
     page,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.flatFieldCandidates']>>> => {
     try {
-      const { version, candidates, truncated } = await commands.flatFieldCandidates(docId, page);
-      return ok({ version, candidates, truncated });
+      const { version, candidates, truncated, alreadyFields } = await commands.flatFieldCandidates(docId, page);
+      return ok({ version, candidates, truncated, alreadyFields });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });

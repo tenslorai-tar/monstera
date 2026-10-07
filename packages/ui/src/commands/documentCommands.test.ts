@@ -1440,6 +1440,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // out of the dialog would have two sources for one geometry, and the one
     // that came through a form control is the one that can be wrong.
     const sent: { id: string; params: unknown }[] = [];
+    const asked: unknown[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
       if (id === 'document.flatFieldCandidates') {
@@ -1447,10 +1448,12 @@ describe('delete pages — the mutation-dialog gate', () => {
           ok({
             version: asDocVersion(1),
             candidates: [
-              { rect: { x0: 10, y0: 20, x1: 110, y1: 40 }, label: 'Name:', name: 'Name' },
-              { rect: { x0: 10, y0: 60, x1: 110, y1: 80 }, label: 'Date:', name: 'Date' },
+              { rect: { x0: 10, y0: 20, x1: 110, y1: 40 }, label: 'Name:', name: 'Name', kind: 'text' },
+              { rect: { x0: 10, y0: 60, x1: 110, y1: 80 }, label: 'Date:', name: 'Date', kind: 'text' },
+              { rect: { x0: 10, y0: 100, x1: 24, y1: 114 }, label: 'Send me the newsletter', name: 'Newsletter', kind: 'checkbox' },
             ],
             truncated: false,
+            alreadyFields: 3,
           }),
         );
       }
@@ -1467,8 +1470,24 @@ describe('delete pages — the mutation-dialog gate', () => {
       // ONE OF THE TWO REJECTED, which is what makes this a review rather than
       // a confirmation: a command that sent everything it was offered would
       // pass a case where the reader accepted both.
-      ask: () => Promise.resolve({ accepted: ['Date'] }),
+      ask: (_id, props) => {
+        asked.push(props);
+        return Promise.resolve({ accepted: ['Date', 'Newsletter'] });
+      },
     }).run(CONTEXT);
+
+    // THE WINDOW IS TOLD each place's kind and how many were left out because they already hold a field.
+    expect(asked).toStrictEqual([
+      {
+        candidates: [
+          { name: 'Name', label: 'Name:', kind: 'text' },
+          { name: 'Date', label: 'Date:', kind: 'text' },
+          { name: 'Newsletter', label: 'Send me the newsletter', kind: 'checkbox' },
+        ],
+        truncated: false,
+        alreadyFields: 3,
+      },
+    ]);
 
     expect(sent).toStrictEqual([
       { id: 'document.flatFieldCandidates', params: { docId: DOC, page: 3 } },
@@ -1485,6 +1504,12 @@ describe('delete pages — the mutation-dialog gate', () => {
                 rect: { x0: 10, y0: 60, x1: 110, y1: 80 },
                 name: 'Date',
                 field: { type: 'text' },
+              },
+              // A SMALL SQUARE IS A TICK BOX, which the old command sent as text for every candidate.
+              {
+                rect: { x0: 10, y0: 100, x1: 24, y1: 114 },
+                name: 'Newsletter',
+                field: { type: 'checkbox' },
               },
             ],
           },
@@ -2092,7 +2117,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const client = createClient(channels, (id) => {
       sent.push(id);
       return Promise.resolve(
-        ok({ version: asDocVersion(1), candidates: [], truncated: false }),
+        ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 }),
       );
     });
 

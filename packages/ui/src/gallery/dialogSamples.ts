@@ -693,23 +693,27 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       state: 'opened',
       props: {
         candidates: [
-          { name: 'full_name', label: 'Full name' },
-          { name: 'date_of_birth', label: 'Date of birth' },
-          { name: 'address', label: 'Address' },
-          { name: 'signature', label: 'Signature' },
+          { name: 'full_name', label: 'Full name', kind: 'text' },
+          { name: 'date_of_birth', label: 'Date of birth', kind: 'text' },
+          { name: 'address', label: 'Address', kind: 'text' },
+          { name: 'newsletter', label: 'Send me the newsletter', kind: 'checkbox' },
         ],
         truncated: false,
+        alreadyFields: 2,
       },
     },
-    { state: 'empty', props: { candidates: [], truncated: false } },
+    { state: 'empty', props: { candidates: [], truncated: false, alreadyFields: 0 } },
+    { state: 'already-fillable', props: { candidates: [], truncated: false, alreadyFields: 14 } },
     {
       state: 'long',
       props: {
         candidates: Array.from({ length: 40 }, (_unused, at) => ({
           name: `line_item_${String(at + 1)}_description_and_amount`,
           label: `Line item ${String(at + 1)}: description of the goods or services supplied, and the amount`,
+          kind: 'text' as const,
         })),
         truncated: true,
+        alreadyFields: 0,
       },
     },
   ],

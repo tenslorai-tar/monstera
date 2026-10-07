@@ -3734,8 +3734,10 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
         candidates: found.value.candidates.map((candidate) => ({
           name: candidate.name,
           label: candidate.label,
+          kind: candidate.kind,
         })),
         truncated: found.value.truncated,
+        alreadyFields: found.value.alreadyFields,
       })) as FlatFieldsAnswer | undefined;
       // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate: the
       // absence of a value is the guard rather than a flag beside it.
@@ -3746,7 +3748,7 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
         .map((candidate) => ({
           rect: candidate.rect,
           name: candidate.name,
-          field: { type: 'text' } as const,
+          field: candidate.kind === 'checkbox' ? ({ type: 'checkbox' } as const) : ({ type: 'text' } as const),
         }));
       // NOTHING TICKED CANNOT REACH HERE — the result schema refuses an empty
       // list and the button is disabled — but the command refuses one too, so

@@ -307,7 +307,11 @@ export type HostBarcodesReader = (
 export type HostFlatFieldsReader = (
   session: MupdfSession,
   page: number,
-) => Promise<{ readonly candidates: readonly FlatFieldCandidate[]; readonly truncated: boolean }>;
+) => Promise<{
+  readonly candidates: readonly FlatFieldCandidate[];
+  readonly truncated: boolean;
+  readonly alreadyFields: number;
+}>;
 
 /**
  * The engine host's side of Decision 10: it looks the spec up and calls it
@@ -1062,7 +1066,10 @@ export function createEngineHandlers({
       // than a state to report, and the reader answers an empty list for a page
       // that displays no region.
       const found = await flatFields(held.session, page);
-      return { ok: true, value: { candidates: [...found.candidates], truncated: found.truncated } };
+      return {
+        ok: true,
+        value: { candidates: [...found.candidates], truncated: found.truncated, alreadyFields: found.alreadyFields },
+      };
     },
 
     'engine/exportFormData': async ({ session, format, into }) => {

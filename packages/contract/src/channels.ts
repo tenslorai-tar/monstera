@@ -4943,14 +4943,18 @@ export const channels = {
             rect: annotationRectSchema,
             /** The text beside it, as a person reads it. */
             label: z.string().max(MAX_FLAT_FIELD_LABEL),
-            /** A name derived from the label, unique within this answer. */
+            /** A name derived from the label, unique within this answer and among the fields the document has. */
             name: z.string().max(MAX_FLAT_FIELD_LABEL),
+            /** A small square with its word beside it is a tick box; anything else is a text field. */
+            kind: z.enum(['text', 'checkbox']),
           }),
         )
         .max(MAX_FLAT_FIELD_CANDIDATES)
         .readonly(),
       /** Whether the bound stopped the walk. `document.annotations`' flag. */
       truncated: z.boolean(),
+      /** How many places that look like a field already hold one: left out, and said, so none is made twice. */
+      alreadyFields: z.number().int().nonnegative(),
     }),
     ['document-not-open', 'document-poisoned'],
   ),
