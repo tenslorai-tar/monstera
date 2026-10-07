@@ -135,8 +135,11 @@ export function lockNavigation(contents: WebContents, loaded: string): void {
 export function createMainWindow(
   target: Session,
   failures: ShellFailureSink,
-  /** Where the window was left, or `undefined` for one that opens the platform's way every run (a harness's). */
-  memory: WindowMemory | undefined,
+  /**
+   * Where the window was left. Absent for one that opens the platform's way every run (a harness's); the product's own
+   * path, `startShell`, takes it as a required argument, so the shipped window cannot forget to remember.
+   */
+  memory?: WindowMemory,
 ): BrowserWindow {
   applyPermissionPolicy(target);
   applyContentSecurityPolicy(target);

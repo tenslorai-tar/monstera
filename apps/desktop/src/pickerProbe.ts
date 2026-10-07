@@ -171,7 +171,7 @@ export async function reportPickerProbe(): Promise<void> {
       return picked;
     },
   });
-  const window = createMainWindow(session.defaultSession, deps.failures, undefined);
+  const window = createMainWindow(session.defaultSession, deps.failures);
   registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
 
   const contents = window.webContents;

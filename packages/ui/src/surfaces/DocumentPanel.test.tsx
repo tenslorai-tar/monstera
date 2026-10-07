@@ -40,7 +40,7 @@ const STAND_INS = {
 
 function drawn(
   settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS)),
-  tool: PanelTool | undefined = undefined,
+  tool?: PanelTool,
 ): {
   readonly settings: SettingsStore;
   readonly presence: PanelPresence;
