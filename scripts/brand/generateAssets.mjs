@@ -107,7 +107,10 @@ async function main() {
   }
 
   const icoPath = join(BRAND, 'logo.ico');
-  const ico = await pngToIco(await Promise.all(ICO_SIZES.map((size) => square(master, size))));
+  // THE ICON IS THE MARK, NOT THE MASTER'S CANVAS, exactly as the Store's icons are (`storeAssets.mjs`): trimmed first, so
+  // Explorer, shortcuts and the window icon draw the mark as large as the taskbar's. Only transparent rows and columns go.
+  const mark = await sharp(master).trim().png().toBuffer();
+  const ico = await pngToIco(await Promise.all(ICO_SIZES.map((size) => square(mark, size))));
   if (check) {
     const existing = await readFile(icoPath).catch(() => null);
     if (existing === null || digest(existing) !== digest(ico)) stale.push('logo.ico');

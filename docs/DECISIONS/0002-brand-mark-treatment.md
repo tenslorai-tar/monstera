@@ -176,3 +176,8 @@ border before fitting, and that still reaches the square's top and bottom with t
 `scripts/research/measureIconFill.mjs`): the app-list icons fill 100% of their height and 90.6% to 93.8% of their width at 16,
 24, 32, 48 and 256 px. The `.ico` is not trimmed — it fits the master's canvas — and so draws the mark at 78% by 86% of its
 tile; that is the one place the drawn area is smaller, and it is recorded here rather than changed without the owner.
+
+**Decided the same day, by the owner: the `.ico` is trimmed too**, so that Explorer, shortcuts and the window icon draw the mark as
+large as the taskbar's. `generateAssets.mjs` trims the master's transparent border before fitting each of the `.ico`'s seven sizes,
+the way `storeAssets.mjs` does for the Store's icons; nothing of the mark is altered. The sentence above describes the `.ico` before
+this change. The owner also decided that the 4096 × 4096 file is not committed: the 2048 × 2048 resample is the master.
