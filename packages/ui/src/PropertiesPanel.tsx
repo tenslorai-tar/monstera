@@ -1,7 +1,12 @@
 import { useLingui } from '@lingui/react';
 import {
+  ANNOTATION_ALIGNMENTS,
+  ANNOTATION_FONTS,
+  type AnnotationAlign,
   type AnnotationBlend,
   type AnnotationColour,
+  type AnnotationFont,
+  type AnnotationTextStyle,
   MAX_ANNOTATION_AUTHOR,
   MAX_ANNOTATION_BORDER,
   MAX_ANNOTATION_FONT,
@@ -10,6 +15,7 @@ import {
   MIN_ANNOTATION_OPACITY,
   measureUnitSchema,
 } from '@monstera/contract';
+import type { MessageKey } from '@monstera/shared';
 import { type ReactElement, useEffect, useId, useState } from 'react';
 
 import { ANNOTATION_KIND_LABELS } from './AnnotationsPanel.js';
@@ -33,8 +39,18 @@ import {
   PROPERTIES_COLOUR,
   PROPERTIES_COMMENT,
   PROPERTIES_CUSTOM_COLOUR,
+  PROPERTIES_ALIGN,
+  PROPERTIES_ALIGN_CENTER,
+  PROPERTIES_ALIGN_LEFT,
+  PROPERTIES_ALIGN_RIGHT,
+  PROPERTIES_FONT,
+  PROPERTIES_FONT_MONO,
+  PROPERTIES_FONT_SANS,
+  PROPERTIES_FONT_SERIF,
   PROPERTIES_FONT_SIZE,
   PROPERTIES_LINE_WIDTH,
+  PROPERTIES_TEXT_COLOUR,
+  PROPERTIES_TEXT_HEADING,
   PROPERTIES_NEW_HEADING,
   PROPERTIES_NEW_HINT,
   PROPERTIES_OPACITY,
@@ -56,6 +72,7 @@ import { SegmentedControl, type SegmentedOption } from './primitives/SegmentedCo
 import type { CommandContext, CommandRegistry } from './registries/commands.js';
 import {
   ANNOTATION_COLOUR_SETTING,
+  ANNOTATION_FONT_SETTING,
   ANNOTATION_FONT_SIZE_SETTING,
   ANNOTATION_LINE_WIDTH_SETTING,
   ANNOTATION_OPACITY_SETTING,
@@ -73,7 +90,9 @@ export type StyleChange =
   | { readonly colour: AnnotationColour }
   | { readonly opacity: number }
   | { readonly borderWidth: number }
-  | { readonly blend: AnnotationBlend };
+  | { readonly blend: AnnotationBlend }
+  // A TEXT BOX'S WORDS, one property at a time like the others (item 14b).
+  | { readonly text: AnnotationTextStyle };
 
 export interface PropertiesPanelProps {
   readonly settings: SettingsStore;
@@ -327,6 +346,12 @@ export function PropertiesPanel({
     if ('colour' in next) settings.set(ANNOTATION_COLOUR_SETTING.id, hexFromColour(next.colour));
     if ('opacity' in next) settings.set(ANNOTATION_OPACITY_SETTING.id, next.opacity);
     if ('borderWidth' in next) settings.set(ANNOTATION_LINE_WIDTH_SETTING.id, next.borderWidth);
+    // THE TEXT SETTINGS THE TOOLS READ: a new text box starts in the face and at the size just chosen (item 14b). The
+    // colour is the shared annotation colour's, set by the row above, so a text colour is not written to it.
+    if ('text' in next) {
+      if (next.text.font !== undefined) settings.set(ANNOTATION_FONT_SETTING.id, next.text.font);
+      if (next.text.fontSize !== undefined) settings.set(ANNOTATION_FONT_SIZE_SETTING.id, next.text.fontSize);
+    }
   };
 
   return (
@@ -391,6 +416,17 @@ export function PropertiesPanel({
           value={first.blend}
         />
       </div>
+      {first.typed === undefined ? null : (
+        // A TEXT BOX, TYPEWRITER OR CALLOUT: the face, size, colour and side its words are drawn in, for the whole box.
+        <TextSection
+          // A NEW SET OF FIELDS PER MARK AND PER SIZE, so a typed size never outlives the mark it was typed for.
+          key={`${String(selection.page)}:${String(first.index)}:${String(first.typed.fontSize)}`}
+          typed={first.typed}
+          onChange={(text) => {
+            change({ text });
+          }}
+        />
+      )}
       {only === undefined ? null : (
         <AuthorRow
           // A NEW FIELD PER MARK AND PER NAME, `CommentRow`'s reason.
@@ -449,11 +485,14 @@ export function PropertiesPanel({
 function ColourRow({
   auto,
   current,
+  label = PROPERTIES_COLOUR,
   offerAuto,
   onPick,
 }: {
   readonly auto: boolean;
   readonly current: string | undefined;
+  /** What the row is called: *Colour* for a mark's, *Text colour* for its words'. */
+  readonly label?: MessageKey;
   readonly offerAuto: boolean;
   readonly onPick: (hex: string | undefined) => void;
 }): ReactElement {
@@ -462,7 +501,7 @@ function ColourRow({
   return (
     <div aria-labelledby={labelId} className="m-properties__row" role="group">
       <span className="m-properties__label" id={labelId}>
-        {i18n._(PROPERTIES_COLOUR)}
+        {i18n._(label)}
       </span>
       {/* THE APPLICATION'S ONE COLOUR CONTROL (`ColourChoice.tsx`), with a mark's colours (`stylePresets.ts`). */}
       <ColourSwatches
@@ -565,6 +604,111 @@ function WidthRow({
             <span className="m-properties__stroke" data-width={String(width)} />
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+const FONT_LABELS: Readonly<Record<AnnotationFont, MessageKey>> = {
+  sans: PROPERTIES_FONT_SANS,
+  serif: PROPERTIES_FONT_SERIF,
+  mono: PROPERTIES_FONT_MONO,
+};
+
+const ALIGN_OPTIONS: readonly SegmentedOption<AnnotationAlign>[] = ANNOTATION_ALIGNMENTS.map((value) => ({
+  value,
+  label: { left: PROPERTIES_ALIGN_LEFT, center: PROPERTIES_ALIGN_CENTER, right: PROPERTIES_ALIGN_RIGHT }[value],
+}));
+
+/**
+ * The Text section of a selected text box, typewriter or callout (the owner's review of 2026-10-07, item 14b): its face,
+ * size, colour and the side its lines sit against. **Each control sends one property**, as the rows above do, and applies to
+ * the whole box. Bold, italic, a fill, line spacing and a run of words inside the box are not offered: MuPDF cannot draw them
+ * in a free text (`writeWordsStyle`), and a control that set something no viewer shows would be the display-only defect.
+ */
+function TextSection({
+  typed,
+  onChange,
+}: {
+  readonly typed: NonNullable<SelectedAnnotation['typed']>;
+  readonly onChange: (text: AnnotationTextStyle) => void;
+}): ReactElement {
+  const { i18n } = useLingui();
+  const fontId = useId();
+  const sizeId = useId();
+  const [size, setSize] = useState(String(typed.fontSize));
+  const sendSize = (): void => {
+    const next = Number(size);
+    if (Number.isFinite(next) && next >= MIN_ANNOTATION_FONT && next <= MAX_ANNOTATION_FONT && next !== typed.fontSize) {
+      onChange({ fontSize: next });
+    }
+  };
+  return (
+    <div className="m-properties__text" data-properties-text="" role="group" aria-label={i18n._(PROPERTIES_TEXT_HEADING)}>
+      <h3 className="m-properties__subtitle">{i18n._(PROPERTIES_TEXT_HEADING)}</h3>
+      <div className="m-properties__row m-properties__row--inline">
+        <label className="m-properties__label" htmlFor={fontId}>
+          {i18n._(PROPERTIES_FONT)}
+        </label>
+        <select
+          className="m-properties__number"
+          id={fontId}
+          onChange={(event) => {
+            const font = ANNOTATION_FONTS.find((each) => each === event.target.value);
+            if (font !== undefined && font !== typed.font) onChange({ font });
+          }}
+          value={typed.font}
+        >
+          {ANNOTATION_FONTS.map((font) => (
+            <option key={font} value={font}>
+              {i18n._(FONT_LABELS[font])}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="m-properties__row m-properties__row--inline">
+        <label className="m-properties__label" htmlFor={sizeId}>
+          {i18n._(PROPERTIES_FONT_SIZE)}
+        </label>
+        <input
+          className="m-properties__number"
+          id={sizeId}
+          max={MAX_ANNOTATION_FONT}
+          min={MIN_ANNOTATION_FONT}
+          onBlur={sendSize}
+          onChange={(event) => {
+            setSize(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') sendSize();
+          }}
+          step={1}
+          type="number"
+          value={size}
+        />
+      </div>
+      <ColourRow
+        auto={false}
+        current={hexFromColour(typed.colour)}
+        label={PROPERTIES_TEXT_COLOUR}
+        offerAuto={false}
+        onPick={(picked) => {
+          const colour = picked === undefined ? undefined : colourFromHex(picked);
+          if (colour !== undefined) onChange({ colour });
+        }}
+      />
+      <div className="m-properties__row">
+        <span className="m-properties__label" aria-hidden="true">
+          {i18n._(PROPERTIES_ALIGN)}
+        </span>
+        <SegmentedControl
+          label={PROPERTIES_ALIGN}
+          onChange={(align) => {
+            onChange({ align });
+          }}
+          options={ALIGN_OPTIONS}
+          value={typed.align ?? 'left'}
+        />
       </div>
     </div>
   );

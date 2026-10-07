@@ -18,6 +18,8 @@ import { SettingsRegistry } from './registries/settings.js';
 import { ALL_SETTINGS } from './settings/all.js';
 import {
   ANNOTATION_COLOUR_SETTING,
+  ANNOTATION_FONT_SETTING,
+  ANNOTATION_FONT_SIZE_SETTING,
   ANNOTATION_LINE_WIDTH_SETTING,
   ANNOTATION_OPACITY_SETTING,
   STYLE_AS_DEFAULT_SETTING,
@@ -327,6 +329,46 @@ describe('PropertiesPanel with marks selected', () => {
     expect(restyled).toStrictEqual([{ blend: 'normal' }]);
     // *Use as default* is on, and the blend is not one of the settings it writes.
     expect(store.get(ANNOTATION_COLOUR_SETTING.id)).toBe('auto');
+  });
+
+  const TEXT_BOX = {
+    ...SQUARE,
+    index: 5,
+    kind: 'text-box' as const,
+    typed: { fontSize: 12, colour: [0, 0, 0] as [number, number, number], font: 'sans' as const, direction: 'ltr' as const },
+  };
+
+  it('a TEXT BOX shows a Text section, and each control sends ONE property of its words', () => {
+    const { restyled, store } = mounted({ ...ONE, items: [TEXT_BOX] });
+    expect(document.querySelector('[data-properties-text]')).not.toBeNull();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Font' }), { target: { value: 'serif' } });
+    expect(restyled).toStrictEqual([{ text: { font: 'serif' } }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Right' }));
+    expect(restyled.at(-1)).toStrictEqual({ text: { align: 'right' } });
+    const size = screen.getAllByRole('spinbutton').find((each) => (each as HTMLInputElement).value === '12');
+    expect(size).toBeDefined();
+    if (size === undefined) return;
+    fireEvent.change(size, { target: { value: '18' } });
+    fireEvent.blur(size);
+    expect(restyled.at(-1)).toStrictEqual({ text: { fontSize: 18 } });
+    // *Use as default* is ticked, so the face and size just chosen are what the next text box starts in.
+    expect(store.get(ANNOTATION_FONT_SETTING.id)).toBe('serif');
+    expect(store.get(ANNOTATION_FONT_SIZE_SETTING.id)).toBe(18);
+  });
+
+  it('CONTROL: a size that is out of range, or unchanged, sends nothing', () => {
+    const { restyled } = mounted({ ...ONE, items: [TEXT_BOX] });
+    const size = screen.getAllByRole('spinbutton').find((each) => (each as HTMLInputElement).value === '12');
+    if (size === undefined) throw new Error('the size field is not drawn');
+    fireEvent.blur(size);
+    fireEvent.change(size, { target: { value: '0' } });
+    fireEvent.blur(size);
+    expect(restyled).toStrictEqual([]);
+  });
+
+  it('CONTROL: a mark that is not a text box has no Text section', () => {
+    mounted({ ...ONE, items: [SQUARE] });
+    expect(document.querySelector('[data-properties-text]')).toBeNull();
   });
 
   it('offers no comment for TWO marks, which have two', () => {

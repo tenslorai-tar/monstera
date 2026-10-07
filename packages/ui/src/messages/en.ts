@@ -1513,6 +1513,16 @@ export const PROPERTIES_OPACITY_VALUE = messageKey('surface.properties.opacity-v
 export const PROPERTIES_LINE_WIDTH = messageKey('surface.properties.line-width');
 export const PROPERTIES_WIDTH_VALUE = messageKey('surface.properties.width-value');
 export const PROPERTIES_FONT_SIZE = messageKey('surface.properties.font-size');
+export const PROPERTIES_TEXT_HEADING = messageKey('surface.properties.text.heading');
+export const PROPERTIES_TEXT_COLOUR = messageKey('surface.properties.text.colour');
+export const PROPERTIES_FONT = messageKey('surface.properties.text.font');
+export const PROPERTIES_FONT_SANS = messageKey('surface.properties.text.font-sans');
+export const PROPERTIES_FONT_SERIF = messageKey('surface.properties.text.font-serif');
+export const PROPERTIES_FONT_MONO = messageKey('surface.properties.text.font-mono');
+export const PROPERTIES_ALIGN = messageKey('surface.properties.text.align');
+export const PROPERTIES_ALIGN_LEFT = messageKey('surface.properties.text.align-left');
+export const PROPERTIES_ALIGN_CENTER = messageKey('surface.properties.text.align-center');
+export const PROPERTIES_ALIGN_RIGHT = messageKey('surface.properties.text.align-right');
 export const PROPERTIES_COMMENT = messageKey('surface.properties.comment');
 export const PROPERTIES_NEW_HEADING = messageKey('surface.properties.new-heading');
 export const PROPERTIES_NEW_HINT = messageKey('surface.properties.new-hint');
@@ -3831,6 +3841,16 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PROPERTIES_LINE_WIDTH]: 'Line width',
   [PROPERTIES_WIDTH_VALUE]: '{width, number} pt',
   [PROPERTIES_FONT_SIZE]: 'Font size',
+  [PROPERTIES_TEXT_HEADING]: 'Text',
+  [PROPERTIES_TEXT_COLOUR]: 'Text colour',
+  [PROPERTIES_FONT]: 'Font',
+  [PROPERTIES_FONT_SANS]: 'Sans',
+  [PROPERTIES_FONT_SERIF]: 'Serif',
+  [PROPERTIES_FONT_MONO]: 'Mono',
+  [PROPERTIES_ALIGN]: 'Align',
+  [PROPERTIES_ALIGN_LEFT]: 'Left',
+  [PROPERTIES_ALIGN_CENTER]: 'Centre',
+  [PROPERTIES_ALIGN_RIGHT]: 'Right',
   [PROPERTIES_COMMENT]: 'Comment',
   [PROPERTIES_NEW_HEADING]: 'New annotations',
   [PROPERTIES_NEW_HINT]: 'These set how the next annotation is drawn. Select one on the page to change it.',

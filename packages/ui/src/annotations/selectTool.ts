@@ -94,6 +94,8 @@ export interface SelectedAnnotation {
   readonly created: ErasableAnnotation['created'];
   /** The blend it is drawn in, carried for the same reason. */
   readonly blend: ErasableAnnotation['blend'];
+  /** How a text box's words are drawn, carried for the same reason — the Properties tab's Text section (item 14b). */
+  readonly typed?: ErasableAnnotation['typed'];
 }
 
 /**
@@ -133,6 +135,7 @@ function selectedFrom(entry: ErasableAnnotation): SelectedAnnotation | undefined
     author: entry.author,
     created: entry.created,
     blend: entry.blend,
+    ...(entry.typed === undefined ? {} : { typed: entry.typed }),
   };
 }
 
