@@ -161,3 +161,18 @@ until this note each of the three spelt it itself.
 
 **Still not verified on an installed build**, for the reason in the note above: the owner sees this
 logo in 0.1.11.0.
+
+## Note, 2026-10-07 — the owner's new logo is the master
+
+The owner supplied `monstera-latest-logo.png`, 4096 × 4096 RGBA: the same document-and-leaf mark, squarer than the one before
+(its drawn area is 78% of the canvas wide and 86% tall where the old one was 64% and 86%). It replaces `monstera_logo.png`,
+resampled to 2048 × 2048 with Lanczos so the master stays the size this note's predecessors documented; the 4096 file is the
+owner's and is not committed. Nothing of the mark is altered, and every output is regenerated from it.
+
+One thing in the file the shape rule had to learn: its four corners carry alpha 3 to 5 of 255, and 91,606 of its 16.8 million
+pixels sit at an alpha from 1 to 23 — an export's haze, invisible on any ground. `brandShape.mjs` now counts a corner
+transparent up to alpha 8 (`CORNER_HAZE`), proven at its edge in both directions. The Store's icons trim the mark's transparent
+border before fitting, and that still reaches the square's top and bottom with the haze present (measured the same day,
+`scripts/research/measureIconFill.mjs`): the app-list icons fill 100% of their height and 90.6% to 93.8% of their width at 16,
+24, 32, 48 and 256 px. The `.ico` is not trimmed — it fits the master's canvas — and so draws the mark at 78% by 86% of its
+tile; that is the one place the drawn area is smaller, and it is recorded here rather than changed without the owner.

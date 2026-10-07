@@ -12,7 +12,7 @@ protects users rather than the project.
 
 | File | Size | Origin | Used by |
 |---|---|---|---|
-| `monstera_logo.png` | 2048 × 2048, RGBA | **the master — supplied by the owner**: the mark alone, a green document with a folded corner and the leaf in a white circle, no wordmark | every file below; the Store's 73 images — the package's 72 and the listing's app tile icon (`npm run brand:store`, built into `apps/desktop/dist/store-assets/` and not committed); the file-type icon when packaging lands |
+| `monstera_logo.png` | 2048 × 2048, RGBA | **the master — supplied by the owner** (the 4096 × 4096 logo of 2026-10-07, resampled to this size; see ADR-0002's note of that day): the mark alone, a green document with a folded corner and the leaf in a white circle, no wordmark | every file below; the Store's 73 images — the package's 72 and the listing's app tile icon (`npm run brand:store`, built into `apps/desktop/dist/store-assets/` and not committed); the file-type icon when packaging lands |
 | `logo-256.png` | 256 × 256 | generated | `README.md` and docs |
 | `logo-title.png` | 52 × 52 | generated | the menu bar's mark, drawn at 18 px (`--logo-menu`; the title bar's, at 26 px, until ADR-0107) |
 | `logo-hero.png` | 142 × 142 | generated | the start screen's hero at 1x, drawn at 142 px (84, then 118 after the owner's review of 0.1.6.0, then about 142 on 2 October); the About window, at 64 px |
