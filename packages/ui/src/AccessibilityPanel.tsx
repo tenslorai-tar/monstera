@@ -81,7 +81,8 @@ const HUMAN_WORDS: Readonly<Record<HumanCheck, MessageKey>> = {
 const INDENT = 12;
 
 /**
- * The context panel's Accessibility tab (ADR-0183): the document check and the page's reading order, beside the page.
+ * The accessibility tools (ADR-0183), shown in the left document panel while open (ADR-0189): the document check and
+ * the page's reading order, beside the page.
  *
  * ## It reads the view and writes none of it
  *

@@ -4,7 +4,7 @@ import type { DocumentStore } from '../documentStores.js';
 import { type AccessibilitySection, type AccessibilityView, EMPTY_ACCESSIBILITY, type Spot } from './view.js';
 
 /**
- * The Accessibility tab's reads, and the ONE writer of a document's `accessibility` state (ADR-0183).
+ * The accessibility tools' reads, and the ONE writer of a document's `accessibility` state (ADR-0183, ADR-0189).
  *
  * ## Every read belongs to a run
  *
@@ -19,7 +19,7 @@ import { type AccessibilitySection, type AccessibilityView, EMPTY_ACCESSIBILITY,
  * could not be read rather than show an empty list — which reads as *nothing is wrong*.
  */
 
-/** What the tab's reads need from the application. */
+/** What the tools' reads need from the application. */
 export interface AccessibilityDeps {
   readonly client: ContractClient;
 }
@@ -33,7 +33,19 @@ function write(store: DocumentStore, view: AccessibilityView): void {
   store.getState().viewAccessibility(view);
 }
 
-/** Which section the tab shows. */
+/** Opens the tool at `section`: the one way it is shown. */
+export function openTool(store: DocumentStore, section: AccessibilitySection): void {
+  const view = current(store);
+  if (!view.open || view.section !== section) write(store, { ...view, open: true, section });
+}
+
+/** Closes the tool and takes its mark off the page; what it read is kept, so opening it again shows it. */
+export function closeTool(store: DocumentStore): void {
+  const view = current(store);
+  if (view.open || view.marked !== undefined) write(store, { ...view, open: false, marked: undefined });
+}
+
+/** Which section the tool shows. */
 export function showSection(store: DocumentStore, section: AccessibilitySection): void {
   const view = current(store);
   if (view.section !== section) write(store, { ...view, section });

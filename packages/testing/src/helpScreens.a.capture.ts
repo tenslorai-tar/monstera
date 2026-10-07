@@ -148,7 +148,8 @@ test('accessibility-check-1', async ({ page }) => {
   await openDocument(page);
   await openSection(page, 'Review');
   await runCommand(page, 'Accessibility check');
-  const panel = page.locator('[data-context-panel="accessibility"]');
+  // THE TOOL IN THE LEFT DOCUMENT PANEL (ADR-0189), which holds the page's side while it is open.
+  const panel = page.locator('[data-panel-tool="open"]');
   await expect(panel).toBeVisible();
   await expect(panel.getByText('Needs fixing')).toBeVisible();
   await shoot(page, 'accessibility-check-1', panel);

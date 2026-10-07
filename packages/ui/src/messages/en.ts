@@ -1592,6 +1592,7 @@ export const PANEL_TITLES = {
 } as const;
 export const PANEL_STRIP_LABEL = messageKey('surface.panel.strip');
 export const PANEL_COLLAPSE = messageKey('surface.panel.collapse');
+export const PANEL_TOOL_CLOSE = messageKey('surface.panel.tool-close');
 export const PANEL_REOPEN = messageKey('surface.panel.reopen');
 export const DOCUMENT_PANEL_TITLE = messageKey('setting.appearance-document-panel.title');
 export const DOCUMENT_PANEL_OPEN_TITLE = messageKey('setting.appearance-document-panel-open.title');
@@ -1828,7 +1829,6 @@ export const CONTEXT_PANEL_TAB_TITLES = {
   properties: CONTEXT_PANEL_TAB_PROPERTIES,
   assistant: CONTEXT_PANEL_TAB_ASSISTANT,
   spelling: CONTEXT_PANEL_TAB_SPELLING,
-  accessibility: CONTEXT_PANEL_TAB_ACCESSIBILITY,
 } as const;
 export const QUICK_TOOLBAR_OPEN_TITLE = messageKey('setting.appearance-quick-toolbar-open.title');
 export const NEXT_PANE_TITLE = messageKey('command.next-pane.title');
@@ -3926,6 +3926,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PANEL_SEARCH]: 'Search',
   [PANEL_STRIP_LABEL]: 'Document panels',
   [PANEL_COLLAPSE]: 'Collapse the document panel',
+  [PANEL_TOOL_CLOSE]: 'Close',
   [PANEL_REOPEN]: 'Show the document panel',
   [DOCUMENT_PANEL_TITLE]: 'Document panel',
   [DOCUMENT_PANEL_OPEN_TITLE]: 'Show the document panel',

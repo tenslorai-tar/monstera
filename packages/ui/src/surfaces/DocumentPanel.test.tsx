@@ -2,17 +2,17 @@
 import { I18nProvider } from '@lingui/react';
 import { act, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import appCss from '../app.css?raw';
 import { activateCatalogue, i18n } from '../i18n.js';
-import { EN } from '../messages/en.js';
+import { CONTEXT_PANEL_TAB_ACCESSIBILITY, EN } from '../messages/en.js';
 import { SettingsRegistry } from '../registries/settings.js';
 import { ALL_SETTINGS } from '../settings/all.js';
 import { DOCUMENT_PANEL_OPEN_SETTING, DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import { PanelPresence } from '../panelPresence.js';
 import { SettingsStore } from '../settingsStore.js';
-import { DocumentPanel } from './DocumentPanel.js';
+import { DocumentPanel, type PanelTool } from './DocumentPanel.js';
 
 /**
  * §10.3's document panel, as a surface a person operates.
@@ -38,20 +38,60 @@ const STAND_INS = {
   search: <p>search content</p>,
 };
 
-function drawn(settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS))): {
+function drawn(
+  settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS)),
+  tool: PanelTool | undefined = undefined,
+): {
   readonly settings: SettingsStore;
   readonly presence: PanelPresence;
 } {
   const presence = new PanelPresence(settings);
   render(
     <Wrapped>
-      <DocumentPanel settings={settings} presence={presence} pages={<p>pages content</p>} panels={STAND_INS} />
+      <DocumentPanel
+        tool={tool}
+        settings={settings}
+        presence={presence}
+        pages={<p>pages content</p>}
+        panels={STAND_INS}
+      />
     </Wrapped>,
   );
   return { settings, presence };
 }
 
 describe('DocumentPanel', () => {
+  it('a TOOL takes the body while it is open, a tab or its close button closes it, and the setting is untouched (ADR-0189)', async () => {
+    const closed = vi.fn();
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    drawn(settings, { title: CONTEXT_PANEL_TAB_ACCESSIBILITY, content: <p>tool content</p>, onClose: closed });
+
+    expect(screen.getByText('tool content')).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Accessibility' })).toBeDefined();
+    // THE PANEL'S OWN BODY IS NOT DRAWN BESIDE IT, so the tool's content is not one of two.
+    expect(screen.queryByText('pages content')).toBeNull();
+    expect(settings.get(DOCUMENT_PANEL_SETTING.id)).toBe('pages');
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Close' }).click();
+      await Promise.resolve();
+    });
+    expect(closed).toHaveBeenCalledTimes(1);
+    // THE CHOSEN TAB TOO, which fires no change of its own: it is the way back to the panel.
+    await act(async () => {
+      screen.getByRole('tab', { name: 'Pages' }).click();
+      await Promise.resolve();
+    });
+    expect(closed).toHaveBeenCalledTimes(2);
+  });
+
+  it('CONTROL: with no tool the panel shows its own chosen body and no close button', () => {
+    drawn();
+    expect(screen.getByText('pages content')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
+    expect(screen.queryByText('tool content')).toBeNull();
+  });
+
   it('shows ONE panel, Pages by default, with SIX tabs named by their panel', () => {
     drawn();
 

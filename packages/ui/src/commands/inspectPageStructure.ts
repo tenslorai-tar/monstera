@@ -12,11 +12,11 @@ import { hasDocument } from './documentCommands.js';
  * `document.pageStructure` answers one page, for ADR-0035's reason, and a page's tagging is read against the page
  * beside it. The panel reads it again as the person turns pages.
  *
- * It opens no dialog (ADR-0183): the Accessibility tab lists the page's items beside it and marks the one chosen. `show`
- * is App's; it opens the tab at the reading-order section, which reads the page.
+ * It opens no dialog (ADR-0183): the left document panel lists the page's items beside it while the tool is open
+ * (ADR-0189) and marks the one chosen. `show` is App's; it opens the tool at the reading-order section, which reads the page.
  */
 export function inspectPageStructureCommand(deps: {
-  /** Opens the Accessibility tab on the reading order of `docId`'s current page. */
+  /** Opens the tool on the reading order of `docId`'s current page. */
   readonly show: (docId: DocId) => void;
 }): UiCommand {
   return {

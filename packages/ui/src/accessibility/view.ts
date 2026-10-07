@@ -2,7 +2,7 @@ import type { ChannelResult } from '@monstera/contract';
 import type { DocVersion } from '@monstera/shared';
 
 /**
- * What a document's Accessibility tab holds (ADR-0183), as its store keeps it. Pure types: the reads are
+ * What a document's accessibility tools hold (ADR-0183, ADR-0189), as its store keeps it. Pure types: the reads are
  * `run.ts`'s, and everything here is a function of what the channels answered.
  */
 
@@ -61,6 +61,12 @@ export type OrderState =
 export type AccessibilitySection = 'check' | 'order';
 
 export interface AccessibilityView {
+  /**
+   * Whether the tool is open, which is whether the document panel shows it (ADR-0189). It is the only thing that
+   * shows it: the tool has no tab of its own and no setting, so a document that has never opened it, or has closed
+   * it, draws nothing and marks nothing.
+   */
+  readonly open: boolean;
   readonly section: AccessibilitySection;
   readonly check: CheckState | undefined;
   readonly order: OrderState | undefined;
@@ -77,8 +83,9 @@ export interface AccessibilityView {
   readonly sequence: number;
 }
 
-/** The view a document starts with: nothing read, nothing marked, the check section showing. */
+/** The view a document starts with: closed, nothing read, nothing marked, the check section showing. */
 export const EMPTY_ACCESSIBILITY: AccessibilityView = {
+  open: false,
   section: 'check',
   check: undefined,
   order: undefined,

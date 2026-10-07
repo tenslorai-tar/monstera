@@ -2,7 +2,9 @@ import { useLingui } from '@lingui/react';
 import { Tabs } from '@base-ui/react/tabs';
 import { useCallback, type ReactElement, type ReactNode } from 'react';
 
-import { PANEL_COLLAPSE, PANEL_REOPEN, PANEL_STRIP_LABEL } from '../messages/en.js';
+import type { MessageKey } from '@monstera/shared';
+
+import { PANEL_COLLAPSE, PANEL_REOPEN, PANEL_STRIP_LABEL, PANEL_TOOL_CLOSE } from '../messages/en.js';
 import { type PanelPresence, usePanelForm } from '../panelPresence.js';
 import { Icon } from '../primitives/Icon.js';
 import { ICONS } from '../primitives/icons.js';
@@ -39,7 +41,19 @@ import { PANEL_IDS, PANELS, type PanelId } from './panels.js';
  * main for outlines and annotation lists nobody can see, and would keep its controls in
  * the tab order behind a panel a reader cannot see.
  */
+/**
+ * A tool that holds the panel's body for as long as it is in use (ADR-0189): the accessibility tools. It is not a
+ * panel of the strip — no tab, no setting — so a launch never opens with one, and closing it leaves the panel as it was.
+ */
+export interface PanelTool {
+  readonly title: MessageKey;
+  readonly content: ReactNode;
+  readonly onClose: () => void;
+}
+
 export interface DocumentPanelProps {
+  /** The tool using the panel, or `undefined` for the panel's own chosen one. */
+  readonly tool: PanelTool | undefined;
   readonly settings: SettingsStore;
   /** Whether the panel is in the row, a sheet or its handle, and the one writer of its open setting. */
   readonly presence: PanelPresence;
@@ -49,7 +63,7 @@ export interface DocumentPanelProps {
   readonly panels: Readonly<Record<Exclude<PanelId, 'pages'>, ReactNode>>;
 }
 
-export function DocumentPanel({ settings, presence, pages, panels }: DocumentPanelProps): ReactElement {
+export function DocumentPanel({ tool, settings, presence, pages, panels }: DocumentPanelProps): ReactElement {
   const { i18n } = useLingui();
   const chosen = useSetting(settings, DOCUMENT_PANEL_SETTING);
   const form = usePanelForm(presence, 'start');
@@ -77,6 +91,9 @@ export function DocumentPanel({ settings, presence, pages, panels }: DocumentPan
                 aria-label={i18n._(PANELS[id].title)}
                 className="m-panel-tab"
                 data-panel-tab={id}
+                // A TAB CHOSEN WHILE A TOOL IS OPEN CLOSES THE TOOL, including the one already chosen, which fires no
+                // change: the tool had the body, and the tab is the way back to the panel.
+                onClick={tool?.onClose}
                 value={id}
               >
                 <Icon name={PANELS[id].icon} size="dense" />
@@ -95,9 +112,19 @@ export function DocumentPanel({ settings, presence, pages, panels }: DocumentPan
           }}
         />
       </div>
-      <Tabs.Panel className="m-document-panel__body" data-panel={chosen} value={chosen}>
-        {chosen === 'pages' ? pages : panels[chosen]}
-      </Tabs.Panel>
+      {tool === undefined ? (
+        <Tabs.Panel className="m-document-panel__body" data-panel={chosen} value={chosen}>
+          {chosen === 'pages' ? pages : panels[chosen]}
+        </Tabs.Panel>
+      ) : (
+        <div className="m-document-panel__body m-document-panel__tool" data-panel-tool="open">
+          <div className="m-document-panel__tool-head">
+            <h2 className="m-document-panel__tool-title">{i18n._(tool.title)}</h2>
+            <IconButton icon={ICONS.X} label={PANEL_TOOL_CLOSE} size="dense" onClick={tool.onClose} />
+          </div>
+          {tool.content}
+        </div>
+      )}
     </Tabs.Root>
   );
 

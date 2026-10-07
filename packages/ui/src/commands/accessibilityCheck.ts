@@ -7,12 +7,12 @@ import { hasDocument } from './documentCommands.js';
 /**
  * Review › Accessibility › *Accessibility check* (ADR-0078), beside *Reading order*.
  *
- * It opens no dialog (ADR-0183): the context panel's Accessibility tab shows the findings beside the page, so a result
- * can be marked where it is. `show` is App's, which holds the panel and the document stores; it opens the tab at the
- * check section and starts the check.
+ * It opens no dialog (ADR-0183): the left document panel shows the findings beside the page while the tool is open
+ * (ADR-0189), so a result can be marked where it is. `show` is App's, which holds the panel and the document stores; it
+ * opens the tool at the check section and starts the check.
  */
 export function accessibilityCheckCommand(deps: {
-  /** Opens the Accessibility tab on its check and runs it for `docId`. */
+  /** Opens the tool on its check and runs it for `docId`. */
   readonly show: (docId: DocId) => void;
 }): UiCommand {
   return {

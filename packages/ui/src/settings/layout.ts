@@ -218,15 +218,16 @@ export const FLOAT_BAR_POSITION_SETTING: SettingDefinition<typeof FLOAT_BAR_POSI
  * so a command that opens the assistant and a person clicking the tab move the same value.
  * **Properties by default** — the panel held only that until this tab arrived, and a person
  * who has not asked for the assistant should not find their panel replaced by it. **Spelling** is the third
- * tab (ADR-0156), opened by the Spell check command. **Accessibility** is the fourth (ADR-0183), opened by the
- * Accessibility check and Reading order commands.
+ * tab (ADR-0156), opened by the Spell check command. There is no fourth: the accessibility tools open in the left
+ * document panel while in use (ADR-0189), so a stored `accessibility` from the build that had the tab is refused by
+ * this schema and the setting falls back.
  */
 export const CONTEXT_PANEL_TAB_SETTING: SettingDefinition<
-  z.ZodEnum<{ properties: 'properties'; assistant: 'assistant'; spelling: 'spelling'; accessibility: 'accessibility' }>
+  z.ZodEnum<{ properties: 'properties'; assistant: 'assistant'; spelling: 'spelling' }>
 > = {
   id: 'appearance.context-panel-tab',
   title: CONTEXT_PANEL_TAB_TITLE,
-  schema: z.enum(['properties', 'assistant', 'spelling', 'accessibility']),
+  schema: z.enum(['properties', 'assistant', 'spelling']),
   fallback: 'properties',
   category: 'appearance',
   remembered: true,

@@ -247,6 +247,7 @@ import {
 import { useDocumentView } from './useDocumentView.js';
 import {
   CLOSE_LABEL,
+  CONTEXT_PANEL_TAB_ACCESSIBILITY,
   HINT_EDIT_OBJECTS,
   HINT_EDIT_TEXT,
   HINT_HAND,
@@ -360,7 +361,11 @@ import { type Side, SideBySide, type SidePreferences, drawForComparison } from '
 import { SplitView } from './SplitView.js';
 import { SpellingPanel, useSpellingReview } from './SpellingPanel.js';
 import { AccessibilityPanel, useAccessibilityView } from './AccessibilityPanel.js';
-import { runCheck as runAccessibilityCheck, showSection as showAccessibilitySection } from './accessibility/run.js';
+import {
+  closeTool as closeAccessibilityTool,
+  openTool as openAccessibilityTool,
+  runCheck as runAccessibilityCheck,
+} from './accessibility/run.js';
 import type { Spot } from './accessibility/view.js';
 import { type SpellingDeps, startReview } from './spelling/reviewRun.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
@@ -378,7 +383,7 @@ import { Ribbon, SECTION_TITLES } from './surfaces/Ribbon.js';
 import { ContextPanel } from './surfaces/ContextPanel.js';
 import { DocumentBody } from './surfaces/DocumentBody.js';
 import { PanelPresence } from './panelPresence.js';
-import { DocumentPanel, type DocumentPanelProps } from './surfaces/DocumentPanel.js';
+import { DocumentPanel, type DocumentPanelProps, type PanelTool } from './surfaces/DocumentPanel.js';
 import { composing, controlOwnsChord, dispatchChord, fieldOwnsChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { CrashReportOffer } from './CrashReportOffer.js';
@@ -2086,37 +2091,47 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
 
   /** What the Accessibility tab's reads need: the client, and nothing the document's own commands do. */
   const accessibilityDeps = useMemo(() => ({ client }), [client]);
-  /** Accessibility check: the tab, shown at its check section, and the check run (ADR-0183). */
+  /** Accessibility check: the tool, opened in the document panel at its check section, and the check run (ADR-0189). */
   const showAccessibilityCheck = useCallback(
     (docId: DocId): void => {
-      settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'accessibility');
-      presence.show('end');
+      presence.show('start');
       const held = stores.get(docId);
       if (held === undefined) return;
-      showAccessibilitySection(held, 'check');
+      openAccessibilityTool(held, 'check');
       void runAccessibilityCheck(accessibilityDeps, held);
     },
-    [accessibilityDeps, presence, settings, stores],
+    [accessibilityDeps, presence, stores],
   );
-  /** Reading order: the tab, shown at its reading-order section, which reads the page the person is on. */
+  /** Reading order: the tool, opened at its reading-order section, which reads the page the person is on. */
   const showReadingOrder = useCallback(
     (docId: DocId): void => {
-      settings.set(CONTEXT_PANEL_TAB_SETTING.id, 'accessibility');
-      presence.show('end');
+      presence.show('start');
       const held = stores.get(docId);
-      if (held !== undefined) showAccessibilitySection(held, 'order');
+      if (held !== undefined) openAccessibilityTool(held, 'order');
     },
-    [presence, settings, stores],
+    [presence, stores],
   );
   /**
-   * The place the tab marked, drawn on its page and shown (ADR-0183). Only while the Accessibility tab is the one
-   * showing, so the page carries no mark for a tab nobody can see — Spelling's rule for its word. The page is taken to
-   * the mark on each choice, keyed on the choice's own `arrival`: choosing the same place again, after scrolling away,
-   * takes the reader back to it.
+   * The place the tool marked, drawn on its page and shown (ADR-0183). Only while the tool is open, so the page carries
+   * no mark for a tool nobody can see — Spelling's rule for its word. The page is taken to the mark on each choice,
+   * keyed on the choice's own `arrival`: choosing the same place again, after scrolling away, takes the reader back to
+   * it.
    */
   const accessibilityView = useAccessibilityView(store);
-  const panelTab = useSetting(settings, CONTEXT_PANEL_TAB_SETTING);
-  const marked = panelTab === 'accessibility' ? accessibilityView?.marked : undefined;
+  const marked = accessibilityView?.open === true ? accessibilityView.marked : undefined;
+  const accessibilityTool = useMemo<PanelTool | undefined>(
+    () =>
+      store === undefined || accessibilityView?.open !== true
+        ? undefined
+        : {
+            title: CONTEXT_PANEL_TAB_ACCESSIBILITY,
+            content: <AccessibilityPanel deps={accessibilityDeps} store={store} />,
+            onClose: () => {
+              closeAccessibilityTool(store);
+            },
+          },
+    [accessibilityDeps, accessibilityView?.open, store],
+  );
   const spotlights = useMemo<ReadonlyMap<number, readonly Spot[]> | undefined>(
     () => (marked === undefined ? undefined : new Map([[marked.spot.page, [marked.spot]]])),
     [marked],
@@ -3848,8 +3863,6 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
               }
               // THE SPELLING TAB (ADR-0156), over the focused document's review, which its store holds.
               spelling={store === undefined ? null : <SpellingPanel deps={spellingDeps} store={store} settings={settings} />}
-              // THE ACCESSIBILITY TAB (ADR-0183), over the focused document's findings, which its store holds.
-              accessibility={store === undefined ? null : <AccessibilityPanel deps={accessibilityDeps} store={store} />}
               settings={settings}
               presence={presence}
             >
@@ -3872,6 +3885,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           // §10.3's DOCUMENT PANELS other than Pages, built here where their state lives.
           // `PageCanvas` hosts them beside the thumbnail strip, which needs its document
           // view; one of the six shows at a time (`DocumentPanel`).
+          // THE ACCESSIBILITY TOOLS, in the panel's body while they are open (ADR-0189).
+          tool={accessibilityTool}
           panels={{
             // THE OUTLINE, keyed on the document rather than the page — it is a
             // property of the document — and the links on the page beside it: both
@@ -4287,8 +4302,9 @@ const DocumentLayer = memo(function DocumentLayer({
             autoscroll={undefined}
             onAutoscrollEnd={IGNORE}
             panels={NO_PANELS}
+            tool={undefined}
             contextPanel={
-              <ContextPanel settings={background.settings} presence={background.presence} assistant={null} spelling={null} accessibility={null}>
+              <ContextPanel settings={background.settings} presence={background.presence} assistant={null} spelling={null}>
                 {null}
               </ContextPanel>
             }
@@ -4365,6 +4381,7 @@ function PageCanvas({
   presence,
   measuresRow,
   panels,
+  tool,
   contextPanel,
   quickToolbar,
   menuAt,
@@ -4463,6 +4480,8 @@ function PageCanvas({
   readonly measuresRow: boolean;
   /** The document panels other than Pages, built by `App` where their state lives. */
   readonly panels: DocumentPanelProps['panels'];
+  /** The tool using the document panel's body, if one is open (ADR-0189). */
+  readonly tool: PanelTool | undefined;
   /** §10.3's right contextual panel, built by `App` where its state lives. */
   readonly contextPanel: ReactNode;
   /** §10.3's floating quick toolbar, placed inside the page area by `DocumentBody`. */
@@ -4686,7 +4705,7 @@ function PageCanvas({
         settings={settings}
         presence={presence}
         measuresRow={measuresRow}
-        panel={<DocumentPanel settings={settings} presence={presence} panels={panels} pages={null} />}
+        panel={<DocumentPanel tool={tool} settings={settings} presence={presence} panels={panels} pages={null} />}
         page={<canvas className="m-page" data-failed="true" />}
         contextPanel={contextPanel} quickToolbar={quickToolbar}
       />
@@ -4704,7 +4723,7 @@ function PageCanvas({
         settings={settings}
         presence={presence}
         measuresRow={measuresRow}
-        panel={<DocumentPanel settings={settings} presence={presence} panels={panels} pages={null} />}
+        panel={<DocumentPanel tool={tool} settings={settings} presence={presence} panels={panels} pages={null} />}
         page={
           <div className="m-page-pane" data-first-frame="pending">
             <OpeningState />
@@ -4841,6 +4860,7 @@ function PageCanvas({
       contextPanel={contextPanel} quickToolbar={quickToolbar}
       panel={
       <DocumentPanel
+        tool={tool}
         settings={settings}
         presence={presence}
         panels={panels}

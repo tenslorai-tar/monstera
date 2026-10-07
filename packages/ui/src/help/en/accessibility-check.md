@@ -10,23 +10,23 @@ The accessibility check looks at the parts of the PDF/UA accessibility standard 
 
 ## Steps
 
-1. In the rail, choose **Review**, then **Accessibility check** in the **Accessibility** group. The **Accessibility** tab opens in the panel on the right and checks the document.
+1. In the rail, choose **Review**, then **Accessibility check** in the **Accessibility** group. The **Accessibility** panel opens on the left, beside the page, and checks the document. Choose the cross at its top, or any of the panel's tabs, to close it.
 2. Under **Needs fixing**, each problem says what it means and what to do about it, for example that a link has no description, so a screen reader cannot say where it goes.
 3. Choose a page button under a problem, such as "Page 3". The page scrolls to it and the place is marked. Choose **Clear the mark on the page** when you are done.
 4. Under **Needs a person to check**, look at each item yourself: Monstera cannot tell whether it is a problem.
 5. Under **Checks for a person**, work through each item, such as whether the reading order makes sense and whether each picture's description says what it shows.
 
-![The Accessibility tab beside the page, listing what needs fixing](screenshot:accessibility-check-1)
+![The Accessibility panel beside the page, listing what needs fixing](screenshot:accessibility-check-1)
 
 ## Good to know
 
 - A problem about the whole file, such as missing document information, says so and has no page to point to.
 - Where Monstera cannot make the repair, the line says to fix it in the program that made the file, then export the PDF again.
 - Passing the automatic checks does not show that a document is accessible. The checks for a person matter as much.
-- If the document changes after a check, the tab says the result is older. Choose **Check again**.
+- If the document changes after a check, the panel says the result is older. Choose **Check again**.
 - The document is not changed.
 
 <!--
 Screenshots to capture:
-1. accessibility-check-1 — An untagged document; the Accessibility tab after Accessibility check. Frame the panel.
+1. accessibility-check-1 — An untagged document; the Accessibility panel on the left after Accessibility check. Frame the panel.
 -->

@@ -7,7 +7,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { AccessibilityPanel } from './AccessibilityPanel.js';
-import { showSection } from './accessibility/run.js';
+import { closeTool, openTool, showSection } from './accessibility/run.js';
 import { createDocumentStore } from './documentStores.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
@@ -171,5 +171,38 @@ describe('the Accessibility tab — the reading order', () => {
     expect(store.getState().accessibility?.marked?.spot).toStrictEqual({ page: 2, box: NODES[1]?.box });
     // THE CONTAINER HAS NO BOX: no button, so no control that marks nothing.
     expect(screen.queryByRole('button', { name: 'Show Container on the page' })).toBeNull();
+  });
+});
+
+describe('the Accessibility tool — open and closed (ADR-0189)', () => {
+  it('is CLOSED until opened, opening it names its section, and closing it takes the mark off but keeps what was read', async () => {
+    const { store } = drawn();
+    // CONTROL: a document that never opened the tool draws and marks nothing.
+    expect(store.getState().accessibility?.open ?? false).toBe(false);
+
+    await act(async () => {
+      openTool(store, 'order');
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(store.getState().accessibility).toMatchObject({ open: true, section: 'order' });
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Show Heading 1 on the page' }).click();
+      await Promise.resolve();
+    });
+    expect(store.getState().accessibility?.marked).toBeDefined();
+    const read = store.getState().accessibility?.order;
+    expect(read?.phase).toBe('done');
+
+    closeTool(store);
+    const closed = store.getState().accessibility;
+    expect(closed?.open).toBe(false);
+    // THE MARK GOES WITH THE TOOL, so the page carries nothing for a tool nobody can see.
+    expect(closed?.marked).toBeUndefined();
+    // WHAT IT READ STAYS, so opening it again shows the answer rather than asking again.
+    expect(closed?.order).toStrictEqual(read);
   });
 });

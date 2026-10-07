@@ -41,7 +41,6 @@ function drawn(settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS)))
       <ContextPanel
         assistant={<p>assistant content</p>}
         spelling={<p>spelling content</p>}
-        accessibility={<p>accessibility content</p>}
         settings={settings}
         presence={presence}
       >
@@ -107,13 +106,14 @@ describe('ContextPanel', () => {
     expect(screen.getByText('assistant content')).toBeDefined();
   });
 
-  it('FOUR TABS, each showing its own content and only its own, and a click moves the one setting (ADR-0156, ADR-0183)', async () => {
+  it('THREE TABS, each showing its own content and only its own, and a click moves the one setting (ADR-0156, ADR-0189)', async () => {
     const settings = drawn();
+    // THREE, and not four: the accessibility tools are in the document panel while in use (ADR-0189), so the
+    // Assistant keeps its word. CONTROL: a fourth tab appearing again is a different list here.
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toStrictEqual([
       'Properties',
       'Assistant',
       'Spelling',
-      'Accessibility',
     ]);
     await act(async () => {
       screen.getByRole('tab', { name: 'Spelling' }).click();
@@ -124,14 +124,14 @@ describe('ContextPanel', () => {
     // CONTROL: neither of the other two is drawn beside it, so the content above is the tab's and not a list of all.
     expect(screen.queryByText('properties content')).toBeNull();
     expect(screen.queryByText('assistant content')).toBeNull();
-    // AND THE FOURTH IS ITS OWN, reached the same way.
-    await act(async () => {
-      screen.getByRole('tab', { name: 'Accessibility' }).click();
-      await Promise.resolve();
-    });
-    expect(settings.get(CONTEXT_PANEL_TAB_SETTING.id)).toBe('accessibility');
-    expect(screen.getByText('accessibility content')).toBeDefined();
-    expect(screen.queryByText('spelling content')).toBeNull();
+  });
+
+  it('REFUSES a stored accessibility tab, which the build before ADR-0189 could have saved, and shows Properties', () => {
+    const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
+    settings.hydrate({ [CONTEXT_PANEL_TAB_SETTING.id]: 'accessibility' });
+    drawn(settings);
+    expect(settings.get(CONTEXT_PANEL_TAB_SETTING.id)).toBe('properties');
+    expect(screen.getByText('properties content')).toBeDefined();
   });
 
   it('a STORED collapse is what opens', () => {
