@@ -4168,6 +4168,15 @@ optgroup {
   flex: none;
 }
 
+/* A COLUMN OF SMALL TOOLS (ADR-0194): up to three rows, as wide as its longest caption, one item in the row's fold.
+   The ribbon's buttons sit at the top (`align-items: flex-start`); a column is the height of its own rows. */
+.m-ribbon__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
 /* A GROUP'S OVERFLOW (the owner's `document-light-narrow.png`): the tools that did not fit, in the
    group they belong to. It draws as a tool button so a folded group reads as a group — the chevron
    is what says it opens rather than runs. */

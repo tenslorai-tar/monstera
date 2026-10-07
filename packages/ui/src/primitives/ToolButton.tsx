@@ -64,6 +64,12 @@ export interface ToolButtonProps {
    * `undefined` writes nothing: a button that sets no state is not a toggle.
    */
   readonly pressed?: boolean | undefined;
+  /**
+   * How it is drawn (ADR-0194): `large` (absent) a glyph over its caption; `small` a glyph beside it; `icon` the glyph alone.
+   * An icon-only button's caption is its `aria-label` and its tooltip is always drawn — the label is not on screen,
+   * so the tooltip is what says what it is to a pointer.
+   */
+  readonly size?: 'large' | 'small' | 'icon' | undefined;
 }
 
 /**
@@ -77,24 +83,28 @@ export function ribbonCaption(text: string): string {
   return text.endsWith('…') ? text.slice(0, -1).trimEnd() : text;
 }
 
-export function ToolButton({ label, description, icon, onClick, command, pressed }: ToolButtonProps): ReactElement {
+export function ToolButton({ label, description, icon, onClick, command, pressed, size = 'large' }: ToolButtonProps): ReactElement {
   const { _ } = useLingui();
   const describedBy = useId();
+  const caption = ribbonCaption(_(label));
   const button = (
     <BaseButton
       aria-describedby={description === undefined ? undefined : describedBy}
+      aria-label={size === 'icon' ? caption : undefined}
       aria-pressed={pressed}
-      className="m-tool-button"
+      className={size === 'large' ? 'm-tool-button' : `m-tool-button m-tool-button--${size}`}
       data-command={command}
       nativeButton
       onClick={onClick}
       type="button"
     >
-      <Icon name={icon} size="ribbon" />
-      <span className="m-tool-button__label">{ribbonCaption(_(label))}</span>
+      <Icon name={icon} size={size === 'large' ? 'ribbon' : 'control'} />
+      {size === 'icon' ? null : <span className="m-tool-button__label">{caption}</span>}
     </BaseButton>
   );
-  if (description === undefined) return button;
+  // AN ICON'S TOOLTIP IS ALWAYS DRAWN: its full title, or its caption where the title is the caption, since nothing
+  // else on screen says what it is. Its name is already its `aria-label`, so no second hidden copy is wired.
+  if (description === undefined) return size === 'icon' ? <Tooltip label={label}>{button}</Tooltip> : button;
   return (
     <>
       <Tooltip label={description}>{button}</Tooltip>

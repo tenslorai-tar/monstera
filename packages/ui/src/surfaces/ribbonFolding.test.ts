@@ -308,6 +308,63 @@ describe('splitFold — nothing is lost when a group folds', () => {
   });
 });
 
+describe('ribbonUnits — a run of small tools is columns of at most three (ADR-0194)', () => {
+  interface Sized {
+    readonly command: { readonly id: string };
+    readonly secondary: boolean;
+    readonly menu: MessageKey | undefined;
+    readonly size: 'large' | 'small' | 'icon';
+  }
+  const tool = (id: string, size: Sized['size'] = 'large', secondary = false, menu?: MessageKey): Sized => ({
+    command: { id },
+    secondary,
+    menu,
+    size,
+  });
+  /** Each unit as `key:member,member`, a column marked by its size, so the columns and their members are both read. */
+  const shape = (entries: readonly Sized[]): string[] =>
+    ribbonUnits(entries).map((unit) =>
+      unit.stack === undefined ? unit.key : `${unit.stack}[${unit.entries.map((entry) => entry.command.id).join(',')}]`,
+    );
+  const run = (count: number, size: Sized['size']): Sized[] => Array.from({ length: count }, (_, index) => tool(`t${String(index)}`, size));
+
+  it('gathers seven icons as 3 + 2 + 2, never 3 + 3 + 1, and three small as one column', () => {
+    expect(shape(run(7, 'icon'))).toStrictEqual(['icon[t0,t1,t2]', 'icon[t3,t4]', 'icon[t5,t6]']);
+    expect(shape(run(3, 'small'))).toStrictEqual(['small[t0,t1,t2]']);
+    expect(shape(run(4, 'small'))).toStrictEqual(['small[t0,t1]', 'small[t2,t3]']);
+    expect(shape(run(1, 'small'))).toStrictEqual(['small[t0]']);
+  });
+
+  it('CONTROL: the same seven tools with no size are seven buttons, so the columns are what `size` causes', () => {
+    expect(shape(run(7, 'large'))).toStrictEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6']);
+  });
+
+  it('a run ends at a large tool and at a different small size, and keeps the placement order', () => {
+    const entries = [tool('a', 'small'), tool('b', 'small'), tool('big'), tool('c', 'small'), tool('d', 'icon'), tool('e', 'icon')];
+    expect(shape(entries)).toStrictEqual(['small[a,b]', 'big', 'small[c]', 'icon[d,e]']);
+  });
+
+  it('a NAMED MENU ends a run, and a SECONDARY is a unit of its own, last, whatever its size', () => {
+    const MENU = messageKey('test.menu.convert');
+    const entries = [tool('a', 'small'), tool('x', 'small', false, MENU), tool('b', 'small'), tool('later', 'small', true), tool('c', 'small')];
+    expect(ribbonUnits(entries).map((unit) => unit.key)).toStrictEqual(['a', 'x', 'b', 'later']);
+    expect(ribbonUnits(entries).map((unit) => unit.stack)).toStrictEqual(['small', undefined, 'small', 'small']);
+    // The secondary is not gathered with the primaries around it; `b` and `c` are one run only once the menu is gone.
+    expect(shape([tool('a', 'small'), tool('later', 'small', true), tool('b', 'small')])).toStrictEqual(['small[a,b]', 'small[later]']);
+  });
+
+  it('a folded column puts EVERY member in the More, one command per line, and nothing is in both', () => {
+    const entries = [...run(3, 'small'), tool('big'), ...[tool('u', 'icon'), tool('v', 'icon')]];
+    const units = ribbonUnits(entries);
+    for (let shown = 1; shown <= units.length; shown += 1) {
+      const split = splitFold(entries, { shown, more: shown < units.length });
+      const all = [...split.shown.flatMap((unit) => unit.entries), ...split.folded].map((entry) => entry.command.id);
+      expect(all, `shown ${String(shown)}`).toStrictEqual(entries.map((entry) => entry.command.id));
+    }
+    expect(splitFold(entries, { shown: 1, more: true }).folded.map((entry) => entry.command.id)).toStrictEqual(['big', 'u', 'v']);
+  });
+});
+
 describe('innerWidthOf', () => {
   /** A row as the browser reports it: a box width, and the padding and border its computed style carries. */
   function row(box: number, style: Partial<CSSStyleDeclaration>): HTMLElement {

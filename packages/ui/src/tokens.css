@@ -512,6 +512,8 @@
   --ribbon-caption: 22px;
   --control-ribbon: 52px;
   --control-ribbon-tall: 64px;
+  /* A SMALL TOOL'S ROW (ADR-0194): three stack to 70 px inside the ribbon's 72 px of room above its caption. */
+  --control-ribbon-row: 22px;
   --rail: 64px;
   --rail-studio: 48px;
   --rail-button: 48px;

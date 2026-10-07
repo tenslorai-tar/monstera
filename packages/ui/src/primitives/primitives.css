@@ -380,6 +380,24 @@
   }
 }
 
+/* A SMALL TOOL (ADR-0194): the glyph beside its caption, one row of a column; and an ICON, the glyph alone in a square
+   as tall as the row. Both fill the column they are stacked in, so a column of captions is as wide as its longest. */
+.m-tool-button--small,
+.m-tool-button--icon {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: var(--space-6);
+  min-inline-size: 0;
+  block-size: var(--control-ribbon-row);
+  padding: 0 var(--space-6);
+}
+
+.m-tool-button--icon {
+  justify-content: center;
+  inline-size: var(--control-ribbon-row);
+  padding: 0;
+}
+
 .m-tool-button__label {
   color: var(--text);
   font-size: var(--font-chrome-11);

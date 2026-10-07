@@ -107,7 +107,10 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
       // THE ROW'S BUTTONS, from the one function that defines them: the primaries, a named menu as one, then the
       // secondaries (ADR-0098's correction, ADR-0101). A button folded away keeps what it was last measured at.
       for (const unit of ribbonUnits(group.entries)) {
-        const width = element.querySelector<HTMLElement>(`[data-command="${CSS.escape(unit.key)}"]`)?.getBoundingClientRect().width ?? 0;
+        // A COLUMN OF SMALL TOOLS (ADR-0194) is measured on its own box, `data-stack`; it comes before its first
+        // member in the page, so the selector list finds it first, and a button or a menu has no such box.
+        const key = CSS.escape(unit.key);
+        const width = element.querySelector<HTMLElement>(`[data-stack="${key}"], [data-command="${key}"]`)?.getBoundingClientRect().width ?? 0;
         if (width > 0) naturals.set(unit.key, width);
       }
     });

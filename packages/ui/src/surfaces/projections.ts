@@ -10,6 +10,7 @@ import {
   type MenuId,
   type MenuContext,
   type Placement,
+  type RibbonSize,
   type SectionId,
   type StartScreenSlot,
   type StatusBarPlacement,
@@ -75,6 +76,8 @@ export interface RibbonEntry {
   readonly secondary: boolean;
   /** The menu this entry is drawn under, or `undefined` for its own button (ADR-0101). */
   readonly menu: MessageKey | undefined;
+  /** How big it is drawn in this group (ADR-0194); a large button where the placement says nothing. */
+  readonly size: RibbonSize;
 }
 
 /** One captioned group within a ribbon section. */
@@ -122,7 +125,7 @@ function sectionsOf(commands: readonly UiCommand[]): readonly RibbonSection[] {
       // the eight — so this cannot be reached, and is not defended against.
       if (groups === undefined) continue;
       const entries = groups.get(slot.group) ?? [];
-      entries.push({ command, order: slot.order, secondary: slot.secondary, menu: slot.menu });
+      entries.push({ command, order: slot.order, secondary: slot.secondary, menu: slot.menu, size: slot.size });
       groups.set(slot.group, entries);
     }
   }
@@ -255,6 +258,7 @@ function ribbonSlot(
       readonly order: number;
       readonly secondary: boolean;
       readonly menu: MessageKey | undefined;
+      readonly size: RibbonSize;
     }
   | undefined {
   switch (placement.surface) {
@@ -265,6 +269,7 @@ function ribbonSlot(
         order: placement.order,
         secondary: placement.prominence === 'secondary',
         menu: placement.menu,
+        size: placement.size ?? 'large',
       };
     case 'quick-toolbar':
     case 'context-menu':

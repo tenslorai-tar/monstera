@@ -51,6 +51,9 @@ export type StartScreenSlot = 'primary' | 'shortcut' | 'footer';
 /** Where a context menu was opened. §7's five contexts; `object` is Edit object's selected object (ADR-0153). */
 export type MenuContext = 'page' | 'annotation' | 'selection' | 'tab' | 'object';
 
+/** How a ribbon placement is drawn (ADR-0194). */
+export type RibbonSize = 'large' | 'small' | 'icon';
+
 /**
  * One place a command appears.
  *
@@ -87,6 +90,13 @@ export type Placement =
        * in two groups at once — so it is on the placement.
        */
       readonly prominence?: 'secondary';
+      /**
+       * How big the tool is drawn IN THIS GROUP ([ADR-0194](../../../../docs/DECISIONS/0194-a-ribbon-placement-may-be-small-and-a-run-of-small-tools-draws-as-columns.md)):
+       * `large` (absent) is a glyph over its caption; `small` is a glyph beside its caption, stacked with the small tools
+       * next to it; `icon` is the glyph alone, named by its caption and described by its full title. Consecutive
+       * entries of one small size are gathered into columns of at most three by `ribbonUnits`, never by the surface.
+       */
+      readonly size?: RibbonSize;
       /**
        * Placements in one group naming the same `menu` draw as ONE captioned button that opens them
        * ([ADR-0101](../../../../docs/DECISIONS/0101-a-ribbon-placement-may-name-a-menu.md)) — the owner's

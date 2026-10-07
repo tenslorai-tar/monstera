@@ -213,14 +213,35 @@ function unfolded(groups: readonly GroupWidths[]): readonly GroupFold[] {
 export interface RibbonUnit<T> {
   readonly key: string;
   readonly menu: MessageKey | undefined;
+  /**
+   * `'small'` or `'icon'` where this unit is a COLUMN of small tools (ADR-0194): `entries` are the column's tools,
+   * top to bottom, and the row measures and folds the column as one. `undefined` is a button, or a named menu.
+   */
+  readonly stack: StackSize | undefined;
   readonly entries: readonly T[];
 }
+
+/** The sizes that stack: a large tool is a button of its own. */
+export type StackSize = 'small' | 'icon';
+
+/** Most tools in one column: what three small buttons stack to inside the ribbon's own height. */
+export const STACK_ROWS = 3;
 
 /** What a ribbon entry has to carry for the row to be built from it. */
 interface UnitEntry {
   readonly secondary: boolean;
   readonly menu: MessageKey | undefined;
+  /** Absent reads as large, so a fixture written before ADR-0194 is the same row. */
+  readonly size?: 'large' | StackSize | undefined;
   readonly command: { readonly id: string };
+}
+
+/** How many tools each of the `columns` columns takes out of `count`, the remainder to the first ones: 7 is 3 + 2 + 2. */
+function columnsOf(count: number): readonly number[] {
+  const columns = Math.ceil(count / STACK_ROWS);
+  const base = Math.floor(count / columns);
+  const extra = count % columns;
+  return Array.from({ length: columns }, (_, index) => base + (index < extra ? 1 : 0));
 }
 
 /**
@@ -237,27 +258,52 @@ interface UnitEntry {
  * (ARCHITECTURE §7: a menu does not combine with `secondary`), so each is a button of its own.
  */
 export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonly RibbonUnit<T>[] {
-  const units: { key: string; menu: MessageKey | undefined; entries: T[] }[] = [];
-  const byMenu = new Map<MessageKey, { key: string; menu: MessageKey | undefined; entries: T[] }>();
-  const secondaries: { key: string; menu: MessageKey | undefined; entries: T[] }[] = [];
+  type Open = { key: string; menu: MessageKey | undefined; stack: StackSize | undefined; entries: T[] };
+  /** A RUN of one small size, still whole: it becomes columns once the group's entries are all read. */
+  type Run = { run: StackSize; entries: T[] };
+  const items: (Open | Run)[] = [];
+  const byMenu = new Map<MessageKey, Open>();
+  const secondaries: Open[] = [];
+  let run: Run | undefined;
   for (const entry of entries) {
+    const stack = entry.size === 'small' || entry.size === 'icon' ? entry.size : undefined;
     if (entry.secondary) {
-      secondaries.push({ key: entry.command.id, menu: undefined, entries: [entry] });
+      // A SECONDARY IS A UNIT OF ITS OWN whatever its size: it folds first and alone, so More lists it last.
+      secondaries.push({ key: entry.command.id, menu: undefined, stack, entries: [entry] });
       continue;
     }
     if (entry.menu === undefined) {
-      units.push({ key: entry.command.id, menu: undefined, entries: [entry] });
+      if (stack === undefined) {
+        items.push({ key: entry.command.id, menu: undefined, stack: undefined, entries: [entry] });
+        run = undefined;
+      } else if (run?.run === stack) {
+        run.entries.push(entry);
+      } else {
+        run = { run: stack, entries: [entry] };
+        items.push(run);
+      }
       continue;
     }
+    // A MENU ENDS A RUN: its members are one large button, and a run does not cross one.
+    run = undefined;
     const existing = byMenu.get(entry.menu);
     if (existing !== undefined) {
       existing.entries.push(entry);
       continue;
     }
-    const unit = { key: entry.command.id, menu: entry.menu, entries: [entry] };
+    const unit: Open = { key: entry.command.id, menu: entry.menu, stack: undefined, entries: [entry] };
     byMenu.set(entry.menu, unit);
-    units.push(unit);
+    items.push(unit);
   }
+  const units = items.flatMap((item): readonly Open[] => {
+    if (!('run' in item)) return [item];
+    let from = 0;
+    return columnsOf(item.entries.length).map((count) => {
+      const column = item.entries.slice(from, from + count);
+      from += count;
+      return { key: column[0]?.command.id ?? '', menu: undefined, stack: item.run, entries: column };
+    });
+  });
   return [...units, ...secondaries];
 }
 

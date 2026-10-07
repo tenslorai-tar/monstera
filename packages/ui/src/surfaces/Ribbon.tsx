@@ -25,10 +25,10 @@ import { SECTION_IDS, type SectionId } from '../registries/placement.js';
 import { LAYOUT_MODE_SETTING, RIBBON_SECTION_SETTING } from '../settings/layout.js';
 import type { SettingsStore } from '../settingsStore.js';
 import { useSetting } from '../useSetting.js';
-import { type RibbonSection, railModel, ribbonModel } from './projections.js';
+import { type RibbonEntry, type RibbonSection, railModel, ribbonModel } from './projections.js';
 import { railCapacity, railFolded } from './railFold.js';
 import { RibbonMore, RibbonMoreGauge } from './RibbonMore.js';
-import { restEntries, splitFold } from './ribbonFolding.js';
+import { restEntries, splitFold, type StackSize } from './ribbonFolding.js';
 import { useRibbonFold } from './useRibbonFold.js';
 
 /**
@@ -295,6 +295,36 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
 
   const active = activeSection?.section;
 
+  /** One ribbon tool, drawn the one way whatever its size (ADR-0194): a column's rows and a lone button alike. */
+  const toolButton = (entry: RibbonEntry, stacked: StackSize | undefined): ReactElement => (
+    <ToolButton
+      key={entry.command.id}
+      command={entry.command.id}
+      size={stacked}
+      // THE STATE IT SETS, where it sets one: the tool that is on, a panel that is shown (WCAG 4.1.2).
+      pressed={entry.command.checked?.(context)}
+      // THE REGISTRY GUARANTEES IT: a command placed on the ribbon with no
+      // icon is refused at construction, so `File` is never drawn for a
+      // command in the shipped graph.
+      icon={entry.command.icon ?? 'File'}
+      // THE SHORT FORM WHERE THERE IS ONE, and the full title as the
+      // tooltip in exactly that case — so a tooltip appears on the
+      // ribbon precisely where the caption is an abbreviation, and
+      // never to repeat what is already under the pointer. Both texts
+      // are the command's; this surface composes no string.
+      label={entry.command.ribbonTitle ?? entry.command.title}
+      description={entry.command.ribbonTitle === undefined ? undefined : entry.command.title}
+      onClick={() => {
+        // Not awaited, for `QuickToolbar`'s reason: a handler
+        // returning a promise would make React's event handling
+        // wait on IPC, and nothing here reads the result.
+        void entry.command.run(context);
+        // A TOOL CHOICE DISMISSES STUDIO'S OVERLAY (§10.3).
+        if (mode === 'studio') shut();
+      }}
+    />
+  );
+
   return (
     // `display: contents` on this root, in `app.css`. The rail and the tool strip
     // are two pieces of §10.3's anatomy in two places — the rail down the left
@@ -453,35 +483,16 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
                     />
                   );
                 }
-                return (
-                <ToolButton
-                  key={entry.command.id}
-                  command={entry.command.id}
-                  // THE STATE IT SETS, where it sets one: the tool that is on, a panel that is shown (WCAG 4.1.2).
-                  pressed={entry.command.checked?.(context)}
-                  // THE REGISTRY GUARANTEES IT: a command placed on the ribbon with no
-                  // icon is refused at construction, so `File` is never drawn for a
-                  // command in the shipped graph.
-                  icon={entry.command.icon ?? 'File'}
-                  // THE SHORT FORM WHERE THERE IS ONE, and the full title as the
-                  // tooltip in exactly that case — so a tooltip appears on the
-                  // ribbon precisely where the caption is an abbreviation, and
-                  // never to repeat what is already under the pointer. Both texts
-                  // are the command's; this surface composes no string.
-                  label={entry.command.ribbonTitle ?? entry.command.title}
-                  description={
-                    entry.command.ribbonTitle === undefined ? undefined : entry.command.title
-                  }
-                  onClick={() => {
-                    // Not awaited, for `QuickToolbar`'s reason: a handler
-                    // returning a promise would make React's event handling
-                    // wait on IPC, and nothing here reads the result.
-                    void entry.command.run(context);
-                    // A TOOL CHOICE DISMISSES STUDIO'S OVERLAY (§10.3).
-                    if (mode === 'studio') shut();
-                  }}
-                />
-                );
+                // A COLUMN OF SMALL TOOLS (ADR-0194): one unit to the fold, drawn as the rows it holds. The same
+                // button as a large one, a size apart — `ToolButton` is the one place a ribbon tool is drawn.
+                if (unit.stack !== undefined) {
+                  return (
+                    <div className="m-ribbon__stack" data-stack={unit.key} key={unit.key}>
+                      {unit.entries.map((member) => toolButton(member, unit.stack))}
+                    </div>
+                  );
+                }
+                return toolButton(entry, undefined);
               })}
               {/* WHAT DID NOT FIT, in this group's own More. A fold is a presentation of the
                   projection above and never a second list: these entries are the tail of the same

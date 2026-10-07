@@ -225,4 +225,44 @@ describe('the ribbon', () => {
     expect(groups[0]?.querySelectorAll('button')).toHaveLength(2);
     expect(groups[1]?.querySelectorAll('button')).toHaveLength(1);
   });
+
+  describe('small tools (ADR-0194)', () => {
+    const small = (id: string, title: string, order: number, size: 'small' | 'icon' | undefined): UiCommand =>
+      commandOf(id, title, [
+        { surface: 'ribbon', section: 'comment', group: GROUP_MARKUP, order, ...(size === undefined ? {} : { size }) },
+      ]);
+
+    it('draws a run of small tools as one column of rows, each running its OWN command', () => {
+      const ran: string[] = [];
+      const make = (id: string, title: string, order: number): UiCommand => ({
+        ...small(id, title, order, 'small'),
+        run: () => {
+          ran.push(id);
+        },
+      });
+      draw([make('s.a', 'test.save', 10), make('s.b', 'test.rotate', 20), make('s.c', 'test.highlight', 30)]);
+
+      const stacks = document.querySelectorAll('.m-ribbon__stack');
+      expect(stacks).toHaveLength(1);
+      const rows = stacks[0]?.querySelectorAll('button.m-tool-button--small') ?? [];
+      expect([...rows].map((row) => row.textContent)).toStrictEqual(['Save', 'Rotate', 'Highlight']);
+      fireEvent.click(rows[1] as Element);
+      expect(ran).toStrictEqual(['s.b']);
+    });
+
+    it('CONTROL: the same tools with no size are three large buttons and no stack', () => {
+      draw([small('s.a', 'test.save', 10, undefined), small('s.b', 'test.rotate', 20, undefined)]);
+      expect(document.querySelectorAll('.m-ribbon__stack')).toHaveLength(0);
+      expect(document.querySelectorAll('button.m-tool-button--small')).toHaveLength(0);
+      expect(document.querySelectorAll('button.m-tool-button')).toHaveLength(2);
+    });
+
+    it('draws an ICON with no caption on screen, still named by it', () => {
+      draw([small('s.a', 'test.save', 10, 'icon'), small('s.b', 'test.rotate', 20, 'small')]);
+      const icon = screen.getByRole('button', { name: 'Save' });
+      expect(icon.className).toContain('m-tool-button--icon');
+      expect(icon.querySelector('.m-tool-button__label')).toBeNull();
+      expect(icon.getAttribute('aria-label')).toBe('Save');
+    });
+  });
 });
