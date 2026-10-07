@@ -3797,7 +3797,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onJump={navigator.jumpTo}
           onMove={movePage}
           onSwap={swapPages}
-          organize={organize}
+          // A TOOL THAT IS ARMED OWNS THE PAGE, in every section: Organize's grid drags a card to reorder it, and under an
+          // armed tool that drag took the drag meant to draw (a barcode's box drew nothing and lifted the page — the
+          // owner's recording of 2026-10-07). So while any tool is armed the canvas is the pages themselves, where the
+          // tools draw, and the grid returns when it is put down. The section, and the selection it counts, are unchanged.
+          organize={toolId === undefined ? organize : undefined}
           loupe={loupe}
           rulers={rulers}
           showGrid={showGrid}

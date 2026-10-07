@@ -74,7 +74,6 @@ import {
   FORM_FIELD_LISTBOX_TOOL_TITLE,
   FORM_FIELD_RADIO_TOOL_TITLE,
   FORM_FIELD_TEXT_TOOL_TITLE,
-  GROUP_MARKS,
   GROUP_FIELDS,
   GROUP_LINKS,
   GROUP_MARKUP,
@@ -1156,14 +1155,19 @@ export function stampToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 export function placeImageToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(
-    PLACE_IMAGE_TOOL_ID,
-    { full: PLACE_IMAGE_TOOL_TITLE, ribbon: RIBBON_PLACE_IMAGE },
-    'Image',
-    52,
-    deps,
-    // A STAMP: D3's custom-image stamp IS this tool (its FEATURES row says so).
-    STAMPS,
+  // AND EDIT › TEXT, beside the text box and the barcode (the owner's order of 2026-10-07): the tools that put content on
+  // a page sit together in Edit, §7's one command in two groups.
+  return alsoOn(
+    toolCommand(
+      PLACE_IMAGE_TOOL_ID,
+      { full: PLACE_IMAGE_TOOL_TITLE, ribbon: RIBBON_PLACE_IMAGE },
+      'Image',
+      52,
+      deps,
+      // A STAMP: D3's custom-image stamp IS this tool (its FEATURES row says so).
+      STAMPS,
+    ),
+    { surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 35 },
   );
 }
 
@@ -1191,21 +1195,15 @@ export function placeSignatureToolCommand(deps: ToolCommandDeps): UiCommand {
 /**
  * The place-barcode tool's command.
  *
- * **Organize › Marks, secondary, at 60**, beside *Read barcodes* at 62: a barcode is something a page
- * is given, like a Bates number or a watermark, and the owner's v5 Marks group draws Bates · Header ·
- * Watermark · Background · TOC, so the two barcode tools sit in its More (ADR-0098), make then read.
+ * **Edit › Text, at 55** (the owner's order of 2026-10-07): adding a barcode puts CONTENT on the page, as an image or a
+ * text box does, and Organize is about the pages themselves. PDF-XChange puts *Add QR Code* under Home › Add. *Read
+ * barcodes* is Tools › OCR's, beside the other recognition.
  */
 export function placeBarcodeToolCommand(deps: ToolCommandDeps): UiCommand {
-  const command = toolCommand(PLACE_BARCODE_TOOL_ID, { full: PLACE_BARCODE_TOOL_TITLE, ribbon: RIBBON_PLACE_BARCODE }, 'QrCode', 60, deps, {
-    section: 'organize',
-    group: GROUP_MARKS,
+  return toolCommand(PLACE_BARCODE_TOOL_ID, { full: PLACE_BARCODE_TOOL_TITLE, ribbon: RIBBON_PLACE_BARCODE }, 'QrCode', 55, deps, {
+    section: 'edit',
+    group: GROUP_TEXT,
   });
-  return {
-    ...command,
-    placements: command.placements.map((placement) =>
-      placement.surface === 'ribbon' ? { ...placement, prominence: 'secondary' as const } : placement,
-    ),
-  };
 }
 
 /**

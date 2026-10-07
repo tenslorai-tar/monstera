@@ -4,7 +4,7 @@ title: Add and read barcodes and QR codes
 summary: Place a QR code or other barcode on a page, or read the barcodes already on a page.
 keywords: [barcode, qr code, qr, data matrix, aztec, pdf417, code 128, ean-13, scan code, read barcode]
 commands: [organize.barcode, document.read-barcodes]
-contexts: [dialog.place-barcode, dialog.page-barcodes, organize]
+contexts: [dialog.place-barcode, dialog.page-barcodes, edit, tools]
 ---
 Monstera can draw a barcode or QR code onto a page, and read the barcodes on the page you are looking at.
 
@@ -12,14 +12,14 @@ Monstera can draw a barcode or QR code onto a page, and read the barcodes on the
 
 To add a barcode:
 
-1. In the rail, choose **Organize**, then **Add a barcode** in the **Marks** group. In a narrower window it is under the group's **More**.
+1. In the rail, choose **Edit**, then **Add a barcode** in the **Text** group, beside **Text box** and **Image**. In a narrower window it is under the group's **More**.
 2. Drag a box on the page where it should go.
 3. Type the **Text or link**, pick a **Barcode type** (**QR Code**, **Data Matrix**, **Aztec**, **PDF417**, **Code 128** or EAN-13, for a number of up to 13 digits), and choose **Add to the page**.
 
 To read barcodes:
 
 1. Go to the page.
-2. In the **Marks** group, choose **Read barcodes** (under the group's **More** in a narrower window). The window lists each barcode's **Type** and **What it says**.
+2. In the rail, choose **Tools**, then **Read barcodes** in the **OCR** group (under the group's **More** in a narrower window). The window lists each barcode's **Type** and **What it says**.
 
 ![The Add a barcode window with Text or link and Barcode type](screenshot:barcodes-1)
 
