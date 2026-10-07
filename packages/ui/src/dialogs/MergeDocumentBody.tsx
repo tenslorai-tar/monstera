@@ -1,5 +1,6 @@
 import { useLingui } from '@lingui/react';
-import { MAX_MERGE_DOCUMENTS } from '@monstera/contract';
+import { MAX_MERGE_DOCUMENTS, MAX_MERGE_PART_ENTRIES, type PageSet, pageSetOf } from '@monstera/contract';
+import { err } from '@monstera/shared';
 import type { ReactElement } from 'react';
 import { useRef, useState } from 'react';
 
@@ -17,6 +18,11 @@ import {
   MERGE_DOCUMENT_PAGE,
   MERGE_DOCUMENT_PLACE,
   MERGE_DOCUMENT_RANGE,
+  MERGE_DOCUMENT_PAGES,
+  MERGE_DOCUMENT_PAGES_ALL,
+  MERGE_DOCUMENT_PAGES_COUNT,
+  MERGE_DOCUMENT_PAGES_EMPTY,
+  MERGE_DOCUMENT_PAGES_TOO_MANY,
   MERGE_DOCUMENT_REMOVE,
   MERGE_DOCUMENT_ROW,
   SOURCE_CHOOSE_FILE,
@@ -28,9 +34,60 @@ import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
+import { type PageRangeProblem, parsePageGroups } from '../pageRanges.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
+import { rangeProblemSentence } from './pageRangeProblem.js';
 import type { MERGE_PLACEMENTS, MergeDocumentAnswer } from './mergeDocumentResult.js';
 import type { SourceDocument } from './sourceDocuments.js';
+
+/**
+ * One row's page range: a field that is empty for every page, beside what it names — *3 of 8 pages go in* — and, once the
+ * person has tried to go on, what is wrong with it, by the shared sentences of `pageRangeProblem.ts` plus the merge's own
+ * bound. The refusal is said and the button goes no further; a part that cannot be read is never dropped.
+ */
+function MergePagesField({
+  text,
+  read,
+  total,
+  tried,
+  onChange,
+}: {
+  readonly text: string;
+  readonly read: RowPages | undefined;
+  readonly total: number;
+  readonly tried: boolean;
+  readonly onChange: (text: string) => void;
+}): ReactElement {
+  const { _ } = useLingui();
+  // SAID AS SOON AS THE TEXT IS WRONG and not only after a press: a field the person typed into is one they are reading.
+  const problem =
+    read === undefined || read.ok
+      ? ''
+      : read.problem === 'too-many'
+        ? _(MERGE_DOCUMENT_PAGES_TOO_MANY, { limit: MAX_MERGE_PART_ENTRIES })
+        : tried || text.trim() !== ''
+          ? rangeProblemSentence(err(read.problem), _, MERGE_DOCUMENT_PAGES_EMPTY)
+          : '';
+  return (
+    <span className="m-merge-list__range">
+      <Input
+        invalid={problem !== ''}
+        label={MERGE_DOCUMENT_PAGES}
+        labelShownBeside
+        placeholder={MERGE_DOCUMENT_PAGES_ALL}
+        value={text}
+        onValueChange={onChange}
+      />
+      <span className="m-merge-list__range-note" role={problem === '' ? undefined : 'alert'}>
+        {problem !== ''
+          ? problem
+          : read?.ok === true && read.pages !== 'all'
+            ? _(MERGE_DOCUMENT_PAGES_COUNT, { count: read.count, total })
+            : ''}
+      </span>
+    </span>
+  );
+}
 
 /** Where the merged pages go. */
 type Placement = (typeof MERGE_PLACEMENTS)[number];
@@ -39,7 +96,11 @@ type Placement = (typeof MERGE_PLACEMENTS)[number];
 interface Listed {
   readonly key: number;
   readonly docId: string;
+  /** The page range as typed; empty is every page (ADR-0195). */
+  readonly pages: string;
 }
+
+type Draft = { readonly docId: string; readonly pages: string };
 
 /**
  * The documents the dialog opens with: those listed before *Choose file…*, then the file just picked — unless it is
@@ -49,14 +110,34 @@ interface Listed {
 function openingDocuments(
   choices: readonly SourceDocument[],
   openedOn: string | undefined,
-  draft: readonly string[] | undefined,
-): readonly string[] {
+  draft: readonly Draft[] | undefined,
+): readonly Draft[] {
   if (draft === undefined) {
     const first = openedOn ?? choices[0]?.docId;
-    return first === undefined ? [] : [first];
+    return first === undefined ? [] : [{ docId: first, pages: '' }];
   }
-  if (openedOn === undefined || draft.includes(openedOn)) return draft;
-  return [...draft, openedOn].slice(0, MAX_MERGE_DOCUMENTS);
+  if (openedOn === undefined || draft.some((each) => each.docId === openedOn)) return draft;
+  return [...draft, { docId: openedOn, pages: '' }].slice(0, MAX_MERGE_DOCUMENTS);
+}
+
+/**
+ * One row's range, read against its document: the pages in the order typed (`1-3, 5`; empty is every page), or what is
+ * wrong with it. The syntax and its refusals are `parsePageGroups`' — the one parser — and the only rule added here is
+ * the merge's own bound on separate groups (`MAX_MERGE_PART_ENTRIES`), which is said where it is typed rather than
+ * refused by the host.
+ */
+type RowPages =
+  | { readonly ok: true; readonly pages: 'all' | PageSet; readonly count: number }
+  | { readonly ok: false; readonly problem: PageRangeProblem | 'too-many' };
+
+function rowPages(text: string, total: number): RowPages {
+  if (text.trim() === '') return { ok: true, pages: 'all', count: total };
+  const groups = parsePageGroups(text, total);
+  if (!groups.ok) return { ok: false, problem: groups.error };
+  const pages = groups.value.flat();
+  const set = pageSetOf(pages);
+  if (set.length > MAX_MERGE_PART_ENTRIES) return { ok: false, problem: 'too-many' };
+  return { ok: true, pages: set, count: pages.length };
 }
 
 /**
@@ -81,19 +162,28 @@ export default function MergeDocumentBody({
   readonly source?: string | undefined;
   readonly pageCount: number;
   readonly draft?:
-    | { readonly placement: Placement; readonly page: string; readonly documents: readonly string[] }
+    | { readonly placement: Placement; readonly page: string; readonly documents: readonly Draft[] }
     | undefined;
 } & DialogAnswering<MergeDocumentAnswer>): ReactElement {
   const { _ } = useLingui();
   const [documents, setDocuments] = useState<readonly Listed[]>(() =>
-    openingDocuments(choices, openedOn, draft?.documents).map((docId, key) => ({ key, docId })),
+    openingDocuments(choices, openedOn, draft?.documents).map((each, key) => ({ key, ...each })),
   );
   // PAST EVERY OPENING KEY, and read only by a press: the list opens with fewer documents than the bound.
   const nextKey = useRef(MAX_MERGE_DOCUMENTS);
   const listed = (docId: string): Listed => {
     nextKey.current += 1;
-    return { key: nextKey.current, docId };
+    return { key: nextKey.current, docId, pages: '' };
   };
+  // EACH ROW'S RANGE READ AGAINST ITS OWN DOCUMENT, by row key. A document no longer offered has no page count and so no
+  // range: `offered` below already refuses the merge for it.
+  const ranges = new Map(
+    documents.map((each) => {
+      const total = choices.find((choice) => choice.docId === each.docId)?.pageCount ?? 0;
+      return [each.key, { total, read: rowPages(each.pages, total) }] as const;
+    }),
+  );
+  const rangesOk = [...ranges.values()].every((range) => range.read.ok);
   const [placement, setPlacement] = useState<Placement>(draft?.placement ?? 'end');
   const [typed, setTyped] = useState(draft?.page ?? '1');
   const attempt = useAttempt();
@@ -180,6 +270,17 @@ export default function MergeDocumentBody({
                         }}
                       />
                     </span>
+                    {chosen === undefined ? null : (
+                      <MergePagesField
+                        text={each.pages}
+                        read={ranges.get(each.key)?.read}
+                        total={chosen.pageCount}
+                        tried={attempt.tried}
+                        onChange={(pages) => {
+                          setDocuments((now) => now.map((row) => (row.key === each.key ? { ...row, pages } : row)));
+                        }}
+                      />
+                    )}
                   </li>
                 );
               })}
@@ -201,7 +302,7 @@ export default function MergeDocumentBody({
               onClick={() => {
                 resolve({
                   kind: 'choose-file',
-                  draft: { placement, page: typed, documents: documents.map((each) => each.docId) },
+                  draft: { placement, page: typed, documents: documents.map((each) => ({ docId: each.docId, pages: each.pages })) },
                 });
               }}
             />
@@ -241,9 +342,18 @@ export default function MergeDocumentBody({
             if (!offered) return;
             attempt.attempt();
             if (placement === 'after' && !named) return;
+            // A RANGE THE DOCUMENT DOES NOT HAVE IS SAID ON ITS ROW and goes no further: nothing is dropped or guessed.
+            if (!rangesOk) return;
             // THE ONE CONVERSION. 1-based on screen, 0-based on the wire.
             const at = placement === 'start' ? 0 : placement === 'end' ? pageCount : parsed;
-            resolve({ kind: 'merge', documents: documents.map((each) => each.docId), at });
+            resolve({
+              kind: 'merge',
+              documents: documents.map((each) => {
+                const read = ranges.get(each.key)?.read;
+                return { docId: each.docId, pages: read?.ok === true ? read.pages : 'all' };
+              }),
+              at,
+            });
           }}
         />
       </DialogFooter>

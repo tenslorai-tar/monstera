@@ -4616,6 +4616,24 @@ optgroup {
   gap: var(--space-2);
 }
 
+/* A ROW'S PAGE RANGE (ADR-0195), on its own line under the document, from the select's column to the row's end: the
+   field, and under it what it names or what is wrong. */
+.m-merge-list__range {
+  display: flex;
+  grid-column: 2 / -1;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.m-merge-list__range-note {
+  color: var(--muted);
+  font-size: var(--font-chrome-12);
+}
+
+.m-merge-list__range-note[role='alert'] {
+  color: var(--text);
+}
+
 .m-merge-list__add {
   display: flex;
   flex-wrap: wrap;

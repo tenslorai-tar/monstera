@@ -2370,7 +2370,16 @@ describe('delete pages — the mutation-dialog gate', () => {
       // command that sent only the first, or sorted them, sends something else.
       ask: (id, props) => {
         opened.push({ id, props });
-        return Promise.resolve({ kind: 'merge', documents: ['doc-2', 'doc-0', 'doc-2'], at: 4 });
+        // THE MIDDLE ONE WITH PAGES CHOSEN (ADR-0195): a command that sent 'all' for every part sends something else.
+        return Promise.resolve({
+          kind: 'merge',
+          documents: [
+            { docId: 'doc-2', pages: 'all' },
+            { docId: 'doc-0', pages: [1, [3, 4]] },
+            { docId: 'doc-2', pages: 'all' },
+          ],
+          at: 4,
+        });
       },
     }).run(CONTEXT);
 
@@ -2399,7 +2408,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           kind: 'mergeDocument',
           documents: [
             { source: 'doc-2', sourcePages: 'all' },
-            { source: 'doc-0', sourcePages: 'all' },
+            { source: 'doc-0', sourcePages: [1, [3, 4]] },
             { source: 'doc-2', sourcePages: 'all' },
           ],
           at: 4,

@@ -506,6 +506,7 @@ export {
   MAX_PAGE_SET_ENTRIES,
   type PageSet,
   pageSetOf,
+  pageSetOfAtMost,
   pageSetSchema,
   pagesOfSet,
   withPageRuns,

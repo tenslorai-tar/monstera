@@ -348,6 +348,11 @@ export const MERGE_DOCUMENT_MOVE_DOWN = messageKey('dialog.merge-document.move-d
 export const MERGE_DOCUMENT_REMOVE = messageKey('dialog.merge-document.remove');
 export const MERGE_DOCUMENT_ADD = messageKey('dialog.merge-document.add');
 export const MERGE_DOCUMENT_NONE = messageKey('dialog.merge-document.none');
+export const MERGE_DOCUMENT_PAGES = messageKey('dialog.merge-document.pages');
+export const MERGE_DOCUMENT_PAGES_ALL = messageKey('dialog.merge-document.pages-all');
+export const MERGE_DOCUMENT_PAGES_COUNT = messageKey('dialog.merge-document.pages-count');
+export const MERGE_DOCUMENT_PAGES_TOO_MANY = messageKey('dialog.merge-document.pages-too-many');
+export const MERGE_DOCUMENT_PAGES_EMPTY = messageKey('dialog.merge-document.pages-empty');
 export const INSERT_FROM_PDF_COMMAND_TITLE = messageKey('command.insert-from-pdf.title');
 export const INSERT_FROM_PDF_TITLE = messageKey('dialog.insert-from-pdf.title');
 export const INSERT_FROM_PDF_LABEL = messageKey('dialog.insert-from-pdf.label');
@@ -4618,6 +4623,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [MERGE_DOCUMENT_REMOVE]: 'Remove document {number}',
   [MERGE_DOCUMENT_ADD]: 'Add a document',
   [MERGE_DOCUMENT_NONE]: 'No document chosen yet. Add one, or choose a file.',
+  [MERGE_DOCUMENT_PAGES]: 'Pages to take',
+  [MERGE_DOCUMENT_PAGES_ALL]: 'All pages, or type some, like 1-3, 5',
+  [MERGE_DOCUMENT_PAGES_COUNT]: '{count, plural, one {# page} other {# pages}} of {total} go in',
+  [MERGE_DOCUMENT_PAGES_TOO_MANY]:
+    'That picks out more separate groups of pages than a merge can carry ({limit} at most). Type fewer groups, like 1-40, or merge this document on its own.',
+  [MERGE_DOCUMENT_PAGES_EMPTY]: 'Type the pages to take, or clear the box to take them all.',
   [INSERT_FROM_PDF_COMMAND_TITLE]: 'Insert from PDF…',
   [INSERT_FROM_PDF_TITLE]: 'Insert from PDF',
   [INSERT_FROM_PDF_LABEL]: 'Insert from',

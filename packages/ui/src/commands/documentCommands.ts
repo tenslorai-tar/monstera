@@ -1940,7 +1940,8 @@ export function mergeDocumentCommand(deps: SourceCommandDeps): UiCommand {
         // Insert from PDF's question. THE SCHEMA BRANDS EACH ID. The dialog answers plain strings because a dialog
         // result is renderer-side text until a command builds a payload, and `mergeDocumentSchema`'s `docIdSchema` is
         // the one place that transform happens (B3a).
-        documents: asked.answer.documents.map((source) => ({ source: source as DocId, sourcePages: 'all' as const })),
+        // THE PAGES EACH ROW CHOSE (ADR-0195), or every page: a row nobody typed in is the merge it always was.
+        documents: asked.answer.documents.map((part) => ({ source: part.docId as DocId, sourcePages: part.pages })),
         // ALREADY ZERO-BASED, converted once in the dialog.
         at: asked.answer.at,
       });

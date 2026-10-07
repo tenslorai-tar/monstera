@@ -15,6 +15,11 @@ afterEach(() => {
   cleanup();
 });
 
+/** Documents taken whole, as the dialog answers them. */
+const ALL = (...ids: string[]): { docId: string; pages: 'all' }[] => ids.map((docId) => ({ docId, pages: 'all' }));
+/** Documents in a draft, nothing typed in their rows. */
+const DRAFT = (...ids: string[]): { docId: string; pages: string }[] => ids.map((docId) => ({ docId, pages: '' }));
+
 const ALPHA = { docId: 'd-a', name: 'Alpha.pdf', pageCount: 3 };
 const BETA = { docId: 'd-b', name: 'Beta.pdf', pageCount: 1 };
 
@@ -43,14 +48,14 @@ describe('MergeDocumentBody', () => {
     expect(screen.queryByRole('textbox', { name: 'Page' })).toBeNull();
     expect(screen.getAllByRole('listitem')).toHaveLength(1);
     press('Merge');
-    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ['d-a'], at: 8 });
+    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-a'), at: 8 });
   });
 
   it('AT THE START sends 0 — the control for the case above', () => {
     const { resolve } = opened();
     press('At the start');
     press('Merge');
-    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ['d-a'], at: 0 });
+    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-a'), at: 0 });
   });
 
   it('AFTER PAGE asks for a page of this document, says one it lacks, and sends the page typed', () => {
@@ -63,7 +68,7 @@ describe('MergeDocumentBody', () => {
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Page' }), { target: { value: '3' } });
     press('Merge');
-    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ['d-a'], at: 3 });
+    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-a'), at: 3 });
   });
 
   it('SEVERAL DOCUMENTS go in the order the list shows, and Move up changes it', () => {
@@ -75,7 +80,7 @@ describe('MergeDocumentBody', () => {
     expect(screen.getByRole('button', { name: 'Move document 1 up' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getByRole('button', { name: 'Move document 2 down' }).hasAttribute('disabled')).toBe(true);
     press('Merge');
-    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ['d-b', 'd-a'], at: 8 });
+    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-b', 'd-a'), at: 8 });
   });
 
   it('THE SAME DOCUMENT may be listed twice, and Remove takes out the row pressed, not its document', () => {
@@ -86,7 +91,7 @@ describe('MergeDocumentBody', () => {
     // Rows 1 and 3 are both Alpha: removing row 1 must leave Beta then Alpha, which removing by document would not.
     press('Remove document 1');
     press('Merge');
-    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ['d-b', 'd-a'], at: 8 });
+    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-b', 'd-a'), at: 8 });
   });
 
   it('NOTHING LISTED says so and cannot be merged', () => {
@@ -99,11 +104,11 @@ describe('MergeDocumentBody', () => {
   });
 
   it('A DOCUMENT NO LONGER OFFERED is not merged in: one listed in the draft but closed since', () => {
-    const { resolve } = opened({ draft: { placement: 'end', page: '1', documents: ['d-a', 'd-gone'] } });
+    const { resolve } = opened({ draft: { placement: 'end', page: '1', documents: DRAFT('d-a', 'd-gone') } });
     expect(screen.getByRole('button', { name: 'Merge' }).hasAttribute('disabled')).toBe(true);
     press('Remove document 2');
     press('Merge');
-    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ['d-a'], at: 8 });
+    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-a'), at: 8 });
   });
 
   it('CHOOSE FILE answers the list and the place, and reopens with the file just picked added at the end', () => {
@@ -113,20 +118,76 @@ describe('MergeDocumentBody', () => {
     press('Choose file…');
     expect(answered(first.resolve)).toStrictEqual({
       kind: 'choose-file',
-      draft: { placement: 'after', page: '2', documents: ['d-a'] },
+      draft: { placement: 'after', page: '2', documents: DRAFT('d-a') },
     });
     cleanup();
 
-    const again = opened({ source: 'd-b', draft: { placement: 'after', page: '2', documents: ['d-a'] } });
+    const again = opened({ source: 'd-b', draft: { placement: 'after', page: '2', documents: DRAFT('d-a') } });
     press('Merge');
-    expect(answered(again.resolve)).toStrictEqual({ kind: 'merge', documents: ['d-a', 'd-b'], at: 2 });
+    expect(answered(again.resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-a', 'd-b'), at: 2 });
   });
 
   it('A PICK ALREADY LISTED is not added twice: the command asks again with it chosen after a cancelled pick', () => {
-    const { resolve } = opened({ source: 'd-b', draft: { placement: 'end', page: '1', documents: ['d-a', 'd-b'] } });
+    const { resolve } = opened({ source: 'd-b', draft: { placement: 'end', page: '1', documents: DRAFT('d-a', 'd-b') } });
     expect(screen.getAllByRole('listitem')).toHaveLength(2);
     press('Merge');
-    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ['d-a', 'd-b'], at: 8 });
+    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-a', 'd-b'), at: 8 });
+  });
+
+  const pagesBox = (number: number): HTMLElement => screen.getAllByRole('textbox', { name: 'Pages to take' })[number - 1] as HTMLElement;
+
+  it('PAGES CHOSEN OF A DOCUMENT go in as the set typed, in the order typed, and the other documents stay whole (ADR-0195)', () => {
+    const { resolve } = opened({ choices: [{ ...ALPHA, pageCount: 8 }, BETA] });
+    press('Add a document');
+    choose(2, 'd-b');
+    fireEvent.change(pagesBox(1), { target: { value: '4, 2' } });
+    expect(screen.getByText('2 pages of 8 go in')).toBeTruthy();
+    press('Merge');
+    // ZERO-BASED AND IN THE ORDER TYPED (4 then 2 is [3, 1]), where a sorted or one-based answer is other numbers.
+    expect(answered(resolve)).toStrictEqual({
+      kind: 'merge',
+      documents: [{ docId: 'd-a', pages: [3, 1] }, { docId: 'd-b', pages: 'all' }],
+      at: 8,
+    });
+  });
+
+  it('a RUN is written as one entry, and CONTROL: an empty box is every page', () => {
+    const { resolve } = opened({ choices: [{ ...ALPHA, pageCount: 8 }, BETA] });
+    fireEvent.change(pagesBox(1), { target: { value: '1-3, 5' } });
+    press('Merge');
+    expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: [{ docId: 'd-a', pages: [[0, 2], 4] }], at: 8 });
+    cleanup();
+    const again = opened({ choices: [{ ...ALPHA, pageCount: 8 }, BETA] });
+    press('Merge');
+    expect(answered(again.resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-a'), at: 8 });
+  });
+
+  it('a range the document does not have is NAMED on its row and nothing is sent', () => {
+    const { resolve } = opened();
+    fireEvent.change(pagesBox(1), { target: { value: '2-9' } });
+    expect(screen.getByRole('alert').textContent).toContain('2-9');
+    press('Merge');
+    expect(resolve).not.toHaveBeenCalled();
+    // AND A PART THAT IS NOT A PAGE, and a range that counts backwards, each by its own sentence naming the part.
+    fireEvent.change(pagesBox(1), { target: { value: '1, x' } });
+    expect(screen.getByRole('alert').textContent).toContain('x');
+    fireEvent.change(pagesBox(1), { target: { value: '3-1' } });
+    expect(screen.getByRole('alert').textContent).toContain('3-1');
+    // CONTROL: fixing it lets the merge go.
+    fireEvent.change(pagesBox(1), { target: { value: '1-3' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    press('Merge');
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it('CHOOSE FILE keeps what was typed in each row, and reopens with it', () => {
+    const first = opened({ choices: [{ ...ALPHA, pageCount: 8 }, BETA] });
+    fireEvent.change(pagesBox(1), { target: { value: '2, 4' } });
+    press('Choose file…');
+    expect(answered(first.resolve)).toStrictEqual({
+      kind: 'choose-file',
+      draft: { placement: 'end', page: '1', documents: [{ docId: 'd-a', pages: '2, 4' }] },
+    });
   });
 
   it('NO OTHER DOCUMENT OPEN lists none, says so, and offers Choose file', () => {
