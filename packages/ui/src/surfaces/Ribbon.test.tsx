@@ -246,7 +246,9 @@ describe('the ribbon', () => {
       expect(stacks).toHaveLength(1);
       const rows = stacks[0]?.querySelectorAll('button.m-tool-button--small') ?? [];
       expect([...rows].map((row) => row.textContent)).toStrictEqual(['Save', 'Rotate', 'Highlight']);
-      fireEvent.click(rows[1] as Element);
+      const middle = rows[1];
+      if (middle === undefined) throw new Error('the stack drew fewer than two rows');
+      fireEvent.click(middle);
       expect(ran).toStrictEqual(['s.b']);
     });
 

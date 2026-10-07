@@ -63,7 +63,7 @@ function unfolded(text: string): readonly string[] {
   const lines: string[] = [];
   for (const raw of text.split(/\r\n|\r|\n/u)) {
     if ((raw.startsWith(' ') || raw.startsWith('\t')) && lines.length > 0) {
-      lines[lines.length - 1] += raw.slice(1);
+      lines.push((lines.pop() ?? '') + raw.slice(1));
     } else {
       lines.push(raw);
     }

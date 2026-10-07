@@ -100,7 +100,7 @@ interface Listed {
   readonly pages: string;
 }
 
-type Draft = { readonly docId: string; readonly pages: string };
+interface Draft { readonly docId: string; readonly pages: string }
 
 /**
  * The documents the dialog opens with: those listed before *Choose file…*, then the file just picked — unless it is

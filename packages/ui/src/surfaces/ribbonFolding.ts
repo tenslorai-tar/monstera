@@ -258,9 +258,9 @@ function columnsOf(count: number): readonly number[] {
  * (ARCHITECTURE §7: a menu does not combine with `secondary`), so each is a button of its own.
  */
 export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonly RibbonUnit<T>[] {
-  type Open = { key: string; menu: MessageKey | undefined; stack: StackSize | undefined; entries: T[] };
+  interface Open { key: string; menu: MessageKey | undefined; stack: StackSize | undefined; entries: T[] }
   /** A RUN of one small size, still whole: it becomes columns once the list is all read. */
-  type Run = { run: StackSize; entries: T[] };
+  interface Run { run: StackSize; entries: T[] }
 
   /** One list's units: the primaries, or the secondaries, each gathered on its own so a run never crosses between them. */
   const gather = (list: readonly T[]): Open[] => {

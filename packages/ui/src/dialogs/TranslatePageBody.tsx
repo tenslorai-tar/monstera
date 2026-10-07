@@ -160,15 +160,15 @@ export default function TranslatePageBody({
           onClick={() => {
             if (language === '') return;
             attempt.attempt();
-            if (scope === 'page') return resolve({ language, provider, what: { scope: 'page' } });
-            if (scope === 'selection') return resolve({ language, provider, what: { scope: 'selection' } });
+            if (scope === 'page') { resolve({ language, provider, what: { scope: 'page' } }); return; }
+            if (scope === 'selection') { resolve({ language, provider, what: { scope: 'selection' } }); return; }
             // EVERY PAGE, or the pages typed — said on its row and no further when they are not ones the document has.
             if (scope === 'document') {
-              return resolve({
+              resolve({
                 language,
                 provider,
                 what: { scope: 'pages', pages: Array.from({ length: pageCount }, (_unused, page) => page) },
-              });
+              }); return;
             }
             if (parsed.ok && parsed.value.length > 0) {
               resolve({ language, provider, what: { scope: 'pages', pages: [...parsed.value] } });

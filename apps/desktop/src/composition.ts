@@ -3854,18 +3854,19 @@ function networkRecognisers(
 ): Readonly<Record<NetworkOcrEngine, NetworkRecogniser>> {
   return {
     azure: {
-      // `async` ONLY FOR THE ROUTE'S ONE TYPE: Azure reads nothing that waits, and Claude's reads its model.
-      prepare: async () => {
+      // A PROMISE FOR THE ROUTE'S ONE TYPE: Azure reads nothing that waits, and Claude's reads its model. A missing key
+      // is a REJECTION, as it is for Claude's, never a throw out of a function that returns a promise.
+      prepare: () => {
         const credentials = azureCredentials(settings, secrets);
         // TYPED, so a caller can answer *no key* by what it is: the Excel export's
         // `service-refused` does. Its sentence is the one this used to throw.
-        if (credentials === null) throw new NetworkKeyMissing('azure');
-        return {
+        if (credentials === null) return Promise.reject(new NetworkKeyMissing('azure'));
+        return Promise.resolve({
           scale: AZURE_RASTER_SCALE,
           accepts: azureAcceptsBytes,
           recognise: (raster) => recogniseThroughAzure(credentials, raster),
           readTables: (png) => readTablesThroughAzure(credentials, { png }, TABLE_BOUNDS),
-        };
+        });
       },
     },
     claude: {

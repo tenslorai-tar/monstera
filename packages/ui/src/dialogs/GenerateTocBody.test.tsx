@@ -42,6 +42,12 @@ const answered = (resolve: ReturnType<typeof vi.fn>): unknown => GENERATE_TOC_RE
 const press = (name: string): void => {
   fireEvent.click(screen.getByRole('button', { name }));
 };
+/** The nth field of a column, refused by name when the dialog drew fewer rather than handed on `undefined`. */
+const box = (name: string, index: number): HTMLElement => {
+  const found = screen.getAllByRole('textbox', { name })[index];
+  if (found === undefined) throw new Error(`no ${name} field at ${String(index)}`);
+  return found;
+};
 const titles = (): string[] => screen.getAllByRole('textbox', { name: 'Title' }).map((box) => (box as HTMLInputElement).value);
 
 describe('GenerateTocBody', () => {
@@ -55,7 +61,7 @@ describe('GenerateTocBody', () => {
 
   it('RENAME, MOVE, NEST and DELETE each change what is answered — and the order is the one left', () => {
     const resolve = opened();
-    fireEvent.change(screen.getAllByRole('textbox', { name: 'Title' })[1] as HTMLElement, { target: { value: 'Methods' } });
+    fireEvent.change(box('Title', 1), { target: { value: 'Methods' } });
     press('Move entry 3 up');
     press('Move entry 1 in a level');
     press('Delete entry 3');
@@ -91,8 +97,8 @@ describe('GenerateTocBody', () => {
 
   it('a row that cannot be written is NAMED and nothing is answered: an empty title, a page the document lacks', () => {
     const resolve = opened();
-    fireEvent.change(screen.getAllByRole('textbox', { name: 'Title' })[0] as HTMLElement, { target: { value: '  ' } });
-    fireEvent.change(screen.getAllByRole('textbox', { name: 'Page' })[2] as HTMLElement, { target: { value: '40' } });
+    fireEvent.change(box('Title', 0), { target: { value: '  ' } });
+    fireEvent.change(box('Page', 2), { target: { value: '40' } });
     press('Insert');
     expect(resolve).not.toHaveBeenCalled();
     const alerts = screen.getAllByRole('alert').map((alert) => alert.textContent);
@@ -101,8 +107,8 @@ describe('GenerateTocBody', () => {
       'Entry 3: type a page from 1 to 12, or leave the page empty.',
     ]);
     // CONTROL: fixed, it answers.
-    fireEvent.change(screen.getAllByRole('textbox', { name: 'Title' })[0] as HTMLElement, { target: { value: 'Intro' } });
-    fireEvent.change(screen.getAllByRole('textbox', { name: 'Page' })[2] as HTMLElement, { target: { value: '5' } });
+    fireEvent.change(box('Title', 0), { target: { value: 'Intro' } });
+    fireEvent.change(box('Page', 2), { target: { value: '5' } });
     press('Insert');
     expect(resolve).toHaveBeenCalledTimes(1);
   });

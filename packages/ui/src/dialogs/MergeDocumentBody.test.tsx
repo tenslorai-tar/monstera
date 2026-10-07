@@ -134,7 +134,11 @@ describe('MergeDocumentBody', () => {
     expect(answered(resolve)).toStrictEqual({ kind: 'merge', documents: ALL('d-a', 'd-b'), at: 8 });
   });
 
-  const pagesBox = (number: number): HTMLElement => screen.getAllByRole('textbox', { name: 'Pages to take' })[number - 1] as HTMLElement;
+  const pagesBox = (number: number): HTMLElement => {
+    const found = screen.getAllByRole('textbox', { name: 'Pages to take' })[number - 1];
+    if (found === undefined) throw new Error(`no pages field for document ${String(number)}`);
+    return found;
+  };
 
   it('PAGES CHOSEN OF A DOCUMENT go in as the set typed, in the order typed, and the other documents stay whole (ADR-0195)', () => {
     const { resolve } = opened({ choices: [{ ...ALPHA, pageCount: 8 }, BETA] });

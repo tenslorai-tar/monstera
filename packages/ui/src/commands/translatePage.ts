@@ -153,7 +153,7 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
   };
 }
 
-type Chosen = { readonly provider: AiProviderId; readonly model: string; readonly language: TranslationLanguage };
+interface Chosen { readonly provider: AiProviderId; readonly model: string; readonly language: TranslationLanguage }
 
 /** What one page's translation came to: written, nothing in it to write, or stopped after saying why. */
 type Outcome = 'written' | 'nothing' | 'stopped';
