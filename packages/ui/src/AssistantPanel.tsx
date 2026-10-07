@@ -103,6 +103,7 @@ import {
   ASSISTANT_WEB_NONE_NO_SEARCH,
   ASSISTANT_WEB_NONE_TERMS,
   ASSISTANT_WEB_ON,
+  ASSISTANT_HISTORY,
   ASSISTANT_MODELS_LISTING,
   ASSISTANT_NO_MODELS,
   ASSISTANT_NO_VISION,
@@ -160,6 +161,7 @@ import { ChoiceMenu } from './primitives/ChoiceMenu.js';
 import { IconButton } from './primitives/IconButton.js';
 import { AI_MODELS_SETTING, AI_PROVIDER_SETTING } from './settings/ai.js';
 import { heldModels, holdModels } from './assistantModels.js';
+import { AssistantHistory } from './AssistantHistory.js';
 import type { SettingsStore } from './settingsStore.js';
 import { composing } from './surfaces/shortcuts.js';
 import { useSetting } from './useSetting.js';
@@ -470,6 +472,8 @@ export function AssistantPanel({
    * a new chat — reads it as off.
    */
   const [webChosen, setWebChosen] = useState<{ readonly docId: DocId } | null>(null);
+  /** Whether the History (ADR-0192) has the panel. Held here, so a person who came back finds the conversation as it was. */
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const turns = useConversation(focused.store);
 
@@ -1017,13 +1021,38 @@ export function AssistantPanel({
       </Fragment>
     );
 
+  // THE HISTORY TAKES THE PANEL while it is open (ADR-0192): every saved conversation, to read or delete. The conversation
+  // under it is untouched — a live answer keeps arriving into its own store — and *Back* returns to it.
+  if (historyOpen) {
+    return (
+      <div className="m-assistant">
+        <AssistantHistory
+          client={client}
+          onBack={() => {
+            setHistoryOpen(false);
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="m-assistant">
-      {turns.length > 0 && (
-        <div className="m-assistant__conversation-bar">
-          {/* NEW CHAT, a "+" at the top right (the owner's review of 0.1.6.0): it empties this document's
-              conversation — and, with history on, its saved copy the next time it settles. Not while an answer is
-              arriving: that answer has nowhere to go. Its name is still *New chat*, which is what a reader hears. */}
+      <div className="m-assistant__conversation-bar">
+        {/* HISTORY, at the top left: every saved conversation, whichever file it was about. A word beside its glyph, so a
+            person looking for their old chats finds it by name. */}
+        <Button
+          icon="History"
+          label={ASSISTANT_HISTORY}
+          onClick={() => {
+            setHistoryOpen(true);
+          }}
+          variant="quiet"
+        />
+        {turns.length > 0 && (
+          // NEW CHAT, a "+" at the top right (the owner's review of 0.1.6.0): it empties this document's
+          // conversation — and, with history on, its saved copy the next time it settles. Not while an answer is
+          // arriving: that answer has nowhere to go. Its name is still *New chat*, which is what a reader hears.
           <IconButton
             disabled={streaming !== null}
             icon={Plus}
@@ -1037,8 +1066,8 @@ export function AssistantPanel({
             }}
             size="dense"
           />
-        </div>
-      )}
+        )}
+      </div>
       {readiness !== 'ready' && readiness !== 'listing' && (
         <p className="m-assistant__state" data-assistant-readiness={readiness}>
           {i18n._(READINESS[readiness])}

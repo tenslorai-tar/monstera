@@ -439,6 +439,147 @@ describe('the assistant tab', () => {
     expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(false);
   });
 
+  describe('the HISTORY lists saved conversations, opens one to read and deletes one after asking (ADR-0192)', () => {
+    const KEY_A = 'a'.repeat(64);
+    const KEY_B = 'b'.repeat(64);
+    const ENTRIES = [
+      { key: KEY_A, name: 'contract.pdf', savedAt: '2026-10-07T09:30:00.000Z', turns: 2, preview: 'Who signs?' },
+      { key: KEY_B, name: null, savedAt: null, turns: 1, preview: 'An older question' },
+    ];
+
+    /** The panel over a store the case holds: what is listed, what reads, what is removed. */
+    function stored(initial: readonly (typeof ENTRIES)[number][] = ENTRIES): {
+      readonly sent: string[];
+      readonly removed: string[];
+    } {
+      const sent: string[] = [];
+      const removed: string[] = [];
+      let held = [...initial];
+      const client = createClient(channels, (id, params) => {
+        sent.push(id);
+        if (id === 'ai.models') return Promise.resolve({ ok: true, value: { source: 'fetched', models: [] } });
+        if (id === 'ai.history.list') return Promise.resolve({ ok: true, value: { conversations: held } });
+        if (id === 'ai.history.read') {
+          const key = (params as { key: string }).key;
+          const found = held.find((entry) => entry.key === key);
+          return Promise.resolve({
+            ok: true,
+            value: {
+              conversation:
+                found === undefined
+                  ? null
+                  : {
+                      name: found.name,
+                      savedAt: found.savedAt,
+                      turns: [
+                        { role: 'user', text: found.preview },
+                        { role: 'assistant', text: 'The tenant and the landlord sign.' },
+                      ].slice(0, found.turns),
+                    },
+            },
+          });
+        }
+        if (id === 'ai.history.remove') {
+          const key = (params as { key: string }).key;
+          removed.push(key);
+          held = held.filter((entry) => entry.key !== key);
+          return Promise.resolve({ ok: true, value: { removed: true } });
+        }
+        throw new Error(`this case does not answer ${id}`);
+      });
+      const docId = asDocId('00000000-0000-4000-8000-0000000000f2');
+      render(
+        <Wrapped>
+          <Host
+            client={client}
+            focused={{ docId, store: createDocumentStore(docId, asDocVersion(1)), page: 0 }}
+            settings={new SettingsStore(new SettingsRegistry(ALL_SETTINGS))}
+            storedSecrets={[ANTHROPIC_KEY]}
+            subscribe={events().subscribe}
+            toast={() => undefined}
+          />
+        </Wrapped>,
+      );
+      return { sent, removed };
+    }
+
+    const settle = async (): Promise<void> => {
+      for (let turn = 0; turn < 4; turn += 1) {
+        await act(async () => {
+          await Promise.resolve();
+        });
+      }
+    };
+
+    it('a History button is at the top; it lists each saved conversation with its file, when, how many messages and its first question', async () => {
+      stored();
+      await settle();
+      fireEvent.click(screen.getByRole('button', { name: 'History' }));
+      await settle();
+      const list = document.querySelector('[data-assistant-history="list"]');
+      expect(list?.textContent).toContain('contract.pdf');
+      expect(list?.textContent).toContain('2 messages');
+      expect(list?.textContent).toContain('Who signs?');
+      // AN ENTRY SAVED BEFORE NAMES WERE RECORDED says so, and shows no date.
+      expect(list?.textContent).toContain('Earlier conversation');
+      expect(list?.textContent).toContain('1 message');
+      // CONTROL: the live conversation's composer is not drawn while the History has the panel.
+      expect(document.querySelector('.m-assistant__composer')).toBeNull();
+    });
+
+    it('Open shows the conversation READ-ONLY by its key, and Back to History returns to the list', async () => {
+      const { sent } = stored();
+      await settle();
+      fireEvent.click(screen.getByRole('button', { name: 'History' }));
+      await settle();
+      fireEvent.click(screen.getByRole('button', { name: 'Open contract.pdf' }));
+      await settle();
+      expect(sent).toContain('ai.history.read');
+      const shown = document.querySelector('[data-assistant-history="conversation"]');
+      expect(shown?.textContent).toContain('Who signs?');
+      expect(shown?.textContent).toContain('The tenant and the landlord sign.');
+      expect(shown?.textContent).toContain('It does not open the file.');
+      // NOTHING TO TYPE IN: it is a record, not a conversation.
+      expect(document.querySelector('textarea')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Back to History' }));
+      await settle();
+      expect(document.querySelector('[data-assistant-history="list"]')).not.toBeNull();
+    });
+
+    it('Delete ASKS first, Keep it removes nothing, and Delete it removes that one and shows the rest', async () => {
+      const { removed } = stored();
+      await settle();
+      fireEvent.click(screen.getByRole('button', { name: 'History' }));
+      await settle();
+      fireEvent.click(screen.getByRole('button', { name: 'Delete contract.pdf' }));
+      expect(screen.getByText('Delete this conversation?')).toBeTruthy();
+      expect(removed).toStrictEqual([]);
+      // KEPT: the question goes and nothing was removed.
+      fireEvent.click(screen.getByRole('button', { name: 'Keep it' }));
+      expect(removed).toStrictEqual([]);
+      expect(screen.queryByText('Delete this conversation?')).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete contract.pdf' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+      await settle();
+      expect(removed).toStrictEqual([KEY_A]);
+      const list = document.querySelector('[data-assistant-history="list"]');
+      expect(list?.textContent).not.toContain('contract.pdf');
+      expect(list?.textContent).toContain('Earlier conversation');
+    });
+
+    it('an empty store says so and points at the setting; Back returns to the conversation', async () => {
+      stored([]);
+      await settle();
+      fireEvent.click(screen.getByRole('button', { name: 'History' }));
+      await settle();
+      expect(screen.getByText(/No conversations are saved/u)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Back to the conversation' }));
+      expect(document.querySelector('[data-assistant-history]')).toBeNull();
+      expect(document.querySelector('.m-assistant__composer')).not.toBeNull();
+    });
+  });
+
   describe('a list not yet asked for is not an empty one (ADR-0190)', () => {
     /** A panel whose `ai.models` read is answered when the case says, so the moment before the answer can be looked at. */
     function pending(): {

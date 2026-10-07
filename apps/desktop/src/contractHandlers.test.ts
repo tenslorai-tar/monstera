@@ -2116,11 +2116,33 @@ describe('ai.history (ADR-0093)', () => {
 
   function withHistory(on: boolean) {
     const saved = new Map<string, readonly { role: 'user' | 'assistant'; text: string }[]>();
+    /** What each save recorded beside its turns: the file's name and the moment (ADR-0192). */
+    const recorded = new Map<string, { name: string | null; savedAt: string }>();
     const history: ChatHistory = {
       available: () => true,
       load: (key) => saved.get(key) ?? [],
-      save: (key, turns) => {
+      save: (key, turns, name, savedAt) => {
         saved.set(key, turns);
+        recorded.set(key, { name, savedAt: savedAt.toISOString() });
+      },
+      // NEWEST SAVED FIRST, as the real store lists: the map's insertion order, reversed.
+      list: () =>
+        [...saved.entries()].reverse().map(([key, turns]) => ({
+          key,
+          name: recorded.get(key)?.name ?? null,
+          savedAt: recorded.get(key)?.savedAt ?? null,
+          turns: turns.length,
+          preview: turns[0]?.text ?? '',
+        })),
+      read: (key) => {
+        const turns = saved.get(key);
+        return turns === undefined
+          ? null
+          : { name: recorded.get(key)?.name ?? null, savedAt: recorded.get(key)?.savedAt ?? null, turns };
+      },
+      remove: (key) => {
+        recorded.delete(key);
+        return saved.delete(key);
       },
       clear: () => {
         const count = saved.size;
@@ -2134,7 +2156,8 @@ describe('ai.history (ADR-0093)', () => {
       assistant: INERT_ASSISTANT,
       appInfo,
       capabilities: new CapabilityRegistry(),
-      commands: unusedCommands,
+      // ONLY THE NAME IS ASKED OF IT (ADR-0192): the save records the file's name beside its turns.
+      commands: { nameOf: (docId: DocId) => (docId === DOC ? 'lease.pdf' : undefined) } as unknown as DocumentCommands,
       // THE KERNEL'S DIGEST, faked: one open document whose file key is `file-key`.
       documents: { historyKeyOf: (docId: DocId) => (docId === DOC ? 'file-key' : undefined) } as unknown as DocumentService,
       openedDocument: () => Promise.resolve(),
@@ -2180,6 +2203,47 @@ settings,
     await expect(handlers['ai.history.save']({ docId: DOC, turns: TURNS })).resolves.toEqual({ ok: true, value: { saved: true } });
     expect([...saved.keys()]).toStrictEqual(['file-key']);
     await expect(handlers['ai.history.load']({ docId: DOC })).resolves.toEqual({ ok: true, value: { turns: TURNS } });
+  });
+
+  describe('the History lists, reads and removes by the digest, with no document open (ADR-0192)', () => {
+    const KEY = 'a'.repeat(64);
+
+    it('a save records the FILE’S NAME, and the list says it, with the first question as the preview', async () => {
+      const { handlers, saved } = withHistory(true);
+      await handlers['ai.history.save']({ docId: DOC, turns: TURNS });
+      expect([...saved.keys()]).toStrictEqual(['file-key']);
+      const listed = await handlers['ai.history.list']({});
+      expect(listed.ok && listed.value.conversations.map((entry) => [entry.name, entry.turns, entry.preview])).toStrictEqual([
+        ['lease.pdf', 1, 'Q'],
+      ]);
+    });
+
+    it('is NOT behind the setting: what was saved lists, reads and removes with it OFF, while a SAVE still stores nothing', async () => {
+      // A CONVERSATION SAVED while the setting was on, and the setting since turned off.
+      const { handlers, saved } = withHistory(false);
+      saved.set(KEY, TURNS);
+      const listed = await handlers['ai.history.list']({});
+      expect(listed.ok && listed.value.conversations.map((entry) => entry.key)).toStrictEqual([KEY]);
+      expect((await handlers['ai.history.read']({ key: KEY })).ok).toBe(true);
+      await expect(handlers['ai.history.save']({ docId: DOC, turns: TURNS })).resolves.toEqual({ ok: true, value: { saved: false } });
+      // CONTROL: the save changed nothing, so the list and the read above were answered from what was there.
+      expect([...saved.keys()]).toStrictEqual([KEY]);
+      await expect(handlers['ai.history.remove']({ key: KEY })).resolves.toEqual({ ok: true, value: { removed: true } });
+      expect(saved.size).toBe(0);
+    });
+
+    it('read answers the conversation by its key and null for a key nothing is saved under; remove says whether it removed', async () => {
+      const { handlers, saved } = withHistory(true);
+      saved.set(KEY, TURNS);
+      await expect(handlers['ai.history.read']({ key: KEY })).resolves.toEqual({
+        ok: true,
+        value: { conversation: { name: null, savedAt: null, turns: TURNS } },
+      });
+      const other = 'b'.repeat(64);
+      await expect(handlers['ai.history.read']({ key: other })).resolves.toEqual({ ok: true, value: { conversation: null } });
+      await expect(handlers['ai.history.remove']({ key: other })).resolves.toEqual({ ok: true, value: { removed: false } });
+      expect(saved.has(KEY)).toBe(true);
+    });
   });
 
   it('a document that is not open is refused by name, and clear says how many went', async () => {

@@ -1647,6 +1647,24 @@ export const ASSISTANT_SCOPE_LEFT = messageKey('assistant.scope.left');
 export const ASSISTANT_SCOPE_RIGHT = messageKey('assistant.scope.right');
 export const ASSISTANT_SCOPE_BOTH = messageKey('assistant.scope.both');
 export const ASSISTANT_YOU = messageKey('assistant.you');
+export const ASSISTANT_HISTORY = messageKey('assistant.history');
+export const HISTORY_BACK = messageKey('assistant.history.back');
+export const HISTORY_BACK_TO_LIST = messageKey('assistant.history.back-to-list');
+export const HISTORY_UNNAMED = messageKey('assistant.history.unnamed');
+export const HISTORY_MESSAGES = messageKey('assistant.history.messages');
+export const HISTORY_SHOWN = messageKey('assistant.history.shown');
+export const HISTORY_OPEN = messageKey('assistant.history.open');
+export const HISTORY_OPEN_SHOWN = messageKey('assistant.history.open-shown');
+export const HISTORY_DELETE = messageKey('assistant.history.delete');
+export const HISTORY_DELETE_SHOWN = messageKey('assistant.history.delete-shown');
+export const HISTORY_DELETE_ASK = messageKey('assistant.history.delete-ask');
+export const HISTORY_DELETE_YES = messageKey('assistant.history.delete-yes');
+export const HISTORY_DELETE_KEEP = messageKey('assistant.history.delete-keep');
+export const HISTORY_EMPTY = messageKey('assistant.history.empty');
+export const HISTORY_FAILED = messageKey('assistant.history.failed');
+export const HISTORY_READ_ONLY = messageKey('assistant.history.read-only');
+export const HISTORY_GONE = messageKey('assistant.history.gone');
+export const HISTORY_LOADING = messageKey('assistant.history.loading');
 export const ASSISTANT_ASSISTANT = messageKey('assistant.assistant');
 export const ASSISTANT_EMPTY = messageKey('assistant.empty');
 export const ASSISTANT_ASK = messageKey('assistant.ask-hint');
@@ -4005,6 +4023,24 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ASSISTANT_SCOPE_RIGHT]: 'right document',
   [ASSISTANT_SCOPE_BOTH]: 'both documents',
   [ASSISTANT_YOU]: 'You',
+  [ASSISTANT_HISTORY]: 'History',
+  [HISTORY_BACK]: 'Back to the conversation',
+  [HISTORY_BACK_TO_LIST]: 'Back to History',
+  [HISTORY_UNNAMED]: 'Earlier conversation',
+  [HISTORY_MESSAGES]: '{count, plural, one {# message} other {# messages}}',
+  [HISTORY_SHOWN]: 'This is a saved conversation, shown to read. It does not open the file.',
+  [HISTORY_OPEN]: 'Open {name}',
+  [HISTORY_OPEN_SHOWN]: 'Open',
+  [HISTORY_DELETE]: 'Delete {name}',
+  [HISTORY_DELETE_SHOWN]: 'Delete',
+  [HISTORY_DELETE_ASK]: 'Delete this conversation?',
+  [HISTORY_DELETE_YES]: 'Delete it',
+  [HISTORY_DELETE_KEEP]: 'Keep it',
+  [HISTORY_EMPTY]: 'No conversations are saved. Turn on Save chat history in Settings › AI to keep them.',
+  [HISTORY_FAILED]: 'The saved conversations could not be read.',
+  [HISTORY_READ_ONLY]: 'Saved conversation',
+  [HISTORY_GONE]: 'This conversation is no longer saved.',
+  [HISTORY_LOADING]: 'Loading saved conversations…',
   [ASSISTANT_ASSISTANT]: 'Assistant',
   [ASSISTANT_EMPTY]: 'No provider key is stored yet. Add one in Settings › AI and the assistant can start answering.',
   [ASSISTANT_ASK]: 'Enter sends. Shift+Enter starts a new line.',

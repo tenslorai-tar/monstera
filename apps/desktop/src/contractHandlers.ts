@@ -624,9 +624,22 @@ export function createContractHandlers(deps: {
       if (key === undefined) return Promise.resolve(err({ code: 'document-not-open' } as const));
       if (!storedSetting(deps.settings.read(), CHAT_HISTORY_STORED)) return Promise.resolve(ok({ saved: false }));
       if (!deps.chatHistory.available()) return Promise.resolve(err({ code: 'secret-storage-unavailable' } as const));
-      deps.chatHistory.save(key, turns);
+      // THE FILE'S NAME AND THE MOMENT go into the entry (ADR-0192): main's own reads, so the History says which file a
+      // conversation was about and when, and the renderer supplies neither.
+      deps.chatHistory.save(key, turns, deps.commands.nameOf(docId) ?? null, new Date());
       return Promise.resolve(ok({ saved: true }));
     },
+    // THE HISTORY (ADR-0192): listed, read and removed by the digest, which names no path, and NOT behind the setting —
+    // what was saved while it was on stays readable and removable while it is off, as clearing already does.
+    'ai.history.list': () =>
+      Promise.resolve(
+        ok({ conversations: [...deps.chatHistory.list()] }),
+      ),
+    'ai.history.read': ({ key }) => {
+      const found = deps.chatHistory.read(key);
+      return Promise.resolve(ok({ conversation: found === null ? null : { ...found, turns: [...found.turns] } }));
+    },
+    'ai.history.remove': ({ key }) => Promise.resolve(ok({ removed: deps.chatHistory.remove(key) })),
     'ai.history.clear': () => Promise.resolve(ok({ cleared: deps.chatHistory.clear() })),
     // THE PAPERCLIP (ADR-0135): main runs the picker, mints a handle per path and answers what a chip draws. The handle
     // is the only thing the renderer can name the file by, and only an ask turns it back into a path.

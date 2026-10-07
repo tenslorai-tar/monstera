@@ -2404,6 +2404,10 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'ai.history.load': () => Promise.resolve(ok(options.aiHistory ?? { turns: [] })),
     'ai.history.save': () => Promise.resolve(ok({ saved: false })),
     'ai.history.clear': () => Promise.resolve(ok({ cleared: 0 })),
+    // NOTHING KEPT, as the shim's load: the History lists none, and nothing named reads or removes.
+    'ai.history.list': () => Promise.resolve(ok({ conversations: [] })),
+    'ai.history.read': () => Promise.resolve(ok({ conversation: null })),
+    'ai.history.remove': () => Promise.resolve(ok({ removed: false })),
     // THE SHIM HAS NO CLIPBOARD, so nothing is claimed copied.
     'window.copyText': () => Promise.resolve(ok({ copied: false })),
     // NO BROWSER TO OPEN A BROWSER IN: a shim page opens nothing outside itself, which is the same

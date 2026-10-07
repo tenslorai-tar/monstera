@@ -116,6 +116,10 @@ export {
   type AiModelListAnswer,
   aiModelListSchema,
   type SavedTurn,
+  type SavedConversation,
+  MAX_HISTORY_PREVIEW,
+  MAX_SAVED_CONVERSATIONS,
+  savedConversationSchema,
   savedTurnSchema,
   savedTurnsSchema,
   // WHAT AN EDITOR OVER A BLOCK IS SET IN (ADR-0096): the renderer reads it, and

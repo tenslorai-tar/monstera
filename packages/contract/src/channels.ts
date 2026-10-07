@@ -534,6 +534,34 @@ export const savedTurnsSchema = z.array(savedTurnSchema).max(MAX_CHAT_TURNS);
 
 export type SavedTurn = z.infer<typeof savedTurnSchema>;
 
+/**
+ * How many files' conversations the store keeps, and so the most a list of them can hold (ADR-0093 Decision 5). Here and
+ * not in `main`, because the list's schema is bounded by it and `main`'s eviction is the other half: one number, two readers.
+ */
+export const MAX_SAVED_CONVERSATIONS = 200;
+
+/** How long the first question quoted beside a saved conversation may be (ADR-0192): a preview, not a transcript. */
+export const MAX_HISTORY_PREVIEW = 160;
+
+/**
+ * What a saved conversation is as the History lists it (ADR-0192): the digest that finds it (opaque to the renderer, and
+ * naming no path), the file's name where the entry recorded one, when it was saved where it recorded that, how many turns it
+ * has, and its first question.
+ */
+export const savedConversationSchema = z
+  .object({
+    // A SHA-256 in hex, so sixty-four characters exactly: the bound is the digest's own length.
+    key: z.string().length(64).regex(/^[0-9a-f]+$/u),
+    name: z.string().max(MAX_DOCUMENT_NAME_LENGTH).nullable(),
+    /** An ISO 8601 instant, or `null` for an entry saved before entries recorded one. */
+    savedAt: z.string().max(40).nullable(),
+    turns: z.number().int().nonnegative().max(MAX_CHAT_TURNS),
+    preview: z.string().max(MAX_HISTORY_PREVIEW),
+  })
+  .strict();
+
+export type SavedConversation = z.infer<typeof savedConversationSchema>;
+
 /** {@link SPELLING_LANGUAGES} as a schema, derived rather than respelt. */
 export const spellingLanguageSchema = z.enum(SPELLING_LANGUAGES);
 
@@ -5590,6 +5618,43 @@ export const channels = {
     z.object({ docId: docIdSchema, turns: savedTurnsSchema }).strict(),
     z.object({ saved: z.boolean() }),
     ['document-not-open', 'secret-storage-unavailable'],
+  ),
+
+  /**
+   * Every saved conversation, newest saved first (ADR-0192) — what the Assistant's History lists. It does not wait on
+   * *Save chat history*: what was saved while it was on stays readable while it is off. Empty where nothing is saved or
+   * this machine cannot decrypt what was.
+   */
+  'ai.history.list': channel(
+    'Every saved assistant conversation, newest first, with the file name where one was recorded.',
+    z.object({}).strict(),
+    z.object({ conversations: z.array(savedConversationSchema).max(MAX_SAVED_CONVERSATIONS) }),
+  ),
+
+  /**
+   * One saved conversation by the key `ai.history.list` gave (ADR-0192), to be SHOWN: it opens no file, since the store
+   * keeps no path. `null` for a key nothing is saved under — removed since the list was read, or one that will not decrypt.
+   */
+  'ai.history.read': channel(
+    'One saved assistant conversation by its key, to be shown read-only.',
+    z.object({ key: savedConversationSchema.shape.key }).strict(),
+    z.object({
+      conversation: z
+        .object({
+          name: savedConversationSchema.shape.name,
+          savedAt: savedConversationSchema.shape.savedAt,
+          turns: savedTurnsSchema,
+        })
+        .strict()
+        .nullable(),
+    }),
+  ),
+
+  /** Removes one saved conversation by its key (ADR-0192); `removed` is false for a key nothing was saved under. */
+  'ai.history.remove': channel(
+    'Removes one saved assistant conversation by its key.',
+    z.object({ key: savedConversationSchema.shape.key }).strict(),
+    z.object({ removed: z.boolean() }),
   ),
 
   /** Removes every saved conversation — Settings › Privacy's *Clear chat history* (ADR-0093). */

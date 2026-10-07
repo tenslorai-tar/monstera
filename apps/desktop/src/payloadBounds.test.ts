@@ -233,6 +233,10 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'ai.history.load': 'one DocId in; at most MAX_CHAT_TURNS bounded turns out, whatever the document’s size',
   'ai.history.save': 'one DocId and at most MAX_CHAT_TURNS bounded turns in; a boolean out',
   'ai.history.clear': 'carries nothing and answers a count',
+  // THE HISTORY (ADR-0192): the store's own bound, MAX_SAVED_CONVERSATIONS, and a conversation never a document.
+  'ai.history.list': 'carries nothing; at most MAX_SAVED_CONVERSATIONS entries out, each a digest, a name, a date, a count and a bounded preview',
+  'ai.history.read': 'one digest in; at most MAX_CHAT_TURNS bounded turns out',
+  'ai.history.remove': 'one digest in; a boolean out',
   // CLOUD STORAGE (ADR-0091): no document's bytes cross in either direction — a working copy is
   // written by main and opened by path, and Save back reads the document in main.
   'cloud.status': 'answers one state per declared provider',
