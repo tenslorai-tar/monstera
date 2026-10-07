@@ -244,6 +244,44 @@ function cornersOf(box: {
 }
 
 /**
+ * The kinds whose box IS the shape, so a side's midpoint can be pulled on its own axis (the owner's review of 2026-10-07,
+ * item 14a). A line's or a polygon's box is only the span of its points, and stretching one edge of it would move points
+ * nobody grabbed; those keep their four corners.
+ */
+export const SIDE_RESIZABLE_KINDS: ReadonlySet<string> = new Set([
+  'square',
+  'circle',
+  'text-box',
+  'callout',
+  'typewriter',
+  'stamp',
+  'redact',
+]);
+
+/** One edge of a box: the midpoint a person grabs, and the two corners (as [x, y] pairs) the resize keeps fixed or moves. */
+export type SideHandle = 'top' | 'bottom' | 'left' | 'right';
+
+/**
+ * The four side midpoints, each with the SIDE it moves. Carried as a named side rather than re-derived from the drag's
+ * direction, as {@link cornersOf} carries its opposite corner.
+ */
+export function sidesOf(box: {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}): readonly (readonly [SideHandle, number, number])[] {
+  const midX = (box.x0 + box.x1) / 2;
+  const midY = (box.y0 + box.y1) / 2;
+  return [
+    ['top', midX, box.y0],
+    ['bottom', midX, box.y1],
+    ['left', box.x0, midY],
+    ['right', box.x1, midY],
+  ];
+}
+
+/**
  * A rectangle in the overlay's own pixels, or `null` when there is none.
  *
  * **Takes the RECT rather than the row**, so both callers — a listed annotation
@@ -354,6 +392,27 @@ function placementFor(
       if (Math.hypot(from.x - cx, from.y - cy) > CORNER_REACH) continue;
       return {
         placements: [{ index: item.index, rect: pdfBox([ox, oy], [to.x, to.y], transform) }],
+        version: selection.version,
+      };
+    }
+  }
+
+  // A SIDE MIDPOINT of a box-shaped mark pulls that edge alone: the other three stay where they are. Corners are tested
+  // first, so a small box whose corner and midpoint overlap still resizes from the corner.
+  for (const item of selection.items) {
+    if (!SIDE_RESIZABLE_KINDS.has(item.kind)) continue;
+    const box = boxOf(item.rect, transform);
+    if (box === null) continue;
+    for (const [side, sx, sy] of sidesOf(box)) {
+      if (Math.hypot(from.x - sx, from.y - sy) > CORNER_REACH) continue;
+      const moved = {
+        x0: side === 'left' ? to.x : box.x0,
+        x1: side === 'right' ? to.x : box.x1,
+        y0: side === 'top' ? to.y : box.y0,
+        y1: side === 'bottom' ? to.y : box.y1,
+      };
+      return {
+        placements: [{ index: item.index, rect: pdfBox([moved.x0, moved.y0], [moved.x1, moved.y1], transform) }],
         version: selection.version,
       };
     }

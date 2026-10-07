@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { pdfRectOnScreen } from './annotations/annotationSpace.js';
-import { type AnnotationSelection, CORNER_REACH } from './annotations/selectTool.js';
+import { type AnnotationSelection, CORNER_REACH, SIDE_RESIZABLE_KINDS, sidesOf } from './annotations/selectTool.js';
 
 /**
  * What is selected, drawn over the page.
@@ -88,6 +88,20 @@ export function SelectionLayer({
                 y={y - CORNER_REACH / 2}
               />
             ))}
+            {/* THE FOUR SIDE MIDPOINTS, for a box-shaped mark only — the same reach, drawn where the tool grabs. */}
+            {SIDE_RESIZABLE_KINDS.has(item.kind)
+              ? sidesOf({ x0: left, y0: top, x1: right, y1: bottom }).map(([side, x, y]) => (
+                  <rect
+                    className="m-selection-handle"
+                    data-selection-handle={side}
+                    height={CORNER_REACH}
+                    key={side}
+                    width={CORNER_REACH}
+                    x={x - CORNER_REACH / 2}
+                    y={y - CORNER_REACH / 2}
+                  />
+                ))
+              : null}
           </g>
         );
       })}

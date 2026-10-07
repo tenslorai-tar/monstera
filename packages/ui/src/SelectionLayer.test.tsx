@@ -58,7 +58,7 @@ describe('SelectionLayer', () => {
 
   it('DRAWS A HANDLE ON EACH CORNER, centred on it and as wide as the select tool’s grab reach (ADR-0133)', () => {
     const { container } = render(<SelectionLayer geometry={GEOMETRY} page={3} selection={SELECTION} />);
-    const handles = [...container.querySelectorAll('[data-selection-index="1"] [data-selection-handle]')];
+    const handles = [...container.querySelectorAll('[data-selection-index="1"] [data-selection-handle=""]')];
     // EACH CENTRE IS A CORNER of the 80 × 80 box at (20, 20), so the handles sit where the tool's reach is measured
     // from. A handle drawn anywhere else would promise a resize the press there does not make.
     const centres = handles.map((handle) => [
@@ -72,6 +72,26 @@ describe('SelectionLayer', () => {
       [100, 100],
     ]);
     expect(handles.every((handle) => handle.getAttribute('width') === String(CORNER_REACH))).toBe(true);
+  });
+
+  it('a BOX-SHAPED mark also gets a handle at each side’s midpoint, and a line gets none', () => {
+    const { container } = render(<SelectionLayer geometry={GEOMETRY} page={3} selection={SELECTION} />);
+    const sides = [...container.querySelectorAll('[data-selection-handle]:not([data-selection-handle=""])')].map(
+      (handle) => [
+        handle.getAttribute('data-selection-handle'),
+        Number(handle.getAttribute('x')) + CORNER_REACH / 2,
+        Number(handle.getAttribute('y')) + CORNER_REACH / 2,
+      ],
+    );
+    expect(sides).toStrictEqual([
+      ['top', 60, 20],
+      ['bottom', 60, 100],
+      ['left', 20, 60],
+      ['right', 100, 60],
+    ]);
+    const line = { ...SELECTION, items: SELECTION.items.map((item) => ({ ...item, kind: 'line' as const })) };
+    const again = render(<SelectionLayer geometry={GEOMETRY} page={3} selection={line} />);
+    expect(again.container.querySelectorAll('[data-selection-handle]').length).toBe(4);
   });
 
   it('draws NOTHING on a page the selection is not on', () => {

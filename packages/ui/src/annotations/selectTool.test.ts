@@ -241,6 +241,27 @@ describe('selectTool', () => {
     });
   });
 
+  it('a SIDE midpoint pulls that edge alone, the other three kept — CONTROL: a line has no side handle, so the same press moves it', async () => {
+    // A's right edge midpoint is screen (100, 60). Dragging it to (140, 70) moves x1 only: the y of the drag is NOT used,
+    // so the box does not grow downwards as well.
+    const selected = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, ...CARRIED }] };
+    const { drag } = selecting([A], selected);
+    expect(await drag([100, 60], [140, 70])).toStrictEqual({
+      kind: 'placeAnnotation',
+      page: 3,
+      placements: [{ index: 1, rect: { x0: 60, y0: 350, x1: 120, y1: 390 } }],
+      version: VERSION,
+    });
+    const asLine = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, ...CARRIED, kind: 'line' as const }] };
+    const control = selecting([A], asLine);
+    expect(await control.drag([100, 60], [140, 70])).toStrictEqual({
+      kind: 'placeAnnotation',
+      page: 3,
+      placements: [{ index: 1, rect: { x0: 80, y0: 345, x1: 120, y1: 385 } }],
+      version: VERSION,
+    });
+  });
+
   it('PREVIEWS a move and a resize where the release will put the marks (ADR-0166) — CONTROL: a marquee stays one', () => {
     const selected = {
       page: 3,
