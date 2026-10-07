@@ -75,3 +75,19 @@ they are the actions Acrobat itself writes. They are JavaScript to a reader and 
   strings, so editing its choices drops the display text. The Properties pane sends choices only when a person changes them.
 - A rename cannot move a field into another group. A name that would is refused (`name-parent`) rather than made a parent.
 - A copy onto a page of another size or turn keeps the rectangle's numbers.
+
+## Correction, 2026-10-07: the three limits above are withdrawn
+
+The owner's principle is *preserve, never drop*, and none of the three could stay as a stated limit.
+
+- **Choices keep both halves.** An edit's and a read's choice is a string where the value and the text shown are the same
+  and a pair where they are not, written back as `/Opt` pairs. The Properties pane has a second box, *Stored values*, aligned
+  by line with *Choices*. A radio group has no text apart from its value, so a pair for one is refused by name
+  (`options-radio-labels`). Found on the way: a FILL stored the text where the file holds the value (`/V` is the export
+  value, ISO 32000-1, 12.7.4.4); a fill now stores the value and a value another program stored reads as its text.
+- **A rename moves the field.** `a.b` renamed `c.b` is the field under the group `c`, made if there is none; the groups the
+  field leaves empty are taken out, what it inherited from them is written onto it first, and a calculation of ours that
+  names it follows the new name. `name-parent` now means a name with an empty part. A name another field holds, or runs
+  through, is still `name-taken`.
+- **A copy lands at the same place.** `fieldPlacement.ts` reads the rectangle as a fraction of the page as seen (crop box,
+  turned by `/Rotate`), keeps the size in points, and moves the copy inside the page it lands on.

@@ -2,7 +2,9 @@ import { PDFDict, PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
 import { applyCreateFormField } from './formFieldCreate.js';
-import { applyFlattenFormFields, fillWidget } from './formFields.js';
+import { asDocVersion } from '@monstera/shared';
+
+import { applyFillFormField, applyFlattenFormFields, fillWidget } from './formFields.js';
 import { buildFormTestPdf } from './formTestForm.js';
 import * as mupdf from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
@@ -120,6 +122,31 @@ describe('flatten keeps what the page shows', () => {
   it('a form every field of which was touched, tick boxes and radios switched on and off again, keeps them all', async () => {
     const kept = await flattenedKeeps(await buildFormTestPdf(), true);
     expect(kept.lost).toStrictEqual([]);
+  });
+
+  it('the person\'s steps: a few fields filled through the fill command, then Flatten, keeps every empty box and circle', async () => {
+    const bytes = await buildFormTestPdf();
+    const { placed, session } = await placedOf(bytes, false);
+    try {
+      const fill = (name: string, value: Parameters<typeof applyFillFormField>[1]['value']): Promise<void> => {
+        const at = placed.findIndex((entry) => entry.name === name);
+        const found = placed[at];
+        if (found === undefined) throw new Error(`the fixture has no ${name}`);
+        const sameNameBefore = placed.slice(0, at).filter((entry) => entry.page === found.page).length;
+        return applyFillFormField(session, { kind: 'fillFormField', page: found.page, index: sameNameBefore, value, version: asDocVersion(1) });
+      };
+      await fill('email', { set: 'text', text: 'someone@example.org' });
+      await fill('date_of_birth', { set: 'text', text: '01/02/1990' });
+      await fill('events', { set: 'button', on: true });
+      const before = inkOf(await mupdfWriter.serialise(session), placed, true);
+      await applyFlattenFormFields(session, { kind: 'flattenFormFields' });
+      const after = inkOf(await mupdfWriter.serialise(session), placed, false);
+      const lost = [...before].filter(([key, ink]) => (after.get(key) ?? 0) < ink * 0.8).map(([key]) => key);
+      expect(before.size, 'control: the reading covers every field of the form').toBeGreaterThan(60);
+      expect(lost).toStrictEqual([]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
   });
 
   it('a form with no appearance for the Off state and none for the comb field keeps what the page showed', async () => {
