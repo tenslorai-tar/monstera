@@ -182,7 +182,7 @@ const MAX_GESTURE_POINTS = 4096;
  * every drag began up to two pixels from where it was pressed, and a
  * typewriter's click landed half a point off at zoom 2 (measured 2026-10-03).
  */
-export const pointerPath: Pick<ToolController, 'begin' | 'update' | 'complete' | 'reopen'> = {
+export const pointerPath: Pick<ToolController, 'begin' | 'update' | 'complete' | 'reopen' | 'pointer'> = {
   begin: (at: ViewportPoint): Gesture => ({ points: [at], presses: [at], done: false }),
   update: (gesture: Gesture, at: ViewportPoint): Gesture => {
     const last = endOf(gesture);
@@ -207,7 +207,17 @@ export const pointerPath: Pick<ToolController, 'begin' | 'update' | 'complete' |
   // A DOUBLE-CLICK REOPENS NOTHING, which is what every tool but the ones that edit words in a mark mean
   // (ADR-0154 Decision 3) — `complete`'s reason for living here.
   reopen: (): undefined => undefined,
+  // THE TOOL'S OWN CURSOR EVERYWHERE, which is what every tool but the select tool means (ADR-0201): a pointer that depends
+  // on the point is one tool's, and the default is the object they already spread, as `complete`'s is.
+  pointer: (): undefined => undefined,
 };
+
+/**
+ * What a press at a point would do, for the pointer to say before it is pressed (ADR-0201): `move` inside a selected mark,
+ * and a resize arrow on the corner or edge that would be pulled, in the screen's directions — the overlay's frame is already
+ * rotated and zoomed to what is drawn, so a corner's arrow needs no arithmetic for a turned page.
+ */
+export type ToolPointer = 'move' | 'resize-nwse' | 'resize-nesw' | 'resize-ns' | 'resize-ew';
 
 /**
  * What a tool does with a drag.
@@ -278,6 +288,12 @@ export interface ToolController {
    * neither the mark nor where it goes. A tool whose preview needs neither ignores them.
    */
   readonly preview: (gesture: Gesture, page: number, transform: PageTransform) => ToolPreview | undefined;
+  /**
+   * What a press at this point would do, for the pointer to say before it is pressed (ADR-0201); `undefined` is the tool's own
+   * {@link UiTool.cursor}. Asked only with NO gesture in flight, and by the same hit test a press uses, so the pointer can
+   * never promise a resize the press would not make. A read: it changes nothing and holds nothing.
+   */
+  readonly pointer: (at: ViewportPoint, page: number, transform: PageTransform) => ToolPointer | undefined;
   /**
    * Whether the gesture is over at this pointer-up.
    *

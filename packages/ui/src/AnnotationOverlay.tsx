@@ -155,12 +155,23 @@ export function AnnotationOverlay({
 
   const move = useCallback(
     (event: React.PointerEvent<SVGSVGElement>): void => {
-      if (gesture === undefined) return;
+      if (gesture === undefined) {
+        // NO GESTURE IN FLIGHT: the tool says what a press here would do (ADR-0201). Written as an ATTRIBUTE and not as
+        // state, so a moving pointer re-renders nothing; during a drag this branch is not taken, so the pointer stays what
+        // the press chose.
+        const element = surface.current;
+        if (element === null) return;
+        const hovered = pointAt(event);
+        const pointer = hovered === undefined ? undefined : tool.controller.pointer(hovered, page, overlayTransform(geometry));
+        if (pointer === undefined) delete element.dataset['pointer'];
+        else element.dataset['pointer'] = pointer;
+        return;
+      }
       const at = pointAt(event);
       if (at === undefined) return;
       setGesture(tool.controller.update(gesture, at));
     },
-    [gesture, pointAt, tool],
+    [geometry, gesture, page, pointAt, tool],
   );
 
   /**
@@ -332,6 +343,10 @@ export function AnnotationOverlay({
       onPointerDown={(event): void => {
         if (event.button === 0) pressed.current = true;
         down(event);
+      }}
+      onPointerLeave={(event): void => {
+        // THE POINTER LEFT THE PAGE, and takes its resize arrow with it; a drag holds the pointer by capture and does not leave.
+        delete event.currentTarget.dataset['pointer'];
       }}
       onPointerMove={move}
       onPointerUp={(event): void => {

@@ -262,6 +262,61 @@ describe('selectTool', () => {
     });
   });
 
+  describe('the pointer says what a press would do (ADR-0201)', () => {
+    const selected: AnnotationSelection = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT, ...CARRIED }] };
+    const toolOver = (sel: AnnotationSelection | undefined) =>
+      selectTool({
+        ...NO_REOPEN,
+        annotations: () => Promise.resolve({ version: VERSION, annotations: [A] }),
+        onSelect: () => undefined,
+        selected: () => sel,
+      });
+    const pointerAt = (x: number, y: number, sel: AnnotationSelection | undefined = selected, page = 3) =>
+      toolOver(sel).controller.pointer(viewportPoint(x, y), page, overlayTransform(PAGE));
+
+    it('names the right arrow for each corner and each edge of a selected box (screen (20,20)–(100,100)), and move inside it', () => {
+      // CORNERS: top-left and bottom-right pull along one diagonal, top-right and bottom-left along the other.
+      expect(pointerAt(20, 20)).toBe('resize-nwse');
+      expect(pointerAt(100, 100)).toBe('resize-nwse');
+      expect(pointerAt(100, 20)).toBe('resize-nesw');
+      expect(pointerAt(20, 100)).toBe('resize-nesw');
+      // EDGES: the top and bottom midpoints pull vertically, the left and right ones sideways.
+      expect(pointerAt(60, 20)).toBe('resize-ns');
+      expect(pointerAt(60, 100)).toBe('resize-ns');
+      expect(pointerAt(20, 60)).toBe('resize-ew');
+      expect(pointerAt(100, 60)).toBe('resize-ew');
+      expect(pointerAt(45, 45)).toBe('move');
+    });
+
+    it('says NOTHING outside the selection, with no selection, and for a selection on another page — the tool’s own arrow', () => {
+      expect(pointerAt(300, 300)).toBeUndefined();
+      // `pointerAt`'s default would stand in for an `undefined`, so this asks the tool directly.
+      expect(toolOver(undefined).controller.pointer(viewportPoint(40, 40), 3, overlayTransform(PAGE))).toBeUndefined();
+      expect(pointerAt(40, 40, selected, 4)).toBeUndefined();
+    });
+
+    it('CONTROL: a line has no edge handle, so the same point is a move — and so the pointer follows the hit test, not the geometry', () => {
+      const line: AnnotationSelection = { ...selected, items: [{ index: 1, rect: A_RECT, ...CARRIED, kind: 'line' as const }] };
+      expect(pointerAt(100, 60, line)).toBe('move');
+      expect(pointerAt(100, 100, line)).toBe('resize-nwse');
+    });
+
+    it('AGREES WITH THE PRESS: dragging from a point the pointer calls a resize changes a size, and from one it calls a move changes none', async () => {
+      const resized = selecting([A], selected);
+      const widthOf = (command: DispatchableCommand | undefined): number => {
+        if (command?.kind !== 'placeAnnotation') throw new Error('expected a placement');
+        const rect = command.placements[0]?.rect;
+        if (rect === undefined) throw new Error('expected a rect');
+        return rect.x1 - rect.x0;
+      };
+      expect(widthOf(await resized.drag([100, 60], [140, 60]))).toBe(60);
+      expect(pointerAt(100, 60)).toBe('resize-ew');
+      const moved = selecting([A], selected);
+      expect(widthOf(await moved.drag([45, 45], [85, 45]))).toBe(40);
+      expect(pointerAt(45, 45)).toBe('move');
+    });
+  });
+
   it('PREVIEWS a move and a resize where the release will put the marks (ADR-0166) — CONTROL: a marquee stays one', () => {
     const selected = {
       page: 3,

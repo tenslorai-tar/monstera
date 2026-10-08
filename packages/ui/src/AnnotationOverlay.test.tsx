@@ -554,4 +554,41 @@ describe('AnnotationOverlay', () => {
     pointer(surface, 'pointerdown', 20, 20);
     expect(capture).toHaveBeenCalledWith(1);
   });
+
+  describe('the tool’s pointer over the page (ADR-0201)', () => {
+    /** A tool that answers a resize arrow only over the left half of the page, as a stand-in for a hit test. */
+    const reaching: UiTool = {
+      ...rectangleTool,
+      id: 'test.reaching',
+      controller: { ...rectangleTool.controller, pointer: (at) => (at.x < 100 ? 'resize-ew' : undefined) },
+    };
+
+    it('writes what the tool says as data-pointer while no gesture is in flight, and takes it away when it says nothing', () => {
+      const { surface } = mounted(reaching);
+      pointer(surface, 'pointermove', 40, 40);
+      expect(surface.getAttribute('data-pointer')).toBe('resize-ew');
+      pointer(surface, 'pointermove', 160, 40);
+      expect(surface.hasAttribute('data-pointer')).toBe(false);
+    });
+
+    it('HOLDS during a drag: the press chose the arrow, and the pointer moving off the reach does not change it', () => {
+      const { surface } = mounted(reaching);
+      Object.defineProperty(surface, 'setPointerCapture', { value: vi.fn(), writable: true });
+      pointer(surface, 'pointermove', 40, 40);
+      pointer(surface, 'pointerdown', 40, 40);
+      pointer(surface, 'pointermove', 160, 60);
+      expect(surface.getAttribute('data-pointer')).toBe('resize-ew');
+    });
+
+    it('is taken away when the pointer leaves the page; CONTROL: a tool that says nothing never sets it', () => {
+      const { surface } = mounted(reaching);
+      pointer(surface, 'pointermove', 40, 40);
+      // React builds `onPointerLeave` from the platform's `pointerout` (a leave to nowhere has no `relatedTarget`).
+      pointer(surface, 'pointerout', 40, 40);
+      expect(surface.hasAttribute('data-pointer')).toBe(false);
+      const plain = mounted(rectangleTool);
+      pointer(plain.surface, 'pointermove', 40, 40);
+      expect(plain.surface.hasAttribute('data-pointer')).toBe(false);
+    });
+  });
 });

@@ -340,6 +340,59 @@ function pdfBox(
   };
 }
 
+/** A box in the overlay's own pixels. */
+interface PixelBox {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
+/**
+ * What a press at a point grabs on the selection (ADR-0201): the ONE hit test, which the press and the pointer both ask.
+ *
+ * Corners are tested first, then side midpoints of the marks whose box is the shape, then the inside of any selected box —
+ * the order a press has always taken, so a small box whose corner and midpoint overlap still resizes from the corner. A
+ * corner carries the OPPOSITE corner (what a resize keeps fixed) and the direction of its arrow; a side carries the side and
+ * the box it pulls.
+ */
+type Grab =
+  | { readonly kind: 'corner'; readonly item: SelectedAnnotation; readonly opposite: { readonly x: number; readonly y: number }; readonly arrow: 'resize-nwse' | 'resize-nesw' }
+  | { readonly kind: 'side'; readonly item: SelectedAnnotation; readonly side: SideHandle; readonly box: PixelBox }
+  | { readonly kind: 'inside' };
+
+/** The arrow for each of {@link cornersOf}'s four corners, in its order: top-left, top-right, bottom-left, bottom-right. */
+const CORNER_ARROWS = ['resize-nwse', 'resize-nesw', 'resize-nesw', 'resize-nwse'] as const;
+
+function grabbedAt(
+  selection: AnnotationSelection,
+  from: ViewportPoint,
+  transform: PageTransform,
+): Grab | undefined {
+  for (const item of selection.items) {
+    const box = boxOf(item.rect, transform);
+    if (box === null) continue;
+    for (const [at, [cx, cy, ox, oy]] of cornersOf(box).entries()) {
+      if (Math.hypot(from.x - cx, from.y - cy) > CORNER_REACH) continue;
+      return { kind: 'corner', item, opposite: { x: ox, y: oy }, arrow: CORNER_ARROWS[at] ?? 'resize-nwse' };
+    }
+  }
+  for (const item of selection.items) {
+    if (!SIDE_RESIZABLE_KINDS.has(item.kind)) continue;
+    const box = boxOf(item.rect, transform);
+    if (box === null) continue;
+    for (const [side, sx, sy] of sidesOf(box)) {
+      if (Math.hypot(from.x - sx, from.y - sy) > CORNER_REACH) continue;
+      return { kind: 'side', item, side, box };
+    }
+  }
+  const inside = selection.items.some((item) => {
+    const box = boxOf(item.rect, transform);
+    return box !== null && from.x >= box.x0 && from.x <= box.x1 && from.y >= box.y0 && from.y <= box.y1;
+  });
+  return inside ? { kind: 'inside' } : undefined;
+}
+
 /** Where a drag on the selection puts each mark, at the selection's version. */
 interface Placement {
   readonly version: AnnotationSelection['version'];
@@ -385,46 +438,28 @@ function placementFor(
   const from = startOf(gesture);
   const to = endOf(gesture);
 
-  for (const item of selection.items) {
-    const box = boxOf(item.rect, transform);
-    if (box === null) continue;
-    for (const [cx, cy, ox, oy] of cornersOf(box)) {
-      if (Math.hypot(from.x - cx, from.y - cy) > CORNER_REACH) continue;
-      return {
-        placements: [{ index: item.index, rect: pdfBox([ox, oy], [to.x, to.y], transform) }],
-        version: selection.version,
-      };
-    }
+  const grab = grabbedAt(selection, from, transform);
+  if (grab === undefined) return undefined;
+  if (grab.kind === 'corner') {
+    return {
+      placements: [{ index: grab.item.index, rect: pdfBox([grab.opposite.x, grab.opposite.y], [to.x, to.y], transform) }],
+      version: selection.version,
+    };
   }
-
-  // A SIDE MIDPOINT of a box-shaped mark pulls that edge alone: the other three stay where they are. Corners are tested
-  // first, so a small box whose corner and midpoint overlap still resizes from the corner.
-  for (const item of selection.items) {
-    if (!SIDE_RESIZABLE_KINDS.has(item.kind)) continue;
-    const box = boxOf(item.rect, transform);
-    if (box === null) continue;
-    for (const [side, sx, sy] of sidesOf(box)) {
-      if (Math.hypot(from.x - sx, from.y - sy) > CORNER_REACH) continue;
-      const moved = {
-        x0: side === 'left' ? to.x : box.x0,
-        x1: side === 'right' ? to.x : box.x1,
-        y0: side === 'top' ? to.y : box.y0,
-        y1: side === 'bottom' ? to.y : box.y1,
-      };
-      return {
-        placements: [{ index: item.index, rect: pdfBox([moved.x0, moved.y0], [moved.x1, moved.y1], transform) }],
-        version: selection.version,
-      };
-    }
+  if (grab.kind === 'side') {
+    // A SIDE MIDPOINT of a box-shaped mark pulls that edge alone: the other three stay where they are.
+    const { box, side } = grab;
+    const moved = {
+      x0: side === 'left' ? to.x : box.x0,
+      x1: side === 'right' ? to.x : box.x1,
+      y0: side === 'top' ? to.y : box.y0,
+      y1: side === 'bottom' ? to.y : box.y1,
+    };
+    return {
+      placements: [{ index: grab.item.index, rect: pdfBox([moved.x0, moved.y0], [moved.x1, moved.y1], transform) }],
+      version: selection.version,
+    };
   }
-
-  const inside = selection.items.some((item) => {
-    const box = boxOf(item.rect, transform);
-    return (
-      box !== null && from.x >= box.x0 && from.x <= box.x1 && from.y >= box.y0 && from.y <= box.y1
-    );
-  });
-  if (!inside) return undefined;
 
   // THE DELTA IS TAKEN IN PDF SPACE, from two viewport points through the one
   // converter. Subtracting screen pixels and scaling by the zoom would be a
@@ -534,6 +569,17 @@ export function selectTool(deps: SelectDeps): UiTool {
         width: marquee.x1 - marquee.x0,
         height: marquee.y1 - marquee.y0,
       };
+    },
+    // THE POINTER SAYS WHAT A PRESS HERE WOULD DO (ADR-0201), from `grabbedAt` — the test the press takes — so a resize
+    // arrow is shown only where a drag resizes. A selection belongs to one page, so any other page's is the arrow.
+    pointer: (at, page, transform) => {
+      const selection = deps.selected();
+      if (selection?.page !== page) return undefined;
+      const grab = grabbedAt(selection, at, transform);
+      if (grab === undefined) return undefined;
+      if (grab.kind === 'corner') return grab.arrow;
+      if (grab.kind === 'side') return grab.side === 'left' || grab.side === 'right' ? 'resize-ew' : 'resize-ns';
+      return 'move';
     },
     // A DOUBLE-CLICK ON A TEXT MARK EDITS ITS WORDS where they are (ADR-0154 Decision 3): the first click has selected
     // it, and the second opens it. A double-click on any other mark reopens nothing.

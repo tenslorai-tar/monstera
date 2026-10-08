@@ -6557,6 +6557,28 @@ optgroup {
   cursor: default;
 }
 
+/* WHAT A PRESS HERE WOULD DO (ADR-0201), written by the overlay from the tool's own hit test: inside a selected mark it moves,
+   and on a corner or an edge it resizes along the arrow shown. After the tool's own cursor, so it wins over it. */
+.m-annotation-overlay[data-pointer='move'] {
+  cursor: move;
+}
+
+.m-annotation-overlay[data-pointer='resize-nwse'] {
+  cursor: nwse-resize;
+}
+
+.m-annotation-overlay[data-pointer='resize-nesw'] {
+  cursor: nesw-resize;
+}
+
+.m-annotation-overlay[data-pointer='resize-ns'] {
+  cursor: ns-resize;
+}
+
+.m-annotation-overlay[data-pointer='resize-ew'] {
+  cursor: ew-resize;
+}
+
 /* A TOOL WHOSE BOX THE WORDS ARE TYPED INTO: the I-beam, which is what a press there is for. */
 .m-annotation-overlay[data-cursor='text'] {
   cursor: text;
