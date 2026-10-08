@@ -77,7 +77,7 @@ const HARFBUZZ = 'harfbuzzjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 21 });
+const roster = createRoster(failures, { cases: 23 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -265,6 +265,27 @@ try {
     `CONTROL: host/hostEntry.js reaches ${HARFBUZZ} through the face writer's dynamic import`,
     (mupdfEver.bare.get(HARFBUZZ) ?? []).length > 0,
     `the whole-life walk names no ${HARFBUZZ}, so the start-only case above proves nothing.`,
+  );
+
+  // PDF-LIB ON FIRST NEED, BY ITS NAME AND NOT BY A MODULE'S (ADR-0121 Decision 3): the cases above name pdfLibWriter.js
+  // and the placeholder, and a route that reaches the library through any OTHER module passed them. `host/hostRefusals.ts`
+  // took `FieldEditRefusedError` from `formFieldEdit.ts`, which imports pdf-lib at load: +17.7 MB in every MuPDF host
+  // (fresh Node process, forced collection, 2026-10-08), the growth that put the host at 100 MB against a 100 MB base.
+  const pdfLibAtStart = mupdfAtStart.bare.get(PDF_LIB) ?? [];
+  check(
+    `host/hostEntry.js does not load ${PDF_LIB} at start`,
+    pdfLibAtStart.length === 0,
+    `named by ${pdfLibAtStart.map((module) => (mupdfAtStart.reached.get(module) ?? [module]).join(' -> ')).join('\n        and ')}.\n` +
+      `      pdf-lib is loaded by pdfLibWriter.js on the first pdf-lib command, through a literal import(). A static route ` +
+      `to any module that imports it — a refusal class, a type that became a value — puts the library into every MuPDF ` +
+      `host at start. Keep what the host's pipe names (classes, tables) in modules that import no library.`,
+  );
+  // CONTROL: over its whole life the host DOES reach pdf-lib, through that import(), so "not at start" is the dynamic
+  // edge being excluded, not a walk that cannot see the specifier.
+  check(
+    `CONTROL: host/hostEntry.js reaches ${PDF_LIB} through the pdf-lib writer's dynamic import`,
+    (mupdfEver.bare.get(PDF_LIB) ?? []).length > 0,
+    `the whole-life walk names no ${PDF_LIB}, so the start-only case above proves nothing.`,
   );
 
   // `main`'s SIGNER PARSES NOTHING (ADR-0148): the module that holds the key half reaches neither the placeholder

@@ -1,6 +1,6 @@
 import { FIELD_EDIT_REASONS } from '@monstera/shared';
 
-import { FieldEditRefusedError } from '../formFieldEdit.js';
+import { FieldEditRefusedError } from '../fieldEditRefusal.js';
 import { PngPixelsRefused } from '../imageDimensions.js';
 import { SignatureAppearanceRefusedError } from '../signingRefusals.js';
 import type { FIELD_EDIT_REFUSALS, PICTURE_REFUSALS, PLACEHOLDER_REFUSALS } from './engineChannels.js';

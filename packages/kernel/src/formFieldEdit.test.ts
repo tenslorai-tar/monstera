@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import type { CommandOfKind, FormFieldHandle, FormFieldProperties, FormFieldRead } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 
-import { FieldEditRefusedError, applyDuplicateFormField, applyEditFormFields, applySetTabOrder } from './formFieldEdit.js';
+import { FieldEditRefusedError } from './fieldEditRefusal.js';
+import { applyDuplicateFormField, applyEditFormFields, applySetTabOrder } from './formFieldEdit.js';
 import { readFieldProperties } from './formFieldRead.js';
 import { readFormFields } from './formFields.js';
 import { buildFormTestPdf } from './formTestForm.js';

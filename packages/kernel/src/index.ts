@@ -626,9 +626,8 @@ export {
 // THE THREE THAT CHANGE A FIELD THAT EXISTS (ADR-0193), on the barrel for the same check: `formFieldEdit.ts` reaches
 // `@cantoo/pdf-lib`, `formFieldCreate.ts`, the pure grammar in `fieldActions.ts` and `pageScope.ts`, and none of them
 // binds native code. Its reader, `formFieldRead.ts`, does and is behind `@monstera/kernel/engine`.
+export { FieldEditRefusedError, type FieldEditRefusal } from './fieldEditRefusal.js';
 export {
-  FieldEditRefusedError,
-  type FieldEditRefusal,
   applyDuplicateFormField,
   applyEditFormFields,
   applySetTabOrder,

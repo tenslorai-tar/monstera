@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FIELD_EDIT_REASONS } from '@monstera/shared';
 
-import { FieldEditRefusedError } from '../formFieldEdit.js';
+import { FieldEditRefusedError } from '../fieldEditRefusal.js';
 import { PngPixelsRefused } from '../imageDimensions.js';
 import { FIELD_EDIT_REFUSALS } from './engineChannels.js';
 import { hostRefusalFor, pdfLibRefusalCodeOf } from './hostRefusals.js';

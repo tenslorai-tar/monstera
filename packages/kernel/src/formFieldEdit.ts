@@ -19,9 +19,10 @@ import type { PDFDocument, PDFField, PDFFont, PDFPage } from '@cantoo/pdf-lib';
 
 import { choiceLabelOf, choiceValueOf } from '@monstera/contract/host';
 import type { AnnotationRect, CommandOfKind, FieldChoice, FieldFormat, FormFieldHandle, FormFieldProperties } from '@monstera/contract';
-import { type FieldEditReason, fieldNameClash } from '@monstera/shared';
+import { fieldNameClash } from '@monstera/shared';
 
 import type { FieldFace } from './fieldActions.js';
+import { FieldEditRefusedError } from './fieldEditRefusal.js';
 import {
   calculationScript,
   faceOfFont,
@@ -59,20 +60,6 @@ import { appendRevision, openForWriting } from './pdfLibSession.js';
  * border, a fill, a size of box or a list of choices regenerates THAT field's appearance and no other's: pdf-lib's
  * form-wide pass would put this command's font in front of fields it never named.
  */
-
-/** Why an edit was refused, each the person's to act on and none a defect: the one list `@monstera/shared` holds. */
-export type FieldEditRefusal = FieldEditReason;
-
-/** A refusal of one of the three commands, carrying the code the surface reads. */
-export class FieldEditRefusedError extends Error {
-  public constructor(
-    public readonly reason: FieldEditRefusal,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'FieldEditRefusedError';
-  }
-}
 
 /**
  * The document, opened for writing, or the refusal that says why it cannot be.
