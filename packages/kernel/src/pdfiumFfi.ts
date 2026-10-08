@@ -1315,12 +1315,6 @@ interface WalkedRun {
   text: string;
   /** The glyphs in the order drawn, which `ObjectRun.drawn` says; empty while the walk reads, set when it ends. */
   drawn: string;
-  /**
-   * What PDFium answered for the object, before `logicalOf` turned it into the order typed. The editable deck reorders it
-   * from the characters' places (`readingOrder.ts`), which holds for every producer where the editor's model of PDFium's
-   * answer holds for the ones it was measured on; empty while the walk reads, set when it ends.
-   */
-  raw: string;
   left: number;
   right: number;
   bottom: number;
@@ -1348,6 +1342,8 @@ function walkRuns(
   readonly unaddressableInk: number;
   /** Each drawn character of each object, in the order PDFium answered it, with where it starts across the page. */
   readonly glyphs: ReadonlyMap<number, readonly { readonly char: string; readonly left: number }[]>;
+  /** Each object's text as PDFium answered it, by object index: the deck's input (`raws` in the walk). */
+  readonly raws: ReadonlyMap<number, string>;
   /**
    * Where each run's last ADVANCE ends, by object index: the furthest right edge of its characters' loose boxes, which
    * is where text after it starts. A run's `right` is its ink's, and two strings of one width end their ink at
@@ -1422,7 +1418,6 @@ function walkRuns(
         held = {
           text: '',
           drawn: '',
-          raw: '',
           left: Number.POSITIVE_INFINITY,
           right: Number.NEGATIVE_INFINITY,
           bottom: Number.POSITIVE_INFINITY,
@@ -1464,8 +1459,12 @@ function walkRuns(
       runs: new Map(
         [...runs.entries()]
           .filter(([, run]) => Number.isFinite(run.left))
-          .map(([index, run]) => [index, { ...run, raw: run.text, drawn: readBackOf(run.text), text: logicalOf(run.text) }] as const),
+          .map(([index, run]) => [index, { ...run, drawn: readBackOf(run.text), text: logicalOf(run.text) }] as const),
       ),
+      // WHAT PDFIUM ANSWERED for each object, before `logicalOf` turned it into the order typed. The editable deck reorders it
+      // from the characters' places (`readingOrder.ts`), which holds for every producer where the editor's model of PDFium's
+      // answer holds for the ones it was measured on. Beside the runs and not on them: a field on a run reaches the strict wire.
+      raws: new Map([...runs.entries()].filter(([, run]) => Number.isFinite(run.left)).map(([index, run]) => [index, run.text] as const)),
       unaddressable,
       unaddressableInk,
       ends,
@@ -5012,8 +5011,9 @@ export async function pageContent(session: PdfiumSession, page: number): Promise
         // merge of the two: `rtlDeck.proof.mjs` red on both drawings that put a word's letters in visual order). The editor's
         // model holds for the producers it was measured on and the places hold for all of them, so the deck takes the places.
         // TWO READERS OF ONE AUTHORITY, stated rather than hidden: the day they are reconciled this goes (a finding, not a fix).
-        runs: joinedWalk(bindings, handle, walked).map(({ members, ...run }) => {
-          const raw = members.map((member) => walked.runs.get(member)?.raw ?? '').join('');
+        // `drawn` IS THIS FILE'S: the wire's run is strict, and a field it does not name is a reply main refuses.
+        runs: joinedWalk(bindings, handle, walked).map(({ members, drawn: _drawn, ...run }) => {
+          const raw = members.map((member) => walked.raws.get(member) ?? '').join('');
           return rightToLeftCount(raw) === 0
             ? run
             : {
