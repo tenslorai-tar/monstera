@@ -298,7 +298,7 @@ describe('a recognised scan (the owner’s answer 2: the picture stays under the
     if (build.kind !== 'editable') throw new Error('expected editable');
     expect(build.scan).toBe(true);
     // The model asks for the page as drawn, once; the image object under it is not a second picture.
-    expect(build.slide.objects.filter((object) => object.kind === 'picture').map((object) => object.kind === 'picture' && object.source.kind)).toStrictEqual(['page']);
+    expect(build.slide.objects.flatMap((object) => (object.kind === 'picture' ? [object.source.kind] : []))).toStrictEqual(['page']);
     const resolved: ResolvedSlide = {
       objects: build.slide.objects.map((object) =>
         object.kind === 'picture' ? { ...object, source: { kind: 'embedded', extension: 'png', bytes: Uint8Array.of(1, 2, 3) } } : object,
@@ -320,7 +320,7 @@ describe('a recognised scan (the owner’s answer 2: the picture stays under the
     const build = buildSlide(typed, deck);
     if (build.kind !== 'editable') throw new Error('expected editable');
     expect(build.scan).toBe(false);
-    expect(build.slide.objects.filter((object) => object.kind === 'picture').map((object) => object.kind === 'picture' && object.source.kind)).toStrictEqual(['embedded']);
+    expect(build.slide.objects.flatMap((object) => (object.kind === 'picture' ? [object.source.kind] : []))).toStrictEqual(['embedded']);
   });
 });
 
