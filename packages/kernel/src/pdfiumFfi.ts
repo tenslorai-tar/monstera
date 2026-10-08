@@ -2531,12 +2531,18 @@ function pieceWriter(
         const font = standardFontNamed(standardFontFor({ mono, serif, bold: spec.bold ?? false, italic: spec.italic ?? false }));
         const object: unknown = bindings.createTextObject(document, font, spec.size);
         if (object === null) throw refusedAt('object', 'FPDFPageObj_CreateTextObj refused the font of an added box');
-        setMatrixOn(bindings, object, { a: 1, b: 0, c: 0, d: 1, e: spec.left, f: spec.baseline });
-        if (!trySetText(bindings, object, SEED_TEXT)) throw refusedAt('set-text', 'PDFium refused the character an added box starts from');
-        const colour = spec.colour ?? { r: 0, g: 0, b: 0 };
-        bindings.setFillColour(object, colour.r, colour.g, colour.b, 255);
-        if (numberFrom(bindings.insertObject(handle, object), 'FPDFPage_InsertObject') !== 1) {
-          throw refusedAt('object', `FPDFPage_InsertObject refused an added box on page ${String(page)}`);
+        // THE CALLER'S UNTIL INSERTED: a refusal at any step below frees it (CR-NAT-15).
+        try {
+          setMatrixOn(bindings, object, { a: 1, b: 0, c: 0, d: 1, e: spec.left, f: spec.baseline });
+          if (!trySetText(bindings, object, SEED_TEXT)) throw refusedAt('set-text', 'PDFium refused the character an added box starts from');
+          const colour = spec.colour ?? { r: 0, g: 0, b: 0 };
+          bindings.setFillColour(object, colour.r, colour.g, colour.b, 255);
+          if (numberFrom(bindings.insertObject(handle, object), 'FPDFPage_InsertObject') !== 1) {
+            throw refusedAt('object', `FPDFPage_InsertObject refused an added box on page ${String(page)}`);
+          }
+        } catch (error) {
+          bindings.destroyObject(object);
+          throw error;
         }
         return object;
       };
@@ -3795,6 +3801,19 @@ function makeTextLike(
   if (font === null) throw refusedAt('object', 'A text object answered no font, so a line in its style cannot be made');
   const object: unknown = bindings.createTextObject(document, font, size[0] ?? 0);
   if (object === null) throw refusedAt('object', 'FPDFPageObj_CreateTextObj refused the font of the line it continues');
+  // A MADE OBJECT IS THE CALLER'S UNTIL IT IS INSERTED (`FPDFPageObj_CreateTextObj` hands ownership over), so a refusal
+  // below frees it: the throw paths leaked one object per refused edit (CR-NAT-15).
+  try {
+    dressLike(bindings, object, source, left);
+  } catch (error) {
+    bindings.destroyObject(object);
+    throw error;
+  }
+  return object;
+}
+
+/** The look of `source` put on the new text object `object`: its place, fill, render mode and stroke. */
+function dressLike(bindings: Bound, object: unknown, source: unknown, left: number): void {
   const matrix = matrixOn(bindings, source);
   setMatrixOn(bindings, object, { ...matrix, e: left });
   const red = [0];
@@ -3823,7 +3842,6 @@ function makeTextLike(
       bindings.setStrokeWidth(object, width[0] ?? 1);
     }
   }
-  return object;
 }
 
 /**
@@ -4363,9 +4381,19 @@ export function promoteFormObjects(session: PdfiumSession, page: number): Promis
 
         for (const child of kids) {
           const own: ObjectMatrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
-          if (numberFrom(bindings.getMatrix(child, own), 'FPDFPageObj_GetMatrix') !== 1) continue;
+          // A CHILD THAT CANNOT BE PLACED IS NOT SKIPPED: its form is destroyed after this walk, and a child left in it goes
+          // with it. Skipping was a silent drop of content (CR-NAT-17); the promotion refuses instead, before anything is
+          // generated, so the page is as it was.
+          if (numberFrom(bindings.getMatrix(child, own), 'FPDFPageObj_GetMatrix') !== 1) {
+            throw refusedAt(
+              'matrix',
+              `FPDFPageObj_GetMatrix refused an object inside a form on page ${String(page)}, so it cannot be ` +
+                'placed on the page and nothing was promoted',
+            );
+          }
           const target = composed(own, placed);
-          if (numberFrom(bindings.objectType(child), 'FPDFPageObj_GetType') === OBJECT_FORM) {
+          // A NESTED FORM WITH A CLIP OF ITS OWN is moved up whole, as the object it is, keeping the clip (see `clippedItself`).
+          if (numberFrom(bindings.objectType(child), 'FPDFPageObj_GetType') === OBJECT_FORM && !clippedItself(child)) {
             flatten(child, target);
             // THE EMPTIED INNER FORM GOES with its parent's other children: taken out of the parent and destroyed,
             // since nothing on the page holds it.
@@ -4383,7 +4411,11 @@ export function promoteFormObjects(session: PdfiumSession, page: number): Promis
             );
           }
           if (numberFrom(bindings.removeFormObject(form, child), 'FPDFFormObj_RemoveObject') !== 1) {
-            continue;
+            throw refusedAt(
+              'object',
+              `FPDFFormObj_RemoveObject refused an object inside a form on page ${String(page)}, which the form ` +
+                'would take with it when it is removed, so nothing was promoted',
+            );
           }
           // OWNERSHIP IS WITH US BETWEEN THESE TWO LINES, and `InsertObject`
           // frees the object itself on failure — so a failed insert is not a
@@ -4399,7 +4431,18 @@ export function promoteFormObjects(session: PdfiumSession, page: number): Promis
         }
       };
 
+      /**
+       * Whether the form is drawn through a clip of its own: a clip set on the page before the form is painted. The form's
+       * children carry their own clips, which travel with them; THIS one belongs to the form and PDFium has no call to put
+       * it on a child, so flattening the form would paint its content unclipped (CR-NAT-17). Such a form stays where it is.
+       */
+      const clippedItself = (form: unknown): boolean => {
+        const clip: unknown = bindings.clipPath(form);
+        return clip !== null && numberFrom(bindings.clipPathCount(clip), 'FPDFClipPath_CountPaths') > 0;
+      };
+
       for (const form of forms) {
+        if (clippedItself(form)) continue;
         flatten(form, matrixOfForm(form));
         // THE EMPTIED FORM GOES, or the page keeps a shape that draws nothing
         // and every index after it counts something invisible.

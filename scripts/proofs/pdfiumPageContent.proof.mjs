@@ -58,7 +58,7 @@ openPdfium(library);
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 32 });
+const roster = createRoster(failures, { cases: 34 });
 
 /**
  * @param {string} name
@@ -413,6 +413,25 @@ async function main() {
     'CONTROL: the plain text read, without flattening, leaves that text unaddressable',
     unflattened.unaddressable > 0 && !unflattened.runs.some((run) => run.text === 'Text inside a form'),
     `${String(unflattened.unaddressable)} characters unaddressable, ${String(unflattened.runs.length)} runs`,
+  );
+
+  // A FORM DRAWN THROUGH A CLIP OF ITS OWN STAYS A FORM (CR-NAT-17): PDFium has no call to put the form's clip on a child, so
+  // flattening it paints the content unclipped. The same page with the clip taken off is the control above.
+  const clippedPdf = onePage({
+    content: 'q 0 0 60 60 re W n 1 0 0 1 100 200 cm /Fm1 Do Q',
+    extra: [TIMES, stream('/Type /XObject /Subtype /Form /BBox [0 0 300 40] /Resources << /Font << /F2 1 0 R >> >>', formContent)],
+    resources: '/XObject << /Fm1 2 0 R >>',
+  });
+  const clipped = await read(clippedPdf);
+  record(
+    'a form drawn through a clip of its own is NOT flattened: its text is not a run on the page, and is counted unaddressable',
+    !clipped.runs.some((run) => run.text === 'Text inside a form') && clipped.unaddressable > 0,
+    `${String(clipped.runs.length)} runs, ${String(clipped.unaddressable)} characters unaddressable`,
+  );
+  record(
+    'CONTROL: the same form with no clip IS flattened, so the case above is the clip',
+    formed.runs.some((run) => run.text === 'Text inside a form') && formed.unaddressable === 0,
+    `${String(formed.runs.length)} runs, ${String(formed.unaddressable)} unaddressable`,
   );
 
   // THE FRAME.
