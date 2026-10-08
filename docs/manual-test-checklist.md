@@ -152,8 +152,8 @@ is not available.
 - [ ] **Sanitize document** — Encryption · `document.sanitize` · Shows: a toast · Help: *Sanitize a document*
 - [ ] **Apply redactions** — Redact · `document.apply-redactions` · Shows: on screen · Help: *Redact (permanently remove) content*
 - [ ] **Mark matches for redaction** — Redact · `document.redact-matches` · Shows: on screen · Help: *Find and redact words*
-- [ ] **Sign document** — Signatures · `document.sign-document` · Shows: a toast · Help: *Sign a document digitally*
-- [ ] **Sign with certificate** — Signatures · `protect.signature` · Shows: on screen · Help: *Add a visible signature*
+- [ ] **Sign with Certificate** — Signatures · `document.sign-document` · Shows: a toast · Help: *Sign a document digitally*
+- [ ] **Signature & Certificate** — Signatures · `protect.signature` · Shows: on screen · Help: *Add a visible signature*
 - [ ] **Check signatures** — Signatures · `document.check-signatures` · Shows: a result dialog · Help: *Check a document's signatures*
 - [ ] **Send to DocuSign** — Signatures · `document.docusign-send` · Shows: a result dialog · Help: *Send a document for signing with DocuSign*
 - [ ] **Save signed copy from DocuSign** — Signatures · `document.docusign-retrieve` · Shows: a toast · Help: *Send a document for signing with DocuSign*
