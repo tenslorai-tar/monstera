@@ -344,6 +344,21 @@ async function drawWithPdfjs(
   pageNumber: number,
 ): Promise<void> {
   console.warn(`TRACE render start p${String(pageNumber)} ${String(canvas.width)}x${String(canvas.height)} @${String(Math.round(performance.now()))}`);
+  const drawn: string[] = [];
+  const realDraw = context.drawImage.bind(context) as (...args: unknown[]) => void;
+  (context as unknown as { drawImage: (...args: unknown[]) => void }).drawImage = (...args: unknown[]): void => {
+    realDraw(...args);
+    try {
+      const source = args[0] as { width?: number; height?: number; constructor?: { name?: string } };
+      const matrix = context.getTransform();
+      const centre = context.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data;
+      drawn.push(
+        `${String(source.constructor?.name)} ${String(source.width)}x${String(source.height)} args=${String(args.length)} m=${[matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f].map((v) => String(Math.round(v))).join(',')} centre=${String(centre[0])},${String(centre[1])},${String(centre[2])},${String(centre[3])}`,
+      );
+    } catch (drawError) {
+      drawn.push(`draw probe failed ${String(drawError)}`);
+    }
+  };
   const task = page.render({ canvas, canvasContext: context, viewport, ...(transform === undefined ? {} : { transform }) });
   const cancel = (): void => {
     console.warn(`TRACE render cancel p${String(pageNumber)} @${String(Math.round(performance.now()))}`);
@@ -384,6 +399,20 @@ async function drawWithPdfjs(
         ops = `threw ${String(error)}`;
       }
       console.warn(`TRACE objs ${held.join(' | ')} ops=${ops}`.slice(0, 280));
+      console.warn(`TRACE drawImage calls=${String(drawn.length)} ${drawn.join(' ; ')}`.slice(0, 400));
+      // THE BITMAP'S OWN PIXELS: drawn onto a 4x4 canvas and summed, so a blank bitmap is told from a blank draw.
+      for (const [objId, data] of page.objs as unknown as Iterable<[string, Record<string, unknown> | null]>) {
+        const bitmap = (data?.['bitmap'] ?? null) as ImageBitmap | null;
+        if (bitmap === null) continue;
+        const small = document.createElement('canvas');
+        small.width = 4;
+        small.height = 4;
+        const smallContext = small.getContext('2d', { willReadFrequently: true });
+        if (smallContext === null) continue;
+        smallContext.drawImage(bitmap, 0, 0, 4, 4);
+        const sums = smallContext.getImageData(0, 0, 4, 4).data;
+        console.warn(`TRACE bitmap ${objId} first=${String(sums[0])},${String(sums[1])},${String(sums[2])},${String(sums[3])} last=${String(sums[60])},${String(sums[61])},${String(sums[62])},${String(sums[63])}`);
+      }
     } catch (probeError) {
       console.warn(`TRACE probe failed ${String(probeError)}`);
     }
