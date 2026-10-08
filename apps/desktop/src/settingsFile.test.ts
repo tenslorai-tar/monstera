@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
   SETTINGS_FILE,
   createEphemeralSettings,
+  createJsonFile,
   createSettingsFile,
   replaceWithRetry,
 } from './settingsFile.js';
@@ -70,6 +71,59 @@ describe('the settings file', () => {
     // one answer. A merge here would make the file the sum of every write it
     // ever received, and a setting removed from the registry could never leave.
     expect(createSettingsFile(directory).read()).toStrictEqual({ 'appearance.theme': 'light' });
+  });
+
+  describe('a read the file system refused is not an absence (CR-COR-03)', () => {
+    const refusal = (code: string) => (): string => {
+      throw Object.assign(new Error(code), { code });
+    };
+
+    it('a file held by another program is waited for, and a hold that ends in time reads normally', () => {
+      const { directory } = freshArea();
+      createSettingsFile(directory).write({ 'appearance.theme': 'dark' });
+      let attempts = 0;
+      const surface = createJsonFile(directory, SETTINGS_FILE, (path) => {
+        attempts += 1;
+        if (attempts < 3) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+        return readFileSync(path, 'utf8');
+      });
+
+      expect(surface.read()).toStrictEqual({ 'appearance.theme': 'dark' });
+      expect(attempts).toBe(3);
+    });
+
+    it('a file that stays refused is NOT REPLACED by a write: the settings it holds are still there afterwards', () => {
+      const { directory } = freshArea();
+      createSettingsFile(directory).write({ 'appearance.theme': 'dark', 'editing.autosave': true });
+      for (const code of ['EACCES', 'EBUSY', 'EPERM', 'EIO']) {
+        const surface = createJsonFile(directory, SETTINGS_FILE, refusal(code));
+        expect(surface.read()).toStrictEqual({});
+
+        expect(() => {
+          surface.write({ 'appearance.theme': 'light' });
+        }).toThrow(/was not replaced/u);
+        expect(createSettingsFile(directory).read()).toStrictEqual({ 'appearance.theme': 'dark', 'editing.autosave': true });
+      }
+    });
+
+    it('CONTROL: a missing file is a first launch and is written, and so is one whose next read succeeds', () => {
+      const { directory } = freshArea();
+      const first = createJsonFile(directory, SETTINGS_FILE, refusal('ENOENT'));
+      expect(first.read()).toStrictEqual({});
+      first.write({ 'appearance.theme': 'light' });
+      expect(createSettingsFile(directory).read()).toStrictEqual({ 'appearance.theme': 'light' });
+
+      let refuse = true;
+      const later = createJsonFile(directory, SETTINGS_FILE, (path) => {
+        if (refuse) throw Object.assign(new Error('EIO'), { code: 'EIO' });
+        return readFileSync(path, 'utf8');
+      });
+      later.read();
+      refuse = false;
+      later.read();
+      later.write({ 'appearance.theme': 'dark' });
+      expect(createSettingsFile(directory).read()).toStrictEqual({ 'appearance.theme': 'dark' });
+    });
   });
 
   it('a first launch reads as no settings rather than as an error', () => {

@@ -5541,11 +5541,12 @@ export const channels = {
    * ## THE WHOLE OBJECT, not one id at a time
    *
    * A per-id channel would make the file the sum of a sequence of writes, so an
-   * interrupted sequence leaves a state no single write produced — and a
-   * setting removed from the registry would need its own deletion message to
-   * ever leave the file. Sending everything makes the stored document a
-   * function of the store's current state, which is the only shape where
-   * "what is on disk" has one answer.
+   * interrupted sequence leaves a state no single write produced. Sending
+   * everything makes the stored document a function of the store's current
+   * state, which is the only shape where "what is on disk" has one answer.
+   * **Main keeps the keys the sender does not name** (CR-COR-14): a setting this
+   * build does not register belongs to another build, and a removed one is
+   * carried rather than dropped.
    *
    * It is also within L11 by the same reasoning `document.execute` is: this
    * scales with the number of registered settings, never with a document.
