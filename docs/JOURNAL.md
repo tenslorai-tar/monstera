@@ -892,6 +892,88 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-08 — Stage audit of `8e65fd00..f69e3c1d` — findings XXXXXXX-1 to XXXXXXX-4
+
+The merge of `work/cloud-6-forms` at `b336a95d` (Part B's in-place text editing and the forms rebuild) into this line:
+158 commits, 400 files. It is audited as a MERGE, which is what this entry can honestly read: the 157 commits it brings were
+audited on their own branch by the entry for `f278ec74..a7c1f387` (VVVVVVV-1 to VVVVVVV-36 there; the label collides with
+this branch's, told apart by the range) and **22 of them, after `a7c1f387`, were read by no audit** (the forms rebuild's last
+commits, found green by the reviewer's board and by the checks below, and not read here). What this entry read is the
+merge's own diff: the thirteen conflicted files and what the merge changed beneath them. One local reader, me. Nothing here
+was run in the installed build.
+
+**XXXXXXX-1** (medium, closed): the thirteen conflicts, each kept both intents and none dropped a side's entry. The one that
+needed a design reading was `client.ts`: main had added a per-call owner and a deadline (`inTurn`), the forms branch had added a
+credential lift (`ParamsFile.credentials`), and both edit `send`'s params-file shape. The shape is now ONE named interface
+(`ParamsFile`) taken by both `send` and `inTurn`, rather than two inline types that agree by luck. Translate took the forms
+branch's choice of the page's own writer (`editTextOperators` for a Type 3 page) into main's per-page loop, which had moved the
+block it edited. `ToolButton` and the ribbon's `toolButton` carry size, keepsFocus and double-click together.
+
+**XXXXXXX-2** (medium, closed): the merge was red before it was green, in six places no conflict marker showed: `bidi-js` and
+`harfbuzzjs` were declared by the merged `package.json` and not installed here (`npm install --ignore-scripts` added three
+packages and left the lockfile as merged, so the lock was consistent); a kernel test built a host client without the `owner`
+and `deadline` main now requires; the translate tests answered without `rewrite`, now required by the contract; one
+file-answer frame in a test named no `credentials`; the contents-review test asserted the OLD no-dialog flow's empty `shown`;
+and Unicode's conformance file was not provisioned. Each was fixed at its cause, none by loosening a check.
+
+**XXXXXXX-3** (low, closed): `bidiOrder.test.ts`'s 91,707-case conformance case ran 6.2 s here against vitest's 5 s default.
+It was given its own 60 s bound, which the corpus-sized cases in this repository already have (a 60,000 ms bound on a case whose
+work is set by its data and does not hang). A timeout raised for a hang would be the banned reflex; this one is raised for a
+measured, bounded workload, and the case still asserts every one of its 91,707 cases.
+
+**XXXXXXX-4** (info): ADR numbers were checked after the merge: none repeats (`ls docs/DECISIONS | cut -c1-4 | sort | uniq -d`
+prints nothing) and the highest is 0197. Two `README.md` rows for 0171 collided; the longer, corrected one is kept.
+
+### 1. Root cause or workaround?
+
+XXXXXXX-1 to -3 each name their mechanism. The one choice that is not a repair is XXXXXXX-3's bound, said as such.
+
+### 2. Verified against the easy shape only?
+
+The merge was checked against the hard shape for a merge: both sides' tests, the whole-tree lint (16 units, none reported) and
+the full unit run (7,100 cases, six reds, each above), not the conflicted files alone.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+One proof moved: the contents-review case no longer asserts an empty `shown`, because that line belonged to a flow the merge
+replaced; the case still asserts the dialog it shows and what Insert sends.
+
+### 3. Would CI have caught it?
+
+Yes for all of it: the tests and lint run in CI on both platforms; the bidi case needs the Unicode file provisioned, which CI
+does.
+
+### 4. Are the proofs non-vacuous?
+
+Not re-mutated here: the merge changed no proof's subject, and the two proofs it touched are described in 2a and XXXXXXX-3.
+
+### 4a. Resolution test before measuring?
+
+No instrument arrived.
+
+### 4b. A search with a positive control?
+
+The conflict-marker sweep was `git grep` for `^<<<<<<< ` and `^>>>>>>> ` over the tree; its control is that the same command
+listed the thirteen files before they were resolved.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+No roster arrived.
+
+### 5. Executed, or asserted?
+
+Executed: typecheck, whole-tree lint, the full unit run, and each red's own case. Not run: the dev-build checks (Step 2 of the
+night run), which follow this commit and are reported on their own.
+
+### 6. Architecture before the feature, or underneath it?
+
+No seam changed in the merge itself; each ADR (0172 to 0181, 0185 to 0188, 0193) arrived with its own commit on its branch.
+
+### 7. Do the documents still match the code?
+
+The ADR index and the journal carry both sides. The two entries that share a label are named in WWWWWWW's header; no
+sentence in either was edited.
+
 ## 2026-10-08 — Stage audit of `7d4f345d..8e65fd00` — findings WWWWWWW-1 to WWWWWWW-4
 
 13 commits, 105 files, the end of the 2026-10-08 run: item 14's Text section and eight handles, the baselines, the three reds
