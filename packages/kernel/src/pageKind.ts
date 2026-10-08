@@ -41,11 +41,13 @@ import type { PageText } from './textStructure.js';
 export type PageKind = 'text' | 'image-only' | 'empty';
 
 /**
- * The share of the pictures' area the text's may reach before the page counts as text: 5%. A scan carrying three invisible
- * words covers a fraction of a percent of its photograph; a typeset page's paragraphs cover tens of percent of any picture
- * on it.
+ * The share of the pictures' area the text's may reach before the page counts as text: 2%. Measured on constructed pages with
+ * the real engine (`scannedPages.proof.mjs`, 2026-10-08): a Letter-sized photograph carrying three words is about 0.2% and one
+ * line of text above a 320 by 120 picture is about 4.4%, so 2% stands between a photograph with a few words (a scan) and a
+ * picture with text of its own (an article). A typeset page's paragraphs cover tens of percent of any picture on it. The
+ * number is the owner's rule given a value from those two points, not fitted to a corpus.
  */
-export const SCAN_TEXT_SHARE = 0.05;
+export const SCAN_TEXT_SHARE = 0.02;
 
 /**
  * The rule, in one place.

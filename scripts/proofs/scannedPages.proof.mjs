@@ -69,7 +69,7 @@ refuseStaleBuild(root, [...TEXT_STRUCTURE, ...PAGE_KIND, ...NATIVE_ENGINE], 3);
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+const roster = createRoster(failures, { cases: 10 });
 
 /**
  * @param {string} label
@@ -132,8 +132,15 @@ try {
     mixed.drawImage(image, { x: 40, y: 40, width: 320, height: 120 });
     mixed.drawText('Text above a picture.', { x: 30, y: 240, size: 12, font });
 
+    // A PHOTOGRAPH THAT GAINED A FEW WORDS from one box recognition (the owner's recording of 2026-10-06): a picture over the
+    // whole of a Letter page and three words at its corner. Visible here, where the real ones are invisible, because the
+    // rule reads where words are and how much of the picture they cover, not whether they are drawn.
+    const photograph = document.addPage([612, 792]);
+    photograph.drawImage(image, { x: 0, y: 0, width: 612, height: 792 });
+    photograph.drawText('Date: 12 Oct', { x: 40, y: 740, size: 12, font });
+
     const bytes = await document.save();
-    const kinds = [0, 1, 2, 3].map((page) => kindOf(bytes, page));
+    const kinds = [0, 1, 2, 3, 4].map((page) => kindOf(bytes, page));
 
     check(
       'a page of text is text',
@@ -157,6 +164,12 @@ try {
       `answered ${String(kinds[3])} — a rule keyed on "has an image" would offer recognition ` +
         'over text the build can already read, which is the common shape of an article',
     );
+    check(
+      'a photograph carrying only a few words is STILL image-only, so it is offered recognition again',
+      kinds[4] === 'image-only',
+      `answered ${String(kinds[4])} — a page with three words was read as a page with text, and OCR pages, Searchable copy ` +
+        'and Clean up all refused the photograph after one box recognition (the owner’s recording of 2026-10-06)',
+    );
   }
 
   // ── The corpus ───────────────────────────────────────────────────────────
@@ -176,6 +189,9 @@ try {
   const corpus = openCorpus({ required: REQUIRE_CORPUS });
   if (!corpus.available) {
     for (const label of CORPUS_CASES) roster.record(roster.mark(), label, false);
+    // THE FAILURES FIRST: `format` throws when a case did not record, and a thrown total names no case — so what failed is
+    // said before the count is checked, not left for whoever reads the exit code.
+    for (const failure of failures) process.stderr.write(`  FAIL ${failure}\n`);
     process.stdout.write(`${roster.format('scanned-page case')}\n${corpus.outcome.text}`);
     if (failures.length > 0 || corpus.outcome.code !== 0) process.exit(1);
     process.exit(0);
