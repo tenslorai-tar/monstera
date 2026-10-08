@@ -234,7 +234,7 @@ import { OPEN_PROBLEM_DIALOG_ID } from './dialogs/openProblem.js';
 import { PERMISSION_PASSWORD_REPLACED_DIALOG_ID } from './dialogs/permissionPasswordReplaced.js';
 import { sayWhenUnwritable } from './commands/readOnlyFile.js';
 import { convertScanCommand } from './commands/convertScan.js';
-import { offerOldBackups, restoreVersionCommand } from './commands/restoreVersion.js';
+import { adoptOldBackups, restoreVersionCommand } from './commands/restoreVersion.js';
 import {
   exportAnnotationsFdfCommand,
   exportAnnotationsJsonCommand,
@@ -2896,9 +2896,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // AND ITS FILE IS ASKED ABOUT as it appears (cloud-4 7b): one that cannot be saved over is said before any edit,
       // with a copy to work on — which opens through here, so the copy is asked about too.
       void sayWhenUnwritable({ client, ask, onOpened: shown }, document.docId);
-      // AND THE OLD `.BAK` FILES BESIDE IT that Monstera made are offered a move into its own folder, once per folder
-      // (ADR-0198): main answers nothing for a folder already offered, so most opens ask nothing.
-      void offerOldBackups({ client, ask, toast }, document.docId);
+      // AND THE OLD `.BAK` FILES BESIDE IT that Monstera made are moved into its own folder, with no question and no
+      // notice (ADR-0198, corrected 2026-10-09).
+      void adoptOldBackups({ client }, document.docId);
     };
     return {
       client,

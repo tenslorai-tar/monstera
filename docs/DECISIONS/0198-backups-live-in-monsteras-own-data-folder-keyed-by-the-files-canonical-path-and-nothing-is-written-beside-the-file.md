@@ -71,3 +71,15 @@ person means by *this file* is the path they open it by. So:
 `backupFolder.test.ts` runs the real atomic write with these names: after a save the target's folder holds the file and
 nothing else (no `.bak`, no copy-aside), the backup is in the data folder, and a restore reads back the OLDER bytes — with the
 control that the same save under `siblingNames` leaves a `.bak` beside the file, so the case fails if the move is undone.
+
+## Correction, 2026-10-09
+
+Decision 5's offer was overruled by the owner: people do not need to know how Monstera handles its `.bak` files, and the
+dialog appeared as soon as a file was opened in 0.1.12.0. Monstera now moves the old `.bak` files it can prove it made into
+its own backups folder by itself when a document opens — no dialog, no setting, no notice. The rest of Decision 5 stands:
+only a file the provenance ledger proves Monstera made is moved (another program's `.bak` is the person's, ADR-0139); it is
+copied, read back by size, and only then removed, so it is moved and never deleted; and a move that fails leaves the file
+where it is and says nothing (the next open tries again). The "asked once per folder" record is gone with the question, since
+a folder with nothing proven left finds nothing. The statements above are kept as written; this is the record that they no
+longer hold. The channel is `document.adoptOldBackups`; `document.legacyBackups` and `document.moveLegacyBackups` and the
+dialog `dialog.legacy-backups` no longer exist.

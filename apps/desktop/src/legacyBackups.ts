@@ -1,14 +1,14 @@
 import { copyFile, mkdir, stat, utimes } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import { MAX_BACKUP_COPIES } from '@monstera/contract';
-import { backupFolderKey, backupFolderOf, listStoredBackups, siblingNames } from '@monstera/kernel';
+import { backupFolderOf, listStoredBackups, siblingNames } from '@monstera/kernel';
 
 import type { BackupProvenance } from './backupLedger.js';
 
 /**
- * The `.bak` files beside a document that earlier builds wrote, and the offer to move the ones Monstera made into its own
+ * The `.bak` files beside a document that earlier builds wrote, and the silent move of the ones Monstera made into its own
  * folder ([ADR-0198](../../../docs/DECISIONS/0198-backups-live-in-monsteras-own-data-folder-keyed-by-the-files-canonical-path-and-nothing-is-written-beside-the-file.md)
  * Decision 5).
  *
@@ -16,7 +16,7 @@ import type { BackupProvenance } from './backupLedger.js';
  *
  * A file named like a backup that a person, a sync client or another editor made is the person's (ADR-0139). So the scan
  * splits what it finds by the ledger's proof, `wasMade`, and only the proven ones are ever copied or removed; the rest are
- * COUNTED, so the offer can say how many stay where they are, and are otherwise left alone.
+ * COUNTED apart, and are otherwise left alone.
  *
  * ## A move is a copy that reads back, then the removal of exactly that file
  *
@@ -46,11 +46,6 @@ export async function scanLegacyBackups(path: string, provenance: Pick<BackupPro
     (await provenance.wasMade(name) ? proven : unproven).push(name);
   }
   return { proven, unproven };
-}
-
-/** The folder this offer is remembered under: the DIRECTORY the document is in, since the offer is made once per folder. */
-export function offerKeyOf(path: string): string {
-  return backupFolderKey(dirname(path));
 }
 
 /**

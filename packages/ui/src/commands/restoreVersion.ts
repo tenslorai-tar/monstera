@@ -1,13 +1,11 @@
 import type { DocId } from '@monstera/shared';
 
-import { LEGACY_BACKUPS_DIALOG_ID } from '../dialogs/legacyBackups.js';
 import { OPEN_PROBLEM_DIALOG_ID } from '../dialogs/openProblem.js';
 import { RESTORE_VERSION_DIALOG_ID } from '../dialogs/restoreVersion.js';
 import { RESTORE_VERSION_RESULT } from '../dialogs/restoreVersionResult.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import {
   RESTORE_VERSION_COMMAND_TITLE,
-  TOAST_LEGACY_MOVED,
   TOAST_RESTORE_GONE,
   TOAST_RESTORE_NONE,
 } from '../messages/en.js';
@@ -88,21 +86,10 @@ export function restoreVersionCommand(
 }
 
 /**
- * Offers, as a document opens, to move the old `.bak` files beside it that Monstera made into its own folder — ONCE PER FOLDER
- * (ADR-0198 Decision 5). Main counts the files it can PROVE it made and answers nothing for a folder already offered or
- * with none; the files it cannot prove are counted apart and stay where they are, which the dialog says. Either answer is
- * remembered by main, so the question is asked once.
+ * As a document opens, moves the old `.bak` files beside it that Monstera made into its own folder, with no dialog, no setting
+ * and no notice (ADR-0198 Decision 5, corrected 2026-10-09: the owner overruled the offer). Main moves only the files it can
+ * PROVE it made; a failure leaves the file where it is and this says nothing.
  */
-export async function offerOldBackups(
-  deps: Pick<DocumentCommandDeps, 'client' | 'ask'> & { readonly toast: ShowToast },
-  docId: DocId,
-): Promise<void> {
-  const found = await deps.client['document.legacyBackups']({ docId });
-  // CLOSED BEFORE THE ANSWER, or a problem that needs no sentence here: this is an offer, never a thing a person asked for.
-  if (!found.ok || found.value.kind !== 'found') return;
-  const { proven, unproven } = found.value;
-  const answer = (await deps.ask(LEGACY_BACKUPS_DIALOG_ID, { proven, unproven })) as { readonly move: boolean } | undefined;
-  // A DISMISSAL IS *LEAVE THEM*, and is remembered as the answer: the question is asked once.
-  const moved = await deps.client['document.moveLegacyBackups']({ docId, move: answer?.move === true });
-  if (moved.ok && moved.value.moved > 0) confirmDone(deps, TOAST_LEGACY_MOVED);
+export async function adoptOldBackups(deps: Pick<DocumentCommandDeps, 'client'>, docId: DocId): Promise<void> {
+  await deps.client['document.adoptOldBackups']({ docId });
 }

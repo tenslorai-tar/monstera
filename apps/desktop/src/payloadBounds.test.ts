@@ -488,8 +488,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.saveBarcodeContact': 'needs an engine session and a save dialog; answers one of seven outcomes and carries no text',
   'document.listBackups': 'needs an open document and a data folder; answers at most eleven versions by opaque id',
   'document.restoreBackup': 'needs an open document, a kept version and a save dialog',
-  'document.legacyBackups': 'needs an open document and the files beside it; answers two small counts',
-  'document.moveLegacyBackups': 'needs an open document and the files beside it; answers two small counts',
+  'document.adoptOldBackups': 'needs an open document and the files beside it; answers one small count',
   'app.clearBackups': 'needs Monstera’s data folder; answers a count',
   'document.pasteAnnotations': 'needs an engine session and a copy made first',
   // BOUNDED AT 64 BARCODES OF 7,089 CHARACTERS, per PAGE — `document.flatFieldCandidates`' shape.

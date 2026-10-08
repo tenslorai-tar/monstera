@@ -131,9 +131,9 @@ function client(options: {
       // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
       case 'document.fileAccess':
         return Promise.resolve(ok({ access: 'writable' as const }));
-      // AND WHETHER OLD `.bak` FILES BESIDE IT ARE OFFERED A MOVE (ADR-0198): none, which is every case's position.
-      case 'document.legacyBackups':
-        return Promise.resolve(ok({ kind: 'none' as const }));
+      // AND THE OLD `.bak` FILES BESIDE IT ARE MOVED SILENTLY (ADR-0198): none moved, which is every case's position.
+      case 'document.adoptOldBackups':
+        return Promise.resolve(ok({ kind: 'adopted' as const, moved: 0 }));
       case 'document.recent':
         return Promise.resolve(ok({ entries: [], lastExitClean: true }));
       case 'document.readRange':

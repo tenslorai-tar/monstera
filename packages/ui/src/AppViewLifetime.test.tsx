@@ -133,8 +133,8 @@ function answeringClient(model?: Readonly<Record<string, unknown>>): ContractCli
     'window.closeListening': { acknowledged: true },
     // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
     'document.fileAccess': { access: 'writable' },
-    // AND NO OLD `.bak` FILES TO OFFER A MOVE OF (ADR-0198).
-    'document.legacyBackups': { kind: 'none' },
+    // AND NO OLD `.bak` FILES TO MOVE (ADR-0198).
+    'document.adoptOldBackups': { kind: 'adopted', moved: 0 },
   };
   return createClient(channels, (id) => {
     const answer = answers[id];

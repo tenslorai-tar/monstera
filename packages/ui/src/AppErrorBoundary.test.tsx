@@ -107,8 +107,8 @@ const ANSWERS: Readonly<Record<string, unknown>> = {
   'window.closeListening': { acknowledged: true },
   // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
   'document.fileAccess': { access: 'writable' },
-  // AND NO OLD `.bak` FILES TO OFFER A MOVE OF (ADR-0198).
-  'document.legacyBackups': { kind: 'none' },
+  // AND NO OLD `.bak` FILES TO MOVE (ADR-0198).
+  'document.adoptOldBackups': { kind: 'adopted', moved: 0 },
   // AN UNDO MOVES THE VERSION, which reopens the view under the same scroller — and moves no page,
   // so the reader's page is the same number afterwards (a move would remap it, correctly).
   'document.undo': { kind: 'undone' as const, version: asDocVersion(2), byteLength: 2048 },

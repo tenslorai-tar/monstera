@@ -502,11 +502,10 @@ export function createContractHandlers(deps: {
     'document.editCopy': editCopyHandler(deps),
     'document.workOnCopy': workOnCopyHandler(deps),
     // THE VERSIONS A SAVE REPLACED (ADR-0198): listed by opaque id, restored as a copy, and the old `.bak` files beside a
-    // file offered a move once per folder; Clear is Settings › Privacy's.
+    // file moved into that folder without a question; Clear is Settings › Privacy's.
     'document.listBackups': listBackupsHandler(deps.commands),
     'document.restoreBackup': restoreBackupHandler(deps),
-    'document.legacyBackups': legacyBackupsHandler(deps.commands),
-    'document.moveLegacyBackups': moveLegacyBackupsHandler(deps.commands),
+    'document.adoptOldBackups': adoptOldBackupsHandler(deps.commands),
     'app.clearBackups': async () => ok({ kind: 'cleared', removed: await deps.commands.clearBackups() } as const),
     // WHICH FILE IS NEWER, from the times main holds for each open document; no time crosses (cloud-4 8a).
     'document.newerOf': ({ first, second }) => {
@@ -2402,21 +2401,10 @@ function listBackupsHandler(commands: DocumentCommands): ContractHandlers['docum
   };
 }
 
-function legacyBackupsHandler(commands: DocumentCommands): ContractHandlers['document.legacyBackups'] {
-  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.legacyBackups']>>> => {
+function adoptOldBackupsHandler(commands: DocumentCommands): ContractHandlers['document.adoptOldBackups'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.adoptOldBackups']>>> => {
     try {
-      const found = await commands.legacyBackups(docId);
-      return ok(found === undefined ? ({ kind: 'none' } as const) : ({ kind: 'found', ...found } as const));
-    } catch (thrown) {
-      return backupFailure(thrown);
-    }
-  };
-}
-
-function moveLegacyBackupsHandler(commands: DocumentCommands): ContractHandlers['document.moveLegacyBackups'] {
-  return async ({ docId, move }): Promise<Awaited<ReturnType<ContractHandlers['document.moveLegacyBackups']>>> => {
-    try {
-      return ok({ kind: 'answered', ...(await commands.moveLegacyBackups(docId, move)) } as const);
+      return ok({ kind: 'adopted', moved: await commands.adoptOldBackups(docId) } as const);
     } catch (thrown) {
       return backupFailure(thrown);
     }

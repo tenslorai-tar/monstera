@@ -3885,29 +3885,14 @@ export const channels = {
   ),
 
   /**
-   * The `.bak` files beside this document that Monstera can PROVE it made, asked once per folder (ADR-0198 Decision 5). The
-   * rest are counted apart and left where they are: a file Monstera did not make is the person's (ADR-0139).
+   * Moves the `.bak` files beside this document that Monstera can PROVE it made into its own backups folder, silently
+   * (ADR-0198 Decision 5, corrected 2026-10-09: the owner overruled the offer). A file Monstera did not make is the
+   * person's and is never touched (ADR-0139); a move that fails leaves the file where it is.
    */
-  'document.legacyBackups': channel(
-    'Counts the old .bak files beside an open document that Monstera made, and those it cannot prove it made.',
+  'document.adoptOldBackups': channel(
+    'Moves the old .bak files beside an open document that Monstera made into its own backups folder, with no question.',
     z.object({ docId: docIdSchema }).strict(),
-    z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('none') }),
-      // `unproven` COUNTS WHAT IS LEFT ALONE, so the offer can say how many files stay where they are.
-      z.object({ kind: z.literal('found'), proven: z.number().int().positive().max(MAX_BACKUP_COPIES), unproven: z.number().int().nonnegative().max(MAX_BACKUP_COPIES) }),
-    ]),
-    ['document-not-open', 'document-busy', 'document-poisoned'],
-  ),
-
-  'document.moveLegacyBackups': channel(
-    'Moves the old .bak files beside an open document that Monstera made into its own backups folder.',
-    z.object({ docId: docIdSchema, move: z.boolean() }).strict(),
-    z.object({
-      kind: z.literal('answered'),
-      moved: z.number().int().nonnegative().max(MAX_BACKUP_COPIES),
-      // A COPY THAT DID NOT READ BACK THE SAME SIZE, or a delete that was held, stays where it was and is counted here.
-      kept: z.number().int().nonnegative().max(MAX_BACKUP_COPIES),
-    }),
+    z.object({ kind: z.literal('adopted'), moved: z.number().int().nonnegative().max(MAX_BACKUP_COPIES) }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 

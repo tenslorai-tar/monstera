@@ -190,7 +190,7 @@ import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import type { BackupProvenance } from './backupLedger.js';
-import { moveLegacyBackups, offerKeyOf, scanLegacyBackups } from './legacyBackups.js';
+import { moveLegacyBackups, scanLegacyBackups } from './legacyBackups.js';
 import { type EditableSources, editablePages, emptyReport } from './editablePowerPoint.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import {
@@ -804,24 +804,6 @@ export interface BackupStore {
   readonly root: string;
   /** The file's identity now, for the hint a moved file is found by; `undefined` reads nothing. */
   readonly identity?: ((path: string) => Promise<{ readonly dev: number | null; readonly ino: number | null } | null>) | undefined;
-  /** Which folders were already offered the move of their old `.bak` files, remembered across launches (ADR-0198). */
-  readonly offered?: { readonly read: () => Readonly<Record<string, unknown>>; readonly write: (value: Record<string, unknown>) => void } | undefined;
-}
-
-/** The folders already offered, as a list of digests in the offered document. */
-function offeredFolders(offered: NonNullable<BackupStore['offered']>): readonly string[] {
-  const stored = offered.read()['folders'];
-  return Array.isArray(stored) ? stored.filter((entry): entry is string => typeof entry === 'string') : [];
-}
-
-function alreadyOffered(offered: NonNullable<BackupStore['offered']>, path: string): boolean {
-  return offeredFolders(offered).includes(offerKeyOf(path));
-}
-
-function rememberOffered(offered: NonNullable<BackupStore['offered']>, path: string): void {
-  const key = offerKeyOf(path);
-  const folders = offeredFolders(offered);
-  if (!folders.includes(key)) offered.write({ folders: [...folders, key] });
 }
 
 /** One kept version, as the application names it: an opaque id, when it was saved over, and how big it is. */
@@ -4301,34 +4283,25 @@ export class DocumentCommands {
   }
 
   /**
-   * The old `.bak` files beside this document that Monstera can prove it made (ADR-0198 Decision 5), asked ONCE PER FOLDER:
-   * `undefined` where this folder was already offered, where no data folder is kept, or where there is nothing proven to move.
-   * The files it cannot prove are counted apart and never touched.
+   * Moves the old `.bak` files beside this document that Monstera can PROVE it made into its own backups folder, with no
+   * question (ADR-0198 Decision 5, corrected 2026-10-09). Only a file the provenance record names is moved — another
+   * program's `.bak` is the person's (ADR-0139) — and a move that fails leaves the file where it is, silently. Run at every
+   * open: once nothing proven is left beside the file the scan finds nothing, so no memory of "already done" is kept.
+   * @returns how many moved
    */
-  async legacyBackups(docId: DocId): Promise<{ readonly proven: number; readonly unproven: number } | undefined> {
-    if (this.#documents.nameOf(docId) === undefined) throw new DocumentNotOpenError(docId, 'look for old backups');
-    const store = this.#backups;
-    if (store?.offered === undefined) return undefined;
-    const { value: path } = await this.#documents.run(docId, (context) => Promise.resolve(context.path));
-    if (alreadyOffered(store.offered, path)) return undefined;
-    const scan = await scanLegacyBackups(path, this.#save.provenance);
-    if (scan.proven.length === 0) return undefined;
-    return { proven: scan.proven.length, unproven: scan.unproven.length };
-  }
-
-  /**
-   * Answers the offer: the folder is remembered as offered whatever the answer, and the proven backups are moved only on a
-   * yes. The scan is taken again, so a file that changed between the question and the answer is no longer proven.
-   */
-  async moveLegacyBackups(docId: DocId, move: boolean): Promise<{ readonly moved: number; readonly kept: number }> {
+  async adoptOldBackups(docId: DocId): Promise<number> {
     if (this.#documents.nameOf(docId) === undefined) throw new DocumentNotOpenError(docId, 'move old backups');
     const store = this.#backups;
-    if (store === undefined) return { moved: 0, kept: 0 };
-    const { value: path } = await this.#documents.run(docId, (context) => Promise.resolve(context.path));
-    if (store.offered !== undefined) rememberOffered(store.offered, path);
-    if (!move) return { moved: 0, kept: 0 };
-    const scan = await scanLegacyBackups(path, this.#save.provenance);
-    return await moveLegacyBackups(store.root, path, scan, this.#save.provenance);
+    if (store === undefined) return 0;
+    try {
+      const { value: path } = await this.#documents.run(docId, (context) => Promise.resolve(context.path));
+      const scan = await scanLegacyBackups(path, this.#save.provenance);
+      if (scan.proven.length === 0) return 0;
+      return (await moveLegacyBackups(store.root, path, scan, this.#save.provenance)).moved;
+    } catch {
+      // NOTHING IS SAID: a folder that cannot be read or written keeps its files, and the next open tries again.
+      return 0;
+    }
   }
 
   /** Deletes every kept version in Monstera's own folder (Settings › Privacy › Clear backups); how many went. */

@@ -682,8 +682,6 @@ export interface ShellComposition {
    * which is the one place the product no longer writes a backup.
    */
   readonly backupDirectory?: string;
-  /** Which folders were offered the move of their old `.bak` files (ADR-0198), under `userData`; absent, in memory. */
-  readonly legacyBackupsOfferedFile?: SettingsSurface;
   /**
    * Opens one of the Store application's pages — `shell.openExternal` of a constant from `STORE_URIS`, which only
    * `entry.ts` may reach. The rating prompt's *review* uses it in the Store build (absent, the web listing), and
@@ -865,7 +863,6 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     engagementFile,
     backupLedgerFile = createEphemeralSettings(),
     backupDirectory = join(tmpdir(), 'monstera-backups-unconfigured'),
-    legacyBackupsOfferedFile = createEphemeralSettings(),
     openStore,
     openLink,
     updateRecordFile,
@@ -1588,12 +1585,6 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     backups: {
       root: backupDirectory,
       identity: readFileIdentity,
-      offered: {
-        read: () => legacyBackupsOfferedFile.read(),
-        write: (value) => {
-          legacyBackupsOfferedFile.write(value);
-        },
-      },
     },
     // INSERTING AN IMAGE, and both members are parameters for the copy's
     // reason: the picker needs Electron and the read needs Node's filesystem,

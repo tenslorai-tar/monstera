@@ -391,12 +391,6 @@ export const RESTORE_VERSION_ROW = messageKey('dialog.restore-version.row');
 export const RESTORE_VERSION_RESTORE = messageKey('dialog.restore-version.restore');
 export const TOAST_RESTORE_NONE = messageKey('toast.restore-version.none');
 export const TOAST_RESTORE_GONE = messageKey('toast.restore-version.gone');
-export const LEGACY_BACKUPS_TITLE = messageKey('dialog.legacy-backups.title');
-export const LEGACY_BACKUPS_BODY = messageKey('dialog.legacy-backups.body');
-export const LEGACY_BACKUPS_LEFT = messageKey('dialog.legacy-backups.left');
-export const LEGACY_BACKUPS_MOVE = messageKey('dialog.legacy-backups.move');
-export const LEGACY_BACKUPS_LEAVE = messageKey('dialog.legacy-backups.leave');
-export const TOAST_LEGACY_MOVED = messageKey('toast.legacy-backups.moved');
 export const INSERT_MARKDOWN_TITLE = messageKey('dialog.insert-markdown.title');
 export const INSERT_MARKDOWN_WHERE = messageKey('dialog.insert-markdown.where');
 export const INSERT_MARKDOWN_START = messageKey('dialog.insert-markdown.start');
@@ -5384,14 +5378,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RESTORE_VERSION_RESTORE]: 'Restore as a copy…',
   [TOAST_RESTORE_NONE]: 'There is no earlier version of this file yet. One is kept each time you save over it.',
   [TOAST_RESTORE_GONE]: 'That version is no longer kept.',
-  [LEGACY_BACKUPS_TITLE]: 'Move old backups',
-  [LEGACY_BACKUPS_BODY]:
-    'Monstera used to keep its backups of this file’s folder beside the files, as .bak files. It now keeps them in its own folder, so your folders stay tidy. Move the {count, plural, one {backup} other {# backups}} Monstera made?',
-  [LEGACY_BACKUPS_LEFT]:
-    '{count, plural, one {# other .bak file was} other {# other .bak files were}} not made by Monstera and will stay where they are.',
-  [LEGACY_BACKUPS_MOVE]: 'Move them',
-  [LEGACY_BACKUPS_LEAVE]: 'Leave them',
-  [TOAST_LEGACY_MOVED]: 'Backups moved to Monstera’s own folder.',
   [INSERT_MARKDOWN_TITLE]: 'Insert from Markdown',
   [INSERT_MARKDOWN_WHERE]: 'Where',
   [INSERT_MARKDOWN_START]: 'At the start',

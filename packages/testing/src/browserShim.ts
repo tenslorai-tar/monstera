@@ -2622,8 +2622,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     // NO DATA FOLDER IN A BROWSER: no version was kept, so none is listed and nothing is old to move.
     'document.listBackups': () => Promise.resolve(ok({ kind: 'listed' as const, versions: [] })),
     'document.restoreBackup': () => Promise.resolve(ok({ kind: 'gone' as const })),
-    'document.legacyBackups': () => Promise.resolve(ok({ kind: 'none' as const })),
-    'document.moveLegacyBackups': () => Promise.resolve(ok({ kind: 'answered' as const, moved: 0, kept: 0 })),
+    'document.adoptOldBackups': () => Promise.resolve(ok({ kind: 'adopted' as const, moved: 0 })),
     'app.clearBackups': () => Promise.resolve(ok({ kind: 'cleared' as const, removed: 0 })),
     // NO CLOUD IN A BROWSER: no client values and no `main` to sign in through, so every provider
     // is what a build without its values is — not configured (ADR-0091 Decision 2).

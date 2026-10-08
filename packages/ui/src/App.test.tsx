@@ -202,8 +202,8 @@ const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
   'window.closeListening': { acknowledged: true },
   // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b); a file a person just opened usually can.
   'document.fileAccess': { access: 'writable' },
-  // AND WHETHER OLD `.bak` FILES BESIDE IT ARE OFFERED A MOVE (ADR-0198): a folder with none, which is every case's position.
-  'document.legacyBackups': { kind: 'none' },
+  // AND THE OLD `.bak` FILES BESIDE IT ARE MOVED SILENTLY (ADR-0198): none moved, which is every case's position.
+  'document.adoptOldBackups': { kind: 'adopted', moved: 0 },
   // E3's rating prompt asks once per mount. Not due is every case's position: a banner here would put four
   // buttons in front of cases that are about something else.
   'app.reviewPrompt': { due: false },
@@ -333,7 +333,7 @@ const OPEN_DOCUMENT_ANSWERS = {
   // fixtures throw on a channel they have no answer for.
   'window.closeListening': { acknowledged: true },
   'document.fileAccess': { access: 'writable' as const },
-  'document.legacyBackups': { kind: 'none' as const },
+  'document.adoptOldBackups': { kind: 'adopted' as const, moved: 0 },
   'document.openWaiting': { opened: [] },
   'document.open': {
     kind: 'opened' as const,

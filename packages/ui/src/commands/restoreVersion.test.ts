@@ -2,9 +2,9 @@ import { type ContractClient, channels, createClient } from '@monstera/contract'
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { TOAST_LEGACY_MOVED, TOAST_RESTORE_GONE, TOAST_RESTORE_NONE } from '../messages/en.js';
+import { TOAST_RESTORE_GONE, TOAST_RESTORE_NONE } from '../messages/en.js';
 import type { CommandContext } from '../registries/commands.js';
-import { offerOldBackups, restoreVersionCommand } from './restoreVersion.js';
+import { adoptOldBackups, restoreVersionCommand } from './restoreVersion.js';
 
 /**
  * The UI half of ADR-0198's restore and its old-backups offer: which channel each control reaches, with what, and where each
@@ -103,30 +103,17 @@ describe('restoreVersionCommand', () => {
   });
 });
 
-describe('offerOldBackups', () => {
-  it('asks nothing where main found nothing to offer — the usual open', async () => {
-    const { sent, asked, deps } = harness({ 'document.legacyBackups': ok({ kind: 'none' }) }, undefined);
-    await offerOldBackups(deps, DOC);
-    expect(asked).toStrictEqual([]);
-    expect(sent.map((call) => call.id)).toStrictEqual(['document.legacyBackups']);
-  });
-
-  it('asks how many Monstera made and how many stay, sends the answer, and says the move — CONTROL: a dismissal is *leave them*, and is still sent so the folder is asked once', async () => {
-    const yes = harness(
-      { 'document.legacyBackups': ok({ kind: 'found', proven: 2, unproven: 1 }), 'document.moveLegacyBackups': ok({ kind: 'answered', moved: 2, kept: 0 }) },
-      { move: true },
-    );
-    await offerOldBackups(yes.deps, DOC);
-    expect(yes.asked).toStrictEqual([{ id: 'dialog.legacy-backups', props: { proven: 2, unproven: 1 } }]);
-    expect(yes.sent[1]).toStrictEqual({ id: 'document.moveLegacyBackups', params: { docId: DOC, move: true } });
-    expect(yes.toasts).toStrictEqual([{ kind: 'done', message: TOAST_LEGACY_MOVED }]);
-
-    const dismissed = harness(
-      { 'document.legacyBackups': ok({ kind: 'found', proven: 2, unproven: 0 }), 'document.moveLegacyBackups': ok({ kind: 'answered', moved: 0, kept: 0 }) },
-      undefined,
-    );
-    await offerOldBackups(dismissed.deps, DOC);
-    expect(dismissed.sent[1]).toStrictEqual({ id: 'document.moveLegacyBackups', params: { docId: DOC, move: false } });
-    expect(dismissed.toasts).toStrictEqual([]);
+describe('adoptOldBackups', () => {
+  it('sends one call, asks no question and says nothing, whether files moved or not', async () => {
+    const moved = harness({ 'document.adoptOldBackups': ok({ kind: 'adopted', moved: 2 }) }, undefined);
+    await adoptOldBackups(moved.deps, DOC);
+    expect(moved.sent).toStrictEqual([{ id: 'document.adoptOldBackups', params: { docId: DOC } }]);
+    expect(moved.asked).toStrictEqual([]);
+    expect(moved.toasts).toStrictEqual([]);
+    // CONTROL: nothing to move is the same silence, so a toast would be the thing a regression added.
+    const none = harness({ 'document.adoptOldBackups': ok({ kind: 'adopted', moved: 0 }) }, undefined);
+    await adoptOldBackups(none.deps, DOC);
+    expect(none.asked).toStrictEqual([]);
+    expect(none.toasts).toStrictEqual([]);
   });
 });

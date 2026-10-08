@@ -44,7 +44,6 @@ import { INSERT_FROM_PDF_DIALOG } from '../dialogs/insertFromPdf.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from '../dialogs/insertImageProblem.js';
 import { CONVERT_SCAN_DIALOG } from '../dialogs/convertScan.js';
 import { INSERT_MARKDOWN_DIALOG } from '../dialogs/insertMarkdown.js';
-import { LEGACY_BACKUPS_DIALOG } from '../dialogs/legacyBackups.js';
 import { RESTORE_VERSION_DIALOG } from '../dialogs/restoreVersion.js';
 import { HELD_COPIES_DIALOG } from '../dialogs/heldCopies.js';
 import { KEPT_BACKUPS_DIALOG } from '../dialogs/keptBackups.js';
@@ -175,7 +174,6 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   INSERT_MARKDOWN_DIALOG,
   CONVERT_SCAN_DIALOG,
   RESTORE_VERSION_DIALOG,
-  LEGACY_BACKUPS_DIALOG,
   REPLACE_PAGE_DIALOG,
   IMPORT_PAGE_AS_LAYER_DIALOG,
   REIMPORT_EXTERNAL_EDIT_DIALOG,
