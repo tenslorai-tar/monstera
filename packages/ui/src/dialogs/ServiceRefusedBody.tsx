@@ -7,11 +7,18 @@ import {
   ANTHROPIC_OUT_OF_CREDIT,
   EXCEL_SERVICE_REFUSED,
   SERVICE_DETAILS,
+  SERVICE_WHY_ADDRESS,
   SERVICE_WHY_DECLINED,
-  SERVICE_WHY_OTHER,
+  SERVICE_WHY_KEY_REFUSED,
+  SERVICE_WHY_NO_KEY,
+  SERVICE_WHY_NOT_DELETED,
   SERVICE_WHY_REJECTED,
+  SERVICE_WHY_TIMED_OUT,
   SERVICE_WHY_TOO_LARGE,
   SERVICE_WHY_TRUNCATED,
+  SERVICE_WHY_UNAVAILABLE,
+  SERVICE_WHY_UNPLACEABLE,
+  SERVICE_WHY_UNREACHABLE,
   SERVICE_WHY_UNREADABLE,
 } from '../messages/en.js';
 
@@ -22,21 +29,21 @@ type Reason = (typeof SERVICE_REFUSALS)[number];
  * without one is a compile error here, never a dialog that falls back to the service's own words.
  */
 const WHY: Readonly<Record<Reason, MessageKey>> = {
-  'no-key': SERVICE_WHY_OTHER,
-  'not-https': SERVICE_WHY_OTHER,
-  'not-the-service': SERVICE_WHY_OTHER,
-  unauthorised: SERVICE_WHY_OTHER,
+  'no-key': SERVICE_WHY_NO_KEY,
+  'not-https': SERVICE_WHY_ADDRESS,
+  'not-the-service': SERVICE_WHY_ADDRESS,
+  unauthorised: SERVICE_WHY_KEY_REFUSED,
   'out-of-credit': ANTHROPIC_OUT_OF_CREDIT,
   rejected: SERVICE_WHY_REJECTED,
-  unavailable: SERVICE_WHY_OTHER,
-  unreachable: SERVICE_WHY_OTHER,
-  'timed-out': SERVICE_WHY_OTHER,
+  unavailable: SERVICE_WHY_UNAVAILABLE,
+  unreachable: SERVICE_WHY_UNREACHABLE,
+  'timed-out': SERVICE_WHY_TIMED_OUT,
   refused: SERVICE_WHY_DECLINED,
   truncated: SERVICE_WHY_TRUNCATED,
   'too-large': SERVICE_WHY_TOO_LARGE,
   'unreadable-answer': SERVICE_WHY_UNREADABLE,
-  'not-deleted': SERVICE_WHY_OTHER,
-  unplaceable: SERVICE_WHY_OTHER,
+  'not-deleted': SERVICE_WHY_NOT_DELETED,
+  unplaceable: SERVICE_WHY_UNPLACEABLE,
 };
 
 /**

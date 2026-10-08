@@ -485,7 +485,7 @@ describe('readTablesThroughClaude (ADR-0086)', () => {
     expect(Object.keys(body.output_config.format.schema.properties)).toStrictEqual(['lines']);
   });
 
-  it('refuses a grid that contradicts itself rather than placing it', async () => {
+  it('keeps the words of a grid that contradicts itself, joined, rather than refusing it (ADR-0222)', async () => {
     const overlapping = {
       tables: [
         {
@@ -499,9 +499,33 @@ describe('readTablesThroughClaude (ADR-0086)', () => {
       ],
     };
     const { fetchImpl } = service(() => answer(overlapping));
-    await expect(
-      readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS),
-    ).rejects.toThrow(/two cells claim/u);
+    const tables = await readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS);
+    expect(tables[0]?.cells.map((each) => each.text)).toStrictEqual(['merged also here']);
+  });
+
+  it('WRITES THE OWNER’S PAGE WHOLE: three columns declared, a merged header, four cells in every row (Handwritten table.pdf)', async () => {
+    // The shape Claude answered on 2026-10-08: "Names Hours" read as one header cell, `columnCount: 3`, and four cells a row.
+    const ragged = {
+      tables: [
+        {
+          rowCount: 7,
+          columnCount: 3,
+          cells: [
+            { rowIndex: 0, columnIndex: 0, rowSpan: 1, columnSpan: 1, content: 'Names Hours' },
+            { rowIndex: 0, columnIndex: 1, rowSpan: 1, columnSpan: 1, content: 'Minutes' },
+            { rowIndex: 0, columnIndex: 2, rowSpan: 1, columnSpan: 1, content: 'Seconds' },
+            ...['John 7 20 36', 'Mike 6 10 12', 'Joe 8 44 57', 'Jada 7 12 22', 'Alex 6 41 05', 'Frank 5 32 41'].flatMap((row, at) =>
+              row.split(' ').map((content, column) => ({ rowIndex: at + 1, columnIndex: column, rowSpan: 1, columnSpan: 1, content })),
+            ),
+          ],
+        },
+      ],
+    };
+    const { fetchImpl } = service(() => answer(ragged));
+    const [table] = await readTablesThroughClaude(CREDENTIALS, { png: pngHeader(400, 600), fetchImpl }, BOUNDS);
+    expect(table).toMatchObject({ rows: 7, columns: 4 });
+    expect(table?.cells).toHaveLength(3 + 6 * 4);
+    expect(table?.cells.find((each) => each.row === 6 && each.column === 3)?.text).toBe('41');
   });
 
   it('answers no tables for a page with none, which is an answer and not a refusal', async () => {

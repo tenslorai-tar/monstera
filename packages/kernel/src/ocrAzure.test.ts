@@ -538,17 +538,23 @@ describe('readTablesThroughAzure (ADR-0086)', () => {
     expect(asked[0]).toContain('/documentModels/prebuilt-read:analyze');
   });
 
-  it('refuses a table whose grid does not fit itself', async () => {
-    const bad = (): Response =>
+  it('places a cell past its declared count by the extent of the cells, and refuses a cell that has no place at all (ADR-0222)', async () => {
+    const past = (): Response =>
       Response.json({
         status: 'succeeded',
         analyzeResult: {
           tables: [{ rowCount: 1, columnCount: 1, cells: [{ rowIndex: 0, columnIndex: 3, content: 'x' }] }],
         },
       });
-    const { fetchImpl } = service(accepted(), [bad]);
-    await expect(readTablesThroughAzure(CREDENTIALS, { png: PNG, fetchImpl }, BOUNDS, INSTANT)).rejects.toThrow(
-      /outside its 1×1 grid/u,
+    const { fetchImpl } = service(accepted(), [past]);
+    const [table] = await readTablesThroughAzure(CREDENTIALS, { png: PNG, fetchImpl }, BOUNDS, INSTANT);
+    expect(table).toMatchObject({ rows: 1, columns: 4 });
+    // CONTROL: a cell with no row at all cannot be placed, and the answer is refused.
+    const noRow = (): Response =>
+      Response.json({ status: 'succeeded', analyzeResult: { tables: [{ cells: [{ columnIndex: 0, content: 'x' }] }] } });
+    const second = service(accepted(), [noRow]);
+    await expect(readTablesThroughAzure(CREDENTIALS, { png: PNG, fetchImpl: second.fetchImpl }, BOUNDS, INSTANT)).rejects.toThrow(
+      /not one this build can place/u,
     );
   });
 });

@@ -693,7 +693,14 @@ export const SERVICE_WHY_TOO_LARGE = messageKey('dialog.service-refused.why-too-
 export const SERVICE_WHY_DECLINED = messageKey('dialog.service-refused.why-declined');
 export const SERVICE_WHY_TRUNCATED = messageKey('dialog.service-refused.why-truncated');
 export const SERVICE_WHY_UNREADABLE = messageKey('dialog.service-refused.why-unreadable');
-export const SERVICE_WHY_OTHER = messageKey('dialog.service-refused.why-other');
+export const SERVICE_WHY_NO_KEY = messageKey('dialog.service-refused.why-no-key');
+export const SERVICE_WHY_KEY_REFUSED = messageKey('dialog.service-refused.why-key-refused');
+export const SERVICE_WHY_UNREACHABLE = messageKey('dialog.service-refused.why-unreachable');
+export const SERVICE_WHY_TIMED_OUT = messageKey('dialog.service-refused.why-timed-out');
+export const SERVICE_WHY_UNAVAILABLE = messageKey('dialog.service-refused.why-unavailable');
+export const SERVICE_WHY_ADDRESS = messageKey('dialog.service-refused.why-address');
+export const SERVICE_WHY_NOT_DELETED = messageKey('dialog.service-refused.why-not-deleted');
+export const SERVICE_WHY_UNPLACEABLE = messageKey('dialog.service-refused.why-unplaceable');
 export const SERVICE_REFUSED_TITLE = messageKey('dialog.service-refused.title');
 export const EXPORT_EXCEL_SHEET_PER_PAGE = messageKey('dialog.export-excel.sheet-per-page');
 export const EXPORT_EXCEL_ONE_SHEET = messageKey('dialog.export-excel.one-sheet');
@@ -5756,7 +5763,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SERVICE_WHY_DECLINED]: 'The service declined to read this page.',
   [SERVICE_WHY_TRUNCATED]: 'The service ran out of room before it finished this page.',
   [SERVICE_WHY_UNREADABLE]: 'The service answered in a way Monstera could not read.',
-  [SERVICE_WHY_OTHER]: 'The service could not read this page. Try again in a moment.',
+  [SERVICE_WHY_NO_KEY]: 'No key is stored for this service, so nothing was sent. Add one in Settings, under AI.',
+  [SERVICE_WHY_KEY_REFUSED]: 'The service did not accept the key. Check it in Settings, under AI.',
+  [SERVICE_WHY_UNREACHABLE]: 'Monstera could not reach the service. Check the connection and try again.',
+  [SERVICE_WHY_TIMED_OUT]: 'The service took too long to answer. Try again in a moment.',
+  [SERVICE_WHY_UNAVAILABLE]: 'The service is not taking requests right now. Try again in a moment.',
+  [SERVICE_WHY_ADDRESS]: 'The service’s address is not one Monstera trusts, so nothing was sent. Check it in Settings, under AI.',
+  [SERVICE_WHY_NOT_DELETED]: 'The service read this page, but it may still hold a copy of it, so its answer was not used.',
+  [SERVICE_WHY_UNPLACEABLE]: 'The service read this page, but what it returned was not a table Monstera could place.',
   [SERVICE_REFUSED_TITLE]: 'The tables were not read',
   [EXPORT_EXCEL_SHEET_PER_PAGE]: 'A sheet for each page that has tables',
   [EXPORT_EXCEL_ONE_SHEET]: 'Every table on one sheet',

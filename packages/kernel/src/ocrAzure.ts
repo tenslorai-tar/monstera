@@ -3,7 +3,7 @@ import type { PdfPoint, Rotation } from '@monstera/shared';
 import { onOrigin, pageTransform, serviceOrigin, toPdf, viewportPoint } from '@monstera/shared';
 
 import type { RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecognise.js';
-import { type RecognisedTable, recognisedTable } from './recognisedTables.js';
+import { type RecognisedTable, placedTables } from './recognisedTables.js';
 
 /**
  * Azure Document Intelligence — **the recogniser that runs in `main`**.
@@ -570,10 +570,9 @@ export async function readTablesThroughAzure(
   const answer = await analyseThroughAzure(credentials, 'prebuilt-layout', request, clock);
   const whole = (value: unknown, fallback?: number): number =>
     typeof value === 'number' ? value : (fallback ?? Number.NaN);
-  return (answer.analyzeResult?.tables ?? []).map((table) =>
-    recognisedTable(
-      whole(table.rowCount),
-      whole(table.columnCount),
+  // THE DECLARED COUNTS ARE NOT READ (ADR-0222): the grid is the extent of the cells returned. Each table is its own answer.
+  return placedTables(
+    (answer.analyzeResult?.tables ?? []).map((table) =>
       (table.cells ?? []).map((cell) => ({
         row: whole(cell.rowIndex),
         column: whole(cell.columnIndex),
@@ -581,9 +580,9 @@ export async function readTablesThroughAzure(
         columnSpan: whole(cell.columnSpan, 1),
         text: typeof cell.content === 'string' ? cell.content : '',
       })),
-      bounds.maxCells,
-      bounds.maxText,
     ),
+    bounds.maxCells,
+    bounds.maxText,
   );
 }
 

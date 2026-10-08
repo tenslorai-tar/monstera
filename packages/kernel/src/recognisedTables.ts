@@ -10,13 +10,19 @@
  * text with no line, font or box. Folding one into the other would mean inventing lines for the
  * second and spans for the first. So the sheet writer takes either, and says which it was given.
  *
- * ## One reader of what a service answered, and it refuses rather than repairs
+ * ## The grid is the extent of the cells the service RETURNED
  *
- * Both services are asked for the same shape (ADR-0086 Decision 3), so {@link recognisedTable}
- * is the one place an answer becomes a table. A cell outside the grid, or two cells claiming the
- * same place in it, is an answer that got its own grid wrong; the table is refused rather than
- * placed by a rule of ours, because any placement would be this build deciding what the service
- * meant.
+ * One reader of what a service answered, and **its own counts are only a hint** (corrected 2026-10-09,
+ * [ADR-0222](../../../docs/DECISIONS/0222-a-recognised-table-is-the-extent-of-its-cells-and-is-never-refused-for-a-count.md)).
+ * Until then a cell outside the DECLARED grid refused the whole table: Claude read a handwritten page whose header
+ * "Names Hours" it merged into one cell, declared three columns, and returned four cells in every data row — and the
+ * four-column table a person could plainly use was refused for it. The cells are the evidence; the declared
+ * counts are a summary of them that the service can get wrong. So the grid is the largest row and column any cell reaches,
+ * a place no cell covers stays an empty cell, and only what cannot be placed at all is refused.
+ *
+ * Two cells claiming one place do not refuse the table either, because refusing it drops every other cell for one
+ * disagreement: the second cell's words are joined onto the first at that place (nothing the service read is lost), and a
+ * span that would cover a place already taken is cut back to the places still free.
  */
 
 /** One cell as a service reports it: where it starts, how far it spans, and its text. */
@@ -48,56 +54,98 @@ export class RecognisedTableRefused extends Error {
 }
 
 /**
- * Checks a service's grid and answers the table, or refuses it.
+ * Builds the table a service's cells make, or refuses what cannot be placed at all.
+ *
+ * Refused: no cell, a cell whose row or column is not a whole number from zero, a grid over `maxCells`, a cell's text over
+ * `maxText`. Nothing else is: a ragged answer is written whole.
  *
  * @param maxCells the grid's bound — the same bound the review grid and the channels carry, so a
  *   service cannot hand the writer a sheet the automatic engine could never produce
  * @param maxText each cell's text bound
  */
-export function recognisedTable(
-  rows: number,
-  columns: number,
-  cells: readonly RecognisedCell[],
-  maxCells: number,
-  maxText: number,
-): RecognisedTable {
+export function recognisedTable(cells: readonly RecognisedCell[], maxCells: number, maxText: number): RecognisedTable {
   const whole = (value: number): boolean => Number.isInteger(value) && value >= 0;
-  if (!whole(rows) || !whole(columns) || rows === 0 || columns === 0) {
-    throw new RecognisedTableRefused(`a ${String(rows)}×${String(columns)} grid`);
+  if (cells.length === 0) throw new RecognisedTableRefused('a table with no cell');
+  // A SPAN THAT IS NOT A WHOLE NUMBER OF AT LEAST ONE IS ONE: the cell is real, and what it spans is the service's guess.
+  const spanOf = (span: number): number => (Number.isInteger(span) && span >= 1 ? span : 1);
+
+  for (const cell of cells) {
+    if (!whole(cell.row) || !whole(cell.column)) {
+      throw new RecognisedTableRefused(`a cell at row ${String(cell.row)}, column ${String(cell.column)}`);
+    }
+    if (cell.text.length > maxText) {
+      throw new RecognisedTableRefused(`a cell's text is ${String(cell.text.length)} characters, over ${String(maxText)}`);
+    }
   }
+  // THE EXTENT OF WHAT WAS RETURNED, spans included.
+  const rows = Math.max(...cells.map((cell) => cell.row + spanOf(cell.rowSpan)));
+  const columns = Math.max(...cells.map((cell) => cell.column + spanOf(cell.columnSpan)));
   if (rows * columns > maxCells) {
     throw new RecognisedTableRefused(`${String(rows * columns)} cells, over the ${String(maxCells)} a table may hold`);
   }
 
   const taken = new Set<number>();
+  const placed = new Map<number, { row: number; column: number; rowSpan: number; columnSpan: number; text: string }>();
   for (const cell of cells) {
-    const fits =
-      whole(cell.row) &&
-      whole(cell.column) &&
-      Number.isInteger(cell.rowSpan) &&
-      Number.isInteger(cell.columnSpan) &&
-      cell.rowSpan >= 1 &&
-      cell.columnSpan >= 1 &&
-      cell.row + cell.rowSpan <= rows &&
-      cell.column + cell.columnSpan <= columns;
-    if (!fits) {
-      throw new RecognisedTableRefused(
-        `a cell at row ${String(cell.row)}, column ${String(cell.column)} spanning ` +
-          `${String(cell.rowSpan)}×${String(cell.columnSpan)} lies outside its ${String(rows)}×${String(columns)} grid`,
-      );
+    const start = cell.row * columns + cell.column;
+    const occupant = placed.get(start);
+    if (occupant !== undefined || taken.has(start)) {
+      // THE SAME PLACE CLAIMED TWICE: the words are joined onto the first claimant, never dropped. A place covered by a
+      // span rather than started there takes the words at the cell that covers it.
+      const holder = occupant ?? [...placed.values()].find((each) => covers(each, cell.row, cell.column));
+      if (holder !== undefined && cell.text !== '') holder.text = holder.text === '' ? cell.text : `${holder.text} ${cell.text}`;
+      continue;
     }
-    if (cell.text.length > maxText) {
-      throw new RecognisedTableRefused(`a cell's text is ${String(cell.text.length)} characters, over ${String(maxText)}`);
-    }
-    for (let y = cell.row; y < cell.row + cell.rowSpan; y += 1) {
-      for (let x = cell.column; x < cell.column + cell.columnSpan; x += 1) {
-        const place = y * columns + x;
-        if (taken.has(place)) {
-          throw new RecognisedTableRefused(`two cells claim row ${String(y)}, column ${String(x)}`);
-        }
-        taken.add(place);
+    let rowSpan = spanOf(cell.rowSpan);
+    let columnSpan = spanOf(cell.columnSpan);
+    // A SPAN IS CUT BACK to the places still free: along the row first, then down.
+    for (let x = 1; x < columnSpan; x += 1) {
+      if (taken.has(cell.row * columns + cell.column + x)) {
+        columnSpan = x;
+        break;
       }
     }
+    for (let y = 1; y < rowSpan; y += 1) {
+      let free = true;
+      for (let x = 0; x < columnSpan; x += 1) free = free && !taken.has((cell.row + y) * columns + cell.column + x);
+      if (!free) {
+        rowSpan = y;
+        break;
+      }
+    }
+    for (let y = 0; y < rowSpan; y += 1) {
+      for (let x = 0; x < columnSpan; x += 1) taken.add((cell.row + y) * columns + cell.column + x);
+    }
+    placed.set(start, { row: cell.row, column: cell.column, rowSpan, columnSpan, text: cell.text });
   }
-  return { kind: 'recognised', rows, columns, cells };
+  return { kind: 'recognised', rows, columns, cells: [...placed.values()] };
+}
+
+/**
+ * Every table a service answered, each placed on its own: a table that cannot be placed is left out and the others are kept
+ * (ADR-0222 Decision 4). The answer is refused only when the service returned tables and NONE could be placed — the first
+ * refusal, whose sentence says why — so a page whose second table is unusable still gives its first.
+ */
+export function placedTables(
+  tables: readonly (readonly RecognisedCell[])[],
+  maxCells: number,
+  maxText: number,
+): readonly RecognisedTable[] {
+  const placed: RecognisedTable[] = [];
+  let firstRefusal: RecognisedTableRefused | undefined;
+  for (const cells of tables) {
+    try {
+      placed.push(recognisedTable(cells, maxCells, maxText));
+    } catch (thrown) {
+      if (!(thrown instanceof RecognisedTableRefused)) throw thrown;
+      firstRefusal ??= thrown;
+    }
+  }
+  if (placed.length === 0 && firstRefusal !== undefined) throw firstRefusal;
+  return placed;
+}
+
+/** Whether `cell`'s span covers the place at `row`, `column`. */
+function covers(cell: { row: number; column: number; rowSpan: number; columnSpan: number }, row: number, column: number): boolean {
+  return row >= cell.row && row < cell.row + cell.rowSpan && column >= cell.column && column < cell.column + cell.columnSpan;
 }

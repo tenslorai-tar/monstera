@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { anthropicErrorMessage, isAnthropicOutOfCredit } from './anthropicCredit.js';
 import type { RecognisedLine, RecognisedPage, RecognisedWord } from './ocrRecognise.js';
-import { type RecognisedTable, recognisedTable } from './recognisedTables.js';
+import { type RecognisedTable, placedTables } from './recognisedTables.js';
 
 /**
  * Recognition by Anthropic's Claude — D6's fourth recogniser, added 2026-09-12
@@ -238,6 +238,10 @@ export function pngSize(png: Uint8Array): { readonly width: number; readonly hei
 /** What is asked for. English, because the model reads it; no person ever does. */
 const INSTRUCTION =
   'Transcribe every word of text visible in this image, in reading order, grouped into lines. ' +
+  // A RULED LINE IS A BOUNDARY (the owner's page of 2026-10-08, where the handwritten header "Names | Hours" was read as the
+  // one word "NamedHours"): words either side of a ruled line, or of a gap as wide as a column, are separate words.
+  'Words on either side of a ruled line, or of a gap as wide as a table column, are separate words: never join them, ' +
+  'and give each its own box. ' +
   'For each word give its exact text and its bounding box as [x1, y1, x2, y2]: the top-left and ' +
   'bottom-right corners, in pixel coordinates of this image, with the origin at the top-left ' +
   'corner. If the image contains no text, return an empty list of lines.';
@@ -442,10 +446,10 @@ export async function readTablesThroughClaude(
   if (!answer.success) {
     throw new ClaudeRecognitionRefused('unreadable-answer', 'Claude’s tables are not the shape they were asked for');
   }
-  return answer.data.tables.map((table) =>
-    recognisedTable(
-      table.rowCount,
-      table.columnCount,
+  // THE DECLARED COUNTS ARE NOT READ (ADR-0222): the grid is the extent of the cells, so a model that declared three columns
+  // and returned four cells a row is written as four columns. Each table is its own answer.
+  return placedTables(
+    answer.data.tables.map((table) =>
       table.cells.map((cell) => ({
         row: cell.rowIndex,
         column: cell.columnIndex,
@@ -453,9 +457,9 @@ export async function readTablesThroughClaude(
         columnSpan: cell.columnSpan,
         text: cell.content,
       })),
-      bounds.maxCells,
-      bounds.maxText,
     ),
+    bounds.maxCells,
+    bounds.maxText,
   );
 }
 
