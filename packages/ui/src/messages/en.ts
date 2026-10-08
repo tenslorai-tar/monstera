@@ -373,6 +373,19 @@ export const INSERT_FROM_PDF_AFTER = messageKey('dialog.insert-from-pdf.after');
 export const INSERT_FROM_PDF_PAGE = messageKey('dialog.insert-from-pdf.page');
 export const INSERT_FROM_PDF_RANGE = messageKey('dialog.insert-from-pdf.range');
 export const INSERT_FROM_PDF_APPLY = messageKey('dialog.insert-from-pdf.apply');
+export const RESTORE_VERSION_COMMAND_TITLE = messageKey('command.restore-version.title');
+export const RESTORE_VERSION_TITLE = messageKey('dialog.restore-version.title');
+export const RESTORE_VERSION_INTRO = messageKey('dialog.restore-version.intro');
+export const RESTORE_VERSION_ROW = messageKey('dialog.restore-version.row');
+export const RESTORE_VERSION_RESTORE = messageKey('dialog.restore-version.restore');
+export const TOAST_RESTORE_NONE = messageKey('toast.restore-version.none');
+export const TOAST_RESTORE_GONE = messageKey('toast.restore-version.gone');
+export const LEGACY_BACKUPS_TITLE = messageKey('dialog.legacy-backups.title');
+export const LEGACY_BACKUPS_BODY = messageKey('dialog.legacy-backups.body');
+export const LEGACY_BACKUPS_LEFT = messageKey('dialog.legacy-backups.left');
+export const LEGACY_BACKUPS_MOVE = messageKey('dialog.legacy-backups.move');
+export const LEGACY_BACKUPS_LEAVE = messageKey('dialog.legacy-backups.leave');
+export const TOAST_LEGACY_MOVED = messageKey('toast.legacy-backups.moved');
 export const INSERT_MARKDOWN_TITLE = messageKey('dialog.insert-markdown.title');
 export const INSERT_MARKDOWN_WHERE = messageKey('dialog.insert-markdown.where');
 export const INSERT_MARKDOWN_START = messageKey('dialog.insert-markdown.start');
@@ -2273,6 +2286,8 @@ export const SETTINGS_DONE = messageKey('dialog.settings.done');
 export const SETTINGS_AI_PROVIDER_STORED = messageKey('dialog.settings.ai-provider.stored');
 export const SETTINGS_ACTION_CLEAR_HISTORY = messageKey('dialog.settings.clear-history');
 export const SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION = messageKey('dialog.settings.clear-history.description');
+export const SETTINGS_ACTION_CLEAR_BACKUPS = messageKey('dialog.settings.clear-backups');
+export const SETTINGS_ACTION_CLEAR_BACKUPS_DESCRIPTION = messageKey('dialog.settings.clear-backups.description');
 export const SETTINGS_ACTION_CLEAR_RECENT = messageKey('dialog.settings.clear-recent');
 export const SETTINGS_ACTION_CLEAR_RECENT_DESCRIPTION = messageKey('dialog.settings.clear-recent.description');
 export const SETTINGS_ACTION_CLEARED = messageKey('dialog.settings.clear-history.done');
@@ -3142,7 +3157,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_SAVED_CLEARED]: 'Saved. Older copies that held what you removed were deleted permanently, and undo cannot go back past this save.',
   [TOAST_SAVED_CLEARED_BACKUPS]: 'Saved. Older copies that held what you removed were deleted permanently.',
   [BACKUP_COPIES_DESCRIPTION]:
-    'Each save keeps the version it replaces beside the file, as report.pdf.bak, then .bak2 and so on, newest first. Choosing fewer removes the extra copies at the next save. At least one is kept, except by a save after a redaction or Sanitize, which keeps none.',
+    'Each save keeps the version it replaces in Monstera’s own folder, never beside your file, newest first. File › Restore a previous version lists them. Choosing fewer removes the extra copies at the next save. At least one is kept, except by a save after a redaction or Sanitize, which keeps none.',
   [BACKUP_COPIES_OPTION_TITLES.one]: '1',
   [BACKUP_COPIES_OPTION_TITLES.three]: '3',
   [BACKUP_COPIES_OPTION_TITLES.five]: '5',
@@ -4919,6 +4934,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SETTINGS_AI_PROVIDER_STORED]: '{provider} — key stored',
   [SETTINGS_ACTION_CLEAR_HISTORY]: 'Clear chat history',
   [SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION]: 'Removes every saved conversation from this computer.',
+  [SETTINGS_ACTION_CLEAR_BACKUPS]: 'Clear backups',
+  // `app.clearBackups`'s own effect: the earlier versions Monstera keeps in its own folder; nothing beside a person's files.
+  [SETTINGS_ACTION_CLEAR_BACKUPS_DESCRIPTION]:
+    'Deletes the earlier versions Monstera keeps of your files when you save, which File › Restore a previous version lists. Your files and any .bak files beside them are not touched.',
   [SETTINGS_ACTION_CLEAR_RECENT]: 'Clear recent files',
   // `document.clearRecent`'s own effect: the list and the pictures kept for it, and nothing else.
   [SETTINGS_ACTION_CLEAR_RECENT_DESCRIPTION]:
@@ -5177,6 +5196,22 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // SAID ON THE PRESS, under the row: the page is one of THIS document's, which the source row above is not.
   [INSERT_FROM_PDF_RANGE]: 'Choose a page of this document, from 1 to {last}.',
   [INSERT_FROM_PDF_APPLY]: 'Insert',
+  [RESTORE_VERSION_COMMAND_TITLE]: 'Restore a previous version…',
+  [RESTORE_VERSION_TITLE]: 'Restore a previous version',
+  [RESTORE_VERSION_INTRO]:
+    'Each time you save, Monstera keeps the version it replaced. Choose one to save as a copy and open. Your document is not changed.',
+  [RESTORE_VERSION_ROW]: 'Saved over {when} · {size}',
+  [RESTORE_VERSION_RESTORE]: 'Restore as a copy…',
+  [TOAST_RESTORE_NONE]: 'There is no earlier version of this file yet. One is kept each time you save over it.',
+  [TOAST_RESTORE_GONE]: 'That version is no longer kept.',
+  [LEGACY_BACKUPS_TITLE]: 'Move old backups',
+  [LEGACY_BACKUPS_BODY]:
+    'Monstera used to keep its backups of this file’s folder beside the files, as .bak files. It now keeps them in its own folder, so your folders stay tidy. Move the {count, plural, one {backup} other {# backups}} Monstera made?',
+  [LEGACY_BACKUPS_LEFT]:
+    '{count, plural, one {# other .bak file was} other {# other .bak files were}} not made by Monstera and will stay where they are.',
+  [LEGACY_BACKUPS_MOVE]: 'Move them',
+  [LEGACY_BACKUPS_LEAVE]: 'Leave them',
+  [TOAST_LEGACY_MOVED]: 'Backups moved to Monstera’s own folder.',
   [INSERT_MARKDOWN_TITLE]: 'Insert from Markdown',
   [INSERT_MARKDOWN_WHERE]: 'Where',
   [INSERT_MARKDOWN_START]: 'At the start',

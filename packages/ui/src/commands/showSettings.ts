@@ -149,6 +149,9 @@ export function showSettingsCommand(deps: {
           await deps.client['document.clearRecent']({});
           deps.onRecentCleared();
         }
+        // EVERY EARLIER VERSION Monstera kept in its own folder (ADR-0198). The files beside a person's documents are never
+        // touched by it; those are the person's.
+        if (answer.action === 'clear-backups') await deps.client['app.clearBackups']({});
         if (answer.action === 'export') {
           // CONFIRMED where it was written, and SAID where it was not: the answer was discarded until 2 October, so
           // a settings file that failed to write looked exactly like one that was written.

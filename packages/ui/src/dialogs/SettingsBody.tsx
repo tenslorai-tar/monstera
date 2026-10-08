@@ -27,6 +27,8 @@ import {
   ASSISTANT_MODEL_NOT_OFFERED,
   SETTINGS_ACTION_CLEAR_HISTORY,
   SETTINGS_ACTION_CLEAR_HISTORY_DESCRIPTION,
+  SETTINGS_ACTION_CLEAR_BACKUPS,
+  SETTINGS_ACTION_CLEAR_BACKUPS_DESCRIPTION,
   SETTINGS_ACTION_CLEAR_RECENT,
   SETTINGS_ACTION_CLEAR_RECENT_DESCRIPTION,
   SETTINGS_ACTION_CLEARED,
@@ -859,6 +861,7 @@ export default function SettingsBody({
   const [query, setQuery] = useState('');
   const [cleared, setCleared] = useState(false);
   const [clearedRecent, setClearedRecent] = useState(false);
+  const [clearedBackups, setClearedBackups] = useState(false);
   const searchId = useId();
 
   // THE PROVIDER IS THE SETTING'S DRAFT, so the page shows the key and model of the provider the Assistant asks.
@@ -1167,6 +1170,18 @@ export default function SettingsBody({
                     setClearedRecent(true);
                   }}
                   title={SETTINGS_ACTION_CLEAR_RECENT}
+                />
+              )}
+              {page?.id === 'privacy' && (
+                <ActionRow
+                  description={SETTINGS_ACTION_CLEAR_BACKUPS_DESCRIPTION}
+                  done={clearedBackups}
+                  label={SETTINGS_ACTION_CLEAR_BACKUPS}
+                  onRun={() => {
+                    report({ action: 'clear-backups' });
+                    setClearedBackups(true);
+                  }}
+                  title={SETTINGS_ACTION_CLEAR_BACKUPS}
                 />
               )}
             </>

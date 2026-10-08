@@ -229,6 +229,7 @@ import { translatePageCommand } from './commands/translatePage.js';
 import { COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { OPEN_PROBLEM_DIALOG_ID } from './dialogs/openProblem.js';
 import { sayWhenUnwritable } from './commands/readOnlyFile.js';
+import { offerOldBackups, restoreVersionCommand } from './commands/restoreVersion.js';
 import {
   exportAnnotationsFdfCommand,
   exportAnnotationsJsonCommand,
@@ -2857,6 +2858,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // AND ITS FILE IS ASKED ABOUT as it appears (cloud-4 7b): one that cannot be saved over is said before any edit,
       // with a copy to work on — which opens through here, so the copy is asked about too.
       void sayWhenUnwritable({ client, ask, onOpened: shown }, document.docId);
+      // AND THE OLD `.BAK` FILES BESIDE IT that Monstera made are offered a move into its own folder, once per folder
+      // (ADR-0198): main answers nothing for a folder already offered, so most opens ask nothing.
+      void offerOldBackups({ client, ask, toast }, document.docId);
     };
     return {
       client,
@@ -2871,7 +2875,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         activate(docId);
       },
     };
-  }, [activate, ask, client, opened]);
+  }, [activate, ask, client, opened, toast]);
   // THE DIALOG, once per problem placed over a document.
   useEffect(() => {
     if (placedProblem === undefined || placedProblem.onStart) return;
@@ -3305,6 +3309,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           onOpened: opened,
           onActivate: activate,
         }),
+        // FILE › RESTORE A PREVIOUS VERSION (ADR-0198): the versions a save replaced, written out as a copy and opened.
+        restoreVersionCommand({ client, onApplied: applied, ask, stamp, signatures, toast, onOpened: opened }),
         mergeDocumentCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
         insertFromPdfCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),
         replacePageCommand({ client, onApplied: applied, ask, stamp, signatures, openSource }),

@@ -854,6 +854,18 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'none-open', props: { choices: [], pageCount: 12, page: 2 } },
     { state: 'long', props: { choices: LONG_SOURCES, pageCount: 12, page: 2 } },
   ],
+  'dialog.restore-version': [
+    { state: 'three-versions', props: { versions: [
+      { id: '1.pdf', savedAt: '2026-10-08T09:41:00.000Z', bytes: 184_320 },
+      { id: '2.pdf', savedAt: '2026-10-07T16:12:00.000Z', bytes: 181_248 },
+      { id: '3.pdf', savedAt: '2026-10-05T11:03:00.000Z', bytes: 2_621_440 },
+    ] } },
+    { state: 'one-version', props: { versions: [{ id: '1.pdf', savedAt: '2026-10-08T09:41:00.000Z', bytes: 184_320 }] } },
+  ],
+  'dialog.legacy-backups': [
+    { state: 'all-theirs-to-move', props: { proven: 3, unproven: 0 } },
+    { state: 'some-stay', props: { proven: 1, unproven: 2 } },
+  ],
   'dialog.insert-markdown': [
     // AT THE END is where it opens; the page on show is the third of twelve.
     { state: 'opened', props: { pageCount: 12, page: 2 } },

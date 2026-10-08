@@ -100,7 +100,7 @@ export const SETTINGS_RESULT = z
      * `clear-chat-history` and `clear-recent` empty the saved conversations and the Recent list from the
      * Privacy page.
      */
-    action: z.enum(['reset', 'export', 'import', 'clear-chat-history', 'clear-recent']).optional(),
+    action: z.enum(['reset', 'export', 'import', 'clear-chat-history', 'clear-recent', 'clear-backups']).optional(),
     /**
      * A provider whose STORED key the person asked to check (ADR-0158). Reported, never answered: the command asks
      * `ai.models` for it and replies with that provider's list and one more answered check in {@link SETTINGS_DIALOG}'s
