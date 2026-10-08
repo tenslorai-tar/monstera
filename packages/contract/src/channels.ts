@@ -598,6 +598,45 @@ export const MAX_AFFIX_BYTES = 256 * 1024;
 export const MAX_DICTIONARY_BYTES = 4 * 1024 * 1024;
 
 /**
+ * The most a `settings.save` may carry, serialised (CR-SEC-07, the owner's figure of 2026-10-08). A decision, not a
+ * derivation: every registered setting is a few bytes, so this is hundreds of times what the real document holds.
+ */
+export const MAX_SETTINGS_BYTES = 1024 * 1024;
+
+/**
+ * Whether `value` serialises to at most `limit` UTF-8 bytes. A value that cannot be serialised at all (a cycle survives a
+ * structured clone, a BigInt does not serialise) is not within any bound, so it answers `false` instead of throwing out
+ * of a schema. The cheap test first: a UTF-16 unit is at least one byte, so a text longer than the limit in units is over
+ * it in bytes, and only the rest is encoded to be measured.
+ */
+export function serialisedLengthWithin(value: unknown, limit: number): boolean {
+  try {
+    // `JSON.stringify(undefined)` is `undefined` at runtime, and reading its length throws into the catch: not serialisable.
+    const text = JSON.stringify(value);
+    return text.length <= limit && utf8Length(text) <= limit;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The UTF-8 size of `text`, counted from its UTF-16 units because this package has no `TextEncoder` to ask: one byte below
+ * U+0080, two below U+0800, three above, and a surrogate PAIR is four, which is two bytes for each of its two units. An
+ * unpaired surrogate is counted the same way, which is the three or four bytes an encoder would replace it with, or more.
+ */
+function utf8Length(text: string): number {
+  let bytes = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const unit = text.charCodeAt(index);
+    if (unit < 0x80) bytes += 1;
+    else if (unit < 0x800) bytes += 2;
+    else if (unit >= 0xd800 && unit <= 0xdfff) bytes += 2;
+    else bytes += 3;
+  }
+  return bytes;
+}
+
+/**
  * How many links one part of a page's links carries.
  *
  * A PART, not the page's links: as the whole page's bound it refused every link on a page past it (JOURNAL, *No
@@ -5529,7 +5568,7 @@ export const channels = {
    * questions, and each has one answer.
    */
   'settings.save': channel(
-    'Replaces the stored NON-SECRET settings with the values the renderer holds.',
+    'Stores the NON-SECRET settings the renderer holds, keeping the keys it does not know.',
     z.object({
       // A SECRET ID IS REFUSED HERE, not stripped. Stripping would store the
       // rest and answer `stored: true`, and the caller that sent a key would
@@ -5538,6 +5577,12 @@ export const channels = {
         .record(z.string(), z.unknown())
         .refine((values) => SECRET_SETTING_IDS.every((id) => !(id in values)), {
           message: 'a secret setting travels on settings.saveSecret, never on settings.save',
+        })
+        // BOUNDED AS A WHOLE (CR-SEC-07), because the record's keys, values and depth were not: the renderer is the
+        // untrusted side, and what it sends here is written to disk whole. Key count, key length, value size and depth
+        // are all bounded by the one number a person can reason about, the size of the document written.
+        .refine((values) => serialisedLengthWithin(values, MAX_SETTINGS_BYTES), {
+          message: `the settings document may not exceed ${String(MAX_SETTINGS_BYTES)} bytes`,
         }),
     }),
     z.object({ stored: z.literal(true) }),
