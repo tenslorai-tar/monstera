@@ -1094,8 +1094,16 @@ export class CommandBus {
     context: DocumentContext,
     command: CommandOfKind<K>,
     inputs: CommandInputs,
+    /**
+     * The version the previous command of this command's step produced (ADR-0200): the entry joins that command's undo
+     * step only if the document is still at this version as the command starts, so a command that intervened — it moved
+     * the version — is never swallowed, and a caller that is wrong gets a step of its own and nothing else.
+     */
+    joinsStep?: DocVersion,
   ): Promise<Executed> {
     const spec: DeclaredCommands[K] = declaredCommands[command.kind];
+    // READ BEFORE ANYTHING RUNS: the version this command starts from is the one the join is compared with.
+    const joins = joinsStep !== undefined && joinsStep === context.version;
 
     // REFUSED FIRST, BEFORE ANYTHING IS OBTAINED OR READ (ADR-0041 Decision 2).
     //
@@ -1197,7 +1205,7 @@ export class CommandBus {
     if (spec.replay === 'reapply-held-intent') {
       this.#held.set(recorded, { command, inverse: captured.captured ? captured.prior : undefined });
     }
-    context.commandLog(COMMAND_WRITER).record(recorded);
+    context.commandLog(COMMAND_WRITER).record(recorded, joins);
 
     // THE WINDOW'S BYTES, after the entry and not before it: by here the session has changed,
     // so a serialise that fails must leave the change undoable rather than unlogged.
@@ -1299,9 +1307,45 @@ export class CommandBus {
     bytes: ByteImageAccess,
   ): Promise<Undone | undefined> {
     const log = context.commandLog(COMMAND_WRITER);
-    const entry = log.entries.at(-1);
-    if (entry === undefined) return undefined;
+    // A STEP, not an entry (ADR-0200): the last entry and each entry it joined. A step of one is every entry recorded
+    // before the join existed, and runs exactly the path below it always did.
+    const step = log.lastStep();
+    const head = step[0];
+    if (head === undefined) return undefined;
+    if (step.length > 1) {
+      // ALL TERMINAL: the document as it was before the step is the head's checkpoint, so it is restored ONCE and the cursor
+      // steps over the rest. Forty restores of a whole document to reach the first one's would be forty times the work and
+      // forty times the places a restore can fail half-way.
+      if (head.kind === 'terminal' && step.every((member) => member.kind === 'terminal')) {
+        const checkpoint = head.checkpoint;
+        // BEFORE the cursor moves, `#undoEntry`'s rule: a restore that throws leaves the log where it was.
+        await restore((destination) => context.writeCheckpoint(COMMAND_WRITER, checkpoint, destination));
+        step.forEach(() => {
+          log.undo();
+        });
+        await this.#show(head.command.kind, context, bytes, false);
+      } else {
+        // A step with an inverse in it is taken back one entry at a time, last first, each by its own path.
+        for (const member of [...step].reverse()) await this.#undoEntry(sessions, context, restore, bytes, member);
+      }
+      return { entry: head, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
+    }
+    await this.#undoEntry(sessions, context, restore, bytes, head);
+    return { entry: head, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
+  }
 
+  /**
+   * Takes ONE applied entry back — the last one — and moves the cursor over it. The version is the caller's to bump, so a
+   * step of several entries bumps it once (ADR-0200).
+   */
+  async #undoEntry(
+    sessions: SessionsByWriter,
+    context: DocumentContext,
+    restore: CheckpointRestore,
+    bytes: ByteImageAccess,
+    entry: LogEntry,
+  ): Promise<void> {
+    const log = context.commandLog(COMMAND_WRITER);
     if (entry.kind === 'terminal') {
       // THE BYTES DO NOT PASS THROUGH THE SUPERVISOR. It receives a writer and
       // grants a destination; the service moves the checkpoint from the record
@@ -1319,7 +1363,7 @@ export class CommandBus {
       // NEVER `installed` here, for either shape: a restore rebuilds the session and replaces no
       // image, so undoing a watermark left main's image watermarked until this line existed.
       await this.#show(entry.command.kind, context, bytes, false);
-      return { entry, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
+      return;
     }
 
     const spec = declaredCommands[entry.command.kind];
@@ -1347,7 +1391,6 @@ export class CommandBus {
 
     log.undo();
     await this.#show(entry.command.kind, context, bytes, writerShapes[spec.writer] !== 'live-session');
-    return { entry, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
   }
 
   /**
@@ -1379,10 +1422,10 @@ export class CommandBus {
    * {@link redo} without asking whether it needed to.
    */
   pendingRedoSources(context: DocumentContext): readonly DocId[] {
-    const entry = context.commandLog(COMMAND_WRITER).peekRedo();
-    if (entry === undefined) return [];
+    // EVERY ENTRY OF THE STEP the redo applies (ADR-0200), not only its first.
+    const step = context.commandLog(COMMAND_WRITER).nextStep();
     // ONCE EACH: a merge may name one document twice (ADR-0152), and a caller holds each document's session once.
-    return [...new Set(sourcesOfEntry(entry, this.#held))];
+    return [...new Set(step.flatMap((entry) => sourcesOfEntry(entry, this.#held)))];
   }
 
   /**
@@ -1460,9 +1503,22 @@ export class CommandBus {
     inputs: CommandInputs,
   ): Promise<Undone | undefined> {
     const log = context.commandLog(COMMAND_WRITER);
-    const entry = log.peekRedo();
-    if (entry === undefined) return undefined;
+    // A STEP (ADR-0200): the first redo entry and each that joined it, applied in order, one version at the end.
+    const step = log.nextStep();
+    const head = step[0];
+    if (head === undefined) return undefined;
+    for (const member of step) await this.#redoEntry(sessions, context, inputs, member);
+    return { entry: head, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
+  }
 
+  /** Applies ONE entry again — the next to redo — and moves the cursor over it. The version is the caller's to bump. */
+  async #redoEntry(
+    sessions: SessionsByWriter,
+    context: DocumentContext,
+    inputs: CommandInputs,
+    entry: LogEntry,
+  ): Promise<void> {
+    const log = context.commandLog(COMMAND_WRITER);
     const spec = declaredCommands[entry.command.kind];
 
     // AN ENTRY REDONE FROM ITS RESULT installs that result and runs nothing (ADR-0162): a signature is over an exact
@@ -1478,7 +1534,7 @@ export class CommandBus {
       this.#recordIfRemoval(spec, context);
       log.redo();
       await this.#show(entry.command.kind, context, inputs, true);
-      return { entry, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
+      return;
     }
     const command = reapplicable(entry, this.#held);
 
@@ -1533,6 +1589,5 @@ export class CommandBus {
 
     log.redo();
     await this.#show(entry.command.kind, context, inputs, writerShapes[spec.writer] !== 'live-session');
-    return { entry, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
   }
 }

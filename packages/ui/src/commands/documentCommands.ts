@@ -625,12 +625,20 @@ export async function applyDocumentCommand(
      * this function does stay done once.
      */
     readonly keep?: (error: Failure<FailureOf<Channels, 'document.execute'>>) => boolean;
+    /**
+     * THE STEP THIS COMMAND BELONGS TO (ADR-0200): the version the previous command of the same gesture produced, so
+     * a run of commands the person made once is one undo. Wrong or stale is the safe direction — a step of its own.
+     */
+    readonly joinsStep?: DocVersion;
+    /** Told the version this command produced, for the next command of the gesture to join. Only when it applied. */
+    readonly produced?: (version: DocVersion) => void;
   } = {},
 ): Promise<boolean> {
   // PAGES AS RUNS (decision D), here where every command leaves the renderer, so no surface has to remember: a
   // selection of ten thousand pages in one stretch crosses as one entry, and every command fits a host's frame.
   const sent = withPageRuns(withStamp(command, deps.stamp()));
-  let answer = await deps.client['document.execute']({ docId, command: sent });
+  const joins = options.joinsStep === undefined ? {} : { joinsStep: options.joinsStep };
+  let answer = await deps.client['document.execute']({ docId, command: sent, ...joins });
 
   // A SIGNED DOCUMENT IS ASKED ABOUT BEFORE IT CHANGES (ADR-0149): main answered without touching it. *Change this
   // document* sends the same command again, stamp and all, agreed; *Work on a copy* sends it to a copy; Cancel, or a
@@ -640,7 +648,7 @@ export async function applyDocumentCommand(
       ? SIGNED_EDIT_RESULT.safeParse(await deps.ask(SIGNED_EDIT_DIALOG_ID, {}))
       : ({ success: true, data: 'this' } as const);
     if (asked.success && asked.data === 'this') {
-      answer = await deps.client['document.execute']({ docId, command: sent, breakSignatures: true });
+      answer = await deps.client['document.execute']({ docId, command: sent, breakSignatures: true, ...joins });
     } else {
       if (!asked.success || !(await editOnCopy(deps, docId, sent))) options.keep?.(answer.error);
       return false;
@@ -664,6 +672,7 @@ export async function applyDocumentCommand(
     return false;
   }
   deps.onApplied(answer.value);
+  options.produced?.(answer.value.version);
 
   // INVARIANT 18, AFTER `onApplied` and not instead of it, and guarded on a
   // positive count because the dialog's schema refuses zero.

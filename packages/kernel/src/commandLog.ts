@@ -922,6 +922,9 @@ export interface ReadonlyCommandLog {
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   peekRedo(): LogEntry | undefined;
+  /** The applied entries the next undo takes back together, and the entries the next redo applies together (ADR-0200). Queries. */
+  lastStep(): readonly LogEntry[];
+  nextStep(): readonly LogEntry[];
   /** How many applied entries the canonical image includes (ADR-0115). */
   readonly imageHolds: number;
   /** The applied entries the canonical image does not include, oldest first (ADR-0115). */
@@ -940,6 +943,9 @@ export class CommandLog implements ReadonlyCommandLog {
   readonly #entries: LogEntry[] = [];
   /** The held files rewritten in place since they were recorded, by path, and their length now ({@link resealed}). */
   readonly #resealed = new Map<string, number>();
+
+  /** The entries recorded as joining the one before them (ADR-0200): by identity, so a trim that shifts positions moves nothing. */
+  readonly #joined = new WeakSet<object>();
 
   /** How many entries are currently applied. */
   #applied = 0;
@@ -1199,8 +1205,10 @@ export class CommandLog implements ReadonlyCommandLog {
    * is the property `LogEntryFor` exists to enforce and the reason this is safe
    * rather than convenient.
    */
-  record<K extends CommandKind>(entry: LogEntryFor<K>): void {
+  record<K extends CommandKind>(entry: LogEntryFor<K>, joinsPrevious = false): void {
     this.#entries.length = this.#applied;
+    // JOINED ONLY WHERE THERE IS AN ENTRY TO JOIN (ADR-0200): the first entry of a log, or of what a trim left, is a step's head.
+    if (joinsPrevious && this.#applied > 0) this.#joined.add(entry);
     this.#entries.push(entry as LogEntry);
     this.#applied += 1;
     // A RESEALED FILE THE TRUNCATED TAIL HELD leaves with it, so the map only ever names files this log holds.
@@ -1232,6 +1240,34 @@ export class CommandLog implements ReadonlyCommandLog {
    */
   peekRedo(): LogEntry | undefined {
     return this.canRedo ? this.#entries[this.#applied] : undefined;
+  }
+
+  /**
+   * The applied entries the next undo takes back together, oldest first: the last applied entry and, going back, each
+   * entry it joined (ADR-0200). One entry for anything that joined nothing. Empty only for an empty log.
+   *
+   * An entry at the front of the log is a head whatever it joined, because what it joined was shed: its own checkpoint is
+   * the document as it was after the shed entries, so undoing it with the entries that joined IT is still coherent.
+   */
+  lastStep(): readonly LogEntry[] {
+    let from = this.#applied - 1;
+    if (from < 0) return [];
+    while (from > 0 && this.#joins(from)) from -= 1;
+    return this.#entries.slice(from, this.#applied);
+  }
+
+  /** Whether the entry at `index` was recorded as joining the one before it. */
+  #joins(index: number): boolean {
+    const entry = this.#entries[index];
+    return entry !== undefined && this.#joined.has(entry);
+  }
+
+  /** The entries the next redo applies together, oldest first, by {@link lastStep}'s rule: the first redo entry and each that joined. */
+  nextStep(): readonly LogEntry[] {
+    if (!this.canRedo) return [];
+    let to = this.#applied + 1;
+    while (to < this.#entries.length && this.#joins(to)) to += 1;
+    return this.#entries.slice(this.#applied, to);
   }
 
   /** Steps the cursor forward and returns the entry to re-apply. */

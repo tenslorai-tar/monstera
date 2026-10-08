@@ -2790,3 +2790,190 @@ describe('a form-field change is ONE undo step', () => {
     expect(context.mutableLog.canUndo, 'nothing is left to undo once the document is as it was opened').toBe(false);
   });
 });
+
+describe('a gesture of several commands is ONE undo step (ADR-0200)', () => {
+  /** A rotation entry, as the log tests build them: invertible, distinguishable by its page. */
+  function rotation(page: number): LogEntryFor<'rotatePages'> {
+    return {
+      kind: 'invertible',
+      command: { kind: 'rotatePages', pages: [page], quarterTurns: 1 },
+      inverse: [{ page, prior: { present: false } }],
+      read: undefined,
+    };
+  }
+
+  it('the log reads a step as an entry and the entries that joined it, and anything else as a step of one', () => {
+    const log = new CommandLog();
+    const recorded = [rotation(0), rotation(1), rotation(2), rotation(3)];
+    log.record(recorded[0] ?? rotation(0));
+    log.record(recorded[1] ?? rotation(1));
+    log.record(recorded[2] ?? rotation(2), true);
+    log.record(recorded[3] ?? rotation(3), true);
+    // THE LAST STEP IS ENTRIES 1, 2 AND 3 IN ORDER: entry 1 joined nothing, 2 and 3 joined it.
+    expect(log.lastStep()).toStrictEqual(recorded.slice(1));
+    log.undo();
+    log.undo();
+    log.undo();
+    // THE ENTRY BEFORE THE STEP is a step of its own.
+    expect(log.lastStep()).toHaveLength(1);
+    // AND THE REDO SIDE reads the same step forwards.
+    log.undo();
+    log.undo();
+    expect(log.nextStep()).toHaveLength(1);
+    log.redo();
+    expect(log.nextStep()).toHaveLength(3);
+  });
+
+  it('CONTROL: the first entry of a log joins nothing, whatever it was recorded as', () => {
+    const log = new CommandLog();
+    log.record(rotation(0), true);
+    log.record(rotation(1));
+    expect(log.lastStep()).toHaveLength(1);
+  });
+
+  /** Two deletes through the real bus, the second joining the first — terminal entries, each with a checkpoint. */
+  async function deletedTwice(joinSecond: boolean): Promise<{
+    readonly bus: CommandBus;
+    readonly context: ReturnType<typeof contextStub>;
+    readonly state: { session: MupdfSession };
+    readonly checkpoints: readonly Checkpoint[];
+    readonly restores: number[];
+    readonly restore: CheckpointRestore;
+    readonly inputs: () => CommandInputs;
+  }> {
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const context = contextStub(true);
+    const state = { session: await mupdfWriter.open(flat) };
+    const restores: number[] = [];
+    // A RESTORE THAT REBUILDS: what the supervisor does with the checkpoint, so a redo after it runs against the restored document.
+    const restore: CheckpointRestore = async (write) => {
+      const destination = join(checkpointRoot, `restored-${String(restores.length)}.pdf`);
+      restores.push(await write(destination));
+      await mupdfWriter.close(state.session);
+      state.session = await mupdfWriter.open(new Uint8Array(await readFile(destination)));
+    };
+    // READ THROUGH `state` AT EACH CALL, because the restore above replaces the session the inputs show.
+    const inputs = (): CommandInputs => ({
+      ...noByteImageExpected,
+      current: () => mupdfWriter.serialise(state.session),
+      currentInto: (destination) => localMupdfWriter.serialiseInto(state.session, destination),
+    });
+    const first = await bus.execute({ mupdf: state.session }, context, { kind: 'deletePages', pages: [0] }, inputs());
+    const second = await bus.execute(
+      { mupdf: state.session },
+      context,
+      { kind: 'deletePages', pages: [0] },
+      inputs(),
+      joinSecond ? first.version : undefined,
+    );
+    const checkpoints = [first.entry, second.entry].map((entry) => {
+      if (entry.kind !== 'terminal') throw new Error('expected a terminal entry');
+      return entry.checkpoint;
+    });
+    return { bus, context, state, checkpoints, restores, restore, inputs };
+  }
+
+  it('UNDO takes the whole step back with ONE restore, of the FIRST entry’s checkpoint; REDO applies both again, in order', async () => {
+    const { bus, context, state, checkpoints, restores, restore, inputs } = await deletedTwice(true);
+    try {
+      expect(await withDocument(state.session, (document) => document.countPages())).toBe(1);
+      expect(context.mutableLog.lastStep()).toHaveLength(2);
+      const bumpsBefore = context.bumps();
+
+      const undone = await bus.undo({ mupdf: state.session }, context, restore, inputs());
+
+      // ONE restore, and of the checkpoint taken before the FIRST delete: the document as it was before the gesture.
+      expect(restores).toHaveLength(1);
+      expect(context.written().at(-1)?.bytes).toStrictEqual(checkpoints[0]);
+      expect(await withDocument(state.session, (document) => document.countPages())).toBe(3);
+      expect(context.log.entries).toHaveLength(0);
+      expect(context.log.canRedo).toBe(true);
+      // ONE VERSION for the step, and the answer names the entry the step began at.
+      expect(context.bumps() - bumpsBefore).toBe(1);
+      expect(undone?.entry).toBe(context.mutableLog.peekRedo());
+
+      const redone = await bus.redo({ mupdf: state.session }, context, inputs());
+      expect(redone).toBeDefined();
+      expect(await withDocument(state.session, (document) => document.countPages())).toBe(1);
+      expect(context.log.entries).toHaveLength(2);
+      expect(context.bumps() - bumpsBefore).toBe(2);
+    } finally {
+      await mupdfWriter.close(state.session);
+    }
+  });
+
+  it('CONTROL: the same two deletes recorded WITHOUT the join are two steps — two undos, two restores', async () => {
+    const { bus, context, state, restores, restore, inputs } = await deletedTwice(false);
+    try {
+      expect(context.mutableLog.lastStep()).toHaveLength(1);
+      await bus.undo({ mupdf: state.session }, context, restore, inputs());
+      expect(context.log.entries).toHaveLength(1);
+      expect(await withDocument(state.session, (document) => document.countPages())).toBe(2);
+      await bus.undo({ mupdf: state.session }, context, restore, inputs());
+      expect(restores).toHaveLength(2);
+      expect(context.log.entries).toHaveLength(0);
+    } finally {
+      await mupdfWriter.close(state.session);
+    }
+  });
+
+  it('a command in between BREAKS the join: the version the caller named is no longer the document’s', async () => {
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const context = contextStub(true);
+    const session = await mupdfWriter.open(flat);
+    try {
+      const first = await bus.execute({ mupdf: session }, context, { kind: 'deletePages', pages: [0] }, showingInputs(session));
+      // SOMEONE ELSE'S COMMAND moves the version before the step's next command arrives.
+      await bus.execute({ mupdf: session }, context, { kind: 'deletePages', pages: [0] }, showingInputs(session));
+      await bus.execute({ mupdf: session }, context, { kind: 'insertBlankPage', at: 0 }, showingInputs(session), first.version);
+      // THE THIRD ENTRY JOINED NOTHING, so the first two are not carried into a step with it.
+      expect(context.mutableLog.lastStep()).toHaveLength(1);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('a step with an INVERTIBLE entry in it is taken back one entry at a time, last first, and still as one step', async () => {
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const context = contextStub(true);
+    const session = await mupdfWriter.open(flat);
+    const supervisor = restoreStub();
+    try {
+      const turn = (page: number): Command => ({ kind: 'rotatePages', pages: [page], quarterTurns: 1 });
+      const first = await bus.execute({ mupdf: session }, context, turn(0), showingInputs(session));
+      await bus.execute({ mupdf: session }, context, turn(1), showingInputs(session), first.version);
+      expect(context.mutableLog.lastStep()).toHaveLength(2);
+      expect(await ownRotation(session, 0)).toBe(90);
+      expect(await ownRotation(session, 1)).toBe(90);
+
+      await bus.undo({ mupdf: session }, context, supervisor.restore, showingInputs(session));
+
+      // BOTH rotations are taken back by one undo, by inverses and not by a restore.
+      expect(supervisor.calls()).toHaveLength(0);
+      expect(await ownRotation(session, 0)).toBeNull();
+      expect(await ownRotation(session, 1)).toBeNull();
+      expect(context.log.entries).toHaveLength(0);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('a trim that sheds the front of a step leaves the rest a coherent, shorter step', async () => {
+    const { bus, context, state, checkpoints, restore, inputs } = await deletedTwice(true);
+    try {
+      // Sheds the oldest terminal entry and everything before it; the entry that joined it remains, alone.
+      context.ceiling(checkpoints[1]?.byteLength ?? 1);
+      const trimmed = context.enforceRetention({} as CommandWriter);
+      expect(trimmed.droppedEntries).toBe(1);
+      expect(context.log.entries).toHaveLength(1);
+      // IT IS A STEP'S HEAD NOW: one entry, and undoing it restores ITS OWN checkpoint — the document as it was after the
+      // entry that was shed — rather than reaching for a checkpoint that is gone.
+      expect(context.mutableLog.lastStep()).toHaveLength(1);
+      await bus.undo({ mupdf: state.session }, context, restore, inputs());
+      expect(context.written().at(-1)?.bytes).toStrictEqual(checkpoints[1]);
+      expect(await withDocument(state.session, (document) => document.countPages())).toBe(2);
+    } finally {
+      await mupdfWriter.close(state.session);
+    }
+  });
+});

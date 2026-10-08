@@ -2213,6 +2213,16 @@ export const channels = {
        * so forgetting it is safe and only the answer to that question sends `true`.
        */
       breakSignatures: z.boolean().optional(),
+      /**
+       * That this command is part of the same gesture as the one before it, and so of the same undo step
+       * ([ADR-0200](../../../docs/DECISIONS/0200-commands-the-person-made-in-one-gesture-are-one-undo-step.md)): the
+       * version that previous command produced. The command joins its step only if the document is still at that
+       * version as it starts, so a command that intervened is never swallowed.
+       *
+       * **Optional, and absent or wrong is the safe direction**: the command is a step of its own, as every command was
+       * before the join existed. The answer does not say which happened, because a caller cannot act on it.
+       */
+      joinsStep: docVersionSchema.optional(),
     }),
     z.object({
       version: docVersionSchema,

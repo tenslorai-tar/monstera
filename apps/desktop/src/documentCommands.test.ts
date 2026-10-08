@@ -5581,6 +5581,61 @@ describe('placeSignature — a plain signature, resolved as a certificate signat
     expect(restores).toBe(1);
     expect(await stamps()).toBe(before);
   });
+
+  it('TWO COMMANDS OF ONE GESTURE are undone by ONE undo, through the whole composition — and redone together (ADR-0200)', async () => {
+    const made = await PDFDocument.create();
+    for (let page = 0; page < 4; page += 1) made.addPage([300, 200]);
+    const bytes = await made.save();
+    const path = join(directory, 'gesture.pdf');
+    writeFileSync(path, bytes);
+    const registry = new CapabilityRegistry();
+    const own = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING, checkpointDirectory: CHECKPOINTS });
+    const opened = await own.open(registry.mint(path));
+    if (opened.kind !== 'opened') throw new Error(`Fixture did not open: ${opened.kind}`);
+    const id = opened.docId;
+    const held = new EngineSessions();
+    held.hold(id, { mupdf: await mupdfWriter.open(bytes) });
+    let restores = 0;
+    const flushHeld: DocumentFlush = (_id, sessions) => {
+      const mupdf = sessions.mupdf;
+      if (mupdf === undefined) throw new Error('flushed a session not held');
+      return mupdfWriter.serialise(mupdf);
+    };
+    const commands = new DocumentCommands({
+      ...INERT,
+      save: { ...noSaving, flush: flushHeld, stage: stagingFrom(flushHeld) },
+      documents: own,
+      bus: new CommandBus({ mupdf: localMupdfWriter }),
+      engine: held,
+      restore: (_id, write) =>
+        held.recycle(id, async () => {
+          restores += 1;
+          const restored = join(directory, `gesture-restore-${String(restores)}.pdf`);
+          await write(restored);
+          return { mupdf: await mupdfWriter.open(readFileSync(restored)) };
+        }),
+    });
+    const pages = (): Promise<number> => {
+      const mupdf = held.sessions(id)?.mupdf;
+      if (mupdf === undefined) throw new Error('the document holds no session');
+      return withDocument(mupdf, (document) => document.countPages());
+    };
+    expect(await pages()).toBe(4);
+
+    const first = await commands.execute(id, { kind: 'deletePages', pages: [0] });
+    // THE SECOND NAMES THE VERSION THE FIRST PRODUCED, as the renderer does from the first's answer.
+    await commands.execute(id, { kind: 'deletePages', pages: [0] }, { joinsStep: first.version });
+    expect(await pages()).toBe(2);
+
+    expect(await commands.undo(id)).toBeDefined();
+    // ONE undo, ONE restore, and BOTH deletes are gone: the document is as it was before the gesture.
+    expect(restores).toBe(1);
+    expect(await pages()).toBe(4);
+    expect(await commands.undo(id)).toBeUndefined();
+
+    expect(await commands.redo(id)).toBeDefined();
+    expect(await pages()).toBe(2);
+  });
 });
 
 describe('composeMarkdownFile: what an import answers before anything is written', () => {

@@ -3653,7 +3653,11 @@ export class DocumentCommands {
      * `breakSignatures`: the person agreed this edit may break the document's signatures (ADR-0149). Absent is not
      * agreed, so a command `main` mints itself is asked about like any other — none of them breaks one today.
      */
-    options: { readonly breakSignatures?: boolean } = {},
+    options: {
+      readonly breakSignatures?: boolean;
+      /** The version the previous command of this command's undo step produced (ADR-0200). Absent, a step of its own. */
+      readonly joinsStep?: DocVersion;
+    } = {},
   ): Promise<Applied> {
     // THE ROUTING TABLE IS NO LONGER READ HERE, and the note that used to stand
     // in its place is worth keeping because it was half right. It read: *the
@@ -3710,6 +3714,7 @@ export class DocumentCommands {
         // `sourceIdsOf` is the one answer to *which documents does this payload
         // name*, and the payload is the contract's (ADR-0040 Decision 4).
         this.#byteImage(docId, sourceIdsOf(command)),
+        options.joinsStep,
       );
       // A PROTECT MOVES THE HOLDER, in the lane and after the bus recorded it, so every later open of a copy has the
       // key the document opens with now (ADR-0171 Decision 8).

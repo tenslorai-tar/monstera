@@ -50,14 +50,17 @@ import { editRefusalOf } from './editRefusals.js';
 export function executeCommandHandler(
   commands: DocumentCommands,
 ): ContractHandlers['document.execute'] {
-  return async ({ docId, command, breakSignatures }) => {
+  return async ({ docId, command, breakSignatures, joinsStep }) => {
     try {
       // TWO SCALARS CROSS, and `Executed` still does not. An entry holds an
       // inverse or a checkpoint — a whole byte image — so what the bus produced
       // never leaves main. The version says the renderer's view is stale and the
       // byte length is what it rebuilds that view against, both the same size
       // for any document.
-      const applied = await commands.execute(docId, command, { breakSignatures: breakSignatures === true });
+      const applied = await commands.execute(docId, command, {
+        breakSignatures: breakSignatures === true,
+        ...(joinsStep === undefined ? {} : { joinsStep }),
+      });
       return ok(applied);
     } catch (thrown) {
       // A QUESTION FOR THE PERSON, not a fault (ADR-0149): the edit would break a signed document's signatures and

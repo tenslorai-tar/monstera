@@ -27,7 +27,7 @@ Translate sends the text you choose to the AI provider you have set up. A page's
 - Only languages written in the Latin alphabet are offered.
 - Where the page's font lacks a letter, that text is set in a standard font. Text may be made smaller to fit its space.
 - Pages printed from a web browser, whose text is drawn from shapes stored in the page, are translated too. Each block is made smaller where the translation is longer, no smaller than about six tenths of its size, and a block that still does not fit at that size runs on past its space.
-- **Undo** (**Ctrl+Z**) puts one page's original text back. Each translated page is its own step.
+- **Undo** (**Ctrl+Z**) puts the original text back. Translating several pages at once is one step, so a single Undo takes back every page of that run, and **Redo** (**Ctrl+Y**) puts them all back together. If you change something else while a run is still going, the pages after that are their own steps.
 
 <!--
 Screenshots to capture:

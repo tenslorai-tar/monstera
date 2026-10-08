@@ -6,7 +6,7 @@ import {
   MAX_TRANSLATE_TEXT,
   type TranslationLanguage,
 } from '@monstera/contract';
-import type { DocId, MessageKey } from '@monstera/shared';
+import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 
 import { TRANSLATE_PAGE_DIALOG_ID, type TranslatePageAnswer } from '../dialogs/translatePage.js';
 import {
@@ -134,6 +134,10 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
         // exactly what *Translate this page* uses and none is changed here. Each page is read at ITS OWN version, since
         // the write before it moved the document's.
         let written = 0;
+        // ONE UNDO FOR THE RUN (ADR-0200): each page's write joins the step of the page before it, by the version that
+        // page produced. A page that wrote nothing leaves the holder where it was, and a command of someone else in
+        // between moves the version, so the next page is then a step of its own and nothing else is swallowed.
+        const step: StepHolder = { version: undefined };
         for (const each of pages) {
           if (task.signal.aborted) break;
           const outcome = await translateOne(
@@ -143,6 +147,8 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
             { provider: answer.provider, model, language: answer.language },
             task.signal,
             answer.what.scope === 'page',
+            undefined,
+            step,
           );
           task.step(1);
           if (outcome === 'written') written += 1;
@@ -150,7 +156,7 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
           if (outcome === 'stopped') break;
         }
         if (answer.what.scope === 'page') return;
-        // THE SUMMARY OF A RUN, and what it left: pages already written stay written, each its own step to undo.
+        // THE SUMMARY OF A RUN, and what it left: pages already written stay written, and the whole run is one step to undo.
         if (written > 0) {
           confirmDone(deps, written === pages.length ? TOAST_PAGES_TRANSLATED : TOAST_PAGES_TRANSLATED_PARTLY);
         }
@@ -162,6 +168,11 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
 }
 
 interface Chosen { readonly provider: AiProviderId; readonly model: string; readonly language: TranslationLanguage }
+
+/** The version the last page of a run produced: what the next page's write names to join its undo step. */
+interface StepHolder {
+  version: DocVersion | undefined;
+}
 
 /** What one page's translation came to: written, nothing in it to write, or stopped after saying why. */
 type Outcome = 'written' | 'nothing' | 'stopped';
@@ -179,6 +190,8 @@ async function translateOne(
   single = false,
   /** The words selected, to translate only the blocks that hold them; absent, the whole page. */
   only?: string,
+  /** The run's undo step (ADR-0200): joined, and moved to the version this page produces. Absent, a step of its own. */
+  step?: StepHolder,
 ): Promise<Outcome> {
   const translated = await deps.client['ai.translatePage']({ docId, page, ...chosen, ...(only === undefined ? {} : { only }) });
   if (signal.aborted) return 'stopped';
@@ -215,6 +228,10 @@ async function translateOne(
       keep: (error) => {
         kept.unwritable = error.code === 'text-not-writable';
         return kept.unwritable;
+      },
+      ...(step?.version === undefined ? {} : { joinsStep: step.version }),
+      produced: (version) => {
+        if (step !== undefined) step.version = version;
       },
     },
   );

@@ -183,10 +183,35 @@ describe('translatePageCommand', () => {
       expect(sent.filter((call) => call.id === 'ai.translatePage').map((call) => (call.params as { page: number }).page)).toStrictEqual([0, 3]);
       expect(executes(sent)).toStrictEqual([
         { docId: DOC, command: { kind: 'editTextBlock', page: 0, ...blockEditOf(BLOCKS), fit: 'shrink', version: 4 } },
-        { docId: DOC, command: { kind: 'editTextBlock', page: 3, ...blockEditOf(BLOCKS), fit: 'shrink', version: 5 } },
+        // THE SECOND PAGE JOINS THE FIRST'S UNDO STEP (ADR-0200), by the version the first one produced; the first has
+        // nothing to join.
+        {
+          docId: DOC,
+          command: { kind: 'editTextBlock', page: 3, ...blockEditOf(BLOCKS), fit: 'shrink', version: 5 },
+          joinsStep: asDocVersion(5),
+        },
       ]);
       expect(applied).toHaveLength(2);
       expect(said).toStrictEqual([{ kind: 'done', message: TOAST_PAGES_TRANSLATED }]);
+    });
+
+    it('a run of THREE chains its steps: each page names the version the page before it produced', async () => {
+      const { sent } = await run({
+        dialog: { ...TWO_PAGES, what: { scope: 'pages', pages: [0, 1, 2] } },
+        sequences: {
+          'document.execute': [
+            { version: asDocVersion(5), byteLength: 900, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+            { version: asDocVersion(6), byteLength: 900, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+            { version: asDocVersion(7), byteLength: 900, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+          ],
+        },
+      });
+      expect(executes(sent).map((params) => (params as { joinsStep?: number }).joinsStep)).toStrictEqual([undefined, 5, 6]);
+    });
+
+    it('CONTROL: one page, and a selection, join nothing — a step of one, as before', async () => {
+      const single = await run({});
+      expect(executes(single.sent).map((params) => (params as { joinsStep?: number }).joinsStep)).toStrictEqual([undefined]);
     });
 
     it('CONTROL: a single page says its own sentence, not a run’s', async () => {
