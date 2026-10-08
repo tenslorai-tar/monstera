@@ -2219,6 +2219,34 @@ export const PAGE_LAYOUT_OPTION_TITLES = {
   facing: PAGE_LAYOUT_FACING,
 } as const;
 export const GRID_DESCRIPTION = messageKey('setting.viewing.grid.description');
+export const GRID_SIZE_TITLE = messageKey('setting.viewing.grid-size.title');
+export const GRID_SIZE_DESCRIPTION = messageKey('setting.viewing.grid-size.description');
+export const GRID_SIZE_AUTO = messageKey('setting.viewing.grid-size.auto');
+export const GRID_SIZE_HALF = messageKey('setting.viewing.grid-size.half');
+export const GRID_SIZE_ONE = messageKey('setting.viewing.grid-size.one');
+export const GRID_SIZE_TWO = messageKey('setting.viewing.grid-size.two');
+export const GRID_SIZE_FIVE = messageKey('setting.viewing.grid-size.five');
+export const GRID_SIZE_OPTION_TITLES = {
+  auto: GRID_SIZE_AUTO,
+  half: GRID_SIZE_HALF,
+  one: GRID_SIZE_ONE,
+  two: GRID_SIZE_TWO,
+  five: GRID_SIZE_FIVE,
+} as const;
+export const GRID_DIVISIONS_TITLE = messageKey('setting.viewing.grid-divisions.title');
+export const GRID_DIVISIONS_DESCRIPTION = messageKey('setting.viewing.grid-divisions.description');
+export const GRID_DIVISIONS_NONE = messageKey('setting.viewing.grid-divisions.none');
+export const GRID_DIVISIONS_TWO = messageKey('setting.viewing.grid-divisions.two');
+export const GRID_DIVISIONS_FOUR = messageKey('setting.viewing.grid-divisions.four');
+export const GRID_DIVISIONS_FIVE = messageKey('setting.viewing.grid-divisions.five');
+export const GRID_DIVISIONS_TEN = messageKey('setting.viewing.grid-divisions.ten');
+export const GRID_DIVISIONS_OPTION_TITLES = {
+  none: GRID_DIVISIONS_NONE,
+  two: GRID_DIVISIONS_TWO,
+  four: GRID_DIVISIONS_FOUR,
+  five: GRID_DIVISIONS_FIVE,
+  ten: GRID_DIVISIONS_TEN,
+} as const;
 export const RULER_UNIT_DESCRIPTION = messageKey('setting.viewing.ruler-unit.description');
 export const AI_SETUP_AT_START_DESCRIPTION = messageKey('setting.ai.setup-at-start.description');
 export const AI_SAVE_HISTORY_DESCRIPTION = messageKey('setting.ai.save-history.description');
@@ -4816,6 +4844,22 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PAGE_LAYOUT_OPTION_TITLES.single]: 'Single page',
   [PAGE_LAYOUT_OPTION_TITLES.facing]: 'Facing pages',
   [GRID_DESCRIPTION]: 'A grid over the page, for lining marks up.',
+  [GRID_SIZE_TITLE]: 'Grid size',
+  [GRID_SIZE_DESCRIPTION]:
+    'How big each large square is, in the ruler’s unit. Automatic follows the ruler’s own marks. The grid is only a guide on screen and is never saved in the document.',
+  [GRID_SIZE_OPTION_TITLES.auto]: 'Automatic',
+  [GRID_SIZE_OPTION_TITLES.half]: 'Half a unit',
+  [GRID_SIZE_OPTION_TITLES.one]: 'One unit',
+  [GRID_SIZE_OPTION_TITLES.two]: 'Two units',
+  [GRID_SIZE_OPTION_TITLES.five]: 'Five units',
+  [GRID_DIVISIONS_TITLE]: 'Small squares',
+  [GRID_DIVISIONS_DESCRIPTION]:
+    'How many faint small squares each large square holds, for lining marks up more closely. Turn them off to see only the large squares.',
+  [GRID_DIVISIONS_OPTION_TITLES.none]: 'None',
+  [GRID_DIVISIONS_OPTION_TITLES.two]: '2 across',
+  [GRID_DIVISIONS_OPTION_TITLES.four]: '4 across',
+  [GRID_DIVISIONS_OPTION_TITLES.five]: '5 across',
+  [GRID_DIVISIONS_OPTION_TITLES.ten]: '10 across',
   [RULER_UNIT_DESCRIPTION]: 'The unit the rulers and the measuring tools show.',
   [AI_SETUP_AT_START_DESCRIPTION]: 'Offers the one-step setup while no provider key is stored.',
   [AI_PROVIDER_TITLE]: 'AI provider',

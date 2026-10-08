@@ -184,12 +184,26 @@ describe('gridSpacing', () => {
     for (const zoom of [0.5, 1, 2, 4]) {
       const majors = rulerTicks(4000, 'in', zoom).filter((tick) => tick.major);
       const between = (majors[1]?.offset ?? 0) - (majors[0]?.offset ?? 0);
-      expect(gridSpacing('in', zoom)).toBeCloseTo(between, 6);
+      expect(gridSpacing('in', zoom)?.major).toBeCloseTo(between, 6);
     }
   });
 
   it('answers undefined rather than a spacing that would render as a fill', () => {
     expect(gridSpacing('in', 0)).toBeUndefined();
     expect(gridSpacing('in', -1)).toBeUndefined();
+  });
+
+  it('draws FAINT SQUARES inside each major one: a major at 96 px split in four is 24 — CONTROL: one division draws none', () => {
+    // 1 inch is 72 pt; at zoom 1.5 it is 108 px, and a chosen size of 1 keeps it, so the major is 108 and a quarter is 27.
+    expect(gridSpacing('in', 1.5, { size: 'one', divisions: 4 })).toStrictEqual({ major: 108, minor: 27 });
+    expect(gridSpacing('in', 1.5, { size: 'one', divisions: 1 })).toStrictEqual({ major: 108, minor: undefined });
+  });
+
+  it('a CHOSEN SIZE is that many units, doubled while it would be too fine to read, and the faint lines are dropped when they would be a fill', () => {
+    // Half an inch at zoom 1 is 36 px, under the 56 px floor, so it is doubled once to 72.
+    expect(gridSpacing('in', 1, { size: 'half', divisions: 2 })).toStrictEqual({ major: 72, minor: 36 });
+    // Ten divisions of 72 px is 7.2 px, past the 6 px floor, and kept; of 57.6 px it would be 5.76 and dropped.
+    expect(gridSpacing('in', 1, { size: 'one', divisions: 10 })?.minor).toBeCloseTo(7.2, 6);
+    expect(gridSpacing('in', 0.8, { size: 'one', divisions: 10 })).toStrictEqual({ major: 57.6, minor: undefined });
   });
 });

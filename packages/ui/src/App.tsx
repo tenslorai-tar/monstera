@@ -340,7 +340,9 @@ import {
 } from './settings/rendering.js';
 import {
   DARK_PAGE_SETTING,
+  GRID_DIVISIONS_SETTING,
   GRID_SETTING,
+  GRID_SIZE_SETTING,
   LOUPE_SETTING,
   PAGE_BADGES_SETTING,
   PAGE_LAYOUT_SETTING,
@@ -377,7 +379,7 @@ import {
 import { AssistantPanel } from './AssistantPanel.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
 import { PropertiesPanel, type StyleChange } from './PropertiesPanel.js';
-import type { RulerUnit } from './rulerGeometry.js';
+import { GRID_DIVISION_COUNTS, type GridLook, type RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
 import { type ShowToast, TOAST_LIFETIME, createToastStore } from './toasts.js';
@@ -2775,7 +2777,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
   }, [toolId, tools]);
 
   const rulers = useSetting(settings, RULERS_SETTING);
-  const showGrid = useSetting(settings, GRID_SETTING);
+  // THE GRID AS CHOSEN: `false` when it is off, else how big a major square is and how many faint ones it holds. Pure
+  // display, read here and drawn by the page list; nothing of it reaches a document.
+  const gridOn = useSetting(settings, GRID_SETTING);
+  const gridSize = useSetting(settings, GRID_SIZE_SETTING);
+  const gridDivisions = useSetting(settings, GRID_DIVISIONS_SETTING);
+  const showGrid = useMemo<GridLook | false>(
+    () => (gridOn ? { size: gridSize, divisions: GRID_DIVISION_COUNTS[gridDivisions] } : false),
+    [gridOn, gridSize, gridDivisions],
+  );
   const unit = useSetting(settings, RULER_UNIT_SETTING);
   const loupe = useSetting(settings, LOUPE_SETTING);
   const split = useSetting(settings, SPLIT_VIEW_SETTING);
@@ -4790,7 +4800,8 @@ function PageCanvas({
       }
     | undefined;
   readonly rulers: boolean;
-  readonly showGrid: boolean;
+  /** The grid as chosen, or `false` while it is off. */
+  readonly showGrid: GridLook | false;
   /** Follows a link pressed on a page (ADR-0167); `undefined` behind, where nothing is pressed. Both panes take it. */
   readonly onFollowLink: PageListProps['onFollowLink'];
   /** Whether links are outlined: the Comment section is on show. */

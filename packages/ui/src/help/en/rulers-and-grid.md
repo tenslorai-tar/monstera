@@ -18,6 +18,7 @@ Rulers run along the top and left of the page area and stay there as you scroll.
 
 ## Good to know
 
+- The grid has large squares with faint small squares inside them, so you can line things up closely. To change them, open **Settings**, **Viewing** page, and choose **Grid size** (how big each large square is) and **Small squares** (how many fit across each large one, or **None**).
 - Shortcuts: **Ctrl+R** for rulers, **Ctrl+G** for the grid.
 - The ruler unit is also used by the measuring tools' readings.
 - Rulers and grid are only on screen; they are never added to the document.

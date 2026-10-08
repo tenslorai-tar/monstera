@@ -3888,6 +3888,10 @@ optgroup {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  /* THE MAJOR LINES FIRST, because the first background layer is the top one: the faint squares sit under them, and a faint
+     line at the major's own spacing (no faint squares chosen, or too close to read) is the same line under the stronger
+     one. The faint colour is the major's own at about a third of its strength, so it follows the theme and the dark-page
+     filter as the major does. */
   background-image:
     repeating-linear-gradient(
       to right,
@@ -3898,6 +3902,16 @@ optgroup {
       to bottom,
       var(--grid-on-paper, var(--border-soft)) 0 1px,
       transparent 1px var(--m-grid, 72px)
+    ),
+    repeating-linear-gradient(
+      to right,
+      color-mix(in srgb, var(--grid-on-paper, var(--border-soft)) 35%, transparent) 0 1px,
+      transparent 1px var(--m-grid-minor, var(--m-grid, 72px))
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--grid-on-paper, var(--border-soft)) 35%, transparent) 0 1px,
+      transparent 1px var(--m-grid-minor, var(--m-grid, 72px))
     );
 }
 

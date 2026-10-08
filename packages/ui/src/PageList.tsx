@@ -74,7 +74,7 @@ import { type Tile, tilesCovering } from './tiles.js';
 import type { SearchHighlight } from './searchHighlight.js';
 import { Loupe } from './Loupe.js';
 import { Rulers } from './Rulers.js';
-import { type RulerSpan, type RulerUnit, gridSpacing } from './rulerGeometry.js';
+import { type GridLook, type RulerSpan, type RulerUnit, gridSpacing } from './rulerGeometry.js';
 import { type MenuAt, inPageMenu } from './surfaces/ContextMenu.js';
 import { pageSlotAt, useVisiblePages } from './useVisiblePages.js';
 import { type Box, type ZoomDirection, type ZoomMode, resolveZoom } from './zoom.js';
@@ -197,8 +197,8 @@ export interface PageListProps {
   readonly loupe: boolean;
   /** Whether the two rulers are drawn. `viewing.rulers`. */
   readonly rulers: boolean;
-  /** Whether the grid overlay is drawn. `viewing.grid`. */
-  readonly showGrid: boolean;
+  /** The grid overlay as chosen — how big a major square is and how many faint ones it holds — or `false` while it is off. `viewing.grid`. */
+  readonly showGrid: GridLook | false;
   /**
    * Follows a link a person pressed on a page (ADR-0167), or `undefined` where this list follows none — the comparison
    * view's panes, whose pages are being read against each other. With it, each visible page draws its links.
@@ -792,7 +792,7 @@ export function PageList({
    * ignoring it, the fix is an effect with `{ passive: false }` and not a
    * different gesture.
    */
-  const grid = showGrid ? gridSpacing(unit, shown) : undefined;
+  const grid = showGrid === false ? undefined : gridSpacing(unit, shown, showGrid);
 
   /**
    * Where the loupe is, and over which page.
@@ -1209,7 +1209,14 @@ export function PageList({
           ? undefined
           : ({
               // INHERITED BY EVERY PAGE'S GRID, whose origin is its own page's corner, the zero the rulers read from.
-              ...(grid === undefined ? {} : { '--m-grid': `${String(grid)}px` }),
+              ...(grid === undefined
+                ? {}
+                : {
+                    '--m-grid': `${String(grid.major)}px`,
+                    // THE FAINT LINES' SPACING, or the major's own where there are none: the two layers then coincide and the
+                    // faint one is hidden under the stronger.
+                    '--m-grid-minor': `${String(grid.minor ?? grid.major)}px`,
+                  }),
               //
               // FIT PAGE'S ROOM: the scroller's own measured height, each page's share of it.
               ...(fitOnePage && viewport !== undefined ? { '--m-fit-room': `${String(viewport.height)}px` } : {}),

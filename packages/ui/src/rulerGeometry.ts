@@ -199,9 +199,46 @@ export function pageRuns(
  * @returns `undefined` where a grid cannot be drawn — the zoom is degenerate,
  *   or the spacing has collapsed to something that would render as a fill
  */
-export function gridSpacing(unit: RulerUnit, zoom: number): number | undefined {
+export function gridSpacing(unit: RulerUnit, zoom: number, look: GridLook = AUTO_GRID_LOOK): GridLines | undefined {
   if (!Number.isFinite(zoom) || zoom <= 0) return undefined;
   const unitPx = UNITS[unit].points * zoom;
-  const spacing = unitPx * majorEvery(unitPx);
-  return spacing >= MIN_MAJOR_PX ? spacing : undefined;
+  let major = look.size === 'auto' ? unitPx * majorEvery(unitPx) : unitPx * GRID_SIZE_UNITS[look.size];
+  // A CHOSEN SIZE THAT WOULD BE TOO FINE AT THIS ZOOM is doubled until it is not, as the ruler thins its own majors, rather
+  // than hiding the grid the moment a person zooms out: the grid they asked for, at the coarsest multiple that can be read.
+  for (let guard = 0; guard < 24 && major < MIN_MAJOR_PX; guard += 1) major *= 2;
+  if (!(major >= MIN_MAJOR_PX)) return undefined;
+  const minor = look.divisions > 1 ? major / look.divisions : undefined;
+  // THE FAINT LINES ARE DROPPED, never the squares, when they would be a grey fill.
+  return { major, minor: minor !== undefined && minor >= MIN_MINOR_PX ? minor : undefined };
 }
+
+/** The sizes of a major square: the ruler's own interval, or this many of the unit (inches, centimetres or points' inch). */
+export const GRID_SIZES = ['auto', 'half', 'one', 'two', 'five'] as const;
+
+export type GridSize = (typeof GRID_SIZES)[number];
+
+/** How many of the unit a chosen size is. Named members, because the settings registry refuses numeric ones (zod moves them to the front). */
+export const GRID_SIZE_UNITS: Readonly<Record<Exclude<GridSize, 'auto'>, number>> = { half: 0.5, one: 1, two: 2, five: 5 };
+
+/** How many faint squares each major square holds. */
+export const GRID_DIVISIONS = ['none', 'two', 'four', 'five', 'ten'] as const;
+
+export type GridDivisions = (typeof GRID_DIVISIONS)[number];
+
+/** Across how many each divides: `none` is one, which draws no faint line. */
+export const GRID_DIVISION_COUNTS: Readonly<Record<GridDivisions, number>> = { none: 1, two: 2, four: 4, five: 5, ten: 10 };
+
+/** What a reader chose of the grid: how big a major square is and how many faint ones it holds. Pure display, never written to a document. */
+export interface GridLook {
+  readonly size: GridSize;
+  readonly divisions: number;
+}
+
+/** The two spacings drawn: the major lines, and the faint ones between them where they are not too close to read. */
+export interface GridLines {
+  readonly major: number;
+  readonly minor: number | undefined;
+}
+
+/** The grid as it was before it could be chosen: the ruler's own major interval, with no faint lines. */
+export const AUTO_GRID_LOOK: GridLook = { size: 'auto', divisions: 1 };

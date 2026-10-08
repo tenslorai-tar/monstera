@@ -6,6 +6,12 @@ import {
   DARK_PAGE_DESCRIPTION,
   DARK_PAGE_TITLE,
   GRID_DESCRIPTION,
+  GRID_DIVISIONS_DESCRIPTION,
+  GRID_DIVISIONS_OPTION_TITLES,
+  GRID_DIVISIONS_TITLE,
+  GRID_SIZE_DESCRIPTION,
+  GRID_SIZE_OPTION_TITLES,
+  GRID_SIZE_TITLE,
   GRID_TITLE,
   LOUPE_DESCRIPTION,
   LOUPE_TITLE,
@@ -35,6 +41,7 @@ import {
   ZOOM_STEP_TITLE,
 } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
+import { GRID_DIVISIONS, GRID_SIZES, type GridDivisions, type GridSize } from '../rulerGeometry.js';
 import { STARTING_ZOOMS, type StartingZoom, ZOOM_STEP_CHOICES, type ZoomStep } from '../zoom.js';
 
 /**
@@ -242,6 +249,35 @@ export const GRID_SETTING: SettingDefinition<z.ZodBoolean> = {
   schema: z.boolean(),
   fallback: false,
   category: 'viewing',
+};
+
+/**
+ * How big a major grid square is — the owner's recording of 2026-10-07: *the grid draws only big squares*. **`auto` is what
+ * it always was**, the ruler's own major interval, so a line is a mark readable off the ruler; the others are that many of
+ * the unit in force. Pure display, never written into a document.
+ */
+export const GRID_SIZE_SETTING: SettingDefinition<z.ZodEnum<{ [K in GridSize]: K }>> = {
+  id: 'viewing.grid-size',
+  title: GRID_SIZE_TITLE,
+  description: GRID_SIZE_DESCRIPTION,
+  schema: z.enum(GRID_SIZES),
+  fallback: 'auto',
+  category: 'viewing',
+  optionTitles: GRID_SIZE_OPTION_TITLES,
+};
+
+/**
+ * How many faint squares each major square holds, as PDF-XChange draws its grid: a major line, and fainter ones inside it.
+ * Four by default; one is none.
+ */
+export const GRID_DIVISIONS_SETTING: SettingDefinition<z.ZodEnum<{ [K in GridDivisions]: K }>> = {
+  id: 'viewing.grid-divisions',
+  title: GRID_DIVISIONS_TITLE,
+  description: GRID_DIVISIONS_DESCRIPTION,
+  schema: z.enum(GRID_DIVISIONS),
+  fallback: 'four',
+  category: 'viewing',
+  optionTitles: GRID_DIVISIONS_OPTION_TITLES,
 };
 
 /**

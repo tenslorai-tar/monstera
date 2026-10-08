@@ -926,7 +926,7 @@ describe('PageList', () => {
       onWentTo: vi.fn(),
       loupe: false,
       rulers: false,
-      showGrid: false, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
+      showGrid: false as const, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
       search: undefined, differences: undefined, spotlights: undefined, writing: undefined,
       secondRasteriser: undefined,
@@ -1012,7 +1012,7 @@ describe('PageList', () => {
       onWentTo: vi.fn(),
       loupe: false,
       rulers: false,
-      showGrid: false, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
+      showGrid: false as const, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
       search: undefined, differences: undefined, spotlights: undefined, writing: undefined,
       secondRasteriser: undefined,
@@ -1050,7 +1050,7 @@ describe('PageList', () => {
       onWentTo: vi.fn(),
       loupe: false,
       rulers: false,
-      showGrid: false, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
+      showGrid: false as const, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
       search: undefined, differences: undefined, spotlights: undefined, writing: undefined,
       secondRasteriser: undefined,
@@ -1098,7 +1098,7 @@ describe('PageList', () => {
       onWentTo: wentTo,
       loupe: false,
       rulers: false,
-      showGrid: false, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
+      showGrid: false as const, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
       search: undefined, differences: undefined, spotlights: undefined, writing: undefined,
       secondRasteriser: undefined,
@@ -1149,7 +1149,7 @@ describe('PageList', () => {
         onWentTo: vi.fn(),
         loupe: false,
         rulers: false,
-        showGrid: false, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
+        showGrid: false as const, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
         unit: 'in' as const,
         search: undefined, differences: undefined, spotlights: undefined, writing: undefined,
         secondRasteriser: undefined,
@@ -1399,7 +1399,7 @@ describe('PageList', () => {
       onWentTo: extra.onWentTo ?? vi.fn(),
       loupe: false,
       rulers: false,
-      showGrid: false, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
+      showGrid: false as const, onFollowLink: undefined, linksOutlined: false, onFillField: undefined,
       unit: 'in' as const,
       search: undefined, differences: undefined, spotlights: undefined, writing: undefined,
       secondRasteriser: undefined,
@@ -1662,7 +1662,7 @@ describe('PageList', () => {
 
   it('draws the GRID inside every page, with the ruler’s spacing on the list (Part A3) — CONTROL: none while it is off', async () => {
     const { client } = clientAnswering();
-    const drawn = (showGrid: boolean): HTMLElement => {
+    const drawn = (showGrid: false | { size: 'auto' | 'one'; divisions: number }): HTMLElement => {
       const { container } = render(
         <PageList
           client={client}
@@ -1688,7 +1688,7 @@ describe('PageList', () => {
       );
       return container;
     };
-    const on = drawn(true);
+    const on = drawn({ size: 'auto', divisions: 1 });
     await settle();
     const grids = [...on.querySelectorAll<HTMLElement>('.m-paper-grid')];
     // ONE PER PAGE, each inside its own slot, so its origin is that page's corner — and hidden from assistive
@@ -1697,6 +1697,12 @@ describe('PageList', () => {
     expect(grids.every((grid) => grid.getAttribute('aria-hidden') === 'true')).toBe(true);
     // THE SPACING IS THE RULER'S: an inch at scale 1, a point to a pixel, is 72 px.
     expect(on.querySelector<HTMLElement>('.m-page-list')?.style.getPropertyValue('--m-grid')).toBe('72px');
+    // NO FAINT SQUARES CHOSEN: the faint spacing is the major's own, so the faint layer lies under the major line.
+    expect(on.querySelector<HTMLElement>('.m-page-list')?.style.getPropertyValue('--m-grid-minor')).toBe('72px');
+    // FOUR ACROSS, one inch: the faint squares are a quarter of it, 18 px, as the page list carries it for every page.
+    const fine = drawn({ size: 'one', divisions: 4 });
+    expect(fine.querySelector<HTMLElement>('.m-page-list')?.style.getPropertyValue('--m-grid')).toBe('72px');
+    expect(fine.querySelector<HTMLElement>('.m-page-list')?.style.getPropertyValue('--m-grid-minor')).toBe('18px');
     // CONTROL: off, no page carries one.
     expect(drawn(false).querySelectorAll('.m-paper-grid')).toHaveLength(0);
   });
@@ -1730,7 +1736,7 @@ describe('PageList', () => {
           onWentTo={vi.fn()}
           loupe={false}
           rulers={true}
-          showGrid={true} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
+          showGrid={{ size: 'auto', divisions: 1 }} onFollowLink={undefined} linksOutlined={false} onFillField={undefined}
           unit="in"
           search={undefined} differences={undefined} spotlights={undefined} writing={undefined}
           secondRasteriser={undefined} tileAbove={2} quality={1} pageBadges={false} smoothScroll={false} layout="continuous"
