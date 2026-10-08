@@ -41,17 +41,14 @@ export function holdPage(document: PDFDocumentProxy, pageNumber: number): () => 
   }
   const entry = pages.get(pageNumber) ?? { count: 0, page: undefined };
   entry.count += 1;
-  console.warn(`TRACE hold p${String(pageNumber)} -> ${String(entry.count)} @${String(Math.round(performance.now()))}`);
   pages.set(pageNumber, entry);
   let spent = false;
   return () => {
     if (spent) return;
     spent = true;
     entry.count -= 1;
-    console.warn(`TRACE release p${String(pageNumber)} -> ${String(entry.count)} @${String(Math.round(performance.now()))}`);
     if (entry.count > 0) return;
     pages.delete(pageNumber);
-    console.warn(`TRACE cleanup p${String(pageNumber)} page=${String(entry.page !== undefined)} @${String(Math.round(performance.now()))}`);
     entry.page?.cleanup();
   };
 }

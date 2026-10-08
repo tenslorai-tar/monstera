@@ -168,7 +168,7 @@ export interface CanvasReadback {
    * nothing, so the reading says nothing about the bitmap.
    */
   readonly workerBitmapInk: number;
-  /** DIAGNOSTIC: the same control made before any page existed. */
+  /** The same control, made before any page existed. */
   readonly coldWorkerBitmapInk: number;
   /**
    * That bitmap drawn as PDF.js draws an image — flipped, smoothing off — on a canvas of the page's size. It must equal
@@ -954,15 +954,14 @@ export async function reportCanvasPixels(
     processesGone.push({ type: details.type, reason: details.reason, exitCode: details.exitCode });
   });
   await app.whenReady();
-  // DIAGNOSTIC (to be reverted with the renderPage trace): the worker bitmap control BEFORE any page exists, so a blank
-  // bitmap here is the engine's own first one, with none of this repository's code in the path.
-  const coldStarted = Date.now();
-  // Electron quits when its last window closes unless something listens; the probe's window is the only one yet.
+  // THE WORKER BITMAP CONTROL BEFORE ANY PAGE EXISTS. The same control is read again below, after the page; a blank
+  // reading here is the engine's own first worker bitmap, with none of this repository's code in the path, and a
+  // failure report that carries both says which side of the page the blankness is on.
+  // Electron quits when its last window closes unless something listens, and the probe's window is the only one yet.
   const keepAlive = (): void => undefined;
   app.on('window-all-closed', keepAlive);
   const cold = await readWorkerBitmapInk(595, 842);
   app.off('window-all-closed', keepAlive);
-  console.warn(`COLD worker bitmap upright=${String(cold.upright)} asPdfjs=${String(cold.asPdfjsDraws)} in ${String(Date.now() - coldStarted)}ms`);
 
   // THE SHIPPED THREE CALLS, in the shipped order. `main.ts` creates the window
   // before registering, because the sender check needs a real `WebContents` id
@@ -1040,7 +1039,7 @@ export async function reportCanvasPixels(
   // only: `console-message` reports a frame, and PDF.js's worker logs elsewhere — read below.
   const consoleLines: string[] = [];
   contents.on('console-message', (event) => {
-    if ((event.level === 'warning' || event.level === 'error') && consoleLines.length < 80) {
+    if ((event.level === 'warning' || event.level === 'error') && consoleLines.length < 20) {
       consoleLines.push(`${event.level}: ${event.message}`.slice(0, 300));
     }
   });
