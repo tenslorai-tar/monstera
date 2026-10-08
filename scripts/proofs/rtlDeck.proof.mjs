@@ -340,8 +340,7 @@ async function main() {
     { text: ARABIC, direction: 'right-to-left', y: 500 },
     { text: LATIN, direction: 'left-to-right', y: 400 },
   ]);
-  const bundled = await deckBoxes(bundledBytes);
-  const hebrewBox = bundled.find((box) => box.text.replace(/\s+/gu, '') === HEBREW.replace(/\s+/gu, ''));
+  const bundled = await deckBoxes(bundledBytes);  const hebrewBox = bundled.find((box) => box.text.replace(/\s+/gu, '') === HEBREW.replace(/\s+/gu, ''));
   const arabicBox = bundled.find((box) => box.text.normalize('NFKC').replace(/\s+/gu, '') === ARABIC.replace(/\s+/gu, ''));
   const latinBox = bundled.find((box) => box.text === LATIN);
   check(
@@ -401,13 +400,15 @@ async function main() {
     );
   }
 
-  // THE CONTROLS THAT SHOW THE REORDERING IS WHAT IS TESTED: what PDFium itself answers (`textRuns`, which the reading order
-  // is not applied to) is NOT in reading order, and differs by producer.
+  // THE CONTROLS THAT SHOW THE READERS ARE TWO, and which one the deck takes. Since ADR-0185 the EDITOR's read (`textRuns`)
+  // answers a line in the order typed by a model of what PDFium does; the deck takes PDFium's own answer and the places,
+  // because that model does not hold for every producer (the next control: a word MuPDF drew keeps its letters as they sit
+  // through the editor's read). Reconciling them is a finding, recorded in the journal, not something this proof settles.
   const rawOne = await onImage({ bytes: oneObject, opensWith: undefined }, (session) => textRuns(session, 0));
   const rawHebrew = rawOne.runs.find((run) => run.text !== LATIN)?.text;
   check(
-    'CONTROL: PDFium answers the one-object line with its WORDS in the order they sit, not the order they are read',
-    rawHebrew === [...HEBREW_WORDS].reverse().join(' '),
+    'CONTROL: the editor’s read answers the one-object line in the order typed, which the deck’s case above reaches by the places instead',
+    rawHebrew === HEBREW,
     `answered [${codes(rawHebrew ?? '')}]`,
   );
   // The page's text is inside forms until they are flattened, which `pageContent` does first and this read must too.

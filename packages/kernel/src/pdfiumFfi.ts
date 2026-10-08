@@ -1315,6 +1315,12 @@ interface WalkedRun {
   text: string;
   /** The glyphs in the order drawn, which `ObjectRun.drawn` says; empty while the walk reads, set when it ends. */
   drawn: string;
+  /**
+   * What PDFium answered for the object, before `logicalOf` turned it into the order typed. The editable deck reorders it
+   * from the characters' places (`readingOrder.ts`), which holds for every producer where the editor's model of PDFium's
+   * answer holds for the ones it was measured on; empty while the walk reads, set when it ends.
+   */
+  raw: string;
   left: number;
   right: number;
   bottom: number;
@@ -1416,6 +1422,7 @@ function walkRuns(
         held = {
           text: '',
           drawn: '',
+          raw: '',
           left: Number.POSITIVE_INFINITY,
           right: Number.NEGATIVE_INFINITY,
           bottom: Number.POSITIVE_INFINITY,
@@ -1457,7 +1464,7 @@ function walkRuns(
       runs: new Map(
         [...runs.entries()]
           .filter(([, run]) => Number.isFinite(run.left))
-          .map(([index, run]) => [index, { ...run, drawn: readBackOf(run.text), text: logicalOf(run.text) }] as const),
+          .map(([index, run]) => [index, { ...run, raw: run.text, drawn: readBackOf(run.text), text: logicalOf(run.text) }] as const),
       ),
       unaddressable,
       unaddressableInk,
@@ -4999,19 +5006,24 @@ export async function pageContent(session: PdfiumSession, page: number): Promise
       // whitespace out: a missing word is what makes a page Exact look, and a space between two objects is not one.
       const walked = walkRuns(bindings, handle);
       const text = {
-        // A RIGHT-TO-LEFT RUN'S TEXT IS READ BACK FROM WHERE ITS CHARACTERS SIT (`readingOrder.ts`): PDFium's own order of
-        // it differs by how the producer drew it.
-        runs: joinedWalk(bindings, handle, walked).map(({ members, ...run }) =>
-          rightToLeftCount(run.text) === 0
+        // A RIGHT-TO-LEFT RUN'S TEXT IS READ BACK FROM WHERE ITS CHARACTERS SIT (`readingOrder.ts`), from PDFium's OWN answer
+        // (`raw`) and not from the join's: `joinedWalk` answers a line in the order TYPED by the editor's model of that answer
+        // (`logicalOf`, ADR-0181 and ADR-0185), and reordering that a second time scrambles it (measured 2026-10-08, after the
+        // merge of the two: `rtlDeck.proof.mjs` red on both drawings that put a word's letters in visual order). The editor's
+        // model holds for the producers it was measured on and the places hold for all of them, so the deck takes the places.
+        // TWO READERS OF ONE AUTHORITY, stated rather than hidden: the day they are reconciled this goes (a finding, not a fix).
+        runs: joinedWalk(bindings, handle, walked).map(({ members, ...run }) => {
+          const raw = members.map((member) => walked.runs.get(member)?.raw ?? '').join('');
+          return rightToLeftCount(raw) === 0
             ? run
             : {
                 ...run,
                 text: readingOrder(
-                  run.text,
+                  raw,
                   members.flatMap((member) => (walked.glyphs.get(member) ?? []).filter((glyph) => glyph.char !== ' ').map((glyph) => glyph.left)),
                 ),
-              },
-        ),
+              };
+        }),
         unaddressable: walked.unaddressableInk,
       };
 
