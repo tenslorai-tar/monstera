@@ -85,7 +85,7 @@ describe('ExportWordBody', () => {
     it('the question comes first, typed text is chosen, and no reader is shown until the pages are said to be pictures', () => {
       opened(['built-in', 'claude']);
       expect(screen.getByRole('radiogroup', { name: /^What is in this document\?/u })).toBeDefined();
-      expect((screen.getByRole('radio', { name: /^Typed text/u })).checked).toBe(true);
+      expect(screen.getByRole<HTMLInputElement>('radio', { name: /^Typed text/u }).checked).toBe(true);
       expect(screen.queryByRole('radiogroup', { name: /^Read the pages with/u })).toBeNull();
     });
 
@@ -94,7 +94,7 @@ describe('ExportWordBody', () => {
       fireEvent.click(screen.getByRole('radio', { name: /^Handwritten or scanned/u }));
       const group = screen.getByRole('radiogroup', { name: /^Read the pages with/u });
       expect(group.querySelectorAll('input[type="radio"]')).toHaveLength(2);
-      expect((screen.getByRole('radio', { name: /^This computer/u })).checked).toBe(true);
+      expect(screen.getByRole<HTMLInputElement>('radio', { name: /^This computer/u }).checked).toBe(true);
       fireEvent.click(screen.getByRole('radio', { name: /^Claude/u }));
       fireEvent.click(SAVE());
       // THE MODE IS FIXED AT WORDS ONLY: a layout of pictures the words sit beside is not an editable file.
