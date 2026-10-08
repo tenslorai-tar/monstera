@@ -465,6 +465,25 @@ export const EXPORT_WORD_TEXT = messageKey('dialog.export-word.text');
 export const EXPORT_WORD_TEXT_NOTE = messageKey('dialog.export-word.text-note');
 export const EXPORT_WORD_APPLY = messageKey('dialog.export-word.apply');
 export const EXPORT_WORD_PAGES_NOTE = messageKey('dialog.export-word.pages-note');
+// WHAT IS IN THE DOCUMENT, and who reads it when it is pictures (ADR-0202): shared by the Word and Excel exports, so the two
+// say it in the same words.
+export const SCAN_SOURCE = messageKey('dialog.scan.source');
+export const SCAN_SOURCE_NOTE = messageKey('dialog.scan.source-note');
+export const SCAN_SOURCE_TYPED = messageKey('dialog.scan.source-typed');
+export const SCAN_SOURCE_TYPED_NOTE = messageKey('dialog.scan.source-typed-note');
+export const SCAN_SOURCE_SCANNED = messageKey('dialog.scan.source-scanned');
+export const SCAN_SOURCE_SCANNED_NOTE = messageKey('dialog.scan.source-scanned-note');
+export const SCAN_READER = messageKey('dialog.scan.reader');
+export const SCAN_READER_BUILT_IN = messageKey('dialog.scan.reader-built-in');
+export const SCAN_READER_BUILT_IN_NOTE = messageKey('dialog.scan.reader-built-in-note');
+export const SCAN_READER_CLAUDE = messageKey('dialog.scan.reader-claude');
+export const SCAN_READER_CLAUDE_NOTE = messageKey('dialog.scan.reader-claude-note');
+export const SCAN_READER_AZURE = messageKey('dialog.scan.reader-azure');
+export const SCAN_READER_AZURE_NOTE = messageKey('dialog.scan.reader-azure-note');
+export const SCAN_READERS_NONE = messageKey('dialog.scan.readers-none');
+export const SCAN_SENDS_CLAUDE = messageKey('dialog.scan.sends-claude');
+export const SCAN_SENDS_AZURE = messageKey('dialog.scan.sends-azure');
+export const SCAN_WORD_OUTPUT_NOTE = messageKey('dialog.scan.word-output-note');
 export const EXPORT_POWERPOINT_TITLE = messageKey('dialog.export-powerpoint.title');
 export const EXPORT_POWERPOINT_PAGES_NOTE = messageKey('dialog.export-powerpoint.pages-note');
 export const EXPORT_TEXT_TITLE = messageKey('dialog.export-text.title');
@@ -5349,6 +5368,28 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXPORT_WORD_TEXT_NOTE]: 'Just the words, with no pictures and no layout.',
   [EXPORT_WORD_APPLY]: 'Choose where to save…',
   [EXPORT_WORD_PAGES_NOTE]: 'The Word file holds these pages, in order.',
+  [SCAN_SOURCE]: 'What is in this document?',
+  [SCAN_SOURCE_NOTE]: 'This decides whether the pages are read before they are saved.',
+  [SCAN_SOURCE_TYPED]: 'Typed text',
+  [SCAN_SOURCE_TYPED_NOTE]: 'The words are already in the PDF, so nothing needs reading.',
+  [SCAN_SOURCE_SCANNED]: 'Handwritten or scanned',
+  [SCAN_SOURCE_SCANNED_NOTE]: 'The pages are pictures. Monstera reads them first, then saves what it read.',
+  [SCAN_READER]: 'Read the pages with',
+  [SCAN_READER_BUILT_IN]: 'This computer',
+  [SCAN_READER_BUILT_IN_NOTE]: 'For printed text only. Nothing leaves your computer.',
+  [SCAN_READER_CLAUDE]: 'Claude',
+  [SCAN_READER_CLAUDE_NOTE]: 'Reads handwriting too. Each page is sent to Anthropic.',
+  [SCAN_READER_AZURE]: 'Azure',
+  [SCAN_READER_AZURE_NOTE]: 'Reads handwriting too. Each page is sent to Microsoft Azure.',
+  [SCAN_READERS_NONE]:
+    'No reader is set up. Printed scans need the text models on this computer, and handwriting needs a Claude or Azure key in Settings.',
+  // SAID BEFORE ANYTHING IS SENT (ADR-0202), with the count the row names, as the Excel export says it. No cost is stated.
+  [SCAN_SENDS_CLAUDE]:
+    '{every, select, yes {{count, plural, one {This document’s page} other {All # pages of this document}}} other {{count, plural, one {One page of this document} other {# pages of this document}}}} will be sent to Anthropic’s Claude to be read.',
+  [SCAN_SENDS_AZURE]:
+    '{every, select, yes {{count, plural, one {This document’s page} other {All # pages of this document}}} other {{count, plural, one {One page of this document} other {# pages of this document}}}} will be sent to Azure Document Intelligence to be read. Each copy is deleted from Azure after it is read.',
+  [SCAN_WORD_OUTPUT_NOTE]:
+    'The Word file holds the words only. They are also kept, unseen, in this document so they can be searched, and Undo takes them out again.',
   [EXPORT_POWERPOINT_TITLE]: 'Export to PowerPoint',
   [EXPORT_POWERPOINT_PAGES_NOTE]: 'Each page becomes one slide.',
   [EXPORT_TEXT_TITLE]: 'Export text',

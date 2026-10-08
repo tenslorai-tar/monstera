@@ -93,6 +93,7 @@ import { OPTIMIZE_DIALOG_ID, type OptimizeAnswer } from '../dialogs/optimize.js'
 import type { TrackTask } from '../runningTask.js';
 import { PDFA_REMOVALS_DIALOG_ID } from '../dialogs/pdfaRemovals.js';
 import { OCR_OUTCOME_DIALOG_ID, type RecognisedWalk } from '../dialogs/ocrOutcome.js';
+import type { ScanReader } from '../dialogs/scanReader.js';
 import { PRINT_DIALOG_ID, type PrintAnswer } from '../dialogs/print.js';
 import { PRINT_QUALITY_DPI, PRINT_QUALITY_SETTING } from '../settings/rendering.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
@@ -284,6 +285,7 @@ import {
   TOAST_PROTECTION_SET,
   TOAST_TEXT_SAVED,
   TOAST_WORD_SAVED,
+  SCAN_READERS_NONE,
   TOAST_SAVED,
   TOAST_SAVED_CLEARED,
   TOAST_SAVED_CLEARED_BACKUPS,
@@ -436,6 +438,23 @@ export interface SignedEditing {
  */
 export interface RecognisesFirst {
   readonly recogniseFirst: (docId: DocId, pageCount: number) => Promise<RecognisedWalk | undefined>;
+}
+
+/**
+ * What an export of a HANDWRITTEN OR SCANNED document needs (ADR-0202): which readers this machine has, and the walk that
+ * reads the chosen pages with one of them — `recogniseText.ts`' walk, composed where the commands are registered for
+ * {@link RecognisesFirst}'s reason. The walk is one undo step, has progress and a Cancel, and reads whole pages with a
+ * service only because the person chose these pages and the dialog said they are sent.
+ *
+ * `readScans` answers what the walk did, or `undefined` where the reader cannot run (no models on this computer).
+ */
+export interface ReadsScans {
+  readonly scanReaders: () => Promise<readonly ScanReader[]>;
+  readonly readScans: (
+    docId: DocId,
+    pages: readonly number[],
+    reader: ScanReader,
+  ) => Promise<RecognisedWalk | undefined>;
 }
 
 /**
@@ -2923,7 +2942,7 @@ export function exportLayoutTextCommand(
  * the way {@link exportTextCommand}'s are.
  */
 export function exportWordCommand(
-  deps: DocumentCommandDeps & RecognisesFirst & WritesAFile & SettlesMarksFirst,
+  deps: DocumentCommandDeps & RecognisesFirst & ReadsScans & WritesAFile & SettlesMarksFirst,
 ): UiCommand {
   return {
     id: 'document.export-word',
@@ -2942,13 +2961,33 @@ export function exportWordCommand(
       if (context.docId === undefined || context.pageCount === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
-      const chosen = (await deps.ask(EXPORT_WORD_DIALOG_ID, { pageCount: context.pageCount })) as
-        | ExportWordAnswer
-        | undefined;
+      const chosen = (await deps.ask(EXPORT_WORD_DIALOG_ID, {
+        pageCount: context.pageCount,
+        // THE READERS THIS MACHINE HAS (ADR-0202), asked when the command runs so a key stored a moment ago is offered.
+        readers: await deps.scanReaders(),
+      })) as ExportWordAnswer | undefined;
       if (chosen === undefined) return;
 
-      // AFTER THE MODE, so a dismissed mode dialog recognises nothing (ADR-0118).
-      const walked = await recognisedBeforeExport(deps, context);
+      // A HANDWRITTEN OR SCANNED DOCUMENT is READ FIRST, by the reader the person chose, over the pages they chose (ADR-0202):
+      // the walk writes the words into the document, and the export is then the ordinary one of what it now holds. A walk
+      // the person stopped writes no file — half the pages read in a file meant to carry all of them is the searchable
+      // export's refused pair — and the pages already read are in the open document, which the outcome says.
+      // AFTER THE DIALOG either way, so a dismissed dialog reads nothing.
+      let walked: RecognisedWalk | undefined | false;
+      if (chosen.reading === 'typed') {
+        walked = await recognisedBeforeExport(deps, context);
+      } else {
+        walked = await deps.readScans(context.docId, chosen.pages, chosen.reading);
+        if (walked === undefined) {
+          // THE READER CHOSEN CANNOT RUN NOW (its models or its key went away since the dialog opened): said, and nothing read.
+          deps.toast('problem', SCAN_READERS_NONE);
+          return;
+        }
+        if (walked.stopped) {
+          void deps.ask(OCR_OUTCOME_DIALOG_ID, walked);
+          return;
+        }
+      }
       if (walked === false) return;
       const answer = await deps.client['document.exportWord']({
         docId: context.docId,

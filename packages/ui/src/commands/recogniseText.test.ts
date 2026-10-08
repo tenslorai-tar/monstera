@@ -12,8 +12,10 @@ import type { ToastAction } from '../primitives/Toast.js';
 import type { CommandContext } from '../registries/commands.js';
 import { type TrackTask, UNTRACKED } from '../runningTask.js';
 import {
+  availableScanReaders,
   enhanceScansCommand,
   exportSearchableCommand,
+  readScannedPages,
   recogniseBeforeExport,
   recogniseTextCommand,
   straightenScansCommand,
@@ -94,8 +96,17 @@ type ScriptedKind = 'text' | 'image-only' | 'empty';
 function clientOver(
   kinds: readonly (ScriptedKind | 'refused')[],
   options: { readonly languages?: readonly string[]; readonly refuseExecute?: boolean } = {},
-): { client: ContractClient; dispatched: Command[]; read: number[]; copies: () => number; revealed: unknown[] } {
+): {
+  client: ContractClient;
+  dispatched: Command[];
+  /** The undo step each dispatched command named to join (ADR-0200), in order; `undefined` where it named none. */
+  joins: (number | undefined)[];
+  read: number[];
+  copies: () => number;
+  revealed: unknown[];
+} {
   const dispatched: Command[] = [];
+  const joins: (number | undefined)[] = [];
   const read: number[] = [];
   const revealed: unknown[] = [];
   let copies = 0;
@@ -121,6 +132,7 @@ function clientOver(
     if (id === 'document.execute') {
       const command = (params as { command: Command }).command;
       dispatched.push(command);
+      joins.push((params as { joinsStep?: number }).joinsStep);
       if (options.refuseExecute === true) {
         return Promise.resolve(err({ code: 'document-busy' }));
       }
@@ -134,7 +146,7 @@ function clientOver(
     }
     throw new Error(`unexpected channel ${id}`);
   });
-  return { client, dispatched, read, copies: () => copies, revealed };
+  return { client, dispatched, joins, read, copies: () => copies, revealed };
 }
 
 /** Records what the command opened, and answers the setup dialog from a script. */
@@ -588,6 +600,56 @@ describe('the recognise-text command', () => {
     expect(dispatched).toStrictEqual([
       { kind: 'ocrPage', page: 0, languages: ['eng'], engine: 'tesseract' },
     ]);
+  });
+});
+
+describe('reading a handwritten or scanned document for an export (ADR-0202)', () => {
+  const deps = (parts: ReturnType<typeof clientOver>) => ({
+    client: parts.client,
+    onApplied: () => undefined,
+    stamp: STAMP,
+    signatures,
+    ask: () => Promise.resolve(undefined),
+    track: UNTRACKED,
+    ocrLanguages: (): OcrLanguages => STORED,
+  });
+
+  it('a SERVICE reads each scanned page WHOLE, and names no language and no region', async () => {
+    const parts = clientOver(['image-only', 'text', 'image-only'], { languages: [] });
+    const walked = await readScannedPages(deps(parts), DOC, [0, 1, 2], 'claude');
+
+    expect(parts.dispatched).toStrictEqual([
+      { kind: 'ocrPage', page: 0, languages: ['eng'], engine: 'claude', wholePage: true },
+      { kind: 'ocrPage', page: 2, languages: ['eng'], engine: 'claude', wholePage: true },
+    ]);
+    expect(walked).toStrictEqual({ recognised: 2, skipped: 1, stopped: false });
+  });
+
+  it('CONTROL: this computer’s reader sends Tesseract with the languages the dialog would open on, and no wholePage', async () => {
+    const parts = clientOver(['image-only'], { languages: ['eng', 'fra'] });
+    await readScannedPages(deps(parts), DOC, [0], 'built-in');
+    expect(parts.dispatched).toStrictEqual([{ kind: 'ocrPage', page: 0, languages: ['fra'], engine: 'tesseract' }]);
+  });
+
+  it('THE WALK IS ONE UNDO STEP: each page names the version the page before it produced', async () => {
+    const parts = clientOver(['image-only', 'image-only', 'image-only'], { languages: ['eng'] });
+    await readScannedPages(deps(parts), DOC, [0, 1, 2], 'azure');
+    // The scripted answer is always version 2: the first page joins nothing, the next two join what the one before made.
+    expect(parts.joins).toStrictEqual([undefined, 2, 2]);
+  });
+
+  it('this computer’s reader with NO model answers undefined and reads nothing; a service does not need one', async () => {
+    const none = clientOver(['image-only'], { languages: [] });
+    expect(await readScannedPages(deps(none), DOC, [0], 'built-in')).toBeUndefined();
+    expect(none.dispatched).toStrictEqual([]);
+  });
+
+  it('offers the readers the machine has: models for this computer’s, a key for each service', async () => {
+    const withModels = clientOver([], { languages: ['eng'] });
+    expect(await availableScanReaders(withModels.client, { claude: true, azure: false })).toStrictEqual(['built-in', 'claude']);
+    const without = clientOver([], { languages: [] });
+    expect(await availableScanReaders(without.client, { claude: false, azure: true })).toStrictEqual(['azure']);
+    expect(await availableScanReaders(without.client, { claude: false, azure: false })).toStrictEqual([]);
   });
 });
 

@@ -195,6 +195,8 @@ import {
   enhanceScansCommand,
   exportSearchableCommand,
   straightenScansCommand,
+  availableScanReaders,
+  readScannedPages,
   recogniseBeforeExport,
   recogniseTextCommand,
 } from './commands/recogniseText.js';
@@ -322,6 +324,7 @@ import { ToolRegistry } from './registries/tools.js';
 import { APPLICATION_DIALOGS } from './registries/applicationDialogs.js';
 import { DialogRegistry } from './registries/dialogs.js';
 import { PageSourcesContext, type PageSources } from './dialogs/pageSources.js';
+import type { ScanReader } from './dialogs/scanReader.js';
 import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
 import {
   HIGH_CONTRAST_QUERIES,
@@ -3122,6 +3125,16 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           },
           docId,
           pageCount,
+        ),
+      // A HANDWRITTEN OR SCANNED DOCUMENT'S EXPORT (ADR-0202): the readers this machine has, and the walk that reads the
+      // chosen pages with one — the same two facts the OCR tools are offered on (`azureReady`, `claudeKeyStored`).
+      scanReaders: () => availableScanReaders(client, { claude: claudeKeyStored, azure: azureReady }),
+      readScans: (docId: DocId, pages: readonly number[], reader: ScanReader) =>
+        readScannedPages(
+          { client, onApplied: applied, ask, stamp, signatures, track, ocrLanguages: storedOcrLanguages },
+          docId,
+          pages,
+          reader,
         ),
     };
     const registered: UiCommand[] = [

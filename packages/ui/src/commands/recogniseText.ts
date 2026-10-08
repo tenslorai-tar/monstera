@@ -1,7 +1,8 @@
 import { MAX_TEXT_LAYER_LINES, type OcrLanguages } from '@monstera/contract';
-import type { DocId } from '@monstera/shared';
+import type { DocId, DocVersion } from '@monstera/shared';
 
 import { OCR_DIALOG_ID, openingLanguages } from '../dialogs/ocr.js';
+import type { ScanReader } from '../dialogs/scanReader.js';
 import { OCR_OUTCOME_DIALOG_ID, type RecognisedWalk } from '../dialogs/ocrOutcome.js';
 import { OCR_RESULT } from '../dialogs/ocrResult.js';
 import { ENHANCE_OUTCOME_DIALOG_ID } from '../dialogs/enhanceOutcome.js';
@@ -295,8 +296,16 @@ export async function recogniseScope(
   docId: DocId,
   targets: readonly number[],
   languages: OcrLanguages,
+  /**
+   * Who reads (ADR-0202): this computer's recogniser, or a service that sends each page. A service reads WHOLE PAGES here,
+   * which is only ever asked for by an export whose dialog said so; the OCR dialog's own scopes read with `built-in`.
+   */
+  reader: ScanReader = 'built-in',
 ): Promise<RecognisedWalk> {
   const task = deps.track(OCR_PROGRESS, targets.length);
+  // THE WALK IS ONE UNDO STEP (ADR-0200): each page's write names the version the page before it produced. A cancelled walk
+  // is the pages done, as one step; a command of someone else in between breaks the join and leaves the rest steps of their own.
+  const step: { version: DocVersion | undefined } = { version: undefined };
   // A FUNCTION rather than a read of `signal.aborted` at each site, which is
   // `showWordCount`'s shape: the two checks in the loop must ask the same
   // question, and a second spelling of it is where they stop doing so.
@@ -325,15 +334,33 @@ export async function recogniseScope(
         continue;
       }
 
-      const applied = await applyDocumentCommand(deps, docId, {
-        kind: 'ocrPage',
-        page: target,
-        languages,
-        // TESSERACT, AND NOT A SETTING. This is the page and document scope, and
-        // the contract refuses a network engine without a region: a page-scoped
-        // send would upload a whole page where a reader asked about a box.
-        engine: 'tesseract',
-      });
+      const applied = await applyDocumentCommand(
+        deps,
+        docId,
+        reader === 'built-in'
+          ? {
+              kind: 'ocrPage',
+              page: target,
+              languages,
+              // TESSERACT, AND NOT A SETTING. The OCR dialog's page and document scope read here, and the contract refuses
+              // a network engine without a region or a statement that these pages are to be sent (ADR-0202).
+              engine: 'tesseract',
+            }
+          : {
+              kind: 'ocrPage',
+              page: target,
+              languages,
+              // THE PERSON CHOSE TO SEND THESE PAGES: the export's dialog said so beside the reader (ADR-0202).
+              engine: reader,
+              wholePage: true,
+            },
+        {
+          ...(step.version === undefined ? {} : { joinsStep: step.version }),
+          produced: (version) => {
+            step.version = version;
+          },
+        },
+      );
       // A REFUSED PAGE STOPS THE WALK. `applyDocumentCommand` has already
       // reported it, and carrying on would stack one dialog per page behind a
       // condition — a closed document, a poisoned one — that is not going to
@@ -347,6 +374,49 @@ export async function recogniseScope(
     task.end();
   }
   return { recognised, skipped, stopped: aborted() };
+}
+
+/**
+ * The languages a service read carries because the command's schema requires some: each service detects the language, so
+ * these are never sent and never believed (`commandDeclarations`' network arm sends none). A named constant, so the
+ * placeholder is one thing with one reason rather than `['eng']` typed at a call site that might be read as a choice.
+ */
+const SERVICE_LANGUAGES: OcrLanguages = ['eng'];
+
+/**
+ * The readers this machine can offer for a handwritten or scanned document (ADR-0202): this computer's recogniser where its
+ * models are provisioned, and a service only where its key is stored — the rule every network feature follows. Asked when
+ * the command runs, so a model provisioned or a key stored a moment ago is offered without a restart.
+ */
+export async function availableScanReaders(
+  client: DocumentCommandDeps['client'],
+  stored: { readonly claude: boolean; readonly azure: boolean },
+): Promise<readonly ScanReader[]> {
+  const models = await client['app.ocrLanguages']({});
+  return [
+    ...(models.ok && models.value.languages.length > 0 ? (['built-in'] as const) : []),
+    ...(stored.claude ? (['claude'] as const) : []),
+    ...(stored.azure ? (['azure'] as const) : []),
+  ];
+}
+
+/**
+ * Reads the chosen pages of a handwritten or scanned document with the reader the person chose, and answers what the walk
+ * did — or `undefined` where the reader cannot run: this computer's, with no model. {@link recogniseScope}, called, so the
+ * export and the OCR dialog cannot disagree about which pages need reading (B3a).
+ */
+export async function readScannedPages(
+  deps: DocumentCommandDeps & { readonly track: TrackTask; readonly ocrLanguages: () => OcrLanguages },
+  docId: DocId,
+  pages: readonly number[],
+  reader: ScanReader,
+): Promise<RecognisedWalk | undefined> {
+  if (reader !== 'built-in') return await recogniseScope(deps, docId, pages, SERVICE_LANGUAGES, reader);
+  const models = await deps.client['app.ocrLanguages']({});
+  if (!models.ok) return undefined;
+  const languages = openingLanguages(deps.ocrLanguages(), models.value.languages);
+  if (languages === undefined) return undefined;
+  return await recogniseScope(deps, docId, pages, languages, reader);
 }
 
 /**

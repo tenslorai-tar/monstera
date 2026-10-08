@@ -16,6 +16,8 @@ Monstera's built-in text recognition reads printed text. For handwriting, you ca
 
 ![The OCR group with Azure OCR and Claude OCR, and a box drawn around handwriting](screenshot:read-handwriting-1)
 
+To read a whole handwritten document without drawing boxes, use **Export to Word** or **Export tables to Excel**, and choose **Handwritten or scanned**. Every page you choose is sent, and the window says how many before you go on.
+
 ## Good to know
 
 - **Azure OCR** appears only when both the Azure Document Intelligence endpoint and key are stored (**Settings**, **OCR** page). **Claude OCR** appears only when an Anthropic key is stored (**Settings**, **AI** page).

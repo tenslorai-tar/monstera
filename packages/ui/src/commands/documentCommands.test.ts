@@ -46,7 +46,10 @@ import {
   TOAST_TRANSITION_SET,
   TOAST_WORD_SAVED,
   RIBBON_EDIT_OBJECT,
+  SCAN_READERS_NONE,
 } from '../messages/en.js';
+import type { RecognisedWalk } from '../dialogs/ocrOutcome.js';
+import type { ScanReader } from '../dialogs/scanReader.js';
 import type { ToastAction } from '../primitives/Toast.js';
 import type { CommandContext } from '../registries/commands.js';
 import { SettingsRegistry } from '../registries/settings.js';
@@ -169,6 +172,12 @@ const WRITTEN = asFileHandle('Handle-written-by-the-fake');
 
 /** Recognising first where the setting is off, which is every export case that is not about it (ADR-0118). */
 const NOTHING_RECOGNISED = (): Promise<undefined> => Promise.resolve(undefined);
+
+/** No reader on this machine and nothing to read with one: every Word case that is not about a handwritten or scanned document (ADR-0202). */
+const NO_SCANS = {
+  scanReaders: (): Promise<readonly ScanReader[]> => Promise.resolve([]),
+  readScans: (): Promise<undefined> => Promise.resolve(undefined),
+};
 
 /**
  * The unapplied-marks question answering *go ahead*, which is a document carrying no marks: every case that is not
@@ -3348,6 +3357,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       await exportWordCommand({
       settleMarks: NOTHING_MARKED,
       recogniseFirst: NOTHING_RECOGNISED,
+        ...NO_SCANS,
         client,
         toast: () => undefined,
         stamp,
@@ -3355,11 +3365,11 @@ describe('delete pages — the mutation-dialog gate', () => {
         onApplied: () => undefined,
         ask: (id, props) => {
           asked.push({ id, props });
-          return Promise.resolve({ mode, pages: CHOSEN });
+          return Promise.resolve({ mode, pages: CHOSEN, reading: 'typed' });
         },
       }).run(CONTEXT);
 
-      expect(asked).toStrictEqual([{ id: 'dialog.export-word', props: { pageCount: 10 } }]);
+      expect(asked).toStrictEqual([{ id: 'dialog.export-word', props: { pageCount: 10, readers: [] } }]);
       expect(sent).toStrictEqual([{ id: 'document.exportWord', params: { docId: DOC, mode, pages: CHOSEN_SET } }]);
     }
   });
@@ -4060,6 +4070,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     await exportWordCommand({
       settleMarks: NOTHING_MARKED,
       recogniseFirst: NOTHING_RECOGNISED,
+      ...NO_SCANS,
       client,
       toast: () => undefined,
       stamp,
@@ -4069,6 +4080,99 @@ describe('delete pages — the mutation-dialog gate', () => {
     }).run(CONTEXT);
 
     expect(sent).toStrictEqual([]);
+  });
+
+  describe('a handwritten or scanned document (ADR-0202)', () => {
+    /** The command over a recording client, a reader list, and a walk that answers `walked` and records what it was asked. */
+    function scanning(
+      options: {
+        readonly readers?: readonly ScanReader[];
+        readonly walked?: RecognisedWalk | undefined;
+        readonly answer?: unknown;
+      } = {},
+    ): {
+      readonly run: () => Promise<void>;
+      readonly sent: { id: string; params: unknown }[];
+      readonly walks: { docId: DocId; pages: readonly number[]; reader: ScanReader }[];
+      readonly asked: { id: string; props: unknown }[];
+      readonly said: MessageKey[];
+      readonly plain: { count: number };
+    } {
+      const { client, sent } = recording({ 'document.exportWord': { kind: 'copied', bytes: 9, written: WRITTEN } });
+      const walks: { docId: DocId; pages: readonly number[]; reader: ScanReader }[] = [];
+      const asked: { id: string; props: unknown }[] = [];
+      const said: MessageKey[] = [];
+      const plain = { count: 0 };
+      const answer = options.answer ?? { mode: 'text', pages: CHOSEN, reading: 'claude' };
+      return {
+        sent,
+        walks,
+        asked,
+        said,
+        plain,
+        run: async (): Promise<void> => {
+          await exportWordCommand({
+            settleMarks: NOTHING_MARKED,
+            recogniseFirst: () => {
+              plain.count += 1;
+              return Promise.resolve(undefined);
+            },
+            scanReaders: () => Promise.resolve(options.readers ?? ['built-in', 'claude']),
+            readScans: (docId, pages, reader) => {
+              walks.push({ docId, pages, reader });
+              return Promise.resolve('walked' in options ? options.walked : { recognised: 3, skipped: 0, stopped: false });
+            },
+            client,
+            toast: (_kind, message) => said.push(message),
+            stamp,
+            signatures,
+            onApplied: () => undefined,
+            ask: (id, props) => {
+              asked.push({ id, props });
+              return Promise.resolve(id === 'dialog.export-word' ? answer : undefined);
+            },
+          }).run(CONTEXT);
+        },
+      };
+    }
+
+    it('OFFERS THE READERS THIS MACHINE HAS to the dialog, asked when the command runs', async () => {
+      const t = scanning({ readers: ['claude'] });
+      await t.run();
+      expect(t.asked[0]).toStrictEqual({ id: 'dialog.export-word', props: { pageCount: 10, readers: ['claude'] } });
+    });
+
+    it('READS THE CHOSEN PAGES with the chosen reader, THEN exports them as words only — and the typed-text recognising is not run', async () => {
+      const t = scanning();
+      await t.run();
+      expect(t.walks).toStrictEqual([{ docId: DOC, pages: CHOSEN, reader: 'claude' }]);
+      expect(t.sent).toStrictEqual([{ id: 'document.exportWord', params: { docId: DOC, mode: 'text', pages: CHOSEN_SET } }]);
+      expect(t.plain.count).toBe(0);
+      // WHAT THE READING DID is said once, after the export, as the recognise-first export says it.
+      expect(t.asked.map((each) => each.id)).toStrictEqual(['dialog.export-word', 'dialog.ocr-outcome']);
+    });
+
+    it('CONTROL: a typed document is read by NO reader and goes through the setting’s recognising, as before', async () => {
+      const t = scanning({ answer: { mode: 'rich', pages: CHOSEN, reading: 'typed' } });
+      await t.run();
+      expect(t.walks).toStrictEqual([]);
+      expect(t.plain.count).toBe(1);
+      expect(t.sent).toStrictEqual([{ id: 'document.exportWord', params: { docId: DOC, mode: 'rich', pages: CHOSEN_SET } }]);
+    });
+
+    it('a walk the person STOPPED writes NO file and says what was read', async () => {
+      const t = scanning({ walked: { recognised: 1, skipped: 0, stopped: true } });
+      await t.run();
+      expect(t.sent).toStrictEqual([]);
+      expect(t.asked.map((each) => each.id)).toStrictEqual(['dialog.export-word', 'dialog.ocr-outcome']);
+    });
+
+    it('a reader that CANNOT RUN now (its models or key went away) is said, and nothing is read or written', async () => {
+      const t = scanning({ walked: undefined });
+      await t.run();
+      expect(t.sent).toStrictEqual([]);
+      expect(t.said).toStrictEqual([SCAN_READERS_NONE]);
+    });
   });
 
   it('export text WITH LAYOUT dispatches the same channel with the layout mode', async () => {
@@ -4154,7 +4258,7 @@ describe('delete pages — the mutation-dialog gate', () => {
   describe('recognising the scanned pages first, where the person turned it on (ADR-0118)', () => {
     /** One timeline for the walk, the channels and the dialogs, so a case can assert their ORDER. */
     function timeline(walked: { recognised: number; skipped: number; stopped: boolean } | undefined): {
-      readonly deps: Parameters<typeof exportTextCommand>[0];
+      readonly deps: Parameters<typeof exportWordCommand>[0];
       readonly events: string[];
       readonly walks: unknown[];
     } {
@@ -4174,7 +4278,7 @@ describe('delete pages — the mutation-dialog gate', () => {
           settleMarks: NOTHING_MARKED,
           ask: (id) => {
             events.push(`dialog ${id}`);
-            if (id === 'dialog.export-word') return Promise.resolve({ mode: 'rich', pages: CHOSEN });
+            if (id === 'dialog.export-word') return Promise.resolve({ mode: 'rich', pages: CHOSEN, reading: 'typed' });
             return Promise.resolve(
               id === 'dialog.export-text' || id === 'dialog.export-layout-text' ? { pages: CHOSEN } : undefined,
             );
@@ -4184,6 +4288,7 @@ describe('delete pages — the mutation-dialog gate', () => {
             events.push('walk');
             return Promise.resolve(walked);
           },
+          ...NO_SCANS,
         },
         events,
         walks,
@@ -6120,6 +6225,7 @@ describe('every file write confirms, and its Show in folder reveals the file the
         return Promise.resolve(queued.shift());
       },
       recogniseFirst: NOTHING_RECOGNISED,
+      ...NO_SCANS,
       settleMarks: NOTHING_MARKED,
       tableEngines: () => ['automatic' as const],
       track: () => ({ signal: new AbortController().signal, step: () => undefined, end: () => undefined }),
@@ -6185,7 +6291,7 @@ describe('every file write confirms, and its Show in folder reveals the file the
       name: 'Word',
       message: TOAST_WORD_SAVED,
       answers: { 'document.exportWord': COPIED },
-      dialogs: [{ mode: 'text', pages: [0] }],
+      dialogs: [{ mode: 'text', pages: [0], reading: 'typed' }],
       run: (deps) => exportWordCommand(deps).run(CONTEXT),
     },
     {

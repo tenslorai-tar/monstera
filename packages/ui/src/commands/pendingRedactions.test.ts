@@ -393,6 +393,8 @@ describe('every save, export, print and send asks before it does anything', () =
       },
       warnSignatureBreak: () => true,
       recogniseFirst: () => Promise.resolve(undefined),
+      scanReaders: () => Promise.resolve([]),
+      readScans: () => Promise.resolve(undefined),
       tableEngines: () => ['automatic' as const],
       track: () => ({ signal: new AbortController().signal, step: () => undefined, end: () => undefined }),
       docusignReady: () => true,
