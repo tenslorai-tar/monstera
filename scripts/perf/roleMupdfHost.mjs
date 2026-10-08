@@ -484,6 +484,9 @@ async function measureHost() {
       processMemoryLimitBytes: budget.ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
       memorySampling: budget.HOST_MEMORY_SAMPLING,
       correlate: () => `role-${String(calls++)}`,
+      // NO DOCUMENT IS EXECUTING in a measured call: the connection asks `owner` as each call is made (the document a host's
+      // ending would count against), and this role runs outside every lane, as a containment probe does.
+      owner: () => undefined,
       // THE SHELL'S DEADLINE POLICY with this one document open (ADR-0023 §3, corrected 2026-10-03), so a measured
       // call that ran past it is one the shipped host would not be allowed to finish either.
       deadline: {
