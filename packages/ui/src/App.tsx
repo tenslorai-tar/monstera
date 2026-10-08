@@ -176,6 +176,7 @@ import { type RunningTask, trackerOver } from './runningTask.js';
 import { offerSecurityNotice } from './updateStatus.js';
 import { type BusyNote, busyOver } from './busyNote.js';
 import { checkSpellingCommand } from './commands/checkSpelling.js';
+import { recognisePagesForExport } from './commands/recognisePages.js';
 import {
   enhanceScansCommand,
   exportSearchableCommand,
@@ -3072,7 +3073,23 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         exportTextCommand(exportDeps),
         exportLayoutTextCommand(exportDeps),
         exportWordCommand(exportDeps),
-        exportPowerPointCommand({ client, onApplied: applied, ask, stamp, signatures, toast, settleMarks }),
+        exportPowerPointCommand({
+          client,
+          onApplied: applied,
+          ask,
+          stamp,
+          signatures,
+          toast,
+          settleMarks,
+          // EDITABLE READS A SCAN'S WORDS FIRST over the chosen pages (ADR-0210): the searchable export's walk, composed here
+          // for `recogniseFirst`'s reason.
+          recognisePages: (docId: DocId, pages: readonly number[]) =>
+            recognisePagesForExport(
+              { client, onApplied: applied, ask, stamp, signatures, track, ocrLanguages: storedOcrLanguages },
+              docId,
+              pages,
+            ),
+        }),
         exportExcelCommand({
           client,
           onApplied: applied,

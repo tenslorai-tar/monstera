@@ -90,8 +90,12 @@ import { PRINT_QUALITY_DPI, PRINT_QUALITY_SETTING } from '../settings/rendering.
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { EXPORT_WORD_DIALOG_ID, type ExportWordAnswer } from '../dialogs/exportWord.js';
 import {
-  EXPORT_LAYOUT_TEXT_DIALOG_ID,
   EXPORT_POWERPOINT_DIALOG_ID,
+  type ExportPowerPointAnswer,
+  POWERPOINT_OUTCOME_DIALOG_ID,
+} from '../dialogs/exportPowerPoint.js';
+import {
+  EXPORT_LAYOUT_TEXT_DIALOG_ID,
   EXPORT_TEXT_DIALOG_ID,
   type ExportPagesAnswer,
 } from '../dialogs/exportPages.js';
@@ -420,6 +424,18 @@ export interface SignedEditing {
  */
 export interface RecognisesFirst {
   readonly recogniseFirst: (docId: DocId, pageCount: number) => Promise<RecognisedWalk | undefined>;
+}
+
+/**
+ * What the editable PowerPoint export needs: recognising the scanned pages among the CHOSEN ones first
+ * ([ADR-0210](../../../../docs/DECISIONS/0210-the-editable-powerpoint-export-is-built-from-two-host-reads-and-a-slide-model.md)).
+ *
+ * {@link RecognisesFirst}'s reason for being a dependency (the walk is `recogniseText.ts`' and that module imports this one),
+ * and not that interface: this is over the pages chosen, not the document, and not conditional on the setting, because
+ * choosing Editable is the consent. `'no-model'` is a computer with no recognition language.
+ */
+export interface RecognisesPages {
+  readonly recognisePages: (docId: DocId, pages: readonly number[]) => Promise<RecognisedWalk | 'no-model'>;
 }
 
 /**
@@ -2924,7 +2940,9 @@ export function exportWordCommand(
  * Writes the chosen pages as a PowerPoint deck, a slide per page (ADR-0072): the pages dialog (ADR-0161), then main's
  * save dialog and write. A dismissed pages dialog dispatches nothing.
  */
-export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst): UiCommand {
+export function exportPowerPointCommand(
+  deps: DocumentCommandDeps & WritesAFile & SettlesMarksFirst & RecognisesPages,
+): UiCommand {
   return {
     id: 'document.export-powerpoint',
     feedback: TOASTS,
@@ -2943,14 +2961,28 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile 
       if (context.docId === undefined || context.pageCount === undefined) return;
       if (!(await deps.settleMarks(context.docId, 'export'))) return;
 
-      const chosen = (await deps.ask(EXPORT_POWERPOINT_DIALOG_ID, {
-        pageCount: context.pageCount,
-        becomes: 'slides',
-      })) as ExportPagesAnswer | undefined;
+      const chosen = (await deps.ask(EXPORT_POWERPOINT_DIALOG_ID, { pageCount: context.pageCount })) as
+        | ExportPowerPointAnswer
+        | undefined;
       if (chosen === undefined) return;
+
+      // EDITABLE READS A SCAN'S WORDS FIRST (ADR-0210 Decision 7), over the chosen pages only, AFTER the dialog so a dismissal
+      // recognises nothing. A stop is the person's: the pages already done keep their words in the open document, and no
+      // file is written from half a walk.
+      const recognised = chosen.mode === 'editable' ? await deps.recognisePages(context.docId, chosen.pages) : undefined;
+      if (recognised !== undefined && recognised !== 'no-model' && recognised.stopped) {
+        void deps.ask(POWERPOINT_OUTCOME_DIALOG_ID, {
+          fellBack: [],
+          fellBackCount: 0,
+          recognised: recognised.recognised,
+          noModel: false,
+        });
+        return;
+      }
 
       const answer = await deps.client['document.exportPowerPoint']({
         docId: context.docId,
+        mode: chosen.mode,
         pages: pageSetOf(chosen.pages),
       });
       if (!answer.ok) {
@@ -2959,6 +2991,16 @@ export function exportPowerPointCommand(deps: DocumentCommandDeps & WritesAFile 
       }
       if (answer.value.kind === 'copied') {
         confirmWritten(deps, TOAST_POWERPOINT_SAVED, answer.value.written);
+        // SAID ONLY WHERE THERE IS A SENTENCE TO READ: pages that became pictures, and words added to the open document.
+        const added = recognised === undefined || recognised === 'no-model' ? 0 : recognised.recognised;
+        if (answer.value.fellBackCount > 0 || added > 0) {
+          void deps.ask(POWERPOINT_OUTCOME_DIALOG_ID, {
+            fellBack: answer.value.fellBack,
+            fellBackCount: answer.value.fellBackCount,
+            recognised: added,
+            noModel: recognised === 'no-model',
+          });
+        }
         return;
       }
       if (answer.value.kind === 'cancelled') return;

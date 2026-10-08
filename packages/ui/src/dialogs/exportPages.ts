@@ -1,10 +1,9 @@
 import { lazy } from 'react';
 import { z } from 'zod';
 
-import { EXPORT_LAYOUT_TEXT_TITLE, EXPORT_POWERPOINT_TITLE, EXPORT_TEXT_TITLE } from '../messages/en.js';
+import { EXPORT_LAYOUT_TEXT_TITLE, EXPORT_TEXT_TITLE } from '../messages/en.js';
 import { declareDialog } from '../registries/dialogs.js';
 
-export const EXPORT_POWERPOINT_DIALOG_ID = 'dialog.export-powerpoint';
 export const EXPORT_TEXT_DIALOG_ID = 'dialog.export-text';
 export const EXPORT_LAYOUT_TEXT_DIALOG_ID = 'dialog.export-layout-text';
 
@@ -27,19 +26,13 @@ export const EXPORT_PAGES_PROPS = z
 export type ExportPagesProps = z.infer<typeof EXPORT_PAGES_PROPS>;
 
 /**
- * ONE BODY, THREE DIALOGS: PowerPoint and the two text exports each ask only which pages, so a body each would be three
- * copies of one row and one button. They stay three declarations because each has its own title, which a person reads
- * to know which export they started.
+ * ONE BODY, TWO DIALOGS: the two text exports each ask only which pages, so a body each would be two copies of one row and
+ * one button. They stay two declarations because each has its own title, which a person reads to know which export they
+ * started. PowerPoint used to be a third and asks a second question now, so it has its own (`exportPowerPoint.ts`,
+ * ADR-0210). **`slides` in `becomes` and its sentence are no longer reached by any dialog** and are left for the next
+ * change to this file rather than widening the one that moved PowerPoint out.
  */
 const BODY = lazy(() => import('./ExportPagesBody.js'));
-
-export const EXPORT_POWERPOINT_DIALOG = declareDialog({
-  id: EXPORT_POWERPOINT_DIALOG_ID,
-  title: EXPORT_POWERPOINT_TITLE,
-  props: EXPORT_PAGES_PROPS,
-  result: EXPORT_PAGES_RESULT,
-  component: BODY,
-});
 
 export const EXPORT_TEXT_DIALOG = declareDialog({
   id: EXPORT_TEXT_DIALOG_ID,

@@ -49,6 +49,7 @@ import {
   CommandBus,
   DocumentNotOpenError,
   type PageImageRequest,
+  type PageContent,
   type PageStructure,
   DocumentService,
   EngineCallFailed,
@@ -163,6 +164,7 @@ import {
   lazyBarcodeWriter,
   type DocumentTextBlocksReader,
   type DocumentPageObjectsReader,
+  type DocumentPresentationReader,
   type DocumentPageRasteriser,
   EngineUnavailableError,
   suggestedComposedName,
@@ -657,6 +659,12 @@ const noPageObjects: DocumentPageObjectsReader = () =>
 const noRenderPage: DocumentPageRasteriser = () =>
   Promise.reject(new EngineUnavailableError('rendering a page with the second engine'));
 
+/** The editable PowerPoint export's reads, absent: a case that exports editable supplies them (ADR-0210). */
+const noPresentation: DocumentPresentationReader = {
+  content: () => Promise.reject(new EngineUnavailableError('reading a page’s content')),
+  render: () => Promise.reject(new EngineUnavailableError('rendering a page without its text')),
+};
+
 /** The candidate proposal's composition, per page. */
 const noBarcodes: DocumentBarcodesReader = () =>
   Promise.reject(new Error('this case does not read barcodes'));
@@ -854,6 +862,7 @@ const INERT = {
   textBlocks: noTextBlocks,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
+  presentation: noPresentation,
   duplicates: noDuplicates,
   copy: noCopying,
   image: noImages,
@@ -940,6 +949,7 @@ const LOCAL_READS = {
   textBlocks: noTextBlocks,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
+  presentation: noPresentation,
   duplicates: localDuplicates,
 } as const satisfies Omit<DocumentCommandsParts, keyof Varying>;
 
@@ -3654,6 +3664,8 @@ describe('exportText — the document’s words, streamed one page at a time', (
       readonly copyTo?: string | null;
       /** A page's structure nodes in place of the real read; absent, the real read. */
       readonly structure?: (page: number) => PageStructure['nodes'];
+      /** The editable PowerPoint export's reads (ADR-0210); absent, the engine is not there. */
+      readonly presentation?: DocumentPresentationReader;
     } = {},
   ): { readonly commands: DocumentCommands; readonly reads: number[]; readonly words: WordMode[] } {
     const reads: number[] = [];
@@ -3667,6 +3679,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       share: options.share ?? null,
       pdfa: options.pdfa ?? null,
       optimizer: options.optimizer ?? null,
+      ...(options.presentation === undefined ? {} : { presentation: options.presentation }),
       ...(options.structure === undefined
         ? {}
         : {
@@ -3825,12 +3838,109 @@ describe('exportText — the document’s words, streamed one page at a time', (
     });
   });
 
-  describe('as a PowerPoint deck (ADR-0072)', () => {
+  describe('as a PowerPoint deck (ADR-0072, ADR-0210)', () => {
+    /** The content one page of the editable deck reads: a line of text, with the words the fixture's page says. */
+    function pageContent(text: string): PageContent {
+      return {
+        frame: { crop: { x0: 0, y0: 0, x1: 612, y1: 792 }, rotation: 0 },
+        runs: [
+          {
+            index: 0,
+            last: 0,
+            text,
+            left: 72,
+            right: 300,
+            bottom: 700,
+            top: 712,
+            invisible: false,
+            style: { size: 12, colour: { r: 0, g: 0, b: 0 }, font: 'Helvetica', serif: false, mono: false, italic: false, bold: false, upright: true },
+          },
+        ],
+        images: [],
+        paths: [],
+        opaque: [],
+        unaddressable: 0,
+        truncated: false,
+      };
+    }
+
+    const sentences = ['first page words', 'second page words'];
+
+    it('EDITABLE: a text box per page, the words as the page states them, and no page picture read at all', async () => {
+      const destination = join(mkdtempSync(join(directory, 'deck-')), 'editable.pptx');
+      const images: PageImageRequest[] = [];
+      const asked: number[] = [];
+      const { commands } = exportingTo(destination, {
+        images,
+        presentation: {
+          content: (_id, _sessions, page) => {
+            asked.push(page);
+            return Promise.resolve(pageContent(sentences[page] ?? ''));
+          },
+          render: () => Promise.reject(new Error('nothing here needs a render')),
+        },
+      });
+
+      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES, 'editable');
+
+      expect(outcome).toMatchObject({ kind: 'copied', fellBack: [] });
+      const files = unzipSync(readFileSync(destination));
+      const first = strFromU8(files['ppt/slides/slide1.xml'] ?? new Uint8Array());
+      const second = strFromU8(files['ppt/slides/slide2.xml'] ?? new Uint8Array());
+      expect(first).toContain('<a:t>first page words</a:t>');
+      expect(second).toContain('<a:t>second page words</a:t>');
+      // EVERY SLIDE IS ITS OWN PAGE'S: the read was asked for each page, in order.
+      expect(asked).toStrictEqual([0, 1]);
+      // CONTROL against Exact look below: editable pages made no picture, so no page was rasterised.
+      expect(images).toStrictEqual([]);
+      expect(Object.keys(files).filter((name) => name.startsWith('ppt/media/'))).toStrictEqual([]);
+    });
+
+    it('EDITABLE: a page the engine will not read is that page’s picture, NAMED in the answer, and the other page stays editable', async () => {
+      const destination = join(mkdtempSync(join(directory, 'deck-')), 'mixed.pptx');
+      const images: PageImageRequest[] = [];
+      const { commands } = exportingTo(destination, {
+        images,
+        presentation: {
+          content: (_id, _sessions, page) =>
+            page === 1 ? Promise.reject(new Error('PDFium refused the page')) : Promise.resolve(pageContent('first page words')),
+          render: () => Promise.reject(new Error('nothing here needs a render')),
+        },
+      });
+
+      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES, 'editable');
+
+      expect(outcome).toMatchObject({ kind: 'copied', fellBack: [2] });
+      const files = unzipSync(readFileSync(destination));
+      expect(strFromU8(files['ppt/slides/slide1.xml'] ?? new Uint8Array())).toContain('<a:t>first page words</a:t>');
+      // The second slide is Exact look's: a picture of page index 1, and no text box.
+      expect(strFromU8(files['ppt/slides/slide2.xml'] ?? new Uint8Array())).not.toContain('<a:t>');
+      expect(images.map((request) => request.page)).toStrictEqual([1]);
+      expect(Object.keys(files).filter((name) => name.startsWith('ppt/media/'))).toHaveLength(1);
+    });
+
+    it('EXACT LOOK reads nothing of the editable engine and reports no page fell back — today’s export, unchanged', async () => {
+      const destination = join(mkdtempSync(join(directory, 'deck-')), 'exact.pptx');
+      const { commands } = exportingTo(destination, {
+        presentation: {
+          content: () => Promise.reject(new Error('Exact look must not read page content')),
+          render: () => Promise.reject(new Error('Exact look must not render without text')),
+        },
+      });
+
+      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES, 'exact');
+
+      expect(outcome).toMatchObject({ kind: 'copied', fellBack: [] });
+      const files = unzipSync(readFileSync(destination));
+      expect(strFromU8(files['[Content_Types].xml'] ?? new Uint8Array())).not.toContain('jpeg');
+      expect(strFromU8(files['ppt/slides/slide1.xml'] ?? new Uint8Array())).not.toContain('<a:t>');
+    });
+
     it('writes a slide per page, each picture from the page-image read for THAT page', async () => {
       const destination = join(mkdtempSync(join(directory, 'deck-')), 'deck.pptx');
       const { commands } = exportingTo(destination);
 
-      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES);
+      const outcome = await commands.exportPowerPoint(textDoc, TWO_PAGES, 'exact');
 
       expect(outcome?.kind).toBe('copied');
       const files = unzipSync(readFileSync(destination));
@@ -3873,7 +3983,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
       const images: PageImageRequest[] = [];
       const { commands } = exportingTo(destination, { images });
 
-      expect((await commands.exportPowerPoint(textDoc, [1]))?.kind).toBe('copied');
+      expect((await commands.exportPowerPoint(textDoc, [1], 'exact'))?.kind).toBe('copied');
       const files = unzipSync(readFileSync(destination));
       expect(files['ppt/media/image1.png']).toBeDefined();
       expect(files['ppt/media/image2.png']).toBeUndefined();

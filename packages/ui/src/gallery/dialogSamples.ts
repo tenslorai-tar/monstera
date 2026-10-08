@@ -821,8 +821,20 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     },
   ],
   'dialog.export-powerpoint': [
-    { state: 'opened', props: { pageCount: 12, becomes: 'slides' } },
-    { state: 'select', props: { pageCount: 12, becomes: 'slides' }, steps: [press('Select pages'), type('Page numbers', '1-3, 7')] },
+    { state: 'opened', props: { pageCount: 12 } },
+    { state: 'select', props: { pageCount: 12 }, steps: [press('Select pages'), type('Page numbers', '1-3, 7')] },
+    { state: 'exact', props: { pageCount: 12 }, steps: [press('Exact look')] },
+    {
+      state: 'refused',
+      props: { pageCount: 12 },
+      steps: [press('Select pages'), type('Page numbers', '20'), press('Choose where to save…')],
+    },
+  ],
+  'dialog.powerpoint-outcome': [
+    { state: 'fell-back', props: { fellBack: [3, 7], fellBackCount: 2, recognised: 0, noModel: false } },
+    // THE LONGEST: every sentence at once, with a list the answer cut short.
+    { state: 'everything', props: { fellBack: [3, 7, 9], fellBackCount: 140, recognised: 4, noModel: true } },
+    { state: 'recognised', props: { fellBack: [], fellBackCount: 0, recognised: 1, noModel: false } },
   ],
   'dialog.export-text': [
     { state: 'opened', props: { pageCount: 12, becomes: 'text' } },

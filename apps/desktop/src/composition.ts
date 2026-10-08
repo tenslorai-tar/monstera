@@ -1450,6 +1450,20 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         png: encodePng(raster.bgra, raster.width, raster.height),
       };
     },
+    // THE EDITABLE POWERPOINT EXPORT'S TWO READS (ADR-0210), composed here for the reads above's reason: a byte-image engine
+    // is asked about a document by being handed its bytes, and `currentImage` is the one route to them. The words a scan was
+    // just recognised into are in those bytes. Nothing here is encoded: a raster stays BGRA until the slide model has cut
+    // what it needs from it.
+    presentation: {
+      content: async (docId, sessions, page) => {
+        if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s content');
+        return pdfiumHost.pageContent(await currentImage(docId, sessions), page);
+      },
+      render: async (docId, sessions, page, width, height, withoutText) => {
+        if (pdfiumHost === null) throw new EngineUnavailableError('rendering a page without its text');
+        return pdfiumHost.renderPage(await currentImage(docId, sessions), page, width, height, withoutText);
+      },
+    },
     // THE DUPLICATE REPORT, composed here for the reads above's reason: the
     // reader and the session are both in scope on this line and nowhere else.
     duplicates: (docId, sessions) => {

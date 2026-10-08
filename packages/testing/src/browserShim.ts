@@ -317,6 +317,11 @@ export interface BrowserShimOptions {
    */
   readonly copyDestination?: number | 'write-failed' | { readonly openElsewhere: number };
   /**
+   * The one-based pages the PowerPoint export reports it wrote as Exact look (ADR-0210). Absent is none, which is what an
+   * export that read every page editable answers.
+   */
+  readonly powerPointFellBack?: readonly number[];
+  /**
    * What the image picker answers, for `document.insertImage`.
    *
    * Undefined is a **dismissal**, for `copyDestination`'s reason: the outcome a
@@ -1889,7 +1894,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (typeof chosen === 'object') {
         return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
       }
-      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen, written: wrote() }));
+      // NO PAGE FELL BACK in the shim: it has no engine to fail, and a test of the message sets `powerPointFellBack`.
+      const fellBack = [...(options.powerPointFellBack ?? [])];
+      return Promise.resolve(
+        ok({ kind: 'copied' as const, bytes: chosen, fellBack, fellBackCount: fellBack.length, written: wrote() }),
+      );
     },
     // THE WORD EXPORT'S SHIM, the text export's option: one file at a destination.
     'document.exportWord': ({ docId }) => {

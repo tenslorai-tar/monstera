@@ -353,7 +353,7 @@ describe('every save, export, print and send asks before it does anything', () =
     { name: 'Export text', occasion: 'export', build: (deps) => exportTextCommand(deps) },
     { name: 'Export text with layout', occasion: 'export', build: (deps) => exportLayoutTextCommand(deps) },
     { name: 'Export to Word', occasion: 'export', build: (deps) => exportWordCommand(deps) },
-    { name: 'Export to PowerPoint', occasion: 'export', build: (deps) => exportPowerPointCommand(deps) },
+    { name: 'Export to PowerPoint', occasion: 'export', build: (deps) => exportPowerPointCommand({ ...deps, recognisePages: () => Promise.reject(new Error('settled first')) }) },
     { name: 'Export to Excel', occasion: 'export', build: (deps) => exportExcelCommand(deps) },
     { name: 'Export PDF/A', occasion: 'export', build: (deps) => exportPdfaCommand(deps) },
     { name: 'Export page images', occasion: 'export', build: (deps) => exportPageImagesCommand(deps) },
