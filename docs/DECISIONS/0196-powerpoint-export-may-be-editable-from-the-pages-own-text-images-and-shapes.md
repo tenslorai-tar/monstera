@@ -1,6 +1,8 @@
 # ADR-0196 — PowerPoint export may be editable, from the page's own text, images and shapes
 
-- **Status:** Proposed — **nothing is built; this waits for the owner's yes** (the owner's order of 2026-10-07, item 6).
+- **Status:** Accepted 2026-10-08 by the owner, as designed; **nothing is built** and it is built in a later run, not the
+  overnight one. The owner's answers to the three questions below: (1) yes, build it; (2) for a scan the picture stays under the
+  recognised text; (3) *Editable* is the default for a page with text, and *Exact look* stays as an option.
 - **Date:** 2026-10-08
 - **Would amend:** [ADR-0072](0072-office-open-xml-exports-are-written-by-this-build-over-fflate.md) — its PowerPoint row,
   *one slide per page, and each slide IS the page*, and the sentence that the text is part of the picture and not editable.
