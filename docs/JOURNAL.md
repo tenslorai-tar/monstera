@@ -892,6 +892,63 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-08 — Stage audit of `f69e3c1d..d3ab2704` — findings YYYYYYY-1 to YYYYYYY-4
+
+39 commits, 202 files on `work/2026-10-08-merge`: the Step 7 exports (scan to Word and Excel, ADR-0202), the link outline
+(ADR-0212), the box-read panel, backups (ADR-0198), and the fix for the host's memory. One reader for the 44 modified tests
+and proofs (a subagent, read per commit with `git log -p`, because a line added and rewritten inside the range nets out of
+the range diff); me for the rest. Nothing here was run in the installed build.
+
+**YYYYYYY-1** (high, closed): the real MuPDF host read 96–100 MB against a 100 MB base (`node scripts/perf/budgetGate.mjs`,
+three runs, 2026-10-08, this machine). Mechanism: `host/hostRefusals.ts` took the `FieldEditRefusedError` class as a VALUE from
+`formFieldEdit.ts`, which imports `@cantoo/pdf-lib` at load, so every host paid +17.7 MB at start for a library it runs on the
+first form command (`rssProbe.mjs` on `@cantoo/pdf-lib/cjs/index.js`, fresh process, forced collection, three runs). The
+source-level import graph of `hostEntry.ts` at `8e65fd00` against `841a91ff` showed `@cantoo/pdf-lib` as the only new library
+and 39 new modules. `hostLoad.proof.mjs` had missed it because it named MODULES (`pdfLibWriter.js`, the placeholder) and a second
+route reached the library through another one — the same shape as the audit's own "named the instance, not the class". The class
+moved to `fieldEditRefusal.ts` (no library), and the proof now names the library at start, with a control that the whole-life
+walk does reach it. Run against the old build it was red and named the route; after the fix the host reads 83.4–86.6 MB over nine
+runs. The budget was not touched.
+
+**YYYYYYY-2** (low, open): `ExportExcelBody.test.tsx` changed `/add a key in Settings/` to `/key in Settings/` because the message
+lost "add a". The null-check twin now matches a wider string, so it separates a little less. Recorded, not changed.
+
+**YYYYYYY-3** (info, open): the reader did not tie the removal of the `tableEngines` stubs in `packages/ui/src/commands/documentCommands.test.ts`
+(94ccfbdf, 541cc1d9) to a stated reason. It is not asserted to be a loosening.
+
+**YYYYYYY-4** (medium, closed by a note): ADR-0202's Consequences say a re-run on a page with recognised text appends another
+invisible layer. The commit after this one replaces Monstera's own earlier layer on a whole-page read; the ADR gets a dated
+correction and the OCR help is checked.
+
+### 1. Root cause or workaround?
+YYYYYYY-1 names its mechanism and measured it before and after.
+
+### 2. Verified against the easy shape only?
+The old build was the hard control for the proof: it went red on the route that was there.
+
+### 2a. Has a change to how something is proven moved the coverage?
+`hostLoad.proof.mjs` gained two cases (21 to 23). The 44 modified files held no skipped case, raised bound or weakened matcher
+except YYYYYYY-2.
+
+### 3. Would CI have caught it?
+The memory gate did, as a red on the native-shim job; the owner's report is what asked for the cause.
+
+### 4. Are the proofs non-vacuous?
+The new hostLoad case was run red on the old build before it was run green.
+
+### 4a, 4b, 4c.
+No new instrument besides the probe scripts kept in the scratchpad; the graph walk is a search and its control is that it
+found `@cantoo/pdf-lib` in the new graph and not in the old. No roster arrived.
+
+### 5. Executed, or asserted?
+Executed: the budget gate, the proof both ways, typecheck, the changed tests, lint of the changed files.
+
+### 6. Architecture before the feature?
+No seam changed.
+
+### 7. Do the documents still match the code?
+ADR-0202 is falsified by the next commit; see YYYYYYY-4.
+
 ## 2026-10-08 — Stage audit of `8e65fd00..f69e3c1d` — findings XXXXXXX-1 to XXXXXXX-4
 
 The merge of `work/cloud-6-forms` at `b336a95d` (Part B's in-place text editing and the forms rebuild) into this line:
