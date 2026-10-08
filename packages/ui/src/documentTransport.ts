@@ -27,6 +27,13 @@ export type OnVersionMoved = (moved: {
 }) => void;
 
 /**
+ * What a transport does when a range could not be served at all: a read the channel rejected, or an answer PDF.js's reader
+ * refused (CR-COR-12). The transport has aborted itself, and PDF.js is still waiting for that range, so unless the owner
+ * closes the view the page never draws and nothing says why. Told with the cause, which stays in the renderer's console.
+ */
+export type OnRangeFailed = (cause: unknown) => void;
+
+/**
  * Serves PDF.js's byte-range reads from main, for one `DocVersion`.
  *
  * ## Why it aborts rather than retrying when the version moves
@@ -43,6 +50,7 @@ export class DocumentRangeTransport extends PDFDataRangeTransport {
   readonly #docId: DocId;
   readonly #version: DocVersion;
   readonly #onVersionMoved: OnVersionMoved;
+  readonly #onRangeFailed: OnRangeFailed;
   #aborted = false;
 
   constructor(options: {
@@ -51,6 +59,8 @@ export class DocumentRangeTransport extends PDFDataRangeTransport {
     readonly version: DocVersion;
     readonly byteLength: number;
     readonly onVersionMoved: OnVersionMoved;
+    /** Required, like `onVersionMoved`: a transport whose reads can fail with nobody listening is the defect. */
+    readonly onRangeFailed: OnRangeFailed;
   }) {
     // `null` initial data, and no progressive read is ever pushed. That is what
     // makes this demand-only BY CONSTRUCTION rather than by an option: with no
@@ -67,6 +77,7 @@ export class DocumentRangeTransport extends PDFDataRangeTransport {
     this.#docId = options.docId;
     this.#version = options.version;
     this.#onVersionMoved = options.onVersionMoved;
+    this.#onRangeFailed = options.onRangeFailed;
   }
 
   /** Whether this transport has stopped answering. */
@@ -77,7 +88,12 @@ export class DocumentRangeTransport extends PDFDataRangeTransport {
   override requestDataRange(begin: number, end: number): void {
     if (this.#aborted) return;
 
-    void this.#serve(begin, end);
+    // A REJECTION HAS SOMEWHERE TO GO (CR-COR-12). `void` alone left it to the console while PDF.js waited for the range
+    // for ever. The transport stops answering, and the owner is told so it can show that the document cannot be displayed.
+    this.#serve(begin, end).catch((cause: unknown) => {
+      this.#aborted = true;
+      this.#onRangeFailed(cause);
+    });
   }
 
   override abort(): void {

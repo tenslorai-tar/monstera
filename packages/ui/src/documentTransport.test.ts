@@ -77,6 +77,7 @@ describe('DocumentRangeTransport', () => {
       version: VERSION,
       byteLength: bytes.byteLength,
       onVersionMoved: vi.fn(),
+      onRangeFailed: vi.fn(),
     });
 
     // `onDataRange` is what PDF.js's stream listens on; nothing is listening
@@ -106,6 +107,7 @@ describe('DocumentRangeTransport', () => {
       version: VERSION,
       byteLength: bytes.byteLength,
       onVersionMoved: vi.fn(),
+      onRangeFailed: vi.fn(),
     });
     const answered = vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
 
@@ -133,7 +135,7 @@ describe('DocumentRangeTransport', () => {
       if (id !== 'document.readRange') throw new Error(`this fixture answers document.readRange only, not ${id}`);
       return inner['document.readRange'](params as never);
     });
-    const transport = new DocumentRangeTransport({ client, docId: DOC, version: VERSION, byteLength: length, onVersionMoved: vi.fn() });
+    const transport = new DocumentRangeTransport({ client, docId: DOC, version: VERSION, byteLength: length, onVersionMoved: vi.fn(), onRangeFailed: vi.fn() });
     const answered = vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
 
     transport.requestDataRange(0, length);
@@ -172,7 +174,7 @@ describe('DocumentRangeTransport', () => {
       return Promise.resolve(ok({ kind: 'stale', version: 9, byteLength: length }));
     });
     const onVersionMoved = vi.fn();
-    const transport = new DocumentRangeTransport({ client, docId: DOC, version: VERSION, byteLength: length, onVersionMoved });
+    const transport = new DocumentRangeTransport({ client, docId: DOC, version: VERSION, byteLength: length, onVersionMoved, onRangeFailed: vi.fn() });
     const answered = vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
 
     transport.requestDataRange(0, length);
@@ -195,6 +197,7 @@ describe('DocumentRangeTransport', () => {
       version: VERSION,
       byteLength: bytes.byteLength,
       onVersionMoved,
+      onRangeFailed: vi.fn(),
     });
     const answered = vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
 
@@ -222,6 +225,7 @@ describe('DocumentRangeTransport', () => {
       version: VERSION,
       byteLength: bytes.byteLength,
       onVersionMoved: vi.fn(),
+      onRangeFailed: vi.fn(),
     });
     const answered = vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
 
@@ -242,6 +246,7 @@ describe('DocumentRangeTransport', () => {
       version: VERSION,
       byteLength: bytes.byteLength,
       onVersionMoved: vi.fn(),
+      onRangeFailed: vi.fn(),
     });
     const answered = vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
 
@@ -253,6 +258,49 @@ describe('DocumentRangeTransport', () => {
     await settle();
 
     expect(answered).not.toHaveBeenCalled();
+  });
+
+  it('a read the channel REJECTS aborts the transport and tells the owner, rather than leaving PDF.js waiting (CR-COR-12)', async () => {
+    const bytes = countingBytes(600);
+    const failure = new Error('the channel went away');
+    const rejecting = createClient(channels, () => Promise.reject(failure));
+    const onRangeFailed = vi.fn();
+    const transport = new DocumentRangeTransport({
+      client: rejecting,
+      docId: DOC,
+      version: VERSION,
+      byteLength: bytes.byteLength,
+      onVersionMoved: vi.fn(),
+      onRangeFailed,
+    });
+    vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
+
+    transport.requestDataRange(0, 40);
+    await settle();
+
+    expect(onRangeFailed).toHaveBeenCalledWith(failure);
+    expect(transport.aborted).toBe(true);
+  });
+
+  it('CONTROL: a read that is answered, and a document that has closed, are not failures', async () => {
+    const bytes = countingBytes(600);
+    for (const held of [bytes, null]) {
+      const onRangeFailed = vi.fn();
+      const transport = new DocumentRangeTransport({
+        client: clientOver(held, VERSION),
+        docId: DOC,
+        version: VERSION,
+        byteLength: bytes.byteLength,
+        onVersionMoved: vi.fn(),
+        onRangeFailed,
+      });
+      vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
+
+      transport.requestDataRange(0, 40);
+      await settle();
+
+      expect(onRangeFailed).not.toHaveBeenCalled();
+    }
   });
 
   it('stops answering when the document is no longer open', async () => {
@@ -267,6 +315,7 @@ describe('DocumentRangeTransport', () => {
       version: VERSION,
       byteLength: bytes.byteLength,
       onVersionMoved,
+      onRangeFailed: vi.fn(),
     });
     const answered = vi.spyOn(transport, 'onDataRange').mockImplementation(() => undefined);
 

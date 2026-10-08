@@ -1637,6 +1637,7 @@ export const TOAST_SMALLER_COPY_SAVED = messageKey('toast.smaller-copy-saved');
 export const TOAST_PAGES_SAVED = messageKey('toast.pages-saved');
 export const TOAST_SHOW_IN_FOLDER = messageKey('toast.show-in-folder');
 export const TOAST_COPIED = messageKey('toast.copied');
+export const TOAST_UNFINISHED = messageKey('toast.unfinished');
 export const TOAST_FILES_SAVED = messageKey('toast.files-saved');
 export const TOAST_IMAGES_SAVED = messageKey('toast.images-saved');
 export const TOAST_TEXT_SAVED = messageKey('toast.text-saved');
@@ -4063,6 +4064,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_PAGES_SAVED]: 'Pages saved',
   [TOAST_SHOW_IN_FOLDER]: 'Show in folder',
   [TOAST_COPIED]: 'Copied',
+  // SAID WHEN A BACKGROUND STEP FAILED WITH NOBODY WAITING FOR IT (CR-COR-12): it claims nothing about what was or was not
+  // changed, because the step is not known here, and it names no cause.
+  [TOAST_UNFINISHED]: 'Something didn’t finish. If it happens again, save your work and reopen the document.',
   [TOAST_FILES_SAVED]: 'Files saved',
   [TOAST_IMAGES_SAVED]: 'Images saved',
   [TOAST_TEXT_SAVED]: 'Text file saved',

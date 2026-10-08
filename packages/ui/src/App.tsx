@@ -349,6 +349,7 @@ import type { RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
 import { type ShowToast, TOAST_LIFETIME, createToastStore } from './toasts.js';
+import { useUnhandledRejectionReport } from './unhandledRejections.js';
 import { ToastStrip } from './primitives/Toast.js';
 import { ReviewPrompt } from './surfaces/ReviewPrompt.js';
 import { PageGrid } from './surfaces/PageGrid.js';
@@ -714,6 +715,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     },
     [toastStore],
   );
+  // A REJECTION NOBODY WAS WAITING FOR REACHES THE PERSON (CR-COR-12), once, and the console still gets the cause.
+  useUnhandledRejectionReport(toast);
   // THE CLOCK IS READ HERE, at the moment the save landed, and nowhere downstream: `savedState`
   // is a function of its arguments so that its boundaries are testable (59 seconds against 60).
   //

@@ -73,6 +73,11 @@ export async function openDocumentView(options: {
   readonly byteLength: number;
   readonly onVersionMoved: OnVersionMoved;
   /**
+   * Called when a range could not be served, **after the view has closed itself** (CR-COR-12). The parser is waiting for
+   * bytes that will not come, so the view is unusable; the caller shows that the document cannot be displayed.
+   */
+  readonly onFailed: (cause: unknown) => void;
+  /**
    * The password this document needs, for one that is encrypted.
    *
    * ## The renderer holds it because PDF.js needs it, and main decides whether
@@ -103,10 +108,14 @@ export async function openDocumentView(options: {
   // reach this parser. `close` is idempotent, so a caller that also closes is
   // not a second teardown.
   let notifyMoved: OnVersionMoved = options.onVersionMoved;
+  let notifyFailed: (cause: unknown) => void = options.onFailed;
   const transport = new DocumentRangeTransport({
     ...options,
     onVersionMoved: (moved) => {
       notifyMoved(moved);
+    },
+    onRangeFailed: (cause) => {
+      notifyFailed(cause);
     },
   });
 
@@ -152,6 +161,12 @@ export async function openDocumentView(options: {
   notifyMoved = (moved) => {
     void close();
     options.onVersionMoved(moved);
+  };
+  // DESTROYING THE TASK is what ends the wait: the parser's pending range requests are rejected by it, where leaving the
+  // task open leaves a page that never draws.
+  notifyFailed = (cause) => {
+    void close();
+    options.onFailed(cause);
   };
 
   try {
