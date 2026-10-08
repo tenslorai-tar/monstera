@@ -1317,7 +1317,8 @@ jobs:
 
       # A HOST THAT ANSWERS NOTHING IS ENDED BY THE CALL'S DEADLINE (CR-SEC-09; ADR-0023 §3, corrected
       # 2026-10-03): a real host frozen mid-call is killed within a 4 s deadline and the document comes
-      # back with what it held; a second deadline poisons it, and a bystander open the whole time is still served;
+      # back with what it held; the third deadline under one command bars that command and keeps the document open
+      # (ADR-0221), and a bystander open the whole time is still served;
       # the control, a 10-minute deadline, is still waiting after 20 s.
       - name: A host call past its deadline ends a frozen host, and the document comes back
         run: node scripts/ci/annotate.mjs scripts/research/hostDeadline.mjs --require-containment

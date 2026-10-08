@@ -10,7 +10,8 @@
  * Two cells, chosen by the first argument, differing in ONE value — the shell's `hostCallDeadline`:
  *
  * - `deadline`: a 4 s floor. The frozen call must end within the deadline, a new host appear, and the document answer
- *   a command again with what it held. Then the same again, and that second deadline of the document's own poisons it.
+ *   a command again with what it held. Then the same command is frozen three times in a row: the third bars that command
+ *   (ADR-0221) and the document stays open. A host that dies instead of freezing still poisons at two (`hostRecovery.mjs`).
  * - `control`: a 10-minute floor, the same freeze. The call must still be waiting when the deadline cell's would long
  *   have ended — which is the wedge the deadline exists to end, reproduced.
  *
@@ -38,6 +39,8 @@ const REPORT_PATH = process.argv[3] ?? '';
 const SHORT_FLOOR_MS = 4_000;
 const LONG_FLOOR_MS = 600_000;
 const WATCH_MS = 20_000;
+/** How many deadlines in a row bar a command (ADR-0221), spelt out here because the proof exists to pin the figure. */
+const STRIKES_TO_BAR = 3;
 /** How long a new host has to appear, and an old one to go — `hostRecoveryHost.mjs`' budgets. */
 const REBUILD_BUDGET_MS = 11_000;
 const DEATH_BUDGET_MS = 5_000;
@@ -208,6 +211,10 @@ async function main() {
     let afterRecovery = null;
     /** @type {{ ok: boolean, code: string | null } | null} */
     let afterSecondDeadline = null;
+    /** @type {{ ok: boolean, code: string | null }[]} */
+    const strikeOutcomes = [];
+    /** @type {number | string | null} */
+    let readAfterBarred = null;
     /** @type {{ ok: boolean, code: string | null } | null} */
     let bystanderAfter = null;
     /** @type {number | string | null} */
@@ -221,14 +228,26 @@ async function main() {
       // freeze under one of its calls would make that deadline its own. A read through its lane waits for that entry.
       await firstPageRotation(handlers, bystanderId);
 
-      // THE SECOND DEADLINE UNDER THE SAME DOCUMENT'S CALL: its second ending of its own, which poisons it.
-      const secondPid = rebuilt.ids.find((id) => id !== frozenPid) ?? 0;
-      if (secondPid > 0) {
-        freezeHost(secondPid);
-        await rotate(handlers, docId);
-        await waitForChildren((ids) => !ids.includes(secondPid), DEATH_BUDGET_MS);
-        afterSecondDeadline = await rotate(handlers, docId);
+      // THREE DEADLINES IN A ROW UNDER THE SAME COMMAND (ADR-0221): the recovery rotate above succeeded, which cleared the
+      // command's strikes, so these are its first, second and third. The first two end the host and the document comes
+      // back; at the third the command is barred, and the document is NOT poisoned, which two deadlines used to do.
+      let currentPid = rebuilt.ids.find((id) => id !== frozenPid) ?? 0;
+      for (let strike = 1; strike <= STRIKES_TO_BAR && currentPid > 0; strike += 1) {
+        const frozen = currentPid;
+        freezeHost(frozen);
+        strikeOutcomes.push(await rotate(handlers, docId));
+        await waitForChildren((ids) => !ids.includes(frozen), DEATH_BUDGET_MS);
+        if (strike < STRIKES_TO_BAR) {
+          const next = await waitForChildren((ids) => ids.some((id) => id !== frozen), REBUILD_BUDGET_MS);
+          // SETTLED BEFORE THE NEXT FREEZE, as the bystander's is: a read through the document's lane waits for its rebuild.
+          await firstPageRotation(handlers, docId);
+          currentPid = next.ids.find((id) => id !== frozen) ?? 0;
+        }
       }
+      // THE FOURTH ATTEMPT never reaches a host: it is refused by name, before one is asked.
+      afterSecondDeadline = await rotate(handlers, docId);
+      // AND THE DOCUMENT IS STILL OPEN: another kind of request is answered, where a poisoned document refuses them all.
+      readAfterBarred = await firstPageRotation(handlers, docId);
       // AND THE BYSTANDER, open the whole time, is served by the host rebuilt for it.
       bystanderAfter = await rotate(handlers, bystanderId);
       bystanderRotation = await firstPageRotation(handlers, bystanderId);
@@ -251,6 +270,8 @@ async function main() {
         afterRecovery,
         rotationAfter,
         afterSecondDeadline,
+        strikeOutcomes,
+        readAfterBarred,
         bystanderBefore,
         bystanderAfter,
         bystanderRotation,
