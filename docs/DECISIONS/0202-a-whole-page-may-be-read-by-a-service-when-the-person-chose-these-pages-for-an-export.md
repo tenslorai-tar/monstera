@@ -57,3 +57,11 @@ asked for, and there is none here.
   composition's network read take the whole-page arm. The reading of **a re-run on a page that already has recognised text** is
   unchanged: it appends another invisible layer (ADR-0198's neighbour finding, stated in the OCR help).
 - The Word and Excel dialogs gain the choice; the commands run the walk; the help articles say what is sent.
+
+## Correction, 2026-10-08
+
+The Consequences above say a re-run on a page with recognised text appends another invisible layer. That stopped being true
+the same day: `applyOcrPage` now removes the layers Monstera's own reading wrote (a content stream opening `q BT 3 Tr` whose
+every font is the glyphless font) before writing a whole-page reading, in the same command and so the same undo step. A
+region read still adds to the page, a text the document had before is never removed, and a reading that finds nothing keeps
+what the page had. The statement above is kept as written; this is the record that it no longer holds.

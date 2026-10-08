@@ -2,6 +2,7 @@ import {
   PDFDict,
   PDFDocument,
   PDFName,
+  PDFRef,
   StandardFonts,
   TextRenderingMode,
   degrees,
@@ -9,7 +10,7 @@ import {
 import * as mupdf from './mupdfRaw.js';
 import { describe, expect, it } from 'vitest';
 
-import type { RecognisedLine } from './ocrRecognise.js';
+import type { RecognisedLine, RecognisedPage } from './ocrRecognise.js';
 import {
   GLYPHLESS_FONT_NAME,
   applyOcrPage,
@@ -486,5 +487,84 @@ describe('writeRecognisedText', () => {
     const texts = layerOf(await document.save()).lines.map((line) => line.text);
     expect(texts).toContain('printed');
     expect(texts).toContain('recognised');
+  });
+});
+
+describe('reading a page again', () => {
+  const WHOLE = { kind: 'ocrPage', page: 0, languages: ['eng'], engine: 'tesseract' } as const;
+  const reading = (text: string, box: Box = [72, 700, 200, 716]): RecognisedPage => ({
+    lines: [recognised(box, [{ text, box }])],
+    confidence: 90,
+    languages: ['eng'],
+  });
+  const textsOf = (bytes: Uint8Array): string[] => layerOf(bytes).lines.map((line) => line.text);
+
+  /** A page that already carries text of its own, and one earlier reading. */
+  async function readOnce(): Promise<Uint8Array> {
+    const document = await PDFDocument.create();
+    const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    page.drawText('printed', { x: 72, y: 600, size: 16, font: await document.embedFont(StandardFonts.Helvetica) });
+    return applyOcrPage(await document.save(), WHOLE, reading('first'));
+  }
+
+  it('REPLACES the earlier reading, so a word is found once and the page does not grow a layer per reading', async () => {
+    const second = await applyOcrPage(await readOnce(), WHOLE, reading('second'));
+    const texts = textsOf(second);
+    expect(texts).toContain('second');
+    expect(texts).not.toContain('first');
+    // THE PAGE'S OWN TEXT STAYS: only what this module wrote is taken off.
+    expect(texts).toContain('printed');
+
+    const third = await applyOcrPage(second, WHOLE, reading('third'));
+    expect(textsOf(third).filter((text) => text === 'third')).toHaveLength(1);
+    const loaded = await PDFDocument.load(third);
+    const fonts = loaded.getPages()[0]?.node.Resources()?.lookupMaybe(PDFName.of('Font'), PDFDict);
+    const ours = fonts?.entries().filter(([, value]) => value instanceof PDFRef || value instanceof PDFDict) ?? [];
+    // Helvetica plus ONE glyphless font, not one per reading.
+    expect(ours).toHaveLength(2);
+  });
+
+  it('CONTROL: writing without the replacement leaves both readings, which is the defect', async () => {
+    const document = await PDFDocument.load(await readOnce());
+    const page = document.getPages()[0];
+    if (page === undefined) throw new Error('no page');
+    writeRecognisedText(page, glyphlessFont(document), reading('second').lines);
+    const texts = textsOf(await document.save());
+    expect(texts).toContain('first');
+    expect(texts).toContain('second');
+  });
+
+  it('NEVER removes text another tool made invisible, even when it hides it the same way', async () => {
+    const document = await PDFDocument.create();
+    const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    page.drawText('earlier scan text', {
+      x: 72,
+      y: 500,
+      size: 16,
+      font: await document.embedFont(StandardFonts.Helvetica),
+      renderMode: TextRenderingMode.Invisible,
+    });
+    const once = await applyOcrPage(await document.save(), WHOLE, reading('first'));
+    const twice = await applyOcrPage(once, WHOLE, reading('second'));
+    const texts = textsOf(twice);
+    expect(texts).toContain('earlier scan text');
+    expect(texts).toContain('second');
+    expect(texts).not.toContain('first');
+  });
+
+  it('adds a region to the page and keeps the earlier reading', async () => {
+    const withRegion = await applyOcrPage(
+      await readOnce(),
+      { ...WHOLE, region: { x0: 60, y0: 300, x1: 300, y1: 340 } },
+      reading('boxed', [72, 310, 200, 326]),
+    );
+    const texts = textsOf(withRegion);
+    expect(texts).toContain('first');
+    expect(texts).toContain('boxed');
+  });
+
+  it('keeps the earlier reading when the new one found nothing to write', async () => {
+    const empty = await applyOcrPage(await readOnce(), WHOLE, { lines: [], confidence: 0, languages: ['eng'] });
+    expect(textsOf(empty)).toContain('first');
   });
 });

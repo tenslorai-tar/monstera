@@ -20,7 +20,7 @@ A scanned page is only a picture, so its words cannot be searched or selected. T
 ## Good to know
 
 - Recognition runs on this computer. Nothing is sent anywhere.
-- Only pages that are mostly a picture are read. A page whose words cover very little of its picture, such as a photograph that has only a few hidden words on it, counts as a picture and is read again. Pages that are mostly text are left alone, and the result says so. Reading a page again adds a second layer of hidden words, so a search can find a word twice.
+- Only pages that are mostly a picture are read. A page whose words cover very little of its picture, such as a photograph that has only a few hidden words on it, counts as a picture and is read again. Pages that are mostly text are left alone, and the result says so. Reading a whole page again replaces the hidden words Monstera added earlier with the new reading, so a search finds each word once. Words the document had before are kept.
 - A page that is a picture shows **This page is a picture, so there is no text to select or search.**
 - If you stop it early, the pages already done keep their text.
 - Each page can be undone with **Ctrl+Z**.

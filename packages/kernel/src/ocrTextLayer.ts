@@ -1,10 +1,17 @@
 import {
+  PDFArray,
+  PDFDict,
   type PDFDocument,
   PDFHexString,
+  PDFName,
+  type PDFObject,
   type PDFPage,
+  PDFRawStream,
   type PDFRef,
+  PDFStream,
   PDFString,
   TextRenderingMode,
+  decodePDFRawStream,
   beginText,
   endText,
   popGraphicsState,
@@ -371,6 +378,75 @@ function quarterTurn(page: PDFPage): keyof typeof ROTATED_RUN {
   return ([0, 90, 180, 270] as const)[quarters] ?? 0;
 }
 
+/** The runs of a recognition that have a box with area and a character that advances: the ones that are drawn. */
+function writableRuns(lines: readonly RecognisedLine[]): ReturnType<typeof runsOf> {
+  return runsOf(lines).filter(
+    (run) => advancingCodes(run.text) > 0 && run.box[2] > run.box[0] && run.box[3] > run.box[1],
+  );
+}
+
+/** The bytes of one content stream, or `undefined` for anything this module cannot decode (which is then left alone). */
+function streamText(stream: PDFObject | undefined): string | undefined {
+  try {
+    if (stream instanceof PDFRawStream) return Buffer.from(decodePDFRawStream(stream).decode()).toString('latin1');
+    if (stream instanceof PDFStream) return Buffer.from(stream.getContents()).toString('latin1');
+  } catch {
+    // An undecodable stream is the document's own, and the document's own is kept.
+  }
+  return undefined;
+}
+
+/** A layer this module wrote: it opens `q BT 3 Tr` — text painted with neither fill nor stroke. */
+const OCR_LAYER_HEAD = /^\s*q\s+BT\s+3\s+Tr\s/u;
+
+/** The fonts a content stream selects, by resource key. */
+function fontKeysOf(text: string): string[] {
+  return [...text.matchAll(/\/(\S+)\s+[-+.\d]+\s+Tf\b/gu)].map((match) => match[1] ?? '');
+}
+
+/**
+ * Takes off a page the invisible text THIS MODULE wrote on an earlier reading, and answers how many layers went.
+ *
+ * ## What counts as Monstera's own
+ *
+ * A content stream that opens `q BT 3 Tr` AND whose every font is a resource whose `/BaseFont` is
+ * {@link GLYPHLESS_FONT_NAME}. Both, because either alone is another tool's: `3 Tr` is how any OCR engine hides text,
+ * and a stream selecting no font of ours is the document's. Text a scanner, an earlier OCR product or the author put
+ * on the page therefore stays, which is "preserve, never drop" read against a re-reading.
+ *
+ * The streams are unlinked from `/Contents`, and a font key only those streams used is dropped from `/Resources` so a
+ * page read ten times does not carry ten fonts. The stream objects themselves stay in the file's earlier revisions, as
+ * every incremental save leaves them.
+ */
+export function removeOcrLayers(page: PDFPage): number {
+  const contents = page.node.Contents();
+  if (!(contents instanceof PDFArray)) return 0;
+  const fonts = page.node.Resources()?.lookupMaybe(PDFName.of('Font'), PDFDict);
+  const isOurs = (key: string): boolean =>
+    fonts?.lookupMaybe(PDFName.of(key), PDFDict)?.lookupMaybe(PDFName.of('BaseFont'), PDFName)?.decodeText() ===
+    GLYPHLESS_FONT_NAME;
+
+  const kept: string[] = [];
+  const usedByRemoved = new Set<string>();
+  let removed = 0;
+  for (let index = contents.size() - 1; index >= 0; index -= 1) {
+    const text = streamText(contents.lookup(index));
+    const keys = text === undefined ? [] : fontKeysOf(text);
+    if (text !== undefined && OCR_LAYER_HEAD.test(text) && keys.length > 0 && keys.every(isOurs)) {
+      contents.remove(index);
+      for (const key of keys) usedByRemoved.add(key);
+      removed += 1;
+    } else if (text !== undefined) {
+      kept.push(text);
+    }
+  }
+  if (removed === 0) return 0;
+  for (const key of usedByRemoved) {
+    if (!kept.some((text) => fontKeysOf(text).includes(key))) fonts?.delete(PDFName.of(key));
+  }
+  return removed;
+}
+
 /**
  * Draws a recognition onto one page as invisible, selectable text.
  *
@@ -399,10 +475,7 @@ export function writeRecognisedText(
   font: PDFRef,
   lines: readonly RecognisedLine[],
 ): number {
-  const runs = runsOf(lines).filter(
-    (run) =>
-      advancingCodes(run.text) > 0 && run.box[2] > run.box[0] && run.box[3] > run.box[1],
-  );
+  const runs = writableRuns(lines);
   if (runs.length === 0) return 0;
 
   // THE RESOURCE KEY IS THE PAGE'S TO CHOOSE. `newFontDictionary` asks the
@@ -539,6 +612,11 @@ export const applyOcrPage: Apply<'pdf-lib', 'ocrPage', 'none', 'ocr'> = async (
     );
   }
 
+  // A WHOLE-PAGE READING REPLACES THE LAST ONE (and a region does not). Reading a page again used to append a second
+  // invisible layer under the first, so a search found every word twice and the page grew with each reading. Only
+  // what Monstera's own reading wrote is taken off (see {@link removeOcrLayers}), and only when the new reading has
+  // something to put in its place: a page read as empty the second time keeps what it had. A region adds to the page.
+  if (command.region === undefined && writableRuns(read.lines).length > 0) removeOcrLayers(page);
   writeRecognisedText(page, glyphlessFont(document), read.lines);
   return appendRevision(document);
 };
