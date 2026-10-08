@@ -578,6 +578,83 @@ describe('the composition root, with an engine host platform', () => {
       // AND THE OPEN-TIME ATTEMPT CARRIED NONE: nothing is held before the unlock.
       expect(opens[0]).toBeUndefined();
     });
+
+    /**
+     * CR-DOC-08: a host that ENDS under a document a password opened. The rebuild is the supervisor's, in the document's
+     * own lane, and it is the one reopen the review found refused: it opened with no password, was answered
+     * `needs-password`, and left the document with no session, no unlock and no save.
+     */
+    async function endingHost(): Promise<{
+      readonly handlers: ReturnType<typeof createShellDependencies>['handlers'];
+      readonly spy: ReturnType<typeof platformAnswering>;
+      readonly opens: unknown[];
+      readonly applies: unknown[];
+      readonly crash: { armed: boolean };
+    }> {
+      const opens: unknown[] = [];
+      const applies: unknown[] = [];
+      const crash = { armed: false };
+      let sessions = 0;
+      const spy = platformAnswering((channel, params) => {
+        if (channel === 'engine/open') {
+          const { password } = params as { password?: unknown };
+          opens.push(password);
+          if (password === PASSWORD) return { ok: true, value: { session: `ab0${String(sessions++)}`, access: 2 } };
+          return { ok: false, error: { code: password === undefined ? 'needs-password' : 'wrong-password' } };
+        }
+        if (channel === 'engine/apply') {
+          applies.push(params);
+          if (crash.armed) return null;
+        }
+        return ENGINE(channel, params);
+      });
+      const { handlers } = createShellDependencies({
+        ...harnessSurfaces('the composition-host test'),
+        appInfo,
+        pickDocument: () => Promise.resolve(aDocument('locked.pdf')),
+        enginePlatform: spy.platform,
+        checkpointDirectory: join(scratch, 'checkpoints-ending'),
+      });
+      return { handlers, spy, opens, applies, crash };
+    }
+
+    it('a host that ends under it rebuilds the session with the held password, and the edits made so far are replayed (CR-DOC-08)', async () => {
+      const { handlers, spy, opens, applies, crash } = await endingHost();
+      const opened = await handlers['document.open']({});
+      if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+      const docId = opened.value.docId;
+      expect((await handlers['document.unlock']({ docId, password: PASSWORD })).ok).toBe(true);
+      const rotate = () => handlers['document.execute']({ docId, command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 } });
+      expect((await rotate()).ok).toBe(true);
+
+      // THE HOST ENDS UNDER THE SECOND EDIT, as a crash would, with its call on the wire.
+      crash.armed = true;
+      const before = applies.length;
+      const dying = rotate();
+      await vi.waitFor(() => {
+        expect(applies.length).toBe(before + 1);
+      });
+      const opensBeforeDeath = opens.length;
+      spy.harness.exit(1);
+      await dying.then(
+        () => undefined,
+        () => undefined,
+      );
+      crash.armed = false;
+
+      // THE NEXT COMMAND COMPLETES ONLY AFTER THE LANE'S REBUILD HAS: a session with no password would have been answered
+      // `needs-password` and the command would find no session. It runs, and the document is saved and closed as any other.
+      expect((await rotate()).ok).toBe(true);
+      const rebuilds = opens.slice(opensBeforeDeath);
+      expect(rebuilds.length).toBeGreaterThan(0);
+      // EVERY OPEN THE REBUILD MADE CARRIED THE PASSWORD, and the first attempt at the document's life carried none: the
+      // password is the one `document.unlock` was given, held in main and not asked for again.
+      expect(rebuilds.every((password) => password === PASSWORD)).toBe(true);
+      expect(opens[0]).toBeUndefined();
+      // THE EDIT MADE BEFORE THE DEATH IS REPLAYED onto the rebuilt session: the log held it, and the canonical image
+      // (the file as opened) does not.
+      expect(applies.length).toBeGreaterThanOrEqual(before + 1 + 1 + 1);
+    });
   });
 
   it('CONTROL: a host that read the negative path is CLOSED, and no session is made', async () => {
