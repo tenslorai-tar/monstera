@@ -8,7 +8,13 @@ import { readPageGeometry } from './pageGeometry.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
 import { scaleWithinPixelBound } from './pageSnapshot.js';
 import { readPageTextJson } from './pageText.js';
-import { PICTURE_READ_OPTIONS, type PagePicture, type PrintedBox, parsePageLayout } from './textStructure.js';
+import {
+  PICTURE_READ_OPTIONS,
+  type PagePicture,
+  type PrintedBox,
+  parsePageLayout,
+  parsePageTables,
+} from './textStructure.js';
 import { type WordMode, type WordPage, wordDocumentParts } from './wordDocument.js';
 
 /**
@@ -27,7 +33,7 @@ export function composeWordDocument(
 ): { readonly chunks: AsyncIterable<Uint8Array>; readonly pictures: () => number } {
   let drawn = 0;
   const chunks = ooxmlPackage(
-    wordDocumentParts(mode, wordPages(session, pages), async (page, pictures) => {
+    wordDocumentParts(mode, wordPages(session, pages, mode), async (page, pictures) => {
       const pngs = await drawPagePictures(session, page, pictures);
       drawn += pngs.length;
       return pngs;
@@ -37,7 +43,7 @@ export function composeWordDocument(
 }
 
 /** THE CHOSEN PAGES only (ADR-0161), in the set's order, a page past the document refused before any is read. */
-async function* wordPages(session: MupdfSession, chosen: PageSet): AsyncIterable<WordPage> {
+async function* wordPages(session: MupdfSession, chosen: PageSet, mode: WordMode): AsyncIterable<WordPage> {
   const { pageCount } = await readPageGeometry(session, []);
   for (const index of pagesOf(chosen, pageCount)) {
     // THE SHARED READ, parsed by the one reader: the words and the pictures' places
@@ -45,7 +51,11 @@ async function* wordPages(session: MupdfSession, chosen: PageSet): AsyncIterable
     const { text, pictures } = parsePageLayout(await readPageTextJson(session, index, 'substrate'));
     const [size] = (await readPageGeometry(session, [index])).sizes;
     if (size === undefined) throw new Error(`the geometry read named no size for page ${String(index + 1)}`);
-    yield { index, text, size, pictures };
+    // THE TABLE READ is the one Excel's automatic engine asks (ADR-0073), taken for the flow modes only: layout places
+    // every line at its own box and needs no table. It finds a table in recognised handwriting too, because it
+    // reads the text layer's alignment and not ruling lines (measured 2026-10-08: a 4×3 grid of invisible words, no lines).
+    const tables = mode === 'layout' ? [] : parsePageTables(await readPageTextJson(session, index, 'table')).tables;
+    yield { index, text, size, pictures, tables };
   }
 }
 

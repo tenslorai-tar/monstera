@@ -30,7 +30,7 @@ Monstera reads the pages you chose, one after another, with the progress in the 
 - Claude and Azure get a picture of each page you chose. The window says how many pages are sent before you choose, and a page you did not choose is not sent.
 - The words read are also kept, unseen, in your document, so you can search it. **Undo** (**Ctrl+Z**) takes out all the pages of one reading together.
 - A page that already has real text is left as it is and not read again.
-- Tables come out as text in Word. To get them in cells, use "Export tables to Excel".
+- A table with ruled lines, and a clearly laid out table in words Monstera has read from a scan, comes out as a real Word table with rows and cells in the two flowing choices. A table whose columns Monstera cannot be sure of stays as text rather than becoming a wrong table. To get any table in cells, use "Export tables to Excel".
 
 ## Good to know
 

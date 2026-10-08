@@ -27,6 +27,7 @@ import {
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
+import { GLYPHLESS_FONT_NAME } from './glyphlessFontName.js';
 import type { Apply, Invert } from './engineSeam.js';
 import type { RecognisedLine } from './ocrRecognise.js';
 import { appendRevision, openForWriting } from './pdfLibSession.js';
@@ -120,7 +121,7 @@ import { appendRevision, openForWriting } from './pdfLibSession.js';
  * object is written here, and a name claiming to be another tool's font would
  * make provenance unreadable the day one of them changes.
  */
-export const GLYPHLESS_FONT_NAME = 'MonsteraGlyphless';
+export { GLYPHLESS_FONT_NAME };
 
 /**
  * Every code's advance, in thousandths of the font size.
