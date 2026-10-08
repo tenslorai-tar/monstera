@@ -337,6 +337,12 @@ export interface PageText {
    * readings that are otherwise both empty.
    */
   readonly images: number;
+  /**
+   * The pictures' combined area, in the display units the lines' boxes are in (whole points, each box truncated as MuPDF
+   * prints it). Optional so a page built by hand (a fixture) reads as it did: absent is no area, and `pageKindOf` then
+   * decides by whether there is text at all.
+   */
+  readonly imageArea?: number;
 }
 
 /**
@@ -610,7 +616,13 @@ export function parsePageLayout(json: string): PageLayout {
     },
     grid: () => undefined,
   });
-  return { text: { blocks, images: pictures.length }, pictures };
+  // THE PICTURES' COMBINED AREA, in the same display units as the text lines' boxes, so `pageKindOf` can say whether a page's
+  // words cover little of what is picture (a scan with a few invisible words) or most of it. Present only where there is one.
+  const imageArea = pictures.reduce((sum, picture) => sum + picture.printed.w * picture.printed.h, 0);
+  return {
+    text: { blocks, images: pictures.length, ...(imageArea > 0 ? { imageArea } : {}) },
+    pictures,
+  };
 }
 
 /** Every line of a page, in reading order, with its block boundaries dropped. */

@@ -15,7 +15,7 @@ import type { PageText } from './textStructure.js';
  * ## `'image-only'` and not `'scanned'`, deliberately
  *
  * Nothing here can know a page came from a scanner. What is observable is that
- * the page carries at least one raster and no text — which is what a scan looks
+ * the page is made of a raster and carries little or no text over it — which is what a scan looks
  * like, and also what a full-page diagram or a photograph looks like. Naming the
  * observation rather than the inference keeps a claim out of a type: a label
  * saying *scanned* would travel into a message, and a reader would then be told
@@ -24,20 +24,28 @@ import type { PageText } from './textStructure.js';
  * It is also the exact condition OCR applies to, so the honest name loses
  * nothing.
  *
- * ## No constant, which is the property to keep
+ * ## The rule has ONE number since the owner's order of 2026-10-07, and why
  *
- * The obvious refinement is a coverage threshold — *an image over 80% of the
- * page* — and it would be a tunable constant in a substrate whose whole
- * character is that it has none (`BUILD-PROMPT.md`:547 governs one that does not
- * exist, and the E2 row says so). It would also be wrong in the direction that
- * matters: a page with no text is a page with no text, whatever fraction the
- * picture covers, and a threshold's only effect is to answer `'empty'` for a
- * page that plainly has something on it.
+ * This module used to answer `'text'` for ANY page with a word on it, and said that a coverage threshold would be a tunable
+ * constant in a substrate that has none. The cost of that was found in use: after one box recognition added a few invisible
+ * words to a photograph, OCR pages, Searchable copy and Clean up all refused the photograph, because a page with three words
+ * was *a page with text*. The owner's rule is the other one: **a page is a picture when its text covers little of it** — here,
+ * when the text lines' area is under {@link SCAN_TEXT_SHARE} of the pictures' area. Words that are invisible OCR over a scan
+ * cover almost nothing of it, so the page stays offered for a re-run; a page of paragraphs with a logo is `'text'` because
+ * its text is most of what is on it.
  *
- * So the rule is two questions with no numbers in them, and it is decidable from
- * one reading of one engine.
+ * The threshold is not measured against a corpus: it is the owner's rule given a number, and the cases pin both sides of it.
+ * It is applied only where there are pictures with an area, so a page with no picture, or built without areas, is decided by
+ * whether it has text at all, as before.
  */
 export type PageKind = 'text' | 'image-only' | 'empty';
+
+/**
+ * The share of the pictures' area the text's may reach before the page counts as text: 5%. A scan carrying three invisible
+ * words covers a fraction of a percent of its photograph; a typeset page's paragraphs cover tens of percent of any picture
+ * on it.
+ */
+export const SCAN_TEXT_SHARE = 0.05;
 
 /**
  * The rule, in one place.
@@ -53,6 +61,24 @@ export function pageKindOf(page: PageText): PageKind {
   const hasText = page.blocks.some((block) =>
     block.lines.some((line) => line.text.trim().length > 0),
   );
-  if (hasText) return 'text';
-  return page.images > 0 ? 'image-only' : 'empty';
+  if (!hasText) return page.images > 0 ? 'image-only' : 'empty';
+  // WORDS OVER A PICTURE THAT COVER LITTLE OF IT: the owner's rule. Only where the pictures have an area to compare with.
+  const imageArea = page.imageArea ?? 0;
+  if (page.images > 0 && imageArea > 0) {
+    const textArea = page.blocks.reduce(
+      (sum, block) =>
+        sum +
+        block.lines
+          .filter((line) => line.text.trim().length > 0)
+          .reduce(
+            (inner, line) =>
+              inner +
+              Math.max(0, line.box.bottomRight.x - line.box.topLeft.x) * Math.max(0, line.box.bottomRight.y - line.box.topLeft.y),
+            0,
+          ),
+      0,
+    );
+    if (textArea < SCAN_TEXT_SHARE * imageArea) return 'image-only';
+  }
+  return 'text';
 }
