@@ -10,7 +10,7 @@ A visible signature shows your signature on the page and signs the document digi
 
 ## Steps
 
-1. In the rail, choose **Protect**, then **Sign with certificate** in the **Signatures** group.
+1. In the rail, choose **Protect**, then **Signature & Certificate** in the **Signatures** group.
 2. Drag a box where the signature should appear.
 3. In **How the signature looks**, choose:
    - **Type it**, then type your **Signature** and pick a **Style**; each style in the list shows your name in it, and the large preview shows it as it will be placed;
@@ -20,6 +20,12 @@ A visible signature shows your signature on the page and signs the document digi
 4. Fill in the rest as in "Sign a document digitally", and choose **Choose certificate and sign**.
 
 ![The signing window with How the signature looks set to Draw it](screenshot:visible-signature-1)
+
+## Which signature do I need?
+
+- **Signature & Certificate** (Protect): your signature shown on the page, and a digital signature from your certificate.
+- **Sign with Certificate** (Protect): the digital signature alone, with no mark on the page. See "Sign a document digitally".
+- **Signature** (Comment): only a picture of your signature. It is not a digital signature; no certificate is used.
 
 ## Good to know
 
@@ -32,5 +38,5 @@ A visible signature shows your signature on the page and signs the document digi
 
 <!--
 Screenshots to capture:
-1. visible-signature-1 — After dragging a box with Sign with certificate; dialog.sign-document with Draw it and a drawn signature. Frame the dialog.
+1. visible-signature-1 — After dragging a box with Signature & Certificate; dialog.sign-document with Draw it and a drawn signature. Frame the dialog.
 -->

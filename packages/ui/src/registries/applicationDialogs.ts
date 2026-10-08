@@ -77,6 +77,7 @@ import { SIGN_DOCUMENT_DIALOG } from '../dialogs/signDocument.js';
 import { SIGN_PROBLEM_DIALOG } from '../dialogs/signProblem.js';
 import { SIGNATURE_DIALOG } from '../dialogs/signature.js';
 import { SIGNATURE_BREAK_DIALOG } from '../dialogs/signatureBreak.js';
+import { SIGN_AGAIN_DIALOG } from '../dialogs/signAgain.js';
 import { SIGNED_EDIT_DIALOG } from '../dialogs/signedEdit.js';
 import { SIGNATURE_PROBLEM_DIALOG } from '../dialogs/signatureProblem.js';
 import { SIGNATURES_DIALOG } from '../dialogs/signatures.js';
@@ -127,6 +128,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   DELETE_PAGES_DIALOG,
   STAMP_DIALOG,
   SIGNATURE_BREAK_DIALOG,
+  SIGN_AGAIN_DIALOG,
   SIGNED_EDIT_DIALOG,
   PENDING_REDACTIONS_DIALOG,
   KEPT_BACKUPS_DIALOG,

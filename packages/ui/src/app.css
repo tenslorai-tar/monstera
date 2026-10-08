@@ -879,12 +879,6 @@ optgroup {
   outline-offset: 2px;
 }
 
-.m-shortcuts__refused {
-  flex-basis: 100%;
-  margin: 0;
-  color: var(--text);
-}
-
 .m-shortcuts-editor__note {
   margin: 0;
 }
@@ -1295,8 +1289,7 @@ optgroup {
 }
 
 .m-crash-offer__address,
-.m-crash-offer__warning,
-.m-crash-offer__problem {
+.m-crash-offer__warning {
   color: var(--muted);
   font-size: var(--font-chrome-12);
 }
@@ -4490,13 +4483,11 @@ optgroup {
 }
 
 /* A STATUS WITH NOTHING TO SAY TAKES NO ROOM: the live region stays in the page, so what it says next is announced. */
-.m-camera-capture__status:empty,
-.m-camera-capture__problem:empty {
+.m-camera-capture__status:empty {
   display: none;
 }
 
-.m-camera-capture__status,
-.m-camera-capture__problem {
+.m-camera-capture__status {
   margin: 0;
 }
 
@@ -4601,7 +4592,6 @@ optgroup {
   border-block-end: 0;
 }
 
-.m-cloud__problem,
 .m-cloud__note,
 .m-cloud__outcome {
   display: flex;
@@ -4628,8 +4618,7 @@ optgroup {
   gap: var(--space-8);
 }
 
-.m-ai-setup__intro,
-.m-ai-setup__problem {
+.m-ai-setup__intro {
   margin: 0;
   color: var(--text);
 }
@@ -4851,13 +4840,6 @@ optgroup {
 .m-page-number-field .m-input {
   inline-size: 100%;
   box-sizing: border-box;
-}
-
-/* REPLACE'S PAIRING SENTENCE, `.m-dialog-row__problem`'s size and colour, under the rows it is about. */
-.m-replace-page__problem {
-  margin: var(--space-8) 0 0;
-  color: var(--text);
-  font-size: var(--font-chrome-12);
 }
 
 /* THE SETTINGS ROWS' DROP-DOWNS TOO (v5-10 draws them as fields): they were browser-default boxes beside styled segmented
@@ -6965,13 +6947,6 @@ optgroup {
   border-radius: var(--radius-4);
   background: var(--page);
   object-fit: contain;
-}
-
-.m-signature__problem {
-  margin: 0;
-  min-block-size: 1lh;
-  color: var(--muted);
-  font-size: var(--font-chrome-12);
 }
 
 .m-signature-pad polyline {

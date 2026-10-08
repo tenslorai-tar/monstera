@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { type ChosenSignatureMark, MAX_SIGNATURE_FIELD, type SignatureFont } from '@monstera/contract';
 import type { ReactElement } from 'react';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 
 import {
   SIGN_DOCUMENT_CLEAR,
@@ -30,6 +30,7 @@ import {
 import { useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
+import { Problem } from '../primitives/Problem.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import { DEFAULT_SIGNATURE_FONT } from '../signatureFaces.js';
 import { TypedSignatureFields, typedNameProblem, useSignatureFaces, useTypedName } from './TypedSignature.js';
@@ -83,6 +84,8 @@ export default function SignatureBody({
 } & DialogAnswering<SignatureAnswers>): ReactElement {
   const { _ } = useLingui();
   const keepId = useId();
+  /** The signature's own fields (the pad, the typed name or the picture button), which a refusal about the look is about. */
+  const markFields = useRef<HTMLDivElement>(null);
   const faces = useSignatureFaces();
   // ASKED AGAIN WITH A PICTURE, the dialog opens where the person was: on Upload, showing it.
   const [way, setWay] = useState<Way>(picked === undefined ? 'draw' : 'upload');
@@ -160,6 +163,7 @@ export default function SignatureBody({
         />
       </DialogRow>
 
+      <div ref={markFields}>
       {way === 'draw' ? (
         <div className="m-signature__pad">
           <SignaturePad onStrokesChange={setStrokes} strokes={strokes} />
@@ -208,6 +212,7 @@ export default function SignatureBody({
           )}
         </div>
       ) : null}
+      </div>
 
       <DialogRow label={SIGNATURE_SAVE} note={SIGNATURE_SAVE_NOTE}>
         <input
@@ -222,15 +227,20 @@ export default function SignatureBody({
         />
       </DialogRow>
 
-      <p className="m-signature__problem" role="status">
-        {tooLong
-          ? _(SIGNATURE_TOO_LONG, { limit: MAX_SIGNATURE_FIELD })
-          : facing !== undefined
-            ? _(facing.message, facing.values)
-            : mark === undefined && attempt.tried
-              ? _(way === 'upload' ? SIGNATURE_PICTURE_MISSING : SIGN_DOCUMENT_MARK_MISSING)
-              : ''}
-      </p>
+      <Problem
+        about={{ within: markFields }}
+        focusField={!tooLong && facing === undefined && mark === undefined && attempt.tried}
+        message={
+          tooLong
+            ? _(SIGNATURE_TOO_LONG, { limit: MAX_SIGNATURE_FIELD })
+            : facing !== undefined
+              ? _(facing.message, facing.values)
+              : mark === undefined && attempt.tried
+                ? _(way === 'upload' ? SIGNATURE_PICTURE_MISSING : SIGN_DOCUMENT_MARK_MISSING)
+                : undefined
+        }
+        reserve
+      />
       <DialogFooter>
         <Button
           disabled={tooLong}

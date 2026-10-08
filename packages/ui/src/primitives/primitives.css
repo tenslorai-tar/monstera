@@ -737,14 +737,43 @@
   text-overflow: ellipsis;
 }
 
+/* A PROBLEM (`Problem`): the one look of "something is wrong, or must be done first", in every dialog. The sentence is in
+   the problem colour with a warning glyph before it, so it cannot be mistaken for the form's own text, and the field it is
+   about is outlined (`data-problem`, written by the component while the sentence shows). The glyph and the sentence
+   carry it without colour; the colour and the outline are what a glance sees. */
+.m-problem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-6);
+  margin: 0;
+  color: var(--problem-text);
+  font-size: var(--font-chrome-13);
+  font-weight: 600;
+}
+
+.m-problem:empty {
+  display: none;
+}
+
+.m-problem--reserve:empty {
+  display: block;
+  min-block-size: 1lh;
+}
+
+.m-problem .m-icon {
+  flex: none;
+  margin-block-start: 0.15em;
+}
+
+[data-problem]:not(:focus-visible) {
+  outline: 2px solid var(--problem-edge);
+  outline-offset: 1px;
+}
+
 /* A ROW'S REFUSAL (`DialogRow`'s `problem`): a line of its own across the row, under its name and its control, so it
-   reads as about this field and not the next. In the text colour, for `.m-status-problem`'s reason: the token set
-   declares no error role, and what carries a refusal is the sentence and `aria-invalid` on the field. */
+   reads as about this field and not the next. It is `Problem`, which owns how it looks. */
 .m-dialog-row__problem {
   flex-basis: 100%;
-  margin: 0;
-  color: var(--text);
-  font-size: var(--font-chrome-12);
 }
 
 /* A GROUP OF OPTIONS AS ONE ROW'S CONTROL (Print's quality, Optimize's level): one to a line, as the base fieldset

@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { MAX_TOC_ENTRIES, MAX_TOC_TITLE_CHARACTERS } from '@monstera/contract';
 import type { ReactElement } from 'react';
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 
 import {
   GENERATE_TOC_ADD,
@@ -29,6 +29,7 @@ import { useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow, DialogScroll } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { GenerateTocAnswer } from './generateToc.js';
 
@@ -107,6 +108,13 @@ export default function GenerateTocBody({
     return '';
   };
   const noRows = attempt.tried && rows.length === 0;
+  // THE FIRST ROW WITH A PROBLEM takes the focus on a press; the rest are only marked.
+  const firstProblem = attempt.tried ? rows.findIndex((row, at) => problemOf(row, at + 1) !== '') : -1;
+  // One pair of field containers per row, named by the row's key so a moved or removed row keeps its own.
+  const rowPrefix = useId();
+  const titleOf = (key: number): string => `${rowPrefix}-title-${String(key)}`;
+  const pageOf = (key: number): string => `${rowPrefix}-page-${String(key)}`;
+  const noRowsRef = useRef<HTMLDivElement>(null);
 
   // AN OUTLINE PAST WHAT CAN BE REVIEWED HERE is written as it stands: nothing to edit, and Insert answers no rows.
   if (tooLong) {
@@ -143,6 +151,7 @@ export default function GenerateTocBody({
                     className="m-generate-toc__fields"
                     // THE LEVEL AS INDENT, a value the person set and not a style the stylesheet could hold.
                     style={{ paddingInlineStart: `calc(${String(row.depth)} * var(--space-16))` }}
+                    id={titleOf(row.key)}
                   >
                     <Input
                       invalid={problem !== '' && row.title.trim() === ''}
@@ -153,7 +162,7 @@ export default function GenerateTocBody({
                         change(row.key, { title });
                       }}
                     />
-                    <span className="m-generate-toc__page">
+                    <span className="m-generate-toc__page" id={pageOf(row.key)}>
                       <Input
                         invalid={problem !== '' && row.title.trim() !== ''}
                         label={GENERATE_TOC_PAGE}
@@ -216,44 +225,48 @@ export default function GenerateTocBody({
                       }}
                     />
                   </span>
-                  {problem === '' ? null : (
-                    <span className="m-generate-toc__problem" role="alert">
-                      {problem}
-                    </span>
-                  )}
+                  <Problem
+                    message={problem === '' ? undefined : problem}
+                    about={{
+                      in: row.title.trim() === '' || row.title.trim().length > MAX_TOC_TITLE_CHARACTERS ? titleOf(row.key) : pageOf(row.key),
+                    }}
+                    focusField={problem !== '' && at === firstProblem}
+                  />
                 </li>
               );
             })}
           </ol>
         )}
       </DialogScroll>
-      <DialogRow label={GENERATE_TOC_ADD}>
-        <span className="m-generate-toc__add">
-          <Input label={GENERATE_TOC_ADD_TITLE} labelShownBeside value={addTitle} onValueChange={setAddTitle} />
-          <span className="m-generate-toc__page">
-            <Input label={GENERATE_TOC_ADD_PAGE} labelShownBeside value={addPage} onValueChange={setAddPage} />
+      <div ref={noRowsRef}>
+        <DialogRow label={GENERATE_TOC_ADD}>
+          <span className="m-generate-toc__add">
+            <Input label={GENERATE_TOC_ADD_TITLE} labelShownBeside value={addTitle} onValueChange={setAddTitle} />
+            <span className="m-generate-toc__page">
+              <Input label={GENERATE_TOC_ADD_PAGE} labelShownBeside value={addPage} onValueChange={setAddPage} />
+            </span>
+            <Button
+              label={GENERATE_TOC_ADD}
+              icon="Plus"
+              disabled={!addable}
+              onClick={() => {
+                const read = readPage(addPage);
+                if (!read.ok) return;
+                nextKey.current += 1;
+                const key = nextKey.current;
+                setRows((now) => [...now, { key, title: addTitle.trim(), page: addPage.trim(), depth: 0 }]);
+                setAddTitle('');
+                setAddPage('');
+              }}
+            />
           </span>
-          <Button
-            label={GENERATE_TOC_ADD}
-            icon="Plus"
-            disabled={!addable}
-            onClick={() => {
-              const read = readPage(addPage);
-              if (!read.ok) return;
-              nextKey.current += 1;
-              const key = nextKey.current;
-              setRows((now) => [...now, { key, title: addTitle.trim(), page: addPage.trim(), depth: 0 }]);
-              setAddTitle('');
-              setAddPage('');
-            }}
-          />
-        </span>
-      </DialogRow>
-      {noRows ? (
-        <p className="m-generate-toc__problem" role="alert">
-          {_(GENERATE_TOC_PROBLEM_NO_ROWS)}
-        </p>
-      ) : null}
+        </DialogRow>
+      </div>
+      <Problem
+        message={noRows ? _(GENERATE_TOC_PROBLEM_NO_ROWS) : undefined}
+        about={{ within: noRowsRef }}
+        focusField={noRows}
+      />
       <DialogFooter>
         <Button
           label={GENERATE_TOC_APPLY}

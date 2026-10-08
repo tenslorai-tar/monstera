@@ -122,6 +122,7 @@ import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/si
 import { FLATTEN_FORM_DIALOG_ID, FLATTEN_FORM_RESULT } from '../dialogs/flattenForm.js';
 import { TAB_ORDER_DIALOG_ID, TAB_ORDER_RESULT } from '../dialogs/tabOrder.js';
 import { PAGE_BACKGROUND_DIALOG_ID, PAGE_BACKGROUND_RESULT } from '../dialogs/pageBackground.js';
+import { SIGN_AGAIN_DIALOG_ID, SIGN_AGAIN_RESULT } from '../dialogs/signAgain.js';
 import { SIGNED_EDIT_DIALOG_ID, SIGNED_EDIT_RESULT } from '../dialogs/signedEdit.js';
 import type { OpenedDocument } from './importMarkdown.js';
 import type { PendingRedactionOccasion } from '../dialogs/pendingRedactions.js';
@@ -172,6 +173,7 @@ import {
   REDACT_MATCHES_COMMAND_TITLE,
   SANITIZE_DOCUMENT_COMMAND_TITLE,
   SIGN_DOCUMENT_COMMAND_TITLE,
+  SIGN_DOCUMENT_TIP,
   SIGNATURES_COMMAND_TITLE,
   DOCUSIGN_RETRIEVE_COMMAND_TITLE,
   DOCUSIGN_SEND_COMMAND_TITLE,
@@ -4567,6 +4569,7 @@ export function signDocumentCommand(deps: DocumentCommandDeps & WritesAFile): Ui
     feedback: TOASTS,
     icon: 'Signature',
     title: SIGN_DOCUMENT_COMMAND_TITLE,
+    tip: SIGN_DOCUMENT_TIP,
     placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_SIGNATURES, order: 10 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
@@ -4597,6 +4600,16 @@ export async function signDocument(
   /** `blob:` addresses for kept pictures — the browser's own unless a case counts them. */
   urls: LibraryPageDeps['urls'] = BLOB_URLS,
 ): Promise<void> {
+  // A DOCUMENT THAT IS ALREADY SIGNED gets a plain notice first (the owner, 2026-10-08): the earlier signatures stay valid
+  // and this one is added after them (ADR-0149), and Continue or Cancel. A read that fails or finds none asks nothing —
+  // not knowing is not a reason to refuse a signing, and the signing's own refusals still apply.
+  const already = await deps.client['document.signatures']({ docId });
+  if (already.ok && (already.value.signatures.length > 0 || already.value.unreadable)) {
+    const go = SIGN_AGAIN_RESULT.safeParse(
+      await deps.ask(SIGN_AGAIN_DIALOG_ID, { count: already.value.signatures.length, unreadable: already.value.unreadable }),
+    );
+    if (!go.success) return;
+  }
   const library: LibraryPageDeps = { client: deps.client, ask: deps.ask, urls };
   // THE SIGNATURE LIBRARY, offered only where a signature is SEEN — a placement. Adding or removing a kept one is an
   // answer, after which the library is read again and the dialog asked again (`SIGN_DOCUMENT_ANSWERS`).

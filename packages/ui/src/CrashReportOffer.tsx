@@ -13,6 +13,7 @@ import {
 } from './messages/en.js';
 import { confirmCopied } from './commands/confirmWritten.js';
 import { Button } from './primitives/Button.js';
+import { Problem } from './primitives/Problem.js';
 import type { ShowToast } from './toasts.js';
 
 /**
@@ -97,11 +98,7 @@ export function CrashReportOffer({
         />
       </p>
       <p className="m-crash-offer__warning">{_(CRASH_REPORT_FRAGMENTS)}</p>
-      {problem ? (
-        <p className="m-crash-offer__problem" role="status">
-          {_(CRASH_REPORT_SHARE_FAILED)}
-        </p>
-      ) : null}
+      {problem ? <Problem message={_(CRASH_REPORT_SHARE_FAILED)} /> : null}
     </section>
   );
 }

@@ -66,7 +66,7 @@ describe('the copy-to-pages dialog', () => {
   it('CONTROL: the field’s own page is refused in words and nothing is answered', () => {
     const answers = mounted(1, 4);
     fireEvent.change(screen.getByLabelText('Pages'), { target: { value: '2-3' } });
-    expect(screen.getByRole('status').textContent).toMatch(/already on that page/u);
+    expect(screen.getByRole('alert').textContent).toMatch(/already on that page/u);
     const button = screen.getByRole('button', { name: 'Copy the field' });
     expect(button.hasAttribute('disabled') || button.getAttribute('aria-disabled') === 'true').toBe(true);
     fireEvent.click(button);

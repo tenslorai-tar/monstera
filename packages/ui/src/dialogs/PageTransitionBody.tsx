@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   PAGE_TRANSITION_APPLY,
@@ -17,6 +17,7 @@ import {
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
@@ -65,6 +66,7 @@ export default function PageTransitionBody({
   const [duration, setDuration] = useState(DEFAULT_DURATION);
   const [everyPage, setEveryPage] = useState(true);
 
+  const durationRef = useRef<HTMLDivElement>(null);
   const seconds = readSeconds(duration);
   const ready = seconds !== null;
 
@@ -80,20 +82,20 @@ export default function PageTransitionBody({
           wrap
         />
       </DialogRow>
-      <DialogRow label={PAGE_TRANSITION_DURATION}>
-        <Input
-          label={PAGE_TRANSITION_DURATION}
-          labelShownBeside
-          value={duration}
-          onValueChange={(next) => {
-            setDuration(next);
-          }}
-        />
-      </DialogRow>
+      <div ref={durationRef}>
+        <DialogRow label={PAGE_TRANSITION_DURATION}>
+          <Input
+            label={PAGE_TRANSITION_DURATION}
+            labelShownBeside
+            value={duration}
+            onValueChange={(next) => {
+              setDuration(next);
+            }}
+          />
+        </DialogRow>
+      </div>
       <PageScopeChoice className="m-page-transition__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
-      <p className="m-page-transition__problem" role="status">
-        {ready ? '' : _(PAGE_TRANSITION_NOT_A_NUMBER)}
-      </p>
+      <Problem message={ready ? undefined : _(PAGE_TRANSITION_NOT_A_NUMBER)} about={{ within: durationRef }} />
       <DialogFooter>
         <Button
           label={PAGE_TRANSITION_APPLY}

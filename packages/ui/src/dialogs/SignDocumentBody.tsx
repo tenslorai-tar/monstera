@@ -3,7 +3,7 @@ import type { ChosenSignatureMark, SignatureFont } from '@monstera/contract';
 import { DOCUMENT_PASSWORD_MAX_CHARS, MAX_SIGNATURE_FIELD, TIMESTAMP_AUTHORITY_IDS } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 
 import {
   SIGN_DOCUMENT_APPLY,
@@ -43,6 +43,7 @@ import { useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { DEFAULT_SIGNATURE_FONT } from '../signatureFaces.js';
 import { KeptSignatureLook } from './KeptSignatureLook.js';
@@ -197,6 +198,8 @@ export default function SignDocumentBody({
   })();
   const missing = placed && mark === undefined;
   const attempt = useAttempt();
+  /** The signature's own fields (the typed name or the pad), which a refusal about the look is about. */
+  const markFields = useRef<HTMLDivElement>(null);
 
   /** A trimmed field, or `undefined` when it holds nothing a reader would show. */
   const stated = (value: string): { readonly value: string } | undefined =>
@@ -226,30 +229,45 @@ export default function SignDocumentBody({
             </select>
           </DialogRow>
 
-          {look === 'typed' ? (
-            <TypedSignatureFields
-              face={font}
-              faces={faces}
-              invalid={tooLong === SIGN_DOCUMENT_TEXT || facing !== undefined}
-              label={SIGN_DOCUMENT_TEXT}
-              onFaceChange={setFont}
-              onTextChange={setText}
-              text={text}
-            />
-          ) : null}
-
-          {look === 'drawn' ? (
-            <>
-              <SignaturePad onStrokesChange={setStrokes} strokes={strokes} />
-              <Button
-                disabled={strokes.length === 0}
-                label={SIGN_DOCUMENT_CLEAR}
-                onClick={() => {
-                  setStrokes([]);
-                }}
+          {/* THE SIGNATURE'S OWN FIELDS, and the sentence about them directly under them: "type or draw it first" is about
+              this field and must read as a warning beside it, not as a line at the foot of the form (the owner, 2026-10-08). */}
+          <div ref={markFields}>
+            {look === 'typed' ? (
+              <TypedSignatureFields
+                face={font}
+                faces={faces}
+                invalid={tooLong === SIGN_DOCUMENT_TEXT || facing !== undefined}
+                label={SIGN_DOCUMENT_TEXT}
+                onFaceChange={setFont}
+                onTextChange={setText}
+                text={text}
               />
-            </>
-          ) : null}
+            ) : null}
+
+            {look === 'drawn' ? (
+              <>
+                <SignaturePad onStrokesChange={setStrokes} strokes={strokes} />
+                <Button
+                  disabled={strokes.length === 0}
+                  label={SIGN_DOCUMENT_CLEAR}
+                  onClick={() => {
+                    setStrokes([]);
+                  }}
+                />
+              </>
+            ) : null}
+          </div>
+          <Problem
+            about={{ within: markFields }}
+            focusField={missing && attempt.tried && facing === undefined}
+            message={
+              facing !== undefined
+                ? _(facing.message, facing.values)
+                : missing && attempt.tried && (look === 'typed' || look === 'drawn')
+                  ? _(SIGN_DOCUMENT_MARK_MISSING)
+                  : undefined
+            }
+          />
 
           {look === 'image' ? (
             <p className="m-sign-document__note">{_(SIGN_DOCUMENT_IMAGE_NOTE)}</p>
@@ -389,15 +407,18 @@ export default function SignDocumentBody({
           what leaves the machine, and what an observer on the network learns. */}
       <p className="m-sign-document__note">{_(SIGN_DOCUMENT_TIMESTAMP_NOTE)}</p>
 
-      <p className="m-sign-document__problem" role="status">
-        {tooLong !== undefined
-          ? _(SIGN_DOCUMENT_TOO_LONG, { field: _(tooLong) })
-          : facing !== undefined
-            ? _(facing.message, facing.values)
-            : missing && attempt.tried
+      <Problem
+        // THE REFUSALS THE FIELDS BESIDE IT CARRY: a missing look and a name its face cannot write are said under the look; a
+        // look with no field of its own (a picture, a kept signature) says it here.
+        message={
+          tooLong !== undefined
+            ? _(SIGN_DOCUMENT_TOO_LONG, { field: _(tooLong) })
+            : missing && attempt.tried && look !== 'typed' && look !== 'drawn'
               ? _(SIGN_DOCUMENT_MARK_MISSING)
-              : ''}
-      </p>
+              : undefined
+        }
+        reserve
+      />
       <DialogFooter>
         <Button
           disabled={over}

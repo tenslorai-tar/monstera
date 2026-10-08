@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   DELETE_PAGES_HINT,
@@ -14,6 +14,7 @@ import { renderRangeProblem } from './pageRangeProblem.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 
 /**
@@ -46,23 +47,24 @@ export default function ExtractPagesBody({
   // STARTS WITH THE COMMAND'S PAGES written out, so the ticked set is one keystroke from done and still editable.
   const [text, setText] = useState(() => formatPageRanges(pages));
 
+  const fieldRef = useRef<HTMLDivElement>(null);
   const parsed = parsePageRanges(text, pageCount);
 
   return (
     <div className="m-extract-pages">
-      <DialogRow label={EXTRACT_PAGES_LABEL}>
-        <Input
-          label={EXTRACT_PAGES_LABEL}
-          labelShownBeside
-          opensFocused
-          placeholder={DELETE_PAGES_HINT}
-          value={text}
-          onValueChange={setText}
-        />
-      </DialogRow>
-      <p className="m-extract-pages__problem" role="status">
-        {renderRangeProblem(parsed, text, _, EXTRACT_PAGES_EMPTY)}
-      </p>
+      <div ref={fieldRef}>
+        <DialogRow label={EXTRACT_PAGES_LABEL}>
+          <Input
+            label={EXTRACT_PAGES_LABEL}
+            labelShownBeside
+            opensFocused
+            placeholder={DELETE_PAGES_HINT}
+            value={text}
+            onValueChange={setText}
+          />
+        </DialogRow>
+      </div>
+      <Problem message={renderRangeProblem(parsed, text, _, EXTRACT_PAGES_EMPTY)} about={{ within: fieldRef }} />
       <DialogFooter>
         <Button
           label={EXTRACT_PAGES_APPLY}

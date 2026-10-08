@@ -20,6 +20,7 @@ import { CLOSE_LABEL, DIALOG_CANCEL, DIALOG_OK } from '../messages/en.js';
 import { Button } from './Button.js';
 import { IconButton } from './IconButton.js';
 import { OPENS_FOCUSED } from './Input.js';
+import { Problem } from './Problem.js';
 
 /**
  * The one dialog primitive. Every dialog in the application is this (B9).
@@ -252,17 +253,20 @@ export function DialogRow({
   readonly children: ReactNode;
 }): ReactElement {
   const { _ } = useLingui();
+  const control = useRef<HTMLDivElement>(null);
   return (
     <div className="m-dialog-row">
       <div className="m-dialog-row__text">
         <span className="m-dialog-row__label">{_(label)}</span>
         {note === undefined ? null : <span className="m-dialog-row__note">{_(note, noteValues)}</span>}
       </div>
-      <div className="m-dialog-row__control">{children}</div>
+      <div className="m-dialog-row__control" ref={control}>
+        {children}
+      </div>
       {problem === undefined || problem === '' ? null : (
-        <p className="m-dialog-row__problem" role="alert">
-          {problem}
-        </p>
+        <div className="m-dialog-row__problem">
+          <Problem message={problem} about={{ within: control }} />
+        </div>
       )}
     </div>
   );

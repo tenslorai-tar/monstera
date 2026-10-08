@@ -3,7 +3,7 @@ import { MAX_FIELD_OPTIONS } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import { X } from 'lucide-react';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { type KnownField, fieldNameProblemAmong, optionProblem } from '../annotations/fieldNameCheck.js';
 import {
@@ -20,6 +20,7 @@ import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { IconButton } from '../primitives/IconButton.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import type { FormFieldAnswer } from './formFieldResult.js';
 
 /**
@@ -129,31 +130,39 @@ export function FormFieldForm({
   const attempt = useAttempt();
   const problem = attemptProblem(attempt, invalid, missing !== undefined, missing);
   const usable = invalid === undefined && missing === undefined;
+  // WHICH FIELD THE SENTENCE IS ABOUT: the name's while the name is empty or wrong, otherwise the option(s).
+  const aboutName = group === undefined && (trimmedName.length === 0 || nameProblem !== undefined);
+  const nameRef = useRef<HTMLDivElement>(null);
+  const choiceRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="m-form-field">
       {group === undefined ? (
-        <DialogRow label={label} note={note}>
-          <Input label={label} labelShownBeside onValueChange={setName} opensFocused value={name} />
-        </DialogRow>
+        <div ref={nameRef}>
+          <DialogRow label={label} note={note}>
+            <Input label={label} labelShownBeside onValueChange={setName} opensFocused value={name} />
+          </DialogRow>
+        </div>
       ) : (
         <p className="m-form-field__group">{_(FORM_FIELD_GROUP_KNOWN, { group })}</p>
       )}
 
       {collects === 'option' ? (
-        <DialogRow label={FORM_FIELD_OPTION_LABEL}>
-          <Input
-            label={FORM_FIELD_OPTION_LABEL}
-            labelShownBeside
-            onValueChange={setOption}
-            opensFocused={group !== undefined}
-            value={option}
-          />
-        </DialogRow>
+        <div ref={choiceRef}>
+          <DialogRow label={FORM_FIELD_OPTION_LABEL}>
+            <Input
+              label={FORM_FIELD_OPTION_LABEL}
+              labelShownBeside
+              onValueChange={setOption}
+              opensFocused={group !== undefined}
+              value={option}
+            />
+          </DialogRow>
+        </div>
       ) : null}
 
       {collects === 'options' ? (
-        <div className="m-form-field__options">
+        <div className="m-form-field__options" ref={choiceRef}>
           {options.map((value, index) => (
             // INDEXED KEY, deliberately: these rows have no identity of their
             // own — two options may hold the same string, and a key derived
@@ -200,9 +209,11 @@ export function FormFieldForm({
         </div>
       ) : null}
 
-      <p className="m-form-field__problem" role="status">
-        {problem === undefined ? '' : _(problem)}
-      </p>
+      <Problem
+        message={problem === undefined ? undefined : _(problem)}
+        about={{ within: aboutName ? nameRef : choiceRef }}
+        focusField={attempt.tried && invalid === undefined}
+      />
       <DialogFooter>
         <Button
           disabled={invalid !== undefined}

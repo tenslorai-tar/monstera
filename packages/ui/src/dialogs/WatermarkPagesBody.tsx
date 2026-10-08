@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   WATERMARK_PAGES_APPLY,
@@ -18,6 +18,7 @@ import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
 import type { WatermarkPagesAnswer } from './watermarkPagesResult.js';
@@ -93,54 +94,77 @@ export default function WatermarkPagesBody({
   // A WRONG APPEARANCE is said as typed and disables the action; NO TEXT only once the action is pressed (`attempt.ts`).
   const invalid = parsed === null ? appearanceProblem(appearance) : undefined;
   const problem = attemptProblem(attempt, invalid, trimmed.length === 0, WATERMARK_PAGES_NO_TEXT);
+  const textField = useRef<HTMLDivElement>(null);
+  const opacityField = useRef<HTMLDivElement>(null);
+  const rotationField = useRef<HTMLDivElement>(null);
+  const sizeField = useRef<HTMLDivElement>(null);
+  /** The field the sentence is about: the missing text, else the first appearance field that is wrong. */
+  const wrongField =
+    invalid === undefined
+      ? textField
+      : invalid === WATERMARK_PAGES_OPACITY_RANGE || readNumber(appearance.opacity, DEFAULT_OPACITY) === null
+        ? opacityField
+        : invalid === WATERMARK_PAGES_SIZE_RANGE || readNumber(appearance.fontSize, DEFAULT_SIZE) === null
+          ? sizeField
+          : rotationField;
 
   return (
     <div className="m-watermark-pages">
-      <DialogRow label={WATERMARK_PAGES_TEXT}>
-        <Input
-          label={WATERMARK_PAGES_TEXT}
-          labelShownBeside
-          opensFocused
-          value={text}
-          onValueChange={(next) => {
-            setText(next);
-          }}
-        />
-      </DialogRow>
-      <DialogRow label={WATERMARK_PAGES_OPACITY}>
-        <Input
-          label={WATERMARK_PAGES_OPACITY}
-          labelShownBeside
-          value={appearance.opacity}
-          onValueChange={(next) => {
-            setAppearance({ ...appearance, opacity: next });
-          }}
-        />
-      </DialogRow>
-      <DialogRow label={WATERMARK_PAGES_ROTATION}>
-        <Input
-          label={WATERMARK_PAGES_ROTATION}
-          labelShownBeside
-          value={appearance.rotationDegrees}
-          onValueChange={(next) => {
-            setAppearance({ ...appearance, rotationDegrees: next });
-          }}
-        />
-      </DialogRow>
-      <DialogRow label={WATERMARK_PAGES_SIZE}>
-        <Input
-          label={WATERMARK_PAGES_SIZE}
-          labelShownBeside
-          value={appearance.fontSize}
-          onValueChange={(next) => {
-            setAppearance({ ...appearance, fontSize: next });
-          }}
-        />
-      </DialogRow>
+      <div ref={textField}>
+        <DialogRow label={WATERMARK_PAGES_TEXT}>
+          <Input
+            label={WATERMARK_PAGES_TEXT}
+            labelShownBeside
+            opensFocused
+            value={text}
+            onValueChange={(next) => {
+              setText(next);
+            }}
+          />
+        </DialogRow>
+      </div>
+      <div ref={opacityField}>
+        <DialogRow label={WATERMARK_PAGES_OPACITY}>
+          <Input
+            label={WATERMARK_PAGES_OPACITY}
+            labelShownBeside
+            value={appearance.opacity}
+            onValueChange={(next) => {
+              setAppearance({ ...appearance, opacity: next });
+            }}
+          />
+        </DialogRow>
+      </div>
+      <div ref={rotationField}>
+        <DialogRow label={WATERMARK_PAGES_ROTATION}>
+          <Input
+            label={WATERMARK_PAGES_ROTATION}
+            labelShownBeside
+            value={appearance.rotationDegrees}
+            onValueChange={(next) => {
+              setAppearance({ ...appearance, rotationDegrees: next });
+            }}
+          />
+        </DialogRow>
+      </div>
+      <div ref={sizeField}>
+        <DialogRow label={WATERMARK_PAGES_SIZE}>
+          <Input
+            label={WATERMARK_PAGES_SIZE}
+            labelShownBeside
+            value={appearance.fontSize}
+            onValueChange={(next) => {
+              setAppearance({ ...appearance, fontSize: next });
+            }}
+          />
+        </DialogRow>
+      </div>
+      <Problem
+        about={{ within: wrongField }}
+        focusField={invalid === undefined && problem !== undefined}
+        message={problem === undefined ? undefined : _(problem)}
+      />
       <PageScopeChoice className="m-watermark-pages__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
-      <p className="m-watermark-pages__problem" role="status">
-        {problem === undefined ? '' : _(problem)}
-      </p>
       <DialogFooter>
         <Button
           label={WATERMARK_PAGES_APPLY}

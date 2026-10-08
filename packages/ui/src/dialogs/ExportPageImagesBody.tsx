@@ -7,7 +7,7 @@ import {
   type PageImageFormat,
 } from '@monstera/contract';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   EXPORT_PAGE_IMAGES_DPI,
@@ -31,6 +31,7 @@ import { PageRangeChoice, usePageRange } from './PageRangeChoice.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 
@@ -82,6 +83,7 @@ export default function ExportPageImagesBody({
   const [format, setFormat] = useState<PageImageFormat>('png');
   const [dpiText, setDpiText] = useState(DEFAULT_DPI);
   const [qualityText, setQualityText] = useState(DEFAULT_QUALITY);
+  const encodingRef = useRef<HTMLDivElement>(null);
 
   const dpi = wholeWithin(dpiText, MIN_PAGE_IMAGE_DPI, MAX_PAGE_IMAGE_DPI);
   // A PNG never reads quality, so its field's text cannot make the export unusable.
@@ -106,26 +108,37 @@ export default function ExportPageImagesBody({
           onChange={setFormat}
         />
       </DialogRow>
-      <DialogRow label={EXPORT_PAGE_IMAGES_DPI} note={EXPORT_PAGE_IMAGES_DPI_NOTE}>
-        <Input label={EXPORT_PAGE_IMAGES_DPI} labelShownBeside value={dpiText} onValueChange={setDpiText} />
-      </DialogRow>
-      {format !== 'png' ? (
-        <DialogRow label={EXPORT_PAGE_IMAGES_QUALITY} note={EXPORT_PAGE_IMAGES_QUALITY_NOTE}>
-          <Input label={EXPORT_PAGE_IMAGES_QUALITY} labelShownBeside value={qualityText} onValueChange={setQualityText} />
+      <div ref={encodingRef}>
+        <DialogRow label={EXPORT_PAGE_IMAGES_DPI} note={EXPORT_PAGE_IMAGES_DPI_NOTE}>
+          <Input label={EXPORT_PAGE_IMAGES_DPI} labelShownBeside value={dpiText} onValueChange={setDpiText} />
         </DialogRow>
-      ) : null}
-      <p className="m-export-page-images__problem" role="status">
-        {!inBounds
-          ? _(EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS, {
-              minDpi: MIN_PAGE_IMAGE_DPI,
-              maxDpi: MAX_PAGE_IMAGE_DPI,
-              minQuality: MIN_IMAGE_QUALITY,
-              maxQuality: MAX_IMAGE_QUALITY,
-            })
-          : range.chosen === undefined
+        {format !== 'png' ? (
+          <DialogRow label={EXPORT_PAGE_IMAGES_QUALITY} note={EXPORT_PAGE_IMAGES_QUALITY_NOTE}>
+            <Input label={EXPORT_PAGE_IMAGES_QUALITY} labelShownBeside value={qualityText} onValueChange={setQualityText} />
+          </DialogRow>
+        ) : null}
+      </div>
+      <Problem
+        message={
+          inBounds
+            ? undefined
+            : _(EXPORT_PAGE_IMAGES_OUT_OF_BOUNDS, {
+                minDpi: MIN_PAGE_IMAGE_DPI,
+                maxDpi: MAX_PAGE_IMAGE_DPI,
+                minQuality: MIN_IMAGE_QUALITY,
+                maxQuality: MAX_IMAGE_QUALITY,
+              })
+        }
+        about={{ within: encodingRef }}
+      />
+      {/* WHAT THE EXPORT WILL MAKE, not a refusal: shown while the bounds hold, where the problem sentence is not. */}
+      {inBounds ? (
+        <p className="m-export-page-images__count" role="status">
+          {range.chosen === undefined
             ? _(EXPORT_PAGE_IMAGES_UNCHANGED)
             : _(EXPORT_PAGE_IMAGES_FILES, { files: range.chosen.length })}
-      </p>
+        </p>
+      ) : null}
       <DialogFooter>
         <Button
           label={SPLIT_DOCUMENT_APPLY}

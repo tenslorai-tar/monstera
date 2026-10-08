@@ -6,7 +6,7 @@ import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { type HeldSignaturePicture, SIGNATURE_ANSWERS, SIGNATURE_DIALOG_ID, type SignatureLook } from '../dialogs/signature.js';
 import { SIGNATURE_PROBLEM_DIALOG_ID } from '../dialogs/signatureProblem.js';
 import { chosenOfKept, requestedMarkOf } from './signatureMarks.js';
-import { GROUP_QUICK_TOOLS, GROUP_STAMPS, SIGNATURE_TITLE, TOAST_SIGNATURE_LIBRARY_FULL, TOAST_SIGNATURE_NOT_KEEPABLE } from '../messages/en.js';
+import { GROUP_QUICK_TOOLS, GROUP_STAMPS, SIGNATURE_TIP, SIGNATURE_TITLE, TOAST_SIGNATURE_LIBRARY_FULL, TOAST_SIGNATURE_NOT_KEEPABLE } from '../messages/en.js';
 import { type UiCommand, VISIBLE } from '../registries/commands.js';
 import { confirmDone } from './confirmWritten.js';
 import { type DocumentCommandDeps, type WritesAFile, hasDocument, reportProblem } from './documentCommands.js';
@@ -148,6 +148,7 @@ export function signatureCommand(deps: SignatureCommandDeps): UiCommand {
     // THE MARK IS PLACED where the person clicks.
     feedback: VISIBLE,
     title: SIGNATURE_TITLE,
+    tip: SIGNATURE_TIP,
     icon: 'Signature',
     placements: [
       // HOME'S QUICK TOOLS AT 108, the slot *Sign with certificate* held until this existed; it is under Protect only now.

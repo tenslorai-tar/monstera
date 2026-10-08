@@ -8,7 +8,7 @@ import {
 } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   DOCUMENT_PASSWORD_TOO_LONG,
@@ -38,6 +38,7 @@ import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { ProtectDocumentAnswer } from './protectDocument.js';
 
@@ -107,6 +108,10 @@ export default function ProtectDocumentBody({
     ownerPassword.length > DOCUMENT_PASSWORD_MAX_CHARS;
   // A PASSWORD IS NOT TRIMMED — `documentPassword.ts` carries the reason: PDF
   // hands the bytes to a hash, so a password ending in a space is a password.
+  // WHICH PASSWORD THE SENTENCE IS ABOUT: the owner's when that is the one too long, otherwise the user's.
+  const ownerTooLong = ownerPassword.length > DOCUMENT_PASSWORD_MAX_CHARS && userPassword.length <= DOCUMENT_PASSWORD_MAX_CHARS;
+  const userRef = useRef<HTMLDivElement>(null);
+  const ownerRef = useRef<HTMLDivElement>(null);
   const usable = removing || (!tooLong && (userPassword.length > 0 || ownerPassword.length > 0));
   const attempt = useAttempt();
   // TOO LONG as typed, and said as itself — it read *"Set at least one password"* over a password that was there; NO
@@ -146,25 +151,29 @@ export default function ProtectDocumentBody({
         <p className="m-protect-document__note">{_(PROTECT_DOCUMENT_REMOVES)}</p>
       ) : (
         <>
-          <DialogRow label={PROTECT_DOCUMENT_USER}>
-            <Input
-              label={PROTECT_DOCUMENT_USER}
-              labelShownBeside
-              onValueChange={setUserPassword}
-              opensFocused
-              secret
-              value={userPassword}
-            />
-          </DialogRow>
-          <DialogRow label={PROTECT_DOCUMENT_OWNER}>
-            <Input
-              label={PROTECT_DOCUMENT_OWNER}
-              labelShownBeside
-              onValueChange={setOwnerPassword}
-              secret
-              value={ownerPassword}
-            />
-          </DialogRow>
+          <div ref={userRef}>
+            <DialogRow label={PROTECT_DOCUMENT_USER}>
+              <Input
+                label={PROTECT_DOCUMENT_USER}
+                labelShownBeside
+                onValueChange={setUserPassword}
+                opensFocused
+                secret
+                value={userPassword}
+              />
+            </DialogRow>
+          </div>
+          <div ref={ownerRef}>
+            <DialogRow label={PROTECT_DOCUMENT_OWNER}>
+              <Input
+                label={PROTECT_DOCUMENT_OWNER}
+                labelShownBeside
+                onValueChange={setOwnerPassword}
+                secret
+                value={ownerPassword}
+              />
+            </DialogRow>
+          </div>
           <DialogRow label={PROTECT_DOCUMENT_PERMISSIONS}>
             <div aria-label={_(PROTECT_DOCUMENT_PERMISSIONS)} className="m-protect-document__permissions" role="group">
               {PDF_PERMISSIONS.map((permission) => (
@@ -190,11 +199,11 @@ export default function ProtectDocumentBody({
         </>
       )}
 
-      {problem === undefined ? null : (
-        <p className="m-protect-document__problem" role="alert">
-          {_(problem)}
-        </p>
-      )}
+      <Problem
+        message={problem === undefined ? undefined : _(problem)}
+        about={{ within: ownerTooLong ? ownerRef : userRef }}
+        focusField={attempt.tried && !tooLong}
+      />
       <DialogFooter>
         <Button
           disabled={!removing && tooLong}

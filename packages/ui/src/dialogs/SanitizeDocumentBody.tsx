@@ -2,7 +2,7 @@ import { useLingui } from '@lingui/react';
 import { PDF_SANITIZE_PARTS, type PdfSanitizePart } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   SANITIZE_DOCUMENT_APPLY,
@@ -15,6 +15,7 @@ import {
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { SanitizeDocumentAnswer } from './sanitizeDocument.js';
 
@@ -44,12 +45,13 @@ export default function SanitizeDocumentBody({
   const { _ } = useLingui();
   const [parts, setParts] = useState<readonly PdfSanitizePart[]>(PDF_SANITIZE_PARTS);
 
+  const partFields = useRef<HTMLDivElement>(null);
   const usable = parts.length > 0;
 
   return (
     <div className="m-sanitize-document">
       <DialogRow label={SANITIZE_DOCUMENT_EXPLAINS}>
-        <div aria-label={_(SANITIZE_DOCUMENT_EXPLAINS)} className="m-sanitize-document__parts" role="group">
+        <div aria-label={_(SANITIZE_DOCUMENT_EXPLAINS)} className="m-sanitize-document__parts" ref={partFields} role="group">
           {PDF_SANITIZE_PARTS.map((part) => (
             <label key={part}>
               <input
@@ -70,9 +72,7 @@ export default function SanitizeDocumentBody({
         </div>
       </DialogRow>
 
-      <p className="m-sanitize-document__problem" role="status">
-        {usable ? '' : _(SANITIZE_DOCUMENT_EMPTY)}
-      </p>
+      <Problem about={{ within: partFields }} message={usable ? undefined : _(SANITIZE_DOCUMENT_EMPTY)} />
       <DialogFooter>
         <Button
           disabled={!usable}

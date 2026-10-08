@@ -26,6 +26,7 @@ import {
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { AiSetupAnswer, AiSetupProblem } from './aiSetup.js';
 
@@ -119,20 +120,14 @@ export default function AiSetupBody({
           <Input label={AI_SETUP_KEY} labelShownBeside onValueChange={setKey} runsLong secret value={key} />
         </DialogRow>
       ) : (
-        <p className="m-ai-setup__problem" role="status">
-          {_(AI_SETUP_STORAGE_UNAVAILABLE)}
-        </p>
+        <Problem message={_(AI_SETUP_STORAGE_UNAVAILABLE)} />
       )}
       {needsEndpoint && secretsAvailable ? (
         <DialogRow label={AI_SETUP_ENDPOINT}>
           <Input label={AI_SETUP_ENDPOINT} labelShownBeside onValueChange={setEndpoint} runsLong value={endpoint} />
         </DialogRow>
       ) : null}
-      {problem === undefined ? null : (
-        <p className="m-ai-setup__problem" data-ai-setup-problem={problem} role="status">
-          {_(PROBLEM_TEXT[problem])}
-        </p>
-      )}
+      <Problem message={problem === undefined ? undefined : _(PROBLEM_TEXT[problem])} />
       {/* THE PATTERN'S FOOTER: Cancel, which is *not now*; Skip, which also stops the first-run offer; and the check.
           Skip stays as large as the check (the owner's ruling, 2026-09-22). */}
       {/* SKIP IS THE DISMISSAL (the owner, 2026-10-02): it records the choice, so a Cancel beside it would be a second

@@ -132,6 +132,7 @@ import {
   SELECT_ALL_MARKS_TITLE,
   SELECT_TOOL_TITLE,
   PLACE_IMAGE_TOOL_TITLE,
+  PLACE_SIGNATURE_TIP,
   PLACE_SIGNATURE_TOOL_TITLE,
   CLAUDE_REGION_TOOL_TITLE,
   CLOUD_REGION_TOOL_TITLE,
@@ -1212,6 +1213,9 @@ export function placeSignatureToolCommand(deps: ToolCommandDeps): UiCommand {
     15,
     deps,
     { section: 'protect', group: GROUP_SIGNATURES },
+    undefined,
+    // THE TIP, the three signatures side by side (the owner, 2026-10-08); the tool is not a held one.
+    { tip: PLACE_SIGNATURE_TIP, holdable: false },
   );
 }
 

@@ -48,6 +48,12 @@ const box = (name: string, index: number): HTMLElement => {
   if (found === undefined) throw new Error(`no ${name} field at ${String(index)}`);
   return found;
 };
+/** The sentences shown: every Problem keeps its (empty) alert region, so the empty ones are not sentences. */
+const alerts = (): string[] =>
+  screen
+    .getAllByRole('alert')
+    .map((alert) => alert.textContent)
+    .filter((text) => text !== '');
 const titles = (): string[] => screen.getAllByRole('textbox', { name: 'Title' }).map((box) => (box as HTMLInputElement).value);
 
 describe('GenerateTocBody', () => {
@@ -101,8 +107,7 @@ describe('GenerateTocBody', () => {
     fireEvent.change(box('Page', 2), { target: { value: '40' } });
     press('Insert');
     expect(resolve).not.toHaveBeenCalled();
-    const alerts = screen.getAllByRole('alert').map((alert) => alert.textContent);
-    expect(alerts).toStrictEqual([
+    expect(alerts()).toStrictEqual([
       'Entry 1 has no title. Type one, or delete the entry.',
       'Entry 3: type a page from 1 to 12, or leave the page empty.',
     ]);
@@ -131,7 +136,7 @@ describe('GenerateTocBody', () => {
     const resolve = opened({ entries: [{ title: 'z'.repeat(101), page: 0, depth: 0 }] });
     press('Insert');
     expect(resolve).not.toHaveBeenCalled();
-    expect(screen.getByRole('alert').textContent).toBe('Entry 1: shorten the title to 100 characters or fewer.');
+    expect(alerts()).toStrictEqual(['Entry 1: shorten the title to 100 characters or fewer.']);
   });
 
   it('a document with NO BOOKMARKS says so, and Insert with no entries is refused in words', () => {
@@ -139,6 +144,6 @@ describe('GenerateTocBody', () => {
     expect(screen.getByText(/has no bookmarks/u)).toBeDefined();
     press('Insert');
     expect(resolve).not.toHaveBeenCalled();
-    expect(screen.getByRole('alert').textContent).toBe('There are no entries. Add one, or choose Cancel.');
+    expect(alerts()).toStrictEqual(['There are no entries. Add one, or choose Cancel.']);
   });
 });

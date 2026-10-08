@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import { STAMP_TOKENS } from '@monstera/contract';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   HEADER_FOOTER_APPLY,
@@ -20,6 +20,7 @@ import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { HeaderFooterAnswer } from './headerFooterResult.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
@@ -103,6 +104,11 @@ export default function HeaderFooterBody({
   const numbersOk = size !== null && size > 0 && size <= 1000 && inset !== null && inset <= 500;
   const ready = anySlot && numbersOk;
   const attempt = useAttempt();
+  // WHICH FIELD THE SENTENCE IS ABOUT: the size when it is the wrong one, else the margin; with both right, the first place.
+  const sizeOk = size !== null && size > 0 && size <= 1000;
+  const headerRef = useRef<HTMLDivElement>(null);
+  const sizeRef = useRef<HTMLDivElement>(null);
+  const marginRef = useRef<HTMLDivElement>(null);
   // A NUMBER THAT IS WRONG is said as typed; NOTHING TO DRAW only once the action is pressed (`attempt.ts`).
   const problem = attemptProblem(attempt, numbersOk ? undefined : HEADER_FOOTER_NOT_A_NUMBER, !anySlot, HEADER_FOOTER_EMPTY);
 
@@ -111,49 +117,55 @@ export default function HeaderFooterBody({
       {/* ONE ROW PER EDGE, its three places as the control: each field keeps its own visible name — Left, Centre,
           Right — since three bare boxes in a row would not say which is which. */}
       {EDGES.map(({ key: edge, label: edgeLabel }) => (
-        <DialogRow key={edge} label={edgeLabel}>
-          <div className="m-dialog-row__fields">
-            {SLOTS.map(({ key: slot, label }) => (
-              <Input
-                key={slot}
-                label={label}
-                value={slots[edge][slot]}
-                onValueChange={(next) => {
-                  setSlots({ ...slots, [edge]: { ...slots[edge], [slot]: next } });
-                }}
-                opensFocused={edge === 'header' && slot === 'left'}
-              />
-            ))}
-          </div>
-        </DialogRow>
+        <div key={edge} ref={edge === 'header' ? headerRef : undefined}>
+          <DialogRow label={edgeLabel}>
+            <div className="m-dialog-row__fields">
+              {SLOTS.map(({ key: slot, label }) => (
+                <Input
+                  key={slot}
+                  label={label}
+                  value={slots[edge][slot]}
+                  onValueChange={(next) => {
+                    setSlots({ ...slots, [edge]: { ...slots[edge], [slot]: next } });
+                  }}
+                  opensFocused={edge === 'header' && slot === 'left'}
+                />
+              ))}
+            </div>
+          </DialogRow>
+        </div>
       ))}
       <p className="m-header-footer__tokens">{_(HEADER_FOOTER_TOKENS, { page: STAMP_TOKENS.page, count: STAMP_TOKENS.count })}</p>
-      <DialogRow label={HEADER_FOOTER_SIZE}>
-        <Input
-          label={HEADER_FOOTER_SIZE}
-          labelShownBeside
-          value={fontSize}
-          onValueChange={(next) => {
-            setFontSize(next);
-          }}
-        />
-      </DialogRow>
-      <DialogRow label={HEADER_FOOTER_MARGIN}>
-        <Input
-          label={HEADER_FOOTER_MARGIN}
-          labelShownBeside
-          value={margin}
-          onValueChange={(next) => {
-            setMargin(next);
-          }}
-        />
-      </DialogRow>
+      <div ref={sizeRef}>
+        <DialogRow label={HEADER_FOOTER_SIZE}>
+          <Input
+            label={HEADER_FOOTER_SIZE}
+            labelShownBeside
+            value={fontSize}
+            onValueChange={(next) => {
+              setFontSize(next);
+            }}
+          />
+        </DialogRow>
+      </div>
+      <div ref={marginRef}>
+        <DialogRow label={HEADER_FOOTER_MARGIN}>
+          <Input
+            label={HEADER_FOOTER_MARGIN}
+            labelShownBeside
+            value={margin}
+            onValueChange={(next) => {
+              setMargin(next);
+            }}
+          />
+        </DialogRow>
+      </div>
       <PageScopeChoice className="m-header-footer__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
-      {problem === undefined ? null : (
-        <p className="m-header-footer__problem" role="alert">
-          {_(problem)}
-        </p>
-      )}
+      <Problem
+        message={problem === undefined ? undefined : _(problem)}
+        about={{ within: numbersOk ? headerRef : sizeOk ? marginRef : sizeRef }}
+        focusField={numbersOk && attempt.tried}
+      />
       <DialogFooter>
         <Button
           label={HEADER_FOOTER_APPLY}

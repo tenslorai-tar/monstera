@@ -80,7 +80,7 @@ const CASES: readonly Case[] = [
     missing: DOCUMENT_PASSWORD_EMPTY,
   },
   {
-    // A STATUS LINE rather than an alert, which is why the gallery's first reading did not flag it.
+    // WAS A STATUS LINE rather than an alert, which is why the gallery's first reading did not flag it; it is the shared Problem now.
     dialog: 'Watermark',
     body: (resolve) => <WatermarkPagesBody pages={[0]} resolve={resolve} update={vi.fn()} />,
     apply: WATERMARK_PAGES_APPLY,

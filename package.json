@@ -238,6 +238,8 @@
     "check:secondwiring": "node scripts/lib/secondWiringPlace.mjs",
     "proof:secondwiring": "node scripts/proofs/secondWiringPlace.proof.mjs",
     "proof:domenvironment": "node scripts/proofs/domEnvironment.proof.mjs",
+    "check:dialogproblems": "node scripts/lib/dialogProblems.mjs",
+    "proof:dialogproblems": "node scripts/proofs/dialogProblems.proof.mjs",
     "proof:engines": "node scripts/spike/engineSpike.mjs",
     "proof:hostcontainment": "node scripts/research/lowboxSpike.mjs"
   },

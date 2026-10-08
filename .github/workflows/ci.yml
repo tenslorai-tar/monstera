@@ -517,6 +517,14 @@ jobs:
       - name: No surface renders a hand-written command list
         run: node scripts/ci/annotate.mjs scripts/lib/secondWiringPlace.mjs
 
+      # A dialog says that something is wrong in ONE way (the owner, 2026-10-08): the shared Problem. The scan refuses a dialog
+      # that draws its own; the proof holds the scan's three directions.
+      - name: Prove the dialog-problems scan can see, refuse and tolerate
+        run: node scripts/ci/annotate.mjs scripts/proofs/dialogProblems.proof.mjs
+
+      - name: Every refusal in a dialog is the shared Problem
+        run: node scripts/ci/annotate.mjs scripts/lib/dialogProblems.mjs
+
       - name: Prove the DOM-environment scan can see, refuse and tolerate
         run: node scripts/ci/annotate.mjs scripts/proofs/domEnvironment.proof.mjs
 

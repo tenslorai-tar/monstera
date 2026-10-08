@@ -63,7 +63,7 @@ describe('ReplacePageBody', () => {
 
     // AND IT GOES as the choice pairs, before the next press.
     fireEvent.change(screen.getByRole('textbox', { name: 'Page numbers' }), { target: { value: '2-3' } });
-    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('alert').textContent).toBe('');
     fireEvent.click(screen.getByRole('button', { name: 'Replace 2 pages' }));
     expect(answered(resolve)).toStrictEqual({ kind: 'replace', source: 'd-a', sourcePages: [1, 2] });
   });

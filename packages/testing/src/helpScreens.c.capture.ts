@@ -223,7 +223,7 @@ test('set-up-ai-1', async ({ page }) => {
 test('sign-a-document-1', async ({ page }) => {
   await openApp(page);
   await openDocument(page);
-  await runCommand(page, 'Sign document');
+  await runCommand(page, 'Sign with Certificate');
   const dialog = await theDialog(page);
   await dialog.getByRole('textbox', { name: 'Reason (optional)' }).fill('Approved for release');
   await dialog.getByRole('combobox', { name: 'This signature says' }).selectOption({ label: 'I approve this document' });

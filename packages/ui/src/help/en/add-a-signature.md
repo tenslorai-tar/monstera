@@ -6,7 +6,9 @@ keywords: [signature, sign, sign here, add signature, draw signature, type signa
 commands: [annotate.signature]
 contexts: [dialog.signature, dialog.signature-problem, home, comment]
 ---
-Signature puts your handwritten, typed or pictured signature on a page. It does not need a certificate. To sign the document digitally as well, see "Add a visible signature".
+Signature puts your handwritten, typed or pictured signature on a page. It does not need a certificate, and it is not a digital signature: nothing proves who placed it. To sign the document digitally as well, see "Add a visible signature".
+
+Three signatures, side by side: **Signature** (Comment) is only a picture of your signature; **Signature & Certificate** (Protect) shows your signature and signs digitally; **Sign with Certificate** (Protect) signs digitally with no mark on the page.
 
 ## Steps
 
@@ -24,7 +26,7 @@ Signature puts your handwritten, typed or pictured signature on a page. It does 
 
 - After you place it, the signature is selected: drag it to move it, or drag a corner handle to resize it.
 - A signature you saved appears under **Your signatures** the next time. Choose it, then click the page. **Remove** beside it takes it away.
-- Saved signatures stay on this computer, and up to 16 are kept. The same signatures appear in **Sign with certificate**.
+- Saved signatures stay on this computer, and up to 16 are kept. The same signatures appear in **Signature & Certificate**.
 - The signature appears upright even on turned pages.
 - There are fifteen styles, most of them handwriting. If a style cannot write a letter of your name, Monstera names the letter as you type, and the list marks each style that cannot. The styles write Latin letters, and some write Cyrillic and Greek too; a name in Arabic, Hebrew, Chinese, Japanese or Korean can be drawn or uploaded instead.
 - A typed signature is drawn into the document as the shapes of its letters, so no font file is added to it.

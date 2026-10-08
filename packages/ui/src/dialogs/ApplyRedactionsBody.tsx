@@ -26,6 +26,7 @@ import {
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
+import { Problem } from '../primitives/Problem.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { type ApplyRedactionsAnswer, applyRedactionsDefaults } from './applyRedactions.js';
@@ -77,7 +78,8 @@ export default function ApplyRedactionsBody({
 
   return (
     <div className="m-apply-redactions">
-      <p className="m-apply-redactions__warning">{_(APPLY_REDACTIONS_WARNS)}</p>
+      {/* A WARNING LOOKS LIKE ONE (the owner, 2026-10-08): this burns the marks in and cannot be undone. */}
+      <Problem message={_(APPLY_REDACTIONS_WARNS)} />
 
       <DialogRow label={APPLY_REDACTIONS_SCOPE}>
         <select

@@ -108,10 +108,10 @@ describe('SignatureBody', () => {
   it('UPLOAD asks for a picture first: Use Signature answers nothing and says so once pressed, and Choose picture… answers the pick with keep', () => {
     const { resolve } = opened();
     fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
-    expect(screen.getByRole('status').textContent).toBe('');
+    expect(screen.getByRole('alert').textContent).toBe('');
     fireEvent.click(USE());
     expect(resolve).not.toHaveBeenCalled();
-    expect(screen.getByRole('status').textContent).toBe('Choose a picture first.');
+    expect(screen.getByRole('alert').textContent).toBe('Choose a picture first.');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Save for reuse' }));
     fireEvent.click(screen.getByRole('button', { name: 'Choose picture…' }));
     expect(resolve).toHaveBeenCalledWith({ upload: 'pick', keep: false });
@@ -133,14 +133,14 @@ describe('SignatureBody', () => {
   it('DRAW waits for a stroke: an empty pad OPENS QUIET, and pressing Use Signature answers nothing and says why', () => {
     const { resolve } = opened();
     // QUIET ON OPEN: the person has not had a chance to draw yet (`attempt.ts`).
-    expect(screen.getByRole('status').textContent).toBe('');
+    expect(screen.getByRole('alert').textContent).toBe('');
     expect(screen.getByText('Draw your signature above')).toBeDefined();
     fireEvent.click(USE());
     expect(resolve).not.toHaveBeenCalled();
-    expect(screen.getByRole('status').textContent).toBe('Type or draw the signature first.');
+    expect(screen.getByRole('alert').textContent).toBe('Type or draw the signature first.');
     // ANOTHER WAY FORGETS THE PRESS: Type's empty field is one the person has not had a chance to fill.
     fireEvent.click(screen.getByRole('button', { name: 'Type' }));
-    expect(screen.getByRole('status').textContent).toBe('');
+    expect(screen.getByRole('alert').textContent).toBe('');
   });
 
   it('a KEPT signature is used by ONE click, as itself, and is not kept again', () => {

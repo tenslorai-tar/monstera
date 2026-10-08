@@ -118,7 +118,10 @@ export function SignaturePad({
         }
       }}
       onPointerUp={finish}
+      // THE FIELD A "DRAW YOUR SIGNATURE FIRST" REFUSAL IS ABOUT (`Problem`): it takes the focus and the outline.
+      data-problem-target=""
       role="img"
+      tabIndex={-1}
       viewBox={`0 0 ${String(VIEW_WIDTH)} ${String(VIEW_HEIGHT)}`}
     >
       {strokes.map((stroke, index) => (

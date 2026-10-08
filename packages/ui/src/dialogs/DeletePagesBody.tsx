@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   DELETE_PAGES_APPLY,
@@ -15,6 +15,7 @@ import type { DeletePagesAnswer } from './deletePagesResult.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 
 /**
@@ -53,6 +54,7 @@ export default function DeletePagesBody({
   const { _ } = useLingui();
   // STARTS WITH THE COMMAND'S PAGES written out, so the ticked set is one keystroke from done and still editable.
   const [text, setText] = useState(() => formatPageRanges(pages));
+  const fieldRef = useRef<HTMLDivElement>(null);
 
   const parsed = parsePageRanges(text, pageCount);
   // EVERY PAGE IS REFUSED, and it is computed from the parse rather than from
@@ -62,21 +64,22 @@ export default function DeletePagesBody({
 
   return (
     <div className="m-delete-pages">
-      <DialogRow label={DELETE_PAGES_LABEL}>
-        <Input
-          label={DELETE_PAGES_LABEL}
-          labelShownBeside
-          opensFocused
-          placeholder={DELETE_PAGES_HINT}
-          value={text}
-          onValueChange={setText}
-        />
-      </DialogRow>
-      <p className="m-delete-pages__problem" role="status">
-        {everything
-          ? _(DELETE_PAGES_EVERYTHING)
-          : renderRangeProblem(parsed, text, _, DELETE_PAGES_EMPTY)}
-      </p>
+      <div ref={fieldRef}>
+        <DialogRow label={DELETE_PAGES_LABEL}>
+          <Input
+            label={DELETE_PAGES_LABEL}
+            labelShownBeside
+            opensFocused
+            placeholder={DELETE_PAGES_HINT}
+            value={text}
+            onValueChange={setText}
+          />
+        </DialogRow>
+      </div>
+      <Problem
+        message={everything ? _(DELETE_PAGES_EVERYTHING) : renderRangeProblem(parsed, text, _, DELETE_PAGES_EMPTY)}
+        about={{ within: fieldRef }}
+      />
       <DialogFooter>
         <Button
           label={DELETE_PAGES_APPLY}

@@ -34,6 +34,7 @@ import { byteSize } from '../byteSize.js';
 import { Button } from '../primitives/Button.js';
 import { DialogActions, DialogFooter, DialogScroll, DialogSection } from '../primitives/Dialog.js';
 import { Icon } from '../primitives/Icon.js';
+import { Problem } from '../primitives/Problem.js';
 import { cloudFileLine } from '../recentLine.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { CloudAnswer } from './cloudStorage.js';
@@ -88,11 +89,7 @@ export default function CloudStorageBody({
   return (
     <>
       <DialogScroll>
-        {problem === undefined ? null : (
-          <p className="m-cloud__problem" data-cloud-problem={problem} role="status">
-            {_(CLOUD_PROBLEMS[problem])}
-          </p>
-        )}
+        <Problem message={problem === undefined ? undefined : _(CLOUD_PROBLEMS[problem])} />
         {note === undefined ? null : (
           <p className="m-cloud__note" role="status">
             {_(NOTE_TEXT[note])}

@@ -117,6 +117,10 @@ export const WARN_SIGNATURE_BREAK_DESCRIPTION = messageKey('setting.saving-warn-
 export const SIGNATURE_BREAK_TITLE = messageKey('dialog.signature-break.title');
 export const SIGNATURE_BREAK_EXPLAINS = messageKey('dialog.signature-break.explains');
 export const SIGNATURE_BREAK_APPLY = messageKey('dialog.signature-break.apply');
+export const SIGN_AGAIN_TITLE = messageKey('dialog.sign-again.title');
+export const SIGN_AGAIN_EXPLAINS = messageKey('dialog.sign-again.explains');
+export const SIGN_AGAIN_UNREADABLE = messageKey('dialog.sign-again.unreadable');
+export const SIGN_AGAIN_CONTINUE = messageKey('dialog.sign-again.continue');
 export const SIGNED_EDIT_TITLE = messageKey('dialog.signed-edit.title');
 export const SIGNED_EDIT_EXPLAINS = messageKey('dialog.signed-edit.explains');
 export const SIGNED_EDIT_COPY = messageKey('dialog.signed-edit.copy');
@@ -2852,6 +2856,10 @@ export const SIGN_DOCUMENT_CLEAR = messageKey('dialog.sign-document.clear');
 export const SIGN_DOCUMENT_IMAGE_NOTE = messageKey('dialog.sign-document.image-note');
 export const SIGN_DOCUMENT_MARK_MISSING = messageKey('dialog.sign-document.mark-missing');
 export const PLACE_SIGNATURE_TOOL_TITLE = messageKey('command.protect.place-signature');
+/** The three signatures, said side by side in each one's tooltip (the owner, 2026-10-08): which one makes a digital signature, and which shows a mark. */
+export const SIGN_DOCUMENT_TIP = messageKey('command.sign-document.tip');
+export const PLACE_SIGNATURE_TIP = messageKey('command.protect.place-signature.tip');
+export const SIGNATURE_TIP = messageKey('command.signature.tip');
 
 export const SIGNATURES_COMMAND_TITLE = messageKey('command.signatures.title');
 export const SIGNATURES_TITLE = messageKey('dialog.signatures.title');
@@ -3213,6 +3221,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURE_BREAK_EXPLAINS]:
     '{count, plural, one {This document is digitally signed.} other {This document carries # digital signatures.}} Saving it now rewrites the whole file, so {count, plural, one {the signature} other {the signatures}} will no longer verify. Close this window to keep {count, plural, one {it} other {them}}: your changes stay open and unsaved.',
   [SIGNATURE_BREAK_APPLY]: 'Save anyway',
+  [SIGN_AGAIN_TITLE]: 'This document is already signed',
+  [SIGN_AGAIN_EXPLAINS]:
+    '{count, plural, =0 {This document already carries a signature.} one {This document already carries 1 digital signature.} other {This document already carries # digital signatures.}} Your signature will be added after {count, plural, =0 {it} one {it} other {them}}. {count, plural, =0 {The earlier signature stays} one {The earlier signature stays} other {The earlier signatures stay}} valid, because nothing in the document is changed.',
+  [SIGN_AGAIN_UNREADABLE]: 'One signature in this document could not be read, so Monstera cannot say whether it stays valid.',
+  [SIGN_AGAIN_CONTINUE]: 'Continue',
   [SIGNED_EDIT_TITLE]: 'This change will break signatures',
   [SIGNED_EDIT_EXPLAINS]:
     'This document is digitally signed. This change rewrites the whole file, so its signatures will no longer verify. Work on a copy to keep the signed document exactly as it is: the copy is saved where you choose and opens with this change made.',
@@ -4475,9 +4488,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HINT_SNAPSHOT]: 'Drag over an area to keep it as a picture.',
   [HINT_READ_REGION]: 'Drag over an area and Monstera reads the words in it.',
   [HINT_IMAGE]: 'Drag out a box and the picture goes inside it.',
-  [HINT_SIGNATURE_FIELD]: 'Drag out a box where the signature will go.',
+  [HINT_SIGNATURE_FIELD]: 'Drag out a box where the signature will go. You add your signature and your certificate next.',
   [HINT_BARCODE]: 'Drag out a box where the barcode should sit.',
-  [HINT_SIGNATURE]: 'Click where your signature belongs.',
+  [HINT_SIGNATURE]: 'Click where your signature belongs. This is a picture, not a digital signature.',
   [HINT_FORM_FIELD]: 'Drag out a box for the field.',
   [HINT_HAND]: 'Drag to slide the page around.',
   [HINT_EDIT_TEXT]: 'Click a block of words and start changing them.',
@@ -6055,7 +6068,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SANITIZE_PART_FLATTEN]: 'Form fields and comments, flattened into the page',
 
   [GROUP_SIGNATURES]: 'Signatures',
-  [SIGN_DOCUMENT_COMMAND_TITLE]: 'Sign document',
+  [SIGN_DOCUMENT_COMMAND_TITLE]: 'Sign with Certificate',
+  [SIGN_DOCUMENT_TIP]:
+    'A digital signature from your certificate, with no mark on the page. For a signature people can see, use Signature & Certificate.',
+  [PLACE_SIGNATURE_TIP]:
+    'Draw a box, then add your signature as a picture and sign with your certificate. For a certificate signature with no mark, use Sign with Certificate. A plain picture of a signature is Signature, under Comment.',
+  [SIGNATURE_TIP]:
+    'Places a picture of your signature on the page. It is not a digital signature: no certificate is used and nothing proves who signed.',
   [SIGN_DOCUMENT_TITLE]: 'Sign document',
   [SIGN_DOCUMENT_EXPLAINS]:
     'You will be asked for your certificate file (.p12 or .pfx) after this. The certificate never leaves this computer.',
@@ -6160,7 +6179,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURE_PICTURE_SHOWN]: 'Your signature picture, {name}',
   [SIGNATURE_PICTURE_MISSING]: 'Choose a picture first.',
   [SIGNATURE_SAVE]: 'Save for reuse',
-  [SIGNATURE_SAVE_NOTE]: 'Kept on this computer, ready to place again here or with Sign with certificate.',
+  [SIGNATURE_SAVE_NOTE]: 'Kept on this computer, ready to place again here or with Signature & Certificate.',
   [SIGNATURE_USE]: 'Use Signature',
   [SIGNATURE_PROBLEM_TITLE]: 'The signature was not placed',
   [SIGNATURE_PROBLEM_UNREADABLE]:
@@ -6178,7 +6197,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGNATURE_PROBLEM_BLANK]: 'This name has nothing to draw. Nothing was placed.',
   [TOAST_SIGNATURE_LIBRARY_FULL]: 'Signature placed. Your saved signatures are full, so this one was not kept.',
   [TOAST_SIGNATURE_NOT_KEEPABLE]: 'Signature placed. This picture could not be kept for reuse.',
-  [PLACE_SIGNATURE_TOOL_TITLE]: 'Sign with certificate',
+  [PLACE_SIGNATURE_TOOL_TITLE]: 'Signature & Certificate',
 
   [SIGNATURES_COMMAND_TITLE]: 'Check signatures',
   [SIGNATURES_TITLE]: 'Signatures',
@@ -6326,7 +6345,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_COMMENTS_EXPORT_JSON]: 'Export JSON',
   [RIBBON_PROTECT_DOCUMENT]: 'Permissions',
   [RIBBON_REDACT_MATCHES]: 'Redact matches',
-  [RIBBON_PLACE_SIGNATURE]: 'Sign with certificate',
+  [RIBBON_PLACE_SIGNATURE]: 'Signature & Certificate',
   [RIBBON_DIAGNOSTICS]: 'Diagnostics',
   [RIBBON_NEW_FROM_MARKDOWN]: 'From Markdown',
   [RIBBON_APPEND_MARKDOWN]: 'Insert Markdown',

@@ -54,6 +54,13 @@ function opened(
 
 const SIGN = (): HTMLElement => screen.getByRole('button', { name: 'Choose certificate and sign' });
 
+/** Every sentence a `Problem` is showing, joined: the dialog holds several, each beside the field it is about. */
+const alerts = (): string =>
+  screen
+    .getAllByRole('alert')
+    .map((each) => each.textContent)
+    .join('');
+
 function choose(selector: string, value: string): void {
   const select = document.querySelector(selector);
   if (select === null) throw new Error(`no ${selector} on screen`);
@@ -107,9 +114,7 @@ describe('SignDocumentBody', () => {
     const location = screen.getByLabelText('Location (optional)');
     fireEvent.change(location, { target: { value: 'x'.repeat(MAX_SIGNATURE_FIELD + 1) } });
 
-    expect(screen.getByRole('status').textContent).toBe(
-      '“Location (optional)” is longer than the document can carry. Shorten it to sign.',
-    );
+    expect(alerts()).toBe('“Location (optional)” is longer than the document can carry. Shorten it to sign.');
     expect(location.getAttribute('aria-invalid')).toBe('true');
     // CONTROL: a field within the bound is not marked, so the mark separates the one field from the rest.
     expect(screen.getByLabelText('Reason (optional)').getAttribute('aria-invalid')).not.toBe('true');
@@ -117,7 +122,7 @@ describe('SignDocumentBody', () => {
 
     // BACK WITHIN THE BOUND: the sentence and the mark both go.
     fireEvent.change(location, { target: { value: 'Rome' } });
-    expect(screen.getByRole('status').textContent).toBe('');
+    expect(alerts()).toBe('');
     expect(location.getAttribute('aria-invalid')).not.toBe('true');
   });
 
@@ -131,10 +136,20 @@ describe('SignDocumentBody', () => {
   it('PLACED and typed: Sign waits for text, then answers it trimmed in the face chosen from the style menu', async () => {
     const { answers } = opened(true);
     // QUIET ON OPEN, and the press with nothing typed signs nothing and says why (`attempt.ts`).
-    expect(screen.getByRole('status').textContent).toBe('');
+    expect(alerts()).toBe('');
     fireEvent.click(SIGN());
     expect(answers).toStrictEqual([]);
-    expect(screen.getByRole('status').textContent).toBe('Type or draw the signature first.');
+    expect(alerts()).toBe('Type or draw the signature first.');
+    // A WARNING, NOT FORM TEXT (the owner, 2026-10-08): the sentence is the shared Problem with its glyph, the field it is
+    // about is marked invalid and described by it, and the focus has moved to that field.
+    const field = screen.getByLabelText('Signature');
+    const warning = document.querySelector('.m-problem');
+    expect(warning?.querySelector('svg')).not.toBeNull();
+    expect(field.getAttribute('aria-invalid')).toBe('true');
+    expect(field.getAttribute('aria-describedby')?.split(' ')).toContain(warning?.id);
+    expect(document.activeElement).toBe(field);
+    // CONTROL: the look's own picker is not the field it is about, so it is not marked.
+    expect(document.querySelector('[data-sign-look]')?.getAttribute('aria-invalid')).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Signature'), { target: { value: '  Grace Hopper ' } });
     await facesRead();
@@ -198,7 +213,10 @@ describe('SignDocumentBody', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
     fireEvent.click(SIGN());
     expect(answers).toStrictEqual([]);
-    expect(screen.getByRole('status').textContent).toBe('Type or draw the signature first.');
+    expect(alerts()).toBe('Type or draw the signature first.');
+    // THE PAD IS THE FIELD HERE: outlined and focused, so the person sees where to draw.
+    expect(surface.getAttribute('aria-invalid')).toBe('true');
+    expect(document.activeElement).toBe(surface);
 
     fireEvent.pointerDown(surface, { clientX: 160, clientY: 50 });
     fireEvent.pointerUp(surface, { clientX: 160, clientY: 50 });

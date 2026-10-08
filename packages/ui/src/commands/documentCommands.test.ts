@@ -5382,6 +5382,8 @@ describe('protectDocumentCommand', () => {
     function signingClient(
       answer: unknown,
       kept: readonly LibraryEntry[] = [],
+      /** How many signatures the document already carries (and whether one could not be read). */
+      already: { readonly count: number; readonly unreadable?: boolean } = { count: 0 },
     ): {
       readonly client: ContractClient;
       readonly sent: { id: string; params: unknown }[];
@@ -5391,6 +5393,24 @@ describe('protectDocumentCommand', () => {
       const sent: { id: string; params: unknown }[] = [];
       const library: { id: string; params: unknown }[] = [];
       const client = createClient(channels, (id, params) => {
+        // THE SIGNATURE READ the notice asks, kept out of `sent` for the library's reason: the cases read the signing channel.
+        if (id === 'document.signatures') {
+          return Promise.resolve(
+            ok({
+              signatures: Array.from({ length: already.count }, () => ({
+                signer: 'Ada',
+                organisation: '',
+                reason: '',
+                location: '',
+                notBefore: '',
+                notAfter: '',
+                coversDocument: true,
+                coversWholeFile: true,
+              })),
+              unreadable: already.unreadable === true,
+            }),
+          );
+        }
         if (id.startsWith('library.')) {
           library.push({ id, params });
           if (id === 'library.list') return Promise.resolve(ok({ entries: kept }));
@@ -5661,6 +5681,87 @@ describe('protectDocumentCommand', () => {
 
       expect(asked).toStrictEqual([{ id: 'dialog.sign-document', props: { placed: false, kept: [] } }]);
       expect(sent).toStrictEqual([{ id: 'document.sign', params: { docId: DOC, passphrase: '' } }]);
+    });
+
+    describe('a document that is already signed (the owner, 2026-10-08)', () => {
+      const SIGNED = { kind: 'signed', version: asDocVersion(2), byteLength: 4096, historyDropped: 0 } as const;
+
+      it('says what will happen BEFORE the signing dialog, and signs after Continue', async () => {
+        const { client, sent } = signingClient(SIGNED, [], { count: 2 });
+        const asked: unknown[] = [];
+        await signDocumentCommand({
+          client,
+          toast: () => undefined,
+          stamp,
+          signatures,
+          onApplied: () => undefined,
+          ask: (id, props) => {
+            asked.push({ id, props });
+            return Promise.resolve(id === 'dialog.sign-again' ? 'continue' : { passphrase: '' });
+          },
+        }).run(CONTEXT);
+
+        expect(asked).toStrictEqual([
+          { id: 'dialog.sign-again', props: { count: 2, unreadable: false } },
+          { id: 'dialog.sign-document', props: { placed: false, kept: [] } },
+        ]);
+        expect(sent).toStrictEqual([{ id: 'document.sign', params: { docId: DOC, passphrase: '' } }]);
+      });
+
+      it('Cancel signs nothing and opens no signing dialog', async () => {
+        const { client, sent } = signingClient(SIGNED, [], { count: 1 });
+        const asked: string[] = [];
+        await signDocumentCommand({
+          client,
+          toast: () => undefined,
+          stamp,
+          signatures,
+          onApplied: () => undefined,
+          ask: (id) => {
+            asked.push(id);
+            return Promise.resolve(undefined);
+          },
+        }).run(CONTEXT);
+
+        expect(asked).toStrictEqual(['dialog.sign-again']);
+        expect(sent).toStrictEqual([]);
+      });
+
+      it('a signature that could not be read is still a signed document: the notice opens, saying so', async () => {
+        const { client } = signingClient(SIGNED, [], { count: 0, unreadable: true });
+        const asked: unknown[] = [];
+        await signDocumentCommand({
+          client,
+          toast: () => undefined,
+          stamp,
+          signatures,
+          onApplied: () => undefined,
+          ask: (id, props) => {
+            asked.push({ id, props });
+            return Promise.resolve(undefined);
+          },
+        }).run(CONTEXT);
+
+        expect(asked).toStrictEqual([{ id: 'dialog.sign-again', props: { count: 0, unreadable: true } }]);
+      });
+
+      it('CONTROL: a document with no signature is not asked, so the notice is the signatures and not the command', async () => {
+        const { client } = signingClient(SIGNED, [], { count: 0 });
+        const asked: string[] = [];
+        await signDocumentCommand({
+          client,
+          toast: () => undefined,
+          stamp,
+          signatures,
+          onApplied: () => undefined,
+          ask: (id) => {
+            asked.push(id);
+            return Promise.resolve(undefined);
+          },
+        }).run(CONTEXT);
+
+        expect(asked).toStrictEqual(['dialog.sign-document']);
+      });
     });
 
     it('a placement answered with NO look signs nothing, rather than signing invisibly', async () => {

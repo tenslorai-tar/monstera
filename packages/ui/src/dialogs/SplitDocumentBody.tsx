@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   DELETE_PAGES_HINT,
@@ -20,6 +20,7 @@ import type { SplitDocumentAnswer } from './splitDocumentResult.js';
 import { Button } from '../primitives/Button.js';
 import { DialogChoices, DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 
 /**
@@ -56,6 +57,7 @@ export default function SplitDocumentBody({
   const { _ } = useLingui();
   const [eachPage, setEachPage] = useState(true);
   const [text, setText] = useState('');
+  const rangeField = useRef<HTMLDivElement>(null);
 
   const parsed = parsePageGroups(text, pageCount);
   // ONE GROUP PER PAGE, built here rather than sent as a mode — see the header.
@@ -80,24 +82,28 @@ export default function SplitDocumentBody({
         }}
       />
       {eachPage ? null : (
-        <DialogRow label={SPLIT_DOCUMENT_LABEL}>
-          <Input
-            label={SPLIT_DOCUMENT_LABEL}
-            labelShownBeside
-            opensFocused
-            placeholder={DELETE_PAGES_HINT}
-            value={text}
-            onValueChange={setText}
-          />
-        </DialogRow>
+        <div ref={rangeField}>
+          <DialogRow label={SPLIT_DOCUMENT_LABEL}>
+            <Input
+              label={SPLIT_DOCUMENT_LABEL}
+              labelShownBeside
+              opensFocused
+              placeholder={DELETE_PAGES_HINT}
+              value={text}
+              onValueChange={setText}
+            />
+          </DialogRow>
+        </div>
       )}
-      <p className="m-split-document__problem" role="status">
-        {eachPage
-          ? _(SPLIT_DOCUMENT_FILES, { files: groups.length })
-          : parsed.ok
-            ? _(SPLIT_DOCUMENT_FILES, { files: groups.length })
-            : renderRangeProblem(parsed, text, _, SPLIT_DOCUMENT_EMPTY)}
-      </p>
+      <Problem
+        about={{ within: rangeField }}
+        message={eachPage || parsed.ok ? undefined : renderRangeProblem(parsed, text, _, SPLIT_DOCUMENT_EMPTY)}
+      />
+      {eachPage || parsed.ok ? (
+        <p className="m-split-document__count" role="status">
+          {_(SPLIT_DOCUMENT_FILES, { files: groups.length })}
+        </p>
+      ) : null}
       <DialogFooter>
         <Button
           label={SPLIT_DOCUMENT_APPLY}

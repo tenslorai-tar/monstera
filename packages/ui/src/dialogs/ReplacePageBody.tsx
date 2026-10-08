@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   REPLACE_PAGE_APPLY,
@@ -13,6 +13,7 @@ import {
 import { formatPageRanges } from '../pageRanges.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter } from '../primitives/Dialog.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { SourceDocumentRow } from './DocumentChoice.js';
 import { PageRangeChoice, type PageRangeStart, usePageRange } from './PageRangeChoice.js';
@@ -58,6 +59,7 @@ export default function ReplacePageBody({
   const pageCount = chosen?.pageCount ?? 1;
   const range = usePageRange(pageCount, draft?.sourcePages ?? startFor(pages.length, pageCount));
   const [pressed, setPressed] = useState(false);
+  const pageFields = useRef<HTMLDivElement>(null);
   const sorted = [...new Set(pages)].sort((a, b) => a - b);
   const together = sorted.every((page, index) => page === (sorted[0] ?? 0) + index);
   // SAID FROM THE FIRST PRESS ON, and as the choice changes after it, until the counts pair.
@@ -79,12 +81,14 @@ export default function ReplacePageBody({
         }}
         marker="replace-page"
       />
-      {chosen === undefined ? null : <PageRangeChoice range={range} note={SOURCE_PAGES_NOTE} empty={SOURCE_PAGES_EMPTY} />}
-      {countsDiffer ? (
-        <p className="m-replace-page__problem" role="alert">
-          {_(REPLACE_PAGE_COUNTS_DIFFER, { count: sorted.length })}
-        </p>
-      ) : null}
+      <div ref={pageFields}>
+        {chosen === undefined ? null : <PageRangeChoice range={range} note={SOURCE_PAGES_NOTE} empty={SOURCE_PAGES_EMPTY} />}
+      </div>
+      <Problem
+        about={{ within: pageFields }}
+        focusField={countsDiffer}
+        message={countsDiffer ? _(REPLACE_PAGE_COUNTS_DIFFER, { count: sorted.length }) : undefined}
+      />
       <DialogFooter>
         <Button
           label={REPLACE_PAGE_APPLY}

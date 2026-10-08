@@ -1,6 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
 import type { KeyboardEvent, ReactElement } from 'react';
+import { useRef } from 'react';
 
 import {
   SHORTCUTS_ACTIONS_HEADER,
@@ -13,6 +14,7 @@ import {
   SHORTCUTS_RESET,
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
+import { Problem } from '../primitives/Problem.js';
 
 /** One command and its key, as the command registry's rows reach a surface (`ShortcutRow`, with the title as a key). */
 export interface ShortcutListRow {
@@ -64,12 +66,29 @@ export function ShortcutList({
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => {
-          const chord = editor === undefined ? row.chord : (editor.chords[row.id] ?? null);
-          const waiting = editor?.waiting === row.id;
-          return (
-            <tr key={row.id}>
-              <th scope="row">{_(row.title)}</th>
+        {rows.map((row) => (
+          <ShortcutRowView editor={editor} key={row.id} row={row} />
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** One command's row. A component of its own so the sentence about its key can point at the row's controls (`Problem`). */
+function ShortcutRowView({
+  row,
+  editor,
+}: {
+  readonly row: ShortcutListRow;
+  readonly editor: ShortcutListEditor | undefined;
+}): ReactElement {
+  const { _ } = useLingui();
+  const rowRef = useRef<HTMLTableRowElement>(null);
+  const chord = editor === undefined ? row.chord : (editor.chords[row.id] ?? null);
+  const waiting = editor?.waiting === row.id;
+  return (
+    <tr ref={rowRef}>
+      <th scope="row">{_(row.title)}</th>
               <td>
                 {/* THE KEYS IN THEIR OWN FLEX BOX, so the cell stays a table cell: a `td` made `display: flex`
                     leaves the table's row alignment and drew every key above its command's name. */}
@@ -96,9 +115,7 @@ export function ShortcutList({
                     <span className="m-shortcuts__none">{_(SHORTCUTS_NONE)}</span>
                   ) : null}
                   {editor?.refused?.id === row.id ? (
-                    <p className="m-shortcuts__refused" role="alert">
-                      {editor.refused.text}
-                    </p>
+                    <Problem about={{ within: rowRef }} message={editor.refused.text} />
                   ) : null}
                 </div>
               </td>
@@ -131,10 +148,6 @@ export function ShortcutList({
                   )}
                 </td>
               )}
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    </tr>
   );
 }

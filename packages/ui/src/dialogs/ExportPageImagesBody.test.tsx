@@ -31,6 +31,15 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
   );
 }
 
+/** Every refusal on screen, joined: an empty alert region is a live region waiting, not a sentence. */
+function alerts(): string {
+  return screen
+    .queryAllByRole('alert')
+    .map((alert) => alert.textContent)
+    .filter((text) => text !== '')
+    .join(' ');
+}
+
 function opened(): { readonly resolve: ReturnType<typeof vi.fn> } {
   const resolve = vi.fn();
   render(
@@ -74,12 +83,12 @@ describe('ExportPageImagesBody', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Select pages' }));
     const field = screen.getByRole('textbox', { name: 'Page numbers' });
     fireEvent.change(field, { target: { value: '4' } });
-    expect(screen.queryByRole('alert')).toBeNull();
+    expect(alerts()).toBe('');
 
     fireEvent.click(EXPORT());
 
     expect(resolve).not.toHaveBeenCalled();
-    expect(screen.getByRole('alert').textContent).toBe('“4” is outside this document, which has 3 pages.');
+    expect(alerts()).toBe('“4” is outside this document, which has 3 pages.');
 
     fireEvent.change(field, { target: { value: '3, 1' } });
     fireEvent.click(EXPORT());

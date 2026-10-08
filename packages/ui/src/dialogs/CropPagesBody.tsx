@@ -1,7 +1,7 @@
 import { useLingui } from '@lingui/react';
 import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   CROP_PAGES_APPLY,
@@ -15,6 +15,7 @@ import {
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { CropPagesAnswer } from './cropPagesResult.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
@@ -61,27 +62,28 @@ export default function CropPagesBody({
   const { _ } = useLingui();
   const [edges, setEdges] = useState<Edges>(EMPTY);
   const [everyPage, setEveryPage] = useState(true);
+  const edgesRef = useRef<HTMLDivElement>(null);
 
   const parsed = readEdges(edges);
 
   return (
     <div className="m-crop-pages">
-      {EDGES.map(({ key, label }) => (
-        <DialogRow key={key} label={label}>
-          <Input
-            label={label}
-            labelShownBeside
-            value={edges[key]}
-            onValueChange={(next) => {
-              setEdges({ ...edges, [key]: next });
-            }}
-          />
-        </DialogRow>
-      ))}
+      <div ref={edgesRef}>
+        {EDGES.map(({ key, label }) => (
+          <DialogRow key={key} label={label}>
+            <Input
+              label={label}
+              labelShownBeside
+              value={edges[key]}
+              onValueChange={(next) => {
+                setEdges({ ...edges, [key]: next });
+              }}
+            />
+          </DialogRow>
+        ))}
+      </div>
       <PageScopeChoice className="m-crop-pages__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
-      <p className="m-crop-pages__problem" role="status">
-        {parsed === null ? _(problemOf(edges)) : ''}
-      </p>
+      <Problem message={parsed === null ? _(problemOf(edges)) : undefined} about={{ within: edgesRef }} />
       <DialogFooter>
         <Button
           label={CROP_PAGES_APPLY}

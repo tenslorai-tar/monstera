@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   RESIZE_PAGES_A3,
@@ -19,6 +19,7 @@ import {
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import { PageScopeChoice } from './PageScopeChoice.js';
 import type { ResizePagesAnswer } from './resizePagesResult.js';
@@ -70,6 +71,8 @@ export default function ResizePagesBody({
   const [width, setWidth] = useState(String(A4.width));
   const [height, setHeight] = useState(String(A4.height));
   const [everyPage, setEveryPage] = useState(true);
+  const widthField = useRef<HTMLDivElement>(null);
+  const heightField = useRef<HTMLDivElement>(null);
 
   const widthPoints = readPoints(width);
   const heightPoints = readPoints(height);
@@ -94,30 +97,35 @@ export default function ResizePagesBody({
           ))}
         </div>
       </DialogRow>
-      <DialogRow label={RESIZE_PAGES_WIDTH}>
-        <Input
-          label={RESIZE_PAGES_WIDTH}
-          labelShownBeside
-          value={width}
-          onValueChange={(next) => {
-            setWidth(next);
-          }}
-        />
-      </DialogRow>
-      <DialogRow label={RESIZE_PAGES_HEIGHT}>
-        <Input
-          label={RESIZE_PAGES_HEIGHT}
-          labelShownBeside
-          value={height}
-          onValueChange={(next) => {
-            setHeight(next);
-          }}
-        />
-      </DialogRow>
+      <div ref={widthField}>
+        <DialogRow label={RESIZE_PAGES_WIDTH}>
+          <Input
+            label={RESIZE_PAGES_WIDTH}
+            labelShownBeside
+            value={width}
+            onValueChange={(next) => {
+              setWidth(next);
+            }}
+          />
+        </DialogRow>
+      </div>
+      <div ref={heightField}>
+        <DialogRow label={RESIZE_PAGES_HEIGHT}>
+          <Input
+            label={RESIZE_PAGES_HEIGHT}
+            labelShownBeside
+            value={height}
+            onValueChange={(next) => {
+              setHeight(next);
+            }}
+          />
+        </DialogRow>
+      </div>
+      <Problem
+        about={{ within: widthPoints === null ? widthField : heightField }}
+        message={ready ? undefined : _(RESIZE_PAGES_NOT_A_SIZE)}
+      />
       <PageScopeChoice className="m-resize-pages__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
-      <p className="m-resize-pages__problem" role="status">
-        {ready ? '' : _(RESIZE_PAGES_NOT_A_SIZE)}
-      </p>
       <DialogFooter>
         <Button
           label={RESIZE_PAGES_APPLY}

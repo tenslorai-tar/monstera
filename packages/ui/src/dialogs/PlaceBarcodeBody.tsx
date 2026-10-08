@@ -21,6 +21,7 @@ import { attemptProblem, useAttempt } from '../primitives/attempt.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { TextArea } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { PlaceBarcodeAnswer } from './placeBarcode.js';
 
@@ -61,11 +62,7 @@ export default function PlaceBarcodeBody({
 
   return (
     <div className="m-place-barcode">
-      {refused === undefined ? null : (
-        <p className="m-place-barcode__refused" role="alert">
-          {_(PLACE_BARCODE_REFUSED)}
-        </p>
-      )}
+      {refused === undefined ? null : <Problem message={_(PLACE_BARCODE_REFUSED)} />}
       {/* THE PRIMITIVE'S MULTI-LINE FIELD, as every dialog's: a textarea of its own drew a resize corner, a thicker
           border and cramped text beside the other fields (the gallery, 2026-10-03). */}
       <DialogRow label={PLACE_BARCODE_TEXT} problem={problem === undefined ? undefined : _(problem)}>

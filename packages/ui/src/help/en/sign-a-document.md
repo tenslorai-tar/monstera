@@ -10,13 +10,19 @@ A digital signature proves who signed a document and shows whether it has change
 
 ## Steps
 
-1. In the rail, choose **Protect**, then **Sign document** in the **Signatures** group.
+1. In the rail, choose **Protect**, then **Sign with Certificate** in the **Signatures** group.
 2. Fill in **Certificate password (leave empty if it has none)**, and if you like the optional **Signed by (optional)**, **Reason (optional)**, **Location (optional)** and **Contact (optional)** fields.
 3. In **This signature says**, choose **I approve this document**, or, if you are the author, one of the three choices that begin "I am the author", which also say what may still change.
 4. In **Timestamp**, choose **No timestamp**, **DigiCert**, **GlobalSign** or **Sectigo**.
 5. Choose **Choose certificate and sign**, and pick your certificate file.
 
 ![The Sign document window with This signature says and Timestamp](screenshot:sign-a-document-1)
+
+## Which signature do I need?
+
+- **Sign with Certificate** (Protect): a digital signature from your certificate, with no mark on the page. Anyone who checks the file sees who signed it.
+- **Signature & Certificate** (Protect): the same digital signature, and your signature shown on the page in a box you draw. See "Add a visible signature".
+- **Signature** (Comment): only a picture of your signature on the page. It is not a digital signature; no certificate is used and nothing proves who signed. See "Add your signature".
 
 ## Good to know
 

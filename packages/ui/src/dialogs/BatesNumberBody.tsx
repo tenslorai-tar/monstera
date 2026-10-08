@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import {
   BATES_NUMBER_APPLY,
@@ -22,6 +22,7 @@ import {
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { Input } from '../primitives/Input.js';
+import { Problem } from '../primitives/Problem.js';
 import { SegmentedControl } from '../primitives/SegmentedControl.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { BatesNumberAnswer } from './batesNumberResult.js';
@@ -85,6 +86,7 @@ export default function BatesNumberBody({
   const [edge, setEdge] = useState<(typeof EDGES)[number]['key']>('footer');
   const [slot, setSlot] = useState<(typeof SLOTS)[number]['key']>('right');
   const [everyPage, setEveryPage] = useState(true);
+  const numbersRef = useRef<HTMLDivElement>(null);
 
   const startValue = readInteger(start, DEFAULT_START);
   const digitsValue = readInteger(digits, DEFAULT_DIGITS);
@@ -107,26 +109,28 @@ export default function BatesNumberBody({
           }}
         />
       </DialogRow>
-      <DialogRow label={BATES_NUMBER_START}>
-        <Input
-          label={BATES_NUMBER_START}
-          labelShownBeside
-          value={start}
-          onValueChange={(next) => {
-            setStart(next);
-          }}
-        />
-      </DialogRow>
-      <DialogRow label={BATES_NUMBER_DIGITS}>
-        <Input
-          label={BATES_NUMBER_DIGITS}
-          labelShownBeside
-          value={digits}
-          onValueChange={(next) => {
-            setDigits(next);
-          }}
-        />
-      </DialogRow>
+      <div ref={numbersRef}>
+        <DialogRow label={BATES_NUMBER_START}>
+          <Input
+            label={BATES_NUMBER_START}
+            labelShownBeside
+            value={start}
+            onValueChange={(next) => {
+              setStart(next);
+            }}
+          />
+        </DialogRow>
+        <DialogRow label={BATES_NUMBER_DIGITS}>
+          <Input
+            label={BATES_NUMBER_DIGITS}
+            labelShownBeside
+            value={digits}
+            onValueChange={(next) => {
+              setDigits(next);
+            }}
+          />
+        </DialogRow>
+      </div>
       <DialogRow label={BATES_NUMBER_SUFFIX}>
         <Input
           label={BATES_NUMBER_SUFFIX}
@@ -163,9 +167,7 @@ export default function BatesNumberBody({
         />
       </DialogRow>
       <PageScopeChoice className="m-bates-number__scope" pages={pages} every={everyPage} onChange={setEveryPage} />
-      <p className="m-bates-number__problem" role="status">
-        {ready ? '' : _(BATES_NUMBER_NOT_A_NUMBER)}
-      </p>
+      <Problem message={ready ? undefined : _(BATES_NUMBER_NOT_A_NUMBER)} about={{ within: numbersRef }} />
       <DialogFooter>
         <Button
           label={BATES_NUMBER_APPLY}

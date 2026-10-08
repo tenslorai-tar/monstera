@@ -17,6 +17,7 @@ import {
 } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogScroll } from '../primitives/Dialog.js';
+import { Problem } from '../primitives/Problem.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { CameraCaptureAnswer } from './cameraCapture.js';
 
@@ -186,9 +187,7 @@ export default function CameraCaptureBody({ resolve }: DialogAnswering<CameraCap
             />
           </div>
         </div>
-        <p className="m-camera-capture__problem" role="status">
-          {full ? _(CAMERA_CAPTURE_FULL) : ''}
-        </p>
+        <Problem message={full ? _(CAMERA_CAPTURE_FULL) : undefined} />
       </DialogScroll>
       <DialogFooter>
         <Button

@@ -72,7 +72,7 @@ export default function DocumentPasswordBody({
           one a person answers without knowing what they are unlocking — and
           with tabs there may be several. It is the name and never the path,
           which is the only thing the renderer has (invariant L2). */}
-      <p className="m-annotation-text__problem">{_(DOCUMENT_PASSWORD_ASKS, { name })}</p>
+      <p className="m-annotation-text__ask">{_(DOCUMENT_PASSWORD_ASKS, { name })}</p>
       <DialogRow label={DOCUMENT_PASSWORD_LABEL} problem={problem === undefined ? undefined : _(problem)}>
         <Input
           invalid={over}
