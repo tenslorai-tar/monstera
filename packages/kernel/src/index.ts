@@ -529,6 +529,7 @@ export {
   isRecognisedScan,
   regionOfFrame,
 } from './slideModel.js';
+export { type PictureResolvers, type Raster, cutFromRaster, resolveSlide } from './slideResolve.js';
 export { rasterScale } from './rasterScale.js';
 export {
   type CellValue,
