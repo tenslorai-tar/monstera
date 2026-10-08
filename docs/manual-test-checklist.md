@@ -187,7 +187,7 @@ is not available.
 - [ ] **Export text with layout…** — Convert · `document.export-layout-text` · Shows: a toast · Help: *Save the text as a text file*
 - [ ] **New PDF from Word, Excel or PowerPoint…** — Create · `document.new-from-office` · Shows: on screen · Help: *Make a PDF from a Word, Excel or PowerPoint file*
 - [ ] **New PDF from Markdown…** — Create · `document.new-from-markdown` · Shows: on screen · Help: *Make a PDF from a Markdown file*
-- [ ] **Add pages from Markdown…** — Create · `document.append-markdown` · Shows: on screen · Help: *Make a PDF from a Markdown file*
+- [ ] **Insert from Markdown…** — Create · `document.append-markdown` · Shows: on screen · Help: *Make a PDF from a Markdown file*
 - [ ] **New PDF table from CSV…** — Create · `document.new-from-csv` · Shows: on screen · Help: *Make a PDF table from a CSV file*
 - [ ] **New PDF from images…** — Create · `document.new-from-images` · Shows: on screen · Help: *Make a PDF from pictures*
 - [ ] **Open from web address…** — Create · `document.open-from-url` · Shows: on screen · Help: *Open a PDF from a web address*

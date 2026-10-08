@@ -61,19 +61,32 @@ const signatures = {
   },
 };
 
-function callbacks(): {
+function callbacks(
+  position: unknown = { at: 10 },
+  // A DEFAULT PARAMETER CANNOT SAY *CLOSED*: an explicit `undefined` takes the default, so the closed question is its own flag.
+  closed = false,
+): {
   readonly calls: { name: string; value: unknown }[];
+  readonly where: { id: string; props: unknown }[];
   readonly record: (name: string) => (value: unknown) => void;
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
 } {
   const calls: { name: string; value: unknown }[] = [];
+  const where: { id: string; props: unknown }[] = [];
   const record = (name: string) => (value: unknown) => {
     calls.push({ name, value });
   };
   return {
     calls,
+    where,
     record,
     ask: (id, props) => {
+      // THE POSITION QUESTION IS ANSWERED AND KEPT APART, so every case about what comes after it reads the same list as
+      // before: it asks where first, and `position` is what the person answered (the end, as the command always did).
+      if (id === 'dialog.insert-markdown') {
+        where.push({ id, props });
+        return Promise.resolve(closed ? undefined : position);
+      }
       calls.push({ name: 'ask', value: { id, props } });
       return Promise.resolve(undefined);
     },
@@ -215,6 +228,43 @@ describe('appendMarkdownCommand', () => {
       },
       { name: 'activate', value: DOC },
     ]);
+  });
+
+  it('ASKS WHERE FIRST and sends the position chosen: at the start is 0, after page 3 is 3 — CONTROL: closing the question sends nothing', async () => {
+    const appended = ok({
+      kind: 'appended',
+      version: asDocVersion(2),
+      byteLength: 8192,
+      historyDropped: 0,
+      opened: { docId: COMPOSED, version: asDocVersion(1), byteLength: 4096, name: 'notes.pdf' },
+      boxed: [],
+      more: 0,
+    });
+    const run = async (
+      position: unknown,
+      closed = false,
+    ): Promise<{ sent: { id: string; params: unknown }[]; where: { id: string; props: unknown }[] }> => {
+      const { client, sent } = recording({ 'document.appendMarkdown': appended });
+      const { record, ask, where } = callbacks(position, closed);
+      await appendMarkdownCommand({
+        client,
+        ask,
+        stamp: STAMP,
+        signatures,
+        onApplied: record('applied'),
+        onOpened: record('opened'),
+        onActivate: record('activate'),
+      }).run(CONTEXT);
+      return { sent, where };
+    };
+
+    const start = await run({ at: 0 });
+    // THE QUESTION CARRIES THE DOCUMENT'S OWN SIZE AND THE PAGE ON SHOW, which bound and seed its position.
+    expect(start.where).toStrictEqual([{ id: 'dialog.insert-markdown', props: { pageCount: 10, page: 3 } }]);
+    expect(start.sent).toStrictEqual([{ id: 'document.appendMarkdown', params: { docId: DOC, at: 0 } }]);
+    expect((await run({ at: 3 })).sent).toStrictEqual([{ id: 'document.appendMarkdown', params: { docId: DOC, at: 3 } }]);
+    // CONTROL: a question closed unanswered is a change of mind. Nothing is picked, composed or written.
+    expect((await run(undefined, true)).sent).toStrictEqual([]);
   });
 
   it('NAMES the characters the added pages draw as boxes, after the document is back in front', async () => {

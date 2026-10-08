@@ -4,6 +4,8 @@ import type { DocId, DocVersion } from '@monstera/shared';
 import { BOXED_CHARACTERS_DIALOG_ID } from '../dialogs/boxedCharacters.js';
 import { CAMERA_CAPTURE_DIALOG_ID, CAMERA_CAPTURE_RESULT } from '../dialogs/cameraCapture.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
+import { INSERT_MARKDOWN_DIALOG_ID } from '../dialogs/insertMarkdown.js';
+import type { InsertMarkdownAnswer } from '../dialogs/insertMarkdownResult.js';
 import { WORKBOOK_INCOMPLETE_DIALOG_ID } from '../dialogs/workbookIncomplete.js';
 import {
   MARKDOWN_IMPORT_PROBLEM_DIALOG_ID,
@@ -386,9 +388,17 @@ export function appendMarkdownCommand(
       if (context.docId === undefined || context.pageCount === undefined) return;
       const target = context.docId;
 
+      // WHERE FIRST, then the file (the owner's 2026-10-07 recording): at the start, at the end or after a page, the whole
+      // converted content going there. Closed unanswered is a change of mind, and nothing is picked or written.
+      const where = (await deps.ask(INSERT_MARKDOWN_DIALOG_ID, {
+        pageCount: context.pageCount,
+        page: context.page ?? 0,
+      })) as InsertMarkdownAnswer | undefined;
+      if (where === undefined) return;
+
       const answer = await deps.client['document.appendMarkdown']({
         docId: target,
-        at: context.pageCount,
+        at: where.at,
       });
       if (!answer.ok) {
         reportProblem(deps, answer.error);

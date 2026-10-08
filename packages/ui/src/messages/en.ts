@@ -373,6 +373,14 @@ export const INSERT_FROM_PDF_AFTER = messageKey('dialog.insert-from-pdf.after');
 export const INSERT_FROM_PDF_PAGE = messageKey('dialog.insert-from-pdf.page');
 export const INSERT_FROM_PDF_RANGE = messageKey('dialog.insert-from-pdf.range');
 export const INSERT_FROM_PDF_APPLY = messageKey('dialog.insert-from-pdf.apply');
+export const INSERT_MARKDOWN_TITLE = messageKey('dialog.insert-markdown.title');
+export const INSERT_MARKDOWN_WHERE = messageKey('dialog.insert-markdown.where');
+export const INSERT_MARKDOWN_START = messageKey('dialog.insert-markdown.start');
+export const INSERT_MARKDOWN_END = messageKey('dialog.insert-markdown.end');
+export const INSERT_MARKDOWN_AFTER = messageKey('dialog.insert-markdown.after');
+export const INSERT_MARKDOWN_PAGE = messageKey('dialog.insert-markdown.page');
+export const INSERT_MARKDOWN_RANGE = messageKey('dialog.insert-markdown.range');
+export const INSERT_MARKDOWN_APPLY = messageKey('dialog.insert-markdown.apply');
 export const REPLACE_PAGE_COMMAND_TITLE = messageKey('command.replace-page.title');
 export const REPLACE_PAGE_TITLE = messageKey('dialog.replace-page.title');
 export const REPLACE_PAGE_LABEL = messageKey('dialog.replace-page.label');
@@ -5125,6 +5133,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // SAID ON THE PRESS, under the row: the page is one of THIS document's, which the source row above is not.
   [INSERT_FROM_PDF_RANGE]: 'Choose a page of this document, from 1 to {last}.',
   [INSERT_FROM_PDF_APPLY]: 'Insert',
+  [INSERT_MARKDOWN_TITLE]: 'Insert from Markdown',
+  [INSERT_MARKDOWN_WHERE]: 'Where',
+  [INSERT_MARKDOWN_START]: 'At the start',
+  [INSERT_MARKDOWN_END]: 'At the end',
+  [INSERT_MARKDOWN_AFTER]: 'After page',
+  [INSERT_MARKDOWN_PAGE]: 'Page',
+  // SAID ON THE PRESS, under the row, `INSERT_FROM_PDF_RANGE`'s reason.
+  [INSERT_MARKDOWN_RANGE]: 'Choose a page of this document, from 1 to {last}.',
+  [INSERT_MARKDOWN_APPLY]: 'Choose file…',
   [REPLACE_PAGE_COMMAND_TITLE]: 'Replace pages…',
   [REPLACE_PAGE_TITLE]: 'Replace pages',
   [REPLACE_PAGE_LABEL]: 'Replace with',
@@ -5487,7 +5504,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'page from. Try a smaller copy of it. Your document has not changed.',
   [GROUP_CREATE]: 'Create',
   [NEW_FROM_MARKDOWN_COMMAND_TITLE]: 'New PDF from Markdown…',
-  [APPEND_MARKDOWN_COMMAND_TITLE]: 'Add pages from Markdown…',
+  [APPEND_MARKDOWN_COMMAND_TITLE]: 'Insert from Markdown…',
   [NEW_FROM_CSV_COMMAND_TITLE]: 'New PDF table from CSV…',
   [NEW_FROM_IMAGES_COMMAND_TITLE]: 'New PDF from images…',
   [NEW_FROM_OFFICE_COMMAND_TITLE]: 'New PDF from Word, Excel or PowerPoint…',
@@ -6064,7 +6081,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_PLACE_SIGNATURE]: 'Sign with certificate',
   [RIBBON_DIAGNOSTICS]: 'Diagnostics',
   [RIBBON_NEW_FROM_MARKDOWN]: 'From Markdown',
-  [RIBBON_APPEND_MARKDOWN]: 'Append Markdown',
+  [RIBBON_APPEND_MARKDOWN]: 'Insert Markdown',
   [RIBBON_NEW_FROM_CSV]: 'From CSV',
   [RIBBON_NEW_FROM_IMAGES]: 'From images',
   [RIBBON_NEW_FROM_OFFICE]: 'From Office',

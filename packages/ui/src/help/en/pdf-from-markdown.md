@@ -17,10 +17,11 @@ To make a new PDF:
 
 To add the pages to the open document:
 
-1. Choose **Append Markdown…** (**Add pages from Markdown…**) in the **Create** group.
-2. Pick the file and choose where to save the new pages' PDF. It opens in a tab and its pages are added to the end of your document.
+1. Choose **Insert Markdown…** (**Insert from Markdown…**) in the **Create** group.
+2. Under **Where**, choose **At the start**, **At the end** or **After page** and type the page. Then choose **Choose file…**.
+3. Pick the file and choose where to save the new pages' PDF. It opens in a tab, and all of its pages are added to your document where you chose.
 
-![The Create group in Tools with From Markdown… and Append Markdown…](screenshot:pdf-from-markdown-1)
+![The Create group in Tools with From Markdown… and Insert Markdown…](screenshot:pdf-from-markdown-1)
 
 ## Good to know
 

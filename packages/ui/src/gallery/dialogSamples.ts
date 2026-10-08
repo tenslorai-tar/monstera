@@ -854,6 +854,11 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'none-open', props: { choices: [], pageCount: 12, page: 2 } },
     { state: 'long', props: { choices: LONG_SOURCES, pageCount: 12, page: 2 } },
   ],
+  'dialog.insert-markdown': [
+    // AT THE END is where it opens; the page on show is the third of twelve.
+    { state: 'opened', props: { pageCount: 12, page: 2 } },
+    { state: 'one-page', props: { pageCount: 1, page: 0 } },
+  ],
   'dialog.replace-page': [
     // ONE PAGE FROM A TWELVE-PAGE FILE: the dialog opens on its first page, so the length is kept.
     { state: 'opened', props: { choices: SOURCES, pages: [2] } },
