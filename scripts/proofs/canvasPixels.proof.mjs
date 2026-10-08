@@ -612,6 +612,9 @@ try {
             // the floor is visible long before it crosses it — and because the
             // device-pixel ratio is what makes the size above readable as a
             // scale rather than as a number that happened.
+            // DIAGNOSTIC (to be reverted with the renderPage trace): the draw's own sequence on a run that PASSES, so a
+            // passing and a failing run can be set side by side.
+            `  TRACE ${JSON.stringify(seen.environment.console)}\n` +
             `  zoomed to ${String(ZOOM_TARGET)}x in ${String(zoomed.clicks)} click(s): drew ` +
             `${String(zoomed.painted)} of ${String(zoomedPixels)} pixels ` +
             `(${((zoomed.painted / zoomedPixels) * 100).toFixed(2)}%) at ` +
