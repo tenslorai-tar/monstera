@@ -105,7 +105,9 @@ export function useRibbonFold(section: RibbonSection | undefined): RibbonFold {
         // THE GROUP'S OWN PADDING AND EDGE, from the one rule for a box's content (`innerWidthOf`). It was the group's
         // width less its buttons row, and that row stretches to the group, so a caption wider than the buttons was
         // inside the "buttons" and never charged.
-        chrome: Math.max(element.getBoundingClientRect().width - innerWidthOf(element), 0),
+        // PLUS THE EXPAND ARROW, where the group draws one (ADR-0199): it is in the buttons row but is no unit of the fold, so
+        // its width and the gap before it are the group's cost besides its buttons, like its padding.
+        chrome: Math.max(element.getBoundingClientRect().width - innerWidthOf(element), 0) + galleryCost(element),
         caption: captionWidth(element),
         gap: buttonGap(element),
       });
@@ -278,6 +280,12 @@ export function innerWidthOf(row: HTMLElement): number {
 /** The gap between two items in the row, from the computed style `app.css` owns. */
 function rowGapOf(row: HTMLElement): number {
   return Number.parseFloat(getComputedStyle(row).columnGap) || 0;
+}
+
+/** An expand arrow's width and the gap before it, or 0 for a group with none: what the fold charges that is not a button. */
+function galleryCost(group: HTMLElement): number {
+  const arrow = group.querySelector<HTMLElement>('.m-ribbon__gallery');
+  return arrow === null ? 0 : arrow.getBoundingClientRect().width + buttonGap(group);
 }
 
 /** The gap between a group's buttons, from the computed style `app.css` owns rather than a copy. */

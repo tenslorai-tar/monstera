@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type MessageKey, messageKey } from '@monstera/shared';
 
-import { foldGroups, foldRow, ribbonUnits, splitFold, type GroupWidths, type RibbonUnit } from './ribbonFolding.js';
+import { foldGroups, foldRow, galleryOf, ribbonUnits, splitFold, type GroupWidths, type RibbonUnit } from './ribbonFolding.js';
 import { innerWidthOf } from './useRibbonFold.js';
 
 /**
@@ -380,6 +380,35 @@ describe('ribbonUnits — a run of small tools is columns of at most three (ADR-
       expect(all, `shown ${String(shown)}`).toStrictEqual(entries.map((entry) => entry.command.id));
     }
     expect(splitFold(entries, { shown: 1, more: true }).folded.map((entry) => entry.command.id)).toStrictEqual(['big', 'u', 'v']);
+  });
+});
+
+describe('galleryOf — a group of icons longer than one column has an expand arrow (ADR-0199)', () => {
+  interface Sized {
+    readonly command: { readonly id: string };
+    readonly secondary: boolean;
+    readonly menu: MessageKey | undefined;
+    readonly size: 'large' | 'small' | 'icon';
+  }
+  const tool = (id: string, size: Sized['size'], secondary = false): Sized => ({ command: { id }, secondary, menu: undefined, size });
+  const run = (count: number, size: Sized['size']): Sized[] => Array.from({ length: count }, (_, index) => tool(`t${String(index)}`, size));
+
+  it('lists EVERY entry of a group whose icons run to two columns or more, in the row’s order', () => {
+    const entries = [tool('big', 'large'), ...run(7, 'icon')];
+    expect(galleryOf(entries)?.map((entry) => entry.command.id)).toStrictEqual(['big', 't0', 't1', 't2', 't3', 't4', 't5', 't6']);
+  });
+
+  it('CONTROL: one column of icons, any number of small tools, and a plain group have none', () => {
+    expect(galleryOf(run(3, 'icon'))).toBeUndefined();
+    expect(galleryOf(run(9, 'small'))).toBeUndefined();
+    expect(galleryOf(run(5, 'large'))).toBeUndefined();
+  });
+
+  it('is what the width folded PLUS what it drew: the arrow and the More are not the same list', () => {
+    const entries = run(8, 'icon');
+    const folded = splitFold(entries, { shown: 1, more: true }).folded;
+    expect(folded.length).toBeLessThan(entries.length);
+    expect(galleryOf(entries)).toHaveLength(entries.length);
   });
 });
 

@@ -33,6 +33,7 @@ export function RibbonMore({
   named,
   widthFolded,
   accessibleName,
+  gallery,
 }: {
   readonly entries: readonly OrderedEntry[];
   readonly context: CommandContext;
@@ -56,6 +57,12 @@ export function RibbonMore({
    * *More*, because the fold charges the row's *More* at the gauge's width.
    */
   readonly accessibleName?: string;
+  /**
+   * A GROUP'S EXPAND ARROW (ADR-0199): the same menu of `entries`, opened by a small icon button named `label` instead of
+   * a captioned one. `entries` are then every command of the group and not the folded ones — the caller says which — and
+   * the arrow does not claim them for *Show me* (`data-holds`), because the group's own buttons and *More* already do.
+   */
+  readonly gallery?: { readonly label: string };
 }): ReactElement {
   const { i18n } = useLingui();
   const marks = entries.some((entry) => entry.command.checked?.(context) !== undefined);
@@ -63,16 +70,27 @@ export function RibbonMore({
   return (
     <Menu.Root>
       <Menu.Trigger
-        className={named === undefined ? 'm-tool-button m-ribbon__more' : 'm-tool-button m-ribbon__menu'}
+        className={
+          gallery !== undefined
+            ? 'm-tool-button m-ribbon__gallery'
+            : named === undefined
+              ? 'm-tool-button m-ribbon__more'
+              : 'm-tool-button m-ribbon__menu'
+        }
         data-command={named?.measuredAs}
         // THE MEMBERS, for the Help centre's *Show me* (ADR-0112): a closed menu's items are not in the page, so the
         // trigger is what a ring for one of them lands on.
-        data-holds={entries.map((entry) => entry.command.id).join(' ')}
+        data-holds={gallery === undefined ? entries.map((entry) => entry.command.id).join(' ') : undefined}
         data-width-folded={widthFolded === undefined ? undefined : String(widthFolded)}
-        aria-label={accessibleName}
+        aria-label={gallery?.label ?? accessibleName}
+        title={gallery?.label}
         nativeButton
       >
-        <MoreFace icon={named?.icon ?? 'Ellipsis'} label={i18n._(named?.label ?? RIBBON_MORE)} />
+        {gallery === undefined ? (
+          <MoreFace icon={named?.icon ?? 'Ellipsis'} label={i18n._(named?.label ?? RIBBON_MORE)} />
+        ) : (
+          <Icon name="ChevronDown" size="chrome" />
+        )}
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner align="start" side="bottom">

@@ -4282,6 +4282,17 @@ optgroup {
   flex: none;
 }
 
+/* A GROUP'S EXPAND ARROW (ADR-0199): the chevron alone, a narrow strip as tall as the three icon rows it ends. It is in the
+   buttons row and is no unit of the fold; the fold charges its width to the group (`useRibbonFold`'s `galleryCost`). */
+.m-ribbon__gallery {
+  flex: none;
+  align-self: flex-start;
+  min-inline-size: 0;
+  inline-size: var(--control-ribbon-row);
+  block-size: calc(var(--control-ribbon-row) * 3 + var(--space-2) * 2);
+  padding: 0;
+}
+
 /* THE FOLD'S RULER (`RibbonMoreGauge`): laid out at its natural width and never seen. Out of flow, so
    it takes no gap and is no group's sibling in the row's arithmetic. */
 .m-ribbon__more-gauge {

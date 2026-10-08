@@ -316,6 +316,20 @@ export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonl
 }
 
 /**
+ * The entries an EXPAND ARROW lists (ADR-0199), or `undefined` for a group that draws none.
+ *
+ * A group has an arrow when its run of `icon` tools is longer than one column — the units, which this module's
+ * {@link ribbonUnits} decides, number more than one column of icons — and it lists **every** entry of the group in the row's
+ * own order, the drawn ones included. That is what separates it from the group's *More*, which holds only what the width
+ * folded. It is derived from the same units the row draws, so the surface keeps no list of which groups have an arrow.
+ */
+export function galleryOf<T extends UnitEntry>(entries: readonly T[]): readonly T[] | undefined {
+  const units = ribbonUnits(entries);
+  if (units.filter((unit) => unit.stack === 'icon').length < 2) return undefined;
+  return units.flatMap((unit) => unit.entries);
+}
+
+/**
  * Splits a group's entries into the ones drawn in place and the ones its *More* holds.
  *
  * **One function for both halves, because the property that matters is that they are a partition**:

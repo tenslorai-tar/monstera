@@ -266,5 +266,31 @@ describe('the ribbon', () => {
       expect(icon.querySelector('.m-tool-button__label')).toBeNull();
       expect(icon.getAttribute('aria-label')).toBe('Save');
     });
+
+    it('a group of icons longer than one column ends in an expand arrow that lists ALL of them, and each runs its own command (ADR-0199)', async () => {
+      const ran: string[] = [];
+      const make = (id: string, order: number): UiCommand => ({
+        ...small(id, 'test.save', order, 'icon'),
+        run: () => {
+          ran.push(id);
+        },
+      });
+      draw(Array.from({ length: 5 }, (_unused, index) => make(`g.${String(index)}`, 10 + index)));
+
+      const arrow = screen.getByRole('button', { name: 'All Markup' });
+      expect(arrow.className).toContain('m-ribbon__gallery');
+      fireEvent.click(arrow);
+      const items = await screen.findAllByRole('menuitem');
+      expect(items).toHaveLength(5);
+      const third = items[2];
+      if (third === undefined) throw new Error('the arrow listed fewer than three tools');
+      fireEvent.click(third);
+      expect(ran).toStrictEqual(['g.2']);
+    });
+
+    it('CONTROL: one column of icons draws no arrow', () => {
+      draw(Array.from({ length: 3 }, (_unused, index) => small(`g.${String(index)}`, 'test.save', 10 + index, 'icon')));
+      expect(screen.queryByRole('button', { name: 'All Markup' })).toBeNull();
+    });
   });
 });
