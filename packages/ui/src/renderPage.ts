@@ -254,10 +254,25 @@ function present(
   signal: AbortSignal,
   pageNumber: number,
 ): void {
-  if (signal.aborted) throw new RenderCancelledError(pageNumber);
+  if (signal.aborted) {
+    console.warn(`TRACE present refused (aborted) p${String(pageNumber)}`);
+    throw new RenderCancelledError(pageNumber);
+  }
   canvas.width = drawing.width;
   canvas.height = drawing.height;
   context.drawImage(drawing, 0, 0);
+  try {
+    let inked = 0;
+    for (let gy = 1; gy < 9; gy += 1) {
+      for (let gx = 1; gx < 9; gx += 1) {
+        const px = context.getImageData(Math.floor((canvas.width * gx) / 9), Math.floor((canvas.height * gy) / 9), 1, 1).data;
+        if (px[0] !== 255 || px[1] !== 255 || px[2] !== 255) inked += 1;
+      }
+    }
+    console.warn(`TRACE present p${String(pageNumber)} ${String(drawing.width)}x${String(drawing.height)} shown ink ${String(inked)}/64 @${String(Math.round(performance.now()))}`);
+  } catch (probeError) {
+    console.warn(`TRACE present probe failed ${String(probeError)}`);
+  }
 }
 
 /** A canvas nobody sees, at `size`, from the document the canvas on screen lives in. */
@@ -328,14 +343,52 @@ async function drawWithPdfjs(
   signal: AbortSignal,
   pageNumber: number,
 ): Promise<void> {
+  console.warn(`TRACE render start p${String(pageNumber)} ${String(canvas.width)}x${String(canvas.height)} @${String(Math.round(performance.now()))}`);
   const task = page.render({ canvas, canvasContext: context, viewport, ...(transform === undefined ? {} : { transform }) });
   const cancel = (): void => {
+    console.warn(`TRACE render cancel p${String(pageNumber)} @${String(Math.round(performance.now()))}`);
     task.cancel();
   };
   signal.addEventListener('abort', cancel, { once: true });
   try {
     await task.promise;
+    try {
+      // WHAT PDF.JS LEFT ON THE SCRATCH, sampled on a coarse grid: ink is any pixel that is not opaque white.
+      const probe = canvas.getContext('2d', { willReadFrequently: true });
+      let inked = 0;
+      let sampled = 0;
+      if (probe !== null && canvas.width > 0 && canvas.height > 0) {
+        for (let gy = 1; gy < 9; gy += 1) {
+          for (let gx = 1; gx < 9; gx += 1) {
+            const px = probe.getImageData(Math.floor((canvas.width * gx) / 9), Math.floor((canvas.height * gy) / 9), 1, 1).data;
+            sampled += 1;
+            if (px[0] !== 255 || px[1] !== 255 || px[2] !== 255) inked += 1;
+          }
+        }
+      }
+      console.warn(`TRACE render done p${String(pageNumber)} scratch ink ${String(inked)}/${String(sampled)} aborted=${String(signal.aborted)} @${String(Math.round(performance.now()))}`);
+      // WHAT THE PAGE HOLDS DECODED, and the operator list it drew from: whether the image object was there and whole.
+      const held: string[] = [];
+      for (const [objId, data] of page.objs as unknown as Iterable<[string, Record<string, unknown> | null]>) {
+        const bitmap = (data?.['bitmap'] ?? null) as { width: number; height: number } | null;
+        const pixels = (data?.['data'] ?? null) as { length: number; [index: number]: number } | null;
+        held.push(
+          `${objId}:${String(data?.['width'])}x${String(data?.['height'])} bitmap=${bitmap === null ? 'none' : `${String(bitmap.width)}x${String(bitmap.height)}`} data=${pixels === null ? 'none' : `${String(pixels.length)}b first=${String(pixels[0])},${String(pixels[1])},${String(pixels[2])},${String(pixels[3])}`}`,
+        );
+      }
+      let ops = 'n/a';
+      try {
+        const list = await page.getOperatorList();
+        ops = Array.from(list.fnArray).join(',');
+      } catch (error) {
+        ops = `threw ${String(error)}`;
+      }
+      console.warn(`TRACE objs ${held.join(' | ')} ops=${ops}`.slice(0, 280));
+    } catch (probeError) {
+      console.warn(`TRACE probe failed ${String(probeError)}`);
+    }
   } catch (error) {
+    console.warn(`TRACE render threw p${String(pageNumber)} aborted=${String(signal.aborted)} ${String(error)} @${String(Math.round(performance.now()))}`);
     // THE CANCELLATION IS OURS, so it is reported as ours; anything else is the page's.
     if (signal.aborted) throw new RenderCancelledError(pageNumber);
     throw error;

@@ -1029,7 +1029,7 @@ export async function reportCanvasPixels(
   // only: `console-message` reports a frame, and PDF.js's worker logs elsewhere — read below.
   const consoleLines: string[] = [];
   contents.on('console-message', (event) => {
-    if ((event.level === 'warning' || event.level === 'error') && consoleLines.length < 20) {
+    if ((event.level === 'warning' || event.level === 'error') && consoleLines.length < 80) {
       consoleLines.push(`${event.level}: ${event.message}`.slice(0, 300));
     }
   });
