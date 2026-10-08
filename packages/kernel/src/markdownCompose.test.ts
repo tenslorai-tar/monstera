@@ -166,6 +166,28 @@ describe('composeMarkdown: every character is drawn (ADR-0172)', () => {
     expect(first).toContain('First line.');
   });
 
+  it('NEVER REFUSES A WHOLE FILE FOR ONE CHARACTER: emoji, CJK, symbols and box-drawing at line 60 compose, and every one is kept as text', async () => {
+    // THE OWNER'S 0.1.11.0 FILE (Recording 2026-10-07 152122): a long document refused with "line 60 has a character the
+    // built-in font cannot draw; nothing was imported". Sixty ordinary lines, then the characters that were refused.
+    const filler = Array.from({ length: 59 }, (_, at) => `Ordinary line ${String(at + 1)}.`).join('\n\n');
+    const hard = 'Done ✅ 🚀 中文 ★ ┌──┬──┐ │ A│ B│ └──┴──┘ → ≠ ∑';
+    const text = `${filler}\n\n${hard}\n`;
+    const { pdf, boxed } = await compose(text);
+    // A COMPOSED DOCUMENT, not a refusal: the call returned, and the line past the sixtieth is on a page.
+    const pages = await pagesOf(pdf);
+    const all = pages.join('\n');
+    expect(all).toContain('Ordinary line 59.');
+    // EVERY ONE OF THE CHARACTERS IS KEPT AS TEXT, drawn or boxed, and copies as what was written.
+    for (const character of ['✅', '🚀', '中', '文', '┌', '│', '→', '≠', '∑']) expect(all).toContain(character);
+    // THE ONES NO FACE CARRIES ARE NAMED BY LINE, and the line is the sixtieth-and-after, never a refusal's.
+    expect(boxed.length).toBeGreaterThan(0);
+    expect(boxed.every((box) => box.line >= 60)).toBe(true);
+    // CONTROL: the same sixty lines with nothing outside the faces compose with nothing boxed, so the boxes above are the
+    // hard line's and not the filler's.
+    const plain = await compose(`${filler}\n\nPlain last line.\n`);
+    expect(plain.boxed).toStrictEqual([]);
+  });
+
   it('names the exact line inside a paragraph that spans several, and every place a character repeats', async () => {
     const { boxed } = await compose('One line\nthen 中 a second\nand 中 a third.\n');
     expect(boxed).toStrictEqual([
