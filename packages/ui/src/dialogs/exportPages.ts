@@ -15,13 +15,8 @@ export const EXPORT_PAGES_RESULT = z.object({ pages: z.array(z.number().int().no
 
 export type ExportPagesAnswer = z.infer<typeof EXPORT_PAGES_RESULT>;
 
-/**
- * The page count the row builds *every page* from, and what a page becomes — a slide, or its text — which is the one
- * sentence the three dialogs do not share.
- */
-export const EXPORT_PAGES_PROPS = z
-  .object({ pageCount: z.number().int().positive(), becomes: z.enum(['slides', 'text']) })
-  .strict();
+/** The page count the row builds *every page* from. */
+export const EXPORT_PAGES_PROPS = z.object({ pageCount: z.number().int().positive() }).strict();
 
 export type ExportPagesProps = z.infer<typeof EXPORT_PAGES_PROPS>;
 
@@ -29,8 +24,7 @@ export type ExportPagesProps = z.infer<typeof EXPORT_PAGES_PROPS>;
  * ONE BODY, TWO DIALOGS: the two text exports each ask only which pages, so a body each would be two copies of one row and
  * one button. They stay two declarations because each has its own title, which a person reads to know which export they
  * started. PowerPoint used to be a third and asks a second question now, so it has its own (`exportPowerPoint.ts`,
- * ADR-0210). **`slides` in `becomes` and its sentence are no longer reached by any dialog** and are left for the next
- * change to this file rather than widening the one that moved PowerPoint out.
+ * ADR-0210).
  */
 const BODY = lazy(() => import('./ExportPagesBody.js'));
 

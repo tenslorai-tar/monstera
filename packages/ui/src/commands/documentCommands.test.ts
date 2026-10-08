@@ -2958,7 +2958,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'plain', pages: CHOSEN_SET } }]);
     // ONLY THE PAGES ARE ASKED: the save dialog is main's, and a success is a toast, never a dialog.
-    expect(asked).toStrictEqual([{ id: 'dialog.export-text', props: { pageCount: 10, becomes: 'text' } }]);
+    expect(asked).toStrictEqual([{ id: 'dialog.export-text', props: { pageCount: 10 } }]);
   });
 
   it('CONTROL: a DISMISSED pages dialog exports nothing, for PowerPoint and both text exports', async () => {
@@ -3851,7 +3851,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     }).run(CONTEXT);
 
     // ITS OWN DIALOG, titled for the layout export, over the same body as plain text's.
-    expect(asked).toStrictEqual([{ id: 'dialog.export-layout-text', props: { pageCount: 10, becomes: 'text' } }]);
+    expect(asked).toStrictEqual([{ id: 'dialog.export-layout-text', props: { pageCount: 10 } }]);
     expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'layout', pages: CHOSEN_SET } }]);
   });
 
@@ -3878,7 +3878,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       }).run(CONTEXT);
 
       expect(spoken).toStrictEqual([
-        { id: 'dialog.export-layout-text', props: { pageCount: 10, becomes: 'text' } },
+        { id: 'dialog.export-layout-text', props: { pageCount: 10 } },
         { id: 'dialog.save-problem', props: { outcome } },
       ]);
     }
@@ -3904,7 +3904,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     // THE WHOLE LIST (audit PPPPPPP-5), as the layout case above has it: the pages dialog, then the problem, and nothing else.
     expect(spoken).toStrictEqual([
-      { id: 'dialog.export-text', props: { pageCount: 10, becomes: 'text' } },
+      { id: 'dialog.export-text', props: { pageCount: 10 } },
       { id: 'dialog.save-problem', props: { outcome: 'contested' } },
     ]);
   });

@@ -3416,7 +3416,6 @@ async function runTextExport(
 
   const chosen = (await deps.ask(mode === 'plain' ? EXPORT_TEXT_DIALOG_ID : EXPORT_LAYOUT_TEXT_DIALOG_ID, {
     pageCount: context.pageCount,
-    becomes: 'text',
   })) as ExportPagesAnswer | undefined;
   if (chosen === undefined) return;
 

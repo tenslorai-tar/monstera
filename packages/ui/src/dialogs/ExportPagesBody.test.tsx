@@ -3,19 +3,18 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ExportPagesBody from './ExportPagesBody.js';
-import type { ExportPagesProps } from './exportPages.js';
 import { InDialog } from './inDialog.js';
 
 /**
- * The body PowerPoint and the two text exports share (ADR-0161): its one question is the pages. The commands' half —
- * that the pages reach `document.exportPowerPoint` and `document.exportText` — is `commands/documentCommands.test.ts`'.
+ * The body the two text exports share (ADR-0161): its one question is the pages. The commands' half — that the pages reach
+ * `document.exportText` — is `commands/documentCommands.test.ts`'. PowerPoint asks a second question and has its own body.
  */
 
-function opened(becomes: ExportPagesProps['becomes']): ReturnType<typeof vi.fn> {
+function opened(): ReturnType<typeof vi.fn> {
   const resolve = vi.fn();
   render(
     <InDialog>
-      <ExportPagesBody becomes={becomes} pageCount={4} resolve={resolve} update={() => undefined} />
+      <ExportPagesBody pageCount={4} resolve={resolve} update={() => undefined} />
     </InDialog>,
   );
   return resolve;
@@ -29,13 +28,13 @@ afterEach(() => {
 
 describe('ExportPagesBody', () => {
   it('answers every page when nothing is chosen', () => {
-    const resolve = opened('slides');
+    const resolve = opened();
     fireEvent.click(SAVE());
     expect(resolve).toHaveBeenCalledWith({ pages: [0, 1, 2, 3] });
   });
 
   it('answers the pages typed, and refuses at the press while they name none', () => {
-    const resolve = opened('text');
+    const resolve = opened();
     fireEvent.click(screen.getByRole('button', { name: 'Select pages' }));
     fireEvent.click(SAVE());
     expect(resolve).not.toHaveBeenCalled();
@@ -46,13 +45,10 @@ describe('ExportPagesBody', () => {
     expect(resolve).toHaveBeenCalledWith({ pages: [1, 2, 3] });
   });
 
-  it('says what each page becomes, by the export that opened it', () => {
-    opened('slides');
-    expect(screen.getByText('Each page becomes one slide.')).toBeTruthy();
-    cleanup();
-    opened('text');
-    // CONTROL: the text exports' sentence, and not the slides' one.
+  it('says the text file holds the pages, and not that each becomes a slide', () => {
+    opened();
     expect(screen.getByText('The text file holds these pages, in order.')).toBeTruthy();
+    // CONTROL: the PowerPoint sentence is that dialog's own.
     expect(screen.queryByText('Each page becomes one slide.')).toBeNull();
   });
 });

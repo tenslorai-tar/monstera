@@ -837,14 +837,14 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'recognised', props: { fellBack: [], fellBackCount: 0, recognised: 1, noModel: false } },
   ],
   'dialog.export-text': [
-    { state: 'opened', props: { pageCount: 12, becomes: 'text' } },
+    { state: 'opened', props: { pageCount: 12 } },
     {
       state: 'refused',
-      props: { pageCount: 12, becomes: 'text' },
+      props: { pageCount: 12 },
       steps: [press('Select pages'), press('Choose where to save…')],
     },
   ],
-  'dialog.export-layout-text': [{ state: 'opened', props: { pageCount: 12, becomes: 'text' } }],
+  'dialog.export-layout-text': [{ state: 'opened', props: { pageCount: 12 } }],
   'dialog.export-excel': [
     { state: 'opened', props: EXCEL },
     { state: 'select', props: { ...EXCEL, range: { every: false, text: '1, 3-4' } } },
