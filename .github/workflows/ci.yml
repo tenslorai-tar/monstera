@@ -403,6 +403,11 @@ jobs:
       - name: Prove Hebrew and Arabic are drawn as their letters, in order
         run: node scripts/ci/annotate.mjs scripts/proofs/rtlText.proof.mjs --require-engine
 
+      # The eight pdf-lib commands on a protected document (ADR-0220): each result opens only with the password, keeps its
+      # permissions and holds what the command wrote, read by the WASM build of MuPDF. The shim is built on both legs.
+      - name: Prove a pdf-lib command on a protected document leaves it protected
+        run: node scripts/ci/annotate.mjs scripts/proofs/pdfLibProtected.proof.mjs --require-engine
+
       # Decision E. The package takes only the modules its entry reaches — imports, and files named by literal as the
       # shell names a preload, a worker and each host entry — so a test's fake or a proof's harness in `dist/` does not
       # ship. The built tree is walked here, where it is built, so the build is required on both legs.

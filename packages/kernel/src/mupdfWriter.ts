@@ -70,6 +70,16 @@ const documents = new WeakMap<MupdfSession, mupdf.PDFDocument>();
 const accesses = new WeakMap<MupdfSession, DocumentAccess>();
 
 /**
+ * The password this session was opened with, where it was opened with one.
+ *
+ * HERE, in the contained host's memory beside the key it derived, and nowhere else: it is what lets a pdf-lib command
+ * write its result protected as the document was, without main (which holds the password for its own reopens,
+ * ADR-0171) being asked for it on every command. It is dropped with the session, and no call returns it but
+ * {@link heldPasswordOf}, whose one caller composes an option string and logs nothing.
+ */
+const heldPasswords = new WeakMap<MupdfSession, string>();
+
+/**
  * What the password that opened `session` bought — 1 unencrypted, 2 user,
  * 4 owner, 6 both.
  *
@@ -232,7 +242,7 @@ const removals = new WeakSet<MupdfSession>();
  * never sees this map and the capture of the command that wrote it is a refusal
  * (ADR-0055).
  */
-const protections = new WeakMap<MupdfSession, string>();
+const protections = new WeakMap<MupdfSession, { readonly options: string; readonly userPassword: string | undefined }>();
 
 /**
  * Records the MuPDF save terms this session's bytes are to be written with.
@@ -244,10 +254,12 @@ const protections = new WeakMap<MupdfSession, string>();
  * `documentFor` first, so a forged session is refused before anything is
  * recorded — the same provenance check every other member here makes.
  */
-export function protectSession(session: MupdfSession, options: string): Promise<void> {
+export function protectSession(session: MupdfSession, options: string, userPassword?: string): Promise<void> {
   return promised(() => {
     documentFor(session);
-    protections.set(session, options);
+    // THE PASSWORD THAT OPENS IT is kept beside the terms, not parsed back out of them: a pdf-lib command reads the
+    // document as it will be written, and opening that copy needs it (ADR-0220).
+    protections.set(session, { options, userPassword });
   });
 }
 
@@ -379,6 +391,46 @@ export function decodedImage(bytes: Uint8Array): mupdf.Image {
 }
 
 /**
+ * What a protected document's writing needs from this module, which owns the maps that hold it (ADR-0220): the terms the
+ * session was last asked to protect with, the password that opened it, and the document's bytes with the protection off.
+ * `documentProtection.ts` composes what a protected document is written with; none of these maps leaves this file.
+ */
+export function protectionTermsOf(
+  session: MupdfSession,
+): { readonly options: string; readonly userPassword: string | undefined } | undefined {
+  documentFor(session);
+  return protections.get(session);
+}
+
+/** The password this session was opened with, or `undefined` where it was opened with none (an empty one included). */
+export function heldPasswordOf(session: MupdfSession): string | undefined {
+  documentFor(session);
+  return heldPasswords.get(session);
+}
+
+/**
+ * `image`, a protected document's bytes, written readable, in memory, with the password that opens it.
+ *
+ * **Takes bytes and a password and never a session**, and that is the design: MuPDF writing a document with its
+ * encryption off replaces the key of the document it wrote (measured 2026-10-08, the session's `/Encrypt` was gone from
+ * its trailer afterwards), so doing it to a live session would leave that session writing every later save unprotected.
+ * Here the document is opened, written and destroyed, and nothing a session holds is touched. The only caller is a
+ * pdf-lib command, whose result is protected again before it leaves this process.
+ */
+export function unprotectedImage(image: ByteImage, password: string | undefined): Promise<ByteImage> {
+  return promised(() => {
+    const document = mupdf.PDFDocument.openDocument(image, 'application/pdf');
+    try {
+      if (!(document instanceof mupdf.PDFDocument)) throw new Error('Opened document is not a PDF, so no PDF writer may act on it.');
+      if (document.authenticatePassword(password ?? '') === 0) throw new DocumentLocked(password === undefined ? 'needs-password' : 'wrong-password');
+      return bufferBytes(document.saveToBuffer('garbage,encrypt=none'));
+    } finally {
+      document.destroy();
+    }
+  });
+}
+
+/**
  * THE ONE PLACE A SAVE'S TERMS ARE DECIDED (B3): the option string `serialise` hands MuPDF, and what it means for the
  * document's signatures — which {@link signaturesKeptBySave} answers from the same decision, so *will this save keep
  * the signatures* can never disagree with what the save then writes.
@@ -411,7 +463,7 @@ function saveTermsOf(session: MupdfSession): {
   // with no encryption term, and a document opened from encrypted bytes keeps
   // its encryption by MuPDF's own default. So a session nothing protected is
   // unaffected by this line.
-  const protection = protections.get(session);
+  const protection = protections.get(session)?.options;
   // ADR-0008 RULE 2 — ALWAYS INCREMENTAL WHEN A SIGNATURE MUST SURVIVE — built 2026-09-28. A plain save
   // re-serialises the file and moves the bytes a PKCS#7 signature covers: measured that day, a freshly signed document
   // flushed as a save flushes came back with different bytes and a signature that no longer covered it, so Sign then
@@ -522,6 +574,7 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
       const session = { engine: 'mupdf' } as MupdfSession;
       documents.set(session, document);
       accesses.set(session, access);
+      if (password !== undefined && password !== '') heldPasswords.set(session, password);
       return session;
     });
   },
@@ -587,6 +640,7 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
       // The access goes with it, so a closed session cannot be asked what its
       // password bought — the same refusal, from the same cause.
       accesses.delete(session);
+      heldPasswords.delete(session);
       document.destroy();
     });
   },

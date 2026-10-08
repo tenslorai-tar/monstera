@@ -142,6 +142,7 @@
     "proof:shimpassword": "node scripts/proofs/shimPassword.proof.mjs",
     "proof:wordpictures": "node scripts/proofs/wordPictures.proof.mjs",
     "proof:rtltext": "node scripts/proofs/rtlText.proof.mjs",
+    "proof:pdflibprotected": "node scripts/proofs/pdfLibProtected.proof.mjs",
     "proof:readerdispose": "node scripts/proofs/readerDispose.proof.mjs",
     "proof:hosthardening": "node scripts/proofs/hostHardening.proof.mjs",
     "proof:shippedmodules": "node scripts/proofs/shippedModules.proof.mjs",
