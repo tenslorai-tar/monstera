@@ -21,10 +21,10 @@ import {
   setTextMatrix,
   setTextRenderingMode,
   showText,
-  toDegrees,
 } from '@cantoo/pdf-lib';
 
 import type { CommandOfKind } from '@monstera/contract';
+import { snapRotation } from '@monstera/shared';
 
 import type { CaptureResult } from './commandLog.js';
 import { GLYPHLESS_FONT_NAME } from './glyphlessFontName.js';
@@ -371,12 +371,11 @@ const ROTATED_RUN = {
 
 /** A page's `/Rotate` as one of the four the table above has an entry for. */
 function quarterTurn(page: PDFPage): keyof typeof ROTATED_RUN {
-  // NORMALISED RATHER THAN TRUSTED: `/Rotate` may be negative or beyond 360 —
-  // `-90` is a legal spelling of 270 — and a value that is not a multiple of 90
-  // is a malformed page every reader rounds. `Math.round` over quarter turns is
-  // that rounding, in the one place this module needs the answer.
-  const quarters = ((Math.round(toDegrees(page.getRotation()) / 90) % 4) + 4) % 4;
-  return ([0, 90, 180, 270] as const)[quarters] ?? 0;
+  // THE RESOLVER'S ANSWER, not a second rounding (B3a, CR-COR-04): `/Rotate` may be negative or beyond 360, and a value
+  // that is not a multiple of 90 is a page the engine snaps one way and `Math.round` snaps another (`/Rotate 45` is 90 to
+  // the engine). The layer must sit on the page as the engine draws it, so it takes the engine's snap.
+  const turn = snapRotation(page.getRotation().angle);
+  return turn === 90 || turn === 180 || turn === 270 ? turn : 0;
 }
 
 /** The runs of a recognition that have a box with area and a character that advances: the ones that are drawn. */

@@ -2,6 +2,7 @@ import {
   PDFDict,
   PDFDocument,
   PDFName,
+  PDFNumber,
   PDFRef,
   StandardFonts,
   TextRenderingMode,
@@ -192,6 +193,17 @@ describe('writeRecognisedText', () => {
       const bytes = await written([recognised(box, [{ text: 'Monstera', box }])], rotation);
       expect(layerOf(bytes).lines[0]?.box, `/Rotate ${String(rotation)}`).toEqual(ON_SCREEN);
     }
+  });
+
+  it('a /Rotate that is not a multiple of 90 is read through the engine’s own snap (CR-COR-04)', async () => {
+    // `/Rotate -85` is 270 to the engine (`snapRotation`, the one resolver, B3a). This module rounded for itself until the
+    // review of 2026-10-08; the two agree on every value tried, so this pins the layer's place and not a difference.
+    const box = SAME_PLACE[270] ?? [0, 0, 0, 0];
+    const document = await PDFDocument.create();
+    const page = document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    page.node.set(PDFName.of('Rotate'), PDFNumber.of(-85));
+    writeRecognisedText(page, glyphlessFont(document), [recognised(box, [{ text: 'Monstera', box }])]);
+    expect(layerOf(await document.save()).lines[0]?.box).toEqual(ON_SCREEN);
   });
 
   it('KEEPS THE SPACE BETWEEN TWO WORDS on a rotated page, which is what separates the turn', async () => {
