@@ -5,6 +5,9 @@ import { useEffect, useRef } from 'react';
 
 import {
   REGION_READ_COPY,
+  REGION_READ_EXCEL,
+  REGION_READ_WORD,
+  REGION_READ_TABLE_NOTE,
   REGION_READ_ENGINE_AZURE,
   REGION_READ_ENGINE_CLAUDE,
   REGION_READ_ENGINE_TESSERACT,
@@ -93,19 +96,40 @@ export default function RegionReadBody(props: RegionReadProps & DialogAnswering<
   }
   return (
     <>
+      {/* A LABEL ABOVE and a field the dialog's whole width, tall enough to read: it was a six-row box with the label
+          squeezed at its corner (the owner's recording of 2026-10-08). The rows are the page's, a table's cells apart by a tab. */}
       <label className="m-region-read__label">
-        <span>{_(REGION_READ_TEXT)}</span>
-        <textarea className="m-region-read__text" readOnly rows={6} value={props.text} />
+        <span className="m-region-read__heading">{_(REGION_READ_TEXT)}</span>
+        <textarea className="m-region-read__text" readOnly rows={Math.min(14, Math.max(6, props.text.split('\n').length + 1))} value={props.text} />
       </label>
+      {props.table ? <p>{_(REGION_READ_TABLE_NOTE)}</p> : null}
       <p>{_(REGION_READ_NOTE)}</p>
       <DialogFooter
         aside={
-          <Button
-            label={REGION_READ_COPY}
-            onClick={() => {
-              update({ kind: 'copy' });
-            }}
-          />
+          <>
+            <Button
+              label={REGION_READ_COPY}
+              onClick={() => {
+                update({ kind: 'copy' });
+              }}
+            />
+            {props.table ? (
+              <>
+                <Button
+                  label={REGION_READ_WORD}
+                  onClick={() => {
+                    update({ kind: 'word' });
+                  }}
+                />
+                <Button
+                  label={REGION_READ_EXCEL}
+                  onClick={() => {
+                    update({ kind: 'excel' });
+                  }}
+                />
+              </>
+            ) : null}
+          </>
         }
         dismissal="close"
       >

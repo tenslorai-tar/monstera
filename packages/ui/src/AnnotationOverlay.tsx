@@ -65,7 +65,7 @@ export interface AnnotationOverlayProps {
    * Resolves whether the document's version moved, which is what decides how long the drawn shape
    * stays on this overlay ({@link drawnWith}).
    */
-  readonly onCommand: (command: DispatchableCommand) => Promise<boolean>;
+  readonly onCommand: (command: DispatchableCommand, page: OverlayPage) => Promise<boolean>;
   /**
    * The view the page underneath was last drawn from: an identity, compared and never read.
    *
@@ -223,7 +223,9 @@ export function AnnotationOverlay({
         // absence of a value rather than a flag somebody checks.
         if (command === undefined) return;
         if (released !== undefined) setCommitted(released);
-        const moved = await onCommand(command);
+        // WITH THE PAGE AS IT WAS DRAWN AT THE RELEASE, `transform`'s own, for a command that has to turn an engine box back
+        // into the page after an await (the box read's lines): resolved later it would be the zoom the person reached.
+        const moved = await onCommand(command, geometry);
         // A REFUSED COMMAND MADE NOTHING, so nothing may stay drawn as if it had. Only this shape is
         // dropped: a later release may already hold the slot.
         if (!moved) setCommitted((current) => (current === released ? undefined : current));
@@ -271,7 +273,7 @@ export function AnnotationOverlay({
       if (at === undefined) return;
       const transform = overlayTransform(geometry);
       void Promise.resolve(tool.controller.reopen(at, page, transform)).then(async (command) => {
-        if (command !== undefined) await onCommand(command);
+        if (command !== undefined) await onCommand(command, geometry);
       });
     },
     [geometry, gesture, onCommand, page, pointAt, release, tool],

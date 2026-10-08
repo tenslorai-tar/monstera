@@ -38,6 +38,8 @@ export const REGION_READ_PROPS = z.discriminatedUnion('state', [
       state: z.literal('read'),
       engine: z.enum(REGION_READ_ENGINES),
       text: z.string().min(1).max(MAX_REGION_TEXT),
+      /** Whether the rows are a table, which offers Word and Excel and says the cells are tab-separated. */
+      table: z.boolean(),
     })
     .strict(),
   z.object({ state: z.literal('nothing'), engine: z.enum(REGION_READ_ENGINES) }).strict(),
@@ -52,6 +54,9 @@ export const REGION_READ_REPORT = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('ready') }).strict(),
   z.object({ kind: z.literal('copy') }).strict(),
   z.object({ kind: z.literal('insert') }).strict(),
+  // A TABLE'S TWO WAYS ON: the page's own Word and Excel exports, which the command starts and the panel closes for.
+  z.object({ kind: z.literal('word') }).strict(),
+  z.object({ kind: z.literal('excel') }).strict(),
 ]);
 
 export type RegionReadReport = z.infer<typeof REGION_READ_REPORT>;

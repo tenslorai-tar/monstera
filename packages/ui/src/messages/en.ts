@@ -1063,6 +1063,9 @@ export const REGION_READ_READING = messageKey('dialog.region-read.reading');
 export const REGION_READ_READING_NOTE = messageKey('dialog.region-read.reading-note');
 export const REGION_READ_TEXT = messageKey('dialog.region-read.text');
 export const REGION_READ_NOTE = messageKey('dialog.region-read.note');
+export const REGION_READ_TABLE_NOTE = messageKey('dialog.region-read.table-note');
+export const REGION_READ_WORD = messageKey('dialog.region-read.word');
+export const REGION_READ_EXCEL = messageKey('dialog.region-read.excel');
 export const REGION_READ_NOTHING = messageKey('dialog.region-read.nothing');
 export const REGION_READ_FAILED = messageKey('dialog.region-read.failed');
 export const REGION_READ_COPY = messageKey('dialog.region-read.copy');
@@ -4649,7 +4652,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'You can close this window. The words are added to the page, unseen, either way, and Undo takes them out.',
   [REGION_READ_TEXT]: 'What was read',
   [REGION_READ_NOTE]:
-    'These words are now on the page, unseen, so it can be searched. Insert them as text if you want to see and edit them there.',
+    'These words are now on the page, unseen, so it can be searched. Insert them as text if you want to see and edit them there, each where it was read.',
+  [REGION_READ_TABLE_NOTE]:
+    'This looks like a table. Its cells are separated by tabs, so Copy pastes it into Word or Excel as a table.',
+  [REGION_READ_WORD]: 'Export to Word…',
+  [REGION_READ_EXCEL]: 'Export to Excel…',
   [REGION_READ_NOTHING]:
     'No words were read in the box. Try a larger box, or one with the writing clearly inside it.',
   [REGION_READ_FAILED]: 'The box could not be read, so the page is as it was.',

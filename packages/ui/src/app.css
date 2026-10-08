@@ -1384,6 +1384,42 @@ optgroup {
   gap: var(--space-8);
 }
 
+/* WHAT A BOX WAS READ AS (the owner's recording of 2026-10-08): the label above, and the words in a field as wide as the
+   dialog and tall enough to read, a row to a line, a table's cells a tab apart. It was a six-row box with its label squeezed
+   into the corner. */
+.m-region-read__label {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.m-region-read__heading {
+  font-size: var(--font-chrome-13);
+  font-weight: 600;
+}
+
+.m-region-read__text {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: 12rem;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-6);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-chrome-13);
+  line-height: 1.5;
+  tab-size: 8;
+  white-space: pre;
+  overflow: auto;
+  resize: vertical;
+}
+
+.m-region-read__text:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 /*
  * The rasterised page. `block` because an inline canvas sits on the text
  * baseline and leaves a gap underneath that reads as a layout bug; the sizing is

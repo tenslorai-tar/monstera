@@ -1078,8 +1078,17 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
   ],
   'dialog.region-read': [
     { state: 'reading', props: { state: 'reading', engine: 'claude' } },
-    { state: 'read', props: { state: 'read', engine: 'tesseract', text: 'Invoice 2026-0412\nTotal due: 1,240.00' } },
-    { state: 'long', props: { state: 'read', engine: 'azure', text: prose(3000) } },
+    { state: 'read', props: { state: 'read', engine: 'tesseract', text: 'Invoice 2026-0412\nTotal due: 1,240.00', table: false } },
+    {
+      state: 'table',
+      props: {
+        state: 'read',
+        engine: 'claude',
+        text: 'Names\tHours\tMinutes\tSeconds\nJohn\t7\t20\t36\nMike\t6\t10\t12\nJoe\t8\t44\t57\nJada\t7\t12\t22\nAlex\t6\t41\t05\nFrank\t5\t32\t41',
+        table: true,
+      },
+    },
+    { state: 'long', props: { state: 'read', engine: 'azure', text: prose(3000), table: false } },
     { state: 'nothing', props: { state: 'nothing', engine: 'tesseract' } },
     { state: 'failed', props: { state: 'failed', engine: 'claude', problem: { code: 'service-refused' } } },
   ],

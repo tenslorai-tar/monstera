@@ -278,6 +278,7 @@ import {
   SPLIT_SECOND_LABEL,
   TOAST_DISMISS,
 } from './messages/en.js';
+import type { OverlayPage } from './annotations/annotationSpace.js';
 import { annotationTools } from './annotations/annotationTools.js';
 import type { KnownField } from './annotations/fieldNameCheck.js';
 import { isFormFieldTool } from './annotations/formFieldTools.js';
@@ -2913,7 +2914,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         activate(docId);
       },
     };
-  }, [activate, ask, client, opened, toast]);
+  }, [activate, ask, client, opened]);
   // THE DIALOG, once per problem placed over a document.
   useEffect(() => {
     if (placedProblem === undefined || placedProblem.onStart) return;
@@ -3705,19 +3706,40 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
    * The second half matters as much as the first: a tool left active while the
    * reader closes every tab would otherwise reach for a `docId` that is gone.
    */
+  // THE CONTEXT A COMMAND THE PANEL STARTS RUNS WITH, as it is when the person presses the button: kept in a ref by an effect
+  // once `context` below exists, since a closure over it here would be a value from a render ago.
+  const commandContextRef = useRef<CommandContext | undefined>(undefined);
   const drawing = useMemo(() => {
     const tool = tools.get(toolId);
     if (tool === undefined || open === undefined) return undefined;
     const docId = open.docId;
     return {
       tool,
-      onCommand: async (command: DispatchableCommand): Promise<boolean> => {
+      onCommand: async (command: DispatchableCommand, page?: OverlayPage): Promise<boolean> => {
         // A DRAG OF THE SELECTION is a `placeAnnotation`, which keeps the walk, so the marks stay
         // selected for the next drag — the same route an arrow key takes.
         // A BOX'S READ is shown in a panel with the words (Step 7c): the same command through the same dispatcher, with the
-        // answer said instead of left in the page unseen.
-        if (isRegionRead(command)) {
-          return readRegionInPanel({ client, onApplied: applied, ask, stamp, signatures, toast, style }, docId, command);
+        // answer said instead of left in the page unseen. Its lines are put back by the page the overlay drew at the release.
+        if (isRegionRead(command) && page !== undefined) {
+          return readRegionInPanel(
+            {
+              client,
+              onApplied: applied,
+              ask,
+              stamp,
+              signatures,
+              toast,
+              style,
+              run: (commandId) => {
+                const target = registry.get(commandId);
+                const at = commandContextRef.current;
+                if (target !== undefined && at !== undefined) void target.run(at);
+              },
+            },
+            docId,
+            command,
+            page,
+          );
         }
         const moved = await send(docId, command);
         // A LINK ADDED IS SAID (item 14c): PDF.js draws no mark for a link, and its outline is drawn only in the Comment
@@ -3733,7 +3755,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       },
       selection,
     };
-  }, [applied, ask, client, keptTool, open, selection, send, signatures, stamp, style, toast, toolId, tools]);
+  }, [applied, ask, client, keptTool, open, registry, selection, send, signatures, stamp, style, toast, toolId, tools]);
 
   /**
    * A link pressed on a page or in the Links panel, followed by the one route (ADR-0167): a page link jumps, a web link
@@ -3932,6 +3954,9 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     }),
     [currentPage, open, pageCount, selectedPages, tabs, textEditorOpen, textSelection],
   );
+  useEffect(() => {
+    commandContextRef.current = context;
+  }, [context]);
 
   // ESCAPE STOPS the tool that is on (ADR-0154 Decision 4), innermost first, as Edit object's own layer does: marks or
   // an object selected are let go before the tool is. A key pressed inside one of those layers, or in an open block's

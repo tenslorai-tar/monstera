@@ -1,10 +1,11 @@
-import { type DispatchableCommand, MAX_TEXT_LAYER_LINES } from '@monstera/contract';
-import type { DocId } from '@monstera/shared';
+import { type AnnotationColour, type DispatchableCommand, MAX_ANNOTATION_TEXT, MAX_TEXT_LAYER_LINES } from '@monstera/contract';
+import { type DocId, type DocVersion, viewportPoint } from '@monstera/shared';
 import type { z } from 'zod';
 
 import { COMMAND_PROBLEM_DIALOG } from '../dialogs/commandProblem.js';
-import { TEXT_COLOUR } from '../annotations/textTools.js';
+import { type OverlayPage, draggedRect, unscaledTransform } from '../annotations/annotationSpace.js';
 import type { AnnotationStyle } from '../annotations/annotationStyle.js';
+import { type ReadLine, addedReadLines, fitSize, isTabular, readingText, rowsOf } from './regionRows.js';
 import { REGION_READ_DIALOG_ID, REGION_READ_REPORT, type RegionReadProps, MAX_REGION_TEXT } from '../dialogs/regionRead.js';
 import type { DialogReports } from '../registries/dialogs.js';
 import { TOAST_REGION_INSERTED } from '../messages/en.js';
@@ -29,6 +30,8 @@ export interface ReadRegionDeps extends DocumentCommandDeps {
   readonly style: AnnotationStyle;
   /** Opens a dialog with a report handler (ADR-0094), settling when it closes. */
   readonly ask: (id: string, props: unknown, onUpdate?: DialogReports) => Promise<unknown>;
+  /** Starts a command of the registry by id, for the panel's Word and Excel: the page's own exports, asked as they always are. */
+  readonly run: (commandId: string) => void;
 }
 
 /** The engine the panel names, from the command's own field: a network engine, or this computer's. */
@@ -37,23 +40,14 @@ function engineOf(command: RegionReadCommand): RegionReadProps['engine'] {
 }
 
 /**
- * The words the read ADDED to a page: its lines after, less the lines that were already there.
- *
- * The recognised words are written into the page as an invisible layer, and the page's text layer is the one answer to
- * *what does this page say* (ADR-0035 and the reader row 3 exists to keep single), so the read is shown by asking it
- * again rather than by a second route that would carry the words out of the writer. A line that was on the page before is
- * taken out ONCE per occurrence, so a box over words the page already had still shows what was added.
+ * THE TEXT THE WORDS ARE PUT BACK IN: the ordinary text colour, black — not the annotation colour, which is the style's
+ * highlighter yellow and read as small yellow serif text down the left edge of the box (the owner's recording of 2026-10-08).
+ * The read words are the page's own, and a person who inserts them wants them to look like the page.
  */
-export function addedLines(before: readonly string[], after: readonly string[]): readonly string[] {
-  const remaining = new Map<string, number>();
-  for (const line of before) remaining.set(line, (remaining.get(line) ?? 0) + 1);
-  return after.filter((line) => {
-    const left = remaining.get(line) ?? 0;
-    if (left === 0) return true;
-    remaining.set(line, left - 1);
-    return false;
-  });
-}
+const READ_TEXT_COLOUR: AnnotationColour = [0, 0, 0];
+
+/** How far a line's box is widened where it is put back, in points: a text box's own inset would otherwise clip its edge. */
+const INSERT_PAD = 2;
 
 /**
  * Reads a dragged box and SHOWS what was read — Step 7c of the owner's order of 2026-10-08.
@@ -78,12 +72,18 @@ export function addedLines(before: readonly string[], after: readonly string[]):
  *
  * @returns whether the read changed the document, for the overlay that holds a committed shape until the page redraws
  */
-export async function readRegionInPanel(deps: ReadRegionDeps, docId: DocId, command: RegionReadCommand): Promise<boolean> {
+export async function readRegionInPanel(
+  deps: ReadRegionDeps,
+  docId: DocId,
+  command: RegionReadCommand,
+  /** The page as the overlay drew it at the release: what turns a line's display-space box back into the page's own. */
+  page: OverlayPage,
+): Promise<boolean> {
   const engine = engineOf(command);
   /** How the panel is answered, once it has said it is up; `undefined` before, and after it closed. */
   const panel: { reply?: ((props: RegionReadProps) => void) | undefined; closed: boolean } = { closed: false };
-  /** The words the panel is showing, for its two actions. */
-  const shown: { text?: string } = {};
+  /** What the panel is showing, for its actions: the words, and the lines each came from. */
+  const shown: { text?: string; lines?: readonly ReadLine[] } = {};
 
   const onReport: DialogReports = (report, reply) => {
     const parsed = REGION_READ_REPORT.safeParse(report);
@@ -93,30 +93,19 @@ export async function readRegionInPanel(deps: ReadRegionDeps, docId: DocId, comm
       return;
     }
     const text = shown.text;
-    if (text === undefined) return;
+    const lines = shown.lines;
+    if (text === undefined || lines === undefined) return;
     if (parsed.data.kind === 'copy') {
       void deps.client['window.copyText']({ text }).then((copied) => {
         if (copied.ok && copied.value.copied) confirmCopied({ toast: deps.toast });
       });
       return;
     }
-    // THE WORDS AS A TEXT BOX where the box was, in the text box tool's own style: an ordinary mark, one undo step.
-    void applyDocumentCommand(deps, docId, {
-      kind: 'addAnnotation',
-      page: command.page,
-      annotation: {
-        type: 'text-box',
-        rect: command.region,
-        text,
-        colour: deps.style.colour(TEXT_COLOUR),
-        opacity: deps.style.opacity,
-        fontSize: deps.style.fontSize,
-        font: deps.style.font,
-        direction: deps.style.direction,
-      },
-    }).then((added) => {
-      if (added) confirmDone(deps, TOAST_REGION_INSERTED);
-    });
+    if (parsed.data.kind === 'word' || parsed.data.kind === 'excel') {
+      deps.run(parsed.data.kind === 'word' ? 'document.export-word' : 'document.export-excel');
+      return;
+    }
+    void insertLines(deps, docId, command.page, lines, page);
   };
 
   /** Opens the panel in `props`, remembering that it closed. */
@@ -134,9 +123,9 @@ export async function readRegionInPanel(deps: ReadRegionDeps, docId: DocId, comm
     else open(props);
   };
 
-  const wholeLines = async (): Promise<readonly string[] | undefined> => {
+  const wholeLines = async (): Promise<readonly ReadLine[] | undefined> => {
     const layer = await deps.client['document.pageTextLayer']({ docId, page: command.page, limit: MAX_TEXT_LAYER_LINES });
-    return layer.ok && !layer.value.truncated ? layer.value.lines.map((line) => line.text) : undefined;
+    return layer.ok && !layer.value.truncated ? layer.value.lines.map((line) => ({ text: line.text, box: line.box })) : undefined;
   };
 
   const before = await wholeLines();
@@ -162,13 +151,74 @@ export async function readRegionInPanel(deps: ReadRegionDeps, docId: DocId, comm
   const after = await wholeLines();
   // A PAGE TOO FULL TO READ BACK WHOLE (its text layer was cut at the bound) cannot say what was added, and says so rather
   // than showing a part as the whole: the words are on the page either way.
-  const added = before === undefined || after === undefined ? [] : addedLines(before, after);
-  const text = added.join('\n').slice(0, MAX_REGION_TEXT).trim();
+  const added = before === undefined || after === undefined ? [] : addedReadLines(before, after);
+  // IN ROWS, as a person reads a page: the lines at one height are one row and a table's cells a tab apart, never one word to
+  // a line.
+  const rows = rowsOf(added);
+  const text = readingText(rows).slice(0, MAX_REGION_TEXT).trim();
   if (text === '') {
     answer({ state: 'nothing', engine });
     return true;
   }
   shown.text = text;
-  answer({ state: 'read', engine, text });
+  shown.lines = rows.flat();
+  answer({ state: 'read', engine, text, table: isTabular(rows) });
   return true;
+}
+
+/**
+ * Puts the read lines back on the page, EACH WHERE IT WAS READ: one typewriter text (no box) per line, in its own box turned
+ * back into the page's space, sized to fit it, in the ordinary text colour. The commands are one gesture — each joins the
+ * step the one before produced (ADR-0200) — so Undo takes the whole insertion out at once. A refused line stops the rest,
+ * which `applyDocumentCommand` has already said.
+ */
+async function insertLines(
+  deps: ReadRegionDeps,
+  docId: DocId,
+  pageIndex: number,
+  lines: readonly ReadLine[],
+  page: OverlayPage,
+): Promise<void> {
+  const step: { version?: DocVersion } = {};
+  let added = 0;
+  for (const line of lines) {
+    const text = line.text.trim();
+    if (text === '') continue;
+    // THE ENGINE'S DISPLAY SPACE AT SCALE 1, back to the page: `annotationSpace.ts`' second conversion, the one place it is
+    // spelled, and then ordered because the page's y runs the other way.
+    const a = draggedRect(viewportPoint(line.box.x0, line.box.y0), viewportPoint(line.box.x1, line.box.y1), unscaledTransform(page));
+    const rect = {
+      x0: Math.min(a.x0, a.x1) - INSERT_PAD,
+      y0: Math.min(a.y0, a.y1) - INSERT_PAD,
+      x1: Math.max(a.x0, a.x1) + INSERT_PAD,
+      y1: Math.max(a.y0, a.y1) + INSERT_PAD,
+    };
+    const ok = await applyDocumentCommand(
+      deps,
+      docId,
+      {
+        kind: 'addAnnotation',
+        page: pageIndex,
+        annotation: {
+          type: 'typewriter',
+          rect,
+          text: text.slice(0, MAX_ANNOTATION_TEXT),
+          colour: READ_TEXT_COLOUR,
+          opacity: 1,
+          fontSize: fitSize(line.box, text),
+          font: 'sans',
+          direction: deps.style.direction,
+        },
+      },
+      {
+        ...(step.version === undefined ? {} : { joinsStep: step.version }),
+        produced: (version) => {
+          step.version = version;
+        },
+      },
+    );
+    if (!ok) return;
+    added += 1;
+  }
+  if (added > 0) confirmDone(deps, TOAST_REGION_INSERTED);
 }

@@ -14,6 +14,7 @@ import {
 
 import { AnnotationLayer } from './AnnotationLayer.js';
 import { AnnotationOverlay } from './AnnotationOverlay.js';
+import type { OverlayPage } from './annotations/annotationSpace.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { type TextEditing, TextEditPage } from './TextEditLayer.js';
@@ -293,7 +294,7 @@ export interface PageListProps {
     | {
         readonly tool: UiTool;
         /** Sends a gesture's command; resolves whether the version moved (`AnnotationOverlay.onCommand`). */
-        readonly onCommand: (command: DispatchableCommand) => Promise<boolean>;
+        readonly onCommand: (command: DispatchableCommand, page?: OverlayPage) => Promise<boolean>;
         /**
          * What the select tool has picked, drawn over its own page.
          *
