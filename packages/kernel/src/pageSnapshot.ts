@@ -116,8 +116,12 @@ export { MAX_SNAPSHOT_SCALE, MIN_SNAPSHOT_SCALE };
  */
 export interface RegionRequest {
   readonly page: number;
-  /** The region, in PDF user space, as the drag produced it — need not be ordered. */
-  readonly rect: AnnotationRect;
+  /**
+   * The region, in PDF user space, as the drag produced it — need not be ordered. ABSENT IS THE WHOLE PAGE, its own displayed
+   * box (`frame.crop`), which is what a service is sent when the person chose these pages for an export (ADR-0202): the same
+   * raster, frame and origin a region returns, so what is read lands on the page through the one converter.
+   */
+  readonly rect?: AnnotationRect | undefined;
   /** Device pixels per PDF point. */
   readonly scale: number;
 }
@@ -218,7 +222,8 @@ export function snapshotRegion(
       );
     }
 
-    const box = deviceBox(placedRect(request.rect, frame), request.scale);
+    const wanted = request.rect ?? { x0: frame.crop.x0, y0: frame.crop.y0, x1: frame.crop.x1, y1: frame.crop.y1 };
+    const box = deviceBox(placedRect(wanted, frame), request.scale);
     const [x0, y0, x1, y1] = box;
     const width = x1 - x0;
     const height = y1 - y0;

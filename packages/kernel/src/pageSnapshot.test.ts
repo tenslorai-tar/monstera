@@ -225,6 +225,44 @@ describe('snapshotRegion on the shapes an upright page hides', () => {
   });
 });
 
+describe('snapshotRegion with no rectangle is the WHOLE PAGE (ADR-0202)', () => {
+  /** The snapshot with no `rect`, which is the page's own displayed box. */
+  async function wholePage(bytes: Uint8Array, scale = 1): Promise<RegionSnapshot> {
+    return await onSession(bytes, (session) => snapshotRegion(session, { page: 0, scale }));
+  }
+
+  it('is the page at its displayed size, and shows all four quadrants — which a region of one quadrant cannot', async () => {
+    const whole = await wholePage(await fixture());
+    expect(pngSize(whole.png)).toStrictEqual([200, 300]);
+    // ONE PIXEL IN EACH QUADRANT, in the reader's frame: the page, and not a part of it.
+    expect(pixelAt(whole.png, 10, 10)).toStrictEqual([...BLUE]);
+    expect(pixelAt(whole.png, 190, 10)).toStrictEqual([...YELLOW]);
+    expect(pixelAt(whole.png, 10, 290)).toStrictEqual([...RED]);
+    expect(pixelAt(whole.png, 190, 290)).toStrictEqual([...GREEN]);
+    // AND ITS ORIGIN is the page's corner, where a region's is wherever the drag began.
+    expect(whole.origin).toStrictEqual([0, 0]);
+  });
+
+  it('is the box the page DISPLAYS: a /CropBox at a non-zero origin, and a page turned a quarter', async () => {
+    const cropped = await wholePage(await fixture({ crop: [0, 150, 200, 300] }));
+    expect(pngSize(cropped.png)).toStrictEqual([200, 150]);
+    expect(pixelAt(cropped.png, 10, 10)).toStrictEqual([...BLUE]);
+    const turned = await wholePage(await fixture({ rotate: 90 }));
+    expect(pngSize(turned.png)).toStrictEqual([300, 200]);
+    expect(turned.rotation).toBe(90);
+  });
+
+  it('scales like a region does, and CONTROL: a region that IS the page is the same raster', async () => {
+    const twice = await wholePage(await fixture(), 2);
+    expect(pngSize(twice.png)).toStrictEqual([400, 600]);
+    const asRegion = await snapshotOf(await fixture(), { x0: 0, y0: 0, x1: 200, y1: 300 });
+    const whole = await wholePage(await fixture());
+    expect(pngSize(asRegion.png)).toStrictEqual(pngSize(whole.png));
+    expect(asRegion.crop).toStrictEqual(whole.crop);
+    expect(asRegion.origin).toStrictEqual(whole.origin);
+  });
+});
+
 describe('snapshotRegion refuses', () => {
   it('a page this document does not have', async () => {
     await expect(snapshot(await fixture(), QUADRANT.upperLeft, 1, 9)).rejects.toThrow(

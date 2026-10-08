@@ -7,6 +7,7 @@ import {
   blockEditOf,
   blocksOfEdit,
   editTextBlockSchema,
+  ocrPageSchema,
   replaceTextObjectSchema,
   replacementFieldsOf,
   replacementsOf,
@@ -297,6 +298,37 @@ describe('both text edits fit the file a PDFium command crosses in, at their wor
       .strict();
     expect(worst(nested)).toBeGreaterThan(ENGINE_ANSWER_FILE_MAX_BYTES);
     expect(worst(editTextBlockSchema)).toBeGreaterThan(MAX_EDIT_TEXT * WORST_BYTES_PER_CHAR);
+  });
+});
+
+describe('ocrPage and the page a service may read (ADR-0202)', () => {
+  const REGION = { x0: 10, y0: 20, x1: 30, y1: 40 };
+  const base = { kind: 'ocrPage', page: 0, languages: ['eng'] } as const;
+
+  it('ADMITS a service reading a region, or the whole pages the person chose to send — and Tesseract with neither', () => {
+    expect(ocrPageSchema.safeParse({ ...base, engine: 'claude', region: REGION }).success).toBe(true);
+    expect(ocrPageSchema.safeParse({ ...base, engine: 'azure', wholePage: true }).success).toBe(true);
+    expect(ocrPageSchema.safeParse({ ...base, engine: 'tesseract' }).success).toBe(true);
+  });
+
+  it('REFUSES a service on a page it was not told to send: neither a region nor wholePage', () => {
+    for (const engine of ['claude', 'azure'] as const) {
+      const refused = ocrPageSchema.safeParse({ ...base, engine });
+      expect(refused.success).toBe(false);
+      // THE REASON IS THE RULE'S, not a missing field somewhere else: the issue is on `region`.
+      expect(!refused.success && refused.error.issues.map((issue) => issue.path.join('.'))).toStrictEqual(['region']);
+    }
+  });
+
+  it('REFUSES wholePage beside a region, and for Tesseract — a statement of what is read must be one', () => {
+    const beside = ocrPageSchema.safeParse({ ...base, engine: 'claude', region: REGION, wholePage: true });
+    expect(beside.success).toBe(false);
+    expect(!beside.success && beside.error.issues.map((issue) => issue.path.join('.'))).toStrictEqual(['wholePage']);
+    expect(ocrPageSchema.safeParse({ ...base, engine: 'tesseract', wholePage: true }).success).toBe(false);
+  });
+
+  it('REFUSES wholePage: false — the flag is a statement, and a negative one is no request', () => {
+    expect(ocrPageSchema.safeParse({ ...base, engine: 'claude', wholePage: false }).success).toBe(false);
   });
 });
 

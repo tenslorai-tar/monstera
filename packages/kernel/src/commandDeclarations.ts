@@ -943,13 +943,19 @@ const declarations = {
             ] as const);
 
       if (command.engine !== 'tesseract') {
+        // THE PAGE ITSELF, BY NAME (ADR-0202): the person chose these pages for an export, and the contract carried
+        // `wholePage` only with no region. A third arm of the request rather than a missing region read as the page.
+        if (region === undefined && command.wholePage === true) {
+          const network: NetworkOcrEngine = command.engine;
+          return access.ocr({ engine: network, page: command.page, wholePage: true });
+        }
         if (region === undefined) {
           // UNREACHABLE THROUGH THE BOUNDARY, which refuses this pair before a
           // command exists — and stated as a throw rather than as a comment,
           // because the declaration is also reachable from a caller in process.
           throw new Error(
-            `the ${command.engine} engine is never offered on a page, so this command must ` +
-              'carry a region (ADR-0052 §4 and its 2026-09-12 addition)',
+            `the ${command.engine} engine is never offered on a page unless the reader chose to send these pages, so this ` +
+              'command must carry a region or wholePage (ADR-0052 §4 and its 2026-09-12 addition; ADR-0202)',
           );
         }
         // EXHAUSTIVE BY A BINDING, NOT A BRANCH. Tesseract is the one local engine

@@ -1971,6 +1971,20 @@ describe('CommandBus and a parameterised pre-read', () => {
     },
   );
 
+  it.each(NETWORK_OCR_ENGINES)(
+    'a %s read of a WHOLE PAGE the person chose to send asks for the page by name, and no region (ADR-0202)',
+    async (engine) => {
+      const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
+      const context = contextStub(true);
+      const inputs = recordingOcr(flat);
+
+      await bus.execute({ mupdf: hosting }, context, { kind: 'ocrPage', page: 1, languages: ['deu'], engine, wholePage: true }, inputs);
+
+      // THE THIRD ARM, NOT A REGION: a request with a `region` key would be read as a dragged box in the host.
+      expect(inputs.requests()).toStrictEqual([{ engine, page: 1, wholePage: true }]);
+    },
+  );
+
   it('replays the recognition it stored, without reading again', async () => {
     const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
     const context = contextStub(true);

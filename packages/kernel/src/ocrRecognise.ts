@@ -468,14 +468,23 @@ export type RecognitionRequest =
   | {
       /**
        * The NETWORK engines, by the one declared set (ADR-0057). Their arm carries
-       * no language — each service detects it — and a REQUIRED region: what it is
-       * given is uploaded, so *the whole page* is not a request this type can
-       * express. They read handwriting too, since the local engine was removed
+       * no language — each service detects it — and a REGION: what it is given is
+       * uploaded, so *the whole page* is a request only by naming it (the arm below,
+       * ADR-0202). They read handwriting too, since the local engine was removed
        * (ADR-0085).
        */
       readonly engine: NetworkOcrEngine;
       readonly page: number;
       readonly region: readonly [number, number, number, number];
+    }
+  | {
+      /**
+       * A network engine reading the page itself, which the person chose to send for an export (ADR-0202). `wholePage` is
+       * REQUIRED and `region` absent, so the page is never what a missing region defaults to: the two arms cannot be mixed.
+       */
+      readonly engine: NetworkOcrEngine;
+      readonly page: number;
+      readonly wholePage: true;
     };
 
 /**

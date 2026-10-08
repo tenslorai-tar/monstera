@@ -1247,19 +1247,30 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       ): candidate is Extract<typeof request, { readonly engine: NetworkOcrEngine }> =>
         isNetworkOcrEngine(candidate.engine);
       if (isNetworkRequest(request)) {
-        const [x0, y0, x1, y1] = request.region;
-        const prepared = await networkRecognisers(settings, secrets)[request.engine].prepare(
-          Math.abs(x1 - x0),
-          Math.abs(y1 - y0),
-        );
+        // A REGION, or THE PAGE ITSELF where the person chose to send these pages (ADR-0202): the page's displayed size
+        // sizes the raster, and an absent rect is the page's own box in the host, so the frame comes back as a region's does.
+        let rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | undefined;
+        let widthPoints: number;
+        let heightPoints: number;
+        if ('wholePage' in request) {
+          const size = (await engineHost.geometry(session, [request.page])).sizes[0];
+          if (size === undefined) throw new Error(`the engine reported no size for page ${String(request.page + 1)}`);
+          widthPoints = size.width;
+          heightPoints = size.height;
+        } else {
+          const [x0, y0, x1, y1] = request.region;
+          rect = { x0, y0, x1, y1 };
+          widthPoints = Math.abs(x1 - x0);
+          heightPoints = Math.abs(y1 - y0);
+        }
+        const prepared = await networkRecognisers(settings, secrets)[request.engine].prepare(widthPoints, heightPoints);
         // BYTES ARE KNOWN ONLY AFTER RASTERISING, so a raster over the service's byte
         // limit is taken again smaller — `rasterWithinLimit.ts` says why and when not.
         const { raster, scale } = await rasterWithinLimit(
           prepared.scale,
           MIN_SNAPSHOT_SCALE,
           prepared.accepts,
-          (at) =>
-            engineHost.snapshot(session, { page: request.page, rect: { x0, y0, x1, y1 }, scale: at }),
+          (at) => engineHost.snapshot(session, { page: request.page, ...(rect === undefined ? {} : { rect }), scale: at }),
         );
         return prepared.recognise({
           png: raster.png,

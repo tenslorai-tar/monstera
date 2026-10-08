@@ -428,7 +428,7 @@ export function remoteMupdfLifecycle(
       const answer = await client['engine/snapshotRegion']({
         session: sessions.handleFor(session),
         page: request.page,
-        rect: request.rect,
+        ...(request.rect === undefined ? {} : { rect: request.rect }),
         scale: request.scale,
         into,
       });

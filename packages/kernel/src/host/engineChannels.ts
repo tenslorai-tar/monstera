@@ -2325,8 +2325,8 @@ export const engineChannels = {
       .object({
         session: sessionSchema,
         page: z.number().int().nonnegative(),
-        /** The region in PDF user space; need not be ordered. */
-        rect: annotationRectSchema,
+        /** The region in PDF user space; need not be ordered. ABSENT IS THE WHOLE PAGE, its displayed box (ADR-0202). */
+        rect: annotationRectSchema.optional(),
         /** Device pixels per PDF point. The kernel holds the bounds. */
         scale: z.number().positive(),
         into: outputNameSchema,

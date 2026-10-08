@@ -1291,21 +1291,36 @@ export const ocrPageSchema = z.object({
    */
   region: annotationRectSchema.optional(),
   /**
+   * That the person chose THESE WHOLE PAGES to be sent to a service
+   * ([ADR-0202](../../../docs/DECISIONS/0202-a-whole-page-may-be-read-by-a-service-when-the-person-chose-these-pages-for-an-export.md)):
+   * the handwritten-or-scanned export, after its dialog said what is sent. A network engine reads a region or, with this, the
+   * page's own displayed box — never neither, and never both. Tesseract has no use for it: its whole page is no region.
+   */
+  wholePage: z.literal(true).optional(),
+  /**
    * Which recogniser answers — [ADR-0052](../../../docs/DECISIONS/0052-a-second-recogniser-arrives-on-demand-and-reads-a-region.md)
    * Decision 1.
    *
    * `tesseract` for a page or a region in one of fourteen languages; the network
    * engines, which read handwriting since the local one was removed (ADR-0085),
-   * for **a region only**.
+   * for **a region, or whole pages the person chose to send** (ADR-0202).
    */
   engine: z.enum(OCR_ENGINES),
-}).strict().refine((command) => command.engine === 'tesseract' || command.region !== undefined, {
-  message:
-    'Only Tesseract is offered on a whole page. A network engine sends what it is given to a ' +
-    'service, so a page-scoped request would send more of the document than the reader asked ' +
-    'about. It must carry the region the reader dragged.',
-  path: ['region'],
-});
+})
+  .strict()
+  .refine((command) => command.engine === 'tesseract' || command.region !== undefined || command.wholePage === true, {
+    message:
+      'Only Tesseract is offered on a whole page unless the reader chose to send these pages. A network engine sends what ' +
+      'it is given to a service, so a page-scoped request from a surface that did not ask for one would send more of the ' +
+      'document than the reader asked about. It must carry the region the reader dragged, or wholePage.',
+    path: ['region'],
+  })
+  .refine((command) => !(command.wholePage === true && (command.region !== undefined || command.engine === 'tesseract')), {
+    message:
+      'wholePage names the page itself for a network engine: it is refused beside a region (two statements of what is ' +
+      'read) and for Tesseract, whose whole page is simply no region.',
+    path: ['wholePage'],
+  });
 
 /**
  * ## Why this one boundary REFUSES where the host boundary cannot EXPRESS
