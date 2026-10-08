@@ -1,6 +1,11 @@
 # ADR-0211 — A text box with styled words has an appearance Monstera writes itself
 
-- **Status:** Proposed — written for the owner's order of 2026-10-08, Step 8. Nothing is built; see *What is not decided*.
+- **Status:** Accepted 2026-10-08 on the owner's order to build it (Step 8 of the run that follows the one that wrote this): all
+  seven Decisions as written, with the two open questions answered as proposed — a script outside the base 14 keeps the engine's
+  appearance and the panel says why (Decision 2), and the per-word styles are built with the box-level ones, on the same
+  `/RC` writer (Decision 7). *Justify* and *line spacing* are stored in `/DS` and drawn in the appearance; `/Q` keeps the
+  nearest of left, centre and right, so a reader that ignores `/AP` and `/DS` shows the words against the side the box says.
+  Written before any of it is built, in its own commit (B4).
 - **Date:** 2026-10-08
 - **Amends:** nothing yet. Building it amends the architecture's annotation row (the engine draws a FreeText) and
   [ADR-0154](0154-words-are-typed-on-the-page-and-the-page-is-asked-for-them.md) Decision 3, which reads a box's style from `/DA` and `/Q`
