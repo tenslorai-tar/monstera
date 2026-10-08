@@ -285,11 +285,14 @@ const handlers: ContractHandlers = {
       ok({
         version: asDocVersion(1),
         links: [
-          { kind: 'internal' as const, page: 4, bounds: { x0: 1, y0: 2, x1: 3, y1: 4 } },
+          { kind: 'internal' as const, page: 4, bounds: { x0: 1, y0: 2, x1: 3, y1: 4 }, outline: 'thin' as const },
           {
             kind: 'external' as const,
             uri: 'https://example.org/',
             bounds: { x0: 5, y0: 6, x1: 7, y1: 8 },
+            // A COLOUR ON ONE AND NONE ON THE OTHER, so a boundary that dropped the optional field, or required it, fails.
+            outline: 'dashed' as const,
+            colour: [0, 0.4, 0.8] as [number, number, number],
           },
         ],
         next: null,

@@ -111,7 +111,7 @@ describe('the document-wide lists’ hostile-host bounds', () => {
   });
 
   it('page links: the smallest link the schema accepts, and the bound it derives', () => {
-    const smallest = { kind: 'internal', page: 0, bounds: { x0: 0, y0: 0, x1: 0, y1: 0 } };
+    const smallest = { kind: 'internal', page: 0, bounds: { x0: 0, y0: 0, x1: 0, y1: 0 }, outline: 'none' };
     expect(engineChannels['engine/page-links'].result.safeParse({ links: [smallest], truncated: false }).success).toBe(
       true,
     );
@@ -120,7 +120,7 @@ describe('the document-wide lists’ hostile-host bounds', () => {
   });
 
   it('CONTROL: the page links bound is enforced — one past it is refused by the channel', () => {
-    const link = { kind: 'internal', page: 0, bounds: { x0: 0, y0: 0, x1: 0, y1: 0 } };
+    const link = { kind: 'internal', page: 0, bounds: { x0: 0, y0: 0, x1: 0, y1: 0 }, outline: 'none' };
     const over = { links: Array.from({ length: ENGINE_PAGE_LINKS_MAX + 1 }, () => link), truncated: true };
     const channel = engineChannels['engine/page-links'].result;
     expect(channel.safeParse({ ...over, links: over.links.slice(1) }).success).toBe(true);

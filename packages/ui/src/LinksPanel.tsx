@@ -1,12 +1,25 @@
 import { useLingui } from '@lingui/react';
-import type { ContractClient } from '@monstera/contract';
-import type { DocId } from '@monstera/shared';
+import {
+  type CommandOfKind,
+  type ContractClient,
+  LINK_OUTLINES,
+  LINK_OUTLINE_DEFAULT_COLOUR,
+  type LinkOutline,
+} from '@monstera/contract';
+import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 import { type ReactElement, useEffect, useState } from 'react';
 
 import {
   LINKS_EMPTY,
   LINKS_EXTERNAL,
   LINKS_LABEL,
+  LINKS_OUTLINE_COLOUR,
+  LINKS_OUTLINE_DASHED,
+  LINKS_OUTLINE_LABEL,
+  LINKS_OUTLINE_NONE,
+  LINKS_OUTLINE_OTHER,
+  LINKS_OUTLINE_THICK,
+  LINKS_OUTLINE_THIN,
   LINKS_TO_PAGE,
   LINKS_TRUNCATED,
   LINKS_UNAVAILABLE,
@@ -42,15 +55,21 @@ export function LinksPanel({
   client,
   docId,
   page,
+  version,
   onFollow,
+  onOutline,
 }: {
   readonly client: ContractClient;
   /** `undefined` with no document open, which renders nothing. */
   readonly docId: DocId | undefined;
   /** The page the reader is on, zero-based. `undefined` with no document. */
   readonly page: number | undefined;
+  /** The document's version: a change to it (an outline just set, an undo) reads the page's links again. */
+  readonly version?: DocVersion | undefined;
   /** Follows a link, by its page and its place on it: the route a link pressed on the page takes too (ADR-0167). */
   readonly onFollow: (followed: FollowedLink) => void;
+  /** Sets one link's outline or colour (ADR-0212), as the command that names it by place and version. */
+  readonly onOutline: (command: CommandOfKind<'setLinkOutline'>) => void;
 }): ReactElement | null {
   const { i18n } = useLingui();
   const [state, setState] = useState<PanelState>({ kind: 'idle' });
@@ -72,7 +91,15 @@ export function LinksPanel({
         // reassuring answer for a document that is busy or poisoned.
         setState(
           answer.ok
-            ? { kind: 'links', page, links: answer.value.items, truncated: answer.value.last.truncated }
+            ? {
+                kind: 'links',
+                page,
+                // THE VERSION THE LIST WAS READ AT, which is what an outline change names (ADR-0212): the position it
+                // sends is a position in THIS list, and a document that has moved since refuses it.
+                version: answer.value.version,
+                links: answer.value.items,
+                truncated: answer.value.last.truncated,
+              }
             : { kind: 'unavailable', page },
         );
       },
@@ -84,7 +111,7 @@ export function LinksPanel({
     return (): void => {
       cancelled = true;
     };
-  }, [client, docId, page]);
+  }, [client, docId, page, version]);
 
   // THE STATE CARRIES THE PAGE IT DESCRIBES, and this is where that is spent.
   //
@@ -128,6 +155,35 @@ export function LinksPanel({
                   <span className="m-links-address">{i18n._(LINKS_EXTERNAL, { uri: link.uri })}</span>
                 )}
               </button>
+              <span className="m-links-outline">
+                <select
+                  aria-label={i18n._(LINKS_OUTLINE_LABEL, { number: at + 1 })}
+                  data-links-outline={String(at)}
+                  value={link.outline}
+                  onChange={(event) => {
+                    const chosen = LINK_OUTLINES.find((outline) => outline === event.target.value);
+                    if (chosen !== undefined) onOutline({ kind: 'setLinkOutline', page: state.page, index: at, outline: chosen, version: state.version });
+                  }}
+                >
+                  {/* AS THE DOCUMENT HAS IT is shown only while it is the state, so it is a thing to leave and never one to choose. */}
+                  {link.outline === 'other' ? <option value="other">{i18n._(LINKS_OUTLINE_OTHER)}</option> : null}
+                  {LINK_OUTLINES.map((outline) => (
+                    <option key={outline} value={outline}>
+                      {i18n._(OUTLINE_NAMES[outline])}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="color"
+                  aria-label={i18n._(LINKS_OUTLINE_COLOUR, { number: at + 1 })}
+                  data-links-colour={String(at)}
+                  value={hexOf(link.colour)}
+                  onChange={(event) => {
+                    const colour = rgbOf(event.target.value);
+                    if (colour !== undefined) onOutline({ kind: 'setLinkOutline', page: state.page, index: at, colour, version: state.version });
+                  }}
+                />
+              </span>
             </li>
           ))}
         </ul>
@@ -135,6 +191,29 @@ export function LinksPanel({
       {state.kind === 'links' && state.truncated ? <p className="m-links-empty">{i18n._(LINKS_TRUNCATED)}</p> : null}
     </nav>
   );
+}
+
+/** Each outline's name, keyed by outline so a fifth arrives owing its words. */
+const OUTLINE_NAMES: Readonly<Record<LinkOutline, MessageKey>> = {
+  none: LINKS_OUTLINE_NONE,
+  thin: LINKS_OUTLINE_THIN,
+  thick: LINKS_OUTLINE_THICK,
+  dashed: LINKS_OUTLINE_DASHED,
+};
+
+/** A `/C` as the hex a colour input holds; a link whose document gives none shows the colour the writer would write. */
+function hexOf(colour: readonly [number, number, number] | undefined): string {
+  const shown = colour ?? LINK_OUTLINE_DEFAULT_COLOUR;
+  const channel = (value: number): string => Math.round(Math.min(1, Math.max(0, value)) * 255).toString(16).padStart(2, '0');
+  return `#${channel(shown[0])}${channel(shown[1])}${channel(shown[2])}`;
+}
+
+/** A colour input's hex as the contract's RGB, or nothing for a value that is not six hex digits. */
+function rgbOf(hex: string): [number, number, number] | undefined {
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/iu.exec(hex);
+  if (match === null) return undefined;
+  const [, r = '0', g = '0', b = '0'] = match;
+  return [parseInt(r, 16) / 255, parseInt(g, 16) / 255, parseInt(b, 16) / 255];
 }
 
 /**
@@ -152,6 +231,8 @@ type PanelState =
   | {
       readonly kind: 'links';
       readonly page: number;
+      /** The version the links were read at. */
+      readonly version: DocVersion;
       /** As the contract carries them, the page layer's shape, so both hand `onFollow` one kind of link. */
       readonly links: readonly PageLinkOnPage[];
       /** Whether the host's walk stopped at its bound, which only a hostile document reaches. */

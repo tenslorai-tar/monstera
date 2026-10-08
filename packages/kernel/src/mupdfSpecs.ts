@@ -98,7 +98,14 @@ import {
   captureSanitizeDocument,
   invertSanitizeDocument,
 } from './documentSanitize.js';
-import { applyAddLink, captureAddLink, invertAddLink } from './pageLinks.js';
+import {
+  applyAddLink,
+  applySetLinkOutline,
+  captureAddLink,
+  captureSetLinkOutline,
+  invertAddLink,
+  invertSetLinkOutline,
+} from './pageLinks.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
 import {
   applyMergeDocument,
@@ -350,6 +357,12 @@ export const mupdfSpecs = {
     apply: applyAddLink,
     capture: captureAddLink,
     invert: invertAddLink,
+  },
+  setLinkOutline: {
+    ...declaredCommands.setLinkOutline,
+    apply: applySetLinkOutline,
+    capture: captureSetLinkOutline,
+    invert: invertSetLinkOutline,
   },
   fillFormField: {
     // THE SPREAD CARRIES `targets: 'field'` IN, and nothing here reads it — the

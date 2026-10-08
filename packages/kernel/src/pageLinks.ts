@@ -1,4 +1,4 @@
-import type { CommandOfKind } from '@monstera/contract';
+import { type CommandOfKind, LINK_OUTLINES, LINK_OUTLINE_DEFAULT_COLOUR, type LinkOutline } from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import type * as mupdf from './mupdfRaw.js';
 
@@ -36,20 +36,30 @@ import { pageInDocument } from './pageScope.js';
  * (§3.2, and invariant 20's *main never parses* one layer up).
  */
 
+/** How a link's own outline reads: one of the four a person may choose, or `other` for what the document brought (ADR-0212). */
+export type ListedOutline = LinkOutline | 'other';
+
+/** What every listed link carries beside its target: how it is outlined in the document, and in what colour. */
+interface LinkLook {
+  readonly outline: ListedOutline;
+  /** The outline's colour when the document gives one in RGB, gray or CMYK, as RGB; absent when it gives none. */
+  readonly colour?: [number, number, number] | undefined;
+}
+
 /** One link on a page. */
 export type PageLink =
-  | {
+  | ({
       readonly kind: 'internal';
       /** Zero-based, as everything that crosses the contract is. */
       readonly page: number;
       readonly bounds: LinkBounds;
-    }
-  | {
+    } & LinkLook)
+  | ({
       readonly kind: 'external';
       /** The URI exactly as the document carries it. Nothing here follows it. */
       readonly uri: string;
       readonly bounds: LinkBounds;
-    };
+    } & LinkLook);
 
 /**
  * A link's rectangle, in MuPDF's own coordinate space.
@@ -248,18 +258,49 @@ function writeLinkBorder(document: mupdf.PDFDocument, page: mupdf.PDFPage, borde
   if (!annots.isArray() || annots.length === 0) return;
   const made = annots.get(annots.length - 1);
   if (!made.isDictionary()) return;
+  writeOutline(document, made, border, undefined);
+}
+
+/**
+ * Writes a link's outline into its dictionary: the ONE writer of `/Border`, `/BS` and `/C` on a link, for a link just added and
+ * a link a person changed (B3).
+ *
+ * `/BS` is deleted whenever an outline is written, because the format makes `/BS` win over `/Border` (PDF 32000 §12.5.2) and
+ * `createLink` writes a `/BS /W 0` of its own: a `/Border` written beside it was stored and then OVERRIDDEN, so a link added
+ * "thin" was drawn with no outline by every reader that follows the rule. Found 2026-10-08 by reading the listing back, which
+ * follows the same rule (`pageLinks.test.ts`); the earlier proof read `/Border` alone.
+ *
+ * A visible outline on a link with no `/C` gets the default blue, never the black a reader would draw; a colour the link has is
+ * kept, and `none` leaves the colour for the next time.
+ */
+function writeOutline(
+  document: mupdf.PDFDocument,
+  dictionary: mupdf.PDFObject,
+  outline: LinkOutline | undefined,
+  colour: readonly number[] | undefined,
+): void {
   const numbers = (values: readonly number[]): mupdf.PDFObject => {
     const array = document.newArray();
     for (const value of values) array.push(document.newReal(value));
     return array;
   };
-  made.put('Border', numbers([0, 0, border === 'thin' ? LINK_BORDER_WIDTH : 0]));
-  if (border === 'thin') made.put('C', numbers(LINK_BORDER_COLOUR));
+  if (outline !== undefined) {
+    const { width, dash } = OUTLINE_STYLE[outline];
+    const border = numbers([0, 0, width]);
+    if (dash.length > 0) border.push(numbers(dash));
+    dictionary.delete('BS');
+    dictionary.put('Border', border);
+  }
+  if (colour !== undefined) {
+    dictionary.put('C', numbers(colour));
+  } else if (outline !== undefined && outline !== 'none' && colourOf(dictionary) === undefined) {
+    dictionary.put('C', numbers(LINK_BORDER_COLOUR));
+  }
 }
 
 /** A thin link outline: one point wide, in a blue that reads on white paper (the accent's family). */
 const LINK_BORDER_WIDTH = 1;
-const LINK_BORDER_COLOUR: readonly number[] = [0, 0.4, 0.8];
+const LINK_BORDER_COLOUR: readonly number[] = LINK_OUTLINE_DEFAULT_COLOUR;
 
 /**
  * Reports that a link's addition records no prior state.
@@ -301,6 +342,73 @@ export const invertAddLink: Invert<'mupdf', 'addLink'> = (): Promise<void> => {
   );
 };
 
+/**
+ * Changes the outline and colour of one link that already exists (ADR-0212).
+ *
+ * ## What is written, and what the format says about it
+ *
+ * `/Border [0 0 w]` — with a dash array as its fourth entry for a dashed one — and `/C` for the colour. **`/BS` is deleted
+ * whenever an outline is written**, because the format makes `/BS` win over `/Border` (PDF 32000 §12.5.2): a link the document
+ * brought with a `/BS` would keep drawing its old outline under the one just chosen, which is a control that reports done and
+ * changes nothing in the viewer that reads `/BS`.
+ *
+ * ## Making a link visible gives it a colour
+ *
+ * A visible outline on a link with no `/C` is drawn black by most readers. It is written in `addLink`'s blue instead, and a
+ * colour the link already has is never replaced by the default; choosing `none` keeps the colour for the next time.
+ *
+ * ## The link is named by its place, and the place is checked
+ *
+ * A position past the page's links, or a page whose `/Link` dictionaries cannot be matched one for one to what `getLinks()`
+ * returns, is refused with its reason rather than applied to a neighbour.
+ */
+export const applySetLinkOutline: Apply<'mupdf', 'setLinkOutline'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'setLinkOutline'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const loaded = pageWithin(document, command.page, document.countPages());
+    const links = loaded.getLinks();
+    const count = links.length;
+    for (const link of links) link.destroy();
+    if (command.index >= count) {
+      throw new RangeError(
+        `page ${String(command.page)} has ${String(count)} link(s), so there is no link at position ${String(command.index)} to outline`,
+      );
+    }
+    const dictionary = linkDictionaries(loaded, count)[command.index];
+    if (dictionary === undefined) {
+      throw new RangeError(
+        `the links on page ${String(command.page)} cannot be matched one for one to their dictionaries, so none is outlined rather than a neighbour`,
+      );
+    }
+    writeOutline(document, dictionary, command.outline, command.colour);
+  });
+
+/**
+ * Reports that a link outline change records no prior state: `captureAddLink`'s reason, since a link has no identity to restore
+ * to, so undo restores the checkpoint the bus took (ADR-0037). The page is validated first, for that function's reason.
+ */
+export function captureSetLinkOutline(
+  session: MupdfSession,
+  command: CommandOfKind<'setLinkOutline'>,
+): Promise<CaptureResult<never>> {
+  return withDocument(session, (document) => {
+    pageWithin(document, command.page, document.countPages());
+    return {
+      captured: false,
+      reason:
+        'a link outline cannot be recorded as prior state: restoring it needs a handle naming which link on the page it is, ' +
+        'and document.pageLinks answers with a position that is stale once the document moves',
+    };
+  });
+}
+
+/** Unreachable, and required by `CommandSpec`'s shape: `CommandPrior['setLinkOutline']` is `never`. */
+export const invertSetLinkOutline: Invert<'mupdf', 'setLinkOutline'> = (): Promise<void> => {
+  throw new Error('a link outline change has no inverse yet; undo restores the checkpoint the bus took (ADR-0037)');
+};
+
 /** The page for a validated index, or a named refusal. */
 function pageWithin(document: mupdf.PDFDocument, page: number, total: number): mupdf.PDFPage {
   pageInDocument(page, total);
@@ -328,16 +436,94 @@ function linkTransform(loaded: mupdf.PDFPage): PageTransform {
   return frame;
 }
 
+/** How each outline is drawn: the width in points, and the dash pattern (none for a solid line). */
+const OUTLINE_STYLE: Readonly<Record<LinkOutline, { readonly width: number; readonly dash: readonly number[] }>> = {
+  none: { width: 0, dash: [] },
+  thin: { width: LINK_BORDER_WIDTH, dash: [] },
+  thick: { width: 3, dash: [] },
+  dashed: { width: LINK_BORDER_WIDTH, dash: [3, 2] },
+};
+
+/**
+ * The page's `/Link` dictionaries, in the order `/Annots` holds them.
+ *
+ * MuPDF's `getLinks()` is built from the same array in the same order, which is what lets a link's position among the page's
+ * links name its dictionary here. The two counts are compared by the caller, and a page where they differ answers no
+ * dictionaries rather than a guess (a listing then reads `other` and a change is refused).
+ */
+function linkDictionaries(page: mupdf.PDFPage, expected: number): readonly mupdf.PDFObject[] {
+  const annots = page.getObject().get('Annots');
+  if (!annots.isArray()) return [];
+  const found: mupdf.PDFObject[] = [];
+  for (let at = 0; at < annots.length; at += 1) {
+    const entry = annots.get(at);
+    if (!entry.isDictionary()) continue;
+    const subtype = entry.get('Subtype');
+    if (subtype.isName() && subtype.asName() === 'Link') found.push(entry);
+  }
+  return found.length === expected ? found : [];
+}
+
+/** A number in a dictionary entry, or `fallback` where it is absent or is not one. */
+function numberOr(value: mupdf.PDFObject, fallback: number): number {
+  return value.isNumber() ? value.asNumber() : fallback;
+}
+
+/**
+ * How a link's outline reads, by the format's own rules (PDF 32000 §12.5.2): a `/BS` dictionary wins over `/Border`, and a
+ * link with neither is drawn one point wide. Anything that is not exactly one of the four a person may choose is `other`.
+ */
+function outlineOf(dictionary: mupdf.PDFObject): ListedOutline {
+  let width = 1;
+  let dashed = false;
+  const style = dictionary.get('BS');
+  const border = dictionary.get('Border');
+  if (style.isDictionary()) {
+    width = numberOr(style.get('W'), 1);
+    const kind = style.get('S');
+    dashed = kind.isName() && kind.asName() === 'D';
+  } else if (border.isArray() && border.length >= 3) {
+    width = numberOr(border.get(2), 1);
+    const dash = border.length >= 4 ? border.get(3) : undefined;
+    dashed = dash !== undefined && dash.isArray() && dash.length > 0;
+  }
+  for (const outline of LINK_OUTLINES) {
+    const wanted = OUTLINE_STYLE[outline];
+    if (wanted.width === width && wanted.dash.length > 0 === dashed) return outline;
+  }
+  return 'other';
+}
+
+/** A link's `/C` as RGB: gray and CMYK by the format's own conversions (§10.4.2), and nothing for any other length. */
+function colourOf(dictionary: mupdf.PDFObject): [number, number, number] | undefined {
+  const colour = dictionary.get('C');
+  if (!colour.isArray()) return undefined;
+  const unit = (at: number): number => Math.min(1, Math.max(0, numberOr(colour.get(at), 0)));
+  if (colour.length === 1) return [unit(0), unit(0), unit(0)];
+  if (colour.length === 3) return [unit(0), unit(1), unit(2)];
+  if (colour.length === 4) return [(1 - unit(0)) * (1 - unit(3)), (1 - unit(1)) * (1 - unit(3)), (1 - unit(2)) * (1 - unit(3))];
+  return undefined;
+}
+
 function linksOn(document: mupdf.PDFDocument, page: number, bound: number): ListedPageLinks {
   const loaded = document.loadPage(page);
   const links = loaded.getLinks();
+  const dictionaries = linkDictionaries(loaded, links.length);
   try {
     // STOPPED AT THE HOST ANSWER'S BOUND AND SAID, as the outline's walk is (ADR-0130 Decision 3).
     const listed = new BoundedList<PageLink>(bound);
-    for (const link of links) {
+    for (const [at, link] of links.entries()) {
       if (!listed.room()) break;
       const [x0, y0, x1, y1] = link.getBounds();
       const bounds: LinkBounds = { x0, y0, x1, y1 };
+      // HOW IT IS OUTLINED, read from the link's own dictionary by its position (`linkDictionaries` says why that names it).
+      // A page whose dictionaries could not be matched to its links answers `other` for each rather than a guess.
+      const dictionary = dictionaries[at];
+      const colour = dictionary === undefined ? undefined : colourOf(dictionary);
+      const look: LinkLook = {
+        outline: dictionary === undefined ? 'other' : outlineOf(dictionary),
+        ...(colour === undefined ? {} : { colour }),
+      };
       // SHOWN SHORTENED, never refused: one tracking link past the wire's bound made every link on the page
       // unreadable (`shownName.ts`). Nothing follows THIS text: a link a person follows is read again in full by its
       // place, through `engine/link-address` (ADR-0167), so the ellipsis changes only what is shown.
@@ -346,8 +532,8 @@ function linksOn(document: mupdf.PDFDocument, page: number, bound: number): List
       // page.
       listed.add(
         link.isExternal()
-          ? { kind: 'external', uri: shownName(link.getURI(), ENGINE_LINK_URI_MAX), bounds }
-          : { kind: 'internal', page: document.resolveLink(link), bounds },
+          ? { kind: 'external', uri: shownName(link.getURI(), ENGINE_LINK_URI_MAX), bounds, ...look }
+          : { kind: 'internal', page: document.resolveLink(link), bounds, ...look },
       );
     }
     const { items, truncated } = listed.answer();

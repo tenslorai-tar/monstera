@@ -2,7 +2,7 @@
 import { I18nProvider } from '@lingui/react';
 import { type ContractClient, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -52,11 +52,13 @@ async function settle(): Promise<void> {
   });
 }
 
-const INTERNAL = { kind: 'internal', page: 4, bounds: { x0: 1, y0: 2, x1: 3, y1: 4 } };
+const INTERNAL = { kind: 'internal', page: 4, bounds: { x0: 1, y0: 2, x1: 3, y1: 4 }, outline: 'thin' };
 const EXTERNAL = {
   kind: 'external',
   uri: 'https://example.org/thing',
   bounds: { x0: 5, y0: 6, x1: 7, y1: 8 },
+  outline: 'dashed',
+  colour: [1, 0, 0],
 };
 
 describe('LinksPanel', () => {
@@ -64,7 +66,7 @@ describe('LinksPanel', () => {
     const { client, asked } = clientAnswering([]);
     render(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={7} onFollow={vi.fn()} />
+        <LinksPanel client={client} docId={DOC} page={7} onFollow={vi.fn()} onOutline={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -90,7 +92,7 @@ describe('LinksPanel', () => {
     });
     const { container } = render(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={2} onFollow={vi.fn()} />
+        <LinksPanel client={client} docId={DOC} page={2} onFollow={vi.fn()} onOutline={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -113,7 +115,7 @@ describe('LinksPanel', () => {
     const { client } = clientAnswering([INTERNAL]);
     const { container } = render(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={0} onFollow={follow} />
+        <LinksPanel client={client} docId={DOC} page={0} onFollow={follow} onOutline={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -135,7 +137,7 @@ describe('LinksPanel', () => {
     const { client, sent } = clientAnswering([EXTERNAL]);
     const { container } = render(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={0} onFollow={follow} />
+        <LinksPanel client={client} docId={DOC} page={0} onFollow={follow} onOutline={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -155,7 +157,7 @@ describe('LinksPanel', () => {
     const { client } = clientAnswering([INTERNAL, EXTERNAL]);
     const { container } = render(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={0} onFollow={follow} />
+        <LinksPanel client={client} docId={DOC} page={0} onFollow={follow} onOutline={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -173,7 +175,7 @@ describe('LinksPanel', () => {
     const empty = clientAnswering([]);
     const { container: emptyPanel } = render(
       <Wrapped>
-        <LinksPanel client={empty.client} docId={DOC} page={0} onFollow={vi.fn()} />
+        <LinksPanel client={empty.client} docId={DOC} page={0} onFollow={vi.fn()} onOutline={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -184,7 +186,7 @@ describe('LinksPanel', () => {
     const refused = clientAnswering([], { refuse: true });
     const { container: refusedPanel } = render(
       <Wrapped>
-        <LinksPanel client={refused.client} docId={DOC} page={0} onFollow={vi.fn()} />
+        <LinksPanel client={refused.client} docId={DOC} page={0} onFollow={vi.fn()} onOutline={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -197,7 +199,7 @@ describe('LinksPanel', () => {
     const { client, asked } = clientAnswering([INTERNAL]);
     const { container } = render(
       <Wrapped>
-        <LinksPanel client={client} docId={undefined} page={undefined} onFollow={vi.fn()} />
+        <LinksPanel client={client} docId={undefined} page={undefined} onFollow={vi.fn()} onOutline={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -213,7 +215,7 @@ describe('LinksPanel', () => {
     const { client } = clientAnswering([INTERNAL]);
     const { container, rerender } = render(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={0} onFollow={vi.fn()} />
+        <LinksPanel client={client} docId={DOC} page={0} onFollow={vi.fn()} onOutline={vi.fn()} />
       </Wrapped>,
     );
     await settle();
@@ -222,9 +224,120 @@ describe('LinksPanel', () => {
     // Re-rendered on a new page WITHOUT letting the answer land.
     rerender(
       <Wrapped>
-        <LinksPanel client={client} docId={DOC} page={1} onFollow={vi.fn()} />
+        <LinksPanel client={client} docId={DOC} page={1} onFollow={vi.fn()} onOutline={vi.fn()} />
       </Wrapped>,
     );
     expect(container.querySelector('.m-links-panel')).toBeNull();
+  });
+
+  describe('each link’s outline (the owner’s item 5.5, ADR-0212)', () => {
+    /** The select and the colour input of the row at `at`, by the attributes the panel gives them. */
+    const controls = (container: HTMLElement, at: number): { select: HTMLSelectElement; colour: HTMLInputElement } => {
+      const select = container.querySelector<HTMLSelectElement>(`select[data-links-outline="${String(at)}"]`);
+      const colour = container.querySelector<HTMLInputElement>(`input[data-links-colour="${String(at)}"]`);
+      if (select === null || colour === null) throw new Error(`row ${String(at)} has no outline controls`);
+      return { select, colour };
+    };
+
+    it('SHOWS what the document has: the outline chosen and the colour it gives, or the default blue where it gives none', async () => {
+      const { client } = clientAnswering([INTERNAL, EXTERNAL]);
+      const { container } = render(
+        <Wrapped>
+          <LinksPanel client={client} docId={DOC} page={0} onFollow={vi.fn()} onOutline={vi.fn()} />
+        </Wrapped>,
+      );
+      await settle();
+      expect(controls(container, 0).select.value).toBe('thin');
+      expect(controls(container, 0).colour.value).toBe('#0066cc');
+      expect(controls(container, 1).select.value).toBe('dashed');
+      expect(controls(container, 1).colour.value).toBe('#ff0000');
+    });
+
+    it('CHOOSING an outline sends exactly that command: this page, this POSITION, the version the list was read at', async () => {
+      const send = vi.fn();
+      const { client } = clientAnswering([INTERNAL, EXTERNAL]);
+      const { container } = render(
+        <Wrapped>
+          <LinksPanel client={client} docId={DOC} page={3} onFollow={vi.fn()} onOutline={send} />
+        </Wrapped>,
+      );
+      await settle();
+      await act(async () => {
+        const { select } = controls(container, 1);
+        select.value = 'thick';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        await Promise.resolve();
+      });
+      // THE SECOND ROW, not the first: a panel that sent a constant position would pass with one link.
+      expect(send).toHaveBeenCalledExactlyOnceWith({
+        kind: 'setLinkOutline',
+        page: 3,
+        index: 1,
+        outline: 'thick',
+        version: asDocVersion(1),
+      });
+    });
+
+    it('CHOOSING a colour sends the colour alone, as the contract’s three numbers', async () => {
+      const send = vi.fn();
+      const { client } = clientAnswering([INTERNAL]);
+      const { container } = render(
+        <Wrapped>
+          <LinksPanel client={client} docId={DOC} page={0} onFollow={vi.fn()} onOutline={send} />
+        </Wrapped>,
+      );
+      await settle();
+      // `fireEvent.change`, not a hand-dispatched event: React reads an input's value through a tracker that a plain
+      // assignment bypasses, so only the library's setter produces the change React hears.
+      fireEvent.change(controls(container, 0).colour, { target: { value: '#00ff00' } });
+      expect(send).toHaveBeenCalledExactlyOnceWith({
+        kind: 'setLinkOutline',
+        page: 0,
+        index: 0,
+        colour: [0, 1, 0],
+        version: asDocVersion(1),
+      });
+    });
+
+    it('AN OUTLINE THE DOCUMENT BROUGHT is shown as it is and is not one to choose, so it is never silently replaced', async () => {
+      const { client } = clientAnswering([{ ...INTERNAL, outline: 'other' }]);
+      const { container } = render(
+        <Wrapped>
+          <LinksPanel client={client} docId={DOC} page={0} onFollow={vi.fn()} onOutline={vi.fn()} />
+        </Wrapped>,
+      );
+      await settle();
+      const { select } = controls(container, 0);
+      expect(select.value).toBe('other');
+      expect([...select.options].map((option) => option.value)).toStrictEqual(['other', 'none', 'thin', 'thick', 'dashed']);
+    });
+
+    it('CONTROL: a row with an outline the document chose is not offered `other`, so the extra option is what the state decides', async () => {
+      const { client } = clientAnswering([INTERNAL]);
+      const { container } = render(
+        <Wrapped>
+          <LinksPanel client={client} docId={DOC} page={0} onFollow={vi.fn()} onOutline={vi.fn()} />
+        </Wrapped>,
+      );
+      await settle();
+      expect([...controls(container, 0).select.options].map((option) => option.value)).toStrictEqual(['none', 'thin', 'thick', 'dashed']);
+    });
+
+    it('reads the page’s links AGAIN when the document’s version moves, so a change just made is what the row shows', async () => {
+      const { client, asked } = clientAnswering([INTERNAL]);
+      const { rerender } = render(
+        <Wrapped>
+          <LinksPanel client={client} docId={DOC} page={0} version={asDocVersion(1)} onFollow={vi.fn()} onOutline={vi.fn()} />
+        </Wrapped>,
+      );
+      await settle();
+      rerender(
+        <Wrapped>
+          <LinksPanel client={client} docId={DOC} page={0} version={asDocVersion(2)} onFollow={vi.fn()} onOutline={vi.fn()} />
+        </Wrapped>,
+      );
+      await settle();
+      expect(asked).toHaveLength(2);
+    });
   });
 });

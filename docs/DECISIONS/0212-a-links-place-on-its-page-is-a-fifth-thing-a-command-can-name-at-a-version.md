@@ -37,6 +37,22 @@ member predicted the shape: *each walk is its own index space, and the refusals 
 4. **A link whose outline the document brought and the four do not name reads back as `other`** and keeps it until a person
    chooses one: *preserve, never drop*.
 
+## Built and measured, 2026-10-08
+
+- **One writer of a link's outline** (`writeOutline` in `pageLinks.ts`, B3): `addLink`'s border and `setLinkOutline` both write
+  `/Border` and `/C` through it. It **deletes `/BS`**, and that fixed a defect `addLink` had since item 11: MuPDF's `createLink`
+  writes a `/BS /W 0`, the format makes `/BS` win over `/Border` (PDF 32000 §12.5.2), so a link added "thin" was stored and then
+  overridden — drawn with no outline by every reader that follows the rule. The earlier proof read `/Border` alone through
+  pdf-lib; the new case reads the page's links back (the listing follows the same rule) and was red before the fix.
+- **Proofs** (`pageLinks.test.ts`, eleven cases with controls, read back through pdf-lib): thick on the second link leaves the
+  first untouched; dashed writes the dash as the border's fourth entry; `none` keeps the colour; a colour alone keeps the outline;
+  a colour the link has is never replaced by the default; a foreign `/BS` reads as `other`, is removed when an outline is chosen
+  and is left alone when only a colour is; a page whose `/Annots` has a note before its links counts links, not entries.
+- **The panel** (`LinksPanel.test.tsx`): each row's choice sends the command naming that page, that position and the version the
+  list was read at; `other` is shown while it is the state and is never a choice. Seen in a window by nobody yet.
+- **The hostile-host bound moved**: every link carries a required `outline`, so the smallest link grew from 67 to 84 bytes and
+  `ENGINE_PAGE_LINKS_MAX`, derived from it, from 123,300 to 98,600 (ADR-0130 Decision 3's derivation, re-run).
+
 ## Rejected alternatives
 
 - **Declare `'annotation'` for it.** Passes the type check and says an annotation index and a link position are the same kind of

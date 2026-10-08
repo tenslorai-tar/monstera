@@ -4,6 +4,7 @@ import {
   type CommandKind,
   type NamesAFormField,
   type NamesAPage,
+  type NamesALink,
   type NamesATextObject,
   type NamesAnAnnotation,
   type NamesASecondDocument,
@@ -122,7 +123,7 @@ type DeclaredTargets = {
  * reason it had two: a page-object index is PDFium's numbering of a page, and
  * folding it into either MuPDF name would say three index spaces are one.
  */
-const _declarationsCoverTheTargets: NamesAnAnnotation | NamesAFormField | NamesATextObject | NamesAPage extends
+const _declarationsCoverTheTargets: NamesAnAnnotation | NamesAFormField | NamesATextObject | NamesAPage | NamesALink extends
   DeclaredTargets
   ? true
   : never = true;
@@ -131,6 +132,7 @@ const _targetsCoverTheDeclarations: DeclaredTargets extends
   | NamesAFormField
   | NamesATextObject
   | NamesAPage
+  | NamesALink
   ? true
   : never = true;
 void _declarationsCoverTheTargets;
@@ -242,7 +244,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('replacePage');
   });
 
-  it('CONTROL: exactly eighteen kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly nineteen kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -264,6 +266,8 @@ describe('the declaration table', () => {
       // four neighbours: the handle is a position in this walk and goes stale
       // when the document moves, whatever the command then does with it.
       'replyToAnnotation',
+      // A LINK'S PLACE among the page's links, at a version (ADR-0212): its own walk, so its own member.
+      'setLinkOutline',
       'fillFormField',
       'deleteFormFields',
       // THE TWO THAT CHANGE OR COPY A FIELD THAT EXISTS (ADR-0193): their handles are positions in the widget walk.
@@ -290,7 +294,7 @@ describe('the declaration table', () => {
     // the wrong one would be an index read against a different ENGINE's
     // numbering of the same page.
     expect(new Set(named.map((kind) => declaredCommands[kind].targets))).toStrictEqual(
-      new Set(['page', 'annotation', 'field', 'text-object']),
+      new Set(['page', 'annotation', 'field', 'text-object', 'link']),
     );
   });
 });

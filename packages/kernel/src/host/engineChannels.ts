@@ -25,6 +25,8 @@ import {
   sanitizeDocumentSchema,
   MAX_ANNOTATION_BORDER,
   addLinkSchema,
+  setLinkOutlineSchema,
+  linkOutlineSchema,
   annotationKindNameSchema,
   annotationRectSchema,
   formDataFormatSchema,
@@ -214,9 +216,12 @@ export const ENGINE_PAGE_TEXT_MAX_BYTES = 8 * 1024 * 1024;
  * rounded down to a hundred (ADR-0130 Decision 3). It was 4,096 and the answer was refused whole past it, so the page's
  * every link was unreadable (JOURNAL, *No document-size refusals*, table A row 7); the renderer reads them in parts.
  */
-export const ENGINE_PAGE_LINKS_MAX = 123_300;
-/** The fewest bytes one link serialises to on this wire. Measured by `engineChannels.test.ts`. */
-export const SMALLEST_LINK_BYTES = 67;
+export const ENGINE_PAGE_LINKS_MAX = 98_600;
+/**
+ * The fewest bytes one link serialises to on this wire. Measured by `engineChannels.test.ts`: 67 until ADR-0212 gave every
+ * link a required `outline` (the shortest value, `none`, adds 17), which moved {@link ENGINE_PAGE_LINKS_MAX} from 123,300.
+ */
+export const SMALLEST_LINK_BYTES = 84;
 
 /**
  * How many filled shapes one page's `engine/page-fills` answer may carry. The host is hostile by
@@ -636,12 +641,19 @@ const fillCoordinate = z.number().min(-1e7).max(1e7);
 /** A colour channel, 0..1. */
 const fillChannel = z.number().min(0).max(1);
 
+/** How a link is outlined, as the host reports it (ADR-0212): one of the four a person may choose, or what the document brought. */
+const engineLinkLook = {
+  outline: z.union([linkOutlineSchema, z.literal('other')]),
+  colour: z.tuple([fillChannel, fillChannel, fillChannel]).optional(),
+};
+
 const engineLinkSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('internal'),
       page: z.number().int().nonnegative(),
       bounds: linkBoundsSchema,
+      ...engineLinkLook,
     })
     .strict(),
   z
@@ -649,6 +661,7 @@ const engineLinkSchema = z.discriminatedUnion('kind', [
       kind: z.literal('external'),
       uri: z.string().max(ENGINE_LINK_URI_MAX),
       bounds: linkBoundsSchema,
+      ...engineLinkLook,
     })
     .strict(),
 ]);
@@ -1139,6 +1152,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   setAnnotationAuthorSchema,
   replyToAnnotationSchema,
   addLinkSchema,
+  setLinkOutlineSchema,
   fillFormFieldSchema,
   deleteFormFieldsSchema,
   flattenFormFieldsSchema,

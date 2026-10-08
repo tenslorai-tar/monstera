@@ -53,11 +53,11 @@ function route(answer: unknown, opened: OpenLinkAnswer = ok({ kind: 'opened' }))
 }
 
 const BOUNDS = { x0: 1, y0: 2, x1: 3, y1: 4 };
-const TO_PAGE: FollowedLink = { page: 2, index: 0, link: { kind: 'internal', page: 9, bounds: BOUNDS } };
+const TO_PAGE: FollowedLink = { page: 2, index: 0, link: { kind: 'internal', page: 9, bounds: BOUNDS, outline: 'thin' } };
 const TO_WEB: FollowedLink = {
   page: 2,
   index: 3,
-  link: { kind: 'external', uri: 'https://example.org/a', bounds: BOUNDS },
+  link: { kind: 'external', uri: 'https://example.org/a', bounds: BOUNDS, outline: 'thin' },
 };
 
 describe('followLink', () => {

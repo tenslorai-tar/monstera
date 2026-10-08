@@ -4311,7 +4311,14 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
                   version={open.version}
                   onJump={navigator.jumpTo}
                 />
-                <LinksPanel client={client} docId={open.docId} page={context.page} onFollow={onFollowLink} />
+                <LinksPanel
+                  client={client}
+                  docId={open.docId}
+                  page={context.page}
+                  version={open.version}
+                  onFollow={onFollowLink}
+                  onOutline={dispatch}
+                />
               </>
             ),
             // Keyed on the version: every drawing tool moves it, so the list is re-read

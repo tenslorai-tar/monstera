@@ -20,6 +20,7 @@ Many PDFs come with an outline (bookmarks) of their headings. The **Bookmarks** 
 
 - An outline entry that goes nowhere is shown as "(goes nowhere)" and cannot be chosen.
 - Before a link to a website opens, Monstera shows you its address and asks. Only web (`https://`, `http://`) and email (`mailto:`) links can be opened.
+- Beside each link are two controls for how it is drawn in the document itself: a choice of **No outline**, **Thin line**, **Thick line** or **Dashed line**, and a colour. They change the file, so any PDF reader shows the same outline. A link the document drew some other way says **As the document has it** until you choose one of the four. Undo with **Ctrl+Z**.
 - You can also click a link where it is on the page. Hold the pointer over it to see where it goes.
 - If the document has no outline, the tab says so.
 

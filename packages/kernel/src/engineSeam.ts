@@ -555,7 +555,14 @@ export type SourceSessions<W extends keyof WriterSession, S extends CommandSourc
  * fourth member, not a widening of one of the three, for the paragraph above: a page
  * index is its own index space ([ADR-0062](../../../docs/DECISIONS/0062-a-page-edited-in-another-application-leaves-as-a-named-file-and-returns-by-the-one-open-route.md)'s correction).
  */
-export type CommandTargets = 'none' | 'annotation' | 'field' | 'text-object' | 'page';
+/*
+ * ## `'link'` ARRIVED, 2026-10-08, and it is the page's links
+ *
+ * `setLinkOutline` names a link by its position in `getLinks()` for a page, read at a version: a different list from the
+ * annotation walk (a link is not an annotation in MuPDF's model), so a fifth member rather than a widening of the first
+ * ([ADR-0212](../../../docs/DECISIONS/0212-a-links-place-on-its-page-is-a-fifth-thing-a-command-can-name-at-a-version.md)).
+ */
+export type CommandTargets = 'none' | 'annotation' | 'field' | 'text-object' | 'page' | 'link';
 
 /**
  * What a command's bytes are FOR, which decides how they are serialised.

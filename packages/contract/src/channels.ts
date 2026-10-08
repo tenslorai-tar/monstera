@@ -47,6 +47,8 @@ import {
   blockEditSchema,
   annotationKindNameSchema,
   annotationRectSchema,
+  annotationColourSchema,
+  linkOutlineSchema,
   annotationAuthorSchema,
   annotationBlendSchema,
   annotationWordsStyleSchema,
@@ -1168,6 +1170,16 @@ const linkBoundsSchema = z.object({
   x1: z.number(),
   y1: z.number(),
 });
+
+/**
+ * How a listed link is outlined in the document (ADR-0212): one of the four a person may choose, or `other` for an outline the
+ * document brought that none of them names, and the outline's colour where the document gives one. Shown on the link's row, and
+ * what the row's controls start from.
+ */
+const linkLookShape = {
+  outline: z.union([linkOutlineSchema, z.literal('other')]),
+  colour: annotationColourSchema.optional(),
+};
 
 /**
  * The longest query this boundary will carry.
@@ -5762,6 +5774,7 @@ export const channels = {
               /** Zero-based, so a caller can hand it straight to a jump. */
               page: z.number().int().nonnegative(),
               bounds: linkBoundsSchema,
+              ...linkLookShape,
             }),
             z.object({
               kind: z.literal('external'),
@@ -5774,6 +5787,7 @@ export const channels = {
                */
               uri: z.string().max(MAX_LINK_URI_LENGTH),
               bounds: linkBoundsSchema,
+              ...linkLookShape,
             }),
           ]),
         )

@@ -484,6 +484,19 @@ const LINK_SPEC = `  addLink: {
     replay: 'reapply-intent',
     sources: 'none',
     reads: 'none',
+  },
+  setLinkOutline: {
+    kind: 'setLinkOutline',
+    writer: 'mupdf',
+    apply: applySetLinkOutline,
+    capture: captureSetLinkOutline,
+    invert: invertSetLinkOutline,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
   },`;
 
 /**
@@ -1232,6 +1245,9 @@ const SPEC_IMPORTS = `import {
   applyAddLink,
   captureAddLink,
   invertAddLink,
+  applySetLinkOutline,
+  captureSetLinkOutline,
+  invertSetLinkOutline,
   applyStyleAnnotation,
   captureStyleAnnotation,
   invertStyleAnnotation,
@@ -3937,8 +3953,9 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // 53 since `replaceTextAt` (2026-10-04, ADR-0156): three spelt, 49 counted, one.
     // 54 since `editTextOperators` (2026-10-06, ADR-0176): three spelt, 50 counted, one.
     // 57 since `editFormFields`, `duplicateFormField` and `setTabOrder` (2026-10-07, ADR-0193): three spelt, 53 counted, one.
+    // 58 since `setLinkOutline` (2026-10-08, ADR-0212): three spelt, 54 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 53 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 54 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

@@ -2828,6 +2828,56 @@ export const addLinkSchema = z.object({
 }).strict();
 
 /**
+ * How a link's outline is drawn in the document (the owner's list of 2026-10-07, item 5.5): none, or a one-point, a three-point
+ * or a dashed one-point line. The set is the four a person is offered; a link the document brought with another outline reads
+ * back as `other` and is changed to one of these, never left unnamed.
+ */
+export const LINK_OUTLINES = ['none', 'thin', 'thick', 'dashed'] as const;
+export const linkOutlineSchema = z.enum(LINK_OUTLINES);
+
+/**
+ * The colour a visible outline is written in when the link has none of its own: a blue that reads on white paper. ONE value,
+ * taken by the kernel's writer and by the panel's colour control (which shows it for a link with no colour), so what the
+ * control shows is what the writer would write.
+ */
+export const LINK_OUTLINE_DEFAULT_COLOUR: readonly [number, number, number] = [0, 0.4, 0.8];
+export type LinkOutline = z.infer<typeof linkOutlineSchema>;
+
+/**
+ * Sets the outline of one link that already exists: how it is drawn, and in what colour.
+ *
+ * ## A link is named by its PLACE among the page's links, at a version
+ *
+ * `document.pageLinks` lists a page's links in the engine's order and carries no identity (`captureAddLink` says why that
+ * matters for undo). `index` is that position, so the command is the same shape `styleAnnotation` is: rows of an answer the
+ * caller was given, refused if the document has moved on since (`version`), because a renumbered page would answer whichever
+ * link slid into the place.
+ *
+ * ## Absent `colour` leaves the colour alone
+ *
+ * The outline and the colour change one at a time in the panel, as the annotation properties do (ADR-0102). A link with no
+ * colour of its own that is made visible is written in the thin outline's blue, so a visible outline is never a black box.
+ */
+export const setLinkOutlineSchema = z
+  .object({
+    kind: z.literal('setLinkOutline'),
+    /** Zero-based index of the page the link sits on. */
+    page: z.number().int().nonnegative(),
+    /** The link's position in the page's links, as `document.pageLinks` listed them. */
+    index: z.number().int().nonnegative(),
+    outline: linkOutlineSchema.optional(),
+    colour: annotationColourSchema.optional(),
+    /** The version the answer naming this link carried. Refused if the document has moved. */
+    version: docVersionSchema,
+  })
+  .strict()
+  // A CHANGE THAT NAMES NOTHING is not a command: it would move the version and put an undo step on a document that did not
+  // change.
+  .refine((command) => command.outline !== undefined || command.colour !== undefined, {
+    message: 'a link outline change names an outline, a colour or both',
+  });
+
+/**
  * How many annotations one restyle may name.
  *
  * {@link MAX_PLACED_ANNOTATIONS}' number and its argument, stated separately for
@@ -5918,6 +5968,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   placeSignatureMarkSchema,
   placeSignaturePictureSchema,
   addLinkSchema,
+  setLinkOutlineSchema,
   styleAnnotationSchema,
   editAnnotationTextSchema,
   setAnnotationAuthorSchema,
@@ -6039,6 +6090,9 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // FORM: a page link is written through MuPDF's own `formatLinkURI`, so the
   // `/GoTo` array is never something a surface spells.
   addLinkSchema,
+  // RENDERABLE, and the payload is a position in an answer the renderer was given, an outline from a set of four and a
+  // colour: nothing in it is a document's own string.
+  setLinkOutlineSchema,
   // RENDERABLE, and its intent is a handful of numbers naming rows of an answer
   // it was given — `removeAnnotation`'s shape with an appearance instead of a
   // deletion.
@@ -6363,6 +6417,7 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'editTextOperators') return command.version;
   if (command.kind === 'replacePage') return command.version;
   if (command.kind === 'importPageAsLayer') return command.version;
+  if (command.kind === 'setLinkOutline') return command.version;
   return undefined;
 }
 
@@ -6469,3 +6524,14 @@ void _theObjectNameIsACommandKind;
 export type NamesAPage = 'replacePage' | 'importPageAsLayer';
 const _thePageNameIsACommandKind: NamesAPage extends CommandKind ? true : never = true;
 void _thePageNameIsACommandKind;
+
+/**
+ * Which kinds {@link targetVersionOf} answers for on a page's LINKS (ADR-0212).
+ *
+ * A **fifth** type for {@link NamesAFormField}'s reason: a link's position is read from `getLinks()`, which is a different list
+ * from the annotation walk (a page carrying links answers zero annotations for them), so folding it into an annotation name would
+ * make two index spaces read as one.
+ */
+export type NamesALink = 'setLinkOutline';
+const _theLinkNameIsACommandKind: NamesALink extends CommandKind ? true : never = true;
+void _theLinkNameIsACommandKind;

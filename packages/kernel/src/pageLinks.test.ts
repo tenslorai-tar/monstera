@@ -1,11 +1,12 @@
-import { PDFDocument, PDFName, PDFArray, PDFNumber, PDFString } from '@cantoo/pdf-lib';
+import { PDFDocument, PDFName, PDFArray, PDFDict, PDFNumber, PDFString } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandOfKind } from '@monstera/contract';
+import { asDocVersion } from '@monstera/shared';
 
 import { mupdfWriter } from './mupdfWriter.js';
 import { readAnnotations } from './pageAnnotations.js';
-import { applyAddLink, captureAddLink, readLinkAddress, readPageLinks } from './pageLinks.js';
+import { applyAddLink, applySetLinkOutline, captureAddLink, readLinkAddress, readPageLinks } from './pageLinks.js';
 
 /** Applies one `addLink` to a link-free three-page document and serialises. */
 async function written(command: CommandOfKind<'addLink'>): Promise<Uint8Array> {
@@ -190,6 +191,9 @@ describe('readPageLinks', () => {
         kind: 'internal',
         page: 2,
         bounds: { x0: 10, y0: 160, x1: 90, y1: 180 },
+        // NO `/Border` AND NO `/BS`, which the format draws one point wide (§12.5.2) — so it reads `thin`, with no colour of
+        // its own.
+        outline: 'thin',
       });
       expect(links[1]).toMatchObject({
         kind: 'external',
@@ -295,6 +299,8 @@ describe('readPageLinks', () => {
         // MuPDF's own frame, y down from the page's top: a `/Rect` whose PDF
         // y runs 20–70 on a 200-high page comes back as 130–180.
         bounds: { x0: 10, y0: 130, x1: 110, y1: 180 },
+        // WITH NO BORDER ASKED, MuPDF's own `/BS /W 0`: a zero-width outline, which is why `addLink` writes one on request.
+        outline: 'none',
       });
     } finally {
       await mupdfWriter.close(session);
@@ -454,6 +460,167 @@ describe('readPageLinks', () => {
     } finally {
       await mupdfWriter.close(session);
     }
+  });
+});
+
+describe('setLinkOutline (ADR-0212)', () => {
+  /** What the saved bytes say about each page-0 link's outline, read by ANOTHER library: `/Border`, `/BS`'s width and `/C`. */
+  async function stored(bytes: Uint8Array): Promise<{ border: unknown[] | undefined; bsWidth: number | undefined; colour: number[] | undefined }[]> {
+    const document = await PDFDocument.load(bytes);
+    const annots = document.getPage(0).node.lookup(PDFName.of('Annots'), PDFArray);
+    const numbersOf = (value: unknown): number[] | undefined =>
+      value instanceof PDFArray ? value.asArray().map((entry) => (entry instanceof PDFNumber ? entry.asNumber() : Number.NaN)) : undefined;
+    return annots.asArray().map((entry) => {
+      const dictionary = document.context.lookup(entry) as PDFDict;
+      const border = dictionary.get(PDFName.of('Border'));
+      const style = dictionary.get(PDFName.of('BS'));
+      const width = style instanceof PDFDict ? style.get(PDFName.of('W')) : undefined;
+      return {
+        border:
+          border instanceof PDFArray
+            ? border.asArray().map((item) => (item instanceof PDFNumber ? item.asNumber() : numbersOf(item)))
+            : undefined,
+        bsWidth: width instanceof PDFNumber ? width.asNumber() : undefined,
+        colour: numbersOf(dictionary.get(PDFName.of('C'))),
+      };
+    });
+  }
+
+  /** Applies `command` to `bytes` and serialises. */
+  async function outlined(bytes: Uint8Array, command: CommandOfKind<'setLinkOutline'>): Promise<Uint8Array> {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      await applySetLinkOutline(session, command);
+      return await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  const VERSION = asDocVersion(1);
+  const change = (index: number, rest: Partial<CommandOfKind<'setLinkOutline'>>): CommandOfKind<'setLinkOutline'> => ({
+    kind: 'setLinkOutline',
+    page: 0,
+    index,
+    version: VERSION,
+    ...rest,
+  });
+  /** The listing's outlines for page 0, in place order. */
+  async function listed(bytes: Uint8Array): Promise<{ outline: string; colour: readonly number[] | undefined }[]> {
+    const session = await mupdfWriter.open(bytes);
+    try {
+      return (await readPageLinks(session, 0)).links.map((link) => ({ outline: link.outline, colour: link.colour }));
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('THICK on the second link writes a three-point border to THAT link only, and the listing reads it back', async () => {
+    const result = await outlined(await documentWithLinks(), change(1, { outline: 'thick' }));
+    const [first, second] = await stored(result);
+    expect(second?.border).toStrictEqual([0, 0, 3]);
+    // CONTROL: the neighbour is untouched, so a command that wrote to every link, or to the first, fails here.
+    expect(first?.border).toBeUndefined();
+    expect(await listed(result)).toStrictEqual([
+      { outline: 'thin', colour: undefined },
+      // A VISIBLE OUTLINE ON A LINK WITH NO COLOUR GETS `addLink`'s BLUE, never the black a reader would draw.
+      { outline: 'thick', colour: [0, expect.closeTo(0.4, 5), expect.closeTo(0.8, 5)] },
+    ]);
+  });
+
+  it('DASHED writes the dash as the border’s fourth entry, and reads back as dashed', async () => {
+    const result = await outlined(await documentWithLinks(), change(0, { outline: 'dashed' }));
+    expect((await stored(result))[0]?.border).toStrictEqual([0, 0, 1, [3, 2]]);
+    expect((await listed(result))[0]?.outline).toBe('dashed');
+  });
+
+  it('NONE writes a zero-width border and KEEPS the colour the link had, for the next time', async () => {
+    const coloured = await outlined(await documentWithLinks(), change(0, { outline: 'thin', colour: [1, 0, 0] }));
+    const hidden = await outlined(coloured, change(0, { outline: 'none' }));
+    const [only] = await stored(hidden);
+    expect(only?.border).toStrictEqual([0, 0, 0]);
+    expect(only?.colour).toStrictEqual([1, 0, 0]);
+    expect((await listed(hidden))[0]).toStrictEqual({ outline: 'none', colour: [1, 0, 0] });
+  });
+
+  it('A COLOUR ALONE changes the colour and leaves the outline as it was', async () => {
+    const thick = await outlined(await documentWithLinks(), change(0, { outline: 'thick' }));
+    const recoloured = await outlined(thick, change(0, { colour: [0, 1, 0] }));
+    expect((await stored(recoloured))[0]).toMatchObject({ border: [0, 0, 3], colour: [0, 1, 0] });
+  });
+
+  it('A COLOUR THE LINK ALREADY HAS is never replaced by the default when the outline changes', async () => {
+    const red = await outlined(await documentWithLinks(), change(0, { outline: 'thin', colour: [1, 0, 0] }));
+    const thick = await outlined(red, change(0, { outline: 'thick' }));
+    expect((await stored(thick))[0]?.colour).toStrictEqual([1, 0, 0]);
+  });
+
+  it('a link ADDED with an outline reads back as the outline it was added with — in the viewer that reads /BS first too', async () => {
+    // `createLink` writes a `/BS` of its own, and the format makes `/BS` win over `/Border` (§12.5.2): so an outline written
+    // only to `/Border` is read as the engine's `/BS` by any reader that follows the rule. The listing follows it.
+    const thin = await listed(await written({ kind: 'addLink', page: 0, rect: { x0: 10, y0: 20, x1: 110, y1: 70 }, target: { kind: 'uri', uri: 'https://example.org/a' }, border: 'thin' }));
+    expect(thin[0]?.outline).toBe('thin');
+    const none = await listed(await written({ kind: 'addLink', page: 0, rect: { x0: 10, y0: 20, x1: 110, y1: 70 }, target: { kind: 'uri', uri: 'https://example.org/a' }, border: 'none' }));
+    expect(none[0]?.outline).toBe('none');
+  });
+
+  describe('a link the DOCUMENT outlined with a /BS dictionary', () => {
+    /** One external link carrying `/BS << /W 5 >>` and a `/Border` that says something else, so only the rule decides. */
+    async function withBorderStyle(): Promise<Uint8Array> {
+      const document = await PDFDocument.create();
+      const page = document.addPage([200, 200]);
+      const link = document.context.obj({
+        Type: PDFName.of('Annot'),
+        Subtype: PDFName.of('Link'),
+        Rect: [10, 20, 90, 40],
+        Border: [0, 0, 1],
+        BS: document.context.obj({ W: 5 }),
+        A: document.context.obj({ Type: PDFName.of('Action'), S: PDFName.of('URI'), URI: PDFString.of('https://example.org/bs') }),
+      });
+      page.node.set(PDFName.of('Annots'), document.context.obj([document.context.register(link)]));
+      return document.save({ useObjectStreams: false });
+    }
+
+    it('reads as OTHER, because /BS wins over the /Border that says thin', async () => {
+      expect((await listed(await withBorderStyle()))[0]?.outline).toBe('other');
+    });
+
+    it('CHANGING it removes the /BS, so the outline chosen is the one every viewer draws', async () => {
+      const result = await outlined(await withBorderStyle(), change(0, { outline: 'thin' }));
+      const [only] = await stored(result);
+      expect(only?.bsWidth).toBeUndefined();
+      expect(only?.border).toStrictEqual([0, 0, 1]);
+      expect((await listed(result))[0]?.outline).toBe('thin');
+    });
+
+    it('CONTROL: a colour alone leaves the /BS where it is, so an outline nobody asked about is not touched', async () => {
+      const result = await outlined(await withBorderStyle(), change(0, { colour: [0, 0, 1] }));
+      expect((await stored(result))[0]?.bsWidth).toBe(5);
+      expect((await listed(result))[0]?.outline).toBe('other');
+    });
+  });
+
+  it('REFUSES a position past the page’s links, and a page that is not there, by name', async () => {
+    const bytes = await documentWithLinks();
+    await expect(outlined(bytes, change(2, { outline: 'thin' }))).rejects.toThrow(/no link at position 2/u);
+    await expect(outlined(bytes, { ...change(0, { outline: 'thin' }), page: 9 })).rejects.toBeInstanceOf(RangeError);
+    // CONTROL: the position that IS there is applied, so the refusals are about the position and not about the fixture.
+    await expect(outlined(bytes, change(1, { outline: 'thin' }))).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it('is its own link’s outline on a page that ALSO carries a non-link annotation: the position counts links, not /Annots', async () => {
+    const document = await PDFDocument.load(await documentWithLinks());
+    const first = document.getPage(0);
+    const annots = first.node.lookup(PDFName.of('Annots'), PDFArray);
+    const note = document.context.obj({ Type: PDFName.of('Annot'), Subtype: PDFName.of('Text'), Rect: [5, 5, 15, 15], Contents: PDFString.of('a note') });
+    // The note goes FIRST, so an index into `/Annots` would land on it and an index among links lands on the link.
+    const reordered = PDFArray.withContext(document.context);
+    reordered.push(document.context.register(note));
+    for (const entry of annots.asArray()) reordered.push(entry);
+    first.node.set(PDFName.of('Annots'), reordered);
+    const result = await outlined(await document.save({ useObjectStreams: false }), change(1, { outline: 'thick' }));
+    const all = await stored(result);
+    expect(all.map((entry) => entry.border)).toStrictEqual([undefined, undefined, [0, 0, 3]]);
   });
 });
 

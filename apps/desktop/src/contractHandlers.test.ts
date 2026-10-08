@@ -2795,7 +2795,7 @@ describe('a CAD export’s layers answer in parts the contract accepts', () => {
 describe('a link-heavy page’s links answer in parts the contract accepts', () => {
   const OPENED = { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' } as const;
   const bounds = { x0: 1, y0: 2, x1: 3, y1: 4 };
-  const links = Array.from({ length: 5000 }, (_, index) => ({ kind: 'external' as const, uri: `https://example.org/${String(index)}`, bounds }));
+  const links = Array.from({ length: 5000 }, (_, index) => ({ kind: 'external' as const, uri: `https://example.org/${String(index)}`, bounds, outline: 'thin' as const }));
   const commands = {
     pageLinks: () => Promise.resolve({ version: asDocVersion(4), links, truncated: false }),
   } as unknown as DocumentCommands;

@@ -1471,6 +1471,26 @@ const declarations = {
     asset: 'none',
     purpose: 'ordinary',
   },
+  setLinkOutline: {
+    kind: 'setLinkOutline',
+    display: 'image',
+    // `/Border` and `/C` on a link's own dictionary, which only MuPDF's object layer reaches (`addLink`'s reason).
+    writer: 'mupdf',
+    // Not invertible: a link has no identity to restore to (`addLink`'s `captureAddLink`), so undo restores the checkpoint
+    // the bus took (ADR-0037).
+    invertible: false,
+    undo: 'checkpoint',
+    // Two keys written from the payload, and no clock.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // ITS INDEX POINTS INTO AN ANSWER: `document.pageLinks` at one version, `styleAnnotation`'s axis. A document that has
+    // moved renumbers the page's links, and the version check is what stops the outline landing on a neighbour.
+    targets: 'link',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
   fillFormField: {
     kind: 'fillFormField',
     display: 'image',

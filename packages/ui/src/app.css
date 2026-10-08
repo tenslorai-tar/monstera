@@ -1764,6 +1764,28 @@ optgroup {
   text-align: start;
 }
 
+/*
+ * A link's row is the jump and its outline controls side by side (ADR-0212): the jump takes the space left, and the controls
+ * keep their width, so a long address never pushes them out of reach.
+ */
+.m-links-list > li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.m-links-list > li > .m-links-item {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.m-links-outline {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+}
+
 .m-destination:hover,
 .m-destination:focus-visible,
 .m-annotations-item:hover,

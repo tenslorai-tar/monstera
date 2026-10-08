@@ -187,7 +187,7 @@ export interface BrowserShim {
  * against the real one where it matters: the shim's answers go through
  * `createClient`, which parses them.
  */
-export type ShimPageLink =
+export type ShimPageLink = (
   | {
       readonly kind: 'internal';
       readonly page: number;
@@ -197,7 +197,12 @@ export type ShimPageLink =
       readonly kind: 'external';
       readonly uri: string;
       readonly bounds: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
-    };
+    }
+) & {
+  /** How the document outlines it; a seeded link with none says `thin`, which is what `addLink` writes by default. */
+  readonly outline?: 'none' | 'thin' | 'thick' | 'dashed' | 'other';
+  readonly colour?: [number, number, number];
+};
 
 /** One line of a page's text layer and its box in display space at scale 1, as `document.pageTextLayer` reports it. */
 export interface ShimPlacedLine {
@@ -2479,7 +2484,12 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          ...shimPart(pageLinks[page] ?? [], from, PAGE_LINKS_PART, 'links'),
+          ...shimPart(
+            (pageLinks[page] ?? []).map((link) => ({ ...link, outline: link.outline ?? ('thin' as const) })),
+            from,
+            PAGE_LINKS_PART,
+            'links',
+          ),
           truncated: false,
         }),
       );

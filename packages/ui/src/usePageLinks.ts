@@ -1,11 +1,11 @@
-import type { ContractClient } from '@monstera/contract';
+import type { ContractClient, LinkOutline } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { readWholeList } from './readWholeList.js';
 
 /** One link on a page as the page layer draws it: where it is, and where it goes (ADR-0167). */
-export type PageLinkOnPage =
+export type PageLinkOnPage = (
   | {
       readonly kind: 'internal';
       readonly page: number;
@@ -16,7 +16,12 @@ export type PageLinkOnPage =
       /** As the listing shows it, shortened past 2,048: shown, never followed — `main` reads the address to open. */
       readonly uri: string;
       readonly bounds: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
-    };
+    }
+) & {
+  /** How the document outlines it (ADR-0212): one of the four a person may choose, or what the document brought. */
+  readonly outline: LinkOutline | 'other';
+  readonly colour?: readonly [number, number, number] | undefined;
+};
 
 /**
  * The links on each visible page, at the document's version (ADR-0167 Decision 1).

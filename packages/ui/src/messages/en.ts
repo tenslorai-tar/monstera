@@ -1348,6 +1348,13 @@ export const LINKS_UNAVAILABLE = messageKey('surface.links.unavailable');
 export const LINKS_TRUNCATED = messageKey('surface.links.truncated');
 export const LINKS_TO_PAGE = messageKey('surface.links.to-page');
 export const LINKS_EXTERNAL = messageKey('surface.links.external');
+export const LINKS_OUTLINE_LABEL = messageKey('surface.links.outline.label');
+export const LINKS_OUTLINE_COLOUR = messageKey('surface.links.outline.colour');
+export const LINKS_OUTLINE_NONE = messageKey('surface.links.outline.none');
+export const LINKS_OUTLINE_THIN = messageKey('surface.links.outline.thin');
+export const LINKS_OUTLINE_THICK = messageKey('surface.links.outline.thick');
+export const LINKS_OUTLINE_DASHED = messageKey('surface.links.outline.dashed');
+export const LINKS_OUTLINE_OTHER = messageKey('surface.links.outline.other');
 export const ANNOTATIONS_LABEL = messageKey('surface.annotations.label');
 export const ANNOTATIONS_EMPTY = messageKey('surface.annotations.empty');
 export const ANNOTATIONS_UNAVAILABLE = messageKey('surface.annotations.unavailable');
@@ -3884,6 +3891,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LINKS_TRUNCATED]: 'This page carries more links than can be read, so the rest are not listed.',
   [LINKS_TO_PAGE]: 'Go to page {page}',
   [LINKS_EXTERNAL]: 'Opens {uri}',
+  [LINKS_OUTLINE_LABEL]: 'Outline of link {number}',
+  [LINKS_OUTLINE_COLOUR]: 'Outline colour of link {number}',
+  [LINKS_OUTLINE_NONE]: 'No outline',
+  [LINKS_OUTLINE_THIN]: 'Thin line',
+  [LINKS_OUTLINE_THICK]: 'Thick line',
+  [LINKS_OUTLINE_DASHED]: 'Dashed line',
+  [LINKS_OUTLINE_OTHER]: 'As the document has it',
   [ANNOTATIONS_LABEL]: 'Annotations in this document',
   [ANNOTATIONS_EMPTY]: 'This document has no annotations.',
   [ANNOTATIONS_UNAVAILABLE]: 'The annotations in this document could not be read.',

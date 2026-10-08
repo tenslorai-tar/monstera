@@ -21,11 +21,12 @@ function Wrapped({ children }: { children: ReactNode }): ReactElement {
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
 }
 
-const INTERNAL: PageLinkOnPage = { kind: 'internal', page: 4, bounds: { x0: 10, y0: 20, x1: 110, y1: 40 } };
+const INTERNAL: PageLinkOnPage = { kind: 'internal', page: 4, bounds: { x0: 10, y0: 20, x1: 110, y1: 40 }, outline: 'thin' };
 const EXTERNAL: PageLinkOnPage = {
   kind: 'external',
   uri: 'https://example.org/thing',
   bounds: { x0: 50, y0: 100, x1: 150, y1: 120 },
+  outline: 'thin',
 };
 
 function draw(
