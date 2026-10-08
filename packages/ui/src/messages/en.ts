@@ -1217,6 +1217,9 @@ export const CRASH_REPORT_ADDRESS_LABEL = messageKey('surface.crash-report.addre
 export const CRASH_REPORT_COPY = messageKey('surface.crash-report.copy');
 export const CRASH_REPORT_FRAGMENTS = messageKey('surface.crash-report.fragments');
 export const CRASH_REPORT_SHARE_FAILED = messageKey('surface.crash-report.share-failed');
+export const CRASH_REPORT_CONFIRM = messageKey('surface.crash-report.confirm');
+export const CRASH_REPORT_CONFIRM_SHARE = messageKey('surface.crash-report.confirm-share');
+export const CRASH_REPORT_CANCEL = messageKey('surface.crash-report.cancel');
 export const PRIVACY_RECENT_PREVIEWS_DESCRIPTION = messageKey('setting.privacy.recent-previews.description');
 export const RECENT_HEADING = messageKey('surface.recent.heading');
 export const RECENT_PLACEHOLDER = messageKey('surface.recent.placeholder');
@@ -3512,6 +3515,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CRASH_REPORT_FRAGMENTS]:
     'A report can contain parts of the documents that were open, and their file names. It leaves this computer only if you share it.',
   [CRASH_REPORT_SHARE_FAILED]: 'The Windows Share window couldn’t open, so nothing was shared.',
+  // SAID BEFORE THE SHARE SHEET OPENS, in plain words (CR-SEC-22): what a report can hold is the reason to think twice, and
+  // the person is the only one who can decide. Nothing is ever sent without this being answered.
+  [CRASH_REPORT_CONFIRM]:
+    'This report may contain parts of the documents that were open when Monstera closed, including their text, and it may contain passwords or sign-in keys that Monstera was holding in memory. It is not sent anywhere unless you choose to share it. Share it only with someone you trust.',
+  [CRASH_REPORT_CONFIRM_SHARE]: 'Share the report',
+  [CRASH_REPORT_CANCEL]: 'Cancel',
   [PRIVACY_RECENT_PREVIEWS_TITLE]: 'Show previews of recent files',
   [PRIVACY_RECENT_PREVIEWS_DESCRIPTION]:
     'Keeps a small picture of each recent file’s first page, made when you opened it. Turning this off deletes them.',

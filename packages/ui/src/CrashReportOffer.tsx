@@ -1,9 +1,12 @@
 import { useLingui } from '@lingui/react';
 import type { ContractClient } from '@monstera/contract';
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import {
   CRASH_REPORT_ADDRESS_LABEL,
+  CRASH_REPORT_CANCEL,
+  CRASH_REPORT_CONFIRM,
+  CRASH_REPORT_CONFIRM_SHARE,
   CRASH_REPORT_COPY,
   CRASH_REPORT_DISMISS,
   CRASH_REPORT_FRAGMENTS,
@@ -43,6 +46,14 @@ export function CrashReportOffer({
   const { _ } = useLingui();
   const [report, setReport] = useState<string | null>(null);
   const [problem, setProblem] = useState(false);
+  // SHARE IS A QUESTION BEFORE IT IS AN ACTION (CR-SEC-22): the sheet opens only from the second step.
+  const [confirming, setConfirming] = useState(false);
+  const notice = useRef<HTMLDivElement>(null);
+
+  // CANCEL IS THE DEFAULT: it is the first control in the notice and takes the focus, so Enter or Space declines.
+  useEffect(() => {
+    if (confirming) notice.current?.querySelector('button')?.focus();
+  }, [confirming]);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,26 +75,49 @@ export function CrashReportOffer({
   return (
     <section aria-label={_(CRASH_REPORT_OFFER)} className="m-crash-offer" data-crash-offer="">
       <p className="m-crash-offer__question">{_(CRASH_REPORT_OFFER)}</p>
-      <div className="m-crash-offer__actions">
-        <Button
-          label={CRASH_REPORT_SHARE}
-          variant="primary"
-          onClick={() => {
-            void client['crashReport.share']({ id: report }).then((answer) => {
-              // OFFERED IS THE SHEET SHOWN, and the offer then goes: the person has it in front of them.
-              if (answer.ok && answer.value.outcome === 'offered') setReport(null);
-              else setProblem(true);
-            });
-          }}
-        />
-        <Button
-          label={CRASH_REPORT_DISMISS}
-          onClick={() => {
-            void client['crashReport.dismiss']({ id: report });
-            setReport(null);
-          }}
-        />
-      </div>
+      {confirming ? (
+        <div ref={notice} role="group" aria-label={_(CRASH_REPORT_CONFIRM)} className="m-crash-offer__confirm">
+          <p>{_(CRASH_REPORT_CONFIRM)}</p>
+          <div className="m-crash-offer__actions">
+            <Button
+              label={CRASH_REPORT_CANCEL}
+              variant="primary"
+              onClick={() => {
+                setConfirming(false);
+              }}
+            />
+            <Button
+              label={CRASH_REPORT_CONFIRM_SHARE}
+              onClick={() => {
+                setConfirming(false);
+                void client['crashReport.share']({ id: report }).then((answer) => {
+                  // OFFERED IS THE SHEET SHOWN, and the offer then goes: the person has it in front of them.
+                  if (answer.ok && answer.value.outcome === 'offered') setReport(null);
+                  else setProblem(true);
+                });
+              }}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="m-crash-offer__actions">
+          <Button
+            label={CRASH_REPORT_SHARE}
+            variant="primary"
+            onClick={() => {
+              setProblem(false);
+              setConfirming(true);
+            }}
+          />
+          <Button
+            label={CRASH_REPORT_DISMISS}
+            onClick={() => {
+              void client['crashReport.dismiss']({ id: report });
+              setReport(null);
+            }}
+          />
+        </div>
+      )}
       <p className="m-crash-offer__address">
         {_(CRASH_REPORT_ADDRESS_LABEL, { address: CRASH_REPORT_ADDRESS })}{' '}
         <Button
