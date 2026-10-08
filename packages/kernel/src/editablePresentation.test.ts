@@ -283,6 +283,47 @@ describe('the editable slide, read back from the written package', () => {
   });
 });
 
+describe('a recognised scan (the owner’s answer 2: the picture stays under the words, the boxes have no fill)', () => {
+  const deck = slideSize({ width: 612, height: 792 });
+  // What recognition writes over a scan: invisible text (render mode 3), two lines, over a page that holds one image.
+  const scan = page({
+    runs: [run(0, 'Invoice 4411', 72, 700, 220, 712, {}, true), run(1, 'Total due 80.00', 72, 686, 240, 698, {}, true)],
+    images: [
+      { index: 2, matrix: [612, 0, 0, 792, 0, 0], bounds: { left: 0, bottom: 0, right: 612, top: 792 }, width: 1, height: 1, format: 'jpeg', bytes: JPEG },
+    ],
+  });
+
+  it('is the page picture at the back and the recognised words as boxes with NO FILL over it, and the scan’s own image is not drawn twice', async () => {
+    const build = buildSlide(scan, deck);
+    if (build.kind !== 'editable') throw new Error('expected editable');
+    expect(build.scan).toBe(true);
+    // The model asks for the page as drawn, once; the image object under it is not a second picture.
+    expect(build.slide.objects.filter((object) => object.kind === 'picture').map((object) => object.kind === 'picture' && object.source.kind)).toStrictEqual(['page']);
+    const resolved: ResolvedSlide = {
+      objects: build.slide.objects.map((object) =>
+        object.kind === 'picture' ? { ...object, source: { kind: 'embedded', extension: 'png', bytes: Uint8Array.of(1, 2, 3) } } : object,
+      ),
+    };
+    const files = await written([{ size: { width: 612, height: 792 }, slide: resolved }]);
+    const document = parsed(files, 1);
+    const order = [...(document.getElementsByTagName('p:spTree')[0]?.children ?? [])].map((child) => child.tagName).filter((tag) => tag !== 'p:nvGrpSpPr' && tag !== 'p:grpSpPr');
+    // THE PICTURE FIRST, so it is at the back; one paragraph of two lines after it, and no second picture.
+    expect(order).toStrictEqual(['p:pic', 'p:sp']);
+    const [box] = boxes(document);
+    expect(box?.text).toBe('Invoice 4411\nTotal due 80.00');
+    const shape = document.getElementsByTagName('p:sp')[0];
+    expect(shape?.getElementsByTagName('p:spPr')[0]?.getElementsByTagName('a:noFill')).toHaveLength(1);
+  });
+
+  it('CONTROL: the same words drawn VISIBLY on a page that holds an image are an ordinary page, whose image is its own picture', () => {
+    const typed = page({ runs: scan.runs.map((entry) => ({ ...entry, invisible: false })), images: scan.images });
+    const build = buildSlide(typed, deck);
+    if (build.kind !== 'editable') throw new Error('expected editable');
+    expect(build.scan).toBe(false);
+    expect(build.slide.objects.filter((object) => object.kind === 'picture').map((object) => object.kind === 'picture' && object.source.kind)).toStrictEqual(['embedded']);
+  });
+});
+
 describe('text boxes: paragraphs and columns', () => {
   const deck = slideSize({ width: 612, height: 792 });
 
