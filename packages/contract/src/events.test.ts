@@ -15,8 +15,21 @@ const NO_WEB: { answer: string; searched: boolean; sources: { title: string; hos
  */
 
 describe('the event registry', () => {
-  it('declares the assistant’s two events, the window’s close request and the launch’s waiting opens, and nothing else', () => {
-    expect(EVENT_IDS).toStrictEqual(['ai.delta', 'ai.done', 'window.close-requested', 'document.opens-waiting']);
+  it('declares the assistant’s two events, the window’s close request, the launch’s waiting opens and a document notice, and nothing else', () => {
+    expect(EVENT_IDS).toStrictEqual([
+      'ai.delta',
+      'ai.done',
+      'window.close-requested',
+      'document.opens-waiting',
+      'document.notice',
+    ]);
+  });
+
+  it('carries only the kind of a document notice, and refuses a name, a path or a kind it does not declare (ADR-0220)', () => {
+    expect(EVENTS['document.notice'].safeParse({ notice: 'permission-password-replaced' }).success).toBe(true);
+    expect(EVENTS['document.notice'].safeParse({ notice: 'permission-password-replaced', docId: 'x' }).success).toBe(false);
+    expect(EVENTS['document.notice'].safeParse({ notice: 'something-else' }).success).toBe(false);
+    expect(EVENTS['document.notice'].safeParse({}).success).toBe(false);
   });
 
   it('carries nothing on a close request, and refuses anything added to it', () => {

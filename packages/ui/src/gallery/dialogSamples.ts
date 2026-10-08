@@ -461,6 +461,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'copy-at-capacity', props: { code: 'copy-at-capacity' } },
   ],
   'dialog.history-trimmed': [{ state: 'opened', props: { dropped: 25 } }],
+  'dialog.permission-password-replaced': [{ state: 'opened', props: {} }],
   'dialog.delete-pages': [
     { state: 'opened', props: { pageCount: 12, pages: [2] } },
     { state: 'refused', props: { pageCount: 12, pages: [2] }, steps: [type('Pages to delete', '9-2')] },

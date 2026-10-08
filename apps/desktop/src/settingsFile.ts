@@ -34,12 +34,19 @@ export const SETTINGS_FILE = 'settings.json';
 /**
  * A settings surface backed by one JSON file under `directory`.
  *
- * ## Every read failure answers `{}`, and none of them is reported
+ * ## Every read answers `{}` when there is nothing to use, and a refusal is not nothing
  *
  * A missing file is a first launch. A file holding invalid JSON, or valid JSON
  * that is not an object, is a file this build cannot use — and there is nothing
  * a user can do about either, because they did not write it. All of them mean
  * *no stored settings*, which is exactly what the registry's fallbacks are for.
+ *
+ * **A file the system REFUSED to read is a different state (CR-COR-03).** An
+ * antivirus scanner or a sync client holding `settings.json` makes the read fail
+ * with `EACCES`, `EBUSY` or `EPERM`, and the file is full. The read still answers
+ * `{}`, because startup callers cannot do anything else, but the surface
+ * remembers, and its next `write` refuses rather than replacing a file nobody
+ * read.
  *
  * **Refusing a non-object is not the same as refusing a value.** An array or a
  * string at the top level is a corrupt document; a *value* this build does not
@@ -78,16 +85,39 @@ export function createSettingsFile(directory: string): SettingsSurface {
  * caller names its own document and there is no table of file names to keep in
  * step with the functions that read them.
  */
-export function createJsonFile(directory: string, fileName: string): SettingsSurface {
+export function createJsonFile(
+  directory: string,
+  fileName: string,
+  readText: (path: string) => string = (target) => readFileSync(target, 'utf8'),
+): SettingsSurface {
   const path = join(directory, fileName);
+  /**
+   * Set when the last read was REFUSED by the file system rather than answered (CR-COR-03): another program held the
+   * file. `{}` was returned for it, because callers at startup cannot do anything else, and a write that followed would
+   * have replaced a file nobody had read with one holding a single key.
+   */
+  let refused: string | undefined;
 
   return {
     read(): Readonly<Record<string, unknown>> {
-      let text: string;
-      try {
-        text = readFileSync(path, 'utf8');
-      } catch {
-        return {};
+      refused = undefined;
+      let text = '';
+      for (let attempt = 1; attempt <= REPLACE_ATTEMPTS; attempt += 1) {
+        try {
+          text = readText(path);
+          break;
+        } catch (cause) {
+          const code = (cause as NodeJS.ErrnoException).code;
+          // A MISSING FILE IS A FIRST LAUNCH, and any other failure to read is the file system saying no, which is not
+          // the same as the file saying nothing. Only the transient kind is waited out; the rest is kept as a refusal too.
+          if (code === 'ENOENT') return {};
+          if (attempt < REPLACE_ATTEMPTS && code !== undefined && TRANSIENT_CODES.has(code)) {
+            pause(REPLACE_BACKOFF_MS);
+            continue;
+          }
+          refused = code ?? 'no code';
+          return {};
+        }
       }
       let parsed: unknown;
       try {
@@ -104,6 +134,14 @@ export function createJsonFile(directory: string, fileName: string): SettingsSur
     },
 
     write(values: Readonly<Record<string, unknown>>): void {
+      // A FILE THAT COULD NOT BE READ IS NOT REPLACED (CR-COR-03). The caller built `values` on top of what `read`
+      // answered, which was nothing, so writing them would delete every setting the file held. The change is reported as
+      // not stored, which the person is told, and the next write after the other program lets go succeeds.
+      if (refused !== undefined) {
+        throw new Error(
+          `The settings file could not be read (${refused}), so it was not replaced. The settings change was not stored.`,
+        );
+      }
       mkdirSync(dirname(path), { recursive: true });
       const temporary = `${path}.writing`;
       writeFileSync(temporary, `${JSON.stringify(values, null, 2)}\n`, 'utf8');
@@ -123,6 +161,12 @@ export function createJsonFile(directory: string, fileName: string): SettingsSur
  */
 const REPLACE_ATTEMPTS = 5;
 const REPLACE_BACKOFF_MS = 40;
+
+/**
+ * The codes a transiently-held file produces, for a read and for a rename alike. `EBUSY` and `EACCES` accompany `EPERM`
+ * here on different Windows versions and filesystems, and all three mean the same thing to both callers.
+ */
+const TRANSIENT_CODES: ReadonlySet<string> = new Set(['EPERM', 'EACCES', 'EBUSY']);
 
 /**
  * Blocks for `ms`, synchronously.
@@ -186,18 +230,13 @@ export function replaceWithRetry(
   to: string,
   rename: (from: string, to: string) => void = renameSync,
 ): void {
-  // The codes a transiently-held destination produces. `EBUSY` and `EACCES`
-  // accompany `EPERM` here on different Windows versions and filesystems, and
-  // all three mean the same thing to this caller.
-  const TRANSIENT = new Set(['EPERM', 'EACCES', 'EBUSY']);
-
   for (let attempt = 1; attempt <= REPLACE_ATTEMPTS; attempt += 1) {
     try {
       rename(from, to);
       return;
     } catch (cause) {
       const code = (cause as NodeJS.ErrnoException).code;
-      if (code === undefined || !TRANSIENT.has(code) || attempt === REPLACE_ATTEMPTS) {
+      if (code === undefined || !TRANSIENT_CODES.has(code) || attempt === REPLACE_ATTEMPTS) {
         try {
           rmSync(from, { force: true });
         } catch {

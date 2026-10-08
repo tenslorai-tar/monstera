@@ -1,11 +1,20 @@
-import { PDF_PERMISSIONS, type CommandOfKind, type PdfPermission } from '@monstera/contract/host';
+import { randomBytes } from 'node:crypto';
+
+import { PDF_PERMISSIONS, type CommandOfKind, type PdfEncryption, type PdfPermission } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
-import type { Apply, MupdfSession } from './engineSeam.js';
+import { ProtectionNotReproducible } from './protectionRefusal.js';
+import type { Apply, ByteImage, MupdfSession } from './engineSeam.js';
 import {
+  accessFor,
+  heldPasswordOf,
+  mupdfWriter,
   protectSession,
+  protectionTermsOf,
   restoreSessionProtection,
   sessionProtection,
+  unprotectedImage,
+  withDocument,
   withDocumentRemoving,
 } from './mupdfWriter.js';
 
@@ -112,14 +121,152 @@ export function optionText(value: string): string {
  * that kept the password.
  */
 export function protectionOptions(command: CommandOfKind<'setDocumentProtection'>): string {
-  if (command.encryption === 'none') return 'encrypt=none';
-  const terms = [`encrypt=${command.encryption}`];
-  if (command.userPassword !== undefined) terms.push(`user-password=${optionText(command.userPassword)}`);
-  if (command.ownerPassword !== undefined) terms.push(`owner-password=${optionText(command.ownerPassword)}`);
-  if (command.permissions !== undefined) {
-    terms.push(`permissions=${String(permissionBits(command.permissions))}`);
-  }
+  return protectionTerms({
+    encryption: command.encryption,
+    userPassword: command.userPassword,
+    ownerPassword: command.ownerPassword,
+    permissions: command.permissions === undefined ? undefined : permissionBits(command.permissions),
+  });
+}
+
+/**
+ * The MuPDF terms for a protection, from the `/P` integer rather than the names it was made of.
+ *
+ * ONE COMPOSER for what protection is written with, whether a person asked for it (`protectionOptions`) or a document
+ * already carries it (`protectedWritingOf`, which reads `/P` off the file and has no names to give back): two spellings
+ * of the same option list would be two opinions about MuPDF's grammar (B3a).
+ */
+function protectionTerms(protection: {
+  readonly encryption: PdfEncryption;
+  readonly userPassword?: string | undefined;
+  readonly ownerPassword?: string | undefined;
+  readonly permissions?: number | undefined;
+}): string {
+  if (protection.encryption === 'none') return 'encrypt=none';
+  const terms = [`encrypt=${protection.encryption}`];
+  if (protection.userPassword !== undefined) terms.push(`user-password=${optionText(protection.userPassword)}`);
+  if (protection.ownerPassword !== undefined) terms.push(`owner-password=${optionText(protection.ownerPassword)}`);
+  if (protection.permissions !== undefined) terms.push(`permissions=${String(protection.permissions)}`);
   return terms.join(',');
+}
+
+/** A document's protection as its `/Encrypt` dictionary states it: the scheme and the `/P` it was written with. */
+interface EncryptionFacts {
+  readonly encryption: Exclude<PdfEncryption, 'none'>;
+  readonly permissions: number;
+}
+
+/**
+ * The scheme and permissions of a document's `/Encrypt` dictionary.
+ *
+ * The dictionary is read, and `hasPermission` is not asked: it answered `true` for every right on a document opened with
+ * its owner password (measured 2026-09-12, above), so it cannot say what the file grants a reader without one.
+ */
+function readEncryption(document: Parameters<Parameters<typeof withDocument>[1]>[0]): EncryptionFacts {
+  const dictionary = document.getTrailer().get('Encrypt');
+  if (dictionary.isNull()) throw new ProtectionNotReproducible('The document has no /Encrypt dictionary to read.');
+  const version = dictionary.get('V').asNumber();
+  const length = dictionary.get('Length').asNumber();
+  let encryption: EncryptionFacts['encryption'] | undefined;
+  if (version === 1) encryption = 'rc4-40';
+  else if (version === 2 || version === 3) encryption = length > 0 && length <= 40 ? 'rc4-40' : 'rc4-128';
+  else if (version === 4) {
+    const filter = dictionary.get('StmF').asName();
+    const method = dictionary.get('CF').get(filter).get('CFM').asName();
+    encryption = method === 'AESV2' ? 'aes-128' : method === 'V2' ? 'rc4-128' : undefined;
+  } else if (version === 5) encryption = 'aes-256';
+  if (encryption === undefined) {
+    throw new ProtectionNotReproducible(`The document's encryption (V ${String(version)}) is not one this build writes.`);
+  }
+  // `/P` IS A SIGNED 32-BIT INTEGER and some producers write it as the unsigned number of the same bits.
+  const raw = dictionary.get('P').asNumber();
+  return { encryption, permissions: raw > 0x7fffffff ? raw - 0x100000000 : raw };
+}
+
+/**
+ * What a pdf-lib command needs to run on a protected document and leave it protected as it was
+ * ([ADR-0220](../../../docs/DECISIONS/0220-a-pdf-lib-command-on-a-protected-document-runs-on-its-readable-bytes-and-is-written-protected.md)).
+ */
+export interface ProtectedWriting {
+  /** The document as a readable image, in this process's memory only. */
+  readonly plain: () => Promise<ByteImage>;
+  /** `image`, a readable result, written with the document's own protection. In memory; the caller writes what it returns. */
+  readonly protect: (image: ByteImage) => Promise<ByteImage>;
+  /**
+   * Whether the document's owner (permissions) password was not known and was replaced by one made up and kept nowhere.
+   * The person is told once (ADR-0220): the rights the file grants a reader are unchanged, and a password they never
+   * had is the one thing that is gone.
+   */
+  readonly permissionPasswordReplaced: boolean;
+}
+
+/**
+ * How `session`'s protection is written, or `undefined` where its bytes carry none.
+ *
+ * - **Protected in this session** (`setDocumentProtection`): the terms it was asked for, every credential known.
+ * - **Opened from a file that opens only with a password, or has an owner password**: the file's scheme and `/P`, the
+ *   password it was opened with as the user password (or none where it was opened with none), and as the owner password
+ *   where it is the same one. Where the person opened it with the user password and the owner password is unknown, the
+ *   owner password is made up and kept nowhere: the rights the file grants a reader are unchanged, and the only thing
+ *   lost is a password this person never had.
+ * - **Opened with an owner password that is not also the user password**: the user password is unknown and is what
+ *   people open the file with, so it cannot be made up. Refused, by name.
+ *
+ * @throws {ProtectionNotReproducible} where the protection cannot be written again without taking a password from somebody
+ */
+export async function protectedWritingOf(session: MupdfSession): Promise<ProtectedWriting | undefined> {
+  const how = await termsToProtectWith(session);
+  if (how === undefined) return undefined;
+  return {
+    permissionPasswordReplaced: how.ownerReplaced,
+    // THE SESSION IS NEVER WRITTEN WITH ITS PROTECTION OFF: it is written as it is (protected), and that copy is opened and
+    // written readable, so the key the session holds is the one a later save still uses.
+    plain: async () => unprotectedImage(await mupdfWriter.serialise(session), how.userPassword),
+    protect: async (image) => {
+      const fresh = await mupdfWriter.open(image);
+      try {
+        await protectSession(fresh, how.terms, how.userPassword);
+        return await mupdfWriter.serialise(fresh);
+      } finally {
+        await mupdfWriter.close(fresh);
+      }
+    },
+  };
+}
+
+async function termsToProtectWith(
+  session: MupdfSession,
+): Promise<
+  { readonly terms: string; readonly userPassword: string | undefined; readonly ownerReplaced: boolean } | undefined
+> {
+  const asked = protectionTermsOf(session);
+  if (asked !== undefined) {
+    return asked.options === 'encrypt=none'
+      ? undefined
+      : { terms: asked.options, userPassword: asked.userPassword, ownerReplaced: false };
+  }
+  const access = accessFor(session);
+  if (access === 1) return undefined;
+  if (access === 4) {
+    throw new ProtectionNotReproducible(
+      'The document was opened with its owner password and has a different password to open it, which is not known here, ' +
+        'so it cannot be written protected as it was.',
+    );
+  }
+  const facts = await withDocument(session, readEncryption);
+  const held = heldPasswordOf(session);
+  return {
+    terms: protectionTerms({
+      encryption: facts.encryption,
+      userPassword: held,
+      ownerPassword: access === 6 ? held : randomBytes(24).toString('base64url'),
+      permissions: facts.permissions,
+    }),
+    userPassword: held,
+    // MADE UP exactly when the owner password was not the one typed (the branch above): that is the replacement the person
+    // is told about.
+    ownerReplaced: access !== 6,
+  };
 }
 
 /**
@@ -131,7 +278,7 @@ export function protectionOptions(command: CommandOfKind<'setDocumentProtection'
  * is refused by `protectSession` before anything is recorded.
  */
 export const applySetDocumentProtection: Apply<'mupdf', 'setDocumentProtection'> = async (session, command) => {
-  await protectSession(session, protectionOptions(command));
+  await protectSession(session, protectionOptions(command), command.encryption === 'none' ? undefined : command.userPassword);
   // ON THE REMOVAL AXIS LIKE ITS DECLARATION (CR-DOC-05): the session is marked as every removal's is, so its save
   // collects (ADR-0045) and the axis keeps one meaning. What it removes is the readable form.
   await withDocumentRemoving(session, () => undefined);
@@ -166,7 +313,10 @@ export const captureSetDocumentProtection = async (
   session: MupdfSession,
 ): Promise<CaptureResult<PriorProtection>> => {
   const { terms, encrypted } = await sessionProtection(session);
-  if (terms !== undefined) return { captured: true, prior: { standing: 'protected', passwordTerms: terms } };
+  // THE OPTIONS ONLY: the prior is lifted across the host's pipe as a credential, and the password that opens the result is
+  // not part of what an undo restores (ADR-0220's record keeps it for a pdf-lib command; after an undo it is not known here,
+  // so such a command is refused as `protection-not-reproducible` until the document is reopened, never written wrongly).
+  if (terms !== undefined) return { captured: true, prior: { standing: 'protected', passwordTerms: terms.options } };
   if (!encrypted) return { captured: true, prior: { standing: 'unprotected' } };
   return {
     captured: false,
@@ -185,9 +335,9 @@ export const invertSetDocumentProtection = async (
   prior: PriorProtection,
 ): Promise<void> => {
   if (prior.standing === 'protected') {
-    await restoreSessionProtection(session, prior.passwordTerms);
+    await restoreSessionProtection(session, { options: prior.passwordTerms, userPassword: undefined });
     return;
   }
   const { encrypted } = await sessionProtection(session);
-  await restoreSessionProtection(session, encrypted ? 'encrypt=none' : undefined);
+  await restoreSessionProtection(session, encrypted ? { options: 'encrypt=none', userPassword: undefined } : undefined);
 };

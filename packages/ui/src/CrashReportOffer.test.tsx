@@ -78,10 +78,28 @@ describe('the crash report offer (ADR-0109)', () => {
     expect(screen.getByText(/can contain parts of the documents that were open/u)).toBeDefined();
   });
 
-  it('SHARE sends that report to the Share sheet, and the offer goes once the sheet is shown', async () => {
+  it('SHARE asks first: it says the report may hold document text and keys, sends nothing, and Cancel has the focus (CR-SEC-22)', async () => {
     const wire = client(REPORT);
     await drawn(wire);
     fireEvent.click(screen.getByRole('button', { name: 'Share…' }));
+
+    expect(screen.getByText(/may contain parts of the documents that were open/u)).toBeDefined();
+    expect(screen.getByText(/passwords or sign-in keys/u)).toBeDefined();
+    // CANCEL IS THE DEFAULT, and NOTHING HAS BEEN SENT: the sheet is one step further on.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
+    expect(wire.sent.filter((call) => call.id === 'crashReport.share')).toStrictEqual([]);
+
+    // Cancel goes back to the offer, still unsent, and the offer is still there.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('button', { name: 'Share…' })).toBeDefined();
+    expect(wire.sent.filter((call) => call.id === 'crashReport.share')).toStrictEqual([]);
+  });
+
+  it('SHARE THE REPORT sends that report to the Share sheet, and the offer goes once the sheet is shown', async () => {
+    const wire = client(REPORT);
+    await drawn(wire);
+    fireEvent.click(screen.getByRole('button', { name: 'Share…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Share the report' }));
     await act(async () => {
       await Promise.resolve();
     });
@@ -94,6 +112,7 @@ describe('the crash report offer (ADR-0109)', () => {
   it('CONTROL: a sheet that could not open keeps the offer and says nothing was shared', async () => {
     await drawn(client(REPORT, 'failed'));
     fireEvent.click(screen.getByRole('button', { name: 'Share…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Share the report' }));
     await act(async () => {
       await Promise.resolve();
     });

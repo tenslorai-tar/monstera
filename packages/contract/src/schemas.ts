@@ -94,6 +94,9 @@ export const UNWRITABLE_CHARACTERS_MAX_UNITS = 128;
 /** The largest number `FPDF_GetLastError` can answer: it returns a C `unsigned long`, and Windows' is 32 bits. */
 export const ENGINE_ERROR_MAX = 0xffff_ffff;
 
+/** How long the command kind a `command-looped` refusal names may be (ADR-0221). */
+const COMMAND_KIND_MAX_CHARS = 64;
+
 /**
  * The schema of each code's declared detail (ADR-0169 Decision 4) — the runtime half of `@monstera/shared`'s
  * `FailureDetails`, which the `satisfies` below holds it to, and {@link FailureDetailSchemasMatch} holds the other way.
@@ -104,6 +107,8 @@ export const FAILURE_DETAIL_SCHEMAS = {
     .object({ step: z.enum(EDIT_STEPS), engineError: z.number().int().min(0).max(ENGINE_ERROR_MAX) })
     .strict(),
   'field-edit-refused': z.object({ reason: z.enum(FIELD_EDIT_REASONS) }).strict(),
+  // A command kind is a camelCase identifier; the bound is a frame's worth of caution, not a derived figure.
+  'command-looped': z.object({ command: z.string().min(1).max(COMMAND_KIND_MAX_CHARS) }).strict(),
 } as const satisfies { readonly [C in keyof FailureDetails]: z.ZodType<FailureDetails[C]> };
 
 /** Compiles only when `Listed` is assignable to `Whole`: `engineChannels.ts`' `Covers`, for one check here. */

@@ -28,6 +28,7 @@ import type { FlatFieldCandidate } from '../flatFields.js';
 import type { ImportReport } from '../formData.js';
 import type { ListedField } from '../formFields.js';
 import type { NextSave } from '../mupdfWriter.js';
+import type { ProtectedWriting } from '../documentProtection.js';
 import type { ListedAnnotation } from '../pageAnnotations.js';
 // A VALUE IMPORT, and the only one in this file's import list that is not a
 // type. `OcrModelUnreadableError` is how the handler below tells a missing model
@@ -64,7 +65,8 @@ import {
   joinPlaceholderAsset,
   taggedPrior,
 } from './engineChannels.js';
-import { pdfLibRefusalCodeOf, placeholderRefusalCodeOf } from './hostRefusals.js';
+import { SignatureProtectedDocumentError } from '../signingRefusals.js';
+import { pdfLibRefusalCodeOf, placeholderRefusalCodeOf, protectionRefusalCodeOf } from './hostRefusals.js';
 import { type CopyEngine, openCopy } from '../openCopy.js';
 
 /**
@@ -533,6 +535,12 @@ export interface EngineHandlerParts {
     reads: PreReadValue | undefined,
   ) => Promise<ByteImage>;
   /**
+   * How a session whose bytes are protected is read and written again for a pdf-lib command (ADR-0220), or `undefined`
+   * for a session whose bytes carry no protection. Absent means every session is unprotected, which is every case that
+   * does not run the real engine.
+   */
+  readonly protectedWriting?: (session: MupdfSession) => Promise<ProtectedWriting | undefined>;
+  /**
    * How this process writes a signature's placeholder and prepares its ranges. `prepareSignature` —
    * `engine/prepareSignature` (ADR-0148).
    */
@@ -584,6 +592,7 @@ export function createEngineHandlers({
   duplicates,
   extract,
   applyPdfLib,
+  protectedWriting,
   prepareSignature,
   snapshot,
   exportFormData,
@@ -796,18 +805,37 @@ export function createEngineHandlers({
           new Error(`"${command.kind}" and the asset sent with it disagree about whether it carries one`),
         );
       }
+      // A PROTECTED DOCUMENT IS READ PLAIN, IN MEMORY, AND ITS RESULT IS WRITTEN PROTECTED AGAIN BEFORE IT LEAVES THIS
+      // PROCESS (ADR-0220). pdf-lib refuses an encrypted file and, given its password, writes a revision that is not
+      // encrypted into one that is — measured 2026-10-08: the result opened with no password and its streams inflated
+      // to nothing. Decided before any work, so a document whose protection cannot be reproduced is refused untouched.
+      let protection: ProtectedWriting | undefined;
+      try {
+        protection = await protectedWriting?.(held.session);
+      } catch (error) {
+        // A DOCUMENT WHOSE USER PASSWORD IS NOT KNOWN keeps its name across the pipe: it is the person's to act on, not
+        // the document's failure, and the sentence tells them what to do (ADR-0220).
+        return failed(protectionRefusalCodeOf(error) ?? 'apply-failed', error);
+      }
       // THE IMAGE IS THIS SESSION'S OWN SERIALISE, taken here — the bytes `main` used to be sent and parse
       // (ADR-0121 Decision 3). A failure is the session's, reported as a serialise's is.
       let image: ByteImage;
       try {
-        image = await writer.serialise(held.session);
+        image = protection === undefined ? await writer.serialise(held.session) : await protection.plain();
       } catch (error) {
         return failed('serialise-failed', error);
       }
       try {
         const result = await applyPdfLib(image, whole, reads);
-        const written = await files.writeOutput(held.outputDirectory, into, result);
-        return { ok: true, value: { bytes: written } };
+        const written = await files.writeOutput(
+          held.outputDirectory,
+          into,
+          protection === undefined ? result : await protection.protect(result),
+        );
+        return {
+          ok: true,
+          value: { bytes: written, ...(protection?.permissionPasswordReplaced === true ? { permissionPasswordReplaced: true as const } : {}) },
+        };
       } catch (error) {
         // A PICTURE PAST THE PIXEL BOUND keeps its name across the pipe, so Insert image says so rather than calling
         // a valid picture unreadable; anything else is the document's failure.
@@ -833,6 +861,15 @@ export function createEngineHandlers({
           'asset-missing',
           new Error('the signature request and the picture sent with it disagree about whether it carries one'),
         );
+      }
+      // A PROTECTED DOCUMENT IS REFUSED BY NAME, BEFORE ANY WORK (ADR-0220). A signature covers the finished file, so a
+      // protected document would need its placeholder written after its protection, which pdf-lib cannot do and MuPDF's
+      // rewrite undoes (measured 2026-10-08). Without this the serialise below is the protected one and pdf-lib refuses it
+      // as an internal failure the person is told nothing about.
+      try {
+        if ((await protectedWriting?.(held.session)) !== undefined) throw new SignatureProtectedDocumentError();
+      } catch (error) {
+        return failed(placeholderRefusalCodeOf(error) ?? 'apply-failed', error);
       }
       let image: ByteImage;
       try {

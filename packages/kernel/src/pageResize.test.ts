@@ -282,6 +282,29 @@ describe('resizePages', () => {
     expect((await boxesOn(after, 1)).media).toEqual([0, 0, 100, 150]);
   });
 
+  it('SWAPS THE TARGET FOR A /Rotate THE ENGINE SNAPS TO A QUARTER TURN, and not for one it snaps to none (CR-COR-04)', async () => {
+    // `/Rotate 45` is displayed at 90 and `/Rotate 44` at 0, by `snapRotation`, the one rule. Reading every unaligned value
+    // as 0 left the first one's target unswapped on a page shown on its side.
+    for (const [rotate, swapped] of [
+      [45, true],
+      [225, true],
+      [135, false],
+      [-45, false],
+      [44, false],
+      [90, true],
+    ] as const) {
+      const source = await PDFDocument.load(await drawnDocument());
+      const page = source.getPages()[0];
+      if (page === undefined) throw new Error('the fixture lost a page');
+      page.node.set(PDFName.of('Rotate'), source.context.obj(rotate));
+      const after = await afterApply(await source.save(), HALF);
+
+      expect((await boxesOn(after, 0)).media, `/Rotate ${String(rotate)}`).toEqual(
+        swapped ? [0, 0, 150, 100] : [0, 0, 100, 150],
+      );
+    }
+  });
+
   it('restores both boxes and the /Contents shape', async () => {
     const original = await drawnDocument();
     const { resized, restored } = await afterRoundTrip(original, HALF);

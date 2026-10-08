@@ -118,7 +118,6 @@ function refusalOfSignIn(error: SignInRefused): CloudRefusal {
     case 'timed-out':
       return 'sign-in-timed-out';
     case 'denied':
-    case 'mismatched-state':
       return 'sign-in-denied';
     case 'listener-failed':
       return 'sign-in-unavailable';

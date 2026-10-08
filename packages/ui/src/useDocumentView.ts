@@ -141,6 +141,14 @@ export function useDocumentView(
     let cancelled = false;
     const stopped = (): boolean => cancelled;
     let view: DocumentView | undefined;
+    // A RANGE THE VIEW COULD NOT SERVE (CR-COR-12): the view has closed itself and its parser is waiting for bytes that will
+    // not come. The page area empties and the caller's `failed` surface says the document cannot be shown, where it used
+    // to stay blank for ever.
+    const onFailed = (): void => {
+      if (stopped()) return;
+      setShown(undefined);
+      setFailed(true);
+    };
 
     /**
      * Opens the view, asking for a password if the parser cannot proceed
@@ -198,6 +206,7 @@ export function useDocumentView(
           version,
           byteLength,
           onVersionMoved,
+          onFailed,
           password,
         });
         // KEPT ONLY ONCE THE PARSE TOOK IT, so a key held is one that opened this document.
@@ -215,7 +224,7 @@ export function useDocumentView(
       for (const key of keys.held()) {
         if (stopped()) return undefined;
         try {
-          return await openDocumentView({ client, docId, version, byteLength, onVersionMoved, password: key.reveal() });
+          return await openDocumentView({ client, docId, version, byteLength, onVersionMoved, onFailed, password: key.reveal() });
         } catch (cause) {
           if (!needsPasswordToParse(cause)) throw cause;
         }
@@ -226,7 +235,7 @@ export function useDocumentView(
     const show = async (): Promise<void> => {
       try {
         try {
-          view = await openDocumentView({ client, docId, version, byteLength, onVersionMoved });
+          view = await openDocumentView({ client, docId, version, byteLength, onVersionMoved, onFailed });
         } catch (cause) {
           // THE ONE FAILURE THAT IS A QUESTION rather than a defect. Everything
           // else falls through to the outer catch and becomes `failed`.

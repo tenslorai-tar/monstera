@@ -331,6 +331,8 @@ function joined(
     return wrapped[id](params);
   });
   const sessions = createRemoteSessions();
+  /** What the hosted commands told the person, in order. */
+  const noticesTold: string[] = [];
 
   /**
    * OPENS THE WAY THE COMPOSITION ROOT OPENS, AND THAT IS THE CONTROL.
@@ -362,7 +364,12 @@ function joined(
     // THE SIGNER'S HOST HALF, through the same client and areas, with assets written where the host reads them.
     signer: remoteSignatureHost(client, sessions, areas, fileAssets(areas)),
     // AND pdf-lib's, for the same reason: a hosted command's refusal crosses this same pipe.
-    pdfLib: remotePdfLibHost(client, sessions, areas, fileAssets(areas)),
+    pdfLib: remotePdfLibHost(client, sessions, areas, fileAssets(areas), {
+      permissionPasswordReplaced: () => {
+        noticesTold.push('permission-password-replaced');
+      },
+    }),
+    noticesTold,
   };
 }
 

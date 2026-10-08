@@ -1569,6 +1569,16 @@ describe('the recent cards’ pictures (ADR-0100)', () => {
     expect(await parts.handlers['document.recentPreview']({ handle })).toStrictEqual({ ok: true, value: { kind: 'none' } });
   });
 
+  it('settings.save keeps the keys the sender does not name, and the sender wins for those it does (CR-COR-14)', async () => {
+    const parts = harness(OPENED, () => Promise.resolve('C:/docs/a.pdf'));
+    parts.settings.write({ 'a-newer-build.colour': 'teal', 'appearance.theme': 'dark' });
+
+    await parts.handlers['settings.save']({ values: { 'appearance.theme': 'light' } });
+
+    // THE UNREGISTERED KEY SURVIVES, which a whole-file replace deleted, and the named one is the sender's.
+    expect(parts.settings.read()).toStrictEqual({ 'a-newer-build.colour': 'teal', 'appearance.theme': 'light' });
+  });
+
   it('a handle this run did not mint answers none, and names no file', async () => {
     const parts = harness(OPENED, () => Promise.resolve('C:/docs/a.pdf'));
     await openedWithPicture(parts);

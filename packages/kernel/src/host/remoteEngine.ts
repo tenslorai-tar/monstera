@@ -765,6 +765,16 @@ export function remoteMupdfDuplicateReport(
  * @param sessions main's token registry.
  */
 /**
+ * What a hosted command tells the person beyond its result, as the caller that knows the document turns it into a notice
+ * (ADR-0220). A callback per fact rather than a log of facts, so a host that sent one nobody listens to is a compile
+ * error at the factory, not a silence.
+ */
+export interface HostNotices {
+  /** A protected document's owner (permissions) password was not known and was replaced by one kept nowhere. */
+  readonly permissionPasswordReplaced: () => void;
+}
+
+/**
  * A pdf-lib command, sent to the MuPDF host that holds `session` and run there, answering the new image STAGED in
  * the session's output directory ([ADR-0121](../../../../docs/DECISIONS/0121-main-never-holds-two-images.md)
  * Decision 3). The bus places it where `adopt` rebuilds the session from it; `main` never reads it.
@@ -779,6 +789,7 @@ export function remotePdfLibHost(
   sessions: RemoteSessions,
   areas: Pick<SessionAreaSurface, 'mintName' | 'moveOutput' | 'removeOutput'>,
   assets: SessionAssets,
+  notices: HostNotices,
 ): PdfLibHost {
   return async (session, command, reads) => {
     const area = sessions.areaFor(session);
@@ -804,7 +815,11 @@ export function remotePdfLibHost(
       // A REFUSAL A PERSON CAN ACT ON comes back as the class it was thrown as (`hostRefusals.ts`).
       const refusal = result.ok ? undefined : hostRefusalFor(result.error.code);
       if (refusal !== undefined) throw refusal;
-      byteLength = answered('engine/applyPdfLib', result).bytes;
+      const answer = answered('engine/applyPdfLib', result);
+      byteLength = answer.bytes;
+      // TOLD AFTER THE ANSWER IS KNOWN TO BE ONE: the file is written, so the owner (permissions) password was replaced
+      // whether or not the person goes on to keep the change (ADR-0220).
+      if (answer.permissionPasswordReplaced === true) notices.permissionPasswordReplaced();
     } finally {
       if (asset !== undefined) await assets.remove(area.snapshotDirectory, asset);
     }

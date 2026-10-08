@@ -36,6 +36,7 @@ import { GENERATE_TOC_DIALOG } from '../dialogs/generateToc.js';
 import { HEADER_FOOTER_DIALOG } from '../dialogs/headerFooter.js';
 import { HELP_DIALOG } from '../dialogs/help.js';
 import { HISTORY_TRIMMED_DIALOG } from '../dialogs/historyTrimmed.js';
+import { PERMISSION_PASSWORD_REPLACED_DIALOG } from '../dialogs/permissionPasswordReplaced.js';
 import { IMPORT_ANNOTATIONS_PROBLEM_DIALOG } from '../dialogs/importAnnotationsProblem.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG } from '../dialogs/importFormDataProblem.js';
 import { IMPORT_PAGE_AS_LAYER_DIALOG } from '../dialogs/importPageAsLayer.js';
@@ -125,6 +126,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   CLOSE_UNSAVED_DIALOG,
   COMMAND_PROBLEM_DIALOG,
   HISTORY_TRIMMED_DIALOG,
+  PERMISSION_PASSWORD_REPLACED_DIALOG,
   DELETE_PAGES_DIALOG,
   STAMP_DIALOG,
   SIGNATURE_BREAK_DIALOG,

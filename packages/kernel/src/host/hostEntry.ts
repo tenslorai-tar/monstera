@@ -183,6 +183,12 @@ const engineHandlers = createEngineHandlers({
     const { applyPdfLibImage } = await import('../pdfLibWriter.js');
     return applyPdfLibImage(image, command, reads);
   },
+  // A PROTECTED DOCUMENT'S pdf-lib COMMAND is read plain and written protected again in this process (ADR-0220), loaded
+  // with the first pdf-lib command for the reason above.
+  protectedWriting: async (session) => {
+    const { protectedWritingOf } = await import('../documentProtection.js');
+    return protectedWritingOf(session);
+  },
   // A SIGNATURE'S PLACEHOLDER, here for the same reason and loaded the same way (ADR-0148): it parses the whole
   // document and decodes the picture. The key half is `main`'s and this process never loads it.
   prepareSignature: async (image, request) => {

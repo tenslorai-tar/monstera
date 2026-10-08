@@ -40,6 +40,7 @@ function open(task: { promise: Promise<unknown>; destroy: () => Promise<void> })
     version: VERSION,
     byteLength: 1024,
     onVersionMoved: vi.fn(),
+    onFailed: vi.fn(),
   });
 }
 
@@ -108,6 +109,7 @@ describe('openDocumentView', () => {
       onVersionMoved: () => {
         order.push('told');
       },
+      onFailed: vi.fn(),
     });
 
     const built = getDocument.mock.calls[0]?.[0] as {
@@ -117,6 +119,38 @@ describe('openDocumentView', () => {
     for (let turn = 0; turn < 12; turn += 1) await Promise.resolve();
 
     expect(order).toStrictEqual(['destroyed', 'told']);
+  });
+
+  it('a range that cannot be served CLOSES the view first and then tells the owner, so no page waits for ever (CR-COR-12)', async () => {
+    const order: string[] = [];
+    getDocument.mockReturnValue({
+      promise: Promise.resolve({ numPages: 1 }),
+      destroy: () => {
+        order.push('destroyed');
+        return Promise.resolve();
+      },
+    });
+    const failure = new Error('the channel went away');
+    const onFailed = vi.fn(() => {
+      order.push('told');
+    });
+    await openDocumentView({
+      client: createClient(channels, () => Promise.reject(failure)),
+      docId: DOC,
+      version: VERSION,
+      byteLength: 1024,
+      onVersionMoved: vi.fn(),
+      onFailed,
+    });
+
+    const built = getDocument.mock.calls[0]?.[0] as {
+      range: { requestDataRange: (begin: number, end: number) => void };
+    };
+    built.range.requestDataRange(0, 16);
+    for (let turn = 0; turn < 12; turn += 1) await Promise.resolve();
+
+    expect(order).toStrictEqual(['destroyed', 'told']);
+    expect(onFailed).toHaveBeenCalledWith(failure);
   });
 
   it('close is idempotent, because two paths can reach it', async () => {

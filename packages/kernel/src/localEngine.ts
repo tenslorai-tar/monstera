@@ -1,6 +1,7 @@
 import { serialiseIntoFile } from './checkpointFile.js';
 import { type RegisteredWriter, localMupdfExecution } from './commandSpecs.js';
 import type { MupdfSession } from './engineSeam.js';
+import { protectedWritingOf } from './documentProtection.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { NO_TIMESTAMPS, type RequestTimestamp, signpdfExecutionWith } from './documentSign.js';
 import { applyPdfLibImage, hostedPdfLibExecution } from './pdfLibWriter.js';
@@ -50,9 +51,13 @@ import { prepareSignature } from './signaturePlaceholder.js';
 export const localPdfLibWriter: RegisteredWriter<'pdf-lib'> = {
   serialise: (session) => mupdfWriter.serialise(session),
   serialiseInto: serialiseIntoFile((session: MupdfSession) => mupdfWriter.serialise(session)),
-  ...hostedPdfLibExecution(async (session, command, reads) =>
-    stagedBytes(await applyPdfLibImage(await mupdfWriter.serialise(session), command, reads)),
-  ),
+  // A PROTECTED DOCUMENT IS READ PLAIN AND ITS RESULT WRITTEN PROTECTED, as the host does (ADR-0220).
+  ...hostedPdfLibExecution(async (session, command, reads) => {
+    const protection = await protectedWritingOf(session);
+    const image = protection === undefined ? await mupdfWriter.serialise(session) : await protection.plain();
+    const result = await applyPdfLibImage(image, command, reads);
+    return stagedBytes(protection === undefined ? result : await protection.protect(result));
+  }),
 };
 
 /**

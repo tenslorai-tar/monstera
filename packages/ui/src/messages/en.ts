@@ -224,6 +224,9 @@ export const RATE_US_CLICK = messageKey('dialog.rate-us.click');
 export const RATE_US_OPEN = messageKey('dialog.rate-us.open');
 export const RATE_US_LATER = messageKey('dialog.rate-us.later');
 export const REVEAL_LOG_TITLE = messageKey('command.reveal-log.title');
+export const PERMISSION_PASSWORD_REPLACED_TITLE = messageKey('dialog.permission-password-replaced.title');
+export const PERMISSION_PASSWORD_REPLACED_DONE = messageKey('dialog.permission-password-replaced.done');
+export const PERMISSION_PASSWORD_REPLACED_WHAT = messageKey('dialog.permission-password-replaced.what');
 export const HISTORY_TRIMMED_TITLE = messageKey('dialog.history-trimmed.title');
 export const HISTORY_TRIMMED_APPLIED = messageKey('dialog.history-trimmed.applied');
 export const HISTORY_TRIMMED_LOST = messageKey('dialog.history-trimmed.lost');
@@ -1328,6 +1331,9 @@ export const CRASH_REPORT_ADDRESS_LABEL = messageKey('surface.crash-report.addre
 export const CRASH_REPORT_COPY = messageKey('surface.crash-report.copy');
 export const CRASH_REPORT_FRAGMENTS = messageKey('surface.crash-report.fragments');
 export const CRASH_REPORT_SHARE_FAILED = messageKey('surface.crash-report.share-failed');
+export const CRASH_REPORT_CONFIRM = messageKey('surface.crash-report.confirm');
+export const CRASH_REPORT_CONFIRM_SHARE = messageKey('surface.crash-report.confirm-share');
+export const CRASH_REPORT_CANCEL = messageKey('surface.crash-report.cancel');
 export const PRIVACY_RECENT_PREVIEWS_DESCRIPTION = messageKey('setting.privacy.recent-previews.description');
 export const RECENT_HEADING = messageKey('surface.recent.heading');
 export const RECENT_PLACEHOLDER = messageKey('surface.recent.placeholder');
@@ -1922,6 +1928,7 @@ export const TOAST_SMALLER_COPY_SAVED = messageKey('toast.smaller-copy-saved');
 export const TOAST_PAGES_SAVED = messageKey('toast.pages-saved');
 export const TOAST_SHOW_IN_FOLDER = messageKey('toast.show-in-folder');
 export const TOAST_COPIED = messageKey('toast.copied');
+export const TOAST_UNFINISHED = messageKey('toast.unfinished');
 export const TOAST_FILES_SAVED = messageKey('toast.files-saved');
 export const TOAST_IMAGES_SAVED = messageKey('toast.images-saved');
 export const TOAST_TEXT_SAVED = messageKey('toast.text-saved');
@@ -2835,6 +2842,7 @@ export const SIGN_PROBLEM_UNREADABLE = messageKey('dialog.sign-problem.unreadabl
 export const SIGN_PROBLEM_IMAGE_UNREADABLE = messageKey('dialog.sign-problem.image-unreadable');
 export const SIGN_PROBLEM_IMAGE_TOO_LARGE = messageKey('dialog.sign-problem.image-too-large');
 export const SIGN_PROBLEM_SAVED_MISSING = messageKey('dialog.sign-problem.saved-missing');
+export const SIGN_PROBLEM_DOCUMENT_PROTECTED = messageKey('dialog.sign-problem.document-protected');
 export const SIGN_PROBLEM_SCAN_BLANK = messageKey('dialog.sign-problem.scan-blank');
 export const SIGN_PROBLEM_SCAN_LOCKED = messageKey('dialog.sign-problem.scan-locked');
 export const SIGN_PROBLEM_SIGNATURE_TOO_LARGE = messageKey('dialog.sign-problem.signature-too-large');
@@ -3030,6 +3038,9 @@ export const PROBLEM_TITLE = messageKey('dialog.command-problem.title');
 export const PROBLEM_NOT_OPEN = messageKey('dialog.command-problem.not-open');
 export const PROBLEM_BUSY = messageKey('dialog.command-problem.busy');
 export const PROBLEM_POISONED = messageKey('dialog.command-problem.poisoned');
+export const PROBLEM_COMMAND_LOOPED = messageKey('dialog.command-problem.command-looped');
+export const PROBLEM_COMMAND_LABEL = messageKey('dialog.command-problem.command-label');
+export const PROBLEM_PROTECTION_NOT_REPRODUCIBLE = messageKey('dialog.command-problem.protection-not-reproducible');
 export const PROBLEM_STALE_TARGET = messageKey('dialog.command-problem.stale-target');
 export const PROBLEM_ENGINE_UNAVAILABLE = messageKey('dialog.command-problem.engine-unavailable');
 export const PROBLEM_RASTER_TOO_LARGE = messageKey('dialog.command-problem.raster-too-large');
@@ -3869,6 +3880,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CRASH_REPORT_FRAGMENTS]:
     'A report can contain parts of the documents that were open, and their file names. It leaves this computer only if you share it.',
   [CRASH_REPORT_SHARE_FAILED]: 'The Windows Share window couldn’t open, so nothing was shared.',
+  // SAID BEFORE THE SHARE SHEET OPENS, in plain words (CR-SEC-22): what a report can hold is the reason to think twice, and
+  // the person is the only one who can decide. Nothing is ever sent without this being answered.
+  [CRASH_REPORT_CONFIRM]:
+    'This report may contain parts of the documents that were open when Monstera closed, including their text, and it may contain passwords or sign-in keys that Monstera was holding in memory. It is not sent anywhere unless you choose to share it. Share it only with someone you trust.',
+  [CRASH_REPORT_CONFIRM_SHARE]: 'Share the report',
+  [CRASH_REPORT_CANCEL]: 'Cancel',
   [PRIVACY_RECENT_PREVIEWS_TITLE]: 'Show previews of recent files',
   [PRIVACY_RECENT_PREVIEWS_DESCRIPTION]:
     'Keeps a small picture of each recent file’s first page, made when you opened it. Turning this off deletes them.',
@@ -4615,6 +4632,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [REGION_READ_COPY]: 'Copy',
   [REGION_READ_INSERT]: 'Insert as text on the page',
   [TOAST_REGION_INSERTED]: 'The words were added to the page as text',
+  // SAID WHEN A BACKGROUND STEP FAILED WITH NOBODY WAITING FOR IT (CR-COR-12): it claims nothing about what was or was not
+  // changed, because the step is not known here, and it names no cause.
+  [TOAST_UNFINISHED]: 'Something didn’t finish. If it happens again, save your work and reopen the document.',
   [TOAST_FILES_SAVED]: 'Files saved',
   [TOAST_IMAGES_SAVED]: 'Images saved',
   [TOAST_TEXT_SAVED]: 'Text file saved',
@@ -6123,6 +6143,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_PROBLEM_IMAGE_TOO_LARGE]: 'That picture is too large to place. Nothing has been changed.',
   [SIGN_PROBLEM_SAVED_MISSING]:
     'That kept signature is no longer in your library. Choose another look and sign again. Nothing has been changed.',
+  [SIGN_PROBLEM_DOCUMENT_PROTECTED]:
+    'This document is protected with a password, and Monstera cannot sign a protected document yet. Nothing has been changed. To sign it, save a copy without the password (Protect, then remove the password), sign that copy, and keep the original.',
   [INSERT_IMAGE_ABSENT]: 'That stamp is no longer in your library, so nothing was added.',
   [SIGN_PROBLEM_SIGNATURE_TOO_LARGE]:
     'The signature is too large to fit in the document. A certificate with a long chain can cause this. Nothing has been changed.',
@@ -6388,6 +6410,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // "Undo history" and not "history": the document's own history is what a
   // reader will assume, and this dialog is about neither the file nor its
   // contents.
+  // SAID ONCE per document, after a change to a protected document that Monstera did not know the permissions password of
+  // (ADR-0220). The change was made, and that is the first sentence.
+  [PERMISSION_PASSWORD_REPLACED_TITLE]: 'The permissions password was replaced',
+  [PERMISSION_PASSWORD_REPLACED_DONE]: 'Your change was made and your document is intact.',
+  [PERMISSION_PASSWORD_REPLACED_WHAT]:
+    'This document has a permissions password, the one that controls printing, copying and editing, and Monstera only knew the password you opened it with. The changed file uses a new permissions password that Monstera does not keep. It still opens with the same password and carries the same restrictions as before. If you ever need the original permissions password, it belongs to the original file.',
   [HISTORY_TRIMMED_TITLE]: 'Older undo steps were released',
   // THE SUCCESS FIRST. This dialog follows an operation that worked, so a body
   // opening with the loss would read as a failure report.
@@ -6542,6 +6570,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // to close the window — which is the one action that loses them.
   [PROBLEM_POISONED]:
     'Monstera can no longer work on this document. Your changes are still open and unsaved — save them somewhere else, or close and reopen the file to start again.',
+  // THE DOCUMENT IS FINE, ONE ACTION IS NOT (ADR-0221): said in that order, because the first thing a person fears is the
+  // loss of their changes. The action itself is named beside it by `PROBLEM_COMMAND_LABEL`.
+  [PROBLEM_COMMAND_LOOPED]:
+    'Monstera could not do this action on this document. It stopped working each time it tried, so it will not try again. The document is still open and your changes are safe. Everything else still works.',
+  [PROBLEM_COMMAND_LABEL]: 'Action',
+  // WHAT HAPPENED, THEN WHAT TO DO (ADR-0220): the document was opened with the password that controls printing and
+  // editing, and the one that opens it for readers is not known, so the changed file could not be protected as it was.
+  [PROBLEM_PROTECTION_NOT_REPRODUCIBLE]:
+    'This change was not made, so nothing has changed. You opened this document with its permissions password, and Monstera does not know the password that opens it for readers, so it cannot protect the changed file the same way. Close the document, open it again with the password readers use, and try again.',
   // SAYS NOTHING CHANGED FIRST, then what to do. The person clicked delete on a
   // row and the row is still there, so the sentence they need is that the
   // document is untouched — not an explanation of versions, which is ours.

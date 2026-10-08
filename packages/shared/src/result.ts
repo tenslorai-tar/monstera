@@ -113,6 +113,8 @@ export interface FailureDetails {
   readonly 'edit-refused': { readonly step: EditStep; readonly engineError: number };
   /** Which refusal a change to a form field met (ADR-0193). */
   readonly 'field-edit-refused': { readonly reason: FieldEditReason };
+  /** The kind of the command the engine stopped three times on, and which main will not send again (ADR-0221). */
+  readonly 'command-looped': { readonly command: string };
 }
 
 /** The codes of `C` that carry no detail, as one member — or nothing, when every code of `C` carries one. */

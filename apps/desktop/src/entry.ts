@@ -60,7 +60,9 @@ import { pictureDirectory } from './recentPictures.js';
 import { BACKUP_LEDGER_FILE } from './backupLedger.js';
 import { ENGAGEMENT_FILE } from './engagement.js';
 import { UPDATE_RECORD_FILE } from './updateCheck.js';
+import { PRINT_PIXELS } from './documentCommands.js';
 import { documentPathsIn } from './launchDocuments.js';
+import { pngSizeWithin } from './pngHeader.js';
 import { STORE_URIS } from './webPages.js';
 import { createChatHistory } from './chatHistory.js';
 import { type SecretCipher, createSecretStore } from './secretStore.js';
@@ -532,6 +534,10 @@ startShell(() => {
       process.platform === 'win32'
         ? createWin32PrintSurface(
             (png) => {
+              // THE DECLARED SIZE IS READ BEFORE THE DECODER IS ASKED (CR-SEC-21): the host that produced these bytes is
+              // hostile by premise, and a header can declare far more than the bytes hold. The bound is the one the print
+              // itself draws to, so no page this application asks for is refused.
+              pngSizeWithin(png, PRINT_PIXELS);
               const image = nativeImage.createFromBuffer(Buffer.from(png));
               const { width, height } = image.getSize();
               return { width, height, bgra: new Uint8Array(image.toBitmap()) };

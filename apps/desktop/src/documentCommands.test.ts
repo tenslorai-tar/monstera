@@ -66,6 +66,7 @@ import {
   type RegisteredWriter,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
+  SignatureProtectedDocumentError,
   SignatureTooLargeError,
   TimestampRefusedError,
   sealCopy,
@@ -188,6 +189,7 @@ import {
   type AskPictureReader,
   PageTooLargeToPicture,
   type OptimizeSource,
+  CommandLoopedError,
   DocumentPoisonedError,
   type DocumentRestore,
   type DocumentFlush,
@@ -1129,6 +1131,23 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     await expect(commands.execute(docId, rotateOnce)).rejects.toThrow(DocumentPoisonedError);
   });
 
+  it('a command barred after three strikes is refused before the engine, and a different command on the same document still applies (ADR-0221)', async () => {
+    const held = engine();
+    for (let strike = 0; strike < 3; strike += 1) {
+      held.commandBegan(docId, rotateOnce.kind);
+      held.strike(docId, rotateOnce.kind);
+      held.commandEnded(docId, rotateOnce.kind, false);
+    }
+    const commands = new DocumentCommands({ ...INERT, documents: service, bus: bus(), engine: held });
+
+    // THE CLASS AND THE KIND, which the handler turns into the declared failure the person is told the action from.
+    await expect(commands.execute(docId, rotateOnce)).rejects.toThrow(CommandLoopedError);
+    await expect(commands.execute(docId, rotateOnce)).rejects.toMatchObject({ command: rotateOnce.kind });
+    // CONTROL: the document is not poisoned, so another kind of command is not refused.
+    expect(held.poisoned(docId)).toBeUndefined();
+    expect(held.commandBarred(docId, 'deletePages')).toBe(false);
+  });
+
   it('CONTROL: the same document, unpoisoned, reaches the engine and applies', async () => {
     // Without this the case above is satisfied by an `execute` that refuses
     // everything, and by a supervisor whose `poisoned` answers a count for a
@@ -1501,6 +1520,9 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           opensWith: () => undefined,
           protected: () => undefined,
           protectionStepped: () => undefined,
+          commandBegan: () => undefined,
+          commandEnded: () => undefined,
+          commandBarred: () => false,
           sessions: () => {
             const cause = new Error(`EPERM: operation not permitted, stat '${SECRET}'`);
             cause.stack = `Error: EPERM: operation not permitted, stat '${SECRET}'\n    at readFileIdentity (${SECRET}:1:1)`;
@@ -5397,6 +5419,8 @@ describe('sign — a visible signature', () => {
     expect(await signing(new SignatureTooLargeError(40_000, 32_768))).toStrictEqual({
       kind: 'signature-too-large',
     });
+    // A PROTECTED DOCUMENT is its own sentence (ADR-0220), and not the incident id it was.
+    expect(await signing(new SignatureProtectedDocumentError())).toStrictEqual({ kind: 'document-protected' });
     // THE AUTHORITY'S THREE FAILURES, three answers — and the refused/unverifiable
     // pair is split by the error's REASON, so a mapping that read only the class
     // would answer one of them for both and fail here.
@@ -7306,6 +7330,9 @@ describe('a protect in this session: the holder follows it', () => {
       opensWith: held.opensWith,
       protected: () => undefined,
       protectionStepped: () => undefined,
+      commandBegan: () => undefined,
+      commandEnded: () => undefined,
+      commandBarred: () => false,
     }));
     try {
       await commands.execute(docId, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: KEY });

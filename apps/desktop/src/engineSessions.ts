@@ -531,7 +531,12 @@ export async function onEngineHostEnded(
   // Snapshotted BEFORE the count moves, because `recordEnding` is what decides
   // which of these are poisoned and the set itself must not change under it.
   const affected = sessions.documentIds();
-  sessions.recordEnding(affected, endingCountsAgainst(ending));
+  const against = endingCountsAgainst(ending);
+  // A DEADLINE DURING A DOCUMENT COMMAND IS THE COMMAND'S STRIKE, NOT THE DOCUMENT'S FAILURE (ADR-0221). Anything else
+  // (a crash, a memory kill, a deadline during a read) still counts against the document, as Decision 9a says.
+  const looping = termination.code === 'deadline' && against !== undefined ? sessions.runningCommand(against) : undefined;
+  sessions.recordEnding(affected, looping === undefined ? against : undefined);
+  if (looping !== undefined && against !== undefined) sessions.strike(against, looping);
 
   // A deliberate close is not a rebuild. Nothing is coming back, and entering
   // lanes to await a host nobody is building would hang every document.
@@ -674,7 +679,22 @@ interface DocumentEntry {
    * way, so removing a password makes it false again.
    */
   savedLocked: boolean;
+  /**
+   * The kind of the document command whose call the host is running now, or `undefined` between commands (ADR-0221).
+   * Set and cleared by {@link EngineSessions.commandBegan} and {@link EngineSessions.commandEnded} around the bus, inside
+   * the document's lane, so there is at most one.
+   */
+  running: string | undefined;
+  /** Deadline endings per command kind, since that kind last succeeded (ADR-0221). The close drops it with the entry. */
+  strikes: Map<string, number>;
 }
+
+/**
+ * How many deadline endings of one command, on one document, bar that command (ADR-0221). A decision, not a derivation:
+ * one ending says the call may be slow, a second that it is deterministic, a third that the person should be told.
+ * Module-private for POISON_AT's reason: the cases spell the number out.
+ */
+const COMMAND_BARRED_AT = 3;
 
 /**
  * The supervisor's per-document state: which engine sessions a document has,
@@ -787,6 +807,8 @@ export class EngineSessions implements EngineSessionSource {
       locked: null,
       unlockedByPassword: false,
       savedLocked: false,
+      running: undefined,
+      strikes: new Map(),
     });
   }
 
@@ -858,6 +880,8 @@ export class EngineSessions implements EngineSessionSource {
         locked: null,
         unlockedByPassword: false,
         savedLocked: false,
+        running: undefined,
+        strikes: new Map(),
       });
       return;
     }
@@ -1132,6 +1156,37 @@ export class EngineSessions implements EngineSessionSource {
       if (docId === during) entry.failures += 1;
     }
   }
+
+  /** The command kind running against `docId` now, or `undefined` (ADR-0221). */
+  readonly runningCommand = (docId: DocId): string | undefined => this.#entries.get(docId)?.running;
+
+  /** Marks `kind` as the command whose call the host is running for `docId`. */
+  readonly commandBegan = (docId: DocId, kind: string): void => {
+    const entry = this.#entries.get(docId);
+    if (entry !== undefined) entry.running = kind;
+  };
+
+  /**
+   * Marks the command finished. A success clears that kind's strikes, per command and not per document, so a good command
+   * cannot hide a bad one's count (ADR-0221 Rejected alternatives).
+   */
+  readonly commandEnded = (docId: DocId, kind: string, succeeded: boolean): void => {
+    const entry = this.#entries.get(docId);
+    if (entry === undefined) return;
+    entry.running = undefined;
+    if (succeeded) entry.strikes.delete(kind);
+  };
+
+  /** Counts one deadline ending against `kind` on `docId`. */
+  strike(docId: DocId, kind: string): void {
+    const entry = this.#entries.get(docId);
+    if (entry === undefined) return;
+    entry.strikes.set(kind, (entry.strikes.get(kind) ?? 0) + 1);
+  }
+
+  /** Whether `kind` has looped the engine on this document often enough to be refused. */
+  readonly commandBarred = (docId: DocId, kind: string): boolean =>
+    (this.#entries.get(docId)?.strikes.get(kind) ?? 0) >= COMMAND_BARRED_AT;
 
   /**
    * Poisons a document at once, for a failure that answers the question a

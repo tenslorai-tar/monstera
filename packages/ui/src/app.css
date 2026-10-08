@@ -1288,6 +1288,13 @@ optgroup {
   gap: var(--space-8);
 }
 
+/* THE NOTICE BEFORE THE SHARE SHEET (CR-SEC-22): the same voice as the offer, at the weight of the question, because
+   it is the thing the person must read before the one control that sends anything. */
+.m-crash-offer__confirm {
+  display: grid;
+  gap: var(--space-8);
+}
+
 .m-crash-offer__address,
 .m-crash-offer__warning {
   color: var(--muted);

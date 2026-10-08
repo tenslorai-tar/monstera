@@ -585,7 +585,11 @@ export function createContractHandlers(deps: {
     // that knows how to read it ever sees the value (B3a).
     'settings.load': () => Promise.resolve(ok({ stored: deps.settings.read() })),
     'settings.save': ({ values }) => {
-      deps.settings.write(values);
+      // THE FILE'S OTHER KEYS ARE KEPT (CR-COR-14, "preserve, never drop"). The renderer sends the settings THIS build
+      // registers; a key a newer build wrote, or a setting renamed without a migration, is not among them, and replacing
+      // the file whole deleted it on the first change of the session. The renderer's values win for the keys it names.
+      // The read comes first so a file the system refused to read is noticed by the write (CR-COR-03).
+      deps.settings.write({ ...deps.settings.read(), ...values });
       // THE PRIVACY SETTING TAKES EFFECT HERE (ADR-0100): turned off, every recent picture is deleted with the
       // write that turned it off, not at some later start screen.
       deps.recentPictures.settingsWritten();

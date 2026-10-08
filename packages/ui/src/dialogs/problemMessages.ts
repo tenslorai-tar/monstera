@@ -35,6 +35,9 @@ import {
   PROBLEM_SERVICE_UNAUTHORISED,
   PROBLEM_SERVICE_UNAVAILABLE,
   PROBLEM_BUSY,
+  PROBLEM_PROTECTION_NOT_REPRODUCIBLE,
+  PROBLEM_COMMAND_LABEL,
+  PROBLEM_COMMAND_LOOPED,
   PROBLEM_COMMENT_TOO_LONG,
   PROBLEM_COPY_ABSENT,
   PROBLEM_COPY_AT_CAPACITY,
@@ -58,6 +61,8 @@ export type CommandProblem =
   | { readonly code: 'document-not-open' }
   | { readonly code: 'document-busy' }
   | { readonly code: 'document-poisoned' }
+  | { readonly code: 'command-looped'; readonly detail: FailureDetails['command-looped'] }
+  | { readonly code: 'protection-not-reproducible' }
   | { readonly code: 'stale-target' }
   | { readonly code: 'engine-unavailable' }
   | { readonly code: 'raster-too-large' }
@@ -105,6 +110,9 @@ export function problemParticulars(
   if (problem.code === 'edit-refused') {
     return { label: PROBLEM_REFERENCE_LABEL, value: `${problem.detail.step} ${String(problem.detail.engineError)}` };
   }
+  if (problem.code === 'command-looped') {
+    return { label: PROBLEM_COMMAND_LABEL, value: commandWords(problem.detail.command) };
+  }
   if (problem.code === 'text-not-writable') {
     // NOTHING TO NAME, NOTHING SHOWN (RRRRRRR-16): `main` forwards only characters the person typed, so a refusal can
     // arrive naming none, and a label over an empty value reads as a list that failed to load. The sentence stands alone.
@@ -128,6 +136,17 @@ const FIELD_EDIT_MESSAGE: Readonly<Record<FieldEditReason, MessageKey>> = {
   'duplicate-signature': FIELD_EDIT_DUPLICATE_SIGNATURE,
   encrypted: FIELD_EDIT_ENCRYPTED,
 };
+
+/**
+ * A command kind in plain words: `watermarkPages` is read as *watermark pages*. The kind is the contract's one name for the
+ * action (ADR-0221), so the words are derived from it and no second table of labels can drift from the commands.
+ */
+function commandWords(kind: string): string {
+  return kind
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .replace(/^./, (first) => first.toUpperCase());
+}
 
 /** One sentence per step of a PDFium rewrite, each ending in *so nothing was changed*. */
 const STEP_MESSAGE: Readonly<Record<EditStep, MessageKey>> = {
@@ -153,6 +172,8 @@ const CODE_MESSAGE: Readonly<Record<Exclude<CommandProblem['code'], 'edit-refuse
   'document-not-open': PROBLEM_NOT_OPEN,
   'document-busy': PROBLEM_BUSY,
   'document-poisoned': PROBLEM_POISONED,
+  'command-looped': PROBLEM_COMMAND_LOOPED,
+  'protection-not-reproducible': PROBLEM_PROTECTION_NOT_REPRODUCIBLE,
   'stale-target': PROBLEM_STALE_TARGET,
   'engine-unavailable': PROBLEM_ENGINE_UNAVAILABLE,
   'raster-too-large': PROBLEM_RASTER_TOO_LARGE,

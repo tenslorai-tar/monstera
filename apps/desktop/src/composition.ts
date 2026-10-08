@@ -103,6 +103,7 @@ import {
   type NextSave,
   type SessionArea,
   type SessionAreaSurface,
+  type HostNotices,
   type SessionAssets,
   type SnapshotWrite,
   type WriterRegistry,
@@ -957,12 +958,30 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // a different one on the returned `failures` would put half the lifecycle in
   // the log and half on a handle nobody is reading.
   const failures = log?.failures ?? reportShellFailure;
+  /** The documents the person has been told, once, that their permissions password was replaced (ADR-0220). */
+  const toldPermissionPasswordReplaced = new Set<DocId>();
 
   // THE REPLAY IS `commands`', which is built below from this opener's writers: the closure is only called after an
   // engine host dies, by which time `commands` exists. Passed, never looked up, so the host-death path cannot reach a
   // replay nothing registered (ADR-0115).
-  const engineHost = engineSessionOpener(enginePlatform, documents, engine, failures, hostPolicy, (docId, context) =>
-    commands.replayAfterRebuild(docId, context),
+  const engineHost = engineSessionOpener(
+    enginePlatform,
+    documents,
+    engine,
+    failures,
+    hostPolicy,
+    (docId, context) => commands.replayAfterRebuild(docId, context),
+    {
+      // TOLD ONCE PER DOCUMENT (ADR-0220): the command that made the owner password up runs in the document's lane, so
+      // that lane's document is the one it was made up for, and the second such command on it says nothing. By `DocId`,
+      // which is minted once per open, so closing a document and opening it again tells again: it is a new file written.
+      permissionPasswordReplaced: () => {
+        const docId = documents.executingDocument();
+        if (docId === undefined || toldPermissionPasswordReplaced.has(docId)) return;
+        toldPermissionPasswordReplaced.add(docId);
+        sendEvent?.('document.notice', { notice: 'permission-password-replaced' });
+      },
+    },
   );
 
   // THE SECOND HOST, and it is built beside the first rather than inside it.
@@ -2044,6 +2063,8 @@ function engineSessionOpener(
   policy: HostPolicy,
   /** The rebuild's second half after a host death (ADR-0115): `DocumentCommands.replayAfterRebuild`. */
   replay: HostDeathSurfaces['replay'],
+  /** What a hosted command tells the person, which the caller who can reach the window and the lanes says (ADR-0220). */
+  notices: HostNotices,
 ): {
   readonly openedDocument: (docId: DocId) => Promise<void>;
   readonly writers: WriterRegistry;
@@ -2768,7 +2789,7 @@ function engineSessionOpener(
     // talking to two different hosts — which is the state a second
     // `createClient` here would make representable.
     const client = createClient(engineChannels, live.value.client.invoke);
-    writer = remoteMupdfWriter(client, remote, sessionAreas(platform), sessionAssets());
+    writer = remoteMupdfWriter(client, remote, sessionAreas(platform), sessionAssets(), notices);
     geometry = remoteMupdfGeometry(client, remote);
     pageText = remoteMupdfPageText(client, remote);
     pageLinks = remoteMupdfPageLinks(client, remote);

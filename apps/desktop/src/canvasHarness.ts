@@ -168,6 +168,8 @@ export interface CanvasReadback {
    * nothing, so the reading says nothing about the bitmap.
    */
   readonly workerBitmapInk: number;
+  /** The same control, made before any page existed. */
+  readonly coldWorkerBitmapInk: number;
   /**
    * That bitmap drawn as PDF.js draws an image — flipped, smoothing off — on a canvas of the page's size. It must equal
    * `pixels`; red here with {@link workerBitmapInk} green names the draw.
@@ -952,6 +954,14 @@ export async function reportCanvasPixels(
     processesGone.push({ type: details.type, reason: details.reason, exitCode: details.exitCode });
   });
   await app.whenReady();
+  // THE WORKER BITMAP CONTROL BEFORE ANY PAGE EXISTS. The same control is read again below, after the page; a blank
+  // reading here is the engine's own first worker bitmap, with none of this repository's code in the path, and a
+  // failure report that carries both says which side of the page the blankness is on.
+  // Electron quits when its last window closes unless something listens, and the probe's window is the only one yet.
+  const keepAlive = (): void => undefined;
+  app.on('window-all-closed', keepAlive);
+  const cold = await readWorkerBitmapInk(595, 842);
+  app.off('window-all-closed', keepAlive);
 
   // THE SHIPPED THREE CALLS, in the shipped order. `main.ts` creates the window
   // before registering, because the sender check needs a real `WebContents` id
@@ -1202,6 +1212,7 @@ export async function reportCanvasPixels(
     bitmapInk,
     workerBitmapInk: worker.upright,
     workerBitmapAsPdfjsInk: worker.asPdfjsDraws,
+    coldWorkerBitmapInk: cold.upright,
     environment: {
       visibility,
       processesGone,

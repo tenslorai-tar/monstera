@@ -1,8 +1,9 @@
 import { type ContractHandlers, SERVICE_PROBLEM_OF } from '@monstera/contract';
-import { DocumentBusyError, DocumentNotOpenError, StaleTargetError } from '@monstera/kernel';
+import { DocumentBusyError, DocumentNotOpenError, ProtectionNotReproducible, StaleTargetError } from '@monstera/kernel';
 import { err, ok } from '@monstera/shared';
 
 import {
+  CommandLoopedError,
   type DocumentCommands,
   DocumentPoisonedError,
   SignaturesWouldBreakError,
@@ -68,6 +69,12 @@ export function executeCommandHandler(
       if (thrown instanceof SignaturesWouldBreakError) return err({ code: 'breaks-signatures' });
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      // A COMMAND THE ENGINE WAS STOPPED ON THREE TIMES (ADR-0221): the document is open and intact, and the one thing
+      // wrong is this action. Said by name, so the person is not left with an incident id for a working document.
+      if (thrown instanceof CommandLoopedError) return err({ code: 'command-looped', detail: { command: thrown.command } });
+      // A PROTECTED DOCUMENT WHOSE OPENING PASSWORD IS NOT KNOWN (ADR-0220): refused before any work, so nothing changed,
+      // and the sentence says what to do. Matched on the class, which crossed the pipe under its own code.
+      if (thrown instanceof ProtectionNotReproducible) return err({ code: 'protection-not-reproducible' });
       // A DECISION, not an inconsistency. The supervisor bounded a rebuild loop
       // and refused; reporting that as `internal` would hand the renderer an
       // unexplained defect for the one failure it can actually explain to a

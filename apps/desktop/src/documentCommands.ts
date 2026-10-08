@@ -142,6 +142,7 @@ import {
   type ReadSignature,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
+  SignatureProtectedDocumentError,
   SignatureTooLargeError,
   TimestampRefusedError,
   TimestampUnreachableError,
@@ -366,6 +367,13 @@ export interface EngineSessionSource {
   readonly protected: (docId: DocId, step: object, terms: ProtectionTerms) => void;
   /** The protect `step` is being undone (`before`) or redone (`after`): `EngineSessions.protectionStepped`. */
   readonly protectionStepped: (docId: DocId, step: object, to: 'before' | 'after') => void;
+  /**
+   * The looping-command ledger (ADR-0221): which command kind the host is running for a document, and whether one has
+   * looped the engine often enough to be refused. The bound stays with the supervisor, for `poisoned`'s reason.
+   */
+  readonly commandBegan: (docId: DocId, kind: string) => void;
+  readonly commandEnded: (docId: DocId, kind: string, succeeded: boolean) => void;
+  readonly commandBarred: (docId: DocId, kind: string) => boolean;
 }
 
 /**
@@ -393,6 +401,39 @@ function protectionTermsOf(command: Command): ProtectionTerms | undefined {
 /** Whether a log entry is a protect's, so its undo or redo moves the holder. */
 function isProtectStep(entry: LogEntry | undefined): entry is LogEntry {
   return entry?.command.kind === 'setDocumentProtection';
+}
+
+/**
+ * A command the document will not run again: it ended the engine on three attempts (ADR-0221). The document is open,
+ * its edits are safe, and every other command still works.
+ */
+export class CommandLoopedError extends Error {
+  override readonly name = 'CommandLoopedError';
+  constructor(
+    readonly docId: DocId,
+    readonly command: string,
+  ) {
+    super(`Command ${command} on document ${docId.slice(0, 8)}… ended the engine three times and is not run again.`);
+  }
+}
+
+/**
+ * Runs `run` under the looping-command ledger (ADR-0221): a command barred after three endings is refused before the host
+ * is asked, and the ending of this one is recorded however it ends, the third naming itself at once.
+ */
+async function ledgered<T>(engine: EngineSessionSource, docId: DocId, kind: string, run: () => Promise<T>): Promise<T> {
+  if (engine.commandBarred(docId, kind)) throw new CommandLoopedError(docId, kind);
+  engine.commandBegan(docId, kind);
+  try {
+    const result = await run();
+    engine.commandEnded(docId, kind, true);
+    return result;
+  } catch (error) {
+    engine.commandEnded(docId, kind, false);
+    // The ending that made this call fail may be the third: say so now rather than on the next attempt.
+    if (engine.commandBarred(docId, kind)) throw new CommandLoopedError(docId, kind);
+    throw error;
+  }
 }
 
 /**
@@ -3753,15 +3794,19 @@ export class DocumentCommands {
         }
       }
 
-      const { trimmed, entry, drawn } = await this.#bus.execute<K>(
-        sessions,
-        context,
-        command,
-        // THE IDS COME FROM THE CONTRACT, not from a field read here.
-        // `sourceIdsOf` is the one answer to *which documents does this payload
-        // name*, and the payload is the contract's (ADR-0040 Decision 4).
-        this.#byteImage(docId, sourceIdsOf(command)),
-        options.joinsStep,
+      // A COMMAND THAT HAS ENDED THE ENGINE THREE TIMES IS NOT SENT AGAIN (ADR-0221), and the refusal is decided here,
+      // before the host, so the fourth attempt costs nothing. Read inside the lane for the poison check's reason.
+      const { trimmed, entry, drawn } = await ledgered(this.#engine, docId, command.kind, () =>
+        this.#bus.execute<K>(
+          sessions,
+          context,
+          command,
+          // THE IDS COME FROM THE CONTRACT, not from a field read here.
+          // `sourceIdsOf` is the one answer to *which documents does this payload
+          // name*, and the payload is the contract's (ADR-0040 Decision 4).
+          this.#byteImage(docId, sourceIdsOf(command)),
+          options.joinsStep,
+        ),
       );
       // A PROTECT MOVES THE HOLDER, in the lane and after the bus recorded it, so every later open of a copy has the
       // key the document opens with now (ADR-0171 Decision 8).
@@ -6415,6 +6460,9 @@ export class DocumentCommands {
       }
       if (error instanceof SignatureCredentialRefusedError) return { kind: 'wrong-passphrase' };
       if (error instanceof SignatureTooLargeError) return { kind: 'signature-too-large' };
+      // A PROTECTED DOCUMENT, refused by the host before anything is written (ADR-0220): the sentence says what to do about
+      // the password, where it used to be an incident id.
+      if (error instanceof SignatureProtectedDocumentError) return { kind: 'document-protected' };
       // THE AUTHORITY'S FAILURES, three sentences rather than one: unreachable is
       // *try again or choose another*, refused is *that service will not do this*,
       // and unverifiable is *it answered with something this build would not

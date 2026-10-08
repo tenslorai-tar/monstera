@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import * as mupdf from './mupdfRaw.js';
@@ -139,6 +142,50 @@ describe('the native MuPDF binding', () => {
     } finally {
       document.destroy();
     }
+  });
+
+  it('reads a FreeText callout line back from native memory: its three points, where upstream shifted a word index (CR-NAT-02)', () => {
+    const document = pageWithOneFill();
+    try {
+      const annotation = document.loadPage(0).createAnnotation('FreeText');
+      annotation.setCalloutLine([
+        [10, 10],
+        [20, 25],
+        [30, 40],
+      ]);
+      // BEFORE THE FIX THIS KILLED THE PROCESS: the engine was handed `address << 2`, a truncated 32-bit number, to write
+      // three points into. Reaching the next line is the first half of the proof; the points are the second.
+      expect(annotation.getCalloutLine()).toStrictEqual([
+        [10, 10],
+        [20, 25],
+        [30, 40],
+      ]);
+      expect(annotation.getCalloutPoint()).toStrictEqual([10, 10]);
+    } finally {
+      document.destroy();
+    }
+  });
+
+  describe('the port keeps no word-index arithmetic on a scratch address, and answers NULL strings as empty (CR-NAT-02, CR-NAT-07)', () => {
+    const source = readFileSync(fileURLToPath(new URL('./mupdfRaw.ts', import.meta.url)), 'utf8');
+    /** A shift by two applied to a scratch block's name: the upstream spelling of a word index becoming an address. */
+    const WORD_TO_BYTE = /_wasm_\w+\s*(?:\+\s*\d+\s*)?\)?\s*<<\s*2\b/gu;
+
+    it('finds the shift in the upstream spelling, and finds none in the source', () => {
+      // THE CONTROL: the scan sees the exact shape the bug had, so its silence on the file means something.
+      expect('fromPoint((_wasm_point+1) << 2 as Pointer)'.match(WORD_TO_BYTE)).not.toBeNull();
+      expect('libmupdf.f(this.pointer, (_wasm_point << 2))'.match(WORD_TO_BYTE)).not.toBeNull();
+      expect(source.match(WORD_TO_BYTE)).toBeNull();
+    });
+
+    it('answers a NULL string before it asks the engine how long it is', () => {
+      const body = /utf8\(ptr: number\): string \{([\s\S]*?)\n\t\},/u.exec(source)?.[1] ?? '';
+      const call = body.indexOf('boundNative().strlen');
+      expect(call).toBeGreaterThanOrEqual(0);
+      // THE GUARD COMES FIRST: a NULL length is an access violation natively, where WASM read address 0 as nothing.
+      expect(body.indexOf('ptr === 0')).toBeGreaterThanOrEqual(0);
+      expect(body.indexOf('ptr === 0')).toBeLessThan(call);
+    });
   });
 
   it('says it is bound, in a process whose setup bound it', () => {

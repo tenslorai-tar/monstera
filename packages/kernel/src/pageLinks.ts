@@ -69,16 +69,19 @@ export type PageLink =
  * MuPDF answers corners, and converting to a size here would be a second shape
  * for one thing the engine already describes.
  *
- * **THE ORIGIN IS TOP-LEFT, which is MuPDF's and not the PDF's**, and it is
- * measured rather than assumed: a `/Rect [10 20 90 40]` on a 200-high page
- * comes back as `y0: 160, y1: 180` (`pageLinks.test.ts`, 2026-09-02). PDF space
- * puts the origin at the bottom-left, so the two differ by a flip about the
- * page height — which is exactly the conversion `monstera/no-bare-y-flip`
- * exists to keep out of call sites.
+ * **THE FRAME IS THE PAGE AS DISPLAYED, with its origin at the displayed
+ * top-left, which is MuPDF's and not the PDF's.** Measured on an UPRIGHT page
+ * whose box starts at the origin: a `/Rect [10 20 90 40]` on a 200-high page
+ * comes back as `y0: 160, y1: 180` (`pageLinks.test.ts`, 2026-09-02). That is a
+ * flip about the page height ONLY for such a page. On a rotated page the
+ * rotation is applied too, and on a CropBox whose origin is not zero the origin
+ * moves with it, as `pageAnnotations.ts` records for `getRect` (CR-COR-05). A
+ * consumer must therefore not undo this by flipping about the height.
  *
- * So a consumer that wants to draw one of these over a rendered page converts
- * through `PageTransform` like every other coordinate. Nothing here flips
- * anything: this is the engine's answer, carried as the engine gave it.
+ * A consumer that wants to draw one of these over a rendered page converts
+ * through `PageTransform` like every other coordinate, which carries the
+ * rotation and the box origin a flip cannot. Nothing here converts anything:
+ * this is the engine's answer, carried as the engine gave it.
  */
 export interface LinkBounds {
   readonly x0: number;

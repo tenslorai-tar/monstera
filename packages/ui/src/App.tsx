@@ -231,6 +231,7 @@ import { compareDocumentsCommand } from './commands/compareDocuments.js';
 import { translatePageCommand } from './commands/translatePage.js';
 import { COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { OPEN_PROBLEM_DIALOG_ID } from './dialogs/openProblem.js';
+import { PERMISSION_PASSWORD_REPLACED_DIALOG_ID } from './dialogs/permissionPasswordReplaced.js';
 import { sayWhenUnwritable } from './commands/readOnlyFile.js';
 import { convertScanCommand } from './commands/convertScan.js';
 import { offerOldBackups, restoreVersionCommand } from './commands/restoreVersion.js';
@@ -391,6 +392,7 @@ import { GRID_DIVISION_COUNTS, type GridLook, type RulerUnit } from './rulerGeom
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
 import { type ShowToast, TOAST_LIFETIME, createToastStore } from './toasts.js';
+import { useUnhandledRejectionReport } from './unhandledRejections.js';
 import { ToastStrip } from './primitives/Toast.js';
 import { ReviewPrompt } from './surfaces/ReviewPrompt.js';
 import { PageGrid } from './surfaces/PageGrid.js';
@@ -761,6 +763,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     },
     [toastStore],
   );
+  // A REJECTION NOBODY WAS WAITING FOR REACHES THE PERSON (CR-COR-12), once, and the console still gets the cause.
+  useUnhandledRejectionReport(toast);
   // THE CLOCK IS READ HERE, at the moment the save landed, and nowhere downstream: `savedState`
   // is a function of its arguments so that its boundaries are testable (59 seconds against 60).
   //
@@ -2915,6 +2919,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     if (placedProblem === undefined || placedProblem.onStart) return;
     void ask(OPEN_PROBLEM_DIALOG_ID, { problems: [...placedProblem.problem] });
   }, [ask, placedProblem]);
+  // A NOTICE MAIN PUSHES ABOUT A DOCUMENT (ADR-0220): a change that succeeded and replaced a password the person never gave
+  // Monstera. Said once per document by main, so each arrival is shown.
+  useEffect(
+    () =>
+      subscribe('document.notice', () => {
+        void ask(PERMISSION_PASSWORD_REPLACED_DIALOG_ID, {});
+      }),
+    [ask, subscribe],
+  );
   const openCommand = useMemo(() => openDocumentCommand(openDeps), [openDeps]);
   // THE ONE RECENT-OPEN ROUTE (ADR-0143), for the start screen's cards and File › Recent alike.
   const openRecent = useCallback((handle: FileHandle) => openRecentDocument(openDeps, handle), [openDeps]);

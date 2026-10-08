@@ -2,8 +2,9 @@ import { FIELD_EDIT_REASONS } from '@monstera/shared';
 
 import { FieldEditRefusedError } from '../fieldEditRefusal.js';
 import { PngPixelsRefused } from '../imageDimensions.js';
-import { SignatureAppearanceRefusedError } from '../signingRefusals.js';
-import type { FIELD_EDIT_REFUSALS, PICTURE_REFUSALS, PLACEHOLDER_REFUSALS } from './engineChannels.js';
+import { ProtectionNotReproducible } from '../protectionRefusal.js';
+import { SignatureAppearanceRefusedError, SignatureProtectedDocumentError } from '../signingRefusals.js';
+import type { FIELD_EDIT_REFUSALS, PICTURE_REFUSALS, PLACEHOLDER_REFUSALS, PROTECTION_REFUSALS } from './engineChannels.js';
 
 /**
  * A hosted command's refusals, across the pipe and back: the ONE table both directions read.
@@ -17,6 +18,7 @@ import type { FIELD_EDIT_REFUSALS, PICTURE_REFUSALS, PLACEHOLDER_REFUSALS } from
  */
 
 type PictureRefusal = (typeof PICTURE_REFUSALS)[number];
+type ProtectionRefusal = (typeof PROTECTION_REFUSALS)[number];
 type PlaceholderRefusal = (typeof PLACEHOLDER_REFUSALS)[number];
 
 type FieldEditRefusalCode = (typeof FIELD_EDIT_REFUSALS)[number];
@@ -32,9 +34,19 @@ export function pdfLibRefusalCodeOf(error: unknown): PictureRefusal | FieldEditR
   return pictureRefusalCodeOf(error);
 }
 
-/** `engine/prepareSignature`'s code for `error`: a picture's refusal, or one only a signature's appearance meets. */
+/** The code for a protected document whose protection cannot be written again (ADR-0220), or `undefined`. */
+export function protectionRefusalCodeOf(error: unknown): ProtectionRefusal | undefined {
+  return error instanceof ProtectionNotReproducible ? 'protection-not-reproducible' : undefined;
+}
+
+/** `engine/prepareSignature`'s code for `error`: a picture's refusal, a protection's, or one only a signature's appearance meets. */
 export function placeholderRefusalCodeOf(error: unknown): PlaceholderRefusal | undefined {
   if (error instanceof SignatureAppearanceRefusedError) return 'signature-picture-unreadable';
+  // A PROTECTED DOCUMENT, by either door: one this build knows it cannot sign, and one whose protection it could not write
+  // again anyway (ADR-0220). The person is told the same thing, which is what to do about the password.
+  if (error instanceof SignatureProtectedDocumentError || error instanceof ProtectionNotReproducible) {
+    return 'signature-document-protected';
+  }
   return pictureRefusalCodeOf(error);
 }
 
@@ -45,6 +57,10 @@ export function hostRefusalFor(code: string): Error | undefined {
       return new SignatureAppearanceRefusedError('unreadable-image', 'the engine host could not decode the signature picture');
     case 'picture-too-many-pixels':
       return new PngPixelsRefused('too-many-pixels', null);
+    case 'protection-not-reproducible':
+      return new ProtectionNotReproducible('the engine host could not write the document protected as it was');
+    case 'signature-document-protected':
+      return new SignatureProtectedDocumentError();
     default: {
       // A CHANGE TO A FORM FIELD (ADR-0193): the reason is the code's tail, and only a listed code is one.
       const reason = FIELD_EDIT_REASONS.find((each) => `field-edit-${each}` === code);

@@ -363,6 +363,22 @@ export const RTL_DECK = [
 ];
 
 /**
+ * What `pdfLibProtected.proof.mjs` runs: the writer that serialises and protects, the protection's composer, the
+ * kernel's own pdf-lib execution beside a session, the routing it dispatches through, and the native engine (ADR-0220).
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const PDF_LIB_PROTECTED = [
+  ['packages/kernel/src/documentProtection.ts', 'packages/kernel/dist/documentProtection.js', 'tsc'],
+  ['packages/kernel/src/protectionRefusal.ts', 'packages/kernel/dist/protectionRefusal.js', 'tsc'],
+  ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
+  ['packages/kernel/src/localEngine.ts', 'packages/kernel/dist/localEngine.js', 'tsc'],
+  ['packages/kernel/src/pdfLibWriter.ts', 'packages/kernel/dist/pdfLibWriter.js', 'tsc'],
+  ['packages/kernel/src/commandSpecs.ts', 'packages/kernel/dist/commandSpecs.js', 'tsc'],
+  ...NATIVE_ENGINE,
+];
+
+/**
  * What `wordPictures.proof.mjs` exports through: the composer the MuPDF host runs, the part writer, the one reader of
  * MuPDF's structured text, and the native engine they draw with (ADR-0072's amendment of 2026-10-01).
  *
@@ -572,6 +588,8 @@ export const ARTEFACT_EDGES = {
   'proof:rtltext': RTL_TEXT,
   // THE EDITABLE DECK'S HEBREW AND ARABIC, through the real read and the slide model (ADR-0210).
   'proof:rtldeck': RTL_DECK,
+  // A pdf-lib command on a protected document, read back by the WASM build of MuPDF (ADR-0220).
+  'proof:pdflibprotected': PDF_LIB_PROTECTED,
   // THE READER CHANNEL'S TEARDOWN on the shipped thread, which used to abort the process when it terminated it.
   'proof:readerdispose': READER_DISPOSE,
   // THE ENGINE HOST'S WIN32 HARDENING on the shipped surfaces (the code review of 2026-10-03).
