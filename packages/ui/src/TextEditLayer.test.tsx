@@ -434,6 +434,32 @@ describe('Edit text on the page (ADR-0096)', () => {
     expect(said).toContain('read-back 0');
   });
 
+  describe('a write that rejects frees the editor (CR-COR-13)', () => {
+    it('a commit that REJECTS keeps the editor and the words, says so beside them, and a second Escape still closes it', async () => {
+      const onCommit = vi.fn((_block: TextBlock, _text: string, _read: BlocksRead) =>
+        Promise.reject<BlockCommit>(new Error('the host went away')),
+      );
+      const made = mount({ onCommit });
+      fireEvent.click(find(made.view.container, '[data-text-block="0"]'));
+      const editor = editorIn(made.view.container);
+      typeInto(editor, 'WORK EXPERIENCE');
+      await act(async () => {
+        fireEvent.keyDown(editor, { key: 'Escape' });
+        await Promise.resolve();
+      });
+      expect(onCommit).toHaveBeenCalledTimes(1);
+      const kept = made.view.container.querySelector('[data-text-editor]');
+      expect(kept?.textContent).toBe('WORK EXPERIENCE');
+      expect(made.view.container.querySelector('[role="alert"]')?.textContent ?? '').not.toBe('');
+      // CONTROL: before the fix `writing` stayed true after the rejection, the editor was locked, and this Escape did nothing.
+      await act(async () => {
+        fireEvent.keyDown(find(made.view.container, '[data-text-editor]'), { key: 'Escape' });
+        await Promise.resolve();
+      });
+      expect(made.view.container.querySelector('[data-text-editor]')).toBeNull();
+    });
+  });
+
   describe('placing a block with its handles (ADR-0180, corrected 2026-10-06)', () => {
     /** The editor open on block 0 (box 72..300 by 700..740 at zoom 1), with every commit's formatting kept. */
     function openForPlacing() {

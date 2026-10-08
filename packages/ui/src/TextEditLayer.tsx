@@ -1069,9 +1069,19 @@ function BlockEditor({
       if (writing.current) return;
       writing.current = true;
       setBusy(true);
-      const outcome = await send();
-      writing.current = false;
-      setBusy(false);
+      // A WRITE THAT REJECTS (a channel that threw, a host that went away) must still free the editor: without the `finally`
+      // `writing` stayed true and the words stayed locked, so the editor could not be closed, written again or left (CR-COR-13).
+      // AND IS SAID, not swallowed: the rejection becomes the editor's own `internal` refusal, which keeps the words beside the
+      // sentence, so the person can try again or keep what they typed.
+      let outcome: BlockCommit;
+      try {
+        outcome = await send();
+      } catch {
+        outcome = { refused: { code: 'internal', incident: 'write-rejected' } };
+      } finally {
+        writing.current = false;
+        setBusy(false);
+      }
       if (outcome !== 'written' && outcome !== 'unchanged') {
         // THE EDITOR STAYS on EVERY refusal (ADR-0169 Decision 5), with the words
         // and the sentence beside them: the person can change what was refused, or
