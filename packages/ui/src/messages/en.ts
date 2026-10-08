@@ -1030,6 +1030,20 @@ export const OCR_KEYS_HELP = messageKey('dialog.ocr.keys-help');
 export const OCR_HANDWRITING_READY = messageKey('dialog.ocr.handwriting-ready');
 export const EXPORT_EXCEL_SERVICES_NO_KEY = messageKey('dialog.export-excel.services-no-key');
 export const OCR_OUTCOME_TITLE = messageKey('dialog.ocr-outcome.title');
+// THE PANEL A BOX'S READ ANSWERS WITH (the owner's Step 7c, 2026-10-08).
+export const REGION_READ_TITLE = messageKey('dialog.region-read.title');
+export const REGION_READ_ENGINE_TESSERACT = messageKey('dialog.region-read.engine.tesseract');
+export const REGION_READ_ENGINE_CLAUDE = messageKey('dialog.region-read.engine.claude');
+export const REGION_READ_ENGINE_AZURE = messageKey('dialog.region-read.engine.azure');
+export const REGION_READ_READING = messageKey('dialog.region-read.reading');
+export const REGION_READ_READING_NOTE = messageKey('dialog.region-read.reading-note');
+export const REGION_READ_TEXT = messageKey('dialog.region-read.text');
+export const REGION_READ_NOTE = messageKey('dialog.region-read.note');
+export const REGION_READ_NOTHING = messageKey('dialog.region-read.nothing');
+export const REGION_READ_FAILED = messageKey('dialog.region-read.failed');
+export const REGION_READ_COPY = messageKey('dialog.region-read.copy');
+export const REGION_READ_INSERT = messageKey('dialog.region-read.insert');
+export const TOAST_REGION_INSERTED = messageKey('toast.region-inserted');
 export const OCR_OUTCOME_RECOGNISED = messageKey('dialog.ocr-outcome.recognised');
 export const OCR_OUTCOME_NONE = messageKey('dialog.ocr-outcome.none');
 export const OCR_OUTCOME_SKIPPED = messageKey('dialog.ocr-outcome.skipped');
@@ -4537,6 +4551,22 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TOAST_PAGES_SAVED]: 'Pages saved',
   [TOAST_SHOW_IN_FOLDER]: 'Show in folder',
   [TOAST_COPIED]: 'Copied',
+  [REGION_READ_TITLE]: 'Words read from the box',
+  [REGION_READ_ENGINE_TESSERACT]: 'this computer',
+  [REGION_READ_ENGINE_CLAUDE]: 'Claude',
+  [REGION_READ_ENGINE_AZURE]: 'Azure',
+  [REGION_READ_READING]: 'Reading the box with {engine}…',
+  [REGION_READ_READING_NOTE]:
+    'You can close this window. The words are added to the page, unseen, either way, and Undo takes them out.',
+  [REGION_READ_TEXT]: 'What was read',
+  [REGION_READ_NOTE]:
+    'These words are now on the page, unseen, so it can be searched. Insert them as text if you want to see and edit them there.',
+  [REGION_READ_NOTHING]:
+    'No words were read in the box. Try a larger box, or one with the writing clearly inside it.',
+  [REGION_READ_FAILED]: 'The box could not be read, so the page is as it was.',
+  [REGION_READ_COPY]: 'Copy',
+  [REGION_READ_INSERT]: 'Insert as text on the page',
+  [TOAST_REGION_INSERTED]: 'The words were added to the page as text',
   [TOAST_FILES_SAVED]: 'Files saved',
   [TOAST_IMAGES_SAVED]: 'Images saved',
   [TOAST_TEXT_SAVED]: 'Text file saved',

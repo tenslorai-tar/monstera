@@ -294,6 +294,7 @@ import { type FieldToCopy, copyFieldToPagesCommand, fieldArrangeCommands } from 
 import { useFormFieldList } from './forms/useFormFieldList.js';
 import type { AnnotationStyle } from './annotations/annotationStyle.js';
 import { styleFrom } from './annotations/annotationStyle.js';
+import { isRegionRead, readRegionInPanel } from './commands/readRegion.js';
 import { LINK_ADDRESS_TOOL_ID, LINK_PAGE_TOOL_ID } from './annotations/linkTools.js';
 import { MEASURE_TOOL_IDS } from './annotations/measureTools.js';
 import { stickyNoteCommand } from './annotations/pointTools.js';
@@ -3683,6 +3684,11 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       onCommand: async (command: DispatchableCommand): Promise<boolean> => {
         // A DRAG OF THE SELECTION is a `placeAnnotation`, which keeps the walk, so the marks stay
         // selected for the next drag — the same route an arrow key takes.
+        // A BOX'S READ is shown in a panel with the words (Step 7c): the same command through the same dispatcher, with the
+        // answer said instead of left in the page unseen.
+        if (isRegionRead(command)) {
+          return readRegionInPanel({ client, onApplied: applied, ask, stamp, signatures, toast, style }, docId, command);
+        }
         const moved = await send(docId, command);
         // A LINK ADDED IS SAID (item 14c): PDF.js draws no mark for a link, and its outline is drawn only in the Comment
         // section, while the command palette starts the two link tools from any. A refusal says its own problem.
@@ -3697,7 +3703,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       },
       selection,
     };
-  }, [keptTool, open, selection, send, toast, toolId, tools]);
+  }, [applied, ask, client, keptTool, open, selection, send, signatures, stamp, style, toast, toolId, tools]);
 
   /**
    * A link pressed on a page or in the Links panel, followed by the one route (ADR-0167): a page link jumps, a web link

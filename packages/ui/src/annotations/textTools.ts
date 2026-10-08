@@ -58,7 +58,7 @@ import type { WordsOf } from './markWords.js';
  * where a text box is words a person is adding TO it and reads as content. A
  * red one looks like a correction whatever it says.
  */
-const TEXT_COLOUR: AnnotationColour = [0.1, 0.1, 0.1];
+export const TEXT_COLOUR: AnnotationColour = [0.1, 0.1, 0.1];
 
 /**
  * The point size moved out on 2026-09-07, to `editing.annotation-font-size`.

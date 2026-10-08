@@ -12,15 +12,18 @@ Instead of reading a whole page, you can read the text in one area of a scanned 
 
 1. In the rail, choose **Tools**, then **Recognise** in the **OCR** group (**Recognise text in a box**).
 2. Drag a box around the text.
-3. The text in the box is recognised and becomes searchable and selectable.
+3. A panel opens and says which reader is working. When it finishes, it shows the words it read.
+4. Choose **Copy** to put the words on the clipboard, or **Insert as text on the page** to add them as a text box where you dragged.
 
 ![A box being dragged around a paragraph on a scanned page](screenshot:recognise-text-in-a-box-1)
 
 ## Good to know
 
+- Either way, the words also become searchable and selectable on the page.
+- If the box held no words, the panel says so. If the read could not finish, it says why.
 - The languages used are the ones in **Settings**, **OCR** page, **Recognition languages**.
-- Recognition runs on this computer. Nothing is sent anywhere.
-- Undo with **Ctrl+Z**.
+- Recognition on the Recognise tool runs on this computer. Nothing is sent anywhere. The handwriting tools send only the box you drew to the service you chose.
+- Undo with **Ctrl+Z**. Inserting the words as a text box is its own step.
 - For handwriting, see "Read handwriting with Azure or Claude".
 
 <!--

@@ -1062,6 +1062,13 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     },
     { state: 'refused', props: { kind: 'refused', page: 1 } },
   ],
+  'dialog.region-read': [
+    { state: 'reading', props: { state: 'reading', engine: 'claude' } },
+    { state: 'read', props: { state: 'read', engine: 'tesseract', text: 'Invoice 2026-0412\nTotal due: 1,240.00' } },
+    { state: 'long', props: { state: 'read', engine: 'azure', text: prose(3000) } },
+    { state: 'nothing', props: { state: 'nothing', engine: 'tesseract' } },
+    { state: 'failed', props: { state: 'failed', engine: 'claude', problem: { code: 'service-refused' } } },
+  ],
   'dialog.place-barcode': [
     { state: 'opened', props: {} },
     { state: 'filled', props: {}, steps: [type('Text or link', 'https://example.com/invoices/2026-0412')] },

@@ -19,7 +19,7 @@ To add a barcode:
 To read barcodes:
 
 1. Go to the page.
-2. In the rail, choose **Tools**, then **Read barcodes** in the **OCR** group (under the group's **More** in a narrower window). The window lists each barcode's **Type** (like **QR code** or **Code 128**) and **What it says**, with what it is above it: a **Web link**, **Phone number**, **Email address**, **Contact card** or **Text**. A contact card is shown as name, title, company, phone, email and address lines. Choose **Show on the page** on a row to mark where that barcode is on the page, and **Save the contact** on a contact card to keep it as a `.vcf` file your address book can open. Choose **Copy** on a row, or **Copy all**. Choose **Read barcodes on all pages** to list the barcodes of every page, each with its page number.
+2. In the rail, choose **Tools**, then **Read barcodes** in the **OCR** group (under the group's More button in a narrower window). The window lists each barcode's **Type** (like **QR code** or **Code 128**) and **What it says**, with what it is above it: a **Web link**, **Phone number**, **Email address**, **Contact card** or **Text**. A contact card is shown as name, title, company, phone, email and address lines. Choose **Show on the page** on a row to mark where that barcode is on the page, and the save-the-contact button on a contact card to keep it as a `.vcf` file your address book can open. Choose **Copy** on a row, or **Copy all**. Choose **Read barcodes on all pages** to list the barcodes of every page, each with its page number.
 
 ![The Add a barcode window with Text or link and Barcode type](screenshot:barcodes-1)
 

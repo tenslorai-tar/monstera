@@ -59,6 +59,7 @@ import { PDFA_REMOVALS_DIALOG } from '../dialogs/pdfaRemovals.js';
 import { PENDING_REDACTIONS_DIALOG } from '../dialogs/pendingRedactions.js';
 import { PLACE_BARCODE_DIALOG } from '../dialogs/placeBarcode.js';
 import { PRINT_DIALOG } from '../dialogs/print.js';
+import { REGION_READ_DIALOG } from '../dialogs/regionRead.js';
 import { PROTECT_DOCUMENT_DIALOG } from '../dialogs/protectDocument.js';
 import { REDACT_MATCHES_DIALOG } from '../dialogs/redactMatches.js';
 import { REIMPORT_EXTERNAL_EDIT_DIALOG } from '../dialogs/reimportExternalEdit.js';
@@ -190,6 +191,7 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   PDFA_REMOVALS_DIALOG,
   OPTIMIZE_DIALOG,
   PAGE_BARCODES_DIALOG,
+  REGION_READ_DIALOG,
   PLACE_BARCODE_DIALOG,
   DUPLICATE_PAGES_DIALOG,
   SETTINGS_PROBLEM_DIALOG,
