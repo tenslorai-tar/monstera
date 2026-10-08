@@ -115,8 +115,6 @@ export type SignInRefusal =
   | 'timed-out'
   /** The provider redirected with an `error` — the person declined, or it refused. */
   | 'denied'
-  /** A redirect arrived whose `state` was not this sign-in's (RFC 6749 §10.12). */
-  | 'mismatched-state'
   /** The listener could not be opened, or the browser could not be. */
   | 'listener-failed';
 
@@ -194,10 +192,10 @@ export async function signInThroughLoopback(options: {
     settle = { resolve, reject };
   });
   // MARKED HANDLED AT BIRTH, and it swallows nothing: `await outcome` below still
-  // throws the refusal. A forged or declined redirect can arrive while the browser
-  // opener is still awaiting, before anything awaits this promise — and Node reports
-  // a rejection with no handler attached at that moment as unhandled, even though it
-  // is handled an instant later. Measured on this file's own mismatched-state case.
+  // throws the refusal. A declined redirect can arrive while the browser opener is
+  // still awaiting, before anything awaits this promise — and Node reports a
+  // rejection with no handler attached at that moment as unhandled, even though it
+  // is handled an instant later. Measured on this file's own declined-redirect case.
   outcome.catch(() => undefined);
   let expectedState: string | null = null;
 
@@ -206,6 +204,16 @@ export async function signInThroughLoopback(options: {
     // ONE PATH. Anything else is refused and changes nothing, so a stray request
     // — a browser asking for a favicon — cannot end or corrupt the sign-in.
     if (request.method !== 'GET' || url.pathname !== path || expectedState === null) {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+      response.end();
+      return;
+    }
+    const state = url.searchParams.get('state');
+    // A REDIRECT FOR ANOTHER SIGN-IN IS REFUSED, NOT THIS FLOW (RFC 6749 section 10.12, CR-SEC-04). The listener is on a
+    // fixed list of loopback ports, so any page the person visits can send a GET to it; settling on the first one let
+    // that page end a sign-in it had no part in. It is answered as a stray path is, and the wait goes on until the
+    // matching redirect or the deadline.
+    if (state !== expectedState) {
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
       response.end();
       return;
@@ -219,12 +227,9 @@ export async function signInThroughLoopback(options: {
     });
     response.end(RETURN_PAGE);
 
-    const state = url.searchParams.get('state');
     const code = url.searchParams.get('code');
     const error = url.searchParams.get('error');
-    if (state !== expectedState) {
-      settle?.reject(new SignInRefused('mismatched-state', 'a redirect arrived for another sign-in'));
-    } else if (error !== null) {
+    if (error !== null) {
       settle?.reject(new SignInRefused('denied', 'the provider redirected with an error'));
     } else if (code === null || code === '') {
       settle?.reject(new SignInRefused('denied', 'the redirect carried no code'));

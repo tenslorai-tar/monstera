@@ -111,10 +111,7 @@ function kindOfSignInRefusal(error: SignInRefused): DocusignRefusalKind {
       return 'sign-in-cancelled';
     case 'timed-out':
       return 'sign-in-timed-out';
-    // A FORGED OR MISMATCHED REDIRECT IS A SIGN-IN THAT DID NOT HAPPEN, and the
-    // person's next step is the same as for a refusal: sign in again.
     case 'denied':
-    case 'mismatched-state':
       return 'sign-in-denied';
     case 'listener-failed':
       return 'sign-in-unavailable';

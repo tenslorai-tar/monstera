@@ -206,16 +206,30 @@ describe('signInThroughLoopback', () => {
     expect(signedIn.kept).toStrictEqual({ picked_file_ids: '1Abc,2Def' });
   });
 
-  it('refuses a redirect whose state is not this sign-in’s', async () => {
-    const refused = await refusalOf(
+  it('answers a redirect whose state is not this sign-in’s with 404 and keeps waiting — the matching one still completes (CR-SEC-04)', async () => {
+    const signedIn = await signInThroughLoopback({
+      authorize,
+      openInBrowser: async (url) => {
+        const forged = await fetch(`${redirectOf(url)}?code=forged-code&state=someone-elses`);
+        expect(forged.status).toBe(404);
+        await fetch(`${redirectOf(url)}?code=the-code&state=the-state`);
+      },
+    });
+    // THE FORGED CODE IS NOT THE ONE KEPT: a listener that settled on the first request would have ended the sign-in.
+    expect(signedIn.code).toBe('the-code');
+  });
+
+  it('CONTROL: a forged redirect alone ends nothing early — the sign-in runs to its deadline', async () => {
+    const timedOut = await refusalOf(
       signInThroughLoopback({
         authorize,
+        timeoutMs: 200,
         openInBrowser: async (url) => {
-          await fetch(`${redirectOf(url)}?code=the-code&state=someone-elses`);
+          await fetch(`${redirectOf(url)}?code=forged-code&state=someone-elses`);
         },
       }),
     );
-    expect(refused.reason).toBe('mismatched-state');
+    expect(timedOut.reason).toBe('timed-out');
   });
 
   it('answers a redirect carrying an error as DENIED', async () => {
