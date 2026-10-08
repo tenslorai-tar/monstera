@@ -127,6 +127,7 @@ import {
   type ComposeChannels,
   composeChannels,
   remotePdfiumPageObjects,
+  remotePdfiumPageContent,
   remotePdfiumRenderPage,
   remotePdfiumRunFonts,
   remotePdfiumPageRuns,
@@ -1509,6 +1510,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         page,
         width,
         height,
+        // The viewer's raster keeps the page's words; only the editable PowerPoint export asks for none (ADR-0210).
+        false,
       );
       return {
         width: raster.width,
@@ -1531,6 +1534,20 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pageRuns: async (docId, sessions, page) => {
       if (pdfiumHost === null) throw new EngineUnavailableError('reading which objects a page’s text is made of');
       return pdfiumHost.pageRuns(await currentImage(docId, sessions), page);
+    },
+    // THE EDITABLE POWERPOINT EXPORT'S TWO READS (ADR-0210), composed here for the reads above's reason: a byte-image engine
+    // is asked about a document by being handed its bytes, and `currentImage` is the one route to them. The words a scan was
+    // just recognised into are in those bytes. Nothing here is encoded: a raster stays BGRA until the slide model has cut
+    // what it needs from it.
+    presentation: {
+      content: async (docId, sessions, page) => {
+        if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s content');
+        return pdfiumHost.pageContent(await currentImage(docId, sessions), page);
+      },
+      render: async (docId, sessions, page, width, height, withoutText) => {
+        if (pdfiumHost === null) throw new EngineUnavailableError('rendering a page without its text');
+        return pdfiumHost.renderPage(await currentImage(docId, sessions), page, width, height, withoutText);
+      },
     },
     // THE DUPLICATE REPORT, composed here for the reads above's reason: the
     // reader and the session are both in scope on this line and nowhere else.
@@ -3198,6 +3215,8 @@ type PdfiumRenderPage = ReturnType<typeof remotePdfiumRenderPage>;
 /** A block's run fonts rebuilt, over the same wire (ADR-0175). */
 type PdfiumRunFonts = ReturnType<typeof remotePdfiumRunFonts>;
 type PdfiumPageRuns = ReturnType<typeof remotePdfiumPageRuns>;
+/** One page's own content, over the same wire (ADR-0210). */
+type PdfiumPageContent = ReturnType<typeof remotePdfiumPageContent>;
 
 /**
  * The PDFium host's lifetime, its one granted area, and the writer the bus
@@ -3254,6 +3273,7 @@ function pdfiumHostBinding(
   readonly renderPage: PdfiumRenderPage;
   readonly runFonts: PdfiumRunFonts;
   readonly pageRuns: PdfiumPageRuns;
+  readonly pageContent: PdfiumPageContent;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -3265,6 +3285,7 @@ function pdfiumHostBinding(
   readonly renderPage: PdfiumRenderPage;
   readonly runFonts: PdfiumRunFonts;
   readonly pageRuns: PdfiumPageRuns;
+  readonly pageContent: PdfiumPageContent;
     /** The granted pair, so `close` can remove exactly what `connect` created. */
     readonly paths: { readonly snapshot: DirectoryPath; readonly output: DirectoryPath };
     readonly session: string;
@@ -3401,6 +3422,7 @@ function pdfiumHostBinding(
       renderPage: remotePdfiumRenderPage(client, held, transfer),
       runFonts: remotePdfiumRunFonts(client, held, transfer),
       pageRuns: remotePdfiumPageRuns(client, held, transfer),
+      pageContent: remotePdfiumPageContent(client, held, transfer),
       paths,
       session: opened.value.session,
     };
@@ -3439,10 +3461,11 @@ function pdfiumHostBinding(
     },
     textRuns: async (image, page) => (await ensure()).textRuns(image, page),
     pageObjects: async (image, page) => (await ensure()).pageObjects(image, page),
-    renderPage: async (image, page, width, height) =>
-      (await ensure()).renderPage(image, page, width, height),
+    renderPage: async (image, page, width, height, withoutText) =>
+      (await ensure()).renderPage(image, page, width, height, withoutText),
     runFonts: async (image, page, indices) => (await ensure()).runFonts(image, page, indices),
     pageRuns: async (image, page) => (await ensure()).pageRuns(image, page),
+    pageContent: async (image, page) => (await ensure()).pageContent(image, page),
     close: async () => {
       const live = host;
       host = null;

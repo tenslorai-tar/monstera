@@ -1,39 +1,26 @@
-import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
-import {
-  EXPORT_PAGES_APPLY,
-  EXPORT_POWERPOINT_PAGES_NOTE,
-  EXPORT_TEXT_PAGES_NOTE,
-  PAGE_RANGE_EXPORT_EMPTY,
-} from '../messages/en.js';
+import { EXPORT_PAGES_APPLY, EXPORT_TEXT_PAGES_NOTE, PAGE_RANGE_EXPORT_EMPTY } from '../messages/en.js';
 import { Button } from '../primitives/Button.js';
 import { DialogFooter } from '../primitives/Dialog.js';
 import type { DialogAnswering } from '../registries/dialogs.js';
 import type { ExportPagesAnswer, ExportPagesProps } from './exportPages.js';
 import { PageRangeChoice, usePageRange } from './PageRangeChoice.js';
 
-/** What each page becomes, keyed so a third kind arrives owing its sentence. */
-const BECOMES: Readonly<Record<ExportPagesProps['becomes'], MessageKey>> = {
-  slides: EXPORT_POWERPOINT_PAGES_NOTE,
-  text: EXPORT_TEXT_PAGES_NOTE,
-};
-
 /**
- * The body of an export whose one question is the pages — PowerPoint, and both text exports (ADR-0161).
+ * The body of an export whose one question is the pages: both text exports (ADR-0161).
  *
  * Main picks the file after this, so the button names that next step, as the other exports' do.
  */
 export default function ExportPagesBody({
   pageCount,
-  becomes,
   resolve,
 }: ExportPagesProps & DialogAnswering<ExportPagesAnswer>): ReactElement {
   const range = usePageRange(pageCount);
 
   return (
     <div className="m-export-pages">
-      <PageRangeChoice empty={PAGE_RANGE_EXPORT_EMPTY} note={BECOMES[becomes]} range={range} />
+      <PageRangeChoice empty={PAGE_RANGE_EXPORT_EMPTY} note={EXPORT_TEXT_PAGES_NOTE} range={range} />
       <DialogFooter>
         <Button
           label={EXPORT_PAGES_APPLY}

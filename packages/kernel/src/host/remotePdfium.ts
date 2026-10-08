@@ -12,6 +12,8 @@ import { serialiseIntoFile } from '../checkpointFile.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { AppliedImage, ByteImage, DrawnBoxes, ImageSession } from '../engineSeam.js';
 import type { PageRuns } from '../operatorEdit.js';
+import { assemblePageContent } from '../pageContentAssemble.js';
+import type { PageContent } from '../presentationContent.js';
 import type { TextRun } from '../pdfiumFfi.js';
 import {
   EditRefusedError,
@@ -477,8 +479,9 @@ export function remotePdfiumRenderPage(
   page: number,
   width: number,
   height: number,
+  withoutText: boolean,
 ) => Promise<{ readonly width: number; readonly height: number; readonly bgra: Uint8Array }> {
-  return async (image, page, width, height) => {
+  return async (image, page, width, height, withoutText) => {
     const { session, area } = held();
     const from = transfer.mintName();
     const into = transfer.mintName();
@@ -486,7 +489,7 @@ export function remotePdfiumRenderPage(
     try {
       const answer = answered(
         'engine/render-page',
-        await client['engine/render-page']({ session, from, password: frameKey(image), into, page, width, height }),
+        await client['engine/render-page']({ session, from, password: frameKey(image), into, page, width, height, withoutText }),
       );
       // THE SIZE IS KNOWN BEFORE THE HOST ANSWERS, so a count that is not the raster's is refused before anything is
       // read, and the read is held to the raster's own size.
@@ -630,6 +633,37 @@ export function remotePdfiumPageObjects(
         'engine/page-objects',
         await client['engine/page-objects']({ session, from, password: frameKey(image), page }),
       );
+    } finally {
+      await transfer.removeSnapshot(area, from);
+    }
+  };
+}
+
+/**
+ * One page's own content, over the boundary ([ADR-0210](../../../../docs/DECISIONS/0210-the-editable-powerpoint-export-is-built-from-two-host-reads-and-a-slide-model.md)).
+ *
+ * `remotePdfiumRenderPage`'s round trip with a metadata answer beside the file: the image is written, the channel is called
+ * naming where to put the pictures, the pictures are taken back at exactly the count the host announced, and both files go.
+ * `assemblePageContent` then checks every claim the host made about those bytes before anything is sliced.
+ */
+export function remotePdfiumPageContent(
+  client: ClientApi<PdfiumChannels>,
+  held: () => PdfiumArea,
+  transfer: PdfiumTransfer,
+): (image: ImageSession, page: number) => Promise<PageContent> {
+  return async (image, page) => {
+    const { session, area } = held();
+    const from = transfer.mintName();
+    const into = transfer.mintName();
+    await transfer.writeSnapshot(area, from, image.bytes);
+    try {
+      const answer = answered(
+        'engine/page-content',
+        await client['engine/page-content']({ session, from, password: frameKey(image), into, page }),
+      );
+      const blob = await takeAnnounced(transfer, area, into, answer.imageBytes);
+      const { imageBytes: _imageBytes, ...content } = answer;
+      return assemblePageContent(content, blob);
     } finally {
       await transfer.removeSnapshot(area, from);
     }

@@ -7,6 +7,7 @@ import {
   LAYERS_PART,
   PAGE_LINKS_PART,
   PAGE_OBJECTS_PART,
+  POWERPOINT_FALLBACK_LISTED_MAX,
   TEXT_BLOCKS_PART,
   type AiModelListAnswer,
   type AiProviderId,
@@ -2151,12 +2152,22 @@ function exportWordHandler(commands: DocumentCommands, mint: MintWritten): Contr
 function exportPowerPointHandler(commands: DocumentCommands, mint: MintWritten): ContractHandlers['document.exportPowerPoint'] {
   return async ({
     docId,
+    mode,
     pages,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.exportPowerPoint']>>> => {
     try {
-      const outcome = await commands.exportPowerPoint(docId, pages);
+      const outcome = await commands.exportPowerPoint(docId, pages, mode);
       if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
-      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
+      if (outcome.kind === 'copied') {
+        // THE COUNT IS EXACT AND THE LIST IS WHAT A SENTENCE CAN NAME (ADR-0210).
+        return ok({
+          kind: 'copied',
+          bytes: outcome.bytes,
+          fellBack: outcome.fellBack.slice(0, POWERPOINT_FALLBACK_LISTED_MAX),
+          fellBackCount: outcome.fellBack.length,
+          written: mint(outcome.destination),
+        } as const);
+      }
       if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
       return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
     } catch (thrown) {

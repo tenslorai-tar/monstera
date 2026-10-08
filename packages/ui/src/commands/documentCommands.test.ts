@@ -182,6 +182,10 @@ const NO_SCANS = {
   track: UNTRACKED,
 };
 
+/** The editable PowerPoint export's recognising, over a document with no scanned page (ADR-0210). */
+const NO_PAGES_TO_RECOGNISE = (): Promise<{ recognised: number; skipped: number; stopped: boolean }> =>
+  Promise.resolve({ recognised: 0, skipped: 4, stopped: false });
+
 /**
  * The unapplied-marks question answering *go ahead*, which is a document carrying no marks: every case that is not
  * about the question (item N1). The cases that are build their own and assert what was asked.
@@ -3319,7 +3323,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'plain', pages: CHOSEN_SET } }]);
     // ONLY THE PAGES ARE ASKED: the save dialog is main's, and a success is a toast, never a dialog.
-    expect(asked).toStrictEqual([{ id: 'dialog.export-text', props: { pageCount: 10, becomes: 'text' } }]);
+    expect(asked).toStrictEqual([{ id: 'dialog.export-text', props: { pageCount: 10 } }]);
   });
 
   it('CONTROL: a DISMISSED pages dialog exports nothing, for PowerPoint and both text exports', async () => {
@@ -3338,8 +3342,10 @@ describe('delete pages — the mutation-dialog gate', () => {
       expect(sent).toStrictEqual([]);
     }
     const { client, sent } = recording();
+    const recognise = vi.fn(NO_PAGES_TO_RECOGNISE);
     await exportPowerPointCommand({
       settleMarks: NOTHING_MARKED,
+      recognisePages: recognise,
       client,
       toast: () => undefined,
       stamp,
@@ -3348,6 +3354,8 @@ describe('delete pages — the mutation-dialog gate', () => {
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
     expect(sent).toStrictEqual([]);
+    // A DISMISSED DIALOG READS NO SCAN: recognising writes into the open document, so it waits for a yes.
+    expect(recognise).not.toHaveBeenCalled();
   });
 
   it('export to Word asks the mode, then dispatches EXACTLY that mode', async () => {
@@ -3377,25 +3385,128 @@ describe('delete pages — the mutation-dialog gate', () => {
     }
   });
 
-  it('export to PowerPoint asks which pages, then dispatches EXACTLY those pages (ADR-0161)', async () => {
-    const { client, sent } = recording({ 'document.exportPowerPoint': { kind: 'copied', bytes: 9, written: WRITTEN } });
-    const asked: unknown[] = [];
+  const POWERPOINT_COPIED = { kind: 'copied', bytes: 9, fellBack: [], fellBackCount: 0, written: WRITTEN } as const;
+
+  it('export to PowerPoint asks the mode and the pages, then dispatches EXACTLY them (ADR-0161, ADR-0210)', async () => {
+    // Each mode in turn, so a command that sent a fixed one passes for one of them at most.
+    for (const mode of ['editable', 'exact'] as const) {
+      const { client, sent } = recording({ 'document.exportPowerPoint': POWERPOINT_COPIED });
+      const asked: unknown[] = [];
+
+      await exportPowerPointCommand({
+        settleMarks: NOTHING_MARKED,
+        recognisePages: NO_PAGES_TO_RECOGNISE,
+        client,
+        toast: () => undefined,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve(id === 'dialog.export-powerpoint' ? { mode, pages: CHOSEN } : undefined);
+        },
+      }).run(CONTEXT);
+
+      expect(sent).toStrictEqual([{ id: 'document.exportPowerPoint', params: { docId: DOC, mode, pages: CHOSEN_SET } }]);
+      // NOTHING TO SAY: every page editable and no scan, so the toast tells it and no second dialog opens.
+      expect(asked).toStrictEqual([{ id: 'dialog.export-powerpoint', props: { pageCount: 10 } }]);
+    }
+  });
+
+  it('EDITABLE recognises the CHOSEN pages first; EXACT LOOK reads no scan at all', async () => {
+    const recognise = vi.fn(NO_PAGES_TO_RECOGNISE);
+    for (const mode of ['editable', 'exact'] as const) {
+      const { client } = recording({ 'document.exportPowerPoint': POWERPOINT_COPIED });
+      await exportPowerPointCommand({
+        settleMarks: NOTHING_MARKED,
+        recognisePages: recognise,
+        client,
+        toast: () => undefined,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id) => Promise.resolve(id === 'dialog.export-powerpoint' ? { mode, pages: CHOSEN } : undefined),
+      }).run(CONTEXT);
+    }
+    // ONE CALL, for the editable run, over exactly the pages chosen and not the document's.
+    expect(recognise).toHaveBeenCalledExactlyOnceWith(DOC, CHOSEN);
+  });
+
+  it('says which pages became pictures, and that words were added to the document, in ONE dialog after the file', async () => {
+    const { client, sent } = recording({
+      'document.exportPowerPoint': { kind: 'copied', bytes: 9, fellBack: [3, 7], fellBackCount: 2, written: WRITTEN },
+    });
+    const asked: { id: string; props: unknown }[] = [];
+    const toasts: string[] = [];
 
     await exportPowerPointCommand({
       settleMarks: NOTHING_MARKED,
+      recognisePages: () => Promise.resolve({ recognised: 4, skipped: 0, stopped: false }),
       client,
-      toast: () => undefined,
+      toast: (_kind, message) => toasts.push(message),
       stamp,
       signatures,
       onApplied: () => undefined,
       ask: (id, props) => {
         asked.push({ id, props });
-        return Promise.resolve(id === 'dialog.export-powerpoint' ? { pages: CHOSEN } : undefined);
+        return Promise.resolve(id === 'dialog.export-powerpoint' ? { mode: 'editable', pages: CHOSEN } : undefined);
       },
     }).run(CONTEXT);
 
-    expect(sent).toStrictEqual([{ id: 'document.exportPowerPoint', params: { docId: DOC, pages: CHOSEN_SET } }]);
-    expect(asked).toStrictEqual([{ id: 'dialog.export-powerpoint', props: { pageCount: 10, becomes: 'slides' } }]);
+    expect(sent).toHaveLength(1);
+    expect(toasts).toStrictEqual([TOAST_POWERPOINT_SAVED]);
+    expect(asked.at(-1)).toStrictEqual({
+      id: 'dialog.powerpoint-outcome',
+      props: { fellBack: [3, 7], fellBackCount: 2, recognised: 4, noModel: false },
+    });
+    expect(asked.filter((entry) => entry.id.startsWith('dialog.powerpoint'))).toHaveLength(1);
+  });
+
+  it('a STOPPED recognition writes no file and says how many pages already gained words; no model goes ahead and says so', async () => {
+    const stopped = recording({ 'document.exportPowerPoint': POWERPOINT_COPIED });
+    const askedStopped: { id: string; props: unknown }[] = [];
+    await exportPowerPointCommand({
+      settleMarks: NOTHING_MARKED,
+      recognisePages: () => Promise.resolve({ recognised: 3, skipped: 0, stopped: true }),
+      client: stopped.client,
+      toast: () => undefined,
+      stamp,
+      signatures,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        askedStopped.push({ id, props });
+        return Promise.resolve(id === 'dialog.export-powerpoint' ? { mode: 'editable', pages: CHOSEN } : undefined);
+      },
+    }).run(CONTEXT);
+    expect(stopped.sent).toStrictEqual([]);
+    expect(askedStopped.at(-1)).toStrictEqual({
+      id: 'dialog.powerpoint-outcome',
+      props: { fellBack: [], fellBackCount: 0, recognised: 3, noModel: false },
+    });
+
+    // CONTROL: with no model the export still goes ahead, and the pages that fell back are explained.
+    const noModel = recording({
+      'document.exportPowerPoint': { kind: 'copied', bytes: 9, fellBack: [2], fellBackCount: 1, written: WRITTEN },
+    });
+    const askedNoModel: { id: string; props: unknown }[] = [];
+    await exportPowerPointCommand({
+      settleMarks: NOTHING_MARKED,
+      recognisePages: () => Promise.resolve('no-model'),
+      client: noModel.client,
+      toast: () => undefined,
+      stamp,
+      signatures,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        askedNoModel.push({ id, props });
+        return Promise.resolve(id === 'dialog.export-powerpoint' ? { mode: 'editable', pages: CHOSEN } : undefined);
+      },
+    }).run(CONTEXT);
+    expect(noModel.sent).toHaveLength(1);
+    expect(askedNoModel.at(-1)).toStrictEqual({
+      id: 'dialog.powerpoint-outcome',
+      props: { fellBack: [2], fellBackCount: 1, recognised: 0, noModel: true },
+    });
   });
 
   describe('export as PDF/A (ADR-0075)', () => {
@@ -4389,7 +4500,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     }).run(CONTEXT);
 
     // ITS OWN DIALOG, titled for the layout export, over the same body as plain text's.
-    expect(asked).toStrictEqual([{ id: 'dialog.export-layout-text', props: { pageCount: 10, becomes: 'text' } }]);
+    expect(asked).toStrictEqual([{ id: 'dialog.export-layout-text', props: { pageCount: 10 } }]);
     expect(sent).toStrictEqual([{ id: 'document.exportText', params: { docId: DOC, mode: 'layout', pages: CHOSEN_SET } }]);
   });
 
@@ -4416,7 +4527,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       }).run(CONTEXT);
 
       expect(spoken).toStrictEqual([
-        { id: 'dialog.export-layout-text', props: { pageCount: 10, becomes: 'text' } },
+        { id: 'dialog.export-layout-text', props: { pageCount: 10 } },
         { id: 'dialog.save-problem', props: { outcome } },
       ]);
     }
@@ -4442,7 +4553,7 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     // THE WHOLE LIST (audit PPPPPPP-5), as the layout case above has it: the pages dialog, then the problem, and nothing else.
     expect(spoken).toStrictEqual([
-      { id: 'dialog.export-text', props: { pageCount: 10, becomes: 'text' } },
+      { id: 'dialog.export-text', props: { pageCount: 10 } },
       { id: 'dialog.save-problem', props: { outcome: 'contested' } },
     ]);
   });
@@ -6488,9 +6599,9 @@ describe('every file write confirms, and its Show in folder reveals the file the
     {
       name: 'PowerPoint',
       message: TOAST_POWERPOINT_SAVED,
-      answers: { 'document.exportPowerPoint': COPIED },
-      dialogs: [{ pages: [0] }],
-      run: (deps) => exportPowerPointCommand(deps).run(CONTEXT),
+      answers: { 'document.exportPowerPoint': { ...COPIED, fellBack: [], fellBackCount: 0 } },
+      dialogs: [{ mode: 'exact', pages: [0] }],
+      run: (deps) => exportPowerPointCommand({ ...deps, recognisePages: NO_PAGES_TO_RECOGNISE }).run(CONTEXT),
     },
     {
       name: 'Excel',

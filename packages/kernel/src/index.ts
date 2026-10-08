@@ -306,6 +306,7 @@ export {
   type PdfiumInputKeeper,
   type PdfiumTransfer,
   regeneratedBy,
+  remotePdfiumPageContent,
   remotePdfiumPageObjects,
   remotePdfiumPageRuns,
   remotePdfiumRenderPage,
@@ -541,12 +542,28 @@ export { type StructureOutline, structureOutlineOf } from './structureOutline.js
 export { type OoxmlPart, ooxmlPackage, xmlText } from './ooxmlPackage.js';
 export { type WordMode, type WordPage, type WordPictureDrawer, baseFontName, wordDocumentParts } from './wordDocument.js';
 export {
+  type EditablePage,
+  type ExactPage,
   type PresentationPage,
   fittedPicture,
   pictureScale,
   presentationParts,
   slideSize,
 } from './presentationDocument.js';
+// THE EDITABLE POWERPOINT EXPORT (ADR-0210). Pure: a page's content in, slide objects and PresentationML out.
+export type { ContentBounds, ContentRun, PageContent } from './presentationContent.js';
+export type { EmbeddedSource, ResolvedSlide } from './editableSlide.js';
+export {
+  type EditableSlide,
+  type FallbackReason,
+  type PictureSource,
+  type SlideBuild,
+  type SlidePicture,
+  buildSlide,
+  isRecognisedScan,
+  regionOfFrame,
+} from './slideModel.js';
+export { type PictureResolvers, type Raster, cutFromRaster, resolveSlide } from './slideResolve.js';
 export { rasterScale } from './rasterScale.js';
 export {
   type CellValue,

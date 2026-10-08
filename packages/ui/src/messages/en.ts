@@ -486,6 +486,17 @@ export const SCAN_SENDS_AZURE = messageKey('dialog.scan.sends-azure');
 export const SCAN_WORD_OUTPUT_NOTE = messageKey('dialog.scan.word-output-note');
 export const EXPORT_POWERPOINT_TITLE = messageKey('dialog.export-powerpoint.title');
 export const EXPORT_POWERPOINT_PAGES_NOTE = messageKey('dialog.export-powerpoint.pages-note');
+export const EXPORT_POWERPOINT_MODE = messageKey('dialog.export-powerpoint.mode');
+export const EXPORT_POWERPOINT_MODE_NOTE = messageKey('dialog.export-powerpoint.mode-note');
+export const EXPORT_POWERPOINT_EDITABLE = messageKey('dialog.export-powerpoint.editable');
+export const EXPORT_POWERPOINT_EDITABLE_NOTE = messageKey('dialog.export-powerpoint.editable-note');
+export const EXPORT_POWERPOINT_EXACT = messageKey('dialog.export-powerpoint.exact');
+export const EXPORT_POWERPOINT_EXACT_NOTE = messageKey('dialog.export-powerpoint.exact-note');
+export const POWERPOINT_OUTCOME_TITLE = messageKey('dialog.powerpoint-outcome.title');
+export const POWERPOINT_OUTCOME_FELL_BACK = messageKey('dialog.powerpoint-outcome.fell-back');
+export const POWERPOINT_OUTCOME_FELL_BACK_MORE = messageKey('dialog.powerpoint-outcome.fell-back-more');
+export const POWERPOINT_OUTCOME_RECOGNISED = messageKey('dialog.powerpoint-outcome.recognised');
+export const POWERPOINT_OUTCOME_NO_MODEL = messageKey('dialog.powerpoint-outcome.no-model');
 export const EXPORT_TEXT_TITLE = messageKey('dialog.export-text.title');
 export const EXPORT_LAYOUT_TEXT_TITLE = messageKey('dialog.export-layout-text.title');
 export const EXPORT_TEXT_PAGES_NOTE = messageKey('dialog.export-text.pages-note');
@@ -5439,6 +5450,27 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'The Word file holds the words only. They are also kept, unseen, in this document so they can be searched, and Undo takes them out again.',
   [EXPORT_POWERPOINT_TITLE]: 'Export to PowerPoint',
   [EXPORT_POWERPOINT_PAGES_NOTE]: 'Each page becomes one slide.',
+  [EXPORT_POWERPOINT_MODE]: 'What should the slides hold?',
+  // THE SCAN SENTENCE LIVES HERE because it is true of the choice, not of one option: a scanned page is the case where
+  // editing needs words the file does not have yet, and the person should read what that costs before choosing.
+  [EXPORT_POWERPOINT_MODE_NOTE]:
+    'A scanned page keeps its picture, and the words found on it are laid over it as text you can edit. Those words are also added to this document, and Undo takes them out.',
+  [EXPORT_POWERPOINT_EDITABLE]: 'Editable',
+  [EXPORT_POWERPOINT_EDITABLE_NOTE]:
+    'Words, pictures and simple shapes become real slide objects you can change. Text is drawn with the fonts on the computer that opens the file, so a line can look a little different.',
+  [EXPORT_POWERPOINT_EXACT]: 'Exact look',
+  [EXPORT_POWERPOINT_EXACT_NOTE]:
+    'Each page is one picture, so the slide looks exactly like the page. Nothing on it can be edited.',
+  [POWERPOINT_OUTCOME_TITLE]: 'PowerPoint file saved',
+  // THE PAGES THAT COULD NOT BE MADE EDITABLE, by the numbers a person counts them by (ADR-0210). `{pages}` is already
+  // joined, and `{more}` is how many the list does not name.
+  [POWERPOINT_OUTCOME_FELL_BACK]:
+    '{count, plural, one {Page {pages} could not be made editable, so it is saved as a picture of the page.} other {These pages could not be made editable, so they are saved as pictures of the page: {pages}.}}',
+  [POWERPOINT_OUTCOME_FELL_BACK_MORE]: 'And {more} more.',
+  [POWERPOINT_OUTCOME_RECOGNISED]:
+    '{count, plural, one {The words on one scanned page were read and added to this document. Undo takes them out.} other {The words on # scanned pages were read and added to this document. Undo takes them out.}}',
+  [POWERPOINT_OUTCOME_NO_MODEL]:
+    'Scanned pages stay pictures because no text recognition language is installed on this computer.',
   [EXPORT_TEXT_TITLE]: 'Export text',
   [EXPORT_LAYOUT_TEXT_TITLE]: 'Export text with layout',
   [EXPORT_TEXT_PAGES_NOTE]: 'The text file holds these pages, in order.',

@@ -94,6 +94,17 @@ export const PDFIUM_ADAPTER = [
 ];
 
 /**
+ * The page-content read's edges: the adapter, and the channels module whose bounds the proof reads the image budget from
+ * (ADR-0210), so a stale build cannot hold the proof to yesterday's pixel limit.
+ *
+ * @type {BuildEdge[]}
+ */
+export const PDFIUM_PAGE_CONTENT = [
+  ...PDFIUM_ADAPTER,
+  ['packages/kernel/src/host/pdfiumChannels.ts', 'packages/kernel/dist/host/pdfiumChannels.js', 'tsc'],
+];
+
+/**
  * The routing a PDFium COMMAND is dispatched through, plus the adapter beneath
  * it.
  *
@@ -337,6 +348,21 @@ export const RTL_TEXT = [
 ];
 
 /**
+ * What `rtlDeck.proof.mjs` runs: the page-content read, the slide model and the part writers that turn it into a deck, and
+ * the engine that draws the page it reads (ADR-0210, ADR-0128).
+ *
+ * @type {readonly BuildEdge[]}
+ */
+export const RTL_DECK = [
+  ...PDFIUM_PAGE_CONTENT,
+  ['packages/kernel/src/slideModel.ts', 'packages/kernel/dist/slideModel.js', 'tsc'],
+  ['packages/kernel/src/slideResolve.ts', 'packages/kernel/dist/slideResolve.js', 'tsc'],
+  ['packages/kernel/src/pageContentAssemble.ts', 'packages/kernel/dist/pageContentAssemble.js', 'tsc'],
+  ['packages/kernel/src/presentationDocument.ts', 'packages/kernel/dist/presentationDocument.js', 'tsc'],
+  ...RTL_TEXT,
+];
+
+/**
  * What `wordPictures.proof.mjs` exports through: the composer the MuPDF host runs, the part writer, the one reader of
  * MuPDF's structured text, and the native engine they draw with (ADR-0072's amendment of 2026-10-01).
  *
@@ -497,6 +523,8 @@ export const ARTEFACT_EDGES = {
   // so the same edges: the adapter, the two that dispatch to it, and the table
   // that says they should.
   'proof:pdfiumobject': PDFIUM_OBJECT,
+  // The page-content read (ADR-0210): the adapter and the channels module its image budget comes from.
+  'proof:pdfiumcontent': PDFIUM_PAGE_CONTENT,
   // The fidelity proof drives the same built adapter, and reads pixels rather
   // than text: it is the guard that an edit does not silently redraw the page.
   'proof:editfidelity': PDFIUM_ADAPTER,
@@ -542,6 +570,8 @@ export const ARTEFACT_EDGES = {
   'proof:wordpictures': WORD_PICTURES,
   // HEBREW AND ARABIC IN TEXT MARKS, read back by pdf.js after MuPDF's bake (ADR-0128).
   'proof:rtltext': RTL_TEXT,
+  // THE EDITABLE DECK'S HEBREW AND ARABIC, through the real read and the slide model (ADR-0210).
+  'proof:rtldeck': RTL_DECK,
   // THE READER CHANNEL'S TEARDOWN on the shipped thread, which used to abort the process when it terminated it.
   'proof:readerdispose': READER_DISPOSE,
   // THE ENGINE HOST'S WIN32 HARDENING on the shipped surfaces (the code review of 2026-10-03).

@@ -896,7 +896,7 @@ describe('every export to another format, and Print, REQUIRE their pages (ADR-01
   const requests = {
     'document.exportText': { docId, mode: 'plain', pages: [[0, 2]] },
     'document.exportWord': { docId, mode: 'rich', pages: [[0, 2]] },
-    'document.exportPowerPoint': { docId, pages: [[0, 2]] },
+    'document.exportPowerPoint': { docId, mode: 'editable', pages: [[0, 2]] },
     'document.exportExcel': { docId, layout: 'one-sheet', engine: 'automatic', version: asDocVersion(3), pages: [[0, 2]], edits: [] },
     'document.print': { docId, dpi: 300, pages: [[0, 2]] },
   } as const;

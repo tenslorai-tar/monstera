@@ -363,7 +363,7 @@ export function pdfiumTaggedPrior<K extends KindsRoutedTo<'pdfium'>>(
   return { kind, prior } as PdfiumCapturedPrior;
 }
 
-export const pdfiumChannels = {
+const basePdfiumChannels = {
   ...coreEngineChannels({
     command: pdfiumCommandSchema,
     capture: pdfiumCaptureSchema,
@@ -646,6 +646,13 @@ export const pdfiumChannels = {
         page: z.number().int().nonnegative(),
         width: z.number().int().positive(),
         height: z.number().int().positive(),
+        /**
+         * Render with the page's text objects removed from the in-memory page (ADR-0210 Decision 1): the picture an
+         * editable slide cuts a shading or a clipped drawing from, so no word is drawn twice. REQUIRED, so a caller
+         * that forgot it is a compile error rather than a render that quietly kept the words. The host holds no
+         * document between calls, so nothing persists.
+         */
+        withoutText: z.boolean(),
       })
       .strict(),
     z
@@ -708,6 +715,169 @@ export const pdfiumChannels = {
     'Answers a page’s joined text runs with the objects each is, and the page indices of its text objects.',
     z.object({ session: sessionSchema, ...byteImageWire.read, page: z.number().int().nonnegative() }).strict(),
     pageRunsSchema,
+    ['no-such-session', 'asset-missing', 'engine-refused'],
+  ),
+} as const;
+
+/** The page-content answer's bounds, declared once and read by the schema, the walk and the proof (ADR-0210). */
+export const PAGE_CONTENT_RUNS_MAX = 8_192;
+export const PAGE_CONTENT_IMAGES_MAX = 256;
+export const PAGE_CONTENT_PATHS_MAX = 4_096;
+export const PAGE_CONTENT_SEGMENTS_PER_PATH_MAX = 256;
+/** Across a page, so the answer's worst case is a number rather than a product of two bounds. */
+export const PAGE_CONTENT_SEGMENTS_MAX = 20_000;
+export const PAGE_CONTENT_OPAQUE_MAX = 2_048;
+/** The largest image the host embeds, in pixels: 16 megapixels, ADR-0072's slide-picture budget. */
+export const PAGE_CONTENT_IMAGE_PIXELS_MAX = 16_000_000;
+/** The most image bytes one page writes beside its answer; an image past it is answered as opaque. */
+export const PAGE_CONTENT_BLOB_MAX = 128 * 1024 * 1024;
+
+const contentBoundsSchema = z.object({ left: z.number(), bottom: z.number(), right: z.number(), top: z.number() }).strict();
+const contentColourSchema = z
+  .object({
+    r: z.number().int().min(0).max(255),
+    g: z.number().int().min(0).max(255),
+    b: z.number().int().min(0).max(255),
+    a: z.number().int().min(0).max(255),
+  })
+  .strict();
+const contentSegmentSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('move'), x: z.number(), y: z.number() }).strict(),
+  z.object({ kind: z.literal('line'), x: z.number(), y: z.number() }).strict(),
+  z
+    .object({
+      kind: z.literal('curve'),
+      x1: z.number(),
+      y1: z.number(),
+      x2: z.number(),
+      y2: z.number(),
+      x: z.number(),
+      y: z.number(),
+    })
+    .strict(),
+  z.object({ kind: z.literal('close') }).strict(),
+]);
+
+/**
+ * The text run this page-content answer carries is `engine/text-runs`' run and one field more, read FROM that channel's own
+ * schema rather than restated: two lists of what a run is would be two opinions about it (B3a).
+ */
+const textRunShape = basePdfiumChannels['engine/text-runs'].result.shape.runs.element.shape;
+
+/** The PDFium host's channel map. */
+export const pdfiumChannels = {
+  ...basePdfiumChannels,
+
+  /**
+   * PDFium's **third** read: one page's own content, for the editable PowerPoint export
+   * ([ADR-0210](../../../../docs/DECISIONS/0210-the-editable-powerpoint-export-is-built-from-two-host-reads-and-a-slide-model.md)).
+   *
+   * ## Forms are flattened first, in the host's in-memory page
+   *
+   * The walk calls `promoteFormObjects` before it reads, so text inside a form is ordinary page text and an object inside
+   * one is on the page with its matrix composed by the walk the editor already trusts. The host holds no document between
+   * calls, so nothing persists.
+   *
+   * ## The answer is metadata and the pictures are beside it
+   *
+   * The answer crosses in a file (it can outgrow a frame), and the image bytes are written to the granted output named by
+   * `into`, as `engine/render-page`'s raster is: a page's pictures are megabytes. The answer says how many bytes it wrote
+   * and where each image lies; main refuses an offset outside what was written.
+   *
+   * ## Only what a shape can be is a shape
+   *
+   * A path is answered whole only when it is a solid fill and a solid undashed line with no clip narrower than itself.
+   * Every other painted path, a shading, and an image that is masked, clipped, past the pixel budget or past the byte budget
+   * is answered as `opaque`: its place, to be cut from a render with no text. The decision is made once, here.
+   */
+  'engine/page-content': fileAnswered(
+    'Answers a page’s own content: its frame, text runs, pictures, shapes and the places it cannot write natively.',
+    z
+      .object({
+        session: sessionSchema,
+        ...byteImageWire.read,
+        ...byteImageWire.write,
+        page: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z
+      .object({
+        frame: z
+          .object({
+            crop: z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() }).strict(),
+            rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
+          })
+          .strict(),
+        runs: z
+          .array(
+            z
+              .object({
+                ...textRunShape,
+                invisible: z.boolean(),
+                turn: z
+                  .object({
+                    angle: z.number(),
+                    quad: z.tuple([
+                      z.number(),
+                      z.number(),
+                      z.number(),
+                      z.number(),
+                      z.number(),
+                      z.number(),
+                      z.number(),
+                      z.number(),
+                    ]),
+                  })
+                  .strict()
+                  .nullable(),
+              })
+              .strict(),
+          )
+          .max(PAGE_CONTENT_RUNS_MAX),
+        images: z
+          .array(
+            z
+              .object({
+                index: z.number().int().nonnegative(),
+                matrix: z.tuple([z.number(), z.number(), z.number(), z.number(), z.number(), z.number()]),
+                bounds: contentBoundsSchema,
+                width: z.number().int().positive(),
+                height: z.number().int().positive(),
+                format: z.enum(['jpeg', 'bgra']),
+                offset: z.number().int().nonnegative().max(PAGE_CONTENT_BLOB_MAX),
+                length: z.number().int().positive().max(PAGE_CONTENT_BLOB_MAX),
+              })
+              .strict(),
+          )
+          .max(PAGE_CONTENT_IMAGES_MAX),
+        paths: z
+          .array(
+            z
+              .object({
+                index: z.number().int().nonnegative(),
+                bounds: contentBoundsSchema,
+                segments: z.array(contentSegmentSchema).max(PAGE_CONTENT_SEGMENTS_PER_PATH_MAX),
+                fill: contentColourSchema.nullable(),
+                stroke: contentColourSchema
+                  .extend({
+                    width: z.number().nonnegative(),
+                    cap: z.enum(['butt', 'round', 'square']),
+                    join: z.enum(['miter', 'round', 'bevel']),
+                  })
+                  .nullable(),
+              })
+              .strict(),
+          )
+          .max(PAGE_CONTENT_PATHS_MAX),
+        opaque: z
+          .array(z.object({ index: z.number().int().nonnegative(), bounds: contentBoundsSchema }).strict())
+          .max(PAGE_CONTENT_OPAQUE_MAX),
+        unaddressable: z.number().int().nonnegative().max(PDFIUM_PRIOR_TEXT_MAX),
+        truncated: z.boolean(),
+        /** The bytes written to `into`: the images' blob. */
+        imageBytes: z.number().int().nonnegative().max(PAGE_CONTENT_BLOB_MAX),
+      })
+      .strict(),
     ['no-such-session', 'asset-missing', 'engine-refused'],
   ),
 } as const;

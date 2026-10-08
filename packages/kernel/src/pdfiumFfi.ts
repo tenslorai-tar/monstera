@@ -28,7 +28,30 @@ import { namedSubset } from './fontSubset.js';
 import { type DrawnGlyph, runFontFor } from './runFont.js';
 import { withoutSubsetTag } from './subsetName.js';
 import { ShapingFace } from './textShaping.js';
-import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
+import {
+  ENGINE_TEXT_OBJECTS_MAX,
+  PAGE_CONTENT_BLOB_MAX,
+  PAGE_CONTENT_IMAGES_MAX,
+  PAGE_CONTENT_IMAGE_PIXELS_MAX,
+  PAGE_CONTENT_OPAQUE_MAX,
+  PAGE_CONTENT_PATHS_MAX,
+  PAGE_CONTENT_RUNS_MAX,
+  PAGE_CONTENT_SEGMENTS_MAX,
+  PAGE_CONTENT_SEGMENTS_PER_PATH_MAX,
+  PDFIUM_FONT_NAME_MAX,
+} from './host/pdfiumChannels.js';
+import type {
+  ContentBounds,
+  ContentColour,
+  ContentImageHeader,
+  ContentOpaque,
+  ContentPath,
+  ContentSegment,
+  ContentTurn,
+  Matrix6,
+  PageContent,
+} from './presentationContent.js';
+import { readingOrder, rightToLeftCount } from './readingOrder.js';
 import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
 import { EditRefusedError, ReplaceMovesLineError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
 import { readInLineOrder } from './bidiLine.js';
@@ -186,6 +209,34 @@ interface Bound {
   readonly bitmapBuffer: Native;
   readonly bitmapStride: Native;
   readonly destroyBitmap: Native;
+  // THE PAGE-CONTENT READ (ADR-0210): a page's pictures, paths and the clips that narrow them.
+  readonly pageRotation: Native;
+  readonly textRenderMode: Native;
+  readonly rotatedBounds: Native;
+  readonly imagePixelSize: Native;
+  readonly imageFilterCount: Native;
+  readonly imageFilter: Native;
+  readonly imageDataRaw: Native;
+  readonly imageMetadata: Native;
+  readonly imageBitmap: Native;
+  readonly imageRenderedBitmap: Native;
+  readonly bitmapWidth: Native;
+  readonly bitmapHeight: Native;
+  readonly bitmapFormat: Native;
+  readonly clipPath: Native;
+  readonly clipPathCount: Native;
+  readonly clipSegmentCount: Native;
+  readonly clipSegment: Native;
+  readonly pathSegmentCount: Native;
+  readonly pathSegment: Native;
+  readonly segmentType: Native;
+  readonly segmentClose: Native;
+  readonly pathDrawMode: Native;
+  readonly strokeColour: Native;
+  readonly strokeWidth: Native;
+  readonly lineCap: Native;
+  readonly lineJoin: Native;
+  readonly dashCount: Native;
 }
 
 /**
@@ -276,6 +327,26 @@ export function openPdfium(libraryPath: string): void {
   // FS_RECTF, the same way, for the page's bounding box in its own coordinates — where a CropBox
   // origin is not zero, the page's left edge is not zero either.
   koffi.struct('FS_RECTF', { left: 'float', top: 'float', right: 'float', bottom: 'float' });
+  koffi.struct('FS_QUADPOINTSF', {
+    x1: 'float',
+    y1: 'float',
+    x2: 'float',
+    y2: 'float',
+    x3: 'float',
+    y3: 'float',
+    x4: 'float',
+    y4: 'float',
+  });
+  // An image's colour space and depth, which decide whether its own bytes can stand as a JPEG (ADR-0210).
+  koffi.struct('FPDF_IMAGEOBJ_METADATA', {
+    width: 'unsigned int',
+    height: 'unsigned int',
+    horizontal_dpi: 'float',
+    vertical_dpi: 'float',
+    bits_per_pixel: 'unsigned int',
+    colorspace: 'int',
+    marked_content_id: 'int',
+  });
 
   const api: Bound = {
     writeBlock,
@@ -586,6 +657,51 @@ export function openPdfium(libraryPath: string): void {
     // in appearance and a copying one in fact.
     bitmapStride: native(library.func('int FPDFBitmap_GetStride(void *bitmap)')),
     destroyBitmap: native(library.func('void FPDFBitmap_Destroy(void *bitmap)')),
+    // THE PAGE-CONTENT READ'S CALLS (ADR-0210). Each answers a number or a handle owned by the object it came from, so
+    // nothing here is freed except the two bitmaps the read itself asks for.
+    pageRotation: native(library.func('int FPDFPage_GetRotation(void *page)')),
+    // 3 IS INVISIBLE: the layer recognition writes over a scan, which is how a scanned page is told from a typed one.
+    textRenderMode: native(library.func('int FPDFTextObj_GetTextRenderMode(void *text_object)')),
+    // THE FOUR CORNERS of an object's bounds turned with it: how a turned run's own width and height are known, which
+    // its axis-aligned bounds cannot say (ADR-0210).
+    rotatedBounds: native(library.func('int FPDFPageObj_GetRotatedBounds(void *page_object, _Out_ FS_QUADPOINTSF *quad_points)')),
+    imagePixelSize: native(
+      library.func('int FPDFImageObj_GetImagePixelSize(void *image_object, _Out_ unsigned int *width, _Out_ unsigned int *height)'),
+    ),
+    imageFilterCount: native(library.func('int FPDFImageObj_GetImageFilterCount(void *image_object)')),
+    imageFilter: native(
+      library.func('unsigned long FPDFImageObj_GetImageFilter(void *image_object, int index, _Out_ uint8_t *buffer, unsigned long buflen)'),
+    ),
+    imageDataRaw: native(
+      library.func('unsigned long FPDFImageObj_GetImageDataRaw(void *image_object, _Out_ uint8_t *buffer, unsigned long buflen)'),
+    ),
+    imageMetadata: native(
+      library.func('int FPDFImageObj_GetImageMetadata(void *image_object, void *page, _Out_ FPDF_IMAGEOBJ_METADATA *metadata)'),
+    ),
+    // THE DECODED PIXELS, with no mask; and the RENDERED bitmap, which applies the mask and is what shows whether one exists.
+    imageBitmap: native(library.func('void *FPDFImageObj_GetBitmap(void *image_object)')),
+    imageRenderedBitmap: native(library.func('void *FPDFImageObj_GetRenderedBitmap(void *document, void *page, void *image_object)')),
+    bitmapWidth: native(library.func('int FPDFBitmap_GetWidth(void *bitmap)')),
+    bitmapHeight: native(library.func('int FPDFBitmap_GetHeight(void *bitmap)')),
+    bitmapFormat: native(library.func('int FPDFBitmap_GetFormat(void *bitmap)')),
+    clipPath: native(library.func('void *FPDFPageObj_GetClipPath(void *page_object)')),
+    clipPathCount: native(library.func('int FPDFClipPath_CountPaths(void *clip_path)')),
+    clipSegmentCount: native(library.func('int FPDFClipPath_CountPathSegments(void *clip_path, int path_index)')),
+    clipSegment: native(library.func('void *FPDFClipPath_GetPathSegment(void *clip_path, int path_index, int segment_index)')),
+    pathSegmentCount: native(library.func('int FPDFPath_CountSegments(void *path)')),
+    pathSegment: native(library.func('void *FPDFPath_GetPathSegment(void *path, int index)')),
+    segmentType: native(library.func('int FPDFPathSegment_GetType(void *segment)')),
+    segmentClose: native(library.func('int FPDFPathSegment_GetClose(void *segment)')),
+    pathDrawMode: native(library.func('int FPDFPath_GetDrawMode(void *path, _Out_ int *fillmode, _Out_ int *stroke)')),
+    strokeColour: native(
+      library.func(
+        'int FPDFPageObj_GetStrokeColor(void *page_object, _Out_ unsigned int *r, _Out_ unsigned int *g, _Out_ unsigned int *b, _Out_ unsigned int *a)',
+      ),
+    ),
+    strokeWidth: native(library.func('int FPDFPageObj_GetStrokeWidth(void *page_object, _Out_ float *width)')),
+    lineCap: native(library.func('int FPDFPageObj_GetLineCap(void *page_object)')),
+    lineJoin: native(library.func('int FPDFPageObj_GetLineJoin(void *page_object)')),
+    dashCount: native(library.func('int FPDFPageObj_GetDashCount(void *page_object)')),
   };
   api.initialise();
   bound = api;
@@ -1218,6 +1334,15 @@ function walkRuns(
   readonly runs: ReadonlyMap<number, WalkedRun>;
   readonly unaddressable: number;
   /**
+   * {@link unaddressable} less the characters that are whitespace: the space PDFium puts between two text objects of a
+   * right-to-left line belongs to no object and is no word a page can lose (measured 2026-10-08, PDFium 153.0.7999.0:
+   * a Hebrew line drawn one object per word counted one per gap). Beside the count rather than in it, since the
+   * editor's reading of it is its own.
+   */
+  readonly unaddressableInk: number;
+  /** Each drawn character of each object, in the order PDFium answered it, with where it starts across the page. */
+  readonly glyphs: ReadonlyMap<number, readonly { readonly char: string; readonly left: number }[]>;
+  /**
    * Where each run's last ADVANCE ends, by object index: the furthest right edge of its characters' loose boxes, which
    * is where text after it starts. A run's `right` is its ink's, and two strings of one width end their ink at
    * different places (measured: `WID` and `WDI` in Helvetica). Beside the runs rather than in them, since a run is
@@ -1239,7 +1364,9 @@ function walkRuns(
     /** index -> the run being accumulated. Insertion order is reading order. */
     const runs = new Map<number, WalkedRun>();
     const ends = new Map<number, number>();
+    const glyphs = new Map<number, { char: string; left: number }[]>();
     let unaddressable = 0;
+    let unaddressableInk = 0;
     /** The run the last DRAWN character joined, for a generated space to follow. */
     let previous: WalkedRun | undefined;
     /** Generated characters seen since the last drawn one. */
@@ -1259,6 +1386,7 @@ function walkRuns(
       // here.
       if (index === undefined) {
         unaddressable += 1;
+        if (character.trim() !== '') unaddressableInk += 1;
         pending = '';
         continue;
       }
@@ -1297,9 +1425,15 @@ function walkRuns(
       }
       held.text += character;
       const loose: Record<string, number> = {};
-      if (numberFrom(bindings.looseCharBox(textPage, at, loose), 'FPDFText_GetLooseCharBox') === 1) {
+      const hasLoose = numberFrom(bindings.looseCharBox(textPage, at, loose), 'FPDFText_GetLooseCharBox') === 1;
+      if (hasLoose) {
         ends.set(index, Math.max(ends.get(index) ?? Number.NEGATIVE_INFINITY, loose['right'] ?? Number.NEGATIVE_INFINITY));
       }
+      // WHERE EACH DRAWN CHARACTER SITS, for the export's reading order of right-to-left text: PDFium's own order of
+      // such text differs by producer, and the places do not.
+      const placed = glyphs.get(index) ?? [];
+      placed.push({ char: character, left: inked ? x0 : (loose['left'] ?? x0) });
+      glyphs.set(index, placed);
       // THE UNION, so a run's extent covers every character in it. A run sized
       // from its first character alone would lose an ascender and stop
       // overlapping the neighbour it shares a line with.
@@ -1326,7 +1460,9 @@ function walkRuns(
           .map(([index, run]) => [index, { ...run, drawn: readBackOf(run.text), text: logicalOf(run.text) }] as const),
       ),
       unaddressable,
+      unaddressableInk,
       ends,
+      glyphs,
     };
   } finally {
     bindings.closeTextPage(textPage);
@@ -4479,8 +4615,15 @@ export function renderPageBitmap(
   page: number,
   width: number,
   height: number,
+  withoutText = false,
 ): Promise<PageBitmap> {
-  return promised(() => onPage(session, page, (handle) => rasteriseOn(api(), handle, width, height)));
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      // ADR-0210: the text objects leave the IN-MEMORY page before it is drawn, and nothing regenerates or saves it.
+      if (withoutText) removeTextObjects(api(), handle);
+      return rasteriseOn(api(), handle, width, height);
+    }),
+  );
 }
 
 /** A page already loaded, rasterised at exactly `width` by `height`: the one raster reader (B3a), by {@link renderPageBitmap} and by a scan's paper. */
@@ -4516,6 +4659,491 @@ function rasteriseOn(bindings: Bound, handle: unknown, width: number, height: nu
   } finally {
     bindings.destroyBitmap(bitmap);
   }
+}
+
+/**
+ * Removes every text object from the in-memory page and frees it, so what is drawn next has no words in it.
+ * Collected before anything is removed: removing renumbers what is left. No `generate`, no save: nothing here is kept.
+ */
+function removeTextObjects(bindings: Bound, handle: unknown): void {
+  const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  const texts: unknown[] = [];
+  for (let index = 0; index < total; index += 1) {
+    const object: unknown = bindings.getObject(handle, index);
+    if (object !== null && numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') === TEXT_OBJECT) {
+      texts.push(object);
+    }
+  }
+  for (const object of texts) {
+    if (numberFrom(bindings.removeObject(handle, object), 'FPDFPage_RemoveObject') === 1) bindings.destroyObject(object);
+  }
+}
+
+/**
+ * One page rendered with no text in it: form text first flattened onto the page (so it is a page object to remove), then
+ * {@link renderPageBitmap} without text ([ADR-0210](../../../docs/DECISIONS/0210-the-editable-powerpoint-export-is-built-from-two-host-reads-and-a-slide-model.md)
+ * Decision 6). The picture an editable slide cuts a shading or a clipped drawing from.
+ */
+export async function renderPageBitmapWithoutText(
+  session: PdfiumSession,
+  page: number,
+  width: number,
+  height: number,
+): Promise<PageBitmap> {
+  await promoteFormObjects(session, page);
+  return await renderPageBitmap(session, page, width, height, true);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// THE PAGE-CONTENT READ (ADR-0210)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** `FPDFImageObj_GetImageMetadata`'s colour spaces that a JPEG stream can stand for as it is: device grey and device RGB. */
+const COLOURSPACE_GRAY = 1;
+const COLOURSPACE_RGB = 2;
+/** `FPDFBitmap_Format`'s values this read converts. */
+const BITMAP_GRAY = 1;
+const BITMAP_BGR = 2;
+const BITMAP_BGRX = 3;
+const BITMAP_BGRA = 4;
+const BITMAP_BGRA_PREMUL = 5;
+/**
+ * `FPDF_SEGMENT_*`: LINETO 0, BEZIERTO 1, MOVETO 2 (measured 2026-10-08 on PDFium 153.0.7999.0's Linux build against a
+ * rectangle, a curve and a line: `[2,x,y]` then `[0,..]` four times for a rectangle; the header's own numbering, which
+ * is NOT the order the words are listed in). A cubic arrives as three BEZIERTO segments in a row.
+ */
+const SEGMENT_LINE = 0;
+const SEGMENT_CURVE = 1;
+const SEGMENT_MOVE = 2;
+/** Page-object kinds this read names beyond text. */
+const OBJECT_PATH = 2;
+const OBJECT_IMAGE = 3;
+/** A clip that contains an object to within this many points does not narrow it. */
+const CLIP_TOLERANCE = 0.5;
+/** The most raw bytes of one JPEG stream read: the blob's own bound is the real one; this stops a single claim past it. */
+const MAX_JPEG_BYTES = 64 * 1024 * 1024;
+/** Samples per axis when an image's rendering is probed for transparency, over the middle 60 per cent of it. */
+const PROBE_GRID = 32;
+
+/** What the page-content read answers: the wire's metadata and the image bytes it wrote beside it. */
+export interface PageContentRead {
+  readonly frame: PageContent['frame'];
+  // MUTABLE ARRAYS, as the wire's schema types them: this is what the handler answers with.
+  readonly runs: (TextRun & { readonly invisible: boolean; readonly turn: ContentTurn | null })[];
+  readonly images: ContentImageHeader[];
+  readonly paths: ContentPath[];
+  readonly opaque: ContentOpaque[];
+  readonly unaddressable: number;
+  readonly truncated: boolean;
+  /** Every image's bytes, back to back; each header names its own offset and length. */
+  readonly blob: Uint8Array;
+}
+
+/**
+ * How a text object that is not level is turned, or `null` where it is not a pure rotation.
+ *
+ * A rotation by θ with one scale is `[s·cos s·sin −s·sin s·cos]`: the diagonal agrees, the off-diagonal is its negative and
+ * the determinant is positive. A shear, a mirror, or two scales fails one of the three, and the run is left to the Exact
+ * look fallback, since a text box states a turn and nothing else.
+ */
+function turnOf(bindings: Bound, object: unknown): ContentTurn | null {
+  const [a, b, c, d] = matrixOf(bindings, object);
+  const scale = Math.hypot(a, b);
+  if (!(scale > 0)) return null;
+  const tolerance = scale * 1e-3;
+  if (Math.abs(a - d) > tolerance || Math.abs(b + c) > tolerance || a * d - b * c <= 0) return null;
+  const quad: Record<string, number> = {};
+  if (numberFrom(bindings.rotatedBounds(object, quad), 'FPDFPageObj_GetRotatedBounds') !== 1) return null;
+  const read = (key: string): number => numberFrom(quad[key], `FS_QUADPOINTSF.${key}`);
+  return {
+    angle: (Math.atan2(b, a) * 180) / Math.PI,
+    quad: [read('x1'), read('y1'), read('x2'), read('y2'), read('x3'), read('y3'), read('x4'), read('y4')],
+  };
+}
+
+function matrixOf(bindings: Bound, object: unknown): Matrix6 {
+  const matrix: Record<string, number> = {};
+  if (numberFrom(bindings.getMatrix(object, matrix), 'FPDFPageObj_GetMatrix') !== 1) {
+    throw refusedAt('matrix', 'FPDFPageObj_GetMatrix refused an object this page handed back');
+  }
+  const read = (key: string): number => numberFrom(matrix[key], `FS_MATRIX.${key}`);
+  return [read('a'), read('b'), read('c'), read('d'), read('e'), read('f')];
+}
+
+/** An RGBA colour through one of PDFium's four-out-parameter getters, or `undefined` where the engine will not say. */
+function colourFrom(read: (red: number[], green: number[], blue: number[], alpha: number[]) => unknown): ContentColour | undefined {
+  const red = [0];
+  const green = [0];
+  const blue = [0];
+  const alpha = [0];
+  if (numberFrom(read(red, green, blue, alpha), 'a colour getter') !== 1) return undefined;
+  return { r: red[0] ?? 0, g: green[0] ?? 0, b: blue[0] ?? 0, a: alpha[0] ?? 0 };
+}
+
+/**
+ * Whether a clip narrows an object: any clip path that is not an axis rectangle containing the object's bounds does.
+ * Producers wrap a whole page in one page-sized rectangle, and that clip changes nothing.
+ */
+function narrowedByClip(bindings: Bound, object: unknown, bounds: ContentBounds): boolean {
+  const clip: unknown = bindings.clipPath(object);
+  if (clip === null) return false;
+  const paths = numberFrom(bindings.clipPathCount(clip), 'FPDFClipPath_CountPaths');
+  for (let path = 0; path < paths; path += 1) {
+    const count = numberFrom(bindings.clipSegmentCount(clip, path), 'FPDFClipPath_CountPathSegments');
+    if (count < 4 || count > 5) return true;
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let at = 0; at < count; at += 1) {
+      const segment: unknown = bindings.clipSegment(clip, path, at);
+      const kind = numberFrom(bindings.segmentType(segment), 'FPDFPathSegment_GetType');
+      if (kind !== SEGMENT_MOVE && kind !== SEGMENT_LINE) return true;
+      const x = [0];
+      const y = [0];
+      if (numberFrom(bindings.segmentPoint(segment, x, y), 'FPDFPathSegment_GetPoint') !== 1) return true;
+      xs.push(x[0] ?? 0);
+      ys.push(y[0] ?? 0);
+    }
+    const left = Math.min(...xs);
+    const right = Math.max(...xs);
+    const bottom = Math.min(...ys);
+    const top = Math.max(...ys);
+    // EVERY CORNER IS ON THE BOX: a rectangle has points only at its corners, a triangle or a slanted quad does not.
+    const corners = xs.every((x, at) => {
+      const y = ys[at] ?? 0;
+      return (Math.abs(x - left) < CLIP_TOLERANCE || Math.abs(x - right) < CLIP_TOLERANCE) && (Math.abs(y - bottom) < CLIP_TOLERANCE || Math.abs(y - top) < CLIP_TOLERANCE);
+    });
+    if (!corners) return true;
+    const contains =
+      left <= bounds.left + CLIP_TOLERANCE &&
+      right >= bounds.right - CLIP_TOLERANCE &&
+      bottom <= bounds.bottom + CLIP_TOLERANCE &&
+      top >= bounds.top - CLIP_TOLERANCE;
+    if (!contains) return true;
+  }
+  return false;
+}
+
+/** A path as a shape, `'opaque'` where it is painted but not a shape, or `'unpainted'` where it draws nothing (a clip). */
+function readPath(
+  bindings: Bound,
+  object: unknown,
+  index: number,
+  bounds: ContentBounds,
+  segmentsLeft: number,
+): { readonly path: ContentPath; readonly used: number } | 'opaque' | 'unpainted' {
+  const fillMode = [0];
+  const strokes = [0];
+  if (numberFrom(bindings.pathDrawMode(object, fillMode, strokes), 'FPDFPath_GetDrawMode') !== 1) return 'opaque';
+  const filled = (fillMode[0] ?? 0) !== 0;
+  const stroked = (strokes[0] ?? 0) !== 0;
+  if (!filled && !stroked) return 'unpainted';
+
+  const count = numberFrom(bindings.pathSegmentCount(object), 'FPDFPath_CountSegments');
+  if (count <= 0 || count > PAGE_CONTENT_SEGMENTS_PER_PATH_MAX || count > segmentsLeft) return 'opaque';
+  if (narrowedByClip(bindings, object, bounds)) return 'opaque';
+  if (numberFrom(bindings.dashCount(object), 'FPDFPageObj_GetDashCount') > 0) return 'opaque';
+
+  const fill = filled ? colourFrom((r, g, b, a) => bindings.getFillColour(object, r, g, b, a)) : undefined;
+  if (filled && fill === undefined) return 'opaque';
+  const lineColour = stroked ? colourFrom((r, g, b, a) => bindings.strokeColour(object, r, g, b, a)) : undefined;
+  if (stroked && lineColour === undefined) return 'opaque';
+
+  const [a, b, c, d, e, f] = matrixOf(bindings, object);
+  const place = (x: number, y: number): { x: number; y: number } => ({ x: a * x + c * y + e, y: b * x + d * y + f });
+  const segments: ContentSegment[] = [];
+  let pending: { x: number; y: number }[] = [];
+  for (let at = 0; at < count; at += 1) {
+    const segment: unknown = bindings.pathSegment(object, at);
+    const kind = numberFrom(bindings.segmentType(segment), 'FPDFPathSegment_GetType');
+    const x = [0];
+    const y = [0];
+    if (numberFrom(bindings.segmentPoint(segment, x, y), 'FPDFPathSegment_GetPoint') !== 1) return 'opaque';
+    const point = place(x[0] ?? 0, y[0] ?? 0);
+    if (kind === SEGMENT_MOVE) segments.push({ kind: 'move', ...point });
+    else if (kind === SEGMENT_LINE) segments.push({ kind: 'line', ...point });
+    else if (kind === SEGMENT_CURVE) {
+      pending.push(point);
+      const [first, second, end] = pending;
+      if (first !== undefined && second !== undefined && end !== undefined) {
+        segments.push({ kind: 'curve', x1: first.x, y1: first.y, x2: second.x, y2: second.y, x: end.x, y: end.y });
+        pending = [];
+      }
+    } else return 'opaque';
+    if (numberFrom(bindings.segmentClose(segment), 'FPDFPathSegment_GetClose') === 1) segments.push({ kind: 'close' });
+  }
+  if (pending.length > 0) return 'opaque';
+
+  let stroke: ContentPath['stroke'] = null;
+  if (stroked && lineColour !== undefined) {
+    const width = [0];
+    if (numberFrom(bindings.strokeWidth(object, width), 'FPDFPageObj_GetStrokeWidth') !== 1) return 'opaque';
+    const cap = numberFrom(bindings.lineCap(object), 'FPDFPageObj_GetLineCap');
+    const join = numberFrom(bindings.lineJoin(object), 'FPDFPageObj_GetLineJoin');
+    stroke = {
+      ...lineColour,
+      // THE WIDTH IS IN THE PATH'S OWN SPACE: the matrix's area scale carries it to the page.
+      width: (width[0] ?? 0) * Math.sqrt(Math.abs(a * d - b * c)),
+      cap: cap === 1 ? 'round' : cap === 2 ? 'square' : 'butt',
+      join: join === 1 ? 'round' : join === 2 ? 'bevel' : 'miter',
+    };
+  }
+  return { path: { index, bounds, segments, fill: fill ?? null, stroke }, used: segments.length };
+}
+
+/** A bitmap as BGRA, whatever PDFium decoded it to. */
+function bgraOf(bindings: Bound, bitmap: unknown): { readonly width: number; readonly height: number; readonly bytes: Uint8Array } {
+  const width = numberFrom(bindings.bitmapWidth(bitmap), 'FPDFBitmap_GetWidth');
+  const height = numberFrom(bindings.bitmapHeight(bitmap), 'FPDFBitmap_GetHeight');
+  const stride = numberFrom(bindings.bitmapStride(bitmap), 'FPDFBitmap_GetStride');
+  const format = numberFrom(bindings.bitmapFormat(bitmap), 'FPDFBitmap_GetFormat');
+  const pointer: unknown = bindings.bitmapBuffer(bitmap);
+  if (pointer === null || width <= 0 || height <= 0) throw new Error('PDFium handed back an empty bitmap.');
+  const source = koffi.decode(pointer, 'uint8_t', stride * height) as Uint8Array;
+  const bytes = new Uint8Array(width * height * 4);
+  for (let row = 0; row < height; row += 1) {
+    for (let column = 0; column < width; column += 1) {
+      const out = (row * width + column) * 4;
+      if (format === BITMAP_GRAY) {
+        const v = source[row * stride + column] ?? 0;
+        bytes[out] = v;
+        bytes[out + 1] = v;
+        bytes[out + 2] = v;
+        bytes[out + 3] = 255;
+      } else if (format === BITMAP_BGR) {
+        const at = row * stride + column * 3;
+        bytes[out] = source[at] ?? 0;
+        bytes[out + 1] = source[at + 1] ?? 0;
+        bytes[out + 2] = source[at + 2] ?? 0;
+        bytes[out + 3] = 255;
+      } else if (format === BITMAP_BGRX || format === BITMAP_BGRA || format === BITMAP_BGRA_PREMUL) {
+        const at = row * stride + column * 4;
+        bytes[out] = source[at] ?? 0;
+        bytes[out + 1] = source[at + 1] ?? 0;
+        bytes[out + 2] = source[at + 2] ?? 0;
+        bytes[out + 3] = format === BITMAP_BGRX ? 255 : (source[at + 3] ?? 255);
+      } else {
+        throw new Error(`PDFium decoded an image to bitmap format ${String(format)}, which this read does not convert.`);
+      }
+    }
+  }
+  return { width, height, bytes };
+}
+
+/**
+ * Whether an image is masked: its RENDERING (which applies the mask) has a transparent pixel in the middle of it. The
+ * decoded bitmap carries no mask, so only the rendering can say. The middle 60 per cent, so a rotated image's empty corners
+ * are not read as a mask. An opaque or absent rendering is not masked; a rendering PDFium will not make is treated as
+ * masked, because an image whose appearance cannot be checked is not embedded unchecked.
+ */
+function maskedImage(bindings: Bound, document: unknown, handle: unknown, object: unknown): boolean {
+  const bitmap: unknown = bindings.imageRenderedBitmap(document, handle, object);
+  if (bitmap === null) return true;
+  try {
+    const width = numberFrom(bindings.bitmapWidth(bitmap), 'FPDFBitmap_GetWidth');
+    const height = numberFrom(bindings.bitmapHeight(bitmap), 'FPDFBitmap_GetHeight');
+    const stride = numberFrom(bindings.bitmapStride(bitmap), 'FPDFBitmap_GetStride');
+    const format = numberFrom(bindings.bitmapFormat(bitmap), 'FPDFBitmap_GetFormat');
+    if (format !== BITMAP_BGRA && format !== BITMAP_BGRA_PREMUL) return false;
+    const pointer: unknown = bindings.bitmapBuffer(bitmap);
+    if (pointer === null || width <= 0 || height <= 0) return true;
+    const source = koffi.decode(pointer, 'uint8_t', stride * height) as Uint8Array;
+    for (let sy = 0; sy < PROBE_GRID; sy += 1) {
+      for (let sx = 0; sx < PROBE_GRID; sx += 1) {
+        const row = Math.min(height - 1, Math.floor(height * (0.2 + (0.6 * sy) / (PROBE_GRID - 1))));
+        const column = Math.min(width - 1, Math.floor(width * (0.2 + (0.6 * sx) / (PROBE_GRID - 1))));
+        if ((source[row * stride + column * 4 + 3] ?? 255) < 255) return true;
+      }
+    }
+    return false;
+  } finally {
+    bindings.destroyBitmap(bitmap);
+  }
+}
+
+/** An image's own JPEG bytes where its one filter is DCT over device grey or RGB, else `undefined`. */
+function jpegBytesOf(bindings: Bound, object: unknown, handle: unknown): Uint8Array | undefined {
+  if (numberFrom(bindings.imageFilterCount(object), 'FPDFImageObj_GetImageFilterCount') !== 1) return undefined;
+  const nameLength = numberFrom(bindings.imageFilter(object, 0, null, 0), 'FPDFImageObj_GetImageFilter');
+  if (nameLength <= 1 || nameLength > 64) return undefined;
+  const name = new Uint8Array(nameLength);
+  bindings.imageFilter(object, 0, name, nameLength);
+  if (new TextDecoder().decode(name.subarray(0, nameLength - 1)) !== 'DCTDecode') return undefined;
+  const metadata: Record<string, unknown> = {};
+  if (numberFrom(bindings.imageMetadata(object, handle, metadata), 'FPDFImageObj_GetImageMetadata') !== 1) return undefined;
+  const space = numberFrom(metadata['colorspace'], 'FPDF_IMAGEOBJ_METADATA.colorspace');
+  if (space !== COLOURSPACE_GRAY && space !== COLOURSPACE_RGB) return undefined;
+  const length = numberFrom(bindings.imageDataRaw(object, null, 0), 'FPDFImageObj_GetImageDataRaw');
+  if (length < 4 || length > MAX_JPEG_BYTES) return undefined;
+  const bytes = new Uint8Array(length);
+  if (numberFrom(bindings.imageDataRaw(object, bytes, length), 'FPDFImageObj_GetImageDataRaw') !== length) return undefined;
+  return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? bytes : undefined;
+}
+
+/**
+ * One page's own content: its frame, its text runs, its pictures with their bytes, the paths a shape can be, and the
+ * places that are neither ([ADR-0210](../../../docs/DECISIONS/0210-the-editable-powerpoint-export-is-built-from-two-host-reads-and-a-slide-model.md)).
+ *
+ * ## Forms are flattened first
+ *
+ * `promoteFormObjects` moves every form's content onto the page with its matrix composed, so the text runs, the objects and
+ * the characters PDFium extracted agree, and `unaddressable` is what is LEFT. It regenerates the in-memory page, and the
+ * session is never serialised from here, so the document is not touched.
+ */
+export async function pageContent(session: PdfiumSession, page: number): Promise<PageContentRead> {
+  await promoteFormObjects(session, page);
+  return await promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const document = documentFor(session);
+      // THE SAME WALK AND JOIN `textRuns` ANSWERS, read here so the count of characters no object holds can leave
+      // whitespace out: a missing word is what makes a page Exact look, and a space between two objects is not one.
+      const walked = walkRuns(bindings, handle);
+      const text = {
+        // A RIGHT-TO-LEFT RUN'S TEXT IS READ BACK FROM WHERE ITS CHARACTERS SIT (`readingOrder.ts`): PDFium's own order of
+        // it differs by how the producer drew it.
+        runs: joinedWalk(bindings, handle, walked).map(({ members, ...run }) =>
+          rightToLeftCount(run.text) === 0
+            ? run
+            : {
+                ...run,
+                text: readingOrder(
+                  run.text,
+                  members.flatMap((member) => (walked.glyphs.get(member) ?? []).filter((glyph) => glyph.char !== ' ').map((glyph) => glyph.left)),
+                ),
+              },
+        ),
+        unaddressable: walked.unaddressableInk,
+      };
+
+      const box: Record<string, number> = {};
+      if (numberFrom(bindings.pageBox(handle, box), 'FPDF_GetPageBoundingBox') !== 1) {
+        throw refusedAt('page', `PDFium gave page ${String(page)} no bounding box`);
+      }
+      const edges = (a: string, b: string): [number, number] => {
+        const first = numberFrom(box[a], `FS_RECTF.${a}`);
+        const second = numberFrom(box[b], `FS_RECTF.${b}`);
+        return [Math.min(first, second), Math.max(first, second)];
+      };
+      const [x0, x1] = edges('left', 'right');
+      const [y0, y1] = edges('bottom', 'top');
+      const turns = ((numberFrom(bindings.pageRotation(handle), 'FPDFPage_GetRotation') % 4) + 4) % 4;
+      const rotation = ([0, 90, 180, 270] as const)[turns] ?? 0;
+
+      const images: ContentImageHeader[] = [];
+      const paths: ContentPath[] = [];
+      const opaque: ContentOpaque[] = [];
+      const blobs: Uint8Array[] = [];
+      let blobBytes = 0;
+      let segmentsLeft = PAGE_CONTENT_SEGMENTS_MAX;
+      let truncated = text.runs.length > PAGE_CONTENT_RUNS_MAX;
+
+      const addOpaque = (index: number, bounds: ContentBounds): void => {
+        if (opaque.length >= PAGE_CONTENT_OPAQUE_MAX) truncated = true;
+        else opaque.push({ index, bounds });
+      };
+
+      const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+      if (total > ENGINE_TEXT_OBJECTS_MAX) truncated = true;
+      for (let index = 0; index < Math.min(total, ENGINE_TEXT_OBJECTS_MAX); index += 1) {
+        const object: unknown = bindings.getObject(handle, index);
+        if (object === null) continue;
+        const kind = numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType');
+        if (kind === TEXT_OBJECT) continue;
+        const bounds = boundsOf(bindings, object);
+
+        if (kind === OBJECT_PATH) {
+          const read = readPath(bindings, object, index, bounds, segmentsLeft);
+          if (read === 'unpainted') continue;
+          if (read === 'opaque' || paths.length >= PAGE_CONTENT_PATHS_MAX) {
+            addOpaque(index, bounds);
+            continue;
+          }
+          segmentsLeft -= read.used;
+          paths.push(read.path);
+          continue;
+        }
+
+        if (kind === OBJECT_IMAGE) {
+          const size = [0];
+          const high = [0];
+          if (numberFrom(bindings.imagePixelSize(object, size, high), 'FPDFImageObj_GetImagePixelSize') !== 1) {
+            addOpaque(index, bounds);
+            continue;
+          }
+          const width = size[0] ?? 0;
+          const height = high[0] ?? 0;
+          const matrix = matrixOf(bindings, object);
+          const embeddable =
+            width > 0 &&
+            height > 0 &&
+            width * height <= PAGE_CONTENT_IMAGE_PIXELS_MAX &&
+            images.length < PAGE_CONTENT_IMAGES_MAX &&
+            !narrowedByClip(bindings, object, bounds) &&
+            !maskedImage(bindings, document, handle, object);
+          if (!embeddable) {
+            addOpaque(index, bounds);
+            continue;
+          }
+          const jpeg = jpegBytesOf(bindings, object, handle);
+          let bytes: Uint8Array;
+          let format: 'jpeg' | 'bgra' = 'jpeg';
+          let pixels = { width, height };
+          if (jpeg !== undefined) {
+            bytes = jpeg;
+          } else {
+            const bitmap: unknown = bindings.imageBitmap(object);
+            if (bitmap === null) {
+              addOpaque(index, bounds);
+              continue;
+            }
+            try {
+              const decoded = bgraOf(bindings, bitmap);
+              bytes = decoded.bytes;
+              pixels = { width: decoded.width, height: decoded.height };
+              format = 'bgra';
+            } finally {
+              bindings.destroyBitmap(bitmap);
+            }
+          }
+          if (blobBytes + bytes.length > PAGE_CONTENT_BLOB_MAX) {
+            addOpaque(index, bounds);
+            continue;
+          }
+          images.push({ index, matrix, bounds, ...pixels, format, offset: blobBytes, length: bytes.length });
+          blobs.push(bytes);
+          blobBytes += bytes.length;
+          continue;
+        }
+
+        // A SHADING, OR ANYTHING PDFIUM WILL NOT NAME: painted, and not something a slide can say.
+        addOpaque(index, bounds);
+      }
+
+      const blob = new Uint8Array(blobBytes);
+      let at = 0;
+      for (const bytes of blobs) {
+        blob.set(bytes, at);
+        at += bytes.length;
+      }
+      return {
+        frame: { crop: { x0, y0, x1, y1 }, rotation },
+        runs: text.runs.slice(0, PAGE_CONTENT_RUNS_MAX).map((run) => {
+          const object: unknown = bindings.getObject(handle, run.index);
+          return {
+            ...run,
+            invisible: numberFrom(bindings.textRenderMode(object), 'FPDFTextObj_GetTextRenderMode') === 3,
+            turn: run.style.orientation === 'upright' ? null : turnOf(bindings, object),
+          };
+        }),
+        images,
+        paths,
+        opaque,
+        unaddressable: text.unaddressable,
+        truncated,
+        blob,
+      };
+    }),
+  );
 }
 
 /**

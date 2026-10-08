@@ -29,6 +29,7 @@ import { pageSetSchema } from './pageSet.js';
 import { channel, type Channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { AI_ANSWER_REFUSALS, MAX_WEB_SOURCES, answerIdSchema, subscriptionIdSchema } from './events.js';
 import { TRANSLATION_LANGUAGE_IDS } from './translationLanguages.js';
+import { POWERPOINT_FALLBACK_LISTED_MAX, POWERPOINT_MODES } from './powerpointModes.js';
 import { WORD_MODES } from './wordModes.js';
 import {
   MAX_ANNOTATION_BORDER,
@@ -2939,15 +2940,26 @@ export const channels = {
   ),
 
   /**
-   * Writes the document as a PowerPoint deck the user picks — D10's *PowerPoint*,
-   * one slide per page, each the page as MuPDF draws it (ADR-0072). No options:
-   * a copy's ask and a copy's outcomes.
+   * Writes the document as a PowerPoint deck the user picks — D10's *PowerPoint*, one slide per page (ADR-0072).
+   *
+   * ## The mode is REQUIRED, and a page may not honour it (ADR-0210)
+   *
+   * `exact` is a picture of each page as MuPDF draws it. `editable` is the page's own text, pictures and shapes as slide
+   * objects, and a page that cannot be written so is written as `exact` and NAMED in the answer: `fellBack` lists the
+   * first of those pages, one-based as a person counts, and `fellBackCount` is how many there were. A copy's other
+   * outcomes are unchanged.
    */
   'document.exportPowerPoint': channel(
     'Writes the document as a PowerPoint deck the user picks.',
-    z.object({ docId: docIdSchema, pages: pageSetSchema }).strict(),
+    z.object({ docId: docIdSchema, mode: z.enum(POWERPOINT_MODES), pages: pageSetSchema }).strict(),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
+      z.object({
+        kind: z.literal('copied'),
+        bytes: z.number().int().nonnegative(),
+        fellBack: z.array(z.number().int().positive()).max(POWERPOINT_FALLBACK_LISTED_MAX),
+        fellBackCount: z.number().int().nonnegative(),
+        ...WRITTEN,
+      }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),

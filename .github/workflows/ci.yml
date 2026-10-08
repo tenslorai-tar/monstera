@@ -363,6 +363,22 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/pdfiumObject.proof.mjs
           --require-pdfium
 
+      # The editable PowerPoint export's read of a page (ADR-0210): text with its render mode, the pictures' own bytes,
+      # the paths a shape can be, and the places that are neither, each beside the control that separates the rule from
+      # an input that would have failed anyway. Both legs, for the reason above.
+      - name: Prove the page-content read the editable PowerPoint export is built from
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/pdfiumPageContent.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+
+      # Hebrew and Arabic from a real PDF to the words a deck holds (ADR-0210): the bundled faces MuPDF draws them in and
+      # three ways a producer draws a line, each beside the control that shows the reading order is what is under test.
+      # The shim is built on both legs; PDFium is provisioned on Windows only, as for the step above.
+      - name: Prove Hebrew and Arabic reach the editable deck in reading order
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/rtlDeck.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+
       # Every PDFium command on a page carrying Type 3 text, which PDFium's
       # generation drops: each must refuse at the read-back and save nothing,
       # and each has a control that must be saved (ADR-0169). Both legs, for

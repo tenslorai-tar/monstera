@@ -600,6 +600,12 @@ export {
   type WordMode,
 } from './wordModes.js';
 export {
+  // The PowerPoint export's modes and how many fallback pages an answer names (ADR-0210).
+  POWERPOINT_FALLBACK_LISTED_MAX,
+  POWERPOINT_MODES,
+  type PowerPointMode,
+} from './powerpointModes.js';
+export {
   // The OCR language set, exported for the same reason the spelling one is: both
   // sides key a record on it — the provisioning table and the renderer's display
   // titles — so adding a language is two compile errors and a digest.

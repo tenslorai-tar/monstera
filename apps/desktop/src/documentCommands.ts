@@ -24,6 +24,7 @@ import {
   MAX_STRUCTURE_NODES,
   MAX_SERVICE_DETAIL,
   type PageSet,
+  type PowerPointMode,
   pageSetOf,
   type AskAbout,
   type AskSent,
@@ -62,8 +63,10 @@ import {
 // which invariant 20 forbids by name and §9.17's budget is argued against
 // (ADR-0026). The kernel's barrel is now free of that edge too.
 import {
+  type PageContent,
   type PageTables,
   type PresentationPage,
+  type Raster,
   type ReviewGrid,
   type SheetLayout,
   type SpreadsheetPage,
@@ -74,6 +77,7 @@ import {
   ooxmlPackage,
   pictureScale,
   presentationParts,
+  slideSize,
   rasterScale,
   type ByteImage,
   type AccessibilityReportOnWire,
@@ -186,6 +190,7 @@ import { basename, join } from 'node:path';
 
 import type { BackupProvenance } from './backupLedger.js';
 import { moveLegacyBackups, offerKeyOf, scanLegacyBackups } from './legacyBackups.js';
+import { type EditableSources, editablePages, emptyReport } from './editablePowerPoint.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import {
   EXTERNAL_EDIT_WAIT_MS,
@@ -2070,6 +2075,23 @@ export type DocumentRunFontsReader = (
 ) => Promise<{ readonly fonts: readonly Uint8Array<ArrayBuffer>[]; readonly runs: readonly (number | null)[] }>;
 
 /**
+ * What the editable PowerPoint export reads of a page, in the editing engine (ADR-0210): the page's own content, and the
+ * page rendered at a stated pixel size with its text or without it. Both are read from the document's CURRENT bytes, as
+ * every other PDFium read is, so the words a scan was just recognised into are the words the slide gets.
+ */
+export interface DocumentPresentationReader {
+  readonly content: (docId: DocId, sessions: DocumentSessions, page: number) => Promise<PageContent>;
+  readonly render: (
+    docId: DocId,
+    sessions: DocumentSessions,
+    page: number,
+    width: number,
+    height: number,
+    withoutText: boolean,
+  ) => Promise<Raster>;
+}
+
+/**
  * One page rasterised by the EDITING engine, as PNG bytes.
  *
  * §6.1's setting, amended 2026-09-10: a second opinion about how a page looks
@@ -2407,6 +2429,8 @@ export interface DocumentCommandsParts {
   readonly renderPage: DocumentPageRasteriser;
   /** A block's run fonts rebuilt by the editing engine's host, each once (ADR-0175). */
   readonly runFonts: DocumentRunFontsReader;
+  /** The editable PowerPoint export's reads of a page, or a thrower (ADR-0210). */
+  readonly presentation: DocumentPresentationReader;
   readonly duplicates: DocumentDuplicatesReader;
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
@@ -2559,6 +2583,14 @@ export type OptimizeMeasurement =
   | { readonly kind: 'unreadable' }
   | { readonly kind: 'unavailable' };
 
+/**
+ * What writing a PowerPoint deck did: a copy's outcomes, and on success the one-based pages written as Exact look because
+ * they could not be written editable (ADR-0210). Empty for Exact look, which is what every page falls back to.
+ */
+export type PowerPointOutcome =
+  | (Extract<CopyOutcome, { readonly kind: 'copied' }> & { readonly fellBack: readonly number[] })
+  | Exclude<CopyOutcome, { readonly kind: 'copied' }>;
+
 /** What writing an optimized copy did. */
 export type OptimizeOutcome =
   | { readonly kind: 'copied'; readonly bytes: number; readonly before: number; readonly destination: string }
@@ -2649,6 +2681,7 @@ export class DocumentCommands {
   readonly #pageObjects: DocumentPageObjectsReader;
   readonly #renderPage: DocumentPageRasteriser;
   readonly #runFonts: DocumentRunFontsReader;
+  readonly #presentation: DocumentPresentationReader;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #backups: BackupStore | undefined;
@@ -2737,6 +2770,7 @@ export class DocumentCommands {
     this.#pageObjects = parts.pageObjects;
     this.#renderPage = parts.renderPage;
     this.#runFonts = parts.runFonts;
+    this.#presentation = parts.presentation;
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#backups = parts.backups;
@@ -5325,13 +5359,15 @@ export class DocumentCommands {
    * image export already makes, one page at a time as the zip pulls it, so `main`
    * holds one page's picture. It does NOT touch the document.
    */
-  async exportPowerPoint(docId: DocId, pages: PageSet): Promise<CopyOutcome | undefined> {
+  async exportPowerPoint(docId: DocId, pages: PageSet, mode: PowerPointMode): Promise<PowerPointOutcome | undefined> {
     const suggest = this.#documents.nameOf(docId);
     if (suggest === undefined) throw new DocumentNotOpenError(docId, 'export to PowerPoint');
 
     const destination = await this.#pickOffice(suggest, 'pptx');
     if (destination === null) return undefined;
 
+    // FILLED AS THE ZIP PULLS PAGES and read once the write has finished (ADR-0210): which pages could not be written editable.
+    const report = emptyReport();
     const { value } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -5351,13 +5387,45 @@ export class DocumentCommands {
             lead === undefined
               ? { width: 612, height: 792 }
               : ((await this.#geometry(docId, sessions, [lead])).sizes[0] ?? { width: 612, height: 792 });
-          return ooxmlPackage(presentationParts(this.#slidePages(docId, sessions, chosen), first, chosen.length));
+          // EXACT LOOK IS TODAY'S EXPORT, byte for byte: the same pages and no option (ADR-0210).
+          if (mode === 'exact') {
+            return ooxmlPackage(presentationParts(this.#slidePages(docId, sessions, chosen), first, chosen.length));
+          }
+          return ooxmlPackage(
+            presentationParts(
+              editablePages(chosen, slideSize(first), this.#editableSources(docId, sessions), report),
+              first,
+              chosen.length,
+              { editable: true },
+            ),
+          );
         },
         destination,
       );
     });
 
-    return value;
+    return value.kind === 'copied' ? { ...value, fellBack: report.fellBack } : value;
+  }
+
+  /** What one editable page asks of the engines (ADR-0210), bound to this document's sessions. */
+  #editableSources(docId: DocId, sessions: DocumentSessions): EditableSources {
+    const sizeOf = async (page: number): Promise<{ readonly width: number; readonly height: number }> => {
+      const [size] = (await this.#geometry(docId, sessions, [page])).sizes;
+      if (size === undefined) throw new Error(`the geometry read named no size for page ${String(page)}`);
+      return size;
+    };
+    return {
+      sizeOf,
+      content: (page) => this.#presentation.content(docId, sessions, page),
+      render: (page, width, height, withoutText) => this.#presentation.render(docId, sessions, page, width, height, withoutText),
+      pagePicture: async (page) =>
+        await this.#pageImage(docId, sessions, {
+          page,
+          format: 'png',
+          scale: pictureScale(await sizeOf(page)),
+          quality: 90,
+        }),
+    };
   }
 
   /**
