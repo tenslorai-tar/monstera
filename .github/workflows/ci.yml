@@ -353,6 +353,14 @@ jobs:
           node scripts/ci/annotate.mjs scripts/proofs/pdfiumPageContent.proof.mjs
           ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
 
+      # Hebrew and Arabic from a real PDF to the words a deck holds (ADR-0210): the bundled faces MuPDF draws them in and
+      # three ways a producer draws a line, each beside the control that shows the reading order is what is under test.
+      # The shim is built on both legs; PDFium is provisioned on Windows only, as for the step above.
+      - name: Prove Hebrew and Arabic reach the editable deck in reading order
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/rtlDeck.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+
       # Every PDFium command on a page carrying Type 3 text, which PDFium's
       # generation drops: each must refuse at the read-back and save nothing,
       # and each has a control that must be saved (ADR-0169). Both legs, for

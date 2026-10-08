@@ -22,9 +22,11 @@ import type {
   ContentOpaque,
   ContentPath,
   ContentSegment,
+  ContentTurn,
   Matrix6,
   PageContent,
 } from './pageContent.js';
+import { readingOrder, rightToLeftCount } from './readingOrder.js';
 import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
 import { EditRefusedError, ReplaceMovesLineError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
@@ -151,6 +153,7 @@ interface Bound {
   // THE PAGE-CONTENT READ (ADR-0210): a page's pictures, paths and the clips that narrow them.
   readonly pageRotation: Native;
   readonly textRenderMode: Native;
+  readonly rotatedBounds: Native;
   readonly imagePixelSize: Native;
   readonly imageFilterCount: Native;
   readonly imageFilter: Native;
@@ -266,6 +269,16 @@ export function openPdfium(libraryPath: string): void {
   // FS_RECTF, the same way, for the page's bounding box in its own coordinates — where a CropBox
   // origin is not zero, the page's left edge is not zero either.
   koffi.struct('FS_RECTF', { left: 'float', top: 'float', right: 'float', bottom: 'float' });
+  koffi.struct('FS_QUADPOINTSF', {
+    x1: 'float',
+    y1: 'float',
+    x2: 'float',
+    y2: 'float',
+    x3: 'float',
+    y3: 'float',
+    x4: 'float',
+    y4: 'float',
+  });
   // An image's colour space and depth, which decide whether its own bytes can stand as a JPEG (ADR-0210).
   koffi.struct('FPDF_IMAGEOBJ_METADATA', {
     width: 'unsigned int',
@@ -506,6 +519,9 @@ export function openPdfium(libraryPath: string): void {
     pageRotation: native(library.func('int FPDFPage_GetRotation(void *page)')),
     // 3 IS INVISIBLE: the layer recognition writes over a scan, which is how a scanned page is told from a typed one.
     textRenderMode: native(library.func('int FPDFTextObj_GetTextRenderMode(void *text_object)')),
+    // THE FOUR CORNERS of an object's bounds turned with it: how a turned run's own width and height are known, which
+    // its axis-aligned bounds cannot say (ADR-0210).
+    rotatedBounds: native(library.func('int FPDFPageObj_GetRotatedBounds(void *page_object, _Out_ FS_QUADPOINTSF *quad_points)')),
     imagePixelSize: native(
       library.func('int FPDFImageObj_GetImagePixelSize(void *image_object, _Out_ unsigned int *width, _Out_ unsigned int *height)'),
     ),
@@ -1112,6 +1128,15 @@ function walkRuns(
   readonly runs: ReadonlyMap<number, WalkedRun>;
   readonly unaddressable: number;
   /**
+   * {@link unaddressable} less the characters that are whitespace: the space PDFium puts between two text objects of a
+   * right-to-left line belongs to no object and is no word a page can lose (measured 2026-10-08, PDFium 153.0.7999.0:
+   * a Hebrew line drawn one object per word counted one per gap). Beside the count rather than in it, since the
+   * editor's reading of it is its own.
+   */
+  readonly unaddressableInk: number;
+  /** Each drawn character of each object, in the order PDFium answered it, with where it starts across the page. */
+  readonly glyphs: ReadonlyMap<number, readonly { readonly char: string; readonly left: number }[]>;
+  /**
    * Where each run's last ADVANCE ends, by object index: the furthest right edge of its characters' loose boxes, which
    * is where text after it starts. A run's `right` is its ink's, and two strings of one width end their ink at
    * different places (measured: `WID` and `WDI` in Helvetica). Beside the runs rather than in them, since a run is
@@ -1133,7 +1158,9 @@ function walkRuns(
     /** index -> the run being accumulated. Insertion order is reading order. */
     const runs = new Map<number, WalkedRun>();
     const ends = new Map<number, number>();
+    const glyphs = new Map<number, { char: string; left: number }[]>();
     let unaddressable = 0;
+    let unaddressableInk = 0;
     /** The run the last DRAWN character joined, for a generated space to follow. */
     let previous: WalkedRun | undefined;
     /** Generated characters seen since the last drawn one. */
@@ -1155,6 +1182,7 @@ function walkRuns(
       // here.
       if (index === undefined) {
         unaddressable += 1;
+        if (character.trim() !== '') unaddressableInk += 1;
         pending = '';
         continue;
       }
@@ -1192,9 +1220,15 @@ function walkRuns(
       }
       held.text += character;
       const loose: Record<string, number> = {};
-      if (numberFrom(bindings.looseCharBox(textPage, at, loose), 'FPDFText_GetLooseCharBox') === 1) {
+      const hasLoose = numberFrom(bindings.looseCharBox(textPage, at, loose), 'FPDFText_GetLooseCharBox') === 1;
+      if (hasLoose) {
         ends.set(index, Math.max(ends.get(index) ?? Number.NEGATIVE_INFINITY, loose['right'] ?? Number.NEGATIVE_INFINITY));
       }
+      // WHERE EACH DRAWN CHARACTER SITS, for the export's reading order of right-to-left text: PDFium's own order of
+      // such text differs by producer, and the places do not.
+      const placed = glyphs.get(index) ?? [];
+      placed.push({ char: character, left: inked ? x0 : (loose['left'] ?? x0) });
+      glyphs.set(index, placed);
       // THE UNION, so a run's extent covers every character in it. A run sized
       // from its first character alone would lose an ascender and stop
       // overlapping the neighbour it shares a line with.
@@ -1213,7 +1247,9 @@ function walkRuns(
       // every comparison it would answer falsely.
       runs: new Map([...runs.entries()].filter(([, run]) => Number.isFinite(run.left))),
       unaddressable,
+      unaddressableInk,
       ends,
+      glyphs,
     };
   } finally {
     bindings.closeTextPage(textPage);
@@ -3064,7 +3100,7 @@ const PROBE_GRID = 32;
 export interface PageContentRead {
   readonly frame: PageContent['frame'];
   // MUTABLE ARRAYS, as the wire's schema types them: this is what the handler answers with.
-  readonly runs: (TextRun & { readonly invisible: boolean })[];
+  readonly runs: (TextRun & { readonly invisible: boolean; readonly turn: ContentTurn | null })[];
   readonly images: ContentImageHeader[];
   readonly paths: ContentPath[];
   readonly opaque: ContentOpaque[];
@@ -3072,6 +3108,28 @@ export interface PageContentRead {
   readonly truncated: boolean;
   /** Every image's bytes, back to back; each header names its own offset and length. */
   readonly blob: Uint8Array;
+}
+
+/**
+ * How a text object that is not level is turned, or `null` where it is not a pure rotation.
+ *
+ * A rotation by θ with one scale is `[s·cos s·sin −s·sin s·cos]`: the diagonal agrees, the off-diagonal is its negative and
+ * the determinant is positive. A shear, a mirror, or two scales fails one of the three, and the run is left to the Exact
+ * look fallback, since a text box states a turn and nothing else.
+ */
+function turnOf(bindings: Bound, object: unknown): ContentTurn | null {
+  const [a, b, c, d] = matrixOf(bindings, object);
+  const scale = Math.hypot(a, b);
+  if (!(scale > 0)) return null;
+  const tolerance = scale * 1e-3;
+  if (Math.abs(a - d) > tolerance || Math.abs(b + c) > tolerance || a * d - b * c <= 0) return null;
+  const quad: Record<string, number> = {};
+  if (numberFrom(bindings.rotatedBounds(object, quad), 'FPDFPageObj_GetRotatedBounds') !== 1) return null;
+  const read = (key: string): number => numberFrom(quad[key], `FS_QUADPOINTSF.${key}`);
+  return {
+    angle: (Math.atan2(b, a) * 180) / Math.PI,
+    quad: [read('x1'), read('y1'), read('x2'), read('y2'), read('x3'), read('y3'), read('x4'), read('y4')],
+  };
 }
 
 function matrixOf(bindings: Bound, object: unknown): Matrix6 {
@@ -3304,11 +3362,29 @@ function jpegBytesOf(bindings: Bound, object: unknown, handle: unknown): Uint8Ar
  */
 export async function pageContent(session: PdfiumSession, page: number): Promise<PageContentRead> {
   await promoteFormObjects(session, page);
-  const text = await textRuns(session, page);
   return await promised(() =>
     onPage(session, page, (handle) => {
       const bindings = api();
       const document = documentFor(session);
+      // THE SAME WALK AND JOIN `textRuns` ANSWERS, read here so the count of characters no object holds can leave
+      // whitespace out: a missing word is what makes a page Exact look, and a space between two objects is not one.
+      const walked = walkRuns(bindings, handle);
+      const text = {
+        // A RIGHT-TO-LEFT RUN'S TEXT IS READ BACK FROM WHERE ITS CHARACTERS SIT (`readingOrder.ts`): PDFium's own order of
+        // it differs by how the producer drew it.
+        runs: joinedWalk(bindings, handle, walked).map(({ members, ...run }) =>
+          rightToLeftCount(run.text) === 0
+            ? run
+            : {
+                ...run,
+                text: readingOrder(
+                  run.text,
+                  members.flatMap((member) => (walked.glyphs.get(member) ?? []).filter((glyph) => glyph.char !== ' ').map((glyph) => glyph.left)),
+                ),
+              },
+        ),
+        unaddressable: walked.unaddressableInk,
+      };
 
       const box: Record<string, number> = {};
       if (numberFrom(bindings.pageBox(handle, box), 'FPDF_GetPageBoundingBox') !== 1) {
@@ -3422,10 +3498,14 @@ export async function pageContent(session: PdfiumSession, page: number): Promise
       }
       return {
         frame: { crop: { x0, y0, x1, y1 }, rotation },
-        runs: text.runs.slice(0, PAGE_CONTENT_RUNS_MAX).map((run) => ({
-          ...run,
-          invisible: numberFrom(bindings.textRenderMode(bindings.getObject(handle, run.index)), 'FPDFTextObj_GetTextRenderMode') === 3,
-        })),
+        runs: text.runs.slice(0, PAGE_CONTENT_RUNS_MAX).map((run) => {
+          const object: unknown = bindings.getObject(handle, run.index);
+          return {
+            ...run,
+            invisible: numberFrom(bindings.textRenderMode(object), 'FPDFTextObj_GetTextRenderMode') === 3,
+            turn: run.style.upright ? null : turnOf(bindings, object),
+          };
+        }),
         images,
         paths,
         opaque,

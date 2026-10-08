@@ -8,6 +8,7 @@ import type {
   PageContent,
 } from './pageContent.js';
 import type { PageSize } from './pageGeometry.js';
+import { logicalWordOrder, rightToLeftCount } from './readingOrder.js';
 import { groupIntoBlocks, settingOf } from './textLines.js';
 
 /**
@@ -156,15 +157,30 @@ const AXIS_TOLERANCE = 0.05;
 /** A shape whose box is this small in both directions is drawn as nothing and is not written. */
 const MIN_EXTENT = 0.01;
 
-const RIGHT_TO_LEFT = /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}]/gu;
 const LETTER = /\p{L}/gu;
 
 /** Whether the strong characters of `text` run right to left. */
 export function isRightToLeft(text: string): boolean {
-  const rtl = (text.match(RIGHT_TO_LEFT) ?? []).length;
+  const rtl = rightToLeftCount(text);
   if (rtl === 0) return false;
   const letters = (text.match(LETTER) ?? []).length;
   return rtl * 2 > letters;
+}
+
+/**
+ * A right-to-left line's runs in the order they are READ, each keeping the style it was drawn in.
+ *
+ * The runs are first put in the order they SIT across the line, left to right, because the order they were drawn in is the
+ * producer's: a producer that draws a Hebrew line word by word draws it in either direction, and the same page reads
+ * differently by each (measured 2026-10-08, one object per word drawn in reading order and in visual order). Each run's
+ * own words are already in reading order, which the page-content read puts them in (`readingOrder.ts`).
+ */
+function logicalRuns(runs: readonly StyledRun[]): readonly StyledRun[] {
+  const across = [...runs].sort((a, b) => (a.left ?? 0) - (b.left ?? 0));
+  return logicalWordOrder(across.filter((run) => run.text.trim() !== '')).map((run, at, all) => ({
+    text: at < all.length - 1 ? `${run.text.trim()} ` : run.text.trim(),
+    style: run.style,
+  }));
 }
 
 function hex(colour: { readonly r: number; readonly g: number; readonly b: number }): string {
@@ -222,6 +238,24 @@ function boxOf(fit: Fit, b: ContentBounds): { x: number; y: number; width: numbe
 interface StyledRun {
   readonly text: string;
   readonly style: ContentRun['style'];
+  /** Where the run starts across its line, in the line's own frame: what a right-to-left line is put in reading order by. */
+  readonly left?: number;
+}
+
+/**
+ * Arabic Presentation Forms-A and -B (the joined, initial, medial and final shapes a producer draws) as the letters they
+ * are shapes of. PowerPoint shapes base letters itself, and shows a presentation form as the one glyph it names, so a word
+ * written in them cannot be edited or searched and does not join to a letter typed beside it. PDFium already answers base
+ * letters for the fonts measured (2026-10-08, PDFium 153.0.7999.0), so this is for a producer whose mapping it does not
+ * normalise. U+FEFF, the byte order mark, ends the range one short.
+ */
+const PRESENTATION_FORMS = new RegExp(
+  `[${String.fromCodePoint(0xfb50)}-${String.fromCodePoint(0xfdff)}${String.fromCodePoint(0xfe70)}-${String.fromCodePoint(0xfefe)}]+`,
+  'gu',
+);
+
+function lettersOf(text: string): string {
+  return text.replace(PRESENTATION_FORMS, (forms) => forms.normalize('NFKC'));
 }
 
 /** A line's runs on the slide, adjacent runs set alike joined and the line's trailing space dropped. */
@@ -229,7 +263,7 @@ function runsOf(runs: readonly StyledRun[], k: number): readonly SlideRun[] {
   const out: SlideRun[] = [];
   for (const run of runs) {
     const next: SlideRun = {
-      text: run.text,
+      text: lettersOf(run.text),
       font: typefaceOf(run.style.font),
       serif: run.style.serif,
       mono: run.style.mono,
@@ -301,9 +335,34 @@ function alignmentOf(lines: readonly BlockLine[]): { align: 'l' | 'ctr' | 'r'; i
   return undefined;
 }
 
+/**
+ * A frame turned by `angle` degrees counter-clockwise from the page's. Text set at an angle is grouped, aligned and boxed
+ * in the frame where it reads level, and only the box's centre comes back to the page, so one set of rules serves level
+ * and turned text alike. At angle 0 both conversions return their input unchanged.
+ */
+interface TextFrame {
+  readonly angle: number;
+  readonly toLocal: (x: number, y: number) => { readonly x: number; readonly y: number };
+  readonly toPage: (x: number, y: number) => { readonly x: number; readonly y: number };
+}
+
+function frameAt(angle: number): TextFrame {
+  if (angle === 0) {
+    return { angle, toLocal: (x, y) => ({ x, y }), toPage: (x, y) => ({ x, y }) };
+  }
+  const cos = Math.cos((angle * Math.PI) / 180);
+  const sin = Math.sin((angle * Math.PI) / 180);
+  return {
+    angle,
+    toLocal: (x, y) => ({ x: x * cos + y * sin, y: -x * sin + y * cos }),
+    toPage: (x, y) => ({ x: x * cos - y * sin, y: x * sin + y * cos }),
+  };
+}
+
 /** One block as one box, or as a box per line where its lines agree on no alignment or on no direction. */
 function textBoxesOf(
   fit: Fit,
+  frame: TextFrame,
   rotation: number,
   order: number,
   lines: readonly BlockLine[],
@@ -312,7 +371,7 @@ function textBoxesOf(
   const alignment = alignmentOf(lines);
   if (alignment === undefined || directions.size > 1) {
     return lines.flatMap((line, at) => {
-      const sole = textBoxesOf(fit, rotation, order + at / 1_000, [line]);
+      const sole = textBoxesOf(fit, frame, rotation, order + at / 1_000, [line]);
       return sole;
     });
   }
@@ -333,7 +392,8 @@ function textBoxesOf(
   // THE SLOT'S TOP is where PowerPoint puts the first line's slot: one pitch above the baseline less what a slot holds below it.
   const top = first.y1 + pitch - (INK_TO_BASELINE + SLOT_BELOW_BASELINE) * size;
   const bottom = top - pitch * lines.length;
-  const centre = at(fit, (x0 + x1) / 2, (top + bottom) / 2);
+  const middle = frame.toPage((x0 + x1) / 2, (top + bottom) / 2);
+  const centre = at(fit, middle.x, middle.y);
   const width = (x1 - x0) * fit.k;
   const height = (top - bottom) * fit.k;
   const rest = lines.slice(1);
@@ -352,34 +412,61 @@ function textBoxesOf(
       pitch: pitch * fit.k,
       marginLeft: alignment.align === 'l' ? Math.max(0, restLeft - x0) * fit.k : 0,
       indent: alignment.align === 'l' ? alignment.indent * fit.k : 0,
-      lines: lines.map((line) => runsOf(line.runs, fit.k)),
+      lines: lines.map((line) => runsOf(rtl ? logicalRuns(line.runs) : line.runs, fit.k)),
     },
   ];
 }
 
+/** A run's box in the frame its text reads level in: its own box when level, its four turned corners un-turned when not. */
+function localBox(run: ContentRun, frame: TextFrame): ContentBounds {
+  if (run.turn === null) return { left: run.left, right: run.right, bottom: run.bottom, top: run.top };
+  const { quad } = run.turn;
+  const corners = [0, 2, 4, 6].map((at) => frame.toLocal(quad[at] ?? 0, quad[at + 1] ?? 0));
+  const xs = corners.map((corner) => corner.x);
+  const ys = corners.map((corner) => corner.y);
+  return { left: Math.min(...xs), right: Math.max(...xs), bottom: Math.min(...ys), top: Math.max(...ys) };
+}
+
+/** Half a degree: runs turned this alike are one frame, since a producer states the same turn with rounding of its own. */
+const ANGLE_STEP = 0.5;
+
 function textBoxes(fit: Fit, runs: readonly ContentRun[]): readonly SlideTextBox[] {
   const shown = runs.filter((run) => run.text.trim() !== '');
+  // ONE FRAME PER ANGLE: level text is the frame at 0, and each turn the page states is its own, so a heading set at 30
+  // degrees groups with its own lines and never with the level text it crosses.
+  const angles = new Map<number, ContentRun[]>();
+  for (const run of shown) {
+    const angle = run.turn === null ? 0 : Math.round(run.turn.angle / ANGLE_STEP) * ANGLE_STEP;
+    const held = angles.get(angle);
+    if (held === undefined) angles.set(angle, [run]);
+    else held.push(run);
+  }
+  return [...angles.entries()].flatMap(([angle, members]) => framedBoxes(fit, frameAt(angle), members));
+}
+
+function framedBoxes(fit: Fit, frame: TextFrame, shown: readonly ContentRun[]): readonly SlideTextBox[] {
   const blocks = groupIntoBlocks(
     shown.map((run) => ({
       index: run.index,
       text: run.text,
-      bottom: run.bottom,
-      top: run.top,
-      left: run.left,
-      right: run.right,
+      ...localBox(run, frame),
       style: run.style,
       setting: settingOf({ font: run.style.font, size: run.style.size, colour: run.style.colour }),
     })),
   );
-  const rotation = fit.transform.rotation;
+  const lefts = new Map(shown.map((run) => [run.index, localBox(run, frame).left]));
+  // THE BOX TURNS WITH THE PAGE'S QUARTER TURN (clockwise) AND AGAINST THE TEXT'S OWN ANGLE (counter-clockwise in page
+  // space, so a slide's clockwise turn is its negative).
+  const rotation = (((fit.transform.rotation - frame.angle) % 360) + 360) % 360;
   return blocks.flatMap((block) => {
     const order = Math.min(...block.lines.flatMap((line) => line.runs.map((run) => run.index)));
     return textBoxesOf(
       fit,
+      frame,
       rotation,
       order,
       block.lines.map((line) => ({
-        runs: line.runs.map((run) => ({ text: run.text, style: run.style })),
+        runs: line.runs.map((run) => ({ text: run.text, style: run.style, left: lefts.get(run.index) ?? 0 })),
         x0: line.box.x0,
         y0: line.box.y0,
         x1: line.box.x1,
@@ -534,8 +621,9 @@ export function isRecognisedScan(content: PageContent): boolean {
  *
  * ## What each reason protects
  *
- * - `text-not-upright`: a box cannot say a skew, and a run the page set at an angle would be
- *   written level. The page is Exact look rather than wrong.
+ * - `text-not-upright`: a box states a turn and nothing else, so a run the page sheared or mirrored would be written
+ *   level. The page is Exact look rather than wrong. A run turned by a pure rotation is not this: it is written as a
+ *   box turned the same amount.
  * - `text-not-addressable`: PDFium extracted characters no object holds, so words would be missing.
  * - `content-truncated`: a list was cut at its bound.
  * - `picture-without-text`: a page of pictures and no words is a scan nobody recognised. The
@@ -548,7 +636,7 @@ export function buildSlide(content: PageContent, deck: PageSize): SlideBuild {
   const fit = fitOf(content, deck);
   const scan = isRecognisedScan(content);
   const painted = scan ? content.runs : content.runs.filter((run) => !run.invisible);
-  if (painted.some((run) => !run.style.upright)) return { kind: 'fallback', reason: 'text-not-upright' };
+  if (painted.some((run) => !run.style.upright && run.turn === null)) return { kind: 'fallback', reason: 'text-not-upright' };
 
   if (scan) {
     const page = cutOf(fit, -1, regionOfFrame(content));

@@ -252,7 +252,7 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
       if (image.bytes.length === 1 && image.bytes[0] === 0) throw new Error('PDFium refused the document');
       return Promise.resolve({
         frame: { crop: { x0: 0, y0: 0, x1: 612, y1: 792 }, rotation: 90 as const },
-        runs: RUNS.map((run) => ({ ...run, invisible: true })),
+        runs: RUNS.map((run) => ({ ...run, invisible: true, turn: null })),
         images: [
           {
             index: 3,

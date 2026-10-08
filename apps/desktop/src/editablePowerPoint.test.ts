@@ -18,7 +18,7 @@ const FRAME: PageContent['frame'] = { crop: { x0: 0, y0: 0, x1: 612, y1: 792 }, 
 const STYLE = { size: 12, colour: { r: 0, g: 0, b: 0 }, font: 'Arial', serif: false, mono: false, italic: false, bold: false, upright: true };
 
 function run(index: number, text: string, invisible = false): PageContent['runs'][number] {
-  return { index, last: index, text, left: 72, right: 200, bottom: 700 - index * 20, top: 712 - index * 20, invisible, style: STYLE };
+  return { index, last: index, text, left: 72, right: 200, bottom: 700 - index * 20, top: 712 - index * 20, invisible, turn: null, style: STYLE };
 }
 
 function content(over: Partial<PageContent>): PageContent {

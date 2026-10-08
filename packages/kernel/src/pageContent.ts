@@ -17,6 +17,16 @@ export interface ContentFrame {
   readonly rotation: 0 | 90 | 180 | 270;
 }
 
+/**
+ * How a run that is not set level is turned: the angle its baseline runs at, counter-clockwise in page space, and the four
+ * corners of its own box turned with it, as `[x1 y1 x2 y2 x3 y3 x4 y4]`. Only a pure rotation (one scale, no shear, no
+ * mirror) has one; a run set any other way has `turn: null` and is not `upright`.
+ */
+export interface ContentTurn {
+  readonly angle: number;
+  readonly quad: [number, number, number, number, number, number, number, number];
+}
+
 /** One run of text, `engine/text-runs`' fields plus whether it is painted. */
 export interface ContentRun {
   readonly index: number;
@@ -28,6 +38,8 @@ export interface ContentRun {
   readonly top: number;
   /** Text render mode 3 (invisible): the layer recognition writes over a scan. */
   readonly invisible: boolean;
+  /** Set only for a run turned by a pure rotation. `null` for a level run, and for one sheared or mirrored. */
+  readonly turn: ContentTurn | null;
   readonly style: {
     readonly size: number;
     readonly colour: { readonly r: number; readonly g: number; readonly b: number };

@@ -6,6 +6,7 @@ import { ooxmlPackage } from './ooxmlPackage.js';
 import type { ContentPath, ContentRun, PageContent } from './pageContent.js';
 import { type PresentationPage, presentationParts, slideSize } from './presentationDocument.js';
 import type { ResolvedSlide } from './editableSlide.js';
+import { logicalWordOrder } from './readingOrder.js';
 import { type EditableSlide, type SlideBuild, buildSlide, isRightToLeft, typefaceOf } from './slideModel.js';
 
 /**
@@ -23,7 +24,25 @@ function style(over: Partial<ContentRun['style']> = {}): ContentRun['style'] {
 }
 
 function run(index: number, text: string, left: number, bottom: number, right: number, top: number, over: Partial<ContentRun['style']> = {}, invisible = false): ContentRun {
-  return { index, last: index, text, left, right, bottom, top, invisible, style: style(over) };
+  return { index, last: index, text, left, right, bottom, top, invisible, turn: null, style: style(over) };
+}
+
+/**
+ * A run set at `angle` degrees (counter-clockwise), `length` along its baseline and `height` across, with its first
+ * baseline corner at (`x`, `y`). Its four corners are what PDFium's rotated bounds answer, and its axis box is the box of
+ * those corners, as the host states both.
+ */
+function turned(index: number, text: string, x: number, y: number, length: number, height: number, angle: number): ContentRun {
+  const cos = Math.cos((angle * Math.PI) / 180);
+  const sin = Math.sin((angle * Math.PI) / 180);
+  const at = (u: number, v: number): [number, number] => [x + u * cos - v * sin, y + u * sin + v * cos];
+  const quad: NonNullable<ContentRun['turn']>['quad'] = [...at(0, 0), ...at(length, 0), ...at(length, height), ...at(0, height)];
+  const xs = [quad[0], quad[2], quad[4], quad[6]];
+  const ys = [quad[1], quad[3], quad[5], quad[7]];
+  return {
+    ...run(index, text, Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), { upright: false }),
+    turn: { angle, quad },
+  };
 }
 
 const FRAME: PageContent['frame'] = { crop: { x0: 0, y0: 0, x1: 612, y1: 792 }, rotation: 0 };
@@ -127,6 +146,8 @@ interface ReadBox {
   readonly algn: string;
   readonly wrap: string | null;
   readonly noAutofit: boolean;
+  /** The box's turn in degrees clockwise, as PowerPoint reads `rot`. */
+  readonly rot: number;
 }
 
 function boxes(document: Document): ReadBox[] {
@@ -152,6 +173,7 @@ function boxes(document: Document): ReadBox[] {
         algn: shape.getElementsByTagName('a:pPr')[0]?.getAttribute('algn') ?? '',
         wrap: body?.getAttribute('wrap') ?? null,
         noAutofit: shape.getElementsByTagName('a:noAutofit').length > 0,
+        rot: Number(shape.getElementsByTagName('a:xfrm')[0]?.getAttribute('rot') ?? 0) / 60_000,
       },
     ];
   });
@@ -372,12 +394,153 @@ describe('text boxes: paragraphs and columns', () => {
     if (mixed.kind !== 'editable') throw new Error('expected editable');
     expect(mixed.slide.objects.filter((object) => object.kind === 'text')).toHaveLength(2);
   });
+
+  const words = (text: string): { text: string }[] => text.split(' ').map((word) => ({ text: word }));
+  const read = (list: readonly { text: string }[]): string => list.map((word) => word.text).join(' ');
+
+  it('puts the words of a right-to-left line in the order they are read, from the order PDFium answers them', () => {
+    // PDFium answers the words as they sit on the page, left to right: the line's LAST word first.
+    expect(read(logicalWordOrder(words('בעברית משפט זה עולם שלום')))).toBe('שלום עולם זה משפט בעברית');
+    // A phrase that reads left to right inside it keeps its own order and moves as one, so `3 figure see` is the defect.
+    expect(read(logicalWordOrder(words('עולם see figure 3 שלום')))).toBe('שלום see figure 3 עולם');
+    // CONTROL: a left-to-right line is not touched by anything but the caller's choice to reorder, and two words of one
+    // direction in the wrong order are exactly what the function turns round, so the assertion above can fail.
+    expect(read(logicalWordOrder(words('שלום עולם')))).toBe('עולם שלום');
+  });
+
+  it('a run whose words are already in reading order is written as it is, and a left-to-right one is left as drawn', async () => {
+    // The page-content read puts a right-to-left run's words in reading order (`readingOrder.ts`), so the model must not
+    // reverse them again: one run, one box, the same words.
+    const build = buildSlide(
+      page({
+        runs: [
+          run(0, 'שלום עולם זה משפט בעברית', 72, 650, 296, 663),
+          run(1, 'one two three words here', 72, 600, 296, 613),
+        ],
+      }),
+      deck,
+    );
+    if (build.kind !== 'editable') throw new Error('expected editable');
+    const files = await written([{ size: { width: 612, height: 792 }, slide: embedded(build) }]);
+    const read = boxes(parsed(files, 1));
+    expect(read.find((box) => box.text.startsWith('ש'))?.text).toBe('שלום עולם זה משפט בעברית');
+    expect(read.find((box) => box.text.startsWith('one'))?.text).toBe('one two three words here');
+  });
+
+  it('Arabic drawn in its presentation forms is written as the letters, so PowerPoint can shape and search it', async () => {
+    // The word of the page: final alef, medial beh, initial hah, final reh, initial meem, as joined shapes in logical order.
+    const shaped = String.fromCodePoint(0xfee3, 0xfeae, 0xfea3, 0xfe92, 0xfe8e);
+    const letters = String.fromCodePoint(0x0645, 0x0631, 0x062d, 0x0628, 0x0627);
+    const build = buildSlide(page({ runs: [run(0, shaped, 400, 650, 440, 663), run(1, 'plain text', 72, 600, 140, 611)] }), deck);
+    if (build.kind !== 'editable') throw new Error('expected editable');
+    const read = boxes(parsed(await written([{ size: { width: 612, height: 792 }, slide: embedded(build) }]), 1));
+    expect(read.map((box) => box.text)).toContain(letters);
+    // CONTROL: the shaped word really was other characters, so the assertion above is the normalisation and not the input.
+    expect(shaped).not.toBe(letters);
+    expect(read.map((box) => box.text)).toContain('plain text');
+  });
+
+  it('a line drawn word by word reads the same whichever way the producer drew it: by where the words sit', async () => {
+    const sitting = [
+      { text: 'שלום', left: 360, right: 400 },
+      { text: 'עולם', left: 316, right: 354 },
+      { text: 'זה', left: 292, right: 308 },
+    ];
+    const textOf = async (drawn: typeof sitting): Promise<string | undefined> => {
+      const build = buildSlide(page({ runs: drawn.map((word, at) => run(at, `${word.text} `, word.left, 650, word.right, 663)) }), deck);
+      if (build.kind !== 'editable') throw new Error('expected editable');
+      const files = await written([{ size: { width: 612, height: 792 }, slide: embedded(build) }]);
+      return boxes(parsed(files, 1))[0]?.text;
+    };
+    // Drawn in reading order (the rightmost first) and drawn left to right: one line, one answer.
+    expect(await textOf(sitting)).toBe('שלום עולם זה');
+    expect(await textOf([...sitting].reverse())).toBe('שלום עולם זה');
+  });
+});
+
+describe('text turned by the page is written as a box turned the same way', () => {
+  const deck = slideSize({ width: 612, height: 792 });
+
+  /** Where the first character's baseline corner lands on the slide: the box's left-centre, turned about its centre. */
+  function startOf(box: ReadBox): { x: number; y: number } {
+    const phi = (box.rot * Math.PI) / 180;
+    const dx = -box.width / 2;
+    return {
+      x: box.x + box.width / 2 + dx * Math.cos(phi),
+      y: box.y + box.height / 2 + dx * Math.sin(phi),
+    };
+  }
+
+  async function boxesOf(runs: ContentRun[]): Promise<ReadBox[]> {
+    const build = buildSlide(page({ runs }), deck);
+    if (build.kind !== 'editable') throw new Error(`expected editable, got ${build.reason}`);
+    return boxes(parsed(await written([{ size: { width: 612, height: 792 }, slide: embedded(build) }]), 1));
+  }
+
+  it('a label that reads upward (90 degrees) is one box turned 270 clockwise, starting where the text starts', async () => {
+    // The run starts at (40, 300) and reads upward for 100 pt.
+    const [box, ...others] = await boxesOf([turned(0, 'Side label', 40, 300, 100, 11, 90)]);
+    expect(others).toHaveLength(0);
+    expect(box?.text).toBe('Side label');
+    expect(box?.rot).toBeCloseTo(270, 3);
+    // The baseline corner (40, 300) is (40, 792 - 300) on the slide. The box's own height is not the run's, so only the
+    // start of the text along its reading direction is compared: the text starts at the box's left edge, centred in its height.
+    expect(box?.width).toBeCloseTo(100, 0);
+    if (box === undefined) throw new Error('expected a box');
+    const start = startOf(box);
+    expect(start.x).toBeGreaterThan(20);
+    expect(start.x).toBeLessThan(60);
+    expect(start.y).toBeCloseTo(792 - 300, -1);
+  });
+
+  it('a heading at 30 degrees is a box turned 330 clockwise, and CONTROL: written level it would not be', async () => {
+    const [box] = await boxesOf([turned(0, 'Draft copy', 100, 400, 200, 24, 30)]);
+    expect(box?.rot).toBeCloseTo(330, 3);
+    // The box's width is the run's length along its baseline, not the width of its axis box (which would be 200 cos 30 + 24 sin 30).
+    expect(box?.width).toBeCloseTo(200, 0);
+    // CONTROL: a build that ignored the turn writes rot 0 and the axis box's width, and fails both assertions above.
+    const level = await boxesOf([run(0, 'Draft copy', 100, 400, 100 + 200 * Math.cos(Math.PI / 6) + 24 * 0.5, 400 + 200 * 0.5 + 24 * Math.cos(Math.PI / 6))]);
+    expect(level[0]?.rot).toBe(0);
+    expect(Math.abs((level[0]?.width ?? 0) - 200)).toBeGreaterThan(5);
+  });
+
+  it('level text and turned text that cross each other are boxes of their own, and the level box is not turned', async () => {
+    const written = await boxesOf([
+      run(0, 'A level line of words', 72, 500, 260, 511),
+      turned(1, 'Crossing label', 150, 450, 120, 11, 90),
+    ]);
+    expect(written).toHaveLength(2);
+    expect(written.find((box) => box.text === 'A level line of words')?.rot).toBe(0);
+    expect(written.find((box) => box.text === 'Crossing label')?.rot).toBeCloseTo(270, 3);
+  });
+
+  it('two lines set at the same angle are ONE paragraph box with a break between them', async () => {
+    const lines = await boxesOf([
+      turned(0, 'First line of it', 60, 300, 120, 11, 90),
+      turned(1, 'Second line of it', 74.5, 300, 120, 11, 90),
+    ]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.breaks).toBe(1);
+    expect(lines[0]?.rot).toBeCloseTo(270, 3);
+  });
+
+  it('a page displayed at a quarter turn adds it to the text’s own turn', () => {
+    const framed = page({
+      frame: { crop: { x0: 0, y0: 0, x1: 612, y1: 792 }, rotation: 90 },
+      runs: [turned(0, 'Both turned', 100, 100, 100, 11, 90)],
+    });
+    const build = buildSlide(framed, { width: 792, height: 612 });
+    if (build.kind !== 'editable') throw new Error('expected editable');
+    const [box] = build.slide.objects;
+    // Clockwise 90 from the page's display, counter-clockwise 90 from the text: they cancel.
+    expect(box?.kind === 'text' && Math.round(box.rotation)).toBe(0);
+  });
 });
 
 describe('where a page cannot be written editable, it says why instead of writing it wrong', () => {
   const deck = slideSize({ width: 612, height: 792 });
 
-  it('names a run set at an angle, uncounted text, a cut list and a picture with no words', () => {
+  it('names a run SHEARED or mirrored, uncounted text, a cut list and a picture with no words', () => {
     expect(buildSlide(page({ runs: [run(0, 'tilted', 72, 700, 140, 711, { upright: false })] }), deck)).toStrictEqual({ kind: 'fallback', reason: 'text-not-upright' });
     expect(buildSlide(page({ runs: [run(0, 'x', 72, 700, 80, 711)], unaddressable: 3 }), deck)).toStrictEqual({ kind: 'fallback', reason: 'text-not-addressable' });
     expect(buildSlide(page({ truncated: true }), deck)).toStrictEqual({ kind: 'fallback', reason: 'content-truncated' });

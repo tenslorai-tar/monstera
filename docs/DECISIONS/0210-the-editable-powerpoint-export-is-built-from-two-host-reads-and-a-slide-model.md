@@ -74,6 +74,22 @@ The writer never decides what a page contained.
   cannot be assumed to have is written with the nearest generic family (serif, monospace, else sans) as its fallback.
 - **Right-to-left** is read from the characters (Hebrew, Arabic, Syriac, Thaana ranges), because the page states no direction.
   A line whose strong characters are right-to-left is written `rtl="1"`, right-aligned, and its words keep reading order.
+  **Reading order is derived from where the characters sit** (`readingOrder.ts`, amended 2026-10-08), not from PDFium's
+  order, which differs by producer: measured against PDFium 153.0.7999.0 and 155.0.8044.0, one text object of glyphs
+  comes back with its words as they sit and each word's letters in reading order, and the same words drawn by MuPDF's
+  layout engine come back with the letters as they sit too. The host sorts a run's characters by where each starts,
+  puts each word's letters in reading order, and puts the words in reading order with a run of words that read left to
+  right (a Latin phrase, a number) kept whole; the model then orders separate runs on a line by where they sit. It is not
+  the Unicode bidirectional algorithm: nested embeddings, direction marks and mirrored brackets are left as drawn, and a
+  combining mark is not ordered by a place of its own. A presentation-form Arabic letter is written as its base letter so
+  PowerPoint shapes it. A defect that is not ours and is not repaired: MuPDF's text box maps a lam to a glyph its
+  ToUnicode does not name, and PDFium answers U+01C4 for it (measured 2026-10-08, `proof:rtldeck`'s fixture), so an
+  Arabic word with a lam in a Monstera-drawn text box reads wrong in every extractor that uses the text map.
+- **Turned text** (amended 2026-10-08, replacing the first build's fallback): a run set by a pure rotation (one scale, no
+  shear, no mirror) is written as a text box turned the same amount. The host answers its angle and the four corners of
+  its own box (`FPDFPageObj_GetRotatedBounds`), the model groups runs of one angle (to half a degree) in the frame where
+  they read level, and the box's `rot` is the page's quarter turn less the text's angle. A shear or a mirror is still
+  Exact look.
 
 ### 4. Pictures
 
@@ -111,7 +127,8 @@ for recognise on export), and the result message says so. With no model on the m
 
 A page is written as Exact look, and listed by its number in the answer, when: it has pictures and no text and recognition
 did not give it any; the read was refused or failed validation; `unaddressable` is non-zero after flattening; the text or
-another list was truncated; or any painted run is not upright (rotated or skewed text, which a level box would misplace). The
+another list was truncated; or any painted run is sheared or mirrored (a rotated one is written turned, Decision 3). A
+space PDFium puts between two text objects belongs to no object and is not an uncounted word. The
 deck is still one file; Editable pages and Exact look pages sit side by side. `fellBack: number[]` (one-based, as a person
 counts) is a field of `document.exportPowerPoint`'s `copied` answer only. Exact look has no fallback because it is the
 fallback.

@@ -753,7 +753,30 @@ export const pdfiumChannels = {
           })
           .strict(),
         runs: z
-          .array(z.object({ ...textRunShape, invisible: z.boolean() }).strict())
+          .array(
+            z
+              .object({
+                ...textRunShape,
+                invisible: z.boolean(),
+                turn: z
+                  .object({
+                    angle: z.number(),
+                    quad: z.tuple([
+                      z.number(),
+                      z.number(),
+                      z.number(),
+                      z.number(),
+                      z.number(),
+                      z.number(),
+                      z.number(),
+                      z.number(),
+                    ]),
+                  })
+                  .strict()
+                  .nullable(),
+              })
+              .strict(),
+          )
           .max(PAGE_CONTENT_RUNS_MAX),
         images: z
           .array(

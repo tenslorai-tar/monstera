@@ -36,7 +36,7 @@ Those words are also added to your document, as they are when you make pages sea
 
 ## When a page is saved as a picture
 
-A page that cannot be written as editable slide objects is saved as one picture, as **Exact look** would, and the window after the save lists those pages by number. This happens to a page of pictures with no text, a page with text set at an angle, and a page the program cannot read. The other pages stay editable.
+A page that cannot be written as editable slide objects is saved as one picture, as **Exact look** would, and the window after the save lists those pages by number. This happens to a page of pictures with no text, a page with text that is slanted or mirrored (text turned to an angle is written as a turned text box), and a page the program cannot read. The other pages stay editable.
 
 ## Good to know
 

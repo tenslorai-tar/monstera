@@ -3853,6 +3853,7 @@ describe('exportText — the document’s words, streamed one page at a time', (
             bottom: 700,
             top: 712,
             invisible: false,
+            turn: null,
             style: { size: 12, colour: { r: 0, g: 0, b: 0 }, font: 'Helvetica', serif: false, mono: false, italic: false, bold: false, upright: true },
           },
         ],

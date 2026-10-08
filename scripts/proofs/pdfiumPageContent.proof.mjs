@@ -58,7 +58,7 @@ openPdfium(library);
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 30 });
+const roster = createRoster(failures, { cases: 32 });
 
 /**
  * @param {string} name
@@ -206,8 +206,53 @@ async function main() {
     JSON.stringify(text.frame),
   );
 
+  // TURNED TEXT: a pure rotation answers its angle and its own four corners, and a shear or a mirror answers neither. The
+  // level run of the same words is the ruler: a turned run's length along its baseline is the level run's width.
+  const thirty = Math.PI / 6;
+  const cos = Math.cos(thirty).toFixed(6);
+  const sin = Math.sin(thirty).toFixed(6);
+  const turnedPage = await read(
+    onePage({
+      content: [
+        'BT /F2 20 Tf 72 700 Td (Turned words here) Tj ET',
+        `BT /F2 20 Tf ${cos} ${sin} -${sin} ${cos} 200 300 Tm (Turned words here) Tj ET`,
+        'BT /F2 20 Tf 1 0 0.5 1 100 200 Tm (Sheared words) Tj ET',
+        'BT /F2 20 Tf -1 0 0 1 400 100 Tm (Mirrored words) Tj ET',
+      ].join('\n'),
+      extra: [HELVETICA_BOLD, TIMES],
+      resources: '/Font << /F1 1 0 R /F2 2 0 R >>',
+    }),
+  );
+  const level = turnedPage.runs.find((run) => run.text === 'Turned words here' && run.style.upright);
+  const turnedRun = turnedPage.runs.find((run) => run.text === 'Turned words here' && !run.style.upright);
+  const sheared = turnedPage.runs.find((run) => run.text === 'Sheared words');
+  const mirrored = turnedPage.runs.find((run) => run.text === 'Mirrored words');
+  const quad = turnedRun?.turn?.quad;
+  const along = quad === undefined ? 0 : Math.hypot(quad[2] - quad[0], quad[3] - quad[1]);
+  const across = quad === undefined ? 0 : Math.hypot(quad[4] - quad[2], quad[5] - quad[3]);
+  record(
+    'a run turned 30 degrees answers its angle and the corners of its own box: its length along the baseline is the level run’s width',
+    turnedRun?.turn !== null &&
+      turnedRun?.turn !== undefined &&
+      near(turnedRun.turn.angle, 30, 0.05) &&
+      level !== undefined &&
+      near(along, level.right - level.left, 2.5) &&
+      across > 5 &&
+      across < 25,
+    JSON.stringify([turnedRun?.turn?.angle, along, level === undefined ? undefined : level.right - level.left, across]),
+  );
+  record(
+    'CONTROL: a level run, a sheared run and a mirrored run answer NO turn, so only a pure rotation is written as a turned box',
+    level?.turn === null &&
+      sheared?.turn === null &&
+      sheared.style.upright === false &&
+      mirrored?.turn === null &&
+      mirrored.style.upright === false,
+    JSON.stringify([level?.turn, sheared?.turn, mirrored?.turn]),
+  );
+
   // PICTURES.
-  const FLATE = deflateSync(Buffer.from([255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]));
+  const FLATE =deflateSync(Buffer.from([255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]));
   const pictures = await read(
     onePage({
       content: 'q 200 0 0 120 72 400 cm /ImJ Do Q\nq 60 0 0 40 300 330 cm /ImF Do Q',
