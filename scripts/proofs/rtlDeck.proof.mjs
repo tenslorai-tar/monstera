@@ -63,7 +63,7 @@ if (bindNativeEngine(root) === null) {
   });
 }
 
-refuseStaleBuild(root, RTL_DECK, 10);
+refuseStaleBuild(root, RTL_DECK, 11);
 
 const { openPdfium, onImage, pageContent, promoteFormObjects, textRuns } = await import('../../packages/kernel/dist/pdfiumFfi.js');
 const { assemblePageContent } = await import('../../packages/kernel/dist/pageContentAssemble.js');

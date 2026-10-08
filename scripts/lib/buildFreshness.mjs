@@ -359,6 +359,7 @@ export const RTL_DECK = [
   ['packages/kernel/src/slideResolve.ts', 'packages/kernel/dist/slideResolve.js', 'tsc'],
   ['packages/kernel/src/pageContentAssemble.ts', 'packages/kernel/dist/pageContentAssemble.js', 'tsc'],
   ['packages/kernel/src/presentationDocument.ts', 'packages/kernel/dist/presentationDocument.js', 'tsc'],
+  ['packages/kernel/src/ooxmlPackage.ts', 'packages/kernel/dist/ooxmlPackage.js', 'tsc'],
   ...RTL_TEXT,
 ];
 
