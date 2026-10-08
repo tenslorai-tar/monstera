@@ -854,6 +854,7 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'none-open', props: { choices: [], pageCount: 12, page: 2 } },
     { state: 'long', props: { choices: LONG_SOURCES, pageCount: 12, page: 2 } },
   ],
+  'dialog.convert-scan': [{ state: 'opened', props: {} }],
   'dialog.restore-version': [
     { state: 'three-versions', props: { versions: [
       { id: '1.pdf', savedAt: '2026-10-08T09:41:00.000Z', bytes: 184_320 },

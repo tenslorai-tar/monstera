@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App.js';
 import type { DropOpener, EventSubscriber } from './bridge.js';
+import { CONVERT_SCAN_TARGETS } from './commands/convertScan.js';
 import { reportProblem } from './commands/documentCommands.js';
 import { START_SCREEN_CONTEXT } from './commands/help.js';
 import { HELP_ARTICLES } from './help/articles.js';
@@ -2901,6 +2902,10 @@ describe('App', () => {
     // CONTROL: every command the shell registers is a line — a generator that listed none would still produce a file.
     for (const command of commands.all()) expect(text, command.id).toContain(`\`${command.id}\``);
     expect(text).toContain('`app.components`');
+    // CONVERT SCAN GOES TO REGISTERED COMMANDS BY ID: an id that names none (a renamed command, a typo) is missing here, which
+    // a constant compared with itself would never show. The control is the id nothing registers.
+    for (const target of Object.values(CONVERT_SCAN_TARGETS)) expect(text, target).toContain(`\`${target}\``);
+    expect(text).not.toContain('`document.convert-scan-typo`');
     await expect(text).toMatchFileSnapshot('../../../docs/manual-test-checklist.md');
   });
 

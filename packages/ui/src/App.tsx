@@ -229,6 +229,7 @@ import { translatePageCommand } from './commands/translatePage.js';
 import { COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { OPEN_PROBLEM_DIALOG_ID } from './dialogs/openProblem.js';
 import { sayWhenUnwritable } from './commands/readOnlyFile.js';
+import { convertScanCommand } from './commands/convertScan.js';
 import { offerOldBackups, restoreVersionCommand } from './commands/restoreVersion.js';
 import {
   exportAnnotationsFdfCommand,
@@ -3300,6 +3301,8 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         saveBackCommand({ client, ask, toast, onSaved, settleMarks }),
         // D9's WEBCAM ROW, the same callbacks: the pictures arrive as a tab.
         newFromCaptureCommand({ client, ask, onOpened: opened, onAlreadyOpen: activate }),
+        // TOOLS › OCR › CONVERT SCAN: says what a scan can become and goes to the registered command that does it.
+        convertScanCommand({ ask, runCommand: (id, commandContext) => holder.registry?.get(id)?.run(commandContext) }),
         appendMarkdownCommand({
           client,
           onApplied: applied,

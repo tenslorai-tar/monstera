@@ -958,6 +958,17 @@ export const SPELLING_DICTIONARY_FULL = messageKey('surface.spelling.dictionary-
 export const SPELLING_WORD_TOO_LONG = messageKey('surface.spelling.word-too-long');
 export const SPELLING_COMMENTS_TITLE = messageKey('setting.editing.spelling-comments.title');
 export const SPELLING_FIELDS_TITLE = messageKey('setting.editing.spelling-fields.title');
+export const CONVERT_SCAN_COMMAND_TITLE = messageKey('command.convert-scan.title');
+export const RIBBON_CONVERT_SCAN = messageKey('ribbon.convert-scan');
+export const CONVERT_SCAN_TIP = messageKey('command.convert-scan.tip');
+export const CONVERT_SCAN_TITLE = messageKey('dialog.convert-scan.title');
+export const CONVERT_SCAN_INTRO = messageKey('dialog.convert-scan.intro');
+export const CONVERT_SCAN_SEARCHABLE = messageKey('dialog.convert-scan.searchable');
+export const CONVERT_SCAN_SEARCHABLE_BUTTON = messageKey('dialog.convert-scan.searchable-button');
+export const CONVERT_SCAN_WORD = messageKey('dialog.convert-scan.word');
+export const CONVERT_SCAN_WORD_BUTTON = messageKey('dialog.convert-scan.word-button');
+export const CONVERT_SCAN_EXCEL = messageKey('dialog.convert-scan.excel');
+export const CONVERT_SCAN_EXCEL_BUTTON = messageKey('dialog.convert-scan.excel-button');
 export const OCR_COMMAND_TITLE = messageKey('command.ocr.title');
 export const OCR_EXPORT_COMMAND_TITLE = messageKey('command.ocr-export.title');
 export const ENHANCE_COMMAND_TITLE = messageKey('command.enhance-scans.title');
@@ -3446,6 +3457,21 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // NAMES WHAT IT PRODUCES, not the technique. *OCR* is the name of the thing in
   // the ribbon group, where a reader who knows the word will look for it; the
   // command says what happens to their document.
+  [CONVERT_SCAN_COMMAND_TITLE]: 'Convert a scan…',
+  [RIBBON_CONVERT_SCAN]: 'Convert scan',
+  [CONVERT_SCAN_TIP]: 'Turn a scanned or handwritten document into a searchable PDF, a Word file or an Excel workbook.',
+  [CONVERT_SCAN_TITLE]: 'Convert a scan',
+  [CONVERT_SCAN_INTRO]:
+    'A scan is a picture of a page. Choose what you want it to become. Nothing is sent anywhere until you pick a reading service in the next step.',
+  [CONVERT_SCAN_SEARCHABLE]:
+    'A searchable PDF looks exactly the same, and hidden words are added behind the picture so you can search and copy them.',
+  [CONVERT_SCAN_SEARCHABLE_BUTTON]: 'Make it searchable',
+  [CONVERT_SCAN_WORD]:
+    'A Word file holds the document’s words so you can edit them. It works from the words in the PDF, so make it searchable first.',
+  [CONVERT_SCAN_WORD_BUTTON]: 'Save as Word',
+  [CONVERT_SCAN_EXCEL]:
+    'An Excel workbook holds the tables, with each cell in its own box. A reading service such as Claude or Azure can read handwritten tables from the page pictures.',
+  [CONVERT_SCAN_EXCEL_BUTTON]: 'Save as Excel',
   [OCR_COMMAND_TITLE]: 'Make scanned pages searchable',
   // NAMES THE FILE, because that is the difference from the command above: both
   // recognise, and this one also writes a copy.
