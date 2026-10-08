@@ -261,3 +261,84 @@ describe('detectFlatFields', () => {
     expect(found.candidates[0]?.name).toBe('Mr_Smith');
   });
 });
+
+/**
+ * The page the owner reported: a title with a rule under it, a hint beside a place to write, boxes with a border AND a
+ * background, small squares with their words on the right, and (optionally) fields the document already has.
+ *
+ * Detect proposed the labels, the title and the hint as fields, proposed every box twice (the second `_2`), and
+ * proposed the places the fields already were. Each case below names which of those it separates.
+ */
+async function reportedPage(options: { readonly withFields?: boolean } = {}): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const page = document.addPage([PAGE.width, PAGE.height]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const draw = (words: string, x: number, y: number): void => {
+    page.drawText(words, { x, y, size: INK.size, font });
+  };
+
+  draw('Registration form', 60, 740);
+  // THE TITLE'S RULE: as wide as the title, just under it.
+  page.drawLine({ start: { x: 60, y: 736 }, end: { x: 60 + font.widthOfTextAtSize('Registration form', INK.size), y: 736 }, thickness: 1, color: INK.colour });
+
+  // A BOX WITH A BORDER AND A BACKGROUND reaches the device as a fill and a stroke of one outline.
+  draw('Full name', 60, 686);
+  page.drawRectangle({ x: 170, y: 680, width: 300, height: 21, borderWidth: 1, borderColor: INK.colour, color: rgb(1, 1, 1) });
+  draw('Date of birth', 60, 646);
+  page.drawRectangle({ x: 170, y: 640, width: 100, height: 21, borderWidth: 1, borderColor: INK.colour, color: rgb(1, 1, 1) });
+  // THE HINT BESIDE THE BOX, which is words and not a place to write.
+  draw('DD_MM_YYYY', 280, 646);
+
+  // TWO TICK BOXES, the word on the right.
+  for (const [at, words] of [[600, 'Send me the newsletter'], [570, 'I accept the terms']] as const) {
+    page.drawRectangle({ x: 60, y: at, width: 14, height: 14, borderWidth: 1, borderColor: INK.colour, color: rgb(1, 1, 1) });
+    draw(words, 82, at + 3);
+  }
+
+  if (options.withFields === true) {
+    const form = document.getForm();
+    const name = form.createTextField('Full_name');
+    name.addToPage(page, { x: 170, y: 680, width: 300, height: 21, font, borderWidth: 1 });
+    const birth = form.createTextField('Date_of_birth');
+    birth.addToPage(page, { x: 170, y: 640, width: 100, height: 21, font, borderWidth: 1 });
+    const news = form.createCheckBox('Send_me_the_newsletter');
+    news.addToPage(page, { x: 60, y: 600, width: 14, height: 14, borderWidth: 1 });
+    const terms = form.createCheckBox('I_accept_the_terms');
+    terms.addToPage(page, { x: 60, y: 570, width: 14, height: 14, borderWidth: 1 });
+  }
+  return document.save();
+}
+
+describe('detectFlatFields on the page that was reported', () => {
+  it('proposes each place once, and nothing for the title, its rule, the hint or any label', async () => {
+    const found = await detected(await reportedPage());
+    expect(found.candidates.map((candidate) => [candidate.name, candidate.kind])).toStrictEqual([
+      ['Full_name', 'text'],
+      ['Date_of_birth', 'text'],
+      ['Send_me_the_newsletter', 'checkbox'],
+      ['I_accept_the_terms', 'checkbox'],
+    ]);
+    // NO `_2`: one box drawn with a border and a background is one place.
+    expect(found.candidates.every((candidate) => !candidate.name.endsWith("_2"))).toBe(true);
+    expect(found.alreadyFields).toBe(0);
+  });
+
+  it('proposes nothing where the document already has a field, says how many, and names no field twice', async () => {
+    const found = await detected(await reportedPage({ withFields: true }));
+    expect(found.candidates).toStrictEqual([]);
+    expect(found.alreadyFields).toBe(4);
+  });
+
+  it('CONTROL: the same geometry as plain page content IS proposed, so the case above saw the fields and not a blind detector', async () => {
+    const found = await detected(await reportedPage());
+    expect(found.candidates.length).toBe(4);
+  });
+
+  it('gives a new field a name no field in the document carries', async () => {
+    const document = await PDFDocument.load(await flatPage({ labels: ['Signature'] }));
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    document.getForm().createTextField('Signature').addToPage(document.getPage(0), { x: 60, y: 300, width: 100, height: 20, font });
+    const found = await detected(await document.save());
+    expect(found.candidates.map((candidate) => candidate.name)).toStrictEqual(['Signature_2']);
+  });
+});

@@ -1,6 +1,7 @@
-import type { ChannelResult, ComposeRefusal } from '@monstera/contract';
+import type { BoxedCharacter, ChannelResult, ComposeRefusal } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 
+import { BOXED_CHARACTERS_DIALOG_ID } from '../dialogs/boxedCharacters.js';
 import { CAMERA_CAPTURE_DIALOG_ID, CAMERA_CAPTURE_RESULT } from '../dialogs/cameraCapture.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { WORKBOOK_INCOMPLETE_DIALOG_ID } from '../dialogs/workbookIncomplete.js';
@@ -90,8 +91,10 @@ export function markdownImportProblem(
     // `appended` are the document they asked for. Named rather than defaulted, so an
     // outcome a channel gains later is a lint error here instead of a silence. And
     // `opened-incomplete` OPENED too, so it is no problem of the import's: the rows it
-    // lacks have their own dialog, which the Office command opens (decision C).
+    // lacks have their own dialog, which the Office command opens (decision C). So did
+    // `opened-with-boxes`, whose boxed characters the text imports name (ADR-0172).
     case 'opened-incomplete':
+    case 'opened-with-boxes':
     case 'cancelled':
     case 'opened':
     case 'already-open':
@@ -119,8 +122,6 @@ function refusalProblem(
       return { reason: 'image-unreadable', file };
     case 'too-many-pixels':
       return { reason: 'too-many-pixels', file };
-    case 'unencodable-text':
-      return { reason: 'unencodable-text', line };
     case 'malformed-csv':
       return { reason: 'malformed-csv', line };
     case 'not-utf8':
@@ -158,15 +159,7 @@ export function newFromMarkdownCommand(deps: {
         return;
       }
       const result = answer.value;
-      if (result.kind === 'opened') {
-        deps.onOpened({
-          docId: result.docId,
-          version: result.version,
-          byteLength: result.byteLength,
-          name: result.name,
-        });
-        return;
-      }
+      if (openedText(deps, result)) return;
       if (result.kind === 'already-open') {
         deps.onAlreadyOpen(result.docId);
         return;
@@ -204,15 +197,7 @@ export function newFromCsvCommand(deps: {
         return;
       }
       const result = answer.value;
-      if (result.kind === 'opened') {
-        deps.onOpened({
-          docId: result.docId,
-          version: result.version,
-          byteLength: result.byteLength,
-          name: result.name,
-        });
-        return;
-      }
+      if (openedText(deps, result)) return;
       if (result.kind === 'already-open') {
         deps.onAlreadyOpen(result.docId);
         return;
@@ -419,10 +404,40 @@ export function appendMarkdownCommand(
         if (result.historyDropped > 0) {
           void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: result.historyDropped });
         }
+        tellBoxed(deps, result.boxed, result.more);
         return;
       }
       const problem = markdownImportProblem(result);
       if (problem !== null) void deps.ask(MARKDOWN_IMPORT_PROBLEM_DIALOG_ID, problem);
     },
   };
+}
+
+/**
+ * Opens the boxed-characters dialog for a text import that drew any character as the box, and nothing for one that
+ * drew none — the dialog's schema refuses an empty list, as the history dialog's refuses zero.
+ */
+function tellBoxed(
+  deps: { readonly ask: DocumentCommandDeps['ask'] },
+  boxed: readonly BoxedCharacter[],
+  more: number,
+): void {
+  if (boxed.length > 0) void deps.ask(BOXED_CHARACTERS_DIALOG_ID, { from: 'import', boxed: [...boxed], more });
+}
+
+/**
+ * The tab a text import opened, and the boxed characters it holds where it holds any: the tab first, then the list,
+ * so the person reads the list beside the document — the Office import's order. `true` where it opened a tab.
+ */
+function openedText(
+  deps: {
+    readonly ask: DocumentCommandDeps['ask'];
+    readonly onOpened: (opened: OpenedDocument) => void;
+  },
+  result: ChannelResult<'document.newFromMarkdown'>,
+): boolean {
+  if (result.kind !== 'opened' && result.kind !== 'opened-with-boxes') return false;
+  deps.onOpened({ docId: result.docId, version: result.version, byteLength: result.byteLength, name: result.name });
+  if (result.kind === 'opened-with-boxes') tellBoxed(deps, result.boxed, result.more);
+  return true;
 }

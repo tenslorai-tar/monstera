@@ -12,15 +12,17 @@ Some forms are just printed lines and boxes with no fillable fields. Monstera ca
 
 1. Go to the page.
 2. In the rail, choose **Forms**, then **Detect…** in the **Manage** group (**Find fields on this page…**).
-3. The **Fields this page could have** window lists what it found. Untick anything that is not really a place to write.
-4. Choose **Create … fields**. The button says how many fields it will make.
+3. The **Fields this page could have** window says how many places it found and lists them. Untick anything that is not really a place to write.
+4. Choose **Create … fields** to add them, or close the window to add nothing. The button says how many fields it will make.
 
 ![The Fields this page could have window with suggestions ticked](screenshot:detect-form-fields-1)
 
 ## Good to know
 
 - Monstera looks for empty ruled lines and boxes with a label next to them. An empty table cell looks the same, so check the list.
-- Every suggestion becomes a text field. Draw tick boxes, dropdowns and lists with the **Fields** tools.
+- Monstera suggests only places to write: empty lines, boxes and table cells beside a label. It does not suggest a place that already has a field, and the window says how many it left out for that reason.
+- A line or a wide box becomes a text field, and a small square becomes a tick box. Draw dropdowns, lists and radio buttons with the **Fields** tools.
+- Nothing is added until you choose **Create … fields**.
 - One page at a time. Undo with **Ctrl+Z**.
 
 <!--

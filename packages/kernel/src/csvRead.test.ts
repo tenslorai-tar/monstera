@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ComposeRefused } from './composeLayout.js';
+import { ComposeRefused } from './composeOutcome.js';
 import { readCsv } from './csvRead.js';
 
 /** How long the crafted-input case may take — its claim that reading is linear, in milliseconds. */

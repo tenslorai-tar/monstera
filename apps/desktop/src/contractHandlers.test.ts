@@ -296,6 +296,8 @@ function harness(
 }
 
 const A_DOC: DocId = asDocId('doc-1');
+/** A page with no text set at an angle: the counts `document.textBlocks` answers by kind (ADR-0181 Decision 7). */
+const NOT_ANGLED = { turned: 0, vertical: 0, slanted: 0, mirrored: 0 } as const;
 
 /**
  * The handle the service was asked to open.
@@ -1125,8 +1127,15 @@ describe('document.editCopy — an edit of a signed document made on a copy (ADR
   }
 
   it('writes the copy, opens it by the one route, and applies the SAME edit there, its version re-bound and agreed', async () => {
+    // A BOX THE EDIT DREW ON THE COPY, which the copy route carries as the direct route does (ADR-0174).
     const { commands, executed, copied } = commandsFor(() =>
-      Promise.resolve({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }),
+      Promise.resolve({
+        version: asDocVersion(2),
+        byteLength: 2048,
+        historyDropped: 0,
+        boxed: [{ character: '中', page: 0 }],
+        more: 1,
+      }),
     );
     const { capabilities, handlers, opened, sessioned, closed } = harness(OPENED, NO_PICKER, undefined, { commands });
 
@@ -1134,7 +1143,16 @@ describe('document.editCopy — an edit of a signed document made on a copy (ADR
 
     expect(result).toStrictEqual({
       ok: true,
-      value: { kind: 'edited', docId: COPY, version: 2, byteLength: 2048, name: 'signed copy.pdf', historyDropped: 0 },
+      value: {
+        kind: 'edited',
+        docId: COPY,
+        version: 2,
+        byteLength: 2048,
+        name: 'signed copy.pdf',
+        historyDropped: 0,
+        boxed: [{ character: '中', page: 0 }],
+        more: 1,
+      },
     });
     // THE ORIGINAL IS ASKED FOR A COPY, AND NOTHING ELSE: no `execute` names it.
     expect(copied).toStrictEqual([[A_DOC, NAMED]]);
@@ -2014,7 +2032,12 @@ describe('ai.translatePage (ADR-0097)', () => {
    * Handlers whose page holds `blocks` and whose provider answers `reply` as a streamed OpenAI-format
    * answer (or `status` when not 200), recording what it was asked.
    */
-  function translating(blocks: readonly unknown[], replies: string | readonly string[], status = 200) {
+  function translating(
+    blocks: readonly unknown[],
+    replies: string | readonly string[],
+    status = 200,
+    rewrite: 'objects' | 'operators' = 'objects',
+  ) {
     /** One reply per ask, the last repeated — so a case can make the first answer unreadable. */
     const sequence = typeof replies === 'string' ? [replies] : replies;
     const secrets = createEphemeralSecrets();
@@ -2039,7 +2062,7 @@ describe('ai.translatePage (ADR-0097)', () => {
     const commands = {
       textBlocks: (docId: DocId) =>
         docId === DOC
-          ? Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, unaddressable: 0 })
+          ? Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, angled: NOT_ANGLED, unaddressable: 0, rewrite })
           : Promise.reject(new DocumentNotOpenError(docId, 'read its text blocks')),
     } as unknown as DocumentCommands;
     const handlers = createContractHandlers({
@@ -2091,7 +2114,12 @@ settings: createEphemeralSettings(),
 
     expect(result).toStrictEqual({
       ok: true,
-      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], text: 'Facture' }]) },
+      value: {
+        kind: 'translated',
+        version: 7,
+        edit: blockEditOf([{ lines: [[3]], soft: [false], text: 'Facture' }]),
+        rewrite: 'objects',
+      },
     });
     expect(asked).toHaveLength(1);
     // THE BLOCKS AS THE KERNEL WILL DIFF THEM: runs joined as they are, lines by a line break.
@@ -2107,7 +2135,7 @@ settings: createEphemeralSettings(),
     const { handlers } = translating(BLOCKS, JSON.stringify([long, 'Payment is due\nwithin 30 days.']));
     expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
       ok: true,
-      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], text: long }]) },
+      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], soft: [false], text: long }]), rewrite: 'objects' },
     });
   });
 
@@ -2129,6 +2157,14 @@ settings: createEphemeralSettings(),
     expect(asked).toHaveLength(2);
   });
 
+  it('answers which writer the page belongs to, so a Type 3 page is translated by the operator writer (ADR-0181)', async () => {
+    const { handlers } = translating(BLOCKS, JSON.stringify(['Facture', 'Payment is due\nwithin 30 days.']), 200, 'operators');
+    expect(await handlers['ai.translatePage'](ASK)).toMatchObject({ ok: true, value: { kind: 'translated', rewrite: 'operators' } });
+    // CONTROL: the same page read as PDFium's answers `objects`, so the answer follows the read and is not a constant.
+    const plain = translating(BLOCKS, JSON.stringify(['Facture', 'Payment is due\nwithin 30 days.']));
+    expect(await plain.handlers['ai.translatePage'](ASK)).toMatchObject({ ok: true, value: { rewrite: 'objects' } });
+  });
+
   it('an answer of the WRONG LENGTH is refused as unreadable — after ONE more ask, never matched by guess', async () => {
     const { handlers, asked } = translating(BLOCKS, JSON.stringify(['Facture']));
     expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
@@ -2143,7 +2179,12 @@ settings: createEphemeralSettings(),
     const { handlers, asked } = translating(BLOCKS, ['not an array', JSON.stringify(['Facture', 'Payment is due\nwithin 30 days.'])]);
     expect(await handlers['ai.translatePage'](ASK)).toStrictEqual({
       ok: true,
-      value: { kind: 'translated', version: 7, edit: blockEditOf([{ lines: [[3]], text: 'Facture' }]) },
+      value: {
+        kind: 'translated',
+        version: 7,
+        edit: blockEditOf([{ lines: [[3]], soft: [false], text: 'Facture' }]),
+        rewrite: 'objects',
+      },
     });
     expect(asked).toHaveLength(2);
   });
@@ -2583,8 +2624,9 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
   const cell = { size: 9, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
   const blocks = Array.from({ length: 600 }, (_, at) => ({
     box,
-    lines: [{ runs: [{ index: at, text: `cell ${String(at)}`, style: cell }], box }],
+    lines: [{ runs: [{ index: at, text: `cell ${String(at)}`, style: cell }], box, soft: false }],
     style: cell,
+    shape: { align: 'left', firstIndent: 0 },
   }));
   const objects = Array.from({ length: 8400 }, (_, at) => ({
     index: at,
@@ -2596,7 +2638,16 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
     fill: null,
   }));
   const commands = {
-    textBlocks: () => Promise.resolve({ version: asDocVersion(7), blocks, truncated: false, rotated: 0, unaddressable: 2 }),
+    textBlocks: () =>
+      Promise.resolve({
+        version: asDocVersion(7),
+        blocks,
+        truncated: false,
+        rotated: 0,
+        angled: NOT_ANGLED,
+        unaddressable: 2,
+        rewrite: 'operators',
+      }),
     pageObjects: () => Promise.resolve({ version: asDocVersion(7), objects, truncated: false }),
   } as unknown as DocumentCommands;
   const { handlers } = harness(OPENED, () => Promise.resolve(null), undefined, { commands });
@@ -2636,7 +2687,10 @@ describe('a dense page’s blocks and objects answer in parts the contract accep
 
   it('CONTROL: the same page answered WHOLE is refused by the contract — the fixture is at the breaking size', () => {
     const whole = { version: asDocVersion(7), next: null, truncated: false };
-    expect(channels['document.textBlocks'].result.safeParse({ ...whole, blocks, rotated: 0, unaddressable: 2 }).success).toBe(false);
+    // EVERY OTHER FIELD PRESENT, so the size is the only thing it can be refused for.
+    const answer = { ...whole, blocks, rotated: 0, angled: NOT_ANGLED, unaddressable: 2, rewrite: 'objects' as const };
+    expect(channels['document.textBlocks'].result.safeParse(answer).success).toBe(false);
+    expect(channels['document.textBlocks'].result.safeParse({ ...answer, blocks: blocks.slice(0, 1) }).success).toBe(true);
     expect(channels['document.pageObjects'].result.safeParse({ ...whole, objects }).success).toBe(false);
   });
 });

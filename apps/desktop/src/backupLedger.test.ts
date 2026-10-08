@@ -165,3 +165,38 @@ describe('which backups Monstera made (ADR-0139)', () => {
     expect(await next.deleteIfMade(`f${String(MAX_LEDGER_ENTRIES)}.bak`)).toBe('deleted');
   });
 });
+
+describe('a backup a protect rewrites in place (ADR-0171 Decision 8)', () => {
+  it('is rewritten only when Monstera made it, and the NEW file is then Monstera’s, so a removal’s save still finds it', async () => {
+    const files = new Map([['a.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 5 }]]);
+    const disk = volume(files);
+    const provenance = createBackupProvenance(createEphemeralSettings(), disk);
+    await provenance.made('a.pdf.bak');
+    const answer = await provenance.rewriteIfMade('a.pdf.bak', () => {
+      // A RENAME OVER THE FILE, as the sealing does: another index, size and time.
+      files.set('a.pdf.bak', { dev: 1, ino: 20, size: 140, modifiedMs: 9 });
+      return Promise.resolve(true);
+    });
+    expect(answer).toBe('rewritten');
+    expect(await provenance.deleteIfMade('a.pdf.bak')).toBe('deleted');
+  });
+
+  it('CONTROL: one Monstera did not make is not rewritten, and one left as it was keeps its record', async () => {
+    const files = new Map([
+      ['mine.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 5 }],
+      ['theirs.pdf.bak', { dev: 1, ino: 11, size: 100, modifiedMs: 5 }],
+    ]);
+    const provenance = createBackupProvenance(createEphemeralSettings(), volume(files));
+    await provenance.made('mine.pdf.bak');
+    let called = 0;
+    const rewrite = (): Promise<boolean> => {
+      called += 1;
+      return Promise.resolve(false);
+    };
+    expect(await provenance.rewriteIfMade('theirs.pdf.bak', rewrite)).toBe('not-made');
+    expect(called).toBe(0);
+    expect(await provenance.rewriteIfMade('mine.pdf.bak', rewrite)).toBe('left');
+    expect(await provenance.deleteIfMade('mine.pdf.bak')).toBe('deleted');
+    expect(await provenance.rewriteIfMade('gone.pdf.bak', rewrite)).toBe('absent');
+  });
+});

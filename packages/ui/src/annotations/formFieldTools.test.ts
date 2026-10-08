@@ -8,10 +8,16 @@ import {
   FORM_FIELD_LISTBOX_DIALOG_ID,
   FORM_FIELD_RADIO_DIALOG_ID,
 } from '../dialogs/formField.js';
-import { FORM_FIELD_NAME_LABEL, FORM_FIELD_NAME_SEGMENT } from '../messages/en.js';
+import {
+  FORM_FIELD_NAME_LABEL,
+  FORM_FIELD_NAME_PARENT,
+  FORM_FIELD_NAME_SEGMENT,
+  FORM_FIELD_NAME_TAKEN,
+} from '../messages/en.js';
 import type { WriteRequest } from '../pageWriting.js';
 import { overlayTransform } from './annotationSpace.js';
 import { PLAIN_STYLE } from './annotationStyle.js';
+import type { KnownField } from './fieldNameCheck.js';
 import {
   FORM_FIELD_CHECKBOX_TOOL_ID,
   FORM_FIELD_DROPDOWN_TOOL_ID,
@@ -54,6 +60,8 @@ const PAGE: Parameters<typeof overlayTransform>[0] = {
 function toolsAnswering(
   answer: unknown,
   typed?: string,
+  /** The fields the document already has, which the tools read when they are about to ask for a name. */
+  has?: readonly KnownField[],
 ): {
   readonly tools: ReturnType<typeof formFieldTools>;
   readonly asked: { id: string; props: unknown }[];
@@ -70,6 +78,7 @@ function toolsAnswering(
       written.push(request);
       return Promise.resolve(typed);
     },
+    ...(has === undefined ? {} : { fields: () => Promise.resolve(has) }),
     style: PLAIN_STYLE,
   });
   return { tools, asked, written };
@@ -241,5 +250,73 @@ describe('formFieldTools — when it builds nothing', () => {
     expect(
       await drag(toolWithId(tools, FORM_FIELD_DROPDOWN_TOOL_ID), [20, 20], [120, 60]),
     ).toMatchObject({ kind: 'createFormField' });
+  });
+});
+
+const HAS: readonly KnownField[] = [
+  { name: 'Name', kind: 'text', options: [] },
+  { name: 'owner.first', kind: 'text', options: [] },
+  { name: 'plan', kind: 'radio', options: ['Basic'] },
+  { name: 'plan', kind: 'radio', options: ['Pro'] },
+];
+
+describe('formFieldTools — a name the form cannot take is said as it is typed, with the rule the writer refuses by', () => {
+  it('the text tool refuses a name the form has, and one that is the start of another or has another for its start, and takes a free one', async () => {
+    const { tools, written } = toolsAnswering(undefined, 'Other', HAS);
+    await drag(toolWithId(tools, FORM_FIELD_TEXT_TOOL_ID), [20, 20], [120, 80]);
+    const check = written[0]?.check;
+
+    // THE KNOWN CAUSE, each in words: this reached a person as *something went wrong inside Monstera* because the
+    // writer's refusal does not cross the engine host's boundary.
+    expect(check?.('Name')).toBe(FORM_FIELD_NAME_TAKEN);
+    expect(check?.('owner')).toBe(FORM_FIELD_NAME_PARENT);
+    expect(check?.('Name.nick')).toBe(FORM_FIELD_NAME_PARENT);
+    // AND A FREE NAME PASSES, so the refusals are not a check that refuses everything.
+    expect(check?.('Other')).toBeUndefined();
+    expect(check?.('owner.second')).toBeUndefined();
+  });
+
+  it('a tick box is checked the same way, and a radio option MAY join a radio group of its name', async () => {
+    const box = toolsAnswering(undefined, 'Other', HAS);
+    await drag(toolWithId(box.tools, FORM_FIELD_CHECKBOX_TOOL_ID), [20, 20], [40, 40]);
+    expect(box.written[0]?.check?.('plan')).toBe(FORM_FIELD_NAME_TAKEN);
+
+    const radio = toolsAnswering({ name: 'plan', option: 'Plus' }, undefined, HAS);
+    await drag(toolWithId(radio.tools, FORM_FIELD_RADIO_TOOL_ID), [20, 20], [40, 40]);
+    // THE DIALOG IS TOLD WHAT THE DOCUMENT HAS, so it can apply the same rule to the group and its choice.
+    expect(radio.asked).toStrictEqual([{ id: FORM_FIELD_RADIO_DIALOG_ID, props: { known: HAS } }]);
+    radio.tools.forEach((tool) => tool.ended?.());
+  });
+});
+
+describe('formFieldTools — a radio group is asked for once, until the tool ends', () => {
+  it('the second option asks only for its own value, suggests the next free one, and is forgotten when the tool ends', async () => {
+    const radio = toolsAnswering({ name: 'size', option: 'Option 1' }, undefined, []);
+    const tool = toolWithId(radio.tools, FORM_FIELD_RADIO_TOOL_ID);
+
+    await drag(tool, [20, 20], [40, 40]);
+    await drag(tool, [60, 20], [80, 40]);
+    // THE FIRST ASKS FOR THE GROUP; THE SECOND IS HANDED IT, with the value the first took, and the number after it.
+    expect(radio.asked.map((entry) => entry.props)).toStrictEqual([
+      { known: [] },
+      { known: [], group: 'size', used: ['Option 1'], nextNumber: 2 },
+    ]);
+
+    // THE TOOL ENDS (Escape): the next run is a new group, asked for again.
+    tool.ended?.();
+    await drag(tool, [20, 60], [40, 80]);
+    expect(radio.asked[2]?.props).toStrictEqual({ known: [] });
+    tool.ended?.();
+  });
+
+  it('CONTROL: only the radio tool stays on after a field is drawn, the other four are spent by one', () => {
+    const { tools } = toolsAnswering(undefined);
+    expect(tools.map((tool) => [tool.id, tool.endsAfterOne === true])).toStrictEqual([
+      [FORM_FIELD_TEXT_TOOL_ID, true],
+      [FORM_FIELD_CHECKBOX_TOOL_ID, true],
+      [FORM_FIELD_RADIO_TOOL_ID, false],
+      [FORM_FIELD_DROPDOWN_TOOL_ID, true],
+      [FORM_FIELD_LISTBOX_TOOL_ID, true],
+    ]);
   });
 });

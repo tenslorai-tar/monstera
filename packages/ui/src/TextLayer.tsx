@@ -137,7 +137,7 @@ export function readTextSelection(selection: Selection | null = globalThis.docum
  *
  * Measured 2026-10-05 in Chromium 151.0.7922.34, pressing at every half pixel across the start of two lines at five
  * horizontal scales and then dragging: a drag failed exactly where the caret at the press point and the caret at its
- * floor differ, with no failure that rule missed and no prediction that held, and the transform is not needed (it
+ * floor differ, with no failure that rule missed and no failure it predicted that did not happen, and the transform is not needed (it
  * fails at scale 1 too). It needs a pointer whose position is a fraction of a pixel, since flooring a whole number
  * changes nothing: Playwright's pointer always is, and that is the condition measured; whether a scaled Windows
  * display delivers one was not measured. Given one, a line fails or works by where its first letters fall, so the

@@ -1,8 +1,8 @@
-import { PDFRadioGroup, StandardFonts, degrees } from '@cantoo/pdf-lib';
+import { PDFRadioGroup, StandardFonts, degrees, rgb } from '@cantoo/pdf-lib';
 import type { PDFDocument, PDFFont, PDFPage } from '@cantoo/pdf-lib';
 
 import type { AnnotationRect, CommandOfKind, CreatedField } from '@monstera/contract';
-import { snapRotation } from '@monstera/shared';
+import { fieldNameClash, snapRotation } from '@monstera/shared';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert } from './engineSeam.js';
@@ -43,26 +43,43 @@ import { appendRevision, openForWriting } from './pdfLibSession.js';
  * **It grows the box by the border.** `PDFField.js`:258 adds the border width
  * to the requested size and re-centres, so pdf-lib's default of 1 writes a
  * rectangle outset by half a point on every side — measured across four widths,
- * where 0 writes `[40 500 160 524]` and 6 writes `[37 497 163 527]`. Every
- * `addToPage` here passes {@link NO_BORDER}.
+ * where 0 writes `[40 500 160 524]` and 6 writes `[37 497 163 527]`. The
+ * rectangle handed to `addToPage` is therefore inset by half the border on every
+ * side ({@link insetForBorder}), so `/Rect` is the box that was drawn.
  *
  * **It turns the box about the anchor.** See {@link preImage}.
  */
 
 /**
- * The border width every field is created with, and why it is zero.
+ * The border width every field is created with, in points.
  *
- * Not a style choice. pdf-lib's default of 1 makes `/Rect` the drawn box outset
- * by half a point, so a person's rectangle and the document's rectangle differ
- * by an amount nobody asked for and nobody can see — which is worse than a
- * visible difference, because there is nothing to notice.
- *
- * A field's border is an appearance a *style* control would choose, and the
- * FEATURES row for that is where it becomes a value a person picks. This
- * follows the shape the watermark and background rows took: a command field that
- * exists and a control that does not, rather than a schema that has to grow.
+ * A new field has to be SEEN. With a width of 0 and no colours pdf-lib writes an appearance that paints nothing
+ * (measured 2026-10-07: 0 dark pixels inside a new text field, tick box, radio and dropdown, and only the option text of
+ * a list box), so a field was created, listed and invisible on the page. One point in dark grey is what PDF-XChange
+ * draws a new field with, and the Properties pane changes it afterwards.
  */
-const NO_BORDER = 0;
+const FIELD_BORDER = 1;
+
+/** The border's colour: dark enough to read on white paper and on a tint. */
+const FIELD_BORDER_COLOUR = rgb(0.2, 0.2, 0.2);
+
+/** A tick box and a radio are small, so each also takes a white fill: a box the page shows through reads as nothing. */
+const FIELD_FILL = rgb(1, 1, 1);
+
+/**
+ * The rectangle with the border's outset taken off, so that pdf-lib's own growth by the border lands `/Rect` on what
+ * was drawn. A box too small to hold a border keeps its size and takes the largest border it can.
+ */
+function insetForBorder(rect: AnnotationRect, border: number): AnnotationRect {
+  const half = border / 2;
+  const x0 = Math.min(rect.x0, rect.x1);
+  const x1 = Math.max(rect.x0, rect.x1);
+  const y0 = Math.min(rect.y0, rect.y1);
+  const y1 = Math.max(rect.y0, rect.y1);
+  const dx = Math.min(half, (x1 - x0) / 4);
+  const dy = Math.min(half, (y1 - y0) / 4);
+  return { x0: x0 + dx, y0: y0 + dy, x1: x1 - dx, y1: y1 - dy };
+}
 
 /**
  * The `addToPage` arguments that land a widget on `rect` with its content
@@ -133,7 +150,7 @@ function preImage(
  * `applyWatermarkPages`' shape and its wording, because a page index out of
  * range is one refusal whatever the command does with the page.
  */
-function pageAt(document: PDFDocument, index: number): PDFPage {
+export function pageAt(document: PDFDocument, index: number): PDFPage {
   const pages = document.getPages();
   const page = pages[index];
   if (!Number.isInteger(index) || index < 0 || page === undefined) {
@@ -168,17 +185,11 @@ function pageAt(document: PDFDocument, index: number): PDFPage {
  * the way is `owner.first`, which reads like a bug in the caller's own code.
  */
 function collidingName(form: ReturnType<PDFDocument['getForm']>, wanted: string): string | undefined {
-  for (const field of form.getFields()) {
-    const existing = field.getName();
-    if (
-      existing === wanted ||
-      existing.startsWith(`${wanted}.`) ||
-      wanted.startsWith(`${existing}.`)
-    ) {
-      return existing;
-    }
-  }
-  return undefined;
+  // THE SHARED RULE (`fieldNameClash`): the surface asks it before it sends a name, and this refuses with it.
+  return fieldNameClash(
+    form.getFields().map((field) => field.getName()),
+    wanted,
+  );
 }
 
 /**
@@ -210,7 +221,9 @@ function put(
   at: ReturnType<typeof preImage>,
   rotation: number,
 ): void {
-  const placement = { ...at, borderWidth: NO_BORDER, rotate: degrees(rotation) };
+  const drawn = { ...at, borderWidth: FIELD_BORDER, borderColor: FIELD_BORDER_COLOUR, rotate: degrees(rotation) };
+  // THE SMALL, TWO-STATE KINDS ALSO TAKE A FILL; a text field, a dropdown and a list box are drawn as an outlined box.
+  const placement = field.type === 'checkbox' || field.type === 'radio' ? { ...drawn, backgroundColor: FIELD_FILL } : drawn;
   const existing = form.getFieldMaybe(name);
 
   if (field.type === 'radio') {
@@ -335,7 +348,8 @@ export const applyCreateFormField: Apply<'pdf-lib', 'createFormField'> = async (
   // handed, so a throw leaves the caller's bytes untouched by construction.
   const form = document.getForm();
   for (const placement of command.fields) {
-    put(form, page, font, placement.name, placement.field, preImage(placement.rect, rotation), rotation);
+    const inset = insetForBorder(placement.rect, FIELD_BORDER);
+    put(form, page, font, placement.name, placement.field, preImage(inset, rotation), rotation);
   }
 
   // NO APPEARANCE PASS. `updateFieldAppearances` regenerates every field in the

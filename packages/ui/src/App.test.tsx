@@ -1351,7 +1351,7 @@ describe('App', () => {
     it('the ROTATE control names the SAME page the renderer asked the model about', async () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1393,7 +1393,7 @@ describe('App', () => {
         ...OPEN_DOCUMENT_ANSWERS,
         'document.pageTextLayer': { version: asDocVersion(1), lines: [], truncated: false, kind: 'image-only' as const },
         'app.ocrLanguages': { languages: ['eng', 'deu'] },
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
         'document.exportText': { kind: 'copied' as const, bytes: 10, written: asFileHandle('Handle-text-export') },
       };
 
@@ -1484,7 +1484,7 @@ describe('App', () => {
       // defect with two extra controls on it.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1512,7 +1512,7 @@ describe('App', () => {
       // registered. This is the case that needs all three to be true.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1547,7 +1547,7 @@ describe('App', () => {
       // because the document is untouched either way.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1575,7 +1575,7 @@ describe('App', () => {
           groups: [{ pages: [0, 3] }],
           truncated: false,
         },
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1612,7 +1612,7 @@ describe('App', () => {
       // and the case that says an empty field means zero rather than blocking.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1653,7 +1653,7 @@ describe('App', () => {
       // scroll rather than a bug.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1678,7 +1678,7 @@ describe('App', () => {
       // a control wired to its neighbour dispatches just as correctly.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -1693,11 +1693,17 @@ describe('App', () => {
       });
     });
 
-    it('THE DELETE CONTROL SENDS deletePages FOR THE PAGE ON SCREEN', async () => {
+    it('THE DELETE CONTROL ASKS FIRST, then sends deletePages FOR THE PAGE ON SCREEN', async () => {
       // The UI half of delete's wired pair. The kernel half is
       // `pageOrder.test.ts`, which reads a saved document back with pdf-lib and
       // says the right pages went; this says a person can reach it and that the
       // index it carries is the one being displayed.
+      //
+      // IT ASKS FIRST since CR-COR-06 (2026-10-06): *Delete page* opens the
+      // **Delete pages** dialog with the page on screen filled in, and nothing
+      // is dispatched until the person confirms — the same gate the Delete key
+      // and *Delete…* have. A control that still deleted on the first click
+      // would send the command without the dialog ever appearing.
       //
       // THE COMMAND KIND IS PART OF THE ASSERTION. A control wired to
       // `rotatePages` dispatches `document.execute` just as correctly, and the
@@ -1705,12 +1711,20 @@ describe('App', () => {
       // separate.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
 
       await pressCommand('Delete page');
+
+      // THE DIALOG, not a dispatch — the page on screen (1-based `1`) filled in.
+      const field = await screen.findByLabelText('Pages to delete');
+      expect((field as HTMLInputElement).value).toBe('1');
+      await act(async () => {
+        screen.getByRole('button', { name: 'Delete pages' }).click();
+        await Promise.resolve();
+      });
 
       const executed = sent.filter((call) => call.id === 'document.execute');
       expect(executed).toHaveLength(1);
@@ -2201,7 +2215,7 @@ describe('App', () => {
       // requests cannot carry this claim.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -2288,7 +2302,7 @@ describe('App', () => {
     it('FORMS › MANAGE › FLATTEN asks, then sends flattenFormFields and says it did (F-F1)', async () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -2334,7 +2348,7 @@ describe('App', () => {
       const client = createClient(channels, (id) => {
         if (id === 'document.execute') {
           version += 1;
-          return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0 }));
+          return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
         }
         if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), cleared: null, held: [] }));
         if (id === 'cloud.saveBack') {
@@ -2392,7 +2406,7 @@ describe('App', () => {
           sent.push({ id, params });
           if (id === 'document.execute') {
             version += 1;
-            return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0 }));
+            return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
           }
           if (id === 'document.save') return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(version), cleared: null, held: [] }));
           const answer = (OPEN_DOCUMENT_ANSWERS as Readonly<Record<string, unknown>>)[id] ?? OTHER_ANSWERS[id];
@@ -2613,6 +2627,85 @@ describe('App', () => {
         await Promise.resolve();
       });
       expect(blockReads.length).toBeGreaterThan(before);
+    });
+
+    it('EDIT TEXT: a page whose read is refused for any OTHER reason says so on that page and the mode STAYS on', async () => {
+      vi.mocked(reportProblem).mockClear();
+      const blockReads: string[] = [];
+      const client = createClient(channels, (id) => {
+        if (id === 'document.textBlocks') {
+          blockReads.push(id);
+          return Promise.resolve(err({ code: 'document-poisoned' as const }));
+        }
+        const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
+        const answer = answers[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+      await pressCommand('Edit text', 'Edit');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(vi.mocked(reportProblem)).toHaveBeenCalledTimes(1);
+      // THE PAGE SAYS IT, in its own words, where the engine-unavailable sentence ends the mode instead.
+      expect(await screen.findByText(/text could not be read/u)).toBeDefined();
+      // STILL ON, asserted by the next press: a mode that was left is turned on again and asks again, and one still on is
+      // turned OFF by it and reads nothing.
+      const before = blockReads.length;
+      // THE SENTENCE'S DIALOG answered by its own button, since Escape would also be the mode's own way out.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+        await Promise.resolve();
+      });
+      await pressCommand('Edit text', 'Edit');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(blockReads.length).toBe(before);
+    });
+
+    it('EDIT TEXT: a page with no text offers to recognise it, and the button runs the registry’s own recognise command (ADR-0181)', async () => {
+      // THE WIRED PAIR'S MISSING HALF: `TextEditLayer.test.tsx` proves the button calls `onRecognise`, and the kernel proof
+      // proves a recognised scan is edited; this is the line between them, which only the shell holds.
+      const asked: string[] = [];
+      const client = createClient(channels, (id) => {
+        asked.push(id);
+        if (id === 'document.textBlocks') {
+          return Promise.resolve(
+            ok({
+              version: asDocVersion(1),
+              blocks: [],
+              next: null,
+              truncated: false,
+              rotated: 0,
+              angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 },
+              unaddressable: 0,
+              rewrite: 'objects' as const,
+            }),
+          );
+        }
+        if (id === 'app.ocrLanguages') return Promise.resolve(ok({ languages: ['eng'] }));
+        const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
+        const answer = answers[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+      await pressCommand('Edit text', 'Edit');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      // CONTROL: nothing asked for the languages until the button was pressed.
+      expect(asked).not.toContain('app.ocrLanguages');
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('button', { name: /recognise its words/u }));
+        await Promise.resolve();
+      });
+      expect(asked).toContain('app.ocrLanguages');
+      expect(await screen.findByRole('dialog', { name: 'Recognise text' })).toBeDefined();
     });
   });
 
@@ -2887,7 +2980,7 @@ describe('App', () => {
         next: null,
         truncated: false,
       },
-      'document.execute': { version: asDocVersion(2), byteLength: 1024, historyDropped: 0 },
+      'document.execute': { version: asDocVersion(2), byteLength: 1024, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
     });
     render(<App client={client} settings={freshSettings()} />);
     await withDocumentOpen();
@@ -4389,7 +4482,7 @@ describe('Settings › Saving › Confirm before redacting (Part F)', () => {
       if (confirmOff) settings.set('saving.confirm-redaction', false);
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
         // ONE MARK, so Apply has something to burn in: with none it says so and offers nothing (F-P1).
         'document.annotations': {
           version: asDocVersion(1),

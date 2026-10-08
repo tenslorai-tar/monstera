@@ -12,6 +12,8 @@ import { pdfiumChannels } from './pdfiumChannels.js';
 import {
   type PdfiumInputKeeper,
   type PdfiumTransfer,
+  remotePdfiumPageRuns,
+  remotePdfiumRunFonts,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
 } from './remotePdfium.js';
@@ -103,6 +105,8 @@ function harness(peer: Peer, transfer: PdfiumTransfer, keep?: PdfiumInputKeeper)
   return {
     writer: remotePdfiumWriter(client, held, transfer, keep),
     textRuns: remotePdfiumTextRuns(client, held, transfer),
+    runFonts: remotePdfiumRunFonts(client, held, transfer),
+    pageRuns: remotePdfiumPageRuns(client, held, transfer),
   };
 }
 
@@ -168,7 +172,8 @@ describe('main’s PDFium writer', () => {
         // every assertion made afterwards.
         expect(transfer.snapshots.get(sent.from)).toStrictEqual(new Uint8Array([1, 2]));
         transfer.outputs.set(sent.into, result);
-        return { ok: true, value: { bytes: result.length } };
+        // A BOX AND A COUNT PAST IT (ADR-0174): both must reach the writer's answer, beside the image.
+        return { ok: true, value: { bytes: result.length, boxed: [{ character: '中', page: 0 }], more: 4 } };
       },
     };
     const { writer } = harness(peer, transfer);
@@ -180,7 +185,7 @@ describe('main’s PDFium writer', () => {
         sources: [],
         reads: undefined,
       }),
-    ).toStrictEqual(result);
+    ).toStrictEqual({ image: result, boxed: [{ character: '中', page: 0 }], more: 4 });
     // AND THE INPUT IS GONE. A file that outlives the call is one nothing holds
     // a name for, in a directory nothing sweeps until the host ends.
     expect(transfer.snapshots.size).toBe(0);
@@ -201,7 +206,7 @@ describe('main’s PDFium writer', () => {
         const sent = params as { from: string; into: string };
         expect(transfer.snapshots.get(sent.from)).toStrictEqual(new Uint8Array([7, 7]));
         transfer.outputs.set(sent.into, result);
-        return { ok: true, value: { bytes: result.length } };
+        return { ok: true, value: { bytes: result.length, boxed: [], more: 0 } };
       },
     };
     const { writer } = harness(peer, transfer, keep);
@@ -220,7 +225,7 @@ describe('main’s PDFium writer', () => {
         const frame = params as { into: string; password: unknown };
         sent.push(frame.password);
         transfer.outputs.set(frame.into, new Uint8Array([9]));
-        return { ok: true, value: { bytes: 1 } };
+        return { ok: true, value: { bytes: 1, boxed: [], more: 0 } };
       },
     };
     const { writer } = harness(peer, transfer, keep);
@@ -242,7 +247,7 @@ describe('main’s PDFium writer', () => {
         const sent = params as { from: string; into: string };
         expect(transfer.snapshots.get(sent.from)).toStrictEqual(new Uint8Array([1, 2]));
         transfer.outputs.set(sent.into, new Uint8Array([9]));
-        return { ok: true, value: { bytes: 1 } };
+        return { ok: true, value: { bytes: 1, boxed: [], more: 0 } };
       },
     };
     const { writer } = harness(peer, transfer, keep);
@@ -261,7 +266,7 @@ describe('main’s PDFium writer', () => {
           return { ok: true, value: { captured: true, value: { kind: 'replaceTextObject', prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] } } } };
         }
         transfer.outputs.set((params as { into: string }).into, new Uint8Array([9]));
-        return { ok: true, value: { bytes: 1 } };
+        return { ok: true, value: { bytes: 1, boxed: [], more: 0 } };
       },
     };
     const { writer } = harness(peer, transfer, keep);
@@ -356,7 +361,7 @@ describe('main’s PDFium writer', () => {
         // A COUNT THAT IS NOT THE FILE'S LENGTH. The host answers a number and
         // main reads a file, so "the host wrote nothing" and "the read found
         // nothing" are otherwise the same empty buffer.
-        return { ok: true, value: { bytes: 99 } };
+        return { ok: true, value: { bytes: 99, boxed: [], more: 0 } };
       },
     };
     const { writer } = harness(peer, transfer);
@@ -453,6 +458,104 @@ describe('main’s PDFium writer', () => {
     await expect(writer.capture(imageOf(new Uint8Array([1])), COMMAND)).rejects.toThrow(/asset-missing/u);
   });
 
+  /**
+   * A BLOCK'S FONTS COME BACK OUT OF THE OUTPUT DIRECTORY in one file, cut where each size ends (ADR-0175), and no sizes
+   * is a block with none: nothing is taken, since the host wrote nothing. Each is the other's control, and the input is
+   * removed either way.
+   */
+  it('cuts a block’s fonts out of one file by the sizes the host answered, and for none takes nothing', async () => {
+    const transfer = stubTransfer();
+    let sizes = [3, 2];
+    const peer: Peer = {
+      asked: [],
+      answer: (channel, params) => {
+        expect(channel).toBe('engine/run-fonts');
+        expect(params).toMatchObject({ page: 2, indices: [6, 7, 9] });
+        if (sizes.length > 0) transfer.outputs.set((params as { into: string }).into, new Uint8Array([1, 2, 3, 8, 9]));
+        return { ok: true, value: { sizes, runs: sizes.length > 0 ? [1, null, 0] : [null, null, null] } };
+      },
+    };
+    const { runFonts } = harness(peer, transfer);
+    const read = await runFonts(imageOf(new Uint8Array([5])), 2, [6, 7, 9]);
+    expect(read.fonts.map((font) => Array.from(font))).toStrictEqual([[1, 2, 3], [8, 9]]);
+    expect(read.runs).toStrictEqual([1, null, 0]);
+    sizes = [];
+    transfer.log.length = 0;
+    expect(await runFonts(imageOf(new Uint8Array([5])), 2, [6, 7, 9])).toStrictEqual({ fonts: [], runs: [null, null, null] });
+    expect(transfer.log.some((entry) => entry.startsWith('take:'))).toBe(false);
+    expect(transfer.log.at(-1)?.startsWith('remove:')).toBe(true);
+  });
+
+  describe('a page’s runs with their members (ADR-0176’s pageRuns)', () => {
+    const asking = (runs: unknown[]) => {
+      const transfer = stubTransfer();
+      const peer: Peer = {
+        asked: [],
+        answer: (channel, params) => {
+          expect(channel).toBe('engine/page-runs');
+          expect(params).toMatchObject({ page: 4 });
+          return { ok: true, value: { textObjects: [0, 2, 3], runs } };
+        },
+      };
+      return { transfer, pageRuns: harness(peer, transfer).pageRuns };
+    };
+    const run = (index: number, members: number[]) => ({ index, members, text: 'x', left: 0, right: 1, bottom: 0, top: 1 });
+
+    it('answers the host’s reading, and removes the input it wrote whatever happened', async () => {
+      const { transfer, pageRuns } = asking([run(0, [0, 2]), run(3, [3])]);
+      expect(await pageRuns(imageOf(new Uint8Array([5])), 4)).toStrictEqual({
+        textObjects: [0, 2, 3],
+        runs: [run(0, [0, 2]), run(3, [3])],
+      });
+      expect(transfer.log.at(-1)?.startsWith('remove:')).toBe(true);
+    });
+
+    it('refuses a member that is not one of the text objects the same answer names', async () => {
+      // OBJECT 1 IS NOT TEXT here: a host naming it would have the writer set a rule as a glyph.
+      await expect(asking([run(0, [0, 1])]).pageRuns(imageOf(new Uint8Array([5])), 4)).rejects.toThrow(/object 1 in a run/u);
+    });
+
+    it('refuses an object named in two runs', async () => {
+      await expect(asking([run(0, [0, 2]), run(2, [2, 3])]).pageRuns(imageOf(new Uint8Array([5])), 4)).rejects.toThrow(/two runs/u);
+    });
+  });
+
+  it('refuses a block’s fonts whose sizes disagree with the file that arrived', async () => {
+    const transfer = stubTransfer();
+    const peer: Peer = {
+      asked: [],
+      answer: (_channel, params) => {
+        transfer.outputs.set((params as { into: string }).into, new Uint8Array([1, 2, 3]));
+        return { ok: true, value: { sizes: [4], runs: [0] } };
+      },
+    };
+    const { runFonts } = harness(peer, transfer);
+    await expect(runFonts(imageOf(new Uint8Array([5])), 0, [1])).rejects.toBeInstanceOf(EngineSerialiseMismatch);
+  });
+
+  /**
+   * THE ANSWER IS HELD TO THE QUESTION, which the channel's schema cannot do: it bounds each field and sees neither the
+   * request nor the other field. A run too few, and a place past the fonts answered, are each refused; the same answer
+   * with the right count and a place in range is the control, read whole.
+   */
+  it('refuses an answer with a run too few, or naming a font it does not carry', async () => {
+    const transfer = stubTransfer();
+    let runs: (number | null)[] = [0];
+    const peer: Peer = {
+      asked: [],
+      answer: (_channel, params) => {
+        transfer.outputs.set((params as { into: string }).into, new Uint8Array([1, 2]));
+        return { ok: true, value: { sizes: [2], runs } };
+      },
+    };
+    const { runFonts } = harness(peer, transfer);
+    await expect(runFonts(imageOf(new Uint8Array([5])), 0, [1, 4])).rejects.toThrow(/answered 1 runs for 2 asked/u);
+    runs = [0, 1];
+    await expect(runFonts(imageOf(new Uint8Array([5])), 0, [1, 4])).rejects.toThrow(/past the 1 it answered/u);
+    runs = [0, 0];
+    expect((await runFonts(imageOf(new Uint8Array([5])), 0, [1, 4])).runs).toStrictEqual([0, 0]);
+  });
+
   it('reads a page’s text runs through the same input write', async () => {
     const transfer = stubTransfer();
     const runs = [
@@ -473,7 +576,7 @@ describe('main’s PDFium writer', () => {
           mono: false,
           italic: true,
           bold: false,
-          upright: true,
+          orientation: 'upright' as const,
         },
       },
       {
@@ -492,7 +595,7 @@ describe('main’s PDFium writer', () => {
           mono: true,
           italic: false,
           bold: true,
-          upright: false,
+          orientation: 'turned' as const,
         },
       },
     ];

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { liftedCredentialsSchema } from './liftedCredentials.js';
+
 /**
  * What the engine-host pipe carries, and how large one frame may be
  * (ADR-0023 §7).
@@ -240,6 +242,11 @@ export const hostRequestSchema = z.union([
    * session is named OUTSIDE the params because the host needs it to find the file before it can read what is in it;
    * it must then match the session the params themselves name. Its bound here is a length guard only: what a session
    * id IS stays the channel's own schema, which the params must pass and this must equal.
+   *
+   * **`credentials` are the params' credentials, which the file never held** (ADR-0171's correction of 2026-10-05):
+   * `liftCredentials` took them out before main wrote it, and the host puts each back at its path before the channel's
+   * schema runs. Required and empty for a call that carries none, so a framer that forgot them is refused rather than
+   * read as carrying none.
    */
   z
     .object({
@@ -250,6 +257,7 @@ export const hostRequestSchema = z.union([
           session: z.string().min(1).max(HOST_OUTPUT_NAME_MAX_CHARS),
           name: outputNameSchema,
           bytes: z.number().int().min(1).max(ENGINE_ANSWER_FILE_MAX_BYTES),
+          credentials: liftedCredentialsSchema,
         })
         .strict(),
       answerInto: outputNameSchema.optional(),
@@ -281,7 +289,10 @@ export const hostResponseSchema = z.union([
   z
     .object({
       id: z.string().min(1).max(HOST_CORRELATION_ID_MAX_CHARS),
-      answerFile: z.object({ bytes: z.number().int().min(1).max(ENGINE_ANSWER_FILE_MAX_BYTES) }).strict(),
+      // AND THE ANSWER'S CREDENTIALS, lifted out of the file by the host as main lifts a request's (ADR-0171).
+      answerFile: z
+        .object({ bytes: z.number().int().min(1).max(ENGINE_ANSWER_FILE_MAX_BYTES), credentials: liftedCredentialsSchema })
+        .strict(),
     })
     .strict(),
 ]);

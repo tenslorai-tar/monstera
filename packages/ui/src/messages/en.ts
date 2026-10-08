@@ -293,6 +293,17 @@ export const IMPORT_FORM_DATA_FDF_TITLE = messageKey('command.import-form-data.f
 export const IMPORT_FORM_DATA_PROBLEM_TITLE = messageKey('dialog.import-form-data.title');
 export const IMPORT_FORM_DATA_UNREADABLE = messageKey('dialog.import-form-data.unreadable');
 export const IMPORT_FORM_DATA_TOO_LARGE = messageKey('dialog.import-form-data.too-large');
+export const IMPORT_FORM_DATA_MATCHED_NOTHING = messageKey('dialog.import-form-data.matched-nothing');
+// WHAT AN IMPORT DID: the fields it left alone, each with its reason (the owner's Part C).
+export const IMPORT_RESULT_TITLE = messageKey('dialog.import-form-data-result.title');
+export const IMPORT_RESULT_FILLED = messageKey('dialog.import-form-data-result.filled');
+export const IMPORT_RESULT_LEFT = messageKey('dialog.import-form-data-result.left');
+export const IMPORT_RESULT_MORE = messageKey('dialog.import-form-data-result.more');
+export const IMPORT_SKIP_NOT_IN_DOCUMENT = messageKey('dialog.import-form-data-result.not-in-document');
+export const IMPORT_SKIP_READ_ONLY = messageKey('dialog.import-form-data-result.read-only');
+export const IMPORT_SKIP_SEVERAL_VALUES = messageKey('dialog.import-form-data-result.several-values');
+export const IMPORT_SKIP_OPTION_NOT_OFFERED = messageKey('dialog.import-form-data-result.option-not-offered');
+export const IMPORT_SKIP_CANNOT_BE_FILLED = messageKey('dialog.import-form-data-result.cannot-be-filled');
 export const PAGE_TRANSITION_TITLE = messageKey('dialog.page-transition.title');
 export const PAGE_TRANSITION_REPLACE = messageKey('dialog.page-transition.replace');
 export const PAGE_TRANSITION_DISSOLVE = messageKey('dialog.page-transition.dissolve');
@@ -697,10 +708,6 @@ export const MARKDOWN_IMPORT_PROBLEM_TITLE = messageKey('dialog.markdown-import-
 export const MARKDOWN_IMPORT_UNREADABLE = messageKey('dialog.markdown-import-problem.unreadable');
 export const MARKDOWN_IMPORT_TOO_LARGE = messageKey('dialog.markdown-import-problem.too-large');
 export const MARKDOWN_IMPORT_NOT_UTF8 = messageKey('dialog.markdown-import-problem.not-utf8');
-export const MARKDOWN_IMPORT_UNENCODABLE = messageKey('dialog.markdown-import-problem.unencodable');
-export const MARKDOWN_IMPORT_UNENCODABLE_LINE = messageKey(
-  'dialog.markdown-import-problem.unencodable-line',
-);
 export const MARKDOWN_IMPORT_NOTHING_TO_DRAW = messageKey(
   'dialog.markdown-import-problem.nothing-to-draw',
 );
@@ -715,6 +722,15 @@ export const WORKBOOK_INCOMPLETE_TITLE = messageKey('dialog.workbook-incomplete.
 export const WORKBOOK_INCOMPLETE_SAID = messageKey('dialog.workbook-incomplete.said');
 export const WORKBOOK_INCOMPLETE_BLOCK = messageKey('dialog.workbook-incomplete.block');
 export const WORKBOOK_INCOMPLETE_MORE = messageKey('dialog.workbook-incomplete.more');
+export const BOXED_CHARACTERS_TITLE = messageKey('dialog.boxed-characters.title');
+export const BOXED_CHARACTERS_SAID = messageKey('dialog.boxed-characters.said');
+export const BOXED_CHARACTERS_AT = messageKey('dialog.boxed-characters.at');
+export const BOXED_CHARACTERS_AT_LINE = messageKey('dialog.boxed-characters.at-line');
+export const BOXED_CHARACTERS_MORE = messageKey('dialog.boxed-characters.more');
+export const BOXED_CHARACTERS_SAID_EDIT = messageKey('dialog.boxed-characters.said-edit');
+export const BOXED_CHARACTERS_ON_PAGE = messageKey('dialog.boxed-characters.on-page');
+export const UNSEALED_COPIES_TITLE = messageKey('dialog.unsealed-copies.title');
+export const UNSEALED_COPIES_SAID = messageKey('dialog.unsealed-copies.said');
 export const MARKDOWN_IMPORT_ABSENT = messageKey('dialog.markdown-import-problem.absent');
 export const MARKDOWN_IMPORT_AT_CAPACITY = messageKey('dialog.markdown-import-problem.at-capacity');
 export const MARKDOWN_IMPORT_IMAGE_UNREADABLE = messageKey(
@@ -1279,17 +1295,124 @@ export const FLAT_FIELDS_TITLE = messageKey('dialog.flat-fields.title');
 export const FLAT_FIELDS_GUESSED = messageKey('dialog.flat-fields.guessed');
 export const FLAT_FIELDS_NONE = messageKey('dialog.flat-fields.none');
 export const FLAT_FIELDS_TRUNCATED = messageKey('dialog.flat-fields.truncated');
+// WHAT DETECT, FLATTEN AND TAB ORDER DO, in one plain sentence each: the ribbon's tooltip and the control's description.
+export const DETECT_FIELDS_TIP = messageKey('command.forms.detect.tip');
+export const FLATTEN_FORM_TIP = messageKey('command.forms.flatten.tip');
+export const TAB_ORDER_TIP = messageKey('command.forms.tab-order.tip');
+// THE ORDER THE TAB KEY WALKS A FORM'S FIELDS (ADR-0193).
+export const TAB_ORDER_COMMAND_TITLE = messageKey('command.forms.tab-order.title');
+export const RIBBON_TAB_ORDER = messageKey('surface.ribbon.tab-order');
+export const TAB_ORDER_TITLE = messageKey('dialog.tab-order.title');
+export const TAB_ORDER_LABEL = messageKey('dialog.tab-order.label');
+export const TAB_ORDER_ROW = messageKey('dialog.tab-order.row');
+export const TAB_ORDER_ROW_NOTE = messageKey('dialog.tab-order.row.note');
+export const TAB_ORDER_COLUMN = messageKey('dialog.tab-order.column');
+export const TAB_ORDER_COLUMN_NOTE = messageKey('dialog.tab-order.column.note');
+export const TAB_ORDER_STRUCTURE = messageKey('dialog.tab-order.structure');
+export const TAB_ORDER_STRUCTURE_NOTE = messageKey('dialog.tab-order.structure.note');
+export const TAB_ORDER_APPLY = messageKey('dialog.tab-order.apply');
+export const TOAST_TAB_ORDER_SET = messageKey('toast.tab-order-set');
+// COPYING A FORM FIELD ONTO OTHER PAGES (ADR-0193).
+export const FIELD_COPY_COMMAND_TITLE = messageKey('command.forms.copy-to-pages.title');
+export const FIELD_COPY_TITLE = messageKey('dialog.field-copy.title');
+export const FIELD_COPY_LABEL = messageKey('dialog.field-copy.label');
+export const FIELD_COPY_NOTE = messageKey('dialog.field-copy.note');
+export const FIELD_COPY_EMPTY = messageKey('dialog.field-copy.empty');
+export const FIELD_COPY_OWN_PAGE = messageKey('dialog.field-copy.own-page');
+export const FIELD_COPY_APPLY = messageKey('dialog.field-copy.apply');
+// ALIGNING SELECTED FORM FIELDS AND MAKING THEM ONE SIZE (ADR-0193), the foot of the Properties tab.
+export const FIELD_ARRANGE_ALIGN_LEFT = messageKey('command.forms.align-left.title');
+export const FIELD_ARRANGE_ALIGN_RIGHT = messageKey('command.forms.align-right.title');
+export const FIELD_ARRANGE_ALIGN_TOP = messageKey('command.forms.align-top.title');
+export const FIELD_ARRANGE_ALIGN_BOTTOM = messageKey('command.forms.align-bottom.title');
+export const FIELD_ARRANGE_CENTRE_HORIZONTALLY = messageKey('command.forms.centre-horizontally.title');
+export const FIELD_ARRANGE_CENTRE_VERTICALLY = messageKey('command.forms.centre-vertically.title');
+export const FIELD_ARRANGE_SAME_WIDTH = messageKey('command.forms.same-width.title');
+export const FIELD_ARRANGE_SAME_HEIGHT = messageKey('command.forms.same-height.title');
+export const FIELD_ARRANGE_SAME_SIZE = messageKey('command.forms.same-size.title');
+// THE PROPERTIES PANE FOR SELECTED FORM FIELDS (ADR-0193).
+export const FIELD_PROPS_LABEL = messageKey('properties.field.label');
+export const FIELD_PROPS_ACTIONS = messageKey('properties.field.actions');
+export const FIELD_PROPS_HEADING_ONE = messageKey('properties.field.heading-one');
+export const FIELD_PROPS_HEADING_MANY = messageKey('properties.field.heading-many');
+export const FIELD_PROPS_WHERE = messageKey('properties.field.where');
+export const FIELD_PROPS_FIRST_SHOWN = messageKey('properties.field.first-shown');
+export const FIELD_PROPS_ONE_ONLY = messageKey('properties.field.one-only');
+export const FIELD_PROPS_UNREADABLE = messageKey('properties.field.unreadable');
+export const FIELD_PROPS_NAME = messageKey('properties.field.name');
+export const FIELD_PROPS_TOOLTIP = messageKey('properties.field.tooltip');
+export const FIELD_PROPS_REQUIRED = messageKey('properties.field.required');
+export const FIELD_PROPS_READ_ONLY = messageKey('properties.field.read-only');
+export const FIELD_PROPS_DEFAULT = messageKey('properties.field.default');
+export const FIELD_PROPS_FONT = messageKey('properties.field.font');
+export const FIELD_PROPS_FONT_HELVETICA = messageKey('properties.field.font.helvetica');
+export const FIELD_PROPS_FONT_TIMES = messageKey('properties.field.font.times');
+export const FIELD_PROPS_FONT_COURIER = messageKey('properties.field.font.courier');
+export const FIELD_PROPS_FONT_SIZE = messageKey('properties.field.font-size');
+export const FIELD_PROPS_BORDER_COLOUR = messageKey('properties.field.border-colour');
+export const FIELD_PROPS_FILL_COLOUR = messageKey('properties.field.fill-colour');
+export const FIELD_PROPS_COLOUR_NONE = messageKey('properties.field.colour-none');
+export const FIELD_PROPS_COLOUR_BLACK = messageKey('properties.field.colour-black');
+export const FIELD_PROPS_COLOUR_WHITE = messageKey('properties.field.colour-white');
+export const FIELD_PROPS_BORDER_WIDTH = messageKey('properties.field.border-width');
+export const FIELD_PROPS_MULTILINE = messageKey('properties.field.multiline');
+export const FIELD_PROPS_OPTIONS = messageKey('properties.field.options');
+export const FIELD_PROPS_OPTIONS_HINT = messageKey('properties.field.options-hint');
+export const FIELD_PROPS_OPTION_VALUES = messageKey('properties.field.option-values');
+export const FIELD_PROPS_OPTION_VALUES_HINT = messageKey('properties.field.option-values-hint');
+export const FIELD_PROPS_FORMAT = messageKey('properties.field.format');
+export const FIELD_PROPS_FORMAT_NONE = messageKey('properties.field.format.none');
+export const FIELD_PROPS_FORMAT_NUMBER = messageKey('properties.field.format.number');
+export const FIELD_PROPS_FORMAT_PERCENT = messageKey('properties.field.format.percent');
+export const FIELD_PROPS_FORMAT_DATE = messageKey('properties.field.format.date');
+export const FIELD_PROPS_FORMAT_TIME = messageKey('properties.field.format.time');
+export const FIELD_PROPS_FORMAT_CUSTOM = messageKey('properties.field.format.custom');
+export const FIELD_PROPS_DECIMALS = messageKey('properties.field.decimals');
+export const FIELD_PROPS_SEPARATORS = messageKey('properties.field.separators');
+export const FIELD_PROPS_SEPARATORS_COMMA_DOT = messageKey('properties.field.separators.comma-dot');
+export const FIELD_PROPS_SEPARATORS_NONE_DOT = messageKey('properties.field.separators.none-dot');
+export const FIELD_PROPS_SEPARATORS_DOT_COMMA = messageKey('properties.field.separators.dot-comma');
+export const FIELD_PROPS_SEPARATORS_NONE_COMMA = messageKey('properties.field.separators.none-comma');
+export const FIELD_PROPS_SEPARATORS_APOSTROPHE_DOT = messageKey('properties.field.separators.apostrophe-dot');
+export const FIELD_PROPS_NEGATIVE = messageKey('properties.field.negative');
+export const FIELD_PROPS_NEGATIVE_MINUS = messageKey('properties.field.negative.minus');
+export const FIELD_PROPS_NEGATIVE_RED = messageKey('properties.field.negative.red');
+export const FIELD_PROPS_NEGATIVE_PARENS = messageKey('properties.field.negative.parens');
+export const FIELD_PROPS_CURRENCY = messageKey('properties.field.currency');
+export const FIELD_PROPS_CURRENCY_BEFORE = messageKey('properties.field.currency-before');
+export const FIELD_PROPS_DATE_PATTERN = messageKey('properties.field.date-pattern');
+export const FIELD_PROPS_TIME_PATTERN = messageKey('properties.field.time-pattern');
+export const FIELD_PROPS_CALCULATION = messageKey('properties.field.calculation');
+export const FIELD_PROPS_CALCULATION_NONE = messageKey('properties.field.calculation.none');
+export const FIELD_PROPS_CALCULATION_SUM = messageKey('properties.field.calculation.sum');
+export const FIELD_PROPS_CALCULATION_PRODUCT = messageKey('properties.field.calculation.product');
+export const FIELD_PROPS_CALCULATION_AVERAGE = messageKey('properties.field.calculation.average');
+export const FIELD_PROPS_CALCULATION_MIN = messageKey('properties.field.calculation.min');
+export const FIELD_PROPS_CALCULATION_MAX = messageKey('properties.field.calculation.max');
+export const FIELD_PROPS_CALCULATION_FIELDS = messageKey('properties.field.calculation-fields');
+export const FIELD_PROPS_CALCULATION_CUSTOM = messageKey('properties.field.calculation-custom');
+export const FIELD_PROPS_CALCULATION_ORDER = messageKey('properties.field.calculation-order');
 export const FLAT_FIELDS_ALL_TEXT = messageKey('dialog.flat-fields.all-text');
 export const FLAT_FIELDS_ACCEPT = messageKey('dialog.flat-fields.accept');
+export const FLAT_FIELDS_FOUND = messageKey('dialog.flat-fields.found');
+export const FLAT_FIELDS_ALREADY = messageKey('dialog.flat-fields.already');
+export const FLAT_FIELDS_NONE_NEW = messageKey('dialog.flat-fields.none-new');
+export const FLAT_FIELDS_KIND_TEXT = messageKey('dialog.flat-fields.kind-text');
+export const FLAT_FIELDS_KIND_TICK = messageKey('dialog.flat-fields.kind-tick');
 export const EDIT_TEXT_COMMAND_TITLE = messageKey('command.text.edit');
 export const TEXT_EDIT_LAYER_LABEL = messageKey('surface.text-edit.layer');
 export const TEXT_EDIT_BLOCK_LABEL = messageKey('surface.text-edit.block');
 export const TEXT_EDIT_EDITOR_LABEL = messageKey('surface.text-edit.editor');
 export const TEXT_EDIT_NONE = messageKey('surface.text-edit.none');
+export const TEXT_EDIT_UNREADABLE = messageKey('surface.text-edit.unreadable');
 export const TEXT_EDIT_TRUNCATED = messageKey('surface.text-edit.truncated');
 export const TEXT_EDIT_UNADDRESSABLE = messageKey('surface.text-edit.unaddressable');
 export const TEXT_EDIT_PROMOTE = messageKey('surface.text-edit.promote');
-export const TEXT_EDIT_ROTATED = messageKey('surface.text-edit.rotated');
+export const TEXT_EDIT_RECOGNISE = messageKey('surface.text-edit.recognise');
+export const TEXT_EDIT_TURNED = messageKey('surface.text-edit.turned');
+export const TEXT_EDIT_VERTICAL = messageKey('surface.text-edit.vertical');
+export const TEXT_EDIT_SLANTED = messageKey('surface.text-edit.slanted');
+export const TEXT_EDIT_MIRRORED = messageKey('surface.text-edit.mirrored');
 export const TEXT_EDIT_NOT_WRITABLE = messageKey('surface.text-edit.not-writable');
 /** The label beside the characters a font cannot show (ADR-0169), in the editor and the problem dialog. */
 export const TEXT_EDIT_CHARACTERS_LABEL = messageKey('surface.text-edit.characters');
@@ -1301,6 +1424,58 @@ export const NOTHING_TO_REPLACE = messageKey('surface.text-edit.nothing-to-repla
 /** A replacement that would change its text's width with more text after it on the line (`replaceLineRule.ts`). */
 export const REPLACE_MOVES_LINE = messageKey('surface.text-edit.replace-moves-line');
 export const TEXT_EDIT_HELD = messageKey('surface.text-edit.held');
+/** A block whose words run past the page's edge: written whole, outlined, and said (the owner's Q7). */
+export const TEXT_EDIT_PAST_PAGE = messageKey('surface.text-edit.past-page');
+// THE EDITOR'S FORMATTING (ADR-0180): the ribbon group, each command, and the bar's own value controls.
+export const GROUP_FORMAT = messageKey('surface.ribbon.group.format');
+export const TEXT_FORMAT_BOLD = messageKey('command.text.format.bold');
+export const TEXT_FORMAT_ITALIC = messageKey('command.text.format.italic');
+export const TEXT_FORMAT_UNDERLINE = messageKey('command.text.format.underline');
+export const TEXT_FORMAT_SUPERSCRIPT = messageKey('command.text.format.superscript');
+export const TEXT_FORMAT_SUBSCRIPT = messageKey('command.text.format.subscript');
+export const TEXT_FORMAT_ALIGN_LEFT = messageKey('command.text.format.align-left');
+export const TEXT_FORMAT_ALIGN_CENTER = messageKey('command.text.format.align-center');
+export const TEXT_FORMAT_ALIGN_RIGHT = messageKey('command.text.format.align-right');
+export const TEXT_FORMAT_BULLETS = messageKey('command.text.format.bullets');
+export const TEXT_FORMAT_NUMBERING = messageKey('command.text.format.numbering');
+export const TEXT_FORMAT_INDENT_MORE = messageKey('command.text.format.indent-more');
+export const TEXT_FORMAT_INDENT_LESS = messageKey('command.text.format.indent-less');
+export const TEXT_FORMAT_BAR_LABEL = messageKey('surface.text-format.bar');
+export const TEXT_BLOCK_REMOVE = messageKey('surface.text-block.remove');
+export const TEXT_MENU_LABEL = messageKey('surface.text-editor.menu');
+export const TEXT_MENU_NO_SUGGESTIONS = messageKey('surface.text-editor.menu.no-suggestions');
+export const TEXT_MENU_ADD_WORD = messageKey('surface.text-editor.menu.add-word');
+export const TEXT_MENU_JOIN_ABOVE = messageKey('surface.text-editor.menu.join-above');
+export const TEXT_MENU_JOIN_BELOW = messageKey('surface.text-editor.menu.join-below');
+export const TEXT_MENU_SPLIT = messageKey('surface.text-editor.menu.split');
+export const ADD_TEXT_COMMAND_TITLE = messageKey('command.text.add');
+export const HINT_ADD_TEXT = messageKey('tool.hint.add-text');
+export const TEXT_ADD_SURFACE = messageKey('surface.text-add.surface');
+export const TEXT_HANDLE_WIDTH = messageKey('surface.text-block.handle-width');
+export const TEXT_HANDLE_SCALE = messageKey('surface.text-block.handle-scale');
+export const TEXT_HANDLE_MOVE = messageKey('surface.text-block.handle-move');
+export const TEXT_HANDLE_TURN = messageKey('surface.text-block.handle-turn');
+export const TEXT_FORMAT_FAMILY = messageKey('surface.text-format.family');
+export const TEXT_FORMAT_FAMILY_RUN = messageKey('surface.text-format.family-run');
+export const TEXT_FORMAT_SIZE = messageKey('surface.text-format.size');
+export const TEXT_FORMAT_FAMILY_ARIAL = messageKey('surface.text-format.family-arial');
+export const TEXT_FORMAT_FAMILY_CALIBRI = messageKey('surface.text-format.family-calibri');
+export const TEXT_FORMAT_FAMILY_CAMBRIA = messageKey('surface.text-format.family-cambria');
+export const TEXT_FORMAT_FAMILY_TIMES = messageKey('surface.text-format.family-times');
+export const TEXT_FORMAT_FAMILY_COURIER = messageKey('surface.text-format.family-courier');
+export const TEXT_FORMAT_COLOUR_CUSTOM = messageKey('surface.text-format.colour-custom');
+export const TEXT_FORMAT_COLOUR_AUTO = messageKey('surface.text-format.colour-auto');
+export const TEXT_FORMAT_COLOUR_BLACK = messageKey('surface.text-format.colour-black');
+export const TEXT_FORMAT_COLOUR_GREY = messageKey('surface.text-format.colour-grey');
+export const TEXT_FORMAT_COLOUR_RED = messageKey('surface.text-format.colour-red');
+export const TEXT_FORMAT_COLOUR_ORANGE = messageKey('surface.text-format.colour-orange');
+export const TEXT_FORMAT_COLOUR_GREEN = messageKey('surface.text-format.colour-green');
+export const TEXT_FORMAT_COLOUR_BLUE = messageKey('surface.text-format.colour-blue');
+export const TEXT_FORMAT_COLOUR_PURPLE = messageKey('surface.text-format.colour-purple');
+export const TEXT_FORMAT_SPACING = messageKey('surface.text-format.spacing');
+export const TEXT_FORMAT_SPACING_SINGLE = messageKey('surface.text-format.spacing-single');
+export const TEXT_FORMAT_SPACING_ONE_HALF = messageKey('surface.text-format.spacing-one-half');
+export const TEXT_FORMAT_SPACING_DOUBLE = messageKey('surface.text-format.spacing-double');
 export const PAGE_IMAGE_ONLY = messageKey('surface.page.image-only');
 /** What the page area says until its first page is drawn, in place of empty slots. */
 export const PAGE_OPENING = messageKey('surface.page.opening');
@@ -1360,6 +1535,12 @@ export const FLATTEN_FORM_TITLE = messageKey('dialog.flatten-form.title');
 export const FLATTEN_FORM_EXPLAINS = messageKey('dialog.flatten-form.explains');
 export const FLATTEN_FORM_APPLY = messageKey('dialog.flatten-form.apply');
 export const FORM_FIELD_TEXT_TOOL_TITLE = messageKey('command.forms.field-text');
+/** One sentence each, the Forms tools' tooltips (the owner, 2026-10-07). */
+export const FORM_FIELD_TEXT_TIP = messageKey('command.forms.field-text.tip');
+export const FORM_FIELD_CHECKBOX_TIP = messageKey('command.forms.field-checkbox.tip');
+export const FORM_FIELD_RADIO_TIP = messageKey('command.forms.field-radio.tip');
+export const FORM_FIELD_DROPDOWN_TIP = messageKey('command.forms.field-dropdown.tip');
+export const FORM_FIELD_LISTBOX_TIP = messageKey('command.forms.field-listbox.tip');
 export const FORM_FIELD_CHECKBOX_TOOL_TITLE = messageKey('command.forms.field-checkbox');
 export const FORM_FIELD_RADIO_TOOL_TITLE = messageKey('command.forms.field-radio');
 export const FORM_FIELD_DROPDOWN_TOOL_TITLE = messageKey('command.forms.field-dropdown');
@@ -1380,6 +1561,11 @@ export const FORM_FIELD_REMOVE_OPTION = messageKey('dialog.form-field.remove-opt
 export const FORM_FIELD_NAME_EMPTY = messageKey('dialog.form-field.name-empty');
 export const FORM_FIELD_NAME_TOO_LONG = messageKey('dialog.form-field.name-too-long');
 export const FORM_FIELD_NAME_SEGMENT = messageKey('dialog.form-field.name-segment');
+export const FORM_FIELD_NAME_TAKEN = messageKey('dialog.form-field.name-taken');
+export const FORM_FIELD_NAME_PARENT = messageKey('dialog.form-field.name-parent');
+export const FORM_FIELD_OPTION_TAKEN = messageKey('dialog.form-field.option-taken');
+export const FORM_FIELD_GROUP_KNOWN = messageKey('dialog.form-field.group-known');
+export const FORM_FIELD_OPTION_SUGGESTION = messageKey('dialog.form-field.option-suggestion');
 export const FORM_FIELD_OPTIONS_EMPTY = messageKey('dialog.form-field.options-empty');
 export const FORMS_KIND_TEXT = messageKey('surface.forms.kind.text');
 export const FORMS_KIND_CHECKBOX = messageKey('surface.forms.kind.checkbox');
@@ -2734,6 +2920,16 @@ export const EDIT_REFUSED_MATRIX = messageKey('dialog.command-problem.edit-refus
 export const EDIT_REFUSED_GENERATE = messageKey('dialog.command-problem.edit-refused.generate');
 export const EDIT_REFUSED_SAVE = messageKey('dialog.command-problem.edit-refused.save');
 export const EDIT_REFUSED_READ_BACK = messageKey('dialog.command-problem.edit-refused.read-back');
+// A CHANGE TO A FORM FIELD THAT COULD NOT BE MADE, one sentence per reason (ADR-0193).
+export const FIELD_EDIT_NOT_FOUND = messageKey('dialog.command-problem.field-edit.not-found');
+export const FIELD_EDIT_NAME_TAKEN = messageKey('dialog.command-problem.field-edit.name-taken');
+export const FIELD_EDIT_NAME_PARENT = messageKey('dialog.command-problem.field-edit.name-parent');
+export const FIELD_EDIT_OPTIONS_COUNT = messageKey('dialog.command-problem.field-edit.options-count');
+export const FIELD_EDIT_OPTIONS_DUPLICATE = messageKey('dialog.command-problem.field-edit.options-duplicate');
+export const FIELD_EDIT_OPTIONS_RADIO_LABELS = messageKey('dialog.command-problem.field-edit.options-radio-labels');
+export const FIELD_EDIT_DUPLICATE_RADIO = messageKey('dialog.command-problem.field-edit.duplicate-radio');
+export const FIELD_EDIT_DUPLICATE_SIGNATURE = messageKey('dialog.command-problem.field-edit.duplicate-signature');
+export const FIELD_EDIT_ENCRYPTED = messageKey('dialog.command-problem.field-edit.encrypted');
 // CLOUD STORAGE (ADR-0091).
 export const CLOUD_TITLE = messageKey('dialog.cloud.title');
 export const CLOUD_COMMAND_TITLE = messageKey('command.cloud.storage');
@@ -3616,11 +3812,113 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FLAT_FIELDS_TITLE]: 'Fields this page could have',
   [FLAT_FIELDS_GUESSED]:
     'Monstera looked for ruled lines and boxes with a label beside them and nothing written in them. An empty box in a table looks the same, so check the list before accepting it.',
+  [DETECT_FIELDS_TIP]:
+    'Detect: finds empty lines and boxes beside a label on this page and offers each one as a field. You see how many it found and choose which to add before anything changes.',
+  [FLATTEN_FORM_TIP]:
+    'Flatten: prints what is typed in every field onto the page and removes the fields, so the form can no longer be filled in. You are asked first.',
+  [TAB_ORDER_TIP]: 'Tab order: choose how the Tab key moves from field to field when someone fills in this form.',
+  [TAB_ORDER_COMMAND_TITLE]: 'Tab order…',
+  [RIBBON_TAB_ORDER]: 'Tab order',
+  [TAB_ORDER_TITLE]: 'Tab order',
+  [TAB_ORDER_LABEL]: 'When someone presses Tab in this form, go',
+  [TAB_ORDER_ROW]: 'Across each row, then down',
+  [TAB_ORDER_ROW_NOTE]: 'Left to right along a line of fields, then to the next line.',
+  [TAB_ORDER_COLUMN]: 'Down each column, then across',
+  [TAB_ORDER_COLUMN_NOTE]: 'Top to bottom in one column of fields, then to the next column.',
+  [TAB_ORDER_STRUCTURE]: 'In the order the document was made',
+  [TAB_ORDER_STRUCTURE_NOTE]: 'Follow the document’s own structure, which is what a screen reader reads.',
+  [TAB_ORDER_APPLY]: 'Set the tab order',
+  [TOAST_TAB_ORDER_SET]: 'Tab order set on every page. Save to keep the change.',
+  [FIELD_COPY_COMMAND_TITLE]: 'Copy to other pages…',
+  [FIELD_COPY_TITLE]: 'Copy this field to other pages',
+  [FIELD_COPY_LABEL]: 'Pages',
+  [FIELD_COPY_NOTE]:
+    'Each copy goes in the same place on its page and is a new field with a name of its own, so filling one does not fill the others.',
+  [FIELD_COPY_EMPTY]: 'Type the pages to copy to, for example 2-4, 6. The form is not changed.',
+  [FIELD_COPY_OWN_PAGE]: 'The field is already on that page. Leave it out of the list.',
+  [FIELD_COPY_APPLY]: 'Copy the field',
+  [FIELD_ARRANGE_ALIGN_LEFT]: 'Align left edges',
+  [FIELD_ARRANGE_ALIGN_RIGHT]: 'Align right edges',
+  [FIELD_ARRANGE_ALIGN_TOP]: 'Align tops',
+  [FIELD_ARRANGE_ALIGN_BOTTOM]: 'Align bottoms',
+  [FIELD_ARRANGE_CENTRE_HORIZONTALLY]: 'Centre across the first field',
+  [FIELD_ARRANGE_CENTRE_VERTICALLY]: 'Centre down the first field',
+  [FIELD_ARRANGE_SAME_WIDTH]: 'Same width as the first field',
+  [FIELD_ARRANGE_SAME_HEIGHT]: 'Same height as the first field',
+  [FIELD_ARRANGE_SAME_SIZE]: 'Same size as the first field',
+  [FIELD_PROPS_LABEL]: 'Field properties',
+  [FIELD_PROPS_ACTIONS]: 'Selected fields',
+  [FIELD_PROPS_HEADING_ONE]: 'Field',
+  [FIELD_PROPS_HEADING_MANY]: '{count, plural, one {# field} other {# fields}}',
+  [FIELD_PROPS_WHERE]: 'Page {page}',
+  [FIELD_PROPS_FIRST_SHOWN]: 'This shows the first selected field. A change you make applies to every selected field.',
+  [FIELD_PROPS_ONE_ONLY]: 'The name, the choices and the calculation belong to one field. Select a single field to change them.',
+  [FIELD_PROPS_UNREADABLE]: 'This field has changed since it was selected. Select it again to see its properties.',
+  [FIELD_PROPS_NAME]: 'Name',
+  [FIELD_PROPS_TOOLTIP]: 'Tooltip',
+  [FIELD_PROPS_REQUIRED]: 'Required',
+  [FIELD_PROPS_READ_ONLY]: 'Read only',
+  [FIELD_PROPS_DEFAULT]: 'Default value',
+  [FIELD_PROPS_FONT]: 'Font',
+  [FIELD_PROPS_FONT_HELVETICA]: 'Helvetica',
+  [FIELD_PROPS_FONT_TIMES]: 'Times',
+  [FIELD_PROPS_FONT_COURIER]: 'Courier',
+  [FIELD_PROPS_FONT_SIZE]: 'Size (0 is automatic)',
+  [FIELD_PROPS_BORDER_COLOUR]: 'Border colour',
+  [FIELD_PROPS_FILL_COLOUR]: 'Fill colour',
+  [FIELD_PROPS_COLOUR_NONE]: 'None',
+  [FIELD_PROPS_COLOUR_BLACK]: 'Black',
+  [FIELD_PROPS_COLOUR_WHITE]: 'White',
+  [FIELD_PROPS_BORDER_WIDTH]: 'Border width',
+  [FIELD_PROPS_MULTILINE]: 'Several lines',
+  [FIELD_PROPS_OPTIONS]: 'Choices',
+  [FIELD_PROPS_OPTIONS_HINT]: 'One choice on each line, as people read it. For a radio group these are the values of its options, in the order they sit.',
+  [FIELD_PROPS_OPTION_VALUES]: 'Stored values',
+  [FIELD_PROPS_OPTION_VALUES_HINT]: 'Optional. On each line, what the document keeps for the choice on the same line above. Leave a line empty to keep the choice itself.',
+  [FIELD_PROPS_FORMAT]: 'Format',
+  [FIELD_PROPS_FORMAT_NONE]: 'None',
+  [FIELD_PROPS_FORMAT_NUMBER]: 'Number',
+  [FIELD_PROPS_FORMAT_PERCENT]: 'Percentage',
+  [FIELD_PROPS_FORMAT_DATE]: 'Date',
+  [FIELD_PROPS_FORMAT_TIME]: 'Time',
+  [FIELD_PROPS_FORMAT_CUSTOM]: 'A script from another program. It is kept as it is.',
+  [FIELD_PROPS_DECIMALS]: 'Decimal places',
+  [FIELD_PROPS_SEPARATORS]: 'Separators',
+  [FIELD_PROPS_SEPARATORS_COMMA_DOT]: '1,234.56',
+  [FIELD_PROPS_SEPARATORS_NONE_DOT]: '1234.56',
+  [FIELD_PROPS_SEPARATORS_DOT_COMMA]: '1.234,56',
+  [FIELD_PROPS_SEPARATORS_NONE_COMMA]: '1234,56',
+  [FIELD_PROPS_SEPARATORS_APOSTROPHE_DOT]: '1’234.56',
+  [FIELD_PROPS_NEGATIVE]: 'Negative numbers',
+  [FIELD_PROPS_NEGATIVE_MINUS]: 'With a minus sign',
+  [FIELD_PROPS_NEGATIVE_RED]: 'In red',
+  [FIELD_PROPS_NEGATIVE_PARENS]: 'In brackets',
+  [FIELD_PROPS_CURRENCY]: 'Currency sign',
+  [FIELD_PROPS_CURRENCY_BEFORE]: 'Sign before the number',
+  [FIELD_PROPS_DATE_PATTERN]: 'Date pattern',
+  [FIELD_PROPS_TIME_PATTERN]: 'Time pattern',
+  [FIELD_PROPS_CALCULATION]: 'Calculation',
+  [FIELD_PROPS_CALCULATION_NONE]: 'None',
+  [FIELD_PROPS_CALCULATION_SUM]: 'Sum',
+  [FIELD_PROPS_CALCULATION_PRODUCT]: 'Product',
+  [FIELD_PROPS_CALCULATION_AVERAGE]: 'Average',
+  [FIELD_PROPS_CALCULATION_MIN]: 'Smallest',
+  [FIELD_PROPS_CALCULATION_MAX]: 'Largest',
+  [FIELD_PROPS_CALCULATION_FIELDS]: 'Fields it works from',
+  [FIELD_PROPS_CALCULATION_CUSTOM]: 'A script from another program. It is kept as it is.',
+  [FIELD_PROPS_CALCULATION_ORDER]: 'Calculation order (1 is first)',
   [FLAT_FIELDS_NONE]: 'Nothing on this page looks like a place to write.',
   [FLAT_FIELDS_TRUNCATED]: 'There were more than Monstera lists here, so this page may have others.',
   [FLAT_FIELDS_ALL_TEXT]:
-    'These are all created as text fields. Use the Forms tools to draw a tick box, a dropdown or a list.',
+    'A line or a wide box becomes a text field and a small square becomes a tick box. Use the Forms tools to draw a dropdown, a list or a radio button.',
   [FLAT_FIELDS_ACCEPT]: '{count, plural, one {Create # field} other {Create # fields}}',
+  [FLAT_FIELDS_FOUND]:
+    '{count, plural, =0 {Found no new places for a field.} one {Found # place for a field.} other {Found # places for fields.}}',
+  [FLAT_FIELDS_ALREADY]:
+    '{count, plural, one {# place already has a field and was left out.} other {# places already have a field and were left out.}}',
+  [FLAT_FIELDS_NONE_NEW]: 'Every place on this page that looks like a field already has one.',
+  [FLAT_FIELDS_KIND_TEXT]: 'Text field',
+  [FLAT_FIELDS_KIND_TICK]: 'Tick box',
   [EDIT_TEXT_COMMAND_TITLE]: 'Edit text on the page',
   [TEXT_EDIT_LAYER_LABEL]: 'Editable text on page {page}',
   // THE BLOCK'S OWN FIRST WORDS name it, so a person moving through the page
@@ -3628,6 +3926,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [TEXT_EDIT_BLOCK_LABEL]: 'Edit “{words}”',
   [TEXT_EDIT_EDITOR_LABEL]: 'Text being edited. Press Esc when you are done.',
   [TEXT_EDIT_NONE]: 'This page has no text that can be edited.',
+  [TEXT_EDIT_UNREADABLE]: 'This page’s text could not be read, so it cannot be edited here. Other pages can.',
   [TEXT_EDIT_TRUNCATED]: 'This page has more text than can be outlined at once; some of it is not outlined.',
   // NAMES THE CAUSE IN A READER'S WORDS, and does not apologise. *Pasted in as
   // a block* is how a Form XObject got there to somebody who did not make the
@@ -3636,7 +3935,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // SAYS WHAT IT DOES TO THE PAGE: the block becomes ordinary page content,
   // which is a change to the document a person is agreeing to.
   [TEXT_EDIT_PROMOTE]: 'Unpack it so it can be edited',
-  [TEXT_EDIT_ROTATED]: 'Text set at an angle on this page can’t be edited in place.',
+  // A SCAN HAS NO TEXT TO EDIT UNTIL IT IS READ (ADR-0181 Decision 9): the button runs the recognise command for this page,
+  // so the words it finds are the ones the editor then offers.
+  [TEXT_EDIT_RECOGNISE]: 'If this is a scan, recognise its words so they can be edited',
+  // ONE SENTENCE FOR EACH KIND THE PAGE HAS (ADR-0181 Decision 7), so a person is told which text is not theirs to edit
+  // and why, rather than that some text is set at an angle.
+  [TEXT_EDIT_TURNED]: 'Text turned at an angle on this page can’t be edited in place.',
+  [TEXT_EDIT_VERTICAL]: 'Text that runs up or down this page can’t be edited in place.',
+  [TEXT_EDIT_SLANTED]: 'Text this page slants itself, rather than in its font, can’t be edited in place.',
+  [TEXT_EDIT_MIRRORED]: 'Mirrored text on this page can’t be edited in place.',
   // SAYS NOTHING CHANGED FIRST, then what to do: the editor stays open with the
   // words, so the person can change the ones the font cannot show.
   // SAID IN THE EDITOR AND IN THE PROBLEM DIALOG ALIKE, so it names no key: the editor adds its own hint beneath
@@ -3657,6 +3964,58 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Nothing was changed: the new words are a different width, and the text after them on the line would have to move, which Replace cannot do yet. Edit text can change this line.',
   [TEXT_EDIT_HELD]:
     'Nothing was changed, so the signatures still verify. Keep typing and you will be asked again when you finish, or press Esc to put the text back.',
+  // THE OWNER'S OWN SENTENCE (Q7), and nothing promised that the editor cannot do: the words are all kept, and the way
+  // to make them fit is to shorten them, which the open editor is for.
+  [TEXT_EDIT_PAST_PAGE]: 'This text no longer fits on the page',
+  [GROUP_FORMAT]: 'Format',
+  [TEXT_FORMAT_BOLD]: 'Bold',
+  [TEXT_FORMAT_ITALIC]: 'Italic',
+  [TEXT_FORMAT_UNDERLINE]: 'Underline',
+  [TEXT_FORMAT_SUPERSCRIPT]: 'Superscript',
+  [TEXT_FORMAT_SUBSCRIPT]: 'Subscript',
+  [TEXT_FORMAT_ALIGN_LEFT]: 'Align left',
+  [TEXT_FORMAT_ALIGN_CENTER]: 'Centre',
+  [TEXT_FORMAT_ALIGN_RIGHT]: 'Align right',
+  [TEXT_FORMAT_BULLETS]: 'Bullets',
+  [TEXT_FORMAT_NUMBERING]: 'Numbering',
+  [TEXT_FORMAT_INDENT_MORE]: 'Increase indent',
+  [TEXT_FORMAT_INDENT_LESS]: 'Decrease indent',
+  [TEXT_FORMAT_BAR_LABEL]: 'Text formatting',
+  [TEXT_BLOCK_REMOVE]: 'Remove this text',
+  [TEXT_MENU_LABEL]: 'Text editing',
+  [TEXT_MENU_NO_SUGGESTIONS]: 'No suggestions',
+  [TEXT_MENU_ADD_WORD]: 'Add “{word}” to the dictionary',
+  [TEXT_MENU_JOIN_ABOVE]: 'Join with the text above',
+  [TEXT_MENU_JOIN_BELOW]: 'Join with the text below',
+  [TEXT_MENU_SPLIT]: 'Split the text before this paragraph',
+  [ADD_TEXT_COMMAND_TITLE]: 'Add text',
+  [HINT_ADD_TEXT]: 'Click the page where the new text should go, then type.',
+  [TEXT_ADD_SURFACE]: 'Click where the new text should go',
+  [TEXT_HANDLE_WIDTH]: 'Drag to change the width of the text',
+  [TEXT_HANDLE_SCALE]: 'Drag to make the text bigger or smaller',
+  [TEXT_HANDLE_MOVE]: 'Drag to move the text',
+  [TEXT_HANDLE_TURN]: 'Drag to turn the text',
+  [TEXT_FORMAT_FAMILY]: 'Font',
+  [TEXT_FORMAT_FAMILY_RUN]: 'As on the page',
+  [TEXT_FORMAT_SIZE]: 'Size in points',
+  [TEXT_FORMAT_FAMILY_ARIAL]: 'Arial',
+  [TEXT_FORMAT_FAMILY_CALIBRI]: 'Calibri',
+  [TEXT_FORMAT_FAMILY_CAMBRIA]: 'Cambria',
+  [TEXT_FORMAT_FAMILY_TIMES]: 'Times New Roman',
+  [TEXT_FORMAT_FAMILY_COURIER]: 'Courier New',
+  [TEXT_FORMAT_COLOUR_CUSTOM]: 'Other text colour',
+  [TEXT_FORMAT_COLOUR_AUTO]: 'Text colour as on the page',
+  [TEXT_FORMAT_COLOUR_BLACK]: 'Black',
+  [TEXT_FORMAT_COLOUR_GREY]: 'Grey',
+  [TEXT_FORMAT_COLOUR_RED]: 'Red',
+  [TEXT_FORMAT_COLOUR_ORANGE]: 'Orange',
+  [TEXT_FORMAT_COLOUR_GREEN]: 'Green',
+  [TEXT_FORMAT_COLOUR_BLUE]: 'Blue',
+  [TEXT_FORMAT_COLOUR_PURPLE]: 'Purple',
+  [TEXT_FORMAT_SPACING]: 'Line spacing',
+  [TEXT_FORMAT_SPACING_SINGLE]: 'Single',
+  [TEXT_FORMAT_SPACING_ONE_HALF]: '1.5',
+  [TEXT_FORMAT_SPACING_DOUBLE]: 'Double',
   // SAYS WHAT THE PAGE IS, not what the application cannot do. A reader looking
   // at words they cannot select has one question — why — and *this page is a
   // picture* answers it. It deliberately does not say *scanned*: the kernel
@@ -3740,6 +4099,16 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // from the Forms panel's controls: those fill a field that exists, these put
   // one on the page.
   [FORM_FIELD_TEXT_TOOL_TITLE]: 'Draw a text field',
+  [FORM_FIELD_TEXT_TIP]:
+    'Text field: drag a box on the page where people type, then name it. Double click to draw several in a row, and press Esc to stop.',
+  [FORM_FIELD_CHECKBOX_TIP]:
+    'Tick box: drag a small square that people tick on or off, then name it. Double click to draw several in a row, and press Esc to stop.',
+  [FORM_FIELD_RADIO_TIP]:
+    'Radio button: drag a circle for each choice. Choices given the same group name belong together and only one can be on. Press Esc when the group is done.',
+  [FORM_FIELD_DROPDOWN_TIP]:
+    'Dropdown: drag a box where people pick one choice from a list. Double click to draw several in a row, and press Esc to stop.',
+  [FORM_FIELD_LISTBOX_TIP]:
+    'List box: drag a box that shows a list of choices people pick from. Double click to draw several in a row, and press Esc to stop.',
   [FORM_FIELD_CHECKBOX_TOOL_TITLE]: 'Draw a tick box',
   [FORM_FIELD_RADIO_TOOL_TITLE]: 'Draw a radio option',
   [FORM_FIELD_DROPDOWN_TOOL_TITLE]: 'Draw a dropdown',
@@ -3770,6 +4139,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // under one parent — so an empty piece asks for a group with no name.
   [FORM_FIELD_NAME_SEGMENT]:
     'A dot groups fields, so “owner.first” and “owner.second” belong together. Every piece between dots needs a name.',
+  // THE KNOWN CAUSES a field cannot be created, said before anything is sent: a name the form already has, and a name
+  // tangled up with another's through a dot.
+  [FORM_FIELD_NAME_TAKEN]: 'This form already has a field with that name. Choose another name.',
+  [FORM_FIELD_NAME_PARENT]:
+    'That name clashes with another field, because a dot groups fields. Choose a name that is not the start of another field’s name, and does not start with one.',
+  [FORM_FIELD_OPTION_TAKEN]: 'This group already has a choice with that value. Give each choice its own value.',
+  [FORM_FIELD_GROUP_KNOWN]: 'Adding a choice to the group “{group}”.',
+  [FORM_FIELD_OPTION_SUGGESTION]: 'Option {number}',
   [FORM_FIELD_OPTIONS_EMPTY]: 'Give it at least one choice, or nobody can pick anything.',
   [FORMS_KIND_TEXT]: 'Text',
   [FORMS_KIND_CHECKBOX]: 'Tick box',
@@ -4650,7 +5027,20 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // does not cross that boundary. Claiming one of the three would be a guess
   // wearing a diagnosis's clothes, and the reader would act on it.
   [IMPORT_FORM_DATA_UNREADABLE]:
-    'Nothing was changed. The file may not be form data in that format, it may name fields this document does not have, or it may hold a value one of those fields will not take.',
+    'Nothing was changed. That file is not form data in the format you chose, so Monstera could not read it. Check that you picked the right format for the file.',
+  [IMPORT_FORM_DATA_MATCHED_NOTHING]:
+    'Nothing was changed. The file names {named, plural, one {# field} other {# fields}}, and this form has none of them. It may be the data of a different form.',
+  [IMPORT_RESULT_TITLE]: 'Form data imported',
+  [IMPORT_RESULT_FILLED]:
+    '{count, plural, =0 {Every field the file names already held those values, so nothing needed filling.} one {Filled # field.} other {Filled # fields.}}',
+  [IMPORT_RESULT_LEFT]:
+    '{count, plural, one {# field was left as it was:} other {# fields were left as they were:}}',
+  [IMPORT_RESULT_MORE]: '…and {count, plural, one {# more} other {# more}}.',
+  [IMPORT_SKIP_NOT_IN_DOCUMENT]: 'This form has no field with that name.',
+  [IMPORT_SKIP_READ_ONLY]: 'The field is locked, and the file holds a different value.',
+  [IMPORT_SKIP_SEVERAL_VALUES]: 'The file gives several values, and this field takes one.',
+  [IMPORT_SKIP_OPTION_NOT_OFFERED]: 'The value is not one of the field’s choices.',
+  [IMPORT_SKIP_CANNOT_BE_FILLED]: 'This kind of field cannot take that value.',
   [IMPORT_FORM_DATA_TOO_LARGE]:
     'Nothing was changed. Monstera reads form data files up to {megabytes} MB, and that one is larger.',
   [PAGE_TRANSITION_TITLE]: 'Page transition',
@@ -5156,10 +5546,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'Nothing was imported.',
   [MARKDOWN_IMPORT_NOT_UTF8]:
     'That file is not UTF-8 text, so it cannot be read as Markdown. Nothing was imported.',
-  [MARKDOWN_IMPORT_UNENCODABLE]:
-    'The file has a character the built-in fonts cannot draw. Nothing was imported.',
-  [MARKDOWN_IMPORT_UNENCODABLE_LINE]:
-    'Line {line} has a character the built-in fonts cannot draw. Nothing was imported.',
   [MARKDOWN_IMPORT_NOTHING_TO_DRAW]: 'That file has no text to put on a page. Nothing was imported.',
   // THE REMEDY IS THE PERSON'S: close the document holding that file, or pick another
   // name. `saveCopy`'s contested sentence is the same situation.
@@ -5171,6 +5557,22 @@ export const EN: Readonly<Record<MessageKey, string>> = {
     'The PDF is open, but these rows of the workbook are not in it. The converter could not convert them, even in smaller parts:',
   [WORKBOOK_INCOMPLETE_BLOCK]: 'Sheet “{sheet}”, rows {from, number} to {to, number}',
   [WORKBOOK_INCOMPLETE_MORE]: '{count, plural, one {And # more block of rows.} other {And # more blocks of rows.}}',
+  [BOXED_CHARACTERS_TITLE]: 'Some characters are shown as boxes',
+  [BOXED_CHARACTERS_SAID]:
+    'The PDF is open. No font here can draw the characters below, so each one is shown as a box. The text is ' +
+    'kept: copying it gives the characters as written.',
+  [BOXED_CHARACTERS_AT]: '“{character}” ({code}), line {line, number}, column {column, number}',
+  [BOXED_CHARACTERS_AT_LINE]: '“{character}” ({code}), in the block that starts on line {line, number}',
+  [BOXED_CHARACTERS_MORE]: '{count, plural, one {And # more place.} other {And # more places.}}',
+  [BOXED_CHARACTERS_SAID_EDIT]:
+    'Your change is made. No font here can draw the characters below, so each one is shown as a box on the page. ' +
+    'The text is kept: copying or searching it finds the characters as you typed them.',
+  [BOXED_CHARACTERS_ON_PAGE]: '“{character}” ({code}), page {page, number}',
+  [UNSEALED_COPIES_TITLE]: 'Some older copies could not be encrypted',
+  [UNSEALED_COPIES_SAID]:
+    'The password and permissions are set. These older copies could not be encrypted, perhaps because another ' +
+    'program has one open, so they may still hold the document as it was. Close any program using them and protect ' +
+    'the document again to finish.',
   [MARKDOWN_IMPORT_CONVERSION_FAILED]:
     'That file could not be turned into a PDF. It may be damaged, or not the kind of file its name says. ' +
     'Nothing was imported.',
@@ -5906,4 +6308,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EDIT_REFUSED_GENERATE]: 'Monstera couldn’t rebuild the page with your change, so nothing was changed.',
   [EDIT_REFUSED_SAVE]: 'Monstera couldn’t save the edited page, so nothing was changed.',
   [EDIT_REFUSED_READ_BACK]: 'This page uses a font Monstera can’t rewrite yet, so nothing was changed.',
+  // EACH SAYS WHAT STOPPED IT AND THAT NOTHING WAS CHANGED, and the three a person can fix say how.
+  [FIELD_EDIT_NOT_FOUND]: 'That field has moved since the list was read, so nothing was changed. Select it again and try once more.',
+  [FIELD_EDIT_NAME_TAKEN]: 'Another field already has that name, or a name that starts with it, so nothing was changed. Choose a different name.',
+  [FIELD_EDIT_NAME_PARENT]: 'A name cannot have an empty part between its dots, so nothing was changed. Each part of a name needs a word.',
+  [FIELD_EDIT_OPTIONS_COUNT]: 'The group has a different number of options than the values given, so nothing was changed.',
+  [FIELD_EDIT_OPTIONS_DUPLICATE]: 'Two options have the same value, so nothing was changed. Give each option its own value.',
+  [FIELD_EDIT_OPTIONS_RADIO_LABELS]: 'A radio group keeps only the value of each option, not a separate text to show, so nothing was changed.',
+  [FIELD_EDIT_DUPLICATE_RADIO]: 'A radio option belongs to its group, so it cannot be copied on its own. Nothing was changed.',
+  [FIELD_EDIT_DUPLICATE_SIGNATURE]: 'A signature field is signed once, so it cannot be copied. Nothing was changed.',
+  [FIELD_EDIT_ENCRYPTED]: 'This document is encrypted, and form fields cannot be changed in an encrypted document. Nothing was changed.',
 };

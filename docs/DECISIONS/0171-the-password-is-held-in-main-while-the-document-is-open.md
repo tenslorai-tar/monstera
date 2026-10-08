@@ -1,6 +1,6 @@
 # ADR-0171 — The password is held in main while the document is open, so every copy stays protected
 
-- **Status:** Accepted, with two questions put to the owner (Decisions 7 and 8)
+- **Status:** Accepted. Decisions 7 and 8 were put to the owner and answered yes on 2026-10-05 (the last addendum)
 - **Date:** 2026-10-05
 - **Supersedes:** [ADR-0055](0055-a-password-crosses-into-the-host-and-unlocking-is-an-open.md) Decision 3's *"It does
   not survive the call. Main does not keep it"*, its rejected alternative *"Caching the password to make `recycle`
@@ -223,3 +223,202 @@ and here the unsafe direction is the quiet one: a credential-bearing command tha
 *Correction, 2026-10-05, while building it:* the positive control finds **three** credential fields, not two:
 `setDocumentProtection`'s `userPassword` and `ownerPassword`, and `signDocument`'s `passphrase`. The walk matches a
 field by its name, so a credential named as something else is out of its reach.
+
+## Addendum, 2026-10-05 — the owner's answers to Decisions 7 and 8, and their mechanism (B4)
+
+The owner, after Phase 0's report:
+
+- **Decision 7: yes.** *"The renderer keeps what the person typed, in memory only, for that document only, and wiped
+  on close. It's never written anywhere."*
+- **Decision 8: yes.** *"Make protect undoable without a saved unprotected copy. Also, at the moment a document is
+  protected, every existing copy on disk (snapshot, working image and any other) is replaced with an encrypted one. No
+  unprotected copy survives the protect, not even until close. Add a proof that fails if any copy is left unencrypted
+  after the protect."*
+
+### What reading the code found first
+
+Mapped 2026-10-05 against this branch, file by file. A protect changes how every later serialise of the session is
+encrypted, and nothing else follows it:
+
+- `opensWith` still answers the password the document was **opened** with, so the undo of a later terminal command, a
+  host rebuild after a later image refresh, PDFium and Optimize all reopen bytes encrypted under the new password with
+  the old one, and fail.
+- A second protect's checkpoint is encrypted under the first in-session password, which nothing holds.
+- The protect is `nothing-drawn`, so the canonical image keeps the unprotected bytes, and its entry stays past the
+  image's base; a removal save's `forgetUndoCopies` cannot shed it, so its own checkpoint, the unprotected document,
+  stays on disk until close.
+
+These are one defect, the holder not following the protection, and Decision 8 is where it is fixed.
+
+### Decision 7's mechanism — the renderer's keys
+
+- `DocumentKeys` in `packages/ui` holds, per `DocId`, the passwords the person typed for that document: one
+  `document.unlock` accepted, and a user password set through Protect. Each is a `HeldPassword`. It is owned by
+  `DocumentStores`, so `close` wipes and drops them in the same call that drops the document's store, and its
+  lifetime is the store's by shape rather than by a cleanup.
+- `useDocumentView` is handed the document's keys. A parse that needs a password tries each held key with PDF.js first
+  and asks the person only if none opens it. Main is not asked again, since main holds its own key. A password the
+  person then types and main accepts is added.
+- **Every key, not only the last**: an undo of a protect puts the image back under the earlier password, so the latest
+  key is the wrong one exactly then.
+- It is never written: no setting, no log, no storage, and no channel carries it except `document.unlock`'s params and
+  the protect command, as today.
+
+### Decision 8's mechanism
+
+**1. The holder follows the protection, and holds three things for the document's life, all wiped on close.**
+
+- *Standing*: the protection the document stands with now. That is either the protect in force (its terms, which may
+  carry passwords), *as opened* (the file's own encryption, or none), or *unprotected* after a protect that removed it.
+- `opensWith`: the password that opens the document as it stands.
+- *Keys*: every password any copy of it is encrypted with. They only grow until close.
+
+A protect, its undo and its redo set the standing and `opensWith`. Each protect step's before and after are held by the
+supervisor in a table keyed by the log entry, in memory, so they die with the entry, as the bus's held table does
+(Decision 3).
+
+**2. Every reopen of a copy tries the keys, the current one first, and is told the standing.** This covers a restore,
+an adopt, a removal save's renewal and a host rebuild. Each attempt is a fresh open, so a wrong key is an ordinary
+refusal and destroys nothing. `engine/open` gains a required `standing`:
+
+- `as-opened`: the session keeps the copy's encryption.
+- `protected` with the terms: the session takes them.
+- `unprotected`: the session is decrypted in memory only when the copy is encrypted. A plain copy is left alone, so
+  its incremental save, which a signature needs, is not lost to a needless `encrypt=none`.
+
+This is what makes the next point safe: an undo always steps back through a protect before it reaches an older copy,
+so the standing at a restore is the protection that copy's own state had.
+
+**3. The protect is invertible, and draws: `invertible: true`, `undo: 'inverse'`, `display: 'image'`.**
+
+- Its prior is the session's protection terms before it, or none, captured in the host before the apply.
+- That prior can carry a password (a second protect's prior is the first's terms), so it is held beside the entry in
+  the bus's held table with the command, and the entry's `inverse` is a marker with no field for either. A held entry
+  carrying terms does not compile.
+- Undo restores the terms. No checkpoint is taken, so the protect writes no unprotected copy of its own.
+- Drawing means main's canonical image, in memory or its image file, is the document as protected after the protect,
+  and the document as it was after its undo. PDFium and Optimize therefore always open it with `opensWith`.
+
+**4. At the protect, and at its redo, before the command answers, every copy that is not encrypted is replaced by one
+encrypted under the new terms.**
+
+| copy | how it is replaced |
+|---|---|
+| the host's snapshot | rewritten from the new canonical image. The host read it whole at open and never reads it again, measured in `engineHandlers.ts` and `hostNodeSurfaces.ts` |
+| the canonical image file | by point 3's refresh |
+| every checkpoint and stored-result file the log holds | each opened in the engine host with a key, given the new terms, serialised, and moved over the old file |
+| Monstera's backups beside the person's file (ADR-0139) | the same way; the ledger then records the new file as Monstera's again |
+| the Recent picture | dropped, since a picture of page 1 cannot be encrypted |
+
+- **A copy that is already encrypted is left as it is.** It is protected already, and re-encrypting it would replace
+  an owner password main never saw. This is the case of a document opened with its password, whose every copy is its
+  own encrypted form.
+- **Out of scope, stated:** the person's own file, until they save; and a cloud working copy, which is the person's
+  file for a document opened from the cloud.
+- **Stated limit:** a protect makes no copy decrypted. An undo of a protect makes the document unprotected again by the
+  person's own act, and copies written after it follow the document as it then stands.
+- **Rejected:**
+  - deleting the older checkpoints, which loses the person's undo history (*preserve, never drop*);
+  - re-encrypting every copy, which destroys a file's owner password;
+  - relying on MuPDF's `encrypt=keep` at a reopen, which keeps whatever key the copy happens to carry.
+
+### Proofs
+
+- Decision 7: a document's keys open its view without asking, an undo that needs an earlier key finds it, and a
+  closed document's keys read as wiped. Control: a view with no keys asks.
+- The undo of a protect takes no checkpoint and restores the prior terms. Control: the declaration put back as terminal
+  takes one.
+- After a protect on a generated document that has a checkpoint, a backup and a Recent picture, no PDF under the
+  session, checkpoint and backup directories opens without a password, and no picture remains. Control: the same flow
+  with the replacement step skipped reports each plaintext copy by name.
+- An undo past the protect restores an older, re-encrypted checkpoint as the unprotected document it was. Control: a
+  reopen told `as-opened` instead keeps the new encryption.
+- The holder follows the protection: after a protect, the undo of a later terminal command reopens its checkpoint.
+  Control: a holder that ignores the protect fails that undo with a password refusal.
+
+*Correction, 2026-10-05, while building Decision 8's point 3:* the prior is not *"the session's protection terms
+before it, or none"*. Measured the same day on this build's MuPDF, in process, on a generated document: a serialise
+with encryption terms installs that encryption in the session's own document, so its trailer gains `/Encrypt` and a
+later save with no terms recorded keeps the **new** key. Recording *none* at the undo therefore restores nothing once
+the protect has drawn, which point 3 makes it do at once.
+
+- The prior is one of two: an earlier protect's **terms**, or **unprotected**, which the undo restores by decrypting in
+  memory wherever the session is encrypted by then. Both are held beside the entry as point 3 says.
+- **A document carrying its own encryption is not captured.** Its prior is that encryption, owner password included,
+  which main never saw and which the protect's first serialise replaces in the session. So its capture refuses and the
+  bus takes a checkpoint: the document's bytes as they stood, encrypted exactly as the file is, so no readable copy is
+  made, and opened at the undo with the key the document was opened with. Point 4 leaves that checkpoint alone, since it
+  is already encrypted.
+- **Consequence, by the owner's rule that no readable copy survives a protect:** a signed document protected and then
+  unprotected by undo comes back decrypted rather than byte for byte, so its next save rewrites the file and the
+  signature no longer covers it; that save asks before it breaks a signature (ADR-0149), as any such save does.
+- The proof list's *"a reopen told `as-opened` instead keeps the new encryption"* control is kept in substance: a
+  session reopened from the protected copy with no terms recorded keeps the protect's encryption.
+
+*Correction, 2026-10-05, while building points 1 and 2:* the reopen is told less than point 2 said, because less is
+enough. `engine/open` carries `keys`, every key the holder has with the current one first, and a `standing` of two
+values, `as-copied` and `unprotected`; there is no `protected` value carrying terms.
+
+- While a protect that encrypts is in force, every copy a reopen can reach is encrypted under it: a copy written after
+  it is serialised from a session with its terms, and a copy point 4 encrypts is reached only once the protect is
+  undone. So `as-copied` already is that protect's standing, and main never has to send terms, which would mean
+  composing MuPDF's option string in main (invariant 20's reason for `protectionOptions` living in the kernel).
+- `unprotected` is a document standing with no protection: a plain file from its first open (MuPDF's access `1`, which
+  means no `/Encrypt`; an owner-only password answers `2`, measured the same day), or a protect removing it, or the
+  undo of a protect on a plain file. The host decrypts such a copy in memory, by the protect's own inverse.
+- One rule opens a copy, `openCopy` in the kernel: each key as a fresh open, then none, then the standing. The host's
+  handler and the in-process proofs both call it.
+- The keys are bounded by the frame: 64, sized against the 262,144-byte frame, current first and then the newest.
+
+## Correction, 2026-10-05: a credential crosses to a host in the frame, never in a file
+
+The stage audit of `974df9f5..389cc010` (finding RRRRRRR-1) found the password on disk, which this decision forbids.
+The first addendum said the key *is revealed only where a frame is written*, and two routes made that untrue:
+
+- **PDFium's commands take their params from a file** (ADR-0138, `commandRoute: 'file'`), and `byteImageWire.read`
+  spreads `password` into `engine/apply`, `engine/capture` and `engine/invert`. So every PDFium edit, capture, undo and
+  redo of a document opened with its password wrote the password as JSON into the session's snapshot directory for
+  the length of the call.
+- **A protect's prior carries the earlier protect's terms**, passwords included (Decision 8), and `engine/capture`
+  answers through a file on every host while `engine/invert` always takes its params from one (ADR-0125's addendum).
+  So a second protect wrote the first protect's passwords into the host's output directory, and its undo wrote them
+  into the snapshot directory.
+
+Each file was removed with a plain `rm` when its call ended, and one survived a crash between the write and the
+removal. Nothing saw it: every password case ran in process, where no transport file exists.
+
+**The decision: a credential never enters a file the transport writes, in either direction.** The file route stays,
+because what it carries outgrows a frame; what it carries loses its credentials on the way in, and they travel in the
+frame beside the file's name:
+
+1. **One rule says what a credential is, and it is the one this ADR already has.** A field whose name matches
+   `CREDENTIAL_NAME` (`credentialFields.ts`) is a credential, so the walk that keeps one out of the undo log and out of
+   every renderer answer also decides what a file may hold (B3a). A second list of the fields to lift would be a second
+   opinion about the same question.
+2. **The transport lifts them, by value, at the point it writes the file.** `client.invoke` lifts every string held
+   under a credential-named key out of a file-routed request's params before it writes them, and names each by its
+   path in the frame's `paramsFile.credentials`; the host's runtime puts each back at its path before the channel's
+   schema runs, so a handler sees the params whole. A file-routed answer is lifted the same way by the runtime, into
+   `answerFile.credentials`, and put back by the client. A credential-named key holding anything but a string or
+   `null` is refused before anything is written, because nothing can lift it safely.
+3. **A field that carries a credential is named as one.** The protect's prior carried its terms as `terms`, a name
+   the rule cannot see. It is renamed `passwordTerms`, which is what it holds, so the lift reaches it; the rule's stated
+   limit, *a credential named as something else is out of reach*, is honoured by naming rather than widened.
+4. **Bounded by the frame.** At most four lifted values a call, where one is the most any channel carries today (a
+   PDFium call's key, or a protect prior's terms): a bound that keeps the frame's size the frame's question, not a
+   measurement. Each is at most `PROTECTION_TERMS_MAX` characters, the longest credential-bearing value a host channel
+   carries, so that bound moves to the contract beside the password's own, where the frame's schema can read it.
+5. **Proved across a real transport, with the bytes on disk read.** A client and a host runtime joined by a stream,
+   with the file answers on a temporary directory, run a call that carries a password both ways: every file the
+   transport writes is read while the call is in flight and none holds the password's bytes, while the handler receives
+   it whole and the client receives the answer's. Control: the same value under a key that is not a credential's
+   reaches the file, so the read can see what the file holds.
+
+Rejected:
+
+- **Taking credentials out of the file route by channel**, so a call carrying one is framed: PDFium's text edits
+  outgrow a frame with a password beside them, which is the reason the route exists.
+- **Keeping the prior's terms in the host** so a capture answers none: a checkpoint restore and a rebuild open a new
+  session, and the terms held in the old one go with it, which is why the prior is held in main.
+- **Wiping each file before removing it**: the bytes reach the disk the moment they are written, and a crash leaves
+  them; the defect is the write, not the removal.

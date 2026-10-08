@@ -30,7 +30,8 @@ import { join } from 'node:path';
 import { COMPOSE_HOST_LIVE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
-import { shimBuildState, shimEnvironment } from '../lib/shimBinary.mjs';
+import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
+import { shimBuildState } from '../lib/shimBinary.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { inspect } from '../provision/containerGrants.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
@@ -51,12 +52,13 @@ const CASES = [
   'the real compose host set a CSV file as a table and the file opened',
   'the real MuPDF host read the CSV table and found every field',
   'the real compose host made one page per picked image, and the real MuPDF host counted them',
+  'the real compose host read its fonts through its grant and the installed fonts, and named only the character no font carries',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 8 });
-if (CASES.length !== 8) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 8`);
+const roster = createRoster(failures, { cases: 9 });
+if (CASES.length !== 9) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 9`);
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -115,7 +117,9 @@ if (!runnable) {
       cwd: ROOT,
       stdio: 'inherit',
       timeout: 180_000,
-      env: { ...process.env, ...shimEnvironment({ root: ROOT }), ELECTRON_RUN_AS_NODE: '1' },
+      // THE LAUNCHER'S WHOLE ENVIRONMENT, not the shim's alone: the compose host now needs the fonts folder too
+      // (ADR-0172), and `developmentEnvironment` is the one answer the development launcher gives the shell.
+      env: { ...process.env, ...(await developmentEnvironment(ROOT)), ELECTRON_RUN_AS_NODE: '1' },
     });
     if (result.error !== undefined) {
       throw new Error(`could not run ${CHILD} under ${ELECTRON_BINARY}`, { cause: result.error });
@@ -187,6 +191,20 @@ if (!runnable) {
     `document.newFromImages answered ${JSON.stringify(seen.imagesComposed)} and document.viewModel ` +
       `${JSON.stringify(seen.imagePages)}, against ${String(seen.expectedImagePages)} pictures. The ` +
       'images reach the host on engine/compose-images; a count that differs is pages lost or added.',
+  );
+
+  check(
+    CASES[8] ?? '',
+    seen.boxedComposed?.ok === true &&
+      seen.boxedComposed.value?.kind === 'opened-with-boxes' &&
+      JSON.stringify(seen.boxedComposed.value?.boxed) ===
+        JSON.stringify([{ character: String.fromCodePoint(0x378), line: 1, column: 8 }]) &&
+      seen.boxedComposed.value?.more === 0,
+    `document.newFromMarkdown answered ${JSON.stringify(seen.boxedComposed)} for a line holding a CJK ideograph no ` +
+      'bundled face carries and an unassigned code point no font carries. `internal` is a host that could not read ' +
+      'its fonts folder, a grant that does not reach it. The ideograph AMONG the boxes is a host that could not read ' +
+      'the installed fonts, or a machine with no editable face for it (ADR-0172 Decision 2 says which is a correction, ' +
+      'never a wider grant); `opened` with no box at all is the unassigned one drawn as nothing.',
   );
 
   check(

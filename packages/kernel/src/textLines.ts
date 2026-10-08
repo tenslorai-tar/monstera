@@ -50,6 +50,22 @@
  * 238.0**, so equality splits the very case the grouping exists for.
  */
 
+import { blockShape } from './paragraphShape.js';
+
+/** How a text object's matrix sets it (`orientationOf`, `pdfiumFfi.ts`): `upright` is the only one an editor is placed along. */
+export type Orientation = 'upright' | 'turned' | 'vertical' | 'slanted' | 'mirrored';
+
+/**
+ * Whether text set like this is edited in place: straight text only, since an editor cannot be placed along an axis the
+ * page is not set on ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
+ * Decision 7). The ONE spelling of that test (B3a): the composition leaves other text out of the blocks, the join does
+ * not join it, and the proofs that group runs ask the same question, so a kind added to {@link Orientation} is decided
+ * here and nowhere else.
+ */
+export function isEditedInPlace(style: { readonly orientation: Orientation }): boolean {
+  return style.orientation === 'upright';
+}
+
 /** One text run as the line grouping needs it. `pdfiumFfi.ts`'s `TextRun`, structurally. */
 export interface GroupableRun {
   readonly index: number;
@@ -189,9 +205,19 @@ export interface EditableBlock<S> {
   readonly lines: readonly {
     readonly runs: readonly { readonly index: number; readonly text: string; readonly style: S }[];
     readonly box: BlockBox;
+    /** Whether the line ENDS in a soft wrap ({@link softEnds}); never the block's last line. */
+    readonly soft: boolean;
   }[];
   /** How the block's first line's longest run is set — what the editor over it is set in. */
   readonly style: S;
+  /** How the block is set, for the editor to draw (ADR-0179 Decision 5). */
+  readonly shape: { readonly align: 'left' | 'center' | 'right'; readonly firstIndent: number };
+}
+
+/** A run as the pieces of a line need it: its place on the page. */
+export interface LineableRun extends GroupableRun {
+  readonly left: number;
+  readonly right: number;
 }
 
 interface Piece<S> {
@@ -202,6 +228,65 @@ interface Piece<S> {
   right: number;
   bottom: number;
   top: number;
+}
+
+/**
+ * The pieces of a page's runs: each line split where the gap between the piece so far and the next run is wider than the
+ * line is tall (step 2 of {@link groupIntoBlocks}), in the order the runs came. The ONE place a piece is decided, which
+ * the block grouping and the line reading (`readInLineOrder`, in `bidiLine.ts`, which takes the bidirectional algorithm
+ * this module must not load into `main`) both take (B3a): two readings of which runs are one line would put a run's words
+ * in one and its place in the other.
+ */
+export function piecesOf<T extends LineableRun>(
+  runs: readonly T[],
+): { runs: T[]; order: number; left: number; right: number; bottom: number; top: number }[] {
+  const pieces: { runs: T[]; order: number; left: number; right: number; bottom: number; top: number }[] = [];
+  for (const line of overlapLines(runs)) {
+    const height = line.top - line.bottom;
+    let piece: (typeof pieces)[number] | undefined;
+    // SWEPT LEFT TO RIGHT, whatever order the runs came in: a gap is between two neighbours, and a line read in the order
+    // it was typed visits a right-to-left phrase before the words beside it, which a sweep in that order measures from
+    // the wrong side. The runs of a piece keep the order they came in.
+    const given = new Map(line.runs.map((run, at) => [run, at] as const));
+    const swept = [...line.runs].sort((a, b) => a.left - b.left || (given.get(a) ?? 0) - (given.get(b) ?? 0));
+    const first = pieces.length;
+    for (const run of swept) {
+      const gap =
+        piece === undefined ? 0 : Math.max(0, run.left - piece.right, piece.left - run.right);
+      if (piece === undefined || gap > height) {
+        piece = {
+          runs: [run],
+          order: pieces.length,
+          left: run.left,
+          right: run.right,
+          bottom: run.bottom,
+          top: run.top,
+        };
+        pieces.push(piece);
+        continue;
+      }
+      piece.runs.push(run);
+      piece.left = Math.min(piece.left, run.left);
+      piece.right = Math.max(piece.right, run.right);
+      piece.bottom = Math.min(piece.bottom, run.bottom);
+      piece.top = Math.max(piece.top, run.top);
+    }
+    // THE PIECES KEEP THE ORDER THEIR FIRST RUN CAME IN, which is the order a person Tabs through them, and each keeps its
+    // runs in the order they came.
+    const at = (run: T): number => given.get(run) ?? 0;
+    const made = pieces.splice(first);
+    for (const each of made) each.runs.sort((a, b) => at(a) - at(b));
+    const firstAt = (each: { runs: T[] }): number => {
+      const [head] = each.runs;
+      return head === undefined ? 0 : at(head);
+    };
+    made.sort((a, b) => firstAt(a) - firstAt(b));
+    made.forEach((each, rank) => {
+      each.order = first + rank;
+    });
+    pieces.push(...made);
+  }
+  return pieces;
 }
 
 /**
@@ -257,32 +342,7 @@ function longestRun<S>(piece: Piece<S>): BlockableRun<S> | undefined {
  * @param runs the page's text runs, in reading order
  */
 export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly EditableBlock<S>[] {
-  const pieces: Piece<S>[] = [];
-  for (const line of overlapLines(runs)) {
-    const height = line.top - line.bottom;
-    let piece: Piece<S> | undefined;
-    for (const run of line.runs) {
-      const gap =
-        piece === undefined ? 0 : Math.max(0, run.left - piece.right, piece.left - run.right);
-      if (piece === undefined || gap > height) {
-        piece = {
-          runs: [run],
-          order: pieces.length,
-          left: run.left,
-          right: run.right,
-          bottom: run.bottom,
-          top: run.top,
-        };
-        pieces.push(piece);
-        continue;
-      }
-      piece.runs.push(run);
-      piece.left = Math.min(piece.left, run.left);
-      piece.right = Math.max(piece.right, run.right);
-      piece.bottom = Math.min(piece.bottom, run.bottom);
-      piece.top = Math.max(piece.top, run.top);
-    }
-  }
+  const pieces = piecesOf(runs);
 
   // TOP TO BOTTOM, not reading order, for the BLOCK pass only. A block's lines
   // are top to bottom by what a block is, and reading order is the content
@@ -324,53 +384,62 @@ export function groupIntoBlocks<S>(runs: readonly BlockableRun<S>[]): readonly E
     // by that same reading. Its first run was a list entry's bold lead word.
     const setBy = first === undefined ? undefined : longestRun(first);
     if (first === undefined || setBy === undefined) return [];
+    const box = {
+      x0: Math.min(...block.map((piece) => piece.left)),
+      y0: Math.min(...block.map((piece) => piece.bottom)),
+      x1: Math.max(...block.map((piece) => piece.right)),
+      y1: Math.max(...block.map((piece) => piece.top)),
+    };
+    const texts = block.map((piece) => piece.runs.map((run) => run.text).join(''));
+    const soft = softEnds(
+      block.map((piece, at) => ({ text: texts[at] ?? '', box: { x0: piece.left, x1: piece.right } })),
+      box.x1,
+    );
+    const { align, firstIndent } = blockShape(
+      block.map((piece, at) => ({ x0: piece.left, x1: piece.right, characters: (texts[at] ?? '').length })),
+      soft,
+    );
     return [
       {
-        box: {
-          x0: Math.min(...block.map((piece) => piece.left)),
-          y0: Math.min(...block.map((piece) => piece.bottom)),
-          x1: Math.max(...block.map((piece) => piece.right)),
-          y1: Math.max(...block.map((piece) => piece.top)),
-        },
-        lines: block.map((piece) => ({
+        box,
+        lines: block.map((piece, at) => ({
           runs: piece.runs.map((run) => ({ index: run.index, text: run.text, style: run.style })),
           box: { x0: piece.left, y0: piece.bottom, x1: piece.right, y1: piece.top },
+          soft: soft[at] === true,
         })),
         style: setBy.style,
+        shape: { align, firstIndent },
       },
     ];
   });
 }
 
 /**
- * A block's text as a paragraph: its SOFT-wrapped lines joined by a space, its hard breaks kept as
- * line breaks — what a translation is sent, so the paragraph re-wraps as one (ADR-0097 4c).
+ * Whether each line of a block ENDS in a soft wrap, by the typesetter's own test and no constant: a line was soft-wrapped
+ * when **the next line's first word would not have fitted at its end**, which is the only reason a typesetter breaks a
+ * line inside a paragraph ([ADR-0097](../../../docs/DECISIONS/0097-a-page-is-translated-as-one-block-edit-and-a-font-that-cannot-carry-it-falls-back.md)
+ * 4c). The first word's width is the next line's width in proportion to its characters, a space included. A line that
+ * ends short of where that word would have reached (an address line, a list entry, a paragraph's last line) was broken on
+ * purpose, and its break is kept.
  *
- * ## The typesetter's own test, and no constant
- *
- * A line was soft-wrapped when **the next line's first word would not have fitted at its end**:
- * that is the only reason a typesetter breaks a line inside a paragraph. The first word's width is
- * the next line's width in proportion to its characters, a space included. A line that ends short
- * of where that word would have reached — an address line, a list entry, a paragraph's last line —
- * was broken on purpose, and the break is kept.
+ * The ONE place a soft end is decided: the reading `document.textBlocks` answers is built from it, the translation and
+ * the editor take their paragraphs from that reading, and a block's writer takes it from the wire rather than deciding
+ * again ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)
+ * Decision 2). The last line ends nothing, so it is never soft.
  *
  * @param lines the block's lines, top to bottom, each its text and its box
  * @param right the block's right edge
  */
-export function paragraphText(
+export function softEnds(
   lines: readonly { readonly text: string; readonly box: { readonly x0: number; readonly x1: number } }[],
   right: number,
-): string {
-  let text = '';
-  for (const [at, line] of lines.entries()) {
-    text += line.text;
+): boolean[] {
+  return lines.map((line, at) => {
     const next = lines[at + 1];
-    if (next === undefined) break;
+    if (next === undefined) return false;
     const nextText = next.text.trimStart();
     const firstWord = nextText.split(/\s/u)[0] ?? '';
     const perCharacter = nextText.length === 0 ? 0 : (next.box.x1 - next.box.x0) / nextText.length;
-    const soft = firstWord !== '' && line.box.x1 + (firstWord.length + 1) * perCharacter > right;
-    text = soft ? `${text.trimEnd()} ` : `${text}\n`;
-  }
-  return text;
+    return firstWord !== '' && line.box.x1 + (firstWord.length + 1) * perCharacter > right;
+  });
 }

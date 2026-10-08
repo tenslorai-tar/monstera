@@ -105,7 +105,7 @@ if (process.platform !== 'win32') {
 } else if (bindNativeEngine(ROOT) === null) {
   process.stdout.write('NOT RUN: the MuPDF shim is not built. Run `npm run provision:mupdf`.\n');
 } else {
-  refuseStaleBuild(ROOT, WORD_PICTURES, 4);
+  refuseStaleBuild(ROOT, WORD_PICTURES, 5);
   // TYPED BY THE BUILT DECLARATIONS, for `wordPictures.proof.mjs`' reason: a parameter the composer gains fails the
   // typecheck rather than reaching the built module as `undefined`.
   const { composeWordDocument } = await import('../../packages/kernel/dist/wordPictures.js');

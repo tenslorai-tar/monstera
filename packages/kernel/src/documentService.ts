@@ -2209,7 +2209,8 @@ export class DocumentService {
           // through `main` (ADR-0121), and the checkpoint stays for a redo.
           writeCheckpoint: async (_writer, checkpoint, destination) => {
             await copyFile(checkpoint.path, destination);
-            return checkpoint.byteLength;
+            // THE LOG'S LENGTH, which follows a file a protect resealed in place (ADR-0171 Decision 8).
+            return record.log.bytesOf(checkpoint);
           },
           storeCheckpoint: (_writer, write) => this.#storeCheckpoint(record, write),
           // THE SAME STORE, a different brand: a held file is in the log's set only by accident of never being

@@ -4,6 +4,7 @@ import { type DocVersion, asDocId, asDocVersion } from '@monstera/shared';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { NO_KEYS } from './documentKeys.js';
 import { useDocumentView } from './useDocumentView.js';
 
 /**
@@ -72,7 +73,7 @@ const noPassword = (): Promise<undefined> => Promise.resolve(undefined);
 function mount(): ReturnType<typeof renderHook<ReturnType<typeof useDocumentView>, { version: number }>> {
   return renderHook(
     ({ version }: { version: number }) =>
-      useDocumentView(client, { docId: DOC, version: asDocVersion(version), byteLength: 100 }, moved, noPassword),
+      useDocumentView(client, { docId: DOC, version: asDocVersion(version), byteLength: 100 }, moved, noPassword, NO_KEYS),
     { initialProps: { version: 1 } },
   );
 }

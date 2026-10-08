@@ -88,7 +88,7 @@ const CASES: readonly Case[] = [
   },
   {
     dialog: 'Form field (dropdown)',
-    body: (resolve) => <FormFieldDropdownBody resolve={resolve} update={vi.fn()} />,
+    body: (resolve) => <FormFieldDropdownBody known={[]} resolve={resolve} update={vi.fn()} />,
     apply: FORM_FIELD_DROPDOWN_APPLY,
     missing: FORM_FIELD_NAME_EMPTY,
   },

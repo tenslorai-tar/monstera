@@ -125,7 +125,43 @@ export const PDFIUM_COMMAND = [
   ],
   // THE COMMANDS' WIRE FORM, whose encoders the proofs build each edit through (ADR-0142).
   ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
+  // AN EDIT'S PIECES (ADR-0173): the planner, the catalogue the piece cases bind, and the subsetter each face goes
+  // through — a stale one would set yesterday's words in yesterday's faces.
+  ['packages/kernel/src/editPieces.ts', 'packages/kernel/dist/editPieces.js', 'tsc'],
+  ['packages/kernel/src/editFaces.ts', 'packages/kernel/dist/editFaces.js', 'tsc'],
+  ['packages/kernel/src/fontResolver.ts', 'packages/kernel/dist/fontResolver.js', 'tsc'],
+  ['packages/kernel/src/fontSubset.ts', 'packages/kernel/dist/fontSubset.js', 'tsc'],
+  // AND THE GLYPHS a face piece is set by (ADR-0173's correction).
+  ['packages/kernel/src/textShaping.ts', 'packages/kernel/dist/textShaping.js', 'tsc'],
+  // AND THE BOX a character no face carries is drawn in (ADR-0173 Decision 7): a stale one would draw yesterday's box.
+  ['packages/kernel/src/boxFont.ts', 'packages/kernel/dist/boxFont.js', 'tsc'],
+  // AND THE ONE RULE for a subset's name, by which an edit finds a sibling (Decision 4).
+  ['packages/kernel/src/subsetName.ts', 'packages/kernel/dist/subsetName.js', 'tsc'],
+  // AND THE CHECK a run's font passes before it is offered to the editor (ADR-0175).
+  ['packages/kernel/src/runFont.ts', 'packages/kernel/dist/runFont.js', 'tsc'],
+  // AND THE FOUR THE PROOF IMPORTS DIRECTLY, which the case "every registered proof's imports are covered" named
+  // (SSSSSSS-2): the operator numbering `pageRuns` is compared against (ADR-0176), the refusals it classifies, the
+  // catalogue its face cases read, and the shared barrel its password cases take `HeldPassword` from.
+  ['packages/kernel/src/textOperators.ts', 'packages/kernel/dist/textOperators.js', 'tsc'],
+  ['packages/kernel/src/textEditRefusals.ts', 'packages/kernel/dist/textEditRefusals.js', 'tsc'],
+  ['packages/kernel/src/fontCatalogue.ts', 'packages/kernel/dist/fontCatalogue.js', 'tsc'],
+  ['packages/shared/src', 'packages/shared/dist/index.js', 'tsc'],
+  // RIGHT-TO-LEFT TEXT AND A SCAN'S PAPER (ADR-0181): the order a line is drawn in and read back in, the cut of a line into
+  // objects, the Arabic joining forms the proof reads directly, and the paper a scan's cover is coloured from.
+  ['packages/kernel/src/bidiOrder.ts', 'packages/kernel/dist/bidiOrder.js', 'tsc'],
+  ['packages/kernel/src/bidiLine.ts', 'packages/kernel/dist/bidiLine.js', 'tsc'],
+  ['packages/kernel/src/visualPieces.ts', 'packages/kernel/dist/visualPieces.js', 'tsc'],
+  ['packages/kernel/src/arabicForms.ts', 'packages/kernel/dist/arabicForms.js', 'tsc'],
+  ['packages/kernel/src/paperColour.ts', 'packages/kernel/dist/paperColour.js', 'tsc'],
 ];
+
+/**
+ * The object proof's edges: {@link PDFIUM_COMMAND}'s, and the contract's barrel, whose command schemas its cases
+ * parse through.
+ *
+ * @type {BuildEdge[]}
+ */
+export const PDFIUM_OBJECT = [...PDFIUM_COMMAND, ['packages/contract/src', 'packages/contract/dist/index.js', 'tsc']];
 
 /**
  * The read-back proof's edges: {@link PDFIUM_COMMAND}'s, and every module the other PDFium commands' specs live in,
@@ -190,6 +226,8 @@ export const PAGE_KIND = [
 export const OCR_RECOGNISE = [
   ['packages/kernel/src/ocrRecognise.ts', 'packages/kernel/dist/ocrRecognise.js', 'tsc'],
   ['packages/kernel/src/pageBoxes.ts', 'packages/kernel/dist/pageBoxes.js', 'tsc'],
+  // AND THE WRITER the proof opens its pages through, which it imports directly (SSSSSSS-2).
+  ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
 ];
 
 /**
@@ -231,6 +269,19 @@ export const COMPOSE_HOST_LIVE = [
  * @type {readonly BuildEdge[]}
  */
 export const NATIVE_ENGINE = [['packages/kernel/src/mupdfRaw.ts', 'packages/kernel/dist/mupdfRaw.js', 'tsc']];
+
+/**
+ * What `type3Edit.proof.mjs` runs (ADR-0176): PDFium's reading and MuPDF's operator writer, which reaches the
+ * numbering, the fonts, the ToUnicode reader and the refusals beneath it. The kernel's whole `src`, so a module the
+ * writer imports two steps down is dated too; the contract's encoder; and the native engine MuPDF runs on.
+ *
+ * @type {BuildEdge[]}
+ */
+export const TYPE3_EDIT = [
+  ['packages/kernel/src', 'packages/kernel/dist/index.js', 'tsc'],
+  ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.js', 'tsc'],
+  ...NATIVE_ENGINE,
+];
 
 /**
  * The engine hosts' readers and channel schemas, which `hostAnswerSizes.mjs` and `hostSchemaBounds.mjs` measure: the
@@ -295,6 +346,9 @@ export const WORD_PICTURES = [
   ['packages/kernel/src/wordPictures.ts', 'packages/kernel/dist/wordPictures.js', 'tsc'],
   ['packages/kernel/src/wordDocument.ts', 'packages/kernel/dist/wordDocument.js', 'tsc'],
   ['packages/kernel/src/textStructure.ts', 'packages/kernel/dist/textStructure.js', 'tsc'],
+  // AND THE WRITER the proof opens its documents through, which it imports directly (SSSSSSS-2). `engineSeam.js` is
+  // named in a JSDoc type only, which loads nothing, so it is not an edge.
+  ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
   ...NATIVE_ENGINE,
 ];
 
@@ -358,6 +412,14 @@ export const CONTRACT_TYPES = [
   ['packages/contract/src/channels.ts', 'packages/contract/dist/channels.d.ts', 'tsc'],
   ['packages/contract/src/commands.ts', 'packages/contract/dist/commands.d.ts', 'tsc'],
 ];
+
+/**
+ * What `ocrModels.proof.mjs` reads: the BUILT language enum, executed, which {@link CONTRACT_TYPES}' declarations do
+ * not watch (SSSSSSS-2): a change to `schemas.ts` alone left its `.js` stale with the guard quiet.
+ *
+ * @type {BuildEdge[]}
+ */
+export const OCR_MODELS = [['packages/contract/src/schemas.ts', 'packages/contract/dist/schemas.js', 'tsc']];
 
 /**
  * `packages/shared`'s barrel, for an instrument that reads geometry through it.
@@ -434,7 +496,7 @@ export const ARTEFACT_EDGES = {
   // The object commands read the same built modules through the same routing,
   // so the same edges: the adapter, the two that dispatch to it, and the table
   // that says they should.
-  'proof:pdfiumobject': PDFIUM_COMMAND,
+  'proof:pdfiumobject': PDFIUM_OBJECT,
   // The fidelity proof drives the same built adapter, and reads pixels rather
   // than text: it is the guard that an edit does not silently redraw the page.
   'proof:editfidelity': PDFIUM_ADAPTER,
@@ -455,7 +517,7 @@ export const ARTEFACT_EDGES = {
   'proof:scannedpages': [...TEXT_STRUCTURE, ...PAGE_KIND, ...NATIVE_ENGINE],
   // The language set it ties the provisioning table to is the BUILT enum, so a
   // stale build would compare against yesterday's languages.
-  'proof:ocrmodels': CONTRACT_TYPES,
+  'proof:ocrmodels': OCR_MODELS,
   // The recognition adapter, which this proof drives against the real engine.
   // Registered WITH its entry rather than after the anchor named it, which is
   // the first time that has happened — the four before it were each found by
@@ -473,6 +535,8 @@ export const ARTEFACT_EDGES = {
   // ADR-0126's proof, which reads two built engines. It called the guard from its first commit and had no entry here
   // until `proof:buildfreshness` named it — the anchor working, one range late.
   'proof:inlineimages': INLINE_IMAGES,
+  // PDFium's reading and MuPDF's operator writer, end to end on a Type 3 page (ADR-0176).
+  'proof:type3edit': TYPE3_EDIT,
   'proof:shimpassword': SHIM_PASSWORD,
   // THE WORD EXPORT'S PICTURES, read back by a zip reader and a PNG decoder that are not the writer's.
   'proof:wordpictures': WORD_PICTURES,

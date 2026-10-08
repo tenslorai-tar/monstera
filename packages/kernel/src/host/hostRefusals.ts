@@ -1,6 +1,9 @@
+import { FIELD_EDIT_REASONS } from '@monstera/shared';
+
+import { FieldEditRefusedError } from '../formFieldEdit.js';
 import { PngPixelsRefused } from '../imageDimensions.js';
 import { SignatureAppearanceRefusedError } from '../signingRefusals.js';
-import type { PICTURE_REFUSALS, PLACEHOLDER_REFUSALS } from './engineChannels.js';
+import type { FIELD_EDIT_REFUSALS, PICTURE_REFUSALS, PLACEHOLDER_REFUSALS } from './engineChannels.js';
 
 /**
  * A hosted command's refusals, across the pipe and back: the ONE table both directions read.
@@ -16,9 +19,17 @@ import type { PICTURE_REFUSALS, PLACEHOLDER_REFUSALS } from './engineChannels.js
 type PictureRefusal = (typeof PICTURE_REFUSALS)[number];
 type PlaceholderRefusal = (typeof PLACEHOLDER_REFUSALS)[number];
 
-/** `engine/applyPdfLib`'s code for `error`, or `undefined` for anything that is not a person's to act on. */
+type FieldEditRefusalCode = (typeof FIELD_EDIT_REFUSALS)[number];
+
+/** A picture's code for `error`, or `undefined` for anything that is not a person's to act on. */
 export function pictureRefusalCodeOf(error: unknown): PictureRefusal | undefined {
   return error instanceof PngPixelsRefused && error.reason === 'too-many-pixels' ? 'picture-too-many-pixels' : undefined;
+}
+
+/** `engine/applyPdfLib`'s code for `error`: a picture's, or a change to a form field's (ADR-0193). */
+export function pdfLibRefusalCodeOf(error: unknown): PictureRefusal | FieldEditRefusalCode | undefined {
+  if (error instanceof FieldEditRefusedError) return `field-edit-${error.reason}`;
+  return pictureRefusalCodeOf(error);
 }
 
 /** `engine/prepareSignature`'s code for `error`: a picture's refusal, or one only a signature's appearance meets. */
@@ -34,7 +45,10 @@ export function hostRefusalFor(code: string): Error | undefined {
       return new SignatureAppearanceRefusedError('unreadable-image', 'the engine host could not decode the signature picture');
     case 'picture-too-many-pixels':
       return new PngPixelsRefused('too-many-pixels', null);
-    default:
-      return undefined;
+    default: {
+      // A CHANGE TO A FORM FIELD (ADR-0193): the reason is the code's tail, and only a listed code is one.
+      const reason = FIELD_EDIT_REASONS.find((each) => `field-edit-${each}` === code);
+      return reason === undefined ? undefined : new FieldEditRefusedError(reason, `the engine host refused the change: ${reason}`);
+    }
   }
 }

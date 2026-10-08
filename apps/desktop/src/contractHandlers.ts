@@ -66,7 +66,6 @@ import {
   type IdentityReader,
   StaleTargetError,
   type WriteTargetVerdict,
-  paragraphText,
   readDocumentRange,
   readTranslation,
   translationInstruction,
@@ -75,7 +74,7 @@ import {
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute, win32 } from 'node:path';
 
-import { type DocId, type FileHandle, err, lineText, ok } from '@monstera/shared';
+import { type DocId, type FileHandle, err, lineText, ok, paragraphsOfLines } from '@monstera/shared';
 
 import { executeCommandHandler } from './commandHandlers.js';
 import { editRefusalOf, rewriteRefusalOf } from './editRefusals.js';
@@ -560,9 +559,11 @@ export function createContractHandlers(deps: {
     'document.annotations': annotationsHandler(deps.commands),
     'document.formFields': formFieldsHandler(deps.commands),
     'document.flatFieldCandidates': flatFieldCandidatesHandler(deps.commands),
+    'document.formFieldProperties': formFieldPropertiesHandler(deps.commands),
     'document.textBlocks': textBlocksHandler(deps.commands),
     'document.pageObjects': pageObjectsHandler(deps.commands),
     'document.renderPage': renderPageHandler(deps.commands),
+    'document.runFonts': runFontsHandler(deps.commands),
     'document.duplicatePages': duplicatePagesHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
@@ -1109,7 +1110,12 @@ function newFromImportHandler(
     try {
       const composed = await deps.commands.composeImportFile(format);
       if (composed.kind !== 'written') return ok(composeRefusal(composed));
-      return ok((await openPath(deps, composed.destination)).outcome);
+      const opened = (await openPath(deps, composed.destination)).outcome;
+      // THE BOXED CHARACTERS RIDE WITH THE OPEN (ADR-0172), the Office import's rule for rows it lacks: a document
+      // that opened is told which characters it draws as the box, and an open that answered anything else answers
+      // that — the file on disk is the same either way.
+      if (opened.kind !== 'opened' || composed.boxed.length === 0) return ok(opened);
+      return ok({ ...opened, kind: 'opened-with-boxes', boxed: [...composed.boxed], more: composed.more });
     } catch (thrown) {
       if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
       throw thrown;
@@ -1242,6 +1248,9 @@ function appendMarkdownHandler(
           byteLength: outcome.byteLength,
           name: outcome.name,
         },
+        // THE BOXED CHARACTERS, `newFromImportHandler`'s rule: the merged pages draw them as the composed tab does.
+        boxed: [...composed.boxed],
+        more: composed.more,
       });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
@@ -1763,6 +1772,7 @@ function importFormDataHandler(
       const outcome = await commands.importFormData(docId, format);
       if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
       if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
+      if (outcome.kind === 'matched-nothing') return ok({ kind: 'matched-nothing', named: outcome.named } as const);
       if (outcome.kind === 'too-large') {
         return ok({ kind: 'too-large', limitBytes: outcome.limitBytes } as const);
       }
@@ -1771,6 +1781,9 @@ function importFormDataHandler(
         version: outcome.version,
         byteLength: outcome.byteLength,
         historyDropped: outcome.historyDropped,
+        filled: outcome.filled,
+        skipped: outcome.skipped,
+        more: outcome.more,
       } as const);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
@@ -2780,8 +2793,22 @@ function flatFieldCandidatesHandler(
     page,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.flatFieldCandidates']>>> => {
     try {
-      const { version, candidates, truncated } = await commands.flatFieldCandidates(docId, page);
-      return ok({ version, candidates, truncated });
+      const { version, candidates, truncated, alreadyFields } = await commands.flatFieldCandidates(docId, page);
+      return ok({ version, candidates, truncated, alreadyFields });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/** The named fields' properties: {@link flatFieldCandidatesHandler}'s body and its refusals (ADR-0193). */
+function formFieldPropertiesHandler(commands: DocumentCommands): ContractHandlers['document.formFieldProperties'] {
+  return async ({ docId, fields }): Promise<Awaited<ReturnType<ContractHandlers['document.formFieldProperties']>>> => {
+    try {
+      const { version, fields: read } = await commands.formFieldProperties(docId, fields);
+      return ok({ version, fields: read });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
@@ -2807,11 +2834,12 @@ function textBlocksHandler(commands: DocumentCommands): ContractHandlers['docume
     from,
   }): Promise<Awaited<ReturnType<ContractHandlers['document.textBlocks']>>> => {
     try {
-      const { version, blocks, truncated, rotated, unaddressable } = await commands.textBlocks(docId, page);
+      const { version, blocks, truncated, rotated, angled, unaddressable, rewrite } = await commands.textBlocks(docId, page);
       // A PART AT A TIME (ADR-0130): a dense page is thousands of blocks, and answered whole it was refused by the
-      // contract's bound as `internal` (AAAAAAA-1). The page's two counts ride on every part; they are the page's.
+      // contract's bound as `internal` (AAAAAAA-1). The page's counts and its writer ride on every part; they are the
+      // page's.
       const part = listPart(blocks, truncated, from, TEXT_BLOCKS_PART);
-      return ok({ version, blocks: part.items, next: part.next, truncated: part.truncated, rotated, unaddressable });
+      return ok({ version, blocks: part.items, next: part.next, truncated: part.truncated, rotated, angled, unaddressable, rewrite });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
@@ -2825,12 +2853,13 @@ function textBlocksHandler(commands: DocumentCommands): ContractHandlers['docume
  * A page's translation (ADR-0097): read the page's blocks as `document.textBlocks` reads them, ask
  * once, answer the blocks that changed as `editTextBlock` names them.
  *
- * ## Each block's text is a PARAGRAPH: `lineText` per line, soft wraps joined
+ * ## Each block's text is its PARAGRAPHS: `lineText` per line, soft wraps joined
  *
- * Lines are read with `lineText`, the rule the kernel diffs with, and joined by `paragraphText`:
- * where the next line's first word would not have fitted, the break was the typesetter's and becomes
- * a space; otherwise it stays a line break (ADR-0097 4c). The kernel then writes the translation's
- * lines over the block's and re-wraps what no longer fits. An unchanged block is not answered:
+ * Lines are read with `lineText`, the rule the kernel diffs with, and joined by `paragraphsOfLines` on the
+ * `soft` the read answered for each: where the next line's first word would not have fitted, the break was the
+ * typesetter's and becomes a space; otherwise it stays a line break (ADR-0097 4c, ADR-0179). The words are the
+ * editor's own words for the same block, from the same join, and the answer carries the same soft ends, so
+ * the kernel writes each translated paragraph over its own and re-wraps what no longer fits. An unchanged block is not answered:
  * rewriting it would regenerate content for nothing, and a translation that changed nothing is
  * `nothing-to-translate`.
  *
@@ -2857,10 +2886,7 @@ function translatePageHandler(deps: {
     // A PARAGRAPH, not its lines (ADR-0097 4c): soft wraps joined, hard breaks kept, so the kernel
     // re-wraps the translation as one paragraph instead of keeping each old line's break.
     const texts = read.blocks.map((block) =>
-      paragraphText(
-        block.lines.map((line) => ({ text: lineText(line.runs), box: line.box })),
-        block.box.x1,
-      ),
+      paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft }))),
     );
     if (texts.every((text) => text.trim() === '')) return ok({ kind: 'nothing-to-translate' } as const);
 
@@ -2884,7 +2910,7 @@ function translatePageHandler(deps: {
       const text = translated[at];
       return text === undefined || text === texts[at]
         ? []
-        : [{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text }];
+        : [{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), soft: block.lines.map((line) => line.soft), text }];
     });
     if (blocks.length === 0) return ok({ kind: 'nothing-to-translate' } as const);
     // A BLOCK'S WORDS ARE BOUNDED ONLY BY THE PAGE'S (ADR-0142): a translated paragraph past 4,096 characters was
@@ -2892,7 +2918,7 @@ function translatePageHandler(deps: {
     // The page's text past `MAX_EDIT_TEXT` is a model that wrote far more than it was given, which that refusal names.
     const edit = blockEditOf(blocks);
     if (edit.text.length > MAX_EDIT_TEXT) return ok({ kind: 'refused', problem: 'unreadable' } as const);
-    return ok({ kind: 'translated', version: read.version, edit } as const);
+    return ok({ kind: 'translated', version: read.version, edit, rewrite: read.rewrite } as const);
   };
 }
 
@@ -2980,6 +3006,24 @@ function renderPageHandler(commands: DocumentCommands): ContractHandlers['docume
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       if (thrown instanceof EngineUnavailableError) return err({ code: 'engine-unavailable' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * A block's run fonts (ADR-0175). The caps are held where the bytes are made and where they cross — the host's channel
+ * and this channel's own schema — so nothing is checked here twice; the lane's refusals are named, and anything else is
+ * a defect that is recorded as one.
+ */
+function runFontsHandler(commands: DocumentCommands): ContractHandlers['document.runFonts'] {
+  return async ({ docId, page, indices }): Promise<Awaited<ReturnType<ContractHandlers['document.runFonts']>>> => {
+    try {
+      const { version, fonts, runs } = await commands.runFonts(docId, page, indices);
+      return ok({ version, fonts, runs });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       throw thrown;
     }
   };

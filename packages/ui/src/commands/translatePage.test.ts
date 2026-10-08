@@ -33,7 +33,7 @@ const CONTEXT: CommandContext = {
   pageCount: 5,
   openDocuments: [],
 };
-const BLOCKS = [{ lines: [[3]], text: 'Facture' }];
+const BLOCKS = [{ lines: [[3]], soft: [false], text: 'Facture' }];
 
 interface Run {
   readonly sent: { id: string; params: unknown }[];
@@ -64,8 +64,8 @@ async function run(options: {
   const applied: unknown[] = [];
   const answers: Readonly<Record<string, unknown>> = {
     'ai.models': { source: 'fetched', models: [{ id: 'first-model', label: 'First', capabilities: { vision: null, streaming: null } }] },
-    'ai.translatePage': { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS) },
-    'document.execute': { version: asDocVersion(5), byteLength: 900, historyDropped: 0 },
+    'ai.translatePage': { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS), rewrite: 'objects' },
+    'document.execute': { version: asDocVersion(5), byteLength: 900, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
     ...options.answers,
   };
   const calls = new Map<string, number>();
@@ -143,6 +143,20 @@ describe('translatePageCommand', () => {
     expect(applied).toHaveLength(1);
   });
 
+  it('writes the translation of a page whose text is in a Type 3 font with editTextOperators, shrunk the same way (ADR-0181)', async () => {
+    const { sent } = await run({
+      answers: { 'ai.translatePage': { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS), rewrite: 'operators' } },
+    });
+    expect(sent.at(-1)).toStrictEqual({
+      id: 'document.execute',
+      params: { docId: DOC, command: { kind: 'editTextOperators', page: 2, ...blockEditOf(BLOCKS), fit: 'shrink', version: 4 } },
+    });
+    // CONTROL: the page whose writer is PDFium's is still written by `editTextBlock`, so the choice is the page's and
+    // not a default that changed.
+    const objects = await run({});
+    expect(objects.sent.at(-1)).toMatchObject({ params: { command: { kind: 'editTextBlock' } } });
+  });
+
   it('offers the dialog ONLY the providers with a stored key', async () => {
     const { asked } = await run({ stored: ['ai.mistral-key', 'ai.anthropic-key', 'docusign.integration-key'] });
     // THE PAGE COUNT AND WHETHER WORDS ARE SELECTED travel in: the dialog draws *Selected text* disabled without them.
@@ -161,8 +175,8 @@ describe('translatePageCommand', () => {
         dialog: TWO_PAGES,
         sequences: {
           'ai.translatePage': [
-            { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS) },
-            { kind: 'translated', version: 5, edit: blockEditOf(BLOCKS) },
+            { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS), rewrite: 'objects' },
+            { kind: 'translated', version: 5, edit: blockEditOf(BLOCKS), rewrite: 'objects' },
           ],
         },
       });
@@ -192,7 +206,7 @@ describe('translatePageCommand', () => {
         dialog: TWO_PAGES,
         sequences: {
           'ai.translatePage': [
-            { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS) },
+            { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS), rewrite: 'objects' },
             { kind: 'refused', problem: 'unauthorised' },
           ],
         },
@@ -208,7 +222,7 @@ describe('translatePageCommand', () => {
       const { sent } = await run({
         dialog: TWO_PAGES,
         sequences: {
-          'ai.translatePage': [{ kind: 'nothing-to-translate' }, { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS) }],
+          'ai.translatePage': [{ kind: 'nothing-to-translate' }, { kind: 'translated', version: 4, edit: blockEditOf(BLOCKS), rewrite: 'objects' }],
         },
       });
       expect(sent.filter((call) => call.id === 'ai.translatePage')).toHaveLength(2);

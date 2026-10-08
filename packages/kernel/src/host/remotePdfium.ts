@@ -10,7 +10,8 @@ import type {
 } from '../commandRouting.js';
 import { serialiseIntoFile } from '../checkpointFile.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
-import type { ByteImage, ImageSession } from '../engineSeam.js';
+import type { AppliedImage, ByteImage, DrawnBoxes, ImageSession } from '../engineSeam.js';
+import type { PageRuns } from '../operatorEdit.js';
 import type { TextRun } from '../pdfiumFfi.js';
 import {
   EditRefusedError,
@@ -183,9 +184,7 @@ export function typedBy(command: CommandOfKind<KindsRoutedTo<'pdfium'>>): string
         .map((replacement) => replacement.text)
         .join('');
     case 'editTextBlock':
-      return blocksOfEdit(command)
-        .map((block) => block.text)
-        .join('');
+      return [...blocksOfEdit(command).map((block) => block.text), ...(command.inserts ?? []).map((insert) => insert.text)].join('');
     case 'replaceTextAt':
     case 'replaceAllText':
       return command.replace;
@@ -195,6 +194,17 @@ export function typedBy(command: CommandOfKind<KindsRoutedTo<'pdfium'>>): string
     case 'promoteFormObjects':
       return '';
   }
+}
+
+/**
+ * Every string a prior holds, joined: the text an undo writes back, which is the only text a `text-not-writable` from
+ * an invert may name. Read structurally rather than per kind, because every string in a prior is one `main` sent.
+ */
+function textIn(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(textIn).join('');
+  if (typeof value === 'object' && value !== null) return Object.values(value).map(textIn).join('');
+  return '';
 }
 
 export function remotePdfiumExecution(
@@ -248,14 +258,15 @@ export function remotePdfiumExecution(
   const wrote = (
     image: ImageSession,
     regenerates: 'all' | number,
-    send: (from: string, into: string, session: string, password: string | null) => Promise<{ bytes: number }>,
-  ): Promise<ByteImage> =>
+    send: (from: string, into: string, session: string, password: string | null) => Promise<{ bytes: number } & DrawnBoxes>,
+  ): Promise<AppliedImage> =>
     withImage(
       image,
       async (from, area, session, password) => {
         const into = transfer.mintName();
         const answer = await send(from, into, session, password);
-        return takeAnnounced(transfer, area, into, answer.bytes);
+        // THE BOXES BESIDE THE IMAGE, as the host answered them (ADR-0174): named, and the rest counted.
+        return { image: await takeAnnounced(transfer, area, into, answer.bytes), boxed: answer.boxed, more: answer.more };
       },
       regenerates,
     );
@@ -269,7 +280,7 @@ export function remotePdfiumExecution(
     apply: async <K extends KindsRoutedTo<'pdfium'>>({
       session: image,
       command,
-    }: ApplyRequest<'pdfium', K>): Promise<ByteImage> =>
+    }: ApplyRequest<'pdfium', K>): Promise<AppliedImage> =>
       wrote(image, regeneratedBy(command), async (from, into, session, password) =>
         answered(
           'engine/apply',
@@ -335,7 +346,7 @@ export function remotePdfiumExecution(
       image: ImageSession,
       kind: K,
       inverse: CommandPrior[K],
-    ): Promise<ByteImage> =>
+    ): Promise<AppliedImage> =>
       // THE PAGE A PRIOR RESTORES, read through the same tagged prior the host is sent: every PDFium prior carries
       // the page its command touched, and restoring it regenerates that page as the command did.
       wrote(image, pdfiumTaggedPrior(kind, inverse).prior.page, async (from, into, session, password) =>
@@ -359,6 +370,9 @@ export function remotePdfiumExecution(
             password,
             into,
           }),
+          // WHAT AN UNDO WRITES is the prior's text, so a refusal's characters must come from it, as an apply's must
+          // come from what was typed (RRRRRRR-6).
+          () => textIn(inverse),
         ),
       ),
   };
@@ -480,6 +494,94 @@ export function remotePdfiumRenderPage(
       if (answer.bytes !== expected) throw new EngineSerialiseMismatch(expected, answer.bytes);
       const bgra = await takeAnnounced(transfer, area, into, expected);
       return { width, height, bgra };
+    } finally {
+      await transfer.removeSnapshot(area, from);
+    }
+  };
+}
+
+/** A block's run fonts as `main` holds them: each font once, and for each run asked about its place, or `null`. */
+export interface RunFonts {
+  readonly fonts: readonly Uint8Array[];
+  readonly runs: readonly (number | null)[];
+}
+
+/**
+ * The fonts a block's runs are drawn in, over the boundary (ADR-0175): {@link remotePdfiumRenderPage}'s round trip, since
+ * font bytes cannot be framed JSON, ONCE for the block. No sizes is a block with no fonts, and the host wrote nothing,
+ * so nothing is read; otherwise the file is their sum, held to itself by `takeAnnounced` and cut where each ends.
+ *
+ * THE HOST'S ANSWER IS CHECKED AGAINST THE QUESTION, since the host is hostile by invariant 25's premise: one place per
+ * run asked about, and none naming a font the answer does not carry. The schema bounds each field and cannot see the
+ * other one or the request.
+ */
+export function remotePdfiumRunFonts(
+  client: ClientApi<PdfiumChannels>,
+  held: () => PdfiumArea,
+  transfer: PdfiumTransfer,
+): (image: ImageSession, page: number, indices: readonly number[]) => Promise<RunFonts> {
+  return async (image, page, indices) => {
+    const { session, area } = held();
+    const from = transfer.mintName();
+    const into = transfer.mintName();
+    await transfer.writeSnapshot(area, from, image.bytes);
+    try {
+      const { sizes, runs } = answered(
+        'engine/run-fonts',
+        await client['engine/run-fonts']({ session, from, password: frameKey(image), into, page, indices: [...indices] }),
+      );
+      if (runs.length !== indices.length) {
+        throw new EngineCallFailed('engine/run-fonts', `answered ${String(runs.length)} runs for ${String(indices.length)} asked`);
+      }
+      if (runs.some((at) => at !== null && at >= sizes.length)) {
+        throw new EngineCallFailed('engine/run-fonts', `named a font past the ${String(sizes.length)} it answered`);
+      }
+      if (sizes.length === 0) return { fonts: [], runs };
+      const all = await takeAnnounced(transfer, area, into, sizes.reduce((total, size) => total + size, 0));
+      let at = 0;
+      const fonts = sizes.map((size) => {
+        const font = all.subarray(at, at + size);
+        at += size;
+        return font;
+      });
+      return { fonts, runs };
+    } finally {
+      await transfer.removeSnapshot(area, from);
+    }
+  };
+}
+
+/**
+ * A page's runs with their members and its text objects' page indices, over the boundary: ADR-0176's `pageRuns`
+ * pre-read. {@link remotePdfiumTextRuns}' round trip, file-answered by the channel.
+ *
+ * THE ANSWER IS CHECKED AGAINST ITSELF, for {@link remotePdfiumRunFonts}' reason, the host being hostile: every member
+ * is one of the text objects the same answer names, and no object is in two runs. The writer finds operators through
+ * exactly these numbers, so a member that is not a text object would name a rule or an image as a run's glyph.
+ */
+export function remotePdfiumPageRuns(
+  client: ClientApi<PdfiumChannels>,
+  held: () => PdfiumArea,
+  transfer: PdfiumTransfer,
+): (image: ImageSession, page: number) => Promise<PageRuns> {
+  return async (image, page) => {
+    const { session, area } = held();
+    const from = transfer.mintName();
+    await transfer.writeSnapshot(area, from, image.bytes);
+    try {
+      const read = answered('engine/page-runs', await client['engine/page-runs']({ session, from, password: frameKey(image), page }));
+      const text = new Set(read.textObjects);
+      const seen = new Set<number>();
+      for (const run of read.runs) {
+        for (const member of run.members) {
+          if (!text.has(member)) {
+            throw new EngineCallFailed('engine/page-runs', `named object ${String(member)} in a run, which is not a text object it answered`);
+          }
+          if (seen.has(member)) throw new EngineCallFailed('engine/page-runs', `named object ${String(member)} in two runs`);
+          seen.add(member);
+        }
+      }
+      return read;
     } finally {
       await transfer.removeSnapshot(area, from);
     }

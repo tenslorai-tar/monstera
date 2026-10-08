@@ -45,7 +45,7 @@ import { openPdfium, pageText, pdfiumWriter, textRuns } from '../../packages/ker
 import { localPdfiumExecution } from '../../packages/kernel/dist/pdfiumSpecs.js';
 import { groupIntoBlocks, settingOf } from '../../packages/kernel/dist/textLines.js';
 import { readTranslation, translationInstruction, translationRequest } from '../../packages/kernel/dist/translation.js';
-import { lineText } from '../../packages/shared/dist/index.js';
+import { lineText, paragraphsOfLines } from '../../packages/shared/dist/index.js';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { unverifiableOutcome } from '../lib/unverifiable.mjs';
@@ -112,7 +112,8 @@ await pdfiumWriter.close(session);
 if (!before.includes('meeting') || !before.includes('Tuesday')) fail('PREMISE — the drawn page does not read back in English.');
 // EACH RUN'S SETTING by the one `settingOf`, as `composition.ts` keys it for the grouping.
 const blocks = groupIntoBlocks(runs.map((run) => ({ ...run, setting: settingOf(run.style) })));
-const texts = blocks.map((block) => block.lines.map((line) => lineText(line.runs)).join('\n'));
+// THE BLOCK'S PARAGRAPHS by the one join, as `translatePageHandler` sends them (ADR-0179).
+const texts = blocks.map((block) => paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft }))));
 
 const answer = await streamChat({
   provider: 'anthropic',
@@ -129,7 +130,13 @@ if (translated === undefined) fail(`the answer was not an array of exactly ${Str
 const changed = blocks.flatMap((block, at) =>
   translated?.[at] === undefined || translated[at] === texts[at]
     ? []
-    : [{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text: translated[at] }],
+    : [
+        {
+          lines: block.lines.map((line) => line.runs.map((run) => run.index)),
+          soft: block.lines.map((line) => line.soft),
+          text: translated[at],
+        },
+      ],
 );
 if (changed.length === 0) fail('nothing came back changed, so nothing was translated.');
 
@@ -146,7 +153,8 @@ const written = await localPdfiumExecution.apply({
   sources: [],
   reads: undefined,
 });
-const reopened = await pdfiumWriter.open(written);
+// THE IMAGE OUT OF THE ANSWER, beside which the apply names any box it drew (ADR-0174).
+const reopened = await pdfiumWriter.open(written.image);
 const after = (await pageText(reopened, 0)).replace(/\s+/gu, ' ');
 await pdfiumWriter.close(reopened);
 

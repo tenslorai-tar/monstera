@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { FrameDecoder, encodeFrame } from './frame.js';
+import { LIFTED_CREDENTIALS_MAX, PROTECTION_TERMS_MAX } from './liftedCredentials.js';
 import {
   ENGINE_ANSWER_FILE_MAX_BYTES,
   ENGINE_HOST_FRAME_MAX_BYTES,
@@ -144,7 +145,7 @@ describe('the host request envelope', () => {
    * request cannot carry two sets of params — and the size is bounded as an answer's is.
    */
   it('names a params file in place of params, never both, within the ceiling', () => {
-    const file = { session: 'abc', name: '0a1b2c3d', bytes: 398_937 };
+    const file = { session: 'abc', name: '0a1b2c3d', bytes: 398_937, credentials: [] };
     expect(hostRequestSchema.safeParse({ id: 'c1', channel: 'engine/invert', paramsFile: file }).success).toBe(true);
     expect(
       hostRequestSchema.safeParse({ id: 'c1', channel: 'engine/invert', params: {}, paramsFile: file }).success,
@@ -159,6 +160,26 @@ describe('the host request envelope', () => {
     expect(
       hostRequestSchema.safeParse({ id: 'c1', channel: 'engine/invert', paramsFile: { ...file, name: '..\\x' } }).success,
     ).toBe(false);
+  });
+
+  /**
+   * ADR-0171's correction: the params' credentials ride beside the file, REQUIRED so a framer that forgot them is
+   * refused rather than read as carrying none, and bounded by count and by length so the frame stays the frame's.
+   */
+  it('carries the params’ credentials beside the file, required, and bounded in count and length', () => {
+    const file = { session: 'abc', name: '0a1b2c3d', bytes: 10 };
+    const one = { path: ['password'], value: 'x' };
+    const parse = (paramsFile: unknown) =>
+      hostRequestSchema.safeParse({ id: 'c1', channel: 'engine/apply', paramsFile }).success;
+    expect(parse({ ...file, credentials: [one] })).toBe(true);
+    expect(parse(file)).toBe(false);
+    expect(parse({ ...file, credentials: Array.from({ length: LIFTED_CREDENTIALS_MAX }, () => one) })).toBe(true);
+    expect(parse({ ...file, credentials: Array.from({ length: LIFTED_CREDENTIALS_MAX + 1 }, () => one) })).toBe(false);
+    expect(parse({ ...file, credentials: [{ path: ['password'], value: 'x'.repeat(PROTECTION_TERMS_MAX) }] })).toBe(true);
+    expect(parse({ ...file, credentials: [{ path: ['password'], value: 'x'.repeat(PROTECTION_TERMS_MAX + 1) }] })).toBe(
+      false,
+    );
+    expect(parse({ ...file, credentials: [{ path: [], value: 'x' }] })).toBe(false);
   });
 
   it('refuses an extra field rather than ignoring it', () => {
@@ -224,15 +245,16 @@ describe('the host response envelope', () => {
    * before it reads anything — and it is never BOTH a body and a file, which would be two answers to one call.
    */
   it('carries a file answer as a byte count within the ceiling, and never beside a body', () => {
-    expect(hostResponseSchema.safeParse({ id: 'c1', answerFile: { bytes: 663_815 } }).success).toBe(true);
-    expect(hostResponseSchema.safeParse({ id: 'c1', answerFile: { bytes: ENGINE_ANSWER_FILE_MAX_BYTES } }).success).toBe(
-      true,
-    );
-    expect(
-      hostResponseSchema.safeParse({ id: 'c1', answerFile: { bytes: ENGINE_ANSWER_FILE_MAX_BYTES + 1 } }).success,
-    ).toBe(false);
-    expect(hostResponseSchema.safeParse({ id: 'c1', answerFile: { bytes: 0 } }).success).toBe(false);
-    expect(hostResponseSchema.safeParse({ id: 'c1', body: {}, answerFile: { bytes: 10 } }).success).toBe(false);
+    const answered = (answerFile: unknown, body?: unknown) =>
+      hostResponseSchema.safeParse(body === undefined ? { id: 'c1', answerFile } : { id: 'c1', body, answerFile }).success;
+    expect(answered({ bytes: 663_815, credentials: [] })).toBe(true);
+    expect(answered({ bytes: ENGINE_ANSWER_FILE_MAX_BYTES, credentials: [] })).toBe(true);
+    expect(answered({ bytes: ENGINE_ANSWER_FILE_MAX_BYTES + 1, credentials: [] })).toBe(false);
+    expect(answered({ bytes: 0, credentials: [] })).toBe(false);
+    expect(answered({ bytes: 10, credentials: [] }, {})).toBe(false);
+    // AND ITS CREDENTIALS, required as a request's are (ADR-0171's correction).
+    expect(answered({ bytes: 10 })).toBe(false);
+    expect(answered({ bytes: 10, credentials: [{ path: ['value', 'prior', 'passwordTerms'], value: 'x' }] })).toBe(true);
   });
 });
 

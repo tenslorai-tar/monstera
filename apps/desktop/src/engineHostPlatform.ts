@@ -7,6 +7,7 @@ import type { Result } from '@monstera/shared';
 
 import type { EngineHostPlatform } from './composition.js';
 import { providedConverterExecutable } from './containedProgram.js';
+import { installedFontsFolder } from './installedFonts.js';
 import { nativeComponentPath } from './nativeComponents.js';
 import type { ConverterPlatform } from './converterSession.js';
 import { LAYOUT_TEXT_BOUNDS } from './layoutText.js';
@@ -226,7 +227,20 @@ export function createEngineHostPlatform(sessionRoot: string, packageData: Packa
           program: {
             runs: 'electron-node',
             executablePath: binary,
-            commandArguments: [...hostCommandArguments({ kind: 'mupdf', libraryPath }, entry, pipeName)],
+            // THE FONT FOLDERS, as the PDFium host's (ADR-0177 Decision 1): the bundled set beside the system's, both
+            // readable from every AppContainer (`ALL APPLICATION PACKAGES`), so this grants nothing new.
+            commandArguments: [
+              ...hostCommandArguments(
+                {
+                  kind: 'mupdf',
+                  libraryPath,
+                  fontsPath: nativeComponentPath('fonts'),
+                  installedFontsPath: installedFontsFolder(),
+                },
+                entry,
+                pipeName,
+              ),
+            ],
           },
           // Inside the grant set, for the reason the acceptance test's is: a
           // working directory of our own would be a path whose rights differ
@@ -317,7 +331,16 @@ export function createPdfiumHostPlatform(base: EngineHostPlatform): EngineHostPl
             runs: 'electron-node',
             executablePath: binary,
             commandArguments: [
-              ...hostCommandArguments({ kind: 'pdfium', libraryPath }, entry, pipeName),
+              ...hostCommandArguments(
+                {
+                  kind: 'pdfium',
+                  libraryPath,
+                  fontsPath: nativeComponentPath('fonts'),
+                  installedFontsPath: installedFontsFolder(),
+                },
+                entry,
+                pipeName,
+              ),
             ],
           },
           workingDirectory: dirname(binary),
@@ -471,7 +494,16 @@ export function createComposeHostPlatform(base: EngineHostPlatform): EngineHostP
             runs: 'electron-node',
             executablePath: binary,
             commandArguments: [
-              ...hostCommandArguments({ kind: 'compose', shimPath: mupdfShimPath() }, entry, pipeName),
+              ...hostCommandArguments(
+                {
+                  kind: 'compose',
+                  shimPath: mupdfShimPath(),
+                  fontsPath: nativeComponentPath('fonts'),
+                  installedFontsPath: installedFontsFolder(),
+                },
+                entry,
+                pipeName,
+              ),
             ],
           },
           workingDirectory: dirname(binary),

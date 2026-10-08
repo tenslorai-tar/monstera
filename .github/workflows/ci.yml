@@ -309,32 +309,50 @@ jobs:
         run: node scripts/ci/annotate.mjs scripts/research/engineSurface.mjs
 
       # The pinned archive is 3.8 MB, hash-verified before anything unpacks it.
-      # Windows only, because `pdfium-win-x64.tgz` is the one asset this project
-      # pins — the product ships to the Microsoft Store and nowhere else.
+      # BOTH legs: Windows takes `pdfium-win-x64.tgz`, the shipped engine; Linux
+      # takes the same release's `pdfium-linux-x64.tgz`, pinned for development
+      # and tests only (the owner's decision, 2026-10-05), so the PDFium proofs
+      # below measure a checked library on both legs. Packaging reads the
+      # Windows library whatever machine runs it, which the next step proves.
       - name: Provision PDFium
-        if: runner.os == 'Windows'
         run: node scripts/ci/annotate.mjs scripts/provision/pdfium.mjs
 
-      # Runs on BOTH legs deliberately. On Windows it is required, so a
-      # could-not-look is red. On Linux it prints UNVERIFIABLE and exits 0 —
-      # visible in the log as a stated absence rather than as a step that
-      # silently did not exist, which is the difference this project keeps
-      # paying for.
+      - name: Prove PDFium is pinned per platform and packaging ships the Windows library
+        run: >
+          node scripts/ci/annotate.mjs scripts/provision/pdfium.proof.mjs --require-pdfium
+
+      # The bundled open fonts (ADR-0172): twenty-one files, 9,965,868 bytes, from one pinned google/fonts commit,
+      # each verified by SHA-256 and the folder checked as a whole tree, since a font in it is one the resolver
+      # embeds. Both legs: the composers and the editor's proofs read these faces.
+      - name: Provision the bundled fonts
+        run: node scripts/ci/annotate.mjs scripts/provision/fonts.mjs
+
+      # Unicode 17's BidiCharacterTest.txt, 6,880,771 bytes by SHA-256 from unicode-org/unicodetools, never committed:
+      # `bidiOrder.test.ts` runs all 91,707 cases and fails rather than skips without it.
+      - name: Provision Unicode's bidirectional conformance data
+        run: node scripts/ci/annotate.mjs scripts/provision/unicodeTests.mjs
+
+      - name: Prove the bundled fonts are the pinned set and the notice names exactly them
+        run: >
+          node scripts/ci/annotate.mjs scripts/provision/fonts.proof.mjs --require-fonts
+
+      # Runs on BOTH legs, and REQUIRED on both since the Linux library is
+      # pinned too (2026-10-05): a could-not-look is red on either leg. Each leg
+      # measures its own platform's build of the same release.
       - name: Prove the PDFium adapter against the real library
         run: >
           node scripts/ci/annotate.mjs scripts/proofs/pdfiumAdapter.proof.mjs
-          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+          --require-pdfium
 
       # The layer above that one: does the COMMAND `commandSpecs.ts` routes to
       # PDFium produce the document effect and survive a round trip. An adapter
       # that edits correctly and an execution that hands it the right session
       # are different facts, and only this step asserts the second. Both legs,
-      # for the step above's reason — UNVERIFIABLE on Linux is a stated absence
-      # rather than a step that silently did not exist.
+      # required, for the step above's reason.
       - name: Prove in-place text editing as a command
         run: >
           node scripts/ci/annotate.mjs scripts/proofs/pdfiumCommand.proof.mjs
-          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+          --require-pdfium
 
       # The same layer for the three OBJECT commands — move and resize, recolour,
       # remove. A separate step rather than more cases in the one above because
@@ -343,7 +361,7 @@ jobs:
       - name: Prove object-level editing as commands
         run: >
           node scripts/ci/annotate.mjs scripts/proofs/pdfiumObject.proof.mjs
-          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+          --require-pdfium
 
       # Every PDFium command on a page carrying Type 3 text, which PDFium's
       # generation drops: each must refuse at the read-back and save nothing,
@@ -352,7 +370,7 @@ jobs:
       - name: Prove a PDFium rewrite is saved only when it reads back as edited
         run: >
           node scripts/ci/annotate.mjs scripts/proofs/pdfiumReadBack.proof.mjs
-          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+          --require-pdfium
 
       # BUILD-PROMPT.md:706's owed fidelity proof. The corpus is not here, so its
       # corpus half reports UNVERIFIABLE and exits 0; the half that runs on every
@@ -361,7 +379,7 @@ jobs:
       - name: Prove an edit redraws only what it touched
         run: >
           node scripts/ci/annotate.mjs scripts/proofs/editFidelity.proof.mjs
-          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+          --require-pdfium
 
       # ADR-0126. PDFium's content generator drops an inline image when an edit
       # regenerates its page; the shim's rewrite keeps it. Five picture shapes,
@@ -372,6 +390,16 @@ jobs:
       - name: Prove an edit keeps a page's inline images
         run: >
           node scripts/ci/annotate.mjs scripts/proofs/inlineImages.proof.mjs
+          ${{ runner.os == 'Windows' && '--require-engines' || '' }}
+
+      # ADR-0176. A page holding Type 3 text, edited end to end: PDFium's real
+      # reading of the Chromium print is the MuPDF writer's input, MuPDF
+      # rewrites the heading in its own font, and PDFium reads the saved bytes
+      # again. A reading numbering one object too many must be refused with
+      # nothing written. Both engines are needed, as for inline images.
+      - name: Prove a Type 3 page is edited by PDFium's reading and MuPDF's writer
+        run: >
+          node scripts/ci/annotate.mjs scripts/proofs/type3Edit.proof.mjs
           ${{ runner.os == 'Windows' && '--require-engines' || '' }}
 
       # ADR-0171's addendum. The shim's two readers of a document's content,
@@ -458,7 +486,7 @@ jobs:
       - name: Score where two engines agree a line ends
         run: >
           node scripts/ci/annotate.mjs scripts/research/lineAgreement.mjs
-          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+          --require-pdfium
 
       # What an in-place text edit charges for, before the five rows that make
       # the charge. Nothing here asserts a millisecond: the cases are relations
@@ -468,7 +496,7 @@ jobs:
       - name: Attribute the cost of one in-place text edit
         run: >
           node scripts/ci/annotate.mjs scripts/research/editCost.mjs
-          ${{ runner.os == 'Windows' && '--require-pdfium' || '' }}
+          --require-pdfium
 
       - name: No surface renders a hand-written command list
         run: node scripts/ci/annotate.mjs scripts/lib/secondWiringPlace.mjs
@@ -1101,6 +1129,15 @@ jobs:
       - name: Lint
         run: node scripts/ci/annotate.mjs scripts/lib/lintcheck.mjs
 
+      # The kernel's font tests read the bundled faces and fail rather than skip without them (ADR-0172), so the floor
+      # provisions them as the matrix job does.
+      - name: Provision the bundled fonts
+        run: node scripts/ci/annotate.mjs scripts/provision/fonts.mjs
+
+      # The bidi order's conformance run reads it, and fails rather than skips without it, as the matrix job's.
+      - name: Provision Unicode's bidirectional conformance data
+        run: node scripts/ci/annotate.mjs scripts/provision/unicodeTests.mjs
+
       - name: Tests
         run: npm test
 
@@ -1202,6 +1239,11 @@ jobs:
       # container the directory PDFium lives in and so must find it there. The pinned 3.8 MB archive, hash-verified.
       - name: Provision PDFium
         run: node scripts/ci/annotate.mjs scripts/provision/pdfium.mjs
+
+      # THE BUNDLED FONTS, for the compose host's live proof below (ADR-0172): its host sets text in them, read through
+      # the container's grant, so before the grant step for PDFium's reason.
+      - name: Provision the bundled fonts
+        run: node scripts/ci/annotate.mjs scripts/provision/fonts.mjs
 
       # THIS JOB NOW NEEDS COMPILED TYPESCRIPT, and it did not before.
       #
@@ -1340,6 +1382,15 @@ jobs:
       # cases cannot pass on inputs the old build handled.
       - name: Answers larger than a frame cross in a file, through both real hosts
         run: node scripts/ci/annotate.mjs scripts/research/hostFileAnswersLive.mjs --require-containment
+
+      # WHICH INSTALLED FACE, AND DOES PDFIUM CARRY IT OUTSIDE THE HOST. The step above's installed-fonts case was
+      # refused on 2026-10-06 (run 37407876114) while the same edit is saved on Linux, so this runs the edit through
+      # the kernel's PDFium writer in plain Node, once per installed face carrying the ideograph: a face that saves
+      # here beside a host that refuses is the host's reach, and a face refusing here is the face. After it, and
+      # whatever it answered, because its reading is what explains a red above.
+      - name: The installed face an edit sets an ideograph in, outside the contained host
+        if: ${{ !cancelled() }}
+        run: node scripts/ci/annotate.mjs --always scripts/research/installedFaceEdit.mjs
 
       # THE SWEEP, AGAINST A REAL LISTING. `sessionDirectories.test.ts` covers
       # every decision the sweep makes and supplies the listing to do it, so the

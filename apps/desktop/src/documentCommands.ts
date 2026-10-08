@@ -36,6 +36,7 @@ import {
   type OptimizeSetting,
   MAX_TEXT_LAYER_LINE,
   type PageImageFormat,
+  type BoxedCharacter,
   type ComposeRefusal,
   type UrlFetchRefusal,
   type RequestedSignatureMark,
@@ -47,9 +48,14 @@ import {
   type WordMode,
   type SaveWriteCause,
   type FileAccess,
+  type FormFieldHandle,
+  type FormFieldRead,
+  type ImportSkipped,
   keptLookOf,
   placedMarkOf,
   sourceIdsOf,
+  type BoxedInEditEntry,
+  cappedBoxes,
 } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
 // importing the spec table would bind the MuPDF native library **in main** —
@@ -75,6 +81,7 @@ import {
   copyNames,
   type CommandBus,
   type FlatFieldCandidate,
+  type RemoteImportPlan,
   type FoundBarcode,
   DocumentNotOpenError,
   type DocumentContext,
@@ -95,6 +102,8 @@ import {
   type StructureOutline,
   type RecognitionRequest,
   type RecognisedPage,
+  type PageRewrite,
+  type PageRuns,
   type SaveDependencies,
   type CopyOutcome,
   type CopyTargetVerdict,
@@ -151,8 +160,10 @@ import {
   StaleTargetError,
   saveWriteCause,
   type SaveBackups,
+  type LogEntry,
 } from '@monstera/kernel';
 import type { BarcodeWriteFormat } from '@monstera/kernel/barcode';
+import type { ProtectionTerms } from './documentPasswords.js';
 import {
   type DocId,
   type DocVersion,
@@ -335,6 +346,41 @@ export interface EngineSessionSource {
    * ADR-0171). Read by everything that opens the document's bytes in a host of its own: a PDFium command and Optimize.
    */
   readonly opensWith: (docId: DocId) => HeldPassword | undefined;
+  /**
+   * A protect ran on this document: it opens and stands as `terms` leave it, and `step`, the protect's log entry, keeps
+   * where it was (`EngineSessions.protected`, ADR-0171 Decision 8). Required, so a supervisor that does not follow a
+   * protect is a compile error rather than every later reopen trying the password the document no longer has.
+   */
+  readonly protected: (docId: DocId, step: object, terms: ProtectionTerms) => void;
+  /** The protect `step` is being undone (`before`) or redone (`after`): `EngineSessions.protectionStepped`. */
+  readonly protectionStepped: (docId: DocId, step: object, to: 'before' | 'after') => void;
+}
+
+/**
+ * How a protect replaces a document's plaintext copies with ones encrypted under its terms
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8).
+ * Composed where the engine host is, because only a host may open a document's bytes.
+ */
+export interface ProtectedCopies {
+  /**
+   * Rewrites the file at `path` encrypted under `command`, in a host session of its own, when it opens with no key and
+   * carries no encryption at all; answers its new length, or `undefined` for a copy left as it was. An encrypted copy
+   * is left: it is protected already, and rewriting it would replace an owner password main never saw.
+   */
+  readonly seal: (docId: DocId, path: string, command: CommandOfKind<'setDocumentProtection'>) => Promise<number | undefined>;
+  /** Rewrites the live session's snapshot from the canonical image, which a protect has just made encrypted. */
+  readonly refreshSnapshot: (docId: DocId) => Promise<void>;
+}
+
+/** The terms the holder follows, for a protect; `undefined` for every other command. */
+function protectionTermsOf(command: Command): ProtectionTerms | undefined {
+  if (command.kind !== 'setDocumentProtection') return undefined;
+  return { encryption: command.encryption, userPassword: command.userPassword };
+}
+
+/** Whether a log entry is a protect's, so its undo or redo moves the holder. */
+function isProtectStep(entry: LogEntry | undefined): entry is LogEntry {
+  return entry?.command.kind === 'setDocumentProtection';
 }
 
 /**
@@ -911,7 +957,13 @@ export interface ImportSource {
  * this type rather than a second one beside it.
  */
 export type ComposedImport =
-  | { readonly kind: 'composed'; readonly pdf: Uint8Array }
+  | {
+      readonly kind: 'composed';
+      readonly pdf: Uint8Array;
+      /** Every place a character is drawn as the missing-character box, the first named and the rest counted (ADR-0172). */
+      readonly boxed: readonly BoxedCharacter[];
+      readonly more: number;
+    }
   | {
       readonly kind: 'refused';
       readonly reason: ComposeRefusal;
@@ -942,7 +994,13 @@ export type ComposeImport =
  * what crosses is that open's outcome.
  */
 export type ComposeImportOutcome =
-  | { readonly kind: 'written'; readonly destination: string }
+  /** Written — and `boxed` names any characters drawn as the missing-character box; empty for none (ADR-0172). */
+  | {
+      readonly kind: 'written';
+      readonly destination: string;
+      readonly boxed: readonly BoxedCharacter[];
+      readonly more: number;
+    }
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'too-large'; readonly limitBytes: number }
   | { readonly kind: 'unreadable' }
@@ -1530,6 +1588,14 @@ export type DocumentOcrReader = (
   request: RecognitionRequest,
 ) => Promise<RecognisedPage>;
 
+/**
+ * One page's joined runs with their members, through the PDFium host: `editTextOperators`' pre-read
+ * ([ADR-0176](../../../docs/DECISIONS/0176-a-page-holding-type-3-text-is-edited-in-its-own-content-stream-by-mupdf.md)'s
+ * correction). {@link DocumentOcrReader}'s shape, per page for its reason, and read from the bytes the bus is about to
+ * apply to, so the runs it names are the ones on the page the edit writes.
+ */
+export type DocumentPageRunsReader = (docId: DocId, sessions: DocumentSessions, page: number) => Promise<PageRuns>;
+
 /** The outline, stamped with the version the lane read it at. */
 export interface DocumentDestinations {
   readonly version: DocVersion;
@@ -1690,9 +1756,16 @@ export type FormDataRead =
 
 /** What {@link DocumentCommands.importFormData} answers. */
 export type ImportFormDataOutcome =
-  | ({ readonly kind: 'imported' } & Applied)
+  | ({
+      readonly kind: 'imported';
+      /** How many fields it filled, and the fields it left alone with a reason each (ADR-0193's neighbour). */
+      readonly filled: number;
+      readonly skipped: readonly ImportSkipped[];
+      readonly more: number;
+    } & Applied)
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'unreadable' }
+  | { readonly kind: 'matched-nothing'; readonly named: number }
   | { readonly kind: 'too-large'; readonly limitBytes: number };
 
 /**
@@ -1705,7 +1778,11 @@ export type DocumentFlatFieldsReader = (
   docId: DocId,
   sessions: DocumentSessions,
   page: number,
-) => Promise<{ readonly candidates: readonly FlatFieldCandidate[]; readonly truncated: boolean }>;
+) => Promise<{
+  readonly candidates: readonly FlatFieldCandidate[];
+  readonly truncated: boolean;
+  readonly alreadyFields: number;
+}>;
 
 /** How one page's barcodes are read: `DocumentFlatFieldsReader`'s shape, in the engine host. */
 export type DocumentBarcodesReader = (
@@ -1766,11 +1843,33 @@ export type PlaceBarcodeOutcome =
   | ({ readonly kind: 'placed' } & Applied)
   | { readonly kind: 'refused' };
 
+/** Plans an import of a data file against the document's form, through whichever host is live. */
+export type DocumentFormImportPlanner = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  bytes: Uint8Array,
+  format: FormDataImportFormat,
+) => Promise<RemoteImportPlan>;
+
+/** The named fields' properties, through whichever host is live (ADR-0193). */
+export type DocumentFieldPropertiesReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  handles: readonly FormFieldHandle[],
+) => Promise<readonly (FormFieldRead | null)[]>;
+
+/** The named fields' properties, stamped with the version the lane read them at. */
+export interface DocumentFieldProperties {
+  readonly version: DocVersion;
+  readonly fields: readonly (FormFieldRead | null)[];
+}
+
 /** The candidates, stamped with the version the lane read them at. */
 export interface DocumentFlatFields {
   readonly version: DocVersion;
   readonly candidates: readonly FlatFieldCandidate[];
   readonly truncated: boolean;
+  readonly alreadyFields: number;
 }
 
 /**
@@ -1836,6 +1935,13 @@ export interface DocumentTextBlocks {
    * in place: an editor cannot be placed along an axis the page is not set on.
    */
   readonly rotated: number;
+  /** `rotated` by kind, so the editor can say which text is not offered and why (ADR-0181 Decision 7). */
+  readonly angled: {
+    readonly turned: number;
+    readonly vertical: number;
+    readonly slanted: number;
+    readonly mirrored: number;
+  };
   /**
    * Characters on this page no command can name — text inside a Form XObject.
    *
@@ -1844,6 +1950,11 @@ export interface DocumentTextBlocks {
    * editable with nothing saying why.
    */
   readonly unaddressable: number;
+  /**
+   * Which writer rewrites this page's text (ADR-0176 Decision 1): `objects` for `editTextBlock`, `operators` for
+   * `editTextOperators`, where the page shows text in a Type 3 font.
+   */
+  readonly rewrite: PageRewrite;
 }
 
 /** One of a page's objects, as the editing engine describes it. */
@@ -1880,6 +1991,23 @@ export interface DocumentPageObjects {
   readonly objects: readonly DocumentPageObject[];
   readonly truncated: boolean;
 }
+
+/**
+ * The fonts the editor draws a block's runs in, rebuilt by the PDFium host from the runs' own programs, each once, with
+ * each run's place among them or `null` for none (ADR-0175). The third sanctioned byte crossing; the document's own
+ * program never leaves the host.
+ *
+ * `Uint8Array<ArrayBuffer>`, {@link DocumentPageRasteriser}'s `png` reason: structured clone sends a view's WHOLE
+ * buffer, so a view onto a shared one would hand the renderer whatever else shares it — here the block's other fonts,
+ * which arrive cut from one file. The composition copies each into a buffer of its own, so the narrower type is true
+ * rather than asserted.
+ */
+export type DocumentRunFontsReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+  indices: readonly number[],
+) => Promise<{ readonly fonts: readonly Uint8Array<ArrayBuffer>[]; readonly runs: readonly (number | null)[] }>;
 
 /**
  * One page rasterised by the EDITING engine, as PNG bytes.
@@ -2094,6 +2222,15 @@ export interface Applied {
   readonly byteLength: number;
   /** Undo steps this command cost to the checkpoint budget (§4, invariant 18). */
   readonly historyDropped: number;
+  /** The characters it drew as boxes, each with its page, capped for the boundary (ADR-0174). */
+  readonly boxed: BoxedInEditEntry[];
+  /** How many boxes past the named ones. */
+  readonly more: number;
+  /**
+   * The older copies a protect could not encrypt, by name (ADR-0178), empty for every other command and for a protect
+   * that sealed every copy. A protect that applied is not failed by a copy another program holds; the person is told.
+   */
+  readonly unsealedCopies: readonly string[];
 }
 
 /**
@@ -2152,6 +2289,8 @@ export interface DocumentCommandsParts {
   readonly destinations: DocumentDestinationsReader;
   /** How a page becomes characters — `ocrPage`'s pre-read (ADR-0051). */
   readonly ocr: DocumentOcrReader;
+  /** Which objects a page's runs are, through the PDFium host — `editTextOperators`' pre-read (ADR-0176). */
+  readonly pageRuns: DocumentPageRunsReader;
   readonly layers: DocumentLayersReader;
   /**
    * Reads and verifies the document's signatures, in the contained host.
@@ -2181,8 +2320,14 @@ export interface DocumentCommandsParts {
   readonly linkAddress: DocumentLinkAddressReader;
   readonly formFields: DocumentFormFieldsReader;
   readonly flatFields: DocumentFlatFieldsReader;
+  /** The named fields' properties, read in the engine host (ADR-0193). */
+  readonly fieldProperties: DocumentFieldPropertiesReader;
+  /** What importing a data file would do to the form, planned in the engine host. */
+  readonly formImportPlan: DocumentFormImportPlanner;
   /** One page's barcodes, read in the engine host (ADR-0076). */
   readonly barcodes: DocumentBarcodesReader;
+  /** How a protect replaces the document's plaintext copies with encrypted ones (ADR-0171 Decision 8). */
+  readonly copies: ProtectedCopies;
   /** The accessibility check, read in the engine host (ADR-0078). */
   readonly accessibility: DocumentAccessibilityReader;
   /** Writes a barcode for placement. See {@link BarcodeWriter}. */
@@ -2200,6 +2345,8 @@ export interface DocumentCommandsParts {
   readonly pageObjects: DocumentPageObjectsReader;
   /** The editing engine's raster of a page, or a thrower. */
   readonly renderPage: DocumentPageRasteriser;
+  /** A block's run fonts rebuilt by the editing engine's host, each once (ADR-0175). */
+  readonly runFonts: DocumentRunFontsReader;
   readonly duplicates: DocumentDuplicatesReader;
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
@@ -2385,6 +2532,7 @@ export class DocumentCommands {
   readonly #wordBoxes: DocumentWordBoxesReader;
   readonly #destinations: DocumentDestinationsReader;
   readonly #ocr: DocumentOcrReader;
+  readonly #pageRuns: DocumentPageRunsReader;
   readonly #layers: DocumentLayersReader;
   readonly #signatures: (session: MupdfSession) => Promise<readonly ReadSignature[]>;
   readonly #signaturesKept: (session: MupdfSession) => Promise<NextSave>;
@@ -2411,12 +2559,16 @@ export class DocumentCommands {
     null;
   readonly #formFields: DocumentFormFieldsReader;
   readonly #flatFields: DocumentFlatFieldsReader;
+  readonly #fieldProperties: DocumentFieldPropertiesReader;
+  readonly #formImportPlan: DocumentFormImportPlanner;
   readonly #barcodes: DocumentBarcodesReader;
+  readonly #copies: ProtectedCopies;
   readonly #accessibility: DocumentAccessibilityReader;
   readonly #writeBarcode: BarcodeWriter;
   readonly #textBlocks: DocumentTextBlocksReader;
   readonly #pageObjects: DocumentPageObjectsReader;
   readonly #renderPage: DocumentPageRasteriser;
+  readonly #runFonts: DocumentRunFontsReader;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
@@ -2475,6 +2627,7 @@ export class DocumentCommands {
     this.#wordBoxes = parts.wordBoxes;
     this.#destinations = parts.destinations;
     this.#ocr = parts.ocr;
+    this.#pageRuns = parts.pageRuns;
     this.#layers = parts.layers;
     this.#signatures = parts.signatures;
     this.#signaturesKept = parts.signaturesKept;
@@ -2487,12 +2640,16 @@ export class DocumentCommands {
     this.#linkAddress = parts.linkAddress;
     this.#formFields = parts.formFields;
     this.#flatFields = parts.flatFields;
+    this.#fieldProperties = parts.fieldProperties;
+    this.#formImportPlan = parts.formImportPlan;
     this.#barcodes = parts.barcodes;
+    this.#copies = parts.copies;
     this.#accessibility = parts.accessibility;
     this.#writeBarcode = parts.writeBarcode;
     this.#textBlocks = parts.textBlocks;
     this.#pageObjects = parts.pageObjects;
     this.#renderPage = parts.renderPage;
+    this.#runFonts = parts.runFonts;
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#image = parts.image;
@@ -3105,7 +3262,32 @@ export class DocumentCommands {
       return this.#flatFields(docId, sessions, page);
     });
 
-    return { version, candidates: value.candidates, truncated: value.truncated };
+    return {
+      version,
+      candidates: value.candidates,
+      truncated: value.truncated,
+      alreadyFields: value.alreadyFields,
+    };
+  }
+
+  /**
+   * What the named fields' properties are (ADR-0193).
+   *
+   * {@link flatFieldCandidates}' body and its lane, for its reason: the walk reads the document the adapter holds, which
+   * a command mutates in place. The version comes back with the answer, so a pane built from it can tell when the
+   * document has moved on.
+   */
+  async formFieldProperties(docId: DocId, handles: readonly FormFieldHandle[]): Promise<DocumentFieldProperties> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#fieldProperties(docId, sessions, handles);
+    });
+    return { version, fields: value };
   }
 
   /**
@@ -3266,6 +3448,32 @@ export class DocumentCommands {
   }
 
   /**
+   * A block's run fonts, inside the document's lane: {@link renderPage}'s guards in its order and for its reason, since
+   * this read too hands PDFium the document's bytes, and a font read interleaved with an apply could check a run against
+   * a page that is neither. The version comes back so the editor drops fonts for a page that has moved.
+   */
+  async runFonts(
+    docId: DocId,
+    page: number,
+    indices: readonly number[],
+  ): Promise<{
+    readonly version: DocVersion;
+    readonly fonts: readonly Uint8Array<ArrayBuffer>[];
+    readonly runs: readonly (number | null)[];
+  }> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#runFonts(docId, sessions, page, indices);
+    });
+    return { version, fonts: value.fonts, runs: value.runs };
+  }
+
+  /**
    * Groups identical pages, inside the document's lane.
    *
    * `layers`' guards in `layers`' order, and the lane matters for the reason it
@@ -3345,6 +3553,13 @@ export class DocumentCommands {
     // that answers it"* — and that argument never depended on undo lacking a
     // command. `execute` now does the same, so the only routing table in this
     // process is the bus's (B3a).
+    //
+    // HELD ON AN OBJECT, `undo`'s idiom: where a protect ran, its file's path, so the Recent picture is retaken after
+    // the lane, whose capture enters the lane itself.
+    const protectedAt: { path: string | undefined } = { path: undefined };
+    // THE COPIES A PROTECT COULD NOT SEAL, held across the lane like `protectedAt`: a protect that applied names them
+    // rather than failing (ADR-0178). Empty for every other command, and for a protect that sealed every copy.
+    const unsealed: { copies: readonly string[] } = { copies: [] };
     const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -3371,7 +3586,7 @@ export class DocumentCommands {
         }
       }
 
-      const { trimmed } = await this.#bus.execute<K>(
+      const { trimmed, entry, drawn } = await this.#bus.execute<K>(
         sessions,
         context,
         command,
@@ -3380,6 +3595,15 @@ export class DocumentCommands {
         // name*, and the payload is the contract's (ADR-0040 Decision 4).
         this.#byteImage(docId, sourceIdsOf(command)),
       );
+      // A PROTECT MOVES THE HOLDER, in the lane and after the bus recorded it, so every later open of a copy has the
+      // key the document opens with now (ADR-0171 Decision 8).
+      const terms = protectionTermsOf(command);
+      if (terms !== undefined) {
+        this.#engine.protected(docId, entry, terms);
+        const protect = this.#bus.protectOf(entry);
+        if (protect !== undefined) unsealed.copies = await this.#sealPlaintextCopies(docId, context, protect);
+        protectedAt.path = context.path;
+      }
       // READ AFTER THE BUS, INSIDE THE LANE, for the reason `Versioned` reads
       // the version there: the command rewrote the canonical image, and the
       // length the renderer needs is the new one. Reading it outside the lane
@@ -3388,9 +3612,19 @@ export class DocumentCommands {
       // The trim travels with the length for the same reason: it is what THIS
       // command cost, and a second command's trim attributed to this one would
       // tell the user their history shrank at the wrong moment.
-      return { byteLength: context.byteLength, historyDropped: trimmed.droppedEntries };
+      // AND WHAT IT DREW AS BOXES (ADR-0174), for the trim's reason: this command's, through the one cap. AND THE
+      // COPIES A PROTECT COULD NOT SEAL (ADR-0178), empty for every other command: the person is owed them.
+      return {
+        byteLength: context.byteLength,
+        historyDropped: trimmed.droppedEntries,
+        ...cappedBoxes(drawn),
+        unsealedCopies: unsealed.copies,
+      };
     });
 
+    // A PICTURE OF A PROTECTED PAGE cannot be encrypted, so it is retaken: deleted, and kept again only if the document
+    // still opens with no password (ADR-0171 Decision 8, `firstPagePicture`'s rule).
+    if (protectedAt.path !== undefined) void this.#recentPicture.retake(docId, protectedAt.path);
     return { version, ...byteLength };
   }
 
@@ -3447,13 +3681,24 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      stepped.yes =
-        (await this.#bus.undo(
-          sessions,
-          context,
-          (write) => this.#restore(docId, write),
-          this.#byteImage(docId),
-        )) !== undefined;
+      // A PROTECT'S UNDO MOVES THE HOLDER FIRST, since a protect undone by its checkpoint reopens that copy, and the
+      // reopen must be given where the document stood before it (ADR-0171 Decision 8). Moved back if the undo throws,
+      // so the holder and the log never disagree about which protect is applied.
+      const last = context.log.entries.at(-1);
+      const protect = isProtectStep(last) ? last : undefined;
+      if (protect !== undefined) this.#engine.protectionStepped(docId, protect, 'before');
+      try {
+        stepped.yes =
+          (await this.#bus.undo(
+            sessions,
+            context,
+            (write) => this.#restore(docId, write),
+            this.#byteImage(docId),
+          )) !== undefined;
+      } catch (thrown) {
+        if (protect !== undefined) this.#engine.protectionStepped(docId, protect, 'after');
+        throw thrown;
+      }
       return context.byteLength;
     });
 
@@ -3470,7 +3715,10 @@ export class DocumentCommands {
     // so nothing is ever shed for it — `CommandBus` names that fact `NO_TRIM`
     // and this is the same statement at the boundary. A field omitted here
     // would make the renderer's obligation optional on one path.
-    return stepped.yes ? { version, byteLength, historyDropped: 0 } : undefined;
+    // NO BOXES, the bus's `TOLD_AT_THE_EDIT` at the boundary (ADR-0174 Decision 3).
+    // NO UNSEALED COPIES: undo and redo seal nothing — a protect's seal pass is its own and runs at apply, not here
+    // (ADR-0178). A field omitted here would make the renderer's obligation optional on one path, `historyDropped`'s reason.
+    return stepped.yes ? { version, byteLength, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] } : undefined;
   }
 
   /**
@@ -3510,6 +3758,7 @@ export class DocumentCommands {
 
   async redo(docId: DocId): Promise<Applied | undefined> {
     const stepped = { yes: false };
+    const protectedAt: { path: string | undefined } = { path: undefined };
 
     const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
@@ -3518,13 +3767,33 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      stepped.yes =
-        (await this.#bus.redo(sessions, context, this.#byteImage(docId, this.#bus.pendingRedoSources(context)))) !==
-        undefined;
+      // A PROTECT'S REDO MOVES THE HOLDER FIRST, for undo's reason in the other direction.
+      const next = context.log.peekRedo();
+      const protect = isProtectStep(next) ? next : undefined;
+      if (protect !== undefined) this.#engine.protectionStepped(docId, protect, 'after');
+      try {
+        stepped.yes =
+          (await this.#bus.redo(sessions, context, this.#byteImage(docId, this.#bus.pendingRedoSources(context)))) !==
+          undefined;
+      } catch (thrown) {
+        if (protect !== undefined) this.#engine.protectionStepped(docId, protect, 'before');
+        throw thrown;
+      }
+      // A REDONE PROTECT SEALS AGAIN, for a copy written while it was undone.
+      const redone = protect === undefined ? undefined : this.#bus.protectOf(protect);
+      if (redone !== undefined) {
+        await this.#sealPlaintextCopies(docId, context, redone);
+        protectedAt.path = context.path;
+      }
       return context.byteLength;
     });
 
-    return stepped.yes ? { version, byteLength, historyDropped: 0 } : undefined;
+    // `execute`'s retake, for a redone protect.
+    if (protectedAt.path !== undefined) void this.#recentPicture.retake(docId, protectedAt.path);
+    // NO BOXES, the bus's `TOLD_AT_THE_EDIT` at the boundary (ADR-0174 Decision 3).
+    // NO UNSEALED COPIES: undo and redo seal nothing — a protect's seal pass is its own and runs at apply, not here
+    // (ADR-0178). A field omitted here would make the renderer's obligation optional on one path, `historyDropped`'s reason.
+    return stepped.yes ? { version, byteLength, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] } : undefined;
   }
 
   /**
@@ -3651,6 +3920,8 @@ export class DocumentCommands {
       // command's own — the declaration builds it — and this closure adds the
       // document, which is what the bus cannot name.
       ocr: (request) => this.#ocr(docId, live(), request),
+      // ADR-0176's member: the page the command names, and this closure adds the document, as `ocr`'s does.
+      pageRuns: ({ page }) => this.#pageRuns(docId, live(), page),
       sources: this.#sourcesFor(named),
     };
   }
@@ -4284,12 +4555,25 @@ export class DocumentCommands {
     if (read.kind === 'unreadable') return { kind: 'unreadable' };
 
     try {
+      // WHAT IT WOULD DO, PLANNED FIRST (ADR-0193's neighbour): the same plan the fill follows, in the host that holds the
+      // form, so a person is told which fields were filled and which were left and why, and a file that names nothing
+      // this form has is the wrong file and not a reason that never crossed the host boundary.
+      const { value: plan } = await this.#documents.run(docId, async () => {
+        const failures = this.#engine.poisoned(docId);
+        if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+        const sessions = this.#engine.sessions(docId);
+        if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+        return this.#formImportPlan(docId, sessions, read.bytes, format);
+      });
+      if (plan === 'unreadable') return { kind: 'unreadable' };
+      if (plan.matched === 0) return { kind: 'matched-nothing', named: plan.named };
+
       const applied = await this.execute(docId, {
         kind: 'importFormData',
         format,
         bytes: read.bytes,
       });
-      return { kind: 'imported', ...applied };
+      return { kind: 'imported', ...applied, filled: plan.filled, skipped: plan.skipped, more: plan.more };
     } catch (error) {
       // `placeImage`'s catch and its reason: the classes the handler already
       // turns into declared codes are rethrown, and everything else is this
@@ -5411,7 +5695,7 @@ export class DocumentCommands {
     if (composed.kind === 'refused') {
       return { kind: 'composition-refused', reason: composed.reason, line: composed.line, file: null };
     }
-    return this.#writeComposed(composed.pdf, picked);
+    return this.#writeComposed(composed, picked);
   }
 
   /**
@@ -5482,7 +5766,7 @@ export class DocumentCommands {
     }
 
     // `ordered` is not empty: an empty pick answered `cancelled` above.
-    return this.#writeComposed(composed.pdf, ordered[0] ?? 'images');
+    return this.#writeComposed(composed, ordered[0] ?? 'images');
   }
 
   /**
@@ -5508,7 +5792,7 @@ export class DocumentCommands {
     if (composed.kind === 'refused') {
       return { kind: 'composition-refused', reason: composed.reason, line: composed.line, file: null };
     }
-    return this.#writeComposed(composed.pdf, 'camera.jpg');
+    return this.#writeComposed(composed, 'camera.jpg');
   }
 
   /**
@@ -5622,7 +5906,10 @@ export class DocumentCommands {
    * One tail for every import, because where a composition is written and which
    * destinations are refused are one decision whatever the source was.
    */
-  async #writeComposed(pdf: Uint8Array, picked: string): Promise<ComposeImportOutcome> {
+  async #writeComposed(
+    { pdf, boxed, more }: Extract<ComposedImport, { readonly kind: 'composed' }>,
+    picked: string,
+  ): Promise<ComposeImportOutcome> {
     const destination = await this.#copy.pick(suggestedComposedName(picked));
     if (destination === null) return { kind: 'cancelled' };
 
@@ -5641,7 +5928,7 @@ export class DocumentCommands {
       return { kind: 'destination-contested', openElsewhere: written.others.length };
     }
     if (written.kind === 'write-failed') return { kind: 'write-failed' };
-    return { kind: 'written', destination };
+    return { kind: 'written', destination, boxed, more };
   }
 
   /**
@@ -6095,6 +6382,54 @@ export class DocumentCommands {
   async deleteHeldCopies(docId: DocId): Promise<readonly string[]> {
     const { value } = await this.#documents.run(docId, (context) => this.#retryHeld(context));
     return value;
+  }
+
+  /**
+   * Replaces every plaintext copy of this document with one encrypted under `command`, before the protect answers
+   * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8):
+   * the host's snapshot, every checkpoint and result the history holds, and every backup beside the file that Monstera
+   * made. The canonical image needs nothing here, since the protect draws. In the protect's own lane entry, so nothing
+   * lands between. An encrypted copy is left as it was (`ProtectedCopies.seal`).
+   *
+   * **A copy that CANNOT be written now does not fail the protect**
+   * ([ADR-0178](../../../docs/DECISIONS/0178-a-protect-that-applied-is-not-failed-by-a-copy-it-could-not-seal.md)):
+   * the protect has already applied and been recorded by the time this runs, so a copy another program holds, or that
+   * cannot be written, is the person's to be told of — not a reason to reject the command and report the applied
+   * protect as failed. A thrown seal is mapped to `'unsealed'` at this boundary, where the throw happens; `seal`
+   * answering `undefined` is a copy deliberately **left** (already encrypted) and is NOT named. The basenames of the
+   * copies left unsealed come back for the renderer to name. The snapshot refresh is not one of these copies — it is
+   * rewritten from the new canonical image main holds, with no external file to be held — so its failure is a host
+   * fault that still throws.
+   *
+   * @returns the basenames of the copies this could not seal, empty when every copy was sealed or left encrypted.
+   */
+  async #sealPlaintextCopies(
+    docId: DocId,
+    context: DocumentContext,
+    command: CommandOfKind<'setDocumentProtection'>,
+  ): Promise<readonly string[]> {
+    await this.#copies.refreshSnapshot(docId);
+    // A SEAL THAT THROWS IS `'unsealed'`, never a thrown command: the copy another program holds is named, not fatal.
+    const trySeal = async (path: string): Promise<number | undefined | 'unsealed'> => {
+      try {
+        return await this.#copies.seal(docId, path, command);
+      } catch {
+        return 'unsealed';
+      }
+    };
+    const unsealed: string[] = [];
+    const { unsealed: checkpoints } = await this.#bus.resealCopies(context, trySeal);
+    for (const path of checkpoints) unsealed.push(basename(path));
+    for (const path of copyNames(this.#save.deps.names(context.path))) {
+      await this.#save.provenance.rewriteIfMade(path, async (made) => {
+        const sealed = await trySeal(made);
+        if (sealed === 'unsealed') unsealed.push(basename(path));
+        // REWRITTEN is a number; LEFT (`undefined`) and UNSEALED are both "not rewritten" to the ledger, which records
+        // a rewrite only. The unsealed one is named above; the left one is already encrypted and needs no record.
+        return typeof sealed === 'number';
+      });
+    }
+    return unsealed;
   }
 
   /** The owed copies among this document's backup names, tried again; the names still held. */

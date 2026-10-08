@@ -11,7 +11,7 @@ import {
   type PreparedSignature,
 } from '@monstera/kernel';
 import { prepareSignature } from '@monstera/kernel/engine';
-import { blockEditOf, replacementFieldsOf } from '@monstera/contract';
+import { type BoxedCharacter, blockEditOf, replacementFieldsOf } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
@@ -528,11 +528,12 @@ describe('the composition root, with an engine host platform', () => {
       const opens: unknown[] = [];
       const spy = platformAnswering((channel, params) => {
         if (channel === 'engine/open') {
-          const { password } = params as { password?: unknown };
-          opens.push(password);
+          // EVERY KEY, as the host's `openCopy` tries them (ADR-0171 Decision 8): this file opens when one is right.
+          const { keys } = params as { keys: readonly unknown[] };
+          opens.push(keys);
           // `access: 2`, what a user password buys, beside this file's `SESSION`, which no password opened.
-          if (password === PASSWORD) return { ok: true, value: { session: 'ab0f', access: 2 } };
-          return { ok: false, error: { code: password === undefined ? 'needs-password' : 'wrong-password' } };
+          if (keys.includes(PASSWORD)) return { ok: true, value: { session: 'ab0f', access: 2 } };
+          return { ok: false, error: { code: keys.length === 0 ? 'needs-password' : 'wrong-password' } };
         }
         if (channel === 'engine/capture') {
           return { ok: true, value: { captured: false, reason: 'page 1 carries a non-numeric /Rotate (/Sideways)' } };
@@ -574,9 +575,9 @@ describe('the composition root, with an engine host platform', () => {
       // open that rebuilt the session carried the password, asserted on what the host was sent.
       const undone = await handlers['document.undo']({ docId });
       expect(undone.ok && undone.value.kind).toBe('undone');
-      expect(opens.slice(before)).toStrictEqual([PASSWORD]);
+      expect(opens.slice(before)).toStrictEqual([[PASSWORD]]);
       // AND THE OPEN-TIME ATTEMPT CARRIED NONE: nothing is held before the unlock.
-      expect(opens[0]).toBeUndefined();
+      expect(opens[0]).toStrictEqual([]);
     });
   });
 
@@ -1127,7 +1128,7 @@ interface PdfiumPeerLog {
  * file is gone by then either way. The only moment the input can be observed is
  * from inside the peer, which is where this looks.
  */
-function pdfiumPeer(): PdfiumPeerLog {
+function pdfiumPeer(drawn: readonly { character: string; page: number }[] = []): PdfiumPeerLog {
   let area: { snapshot: string; output: string } | null = null;
   const inputs: string[] = [];
   const inputsPresent: boolean[] = [];
@@ -1147,7 +1148,8 @@ function pdfiumPeer(): PdfiumPeerLog {
     const { into } = params as { into: string };
     const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
     writeFileSync(join(area.output, into), bytes);
-    return { ok: true, value: { bytes: bytes.length } };
+    // AND THE BOXES IT DREW, which a case hands it (ADR-0174), none by default.
+    return { ok: true, value: { bytes: bytes.length, boxed: [...drawn], more: 0 } };
   };
 
   return {
@@ -1315,7 +1317,8 @@ describe('the composition root, with BOTH engine hosts', () => {
     // is indistinguishable from two at this layer. The separation is asserted
     // where it lives, on the monikers; this case asserts the ROUTING.
     const mupdf = platformAnswering(serialisingEngine());
-    const pdfium = pdfiumPeer();
+    // A BOX THE HOST DREW (ADR-0174), so the answer below says whether the composition root carries it to the renderer.
+    const pdfium = pdfiumPeer([{ character: '中', page: 0 }]);
     const second = platformAnswering(pdfium.peer);
 
     const { handlers } = createShellDependencies({
@@ -1347,6 +1350,10 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(executed.ok, JSON.stringify(executed)).toBe(true);
     if (!executed.ok) throw new Error('the edit should have succeeded');
     expect(executed.value.version).toBeGreaterThan(opened.value.version);
+    // THE HOST'S BOX REACHED THE ANSWER, across every hop between the host's frame and `document.execute`: the remote
+    // writer, the bus, main's commands and the handler (ADR-0174). The kernel and renderer halves cannot see these.
+    expect(executed.value.boxed).toStrictEqual([{ character: '中', page: 0 }]);
+    expect(executed.value.more).toBe(0);
 
     // THE SECOND HOST WAS BUILT AND PROBED. Its own containment verdict, not
     // the first host's — the two run under different profiles, so a verdict
@@ -1394,9 +1401,10 @@ describe('the composition root, with BOTH engine hosts', () => {
     const inner = serialisingEngine();
     const mupdf = platformAnswering((channel, params) => {
       if (channel === 'engine/open') {
-        const { password } = params as { password?: unknown };
-        opens.push(password);
-        if (password !== PASSWORD) return { ok: false, error: { code: 'needs-password' } };
+        // THE CURRENT KEY FIRST (ADR-0171 Decision 8), so the first of the keys is the one the document opens with now.
+        const { keys } = params as { keys: readonly unknown[] };
+        opens.push(keys[0]);
+        if (!keys.includes(PASSWORD)) return { ok: false, error: { code: 'needs-password' } };
       }
       return inner(channel, params);
     });
@@ -1427,6 +1435,48 @@ describe('the composition root, with BOTH engine hosts', () => {
     expect(pdfium.passwords.every((sent) => sent === PASSWORD)).toBe(true);
     expect(opens.slice(2)).toStrictEqual(opens.slice(2).map(() => PASSWORD));
     expect(opens.length).toBeGreaterThan(2);
+    // AND NO FILE ON THE DISK HELD IT (ADR-0171's correction, RRRRRRR-1): PDFium's commands take their params from a
+    // file, and the key rode in the frame beside each one. CONTROL: those files exist and are the commands' params, so
+    // an empty or unrelated list cannot pass for one that held no key.
+    const onDisk = second.harness.filesOnDisk;
+    expect(onDisk.filter((text) => text.includes('"replaceTextObject"')).length).toBeGreaterThanOrEqual(2);
+    expect(onDisk.filter((text) => text.includes(PASSWORD))).toStrictEqual([]);
+  });
+
+  /**
+   * AN UNDO'S "FONT CANNOT CARRY IT" REACHES THE RENDERER BY NAME (finding RRRRRRR-6). The stretch neither half
+   * crosses: `contractHandlers.test.ts` stubs `DocumentCommands` to throw the error, and the kernel proof throws it
+   * in process. Between them sat the host's invert, which answered it as `engine-refused`, and the person read
+   * *Something went wrong*. The peer names one character the prior holds and one it never sent, and only the first
+   * may reach the person: a host is hostile, and what an undo writes is the prior.
+   */
+  it('an undo the PDFium host refuses for a font that cannot carry it reaches the renderer BY NAME', async () => {
+    const mupdf = platformAnswering(serialisingEngine());
+    const base = pdfiumPeer();
+    const pdfium: FakePeer = (channel, params) =>
+      channel === 'engine/invert'
+        ? { ok: false, error: { code: 'text-not-writable', detail: { characters: 'AZ' } } }
+        : base.peer(channel, params);
+    const second = platformAnswering(pdfium);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickDocument: () => Promise.resolve(aDocument('undo-refused.pdf')),
+      enginePlatform: mupdf.platform,
+      pdfiumPlatform: second.platform,
+    });
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const executed = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: opened.value.version },
+    });
+    expect(executed.ok, JSON.stringify(executed)).toBe(true);
+
+    const undone = await handlers['document.undo']({ docId: opened.value.docId });
+    // THE PRIOR IS `WAS` (the peer's capture), so `A` is a character the undo wrote back and `Z` is not.
+    expect(undone).toStrictEqual({ ok: false, error: { code: 'text-not-writable', detail: { characters: 'A' } } });
+    expect(second.harness.calls).toContain('peer.request:engine/invert');
   });
 
   it('routes editTextBlock to the PDFium host, and its "font cannot carry it" refusal reaches the renderer BY NAME', async () => {
@@ -1469,7 +1519,7 @@ describe('the composition root, with BOTH engine hosts', () => {
         command: {
           kind: 'editTextBlock',
           page: 0,
-          ...blockEditOf([{ lines: [[2, 4], [7]], text: 'new words' }]),
+          ...blockEditOf([{ lines: [[2, 4], [7]], soft: [false, false], text: 'new words' }]),
           fit: 'reflow',
           version: opened.value.version,
         },
@@ -1536,7 +1586,7 @@ describe('the composition root, with BOTH engine hosts', () => {
       command: {
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines: [[2, 4], [7]], text: 'new words' }]),
+        ...blockEditOf([{ lines: [[2, 4], [7]], soft: [false, false], text: 'new words' }]),
         fit: 'reflow',
         version: opened.value.version,
       },
@@ -1885,8 +1935,13 @@ const COMPOSED_BYTES = [0x25, 0x50, 0x44, 0x46, 0x2d, 0x37];
  * source, calls, and removes it, so after the call returns *written, then called*
  * and *called, then written* leave the same directory. Only the peer can tell them
  * apart.
+ *
+ * @param boxed the characters its text composers answer as drawn as the box, and how many more it counts; none by
+ *   default, so a case about the route is not also a case about the boxes
  */
-function composePeer(): ComposePeerLog {
+function composePeer(
+  boxed: { readonly places: readonly BoxedCharacter[]; readonly more: number } = { places: [], more: 0 },
+): ComposePeerLog {
   let area: { snapshot: string; output: string } | null = null;
   const sources: string[] = [];
   const fromPaths: string[] = [];
@@ -1914,7 +1969,10 @@ function composePeer(): ComposePeerLog {
           fromPaths.push(source);
           sources.push(existsSync(source) ? readFileSync(source, 'utf8') : '(absent at the call)');
           writeFileSync(join(area.output, into), new Uint8Array(COMPOSED_BYTES));
-          return { ok: true, value: { kind: 'composed', bytes: COMPOSED_BYTES.length } };
+          return {
+            ok: true,
+            value: { kind: 'composed', bytes: COMPOSED_BYTES.length, boxed: [...boxed.places], more: boxed.more },
+          };
         }
         // EVERY LISTED IMAGE, read at the call and recorded with its decoder, so a case
         // can assert what was on disk, in which order, routed to which decoder.
@@ -1933,7 +1991,7 @@ function composePeer(): ComposePeerLog {
             );
           }
           writeFileSync(join(area.output, into), new Uint8Array(COMPOSED_BYTES));
-          return { ok: true, value: { kind: 'composed', bytes: COMPOSED_BYTES.length } };
+          return { ok: true, value: { kind: 'composed', bytes: COMPOSED_BYTES.length, boxed: [], more: 0 } };
         }
         default:
           return null;
@@ -2025,7 +2083,9 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
       }
       return ENGINE(channel, params);
     });
-    const compose = composePeer();
+    // WITH A BOX, so this case also carries the append's own list through the root (ADR-0172).
+    const boxedPlaces = [{ character: '中', line: 1, column: 1 }];
+    const compose = composePeer({ places: boxedPlaces, more: 0 });
     const third = platformAnswering(compose.peer);
     const target = aDocument('append-target.pdf');
     const destination = join(scratch, 'appended-from-markdown.pdf');
@@ -2056,6 +2116,8 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     expect(appended.value.version).toBeGreaterThan(opened.value.version);
     expect(appended.value.opened.docId).not.toBe(opened.value.docId);
     expect(appended.value.opened.name).toBe('appended-from-markdown.pdf');
+    expect(appended.value.boxed).toStrictEqual(boxedPlaces);
+    expect(appended.value.more).toBe(0);
 
     // THE MERGE REACHED THE ENGINE HOST, after the composed document got a session
     // there: at least one more `engine/open` than before, then an `engine/apply`.
@@ -2066,6 +2128,29 @@ describe('the composition root, with the COMPOSE host (ADR-0060)', () => {
     expect(apply).toBeGreaterThan(-1);
     expect(calls.indexOf('peer.request:engine/open', opensBefore)).toBeLessThan(apply);
     expect(lastOpen).toBeGreaterThan(-1);
+  }, 120_000);
+
+  it('carries the host’s BOXED CHARACTERS through the whole root to the open (ADR-0172)', async () => {
+    // THE PAIR'S MIDDLE (CLAUDE.md, the wired-tools rule): the composer reports boxes against a local writer, the
+    // renderer shows them against a stubbed kernel, and every hop between — the client, the command, the handler —
+    // is crossed only here. A hop that dropped the list would answer `opened` and pass both halves.
+    // The append's own list is asserted in the append case below, which has the engine a merge needs.
+    const places = [{ character: '中', line: 3, column: 8 }];
+    const mupdf = platformAnswering(serialisingEngine());
+    const third = platformAnswering(composePeer({ places, more: 4 }).peer);
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
+      appInfo,
+      pickMarkdown: () => Promise.resolve(join(scratch, 'boxed.md')),
+      readMarkdown: () => Promise.resolve({ kind: 'read' as const, bytes: new TextEncoder().encode('中\n') }),
+      pickDestination: () => Promise.resolve(join(scratch, 'boxed.pdf')),
+      enginePlatform: mupdf.platform,
+      composePlatform: third.platform,
+    });
+    expect(await handlers['document.newFromMarkdown']({})).toMatchObject({
+      ok: true,
+      value: { kind: 'opened-with-boxes', name: 'boxed.pdf', boxed: places, more: 4 },
+    });
   }, 120_000);
 
   it('a CSV import reaches the CSV channel, and never the Markdown one', async () => {

@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
 import {
+  MAX_BLOCK_FONTS,
+  MAX_FONT_RUNS,
+  MAX_RUN_FONT_BYTES,
   channel,
   fileAnswered,
   deletePageObjectsSchema,
@@ -22,6 +25,7 @@ import {
   coreEngineChannels,
   sessionSchema,
 } from './engineChannels.js';
+import { pageRunsSchema } from './pageRunsWire.js';
 
 /**
  * The channel set of the **PDFium** host
@@ -112,10 +116,11 @@ export type PdfiumChannelExcludesEveryOtherKind = Excludes<
  * answered truncated: *"more text than can be outlined at once"*, and the rest could not be edited. The host now joins
  * a run's glyph objects before it answers (`textRunJoin.ts`), so that page answers 60 runs; and what stays here is the
  * bound against a peer that is not a document at all: the most runs an answer within `ENGINE_ANSWER_FILE_MAX_BYTES`
- * (8 MiB, ADR-0125) could carry at the smallest a run can serialise to — {@link SMALLEST_RUN_BYTES}, 192 bytes for a run
- * with no text and no font name, and one more for the comma between runs — which is 43,464, rounded down to 43,400. It
- * was 45,800 until the style carried the font's name (2026-10-03, for the block grouping's change of font). A real
- * page's runs are larger and far fewer.
+ * (8 MiB, ADR-0125) could carry at the smallest a run can serialise to — {@link SMALLEST_RUN_BYTES}, 200 bytes for a run
+ * with no text and no font name, and one more for the comma between runs — which is 41,734, rounded down to 41,700
+ * (computed 2026-10-06 by `pdfiumChannels.test.ts`' own division). It was 43,400 until the style said HOW a run is set
+ * and not only whether it is upright (ADR-0181 Decision 7), and 45,800 until it carried the font's name (2026-10-03,
+ * for the block grouping's change of font). A real page's runs are larger and far fewer.
  *
  * A literal, not the division: computed at module load, a field added to the schema would move the bound with no line of
  * any diff saying so. `pdfiumChannels.test.ts` holds the literal to the division, so a change to either is a red case
@@ -131,13 +136,13 @@ export type PdfiumChannelExcludesEveryOtherKind = Excludes<
  * believed. Declared above the schemas because a `const` referenced during
  * module evaluation cannot be declared below them.
  */
-export const ENGINE_TEXT_OBJECTS_MAX = 43_400;
+export const ENGINE_TEXT_OBJECTS_MAX = 41_700;
 
 /**
  * The fewest bytes one text run can serialise to on this wire: no text, every number `0`, every flag `true`.
  * Measured by `pdfiumChannels.test.ts` against the schema's own shape, and the divisor of {@link ENGINE_TEXT_OBJECTS_MAX}.
  */
-export const SMALLEST_RUN_BYTES = 192;
+export const SMALLEST_RUN_BYTES = 200;
 
 /**
  * How long a captured run's text may be on this wire.
@@ -371,11 +376,13 @@ export const pdfiumChannels = {
     // read is refused — at the call that wanted the engine rather than at the
     // open (ADR-0048's withdrawn Decision 3).
     //
-    // PLUS ONE APPLY REFUSAL OF ITS OWN: an in-place edit whose typed text the
-    // page's font cannot carry (ADR-0096). On the apply only — capture and invert
-    // cannot produce it — and on this engine only.
-    // AND A SECOND: one occurrence named by its point that no single text object holds there (ADR-0156).
-    // AND A THIRD: a replacement that matches nothing or changes nothing, which makes no version (ADR-0169 Decision 6).
+    // PLUS APPLY REFUSALS OF ITS OWN, on this engine only: an in-place edit whose typed text the page's font cannot
+    // carry (ADR-0096); one occurrence named by its point that no single text object holds there (ADR-0156); a
+    // replacement that matches nothing or changes nothing, which makes no version (ADR-0169 Decision 6); and one that
+    // would move the text after it on its line.
+    //
+    // `text-not-writable` ON THE INVERT TOO: an undo writes the prior's text back and reads it back as the edit did, so
+    // a font can fail to carry it there as well (finding RRRRRRR-6). The other three are an apply's alone.
     //
     // `edit-refused` ON ALL THREE, carrying the step and PDFium's number (ADR-0169 Decision 4): capture, apply and
     // invert each open the image and run native calls, and any of them can refuse at a step a person is told about.
@@ -383,6 +390,7 @@ export const pdfiumChannels = {
       ...byteImageWire,
       transferFailures: [...byteImageWire.transferFailures, 'edit-refused'] as const,
       applyFailures: ['text-not-writable', 'text-not-in-place', 'nothing-to-replace', 'replace-moves-line'] as const,
+      invertFailures: ['text-not-writable'] as const,
     },
     // IN A FILE (ADR-0138): `replaceTextObject` and `editTextBlock` multiply per-entry text bounds past a frame.
     commandRoute: 'file',
@@ -494,7 +502,8 @@ export const pdfiumChannels = {
                     mono: z.boolean(),
                     italic: z.boolean(),
                     bold: z.boolean(),
-                    upright: z.boolean(),
+                    /** How the run is set (`orientationOf`): the editor names the kind of text it will not edit. */
+                    orientation: z.enum(['upright', 'turned', 'vertical', 'slanted', 'mirrored']),
                   })
                   .strict(),
               })
@@ -652,6 +661,53 @@ export const pdfiumChannels = {
         bytes: z.number().int().nonnegative(),
       })
       .strict(),
+    ['no-such-session', 'asset-missing', 'engine-refused'],
+  ),
+
+  /**
+   * The fonts the editor draws a block's runs in, rebuilt by this host from the runs' own programs, each font once
+   * ([ADR-0175](../../../../docs/DECISIONS/0175-the-typing-box-draws-a-run-in-its-own-font-rebuilt-in-the-host.md)),
+   * into the granted output directory as `engine/render-page` writes a raster: font bytes cannot be framed JSON.
+   *
+   * The fonts are written one after another and `sizes` says where each ends; nothing is written when there are none.
+   * A run with no font (not embedded, not an sfnt, a glyph that does not read as PDFium's, past the cap) is `null` in
+   * `runs`: none is the ordinary case and not a failure, and the editor draws the run in its kind of face.
+   */
+  'engine/run-fonts': channel(
+    'Rebuilds the fonts a block’s runs are drawn in, each once, into the granted output directory.',
+    z
+      .object({
+        session: sessionSchema,
+        ...byteImageWire.read,
+        ...byteImageWire.write,
+        page: z.number().int().nonnegative(),
+        /** The runs' first objects, as `engine/text-runs` named them. */
+        indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_FONT_RUNS),
+      })
+      .strict(),
+    z
+      .object({
+        /** Each font's length in the order written: main refuses a file whose length disagrees with their sum. */
+        sizes: z.array(z.number().int().min(1).max(MAX_RUN_FONT_BYTES)).max(MAX_BLOCK_FONTS),
+        /** For each run asked about, in the order asked, its font's place in `sizes`, or `null` for none. */
+        runs: z.array(z.number().int().min(0).max(MAX_BLOCK_FONTS - 1).nullable()).max(MAX_FONT_RUNS),
+      })
+      .strict(),
+    ['no-such-session', 'asset-missing', 'engine-refused'],
+  ),
+
+  /**
+   * The page's joined runs WITH their members, and its text objects' page indices: the `pageRuns` pre-read of ADR-0176's
+   * writer (its 2026-10-06 correction), which finds the objects a run is among a content stream's operators.
+   *
+   * File-answered for `engine/text-runs`' reason, and larger: a page drawn a glyph per object answers one member per
+   * glyph. Never truncated, unlike that read: a writer handed part of a page would number the rest wrongly, so a page
+   * past the bound is refused by the schema and the edit with it.
+   */
+  'engine/page-runs': fileAnswered(
+    'Answers a page’s joined text runs with the objects each is, and the page indices of its text objects.',
+    z.object({ session: sessionSchema, ...byteImageWire.read, page: z.number().int().nonnegative() }).strict(),
+    pageRunsSchema,
     ['no-such-session', 'asset-missing', 'engine-refused'],
   ),
 } as const;

@@ -1,4 +1,4 @@
-import { ComposeRefused } from './composeLayout.js';
+import { ComposeRefused } from './composeOutcome.js';
 
 /**
  * A strict RFC 4180 reader, for a CSV file picked for import

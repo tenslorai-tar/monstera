@@ -33,7 +33,7 @@ import { PDFDocument, PDFName, StandardFonts, degrees } from '@cantoo/pdf-lib';
 
 import { mupdfWriter } from '../../packages/kernel/dist/mupdfWriter.js';
 import { loadedCore, recognisePage } from '../../packages/kernel/dist/ocrRecognise.js';
-import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { OCR_RECOGNISE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { corpusCaveat, openCorpus } from '../lib/corpus.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { bindNativeEngine } from '../lib/nativeEngine.mjs';
@@ -46,14 +46,8 @@ const ROOT = repoRoot();
 // The native engine, bound through the one resolver before any engine call (ADR-0124).
 bindNativeEngine(ROOT);
 
-refuseStaleBuild(
-  ROOT,
-  [
-    ['packages/kernel/src/ocrRecognise.ts', 'packages/kernel/dist/ocrRecognise.js', 'tsc'],
-    ['packages/kernel/src/pageBoxes.ts', 'packages/kernel/dist/pageBoxes.js', 'tsc'],
-  ],
-  2,
-);
+// THE REGISTERED LIST, not a copy of it at the call site: a copy is a second opinion about what this proof reads.
+refuseStaleBuild(ROOT, OCR_RECOGNISE, 3);
 
 const MODELS = tessdataDirectory(ROOT);
 

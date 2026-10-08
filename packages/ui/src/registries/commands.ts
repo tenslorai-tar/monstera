@@ -107,6 +107,13 @@ export interface CommandContext {
    * would be a second reading of which pages a person means.
    */
   readonly selectedPages: readonly number[];
+  /**
+   * Whether the in-place text editor is open on a block
+   * ([ADR-0180](../../../../docs/DECISIONS/0180-formatting-is-marks-over-a-blocks-words-and-a-block-is-moved-resized-and-added-by-its-own-commands.md)):
+   * what the formatting commands' `when` asks. Optional, so a context built for a surface that has no editor needs no
+   * field; absent is *no*.
+   */
+  readonly editingText?: boolean;
 }
 
 /**
@@ -192,6 +199,17 @@ export interface UiCommand {
    */
   readonly summary?: MessageKey;
   /**
+   * One plain sentence saying what this control does, shown as its tooltip on the ribbon and exposed as its description
+   * (the owner, 2026-10-07: every Forms tool says in words what it does). Where it is absent a command with a short
+   * `ribbonTitle` shows its full title there, and one without says nothing the caption does not.
+   */
+  readonly tip?: MessageKey;
+  /**
+   * What a DOUBLE CLICK on this command's ribbon button does, where it does something other than two presses: a drawing
+   * tool that ends after one thing drawn is kept on until Escape. Absent, a double click is two presses.
+   */
+  readonly hold?: (context: CommandContext) => void;
+  /**
    * The glyph a surface draws for this command, from the one closed set.
    *
    * **Required wherever the command is drawn as a control** — on the ribbon, the
@@ -235,6 +253,12 @@ export interface UiCommand {
   readonly checked?: (context: CommandContext) => boolean;
   /** Required. See the note above about what that does and does not buy. */
   readonly run: (context: CommandContext) => void | Promise<void>;
+  /**
+   * Whether a press on this command's control leaves the focus where it was. Set by the formatting commands, whose
+   * subject is the selection in the text editor: a press that took the focus would close the editor over the words the
+   * command is for (ADR-0180 Decision 8).
+   */
+  readonly keepsFocus?: boolean;
   /**
    * How a person learns this command did what they asked
    * ([ADR-0141](../../../../docs/DECISIONS/0141-every-command-declares-how-a-person-learns-it-worked.md)). Required, so

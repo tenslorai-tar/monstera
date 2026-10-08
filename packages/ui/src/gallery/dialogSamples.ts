@@ -146,6 +146,7 @@ const COMPONENTS = [
   { id: 'onlyoffice', name: 'ONLYOFFICE', version: '9.0.4', state: 'present', missing: 0, altered: 0, extra: 0 },
   { id: 'mupdf-shim', name: 'MuPDF', version: '1.26.10', state: 'present', missing: 0, altered: 0, extra: 0 },
   { id: 'ocr-models', name: 'OCR models', version: '4.1.0', state: 'present', missing: 0, altered: 0, extra: 0 },
+  { id: 'fonts', name: 'Bundled open fonts', version: 'google/fonts 7085eb89a950', state: 'present', missing: 0, altered: 0, extra: 0 },
 ] as const;
 
 const SHORTCUTS = [
@@ -251,11 +252,17 @@ function textForm(field: string, text: string): readonly DialogSample[] {
 }
 
 /** A form-field dialog that lists choices: opened, filled, and with several choice rows. */
+/** The fields the form already has, which a new field's name is asked against (`fieldNameCheck.ts`). */
+const KNOWN_FIELDS = [{ name: 'full_name', kind: 'text' as const, options: [] }];
+
 function choiceField(name: string): readonly DialogSample[] {
+  const props = { known: KNOWN_FIELDS };
   return [
-    { state: 'opened', props: {} },
-    { state: 'filled', props: {}, steps: [type('Field name', name), type('Choice', 'Standard delivery')] },
-    { state: 'choices', props: {}, steps: [press('Add a choice'), press('Add a choice'), press('Add a choice')] },
+    { state: 'opened', props },
+    { state: 'filled', props, steps: [type('Field name', name), type('Choice', 'Standard delivery')] },
+    { state: 'choices', props, steps: [press('Add a choice'), press('Add a choice'), press('Add a choice')] },
+    // A NAME THE FORM ALREADY HAS, said where it is typed (the refusal that once reached a person as an incident).
+    { state: 'name-taken', props, steps: [type('Field name', 'full_name')] },
   ];
 }
 
@@ -644,27 +651,65 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
       state: 'opened',
       props: {
         candidates: [
-          { name: 'full_name', label: 'Full name' },
-          { name: 'date_of_birth', label: 'Date of birth' },
-          { name: 'address', label: 'Address' },
-          { name: 'signature', label: 'Signature' },
+          { name: 'full_name', label: 'Full name', kind: 'text' },
+          { name: 'date_of_birth', label: 'Date of birth', kind: 'text' },
+          { name: 'address', label: 'Address', kind: 'text' },
+          { name: 'newsletter', label: 'Send me the newsletter', kind: 'checkbox' },
         ],
         truncated: false,
+        alreadyFields: 2,
       },
     },
-    { state: 'empty', props: { candidates: [], truncated: false } },
+    { state: 'empty', props: { candidates: [], truncated: false, alreadyFields: 0 } },
+    { state: 'already-fillable', props: { candidates: [], truncated: false, alreadyFields: 14 } },
     {
       state: 'long',
       props: {
         candidates: Array.from({ length: 40 }, (_unused, at) => ({
           name: `line_item_${String(at + 1)}_description_and_amount`,
           label: `Line item ${String(at + 1)}: description of the goods or services supplied, and the amount`,
+          kind: 'text' as const,
         })),
         truncated: true,
+        alreadyFields: 0,
       },
     },
   ],
-  'dialog.import-form-data-problem': [{ state: 'opened', props: { reason: 'unreadable' } }],
+  'dialog.field-copy': [
+    { state: 'opened', props: { pageCount: 6, from: 0 } },
+    { state: 'own-page', props: { pageCount: 6, from: 0 }, steps: [type('Pages', '1-3')] },
+    { state: 'outside', props: { pageCount: 6, from: 0 }, steps: [type('Pages', '9')] },
+  ],
+  'dialog.tab-order': [{ state: 'opened', props: {} }],
+  'dialog.import-form-data-result': [
+    {
+      state: 'left-some',
+      props: {
+        filled: 12,
+        skipped: [
+          { name: 'order_ref', reason: 'read-only' },
+          { name: 'loyalty_number', reason: 'not-in-document' },
+          { name: 'region', reason: 'option-not-offered' },
+          { name: 'interests', reason: 'several-values' },
+          { name: 'submit', reason: 'cannot-be-filled' },
+        ],
+        more: 0,
+      },
+    },
+    {
+      state: 'many',
+      props: {
+        filled: 3,
+        skipped: Array.from({ length: 100 }, (_unused, at) => ({ name: `missing_field_${String(at + 1)}`, reason: 'not-in-document' as const })),
+        more: 240,
+      },
+    },
+    { state: 'nothing-needed-filling', props: { filled: 0, skipped: [{ name: 'order_ref', reason: 'read-only' }], more: 0 } },
+  ],
+  'dialog.import-form-data-problem': [
+    { state: 'opened', props: { reason: 'unreadable' } },
+    { state: 'wrong-file', props: { reason: 'matched-nothing', named: 7 } },
+  ],
   'dialog.import-annotations-problem': [{ state: 'opened', props: { reason: 'unreadable' } }],
   'dialog.insert-image-problem': [{ state: 'opened', props: { reason: 'too-large', limitBytes: 50 * 1024 * 1024 } }],
   'dialog.markdown-import-problem': [
@@ -692,6 +737,53 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
         })),
         more: 12,
       },
+    },
+  ],
+  'dialog.boxed-characters': [
+    {
+      state: 'opened',
+      props: {
+        from: 'import',
+        boxed: [
+          { character: '中', line: 3, column: 8 },
+          { character: '文', line: 3, column: 9 },
+          { character: 'ก', line: 12, column: null },
+        ],
+        more: 0,
+      },
+    },
+    {
+      state: 'long',
+      props: {
+        from: 'import',
+        boxed: Array.from({ length: 64 }, (_unused, at) => ({
+          character: String.fromCodePoint(0x4e00 + at),
+          line: 1_000 + at * 37,
+          column: at % 5 === 0 ? null : 10_000 + at,
+        })),
+        more: 1_250,
+      },
+    },
+    // AN EDIT'S BOXES, named by page (ADR-0174).
+    {
+      state: 'edited',
+      props: {
+        from: 'edit',
+        boxed: [
+          { character: '中', page: 0 },
+          { character: String.fromCodePoint(0x1f600), page: 0 },
+          { character: 'ก', page: 11 },
+        ],
+        more: 0,
+      },
+    },
+  ],
+  // THE OLDER COPIES A PROTECT COULD NOT ENCRYPT, by name (ADR-0178).
+  'dialog.unsealed-copies': [
+    { state: 'opened', props: { copies: ['quarterly report.pdf.bak'] } },
+    {
+      state: 'several',
+      props: { copies: ['quarterly report.pdf.bak', 'quarterly report.pdf.previous', 'quarterly report (1).pdf.bak'] },
     },
   ],
   'dialog.open-from-url': [
@@ -974,15 +1066,16 @@ export const DIALOG_SAMPLES: Readonly<Record<string, readonly DialogSample[]>> =
     { state: 'no-match', props: SETTINGS, steps: [type('Search settings', 'xylophone')] },
   ],
   'dialog.form-field-radio': [
-    { state: 'opened', props: {} },
+    { state: 'opened', props: { known: KNOWN_FIELDS } },
     {
       state: 'filled',
-      props: {},
+      props: { known: KNOWN_FIELDS },
       steps: [
         type('Group name', 'delivery'),
         type('This option’s value', 'Standard'),
       ],
     },
+    { state: 'name-taken', props: { known: KNOWN_FIELDS }, steps: [type('Group name', 'full_name')] },
   ],
   'dialog.form-field-dropdown': choiceField('delivery_method'),
   'dialog.form-field-listbox': choiceField('preferred_days'),

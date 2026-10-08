@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
-import { type ObjectRun, joinRuns, membersOf } from './textRunJoin.js';
+import { type JoinStyle, type ObjectRun, joinRuns, membersOf } from './textRunJoin.js';
 
-const STYLE = {
+const STYLE: JoinStyle = {
   size: 10,
   colour: { r: 0, g: 0, b: 0 },
   serif: true,
   mono: false,
   italic: false,
   bold: false,
-  upright: true,
+  orientation: 'upright',
 };
 
 /** A glyph object at `x` on the baseline `y`, five points wide. */
 function glyph(index: number, text: string, x: number, y = 700, style = STYLE): ObjectRun {
-  return { index, text, left: x, right: x + 5, bottom: y, top: y + 7, style };
+  return { index, text, drawn: text, left: x, right: x + 5, bottom: y, top: y + 7, style };
 }
 
 /** A word drawn one glyph per object, from object `first`, starting at `x`. */
@@ -47,7 +47,10 @@ describe('joinRuns', () => {
       ['a line at tight leading, its ink barely touching', [glyph(0, 'a', 72), glyph(1, 'b', 77, 693.5)]],
       ['a gap wider than the size', [glyph(0, 'a', 72), glyph(1, 'b', 77 + 11)]],
       ['an overlap deeper than a quarter', [glyph(0, 'a', 72), glyph(1, 'b', 77 - 3)]],
-      ['text not set upright', [glyph(0, 'a', 72, 700, { ...STYLE, upright: false }), glyph(1, 'b', 77, 700, { ...STYLE, upright: false })]],
+      [
+        'text not set upright',
+        [glyph(0, 'a', 72, 700, { ...STYLE, orientation: 'turned' }), glyph(1, 'b', 77, 700, { ...STYLE, orientation: 'turned' })],
+      ],
     ];
     for (const [why, runs] of cases) expect(joinRuns(runs), why).toHaveLength(2);
   });

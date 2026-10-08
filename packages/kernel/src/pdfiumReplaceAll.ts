@@ -2,7 +2,7 @@ import { compileQuery } from '@monstera/shared';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { ByteImage, ImageSession } from './engineSeam.js';
+import type { AppliedImage, BoxedInEdit, ImageSession } from './engineSeam.js';
 import { objectRuns, onImage, pageCount, pdfiumWriter, replaceTextObjects } from './pdfiumFfi.js';
 import { NothingToReplaceError } from './textEditRefusals.js';
 
@@ -79,7 +79,7 @@ export function captureReplaceAllText(): Promise<CaptureResult<never>> {
  * throwing rather than resolving keeps a widened type from landing as an undo
  * that did nothing.
  */
-export function invertReplaceAllText(): Promise<ByteImage> {
+export function invertReplaceAllText(): Promise<AppliedImage> {
   throw new Error(
     'a document-wide replacement has no inverse; undo restores the checkpoint the bus took (ADR-0037)',
   );
@@ -131,7 +131,7 @@ function replacedIn(
 export async function applyReplaceAllText(
   image: ImageSession,
   command: CommandOfKind<'replaceAllText'>,
-): Promise<ByteImage> {
+): Promise<AppliedImage> {
   const compiled = compileQuery(command.find, {
     ...(command.caseSensitive === undefined ? {} : { caseSensitive: command.caseSensitive }),
     ...(command.wholeWord === undefined ? {} : { wholeWord: command.wholeWord }),
@@ -153,6 +153,8 @@ export async function applyReplaceAllText(
   return onImage(image, async (session) => {
     const pages = await pageCount(session);
     let rewritten = 0;
+    /** What every page drew as boxes, in page order (ADR-0174): a word is written in pieces as the editor writes it. */
+    const boxed: BoxedInEdit[] = [];
     for (let page = 0; page < pages; page += 1) {
       // SEQUENTIALLY, and per page. PDFium's page handles are not safe to work
       // through concurrently, and each page's generation is its own cost — so
@@ -174,13 +176,14 @@ export async function applyReplaceAllText(
       // empty list precisely so this decision is made here rather than there.
       if (replacements.length === 0) continue;
       // THE LINE IS HELD: a replacement that would move the text after it is refused, and the whole command with it.
-      await replaceTextObjects(session, page, replacements, 'held');
+      boxed.push(...(await replaceTextObjects(session, page, replacements, 'held')));
       rewritten += 1;
     }
     // NO PAGE CHANGED, SO NO VERSION (ADR-0169 Decision 6): thrown before the serialise, so the bus records nothing and
     // the person reads that nothing matched. Serialised, an unchanged document came back as new bytes and a new version
     // with an undo step that did nothing.
     if (rewritten === 0) throw new NothingToReplaceError();
-    return pdfiumWriter.serialise(session);
+    // EVERY BOX, uncapped: the host names the first ones and counts the rest at the pipe (`cappedBoxes`).
+    return { image: await pdfiumWriter.serialise(session), boxed, more: 0 };
   });
 }

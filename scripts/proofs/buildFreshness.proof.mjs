@@ -72,6 +72,8 @@ const CASES = [
   'CONTROL: and the scan found the callers it is known to be able to find',
   'every script that IMPORTS a build takes the guard, or is named as owing none',
   'CONTROL: and that scan sees the importers, and its allowlist has no dead entry',
+  'every built module a registered proof imports by path is covered by one of its edges',
+  'CONTROL: and that check sees the imports, and names one an edge list lacks',
 ];
 
 const roster = createRoster(failures, { cases: CASES.length });
@@ -603,6 +605,73 @@ try {
         `stopped matching the forms in use and an empty result reads as a clean tree. ` +
         `${String(dead.length)} allowlist entry(ies) name a script that imports no build: ` +
         `${dead.length > 0 ? dead.join(', ') : '(none)'}.`,
+    );
+  }
+
+  // THE EDGES COVER THE IMPORTS (finding SSSSSSS-2, 2026-10-06). The two cases above ask whether a script takes the
+  // guard; neither asks whether the edges it hands the guard name what it imports, and both lists are kept by hand
+  // beside the import statements they describe. Measured on the day this case was written: eight imports across five
+  // registered proofs were in no edge — among them `textOperators.js`, which `pdfiumCommand.proof.mjs` compares PDFium's
+  // runs against, and the built `schemas.js` enum `ocrModels.proof.mjs` executes while its edges watched `.d.ts` files.
+  //
+  // An import is covered by an edge whose artefact IS that module, or by an edge whose source is its package's whole
+  // `src` directory, which dates every file the package's build emits. A JSDoc `import(...)` type names a module and
+  // loads nothing, so it is not an import here.
+  //
+  // THE STATED LIMIT: imports by RELATIVE PATH only. A bare `@monstera/kernel` specifier also loads a build, and which
+  // file it reaches is the package map's answer; reading that here would be a second resolver beside Node's (B3a), and
+  // the scan above does not count such a script as a build importer either.
+  {
+    const scripts = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')).scripts;
+    const BUILT_IMPORT =
+      /(?<!(?:typeof\s+|\{\s*))(?:\bfrom\s*|\bimport\s*\(\s*)['"](?:\.\.\/)+((?:packages|apps)\/[\w-]+\/dist\/[\w./-]+)['"]/gu;
+    /** @param {string} source */
+    const builtImportsOf = (source) => [...new Set([...source.matchAll(BUILT_IMPORT)].map((match) => match[1] ?? ''))];
+    /**
+     * @param {readonly (readonly [string, string, string])[]} edges
+     * @param {readonly string[]} imports
+     */
+    const uncoveredBy = (edges, imports) =>
+      imports.filter(
+        (path) => !edges.some(([source, artefact]) => artefact === path || source === path.replace(/\/dist\/.*$/u, '/src')),
+      );
+
+    /** @type {string[]} */
+    const gaps = [];
+    let seen = 0;
+    for (const [name, edges] of Object.entries(ARTEFACT_EDGES)) {
+      const file = /(scripts\/[\w/.-]+\.mjs)/u.exec(scripts[name] ?? '')?.[1];
+      if (file === undefined) continue;
+      const imports = builtImportsOf(readFileSync(join(REPO_ROOT, file), 'utf8'));
+      seen += imports.length;
+      const missing = uncoveredBy(edges, imports);
+      if (missing.length > 0) gaps.push(`${name}: ${missing.join(', ')}`);
+    }
+    check(
+      'every built module a registered proof imports by path is covered by one of its edges',
+      gaps.length === 0,
+      `${String(gaps.length)} registered proof(s) import a built module none of their edges names, so a stale copy ` +
+        `of it passes the guard: ${gaps.join('; ')}. Add the edge to the proof's list in buildFreshness.mjs and ` +
+        `raise the count at its refuseStaleBuild call.`,
+    );
+
+    // A SEARCH, so it must find what is known to be there, and the comparison must be able to say no (items 4b, 4).
+    // `pdfiumCommand.proof.mjs` imports `pdfiumFfi.js` by path; the same imports against its list less that edge must
+    // name it; and `wordPictures.proof.mjs`' JSDoc type naming `engineSeam.js` must not count as an import.
+    const command = builtImportsOf(readFileSync(join(REPO_ROOT, 'scripts/proofs/pdfiumCommand.proof.mjs'), 'utf8'));
+    const pictures = builtImportsOf(readFileSync(join(REPO_ROOT, 'scripts/proofs/wordPictures.proof.mjs'), 'utf8'));
+    const lessAdapter = (ARTEFACT_EDGES['proof:pdfiumcommand'] ?? []).filter(([, artefact]) => !artefact.endsWith('/pdfiumFfi.js'));
+    const named = uncoveredBy(lessAdapter, command);
+    check(
+      'CONTROL: and that check sees the imports, and names one an edge list lacks',
+      seen >= 20 &&
+        command.includes('packages/kernel/dist/pdfiumFfi.js') &&
+        named.includes('packages/kernel/dist/pdfiumFfi.js') &&
+        pictures.includes('packages/kernel/dist/wordPictures.js') &&
+        !pictures.includes('packages/kernel/dist/engineSeam.js'),
+      `the check saw ${String(seen)} import(s); pdfiumCommand's: ${command.join(', ')}; with the adapter's edge removed ` +
+        `it named: ${named.join(', ') || '(none)'}; wordPictures': ${pictures.join(', ')}. A blind pattern reports ` +
+        `every proof covered, which is the answer hoped for.`,
     );
   }
 

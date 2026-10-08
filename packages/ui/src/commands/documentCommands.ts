@@ -1,6 +1,7 @@
 import {
   type AnnotationRect,
   type AnnotationStamp,
+  type BlockFormatting,
   type ChannelResult,
   type Channels,
   type ContractClient,
@@ -9,6 +10,7 @@ import {
   type FormDataFormat,
   type FormDataImportFormat,
   type OptimizeSetting,
+  type PageInsert,
   type PageSet,
   type SaveWriteCause,
   type RenderableCommand,
@@ -17,15 +19,17 @@ import {
   MAX_TOC_ENTRIES,
   MAX_TOC_TITLE_CHARACTERS,
   type OutlineEntry,
+  MAX_FONT_RUNS,
   blockEditOf,
   pageSetOf,
   withPageRuns,
   withStamp,
 } from '@monstera/contract';
-import { type DocId, type DocVersion, type Failure, type MessageKey, lineText } from '@monstera/shared';
+import { type DocId, type DocVersion, type Failure, type MessageKey, lineText, paragraphsOfLines } from '@monstera/shared';
 
 import type { z } from 'zod';
 
+import { isFormatted } from '../textFormatting.js';
 import { BATES_NUMBER_DIALOG_ID } from '../dialogs/batesNumber.js';
 import type { BatesNumberAnswer } from '../dialogs/batesNumberResult.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
@@ -33,6 +37,7 @@ import type { CommandProblem } from '../dialogs/problemMessages.js';
 import { CROP_PAGES_DIALOG_ID } from '../dialogs/cropPages.js';
 import { PROTECT_DOCUMENT_DIALOG_ID } from '../dialogs/protectDocument.js';
 import type { ProtectDocumentAnswer } from '../dialogs/protectDocument.js';
+import type { DocumentKeys } from '../documentKeys.js';
 import {
   APPLY_REDACTIONS_DIALOG_ID,
   type ApplyRedactionsAnswer,
@@ -63,8 +68,11 @@ import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { FLAT_FIELDS_DIALOG_ID } from '../dialogs/flatFields.js';
 import type { FlatFieldsAnswer } from '../dialogs/flatFieldsResult.js';
 import { type EditableObject, OBJECT_FILTERS, type ObjectFilter, type PageObjects } from '../objectEditing.js';
+import { BOXED_CHARACTERS_DIALOG_ID } from '../dialogs/boxedCharacters.js';
+import { UNSEALED_COPIES_DIALOG_ID } from '../dialogs/unsealedCopies.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { IMPORT_FORM_DATA_PROBLEM_DIALOG_ID } from '../dialogs/importFormDataProblem.js';
+import { IMPORT_FORM_DATA_RESULT_DIALOG_ID } from '../dialogs/importFormDataResult.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
 import { EXTRACT_PAGES_DIALOG_ID } from '../dialogs/extractPages.js';
 import type { ExtractPagesAnswer } from '../dialogs/extractPagesResult.js';
@@ -107,6 +115,7 @@ import { KEPT_BACKUPS_DIALOG_ID } from '../dialogs/keptBackups.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { SIGNATURE_BREAK_DIALOG_ID, SIGNATURE_BREAK_RESULT } from '../dialogs/signatureBreak.js';
 import { FLATTEN_FORM_DIALOG_ID, FLATTEN_FORM_RESULT } from '../dialogs/flattenForm.js';
+import { TAB_ORDER_DIALOG_ID, TAB_ORDER_RESULT } from '../dialogs/tabOrder.js';
 import { PAGE_BACKGROUND_DIALOG_ID, PAGE_BACKGROUND_RESULT } from '../dialogs/pageBackground.js';
 import { SIGNED_EDIT_DIALOG_ID, SIGNED_EDIT_RESULT } from '../dialogs/signedEdit.js';
 import type { OpenedDocument } from './importMarkdown.js';
@@ -137,6 +146,7 @@ import {
   GROUP_PAGES,
   GROUP_ROTATE,
   GROUP_TEXT,
+  ADD_TEXT_COMMAND_TITLE,
   EDIT_TEXT_COMMAND_TITLE,
   GROUP_MARKUP,
   SHOW_BOOKMARKS_TITLE,
@@ -229,6 +239,12 @@ import {
   RIBBON_TEXT,
   GROUP_QUICK_TOOLS,
   RIBBON_FLATTEN_FORM,
+  RIBBON_TAB_ORDER,
+  DETECT_FIELDS_TIP,
+  FLATTEN_FORM_TIP,
+  TAB_ORDER_TIP,
+  TAB_ORDER_COMMAND_TITLE,
+  TOAST_TAB_ORDER_SET,
   RIBBON_FORM_DATA_EXPORT,
   RIBBON_EXPORT_OFFICE,
   RIBBON_FORM_DATA_IMPORT,
@@ -654,6 +670,17 @@ export async function applyDocumentCommand(
   if (answer.value.historyDropped > 0) {
     void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
   }
+  // THE CHARACTERS IT DREW AS BOXES (ADR-0174), told once, here where every command's answer arrives, and guarded on a
+  // list that names one for the same reason: the dialog's schema refuses an empty one.
+  if (answer.value.boxed.length > 0) {
+    void deps.ask(BOXED_CHARACTERS_DIALOG_ID, { from: 'edit', boxed: answer.value.boxed, more: answer.value.more });
+  }
+  // THE COPIES A PROTECT COULD NOT ENCRYPT (ADR-0178), named here for the same reason — every command's answer passes
+  // through — and empty for all but a protect that left one unsealed. The protect's own *Protection set* toast is
+  // true and stands; this is its caveat, so the person learns the older copies may still hold the document as it was.
+  if (answer.value.unsealedCopies.length > 0) {
+    void deps.ask(UNSEALED_COPIES_DIALOG_ID, { copies: [...answer.value.unsealedCopies] });
+  }
   return true;
 }
 
@@ -682,8 +709,15 @@ async function editOnCopy(deps: DocumentCommandDeps, docId: DocId, command: Rend
       });
       // THE COPY IS OPEN EITHER WAY, and a refusal of the edit there is said over it: the file is where the person
       // put it, unchanged, and closing its tab is theirs.
-      if (outcome.kind === 'edit-refused') reportProblem(deps, outcome.problem);
-      else if (outcome.historyDropped > 0) void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: outcome.historyDropped });
+      if (outcome.kind === 'edit-refused') {
+        reportProblem(deps, outcome.problem);
+        return true;
+      }
+      if (outcome.historyDropped > 0) void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: outcome.historyDropped });
+      // THE BOXES ON THE COPY, told as the direct route tells them (ADR-0174).
+      if (outcome.boxed.length > 0) {
+        void deps.ask(BOXED_CHARACTERS_DIALOG_ID, { from: 'edit', boxed: outcome.boxed, more: outcome.more });
+      }
       return true;
     }
     case 'cancelled':
@@ -1389,13 +1423,22 @@ export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
  * command in the build does not get the key that is about to be contested — D3
  * decides that, with a focus rule rather than a first-come registration.
  *
- * ## It is undone by a CHECKPOINT, which is the reason this row waited
+ * ## It ASKS FIRST, through the same dialog the Delete key opens
+ *
+ * This command, the page grid's Delete key, and the ribbon's *Delete…* are now
+ * the one way a page is removed: all three open **Delete pages** filled with the
+ * target pages, and nothing is deleted until the person confirms (owner,
+ * 2026-10-06, CR-COR-06 — the key already asked since 2026-10-05, and a menu or
+ * secondary button that still deleted on the first click was the half of the
+ * ruling left standing). A right-click *Delete page* and a mis-aimed secondary
+ * button now cost a **Cancel**, never a page. `askToDeletePages` is that one
+ * path, so this run collects no answer of its own.
+ *
+ * ## It is undone by a CHECKPOINT
  *
  * `deletePages` is the first command declaring `invertible: false`, so its log
  * entry is terminal and undoing it restores the bytes the bus snapshotted
  * ([ADR-0037](../../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
- * Nothing about this dispatch says so, and that is the point — the surface is
- * the same four steps every other command's is.
  */
 export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
@@ -1410,13 +1453,11 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
     ],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      // `targetPages`' pages (ADR-0104): the ticked ones in the grid, else the page on show.
+      // `targetPages`' pages (ADR-0104): the ticked ones in the grid, else the page on show. The dialog needs the
+      // bound, and `askToDeletePages` holds the one `undefined`-is-a-dismissal gate — so a Cancel here deletes nothing.
       const pages = targetPages(context);
-      if (context.docId === undefined || pages.length === 0) return;
-      await applyDocumentCommand(deps, context.docId, {
-        kind: 'deletePages',
-        pages: [...pages],
-      });
+      if (context.docId === undefined || context.pageCount === undefined || pages.length === 0) return;
+      await askToDeletePages(deps, context.docId, context.pageCount, pages);
     },
   };
 }
@@ -1469,8 +1510,10 @@ export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
 
 /**
  * Opens the Delete pages dialog with `pages` in its field, and deletes what it answers — or nothing, when it is
- * dismissed. The one way a page is deleted after asking: this command's, and the page grid's Delete key, which asks
- * first by the owner's ruling (2026-10-05, CR-COR-06), so a key pressed by mistake costs a Cancel and never a page.
+ * dismissed. The one way a page is deleted after asking, shared by every surface that removes a page: the ribbon's
+ * *Delete…* (`deletePagesCommand`), the *Delete page* button and right-click item (`deletePageCommand`), and the page
+ * grid's Delete key — all ask first by the owner's ruling (CR-COR-06, 2026-10-05 for the key, 2026-10-06 for the rest),
+ * so a key pressed or a button clicked by mistake costs a Cancel and never a page.
  */
 export async function askToDeletePages(
   deps: DocumentCommandDeps,
@@ -3617,8 +3660,22 @@ function importFormDataCommand(
         });
         return;
       }
+      // THE WRONG FILE: form data, and none of its fields is in this form. Nothing was changed.
+      if (answer.value.kind === 'matched-nothing') {
+        void deps.ask(IMPORT_FORM_DATA_PROBLEM_DIALOG_ID, { reason: 'matched-nothing', named: answer.value.named });
+        return;
+      }
       deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
       confirmDone(deps, TOAST_FORM_DATA_IMPORTED);
+      // WHAT IT LEFT ALONE, said with its reasons whenever there is something: the application's own export leaves
+      // nothing, so this opens only for a file that did not fit the form field for field.
+      if (answer.value.skipped.length > 0 || answer.value.more > 0) {
+        void deps.ask(IMPORT_FORM_DATA_RESULT_DIALOG_ID, {
+          filled: answer.value.filled,
+          skipped: [...answer.value.skipped],
+          more: answer.value.more,
+        });
+      }
       // INVARIANT 18, after `onApplied` and guarded on a positive count, which
       // is `applyDocumentCommand`'s ordering — this command takes the same
       // route through the bus and can trim the same history.
@@ -3706,11 +3763,41 @@ export function flattenFormCommand(deps: DocumentCommandDeps & WritesAFile): UiC
     icon: 'Layers',
     title: FORMS_FLATTEN,
     ribbonTitle: RIBBON_FLATTEN_FORM,
+    // THE FIRST THING A PERSON ASKS OF *FLATTEN*, answered before they press it.
+    tip: FLATTEN_FORM_TIP,
     placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_MANAGE, order: 82 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
       await flattenForm(deps, context.docId);
+    },
+  };
+}
+
+/**
+ * *Tab order…* (ADR-0193): how the Tab key walks the form's fields, set on every page by one `setTabOrder`.
+ *
+ * Asked first, for the flatten's reason in the other direction: a person has to say which of three orders, and dismissing
+ * the question sets nothing. The toast says it ran, since a tab order changes nothing the page shows.
+ */
+export function tabOrderCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+  return {
+    id: 'document.tab-order',
+    // OUT OF SIGHT: the order shows only when Tab is pressed, so the toast is the sign that it ran.
+    feedback: TOASTS,
+    icon: 'ListOrdered',
+    title: TAB_ORDER_COMMAND_TITLE,
+    ribbonTitle: RIBBON_TAB_ORDER,
+    tip: TAB_ORDER_TIP,
+    placements: [{ surface: 'ribbon', section: 'forms', group: GROUP_MANAGE, order: 84 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const answer = TAB_ORDER_RESULT.safeParse(await deps.ask(TAB_ORDER_DIALOG_ID, {}));
+      if (!answer.success) return;
+      if (await applyDocumentCommand(deps, context.docId, { kind: 'setTabOrder', pages: 'all', order: answer.data.order })) {
+        confirmDone(deps, TOAST_TAB_ORDER_SET);
+      }
     },
   };
 }
@@ -3723,6 +3810,8 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
     title: FLAT_FIELDS_COMMAND_TITLE,
     // v5-08's Forms › Manage › *Detect*: this proposes fields where a page has only drawn boxes.
     ribbonTitle: RIBBON_DETECT_FIELDS,
+    // WHAT IT DOES IN ONE SENTENCE, because *Detect* alone says nothing to a person who has not met it.
+    tip: DETECT_FIELDS_TIP,
     placements: [
       { surface: 'ribbon', section: 'forms', group: GROUP_MANAGE, order: 80 },
     ],
@@ -3743,8 +3832,10 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
         candidates: found.value.candidates.map((candidate) => ({
           name: candidate.name,
           label: candidate.label,
+          kind: candidate.kind,
         })),
         truncated: found.value.truncated,
+        alreadyFields: found.value.alreadyFields,
       })) as FlatFieldsAnswer | undefined;
       // A DISMISSAL DISPATCHES NOTHING, which is the mutation-dialog gate: the
       // absence of a value is the guard rather than a flag beside it.
@@ -3755,7 +3846,7 @@ export function detectFlatFieldsCommand(deps: DocumentCommandDeps): UiCommand {
         .map((candidate) => ({
           rect: candidate.rect,
           name: candidate.name,
-          field: { type: 'text' } as const,
+          field: candidate.kind === 'checkbox' ? ({ type: 'checkbox' } as const) : ({ type: 'text' } as const),
         }));
       // NOTHING TICKED CANNOT REACH HERE — the result schema refuses an empty
       // list and the button is disabled — but the command refuses one too, so
@@ -3819,6 +3910,38 @@ export function saveCopyCommand(deps: DocumentCommandDeps & WritesAFile & Settle
 export const EDIT_TEXT_TOOL_ID = 'text.edit';
 
 /**
+ * Edit text in its ADD flavour (ADR-0180 Decision 6): the same mode with a press on the empty page opening a new box,
+ * and the slot's own value rather than a flag beside it, so leaving the mode, or choosing another tool, ends it by the
+ * slot's own rule and nothing can be left over for the next entry.
+ */
+export const EDIT_TEXT_ADD_TOOL_ID = 'text.add';
+
+/** Whether a tool id is Edit text, in either flavour: the ONE answer every surface of the mode asks (B3a). */
+export const isEditTextTool = (id: string | undefined): boolean => id === EDIT_TEXT_TOOL_ID || id === EDIT_TEXT_ADD_TOOL_ID;
+
+/**
+ * Add text: a box of new words where the person clicks on the page. One box, then back to Edit text, since a person who
+ * has typed a box wants to look at it.
+ */
+export function addTextCommand(deps: {
+  readonly activeTool: () => string | undefined;
+  readonly onSelect: (id: string | undefined) => void;
+}): UiCommand {
+  return {
+    id: EDIT_TEXT_ADD_TOOL_ID,
+    feedback: VISIBLE,
+    icon: 'Plus',
+    title: ADD_TEXT_COMMAND_TITLE,
+    placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 11 }],
+    when: hasDocument,
+    checked: () => deps.activeTool() === EDIT_TEXT_ADD_TOOL_ID,
+    run: (): void => {
+      deps.onSelect(deps.activeTool() === EDIT_TEXT_ADD_TOOL_ID ? EDIT_TEXT_TOOL_ID : EDIT_TEXT_ADD_TOOL_ID);
+    },
+  };
+}
+
+/**
  * Edit text: every editable block on the page outlined in place, and edited
  * where it is ([ADR-0096](../../../../docs/DECISIONS/0096-text-is-edited-in-place-on-the-page-in-blocks-that-reflow.md)).
  *
@@ -3850,12 +3973,15 @@ export function editTextCommand(deps: {
     title: EDIT_TEXT_COMMAND_TITLE,
     ribbonTitle: RIBBON_EDIT_TEXT,
     placements: [{ surface: 'ribbon', section: 'edit', group: GROUP_TEXT, order: 10 }],
+    // THE KEY FOR THE MODE: T for text, with Shift because Ctrl+T is the browser's own and every bare Ctrl letter here is
+    // a file or an editing verb. Derived into the palette, the tooltip and the shortcut map from this one field.
+    shortcut: 'Ctrl+Shift+T',
     when: hasDocument,
-    checked: () => deps.activeTool() === EDIT_TEXT_TOOL_ID,
+    checked: () => isEditTextTool(deps.activeTool()),
     run: (): void => {
       // READ THROUGH THE FUNCTION, `toolCommand`'s rule: the command is built
       // once, and a captured id would toggle against whatever was active then.
-      deps.onSelect(deps.activeTool() === EDIT_TEXT_TOOL_ID ? undefined : EDIT_TEXT_TOOL_ID);
+      deps.onSelect(isEditTextTool(deps.activeTool()) ? undefined : EDIT_TEXT_TOOL_ID);
     },
   };
 }
@@ -3939,6 +4065,64 @@ export async function promoteTextOnPage(deps: DocumentCommandDeps, docId: DocId,
 export type TextBlock = ChannelResult<'document.textBlocks'>['blocks'][number];
 
 /**
+ * What a block's edit is sent BY, from the read its blocks came from: the version they were read at, and the writer the
+ * page named (ADR-0176 Decision 1). One pair, so an edit cannot carry the version of one read and the writer of another.
+ */
+export type BlocksRead = Pick<ChannelResult<'document.textBlocks'>, 'version' | 'rewrite'>;
+
+/** The command each writer the page names is rewritten by, with the same block wire (ADR-0176 Decision 1). */
+const BLOCK_EDIT_KIND = { objects: 'editTextBlock', operators: 'editTextOperators' } as const satisfies Record<
+  BlocksRead['rewrite'],
+  'editTextBlock' | 'editTextOperators'
+>;
+
+/** A block's run fonts as the editor draws them: each font once, and each run's font by the run's first object. */
+export interface RunFonts {
+  readonly fonts: readonly Uint8Array<ArrayBuffer>[];
+  /** A run's place in `fonts`, by its first object. A run absent here has none and is drawn in its kind of face. */
+  readonly runs: ReadonlyMap<number, number>;
+}
+
+/** No run has a font: the editor draws every run in its kind of face, as it did before ADR-0175. */
+export const NO_RUN_FONTS: RunFonts = { fonts: [], runs: new Map() };
+
+/**
+ * The fonts the PDFium host rebuilt for `block`'s runs (ADR-0175), read in as few reads as `MAX_FONT_RUNS` allows —
+ * one for any block but a very long one, since every read costs the host a write of the document's image.
+ *
+ * ## Anything but an answer at `version` is NO FONTS, and that is the feature's own outcome rather than a loss
+ *
+ * A run without its font is drawn in its kind of face, which is how every run was drawn before ADR-0175 and how a run
+ * in a font the host declines is drawn now. An answer at another version describes objects the open block no longer
+ * names. A refusal is a document not open or poisoned, which the edit the person makes next says in its own words, or
+ * an incident `main` has already recorded; the editor is not the place to say either a second time, and the words the
+ * person types are untouched by it.
+ */
+export async function readRunFonts(
+  client: ContractClient,
+  docId: DocId,
+  page: number,
+  block: TextBlock,
+  version: DocVersion,
+): Promise<RunFonts> {
+  const indices = [...new Set(block.lines.flatMap((line) => line.runs.map((run) => run.index)))];
+  const fonts: Uint8Array<ArrayBuffer>[] = [];
+  const runs = new Map<number, number>();
+  for (let from = 0; from < indices.length; from += MAX_FONT_RUNS) {
+    const asked = indices.slice(from, from + MAX_FONT_RUNS);
+    const answer = await client['document.runFonts']({ docId, page, indices: asked });
+    if (!answer.ok || answer.value.version !== version) return NO_RUN_FONTS;
+    const base = fonts.length;
+    fonts.push(...answer.value.fonts);
+    asked.forEach((index, at) => {
+      const place = answer.value.runs[at];
+      if (place !== null && place !== undefined) runs.set(index, base + place);
+    });
+  }
+  return { fonts, runs };
+}
+
+/**
  * How writing one block ended, as far as the editor over it has to act: written, nothing to write, a signed document
  * the person chose to leave as it is, or refused with the problem the editor says beside the words.
  */
@@ -3981,24 +4165,44 @@ export async function commitTextBlock(
   page: number,
   block: TextBlock,
   text: string,
-  version: DocVersion,
+  read: BlocksRead,
+  /** What spans of the words are, and how paragraphs are set, where the person chose (ADR-0180). */
+  formatting: BlockFormatting = {},
 ): Promise<BlockCommit> {
-  const before = block.lines.map((line) => lineText(line.runs)).join('\n');
-  if (text === before) return 'unchanged';
+  // THE BLOCK'S WORDS AS IT SHOWS THEM, by the one join the kernel diffs against (ADR-0179): soft wraps are spaces.
+  const before = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  // UNCHANGED ONLY WHEN THE WORDS AND THEIR FORMATTING both are: a bold word is an edit with the same words (ADR-0180).
+  if (text === before && !isFormatted(formatting)) return 'unchanged';
+  return sendBlockEdit(deps, docId, page, read, [
+    {
+      lines: block.lines.map((line) => line.runs.map((run) => run.index)),
+      soft: block.lines.map((line) => line.soft),
+      text,
+      ...formatting,
+    },
+  ]);
+}
+
+/**
+ * The ONE way a block edit leaves the renderer, an edit of blocks and an added box alike (B3a): the wire form through the
+ * contract's encoder (ADR-0142), the writer the page's read named (ADR-0176 Decision 1: a page showing Type 3 text is
+ * rewritten in its own content stream), reflow (a person typing sees the block grow and it stays that way), and the
+ * outcome the editor says: written, held for the signatures question, or the refusal.
+ */
+async function sendBlockEdit(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  page: number,
+  read: BlocksRead,
+  blocks: Parameters<typeof blockEditOf>[0],
+  inserts: PageInsert[] = [],
+): Promise<BlockCommit> {
   /** Set by the hook below to what the editor says: the signatures question left unanswered, or the refusal. */
   const kept: { outcome: Exclude<BlockCommit, 'written' | 'unchanged'> | undefined } = { outcome: undefined };
   const applied = await applyDocumentCommand(
     deps,
     docId,
-    {
-      kind: 'editTextBlock',
-      page,
-      // IN THE WIRE FORM, through the contract's one encoder (ADR-0142).
-      ...blockEditOf([{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), text }]),
-      // REFLOW: a person typing sees the block grow as they type, and it stays that way.
-      fit: 'reflow',
-      version,
-    },
+    { kind: BLOCK_EDIT_KIND[read.rewrite], page, ...blockEditOf(blocks, inserts), fit: 'reflow', version: read.version },
     {
       keep: (error) => {
         // A FAILURE THAT CARRIES SOMETHING passes whole, so the editor can name the characters or show the reference.
@@ -4014,6 +4218,40 @@ export async function commitTextBlock(
   // UNREACHABLE BY `applyDocumentCommand`'s OWN RULE: a command not applied answered a failure, and the hook kept it.
   if (kept.outcome === undefined) throw new Error('a block edit was neither applied nor refused');
   return kept.outcome;
+}
+
+/**
+ * Writes several blocks of one page in ONE command: a join (the upper block's words with the lower's, the lower
+ * emptied) and a split (each half, the second moved down) are each such a write (ADR-0180 Decision 7), and one command is
+ * one undo step. The outcome is {@link commitTextBlock}'s.
+ */
+export function commitBlocks(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  page: number,
+  blocks: Parameters<typeof blockEditOf>[0],
+  read: BlocksRead,
+): Promise<BlockCommit> {
+  return sendBlockEdit(deps, docId, page, read, blocks);
+}
+
+/**
+ * Adds a box of new text to a page (ADR-0180 Decision 6, corrected 2026-10-06): the words and where they go, sent as
+ * `inserts` on the same block wire an edit uses, by the writer the page's read named. The outcome is
+ * {@link commitTextBlock}'s, so the editor over a new box says a refusal as the editor over a block does.
+ *
+ * `unchanged` for words that are only white space: a box nobody typed in adds nothing, and the kernel would refuse it.
+ */
+export async function commitPageInsert(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  page: number,
+  insert: PageInsert,
+  read: BlocksRead,
+): Promise<BlockCommit> {
+  if (insert.text.trim() === '') return 'unchanged';
+  // NO BLOCK, ONLY A BOX: the encoder's second argument.
+  return sendBlockEdit(deps, docId, page, read, [], [insert]);
 }
 
 /** Edit object's mode in the tool slot (ADR-0153 Decision 1), Edit text's slot and its reason. */
@@ -4538,7 +4776,16 @@ export function applyRedactionsCommand(
  * person that — a protection command that appeared to have done something to
  * the file on screen would be claiming an effect that has not happened yet.
  */
-export function protectDocumentCommand(deps: DocumentCommandDeps & WritesAFile): UiCommand {
+export function protectDocumentCommand(
+  deps: DocumentCommandDeps &
+    WritesAFile & {
+      /**
+       * The renderer's keys for each document (ADR-0171 Decision 7): a user password this command sets is one the person
+       * typed, and the document's view needs it once the protect has drawn.
+       */
+      readonly documentKeys: DocumentKeys;
+    },
+): UiCommand {
   return {
     id: 'document.protect',
     // NOTHING ON THE PAGE SHOWS A PASSWORD, and it takes effect at the next save (ADR-0141).
@@ -4567,6 +4814,8 @@ export function protectDocumentCommand(deps: DocumentCommandDeps & WritesAFile):
         // who unticked nothing chose to withhold nothing.
         permissions: [...answer.permissions],
       });
+      // KEPT ONLY ONCE MAIN APPLIED IT, so a key held is one this document stands with or stood with.
+      if (applied && answer.userPassword !== undefined) deps.documentKeys.hold(context.docId, answer.userPassword);
       if (applied) confirmDone(deps, TOAST_PROTECTION_SET);
     },
   };

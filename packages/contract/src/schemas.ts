@@ -1,5 +1,6 @@
 import {
   EDIT_STEPS,
+  FIELD_EDIT_REASONS,
   type FailureDetails,
   INTERNAL_FAILURE,
   asDocId,
@@ -102,6 +103,7 @@ export const FAILURE_DETAIL_SCHEMAS = {
   'edit-refused': z
     .object({ step: z.enum(EDIT_STEPS), engineError: z.number().int().min(0).max(ENGINE_ERROR_MAX) })
     .strict(),
+  'field-edit-refused': z.object({ reason: z.enum(FIELD_EDIT_REASONS) }).strict(),
 } as const satisfies { readonly [C in keyof FailureDetails]: z.ZodType<FailureDetails[C]> };
 
 /** Compiles only when `Listed` is assignable to `Whole`: `engineChannels.ts`' `Covers`, for one check here. */
@@ -520,8 +522,8 @@ export type DocusignRefusalKind = (typeof DOCUSIGN_REFUSALS)[number];
 export const COMPOSE_REFUSALS = [
   /** The file's bytes are not UTF-8 text. */
   'not-utf8',
-  /** A character the standard fonts cannot draw; the refusal names its line. */
-  'unencodable-text',
+  // NO REFUSAL FOR A CHARACTER (ADR-0172): `unencodable-text` was the standard fonts' and is withdrawn. Every
+  // character is drawn, and one no face carries is a box the import NAMES after it opens.
   /** The source holds no text, so a composed document would be blank. */
   'nothing-to-draw',
   /**
@@ -541,6 +543,71 @@ export const COMPOSE_REFUSALS = [
    */
   'too-many-pixels',
 ] as const;
+
+/** How many places of a boxed character a text import NAMES; past it, `more` counts the rest. */
+export const MAX_BOXED_CHARACTERS = 64;
+
+/**
+ * A character a composed document draws as the missing-character box, and where the source holds it
+ * ([ADR-0172](../../../docs/DECISIONS/0172-one-font-resolver-open-fonts-bundled-by-fingerprint-subsets-made-in-the-host.md)
+ * Decision 8): one code point, its one-based line, and its one-based column in characters, `null` where the source
+ * does not hold it as itself.
+ *
+ * **Declared here and not in the kernel**, {@link COMPOSE_REFUSALS}' reason: the compose host's answer and the
+ * renderer's carry the same list.
+ */
+export const boxedCharacterSchema = z
+  .object({
+    // THE LENGTH AS WELL AS THE PATTERN: the payload bound is read from `.max()`, never from a regex, and one code
+    // point is at most two UTF-16 units.
+    character: z.string().max(2).regex(/^.$/su),
+    line: z.number().int().positive(),
+    column: z.number().int().positive().nullable(),
+  })
+  .strict();
+
+/** One of {@link boxedCharacterSchema}. */
+export type BoxedCharacter = z.infer<typeof boxedCharacterSchema>;
+
+/**
+ * A character an EDIT drew as the missing-character box, and the 0-based page it is on
+ * ([ADR-0174](../../../docs/DECISIONS/0174-a-pdfium-apply-answers-the-characters-it-drew-as-boxes.md)). The character is
+ * {@link boxedCharacterSchema}'s one code point; the place is a page, which is where an edit's text is.
+ *
+ * Declared here for {@link boxedCharacterSchema}'s reason: the PDFium host's answer and `document.execute`'s carry it.
+ */
+export const boxedInEditSchema = z
+  .object({
+    character: boxedCharacterSchema.shape.character,
+    page: z.number().int().nonnegative(),
+  })
+  .strict();
+
+/** One of {@link boxedInEditSchema}. */
+export type BoxedInEditEntry = z.infer<typeof boxedInEditSchema>;
+
+/**
+ * The boxes an operation drew, as a boundary carries them: at most {@link MAX_BOXED_CHARACTERS} named and the rest
+ * counted (ADR-0174 Decision 2). Both REQUIRED, `historyDropped`'s rule.
+ */
+export const drawnBoxesShape = {
+  boxed: z.array(boxedInEditSchema).max(MAX_BOXED_CHARACTERS),
+  more: z.number().int().nonnegative(),
+};
+
+/**
+ * `boxed` and `more` capped for a boundary: the first {@link MAX_BOXED_CHARACTERS} named, every other one counted with
+ * those already counted past an earlier boundary. THE ONE CAP, so the host and `main` cannot cut a list two ways.
+ */
+export function cappedBoxes<T>(drawn: { readonly boxed: readonly T[]; readonly more: number }): {
+  boxed: T[];
+  more: number;
+} {
+  return {
+    boxed: drawn.boxed.slice(0, MAX_BOXED_CHARACTERS),
+    more: drawn.more + Math.max(0, drawn.boxed.length - MAX_BOXED_CHARACTERS),
+  };
+}
 
 /**
  * Whether an open document's own file could be written over now (cloud-4 7b) — the kernel's probe answers exactly these.

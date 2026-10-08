@@ -38,7 +38,7 @@ import { fileURLToPath } from 'node:url';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { assertableBudget, memoryBudgets } from '../lib/memoryBudgets.mjs';
 import { buildDenseFixture, buildLargeFixture, buildScanFixture } from './largeFixture.mjs';
-import { formatBytes, measurePeak } from './peakRss.mjs';
+import { MeasurementNotApplicable, NOT_APPLICABLE_EXIT, formatBytes, measurePeak } from './peakRss.mjs';
 import { isMain } from '../lib/isMain.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -143,12 +143,14 @@ export function documentCostBytes(role, peakBytes, baselineBytes) {
  */
 
 /**
- * @param {{ documentPath?: string, documentBytes?: number, root?: string, budgetsText?: string }} [options]
+ * @param {{ documentPath?: string, documentBytes?: number, root?: string, budgetsText?: string, roles?: Array<{ role: string, budget?: string, script: string, args?: string[] }> }} [options]
  *   `budgetsText` substitutes the document the budgets are parsed from. It
  *   exists for the proof, which mutates the declared line and requires the gate
  *   to follow it — the alternative was a proof restating the limits, which would
- *   be a fourth copy of the numbers in the place people look last.
- * @returns {{ fixture: { path: string, bytes: number }, results: RoleResult[], unasserted: Array<{ role: string, reason: string }> }}
+ *   be a fourth copy of the numbers in the place people look last. `roles`
+ *   overrides the production role list; the proof injects control roles to
+ *   exercise the not-applicable/failed split (R29).
+ * @returns {{ fixture: { path: string, bytes: number }, results: RoleResult[], unasserted: Array<{ role: string, reason: string }>, failures: Array<{ role: string, reason: string }> }}
  */
 export function runBudgetGate(options = {}) {
   const root = options.root ?? ROOT;
@@ -194,7 +196,7 @@ export function runBudgetGate(options = {}) {
    *
    * @type {Array<{ role: string, budget?: string, script: string, args?: string[] }>}
    */
-  const roles = [
+  const roles = options.roles ?? [
     { role: 'main', script: join(HERE, 'roleMain.mjs') },
     { role: 'main-service', budget: 'main', script: join(HERE, 'roleMainService.mjs') },
     { role: 'mupdf-host', script: join(HERE, 'roleMupdfHost.mjs') },
@@ -215,6 +217,14 @@ export function runBudgetGate(options = {}) {
   const results = [];
   /** @type {Array<{ role: string, reason: string }>} */
   const unasserted = [];
+  /**
+   * Roles that SHOULD have measured on this runner and did not (R29). A role
+   * that exits with the sanctioned not-applicable code goes to {@link unasserted}
+   * and reads as "not asserted"; every other failure lands here and reddens the
+   * gate, so a broken role can never again read as a platform limit.
+   * @type {Array<{ role: string, reason: string }>}
+   */
+  const failures = [];
   for (const { role, budget: budgetName, script, args = [] } of roles) {
     const budget = assertableBudget(budgets, budgetName ?? role);
 
@@ -237,12 +247,20 @@ export function runBudgetGate(options = {}) {
       // own output below it, and taking `[0]` printed "Measured run failed
       // (exit 1)" for a host that had told us exactly what went wrong. The one
       // line a reader does not need is the only one that survived.
-      unasserted.push({
-        role,
-        reason: `could not be measured on this runner — ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      });
+      //
+      // NOT-APPLICABLE IS NOT FAILURE (R29). Only the sanctioned exit code —
+      // `MeasurementNotApplicable`, exit 2 — means this runner cannot measure
+      // the role, which is a legitimate "not asserted". Every other exit is a
+      // role that broke where it should have run, and reading that as "could
+      // not be measured" is how a broken real host passed the gate from
+      // 76e16d7b until R29: the words were the same and nothing acted on the
+      // difference.
+      const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof MeasurementNotApplicable) {
+        unasserted.push({ role, reason: `could not be measured on this runner — ${message}` });
+      } else {
+        failures.push({ role, reason: `failed to measure where it should run — ${message}` });
+      }
       continue;
     }
     const documentCost = documentCostBytes(role, measurement.peakRssBytes, baselineBytes);
@@ -291,7 +309,7 @@ export function runBudgetGate(options = {}) {
     }
   }
 
-  return { fixture: { path: fixture.path, bytes: documentBytes }, results, unasserted };
+  return { fixture: { path: fixture.path, bytes: documentBytes }, results, unasserted, failures };
 }
 
 /**
@@ -302,7 +320,7 @@ export function runBudgetGate(options = {}) {
  * total RSS against a 6x limit. Running one and calling the gate satisfied is
  * exactly the failure that item was written for.
  *
- * @returns {Array<{ shape: string, fixture: { path: string, bytes: number }, results: RoleResult[], unasserted: Array<{ role: string, reason: string }> }>}
+ * @returns {Array<{ shape: string, fixture: { path: string, bytes: number }, results: RoleResult[], unasserted: Array<{ role: string, reason: string }>, failures: Array<{ role: string, reason: string }> }>}
  */
 export function runAllShapes(root = ROOT) {
   const image = buildLargeFixture({ root });
@@ -322,7 +340,7 @@ if (isMain(import.meta.url)) {
   if (process.argv.includes('--json')) {
     process.stdout.write(`${JSON.stringify(runs, null, 2)}\n`);
   } else {
-    for (const { shape, fixture, results, unasserted } of runs) {
+    for (const { shape, fixture, results, unasserted, failures } of runs) {
       process.stdout.write(
         `${shape}: ${formatBytes(fixture.bytes)} (${String(fixture.bytes)} bytes)\n`,
       );
@@ -352,6 +370,12 @@ if (isMain(import.meta.url)) {
         // sentence is the shape that makes an unrun check read as a chosen one.
         process.stdout.write(`  --   ${entry.role.padEnd(11)} not asserted — ${entry.reason}\n`);
       }
+      // A ROLE THAT SHOULD HAVE RUN AND DID NOT is printed apart from the ones
+      // the runner cannot measure, and in words a reader cannot mistake for
+      // "not asserted" (R29).
+      for (const entry of failures) {
+        process.stdout.write(`  FAIL ${entry.role.padEnd(11)} FAILED TO MEASURE — ${entry.reason}\n`);
+      }
       process.stdout.write('\n');
     }
   }
@@ -361,6 +385,18 @@ if (isMain(import.meta.url)) {
       .filter((result) => !result.withinMultiplier || !result.withinAbsolute || !result.withinBaseline)
       .map((result) => ({ shape, result })),
   );
+  // A ROLE THAT FAILED TO MEASURE REDDENS THE GATE (R29), so "could not be
+  // measured" can never again read as "not applicable" on a runner that can.
+  const failedToMeasure = runs.flatMap(({ shape, failures }) => failures.map((entry) => ({ shape, entry })));
+  if (failedToMeasure.length > 0) {
+    process.stderr.write(
+      `${String(failedToMeasure.length)} role(s) failed to measure where they should run. A role that cannot ` +
+        `run on this runner at all exits ${String(NOT_APPLICABLE_EXIT)} and is reported "not asserted"; any other ` +
+        `exit is a broken role, and treating it as "not applicable" is how a broken real host passed this gate for ` +
+        `a whole release range (R29). Fix the role or, if it genuinely cannot run here, make it exit ` +
+        `${String(NOT_APPLICABLE_EXIT)} with its reason.\n`,
+    );
+  }
   if (breaches.length > 0) {
     process.stderr.write(
       `${String(breaches.length)} budget breach(es). The budgets are stated in ARCHITECTURE §9.17 and ` +
@@ -368,6 +404,6 @@ if (isMain(import.meta.url)) {
         `started doing, not by raising the number — for mupdf-host the invariant says so ` +
         `explicitly, since its limit is a containment limit whose breach means kill-and-restart.\n`,
     );
-    process.exit(1);
   }
+  if (breaches.length > 0 || failedToMeasure.length > 0) process.exit(1);
 }

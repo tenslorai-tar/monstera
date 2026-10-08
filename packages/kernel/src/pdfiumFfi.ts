@@ -1,11 +1,38 @@
-import { type EditStep, replacementsForLine } from '@monstera/shared';
+import {
+  type BlockMark,
+  type BlockMarkSet,
+  type BlockPlace,
+  MAX_BLOCK_FONTS,
+  type PageInsert,
+  type ParagraphProps,
+} from '@monstera/contract/host';
+import type { EditStep } from '@monstera/shared';
 import koffi, { type KoffiFunc, type TypeObject } from 'koffi';
 
-import type { ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
+import { editFaces, editFacesBound } from './editFaces.js';
+import { arabicForms, lettersOfForms } from './arabicForms.js';
+import { drawnOrder, drawnRightToLeft, drewTheGlyphs, isBidirectional, logicalOf, readBackOf } from './bidiOrder.js';
+import { paperCoverFor, type PixelBox, type Rgb } from './paperColour.js';
+import { resolveRuns } from './fontResolver.js';
+import { type EditPiece, editPieces } from './editPieces.js';
+import { inDrawingOrder, visualUnits } from './visualPieces.js';
+import type { BoxedInEdit, ByteImage, EngineWriter, ImageSession, PdfiumSession } from './engineSeam.js';
+import type { CatalogueFace, FaceSource } from './fontCatalogue.js';
+import type { PageRuns } from './operatorEdit.js';
+import { FIT_STEPS, type FlowLine, MIN_FIT, type Measure, NO_MARK, planBlock } from './paragraphFlow.js';
+import { type Alignment, blockShape, paragraphSpacing } from './paragraphShape.js';
 import { type ProgramFace, faceOf, programFace } from './fontFace.js';
+import { readFace } from './fontFaces.js';
+import { BOX, boxFont } from './boxFont.js';
+import { namedSubset } from './fontSubset.js';
+import { type DrawnGlyph, runFontFor } from './runFont.js';
+import { withoutSubsetTag } from './subsetName.js';
+import { ShapingFace } from './textShaping.js';
 import { PDFIUM_FONT_NAME_MAX } from './host/pdfiumChannels.js';
 import { type RunBox, replacementsMovingTheirLine } from './replaceLineRule.js';
 import { EditRefusedError, ReplaceMovesLineError, TextNotWritableError, unwritableCharacters } from './textEditRefusals.js';
+import { readInLineOrder } from './bidiLine.js';
+import { type Orientation, isEditedInPlace } from './textLines.js';
 import { type JoinedRun, joinRuns, membersOf } from './textRunJoin.js';
 
 /**
@@ -52,6 +79,9 @@ const TEXT_OBJECT = 1;
  */
 const OBJECT_FORM = 5;
 
+/** `FPDF_FONT_TRUETYPE`, the `font_type` `FPDFText_LoadFont` takes for a TrueType program (`fpdf_edit.h`). */
+const FONT_TRUETYPE = 2;
+
 /**
  * A bound C function, as this file is willing to describe one.
  *
@@ -90,6 +120,7 @@ interface Bound {
   readonly closeTextPage: Native;
   readonly countChars: Native;
   readonly getText: Native;
+  readonly setCharcodes: Native;
   readonly textObjectText: Native;
   readonly charObject: Native;
   readonly charGenerated: Native;
@@ -101,6 +132,25 @@ interface Bound {
   readonly transform: Native;
   readonly getFillColour: Native;
   readonly setFillColour: Native;
+  readonly getRenderMode: Native;
+  readonly setRenderMode: Native;
+  readonly countMarks: Native;
+  readonly getMark: Native;
+  readonly markName: Native;
+  readonly markParamCount: Native;
+  readonly markParamKey: Native;
+  readonly markParamType: Native;
+  readonly markParamInt: Native;
+  readonly markParamString: Native;
+  readonly addMark: Native;
+  readonly markSetInt: Native;
+  readonly markSetString: Native;
+  readonly getStrokeColour: Native;
+  readonly setStrokeColour: Native;
+  readonly getStrokeWidth: Native;
+  readonly setStrokeWidth: Native;
+  readonly newRect: Native;
+  readonly setDrawMode: Native;
   readonly removeObject: Native;
   readonly destroyObject: Native;
   readonly countFormObjects: Native;
@@ -118,8 +168,17 @@ interface Bound {
   readonly fontData: Native;
   readonly fontAscent: Native;
   readonly fontDescent: Native;
+  readonly glyphWidth: Native;
+  readonly glyphPath: Native;
+  readonly glyphPathSegments: Native;
+  readonly glyphPathSegment: Native;
+  readonly segmentPoint: Native;
   readonly loadStandardFont: Native;
+  readonly loadFont: Native;
   readonly pageBox: Native;
+  readonly pageWidth: Native;
+  readonly pageHeight: Native;
+  readonly pageToDevice: Native;
   readonly closeFont: Native;
   readonly createBitmap: Native;
   readonly fillRect: Native;
@@ -252,6 +311,9 @@ export function openPdfium(libraryPath: string): void {
     getText: native(
       library.func('int FPDFText_GetText(void *textPage, int start, int count, _Out_ uint16_t *buffer)'),
     ),
+    // TEXT SET BY CODE, for a piece in a face we loaded: its codes are the subset's glyph ids, and `FPDFText_SetText`
+    // draws a character past the BMP as code 0 (ADR-0173's correction, measured 2026-10-05).
+    setCharcodes: native(library.func('int FPDFText_SetCharcodes(void *object, const uint32_t *codes, size_t count)')),
     // ONE OBJECT'S TEXT, and it needs the page's TEXT PAGE as well as the
     // object. That second parameter is why this is not the same read as
     // `getText` above with a range: PDFium answers a text object's own string
@@ -340,6 +402,64 @@ export function openPdfium(libraryPath: string): void {
         'int FPDFPageObj_SetFillColor(void *object, unsigned int r, unsigned int g, unsigned int b, unsigned int a)',
       ),
     ),
+    // HOW A TEXT OBJECT IS PAINTED (`Tr`), and the stroke a mode of 1 or 2 paints with: a line set again must be painted
+    // as the line it replaces, or an invisible layer (mode 3, an OCR'd scan's words) becomes visible text over its own
+    // picture, and outlined text loses its outline (ADR-0179's keep list).
+    getRenderMode: native(library.func('int FPDFTextObj_GetTextRenderMode(void *object)')),
+    setRenderMode: native(library.func('int FPDFTextObj_SetTextRenderMode(void *object, int mode)')),
+    // THE MARKED CONTENT an object stands in (`BDC … EMC`): its marks, each a name and parameters, an `MCID` among them.
+    // A tagged page's structure tree names its text by that number, so a new object that takes an old one's place must
+    // carry the marks, or the structure points at nothing (ADR-0181 Decision 8). Names and keys come back as UTF-16LE
+    // with their terminator, their lengths in BYTES; a name or key going in is a byte string.
+    countMarks: native(library.func('int FPDFPageObj_CountMarks(void *object)')),
+    getMark: native(library.func('void *FPDFPageObj_GetMark(void *object, unsigned long index)')),
+    markName: native(
+      library.func(
+        'int FPDFPageObjMark_GetName(void *mark, _Out_ uint8_t *buffer, unsigned long length, _Out_ unsigned long *needed)',
+      ),
+    ),
+    markParamCount: native(library.func('int FPDFPageObjMark_CountParams(void *mark)')),
+    markParamKey: native(
+      library.func(
+        'int FPDFPageObjMark_GetParamKey(void *mark, unsigned long index, _Out_ uint8_t *buffer, unsigned long length, _Out_ unsigned long *needed)',
+      ),
+    ),
+    markParamType: native(library.func('int FPDFPageObjMark_GetParamValueType(void *mark, const char *key)')),
+    markParamInt: native(
+      library.func('int FPDFPageObjMark_GetParamIntValue(void *mark, const char *key, _Out_ int *value)'),
+    ),
+    markParamString: native(
+      library.func(
+        'int FPDFPageObjMark_GetParamStringValue(void *mark, const char *key, _Out_ uint8_t *buffer, unsigned long length, _Out_ unsigned long *needed)',
+      ),
+    ),
+    addMark: native(library.func('void *FPDFPageObj_AddMark(void *object, const char *name)')),
+    markSetInt: native(
+      library.func(
+        'int FPDFPageObjMark_SetIntParam(void *document, void *object, void *mark, const char *key, int value)',
+      ),
+    ),
+    markSetString: native(
+      library.func(
+        'int FPDFPageObjMark_SetStringParam(void *document, void *object, void *mark, const char *key, const char *value)',
+      ),
+    ),
+    getStrokeColour: native(
+      library.func(
+        'int FPDFPageObj_GetStrokeColor(void *object, _Out_ unsigned int *r, _Out_ unsigned int *g, _Out_ unsigned int *b, _Out_ unsigned int *a)',
+      ),
+    ),
+    setStrokeColour: native(
+      library.func(
+        'int FPDFPageObj_SetStrokeColor(void *object, unsigned int r, unsigned int g, unsigned int b, unsigned int a)',
+      ),
+    ),
+    getStrokeWidth: native(library.func('int FPDFPageObj_GetStrokeWidth(void *object, _Out_ float *width)')),
+    setStrokeWidth: native(library.func('int FPDFPageObj_SetStrokeWidth(void *object, float width)')),
+    // A FILLED RECTANGLE, for the line under underlined words: a page has no underline of its own to set on text, so it is
+    // what every producer draws (ADR-0180 Decision 4).
+    newRect: native(library.func('void *FPDFPageObj_CreateNewRect(float x, float y, float w, float h)')),
+    setDrawMode: native(library.func('int FPDFPath_SetDrawMode(void *path, int fillmode, int stroke)')),
     // REMOVE UNLINKS AND HANDS OWNERSHIP BACK; `FPDFPageObj_Destroy` is what
     // frees it. Calling the first without the second leaks the object for the
     // life of the process, and calling the second on an object still on a page
@@ -412,13 +532,37 @@ export function openPdfium(libraryPath: string): void {
     // measure a pitch from.
     fontAscent: native(library.func('int FPDFFont_GetAscent(void *font, float size, _Out_ float *ascent)')),
     fontDescent: native(library.func('int FPDFFont_GetDescent(void *font, float size, _Out_ float *descent)')),
+    // WHAT PDFium DRAWS FOR A CHARACTER, the readings a run's font is checked against (ADR-0175). Both take a CODE POINT
+    // where their header says "glyph", measured 2026-10-06: the path is in ems whatever the size, and the width in
+    // thousandths at a size of 1000. The path is PDFium's, owned by the font, and freed with it.
+    glyphWidth: native(
+      library.func('int FPDFFont_GetGlyphWidth(void *font, uint32_t glyph, float size, _Out_ float *width)'),
+    ),
+    glyphPath: native(library.func('void *FPDFFont_GetGlyphPath(void *font, uint32_t glyph, float size)')),
+    glyphPathSegments: native(library.func('int FPDFGlyphPath_CountGlyphSegments(void *path)')),
+    glyphPathSegment: native(library.func('void *FPDFGlyphPath_GetGlyphPathSegment(void *path, int index)')),
+    segmentPoint: native(library.func('int FPDFPathSegment_GetPoint(void *segment, _Out_ float *x, _Out_ float *y)')),
     // ONE OF THE FOURTEEN STANDARD FONTS, for a write the page's own font cannot
     // carry (ADR-0097). Loaded by name and never embedded — every conforming
     // reader supplies them. THIS handle IS ours, unlike `textFont`'s, so
     // `closeFont` releases it once the edit's objects hold their own references.
     loadStandardFont: native(library.func('void *FPDFText_LoadStandardFont(void *document, const char *font)')),
+    // A FONT PROGRAM WE HAND IT, for a piece of an edit in the resolver's face (ADR-0173): a uniquely named subset,
+    // loaded as a CID TrueType font (`FPDF_FONT_TRUETYPE`, `cid` 1). Ours to close, like a standard font.
+    loadFont: native(
+      library.func('void *FPDFText_LoadFont(void *document, const uint8_t *data, uint32_t size, int font_type, int cid)'),
+    ),
     // THE PAGE'S BOX in page space — a one-line block's column is measured against it (ADR-0097).
     pageBox: native(library.func('int FPDF_GetPageBoundingBox(void *page, _Out_ FS_RECTF *rect)')),
+    // THE PAGE AS SHOWN, rotation included, and where a point of it falls on a raster of that shape: what a scan's paper is
+    // read from (ADR-0181 Decision 9).
+    pageWidth: native(library.func('float FPDF_GetPageWidthF(void *page)')),
+    pageHeight: native(library.func('float FPDF_GetPageHeightF(void *page)')),
+    pageToDevice: native(
+      library.func(
+        'int FPDF_PageToDevice(void *page, int startX, int startY, int sizeX, int sizeY, int rotate, double pageX, double pageY, _Out_ int *deviceX, _Out_ int *deviceY)',
+      ),
+    ),
     closeFont: native(library.func('void FPDFFont_Close(void *font)')),
     // THE RASTERISER, and it is the only part of this adapter a READER uses.
     // §6.1's setting, amended 2026-09-10: a second opinion about how a page
@@ -584,23 +728,20 @@ export function countObjects(session: PdfiumSession, page: number): Promise<numb
  * caller here re-loads the page anyway.
  */
 export function textObjectIndices(session: PdfiumSession, page: number): Promise<number[]> {
-  return promised(() =>
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
-      const found: number[] = [];
-      for (let index = 0; index < total; index += 1) {
-        const object: unknown = bindings.getObject(handle, index);
-        if (
-          object !== null &&
-          numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') === TEXT_OBJECT
-        ) {
-          found.push(index);
-        }
-      }
-      return found;
-    }),
-  );
+  return promised(() => onPage(session, page, (handle) => textObjectsOn(api(), handle)));
+}
+
+/** The page object indices of a loaded page's text objects, in order: {@link textObjectIndices}' walk, once. */
+function textObjectsOn(bindings: Bound, handle: unknown): number[] {
+  const total = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  const found: number[] = [];
+  for (let index = 0; index < total; index += 1) {
+    const object: unknown = bindings.getObject(handle, index);
+    if (object !== null && numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') === TEXT_OBJECT) {
+      found.push(index);
+    }
+  }
+  return found;
 }
 
 /**
@@ -703,11 +844,23 @@ function drawnTextOn(bindings: Bound, textPage: unknown, objects: readonly unkno
     if (numberFrom(bindings.charGenerated(textPage, at), 'FPDFText_IsGenerated') === 1) continue;
     const index = slot.get(String(koffi.address(bindings.charObject(textPage, at))));
     if (index === undefined) continue;
-    const buffer = new Uint16Array(2);
-    numberFrom(bindings.getText(textPage, at, 1, buffer), 'FPDFText_GetText');
-    texts[index] = `${texts[index] ?? ''}${String.fromCharCode(buffer[0] ?? 0)}`;
+    texts[index] = `${texts[index] ?? ''}${characterAt(bindings, textPage, at)}`;
   }
   return texts;
+}
+
+/**
+ * The text page's UTF-16 unit at `at` — the one way a page's text is read one index at a time.
+ *
+ * ONE UNIT, AND THAT READS A CHARACTER PAST THE BMP WHOLE: measured 2026-10-05 on PDFium 155.0.8044.0's Linux build, a
+ * text page indexes U+10140 set by glyph id as TWO characters, `D800` then `DD40`, from `FPDFText_GetText` and
+ * `FPDFText_GetUnicode` alike, so the units read in order are the character (ADR-0173's correction, its note on
+ * Decision 8).
+ */
+function characterAt(bindings: Bound, textPage: unknown, at: number): string {
+  const buffer = new Uint16Array(2);
+  numberFrom(bindings.getText(textPage, at, 1, buffer), 'FPDFText_GetText');
+  return String.fromCharCode(buffer[0] ?? 0);
 }
 
 /**
@@ -723,6 +876,21 @@ function drawnTextOn(bindings: Bound, textPage: unknown, objects: readonly unkno
 function asTextPageReads(text: string): string {
   const collapsed = text.replace(/ {2,}/gu, ' ');
   return collapsed.trim() === '' ? '' : collapsed;
+}
+
+/**
+ * The writes a live read-back did not give back, as the pairs {@link unwritableCharacters} names characters from: the
+ * ONE comparison both read-backs make (B3a). Exact for text that runs left to right; for text with right-to-left
+ * characters, by glyph, because a text page reads such an object in the direction of the line it stands in
+ * ({@link drewTheGlyphs}).
+ */
+function misreadWrites(
+  said: readonly string[],
+  drawn: readonly string[],
+): { readonly written: string; readonly read: string }[] {
+  return said
+    .map((text, at) => ({ written: asTextPageReads(text), read: drawn[at] ?? '' }))
+    .filter(({ written, read }) => written !== read && !drewTheGlyphs(written, read));
 }
 
 /** One object's own string, read through a text page the caller holds. */
@@ -765,11 +933,12 @@ function fromUtf16Units(units: Uint16Array): string {
 /**
  * How a run is set, as far as an editor drawn over it needs to know.
  *
- * ## Only what the renderer can USE, because the page's font cannot travel
+ * ## Only what the renderer can USE, because the page's font program cannot travel
  *
- * The renderer cannot load an embedded font — it would be a second parser of
- * the document's bytes — so it sets an editor in a family of the same KIND.
- * These are the facts that choose the kind: the font descriptor's own flags,
+ * The renderer cannot load the document's embedded program — it would be a
+ * second parser of the document's bytes. It draws a run in a font the host
+ * rebuilt and checked where there is one (ADR-0175, `document.runFonts`), and
+ * otherwise in a family of the same KIND. These are the facts that choose the kind: the font descriptor's own flags,
  * its weight, and whether its name says bold. The size is the size the page
  * DRAWS at, the object's font size times its matrix's scale, which is what the
  * editor must match to sit over the words.
@@ -781,7 +950,9 @@ export interface RunStyle {
   readonly colour: { readonly r: number; readonly g: number; readonly b: number };
   /**
    * The font's base name, as PDFium answers it — which font the run is set in, for the block grouping's *a change of
-   * font starts a new block* (`textLines.ts`). It never reaches a renderer: the page's font cannot be loaded there.
+   * font starts a new block* (`textLines.ts`). It never reaches a renderer, and nor does the font's program: what the
+   * editor draws a run in is a font the host rebuilds from that program's checked glyphs, read on its own channel
+   * (`runFont`, ADR-0175).
    */
   readonly font: string;
   /** Font descriptor flag 2 — a serif face. */
@@ -793,12 +964,13 @@ export interface RunStyle {
   /** Weight 600 or more, from the embedded program, else the descriptor, else the name (`fontFace.ts`). */
   readonly bold: boolean;
   /**
-   * Whether the run is set straight — no rotation, no skew, no mirror.
+   * How the run is set: `upright` is straight — no rotation, no skew, no mirror — and anything else says which it is.
    *
    * An edit over rotated text cannot be placed where the words are, so a block
-   * that holds any run that is not upright is not offered for editing in place.
+   * that holds any run that is not upright is not offered for editing in place,
+   * and the editor names the kind (ADR-0181 Decision 7).
    */
-  readonly upright: boolean;
+  readonly orientation: Orientation;
 }
 
 /**
@@ -934,9 +1106,30 @@ export function textRuns(session: PdfiumSession, page: number): Promise<PageText
     onPage(session, page, (handle) => {
       const bindings = api();
       const walked = walkRuns(bindings, handle);
-      // THE MEMBERS STAY HERE: the wire names a run by its first and last object, and the edit recomputes the rest.
-      const runs = joinedWalk(bindings, handle, walked).map(({ members: _members, ...run }) => run);
+      // THE MEMBERS STAY HERE: the wire names a run by its first and last object, and the edit recomputes the rest. So
+      // do the glyphs as drawn: they are what a line's order is found from, and the line is read here, once.
+      const runs = readWalk(bindings, handle, walked).map(({ members: _members, drawn: _drawn, ...run }) => run);
       return { runs, unaddressable: walked.unaddressable };
+    }),
+  );
+}
+
+/**
+ * The page's joined runs WITH their members, and its text objects' page indices: what ADR-0176's writer needs to find
+ * in a content stream the objects a run is (its 2026-10-06 correction, the `pageRuns` pre-read).
+ *
+ * {@link textRuns}' walk and join, the same calls, so the runs the writer is handed are the runs the editor named
+ * (B3a); only the members, which the editor's wire leaves here, and the text object list are added. No style: the
+ * writer reads each run's state from its own operators.
+ */
+export function pageRuns(session: PdfiumSession, page: number): Promise<PageRuns> {
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const runs = joinedWalk(bindings, handle, walkRuns(bindings, handle)).map(
+        ({ index, members, text, left, right, bottom, top }) => ({ index, members, text, left, right, bottom, top }),
+      );
+      return { textObjects: textObjectsOn(bindings, handle), runs };
     }),
   );
 }
@@ -957,7 +1150,7 @@ export function objectRuns(session: PdfiumSession, page: number): Promise<PageTe
       const walked = walkRuns(bindings, handle);
       const programs = new Map<string, ProgramFace | undefined>();
       return {
-        runs: [...walked.runs.entries()].map(([index, run]) => ({
+        runs: [...walked.runs.entries()].map(([index, { drawn: _drawn, ...run }]) => ({
           index,
           last: index,
           ...run,
@@ -967,6 +1160,19 @@ export function objectRuns(session: PdfiumSession, page: number): Promise<PageTe
       };
     }),
   );
+}
+
+/**
+ * {@link joinedWalk}'s runs with each line that runs both ways READ AS IT WAS TYPED (`readInLineOrder`, ADR-0185): the
+ * answer {@link textRuns} gives and an edit's layout takes, so that the words a person is shown for a line and the words
+ * the edit diffs what they typed against are one reading's (B3a).
+ */
+function readWalk(
+  bindings: Bound,
+  handle: unknown,
+  walked: { readonly runs: ReadonlyMap<number, WalkedRun> },
+): JoinedRun<RunStyle>[] {
+  return readInLineOrder(joinedWalk(bindings, handle, walked), (run) => isEditedInPlace(run.style));
 }
 
 /**
@@ -991,6 +1197,8 @@ function joinedWalk(
 /** One run as the walk accumulates it: text and the union of its characters' boxes. */
 interface WalkedRun {
   text: string;
+  /** The glyphs in the order drawn, which `ObjectRun.drawn` says; empty while the walk reads, set when it ends. */
+  drawn: string;
   left: number;
   right: number;
   bottom: number;
@@ -1038,9 +1246,7 @@ function walkRuns(
     let pending = '';
 
     for (let at = 0; at < chars; at += 1) {
-      const buffer = new Uint16Array(2);
-      numberFrom(bindings.getText(textPage, at, 1, buffer), 'FPDFText_GetText');
-      const character = String.fromCharCode(buffer[0] ?? 0);
+      const character = characterAt(bindings, textPage, at);
 
       if (numberFrom(bindings.charGenerated(textPage, at), 'FPDFText_IsGenerated') === 1) {
         pending += character;
@@ -1081,6 +1287,7 @@ function walkRuns(
       if (held === undefined) {
         held = {
           text: '',
+          drawn: '',
           left: Number.POSITIVE_INFINITY,
           right: Number.NEGATIVE_INFINITY,
           bottom: Number.POSITIVE_INFINITY,
@@ -1109,7 +1316,15 @@ function walkRuns(
       // A RUN OF SPACES ALONE HAS NO BOX, and it has nothing to edit either:
       // leaving it out keeps an infinite extent from reaching a grouping whose
       // every comparison it would answer falsely.
-      runs: new Map([...runs.entries()].filter(([, run]) => Number.isFinite(run.left))),
+      // AND IN THE ORDER TYPED: a text page reads each word of a right-to-left object reversed in place and leaves the
+      // words in the order they are drawn, so the reading is turned back into what the object says (`logicalOf`,
+      // ADR-0181) and the glyphs it draws are kept beside it, since the order a LINE was typed in is the reordering of
+      // all of its objects' glyphs together (`bidiLine.ts`, ADR-0185).
+      runs: new Map(
+        [...runs.entries()]
+          .filter(([, run]) => Number.isFinite(run.left))
+          .map(([index, run]) => [index, { ...run, drawn: readBackOf(run.text), text: logicalOf(run.text) }] as const),
+      ),
       unaddressable,
       ends,
     };
@@ -1164,7 +1379,7 @@ function styleOf(bindings: Bound, object: unknown, programs: Map<string, Program
     mono: (flags & 1) !== 0,
     bold: face.bold,
     italic: face.italic,
-    upright: isUpright(a, b, c, d),
+    orientation: orientationOf(a, b, c, d),
   };
 }
 
@@ -1182,21 +1397,125 @@ const MAX_FONT_PROGRAM_BYTES = 32 * 1024 * 1024;
 function programOf(bindings: Bound, font: unknown, programs: Map<string, ProgramFace | undefined>): ProgramFace | undefined {
   const key = String(koffi.address(font));
   if (programs.has(key)) return programs.get(key);
-  let face: ProgramFace | undefined;
-  if (numberFrom(bindings.fontIsEmbedded(font), 'FPDFFont_GetIsEmbedded') === 1) {
-    const needed = [0];
-    if (numberFrom(bindings.fontData(font, null, 0, needed), 'FPDFFont_GetFontData') === 1) {
-      const length = needed[0] ?? 0;
-      if (length > 0 && length <= MAX_FONT_PROGRAM_BYTES) {
-        const bytes = new Uint8Array(length);
-        if (numberFrom(bindings.fontData(font, bytes, length, needed), 'FPDFFont_GetFontData') === 1) {
-          face = programFace(bytes);
-        }
-      }
-    }
-  }
+  const bytes = embeddedProgramOf(bindings, font);
+  const face = bytes === null ? undefined : programFace(bytes);
   programs.set(key, face);
   return face;
+}
+
+/**
+ * An EMBEDDED font's program, decoded, or `null` where the font is not embedded or the program is past
+ * {@link MAX_FONT_PROGRAM_BYTES}. Never a substitute's: for a font that is not embedded `FPDFFont_GetFontData` answers
+ * the program PDFium draws with instead, which is PDFium's choice and not the document's.
+ */
+function embeddedProgramOf(bindings: Bound, font: unknown): Uint8Array | null {
+  if (numberFrom(bindings.fontIsEmbedded(font), 'FPDFFont_GetIsEmbedded') !== 1) return null;
+  const needed = [0];
+  if (numberFrom(bindings.fontData(font, null, 0, needed), 'FPDFFont_GetFontData') !== 1) return null;
+  const length = needed[0] ?? 0;
+  if (length <= 0 || length > MAX_FONT_PROGRAM_BYTES) return null;
+  const bytes = new Uint8Array(length);
+  return numberFrom(bindings.fontData(font, bytes, length, needed), 'FPDFFont_GetFontData') === 1 ? bytes : null;
+}
+
+/** A block's run fonts: each font once, and for each run asked about its font's place among them, or `null`. */
+export interface BlockFonts {
+  readonly fonts: readonly Uint8Array[];
+  readonly runs: readonly (number | null)[];
+}
+
+/**
+ * The fonts the editor draws the runs whose first objects are `indices` in, each rebuilt from its own program
+ * (ADR-0175, `runFont.ts`). ONE ANSWER PER FONT, keyed by the font handle's address, which is the page's own font and
+ * stable while the page is open: the check and the rebuild depend on the font alone, so runs that share one share its
+ * answer, and a run in a font past {@link MAX_BLOCK_FONTS} is answered with none.
+ *
+ * Each font is checked against every character drawn in it ON THE PAGE, the run's and every other object's in it: a
+ * joined run spans several objects, and a letter the person types may be one another line holds.
+ */
+export function runFonts(session: PdfiumSession, page: number, indices: readonly number[]): Promise<BlockFonts> {
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const fonts: Uint8Array[] = [];
+      /** Each font met, by address: its place in `fonts`, or `null` for one with none. */
+      const answered = new Map<string, number | null>();
+      let textPage: unknown = null;
+      try {
+        const runs = indices.map((index) => {
+          const font: unknown = bindings.textFont(textObjectAt(bindings, handle, page, index));
+          if (font === null) return null;
+          const key = String(koffi.address(font));
+          const known = answered.get(key);
+          if (known !== undefined) return known;
+          let at: number | null = null;
+          if (fonts.length < MAX_BLOCK_FONTS) {
+            if (textPage === null) {
+              textPage = bindings.loadTextPage(handle);
+              if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read a run’s characters');
+            }
+            const rebuilt = fontOfRun(bindings, handle, textPage, font, key);
+            if (rebuilt !== null) at = fonts.push(rebuilt) - 1;
+          }
+          answered.set(key, at);
+          return at;
+        });
+        return { fonts, runs };
+      } finally {
+        if (textPage !== null) bindings.closeTextPage(textPage);
+      }
+    }),
+  );
+}
+
+/** One font's rebuilt program, checked against what PDFium draws for every character the page sets in it, or `null`. */
+function fontOfRun(bindings: Bound, handle: unknown, textPage: unknown, font: unknown, key: string): Uint8Array | null {
+  const program = embeddedProgramOf(bindings, font);
+  if (program === null) return null;
+  const inFont: unknown[] = [];
+  const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  for (let at = 0; at < count; at += 1) {
+    const object: unknown = bindings.getObject(handle, at);
+    if (object === null || numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') !== TEXT_OBJECT) continue;
+    const own: unknown = bindings.textFont(object);
+    if (own !== null && String(koffi.address(own)) === key) inFont.push(object);
+  }
+  const drawn = new Map<number, DrawnGlyph>();
+  for (const character of drawnTextOn(bindings, textPage, inFont).join('')) {
+    const point = character.codePointAt(0) ?? 0;
+    if (drawn.has(point)) continue;
+    const glyph = drawnGlyphOf(bindings, font, point);
+    if (glyph === null) return null;
+    drawn.set(point, glyph);
+  }
+  return runFontFor(program, drawn);
+}
+
+/**
+ * What PDFium draws for `point` in `font`, in thousandths of an em: its width, and the box of its path's points, `null`
+ * for a glyph with no path (a space). `null` where PDFium answers no width, which no check can stand in for.
+ */
+function drawnGlyphOf(bindings: Bound, font: unknown, point: number): DrawnGlyph | null {
+  const width = [0];
+  if (numberFrom(bindings.glyphWidth(font, point, 1000, width), 'FPDFFont_GetGlyphWidth') !== 1) return null;
+  const path: unknown = bindings.glyphPath(font, point, 1000);
+  const segments = path === null ? 0 : numberFrom(bindings.glyphPathSegments(path), 'FPDFGlyphPath_CountGlyphSegments');
+  let box: DrawnGlyph['box'] = null;
+  for (let at = 0; at < segments; at += 1) {
+    const x = [0];
+    const y = [0];
+    if (numberFrom(bindings.segmentPoint(bindings.glyphPathSegment(path, at), x, y), 'FPDFPathSegment_GetPoint') !== 1) {
+      continue;
+    }
+    // IN EMS, measured, so a thousand times each point is the thousandths the program's reading is in.
+    const px = (x[0] ?? 0) * 1000;
+    const py = (y[0] ?? 0) * 1000;
+    box =
+      box === null
+        ? { x0: px, y0: py, x1: px, y1: py }
+        : { x0: Math.min(box.x0, px), y0: Math.min(box.y0, py), x1: Math.max(box.x1, px), y1: Math.max(box.y1, py) };
+  }
+  return { advance: width[0] ?? 0, box };
 }
 
 /** The most bytes of one base name read: a name is a PDF name, and one this long is not a font's (CR-NAT-12). */
@@ -1247,6 +1566,28 @@ function isUpright(a: number, b: number, c: number, d: number): boolean {
   const scale = Math.max(Math.abs(a), Math.abs(d));
   if (!(a > 0 && d > 0)) return false;
   return Math.abs(b) <= scale * 1e-6 && Math.abs(c) <= scale * 1e-6;
+}
+
+/**
+ * HOW a text matrix sets text, for the editor to say what it will not edit and why
+ * ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
+ * Decision 7): `upright` is {@link isUpright}'s, the one test, and the rest is why it failed it.
+ *
+ * - `mirrored`: the matrix turns the page over (a negative determinant).
+ * - `slanted`: its columns are not at a right angle, a shear — an oblique drawn by the matrix and not by the font.
+ * - `vertical`: a rotation of a quarter turn, which is how lines that run up or down a page are set.
+ * - `turned`: any other rotation, a half turn included.
+ */
+export function orientationOf(a: number, b: number, c: number, d: number): Orientation {
+  if (isUpright(a, b, c, d)) return 'upright';
+  if (a * d - b * c < 0) return 'mirrored';
+  const first = Math.hypot(a, b);
+  const second = Math.hypot(c, d);
+  // THE COLUMNS' DOT PRODUCT against the product of their lengths: zero for a rotation, whatever the angle, and not
+  // zero for a shear. Relative, as {@link isUpright}'s test is, since a matrix read back as floats carries rounding.
+  if (first === 0 || second === 0 || Math.abs(a * c + b * d) > first * second * 1e-6) return 'slanted';
+  const quarters = Math.abs(Math.atan2(b, a)) / (Math.PI / 2);
+  return Math.abs(quarters - Math.round(quarters)) < 1e-6 && Math.round(quarters) % 2 === 1 ? 'vertical' : 'turned';
 }
 
 /** One text object's new text, named by its index in the page's object order. */
@@ -1344,10 +1685,13 @@ function textObjectAt(bindings: Bound, handle: unknown, page: number, index: num
  * upstream that a silent success would hide.
  * @throws when an index is not a text object, rather than editing whatever is
  * there. `FPDFText_SetText` on a path object is undefined behaviour.
- * @throws TextNotWritableError when a write reads back as something other than what was written: the run's font
- * cannot draw it, and nothing is generated.
- * @throws ReplaceMovesLineError under `line: 'held'` when a replacement changes its object's width and text follows it
- * on its line, before anything is generated.
+ * @throws TextNotWritableError when a write reads back as something other than what was written, and nothing is
+ * generated. Where this process has the bundled fonts, a word the object's font cannot carry is written as its own
+ * piece first (ADR-0173 Decision 9), so this is a font that drew wrong rather than one that lacked a letter.
+ * @throws ReplaceMovesLineError under `line: 'held'` when a replacement changes its width and text follows it on its
+ * line, before anything is generated: its pieces' width where it was written in pieces.
+ *
+ * @returns the characters it drew as boxes, with the page (ADR-0174).
  *
  * @param line `'held'` for a Replace, which has no knowledge of the line and refuses an edit that would move the text
  *   after it (`replaceLineRule.ts`); `'as-written'` where the strings are already what the line should hold: an undo
@@ -1359,8 +1703,8 @@ export function replaceTextObjects(
   page: number,
   replacements: readonly TextReplacement[],
   line: 'held' | 'as-written',
-): Promise<void> {
-  return promised(() => {
+): Promise<readonly BoxedInEdit[]> {
+  return promised(() =>
     onPage(session, page, (handle) => {
       const bindings = api();
       if (replacements.length === 0) {
@@ -1375,64 +1719,131 @@ export function replaceTextObjects(
         replacement,
         object: textObjectAt(bindings, handle, page, replacement.index),
       }));
-      // AN EMPTIED OBJECT IS REMOVED, never set to nothing, which PDFium refuses ({@link removesItsObject}). Removed
-      // after every set, as the block edit removes, so no index above was read from a page already renumbered.
-      const kept = resolved.filter(({ replacement }) => !removesItsObject(replacement.text));
-      const removed = resolved.filter(({ replacement }) => removesItsObject(replacement.text));
       // THE LINE AS IT WAS, read before any write and only where it is held: each object's ink and advance end.
       const before = line === 'held' ? lineBoxes(walkRuns(bindings, handle)) : undefined;
-      for (const { replacement, object } of kept) {
-        if (numberFrom(bindings.setText(object, wideString(replacement.text)), 'FPDFText_SetText') !== 1) {
-          throw refusedAt('set-text', `FPDFText_SetText refused the replacement for object ${String(replacement.index)}`);
-        }
-      }
-      // MEASURED AFTER THE SETS AND BEFORE THE REMOVALS, so every index still names the object it named above. An object
-      // with no characters read back has no box here and is the read-back's to refuse.
-      if (before !== undefined) {
-        const now = lineBoxes(walkRuns(bindings, handle));
-        const after = new Map<number, RunBox | null>();
-        for (const { replacement } of resolved) {
-          const box = removesItsObject(replacement.text) ? null : now.get(replacement.index);
-          if (box !== undefined) after.set(replacement.index, box);
-        }
-        if (replacementsMovingTheirLine(before, after).length > 0) throw new ReplaceMovesLineError();
-      }
-      for (const { replacement, object } of removed) {
-        if (numberFrom(bindings.removeObject(handle, object), 'FPDFPage_RemoveObject') !== 1) {
-          throw refusedAt('object', `FPDFPage_RemoveObject refused object ${String(replacement.index)}, emptied by its replacement`);
-        }
-        bindings.destroyObject(object);
-      }
-      // EVERY WRITE IS READ BACK before anything is generated, by the block edit's rule (`editTextBlocks`): a 1 from
-      // FPDFText_SetText says the string was set, not that the run's font can draw it, and a subset font missing a
-      // character drew it as nothing while Replace All reported success (CR-NAT-10). A throw here leaves the document
-      // as it came, since nothing has been generated and the page is discarded.
-      const textPage: unknown = bindings.loadTextPage(handle);
-      if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read the replacement back');
+      // THE BLOCK EDIT'S WRITER (ADR-0173 Decision 9): a word the object's font cannot carry is its own piece in the
+      // resolver's face, and a character no face carries its box, so Replace and the editor answer one question once.
+      const pen = pieceWriter(session, handle, page, 'write', charactersOf(replacements.map(({ text }) => text)));
       try {
-        const drawn = drawnTextOn(
-          bindings,
-          textPage,
-          kept.map(({ object }) => object),
-        );
-        const pairs = kept.map(({ replacement }, at) => ({
-          written: asTextPageReads(replacement.text),
-          read: drawn[at] ?? '',
-        }));
-        if (pairs.some(({ written, read }) => written !== read)) {
-          throw new TextNotWritableError(unwritableCharacters(pairs));
+        /** The objects each replacement now says itself in, by the index it named: one, or its pieces in order. */
+        const wrote = new Map<number, readonly unknown[]>();
+        for (const { replacement, object } of resolved) {
+          // AN EMPTIED OBJECT IS REMOVED, never set to nothing, which PDFium refuses ({@link removesItsObject}). Removed
+          // after every write, as the block edit removes, so no handle above is read after it is freed.
+          if (removesItsObject(replacement.text)) {
+            pen.removed.push(object);
+            continue;
+          }
+          if (pen.inPieces) {
+            wrote.set(replacement.index, pen.writePieces(object, replacement.text));
+            continue;
+          }
+          // A PROCESS GIVEN NO FONTS sets the string in the object's own font, as Replace always has, and the read-back
+          // below refuses what that font cannot draw: Replace never had the block edit's standard twin.
+          if (!trySetText(bindings, object, replacement.text)) {
+            throw refusedAt('set-text', `FPDFText_SetText refused the replacement for object ${String(replacement.index)}`);
+          }
+          pen.record(object, replacement.text);
+          wrote.set(replacement.index, [object]);
         }
+        // MEASURED AFTER THE WRITES AND BEFORE THE REMOVALS. A replacement ends where its LAST object ends, found by
+        // handle, since pieces are inserted after the run and every index after them moved. An object with no
+        // characters read back has no box here and is the read-back's to refuse.
+        if (before !== undefined) {
+          const now = lineBoxes(walkRuns(bindings, handle));
+          const indexOf = objectIndices(bindings, handle);
+          const after = new Map<number, RunBox | null>();
+          for (const { replacement } of resolved) {
+            const objects = wrote.get(replacement.index);
+            const last = objects?.at(-1);
+            const at = last === undefined ? undefined : indexOf.get(String(koffi.address(last)));
+            const box = objects === undefined ? null : at === undefined ? undefined : now.get(at);
+            if (box !== undefined) after.set(replacement.index, box);
+          }
+          if (replacementsMovingTheirLine(before, after).length > 0) throw new ReplaceMovesLineError();
+        }
+        for (const object of pen.removed) {
+          if (numberFrom(bindings.removeObject(handle, object), 'FPDFPage_RemoveObject') !== 1) {
+            throw refusedAt('object', `FPDFPage_RemoveObject refused an object a replacement removes on page ${String(page)}`);
+          }
+          bindings.destroyObject(object);
+        }
+        // EVERY WRITE IS READ BACK before anything is generated, by the block edit's rule (`editTextBlocks`): a 1 from
+        // FPDFText_SetText says the string was set, not that the run's font can draw it, and a subset font missing a
+        // character drew it as nothing while Replace All reported success (CR-NAT-10). A throw here leaves the document
+        // as it came, since nothing has been generated and the page is discarded.
+        const textPage: unknown = bindings.loadTextPage(handle);
+        if (textPage === null) throw refusedAt('page', 'PDFium could not load the page to read the replacement back');
+        try {
+          const drawn = drawnTextOn(
+            bindings,
+            textPage,
+            pen.written.map(({ object }) => object),
+          );
+          const misread = misreadWrites(
+            pen.written.map(({ text }) => text),
+            drawn,
+          );
+          if (misread.length > 0) {
+            throw new TextNotWritableError(unwritableCharacters(misread));
+          }
+        } finally {
+          bindings.closeTextPage(textPage);
+        }
+        generate(
+          session,
+          page,
+          handle,
+          pen.written.map(({ object }) => object),
+        );
+        return pen.boxed();
       } finally {
-        bindings.closeTextPage(textPage);
+        pen.close();
       }
-      generate(
-        session,
-        page,
-        handle,
-        kept.map(({ object }) => object),
-      );
-    });
-  });
+    }),
+  );
+}
+
+/**
+ * Whether every replacement stays in the object it names, rather than becoming pieces (ADR-0173 Decision 9): asked by
+ * a capture before it records strings by index, since pieces renumber the page and an inverse by index would then write
+ * into the wrong objects. Answered by the writer's own {@link PieceWriter.keepsItsObject} on a page that is closed
+ * without being generated, which discards nothing it did not already discard. True in a process given no fonts, where
+ * a replacement is never written in pieces.
+ */
+export function replacementsKeepTheirObjects(
+  session: PdfiumSession,
+  page: number,
+  replacements: readonly TextReplacement[],
+): Promise<boolean> {
+  return promised(() =>
+    onPage(session, page, (handle) => {
+      const bindings = api();
+      const pen = pieceWriter(session, handle, page, 'trial', charactersOf(replacements.map(({ text }) => text)));
+      try {
+        if (!pen.inPieces) return true;
+        return replacements.every(
+          ({ index, text }) => removesItsObject(text) || pen.keepsItsObject(textObjectAt(bindings, handle, page, index), text),
+        );
+      } finally {
+        pen.close();
+      }
+    }),
+  );
+}
+
+/** Every distinct code point the texts hold: what one subset per face must carry (ADR-0173 Decision 5). */
+function charactersOf(texts: readonly string[]): number[] {
+  // THE FORMS A LETTER IS DRAWN IN, not the letter (`drawing`): an Arabic letter is set as one of four code points.
+  return [...new Set(texts.flatMap((text) => Array.from(arabicForms(text), (character) => character.codePointAt(0) ?? 0)))];
+}
+
+/** Each object on the page by its handle's address, to its index in the page's order now. */
+function objectIndices(bindings: Bound, handle: unknown): ReadonlyMap<string, number> {
+  const indices = new Map<string, number>();
+  const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  for (let index = 0; index < count; index += 1) indices.set(String(koffi.address(bindings.getObject(handle, index))), index);
+  return indices;
 }
 
 /** Each walked run as the line rule reads it: its ink's start and height, and its advance's end. */
@@ -1454,7 +1865,14 @@ function lineBoxes(walked: ReturnType<typeof walkRuns>): ReadonlyMap<number, Run
  */
 export interface BlockEdit {
   readonly lines: readonly (readonly number[])[];
+  /** Whether each line ends in a soft wrap (ADR-0179): the paragraphs the text is laid out as. */
+  readonly soft: readonly boolean[];
   readonly text: string;
+  /** What spans of `text` are, and how named paragraphs are set (ADR-0180). */
+  readonly marks?: readonly Omit<BlockMark, 'block'>[];
+  readonly paragraphs?: readonly Omit<ParagraphProps, 'block'>[];
+  /** How the block is placed once laid out: moved, scaled, rotated, or set at a new measure (ADR-0180, corrected). */
+  readonly place?: Omit<BlockPlace, 'block'>;
   /**
    * `reflow`: a person typing — the block grows downward (ADR-0096). `shrink`: a translation — the
    * block is scaled uniformly to end above its original last line, never below {@link MIN_FIT}
@@ -1462,19 +1880,6 @@ export interface BlockEdit {
    */
   readonly fit: 'reflow' | 'shrink';
 }
-
-/**
- * The smallest a fitted block is scaled to: 11-point text at 0.6 is 6.6 points, the size of fine
- * print, and smaller is not a translation anyone can read (ADR-0097 4b). A block needing more is
- * written at this and may overlap what is below it.
- */
-const MIN_FIT = 0.6;
-
-/**
- * How many bisection steps find a block's scale: the interval [0.6, 1] halved six times is 0.00625
- * wide — at 11 points, under a tenth of a point of size, which no reader sees.
- */
-const FIT_STEPS = 6;
 
 /** Characters as a person sees them, for naming the ones a font cannot carry: an accent typed as a mark stays on its letter. */
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
@@ -1534,12 +1939,6 @@ function moveBy(bindings: Bound, object: unknown, dx: number, dy: number): void 
   setMatrixOn(bindings, object, { ...matrix, e: matrix.e + dx, f: matrix.f + dy });
 }
 
-function setTextOn(bindings: Bound, object: unknown, text: string): void {
-  if (!trySetText(bindings, object, text)) {
-    throw refusedAt('set-text', 'FPDFText_SetText refused a block edit');
-  }
-}
-
 /**
  * Sets an object's text, answering whether PDFium would.
  *
@@ -1552,16 +1951,30 @@ function setTextOn(bindings: Bound, object: unknown, text: string): void {
  * where a throw here had made it an internal error in place of the refusal the edit is designed to
  * give.
  */
-function trySetText(bindings: Bound, object: unknown, text: string): boolean {
-  return numberFrom(bindings.setText(object, wideString(text)), 'FPDFText_SetText') === 1;
+function trySetText(bindings: Bound, object: unknown, text: string, rtl?: boolean): boolean {
+  return numberFrom(bindings.setText(object, wideString(drawing(text, rtl).drawn)), 'FPDFText_SetText') === 1;
 }
 
 /**
- * Where the text of a line may break: after a space, at the last one that
- * leaves something on both sides.
+ * The string an object is set to for `text`, and the string a text page reads from it
+ * ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)).
+ *
+ * A content stream is in drawing order and a text page reverses an object it takes as right to left, so what is set is
+ * the drawing order and what is read is the text as typed. `rtl` is the direction of the object's span where the
+ * caller cut the line by direction (`inDrawingOrder`), and absent where the object is a whole line, ordered here.
+ *
+ * `reads` is {@link readBackOf} the drawn string, which is the text as typed except where an edge neutral of a right to
+ * left piece reads on the other side of its word, and a read-back compares against it: it asks whether the font drew
+ * every character, which is the question it exists for.
  */
-function lastBreak(text: string): number {
-  return text.trimEnd().lastIndexOf(' ');
+function drawing(text: string, rtl: boolean | undefined): { readonly drawn: string; readonly reads: string } {
+  // THE LETTERS ARE SET IN THEIR JOINING FORMS first (`arabicForms`, the lam-alef pair as its ligature), and a text page
+  // reverses a run by its characters and normalises each form back to its letters AFTER: measured 2026-10-06 on PDFium
+  // 155.0.8044.0's Linux build, a lone ligature glyph reads `لا`, lam then alef as typed, where letters expanded first
+  // and reversed would read `ال`. For a form of one letter the order makes no difference; for a ligature it does.
+  const shaped = arabicForms(text);
+  const drawn = rtl === undefined ? drawnOrder(shaped) : rtl ? drawnRightToLeft(shaped) : shaped;
+  return { drawn, reads: lettersOfForms(readBackOf(drawn)) };
 }
 
 /**
@@ -1614,9 +2027,15 @@ export async function editTextBlocks(
   session: PdfiumSession,
   page: number,
   edits: readonly BlockEdit[],
-): Promise<void> {
-  const scales = await fitScales(session, page, edits);
-  await promised(() => onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, scales, 'write')));
+  /** Boxes of new text the page is given, laid out by the same pass (ADR-0180, corrected 2026-10-06). */
+  inserts: readonly PageInsert[] = [],
+): Promise<readonly BoxedInEdit[]> {
+  const scales = await fitScales(session, page, edits, inserts);
+  // THE CHARACTERS IT DREW AS BOXES (ADR-0174): the write pass's, never a trial's, which draws on a page thrown away.
+  const { boxed } = await promised(() =>
+    onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, inserts, scales, 'write')),
+  );
+  return boxed;
 }
 
 /**
@@ -1632,10 +2051,17 @@ export async function editTextBlocks(
  * trials however many blocks it has. A trial writes without reading back: it asks where the words
  * land, and whether a font can carry them is the real pass's question.
  */
-async function fitScales(session: PdfiumSession, page: number, edits: readonly BlockEdit[]): Promise<number[]> {
+async function fitScales(
+  session: PdfiumSession,
+  page: number,
+  edits: readonly BlockEdit[],
+  inserts: readonly PageInsert[],
+): Promise<number[]> {
   const scales = edits.map(() => 1);
   const trial = (candidate: readonly number[]) =>
-    promised(() => onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, candidate, 'trial')));
+    promised(() =>
+      onPage(session, page, (handle) => layOutBlocks(session, handle, page, edits, inserts, candidate, 'trial')),
+    );
   if (!edits.some((edit) => edit.fit === 'shrink')) return scales;
   const first = await trial(scales);
   // KNOWN TO FIT is `low`, known not to is `high`. The floor is accepted without a trial: a block
@@ -1661,81 +2087,88 @@ async function fitScales(session: PdfiumSession, page: number, edits: readonly B
 }
 
 /**
- * One pass over a page's block edits: `write` makes the edit and generates the page, naming its writes to the
- * generation; `trial` lays the blocks out at the scales given, writes without reading back, generates nothing. Both
- * answer which blocks ended above their original last line.
+ * How a superscript or subscript is set (ADR-0180 Decision 4): at this fraction of the size the words would have, raised
+ * or dropped by these fractions of it, the figures word processors use.
  */
-function layOutBlocks(
+const RISE_SCALE = 0.65;
+const SUPERSCRIPT_RISE = 0.33;
+const SUBSCRIPT_DROP = 0.12;
+/** The rule under underlined words: this fraction of their size thick, this far below the baseline. */
+const UNDERLINE_THICKNESS = 0.06;
+const UNDERLINE_DROP = 0.12;
+
+/**
+ * What a mark asks of the face a word is set in (ADR-0180 Decision 4): a weight, a slant or a family, each only where it
+ * is named. The size, the colour, the underline and the rise are applied to the objects after they are written.
+ */
+interface Restyle {
+  readonly bold?: boolean;
+  readonly italic?: boolean;
+  readonly family?: string;
+}
+
+/**
+ * What {@link pieceWriter} hands its caller: the one way an edit's text is written into a page's objects.
+ *
+ * `written` and `removed` are the caller's to read and to add to: the read-back reads `written`, the generation names
+ * it, and an object the caller removes for its own reason (a line the person deleted, a run the diff emptied) joins
+ * `removed`, which is unlinked LAST.
+ */
+interface PieceWriter {
+  /** Whether this process sets a word its run's font cannot carry in a catalogue face, or keeps the standard twin. */
+  readonly inPieces: boolean;
+  readonly written: { object: unknown; text: string }[];
+  readonly removed: unknown[];
+  readonly insertAfter: (object: unknown, anchor: unknown) => void;
+  readonly write: (object: unknown, text: string) => unknown;
+  /**
+   * `forced` says the text is one stretch of a line that runs both ways, in the direction the line runs there, which
+   * its own letters do not decide (`visualUnits`); absent, the text is ordered as its own line is.
+   */
+  readonly writePieces: (object: unknown, text: string, restyle?: Restyle, forced?: boolean) => unknown[];
+  /** Where the pen stands after the last of these objects, where it was set in a face this edit loaded. */
+  readonly endOf: (objects: readonly unknown[]) => number | undefined;
+  /** The standard font a restyled word is set in where no catalogue is bound. */
+  readonly standardFontRestyled: (object: unknown, restyle: Restyle) => unknown;
+  /** A new text object appended to the page for an added box, in the standard face its family names. */
+  readonly seed: (spec: {
+    readonly family?: string | undefined;
+    readonly bold?: boolean | undefined;
+    readonly italic?: boolean | undefined;
+    readonly size: number;
+    readonly colour?: { readonly r: number; readonly g: number; readonly b: number } | undefined;
+    readonly left: number;
+    readonly baseline: number;
+  }) => unknown;
+  /** An object's own style, as the editor reads it: what a mark is compared against. */
+  readonly styleOfObject: (object: unknown) => RunStyle;
+  readonly trimPieces: (objects: readonly unknown[], text: string) => unknown[];
+  readonly record: (object: unknown, text: string) => void;
+  readonly standardFontLike: (object: unknown) => unknown;
+  readonly uncarriedIn: (source: unknown, text: string) => string;
+  readonly keepsItsObject: (object: unknown, text: string) => boolean;
+  /** The characters drawn as boxes that are still on the page, in the order they were drawn (ADR-0174). */
+  readonly boxed: () => BoxedInEdit[];
+  /** Closes the fonts this writer loaded and deletes its scratch page: before the caller generates or saves. */
+  readonly close: () => void;
+}
+
+/**
+ * THE ONE WRITER of an edit's text into a page's objects, the block edit's and Replace's (ADR-0173 Decision 9), so
+ * which font carries which word has one answer whichever command asks it (B3a).
+ *
+ * @param mode `trial` lays text out without reading it back and records nothing, for a block fitted to its box
+ * @param characters every character the command writes: one subset per face carries all of them (Decision 5)
+ */
+function pieceWriter(
   session: PdfiumSession,
   handle: unknown,
   page: number,
-  edits: readonly BlockEdit[],
-  scales: readonly number[],
   mode: 'write' | 'trial',
-): { readonly fits: readonly boolean[] } {
+  characters: readonly number[],
+): PieceWriter {
       const bindings = api();
       const document = documentFor(session);
-      const walked = walkRuns(bindings, handle);
-      /** Per block: did its layout end above its original last line? */
-      const fits = edits.map(() => true);
-      // THE PAGE'S BOX, for a one-line block's column (ADR-0097 4a).
-      const box: Record<string, number> = {};
-      const hasBox = numberFrom(bindings.pageBox(handle, box), 'FPDF_GetPageBoundingBox') === 1;
-      const pageLeft = hasBox ? (box['left'] ?? 0) : 0;
-      const pageRight = hasBox ? (box['right'] ?? 0) : Number.NEGATIVE_INFINITY;
-
-      // EVERY BLOCK RESOLVED IN FULL FIRST, against the untouched page, so a bad
-      // index refuses before anything is written — and so a later block's
-      // indices are the page's own, not whatever an earlier block left behind.
-      // A NAMED RUN IS ITS OBJECTS: the same join the read answered (`joinedWalk`, ADR-0130) expands each run an edit
-      // names into the objects it is, in order — so a line drawn one glyph per object is written as the person saw it.
-      const joined = joinedWalk(bindings, handle, walked);
-      const blocks = edits.map((edit) => ({
-        text: edit.text,
-        fit: edit.fit,
-        lines: edit.lines.map((line) =>
-          line.map((named): HeldRun => {
-            const members = membersOf(joined, named);
-            if (members === undefined) {
-              throw refusedAt(
-                'object',
-                `Object ${String(named)} on page ${String(page)} begins no run this page's reading answered`,
-              );
-            }
-            const held = members.map((index) => {
-              const run = walked.runs.get(index);
-              if (run === undefined) {
-                throw refusedAt(
-                  'object',
-                  `Object ${String(index)} on page ${String(page)} carries no text this page's reading can place`,
-                );
-              }
-              return { object: textObjectAt(bindings, handle, page, index), run };
-            });
-            const [first, ...rest] = held;
-            if (first === undefined) throw refusedAt('object', `Run ${String(named)} on page ${String(page)} has no object`);
-            return {
-              index: named,
-              object: first.object,
-              text: held.map((member) => member.run.text).join(''),
-              extras: rest.map((member) => member.object),
-              span: {
-                left: Math.min(...held.map((member) => member.run.left)),
-                right: Math.max(...held.map((member) => member.run.right)),
-              },
-            };
-          }),
-        ),
-      }));
-      if (blocks.length === 0) throw new Error(`A block edit on page ${String(page)} named no block.`);
-      // A RUN IN TWO BLOCKS would be written twice, the second write undoing
-      // the first's layout. The contract refuses it; this is the write keeping
-      // the rule for a caller that did not ask.
-      const named = blocks.flatMap((block) => block.lines.flat().map((run) => run.index));
-      if (new Set(named).size !== named.length) {
-        throw new Error(`A block edit on page ${String(page)} names one run in two blocks.`);
-      }
-
       /** Every object this edit wrote, and what it wrote, for the read-back. */
       const written: { object: unknown; text: string }[] = [];
       /**
@@ -1753,6 +2186,79 @@ function layOutBlocks(
       const standardFonts = new Map<string, unknown>();
       /** Each font program's face, read once for this edit (`programOf`). */
       const programs = new Map<string, ProgramFace | undefined>();
+      /** The glyphs of each face this edit loaded (`faceFont`), by the address of the font PDFium answered. */
+      const faceGlyphs = new Map<string, ShapingFace>();
+      /**
+       * Sets `text` on `object` — THE ONE SETTER of this edit's text. An object in a face this edit loaded is set by its
+       * subset's glyph ids (`FPDFText_SetCharcodes`), which are the codes PDFium writes for that font, so a character
+       * past the BMP draws its glyph rather than code 0; PDFium's ToUnicode for the font is its cmap, so it reads back as
+       * itself (ADR-0173's correction). Any other object is set by `FPDFText_SetText`, as before. False where the font
+       * has no glyph for a character, or PDFium refuses.
+       */
+      const setOn = (object: unknown, text: string, rtl?: boolean): boolean => {
+        const font: unknown = bindings.textFont(object);
+        const glyphs = font === null ? undefined : faceGlyphs.get(String(koffi.address(font)));
+        if (glyphs === undefined) return trySetText(bindings, object, text, rtl);
+        const codes: number[] = [];
+        for (const character of drawing(text, rtl).drawn) {
+          const glyph = glyphs.glyphFor(character.codePointAt(0) ?? 0);
+          if (glyph === undefined || glyph === 0) return false;
+          codes.push(glyph);
+        }
+        return (
+          codes.length > 0 &&
+          numberFrom(bindings.setCharcodes(object, Uint32Array.from(codes), codes.length), 'FPDFText_SetCharcodes') === 1
+        );
+      };
+      /**
+       * Where the pen stands after `objects`, in page units: the furthest right edge of their characters' LOOSE boxes on
+       * the page as it is now, which is where text after them starts (`walkRuns`' `ends`). No ink box says it: a space at
+       * an end has none, and a joined letter's ink is not its advance. And not the plan's width, which adds the advance of
+       * each letter drawn alone: for joined Arabic that is wider than the joined letters are, and a stretch placed by it
+       * left a gap wide enough to end the line (measured 2026-10-06, 29 pt, then 135 against 64 on a second edit).
+       */
+      const endOf = (objects: readonly unknown[]): number | undefined => {
+        const last = objects.at(-1);
+        const said = last === undefined ? undefined : setBy.get(last);
+        if (last === undefined || said === undefined) return undefined;
+        // A COPY OF THE LAST OBJECT ON THE SCRATCH PAGE, alone: on the page the object stands among the ones it replaces,
+        // and a text page leaves out a character that lies exactly over another, so the new object's characters are not
+        // read at all while the old line is still there. The copy has the object's font, size, scale and text.
+        const font: unknown = bindings.textFont(last);
+        if (font === null) return undefined;
+        const probe = makeTextLike(bindings, document, last, 0, font);
+        if (!setOn(probe, said.text, said.rtl)) {
+          bindings.destroyObject(probe);
+          return undefined;
+        }
+        const matrix = matrixOn(bindings, probe);
+        setMatrixOn(bindings, probe, { ...matrix, e: 72, f: 396 });
+        const sheet = scratchPage();
+        if (numberFrom(bindings.insertObject(sheet, probe), 'FPDFPage_InsertObject') !== 1) {
+          throw refusedAt('object', 'FPDFPage_InsertObject refused a probe on the scratch page');
+        }
+        try {
+          const textPage: unknown = bindings.loadTextPage(sheet);
+          if (textPage === null) throw refusedAt('page', 'PDFium could not load the scratch page to measure a stretch');
+          try {
+            const chars = numberFrom(bindings.countChars(textPage), 'FPDFText_CountChars');
+            let right: number | undefined;
+            for (let at = 0; at < chars; at += 1) {
+              if (numberFrom(bindings.charGenerated(textPage, at), 'FPDFText_IsGenerated') === 1) continue;
+              const loose: Record<string, number> = {};
+              if (numberFrom(bindings.looseCharBox(textPage, at, loose), 'FPDFText_GetLooseCharBox') !== 1) continue;
+              right = Math.max(right ?? Number.NEGATIVE_INFINITY, loose['right'] ?? Number.NEGATIVE_INFINITY);
+            }
+            return right === undefined ? undefined : matrixOn(bindings, last).e + (right - 72);
+          } finally {
+            bindings.closeTextPage(textPage);
+          }
+        } finally {
+          if (numberFrom(bindings.removeObject(sheet, probe), 'FPDFPage_RemoveObject') === 1) bindings.destroyObject(probe);
+        }
+      };
+      /** What each object of a piece was set to say, and the direction it was drawn in, for {@link endOf}. */
+      const setBy = new Map<unknown, { readonly text: string; readonly rtl: boolean | undefined }>();
 
       /**
        * Inserts `object` right after `anchor` in the page's order — the line it continues, or the
@@ -1771,6 +2277,8 @@ function layOutBlocks(
         if (numberFrom(bindings.insertObjectAt(handle, object, at + 1), 'FPDFPage_InsertObjectAtIndex') !== 1) {
           throw refusedAt('object', `FPDFPage_InsertObjectAtIndex refused a line this edit made on page ${String(page)}`);
         }
+        // THE OBJECT STANDS IN THE CONTENT THE ONE IT FOLLOWS STANDS IN (ADR-0181 Decision 8).
+        copyMarks(bindings, document, anchor, object);
       };
       /**
        * The blank page the font probes are read on, made on first use: appended after the
@@ -1787,7 +2295,7 @@ function layOutBlocks(
         return made;
       };
       /**
-       * Whether `object`'s font carries `text` — asked of a throwaway object, never of `object`.
+       * Whether `object`'s font, or `font` set like it, carries `text` — asked of a throwaway object, never of `object`.
        *
        * ## Apart from everything, because a text page reads by position
        *
@@ -1805,9 +2313,14 @@ function layOutBlocks(
        * call by call on a corpus page on 2026-09-24. So the probe goes on a blank page appended for
        * this edit and deleted before anything is generated or saved (`scratch`, below).
        */
-      const carries = (object: unknown, text: string): boolean => {
-        const probe = makeTextLike(bindings, document, object, 0);
-        if (!trySetText(bindings, probe, text)) {
+      const carries = (
+        object: unknown,
+        text: string,
+        font: unknown = bindings.textFont(object),
+        rtl?: boolean,
+      ): boolean => {
+        const probe = makeTextLike(bindings, document, object, 0, font);
+        if (!setOn(probe, text, rtl)) {
           bindings.destroyObject(probe);
           return false;
         }
@@ -1821,7 +2334,7 @@ function layOutBlocks(
           const textPage: unknown = bindings.loadTextPage(sheet);
           if (textPage === null) throw refusedAt('page', 'PDFium could not load the scratch page to read a probe');
           try {
-            return drawnTextOn(bindings, textPage, [probe])[0] === asTextPageReads(text);
+            return drawnTextOn(bindings, textPage, [probe])[0] === asTextPageReads(drawing(text, rtl).reads);
           } finally {
             bindings.closeTextPage(textPage);
           }
@@ -1829,9 +2342,14 @@ function layOutBlocks(
           if (numberFrom(bindings.removeObject(sheet, probe), 'FPDFPage_RemoveObject') === 1) bindings.destroyObject(probe);
         }
       };
+      /**
+       * Whether `text` written as the run `object` heads stays in `object` alone, or becomes pieces: the one answer to
+       * that question, which {@link writePieces} takes and a capture asks before it records strings by index, since
+       * pieces are objects inserted after the run and renumber the page (ADR-0173 Decision 9).
+       */
+      const keepsItsObject = (object: unknown, text: string): boolean => carries(object, text);
       /** The standard font nearest `object`'s, loaded once per edit and closed with it. */
-      const standardFontLike = (object: unknown): unknown => {
-        const name = standardFontFor(styleOf(bindings, object, programs));
+      const standardFontNamed = (name: string): unknown => {
         let font = standardFonts.get(name);
         if (font === undefined) {
           font = bindings.loadStandardFont(document, name);
@@ -1840,6 +2358,48 @@ function layOutBlocks(
         }
         return font;
       };
+      const standardFontLike = (object: unknown): unknown =>
+        standardFontNamed(standardFontFor(styleOf(bindings, object, programs)));
+      /**
+       * The standard font a restyled word is set in where no catalogue is bound: the kind of face the family names, in the
+       * weight and slant asked. A family the standard fonts have no name for keeps the run's own kind.
+       */
+      const standardFontRestyled = (object: unknown, restyle: Restyle): unknown => {
+        const style = styleOf(bindings, object, programs);
+        const { mono, serif } = kindOfFamily(restyle.family, style);
+        return standardFontNamed(
+          standardFontFor({ mono, serif, bold: restyle.bold ?? style.bold, italic: restyle.italic ?? style.italic }),
+        );
+      };
+      /**
+       * A text object of its own on the page, in the standard face the family names, for an added box (ADR-0180 Decision
+       * 6): the one run its words are laid out from, since a layout takes its style from a run. Its single character is
+       * what the box's words replace, and it is appended, so the page reads it last.
+       */
+      const seed = (spec: {
+        readonly family?: string | undefined;
+        readonly bold?: boolean | undefined;
+        readonly italic?: boolean | undefined;
+        readonly size: number;
+        readonly colour?: { readonly r: number; readonly g: number; readonly b: number } | undefined;
+        readonly left: number;
+        readonly baseline: number;
+      }): unknown => {
+        const { mono, serif } = kindOfFamily(spec.family, { mono: false, serif: false });
+        const font = standardFontNamed(standardFontFor({ mono, serif, bold: spec.bold ?? false, italic: spec.italic ?? false }));
+        const object: unknown = bindings.createTextObject(document, font, spec.size);
+        if (object === null) throw refusedAt('object', 'FPDFPageObj_CreateTextObj refused the font of an added box');
+        setMatrixOn(bindings, object, { a: 1, b: 0, c: 0, d: 1, e: spec.left, f: spec.baseline });
+        if (!trySetText(bindings, object, SEED_TEXT)) throw refusedAt('set-text', 'PDFium refused the character an added box starts from');
+        const colour = spec.colour ?? { r: 0, g: 0, b: 0 };
+        bindings.setFillColour(object, colour.r, colour.g, colour.b, 255);
+        if (numberFrom(bindings.insertObject(handle, object), 'FPDFPage_InsertObject') !== 1) {
+          throw refusedAt('object', `FPDFPage_InsertObject refused an added box on page ${String(page)}`);
+        }
+        return object;
+      };
+      /** The run's own object, as the style it is read as: the base a mark is compared against. */
+      const styleOfObject = (object: unknown): RunStyle => styleOf(bindings, object, programs);
       /**
        * The characters of `text` that neither `source`'s font nor its standard twin carries, each asked ALONE — the
        * names a refusal gives (ADR-0169 Decision 4). Only reached on the way to a refusal, so its probes cost an edit
@@ -1863,7 +2423,9 @@ function layOutBlocks(
           bindings.destroyObject(twin);
         }
       };
-      const record = (object: unknown, text: string): void => {
+      /** Names what an object was written to say, as a text page will read it back ({@link drawing}). */
+      const record = (object: unknown, said: string, rtl?: boolean): void => {
+        const text = drawing(said, rtl).reads;
         const entry = written.find((write) => write.object === object);
         if (entry === undefined) written.push({ object, text });
         else entry.text = text;
@@ -1900,8 +2462,473 @@ function layOutBlocks(
         }
         return twin;
       };
+      /**
+       * A restyled word where no catalogue is bound: a new object in the standard font of the style asked, taking the
+       * place of `object`, which goes. The twin's own refusal is `write`'s (a character the font cannot carry).
+       */
+      const writeRestyledTwin = (object: unknown, text: string, restyle: Restyle): unknown => {
+        const twin = makeTextLike(bindings, document, object, matrixOn(bindings, object).e, standardFontRestyled(object, restyle));
+        if (!trySetText(bindings, twin, text) || (mode === 'write' && !carries(twin, text))) {
+          bindings.destroyObject(twin);
+          throw new TextNotWritableError(uncarriedIn(object, text));
+        }
+        insertAfter(twin, object);
+        removed.push(object);
+        if (mode === 'write') {
+          const at = written.findIndex((entry) => entry.object === object);
+          if (at !== -1) written.splice(at, 1);
+          record(twin, text);
+        }
+        return twin;
+      };
 
+      /**
+       * Whether this process sets a word its run's font cannot carry in a catalogue face (ADR-0173 Decision 4), or
+       * keeps the standard twin of before. The catalogue itself is read by the first word that needs it (`faces`).
+       */
+      const inPiecesHere = editFacesBound();
+      const faces = (): FaceSource => {
+        const read = editFaces();
+        if (read === null) throw new Error('An edit asked for the bundled fonts in a process given none.');
+        return read;
+      };
+      /** The resolver faces this edit loaded, by face and weight: ours to close, with the standard fonts. */
+      const faceFonts = new Map<string, unknown>();
+      /** Their programs, held for the edit's length, because PDFium is handed a pointer to them. */
+      const facePrograms: Uint8Array[] = [];
+      /** The text each piece object holds, so a wrap can trim a run's pieces from their end. */
+      const pieceTexts = new Map<unknown, string>();
+      /** Whether a run's own font, or a sibling of it, draws a segment, asked once per font and segment of this edit. */
+      const ownAnswers = new Map<string, boolean>();
+      /** Each font's siblings on this page, by the font's address, found once per edit. */
+      const siblingFonts = new Map<string, readonly unknown[]>();
+      /**
+       * The run's SIBLINGS (ADR-0173 Decision 4): every other EMBEDDED font on this page whose name, less its subset tag
+       * (`withoutSubsetTag`), is the run's own font's, each once, in the page's order. So `ABCDEF+Calibri` lacking `é`
+       * finds `GHIJKL+Calibri` drawing it, and the word stays in the document's own font. Embedded only: a standard font
+       * of the same name is the twin trap — measured 2026-09-24, Helvetica in StandardEncoding reads `é` on the live page
+       * and `Ø` once saved — and would turn an edit the catalogue can make into a refusal. The page, not the document:
+       * the other pages' fonts are reached only by loading them, which an edit of one page does not do.
+       */
+      const siblingsOf = (object: unknown): readonly unknown[] => {
+        const own: unknown = bindings.textFont(object);
+        if (own === null) return [];
+        const key = String(koffi.address(own));
+        const known = siblingFonts.get(key);
+        if (known !== undefined) return known;
+        const name = withoutSubsetTag(baseNameOf(bindings, own));
+        const found: unknown[] = [];
+        const seen = new Set([key]);
+        const count = name === '' ? 0 : numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+        for (let index = 0; index < count; index += 1) {
+          const each: unknown = bindings.getObject(handle, index);
+          if (each === null || numberFrom(bindings.objectType(each), 'FPDFPageObj_GetType') !== TEXT_OBJECT) continue;
+          const font: unknown = bindings.textFont(each);
+          if (font === null) continue;
+          const address = String(koffi.address(font));
+          if (seen.has(address)) continue;
+          seen.add(address);
+          if (numberFrom(bindings.fontIsEmbedded(font), 'FPDFFont_GetIsEmbedded') !== 1) continue;
+          if (withoutSubsetTag(baseNameOf(bindings, font)) === name) found.push(font);
+        }
+        siblingFonts.set(key, found);
+        return found;
+      };
+
+      /** `face` at `weight`, loaded once for this edit as a uniquely named subset, or `null` where it cannot be. */
+      const faceFont = (face: CatalogueFace, weight: number): unknown => {
+        const key = `${face.id}|${String(weight)}`;
+        const loaded = faceFonts.get(key);
+        if (loaded !== undefined) return loaded;
+        const whole = faces().read(face.path);
+        const named = readFace(whole, face.faceIndex).postscript;
+        // A VARIABLE FACE'S NAME says which instance it is, as the composers name one (`composeFonts.ts`).
+        const postscript = face.weights === null ? named : `${named === '' ? 'Font' : named}-wght${String(weight)}`;
+        const subset = namedSubset(whole, postscript, {
+          unicodes: characters.filter((point) => face.unicodes.has(point)),
+          faceIndex: face.faceIndex,
+          axes: face.weights === null ? {} : { wght: weight },
+        });
+        // THE WHOLE FONT only where HarfBuzz refused the subset, the licence allows it, and it is one static face
+        // PDFium can load as it stands (Decision 5).
+        const program =
+          subset?.bytes ?? (face.embedding !== 'never' && face.weights === null && face.faceIndex === 0 ? whole : null);
+        if (program === null) return null;
+        const font: unknown = bindings.loadFont(document, program, program.length, FONT_TRUETYPE, 1);
+        if (font === null) return null;
+        facePrograms.push(program);
+        faceFonts.set(key, font);
+        // ITS GLYPHS, read from the very program PDFium was handed: the codes it writes are that program's glyph ids.
+        faceGlyphs.set(String(koffi.address(font)), new ShapingFace(program, 0, {}));
+        return font;
+      };
+
+      /**
+       * The box font for `character` (ADR-0173 Decision 7 as corrected, `boxFont.ts`): the box of the piece's own face
+       * where it has one, else of the first catalogue face that does, in the catalogue's order — so the box sits in the
+       * face beside it where it can. Loaded once per character and command; `null` where no face has a box.
+       */
+      const boxFontLike = (face: CatalogueFace | null, weight: number, character: string): unknown => {
+        const point = character.codePointAt(0) ?? 0;
+        const candidates = [...(face === null ? [] : [face]), ...faces().faces].filter((each) => each.unicodes.has(BOX));
+        for (const candidate of candidates) {
+          const pin = candidate.weights === null ? candidate.weight : weight;
+          const key = `box|${candidate.id}|${String(pin)}|${String(point)}`;
+          const loaded = faceFonts.get(key);
+          if (loaded !== undefined) return loaded;
+          const whole = faces().read(candidate.path);
+          const named = readFace(whole, candidate.faceIndex).postscript;
+          const postscript = candidate.weights === null ? named : `${named === '' ? 'Font' : named}-wght${String(pin)}`;
+          const made = boxFont(whole, candidate.faceIndex, candidate.weights === null ? {} : { wght: pin }, postscript, point);
+          if (made === null) continue;
+          const font: unknown = bindings.loadFont(document, made.bytes, made.bytes.length, FONT_TRUETYPE, 1);
+          if (font === null) continue;
+          facePrograms.push(made.bytes);
+          faceFonts.set(key, font);
+          faceGlyphs.set(String(koffi.address(font)), new ShapingFace(made.bytes, 0, {}));
+          return font;
+        }
+        return null;
+      };
+      /** Each box this edit drew and the character it stands for, read at the end against what was removed. */
+      const boxObjects = new Map<unknown, string>();
+
+      /**
+       * Writes `text` as the run `object` heads and answers the objects that now say it, in order: `object` alone where
+       * its own font carries the text, and otherwise its PIECES (ADR-0173 Decisions 1 to 3) — each word its font cannot
+       * carry in the resolver's face, the rest in its own, each placed at the measured right edge of the one before
+       * and inserted after it. Where this process has no catalogue, the standard twin of {@link write} as before.
+       *
+       * Every piece is read back as it is written, `write`'s reason. A character no face carries is a box, one object
+       * per character in a box font of its own (Decision 7 as corrected); a piece whose face cannot be loaded, or a
+       * box where no face has one, refuses the edit by name.
+       *
+       * A TRIAL PROBES TOO, unlike `write`'s: which words become pieces decides the line's width, and a trial that
+       * measured the run's own font where the write sets another would fit a block to text that is not drawn.
+       */
+      const writePieces = (object: unknown, text: string, restyle?: Restyle, forced?: boolean): unknown[] => {
+        // A WORD THE PERSON MADE BOLD, ITALIC OR ANOTHER FAMILY is set in a face that is that, whichever font the run is
+        // in (ADR-0180 Decision 4): the run's own font is not preferred, because it is the wrong one by definition.
+        if (restyle !== undefined && !inPiecesHere) return [writeRestyledTwin(object, text, restyle)];
+        if (!inPiecesHere) return [write(object, text)];
+        if (restyle === undefined && setOn(object, text, forced) && carries(object, text, undefined, forced)) {
+          if (mode === 'write') record(object, text, forced);
+          pieceTexts.set(object, text);
+          setBy.set(object, { text, rtl: forced });
+          return [object];
+        }
+        const font = String(koffi.address(bindings.textFont(object)));
+        const ownCarries = (segment: string): boolean => {
+          // RESTYLED: only white space stays in the run's font; a word goes to the resolver for the style asked.
+          if (restyle !== undefined) return segment.trim() === '';
+          const key = `${font}|${segment}`;
+          let answer = ownAnswers.get(key);
+          if (answer === undefined) {
+            answer = segment.trim() === '' ? true : carries(object, segment);
+            ownAnswers.set(key, answer);
+          }
+          return answer;
+        };
+        const style = styleOf(bindings, object, programs);
+        // EACH SIBLING ASKED AS THE RUN'S OWN FONT IS, by the probe, and once per segment. A restyled word has none: a
+        // sibling is the run's own face under another subset tag.
+        const fonts = restyle === undefined ? siblingsOf(object) : [];
+        const siblings = fonts.map((sibling) => ({
+          carries: (segment: string): boolean => {
+            const asked = `${String(koffi.address(sibling))}|${segment}`;
+            let answer = ownAnswers.get(asked);
+            if (answer === undefined) {
+              answer = carries(object, segment, sibling);
+              ownAnswers.set(asked, answer);
+            }
+            return answer;
+          },
+        }));
+        const request = {
+          family: restyle?.family ?? style.font,
+          bold: restyle?.bold ?? style.bold,
+          italic: restyle?.italic ?? style.italic,
+          own: [],
+        };
+        const split = editPieces(text, ownCarries, request, faces().faces, siblings);
+        // A LINE THAT RUNS BOTH WAYS IS ONE OBJECT where one face carries all of it. A text page reads the objects of a
+        // line in the order they stand and each object in its own direction, so a line split between two fonts reads
+        // back with its parts in drawing order (measured 2026-10-06: `Hello שלום` drawn as two objects reads back as
+        // `Helloשלום`), where one object is read back as typed. The cost is that the line's Latin words are not in the
+        // document's own font, which only a line with right-to-left letters in it pays (ADR-0181 Decision 5).
+        // A STRETCH OF ONE DIRECTION cut out of a line (`forced`) has no direction change in it for the rule to be about.
+        const whole = split.length > 1 && forced === undefined && isBidirectional(text) ? resolveRuns(text, request, faces().faces) : [];
+        const only = whole.length === 1 && whole[0]?.face != null && whole[0].missing.length === 0 ? whole[0] : undefined;
+        const onlyFace = only === undefined ? undefined : faces().faces.find((each) => each.id === only.face?.id);
+        const pieces: EditPiece[] =
+          only === undefined || onlyFace === undefined
+            ? split
+            : [{ text, face: onlyFace, sibling: null, weight: only.weight, boxed: [] }];
+        // A BOXED PIECE IS ONE OBJECT PER CHARACTER, each in a box font of its own (Decision 7): one glyph has one code,
+        // and one code reads as one text.
+        const carried = (piece: EditPiece, said: string): boolean =>
+          piece.face !== null
+            ? Array.from(said).every((character) => piece.face?.unicodes.has(character.codePointAt(0) ?? 0) === true)
+            : piece.sibling !== null
+              ? (siblings[piece.sibling]?.carries(said) ?? false)
+              : ownCarries(said);
+        const units = inDrawingOrder(text, pieces, carried, forced).flatMap((piece) => {
+          const { face, weight, rtl } = piece;
+          if (piece.boxed.length > 0) {
+            // ONE GLYPH EACH IN DRAWING ORDER: a right-to-left piece's characters are placed last typed first.
+            const characters = Array.from(piece.text);
+            return (rtl ? characters.reverse() : characters).map((character) => ({
+              text: character,
+              rtl: false,
+              font: (): unknown => boxFontLike(face, weight, character),
+              box: true,
+            }));
+          }
+          // A SIBLING'S PIECE in the document's own font handle, which is the document's and not ours to close.
+          const sibling = piece.sibling === null ? undefined : fonts[piece.sibling];
+          if (sibling !== undefined) return [{ text: piece.text, rtl, font: (): unknown => sibling, box: false }];
+          return [{ text: piece.text, rtl, font: face === null ? null : (): unknown => faceFont(face, weight), box: false }];
+        });
+        const objects: unknown[] = [];
+        let left = matrixOn(bindings, object).e;
+        for (const unit of units) {
+          const reuse = unit.font === null && objects.length === 0;
+          const unitFont = unit.font === null ? bindings.textFont(object) : unit.font();
+          if (unitFont === null) throw new TextNotWritableError(unit.text.trim());
+          const made = reuse ? object : makeTextLike(bindings, document, object, left, unitFont);
+          if (!setOn(made, unit.text, unit.rtl) || (mode === 'write' && !carries(made, unit.text, undefined, unit.rtl))) {
+            if (!reuse) bindings.destroyObject(made);
+            throw new TextNotWritableError(unit.text.trim());
+          }
+          if (!reuse) insertAfter(made, objects.at(-1) ?? object);
+          if (mode === 'write') record(made, unit.text, unit.rtl);
+          pieceTexts.set(made, unit.text);
+          setBy.set(made, { text: unit.text, rtl: unit.rtl });
+          if (unit.box) boxObjects.set(made, unit.text);
+          objects.push(made);
+          left = boundsOf(bindings, made).right;
+        }
+        // THE RUN'S OWN OBJECT GOES where its first piece is in another face, and with it what it was recorded as.
+        if (objects[0] !== object) {
+          removed.push(object);
+          const at = written.findIndex((entry) => entry.object === object);
+          if (at !== -1) written.splice(at, 1);
+        }
+        return objects;
+      };
+
+      /**
+       * Trims a run's pieces so that together they say `text`, a prefix of what they said: whole pieces off the end,
+       * then the last one kept cut where `text` ends. Each piece's font carries every prefix of its own text, so nothing
+       * is asked again; what each now says is recorded for the read-back.
+       */
+      const trimPieces = (objects: readonly unknown[], text: string): unknown[] => {
+        const kept: unknown[] = [];
+        let at = 0;
+        for (const piece of objects) {
+          const said = pieceTexts.get(piece) ?? '';
+          if (at >= text.length) {
+            removed.push(piece);
+            const entry = written.findIndex((write) => write.object === piece);
+            if (entry !== -1) written.splice(entry, 1);
+            continue;
+          }
+          const now = text.slice(at, at + said.length);
+          at += said.length;
+          if (now !== said) {
+            if (!setOn(piece, now)) throw refusedAt('set-text', 'A block edit could not cut a piece it had already written');
+            pieceTexts.set(piece, now);
+          }
+          if (mode === 'write') record(piece, now);
+          kept.push(piece);
+        }
+        return kept;
+      };
+      return {
+        inPieces: inPiecesHere,
+        written,
+        removed,
+        insertAfter,
+        write,
+        writePieces,
+        endOf,
+        trimPieces,
+        record,
+        standardFontLike,
+        standardFontRestyled,
+        seed,
+        styleOfObject,
+        uncarriedIn,
+        keepsItsObject,
+        boxed: () => {
+          // A box a wrap trimmed off one line was drawn again on the next, and is told once, where it is.
+          const gone = new Set(removed);
+          return [...boxObjects].flatMap(([object, character]) => (gone.has(object) ? [] : [{ character, page }]));
+        },
+        close: () => {
+          // OURS TO CLOSE, and only ours: each object holds its own reference to
+          // the font it was made in, so closing the caller's handle frees nothing
+          // the page still draws.
+          for (const font of standardFonts.values()) bindings.closeFont(font);
+          for (const font of faceFonts.values()) bindings.closeFont(font);
+          // THE SCRATCH PAGE GOES before the caller can generate or save anything.
+          if (scratch !== undefined) {
+            bindings.closePage(scratch.handle);
+            bindings.deletePage(document, scratch.index);
+          }
+        },
+      };
+}
+
+/**
+ * One pass over a page's block edits: `write` makes the edit and generates the page, naming its writes to the
+ * generation; `trial` lays the blocks out at the scales given, writes without reading back, generates nothing. Both
+ * answer which blocks ended above their original last line.
+ */
+function layOutBlocks(
+  session: PdfiumSession,
+  handle: unknown,
+  page: number,
+  given: readonly BlockEdit[],
+  inserts: readonly PageInsert[],
+  scales: readonly number[],
+  mode: 'write' | 'trial',
+): { readonly fits: readonly boolean[]; readonly boxed: readonly BoxedInEdit[] } {
+      const bindings = api();
+      const document = documentFor(session);
+      const pen = pieceWriter(
+        session,
+        handle,
+        page,
+        mode,
+        charactersOf([...given.map(({ text }) => text), ...inserts.map(({ text }) => text)]),
+      );
       try {
+      // AN ADDED BOX IS AN EDIT OF ONE RUN: a text object appended to the page in the box's own face and place, which the
+      // layout then replaces with the box's words at the measure it was given (ADR-0180 Decision 6, corrected). It is
+      // made BEFORE the page is read, so it is one of the runs the reading answers and is named as any run is.
+      const seeds = inserts.map((insert) =>
+        pen.seed({
+          family: insert.base?.family,
+          bold: insert.base?.bold,
+          italic: insert.base?.italic,
+          size: insert.size,
+          colour: insert.base?.colour,
+          left: insert.left,
+          baseline: insert.baseline,
+        }),
+      );
+      const seeded = objectIndices(bindings, handle);
+      const edits: readonly BlockEdit[] = [
+        ...given,
+        ...inserts.map((insert, at): BlockEdit => {
+          const index = seeded.get(String(koffi.address(seeds[at])));
+          if (index === undefined) throw refusedAt('object', `An added box on page ${String(page)} is not on the page it was added to`);
+          return {
+            lines: [[index]],
+            soft: [false],
+            text: insert.text,
+            ...(insert.marks === undefined ? {} : { marks: insert.marks }),
+            ...(insert.paragraphs === undefined ? {} : { paragraphs: insert.paragraphs }),
+            place: { width: insert.measure },
+            fit: 'reflow',
+          };
+        }),
+      ];
+      const walked = walkRuns(bindings, handle);
+      /** Per block: did its layout end above its original last line? */
+      const fits = edits.map(() => true);
+      // THE PAGE'S BOX, for a one-line block's column (ADR-0097 4a).
+      const box: Record<string, number> = {};
+      const hasBox = numberFrom(bindings.pageBox(handle, box), 'FPDF_GetPageBoundingBox') === 1;
+      const pageLeft = hasBox ? (box['left'] ?? 0) : 0;
+      const pageRight = hasBox ? (box['right'] ?? 0) : Number.NEGATIVE_INFINITY;
+
+      // EVERY BLOCK RESOLVED IN FULL FIRST, against the untouched page, so a bad
+      // index refuses before anything is written — and so a later block's
+      // indices are the page's own, not whatever an earlier block left behind.
+      // A NAMED RUN IS ITS OBJECTS: the same join the read answered (`joinedWalk`, ADR-0130) expands each run an edit
+      // names into the objects it is, in order — so a line drawn one glyph per object is written as the person saw it.
+      // AND A LINE THAT RUNS BOTH WAYS IS READ AS IT WAS TYPED, by the reading `textRuns` answers (`readWalk`): the words
+      // each named run holds here are the words the editor showed for it, so the edit diffs what a person typed against
+      // what they were shown, and a line they left alone is not set again.
+      const joined = readWalk(bindings, handle, walked);
+      const blocks = edits.map((edit) => ({
+        text: edit.text,
+        soft: edit.soft,
+        marks: edit.marks ?? [],
+        paragraphs: edit.paragraphs ?? [],
+        place: edit.place,
+        fit: edit.fit,
+        lines: edit.lines.map((line) =>
+          line.map((named): HeldRun => {
+            const members = membersOf(joined, named);
+            const joinedRun = joined.find((candidate) => candidate.index === named);
+            if (members === undefined || joinedRun === undefined) {
+              throw refusedAt(
+                'object',
+                `Object ${String(named)} on page ${String(page)} begins no run this page's reading answered`,
+              );
+            }
+            const held = members.map((index) => {
+              const run = walked.runs.get(index);
+              if (run === undefined) {
+                throw refusedAt(
+                  'object',
+                  `Object ${String(index)} on page ${String(page)} carries no text this page's reading can place`,
+                );
+              }
+              return { object: textObjectAt(bindings, handle, page, index), run };
+            });
+            const [first, ...rest] = held;
+            if (first === undefined) throw refusedAt('object', `Run ${String(named)} on page ${String(page)} has no object`);
+            return {
+              index: named,
+              object: first.object,
+              text: joinedRun.text,
+              extras: rest.map((member) => member.object),
+              span: {
+                left: Math.min(...held.map((member) => member.run.left)),
+                right: Math.max(...held.map((member) => member.run.right)),
+              },
+            };
+          }),
+        ),
+      }));
+      if (blocks.length === 0) throw new Error(`A block edit on page ${String(page)} named no block.`);
+      // A RUN IN TWO BLOCKS would be written twice, the second write undoing
+      // the first's layout. The contract refuses it; this is the write keeping
+      // the rule for a caller that did not ask.
+      const named = blocks.flatMap((block) => block.lines.flat().map((run) => run.index));
+      if (new Set(named).size !== named.length) {
+        throw new Error(`A block edit on page ${String(page)} names one run in two blocks.`);
+      }
+
+      const { written, removed, insertAfter, writePieces } = pen;
+      /** Whether any block was placed, which is a change the page's generation must be told of though no word moved. */
+      let placed = false;
+
+      // A SCAN'S RECOGNISED WORDS (ADR-0181 Decision 9): the objects of each block that are an OCR layer over a picture, and
+      // the paper round each, read ONCE from the page as it is now, before any object is changed. Where such a word is
+      // edited the new words are drawn and the picture's old ones are covered with the paper, since the page is a picture
+      // and the words a person reads there are its pixels. Only a write does it: a trial lays out for a fit and draws nothing.
+      const scanned = blocks.map((block) =>
+        mode === 'write' ? recognisedOverPictures(bindings, handle, block.lines.flat().flatMap((run) => [run.object, ...run.extras])) : [],
+      );
+      const coverBoxes = scanned.flatMap((objects) =>
+        objects.map((object): Bounds => {
+          const box = boundsOf(bindings, object);
+          return {
+            left: box.left - COVER_MARGIN,
+            bottom: box.bottom - COVER_MARGIN,
+            right: box.right + COVER_MARGIN,
+            top: box.top + COVER_MARGIN,
+          };
+        }),
+      );
+      const papers = coverBoxes.length === 0 ? [] : coversRoundBoxes(bindings, handle, coverBoxes);
+      let coverAt = 0;
+
         for (const [blockAt, block] of blocks.entries()) {
           const { lines } = block;
           const [firstLine] = lines;
@@ -1932,8 +2959,13 @@ function layOutBlocks(
           // never narrower than the block itself. A block of several lines keeps the measure its
           // paragraph was set to.
           const ownRight = Math.max(...edges.map((edge) => edge.right));
+          // A MEASURE THE PERSON GAVE (a resized box, an added one) is the measure, from the block's own left edge.
           const blockRight =
-            lines.length === 1 ? Math.max(ownRight, pageRight - (blockLeft - pageLeft)) : ownRight;
+            block.place?.width !== undefined
+              ? blockLeft + block.place.width
+              : lines.length === 1
+                ? Math.max(ownRight, pageRight - (blockLeft - pageLeft))
+                : ownRight;
           // WHERE THE BLOCK ENDED, before anything moves: a fitted block must end above it.
           const lastBaselineBefore = matrixOn(bindings, (lines[lines.length - 1]?.[0] ?? firstRun).object).f;
 
@@ -1957,159 +2989,343 @@ function layOutBlocks(
           const baselines = lines.map((line) => matrixOn(bindings, (line[0] ?? firstRun).object).f);
           const pitch = blockPitch(bindings, firstRun.object, baselines);
 
-          const typed = block.text.replace(/\r\n?/gu, '\n').split('\n');
+          // THE BLOCK AS PARAGRAPHS (ADR-0179): which lines end a paragraph, how it is set, and what its words say.
+          const soft = lines.map((_, at) => at < lines.length - 1 && block.soft[at] === true);
+          const flow: FlowLine[] = lines.map((line, at) => ({
+            runs: line.map((run) => ({ id: run.index, text: run.text })),
+            soft: soft[at] === true,
+          }));
+          // THE SHAPE FROM THE RUNS' OWN EXTENTS, read before anything moved, by the one function the read answers it
+          // with, so the editor's box and this layout are one shape (B3a).
+          const shape = blockShape(
+            lines.map((line) => ({
+              x0: Math.min(...line.map((run) => run.span.left)),
+              x1: Math.max(...line.map((run) => run.span.right)),
+              characters: line.reduce((sum, run) => sum + run.text.length, 0),
+            })),
+            soft,
+          );
+          const spacing = paragraphSpacing(baselines, soft);
+          // A SCALED BLOCK'S LEFT EDGE MOVED with the scale about its corner; its right edge did not (ADR-0097 4b).
+          const scaledX = (x: number): number => blockLeft + (x - blockLeft) * scale;
+          // HOW EACH PARAGRAPH IS SET: the block's shape with what the person set over it (ADR-0180 Decision 2).
+          const settings = new Map(block.paragraphs.map((setting) => [setting.paragraph, setting]));
+          const setFor = (place: number): { align: Alignment; leftEdge: number; first: number; centre: number } => {
+            const own = settings.get(place);
+            const align = own?.align ?? shape.align;
+            const leftEdge = own?.leftIndent === undefined ? shape.left : blockLeft + own.leftIndent;
+            const first = own?.firstIndent ?? (own?.leftIndent === undefined ? shape.firstIndent : 0);
+            // THE CENTRE the block's own lines keep where it was centred and the person did not move it; otherwise the
+            // middle of the paragraph's column.
+            const centre = own?.align === undefined && shape.align === 'center' ? shape.centre : (leftEdge + blockRight) / 2;
+            return { align, leftEdge, first, centre };
+          };
+          const limits = (place: number): { first: number; rest: number } => {
+            const set = setFor(place);
+            if (set.align === 'center') {
+              const across = Math.max(1, 2 * Math.min(blockRight - set.centre, set.centre - set.leftEdge));
+              return { first: across, rest: across };
+            }
+            if (set.align === 'right') {
+              const across = Math.max(1, blockRight - set.leftEdge);
+              return { first: across, rest: across };
+            }
+            return {
+              first: Math.max(1, blockRight - scaledX(set.leftEdge + set.first)),
+              rest: Math.max(1, blockRight - scaledX(set.leftEdge)),
+            };
+          };
+          /** The paragraphs whose settings the person changed from how the block was found: set again, words or not. */
+          const changedSettings = block.paragraphs
+            .filter(
+              (setting) =>
+                (setting.align !== undefined && setting.align !== shape.align) ||
+                (setting.leftIndent !== undefined && Math.abs(blockLeft + setting.leftIndent - shape.left) > 0.5) ||
+                (setting.firstIndent !== undefined && Math.abs(setting.firstIndent - shape.firstIndent) > 0.5) ||
+                (setting.lineSpacing !== undefined && Math.abs(setting.lineSpacing - 1) > 0.01) ||
+                (setting.spaceBefore !== undefined && setting.spaceBefore > 0.5),
+            )
+            .map((setting) => setting.paragraph);
+          // A NEW MEASURE SETS EVERY PARAGRAPH AGAIN, words or not: the lines the old measure broke are not the lines the
+          // new one does.
+          const everyParagraph =
+            block.place?.width === undefined ? [] : Array.from({ length: block.text.split('\n').length }, (_, paragraph) => paragraph);
+          const forced = new Set([...changedSettings, ...everyParagraph]);
+          const runsById = new Map(lines.flat().map((run) => [run.index, run]));
+          const lineOfRun = new Map(lines.flatMap((line, at) => line.map((run): [HeldRun, number] => [run, at])));
+          // WHERE A LINE SET AFRESH STARTS, as an object's own origin: the line that keeps the paragraph's left edge, read
+          // off its first object, since the shape's edge is where ink begins and an origin is where the glyph is drawn from.
+          const lefts = lines.map((line) => Math.min(...line.map((run) => run.span.left)));
+          // THE LEFTMOST RUN OF A LINE is where its first glyph is drawn from: a line read as it was typed (ADR-0185) has its
+          // right-to-left runs first, so the first run of a line is not the one at its left edge.
+          const leftmostOf = (line: readonly HeldRun[] | undefined): HeldRun =>
+            (line ?? []).reduce((best, run) => (run.span.left < best.span.left ? run : best), line?.[0] ?? firstRun);
+          const restLines = lines.length > 1 ? lines.slice(1).map((_, at) => at + 1) : [0];
+          const restAt = restLines.reduce((best, at) => ((lefts[at] ?? 0) < (lefts[best] ?? 0) ? at : best), restLines[0] ?? 0);
+          const restOrigin = matrixOn(bindings, leftmostOf(lines[restAt]).object).e;
+          // WHAT A MARK MAKES OF A RUN'S WORDS (ADR-0180 Decision 4), read from the run's own object: the face it asks, the
+          // size it ends at against the size the run is, and where it rises to.
+          const markStyle = (run: HeldRun, mark: number) => {
+            const set: BlockMarkSet = block.marks[mark]?.set ?? {};
+            const style = pen.styleOfObject(run.object);
+            const restyle: Restyle | undefined =
+              set.bold === undefined && set.italic === undefined && set.family === undefined
+                ? undefined
+                : {
+                    ...(set.bold === undefined ? {} : { bold: set.bold }),
+                    ...(set.italic === undefined ? {} : { italic: set.italic }),
+                    ...(set.family === undefined ? {} : { family: set.family }),
+                  };
+            const size = set.size ?? style.size;
+            const factor = (size / Math.max(style.size, 0.01)) * (set.rise === undefined ? 1 : RISE_SCALE);
+            return { set, style, restyle, size, factor };
+          };
+          const changes = (run: number, mark: number): boolean => {
+            const { set, style } = markStyle(runsById.get(run) ?? firstRun, mark);
+            return (
+              (set.bold !== undefined && set.bold !== style.bold) ||
+              (set.italic !== undefined && set.italic !== style.italic) ||
+              (set.size !== undefined && Math.abs(set.size - style.size) > 0.05) ||
+              (set.colour !== undefined &&
+                (set.colour.r !== style.colour.r || set.colour.g !== style.colour.g || set.colour.b !== style.colour.b)) ||
+              (set.family !== undefined && !style.font.toLowerCase().includes(set.family.toLowerCase())) ||
+              // NOT READABLE, so a mark that asks for it is a change: an underline is a line the page may or may not have.
+              set.underline === true ||
+              set.rise !== undefined
+            );
+          };
+          const measure = blockMeasure(bindings, document, pen, runsById, firstRun, lines.flat(), (run, mark) => {
+            const { restyle, factor } = markStyle(run, mark);
+            return { restyle, factor };
+          });
+          const plan = planBlock(flow, block.text.replace(/\r\n?/gu, '\n'), measure, limits, {
+            marks: block.marks.map(({ from, to }) => ({ from, to })),
+            changes,
+            forced,
+          });
+          /** The lines to draw under underlined words, made once the baselines are known. */
+          const underlines: { left: number; width: number; size: number; colour: [number, number, number]; first: unknown; last: unknown }[] = [];
 
-          /** The visual lines the block will have, top to bottom. */
-          const visual: { objects: unknown[]; oldBaseline: number | undefined; gapAbove: number }[] = [];
-          /** The object the block's reading order currently ends at, for lines typed below it. */
-          let blockEnd: unknown = firstRun.object;
-
-          /**
-           * Makes a continuation line in `source`'s style holding `text`,
-           * starting at `left`, and wraps it again if it does not fit. Appends
-           * each to `visual`.
-           *
-           * INSERTED AS IT IS MADE, not once the layout is known, because the
-           * read-back that decides whether it needs a twin reads a text page,
-           * and a text page holds only what is on the page. An insertion
-           * appends, so no index this edit resolved moves.
-           */
-          const continueWith = (source: unknown, text: string, left: number, after: unknown): unknown => {
-            let rest = text;
-            // EACH NEW LINE FOLLOWS THE ONE BEFORE IT in the page's order, starting after `after`.
-            let anchor = after;
-            while (rest !== '') {
-              let object = makeTextLike(bindings, document, source, left);
-              // A FONT THAT REFUSES THE WORDS makes the line in its standard twin from the start, so
-              // the wrap below measures the font that will be drawn.
-              if (!trySetText(bindings, object, rest)) {
-                bindings.destroyObject(object);
-                object = makeTextLike(bindings, document, source, left, standardFontLike(source));
-                if (!trySetText(bindings, object, rest)) {
-                  bindings.destroyObject(object);
-                  throw new TextNotWritableError(uncarriedIn(source, rest));
+          /** The visual lines the block will have, top to bottom. `rise` is a run's offset from its line's baseline. */
+          const visual: {
+            objects: { object: unknown; rise: number }[];
+            oldBaseline: number | undefined;
+            gapAbove: number;
+          }[] = [];
+          const objectsOf = (line: readonly HeldRun[]): unknown[] => line.flatMap((run) => [run.object, ...run.extras]);
+          /** The old lines the plan keeps as they stand. */
+          const kept = new Set<number>();
+          /** The object the block's reading order has reached, so a new line is inserted where it is seen. */
+          let anchor: unknown = firstRun.object;
+          for (const row of plan.rows) {
+            if (row.kind === 'old') {
+              const line = lines[row.line];
+              if (line === undefined) continue;
+              kept.add(row.line);
+              const objects = objectsOf(line);
+              visual.push({
+                objects: objects.map((object) => ({ object, rise: 0 })),
+                oldBaseline: baselines[row.line],
+                gapAbove: row.line === 0 ? 0 : (baselines[row.line - 1] ?? 0) - (baselines[row.line] ?? 0),
+              });
+              anchor = objects.at(-1) ?? anchor;
+              continue;
+            }
+            if (row.kind === 'blank') {
+              visual.push({ objects: [], oldBaseline: undefined, gapAbove: pitch + (row.opens ? spacing : 0) });
+              continue;
+            }
+            const set = setFor(row.paragraph);
+            const own = settings.get(row.paragraph);
+            // A LINE SET AFRESH, one object per run of words it holds, each in its own run's style and at the width the
+            // plan measured: made, inserted after the line before it and written as it is made, because the read-back
+            // that decides whether a word needs another face reads a text page, which holds only what is on the page.
+            const replaced = row.replaces >= 0 ? lines[row.replaces] : undefined;
+            // A PARAGRAPH THE PERSON LEFT ALONE keeps the line it stood in; one they set takes the edge they chose.
+            const keepsItsLine =
+              replaced !== undefined && own?.leftIndent === undefined && own?.firstIndent === undefined;
+            const x =
+              set.align === 'center'
+                ? set.centre - row.width / 2
+                : set.align === 'right'
+                  ? blockRight - row.width
+                  : keepsItsLine
+                    ? matrixOn(bindings, leftmostOf(replaced).object).e
+                    : restOrigin + (set.leftEdge - shape.left) * scale + (row.first ? set.first * scale : 0);
+            const objects: { object: unknown; rise: number }[] = [];
+            let left = x;
+            let after = replaced === undefined ? anchor : (objectsOf(replaced).at(-1) ?? anchor);
+            // A ROW THAT RUNS BOTH WAYS IS DRAWN IN THE ORDER IT IS SEEN, not the order typed (ADR-0185): its pieces, the
+            // words of one run and one mark each, are cut where the line changes direction and set left to right as a
+            // reader sees them, each stretch in the direction the line runs there. A row of one piece, or of one
+            // direction, is written as it stands: the piece is ordered by its own letters, inside the writer.
+            const stretches = visualUnits(row.pieces.map((piece) => piece.text));
+            const units = (stretches ?? row.pieces.map((piece, at) => ({ piece: at, text: piece.text, rtl: undefined }))).map(
+              (stretch) => {
+                const piece = row.pieces[stretch.piece];
+                if (piece === undefined) throw new Error('A row stretch names a piece the row does not have.');
+                return {
+                  piece,
+                  text: stretch.text,
+                  rtl: stretch.rtl,
+                  width: stretches === undefined ? piece.width : measure(piece.run, piece.mark, stretch.text),
+                };
+              },
+            );
+            for (const { piece, text: stretchText, rtl: forced, width: stretchWidth } of units) {
+              const source = runsById.get(piece.run) ?? firstRun;
+              const made = makeTextLike(bindings, document, source.object, left);
+              insertAfter(made, after);
+              let rise = matrixOn(bindings, source.object).f - (baselines[lineOfRun.get(source) ?? 0] ?? 0);
+              const marked = piece.mark === NO_MARK ? undefined : markStyle(source, piece.mark);
+              const laid = writePieces(made, stretchText, marked?.restyle, forced);
+              if (marked !== undefined) {
+                // THE SIZE AND THE COLOUR the mark gives, on every object the piece became, about the first one's origin so
+                // the pieces of one word keep their places.
+                const origin = matrixOn(bindings, laid[0] ?? made).e;
+                for (const object of laid) {
+                  if (Math.abs(marked.factor - 1) > 1e-6) {
+                    const m = matrixOn(bindings, object);
+                    setMatrixOn(bindings, object, {
+                      a: m.a * marked.factor,
+                      b: m.b * marked.factor,
+                      c: m.c * marked.factor,
+                      d: m.d * marked.factor,
+                      e: origin + (m.e - origin) * marked.factor,
+                      f: m.f,
+                    });
+                  }
+                  if (marked.set.colour !== undefined) {
+                    bindings.setFillColour(object, marked.set.colour.r, marked.set.colour.g, marked.set.colour.b, 255);
+                  }
+                }
+                if (marked.set.rise === 'superscript') rise += SUPERSCRIPT_RISE * marked.size;
+                if (marked.set.rise === 'subscript') rise -= SUBSCRIPT_DROP * marked.size;
+                if (marked.set.underline === true) {
+                  const colour = marked.set.colour ?? marked.style.colour;
+                  underlines.push({
+                    left,
+                    width: stretchWidth,
+                    size: marked.size * (marked.set.rise === undefined ? 1 : RISE_SCALE),
+                    colour: [colour.r, colour.g, colour.b],
+                    first: laid[0] ?? made,
+                    last: laid.at(-1) ?? made,
+                  });
                 }
               }
-              let tail = '';
-              // THE SAME WRAP AS AN OLD LINE'S, on the object's own bounds.
-              while (boundsOf(bindings, object).right > blockRight && lastBreak(rest) > 0) {
-                const cut = lastBreak(rest);
-                tail = tail === '' ? rest.slice(cut + 1).trimEnd() : `${rest.slice(cut + 1).trimEnd()} ${tail}`;
-                rest = rest.slice(0, cut);
-                setTextOn(bindings, object, rest);
-              }
-              insertAfter(object, anchor);
-              anchor = write(object, rest);
-              visual.push({ objects: [anchor], oldBaseline: undefined, gapAbove: pitch });
-              rest = tail;
+              for (const object of laid) objects.push({ object, rise });
+              after = laid.at(-1) ?? made;
+              // A ROW DRAWN IN THE ORDER IT IS SEEN goes on from where the pen stands, not from where the plan measured it
+              // would: the plan adds the advance of each letter alone, which for joined Arabic is wider than the joined
+              // letters are, and a stretch placed by it left a gap wide enough to end the line (measured 2026-10-06, 29 pt).
+              left = (stretches === undefined ? undefined : pen.endOf(laid)) ?? left + stretchWidth;
             }
-            return anchor;
-          };
-
-          for (const [k, line] of lines.entries()) {
-            const next = typed[k];
-            if (next === undefined) {
-              // THE PERSON REMOVED THIS LINE; its objects go at the end — a joined run's every object.
-              removed.push(...line.flatMap((run) => [run.object, ...run.extras]));
-              continue;
-            }
-            const replacements = new Map(
-              replacementsForLine(line, next).map((replacement) => [replacement.index, replacement.text]),
-            );
-            // PUSHED ALONG THE LINE by what the runs before grew.
-            let push = 0;
-            /** Runs the diff emptied — removed with the edit's other removals, never set to nothing. */
-            const emptied = new Set<number>();
-            for (const run of line) {
-              moveBy(bindings, run.object, push, 0);
-              for (const extra of run.extras) moveBy(bindings, extra, push, 0);
-              const text = replacements.get(run.index);
-              if (text === undefined) continue;
-              // THE WHOLE RUN'S WIDTH, a joined run's every object: measured off its first object alone, a write
-              // into a run of glyphs would read as growing by the whole line and push everything after it away.
-              const before = run.extras.length === 0 ? boundsOf(bindings, run.object) : run.span;
-              // AN EMPTIED RUN IS REMOVED. `lineEdit`'s diff empties the runs an edit crossed, and
-              // `FPDFText_SetText` REFUSES the empty string (measured 2026-09-24) — so a translation,
-              // or a person retyping across a bold word, was refused where nothing was wrong.
-              if (text === '') {
-                emptied.add(run.index);
-                removed.push(run.object, ...run.extras);
-                run.extras = [];
-                push -= before.right - before.left;
-                continue;
-              }
-              // A JOINED RUN IS WRITTEN WHOLE into its first object; its other objects go (`HeldRun.extras`).
-              removed.push(...run.extras);
-              run.extras = [];
-              // THE RUN NOW NAMES WHATEVER SAYS IT — itself, or its twin.
-              run.object = write(run.object, text);
-              const after = boundsOf(bindings, run.object);
-              push += after.right - after.left - (before.right - before.left);
-            }
-            // THE LINE ENDS AT ITS LAST RUN WITH TEXT: an emptied run after it is going, and a wrap
-            // that looked at it would never wrap the words the first run now carries.
-            const kept = line.filter((run) => !emptied.has(run.index));
-            const last = kept[kept.length - 1] ?? line[line.length - 1] ?? firstRun;
-            const start = matrixOn(bindings, (line[0] ?? firstRun).object).e;
-            let lastText = replacements.get(last.index) ?? last.text;
-            let tail = '';
-            // A LINE THAT GREW PAST THE BLOCK WRAPS; one that did not grow never
-            // does, however its rewrite measures.
-            while (push > 0 && boundsOf(bindings, last.object).right > blockRight && lastBreak(lastText) > 0) {
-              const cut = lastBreak(lastText);
-              tail = tail === '' ? lastText.slice(cut + 1).trimEnd() : `${lastText.slice(cut + 1).trimEnd()} ${tail}`;
-              lastText = lastText.slice(0, cut);
-              setTextOn(bindings, last.object, lastText);
-            }
-            if (tail !== '') record(last.object, lastText);
+            anchor = after;
+            // THE GAP ABOVE THIS LINE: the person's own where they set the paragraph's spacing, else the gap the line it
+            // stands in had, else the block's pitch (and its paragraph spacing where it opens a paragraph).
+            const lineGap = pitch * (own?.lineSpacing ?? 1);
+            const spaced = own?.lineSpacing !== undefined || own?.spaceBefore !== undefined;
             visual.push({
-              // A joined run the edit left alone still has all its objects, and they move down with the line.
-              objects: line.flatMap((run) => [run.object, ...run.extras]),
-              oldBaseline: baselines[k],
-              gapAbove: k === 0 ? 0 : (baselines[k - 1] ?? 0) - (baselines[k] ?? 0),
+              objects,
+              oldBaseline: undefined,
+              gapAbove: spaced
+                ? lineGap + (row.first && visual.length > 0 ? (own.spaceBefore ?? spacing) : 0)
+                : row.replaces > 0
+                  ? (baselines[row.replaces - 1] ?? 0) - (baselines[row.replaces] ?? 0)
+                  : pitch + (row.opens ? spacing : 0),
             });
-            if (tail !== '') blockEnd = continueWith(last.object, tail, start, last.object);
-            else blockEnd = last.object;
           }
-
-          // LINES TYPED BELOW THE BLOCK'S LAST, in its last line's last run's style, after whatever
-          // the block's last line now ends with in the page's order.
-          const lastLine = lines[lines.length - 1] ?? firstLine;
-          const lastRunOfBlock = lastLine[lastLine.length - 1] ?? firstRun;
-          const blockStart = matrixOn(bindings, (lastLine[0] ?? firstRun).object).e;
-          for (const extra of typed.slice(lines.length)) {
-            if (extra === '') {
-              visual.push({ objects: [], oldBaseline: undefined, gapAbove: pitch });
-              continue;
-            }
-            blockEnd = continueWith(lastRunOfBlock.object, extra, blockStart, blockEnd);
-          }
+          // EVERY OLD LINE THE PLAN DID NOT KEEP goes at the end: a line set afresh stands in for it, or the person
+          // removed it — a joined run's every object.
+          for (const [at, line] of lines.entries()) if (!kept.has(at)) removed.push(...objectsOf(line));
 
           // THE LAYOUT, top to bottom: the first line stays where it is, and
           // each line after it sits its own gap below the one above.
           let baseline = baselines[0] ?? 0;
           for (const [at, line] of visual.entries()) {
             if (at > 0) baseline -= line.gapAbove;
-            if (line.oldBaseline !== undefined) {
-              for (const object of line.objects) moveBy(bindings, object, 0, baseline - line.oldBaseline);
-            } else {
-              for (const object of line.objects) {
+            for (const { object, rise } of line.objects) {
+              if (line.oldBaseline !== undefined) {
+                moveBy(bindings, object, 0, baseline - line.oldBaseline);
+              } else {
                 const matrix = matrixOn(bindings, object);
-                setMatrixOn(bindings, object, { ...matrix, f: baseline });
+                setMatrixOn(bindings, object, { ...matrix, f: baseline + rise });
               }
+            }
+          }
+          // THE LINES UNDER UNDERLINED WORDS, now that the baselines are where they end: a filled rectangle a little below
+          // the baseline, as long as the words are wide, inserted after the last object it underlines so the page reads
+          // in the order it is seen.
+          const rules: unknown[] = [];
+          for (const line of underlines) {
+            const thickness = Math.max(0.5, UNDERLINE_THICKNESS * line.size);
+            const baselineAt = matrixOn(bindings, line.first).f;
+            const rule: unknown = bindings.newRect(line.left, baselineAt - UNDERLINE_DROP * line.size - thickness, line.width, thickness);
+            if (rule === null) throw refusedAt('object', 'FPDFPageObj_CreateNewRect refused the line under underlined words');
+            bindings.setFillColour(rule, line.colour[0], line.colour[1], line.colour[2], 255);
+            if (numberFrom(bindings.setDrawMode(rule, 1, 0), 'FPDFPath_SetDrawMode') !== 1) {
+              throw refusedAt('object', 'FPDFPath_SetDrawMode refused the line under underlined words');
+            }
+            insertAfter(rule, line.last);
+            rules.push(rule);
+          }
+          // THE BLOCK PLACED, now that it ends as it will: every object it is made of, its kept lines, the lines set
+          // afresh and the rules under them, so it moves as the one thing it is. A trial lays out for a fit and places nothing.
+          if (mode === 'write' && block.place !== undefined) {
+            const mine = [...visual.flatMap((line) => line.objects.map(({ object }) => object)), ...rules];
+            if (mine.length > 0) {
+              if (placeObjects(bindings, mine, block.place, { x: blockLeft, y: blockTop })) placed = true;
             }
           }
           // A FITTED BLOCK FITS when its last line sits no lower than its old last line did. A
           // baseline, not a bounding box: a descender is not a line, and comparing bottoms would
           // shrink a block for a `g`.
           if (block.fit === 'shrink') fits[blockAt] = baseline >= lastBaselineBefore;
+
+          // A RECOGNISED SCAN, EDITED (ADR-0181 Decision 9): the words written are drawn, not invisible, and the picture's
+          // words they replace are covered with the paper round them, above the picture and below the new words. The
+          // picture itself is not changed, so nothing is dropped, and the page is as it was after one Undo.
+          const onScan = scanned[blockAt] ?? [];
+          const papersHere = papers.slice(coverAt, coverAt + onScan.length);
+          coverAt += onScan.length;
+          if (onScan.length > 0) {
+            const address = (object: unknown): string => String(koffi.address(object));
+            const gone = new Set(removed.map(address));
+            const wrote = new Set(written.map((entry) => address(entry.object)));
+            const touched = onScan.flatMap((object, at) => (gone.has(address(object)) || wrote.has(address(object)) ? [at] : []));
+            if (touched.length > 0) {
+              for (const { object } of visual.flatMap((line) => line.objects)) {
+                if (!wrote.has(address(object)) || numberFrom(bindings.getRenderMode(object), 'FPDFTextObj_GetTextRenderMode') !== 3) continue;
+                if (numberFrom(bindings.setRenderMode(object, 0), 'FPDFTextObj_SetTextRenderMode') !== 1) {
+                  throw refusedAt('object', 'FPDFTextObj_SetTextRenderMode refused to draw a line written over a scan');
+                }
+              }
+              const indices = objectIndices(bindings, handle);
+              const lowest = Math.min(...onScan.map((object) => indices.get(address(object)) ?? Number.POSITIVE_INFINITY));
+              for (const at of touched) {
+                // ONE RECTANGLE WHERE THE PAPER IS ONE COLOUR, a grid of them where it shades (ADR-0187).
+                for (const { box, colour: paper } of papersHere[at] ?? []) {
+                  if (!Number.isFinite(lowest)) continue;
+                  const cover: unknown = bindings.newRect(box.left, box.bottom, box.right - box.left, box.top - box.bottom);
+                  if (cover === null) throw refusedAt('object', 'FPDFPageObj_CreateNewRect refused the paper over a scanned word');
+                  bindings.setFillColour(cover, paper.r, paper.g, paper.b, 255);
+                  if (numberFrom(bindings.setDrawMode(cover, 1, 0), 'FPDFPath_SetDrawMode') !== 1) {
+                    throw refusedAt('object', 'FPDFPath_SetDrawMode refused the paper over a scanned word');
+                  }
+                  if (numberFrom(bindings.insertObjectAt(handle, cover, lowest), 'FPDFPage_InsertObjectAtIndex') !== 1) {
+                    throw refusedAt('object', `FPDFPage_InsertObjectAtIndex refused the paper over a scanned word on page ${String(page)}`);
+                  }
+                }
+              }
+            }
+          }
         }
 
         // A TRIAL ENDS HERE: nothing removed, nothing read back, nothing generated — the page is
         // closed and its changes go with it.
-        if (mode === 'trial') return { fits };
+        if (mode === 'trial') return { fits, boxed: [] };
 
-        if (written.length === 0 && removed.length === 0) {
+        if (written.length === 0 && removed.length === 0 && !placed && inserts.length === 0) {
           throw new Error(
             `A block edit on page ${String(page)} changed nothing. Regenerating a page's content ` +
               'stream is the whole cost of an edit, and this one would change nothing.',
@@ -2135,9 +3351,12 @@ function layOutBlocks(
             textPage,
             written.map((write) => write.object),
           );
-          const pairs = written.map((write, at) => ({ written: asTextPageReads(write.text), read: drawn[at] ?? '' }));
-          if (pairs.some(({ written: wrote, read }) => wrote !== read)) {
-            throw new TextNotWritableError(unwritableCharacters(pairs));
+          const misread = misreadWrites(
+            written.map((write) => write.text),
+            drawn,
+          );
+          if (misread.length > 0) {
+            throw new TextNotWritableError(unwritableCharacters(misread));
           }
         } finally {
           bindings.closeTextPage(textPage);
@@ -2153,18 +3372,135 @@ function layOutBlocks(
           handle,
           written.map((write) => write.object),
         );
-        return { fits };
+        // THE BOXES STILL ON THE PAGE (ADR-0174).
+        return { fits, boxed: pen.boxed() };
       } finally {
-        // OURS TO CLOSE, and only ours: each object holds its own reference to
-        // the font it was made in, so closing the caller's handle frees nothing
-        // the page still draws.
-        for (const font of standardFonts.values()) bindings.closeFont(font);
-        // THE SCRATCH PAGE GOES before the caller can generate or save anything.
-        if (scratch !== undefined) {
-          bindings.closePage(scratch.handle);
-          bindings.deletePage(document, scratch.index);
-        }
+        pen.close();
       }
+}
+
+/**
+ * How wide a piece of text is in a run's style, for {@link planBlock}.
+ *
+ * PDFium sets no kerning and no shaping: an object's width is the sum of its characters' advances, so the width of a
+ * word is the sum over its characters, and each character is measured once per run. `FPDFPageObj_GetBounds` is the ink
+ * box, not the advance, so one character's advance is read as a DIFFERENCE of two ink right edges that share a
+ * reference character the font carries: the right edge of `character` then `reference`, less that of `reference`
+ * alone. That is exact for any character, a space included, whose own ink box is empty.
+ *
+ * Where the run's font cannot carry a character: in a process with a catalogue, the character is written as pieces on
+ * the page for an instant, twice, and measured by the same difference (the face and box fonts the write will use); in
+ * one without, the whole text is measured in the standard twin the write will use, and a character it refuses is the
+ * refusal the write would give.
+ */
+function blockMeasure(
+  bindings: Bound,
+  document: unknown,
+  pen: PieceWriter,
+  runs: ReadonlyMap<number, HeldRun>,
+  fallback: HeldRun,
+  block: readonly HeldRun[],
+  /** What a mark makes of a run's words: the face it asks and the factor its size and rise scale a width by. */
+  styleFor: (run: HeldRun, mark: number) => { readonly restyle: Restyle | undefined; readonly factor: number },
+): Measure {
+  const inkRight = (source: unknown, text: string, font?: unknown): number | undefined => {
+    const probe = makeTextLike(bindings, document, source, 0, font);
+    try {
+      // LEFT TO RIGHT, AS GIVEN: the probe is two characters set side by side and a width is the second's, so a
+      // right-to-left pair put in drawing order would stand the other way round and measure the first (ADR-0186).
+      return trySetText(bindings, probe, text, false) ? boundsOf(bindings, probe).right : undefined;
+    } finally {
+      bindings.destroyObject(probe);
+    }
+  };
+  const characters = Array.from(new Set(block.flatMap((run) => Array.from(run.text)).filter((each) => each.trim() !== '')));
+  const references = new Map<string, string | undefined>();
+  const referenceFor = (key: string, source: unknown, font?: unknown, among: readonly string[] = characters): string | undefined => {
+    if (references.has(key)) return references.get(key);
+    const found = among.find((each) => inkRight(source, each, font) !== undefined);
+    references.set(key, found);
+    return found;
+  };
+  const advances = new Map<string, number | null>();
+  const advanceOf = (
+    kind: 'own' | 'twin',
+    run: HeldRun,
+    character: string,
+    font?: unknown,
+    among?: readonly string[],
+    /** Which restyled face `font` is, so a bold twin and a plain one are not one answer. */
+    variant = '',
+  ): number | null => {
+    const key = `${kind}${variant}|${String(run.index)}|${character}`;
+    const known = advances.get(key);
+    if (known !== undefined) return known;
+    const source = run.object;
+    const reference = referenceFor(`${kind}${variant}|${String(run.index)}`, source, font, among);
+    let answer: number | null = null;
+    if (reference !== undefined) {
+      const both = inkRight(source, character + reference, font);
+      const alone = inkRight(source, reference, font);
+      answer = both === undefined || alone === undefined ? null : both - alone;
+    }
+    advances.set(key, answer);
+    return answer;
+  };
+  /** One character set as pieces on the page and taken off again: its width is the second write less the first. */
+  const piecesAdvance = (run: HeldRun, character: string, restyle?: Restyle): number => {
+    const key = `pieces${JSON.stringify(restyle ?? null)}|${String(run.index)}|${character}`;
+    const known = advances.get(key);
+    if (known !== undefined && known !== null) return known;
+    const rightOf = (text: string): number => {
+      const object = makeTextLike(bindings, document, run.object, 0);
+      pen.insertAfter(object, run.object);
+      const objects = pen.writePieces(object, text, restyle);
+      const right = spanOf(bindings, objects).right;
+      for (const each of [object, ...objects]) {
+        if (!pen.removed.includes(each)) pen.removed.push(each);
+        const at = pen.written.findIndex((entry) => entry.object === each);
+        if (at !== -1) pen.written.splice(at, 1);
+      }
+      return right;
+    };
+    const width = rightOf(character + character) - rightOf(character);
+    advances.set(key, width);
+    return width;
+  };
+  /** The width of `text` in a face a mark asked for: every character through the resolver's face, or the standard twin. */
+  const restyledWidth = (run: HeldRun, restyle: Restyle, text: string): number => {
+    const each = Array.from(arabicForms(text));
+    if (pen.inPieces) return each.reduce((sum, character) => sum + piecesAdvance(run, character, restyle), 0);
+    const twin = pen.standardFontRestyled(run.object, restyle);
+    const widths = each.map((character) => advanceOf('twin', run, character, twin, ['x'], JSON.stringify(restyle)));
+    if (widths.some((width) => width === null)) throw new TextNotWritableError(pen.uncarriedIn(run.object, text));
+    return widths.reduce<number>((sum, width) => sum + (width ?? 0), 0);
+  };
+  /** The width of `text` in the run's own style: its font, then the pieces a character it lacks is set in. */
+  const plainWidth = (run: HeldRun, text: string): number => {
+    // THE SHAPES THE WRITER DRAWS, not the letters: Arabic is set in its joining forms and the ligature, which are
+    // narrower together than each letter drawn alone, so a plan measured by the letters wrapped a paragraph early
+    // (measured 2026-10-06 on the bundled Naskh face: 135 pt planned for a line drawn in 64).
+    const each = Array.from(arabicForms(text));
+    const own = each.map((character) => advanceOf('own', run, character));
+    if (own.every((width) => width !== null)) return own.reduce((sum, width) => sum + width, 0);
+    if (pen.inPieces) {
+      return each.reduce((sum, character, at) => sum + (own[at] ?? piecesAdvance(run, character)), 0);
+    }
+    const twin = pen.standardFontLike(run.object);
+    const widths = each.map((character) => advanceOf('twin', run, character, twin, ['x']));
+    if (widths.some((width) => width === null)) throw new TextNotWritableError(pen.uncarriedIn(run.object, text));
+    return widths.reduce<number>((sum, width) => sum + (width ?? 0), 0);
+  };
+  return (id, mark, text) => {
+    const run = runs.get(id) ?? fallback;
+    // A MARKED PIECE: the face it asks (where it asks one), scaled by its size and its rise. The size is applied to the
+    // objects after they are written, so the width is the unscaled one times the factor.
+    if (mark !== NO_MARK) {
+      const { restyle, factor } = styleFor(run, mark);
+      return factor * (restyle === undefined ? plainWidth(run, text) : restyledWidth(run, restyle, text));
+    }
+    return plainWidth(run, text);
+  };
 }
 
 /**
@@ -2173,12 +3509,31 @@ function layOutBlocks(
  * twelve of the fourteen that set text (ADR-0097). Read from {@link styleOf},
  * the one reading of a run's style, rather than from the flags again.
  */
-function standardFontFor(style: RunStyle): string {
+function standardFontFor(style: Pick<RunStyle, 'bold' | 'italic' | 'mono' | 'serif'>): string {
   const { bold, italic } = style;
   if (style.mono) return `Courier${bold && italic ? '-BoldOblique' : bold ? '-Bold' : italic ? '-Oblique' : ''}`;
   if (style.serif) return `Times${bold && italic ? '-BoldItalic' : bold ? '-Bold' : italic ? '-Italic' : '-Roman'}`;
   return `Helvetica${bold && italic ? '-BoldOblique' : bold ? '-Bold' : italic ? '-Oblique' : ''}`;
 }
+
+/**
+ * Whether a family a person asked for is a fixed-pitch or a serif kind, where it names one, and the run's own kind where
+ * it does not: the ONE reading of a family's name that a restyled word and an added box both take (B3a).
+ */
+function kindOfFamily(
+  family: string | undefined,
+  own: Pick<RunStyle, 'mono' | 'serif'>,
+): { readonly mono: boolean; readonly serif: boolean } {
+  const asked = (family ?? '').toLowerCase();
+  if (asked === '') return { mono: own.mono, serif: own.serif };
+  return {
+    mono: /courier|mono|consolas/u.test(asked),
+    serif: /times|serif|georgia|garamond|cambria/u.test(asked) && !asked.includes('sans'),
+  };
+}
+
+/** The one character an added box's text object starts from, which its words replace. */
+const SEED_TEXT = '.';
 
 /**
  * The distance between a block's lines: its first two baselines where it has
@@ -2206,6 +3561,75 @@ function blockPitch(bindings: Bound, object: unknown, baselines: readonly number
   }
   const bounds = boundsOf(bindings, object);
   return bounds.top - bounds.bottom;
+}
+
+/** `FPDF_OBJECT_*` of a mark's parameter: the two kinds PDFium's calls can both read and set. */
+const MARK_NUMBER = 2;
+const MARK_STRING = 3;
+const MARK_NAME = 4;
+
+/** The longest name, key or string value of a mark one read takes, in bytes: a hostile file's, bounded. */
+const MAX_MARK_STRING_BYTES = 4096;
+
+/** A mark's string read by PDFium's two-call convention (UTF-16LE with its terminator, the length in bytes). */
+function markString(
+  call: (buffer: Uint8Array | null, length: number, needed: number[]) => unknown,
+  what: string,
+): string | null {
+  const needed = [0];
+  if (numberFrom(call(null, 0, needed), what) !== 1) return null;
+  const bytes = needed[0] ?? 0;
+  if (bytes <= 2) return '';
+  if (bytes > MAX_MARK_STRING_BYTES) return null;
+  const buffer = new Uint8Array(bytes);
+  if (numberFrom(call(buffer, buffer.length, needed), what) !== 1) return null;
+  return Buffer.from(buffer.subarray(0, bytes - 2)).toString('utf16le');
+}
+
+/**
+ * The marked content `from` stands in, set on `to` ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
+ * Decision 8): each mark's name and the parameters PDFium can both read and set (numbers and strings, an `MCID` among
+ * them).
+ *
+ * A tagged page's structure tree names its text by that number, so an object that takes an old one's place without the
+ * mark leaves the structure pointing at nothing, and a screen reader loses the text. A parameter of another kind (an
+ * array or a dictionary, a figure's bounding box) is not copied: the mark is, so the object stays in its content
+ * sequence, and what is lost is a property of the sequence that PDFium has no call to write.
+ *
+ * A continuation line takes the marks of the line it continues, so one sequence's number may stand on more than one
+ * object on the page.
+ */
+function copyMarks(bindings: Bound, document: unknown, from: unknown, to: unknown): void {
+  const count = numberFrom(bindings.countMarks(from), 'FPDFPageObj_CountMarks');
+  for (let at = 0; at < count; at += 1) {
+    const mark: unknown = bindings.getMark(from, at);
+    if (mark === null) continue;
+    const name = markString((buffer, length, needed) => bindings.markName(mark, buffer, length, needed), 'FPDFPageObjMark_GetName');
+    if (name === null || name === '') continue;
+    const made: unknown = bindings.addMark(to, name);
+    if (made === null) throw refusedAt('object', `FPDFPageObj_AddMark refused the mark ${name} of a line this edit made`);
+    const params = numberFrom(bindings.markParamCount(mark), 'FPDFPageObjMark_CountParams');
+    for (let index = 0; index < params; index += 1) {
+      const key = markString(
+        (buffer, length, needed) => bindings.markParamKey(mark, index, buffer, length, needed),
+        'FPDFPageObjMark_GetParamKey',
+      );
+      if (key === null || key === '') continue;
+      const kind = numberFrom(bindings.markParamType(mark, key), 'FPDFPageObjMark_GetParamValueType');
+      if (kind === MARK_NUMBER) {
+        const value = [0];
+        if (numberFrom(bindings.markParamInt(mark, key, value), 'FPDFPageObjMark_GetParamIntValue') === 1) {
+          numberFrom(bindings.markSetInt(document, to, made, key, value[0] ?? 0), 'FPDFPageObjMark_SetIntParam');
+        }
+      } else if (kind === MARK_STRING || kind === MARK_NAME) {
+        const text = markString(
+          (buffer, length, needed) => bindings.markParamString(mark, key, buffer, length, needed),
+          'FPDFPageObjMark_GetParamStringValue',
+        );
+        if (text !== null) numberFrom(bindings.markSetString(document, to, made, key, text), 'FPDFPageObjMark_SetStringParam');
+      }
+    }
+  }
 }
 
 /**
@@ -2237,6 +3661,25 @@ function makeTextLike(
   const alpha = [0];
   if (numberFrom(bindings.getFillColour(source, red, green, blue, alpha), 'FPDFPageObj_GetFillColor') === 1) {
     bindings.setFillColour(object, red[0] ?? 0, green[0] ?? 0, blue[0] ?? 0, alpha[0] ?? 255);
+  }
+  // HOW IT IS PAINTED: the mode, and the stroke a stroking mode paints with. A new text object is mode 0, filled; a
+  // line that replaced an invisible one (mode 3) would be drawn over the picture it was recognised from.
+  const mode = numberFrom(bindings.getRenderMode(source), 'FPDFTextObj_GetTextRenderMode');
+  if (mode > 0 && numberFrom(bindings.setRenderMode(object, mode), 'FPDFTextObj_SetTextRenderMode') !== 1) {
+    throw refusedAt('object', 'FPDFTextObj_SetTextRenderMode refused the mode of the line a new one stands in for');
+  }
+  if (mode === 1 || mode === 2 || mode === 5 || mode === 6) {
+    const width = [0];
+    const r = [0];
+    const g = [0];
+    const b = [0];
+    const a = [0];
+    if (numberFrom(bindings.getStrokeColour(source, r, g, b, a), 'FPDFPageObj_GetStrokeColor') === 1) {
+      bindings.setStrokeColour(object, r[0] ?? 0, g[0] ?? 0, b[0] ?? 0, a[0] ?? 255);
+    }
+    if (numberFrom(bindings.getStrokeWidth(source, width), 'FPDFPageObj_GetStrokeWidth') === 1) {
+      bindings.setStrokeWidth(object, width[0] ?? 1);
+    }
   }
   return object;
 }
@@ -2308,6 +3751,128 @@ function objectAt(bindings: Bound, handle: unknown, page: number, index: number)
   return object;
 }
 
+/** A box in PDF user space, as {@link boundsOf} reads it. */
+interface Bounds {
+  readonly left: number;
+  readonly bottom: number;
+  readonly right: number;
+  readonly top: number;
+}
+
+const IMAGE_OBJECT = 3;
+
+/** How many raster pixels a point of the page is, when the page is read for its paper: past what a scan's grain needs. */
+const PAPER_PIXELS_PER_POINT = 2;
+
+/** How far past a recognised word's box the paper cover reaches, in points: a scanned word's ink is wider than its box. */
+const COVER_MARGIN = 1.5;
+
+/**
+ * THE RECOGNISED WORDS OF A SCAN AMONG `objects` ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
+ * Decision 9): those painted invisibly (render mode 3, how an OCR text layer is drawn) that lie over a picture, so the
+ * words a person reads there are the picture's.
+ *
+ * The picture is the test, and not the invisibility alone: invisible text over nothing is text a document keeps for a
+ * reader that is not eyes, and an edit of it stays as invisible as it was (ADR-0179's keep list).
+ */
+function recognisedOverPictures(bindings: Bound, handle: unknown, objects: readonly unknown[]): unknown[] {
+  const pictures: Bounds[] = [];
+  const count = numberFrom(bindings.countObjects(handle), 'FPDFPage_CountObjects');
+  for (let at = 0; at < count; at += 1) {
+    const object: unknown = bindings.getObject(handle, at);
+    if (object !== null && numberFrom(bindings.objectType(object), 'FPDFPageObj_GetType') === IMAGE_OBJECT) {
+      pictures.push(boundsOf(bindings, object));
+    }
+  }
+  if (pictures.length === 0) return [];
+  return objects.filter((object) => {
+    if (numberFrom(bindings.getRenderMode(object), 'FPDFTextObj_GetTextRenderMode') !== 3) return false;
+    const box = boundsOf(bindings, object);
+    return pictures.some((picture) => box.left < picture.right && box.right > picture.left && box.bottom < picture.top && box.top > picture.bottom);
+  });
+}
+
+/** One rectangle of a scan's cover, in page space, and the paper colour it is filled with. */
+interface PageCoverCell {
+  readonly box: Bounds;
+  readonly colour: Rgb;
+}
+
+/**
+ * The cover for each of `boxes` on the page as it is drawn now, read once from one raster, in the order the boxes were
+ * given ([ADR-0187](../../../docs/DECISIONS/0187-a-scans-edited-words-are-covered-where-the-ink-is-with-the-paper-that-is-there.md)):
+ * each box grown through the ink that touches it, in cells filled with the paper that is there (`paperCoverFor`).
+ *
+ * The cover is worked out on the raster and written in page space, so the page's own mapping stands between the two, and
+ * a mapping is read from the page rather than assumed: where the page is rotated or its box does not start at the origin
+ * a device pixel is not a page unit away.
+ */
+function coversRoundBoxes(bindings: Bound, handle: unknown, boxes: readonly Bounds[]): PageCoverCell[][] {
+  const pageWidth = numberFrom(bindings.pageWidth(handle), 'FPDF_GetPageWidthF');
+  const pageHeight = numberFrom(bindings.pageHeight(handle), 'FPDF_GetPageHeightF');
+  const width = Math.max(1, Math.round(pageWidth * PAPER_PIXELS_PER_POINT));
+  const height = Math.max(1, Math.round(pageHeight * PAPER_PIXELS_PER_POINT));
+  const raster = rasteriseOn(bindings, handle, width, height);
+  const deviceOf = (x: number, y: number): readonly [number, number] | undefined => {
+    const deviceX = [0];
+    const deviceY = [0];
+    if (numberFrom(bindings.pageToDevice(handle, 0, 0, width, height, 0, x, y, deviceX, deviceY), 'FPDF_PageToDevice') !== 1) return undefined;
+    return [deviceX[0] ?? 0, deviceY[0] ?? 0];
+  };
+  // THE MAPPING BACK, from three corners of the page: the page's own mapping is affine (a scale, a quarter turn at most,
+  // a shift), so where the page's width and height are carried to the device gives its inverse, to the pixel over the
+  // whole page and not to a pixel over a point.
+  const origin = deviceOf(0, 0);
+  const alongX = deviceOf(pageWidth, 0);
+  const alongY = deviceOf(0, pageHeight);
+  if (origin === undefined || alongX === undefined || alongY === undefined) {
+    return boxes.map((box) => [{ box, colour: { r: 255, g: 255, b: 255 } }]);
+  }
+  const a = (alongX[0] - origin[0]) / pageWidth;
+  const b = (alongX[1] - origin[1]) / pageWidth;
+  const c = (alongY[0] - origin[0]) / pageHeight;
+  const d = (alongY[1] - origin[1]) / pageHeight;
+  const determinant = a * d - b * c;
+  const pageOf = (x: number, y: number): readonly [number, number] => [
+    (d * (x - origin[0]) - c * (y - origin[1])) / determinant,
+    (-b * (x - origin[0]) + a * (y - origin[1])) / determinant,
+  ];
+  return boxes.map((box) => {
+    // THE PAGE'S OWN MAPPING, rotation included: the four corners of the box, where they fall on this raster.
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (const [x, y] of [
+      [box.left, box.bottom],
+      [box.left, box.top],
+      [box.right, box.bottom],
+      [box.right, box.top],
+    ] as const) {
+      const device = deviceOf(x, y);
+      if (device === undefined || !Number.isFinite(determinant) || determinant === 0) return [{ box, colour: { r: 255, g: 255, b: 255 } }];
+      xs.push(device[0]);
+      ys.push(device[1]);
+    }
+    const seed: PixelBox = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+    return paperCoverFor(raster.bgra, width, height, seed, PAPER_PIXELS_PER_POINT).map((cell) => {
+      const corners = [
+        pageOf(cell.box.x0, cell.box.y0),
+        pageOf(cell.box.x1, cell.box.y0),
+        pageOf(cell.box.x0, cell.box.y1),
+        pageOf(cell.box.x1, cell.box.y1),
+      ];
+      return {
+        box: {
+          left: Math.min(...corners.map((corner) => corner[0])),
+          bottom: Math.min(...corners.map((corner) => corner[1])),
+          right: Math.max(...corners.map((corner) => corner[0])),
+          top: Math.max(...corners.map((corner) => corner[1])),
+        },
+        colour: cell.colour,
+      };
+    });
+  });
+}
+
 /** One object's box, read through `FPDFPageObj_GetBounds`. */
 function boundsOf(
   bindings: Bound,
@@ -2324,6 +3889,68 @@ function boundsOf(
     throw refusedAt('object', 'FPDFPageObj_GetBounds refused an object this page handed back');
   }
   return { left: left[0] ?? 0, bottom: bottom[0] ?? 0, right: right[0] ?? 0, top: top[0] ?? 0 };
+}
+
+/**
+ * Moves, scales and rotates a block's objects as ONE thing (ADR-0180, corrected 2026-10-06): scaled about `anchor` (its
+ * top left), then turned about the centre of what that left, then moved. The three are composed into one matrix and
+ * applied to each object once, so the block never stands half placed between steps.
+ *
+ * Measured against `FPDFPageObj_Transform` (2026-09-10): a matrix scales about the origin, so the anchor is composed
+ * into the matrix here rather than left to the caller.
+ */
+function placeObjects(
+  bindings: Bound,
+  objects: readonly unknown[],
+  place: Omit<BlockPlace, 'block'>,
+  anchor: { readonly x: number; readonly y: number },
+): boolean {
+  const scale = place.scale ?? 1;
+  const degrees = place.rotate ?? 0;
+  const move = place.move ?? { x: 0, y: 0 };
+  // A PLACEMENT THAT PLACES NOTHING is no change, so a page is not regenerated for it.
+  if (scale === 1 && degrees === 0 && move.x === 0 && move.y === 0) return false;
+  const edges = objects.map((object) => boundsOf(bindings, object));
+  const centre = {
+    x: (Math.min(...edges.map((edge) => edge.left)) + Math.max(...edges.map((edge) => edge.right))) / 2,
+    y: (Math.min(...edges.map((edge) => edge.bottom)) + Math.max(...edges.map((edge) => edge.top))) / 2,
+  };
+  // THE CENTRE AFTER THE SCALE, which is what the turn is about.
+  const turned = { x: anchor.x + (centre.x - anchor.x) * scale, y: anchor.y + (centre.y - anchor.y) * scale };
+  const radians = (degrees * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const scaling: Matrix = { a: scale, b: 0, c: 0, d: scale, e: anchor.x * (1 - scale), f: anchor.y * (1 - scale) };
+  const turning: Matrix = {
+    a: cos,
+    b: sin,
+    c: -sin,
+    d: cos,
+    e: turned.x - turned.x * cos + turned.y * sin,
+    f: turned.y - turned.x * sin - turned.y * cos,
+  };
+  const moving: Matrix = { a: 1, b: 0, c: 0, d: 1, e: move.x, f: move.y };
+  const whole = then(then(scaling, turning), moving);
+  for (const object of objects) setMatrixOn(bindings, object, then(matrixOn(bindings, object), whole));
+  return true;
+}
+
+/** `first` followed by `second`, in the row-vector order a PDF matrix composes in. */
+function then(first: Matrix, second: Matrix): Matrix {
+  return {
+    a: first.a * second.a + first.b * second.c,
+    b: first.a * second.b + first.b * second.d,
+    c: first.c * second.a + first.d * second.c,
+    d: first.c * second.b + first.d * second.d,
+    e: first.e * second.a + first.f * second.c + second.e,
+    f: first.e * second.b + first.f * second.d + second.f,
+  };
+}
+
+/** The left and right edges of a run written as several objects (ADR-0173's pieces), from each one's own bounds. */
+function spanOf(bindings: Bound, objects: readonly unknown[]): { left: number; right: number } {
+  const edges = objects.map((object) => boundsOf(bindings, object));
+  return { left: Math.min(...edges.map((edge) => edge.left)), right: Math.max(...edges.map((edge) => edge.right)) };
 }
 
 /**
@@ -2853,42 +4480,42 @@ export function renderPageBitmap(
   width: number,
   height: number,
 ): Promise<PageBitmap> {
-  return promised(() =>
-    onPage(session, page, (handle) => {
-      const bindings = api();
-      if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
-        throw new Error(
-          `A raster of ${String(width)}x${String(height)} is not a size PDFium can allocate. ` +
-            'The caller states the size and a non-positive one means the caller has a bug.',
-        );
-      }
-      const bitmap: unknown = bindings.createBitmap(width, height, 1);
-      if (bitmap === null) {
-        throw new Error(
-          `FPDFBitmap_Create refused ${String(width)}x${String(height)} ` +
-            `(FPDF_GetLastError ${String(bindings.lastError())}).`,
-        );
-      }
-      try {
-        bindings.fillRect(bitmap, 0, 0, width, height, 0xffffffff);
-        // FLAGS 0. `FPDF_LCD_TEXT` would produce sub-pixel-positioned text whose
-        // correctness depends on the physical pixel layout of the display it
-        // lands on, and this bitmap is encoded and sent somewhere else.
-        bindings.renderPage(bitmap, handle, 0, 0, width, height, 0, 0);
-        const stride = numberFrom(bindings.bitmapStride(bitmap), 'FPDFBitmap_GetStride');
-        const pointer: unknown = bindings.bitmapBuffer(bitmap);
-        if (pointer === null) throw new Error('FPDFBitmap_GetBuffer answered nothing.');
-        const source = koffi.decode(pointer, 'uint8_t', stride * height) as Uint8Array;
-        const bgra = new Uint8Array(width * height * 4);
-        for (let row = 0; row < height; row += 1) {
-          bgra.set(source.subarray(row * stride, row * stride + width * 4), row * width * 4);
-        }
-        return { width, height, bgra };
-      } finally {
-        bindings.destroyBitmap(bitmap);
-      }
-    }),
-  );
+  return promised(() => onPage(session, page, (handle) => rasteriseOn(api(), handle, width, height)));
+}
+
+/** A page already loaded, rasterised at exactly `width` by `height`: the one raster reader (B3a), by {@link renderPageBitmap} and by a scan's paper. */
+function rasteriseOn(bindings: Bound, handle: unknown, width: number, height: number): PageBitmap {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    throw new Error(
+      `A raster of ${String(width)}x${String(height)} is not a size PDFium can allocate. ` +
+        'The caller states the size and a non-positive one means the caller has a bug.',
+    );
+  }
+  const bitmap: unknown = bindings.createBitmap(width, height, 1);
+  if (bitmap === null) {
+    throw new Error(
+      `FPDFBitmap_Create refused ${String(width)}x${String(height)} ` +
+        `(FPDF_GetLastError ${String(bindings.lastError())}).`,
+    );
+  }
+  try {
+    bindings.fillRect(bitmap, 0, 0, width, height, 0xffffffff);
+    // FLAGS 0. `FPDF_LCD_TEXT` would produce sub-pixel-positioned text whose
+    // correctness depends on the physical pixel layout of the display it
+    // lands on, and this bitmap is encoded and sent somewhere else.
+    bindings.renderPage(bitmap, handle, 0, 0, width, height, 0, 0);
+    const stride = numberFrom(bindings.bitmapStride(bitmap), 'FPDFBitmap_GetStride');
+    const pointer: unknown = bindings.bitmapBuffer(bitmap);
+    if (pointer === null) throw new Error('FPDFBitmap_GetBuffer answered nothing.');
+    const source = koffi.decode(pointer, 'uint8_t', stride * height) as Uint8Array;
+    const bgra = new Uint8Array(width * height * 4);
+    for (let row = 0; row < height; row += 1) {
+      bgra.set(source.subarray(row * stride, row * stride + width * 4), row * width * 4);
+    }
+    return { width, height, bgra };
+  } finally {
+    bindings.destroyBitmap(bitmap);
+  }
 }
 
 /**
@@ -3101,23 +4728,6 @@ function saveAsCopy(document: unknown): Buffer {
 }
 
 /**
- * The second adapter behind the engine seam.
- *
- * `engineSeam.ts` declared `PdfiumSession` with nothing behind it and said so;
- * this is what goes behind it. A PDFium edit mutates a loaded document and the
- * bytes come back from `serialise`, exactly as MuPDF's do — but the writer of
- * record's shape is **`byte-image`** ([ADR-0047](../../../docs/DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)),
- * so this session is minted for one command and never survives it.
- * `PdfiumSession` is the handle held *inside* a command; `WriterSession['pdfium']`
- * is a `ByteImage` and they are different types on purpose.
- *
- * **This said *"the shape is `live-session`, as `writerShapes` already records"*
- * until 2026-09-09** and cited the table that by then contradicted it — a
- * compound claim whose second clause, the mechanism, stayed true and vouched
- * for the dead one beside it (finding CCCCCC-2). Nothing in `63f10be` opened
- * this file.
- */
-/**
  * Runs `work` against a session opened from `image` with the key it carries, closing it however it ends. THE ONE
  * OPENER every PDFium spec and read takes (ADR-0171's addendum), where each module had a copy of these lines: a copy
  * that opened without the key would read as the same four lines and refuse every document opened with its password.
@@ -3131,6 +4741,23 @@ export async function onImage<T>(image: ImageSession, work: (session: PdfiumSess
   }
 }
 
+/**
+ * The second adapter behind the engine seam.
+ *
+ * `engineSeam.ts` declared `PdfiumSession` with nothing behind it and said so;
+ * this is what goes behind it. A PDFium edit mutates a loaded document and the
+ * bytes come back from `serialise`, exactly as MuPDF's do — but the writer of
+ * record's shape is **`byte-image`** ([ADR-0047](../../../docs/DECISIONS/0047-an-in-place-text-edit-is-a-byte-image-command.md)),
+ * so this session is minted for one command and never survives it.
+ * `PdfiumSession` is the handle held *inside* a command; `WriterSession['pdfium']`
+ * is an `ImageSession`, the bytes and the key that opens them, and they are different types on purpose.
+ *
+ * **This said *"the shape is `live-session`, as `writerShapes` already records"*
+ * until 2026-09-09** and cited the table that by then contradicted it — a
+ * compound claim whose second clause, the mechanism, stayed true and vouched
+ * for the dead one beside it (finding CCCCCC-2). Nothing in `63f10be` opened
+ * this file.
+ */
 export const pdfiumWriter: EngineWriter<PdfiumSession> = {
   /**
    * Parses `image` into a session.

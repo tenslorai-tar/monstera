@@ -5,11 +5,17 @@ import {
   ENGINE_HOST_FRAME_MAX_BYTES,
   FRAME_HEADER_BYTES,
   encodeFrame,
+  liftCredentials,
   replacementFieldsOf,
 } from '@monstera/contract';
 
-import type { ByteImage, ImageSession } from '../engineSeam.js';
-import { EditRefusedError, NothingToReplaceError, ReplaceMovesLineError } from '../textEditRefusals.js';
+import { type ByteImage, type DrawnBoxes, type ImageSession, NO_BOXES } from '../engineSeam.js';
+import {
+  EditRefusedError,
+  NothingToReplaceError,
+  ReplaceMovesLineError,
+  TextNotWritableError,
+} from '../textEditRefusals.js';
 import { TOKEN_BYTES } from '../token.js';
 import type { HostArea } from './engineHandlers.js';
 import { sessionFileAnswers } from './fileAnswers.js';
@@ -130,7 +136,7 @@ const RUNS = [
       mono: false,
       italic: true,
       bold: false,
-      upright: true,
+      orientation: 'upright' as const,
     },
   },
   {
@@ -149,7 +155,7 @@ const RUNS = [
       mono: true,
       italic: false,
       bold: true,
-      upright: false,
+      orientation: 'turned' as const,
     },
   },
 ];
@@ -168,9 +174,10 @@ function seen(session: ImageSession): string {
 
 /**
  * @param files what `readSnapshot` will find, and where `writeOutput` records.
- * @param applied what the stubbed execution's `apply` answers.
+ * @param applied the image the stubbed execution's `apply` answers.
+ * @param drawn the boxes it answers beside it (ADR-0174).
  */
-function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
+function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9]), drawn: DrawnBoxes = NO_BOXES) {
   const calls: string[] = [];
   // NAMED, as the entry names it: a file-routed answer is written into the area this table holds (ADR-0125).
   const areas = createHostSessions<HostArea>(() => new Uint8Array(TOKEN_BYTES).fill(7));
@@ -209,7 +216,7 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         if (image.length === 4) throw new NothingToReplaceError();
         // FIVE BYTES ARE A REPLACEMENT THAT WOULD MOVE THE TEXT AFTER IT ON ITS LINE (`replaceLineRule.ts`).
         if (image.length === 5) throw new ReplaceMovesLineError();
-        return Promise.resolve(applied);
+        return Promise.resolve({ image: applied, ...drawn });
       },
       capture: (session) => {
         calls.push(`capture:${seen(session)}`);
@@ -223,7 +230,9 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
         calls.push(`invert:${seen(session)}`);
         // AN UNDO REGENERATES AS AN EDIT DOES, so it is refused at the same step with PDFium's number beside it.
         if (session.bytes.length === 3) throw new EditRefusedError('generate', 6, 'FPDFPage_GenerateContent failed');
-        return Promise.resolve(applied);
+        // SIX BYTES ARE A PAGE WHOSE FONT DOES NOT CARRY THE TEXT THE UNDO WRITES BACK (RRRRRRR-6).
+        if (session.bytes.length === 6) throw new TextNotWritableError('A');
+        return Promise.resolve({ image: applied, ...drawn });
       },
     },
     files: surface,
@@ -256,6 +265,26 @@ function start(files: Files, applied: ByteImage = new Uint8Array([9, 9, 9])) {
       // stub answering an arbitrary length would fail for the right reason and
       // teach the case nothing about the handler.
       return Promise.resolve(new Uint8Array(width * height * 4).fill(7));
+    },
+    runFonts: (image, page, indices) => {
+      calls.push(`run-fonts:${String(page)}:${indices.join(',')}:${seen(image)}`);
+      if (image.bytes.length === 1 && image.bytes[0] === 0) throw new Error('PDFium refused the document');
+      // RUNS 4 AND 6 SHARE A FONT, RUN 8 HAS ANOTHER, and every other run none: the handler must write both fonts one
+      // after the other and pass the places through, and a block of runs with none must write nothing.
+      const fonts = [new Uint8Array([0, 1, 0, 0, 5]), new Uint8Array([0x4f, 0x54, 0x54, 0x4f])];
+      const place = (index: number): number | null => (index === 4 || index === 6 ? 0 : index === 8 ? 1 : null);
+      const runs = indices.map(place);
+      return Promise.resolve({ fonts: runs.some((at) => at !== null) ? fonts : [], runs });
+    },
+    pageRuns: (image, page) => {
+      calls.push(`page-runs:${String(page)}:${seen(image)}`);
+      if (image.bytes.length === 1 && image.bytes[0] === 0) throw new Error('PDFium refused the document');
+      // A RULE IS OBJECT 1, so text objects 0, 2, 3 and a run whose members skip it: the answer must cross as the reader
+      // gave it, members and all.
+      return Promise.resolve({
+        textObjects: [0, 2, 3],
+        runs: [{ index: 0, members: [0, 2], text: 'ab', left: 1, right: 9, bottom: 2, top: 8 }],
+      });
     },
     pageObjects: (image, page) => {
       calls.push(`page-objects:${String(page)}:${seen(image)}`);
@@ -328,10 +357,12 @@ function request(id: string, channel: string, params: unknown, answerInto?: stri
   const declared: ChannelMap = pdfiumChannels;
   if (declared[channel]?.request === 'file') {
     if (files === undefined) throw new Error(`"${channel}" takes its params in a file; hand the case's files`);
-    const bytes = new TextEncoder().encode(JSON.stringify(params));
+    // LIFTED AS MAIN LIFTS THEM (ADR-0171's correction): the key travels in the frame and the file never holds it.
+    const { filed, credentials } = liftCredentials(params);
+    const bytes = new TextEncoder().encode(JSON.stringify(filed));
     files.read.set(`${AREA.snapshotDirectory}|${PARAMS}`, bytes);
     const session = (params as { readonly session: string }).session;
-    carried = { paramsFile: { session, name: PARAMS, bytes: bytes.byteLength } };
+    carried = { paramsFile: { session, name: PARAMS, bytes: bytes.byteLength, credentials } };
   }
   return encodeFrame(
     new TextEncoder().encode(
@@ -347,8 +378,9 @@ const ANSWER = 'a0b1c2d3';
 /** Registers the area and returns the id the host minted. */
 async function openArea(
   files: Files,
+  drawn: DrawnBoxes = NO_BOXES,
 ): Promise<{ session: string; calls: string[]; body: ReturnType<typeof start>['body'] }> {
-  const { calls, body } = start(files);
+  const { calls, body } = start(files, undefined, drawn);
   stream.feed(
     request('o1', 'engine/open', {
       snapshotDirectory: AREA.snapshotDirectory,
@@ -462,6 +494,34 @@ describe('the PDFium host body', () => {
     expect(files.written.size).toBe(0);
   });
 
+  /**
+   * AN UNDO A FONT CANNOT CARRY IS SAID BY NAME (RRRRRRR-6): `refusedBy` alone knew only a refusal at a step, so this
+   * answered `engine-refused` and the person read *Something went wrong*. The channel must declare the code on the
+   * invert as well, or the host's own outbound check turns the answer into `internal`.
+   */
+  it('answers an undo whose text a font cannot carry as text-not-writable, with the characters, and writes nothing', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([1, 2, 3, 4, 5, 6]));
+
+    stream.feed(
+      request('i1', 'engine/invert', {
+        session,
+        inverse: { kind: 'replaceTextObject', prior: { page: 0, objects: [{ index: 2, text: 'WAS' }] } },
+        from: IN,
+        password: null,
+        into: OUT,
+      }, undefined, files),
+    );
+    await stream.whenSent(2);
+
+    expect(answerIn(stream.sent[1])).toMatchObject({
+      body: { ok: false, error: { code: 'text-not-writable', detail: { characters: 'A' } } },
+    });
+    expect(files.written.size).toBe(0);
+  });
+
   it('answers a replacement that would change nothing as nothing-to-replace, and writes nothing (ADR-0169)', async () => {
     stream = stubStream();
     const files = emptyFiles();
@@ -515,6 +575,34 @@ describe('the PDFium host body', () => {
     expect(calls.filter((entry) => entry.startsWith('incident:'))).toStrictEqual([]);
   });
 
+  /**
+   * THE BOXES TRAVEL WITH THE ANSWER, through the one cap (ADR-0174 Decision 2): seventy drawn, the first sixty-four
+   * named in order and six counted. A handler that dropped them answers `boxed: []`, which the schema accepts and the
+   * case below would not; one that sent all seventy is refused by the schema at the host's own outbound check.
+   */
+  it('answers the characters the apply drew as boxes, sixty-four named and the rest counted', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const drawn = Array.from({ length: 70 }, (_, at) => ({ character: String.fromCodePoint(0x4e00 + at), page: 0 }));
+    const { session } = await openArea(files, { boxed: drawn, more: 0 });
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([4, 5]));
+    stream.feed(
+      request('a1', 'engine/apply', {
+        session,
+        sources: [],
+        command: { kind: 'replaceTextObject', page: 0, ...replacementFieldsOf([{ index: 2, text: 'hi' }]), version: 1 },
+        from: IN,
+        password: null,
+        into: OUT,
+      }, undefined, files),
+    );
+    await stream.whenSent(2);
+    const answer = answerIn(stream.sent[1]) as { body: { ok: boolean; value: { boxed: unknown[]; more: number } } };
+    expect(answer.body.ok, JSON.stringify(answer)).toBe(true);
+    expect(answer.body.value.boxed).toStrictEqual(drawn.slice(0, 64));
+    expect(answer.body.value.more).toBe(6);
+  });
+
   it('applies from the named file and writes the result into the granted directory', async () => {
     stream = stubStream();
     const files = emptyFiles();
@@ -540,8 +628,8 @@ describe('the PDFium host body', () => {
     await stream.whenSent(2);
 
     // A COUNT, which is `engine/serialise`'s own answer — this handler is that
-    // channel's job and this engine's apply in one call.
-    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { bytes: 3 } } });
+    // channel's job and this engine's apply in one call — and no box, stated (ADR-0174).
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { bytes: 3, boxed: [], more: 0 } } });
     // AND THE BYTES LANDED IN THE GRANTED DIRECTORY, under the name main chose.
     // Asserting the count alone would pass on a handler that wrote nowhere.
     expect(files.written.get(`${AREA.outputDirectory}|${OUT}`)).toStrictEqual(
@@ -576,6 +664,10 @@ describe('the PDFium host body', () => {
 
     // CONTROL: the apply case above sends `null` and records no key, so this separates a carried key from none.
     expect(calls).toStrictEqual(['apply:4,5|key:sample-only-0171', 'text-runs:0:4,5|key:sample-only-0171']);
+    // AND THE PARAMS FILE NEVER HELD IT (ADR-0171's correction, RRRRRRR-1): the key the handler used came in the frame.
+    const paramsFile = new TextDecoder().decode(files.read.get(`${AREA.snapshotDirectory}|${PARAMS}`));
+    expect(paramsFile).toContain('"from"');
+    expect(paramsFile).not.toContain('sample-only-0171');
   });
 
   it('refuses an apply whose input file is gone, as asset-missing rather than internal', async () => {
@@ -647,7 +739,7 @@ describe('the PDFium host body', () => {
     // THE PRIOR STATE CROSSES IN A FILE (ADR-0125's addendum): it grows with the pages a command touches.
     const written = files.written.get(`${AREA.outputDirectory}|${ANSWER}`);
     expect(written, 'the capture was written into the granted OUTPUT directory under the name main minted').toBeDefined();
-    expect(answerIn(stream.sent[1])).toStrictEqual({ id: 'c1', answerFile: { bytes: written?.length } });
+    expect(answerIn(stream.sent[1])).toStrictEqual({ id: 'c1', answerFile: { bytes: written?.length, credentials: [] } });
     expect(JSON.parse(new TextDecoder().decode(written))).toMatchObject({
       ok: true,
       value: {
@@ -677,7 +769,7 @@ describe('the PDFium host body', () => {
     // answered 663,815 bytes against a 262,144-byte frame, and the host ended rather than send it.
     const written = files.written.get(`${AREA.outputDirectory}|${ANSWER}`);
     expect(written, 'the answer was written into the granted OUTPUT directory under the name main minted').toBeDefined();
-    expect(answerIn(stream.sent[1])).toStrictEqual({ id: 't1', answerFile: { bytes: written?.length } });
+    expect(answerIn(stream.sent[1])).toStrictEqual({ id: 't1', answerFile: { bytes: written?.length, credentials: [] } });
     expect(JSON.parse(new TextDecoder().decode(written))).toMatchObject({
       ok: true,
       // THE TEXT AND THE EXTENT CROSS, not merely the indices. The wire
@@ -756,6 +848,72 @@ describe('the PDFium host body', () => {
     expect(answerIn(stream.sent[1])).toMatchObject({
       body: { ok: false, error: { code: 'engine-refused' } },
     });
+    expect(files.written.size).toBe(0);
+  });
+
+  /**
+   * A BLOCK'S FONTS ARE WRITTEN WHERE A RASTER IS (ADR-0175), into the output directory one after another with their
+   * sizes answered, and a block whose runs have none answers no sizes and writes nothing. Each case is the other's
+   * control: a handler answering every block alike fails one of them.
+   */
+  it('writes a block’s fonts into the OUTPUT directory in order, and for runs with none answers no sizes and writes nothing', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([9]));
+
+    const ask = (id: string, indices: number[]) =>
+      request(id, 'engine/run-fonts', { session, from: IN, password: null, into: OUT, page: 1, indices });
+    stream.feed(ask('r1', [4, 5, 8, 6]));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: true, value: { sizes: [5, 4], runs: [0, null, 1, 0] } } });
+    expect(Array.from(files.written.get(`${AREA.outputDirectory}|${OUT}`) ?? [])).toStrictEqual([
+      0, 1, 0, 0, 5, 0x4f, 0x54, 0x54, 0x4f,
+    ]);
+
+    files.written.clear();
+    stream.feed(ask('r2', [5, 7]));
+    await stream.whenSent(3);
+    expect(answerIn(stream.sent[2])).toMatchObject({ body: { ok: true, value: { sizes: [], runs: [null, null] } } });
+    expect(files.written.size).toBe(0);
+    // THE PAGE AND THE RUNS REACHED THE READER, each time, as one read per block.
+    expect(calls).toStrictEqual(['run-fonts:1:4,5,8,6:9', 'run-fonts:1:5,7:9']);
+  });
+
+  it('answers a page’s runs with their members and its text objects, from the named file, never truncated', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session, calls } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([7]));
+    stream.feed(request('p1', 'engine/page-runs', { session, from: IN, password: null, page: 2 }, ANSWER));
+    await stream.whenSent(2);
+    const written = files.written.get(`${AREA.outputDirectory}|${ANSWER}`);
+    expect(answerIn(stream.sent[1])).toStrictEqual({ id: 'p1', answerFile: { bytes: written?.length, credentials: [] } });
+    expect(JSON.parse(new TextDecoder().decode(written))).toStrictEqual({
+      ok: true,
+      value: { textObjects: [0, 2, 3], runs: [{ index: 0, members: [0, 2], text: 'ab', left: 1, right: 9, bottom: 2, top: 8 }] },
+    });
+    expect(calls).toStrictEqual(['page-runs:2:7']);
+  });
+
+  it('refuses the runs of a page the document cannot answer', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([0]));
+    stream.feed(request('p1', 'engine/page-runs', { session, from: IN, password: null, page: 0 }, ANSWER));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'engine-refused' } } });
+  });
+
+  it('refuses a block’s fonts the document cannot answer, writing nothing', async () => {
+    stream = stubStream();
+    const files = emptyFiles();
+    const { session } = await openArea(files);
+    files.read.set(`${AREA.snapshotDirectory}|${IN}`, new Uint8Array([0]));
+    stream.feed(request('r1', 'engine/run-fonts', { session, from: IN, password: null, into: OUT, page: 0, indices: [4] }));
+    await stream.whenSent(2);
+    expect(answerIn(stream.sent[1])).toMatchObject({ body: { ok: false, error: { code: 'engine-refused' } } });
     expect(files.written.size).toBe(0);
   });
 

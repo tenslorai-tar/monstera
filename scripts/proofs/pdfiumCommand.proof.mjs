@@ -65,14 +65,19 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { crc32, deflateSync } from 'node:zlib';
 
 import {
   PDFDict,
   PDFDocument,
   PDFName,
+  PDFOperator,
+  PDFOperatorNames,
   StandardFonts,
   beginText,
   concatTransformationMatrix,
+  degrees,
+  endMarkedContent,
   endText,
   popGraphicsState,
   pushGraphicsState,
@@ -80,13 +85,16 @@ import {
   setFillingRgbColor,
   setFontAndSize,
   setTextMatrix,
+  setTextRenderingMode,
   showText,
 } from '@cantoo/pdf-lib';
 
 import { PDFIUM_COMMAND, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { pageStreams } from '../lib/pageStreams.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { withNoPassword } from '../lib/pdfiumNoPassword.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
+import { fontsDirectory } from '../provision/fonts.mjs';
 import { PDFIUM_VERSION, pdfiumLibrary } from '../provision/pdfium.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -104,12 +112,28 @@ if (!existsSync(library)) {
 
 // The proof imports the BUILT modules, so a stale build would prove yesterday's
 // routing and say nothing about the diff under review.
-refuseStaleBuild(root, PDFIUM_COMMAND, 7);
+refuseStaleBuild(root, PDFIUM_COMMAND, 24);
 
 // EVERY EDIT BUILT THROUGH THE CONTRACT'S ONE ENCODER, as the application builds it (ADR-0142).
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
-const { openPdfium, pdfiumWriter, pageText, renderPageBitmap, replaceTextObjects, textObjectIndices, textRuns } =
-  await import('../../packages/kernel/dist/pdfiumFfi.js');
+const { lineText, paragraphsOfLines } = await import('../../packages/shared/dist/index.js');
+const {
+  objectRuns,
+  openPdfium,
+  pdfiumWriter,
+  pageObjects,
+  pageRuns,
+  pageText,
+  renderPageBitmap,
+  replaceTextObjects,
+  runFonts,
+  textObjectIndices,
+  textRuns,
+} = await import('../../packages/kernel/dist/pdfiumFfi.js');
+// THE KERNEL'S OWN NUMBERING of a page's text operators (ADR-0176 Decision 3), which `pageRuns` is joined against.
+const { joinedContent, showOperators, textObjectCount } = await import('../../packages/kernel/dist/textOperators.js');
+// THE ONE HARFBUZZ READER, to read a rebuilt run font back (ADR-0175).
+const { ShapingFace } = await import('../../packages/kernel/dist/textShaping.js');
 const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
 const specs = await import('../../packages/kernel/dist/pdfiumSpecs.js');
 // OVER BYTES THAT OPEN WITH NO PASSWORD, as every fixture here but the encrypted one does (`withNoPassword`).
@@ -117,6 +141,9 @@ const localPdfiumExecution = withNoPassword(specs.localPdfiumExecution);
 const { declaredCommands } = await import('../../packages/kernel/dist/commandDeclarations.js');
 const { EditRefusedError } = await import('../../packages/kernel/dist/textEditRefusals.js');
 const { HeldPassword } = await import('../../packages/shared/dist/index.js');
+// THE CATALOGUE AN EDIT SETS A WORD IN, bound as `pdfiumHostEntry.ts` binds it (ADR-0173).
+const { bindEditFaces } = await import('../../packages/kernel/dist/editFaces.js');
+const { faceSourceOf } = await import('../../packages/kernel/dist/fontCatalogue.js');
 
 const FIRST = 'FIRST RUN stays exactly where it is';
 const SECOND = 'SECOND RUN is the one that changes';
@@ -181,12 +208,15 @@ async function passwordCases() {
     let saved;
     let answer = 'saved';
     try {
-      saved = await specs.localPdfiumExecution.apply({
-        session: { bytes, opensWith: new HeldPassword(password) },
-        command,
-        sources: [],
-        reads: undefined,
-      });
+      // THE IMAGE OUT OF THE ANSWER, beside which the apply names any box it drew (ADR-0174).
+      saved = (
+        await specs.localPdfiumExecution.apply({
+          session: { bytes, opensWith: new HeldPassword(password) },
+          command,
+          sources: [],
+          reads: undefined,
+        })
+      ).image;
     } catch (error) {
       answer = error instanceof Error ? error.message : String(error);
     }
@@ -230,8 +260,17 @@ const failures = [];
 // and 80 from its Decision 6's empty replacement: a word deleted, an object removed, and the checkpoint either takes,
 // and 82 from the same decision's *no version*: one occurrence for itself, and a word the page reads but no object
 // holds (the identity replace-all case became the nothing-matched one), and 84 from the line rule's two, and 87 from
-// ADR-0171's addendum: an edit of a document opened with either password, and its control with none.
-const roster = createRoster(failures, { cases: 87 });
+// ADR-0171's addendum: an edit of a document opened with either password, and its control with none, and 95 from
+// ADR-0173's pieces: a word saved in a bundled face, its object, its wrap, the word the twin refused, an unreadable
+// catalogue either way, and a control either side, and 97 from its correction: a character past the BMP and its premise,
+// and 100 from the box: its premise, its reading, and its answer (ADR-0174), and 117 from ADR-0176's pageRuns: the
+// Chromium print's members against the kernel's own numbering, and the ruled page's object indices as the control, and
+// 126 from ADR-0179's paragraphs: the fixture's soft ends and its words, a letter that moves one line, a bold word that
+// wraps bold, a centred line and an indented first line kept, and a control beside each, and 129 from the render mode an
+// edit keeps: invisible text stays invisible, with a visible control and the fixture's own, and 143 from ADR-0180's
+// marks: bold, colour, size, underline, superscript and a restated mark, then alignment, line spacing and an indent, each
+// with the control that separates the mark from the fixture.
+const roster = createRoster(failures, { cases: 222 });
 
 /**
  * @param {string} name
@@ -509,9 +548,24 @@ async function main() {
   await promotionCases();
   await nestedPromotionCases();
   await blockEditCases();
+  await paragraphCases();
+  await formatCases();
+  await placeCases();
+  await joinSplitCases();
+  await directionCases();
+  await markCases();
+  await scanCases();
+  await pastThePageCases();
   await glyphLineCases();
   await settingCases();
   await passwordCases();
+  await pageRunsCases();
+  // LAST, because they bind the process's catalogue, and unbind it before returning.
+  await pieceCases();
+  await replacePieceCases();
+  await siblingCases();
+  await runFontCases();
+  await formatPieceCases();
 
   process.stdout.write(
     failures.length > 0
@@ -519,6 +573,781 @@ async function main() {
       : roster.format('PDFium command case'),
   );
   process.exitCode = failures.length === 0 ? 0 : 1;
+}
+
+/**
+ * A word the run's font cannot carry is its own piece, in the resolver's face, and the rest of the line keeps the
+ * document's font ([ADR-0173](../../docs/DECISIONS/0173-an-edits-word-its-font-cannot-carry-is-its-own-piece-in-the-resolvers-face.md)
+ * Decisions 1 to 4, the owner's Q6).
+ *
+ * Against {@link aParagraph}, whose Helvetica is WinAnsi and carries no Cyrillic, with the bundled fonts bound as the
+ * PDFium host's entry binds them. THE CONTROL is the same edit with no catalogue bound, which must be refused naming
+ * the Cyrillic: so the save below is the pieces' doing, and not a font that could draw the word all along. And a Latin
+ * edit with the catalogue bound must add no object and no font, so a piece is made only for a word the font lacks.
+ */
+async function pieceCases() {
+  const fonts = fontsDirectory(root);
+  if (!existsSync(fonts)) {
+    record('the bundled fonts are provisioned for the piece cases', false, `${fonts} is absent; run scripts/provision/fonts.mjs`);
+    return;
+  }
+  const original = await aParagraph();
+  const { blocks } = await blocksOf(original);
+  const block = blocks[0];
+  if (block === undefined) {
+    record('the paragraph fixture reads as a block for the piece cases', false, 'it read as none');
+    return;
+  }
+  const lines = block.lines.map((line) => line.runs.map((run) => run.index));
+  /** The whole answer, image and boxes (ADR-0174). @param {string} first the block's first line as typed; the other two are kept */
+  const editDrawing = (first) =>
+    localPdfiumExecution.applyDrawing({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines, soft: lines.map(() => false), text: [first, BLOCK_LINES[1], BLOCK_LINES[2]].join('\n') }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  /** The image alone. @param {string} first */
+  const edit = async (first) => (await editDrawing(first)).image;
+  const WORD = 'Привет';
+  const TYPED = `The first ${WORD} line of the block`;
+  /** The lines a reading holds before the block's unedited second line, as one line: what the first line became. */
+  const firstLineOf = (/** @type {string} */ text) => {
+    const read = text.split(/\r?\n/u).map((line) => line.trim());
+    return read.slice(0, read.indexOf(BLOCK_LINES[1] ?? '')).join(' ');
+  };
+  /** Page 0's runs one per object, from bytes. @param {Uint8Array} bytes */
+  const objectRunsOf = async (bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      return (await objectRuns(session, 0)).runs;
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+
+  // THE CONTROL, with nothing bound: the font cannot carry the word and there is nowhere else to set it.
+  bindEditFaces(null);
+  /** @type {unknown} */
+  let unbound;
+  try {
+    await edit(TYPED);
+  } catch (error) {
+    unbound = error;
+  }
+  record(
+    'CONTROL: with no catalogue, a Cyrillic word typed into a Helvetica line is refused, naming it',
+    unbound instanceof Error && unbound.name === 'TextNotWritableError' && 'characters' in unbound && String(unbound.characters).includes('П'),
+    unbound instanceof Error ? `${unbound.name}: ${'characters' in unbound ? String(unbound.characters) : unbound.message}` : 'it was SAVED',
+  );
+
+  // A FOLDER THAT CANNOT BE READ fails only the edit that needs a face: the catalogue is read by the first word that
+  // needs one, never by an edit the document's own fonts carry. The control is the Cyrillic edit on the same binding,
+  // which must meet the fault — so the Latin save is the laziness, and not a binding that was never consulted.
+  bindEditFaces(() => {
+    throw new Error('this catalogue cannot be read');
+  });
+  let latinOnBroken = 'saved';
+  try {
+    await edit('The first line of a block');
+  } catch (error) {
+    latinOnBroken = error instanceof Error ? error.message : String(error);
+  }
+  let cyrillicOnBroken = 'it was SAVED';
+  try {
+    await edit(TYPED);
+  } catch (error) {
+    cyrillicOnBroken = error instanceof Error ? error.message : String(error);
+  }
+  record(
+    'an unreadable catalogue does not refuse an edit the page’s own font carries',
+    latinOnBroken === 'saved',
+    latinOnBroken,
+  );
+  record(
+    'CONTROL: and the edit that needs a face meets the unreadable catalogue as a fault, not as a twin',
+    cyrillicOnBroken.includes('this catalogue cannot be read'),
+    cyrillicOnBroken,
+  );
+
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  try {
+    /** @type {Uint8Array | undefined} */
+    let saved;
+    let answer = 'saved';
+    try {
+      saved = await edit(TYPED);
+    } catch (error) {
+      answer = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    }
+    // THE BLOCK'S FIRST LINE AS TYPED, read across the line it may wrap onto: the line grew past the block's measure.
+    const text = saved === undefined ? '' : await textOf(saved);
+    record(
+      'with the bundled fonts bound, the same edit is saved and the reopened page says it, the other lines kept',
+      firstLineOf(text) === TYPED && text.includes(BLOCK_LINES[1] ?? '') && text.includes(BLOCK_LINES[2] ?? ''),
+      `${answer}; it reads ${JSON.stringify(text.slice(0, 160))}`,
+    );
+
+    // THE WORD IN ANOTHER FACE AND THE REST IN HELVETICA, read OBJECT BY OBJECT (`objectRuns`): the editor's reading
+    // joins the pieces back into one run, since they abut on one line set alike (ADR-0130), and answers the first
+    // object's font for all of it. With the space before the word in the word's piece (Decision 2).
+    const objects = saved === undefined ? [] : await objectRunsOf(saved);
+    const holding = (/** @type {string} */ part) => objects.find((run) => run.text.includes(part));
+    const word = holding(WORD);
+    const before = holding('The first');
+    const after = holding('line of the');
+    record(
+      'the word is its own object in a bundled face, with the space before it, and the words around it stay in Helvetica',
+      word !== undefined &&
+        word.text.trimEnd() === ` ${WORD}` &&
+        /^[A-Z]{6}\+Arimo/u.test(word.style.font) &&
+        before?.style.font === 'Helvetica' &&
+        after?.style.font === 'Helvetica' &&
+        before !== word &&
+        after !== word,
+      JSON.stringify(objects.slice(0, 5).map((run) => [run.text, run.style.font])),
+    );
+
+    // AND NOTHING TYPED IS LOST WHEN A LINE IN PIECES WRAPS: past the column, the wrap trims the pieces from their
+    // end and carries the rest onto a new line, in order. The line OPENS with the word, so its first piece is in the
+    // bundled face: the lines it wraps onto must still be made in the run's own Helvetica, never in that piece's face.
+    const long = `${WORD} first line of the block grows with words enough to pass the column’s right edge and wrap ${WORD} below`;
+    let wrapped = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let wrappedObjects = [];
+    try {
+      const bytes = await edit(long);
+      wrapped = await textOf(bytes);
+      wrappedObjects = await objectRunsOf(bytes);
+    } catch (error) {
+      wrapped = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    }
+    const lineCount = wrapped.split(/\r?\n/u).indexOf(BLOCK_LINES[1] ?? '');
+    const latinInAFace = wrappedObjects.filter((run) => !run.text.includes(WORD) && run.style.font !== 'Helvetica');
+    record(
+      'a line in pieces that grows past the column wraps, every word typed reads back in order, and only the word leaves Helvetica',
+      firstLineOf(wrapped) === long && lineCount > 2 && wrappedObjects.length > 0 && latinInAFace.length === 0,
+      `${String(lineCount)} line(s) before the second; they read ${JSON.stringify(firstLineOf(wrapped))}; ` +
+        `not in Helvetica: ${JSON.stringify(latinInAFace.map((run) => [run.text, run.style.font]))}`,
+    );
+
+    // THE CASE THE TWIN COULD NOT TAKE: Helvetica in StandardEncoding, where the standard load hands back this very
+    // font, refused `é` above with no catalogue. With one, `déjà` is a piece in Arimo, and saved.
+    const narrowed = await aParagraphInStandardEncoding('Helvetica');
+    const narrowedLines = ((await blocksOf(narrowed)).blocks[0]?.lines ?? []).map((line) => line.runs.map((run) => run.index));
+    const accented = 'a second line, déjà vu';
+    let accentedText = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let accentedObjects = [];
+    try {
+      const bytes = await localPdfiumExecution.apply({
+        session: narrowed,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+          kind: 'editTextBlock',
+          page: 0,
+          ...blockEditOf([{ lines: narrowedLines, soft: narrowedLines.map(() => false), text: [BLOCK_LINES[0], accented, BLOCK_LINES[2]].join('\n') }]),
+          fit: 'reflow',
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      });
+      accentedText = await textOf(bytes);
+      accentedObjects = await objectRunsOf(bytes);
+    } catch (error) {
+      accentedText = `refused: ${error instanceof Error ? error.name : String(error)}`;
+    }
+    const dejaVu = accentedObjects.find((run) => run.text.includes('déjà'));
+    record(
+      'a word a StandardEncoding Helvetica cannot carry, which the twin refused, is saved as a piece in a bundled face',
+      accentedText.includes(accented) && dejaVu !== undefined && /Arimo/u.test(dejaVu.style.font),
+      `${JSON.stringify(accentedText.slice(0, 120))}; ${JSON.stringify(dejaVu === undefined ? null : [dejaVu.text, dejaVu.style.font])}`,
+    );
+
+    // A CHARACTER PAST THE BMP (ADR-0173's correction): `FPDFText_SetText` draws it as code 0, which the live read-back
+    // refuses and a reopened page reads as nothing, so only a piece set by its subset's glyph ids is saved reading it.
+    const ASTRAL = String.fromCodePoint(0x10140);
+    const carriers = faceSourceOf([{ path: fonts, origin: 'bundled' }]).faces.filter((face) => face.unicodes.has(0x10140));
+    record(
+      'PREMISE: a bundled face carries U+10140, so the case below asks the setter and not the catalogue',
+      carriers.length > 0,
+      carriers.map((face) => face.family).join(', ') || 'no bundled face carries it',
+    );
+    const astralTyped = `The first line ${ASTRAL} of the block`;
+    let astralText = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let astralObjects = [];
+    try {
+      const bytes = await edit(astralTyped);
+      astralText = await textOf(bytes);
+      astralObjects = await objectRunsOf(bytes);
+    } catch (error) {
+      astralText = `refused: ${error instanceof Error ? `${error.name} ${'characters' in error ? String(error.characters) : error.message}` : String(error)}`;
+    }
+    const astralPiece = astralObjects.find((run) => run.text.includes(ASTRAL));
+    record(
+      'a character past the BMP is saved in a bundled face and the reopened page reads it, the rest kept',
+      firstLineOf(astralText) === astralTyped && astralPiece !== undefined && !astralPiece.style.font.includes('Helvetica'),
+      `${JSON.stringify(astralText.slice(0, 120))}; ${JSON.stringify(astralPiece === undefined ? null : [astralPiece.text, astralPiece.style.font])}`,
+    );
+
+    // A CHARACTER NO FACE CARRIES IS THE BOX (ADR-0173 Decision 7 as corrected), drawn in a box font of its own whose
+    // cmap names the real character, so the reopened page READS the character; and the apply ANSWERS it with its page
+    // (ADR-0174), which is how the person is told. The premise is that no bundled face carries it, or the case would be
+    // asking the resolver rather than the box.
+    const NONE_CARRY = String.fromCodePoint(0x4e2d);
+    const catalogue = faceSourceOf([{ path: fonts, origin: 'bundled' }]).faces;
+    record(
+      'PREMISE: no bundled face carries U+4E2D, and one carries the box U+25A1',
+      !catalogue.some((face) => face.unicodes.has(0x4e2d)) && catalogue.some((face) => face.unicodes.has(0x25a1)),
+      `${String(catalogue.filter((face) => face.unicodes.has(0x4e2d)).length)} carry U+4E2D; ` +
+        `${String(catalogue.filter((face) => face.unicodes.has(0x25a1)).length)} carry U+25A1`,
+    );
+    const boxTyped = `The first ${NONE_CARRY} line of the block`;
+    let boxText = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let boxObjects = [];
+    /** @type {unknown} */
+    let boxAnswer = null;
+    try {
+      const drawn = await editDrawing(boxTyped);
+      boxAnswer = { boxed: drawn.boxed, more: drawn.more };
+      boxText = await textOf(drawn.image);
+      boxObjects = await objectRunsOf(drawn.image);
+    } catch (error) {
+      boxText = `refused: ${error instanceof Error ? `${error.name} ${'characters' in error ? String(error.characters) : error.message}` : String(error)}`;
+    }
+    const boxPiece = boxObjects.find((run) => run.text === NONE_CARRY);
+    record(
+      'a character no face carries is saved as a box in a font of its own, and the reopened page reads the character',
+      firstLineOf(boxText) === boxTyped && boxPiece !== undefined && /^[A-Z]{6}\+.*-Box$/u.test(boxPiece.style.font),
+      `${JSON.stringify(boxText.slice(0, 100))}; ${JSON.stringify(boxPiece === undefined ? null : [boxPiece.text, boxPiece.style.font])}`,
+    );
+    record(
+      'and the apply answers it, with the page it is on, so the person is told (ADR-0174)',
+      JSON.stringify(boxAnswer) === JSON.stringify({ boxed: [{ character: NONE_CARRY, page: 0 }], more: 0 }),
+      JSON.stringify(boxAnswer),
+    );
+
+    // CONTROL: a Latin edit with the catalogue bound makes no piece — the same objects, and no new font in the file.
+    let latin = 'it was refused';
+    let latinObjects = -1;
+    /** @type {unknown} */
+    let latinBoxes = null;
+    try {
+      const drawn = await editDrawing('The first line of a block');
+      latinObjects = (await textIndicesOf(drawn.image)).length;
+      latin = JSON.stringify((await objectRunsOf(drawn.image)).map((run) => run.style.font));
+      latinBoxes = { boxed: drawn.boxed, more: drawn.more };
+    } catch (error) {
+      latin = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    }
+    // AND IT ANSWERS NO BOX, the control for the box case's answer: an apply that answered every character it wrote
+    // would pass that case and fail here.
+    record(
+      'CONTROL: a Latin edit with the catalogue bound stays in its own objects and font, and answers no box',
+      latinObjects === (await textIndicesOf(original)).length &&
+        !latin.includes('Arimo') &&
+        latin.includes('Helvetica') &&
+        JSON.stringify(latinBoxes) === JSON.stringify({ boxed: [], more: 0 }),
+      `${String(latinObjects)} text object(s); fonts ${latin}; boxes ${JSON.stringify(latinBoxes)}`,
+    );
+  } finally {
+    bindEditFaces(null);
+  }
+}
+
+/**
+ * A block typed past the foot of its page is written WHOLE, and nothing typed is lost (the owner's Q7): the edit is
+ * never refused for it, every line reads back from the saved bytes in order, and the block read the editor outlines
+ * answers every line with its box below the page, which is what the renderer says *no longer fits* from. THE CONTROL is
+ * the same paragraph given lines that fit, whose block stays on the page: so the first case's box is the overflow's, not
+ * a reading that always reaches below.
+ */
+async function pastThePageCases() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 400]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  page.drawText('A paragraph near the foot of the page', { x: 72, y: 40, size: 11, font });
+  page.drawText('and its second line', { x: 72, y: 26, size: 11, font });
+  const original = await document.save();
+  const lines = ((await blocksOf(original)).blocks[0]?.lines ?? []).map((line) => line.runs.map((run) => run.index));
+  /** @param {readonly string[]} typed */
+  const typing = (typed) =>
+    localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines, soft: lines.map(() => false), text: typed.join('\n') }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  const past = [
+    'A paragraph near the foot of the page',
+    'and its second line',
+    'a third line typed',
+    'a fourth line typed',
+    'a fifth line typed',
+    'THE LAST LINE TYPED',
+  ];
+  /** @type {string} */
+  let read;
+  /** @type {{ y0: number, lines: number } | null} */
+  let block = null;
+  try {
+    const bytes = await typing(past);
+    read = await pageOf(bytes, 0);
+    const [first] = (await blocksOf(bytes)).blocks;
+    block = first === undefined ? null : { y0: first.box.y0, lines: first.lines.length };
+  } catch (error) {
+    read = `refused: ${error instanceof Error ? error.name : String(error)}`;
+  }
+  const order = read.split(/\r?\n/u).map((line) => line.trim());
+  record(
+    'a block typed past the foot of its page is saved, and every line typed reads back from the saved bytes in order',
+    JSON.stringify(order.slice(0, past.length)) === JSON.stringify(past),
+    JSON.stringify(read.slice(0, 200)),
+  );
+  record(
+    'and the block read answers every line with its box below the page, which the editor outlines as past it',
+    block !== null && block.lines === past.length && block.y0 < 0,
+    JSON.stringify(block),
+  );
+  /** @type {{ y0: number, lines: number } | string} */
+  let fitting = 'it read as no block';
+  try {
+    const [first] = (await blocksOf(await typing(['A paragraph near the foot', 'of the page']))).blocks;
+    if (first !== undefined) fitting = { y0: first.box.y0, lines: first.lines.length };
+  } catch (error) {
+    fitting = `refused: ${error instanceof Error ? error.name : String(error)}`;
+  }
+  record(
+    'CONTROL: the same paragraph given lines that fit stays on the page',
+    typeof fitting !== 'string' && fitting.lines === 2 && fitting.y0 >= 0,
+    JSON.stringify(fitting),
+  );
+}
+
+/**
+ * Replace takes the editor's pieces ([ADR-0173](../../docs/DECISIONS/0173-an-edits-word-its-font-cannot-carry-is-its-own-piece-in-the-resolvers-face.md)
+ * Decision 9): a word the object's font cannot carry is its own piece, a character no face carries its box, and the
+ * line rule (`replaceLineRule.ts`) still refuses a replacement that would move the text after it.
+ *
+ * Against {@link threePagesOfWidgets}, whose Helvetica is WinAnsi and carries no Cyrillic: each whole line is one
+ * object with nothing after it, and page 0's third line is `WID` then `GET`. THE CONTROL for the save is the same
+ * command with no catalogue bound, refused naming the word, so the save is the pieces' doing.
+ */
+async function replacePieceCases() {
+  const fonts = fontsDirectory(root);
+  if (!existsSync(fonts)) {
+    record('the bundled fonts are provisioned for the replace piece cases', false, `${fonts} is absent; run scripts/provision/fonts.mjs`);
+    return;
+  }
+  const original = await threePagesOfWidgets();
+  const WORD = 'Привет';
+  /**
+   * @param {string} find @param {string} replace @param {{ x: number, y: number }} point
+   * @returns {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextAt'>}
+   */
+  const at = (find, replace, point) => ({ kind: 'replaceTextAt', page: 0, find, replace, at: point });
+  /** @param {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextAt' | 'replaceAllText'>} command */
+  const drawing = (command) => localPdfiumExecution.applyDrawing({ session: original, command, sources: [], reads: undefined });
+  /** The refusal's name and characters, or null where it was saved. @param {() => Promise<unknown>} work */
+  const refusal = async (work) => {
+    try {
+      await work();
+      return null;
+    } catch (error) {
+      return error instanceof Error ? `${error.name}${'characters' in error ? ` ${String(error.characters)}` : ''}` : String(error);
+    }
+  };
+  /** Page 0's runs one per object, from bytes. @param {Uint8Array} bytes */
+  const objectRunsOf = async (bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      return (await objectRuns(session, 0)).runs;
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  // ON THE FIRST LINE, as `replaceAtCases` points: the whole line is one object, so nothing follows the word's object.
+  const first = at('WIDGET', WORD, { x: 80, y: 233 });
+
+  bindEditFaces(null);
+  const unbound = await refusal(() => drawing(first));
+  record(
+    'CONTROL: with no catalogue, a Cyrillic replacement in a Helvetica line is refused naming it, and no twin is made',
+    unbound !== null && unbound.startsWith('TextNotWritableError') && unbound.includes('П'),
+    unbound ?? 'it was SAVED',
+  );
+
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  try {
+    let read = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let objects = [];
+    try {
+      const drawn = await drawing(first);
+      read = await pageOf(drawn.image, 0);
+      objects = await objectRunsOf(drawn.image);
+    } catch (error) {
+      read = `refused: ${error instanceof Error ? error.name : String(error)}`;
+    }
+    const word = objects.find((run) => run.text.includes(WORD));
+    const rest = objects.filter((run) => !run.text.includes(WORD) && run.text.trim() !== '');
+    record(
+      'with the bundled fonts bound, the replacement is saved, the word in its own object in a bundled face and the rest in Helvetica',
+      read.includes(`The ${WORD} is on this page`) &&
+        read.includes('and the WIDGET again below') &&
+        word !== undefined &&
+        word.text.trimEnd() === ` ${WORD}` &&
+        /^[A-Z]{6}\+Arimo/u.test(word.style.font) &&
+        rest.length > 0 &&
+        rest.every((run) => run.style.font === 'Helvetica'),
+      `${JSON.stringify(read.slice(0, 90))}; ${JSON.stringify(objects.slice(0, 4).map((run) => [run.text, run.style.font]))}`,
+    );
+
+    // ITS UNDO IS A CHECKPOINT: the pieces are new objects after the run, so a string put back by index would land in
+    // the wrong object. By either command; CONTROL: a Latin replacement with the catalogue bound still captures.
+    const lastObject = (await textIndicesOf(original)).at(-1) ?? -1;
+    const replacing = (/** @type {string} */ text) =>
+      /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextObject'>} */ ({
+        kind: 'replaceTextObject',
+        page: 0,
+        ...replacementFieldsOf([{ index: lastObject, text }]),
+        version: 1,
+      });
+    const pointPieced = await localPdfiumExecution.capture(original, first);
+    const dialogPieced = await localPdfiumExecution.capture(original, replacing(WORD));
+    const pointLatin = await localPdfiumExecution.capture(original, at('WIDGET', 'GADGET', { x: 80, y: 233 }));
+    const dialogLatin = await localPdfiumExecution.capture(original, replacing('GOT'));
+    record(
+      'a replacement written in pieces takes a checkpoint, by either command, and a Latin one still captures its string',
+      !pointPieced.captured &&
+        pointPieced.reason.includes('renumbers') &&
+        !dialogPieced.captured &&
+        dialogPieced.reason.includes('renumbers') &&
+        pointLatin.captured &&
+        dialogLatin.captured,
+      `point: ${pointPieced.captured ? 'captured' : pointPieced.reason}; dialog: ${dialogPieced.captured ? 'captured' : dialogPieced.reason}; ` +
+        `Latin: ${String(pointLatin.captured)}, ${String(dialogLatin.captured)}`,
+    );
+
+    // THE LINE RULE HOLDS ON THE PIECES' WIDTH: `WID Дом` would draw into `GET`. Its first piece is `WID` in the run's
+    // own object at its own width, and only the piece after it moves the line, so a rule that measured the old index
+    // reads an object that did not move and saves the overlap; a wholly Cyrillic word does not separate the two, since
+    // the run's own object is set to it before the probe sends it to a piece. `replaceAtCases`' `WDI` is the control
+    // that the rule does not refuse every edit on such a line.
+    const moving = await refusal(() => drawing(at('WID', 'WID Дом', { x: 35, y: 173 })));
+    record(
+      'a replacement in pieces that would move the text after it on its line is refused, measured on its pieces',
+      moving === 'ReplaceMovesLineError',
+      moving ?? 'it was SAVED',
+    );
+
+    // A CHARACTER NO FACE CARRIES IS ITS BOX, and the apply answers it with its page (ADR-0174), at a point and across
+    // the document. `page` ends page 0's first line and page 1's: both are boxed, each on its own page, in order.
+    const NONE_CARRY = String.fromCodePoint(0x4e2d);
+    /** @type {unknown} */
+    let pointBoxes = null;
+    let pointRead = '';
+    try {
+      const drawn = await drawing(at('WIDGET', NONE_CARRY, { x: 80, y: 233 }));
+      pointBoxes = { boxed: drawn.boxed, more: drawn.more };
+      pointRead = await pageOf(drawn.image, 0);
+    } catch (error) {
+      pointRead = `refused: ${error instanceof Error ? error.name : String(error)}`;
+    }
+    record(
+      'one occurrence replaced by a character no face carries is saved as its box, reading the character, and answered',
+      pointRead.includes(`The ${NONE_CARRY} is on this page`) &&
+        JSON.stringify(pointBoxes) === JSON.stringify({ boxed: [{ character: NONE_CARRY, page: 0 }], more: 0 }),
+      `${JSON.stringify(pointRead.slice(0, 60))}; ${JSON.stringify(pointBoxes)}`,
+    );
+    /** @param {string} find @param {string} replace */
+    const everywhere = (find, replace) =>
+      /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceAllText'>} */ ({
+        kind: 'replaceAllText',
+        find,
+        replace,
+        version: 1,
+      });
+    /** @type {unknown} */
+    let allBoxes = null;
+    try {
+      const drawn = await drawing(everywhere('page', NONE_CARRY));
+      allBoxes = { boxed: drawn.boxed, more: drawn.more };
+    } catch (error) {
+      allBoxes = `refused: ${error instanceof Error ? error.name : String(error)}`;
+    }
+    record(
+      'a replace-all to a character no face carries answers every box with its own page, across the document',
+      JSON.stringify(allBoxes) ===
+        JSON.stringify({ boxed: [{ character: NONE_CARRY, page: 0 }, { character: NONE_CARRY, page: 1 }], more: 0 }),
+      JSON.stringify(allBoxes),
+    );
+    /** @type {unknown} */
+    let latinBoxes = null;
+    try {
+      const drawn = await drawing(everywhere('WIDGET', 'GADGET'));
+      latinBoxes = { boxed: drawn.boxed, more: drawn.more };
+    } catch (error) {
+      latinBoxes = `refused: ${error instanceof Error ? error.name : String(error)}`;
+    }
+    record(
+      'CONTROL: a Latin replace-all with the catalogue bound answers no box',
+      JSON.stringify(latinBoxes) === JSON.stringify({ boxed: [], more: 0 }),
+      JSON.stringify(latinBoxes),
+    );
+  } finally {
+    bindEditFaces(null);
+  }
+}
+
+/**
+ * ADR-0176's `pageRuns`, through this PDFium, joined against the kernel's own numbering of the same content
+ * (`textOperators.ts`): what the operator writer finds a run's glyphs by. On the committed Chromium print every member of
+ * every run is an operator that shows a code, and the inkless spaces between glyphs are members of none. CONTROL: a page
+ * that draws a rule between two lines, where PDFium's text objects are 0 and 2, so a list that answered text ordinals
+ * would read [0, 1] and name the rule.
+ */
+async function pageRunsCases() {
+  const chromium = new Uint8Array(readFileSync(resolve(root, 'packages', 'testing', 'fixtures', 'text-edit', 'chromium-type3.pdf')));
+  const read = async (/** @type {Uint8Array} */ bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      return await pageRuns(session, 0);
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const runs = await read(chromium);
+  const ops = showOperators(joinedContent(await pageStreams(chromium, 0)));
+  const opOf = (/** @type {number} */ member) => ops.find((op) => op.object === runs.textObjects.indexOf(member));
+  const members = runs.runs.flatMap((run) => [...run.members]);
+  const spaces = ops.filter((op) => op.codes.length === 1 && op.codes[0] === 3 && op.state.font === 'F4');
+  record(
+    'pageRuns names the Chromium print’s glyph objects: every member an operator that shows a code, no space glyph a member',
+    runs.textObjects.length === textObjectCount(ops) &&
+      members.length > 0 &&
+      members.every((member) => (opOf(member)?.codes.length ?? 0) > 0) &&
+      spaces.length > 0 &&
+      spaces.every((space) => !members.includes(runs.textObjects[space.object ?? -1] ?? -1)) &&
+      runs.runs[0]?.text.startsWith('Monstera') === true,
+    `${String(runs.textObjects.length)} text objects for ${String(textObjectCount(ops))} operators; ${String(members.length)} members; ${String(spaces.length)} spaces; first ${JSON.stringify(runs.runs[0]?.text)}`,
+  );
+
+  const document = await PDFDocument.create();
+  const page = document.addPage([300, 300]);
+  const helvetica = await document.embedFont(StandardFonts.Helvetica);
+  page.drawText('Above the rule', { x: 20, y: 250, size: 12, font: helvetica });
+  page.drawRectangle({ x: 20, y: 240, width: 200, height: 1, color: rgb(0, 0, 0) });
+  page.drawText('Below the rule', { x: 20, y: 220, size: 12, font: helvetica });
+  const ruled = await read(await document.save());
+  record(
+    'CONTROL: on a page with a rule between two lines, the text objects are 0 and 2 and the runs are named by them',
+    JSON.stringify(ruled.textObjects) === '[0,2]' && JSON.stringify(ruled.runs.map((run) => run.members)) === '[[0],[2]]',
+    JSON.stringify({ textObjects: ruled.textObjects, members: ruled.runs.map((run) => run.members) }),
+  );
+}
+
+/**
+ * A word the run's font lacks goes into a SIBLING already in the document before any bundled face
+ * ([ADR-0173](../../docs/DECISIONS/0173-an-edits-word-its-font-cannot-carry-is-its-own-piece-in-the-resolvers-face.md)
+ * Decision 4): another embedded subset of the same font, by its name less the subset tag.
+ *
+ * The fixture is made by this writer's own edits, so it is generated: {@link aParagraph}'s first line typed to end in
+ * `Привет` makes subset S1 of Arimo, and the block far below typed to end in `Дом` makes S2, each named `TAG+` the same
+ * name. Then the S1 piece is replaced by ` Привет Дом`, which S1 cannot draw and S2 can. THE CONTROL is the same
+ * replacement on the document before S2 existed, which must load a face of its own: so the reuse is the sibling's
+ * doing, and not every replacement landing in an Arimo font whatever the document holds.
+ */
+async function siblingCases() {
+  const fonts = fontsDirectory(root);
+  if (!existsSync(fonts)) {
+    record('the bundled fonts are provisioned for the sibling cases', false, `${fonts} is absent; run scripts/provision/fonts.mjs`);
+    return;
+  }
+  /** Page 0's runs one per object, from bytes. @param {Uint8Array} bytes */
+  const objectRunsOf = async (bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      return (await objectRuns(session, 0)).runs;
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  /** One block retyped, by the block that holds `starts`. @param {Uint8Array} bytes @param {string} starts @param {string} text */
+  const retype = async (bytes, starts, text) => {
+    const block = (await blocksOf(bytes)).blocks.find((each) => (each.lines[0]?.runs[0]?.text ?? '').startsWith(starts));
+    if (block === undefined) throw new Error(`no block begins ${JSON.stringify(starts)}`);
+    return localPdfiumExecution.apply({
+      session: bytes,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), soft: block.lines.map(() => false), text }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  };
+  /** The S1 piece replaced, as Replace writes it. @param {Uint8Array} bytes */
+  const replaceTheFirst = async (bytes) => {
+    const piece = (await objectRunsOf(bytes)).find((run) => run.text.includes('Привет'));
+    if (piece === undefined) throw new Error('the first piece is not on the page');
+    return {
+      piece,
+      bytes: await localPdfiumExecution.apply({
+        session: bytes,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'replaceTextObject'>} */ ({
+          kind: 'replaceTextObject',
+          page: 0,
+          ...replacementFieldsOf([{ index: piece.index, text: ' Привет Дом' }]),
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      }),
+    };
+  };
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  try {
+    const first = await retype(await aParagraph(), 'The first', [`${BLOCK_LINES[0] ?? ''} Привет`, BLOCK_LINES[1], BLOCK_LINES[2]].join('\n'));
+    const both = await retype(first, 'A separate', `${FAR_BELOW} Дом`);
+    const named = (await objectRunsOf(both)).map((run) => [run.text, run.style.font]);
+    const s1 = named.find(([text]) => String(text).includes('Привет'))?.[1] ?? '';
+    const s2 = named.find(([text]) => String(text).includes('Дом'))?.[1] ?? '';
+    record(
+      'PREMISE: two edits made two Arimo subsets whose names differ by the subset tag alone',
+      /^[A-Z]{6}\+Arimo/u.test(s1) && /^[A-Z]{6}\+Arimo/u.test(s2) && s1 !== s2 && s1.slice(7) === s2.slice(7),
+      JSON.stringify([s1, s2]),
+    );
+
+    let read = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let after = [];
+    try {
+      const { bytes } = await replaceTheFirst(both);
+      read = await pageOf(bytes, 0);
+      after = await objectRunsOf(bytes);
+    } catch (error) {
+      read = `refused: ${error instanceof Error ? `${error.name} ${error.message}` : String(error)}`;
+    }
+    // TWO RUNS SAY `Дом` now, S2's own and the new one, and BOTH must be in S2: a lookup of the first would find S2's own
+    // piece and pass whatever the replacement did.
+    const doms = after.filter((run) => run.text.trim() === 'Дом');
+    const arimos = new Set(after.map((run) => run.style.font).filter((font) => /Arimo/u.test(font)));
+    record(
+      'a word the run’s subset lacks and a sibling subset in the document carries is written in that sibling, loading no face',
+      read.includes('Привет Дом') && doms.length === 2 && doms.every((run) => run.style.font === s2) && arimos.size === 2,
+      `${JSON.stringify(read.slice(0, 80))}; Дом in ${JSON.stringify(doms.map((run) => run.style.font))}; Arimo fonts ${JSON.stringify([...arimos])}`,
+    );
+
+    // CONTROL: before S2 existed the same replacement has no sibling, so it loads a face of its own.
+    let control = '';
+    /** @type {readonly { text: string, style: { font: string } }[]} */
+    let controlRuns = [];
+    try {
+      const { bytes } = await replaceTheFirst(first);
+      control = await pageOf(bytes, 0);
+      controlRuns = await objectRunsOf(bytes);
+    } catch (error) {
+      control = `refused: ${error instanceof Error ? error.name : String(error)}`;
+    }
+    const controlDom = controlRuns.find((run) => run.text.trim() === 'Дом');
+    record(
+      'CONTROL: with no sibling carrying it, the same replacement loads a face of its own',
+      control.includes('Привет Дом') &&
+        controlDom !== undefined &&
+        /^[A-Z]{6}\+Arimo/u.test(controlDom.style.font) &&
+        controlDom.style.font !== s1 &&
+        controlDom.style.font !== s2,
+      `${JSON.stringify(control.slice(0, 80))}; Дом in ${JSON.stringify(controlDom?.style.font ?? null)}`,
+    );
+  } finally {
+    bindEditFaces(null);
+  }
+}
+
+/**
+ * The font the editor draws a run in, rebuilt by the host from the run's own program
+ * ([ADR-0175](../../docs/DECISIONS/0175-the-typing-box-draws-a-run-in-its-own-font-rebuilt-in-the-host.md)), against the
+ * real library: a run in an Arimo subset an edit embedded has one, and its glyphs are the program's. THE CONTROL is the
+ * Helvetica run on the same page, which is not embedded, so PDFium's substitute is all there is and nothing is offered.
+ */
+async function runFontCases() {
+  const fonts = fontsDirectory(root);
+  if (!existsSync(fonts)) {
+    record('the bundled fonts are provisioned for the run font cases', false, `${fonts} is absent; run scripts/provision/fonts.mjs`);
+    return;
+  }
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  /** @type {Uint8Array} */
+  let edited;
+  try {
+    const original = await aParagraph();
+    const lines = ((await blocksOf(original)).blocks[0]?.lines ?? []).map((line) => line.runs.map((run) => run.index));
+    edited = await localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines, soft: lines.map(() => false), text: [`${BLOCK_LINES[0] ?? ''} Привет`, BLOCK_LINES[1], BLOCK_LINES[2]].join('\n') }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  } finally {
+    bindEditFaces(null);
+  }
+  const session = await pdfiumWriter.open(edited);
+  try {
+    const runs = (await objectRuns(session, 0)).runs;
+    const piece = runs.find((run) => run.text.includes('Привет'));
+    const helvetica = runs.find((run) => run.style.font === 'Helvetica');
+    if (piece === undefined || helvetica === undefined) {
+      record('the edited page holds a run in the embedded subset and one in Helvetica', false, JSON.stringify(runs.map((run) => run.style.font)));
+      return;
+    }
+    // THE SUBSET'S RUN ASKED TWICE, around the Helvetica run: one font answered, both asks naming it, and the Helvetica
+    // run none — so a read that rebuilt per run, or answered every run alike, fails one of the two records.
+    const read = await runFonts(session, 0, [piece.index, helvetica.index, piece.index]);
+    const pieceFont = read.fonts[0];
+    // THE REBUILT FONT DRAWS THE RUN: every character of the piece maps to a glyph in it.
+    const mapped = pieceFont === undefined ? [] : Array.from(piece.text.trim(), (c) => runFontGlyph(pieceFont, c));
+    record(
+      'a block’s runs in an embedded subset have one font rebuilt from its program, mapping every character the run holds',
+      read.fonts.length === 1 && read.runs[0] === 0 && read.runs[2] === 0 && mapped.length > 0 && mapped.every((glyph) => glyph > 0),
+      `${String(read.fonts.length)} fonts, places ${JSON.stringify(read.runs)}; glyphs ${JSON.stringify(mapped)}`,
+    );
+    record(
+      'CONTROL: a run in a font that is not embedded has none, PDFium’s substitute being all there is',
+      read.runs[1] === null,
+      `place ${JSON.stringify(read.runs[1])}`,
+    );
+  } finally {
+    await pdfiumWriter.close(session);
+  }
+}
+
+/** The glyph `font` maps `character` to, read by the one HarfBuzz reader. @param {Uint8Array} font @param {string} character */
+function runFontGlyph(font, character) {
+  return new ShapingFace(font, 0, {}).glyphFor(character.codePointAt(0) ?? 0) ?? 0;
 }
 
 /**
@@ -648,7 +1477,12 @@ async function replaceAtCases() {
   const afterRemoval = removed === null ? '' : await pageOf(removed, 0);
   record(
     'a word that was its object’s WHOLE text, at the END of its line, replaced with nothing, removes that object alone',
-    objectsAfter === objectsBefore - 1 && (afterRemoval.match(/WIDGET/gu) ?? []).length === 2 && afterRemoval.includes('WID'),
+    // `WID` AS A WORD, never as a substring: the page's two whole `WIDGET` lines hold `WID` and `GET` too, so a
+    // substring test passed whichever of the split pair's objects went.
+    objectsAfter === objectsBefore - 1 &&
+      (afterRemoval.match(/WIDGET/gu) ?? []).length === 2 &&
+      /\bWID\b/u.test(afterRemoval) &&
+      !/\bGET\b/u.test(afterRemoval),
     removal === null
       ? `${String(objectsBefore)} text objects before, ${String(objectsAfter)} after; page 0 reads ${JSON.stringify(afterRemoval)}`
       : `it was refused: ${removal}`,
@@ -1144,7 +1978,7 @@ async function glyphLineCases() {
       kind: 'editTextBlock',
       page: 0,
       // THE JOINED RUN, by its first object alone: the edit expands it through the same join.
-      ...blockEditOf([{ lines: [[run.index]], text: 'Drawn as one line and edited whole' }]),
+      ...blockEditOf([{ lines: [[run.index]], soft: [false], text: 'Drawn as one line and edited whole' }]),
       fit: 'reflow',
       version: 1,
     }),
@@ -1454,7 +2288,7 @@ async function blockEditCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines, text }]),
+        ...blockEditOf([{ lines, soft: lines.map(() => false), text }]),
         fit: 'reflow',
         version: 1,
       }),
@@ -1465,7 +2299,7 @@ async function blockEditCases() {
   const refusedCapture = await localPdfiumExecution.capture(original, {
     kind: 'editTextBlock',
     page: 0,
-    ...blockEditOf([{ lines, text: 'x' }]),
+    ...blockEditOf([{ lines, soft: lines.map(() => false), text: 'x' }]),
     fit: 'reflow',
     version: /** @type {never} */ (1),
   });
@@ -1580,7 +2414,7 @@ async function blockEditCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines: headingLines, text: 'Les plantations de printemps commencent la semaine prochaine' }]),
+        ...blockEditOf([{ lines: headingLines, soft: headingLines.map(() => false), text: 'Les plantations de printemps commencent la semaine prochaine' }]),
         fit: 'reflow',
         version: 1,
       }),
@@ -1608,7 +2442,7 @@ async function blockEditCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines: target, text }]),
+        ...blockEditOf([{ lines: target, soft: target.map(() => false), text }]),
         fit,
         version: 1,
       }),
@@ -1678,7 +2512,7 @@ async function blockEditCases() {
       command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines: twoRunLines, text: replacedWhole }]),
+        ...blockEditOf([{ lines: twoRunLines, soft: twoRunLines.map(() => false), text: replacedWhole }]),
         fit: 'reflow',
         version: 1,
       }),
@@ -1709,9 +2543,10 @@ async function blockEditCases() {
       kind: 'editTextBlock',
       page: 0,
       ...blockEditOf([
-        { lines, text: [BLOCK_LINES[0], 'a second line, rewritten', BLOCK_LINES[2]].join('\n') },
+        { lines, soft: lines.map(() => false), text: [BLOCK_LINES[0], 'a second line, rewritten', BLOCK_LINES[2]].join('\n') },
         {
           lines: separate.lines.map((line) => line.runs.map((run) => run.index)),
+          soft: separate.lines.map(() => false),
           text: 'The block below, rewritten',
         },
       ]),
@@ -1748,7 +2583,7 @@ async function blockEditCases() {
         command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
           kind: 'editTextBlock',
           page: 0,
-          ...blockEditOf([{ lines: narrowedLines, text: [BLOCK_LINES[0], accented, BLOCK_LINES[2]].join('\n') }]),
+          ...blockEditOf([{ lines: narrowedLines, soft: narrowedLines.map(() => false), text: [BLOCK_LINES[0], accented, BLOCK_LINES[2]].join('\n') }]),
           fit: 'reflow',
           version: 1,
         }),
@@ -1874,6 +2709,1510 @@ async function blockEditCases() {
     'and the refusal names exactly the characters the font cannot show',
     named === 'é',
     named === null ? 'it named nothing' : `it named ${JSON.stringify(named)}`,
+  );
+}
+
+/**
+ * A page typeset as a person would: `text` filled greedily into lines of at most `limit` points, each word in its own
+ * font (the words named in `bold` in Helvetica-Bold), the first line starting `indent` points in. `lines` instead sets
+ * each given line on its own, centred on `centre` when that is given.
+ *
+ * @param {{ text?: string; lines?: string[]; bold?: string[]; limit?: number; indent?: number; centre?: number; invisible?: boolean }} options
+ */
+async function aTypeset({ text = '', lines, bold = [], limit = 200, indent = 0, centre, invisible = false }) {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 400]);
+  // RENDER MODE 3, an OCR'd scan's invisible words: set before the text, so each `q BT ... ET Q` the drawing writes
+  // inherits it (`Tr` is graphics state).
+  if (invisible) page.pushOperators(setTextRenderingMode(3));
+  const regular = await document.embedFont(StandardFonts.Helvetica);
+  const strong = await document.embedFont(StandardFonts.HelveticaBold);
+  const size = 11;
+  /** @param {string} word */
+  const fontOf = (word) => (bold.includes(word) ? strong : regular);
+  /** @param {string} word */
+  const widthOf = (word) => fontOf(word).widthOfTextAtSize(`${word} `, size);
+  /** @type {string[]} */
+  let rows = lines ?? [];
+  if (lines === undefined) {
+    rows = [];
+    let current = [];
+    let used = 0;
+    for (const word of text.split(' ')) {
+      const room = limit - (rows.length === 0 ? indent : 0);
+      if (current.length > 0 && used + widthOf(word) > room) {
+        rows.push(current.join(' '));
+        current = [];
+        used = 0;
+      }
+      current.push(word);
+      used += widthOf(word);
+    }
+    rows.push(current.join(' '));
+  }
+  for (const [at, row] of rows.entries()) {
+    /** @type {{ text: string; font: typeof regular }[]} */
+    const segments = [];
+    const words = row.split(' ');
+    for (const [index, word] of words.entries()) {
+      const font = fontOf(word);
+      const piece = index < words.length - 1 ? `${word} ` : word;
+      const last = segments.at(-1);
+      if (last?.font === font) last.text += piece;
+      else segments.push({ text: piece, font });
+    }
+    const width = segments.reduce((sum, segment) => sum + segment.font.widthOfTextAtSize(segment.text, size), 0);
+    let cursor = centre === undefined ? 72 + (at === 0 ? indent : 0) : centre - width / 2;
+    for (const segment of segments) {
+      page.drawText(segment.text, { x: cursor, y: 300 - at * 14, size, font: segment.font });
+      cursor += segment.font.widthOfTextAtSize(segment.text, size);
+    }
+  }
+  return document.save();
+}
+
+/** A page of two blocks, one above the other with a gap no line rule joins, each of two lines. */
+async function twoBlocks() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 400]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  for (const [at, row] of ['Upper block first line', 'Upper block second line'].entries()) {
+    page.drawText(row, { x: 72, y: 340 - at * 14, size: 11, font });
+  }
+  for (const [at, row] of ['Lower block first line', 'Lower block second line'].entries()) {
+    page.drawText(row, { x: 72, y: 200 - at * 14, size: 11, font });
+  }
+  return document.save();
+}
+
+/**
+ * PLACEMENT AND ADDED BOXES on the block wire (ADR-0180, corrected 2026-10-06): a block moved, scaled, rotated and set at
+ * a new measure as one thing, and a box of new text laid out by the same writer. Each case reads the reopened bytes, and
+ * carries the control the bug would also pass: the block that was not named stays where it was.
+ */
+async function placeCases() {
+  const original = await twoBlocks();
+  const read = await blocksOf(original);
+  const upper = read.blocks.find((block) => block.lines[0]?.runs[0]?.text.startsWith('Upper'));
+  const lower = read.blocks.find((block) => block.lines[0]?.runs[0]?.text.startsWith('Lower'));
+  if (upper === undefined || lower === undefined) {
+    record('the two-block fixture reads as two blocks', false, `${String(read.blocks.length)} block(s)`);
+    return;
+  }
+  /** One block as the wire names it, with what is done to its place. */
+  const entry = (/** @type {typeof upper} */ block, /** @type {object | undefined} */ place) => ({
+    lines: block.lines.map((line) => line.runs.map((run) => run.index)),
+    soft: block.lines.map((line) => line.soft),
+    text: paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft }))),
+    ...(place === undefined ? {} : { place }),
+  });
+  const send = (
+    /** @type {ReturnType<typeof entry>[]} */ blocks,
+    /** @type {object[]} */ inserts = [],
+    /** @type {Uint8Array} */ session = original,
+  ) =>
+    localPdfiumExecution.apply({
+      session,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf(blocks, /** @type {never} */ (inserts)),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  const runStarting = async (/** @type {Uint8Array} */ bytes, /** @type {string} */ words) =>
+    (await blocksOf(bytes)).runs.find((run) => run.text.startsWith(words));
+  const before = await runStarting(original, 'Upper block first');
+  const lowerBefore = await runStarting(original, 'Lower block first');
+
+  // MOVE: every object of the block, by one amount.
+  const moved = await send([entry(upper, { move: { x: 50, y: -40 } }), entry(lower, undefined)]);
+  const after = await runStarting(moved, 'Upper block first');
+  const secondAfter = await runStarting(moved, 'Upper block second');
+  const secondBefore = await runStarting(original, 'Upper block second');
+  record(
+    'a move shifts every line of the block by the same amount, in points',
+    before !== undefined && after !== undefined && secondBefore !== undefined && secondAfter !== undefined &&
+      Math.abs(after.left - before.left - 50) < 0.05 && Math.abs(after.bottom - before.bottom + 40) < 0.05 &&
+      Math.abs(secondAfter.left - secondBefore.left - 50) < 0.05 && Math.abs(secondAfter.bottom - secondBefore.bottom + 40) < 0.05,
+    `first ${JSON.stringify(after && [after.left - (before?.left ?? 0), after.bottom - (before?.bottom ?? 0)])}, second ${JSON.stringify(secondAfter && [secondAfter.left - (secondBefore?.left ?? 0), secondAfter.bottom - (secondBefore?.bottom ?? 0)])}`,
+  );
+  const lowerAfter = await runStarting(moved, 'Lower block first');
+  record(
+    'CONTROL: the block that was named in the same edit with no place stays exactly where it was',
+    lowerBefore !== undefined && lowerAfter !== undefined &&
+      Math.abs(lowerAfter.left - lowerBefore.left) < 0.001 && Math.abs(lowerAfter.bottom - lowerBefore.bottom) < 0.001,
+    `lower ${JSON.stringify(lowerAfter && [lowerAfter.left - (lowerBefore?.left ?? 0), lowerAfter.bottom - (lowerBefore?.bottom ?? 0)])}`,
+  );
+  record(
+    'and a move keeps the words: the moved block says what it said',
+    after?.text.trim() === 'Upper block first line' && secondAfter?.text.trim() === 'Upper block second line',
+    `${JSON.stringify(after?.text)} ${JSON.stringify(secondAfter?.text)}`,
+  );
+
+  // SCALE, about the block's top left.
+  const scaled = await send([entry(upper, { scale: 2 })]);
+  const big = await runStarting(scaled, 'Upper block first');
+  record(
+    'a scale of two sets the block at twice its size',
+    before !== undefined && big !== undefined && Math.abs(big.style.size / before.style.size - 2) < 0.05,
+    `size ${String(before?.style.size)} then ${String(big?.style.size)}`,
+  );
+  record(
+    'about its top left: its left edge and its top stay where they were',
+    before !== undefined && big !== undefined && Math.abs(big.left - before.left) < 0.5 && Math.abs(big.top - before.top) < 0.5,
+    `left ${String(before?.left)} then ${String(big?.left)}, top ${String(before?.top)} then ${String(big?.top)}`,
+  );
+
+  // ROTATE: a quarter turn swaps the block's width and height, about its centre.
+  const extentOf = async (/** @type {Uint8Array} */ bytes, /** @type {string} */ first) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      const objects = (await pageObjects(session, 0)).filter((object) => object.kind === 'text' && object.top > (first === 'Upper' ? 250 : 0));
+      const left = Math.min(...objects.map((object) => object.left));
+      const right = Math.max(...objects.map((object) => object.right));
+      const bottom = Math.min(...objects.map((object) => object.bottom));
+      const top = Math.max(...objects.map((object) => object.top));
+      return { width: right - left, height: top - bottom, centre: [(left + right) / 2, (bottom + top) / 2] };
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const flat = await extentOf(original, 'Upper');
+  const turned = await extentOf(await send([entry(upper, { rotate: 90 })]), 'Upper');
+  record(
+    'a quarter turn swaps the block’s width and height',
+    Math.abs(turned.width - flat.height) < 1.5 && Math.abs(turned.height - flat.width) < 1.5,
+    `${flat.width.toFixed(1)} by ${flat.height.toFixed(1)} became ${turned.width.toFixed(1)} by ${turned.height.toFixed(1)}`,
+  );
+  record(
+    'about its centre: the middle of the block does not move',
+    Math.abs((turned.centre[0] ?? 0) - (flat.centre[0] ?? 0)) < 1.5 && Math.abs((turned.centre[1] ?? 0) - (flat.centre[1] ?? 0)) < 1.5,
+    `centre ${JSON.stringify(flat.centre)} became ${JSON.stringify(turned.centre)}`,
+  );
+
+  // A PLACEMENT THAT PLACES NOTHING is no edit.
+  const nothing = await send([entry(upper, { scale: 1, move: { x: 0, y: 0 } })]).then(
+    () => 'wrote',
+    (error) => (error instanceof Error ? error.message : String(error)),
+  );
+  record('a place that moves, scales and turns nothing changes nothing, and the edit says so', nothing.includes('changed nothing'), nothing);
+
+  // WIDTH: the block laid out again at a new measure.
+  const narrow = await send([entry(upper, { width: 60 })]);
+  const narrowRuns = (await blocksOf(narrow)).runs.filter((run) => run.top > 250);
+  const wordsOf = (/** @type {{ text: string }[]} */ runs) => runs.map((run) => run.text).join(' ').replace(/\s+/gu, ' ').trim();
+  record(
+    'a width of sixty sets the block in lines no wider than that, with every word kept',
+    narrowRuns.length > 2 && Math.max(...narrowRuns.map((run) => run.right)) - Math.min(...narrowRuns.map((run) => run.left)) <= 61 &&
+      wordsOf(narrowRuns) === 'Upper block first line Upper block second line',
+    `${String(narrowRuns.length)} runs, width ${(Math.max(...narrowRuns.map((run) => run.right)) - Math.min(...narrowRuns.map((run) => run.left))).toFixed(1)}, words ${JSON.stringify(wordsOf(narrowRuns))}`,
+  );
+  const wide = await send([entry(upper, { width: 300 })]).then(
+    () => 'wrote',
+    (error) => (error instanceof Error ? error.message : String(error)),
+  );
+  record(
+    'CONTROL: a width as wide as the block already was lays out the same lines and writes nothing new',
+    wide.includes('changed nothing') || wide === 'wrote',
+    wide,
+  );
+
+  // AN ADDED BOX: a text object made for it and laid out as an edit of it.
+  const added = await send([], [{ left: 100, baseline: 120, measure: 150, size: 14, text: 'A note added to the page' }]);
+  const note = await runStarting(added, 'A note');
+  record(
+    'an added box writes its words at its left edge and baseline, in its size',
+    note !== undefined && Math.abs(note.left - 100) < 2 && Math.abs(note.bottom - 120) < 6 && Math.abs(note.style.size - 14) < 0.3 &&
+      // WRAPPED AT ITS MEASURE of 150 (a fourteen-point line of that sentence is wider), so the words are across its lines.
+      wordsOf((await blocksOf(added)).runs.filter((run) => run.top < 140 && run.left >= 99)) === 'A note added to the page',
+    `${JSON.stringify(note && { text: note.text, left: note.left, bottom: note.bottom, size: note.style.size })}`,
+  );
+  const untouched = await runStarting(added, 'Upper block first');
+  record(
+    'CONTROL: the blocks already on the page are exactly where they were, and the page without the box has no such words',
+    untouched !== undefined && before !== undefined && Math.abs(untouched.bottom - before.bottom) < 0.001 &&
+      (await runStarting(original, 'A note')) === undefined,
+    `upper ${String(untouched?.bottom)} against ${String(before?.bottom)}`,
+  );
+  const wrapped = await send([], [{ left: 100, baseline: 120, measure: 70, size: 11, text: 'a long note that must wrap at its measure' }]);
+  const wrappedRuns = (await blocksOf(wrapped)).runs.filter((run) => run.top < 140 && run.bottom > 0 && run.left >= 99);
+  record(
+    'an added box wraps its words at the measure it was given',
+    wrappedRuns.length >= 3 && Math.max(...wrappedRuns.map((run) => run.right)) - 100 <= 72,
+    `${String(wrappedRuns.length)} lines, right edge ${Math.max(...wrappedRuns.map((run) => run.right)).toFixed(1)}`,
+  );
+  const marked = await send([], [{ left: 100, baseline: 120, measure: 200, size: 12, text: 'plain heavy plain', marks: [{ from: 6, to: 11, set: { bold: true } }] }]);
+  const heavy = (await blocksOf(marked)).runs.find((run) => run.text.trim() === 'heavy');
+  const plain = (await blocksOf(marked)).runs.find((run) => run.text.includes('plain'));
+  record(
+    'an added box takes marks as an edit does: its bold word is bold and the rest of it is not',
+    heavy?.style.bold === true && plain?.style.bold === false,
+    `heavy ${String(heavy?.style.bold)}, plain ${String(plain?.style.bold)}`,
+  );
+}
+
+/**
+ * JOIN AND SPLIT as edits of the block wire (ADR-0180 Decision 7): two blocks made one by extending the upper's words and
+ * emptying the lower, one made two by naming each half's own lines and moving the second down. The grouping is the read's,
+ * so each case reads the saved bytes and counts blocks, which is the observable a join and a split exist to change.
+ */
+async function joinSplitCases() {
+  const original = await twoBlocks();
+  const read = await blocksOf(original);
+  const upper = read.blocks.find((block) => block.lines[0]?.runs[0]?.text.startsWith('Upper'));
+  const lower = read.blocks.find((block) => block.lines[0]?.runs[0]?.text.startsWith('Lower'));
+  if (upper === undefined || lower === undefined) {
+    record('the join fixture reads as two blocks', false, `${String(read.blocks.length)} block(s)`);
+    return;
+  }
+  const entry = (/** @type {typeof upper} */ block, /** @type {string} */ text, /** @type {object} */ extra = {}) => ({
+    lines: block.lines.map((line) => line.runs.map((run) => run.index)),
+    soft: block.lines.map((line) => line.soft),
+    text,
+    ...extra,
+  });
+  const wordsOf = (/** @type {typeof upper} */ block) =>
+    paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  const send = (/** @type {object[]} */ blocks, /** @type {Uint8Array} */ session = original) =>
+    localPdfiumExecution.apply({
+      session,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf(/** @type {never} */ (blocks)),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+
+  // JOIN: the upper block's words with the lower's after them, the lower emptied.
+  const joinedWords = `${wordsOf(upper)} ${wordsOf(lower)}`;
+  const joined = await send([entry(upper, joinedWords), entry(lower, '')]);
+  const after = await blocksOf(joined);
+  const one = after.blocks[0];
+  record(
+    'a join reads back as ONE block holding both blocks’ words, where it read as two',
+    read.blocks.length === 2 && after.blocks.length === 1 &&
+      one !== undefined && one.lines.map((line) => lineText(line.runs)).join(' ').replace(/\s+/gu, ' ').trim() ===
+        joinedWords.replace(/\s+/gu, ' '),
+    `${String(read.blocks.length)} block(s) before, ${String(after.blocks.length)} after; ${JSON.stringify(one?.lines.map((line) => lineText(line.runs)))}`,
+  );
+  const tops = after.runs.map((run) => run.bottom).sort((a, b) => b - a);
+  const gaps = tops.slice(1).map((value, at) => (tops[at] ?? 0) - value).filter((gap) => gap > 0.5);
+  record(
+    'and the lower block’s words stand at the pitch of the block they joined, not where the lower block was',
+    gaps.length > 0 && Math.max(...gaps) < 20,
+    `gaps between lines ${JSON.stringify(gaps.map((gap) => Math.round(gap * 10) / 10))}`,
+  );
+  const unemptied = await send([entry(upper, joinedWords)]).catch(() => undefined);
+  record(
+    'CONTROL: extending the upper block WITHOUT emptying the lower leaves the lower’s words on the page twice, which is why both are in one command',
+    unemptied !== undefined && (await blocksOf(unemptied)).runs.filter((run) => run.text.includes('Lower block first')).length >= 2,
+    unemptied === undefined ? 'refused' : 'one copy',
+  );
+
+  // SPLIT: one block of two paragraphs made two.
+  const two = await aTypeset({ lines: ['First paragraph line', 'Second paragraph line'] });
+  const twoRead = await blocksOf(two);
+  const both = twoRead.blocks[0];
+  if (both === undefined) {
+    record('the split fixture reads as a block', false, 'no block');
+    return;
+  }
+  const firstLine = both.lines[0];
+  const secondLine = both.lines[1];
+  if (firstLine === undefined || secondLine === undefined) {
+    record('the split fixture reads as two lines', false, `${String(both.lines.length)} line(s)`);
+    return;
+  }
+  const pitch = firstLine.box.y1 - secondLine.box.y1;
+  const half = (/** @type {typeof firstLine} */ line, /** @type {object} */ extra = {}) => ({
+    lines: [line.runs.map((run) => run.index)],
+    soft: [false],
+    text: lineText(line.runs),
+    ...extra,
+  });
+  const split = await send([half(firstLine), half(secondLine, { place: { move: { x: 0, y: -pitch } } })], two);
+  const splitRead = await blocksOf(split);
+  record(
+    'a split reads back as TWO blocks, where it read as one, with each half’s words',
+    twoRead.blocks.length === 1 && splitRead.blocks.length === 2 &&
+      splitRead.blocks.map((block) => wordsOf(block)).join('|') === 'First paragraph line|Second paragraph line',
+    `${String(twoRead.blocks.length)} block(s) before, ${String(splitRead.blocks.length)} after`,
+  );
+  const barely = await send([half(firstLine), half(secondLine, { place: { move: { x: 0, y: -1 } } })], two);
+  record(
+    'CONTROL: the same two halves moved by a point read as one block again, which is what a full line of movement is for',
+    (await blocksOf(barely)).blocks.length === 1,
+    `${String((await blocksOf(barely)).blocks.length)} block(s)`,
+  );
+}
+
+/**
+ * A paragraph of three lines, each in its own marked-content sequence with its own `MCID` — how a tagged PDF names its text
+ * for the structure tree.
+ */
+async function aTaggedParagraph() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 400]);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  for (const [at, line] of BLOCK_LINES.entries()) {
+    // `obj` of an object literal answers a PDFDict, which the operator's argument type does not list among the ones it takes
+    const properties = /** @type {never} */ (document.context.obj({ MCID: at }));
+    page.pushOperators(PDFOperator.of(PDFOperatorNames.BeginMarkedContentSequence, [PDFName.of('P'), properties]));
+    page.drawText(line, { x: 72, y: 300 - at * 14, size: 11, font });
+    page.pushOperators(endMarkedContent());
+  }
+  return document.save();
+}
+
+/**
+ * MARKED CONTENT IS KEPT (ADR-0181 Decision 8): an object that takes an old one's place stands in the same content
+ * sequence, so a tagged page keeps the structure that names its text. The control is the untagged page, which stays
+ * untagged, so the marks are copied and not invented.
+ */
+async function markCases() {
+  const bdcOf = async (/** @type {Uint8Array} */ bytes) => {
+    const content = Buffer.from(
+      (await pageStreams(bytes, 0)).reduce((all, part) => Uint8Array.from([...all, ...part, 10]), new Uint8Array()),
+    ).toString('latin1');
+    return {
+      sequences: (content.match(/\bBDC\b/gu) ?? []).length,
+      numbers: [...content.matchAll(/\/MCID\s+(\d+)/gu)].map((each) => Number(each[1])),
+      texts: (content.match(/\bBT\b/gu) ?? []).length,
+    };
+  };
+  const edit = async (/** @type {Uint8Array} */ original, /** @type {string} */ text) => {
+    const [block] = (await blocksOf(original)).blocks;
+    if (block === undefined) throw new Error('the marked fixture read as no block');
+    const lines = block.lines.map((line) => line.runs.map((run) => run.index));
+    return localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines, soft: lines.map(() => true), text }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  };
+  const tagged = await aTaggedParagraph();
+  const before = await bdcOf(tagged);
+  record(
+    'the tagged fixture is three text objects in three marked sequences, MCID 0 to 2',
+    before.sequences === 3 && before.texts === 3 && before.numbers.join() === '0,1,2',
+    JSON.stringify(before),
+  );
+  // THE WORDS CHANGED AND A LINE ADDED: the first and second lines are kept or replaced, and the new line continues one.
+  const edited = await edit(tagged, `${BLOCK_LINES.join(' ')} with a good many more words at its end so the block gains a line`);
+  const after = await bdcOf(edited);
+  record(
+    'every text object an edit leaves on a tagged page is in a marked sequence, and the numbers it was given are still named',
+    after.texts > 0 && after.sequences === after.texts && [0, 1, 2].every((number) => after.numbers.includes(number)),
+    JSON.stringify(after),
+  );
+  record(
+    'a line the edit ADDED takes the marks of the line it continues',
+    after.texts > before.texts && after.sequences === after.texts,
+    `${String(before.texts)} text objects before, ${String(after.texts)} after, ${String(after.sequences)} sequences`,
+  );
+  const plain = await edit(await aParagraph(), `${BLOCK_LINES.join(' ')} with a good many more words at its end so the block gains a line`);
+  const none = await bdcOf(plain);
+  record(
+    'CONTROL: an untagged page stays untagged, so the marks are copied and not invented',
+    none.sequences === 0 && none.numbers.length === 0 && none.texts > 0,
+    JSON.stringify(none),
+  );
+}
+
+/**
+ * A PNG of `width` by `height` whose pixel at (x, y) is `pixelAt(x, y)`: the smallest encoder a scan fixture needs, built
+ * here so the picture is known to the pixel.
+ *
+ * @param {number} width
+ * @param {number} height
+ * @param {(x: number, y: number) => readonly [number, number, number]} pixelAt
+ */
+function pngOf(width, height, pixelAt) {
+  const rows = Buffer.alloc((width * 3 + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    const row = y * (width * 3 + 1);
+    rows[row] = 0;
+    for (let x = 0; x < width; x += 1) {
+      const [r, g, b] = pixelAt(x, y);
+      rows[row + 1 + x * 3] = r;
+      rows[row + 2 + x * 3] = g;
+      rows[row + 3 + x * 3] = b;
+    }
+  }
+  /** @param {string} kind @param {Buffer} data */
+  const chunk = (kind, data) => {
+    const body = Buffer.concat([Buffer.from(kind, 'latin1'), data]);
+    const out = Buffer.alloc(8 + data.length + 4);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc32(body), 8 + data.length);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  header[9] = 2;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(rows)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/** The colour of the scan's paper and of its ink, and where each of its two lines of words stands. */
+const PAPER = /** @type {const} */ ([250, 240, 200]);
+const INK = /** @type {const} */ ([20, 20, 20]);
+const SCAN_LINES = [
+  { text: 'Recognised first line', baseline: 300 },
+  { text: 'Recognised second line', baseline: 286 },
+];
+/** Where a scan's ink runs past what a recogniser read, in points: the bar's far end, a stub under it, and a mark apart from it. */
+const OVERSHOOT = { across: 4, stubAt: 20, stubWidth: 6, stubDepth: 6, neighbourAt: 6, neighbourWidth: 6 };
+/** The scan's paper at a pixel: one colour, or a gradient that darkens to the right and down, steeply enough to show in one word. */
+function scanPaperAt(/** @type {number} */ x, /** @type {number} */ y, /** @type {boolean} */ gradient) {
+  if (!gradient) return PAPER;
+  /** @type {readonly [number, number, number]} */
+  const shaded = [Math.round(PAPER[0] - 0.45 * x - 0.1 * y), Math.round(PAPER[1] - 0.45 * x - 0.1 * y), Math.round(PAPER[2] - 0.35 * x - 0.1 * y)];
+  return shaded;
+}
+
+/**
+ * A SCANNED PAGE: a cream picture of the whole page with a bar of ink where each line's words are, and over it the text a
+ * recogniser read, painted invisibly (render mode 3) at the same places. The bars are exactly as wide as their words, so
+ * what a cover leaves of the ink is known to the pixel.
+ *
+ * @param {{ picture?: boolean, overshoot?: boolean, gradient?: boolean, turned?: boolean }} [options] `picture: false` leaves the picture out:
+ * invisible text over nothing. `overshoot` runs the ink past the recogniser's words (OVERSHOOT) and `gradient` shades the
+ * paper (scanPaperAt); `turned` sets the page's /Rotate to 90, which a cover is drawn through.
+ */
+async function aScan({ picture = true, overshoot = false, gradient = false, turned = false } = {}) {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 400]);
+  if (turned) page.setRotation(degrees(90));
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const widths = SCAN_LINES.map((line) => font.widthOfTextAtSize(line.text, 11));
+  if (picture) {
+    const image = await document.embedPng(
+      pngOf(400, 400, (x, y) => {
+        for (const [at, line] of SCAN_LINES.entries()) {
+          // THE INK: the glyphs' own extent, a baseline up to its x-height and cap, as a solid bar.
+          const top = 400 - (line.baseline + 7);
+          const bottom = 400 - (line.baseline - 1);
+          const width = widths[at] ?? 0;
+          if (y >= top && y <= bottom && x >= 72 && x < 72 + width + (overshoot ? OVERSHOOT.across : 0)) return INK;
+          if (overshoot) {
+            // A DESCENDER-LIKE STUB under the bar, which touches it, and a separate mark past the word's gap, which does not.
+            if (at === SCAN_LINES.length - 1 && y > bottom && y <= bottom + OVERSHOOT.stubDepth && x >= 72 + OVERSHOOT.stubAt && x < 72 + OVERSHOOT.stubAt + OVERSHOOT.stubWidth) return INK;
+            if (y >= top && y <= bottom && x >= 72 + width + OVERSHOOT.neighbourAt && x < 72 + width + OVERSHOOT.neighbourAt + OVERSHOOT.neighbourWidth) return INK;
+          }
+        }
+        return scanPaperAt(x, y, gradient);
+      }),
+    );
+    page.drawImage(image, { x: 0, y: 0, width: 400, height: 400 });
+  }
+  page.pushOperators(setTextRenderingMode(3));
+  for (const line of SCAN_LINES) page.drawText(line.text, { x: 72, y: line.baseline, size: 11, font });
+  return { bytes: await document.save(), widths };
+}
+
+/**
+ * A SCANNED PAGE IS RECOGNISED, THEN EDITED (ADR-0181 Decision 9): words typed over a recognised line are drawn, the
+ * picture's old words under them are covered with the paper round them, and the words not touched are left as the
+ * picture. Every case reads the pixels of reopened bytes, and carries the control the bug would also pass: the page with
+ * no picture stays invisible (ADR-0179's keep list), and the line not edited keeps its ink.
+ */
+async function scanCases() {
+  const { bytes, widths } = await aScan();
+  const pixel = async (/** @type {Uint8Array} */ page, /** @type {number} */ x, /** @type {number} */ y) => {
+    const session = await pdfiumWriter.open(page);
+    try {
+      const raster = await renderPageBitmap(session, 0, 400, 400);
+      const at = (y * 400 + x) * 4;
+      return [raster.bgra[at + 2] ?? 0, raster.bgra[at + 1] ?? 0, raster.bgra[at] ?? 0];
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const dark = async (/** @type {Uint8Array} */ page, /** @type {{ x0: number; y0: number; x1: number; y1: number }} */ box) => {
+    const session = await pdfiumWriter.open(page);
+    try {
+      const raster = await renderPageBitmap(session, 0, 400, 400);
+      let count = 0;
+      for (let y = box.y0; y < box.y1; y += 1) {
+        for (let x = box.x0; x < box.x1; x += 1) if ((raster.bgra[(y * 400 + x) * 4] ?? 255) < 100) count += 1;
+      }
+      return count;
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  // WHERE EACH LINE'S INK IS: a point well inside its bar, and a point near the bar's far end.
+  const rowOf = (/** @type {number} */ line) => 400 - ((SCAN_LINES[line]?.baseline ?? 0) + 3);
+  const farEnd = (/** @type {number} */ line) => Math.floor(72 + (widths[line] ?? 0) - 6);
+  const isPaper = (/** @type {readonly number[]} */ colour) => colour.every((value, at) => Math.abs(value - (PAPER[at] ?? 0)) <= 6);
+  const isInk = (/** @type {readonly number[]} */ colour) => colour.every((value) => value < 80);
+
+  const fixture = await blocksOf(bytes);
+  const block = fixture.blocks[0];
+  record(
+    'the scan fixture is two lines of recognised words over a picture whose ink is under them',
+    block?.lines.length === 2 && isInk(await pixel(bytes, farEnd(0), rowOf(0))) && isInk(await pixel(bytes, farEnd(1), rowOf(1))) &&
+      isPaper(await pixel(bytes, 380, 380)),
+    `${String(block?.lines.length)} line(s); ink ${JSON.stringify(await pixel(bytes, farEnd(1), rowOf(1)))}`,
+  );
+  if (block === undefined) return;
+  const lines = block.lines.map((line) => line.runs.map((run) => run.index));
+  const type = (/** @type {Uint8Array} */ page, /** @type {string} */ text) =>
+    localPdfiumExecution.apply({
+      session: page,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines, soft: lines.map(() => false), text }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+
+  // THE SECOND LINE EDITED to something shorter than it was: its far end is where the old ink is and no new word is.
+  const edited = await type(bytes, `${SCAN_LINES[0]?.text ?? ''}\nEdited`);
+  record(
+    'the picture’s old words under an edited line are covered with the PAPER round them, where no new word stands',
+    isPaper(await pixel(edited, farEnd(1), rowOf(1))),
+    `the far end of the old ink reads ${JSON.stringify(await pixel(edited, farEnd(1), rowOf(1)))}, paper ${JSON.stringify(PAPER)}`,
+  );
+  const newWords = await dark(edited, { x0: 72, y0: 400 - (286 + 10), x1: 72 + 40, y1: 400 - (286 - 3) });
+  record(
+    'and the words typed are DRAWN there, as words and not as the solid bar they cover',
+    newWords > 15 && newWords < 250,
+    `${String(newWords)} dark pixel(s) where the new line is`,
+  );
+  record(
+    'the line that was not edited keeps its ink: it is the picture’s, and nothing was dropped',
+    isInk(await pixel(edited, farEnd(0), rowOf(0))),
+    `the first line's far end reads ${JSON.stringify(await pixel(edited, farEnd(0), rowOf(0)))}`,
+  );
+  // THE CONTROL THAT SEPARATES THE COVER FROM A CHANGE EVERYWHERE: edit the first line only and the second keeps its ink.
+  const firstOnly = await type(bytes, `Changed\n${SCAN_LINES[1]?.text ?? ''}`);
+  record(
+    'CONTROL: editing the first line covers the first and leaves the second line’s ink, so the cover is where the edit is',
+    isPaper(await pixel(firstOnly, farEnd(0), rowOf(0))) && isInk(await pixel(firstOnly, farEnd(1), rowOf(1))),
+    `first ${JSON.stringify(await pixel(firstOnly, farEnd(0), rowOf(0)))}, second ${JSON.stringify(await pixel(firstOnly, farEnd(1), rowOf(1)))}`,
+  );
+  // INVISIBLE TEXT WITH NO PICTURE UNDER IT is not a scan, and stays invisible as ADR-0179 keeps it.
+  const bare = await aScan({ picture: false });
+  const bareBlock = (await blocksOf(bare.bytes)).blocks[0];
+  const bareLines = bareBlock?.lines.map((line) => line.runs.map((run) => run.index)) ?? [];
+  const bareEdited = await localPdfiumExecution.apply({
+    session: bare.bytes,
+    command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+      kind: 'editTextBlock',
+      page: 0,
+      ...blockEditOf([{ lines: bareLines, soft: bareLines.map(() => false), text: `${SCAN_LINES[0]?.text ?? ''}\nEdited` }]),
+      fit: 'reflow',
+      version: 1,
+    }),
+    sources: [],
+    reads: undefined,
+  });
+  record(
+    'CONTROL: the same edit of invisible text over NO picture draws nothing and covers nothing, so it is the picture that makes it a scan',
+    (await dark(bareEdited, { x0: 0, y0: 0, x1: 400, y1: 400 })) === 0 && (await textOf(bareEdited)).includes('Edited'),
+    `${String(await dark(bareEdited, { x0: 0, y0: 0, x1: 400, y1: 400 }))} dark pixel(s)`,
+  );
+
+  // THE COVER IS WHERE THE INK IS (ADR-0187): a scanned letter runs past the recogniser's box, and the paper behind a word
+  // is not always one colour. Each case edits the second line to a shorter one and reads pixels of the reopened bytes.
+  const editedSecond = async (/** @type {{ overshoot?: boolean, gradient?: boolean, turned?: boolean }} */ options) => {
+    const scan = await aScan(options);
+    const read = await blocksOf(scan.bytes);
+    const target = read.blocks[0];
+    const targetLines = target?.lines.map((line) => line.runs.map((run) => run.index)) ?? [];
+    const done = await localPdfiumExecution.apply({
+      session: scan.bytes,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines: targetLines, soft: targetLines.map(() => false), text: `${SCAN_LINES[0]?.text ?? ''}\nEdited` }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+    return { scan, read, edited: done };
+  };
+  const second = SCAN_LINES[1];
+  const secondRow = rowOf(1);
+  const barBottom = 400 - ((second?.baseline ?? 0) - 1);
+
+  const over = await editedSecond({ overshoot: true });
+  const recognised = over.read.runs.find((run) => run.text.startsWith('Recognised second'));
+  const marginPoints = 1.5;
+  const pastColumn = Math.floor(72 + (over.scan.widths[1] ?? 0) + OVERSHOOT.across - 1.8);
+  const stubColumn = 72 + OVERSHOOT.stubAt + 3;
+  const stubRow = barBottom + OVERSHOOT.stubDepth - 1;
+  const outsideMargin = recognised !== undefined && pastColumn + 0.5 > recognised.right + marginPoints + 0.4 && 400 - (stubRow + 0.5) < recognised.bottom - marginPoints - 0.4;
+  record(
+    'PREMISE: the ink’s far end and the stub under it lie beyond the recogniser’s box and the old margin, and are ink before the edit',
+    outsideMargin && isInk(await pixel(over.scan.bytes, pastColumn, secondRow)) && isInk(await pixel(over.scan.bytes, stubColumn, stubRow)),
+    `box right ${String(recognised?.right)}, bottom ${String(recognised?.bottom)}; probes (${String(pastColumn)}, ${String(secondRow)}) and (${String(stubColumn)}, ${String(stubRow)})`,
+  );
+  record(
+    'ink that runs past the recogniser’s box is covered too: the far end of the bar and the stub under it read as paper',
+    isPaper(await pixel(over.edited, pastColumn, secondRow)) && isPaper(await pixel(over.edited, stubColumn, stubRow)),
+    `far end ${JSON.stringify(await pixel(over.edited, pastColumn, secondRow))}, stub ${JSON.stringify(await pixel(over.edited, stubColumn, stubRow))}; the row after the edit, from ${String(pastColumn - 3)}: ${JSON.stringify(await Promise.all([0, 1, 2, 3, 4, 5, 6].map(async (step) => (await pixel(over.edited, pastColumn - 3 + step, secondRow))[0])))}; bar ends at ${(72 + (over.scan.widths[1] ?? 0) + OVERSHOOT.across).toFixed(2)}, box right ${String(recognised?.right)}`,
+  );
+  const apartColumn = Math.floor(72 + (over.scan.widths[1] ?? 0) + OVERSHOOT.neighbourAt + 2);
+  record(
+    'CONTROL: a mark that is not touching the ink is not covered, so the cover grows through ink that touches and no further',
+    isInk(await pixel(over.scan.bytes, apartColumn, secondRow)) && isInk(await pixel(over.edited, apartColumn, secondRow)),
+    `apart mark before ${JSON.stringify(await pixel(over.scan.bytes, apartColumn, secondRow))}, after ${JSON.stringify(await pixel(over.edited, apartColumn, secondRow))}`,
+  );
+
+  // A GRADIENT: the paper at the two ends of the old ink differs by more than one colour can match, and each end is covered
+  // with the paper that is THERE.
+  const shaded = await editedSecond({ gradient: true });
+  const nearX = 72 + 60;
+  const farX = Math.floor(72 + (shaded.scan.widths[1] ?? 0) - 6);
+  const near = scanPaperAt(nearX, secondRow, true);
+  const far = scanPaperAt(farX, secondRow, true);
+  const closeTo = (/** @type {readonly number[]} */ got, /** @type {readonly number[]} */ want) => got.every((value, at) => Math.abs(value - (want[at] ?? 0)) <= 10);
+  record(
+    'PREMISE: the paper behind the old ink shades by more than one flat colour could match at both ends of it',
+    near.some((value, at) => Math.abs(value - (far[at] ?? 0)) > 20),
+    `near ${JSON.stringify(near)}, far ${JSON.stringify(far)}`,
+  );
+  const nearGot = await pixel(shaded.edited, nearX, secondRow);
+  const farGot = await pixel(shaded.edited, farX, secondRow);
+  record(
+    'a word on shaded paper is covered with the paper at each place: both ends of the old ink read as the gradient',
+    closeTo(nearGot, near) && closeTo(farGot, far),
+    `near ${JSON.stringify(nearGot)} for ${JSON.stringify(near)}, far ${JSON.stringify(farGot)} for ${JSON.stringify(far)}`,
+  );
+  // A TURNED PAGE: the cover is worked out on the raster and written in page space, so a page turned a quarter is where an
+  // inverse that assumed the page upright puts the paper beside the ink instead of over it. The page turned clockwise
+  // carries a user-space point (x, y) to the device point (y, x) on a square page.
+  const turned = await editedSecond({ overshoot: true, turned: true });
+  const turnedRead = turned.read.runs.find((run) => run.text.startsWith('Recognised second'));
+  const turnedFar = [400 - secondRow,Math.floor(72 + (turned.scan.widths[1] ?? 0) + OVERSHOOT.across - 1.8)];
+  const turnedStub = [400 - stubRow, stubColumn];
+  const turnedMid = [400 - secondRow, Math.floor(72 + (turned.scan.widths[1] ?? 0) - 6)];
+  record(
+    'PREMISE: on the page turned a quarter the old ink is where the turn puts it, and is ink before the edit',
+    turnedRead !== undefined && isInk(await pixel(turned.scan.bytes, turnedMid[0] ?? 0, turnedMid[1] ?? 0)) && isInk(await pixel(turned.scan.bytes, turnedStub[0] ?? 0, turnedStub[1] ?? 0)),
+    `mid ${JSON.stringify(await pixel(turned.scan.bytes, turnedMid[0] ?? 0, turnedMid[1] ?? 0))}, stub ${JSON.stringify(await pixel(turned.scan.bytes, turnedStub[0] ?? 0, turnedStub[1] ?? 0))}`,
+  );
+  record(
+    'a scan on a turned page is covered where its ink is: the old ink, its far end and the stub under it read as paper',
+    isPaper(await pixel(turned.edited, turnedMid[0] ?? 0, turnedMid[1] ?? 0)) &&
+      isPaper(await pixel(turned.edited, turnedStub[0] ?? 0, turnedStub[1] ?? 0)) &&
+      isPaper(await pixel(turned.edited, turnedFar[0] ?? 0, turnedFar[1] ?? 0)),
+    `mid ${JSON.stringify(await pixel(turned.edited, turnedMid[0] ?? 0, turnedMid[1] ?? 0))}, stub ${JSON.stringify(await pixel(turned.edited, turnedStub[0] ?? 0, turnedStub[1] ?? 0))}, far ${JSON.stringify(await pixel(turned.edited, turnedFar[0] ?? 0, turnedFar[1] ?? 0))}`,
+  );
+  record(
+    'CONTROL: on the turned page the line not edited keeps its ink, so the cover did not land on the wrong line',
+    isInk(await pixel(turned.edited, 400 - rowOf(0), farEnd(0))),
+    `${JSON.stringify(await pixel(turned.edited, 400 - rowOf(0), farEnd(0)))}`,
+  );
+  record(
+    'CONTROL: the shaded line that was not edited keeps its ink, so it is the cover and not the page that changed',
+    isInk(await pixel(shaded.edited, farEnd(0), rowOf(0))),
+    `${JSON.stringify(await pixel(shaded.edited, farEnd(0), rowOf(0)))}`,
+  );
+}
+
+/**
+ * RIGHT-TO-LEFT TEXT (ADR-0181): a line typed in Hebrew or Arabic is written in drawing order and read back as it was
+ * typed, a mixed line is read back as typed, and an Arabic line is set in its joining forms. Every read is from reopened
+ * bytes. The control for the order is PDFium itself: a text page reverses what it takes as right to left, so a write
+ * that drew the typed order would be read back as another string and refused.
+ */
+async function directionCases() {
+  const fonts = fontsDirectory(root);
+  if (!existsSync(fonts)) {
+    record('the bundled fonts are provisioned for the right-to-left cases', false, `${fonts} is absent`);
+    return;
+  }
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  try {
+    const original = await aTypeset({ lines: ['Hello world'] });
+    const [block] = (await blocksOf(original)).blocks;
+    if (block === undefined) {
+      record('the right-to-left fixture reads as a block', false, 'no block');
+      return;
+    }
+    const lines = block.lines.map((line) => line.runs.map((run) => run.index));
+    const type = (/** @type {string} */ text) =>
+      localPdfiumExecution.apply({
+        session: original,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+          kind: 'editTextBlock',
+          page: 0,
+          ...blockEditOf([{ lines, soft: lines.map(() => false), text }]),
+          fit: 'reflow',
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      });
+    const lineOf = async (/** @type {Uint8Array} */ bytes) => {
+      const after = await blocksOf(bytes);
+      return { runs: after.runs, text: after.blocks.map((each) => each.lines.map((line) => lineText(line.runs)).join('\n')).join('\n') };
+    };
+    for (const typed of [
+      'שלום עולם',
+      'שלום (עולם)',
+      'שלום, 123 עולם',
+      'Hello (שלום)',
+      'שלום Hello',
+      'abc שלום def עולם xyz',
+      'مرحبا بالعالم',
+      'السلام عليكم',
+      'مرحبا (عالم)',
+    ]) {
+      const written = await type(typed).then(
+        (bytes) => bytes,
+        (error) => error,
+      );
+      const read = written instanceof Uint8Array ? await lineOf(written) : undefined;
+      record(
+        `the line “${typed}” is written in drawing order and read back as typed`,
+        read !== undefined && read.text.trim() === typed,
+        written instanceof Uint8Array ? JSON.stringify(read?.text) : `refused: ${String(written instanceof Error ? written.message : written)}`,
+      );
+    }
+
+    // THE ONE OBJECT: a line one face carries is written as one object.
+    const mixed = await type('שלום Hello').then(lineOf, () => undefined);
+    record(
+      'a line that runs both ways and one face carries is ONE object',
+      mixed !== undefined && mixed.runs.length === 1,
+      `${String(mixed?.runs.length)} run(s)`,
+    );
+
+    // A LINE NO ONE FACE CARRIES, IN OBJECTS OF ITS OWN (ADR-0185): written as several, read back as typed, drawn in the
+    // order it is seen, and an edit of one word moves nothing. `typeMarked` colours one word, which makes a second run.
+    const typeMarked = (/** @type {string} */ text, /** @type {string | undefined} */ word) => {
+      const from = word === undefined ? -1 : text.indexOf(word);
+      const marks = from < 0 ? [] : [{ from, to: from + (word?.length ?? 0), set: { colour: { r: 200, g: 0, b: 0 } } }];
+      return localPdfiumExecution.apply({
+        session: original,
+        command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+          kind: 'editTextBlock',
+          page: 0,
+          ...blockEditOf([{ lines, soft: lines.map(() => false), text, ...(marks.length > 0 ? { marks } : {}) }]),
+          fit: 'reflow',
+          version: 1,
+        }),
+        sources: [],
+        reads: undefined,
+      });
+    };
+    const withSession = async (/** @type {Uint8Array} */ bytes, /** @type {(session: Awaited<ReturnType<typeof pdfiumWriter.open>>) => Promise<any>} */ use) => {
+      const session = await pdfiumWriter.open(bytes);
+      try {
+        return await use(session);
+      } finally {
+        await pdfiumWriter.close(session);
+      }
+    };
+    /** The page's own reading, which is by position and so is the order the page is DRAWN in. */
+    const visualOf = async (/** @type {Uint8Array} */ bytes) => (await withSession(bytes, (session) => pageText(session, 0))).trim();
+    const kinds = /** @type {[string, string | undefined][]} */ ([
+      ['Hello مرحبا العالم', undefined],
+      ['العالم Hello مرحبا', undefined],
+      ['مرحبا بالعالم Hello world', 'Hello'],
+      ['שלום Hello עולם בוקר', 'Hello'],
+      ['مرحبا (Hello) العالم', 'Hello'],
+      ['السعر 123 دولار', '123'],
+    ]);
+    /** @type {Map<string, Uint8Array>} */
+    const written = new Map();
+    for (const [typed, word] of kinds) {
+      const bytes = await typeMarked(typed, word).then(
+        (done) => done,
+        () => undefined,
+      );
+      const read = bytes === undefined ? undefined : await lineOf(bytes);
+      if (bytes !== undefined) written.set(typed, bytes);
+      record(
+        `the line “${typed}” in objects of its own is read back as typed${word === undefined ? '' : `, with “${word}” a run of its own`}`,
+        read !== undefined && read.text.trim() === typed && (word === undefined || read.runs.length >= 2),
+        `${JSON.stringify(read?.text)} in ${String(read?.runs.length)} run(s): ${JSON.stringify(read?.runs.map((run) => [run.text, Math.round(run.left)]))}`,
+      );
+    }
+    // THE PREMISE of the control below: this line really is several objects, so no object read alone can be the line.
+    const several = written.get('Hello مرحبا العالم');
+    const objects = several === undefined ? undefined : await withSession(several, (session) => objectRuns(session, 0));
+    record(
+      'PREMISE: a line no one face carries is written as several objects',
+      objects !== undefined && objects.runs.length >= 2,
+      `${String(objects?.runs.length)} object(s)`,
+    );
+    // THE MECHANISM, as the control: each object read alone and put in the order the page gives them is NOT the line (a
+    // space at the edge of a right-to-left word is on the wrong side of it, and the words come back in the order drawn),
+    // and the line read as a whole is. Without the line reading, the editor shows the first.
+    const alone = (objects?.runs ?? []).map((/** @type {{ text: string }} */ run) => run.text).join('');
+    const asLine = several === undefined ? undefined : await lineOf(several);
+    record(
+      'CONTROL: the objects of the line, each read alone, are not the line; read as one line they are',
+      alone !== 'Hello مرحبا العالم' && asLine !== undefined && asLine.text.trim() === 'Hello مرحبا العالم',
+      `alone ${JSON.stringify(alone)}, as a line ${JSON.stringify(asLine?.text)}`,
+    );
+
+    // THE ORDER IT IS SEEN: in a line that runs mostly right to left the first word typed is at the right, so a coloured
+    // Latin word typed first stands to the RIGHT of the Arabic after it; in a line that runs mostly left to right it is
+    // at the left. The same two objects either way, so the order is the line's direction and no constant.
+    const rightward = written.get('مرحبا بالعالم Hello world');
+    const leftward = await typeMarked('Hello world مرحبا', 'Hello').then(lineOf, () => undefined);
+    const rightRuns = rightward === undefined ? undefined : (await lineOf(rightward)).runs;
+    const helloRight = rightRuns?.find((run) => run.text.includes('Hello'));
+    const arabicRight = rightRuns?.find((run) => /[؀-ۿ]/u.test(run.text));
+    record(
+      'in a line that runs right to left, the Latin words typed after the Arabic stand to the LEFT of it, and the Arabic is at the right',
+      helloRight !== undefined && arabicRight !== undefined && helloRight.right <= arabicRight.left + 1,
+      JSON.stringify(rightRuns?.map((run) => [run.text, Math.round(run.left), Math.round(run.right)])),
+    );
+    const helloLeft = leftward?.runs.find((run) => run.text.includes('Hello'));
+    const arabicLeft = leftward?.runs.find((run) => /[؀-ۿ]/u.test(run.text));
+    record(
+      'CONTROL: in a line that runs left to right, the same coloured word stands to the LEFT of the Arabic',
+      helloLeft !== undefined && arabicLeft !== undefined && helloLeft.right <= arabicLeft.left + 1,
+      JSON.stringify(leftward?.runs.map((run) => [run.text, Math.round(run.left), Math.round(run.right)])),
+    );
+
+    // AN EDIT OF ONE WORD MOVES NOTHING: the line is read, one Latin word changed for another of the same length and
+    // written back through the same command, and the page's own reading by position is the first's with that word
+    // changed. A line that was written back in the order typed, and not the order seen, reads otherwise.
+    for (const typed of ['مرحبا (Hello) العالم', 'مرحبا بالعالم Hello world']) {
+      const first = written.get(typed);
+      const readFirst = first === undefined ? undefined : await lineOf(first);
+      const [firstBlock] = first === undefined ? [] : (await blocksOf(first)).blocks;
+      const next = (readFirst?.text.trim() ?? '').replace('Hello', 'Jello');
+      const second =
+        first === undefined || firstBlock === undefined
+          ? undefined
+          : await localPdfiumExecution
+              .apply({
+                session: first,
+                command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+                  kind: 'editTextBlock',
+                  page: 0,
+                  ...blockEditOf([
+                    {
+                      lines: firstBlock.lines.map((line) => line.runs.map((run) => run.index)),
+                      soft: firstBlock.lines.map((line) => line.soft),
+                      text: next,
+                    },
+                  ]),
+                  fit: 'reflow',
+                  version: 1,
+                }),
+                sources: [],
+                reads: undefined,
+              })
+              .then(
+                (done) => done,
+                () => undefined,
+              );
+      const visualBefore = first === undefined ? undefined : (await visualOf(first)).replace('Hello', 'Jello');
+      const visualAfter = second === undefined ? undefined : await visualOf(second);
+      const readSecond = second === undefined ? undefined : await lineOf(second);
+      record(
+        `an edit of one word of “${typed}” leaves the rest where it stood, and reads back as typed`,
+        visualBefore !== undefined && visualBefore === visualAfter && readSecond?.text.trim() === next,
+        `before ${JSON.stringify(visualBefore)}, after ${JSON.stringify(visualAfter)}, read ${JSON.stringify(readSecond?.text)}, wanted ${JSON.stringify(next)}`,
+      );
+    }
+
+    // A LINE WITH NO MAJORITY has no direction in what a page stores, and is read in the direction of its first letter
+    // as drawn: typed right to left, it comes back with its words in the order they stand, which is the same page. The
+    // page is the point, and editing it keeps it.
+    const tie = await typeMarked('مرحبا World', undefined).then((bytes) => bytes, () => undefined);
+    const tieRead = tie === undefined ? undefined : await lineOf(tie);
+    const tieTwice =
+      tie === undefined || tieRead === undefined
+        ? undefined
+        : await type(tieRead.text.trim().replace('World', 'Worlx')).then(
+            (bytes) => bytes,
+            () => undefined,
+          );
+    record(
+      'a line of as many letters one way as the other reads back with its words as seen, and editing that keeps the page as it was',
+      tie !== undefined &&
+        tieRead?.text.trim() === 'World مرحبا' &&
+        tieTwice !== undefined &&
+        (await visualOf(tie)).replace('World', 'Worlx') === (await visualOf(tieTwice)),
+      `${JSON.stringify(tieRead?.text)}; visual ${JSON.stringify(tie === undefined ? undefined : await visualOf(tie))}`,
+    );
+
+    // ARABIC IS JOINED: the same letters set isolated are 40% wider, so a line written as bare letters fails this.
+    const arabic = 'مرحبا بالعالم';
+    const joined = await type(arabic).then(lineOf, () => undefined);
+    const { arabicForms } = await import('../../packages/kernel/dist/arabicForms.js');
+    const face = new ShapingFace(new Uint8Array(readFileSync(`${fonts}/NotoNaskhArabic[wght].ttf`)), 0, {});
+    const advance = (/** @type {string} */ text) =>
+      (Array.from(text).reduce((sum, character) => sum + face.nominalAdvance(face.glyphFor(character.codePointAt(0) ?? 0) ?? 0), 0) / face.unitsPerEm) * 11;
+    const width = joined === undefined ? 0 : Math.max(...joined.runs.map((run) => run.right)) - Math.min(...joined.runs.map((run) => run.left));
+    record(
+      'an Arabic line is set in its joining forms: narrower than the same letters isolated',
+      joined !== undefined && width > 0 && width < 0.8 * advance(arabic),
+      `${width.toFixed(1)} pt against ${advance(arabic).toFixed(1)} isolated, ${advance(arabicForms(arabic)).toFixed(1)} joined`,
+    );
+    record(
+      'CONTROL: the isolated letters ARE wider than the joined forms in this face, so the threshold separates the two',
+      advance(arabic) * 0.8 > advance(arabicForms(arabic)) * 1.0,
+      `${advance(arabic).toFixed(1)} against ${advance(arabicForms(arabic)).toFixed(1)}`,
+    );
+    // A LINE TYPED AGAIN CHANGES NOTHING: what was read is what a person edits, so writing it back is the identity.
+    const again = joined === undefined ? undefined : await lineOf(await type(joined.text.trim()));
+    record(
+      'writing a read line back changes nothing: the order a text page gives is turned back into the order typed',
+      again !== undefined && again.text.trim() === arabic,
+      JSON.stringify(again?.text),
+    );
+
+    // THE LAM-ALEF LIGATURE (ADR-0186): a lam beside an alef is one glyph of the face's own, and the line reads back as typed.
+    for (const typed of ['لا', 'بلا', 'الله', 'لأن', 'لإ', 'السلام عليكم']) {
+      const written = await type(typed).then(
+        (bytes) => bytes,
+        (error) => error,
+      );
+      const read = written instanceof Uint8Array ? await lineOf(written) : undefined;
+      record(
+        `the line “${typed}” with a lam beside an alef is read back as typed`,
+        read !== undefined && read.text.trim() === typed,
+        written instanceof Uint8Array ? JSON.stringify(read?.text) : `refused: ${String(written instanceof Error ? written.message : written)}`,
+      );
+    }
+    // THE ADVANCE IS THE DIFFERENCE OF TWO WIDTHS: a text page reports a glyph's box, whose edges are not the pen's, so one
+    // ligature's width is not its advance, but two of them minus one is exactly one advance, the bearings cancelling.
+    const widthOf = async (/** @type {string} */ typed) => {
+      const done = await type(typed).then(lineOf, () => undefined);
+      return done === undefined || done.runs.length === 0 ? 0 : Math.max(...done.runs.map((run) => run.right)) - Math.min(...done.runs.map((run) => run.left));
+    };
+    const pairAdvance = (await widthOf('لالا')) - (await widthOf('لا'));
+    const shapedPair = face.shape('لا', true).reduce((sum, glyph) => sum + glyph.advance, 0);
+    const shapedPoints = (shapedPair / face.unitsPerEm) * 11;
+    const twoLetters = advance('ﻟﺎ');
+    record(
+      'the lam and the alef are drawn as the shaper draws the pair: one glyph advancing the pen as far as HarfBuzz answers for it',
+      Math.abs(pairAdvance - shapedPoints) < 0.4,
+      `${pairAdvance.toFixed(2)} pt against the shaper’s ${shapedPoints.toFixed(2)} pt`,
+    );
+    record(
+      'CONTROL: two letters joined to each other are NARROWER than the ligature, so the width above tells the two drawings apart',
+      twoLetters < shapedPoints - 0.5,
+      `${twoLetters.toFixed(2)} pt joined against ${shapedPoints.toFixed(2)} pt ligature`,
+    );
+
+    // THE PLAN MEASURES THE SHAPES DRAWN (ADR-0186): a paragraph is wrapped by the width of the forms and the ligature, not
+    // of each letter alone, which is wider. A sentence that fits the block in its forms and not as isolated letters stays
+    // on one line.
+    const wide = await aTypeset({ lines: ['Hello world, a line of words long enough here'] });
+    const wideRead = await blocksOf(wide);
+    const [wideBlock] = wideRead.blocks;
+    const wideRuns = wideRead.runs;
+    const room = wideRuns.length === 0 ? 0 : Math.max(...wideRuns.map((run) => run.right)) - Math.min(...wideRuns.map((run) => run.left));
+    const sentences = ['مرحبا بالعالم السلام عليكم ورحمة الله وبركاته', 'السلام عليكم ورحمة الله وبركاته مرحبا بالعالم جميعا', 'الله لا إله إلا هو الحي القيوم لا تأخذه سنة'];
+    const fitting = sentences.find((sentence) => advance(arabicForms(sentence)) < room - 2 && advance(sentence) > room);
+    record(
+      'PREMISE: a sentence exists whose joined forms fit the block and whose letters drawn alone would not',
+      fitting !== undefined && room > 0,
+      `block ${room.toFixed(1)} pt; ${sentences.map((sentence) => `${advance(arabicForms(sentence)).toFixed(0)}/${advance(sentence).toFixed(0)}`).join(' ')}`,
+    );
+    if (wideBlock !== undefined && fitting !== undefined) {
+      const wideLines = wideBlock.lines.map((line) => line.runs.map((run) => run.index));
+      const written = await localPdfiumExecution
+        .apply({
+          session: wide,
+          command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+            kind: 'editTextBlock',
+            page: 0,
+            ...blockEditOf([{ lines: wideLines, soft: wideLines.map(() => false), text: fitting }]),
+            fit: 'reflow',
+            version: 1,
+          }),
+          sources: [],
+          reads: undefined,
+        })
+        .then(
+          (bytes) => bytes,
+          () => undefined,
+        );
+      const after = written === undefined ? undefined : await blocksOf(written);
+      const rows = after?.blocks.flatMap((each) => each.lines) ?? [];
+      record(
+        'a sentence that fits the block in its joined forms is one line: the plan measures what is drawn',
+        rows.length === 1,
+        `${String(rows.length)} line(s) at ${room.toFixed(1)} pt for ${advance(arabicForms(fitting)).toFixed(1)} pt of forms against ${advance(fitting).toFixed(1)} pt of letters: ${JSON.stringify((after?.runs ?? []).map((run) => [run.text, Math.round(run.left), Math.round(run.right)]))}`,
+      );
+    }
+
+    // THE MARKS (ADR-0186): the shaper answers a right-to-left letter with its marks first, a mark being a glyph of no
+    // advance, and the writer draws them in that order; a line of marks reads back as typed.
+    const markPairs = ['بَ', 'مُ', 'حَ', 'دِ', 'مّ', 'سْ'];
+    // A letter's own dots are glyphs of no advance too, so "the first glyph has none" says nothing; what the mark adds is
+    // one more glyph BEFORE the one that advances the pen.
+    const before = (/** @type {string} */ text) => face.shape(text, true).findLastIndex((glyph) => glyph.advance !== 0);
+    const marksFirst = markPairs.every((pair) => {
+      const [base, ...marks] = Array.from(pair);
+      return before(pair) === before(base ?? '') + marks.length;
+    });
+    record('the shaper answers each base and mark of the sample with the marks before the glyph that advances', marksFirst, markPairs.map((pair) => before(pair)).join(' '));
+    record(
+      'CONTROL: a bare letter and the same letter with a mark differ in what precedes the advancing glyph, so the test above is about the mark',
+      markPairs.every((pair) => before(pair) !== before(Array.from(pair)[0] ?? '')),
+      markPairs.map((pair) => `${before(Array.from(pair)[0] ?? '')}→${before(pair)}`).join(' '),
+    );
+    const { drawnRightToLeft } = await import('../../packages/kernel/dist/bidiOrder.js');
+    record(
+      'the writer draws a mark before its letter, in the shaper’s order, and a bare letter is unchanged',
+      markPairs.every((pair) => {
+        const [base, ...marks] = Array.from(pair);
+        return drawnRightToLeft(pair) === [...marks.reverse(), base].join('');
+      }) && drawnRightToLeft('بب') === 'بب',
+      markPairs.map((pair) => JSON.stringify(drawnRightToLeft(pair))).join(' '),
+    );
+    for (const typed of ['مُحَمَّد', 'بِسْمِ اللَّهِ']) {
+      const written = await type(typed).then(
+        (bytes) => bytes,
+        (error) => error,
+      );
+      const read = written instanceof Uint8Array ? await lineOf(written) : undefined;
+      record(
+        `the line “${typed}” with marks is read back as typed`,
+        read !== undefined && read.text.trim() === typed,
+        written instanceof Uint8Array ? JSON.stringify(read?.text) : `refused: ${String(written instanceof Error ? written.message : written)}`,
+      );
+    }
+  } finally {
+    bindEditFaces(null);
+  }
+}
+
+/**
+ * A bold mark with the catalogue bound: the words are set in the resolver's bold face, not in a standard font, and the
+ * width the plan measured is the width drawn (the line's right edge stays inside the block's).
+ */
+async function formatPieceCases() {
+  const fonts = fontsDirectory(root);
+  if (!existsSync(fonts)) {
+    record('the bundled fonts are provisioned for the formatting piece cases', false, `${fonts} is absent`);
+    return;
+  }
+  bindEditFaces(() => faceSourceOf([{ path: fonts, origin: 'bundled' }]));
+  try {
+    const PARAGRAPH = 'The quick brown fox jumps over the lazy dog while the keen reviewer reads every single line twice more today';
+    const original = await aTypeset({ text: PARAGRAPH });
+    const [block] = (await blocksOf(original)).blocks;
+    if (block === undefined) {
+      record('the piece formatting fixture reads as a block', false, 'no block');
+      return;
+    }
+    const words = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+    const from = words.indexOf('quick');
+    const edited = await localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([
+          {
+            lines: block.lines.map((line) => line.runs.map((run) => run.index)),
+            soft: block.lines.map((line) => line.soft),
+            text: words,
+            marks: [{ from, to: from + 'quick'.length, set: { bold: true } }],
+          },
+        ]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+    const after = await blocksOf(edited);
+    const quick = after.runs.find((run) => run.text.trim() === 'quick');
+    const brown = after.runs.find((run) => run.text.includes('brown'));
+    record(
+      'with a catalogue, a bold mark sets its words in a bold face of the resolver’s, and the rest of the line keeps its font',
+      quick?.style.bold === true && !/helvetica/iu.test(quick.style.font) && brown?.style.bold === false && /helvetica/iu.test(brown.style.font),
+      `quick ${String(quick?.style.font)} bold ${String(quick?.style.bold)}; brown ${String(brown?.style.font)}`,
+    );
+    record(
+      'and no line reaches past the block’s right edge: the width the plan measured is the width the face draws',
+      Math.max(...after.runs.map((run) => run.right)) <= block.box.x1 + 1,
+      `widest ${Math.max(...after.runs.map((run) => run.right)).toFixed(2)} against ${block.box.x1.toFixed(2)}`,
+    );
+  } finally {
+    bindEditFaces(null);
+  }
+}
+
+/**
+ * FORMATTING as marks over a block's words (ADR-0180), written by the PDFium writer: each style the contract names, read
+ * back from reopened bytes against what the same edit without the mark leaves, which is the control every case carries.
+ */
+async function formatCases() {
+  const PARAGRAPH = 'The quick brown fox jumps over the lazy dog while the keen reviewer reads every single line twice more today';
+  const original = await aTypeset({ text: PARAGRAPH });
+  const read = await blocksOf(original);
+  const [block] = read.blocks;
+  if (block === undefined) {
+    record('the formatting fixture reads as a block', false, 'no block');
+    return;
+  }
+  const lines = block.lines.map((line) => line.runs.map((run) => run.index));
+  const soft = block.lines.map((line) => line.soft);
+  const words = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  /**
+   * @param {{ marks?: { from: number; to: number; set: object }[]; paragraphs?: { paragraph: number; align?: 'left' | 'center' | 'right'; leftIndent?: number; firstIndent?: number; lineSpacing?: number; spaceBefore?: number }[]; text?: string }} extra
+   */
+  const format = (extra) =>
+    localPdfiumExecution.apply({
+      session: original,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines, soft, text: extra.text ?? words, marks: extra.marks ?? [], paragraphs: extra.paragraphs ?? [] }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  /** The run holding `word`, in a reading of the saved bytes. */
+  const runOf = async (/** @type {Uint8Array} */ bytes, /** @type {string} */ word) => {
+    const { runs } = await blocksOf(bytes);
+    // THE WORD'S OWN OBJECT where a mark made it one, else the line's run that holds it.
+    return runs.find((run) => run.text.trim() === word) ?? runs.find((run) => run.text.includes(word));
+  };
+  const at = (/** @type {string} */ word) => ({ from: words.indexOf(word), to: words.indexOf(word) + word.length });
+
+  // BOLD: the words are in a bold face, their neighbours are not.
+  const bolded = await format({ marks: [{ ...at('quick'), set: { bold: true } }] });
+  const quick = await runOf(bolded, 'quick');
+  const brown = await runOf(bolded, 'brown');
+  record(
+    'a bold mark sets its words in a bold face and leaves the words beside them as they were',
+    quick?.style.bold === true && brown?.style.bold === false,
+    `quick bold ${String(quick?.style.bold)}, brown bold ${String(brown?.style.bold)}`,
+  );
+  record(
+    'CONTROL: the same edit with no mark leaves the page as it was, so the bold above is the mark’s',
+    (await runOf(original, 'quick'))?.style.bold === false,
+    `bold before ${String((await runOf(original, 'quick'))?.style.bold)}`,
+  );
+
+  // COLOUR.
+  const coloured = await format({ marks: [{ ...at('fox'), set: { colour: { r: 200, g: 20, b: 20 } } }] });
+  const fox = await runOf(coloured, 'fox');
+  const dog = await runOf(coloured, 'dog');
+  record(
+    'a colour mark paints its words in that colour, and not the words after them',
+    fox?.style.colour.r === 200 && fox.style.colour.g === 20 && dog?.style.colour.r === 0,
+    `fox ${JSON.stringify(fox?.style.colour)}, dog ${JSON.stringify(dog?.style.colour)}`,
+  );
+
+  // SIZE.
+  const sized = await format({ marks: [{ ...at('jumps'), set: { size: 20 } }] });
+  const jumps = await runOf(sized, 'jumps');
+  const neighbour = await runOf(sized, 'quick');
+  record(
+    'a size mark sets its words at that size, and the line it is on takes room for it',
+    jumps !== undefined && Math.abs(jumps.style.size - 20) < 0.6 && Math.abs((neighbour?.style.size ?? 0) - 11) < 0.6,
+    `jumps ${String(jumps?.style.size)}, quick ${String(neighbour?.style.size)}`,
+  );
+
+  // UNDERLINE: a rule, one object, the width of the words.
+  const objectKinds = async (/** @type {Uint8Array} */ bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      return (await pageObjects(session, 0)).filter((object) => object.kind === 'path');
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const metrics = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
+  const reviewerWidth = metrics.widthOfTextAtSize('reviewer', 11);
+  const underlined = await format({ marks: [{ ...at('reviewer'), set: { underline: true } }] });
+  const rules = await objectKinds(underlined);
+  const reviewer = await runOf(underlined, 'reviewer');
+  record(
+    'an underline mark draws one rule under its words, as wide as they are, a little below their baseline',
+    rules.length === 1 && reviewer !== undefined && rules[0] !== undefined &&
+      // THE WORD'S OWN WIDTH, from the font's metrics (the reading's run is the whole line the object joined into).
+      Math.abs(rules[0].right - rules[0].left - reviewerWidth) < 1 &&
+      rules[0].bottom >= reviewer.bottom - 1 &&
+      rules[0].top <= reviewer.top,
+    `${String(rules.length)} rule(s); ${JSON.stringify(rules[0])} against a ${reviewerWidth.toFixed(2)} wide word in a line ${String(reviewer?.bottom)}..${String(reviewer?.top)}`,
+  );
+  record('CONTROL: with no underline mark the page has no rule', (await objectKinds(original)).length === 0, 'rules before the edit');
+
+  // SUPERSCRIPT: smaller, and higher than the words beside it.
+  const raised = await format({ marks: [{ ...at('lazy'), set: { rise: 'superscript' } }] });
+  const lazy = await runOf(raised, 'lazy');
+  const dogs = await runOf(raised, 'dog');
+  record(
+    'a superscript mark sets its words smaller and above the baseline of the words beside them',
+    lazy !== undefined && dogs !== undefined && lazy.style.size < 0.8 * 11 && lazy.top > dogs.top - 0.5 * 11 && lazy.bottom > dogs.bottom + 1,
+    `lazy ${JSON.stringify(lazy && { size: lazy.style.size, bottom: lazy.bottom })}, dog bottom ${String(dogs?.bottom)}`,
+  );
+
+  // A MARK THAT RESTATES THE RUN IS NO EDIT: the same bold, sent again, writes nothing (the page's own words are already bold).
+  const doubly = await localPdfiumExecution.apply({
+    session: bolded,
+    command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+      kind: 'editTextBlock',
+      page: 0,
+      ...blockEditOf([
+        {
+          lines: (await blocksOf(bolded)).blocks[0]?.lines.map((line) => line.runs.map((run) => run.index)) ?? [],
+          soft: (await blocksOf(bolded)).blocks[0]?.lines.map((line) => line.soft) ?? [],
+          text: words,
+          marks: [{ ...at('quick'), set: { bold: true } }],
+        },
+      ]),
+      fit: 'reflow',
+      version: 1,
+    }),
+    sources: [],
+    reads: undefined,
+  }).then(
+    () => 'wrote',
+    (error) => (error instanceof Error ? error.message : String(error)),
+  );
+  record(
+    'a mark that restates what its words already are changes nothing, so the edit says so and writes nothing',
+    doubly.includes('changed nothing'),
+    doubly,
+  );
+
+  // PARAGRAPH SETTINGS: alignment, indent and spacing.
+  const centred = await format({ paragraphs: [{ paragraph: 0, align: 'center' }] });
+  const centredBlock = (await blocksOf(centred)).blocks[0];
+  const middles = centredBlock?.lines.map((line) => (line.box.x0 + line.box.x1) / 2) ?? [];
+  record(
+    'a centre setting sets every line of the paragraph about one middle',
+    middles.length >= 3 && Math.max(...middles) - Math.min(...middles) < 3,
+    `middles ${JSON.stringify(middles.map((middle) => Math.round(middle * 10) / 10))}`,
+  );
+  const lefts = block.lines.map((line) => line.box.x0);
+  record(
+    'CONTROL: the lines were flush left before, so the centred spread is the setting’s and not the fixture’s',
+    Math.max(...lefts) - Math.min(...lefts) < 1.5,
+    `lefts ${JSON.stringify(lefts)}`,
+  );
+  const spaced = await format({ paragraphs: [{ paragraph: 0, lineSpacing: 2 }] });
+  // THE GAP BETWEEN THE FIRST TWO LINES, from the runs themselves: a doubled gap may read as two blocks, which is the
+  // reading's grouping and not what is being asked.
+  const gap = async (/** @type {Uint8Array} */ bytes) => {
+    const rows = [...new Set((await blocksOf(bytes)).runs.map((run) => Math.round(run.bottom * 10) / 10))].sort((a, b) => b - a);
+    return rows.length < 2 ? 0 : (rows[0] ?? 0) - (rows[1] ?? 0);
+  };
+  const beforeGap = await gap(original);
+  const afterGap = await gap(spaced);
+  record(
+    'a line-spacing setting of two doubles the gap between the paragraph’s lines',
+    beforeGap > 0 && Math.abs(afterGap / beforeGap - 2) < 0.15,
+    `gap ${beforeGap.toFixed(2)} before, ${afterGap.toFixed(2)} after`,
+  );
+  const indented = await format({ paragraphs: [{ paragraph: 0, leftIndent: 30 }] });
+  const indentedBlock = (await blocksOf(indented)).blocks[0];
+  record(
+    'a left indent of 30 points moves every line of the paragraph in by 30',
+    indentedBlock !== undefined && indentedBlock.lines.every((line) => Math.abs(line.box.x0 - (lefts[0] ?? 0) - 30) < 2),
+    `lefts ${JSON.stringify(indentedBlock?.lines.map((line) => Math.round(line.box.x0 * 10) / 10))} against ${String(lefts[0])}`,
+  );
+}
+
+/**
+ * A block edited as PARAGRAPHS (ADR-0179): a paragraph's words flow, each in the style it was typed or drawn in, and a
+ * paragraph is set as its first lines were. Every reading is from reopened bytes; every case names what only the
+ * correct write produces, and the controls are the edits that must move more or less than the case under test.
+ */
+async function paragraphCases() {
+  const PARAGRAPH =
+    'The quick brown fox jumps over the lazy dog while the keen reviewer reads every single line twice more today';
+  const original = await aTypeset({ text: PARAGRAPH, bold: ['jumps'] });
+  const before = await blocksOf(original);
+  const [block] = before.blocks;
+  record(
+    'the typeset paragraph reads as ONE block of soft-ended lines, and its last line is a hard end',
+    before.blocks.length === 1 && block !== undefined && block.lines.length >= 3 &&
+      block.lines.every((line, at) => line.soft === (at < block.lines.length - 1)),
+    `${String(before.blocks.length)} block(s); soft ${JSON.stringify(block?.lines.map((line) => line.soft))}`,
+  );
+  if (block === undefined) return;
+  const lines = block.lines.map((line) => line.runs.map((run) => run.index));
+  const soft = block.lines.map((line) => line.soft);
+  const words = paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  record(
+    'PREMISE: the paragraph’s words are the sentence drawn, joined across the soft wraps by single spaces',
+    words === PARAGRAPH,
+    JSON.stringify(words),
+  );
+  /**
+   * @param {string} text
+   * @param {Uint8Array} bytes
+   * @param {typeof lines} on
+   * @param {typeof soft} ends
+   */
+  const edit = (text, bytes = original, on = lines, ends = soft) =>
+    localPdfiumExecution.apply({
+      session: bytes,
+      command: /** @type {import('../../packages/contract/dist/commands.js').CommandOfKind<'editTextBlock'>} */ ({
+        kind: 'editTextBlock',
+        page: 0,
+        ...blockEditOf([{ lines: on, soft: ends, text }]),
+        fit: 'reflow',
+        version: 1,
+      }),
+      sources: [],
+      reads: undefined,
+    });
+  /** @param {Uint8Array} bytes */
+  const runsAfter = async (bytes) => (await blocksOf(bytes)).runs;
+  const right = block.box.x1;
+
+  // A LETTER TYPED INTO A LINE THAT HAS ROOM sets that line again and nothing else: the lines below stay as they
+  // were, objects and places. The first line's last word is the one that gains the letter.
+  const [firstWord] = words.split(' ');
+  const typedFirst = await edit(words.replace(`${firstWord ?? ''} `, `${firstWord ?? ''}s `));
+  const afterFirst = await runsAfter(typedFirst);
+  const lastBefore = before.runs.find((run) => run.text.includes('twice more today') || run.text.includes('today'));
+  const lastAfter = afterFirst.find((run) => run.text.includes('today'));
+  record(
+    'a letter typed into the first line is on the page, and the last line stands where it was',
+    (await textOf(typedFirst)).includes(`${firstWord ?? ''}s`) &&
+      lastBefore !== undefined && lastAfter !== undefined &&
+      Math.abs(lastAfter.left - lastBefore.left) < 0.01 && Math.abs(lastAfter.bottom - lastBefore.bottom) < 0.01,
+    `last line ${JSON.stringify(lastAfter && { left: lastAfter.left, bottom: lastAfter.bottom })} against ${JSON.stringify(lastBefore && { left: lastBefore.left, bottom: lastBefore.bottom })}`,
+  );
+
+  // A LONG WORD TYPED IN FRONT OF THE BOLD ONE makes it wrap, and it WRAPS BOLD: every word keeps its own style.
+  const widened = await edit(words.replace('brown fox', 'brown unmistakably fox'));
+  const afterWide = await runsAfter(widened);
+  const boldRun = afterWide.find((run) => run.text.includes('jumps'));
+  const plainRun = afterWide.find((run) => run.text.includes('quick'));
+  const boldBefore = before.runs.find((run) => run.text.includes('jumps'));
+  record(
+    'a word wrapped by a longer line keeps its style: the bold word is bold on its new line, its neighbour is not',
+    boldRun !== undefined && plainRun !== undefined && boldBefore !== undefined &&
+      boldRun.style.bold === true && plainRun.style.bold === false &&
+      Math.max(...afterWide.map((run) => run.right)) <= right + 0.5,
+    `bold ${String(boldRun?.style.bold)}, plain ${String(plainRun?.style.bold)}, widest ${Math.max(...afterWide.map((run) => run.right)).toFixed(2)} against ${right.toFixed(2)}`,
+  );
+  const lineBelow = afterWide.find((run) => run.text.includes('today'));
+  record(
+    'CONTROL: that same edit DOES move the last line, so the unchanged lines above were kept by the plan and not by the edit being small',
+    lastBefore !== undefined && lineBelow !== undefined &&
+      (Math.abs(lineBelow.left - lastBefore.left) > 0.01 || Math.abs(lineBelow.bottom - lastBefore.bottom) > 0.01),
+    `last line at ${String(lineBelow?.left)},${String(lineBelow?.bottom)} against ${String(lastBefore?.left)},${String(lastBefore?.bottom)}`,
+  );
+
+  // A CENTRED BLOCK STAYS CENTRED when a line grows: the lines are set about the centre they kept.
+  const centred = await aTypeset({ lines: ['Annual report', 'prepared for the board', 'March'], centre: 200 });
+  const centredBlock = (await blocksOf(centred)).blocks[0];
+  const centredLines = centredBlock?.lines.map((line) => line.runs.map((run) => run.index)) ?? [];
+  const grown = await edit(
+    'Annual report of 2026\nprepared for the board\nMarch',
+    centred,
+    centredLines,
+    centredLines.map(() => false),
+  );
+  const centres = (await blocksOf(grown)).blocks[0]?.lines.map((line) => (line.box.x0 + line.box.x1) / 2) ?? [];
+  record(
+    'a centred line that grows is still centred, and so are the lines beside it',
+    centres.length === 3 && centres.every((centre) => Math.abs(centre - 200) < 1.5),
+    `centres ${JSON.stringify(centres.map((centre) => Number(centre.toFixed(2))))}`,
+  );
+  record(
+    'CONTROL: the lines were centred on the same point before the edit and were not the same width, so the case above measured the writer',
+    (centredBlock?.lines ?? []).every((line) => Math.abs((line.box.x0 + line.box.x1) / 2 - 200) < 1.5) &&
+      new Set((centredBlock?.lines ?? []).map((line) => Math.round(line.box.x1 - line.box.x0))).size === 3,
+    `before ${JSON.stringify((centredBlock?.lines ?? []).map((line) => Number(((line.box.x0 + line.box.x1) / 2).toFixed(2))))}`,
+  );
+
+  // A FIRST-LINE INDENT IS KEPT: the first line starts where it did, and the lines after it start at the paragraph's own edge.
+  const indented = await aTypeset({ text: PARAGRAPH, indent: 24 });
+  const indentedBlock = (await blocksOf(indented)).blocks[0];
+  const indentedLines = indentedBlock?.lines.map((line) => line.runs.map((run) => run.index)) ?? [];
+  const indentedSoft = indentedBlock?.lines.map((line) => line.soft) ?? [];
+  const indentedWords = paragraphsOfLines(
+    (indentedBlock?.lines ?? []).map((line) => ({ text: lineText(line.runs), soft: line.soft })),
+  );
+  const longer = await edit(`${indentedWords} Thank you very much indeed for reading all of it.`, indented, indentedLines, indentedSoft);
+  const longerLines = (await blocksOf(longer)).blocks[0]?.lines ?? [];
+  const firstLeft = longerLines[0]?.box.x0;
+  const restLefts = longerLines.slice(1).map((line) => line.box.x0);
+  record(
+    'a paragraph that grows keeps its first-line indent: the first line is 24 points in, every other line is at the edge',
+    longerLines.length > (indentedBlock?.lines.length ?? 0) && firstLeft !== undefined &&
+      restLefts.every((left) => Math.abs(left - 72) < 1.5) && Math.abs(firstLeft - 96) < 1.5,
+    `first ${String(firstLeft)}; rest ${JSON.stringify(restLefts)}`,
+  );
+  // INVISIBLE TEXT STAYS INVISIBLE (render mode 3, an OCR'd scan's words): a line set again is painted as the line it
+  // replaced, or the recognised words appear over the picture they were read from.
+  /** @param {Uint8Array} bytes */
+  const darkPixels = async (bytes) => {
+    const session = await pdfiumWriter.open(bytes);
+    try {
+      const bitmap = await renderPageBitmap(session, 0, 400, 400);
+      let count = 0;
+      for (let at = 0; at < bitmap.bgra.length; at += 4) if ((bitmap.bgra[at] ?? 255) < 128) count += 1;
+      return count;
+    } finally {
+      await pdfiumWriter.close(session);
+    }
+  };
+  const hidden = await aTypeset({ text: PARAGRAPH, invisible: true });
+  const hiddenBlock = (await blocksOf(hidden)).blocks[0];
+  const hiddenLines = hiddenBlock?.lines.map((line) => line.runs.map((run) => run.index)) ?? [];
+  const hiddenSoft = hiddenBlock?.lines.map((line) => line.soft) ?? [];
+  const hiddenWords = paragraphsOfLines((hiddenBlock?.lines ?? []).map((line) => ({ text: lineText(line.runs), soft: line.soft })));
+  const widenedHidden = await edit(hiddenWords.replace('brown fox', 'brown unmistakably fox'), hidden, hiddenLines, hiddenSoft);
+  const shown = await edit(words.replace('brown fox', 'brown unmistakably fox'));
+  record(
+    'text drawn invisibly (render mode 3) is still invisible after an edit that wraps it, and its words are there',
+    (await textOf(widenedHidden)).includes('unmistakably') && (await darkPixels(widenedHidden)) === 0,
+    `${String(await darkPixels(widenedHidden))} dark pixel(s)`,
+  );
+  record(
+    'CONTROL: the same edit to visible text paints it, so the invisible case above is the render mode and not an empty render',
+    (await darkPixels(shown)) > 100 && (await darkPixels(original)) > 100,
+    `${String(await darkPixels(shown))} dark pixel(s) after, ${String(await darkPixels(original))} before`,
+  );
+  record(
+    'CONTROL: the invisible fixture itself draws nothing, so the edit did not hide anything that was showing',
+    (await darkPixels(hidden)) === 0,
+    `${String(await darkPixels(hidden))} dark pixel(s)`,
+  );
+  record(
+    'CONTROL: the indent was in the fixture, so a writer that flushed every line left would have failed the case above',
+    Math.abs((indentedBlock?.lines[0]?.box.x0 ?? 0) - 96) < 1.5 && Math.abs((indentedBlock?.lines[1]?.box.x0 ?? 0) - 72) < 1.5,
+    `fixture first ${String(indentedBlock?.lines[0]?.box.x0)}, second ${String(indentedBlock?.lines[1]?.box.x0)}`,
   );
 }
 

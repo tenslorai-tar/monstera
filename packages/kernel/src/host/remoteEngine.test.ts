@@ -1,8 +1,18 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 import { asDocId, asDocVersion } from '@monstera/shared';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type CommandOfKind, createClient, type Incident, wrapHandlers } from '@monstera/contract';
+import { blockEditOf } from '@monstera/contract/host';
+
+import { bindEditFaces } from '../editFaces.js';
+import { faceSourceOf } from '../fontCatalogue.js';
+import type { PageRuns } from '../operatorEdit.js';
+import { pageContentStreams } from '../pageContent.js';
+import { joinedContent, showOperators, textObjectCount } from '../textOperators.js';
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
@@ -14,6 +24,7 @@ import { prepareSignature } from '../signaturePlaceholder.js';
 import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import { readPageGeometry } from '../pageGeometry.js';
+import { readPageRewrite } from '../pageRewrite.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
 import { checkAccessibility } from '../accessibilityCheck.js';
@@ -24,6 +35,8 @@ import {
 } from '../annotationInterchange.js';
 import { readPageBarcodes } from '../barcodeReader.js';
 import { detectFlatFields } from '../flatFields.js';
+import { readFormImportPlan } from '../formData.js';
+import { readFieldProperties } from '../formFieldRead.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
 import { readAnnotationWords, readAnnotations } from '../pageAnnotations.js';
@@ -44,6 +57,7 @@ import {
   remoteMupdfGeometry,
   remoteMupdfPageText,
   remoteMupdfPageFills,
+  remoteMupdfPageRewrite,
   remoteMupdfWordBoxes,
   remoteMupdfAccessibility,
   type SessionAssets,
@@ -236,6 +250,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
   readonly geometry: ReturnType<typeof remoteMupdfGeometry>;
   readonly pageText: ReturnType<typeof remoteMupdfPageText>;
   readonly pageFills: ReturnType<typeof remoteMupdfPageFills>;
+  readonly pageRewrite: ReturnType<typeof remoteMupdfPageRewrite>;
   readonly wordBoxes: ReturnType<typeof remoteMupdfWordBoxes>;
   readonly accessibility: ReturnType<typeof remoteMupdfAccessibility>;
   readonly sessions: ReturnType<typeof createRemoteSessions>;
@@ -322,6 +337,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       pageLinks: readPageLinks,
       linkAddress: readLinkAddress,
       pageFills: readPageFills,
+      pageRewrite: readPageRewrite,
       wordBoxes: readPageWordBoxes,
       // NOT THE REAL READER, where its neighbours above are. `recognisePage`
       // instantiates 2.8 MB of Tesseract WASM and takes about four seconds per
@@ -352,6 +368,8 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
       pageImage: rasterisePageImage,
       word: composeWordDocument,
       flatFields: detectFlatFields,
+      fieldProperties: readFieldProperties,
+      formImportPlan: readFormImportPlan,
       barcodes: readPageBarcodes,
       exportAnnotationData: async (session, format) =>
         serialiseAnnotationData(await readInterchangeAnnotations(session), format),
@@ -381,6 +399,7 @@ async function joined(bytes: ByteImage = flat, sourceBytes?: ByteImage): Promise
     geometry: remoteMupdfGeometry(client, sessions),
     pageText: remoteMupdfPageText(client, sessions),
     pageFills: remoteMupdfPageFills(client, sessions),
+    pageRewrite: remoteMupdfPageRewrite(client, sessions),
     wordBoxes: remoteMupdfWordBoxes(client, sessions),
     accessibility: remoteMupdfAccessibility(client, sessions),
     sessions,
@@ -569,6 +588,23 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       expect(crossed).toStrictEqual(await readPageWordBoxes(session, 0));
     } finally {
       await mupdfWriter.close(session);
+    }
+  });
+
+  it('the PAGE-REWRITE read crosses: the Chromium print names the operator writer, a plain page the object one (ADR-0176)', async () => {
+    const chromium = new Uint8Array(
+      readFileSync(fileURLToPath(new URL('../../../testing/fixtures/text-edit/chromium-type3.pdf', import.meta.url))),
+    );
+    const type3 = await joined(chromium);
+    const plain = await joined(flat);
+    try {
+      expect(await type3.pageRewrite(type3.token, 0)).toBe('operators');
+      // CONTROL: the same handler and wire answer the other word for a page with no Type 3 text, so the answer above
+      // is the page's and not a constant.
+      expect(await plain.pageRewrite(plain.token, 0)).toBe('objects');
+    } finally {
+      await mupdfWriter.close(type3.session);
+      await mupdfWriter.close(plain.session);
     }
   });
 
@@ -809,6 +845,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         pageFills: () => {
           throw new Error('unused');
         },
+        pageRewrite: () => {
+          throw new Error('no case here reads which writer a page needs');
+        },
         wordBoxes: () => {
           throw new Error('unused');
         },
@@ -850,6 +889,12 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         word: () => {
           throw new Error('unused');
+        },
+        formImportPlan: () => {
+          throw new Error('a refused-host case must not plan an import');
+        },
+        fieldProperties: () => {
+          throw new Error('a refused-host case must not read field properties');
         },
         flatFields: () => {
           throw new Error('unused');
@@ -960,6 +1005,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         pageFills: () => {
           throw new Error('the rotation-refusal case must not read page fills');
         },
+        pageRewrite: () => {
+          throw new Error('no case here reads which writer a page needs');
+        },
         wordBoxes: () => {
           throw new Error('the rotation-refusal case must not read word boxes');
         },
@@ -1001,6 +1049,12 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         word: () => {
           throw new Error('the rotation-refusal case must not export a Word file');
+        },
+        formImportPlan: () => {
+          throw new Error('a refused-host case must not plan an import');
+        },
+        fieldProperties: () => {
+          throw new Error('a refused-host case must not read field properties');
         },
         flatFields: () => {
           throw new Error('the rotation-refusal case must not propose fields');
@@ -1107,5 +1161,72 @@ describe('the registry answers an area by handle for the lifetime of its token',
     // THE CONTROL: a released handle is free again, so the refusal is about one held, not one ever seen.
     sessions.release(held);
     expect(sessions.areaForHandle(sessions.handleFor(sessions.adopt('handle-1', second)))).toBe(second);
+  });
+});
+
+/** The Chromium print committed as Part B's starting material, whose heading is set in a Type 3 font (ADR-0176). */
+const CHROMIUM_TYPE3 = fileURLToPath(new URL('../../../testing/fixtures/text-edit/chromium-type3.pdf', import.meta.url));
+
+/**
+ * PDFium's reading of the print's heading as `proof:pdfiumcommand` measured it, as `textOperatorEdit.test.ts` states
+ * it: text objects numbered from 0 with nothing between them, the heading one run, its inkless spaces (code 3) members
+ * of none.
+ */
+function headingRuns(content: Uint8Array): PageRuns {
+  const ops = showOperators(content);
+  const heading = ops.filter((op) => op.textObject === ops[0]?.textObject && op.object !== null);
+  const members = heading.filter((op) => !(op.codes.length === 1 && op.codes[0] === 3)).map((op) => op.object ?? -1);
+  return {
+    textObjects: Array.from({ length: textObjectCount(ops) }, (_, at) => at),
+    runs: [{ index: members[0] ?? 0, members, text: 'Monstera fixture heading.', left: 0, right: 0, bottom: 0, top: 0 }],
+  };
+}
+
+describe('an operator edit over engine/apply-file answers its boxes (ADR-0177 Decision 7)', () => {
+  beforeAll(() => {
+    bindEditFaces(() => faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }]));
+  });
+  afterAll(() => {
+    bindEditFaces(null);
+  });
+
+  async function edit(text: string) {
+    const { session, token, remote } = await joined(new Uint8Array(readFileSync(CHROMIUM_TYPE3)));
+    try {
+      const content = await withDocument(session, (document) => joinedContent(pageContentStreams(document.findPage(0))));
+      const runs = headingRuns(content);
+      return await remote.apply({
+        session: token,
+        command: {
+          kind: 'editTextOperators',
+          page: 0,
+          ...blockEditOf([{ lines: [[runs.runs[0]?.index ?? 0]], soft: [false], text }]),
+          fit: 'reflow',
+          version: asDocVersion(1),
+        },
+        sources: [],
+        reads: runs,
+      });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('names a character no face carries, with its page, after crossing the pipe', async () => {
+    const unassigned = String.fromCodePoint(0x378);
+    expect(await edit(`Monstera fixture ${unassigned}.`)).toStrictEqual({ boxed: [{ character: unassigned, page: 0 }], more: 0 });
+  });
+
+  it('names the first sixty-four boxes and counts the rest, by the one cap', async () => {
+    // SEVENTY DRAWN, in seven words so every line stays on the page: an answer that skipped the cap is refused by the
+    // channel's own schema, and one that dropped the list answers `boxed: []`, which the first case refuses.
+    const unassigned = String.fromCodePoint(0x378);
+    const answer = await edit(`Monstera ${Array.from({ length: 7 }, () => unassigned.repeat(10)).join(' ')}.`);
+    expect(answer.boxed).toHaveLength(64);
+    expect(answer.more).toBe(6);
+  });
+
+  it('answers no box for a word set in faces alone, so the list above is the edit’s and not a constant', async () => {
+    expect(await edit('Monstera fixture zap.')).toStrictEqual({ boxed: [], more: 0 });
   });
 });

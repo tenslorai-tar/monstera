@@ -14,6 +14,7 @@ import type { Brand } from '@monstera/shared';
 //
 // Same mechanism as the Electron download one file over, with a different bill.
 import type { DeclaredCommands } from './commandDeclarations.js';
+import type { PriorProtection } from './documentProtection.js';
 import type { PreReadValue } from './engineSeam.js';
 import type { PriorFieldValue } from './formFields.js';
 import type { PriorAnnotationAuthor, PriorAnnotationText } from './pageAnnotations.js';
@@ -566,15 +567,13 @@ export interface CommandPrior {
   readonly flattenFormFields: never;
 
   /**
-   * A protection change has no prior state, and this is the one entry here
-   * where that is **not** a question of size.
+   * The protection the session stood with before the change
+   * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8).
    *
-   * The prior state is a password. A capture is serialised into this log, and
-   * ADR-0055 puts a document password out of every place main keeps anything —
-   * so `never` is a rule rather than a measurement, and it is the only entry in
-   * this table that would be perfectly representable and must not be.
+   * Its terms can carry a password, so it never reaches this log: the entry keeps {@link HeldInverse} and the bus keeps
+   * this beside it, in memory, as it keeps the command ({@link RecordedInverse}).
    */
-  readonly setDocumentProtection: never;
+  readonly setDocumentProtection: PriorProtection;
 
   /**
    * A burned-in redaction has no prior state, and recording one would be the
@@ -628,6 +627,15 @@ export interface CommandPrior {
    * is impossible here, and it is merely wrong.
    */
   readonly createFormField: never;
+
+  /**
+   * The three commands that change a field that exists (ADR-0193) record no prior state, `createFormField`'s reason: an
+   * edit's prior is whole dictionaries, a rename moves a field's identity, and a duplicate adds widgets to pages. The
+   * checkpoint restores the bytes, which an inverse would have to carry a second copy of.
+   */
+  readonly editFormFields: never;
+  readonly duplicateFormField: never;
+  readonly setTabOrder: never;
 
   /**
    * An import has no prior state, for the flatten's reason at a smaller scale
@@ -726,6 +734,8 @@ export interface CommandPrior {
    * would undo the text and keep the lines (ADR-0096 Decision 6).
    */
   readonly editTextBlock: never;
+  /** A checkpoint until Decision 7's prior lands (ADR-0176). */
+  readonly editTextOperators: never;
 }
 
 /**
@@ -778,7 +788,8 @@ export type LogEntryFor<K extends CommandKind> =
       readonly kind: 'invertible';
       /** The command whole, or its kind alone where the bus holds it ({@link RecordedCommand}). */
       readonly command: RecordedCommand<K>;
-      readonly inverse: CommandPrior[K];
+      /** The prior state, or a marker where the bus holds it ({@link RecordedInverse}). */
+      readonly inverse: RecordedInverse<K>;
       /** What the apply was handed, where replay may not read it again. */
       readonly read: PreReadValue | undefined;
     }
@@ -836,6 +847,26 @@ export type RecordedCommand<K extends CommandKind> = K extends CommandKind
   : never;
 
 /**
+ * What an invertible entry keeps of its prior state: the prior whole, or {@link HeldInverse} for a command whose intent
+ * is held ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md)
+ * Decision 8).
+ *
+ * Decided by the same declaration as {@link RecordedCommand}, because the reason is the same: a protect's prior is the
+ * protection before it, and a second protect's prior is the first one's passwords. The bus keeps the prior beside the
+ * entry with the command, and an entry built with the prior in it does not compile.
+ */
+export type RecordedInverse<K extends CommandKind> = K extends CommandKind
+  ? DeclaredCommands[K]['replay'] extends 'reapply-held-intent'
+    ? HeldInverse
+    : CommandPrior[K]
+  : never;
+
+/** The marker a held entry keeps where its prior would be. It has no field a prior could be written in. */
+export interface HeldInverse {
+  readonly held: true;
+}
+
+/**
  * Any entry, as the log holds them.
  *
  * A mapped type collapsed to its own union rather than `LogEntryFor<CommandKind>`
@@ -886,6 +917,8 @@ export interface ReadonlyCommandLog {
   retainedBytes(): number;
   /** Every checkpoint file retained, by path — `retainedBytes`' set (ADR-0121). */
   checkpointPaths(): ReadonlySet<string>;
+  /** How long a held file is now, a resealed one included (ADR-0171 Decision 8). */
+  bytesOf(file: CheckpointFile): number;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   peekRedo(): LogEntry | undefined;
@@ -905,6 +938,8 @@ export interface ReadonlyCommandLog {
 export class CommandLog implements ReadonlyCommandLog {
   /** @internal */
   readonly #entries: LogEntry[] = [];
+  /** The held files rewritten in place since they were recorded, by path, and their length now ({@link resealed}). */
+  readonly #resealed = new Map<string, number>();
 
   /** How many entries are currently applied. */
   #applied = 0;
@@ -972,9 +1007,30 @@ export class CommandLog implements ReadonlyCommandLog {
   retainedBytes(): number {
     let total = 0;
     for (const entry of this.#entries) {
-      for (const file of filesOf(entry)) total += file.byteLength;
+      for (const file of filesOf(entry)) total += this.bytesOf(file);
     }
     return total;
+  }
+
+  /**
+   * How long a held file is now: its recorded length, or what {@link resealed} recorded since
+   * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8).
+   * The one answer, so the budget, a trim's report and a restore's count cannot disagree about one file.
+   */
+  bytesOf(file: CheckpointFile): number {
+    return this.#resealed.get(file.path) ?? file.byteLength;
+  }
+
+  /**
+   * Records that a held file was rewritten in place, encrypted under a protect's terms, and how long it is now. The
+   * entry keeps its identity, which the bus's held table and the protect's positions are keyed by. Refuses a path the
+   * log does not hold, since recording a length for a file nothing references would count bytes nobody keeps.
+   */
+  resealed(path: string, byteLength: number): void {
+    if (!this.checkpointPaths().has(path)) {
+      throw new Error('a resealed file must be one this log holds; this one is not.');
+    }
+    this.#resealed.set(path, byteLength);
   }
 
   /**
@@ -1054,7 +1110,10 @@ export class CommandLog implements ReadonlyCommandLog {
     const shed = (entries: readonly LogEntry[]): void => {
       droppedEntries += entries.length;
       for (const entry of entries) {
-        for (const file of filesOf(entry)) droppedBytes += file.byteLength;
+        for (const file of filesOf(entry)) {
+          droppedBytes += this.bytesOf(file);
+          this.#resealed.delete(file.path);
+        }
       }
     };
 
@@ -1144,6 +1203,9 @@ export class CommandLog implements ReadonlyCommandLog {
     this.#entries.length = this.#applied;
     this.#entries.push(entry as LogEntry);
     this.#applied += 1;
+    // A RESEALED FILE THE TRUNCATED TAIL HELD leaves with it, so the map only ever names files this log holds.
+    const held = this.checkpointPaths();
+    for (const path of this.#resealed.keys()) if (!held.has(path)) this.#resealed.delete(path);
   }
 
   /**

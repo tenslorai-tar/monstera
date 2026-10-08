@@ -53,10 +53,17 @@ const LIVE_SESSION = ['engine/serialise'] as const;
 /** MuPDF's document model, which is the half a second engine owes none of. */
 const MUPDF_READS = [
   'engine/extract',
+  // THE PROPERTIES PANE'S READ (ADR-0193): MuPDF's own, for the field list's reason.
+  'engine/field-properties',
+  // WHAT AN IMPORT WOULD DO, planned beside the form it fills: the data file is hostile input MuPDF's host parses.
+  'engine/form-import-plan',
   // pdf-lib RUN ON THIS ENGINE'S SESSION is MuPDF's for `engine/extract`'s reason: the image it rewrites is this
   // session's serialise, taken in the process that holds it, and the result goes to the output directory
   // (ADR-0121 Decision 3). A second engine holds no such session and owes none of it.
   'engine/applyPdfLib',
+  // A MuPDF COMMAND PAST THE FRAME is MuPDF's own: `engine/apply`'s request for the kinds that outgrow a frame, with
+  // the pre-read they declare (ADR-0176's note on Decision 2). A second engine routes none of them.
+  'engine/apply-file',
   // A SIGNATURE'S PLACEHOLDER is MuPDF's for pdf-lib's reason: written on this session's serialise (ADR-0148).
   'engine/prepareSignature',
   'engine/snapshotRegion',
@@ -73,6 +80,8 @@ const MUPDF_READS = [
   // A PAGE'S FILLS ARE ONE OF MuPDF'S READS: drawing the page parses it, and a table cell's
   // background is joined from them in main (`cellFills.ts`).
   'engine/page-fills',
+  // WHICH WRITER REWRITES A PAGE'S TEXT IS ONE OF MuPDF'S READS: the PDFium API has no query for a font's type (ADR-0176).
+  'engine/page-rewrite',
   // A PAGE'S WORD BOXES ARE ONE OF MuPDF'S READS: its characters' quads, walked from the structured text (ADR-0137).
   'engine/word-boxes',
   // RECOGNITION IS ONE OF MuPDF'S READS, and that is §3's matrix rather than a
@@ -267,8 +276,10 @@ describe('the core channel set', () => {
     // refusal is what says the parameter was used rather than defaulted to
     // `z.object({})`, which accepts an empty object and would pass on both.
     const applied = coreEngineChannels(OTHER)['engine/apply'].result;
-    expect(applied.safeParse({ bytes: 12 }).success).toBe(true);
+    expect(applied.safeParse({ bytes: 12, boxed: [], more: 0 }).success).toBe(true);
     expect(applied.safeParse({}).success).toBe(false);
+    // AND THE BOXES ARE REQUIRED (ADR-0174): a count with no list is a host that dropped what the person is owed.
+    expect(applied.safeParse({ bytes: 12 }).success).toBe(false);
   });
 
   it('takes the engine’s command union rather than closing over MuPDF’s', () => {
@@ -321,9 +332,9 @@ describe('MuPDF’s channel map', () => {
 
   it('answers an apply with NOTHING, which is the live-session shape on the wire', () => {
     // The other side of the byte-image case above, and the pair is what makes
-    // either mean anything: `CommandExecution<'mupdf'>.apply` returns
-    // `Promise<void>`, so this result must accept an empty object and refuse a
-    // byte count. Without the refusal a schema of `z.object({})` non-strict
+    // either mean anything: no kind `engine/apply` carries sets text, so its
+    // MuPDF apply answers no box (ADR-0177 keeps those on `engine/apply-file`),
+    // and this result must accept an empty object and refuse a byte count. Without the refusal a schema of `z.object({})` non-strict
     // would satisfy both engines and the parameter would be doing nothing.
     const applied = engineChannels['engine/apply'].result;
     expect(applied.safeParse({}).success).toBe(true);

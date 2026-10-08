@@ -90,9 +90,10 @@ async function settle(): Promise<void> {
 /** Renders the panel over one answer and records what it asked the shell to do. */
 async function panel(
   fields: readonly unknown[],
-  options: { refuse?: boolean; truncated?: boolean; version?: number } = {},
+  options: { refuse?: boolean; truncated?: boolean; version?: number; selected?: readonly string[] } = {},
 ): Promise<{
   jumps: number[];
+  selects: unknown[];
   fills: unknown[];
   deletes: unknown[];
   // A FUNCTION, not the number. Every case clicks AFTER this helper returns,
@@ -105,6 +106,7 @@ async function panel(
 }> {
   const { client, asked } = clientAnswering(fields, options);
   const jumps: number[] = [];
+  const selects: unknown[] = [];
   const fills: unknown[] = [];
   const deletes: unknown[] = [];
   // A COUNT rather than a list, because a flatten carries no handle — there is
@@ -128,12 +130,16 @@ async function panel(
         onJump={(page): void => {
           jumps.push(page);
         }}
+        onSelect={(page, index, mode, ordered): void => {
+          selects.push({ page, index, mode, ordered });
+        }}
+        selected={new Set(options.selected ?? [])}
         version={asDocVersion(options.version ?? 1)}
       />
     </Wrapped>,
   );
   await settle();
-  return { jumps, fills, deletes, flattens: () => flattens, asked };
+  return { jumps, fills, deletes, selects, flattens: () => flattens, asked };
 }
 
 /**
@@ -449,6 +455,32 @@ describe('FormsPanel', () => {
     // FIVE ON SCREEN, FOUR IN THE CALL — the two halves of the correspondence
     // in one case, which is the only place they meet.
     expect(jumps).toStrictEqual([4]);
+  });
+
+  it('a click on a row SELECTS that field, and Ctrl and Shift say how it joins the selection', async () => {
+    const { selects, jumps } = await panel([
+      field({ name: 'first', index: 0 }),
+      field({ name: 'second', index: 1 }),
+    ]);
+    const first = screen.getByRole('button', { name: /first/u });
+    fireEvent.click(first);
+    fireEvent.click(screen.getByRole('button', { name: /second/u }), { ctrlKey: true });
+    fireEvent.click(screen.getByRole('button', { name: /second/u }), { shiftKey: true });
+    // THE ORDER THE LIST SHOWS, which is what a Shift click's run is taken over; the page is jumped to only for a
+    // plain click, since an extending click is about the selection and not about where the reader is.
+    const ordered = ['0:0', '0:1'];
+    expect(selects).toStrictEqual([
+      { page: 0, index: 0, mode: 'replace', ordered },
+      { page: 0, index: 1, mode: 'toggle', ordered },
+      { page: 0, index: 1, mode: 'range', ordered },
+    ]);
+    expect(jumps).toStrictEqual([0]);
+  });
+
+  it('draws the selected rows as pressed, and ONLY them: two rows are never selected by one click', async () => {
+    await panel([field({ name: 'first', index: 0 }), field({ name: 'second', index: 1 })], { selected: ['0:1'] });
+    expect(screen.getByRole('button', { name: /first/u }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: /second/u }).getAttribute('aria-pressed')).toBe('true');
   });
 
   it('says the bound stopped the walk rather than showing a short list quietly', async () => {

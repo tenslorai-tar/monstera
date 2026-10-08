@@ -1,6 +1,36 @@
 import { describe, expect, it } from 'vitest';
 
-import { type LineRun, lineText, replacementsForLine } from './lineEdit.js';
+import { type LineRun, joinAfterLine, lineText, paragraphsOfLines, replacementsForLine } from './lineEdit.js';
+
+describe('the join between two lines of a paragraph (ADR-0179)', () => {
+  it('is one space at a soft end, none where the line already ends in white space, and a line break at a hard one', () => {
+    expect(joinAfterLine('foo', true)).toBe(' ');
+    expect(joinAfterLine('foo ', true)).toBe('');
+    expect(joinAfterLine('foo', false)).toBe('\n');
+    // A hard end keeps a space the line ended in: the person put it there.
+    expect(joinAfterLine('foo ', false)).toBe('\n');
+  });
+
+  it('builds a block’s words from its lines: soft ends joined, hard ends kept, the last line never joined', () => {
+    expect(
+      paragraphsOfLines([
+        { text: 'aaa bbb', soft: true },
+        { text: 'ccc ', soft: true },
+        { text: 'ddd', soft: false },
+        { text: 'eee', soft: false },
+      ]),
+    ).toBe('aaa bbb ccc ddd\neee');
+  });
+
+  it('CONTROL: the lines as they were joined before, each by a line break, are not the paragraph', () => {
+    const lines = [
+      { text: 'aaa', soft: true },
+      { text: 'bbb', soft: false },
+    ];
+    expect(lines.map((line) => line.text).join('\n')).toBe('aaa\nbbb');
+    expect(paragraphsOfLines(lines)).toBe('aaa bbb');
+  });
+});
 
 /**
  * The line diff, cased on what it must NOT rewrite.

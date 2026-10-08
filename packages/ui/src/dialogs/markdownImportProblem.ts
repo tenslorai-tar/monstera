@@ -18,8 +18,10 @@ export const MARKDOWN_IMPORT_PROBLEM_DIALOG_ID = 'dialog.markdown-import-problem
  * nothing, because the person did it on purpose.
  *
  * **The composer's refusals are flattened into `reason`**, because each needs its own
- * sentence and only one of them has a line to name. `unencodable-text` carries it; a
- * sentence naming the line is what lets a person find the character.
+ * sentence and only one of them has a line to name. `malformed-csv` carries it; a
+ * sentence naming the line is what lets a person find the record. No character refuses
+ * an import (ADR-0172): one no font draws is a box, named by `boxedCharacters.ts`
+ * beside the document that opened.
  *
  * `absent` and `at-capacity` are here rather than on the open problem, because the
  * PDF WAS written — the person has a file where they chose, and the sentence says so.
@@ -28,10 +30,6 @@ const markdownImportProblemSchema = z.discriminatedUnion('reason', [
   z.object({ reason: z.literal('unreadable') }),
   z.object({ reason: z.literal('too-large'), limitBytes: z.number().int().positive() }),
   z.object({ reason: z.literal('not-utf8') }),
-  z.object({
-    reason: z.literal('unencodable-text'),
-    line: z.number().int().positive().nullable(),
-  }),
   z.object({ reason: z.literal('nothing-to-draw') }),
   z.object({
     reason: z.literal('malformed-csv'),

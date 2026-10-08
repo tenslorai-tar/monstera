@@ -2,7 +2,7 @@ import { PDFDocument } from '@cantoo/pdf-lib';
 
 import { MAX_IMPORT_PNG_PIXELS } from '@monstera/contract/host';
 
-import { ComposeRefused } from './composeLayout.js';
+import { ComposeRefused } from './composeOutcome.js';
 import { type PixelSize, PngPixelsRefused, checkPngPixels } from './imageDimensions.js';
 import { type EmbeddableImageType, addImagePage } from './pageImage.js';
 

@@ -392,6 +392,9 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // removed — so the payload here is the same size for a one-field form and a
   // four-thousand-field one.
   'document.importFormData': 'needs an engine session and an open dialog',
+  // THE ASK IS HANDLES AND THE ANSWER IS THEIR PROPERTIES, at most `MAX_READ_FIELDS` (16) of each: a four-thousand-field
+  // form answers the same sixteen at most, so the payload is bounded by the request and not by the document (ADR-0193).
+  'document.formFieldProperties': 'needs an engine session; bounded by its sixteen handles, not by the form',
   'document.split': 'needs an engine session and a folder dialog',
   // THE ASK IS PAGES AND THREE NUMBERS, bounded by the split's own part count;
   // the images are written in the host and never cross.
@@ -534,6 +537,12 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // document's size. A thousand-page report and a one-page note answer the same
   // number of bytes for the same canvas.
   'document.renderPage': 'needs an engine session',
+  // THE THIRD SANCTIONED BYTE CROSSING (ADR-0175), and FONTS rather than a
+  // raster: a block's embedded programs, each rebuilt in the host without its
+  // hinting, refused above `MAX_RUN_FONT_BYTES`, at most `MAX_BLOCK_FONTS` of
+  // them. A function of the fonts one block is set in, never of how many pages
+  // the document has.
+  'document.runFonts': 'needs an engine session',
   'document.duplicatePages': 'needs an engine session',
 };
 

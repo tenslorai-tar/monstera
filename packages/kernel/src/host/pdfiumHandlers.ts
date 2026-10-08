@@ -1,8 +1,10 @@
 import type { Handlers } from '@monstera/contract';
+import { cappedBoxes } from '@monstera/contract/host';
 import { HeldPassword } from '@monstera/shared';
 
 import type { CommandExecution } from '../commandRouting.js';
 import type { ImageSession } from '../engineSeam.js';
+import type { PageRuns } from '../operatorEdit.js';
 import type { TextRun } from '../pdfiumFfi.js';
 import {
   EditRefusedError,
@@ -109,6 +111,23 @@ export type HostPageRasteriser = (
   height: number,
 ) => Promise<Uint8Array>;
 
+/**
+ * How this process rebuilds the fonts a block's runs are drawn in (ADR-0175): each font once, and for each run its
+ * font's place, or `null` for a run with none. Injected for {@link HostPageRasteriser}'s reason, and answering bytes for
+ * the same one: where the file goes is the handler's.
+ */
+export type HostRunFontsReader = (
+  image: ImageSession,
+  page: number,
+  indices: readonly number[],
+) => Promise<{ readonly fonts: readonly Uint8Array[]; readonly runs: readonly (number | null)[] }>;
+
+/**
+ * How this process reads a page's joined runs with their members and its text objects' page indices (ADR-0176's
+ * `pageRuns`). Injected for {@link HostTextRunsReader}'s reason.
+ */
+export type HostPageRunsReader = (image: ImageSession, page: number) => Promise<PageRuns>;
+
 export type HostPageObjectsReader = (
   image: ImageSession,
   page: number,
@@ -146,6 +165,10 @@ export interface PdfiumHandlerParts {
   readonly pageObjects: HostPageObjectsReader;
   /** How this process rasterises a page. `engine/render-page`. */
   readonly renderPage: HostPageRasteriser;
+  /** How this process rebuilds a block's run fonts. `engine/run-fonts`. */
+  readonly runFonts: HostRunFontsReader;
+  /** How this process reads a page's runs with their members. `engine/page-runs`. */
+  readonly pageRuns: HostPageRunsReader;
 }
 
 export function createPdfiumHandlers({
@@ -153,8 +176,10 @@ export function createPdfiumHandlers({
   execution,
   files,
   pageObjects,
+  pageRuns,
   probe,
   renderPage,
+  runFonts,
   textRuns,
 }: PdfiumHandlerParts): Handlers<PdfiumChannels> {
   // THE MISS IS RETURNED, NEVER THROWN — `engineHandlers.ts`'s rule, and it is
@@ -323,8 +348,9 @@ export function createPdfiumHandlers({
         if (error instanceof ReplaceMovesLineError) return failed('replace-moves-line');
         return refusedBy(error);
       }
-      const written = await files.writeOutput(held.outputDirectory, into, applied);
-      return { ok: true, value: { bytes: written } };
+      const written = await files.writeOutput(held.outputDirectory, into, applied.image);
+      // WHAT IT DREW AS BOXES TRAVELS WITH THE COUNT (ADR-0174), through the one cap.
+      return { ok: true, value: { bytes: written, ...cappedBoxes(applied) } };
     },
 
     'engine/invert': async ({ session, inverse, from, password, into }) => {
@@ -344,11 +370,15 @@ export function createPdfiumHandlers({
         inverted = await execution.invert(image, inverse.kind, inverse.prior);
       } catch (error) {
         // AN UNDO CAN LOSE TEXT AS AN EDIT CAN — it regenerates the page by the same call — so it refuses at the same
-        // read-back and says so the same way.
+        // read-back and says so the same way, including a font that does not carry the text it wrote back (RRRRRRR-6):
+        // `refusedBy` alone answered that as `engine-refused`, which reached the person as *Something went wrong*.
+        if (error instanceof TextNotWritableError) {
+          return { ok: false, error: { code: 'text-not-writable', detail: { characters: error.characters } } } as const;
+        }
         return refusedBy(error);
       }
-      const written = await files.writeOutput(held.outputDirectory, into, inverted);
-      return { ok: true, value: { bytes: written } };
+      const written = await files.writeOutput(held.outputDirectory, into, inverted.image);
+      return { ok: true, value: { bytes: written, ...cappedBoxes(inverted) } };
     },
 
     'engine/text-runs': async ({ session, from, password, page }) => {
@@ -439,6 +469,56 @@ export function createPdfiumHandlers({
       // reads nothing rather than a partial image.
       const written = await files.writeOutput(held.outputDirectory, into, raster);
       return { ok: true, value: { bytes: written } };
+    },
+
+    'engine/run-fonts': async ({ session, from, password, into, page, indices }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      let image: ImageSession;
+      try {
+        image = await imageFor(held, from, password);
+      } catch {
+        return failed('asset-missing');
+      }
+      let read;
+      try {
+        read = await runFonts(image, page, indices);
+      } catch {
+        // `engine/render-page`'s reason: a page or an object this document does not have is the request's.
+        return failed('engine-refused');
+      }
+      const sizes = read.fonts.map((font) => font.length);
+      // NONE IS AN ANSWER, and nothing is written for it: main reads no file when every size is absent.
+      if (sizes.length > 0) {
+        const all = new Uint8Array(sizes.reduce((total, size) => total + size, 0));
+        let at = 0;
+        for (const font of read.fonts) {
+          all.set(font, at);
+          at += font.length;
+        }
+        await files.writeOutput(held.outputDirectory, into, all);
+      }
+      return { ok: true, value: { sizes, runs: [...read.runs] } };
+    },
+
+    'engine/page-runs': async ({ session, from, password, page }) => {
+      const held = areas.lookup(session);
+      if (held === undefined) return gone;
+      let image: ImageSession;
+      try {
+        image = await imageFor(held, from, password);
+      } catch {
+        return failed('asset-missing');
+      }
+      try {
+        const read = await pageRuns(image, page);
+        // NO SLICE, unlike `engine/text-runs`: part of a page would number the rest wrongly, so a page past the bound
+        // fails the schema and the edit is refused rather than written against a partial reading.
+        return { ok: true, value: { textObjects: [...read.textObjects], runs: read.runs.map((run) => ({ ...run, members: [...run.members] })) } };
+      } catch {
+        // `engine/text-runs`' reason: a page this document does not have is the request's, not a sick host.
+        return failed('engine-refused');
+      }
     },
   };
 }

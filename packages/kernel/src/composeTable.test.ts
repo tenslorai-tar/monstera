@@ -3,9 +3,21 @@ import { describe, expect, it } from 'vitest';
 
 import { BODY_SIZE } from './composeLayout.js';
 import { COLUMN_MAX_EMS, TABLE_FLOOR_SIZE, planTable } from './composeTable.js';
-import { composeCsv } from './csvCompose.js';
-import { composeMarkdown } from './markdownCompose.js';
-import { contentOf, shownOn } from './shownText.js';
+import { composeCsv as composeCsvWith } from './csvCompose.js';
+import { faceSourceOf } from './fontCatalogue.js';
+import { composeMarkdown as composeMarkdownWith } from './markdownCompose.js';
+import { contentOf, readLines } from './shownText.js';
+
+/** The bundled faces, `markdownCompose.test.ts`' reading and its rule: absent is a failure. */
+const FACES = faceSourceOf([{ path: process.env['MONSTERA_FONTS_DIRECTORY'] ?? '', origin: 'bundled' }]);
+
+async function composeCsv(source: Uint8Array, page: { width: number; height: number }): Promise<Uint8Array> {
+  return (await composeCsvWith(source, page, FACES)).pdf;
+}
+
+async function composeMarkdown(source: Uint8Array, page: { width: number; height: number }): Promise<Uint8Array> {
+  return (await composeMarkdownWith(source, page, FACES)).pdf;
+}
 
 /** US Letter, upright. */
 const LETTER = { width: 612, height: 792 } as const;
@@ -13,7 +25,7 @@ const LETTER = { width: 612, height: 792 } as const;
 /** Letter's room across between the margins, upright and turned. */
 const ROOM = { upright: 500, turned: 680 } as const;
 
-/** About the width of `000` at body size in Helvetica. */
+/** About the width of `000` at body size in Arimo, which keeps Helvetica's widths. */
 const NARROWEST = 18;
 
 /** `count` columns alike. */
@@ -37,11 +49,29 @@ async function typeSizesOn(pdf: Uint8Array, page: number): Promise<number[]> {
   return [...content.matchAll(/\/\S+ ([\d.]+) Tf/gu)].map(([, size]) => Number(size));
 }
 
-/** The strings every page shows, page by page. */
-async function shownPages(pdf: Uint8Array): Promise<(readonly string[])[]> {
-  const pages: (readonly string[])[] = [];
-  for (let page = 0; page < (await sizesOf(pdf)).length; page += 1) pages.push(await shownOn(pdf, page));
-  return pages;
+/**
+ * Every page's PHYSICAL lines: what a reader finds, grouped by baseline and read left to right. MuPDF gives each
+ * cell as a line of its own and orders them column by column (measured 2026-10-05), so its order is not the table's;
+ * the baseline is, because the cells of one physical line share one.
+ */
+async function shownPages(pdf: Uint8Array): Promise<string[][]> {
+  return (await readLines(pdf)).map((lines) => {
+    const rows = new Map<number, { x: number; text: string }[]>();
+    for (const line of lines) {
+      const key = Math.round(line.y);
+      const row = rows.get(key);
+      if (row === undefined) rows.set(key, [{ x: line.x, text: line.text }]);
+      else row.push({ x: line.x, text: line.text });
+    }
+    return [...rows.entries()]
+      .sort(([above], [below]) => above - below)
+      .map(([, cells]) => cells.sort((left, right) => left.x - right.x).map((cell) => cell.text).join(' '));
+  });
+}
+
+/** The words of lines, in order. */
+function wordsOf(lines: readonly string[]): string[] {
+  return lines.flatMap((line) => line.split(/\s+/u).filter((word) => word !== ''));
 }
 
 describe('planTable: the least change that holds the table (Part A2)', () => {
@@ -113,11 +143,11 @@ describe('a composed table (Part A2)', () => {
     const values = Array.from({ length: 60 }, (_, at) => `v${String(at)}`).join(',');
     const pdf = await composeCsv(bytesOf(`${header}\n${values}\n`), LETTER);
     const pages = await shownPages(pdf);
-    const shown = pages.flat();
+    const shown = wordsOf(pages.flat());
     for (let at = 0; at < 60; at += 1) expect(shown).toContain(`v${String(at)}`);
     // SPLIT, and every group's pages carry the first column, so each row is still named.
     expect(pages.length).toBeGreaterThan(1);
-    for (const page of pages) expect(page).toContain('v0');
+    for (const page of pages) expect(wordsOf(page)).toContain('v0');
     // On turned pages, at the floor.
     for (const size of await sizesOf(pdf)) expect(size).toStrictEqual({ width: 792, height: 612 });
     expect(await typeSizesOn(pdf, 0)).toContain(TABLE_FLOOR_SIZE);
@@ -138,37 +168,38 @@ describe('a composed table (Part A2)', () => {
     const sizes = await typeSizesOn(pdf, 0);
     expect(Math.max(...sizes)).toBeLessThan(BODY_SIZE);
     expect(Math.min(...sizes)).toBeGreaterThanOrEqual(TABLE_FLOOR_SIZE);
-    // UNWRAPPED: every cell drawn whole, as one string.
-    expect((await shownOn(pdf, 0)).filter((shown) => shown === cell)).toHaveLength(10);
+    // UNWRAPPED: every cell read whole, as one word, on one line.
+    const [lines = []] = await shownPages(pdf);
+    expect(wordsOf(lines).filter((word) => word === cell)).toHaveLength(10);
+    expect(lines).toHaveLength(1);
   });
 
   it('WRAPS between words, never inside one while the word fits its column', async () => {
     const sentence = 'the quick brown fox jumps over the lazy dog and keeps on running across the field until dark';
     const pdf = await composeCsv(bytesOf(`${Array.from({ length: 6 }, () => `"${sentence}"`).join(',')}\n`), LETTER);
-    const shown = await shownOn(pdf, 0);
+    const [lines = []] = await shownPages(pdf);
     const words = new Set(sentence.split(' '));
-    // Several lines per cell, and every one of them whole words.
-    expect(shown.length).toBeGreaterThan(6);
-    for (const piece of shown) {
-      for (const word of piece.trim().split(' ')) expect(words.has(word)).toBe(true);
-    }
+    // Several lines, and every word on them whole: a word broken inside itself would read as two that are not words.
+    expect(lines.length).toBeGreaterThan(1);
+    for (const word of wordsOf(lines)) expect(words.has(word)).toBe(true);
   });
 
   it('draws WHOLE a word exactly as wide as its column', async () => {
     // `value` is this column's widest line, so the plan gives the column exactly its width; `wrap` measures it again
     // and the two sums can differ in the last bit. Without the width resolution this was drawn `valu`, `e`.
-    const shown = await shownOn(await composeCsv(bytesOf('name,value\nitem 1,1\n'), LETTER), 0);
-    expect(shown.slice(0, 2)).toStrictEqual(['name', 'value']);
+    const [lines = []] = await shownPages(await composeCsv(bytesOf('name,value\nitem 1,1\n'), LETTER));
+    expect(wordsOf(lines).slice(0, 2)).toStrictEqual(['name', 'value']);
   });
 
   it('REPEATS the header row on every page — CONTROL: the body row it sits over differs per page', async () => {
     const rows = Array.from({ length: 300 }, (_, at) => `item ${String(at)},${String(at)}`);
     const pages = await shownPages(await composeCsv(bytesOf(`name,value\n${rows.join('\n')}\n`), LETTER));
     expect(pages.length).toBeGreaterThan(2);
-    for (const page of pages) expect(page.slice(0, 2)).toStrictEqual(['name', 'value']);
-    // Each word is drawn as its own string, so the first body row is its next three.
-    expect(pages[1]?.slice(2, 5).join('')).not.toBe(pages[2]?.slice(2, 5).join(''));
-    expect(pages[1]?.slice(2, 4).join('')).toMatch(/^item \d+$/u);
+    for (const page of pages) expect(wordsOf(page).slice(0, 2)).toStrictEqual(['name', 'value']);
+    // The first body row is the next three words: `item`, its number and its value.
+    const firstRow = (page: readonly string[] | undefined): string => wordsOf(page ?? []).slice(2, 5).join(' ');
+    expect(firstRow(pages[1])).not.toBe(firstRow(pages[2]));
+    expect(firstRow(pages[1])).toMatch(/^item \d+ \d+$/u);
   });
 
   it('turns only a Markdown table’s pages, and the prose after it is upright again', async () => {
@@ -176,7 +207,8 @@ describe('a composed table (Part A2)', () => {
     const table = `${cells('abcdefghijklmn')}\n${cells('---')}\n${cells('opqrstuvwxyzab')}\n`;
     const pdf = await composeMarkdown(bytesOf(`Before the table.\n\n${table}\nAfter the table.\n`), LETTER);
     expect(await sizesOf(pdf)).toStrictEqual([LETTER, { width: 792, height: 612 }, LETTER]);
-    expect((await shownOn(pdf, 2)).join('')).toBe('After the table.');
-    expect((await shownOn(pdf, 0)).join('')).toBe('Before the table.');
+    const pages = await shownPages(pdf);
+    expect(pages[2]).toStrictEqual(['After the table.']);
+    expect(pages[0]).toStrictEqual(['Before the table.']);
   });
 });

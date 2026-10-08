@@ -6,6 +6,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   type ClientApi,
+  type CommandOfKind,
   createClient,
   type Incident,
   type OutlinedSignatureMark,
@@ -14,6 +15,8 @@ import {
 } from '@monstera/contract';
 
 import { localMupdfExecution } from '../commandSpecs.js';
+import { applySetDocumentProtection } from '../documentProtection.js';
+import * as mupdf from '../mupdfRaw.js';
 import { extractPages } from '../pageExtract.js';
 import { applyPdfLibImage } from '../pdfLibWriter.js';
 import { prepareSignature } from '../signaturePlaceholder.js';
@@ -23,6 +26,8 @@ import {
   serialiseAnnotationData,
 } from '../annotationInterchange.js';
 import { detectFlatFields } from '../flatFields.js';
+import { readFormImportPlan } from '../formData.js';
+import { readFieldProperties } from '../formFieldRead.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
@@ -252,6 +257,9 @@ function joined(
       pageFills: () => {
         throw new Error('the lifecycle half must not read page fills');
       },
+      pageRewrite: () => {
+        throw new Error('no case here reads which writer a page needs');
+      },
       wordBoxes: () => {
         throw new Error('the lifecycle half must not read word boxes');
       },
@@ -296,6 +304,8 @@ function joined(
       pageImage: rasterisePageImage,
       word: composeWordDocument,
       flatFields: detectFlatFields,
+      fieldProperties: readFieldProperties,
+      formImportPlan: readFormImportPlan,
       barcodes: () => {
         throw new Error('the lifecycle half must not read barcodes');
       },
@@ -347,7 +357,7 @@ function joined(
   return {
     incidents,
     held,
-    open: (image: Uint8Array) => openAsSupervisor(client, sessions, areas, image),
+    open: (image: Uint8Array, opening: Opening = AS_COPIED) => openAsSupervisor(client, sessions, areas, image, opening),
     lifecycle: remoteMupdfLifecycle(client, sessions, areas),
     // THE SIGNER'S HOST HALF, through the same client and areas, with assets written where the host reads them.
     signer: remoteSignatureHost(client, sessions, areas, fileAssets(areas)),
@@ -372,11 +382,20 @@ function fileAssets(areas: FakeAreas): SessionAssets {
  * this sequence there would be a second opinion about how a session comes to
  * exist — which is exactly what `remoteMupdfLifecycle.open` was.
  */
+/** What `engine/open` is told besides where the copy is: the keys to try and how the document stands. */
+interface Opening {
+  readonly keys: readonly string[];
+  readonly standing: 'as-copied' | 'unprotected';
+}
+
+const AS_COPIED: Opening = { keys: [], standing: 'as-copied' };
+
 async function openAsSupervisor(
   client: ClientApi<EngineChannels>,
   sessions: RemoteSessions,
   areas: FakeAreas,
   image: Uint8Array,
+  opening: Opening,
 ): Promise<MupdfSession> {
   const area = await areas.create();
   const snapshotName = areas.mintName();
@@ -386,6 +405,7 @@ async function openAsSupervisor(
       snapshotDirectory: area.snapshotDirectory,
       snapshotName,
       outputDirectory: area.outputDirectory,
+      ...opening,
     });
     if (!answer.ok) throw new EngineOpenFailed(answer.error.code);
     return sessions.adopt(answer.value.session, area);
@@ -628,6 +648,9 @@ describe('remoteMupdfLifecycle', () => {
         pageFills: () => {
           throw new Error('the byte-size case must not read page fills');
         },
+        pageRewrite: () => {
+          throw new Error('no case here reads which writer a page needs');
+        },
         wordBoxes: () => {
           throw new Error('the byte-size case must not read word boxes');
         },
@@ -670,6 +693,12 @@ describe('remoteMupdfLifecycle', () => {
         exportFormData: () => {
           throw new Error('the byte-size case must not export form data');
         },
+        formImportPlan: () => {
+          throw new Error('a lifecycle case must not plan an import');
+        },
+        fieldProperties: () => {
+          throw new Error('a lifecycle case must not read field properties');
+        },
         flatFields: () => {
           throw new Error('the byte-size case must not propose fields');
         },
@@ -702,7 +731,7 @@ describe('remoteMupdfLifecycle', () => {
 
     const sessions = createRemoteSessions();
     const lifecycle = remoteMupdfLifecycle(client, sessions, areas);
-    const session = await openAsSupervisor(client, sessions, areas, bulky);
+    const session = await openAsSupervisor(client, sessions, areas, bulky, AS_COPIED);
     const round = await lifecycle.serialise(session);
     await lifecycle.close(session);
 
@@ -1089,6 +1118,100 @@ describe('a hosted pdf-lib command’s refusal, across the pipe (ADR-0121 Decisi
       undefined,
     );
     await expect(unreadable).rejects.toBeInstanceOf(EngineCallFailed);
+    await lifecycle.close(session);
+  });
+});
+
+/**
+ * `engine/open` with every key and the document's standing
+ * ([ADR-0171](../../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8),
+ * through the real handlers: a copy a protect encrypted opens with that protect's key wherever it is in the list, and a
+ * document that stands unprotected comes back decrypted in memory.
+ */
+describe('engine/open, told every key and how the document stands', () => {
+  afterEach(async () => {
+    while (mintedRoots.length > 0) {
+      const root = mintedRoots.pop();
+      if (root !== undefined) await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  /** `flat` under a protect's terms, serialised: the shape of a checkpoint a protect encrypted. */
+  async function protectedCopy(command: CommandOfKind<'setDocumentProtection'>): Promise<ByteImage> {
+    const session = await mupdfWriter.open(flat);
+    try {
+      await applySetDocumentProtection(session, command);
+      return await mupdfWriter.serialise(session);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  /** What MuPDF answers an empty password with, for bytes as they serialise: 1 is no `/Encrypt`, 0 refused. */
+  function emptyAccess(bytes: ByteImage): number {
+    const document = mupdf.PDFDocument.openDocument(bytes, 'application/pdf');
+    try {
+      return document.authenticatePassword('');
+    } finally {
+      document.destroy();
+    }
+  }
+
+  const PROTECT = { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: 'open-me' } as const;
+
+  it('tries each key in turn, so the right one opens the copy wherever it is, and AS COPIED keeps it encrypted', async () => {
+    const areas = realAreas();
+    const { open, lifecycle } = joined(areas);
+    const session = await open(await protectedCopy(PROTECT), { keys: ['not-this-one', 'open-me'], standing: 'as-copied' });
+    const bytes = await lifecycle.serialise(session);
+    expect(emptyAccess(bytes)).toBe(0);
+    await lifecycle.close(session);
+  });
+
+  it('a document that stands UNPROTECTED is decrypted in memory, so what it serialises opens with no password', async () => {
+    const areas = realAreas();
+    const { open, lifecycle } = joined(areas);
+    const session = await open(await protectedCopy(PROTECT), { keys: ['open-me'], standing: 'unprotected' });
+    expect(emptyAccess(await lifecycle.serialise(session))).toBe(1);
+    await lifecycle.close(session);
+  });
+
+  it('CONTROL: no key answers needs-password, and keys that are all wrong answer wrong-password', async () => {
+    const areas = realAreas();
+    const { open } = joined(areas);
+    const copy = await protectedCopy(PROTECT);
+    await expect(open(copy, { keys: [], standing: 'as-copied' })).rejects.toThrow(/needs-password/u);
+    await expect(open(copy, { keys: ['no', 'nor-this'], standing: 'unprotected' })).rejects.toThrow(/wrong-password/u);
+  });
+
+  it('an OWNER-ONLY copy opens with no key, answers access 2 rather than 1, and as copied keeps its encryption', async () => {
+    // MAIN READS ACCESS 1 AS *NO ENCRYPTION AT ALL*, and starts such a document unprotected. An owner-only password
+    // opens with no key, so this is the case that rule must not mistake for a plain file.
+    const copy = await protectedCopy({ kind: 'setDocumentProtection', encryption: 'aes-256', ownerPassword: 'own-me' });
+    const local = await mupdfWriter.open(copy);
+    try {
+      expect(accessFor(local)).toBe(2);
+    } finally {
+      await mupdfWriter.close(local);
+    }
+    const plain = await mupdfWriter.open(flat);
+    try {
+      // CONTROL: a file with no /Encrypt is the 1 the rule keys on.
+      expect(accessFor(plain)).toBe(1);
+    } finally {
+      await mupdfWriter.close(plain);
+    }
+
+    const areas = realAreas();
+    const { open, lifecycle } = joined(areas);
+    const session = await open(copy, { keys: ['open-me'], standing: 'as-copied' });
+    const document = mupdf.PDFDocument.openDocument(await lifecycle.serialise(session), 'application/pdf');
+    try {
+      if (!(document instanceof mupdf.PDFDocument)) throw new Error('expected a PDF');
+      expect(document.getTrailer().get('Encrypt').isDictionary()).toBe(true);
+    } finally {
+      document.destroy();
+    }
     await lifecycle.close(session);
   });
 });

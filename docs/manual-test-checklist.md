@@ -4,7 +4,7 @@
      equal to it. Regenerate with `npx vitest run packages/ui/src/App.test.tsx -t "manual test checklist" -u`.
      Do not edit by hand. -->
 
-Every command the application registers — 226 — and the checks only the installed window can answer.
+Every command the application registers — 250 — and the checks only the installed window can answer.
 For each command: use it on a real document, see the correct effect, then save, close and reopen and see it kept
 (the wired-tools rule, CLAUDE.md). A command that needs a selection, a second document or a key says so when it
 is not available.
@@ -72,10 +72,23 @@ is not available.
 ## Ribbon › Edit
 
 - [ ] **Find** — Find · `document.find` · Shows: on screen · Help: *Find and replace text*
+- [ ] **Bold** — Format · `text.format.bold` · Shows: on screen
+- [ ] **Italic** — Format · `text.format.italic` · Shows: on screen
+- [ ] **Underline** — Format · `text.format.underline` · Shows: on screen
+- [ ] **Superscript** — Format · `text.format.superscript` · Shows: on screen
+- [ ] **Subscript** — Format · `text.format.subscript` · Shows: on screen
+- [ ] **Align left** — Format · `text.format.align-left` · Shows: on screen
+- [ ] **Centre** — Format · `text.format.align-center` · Shows: on screen
+- [ ] **Align right** — Format · `text.format.align-right` · Shows: on screen
+- [ ] **Bullets** — Format · `text.format.bullets` · Shows: on screen
+- [ ] **Numbering** — Format · `text.format.numbering` · Shows: on screen
+- [ ] **Increase indent** — Format · `text.format.indent-more` · Shows: on screen
+- [ ] **Decrease indent** — Format · `text.format.indent-less` · Shows: on screen
 - [ ] **Translate this page…** — Language · `edit.translate-page` · Shows: a toast · Help: *Translate a page*
 - [ ] **Spell check** — Proofing · `document.spell-check` · Shows: on screen · Help: *Check spelling*
 - [ ] **Word count** — Proofing · `document.word-count` · Shows: a result dialog · Help: *Count words and characters*
 - [ ] **Edit text on the page** — Text · `text.edit` · Shows: on screen · Help: *Edit text on the page*
+- [ ] **Add text** — Text · `text.add` · Shows: on screen
 - [ ] **Edit all objects** — Text · `edit.objects-all` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Edit text objects** — Text · `edit.objects-text` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
 - [ ] **Edit images** — Text · `edit.objects-images` · Shows: on screen · Help: *Move, resize, recolour or remove things on a page*
@@ -131,6 +144,7 @@ is not available.
 - [ ] **Fields list** — Fields · `view.show-fields` · Shows: on screen · Help: *Delete a form field*
 - [ ] **Find fields on this page…** — Manage · `document.find-flat-fields` · Shows: a result dialog · Help: *Find fields on a flat form*
 - [ ] **Flatten form** — Manage · `document.flatten-form` · Shows: a toast · Help: *Flatten a form*
+- [ ] **Tab order…** — Manage · `document.tab-order` · Shows: a toast · Help: *Change a form field*
 
 ## Ribbon › Protect
 
@@ -256,6 +270,19 @@ is not available.
 - [ ] **Donate** · `app.donate` · Shows: on screen · Help: *Support Monstera with a donation*
 - [ ] **Rate Us** · `app.rate` · Shows: on screen · Help: *Rate Monstera*
 - [ ] **Update available** · `app.update-available` · Shows: on screen
+
+## Properties tab
+
+- [ ] **Copy to other pages…** · `forms.copy-to-pages` · Shows: on screen · Help: *Change a form field*
+- [ ] **Align left edges** · `forms.arrange.align-left` · Shows: on screen · Help: *Change a form field*
+- [ ] **Align right edges** · `forms.arrange.align-right` · Shows: on screen
+- [ ] **Align tops** · `forms.arrange.align-top` · Shows: on screen
+- [ ] **Align bottoms** · `forms.arrange.align-bottom` · Shows: on screen
+- [ ] **Centre across the first field** · `forms.arrange.centre-horizontally` · Shows: on screen
+- [ ] **Centre down the first field** · `forms.arrange.centre-vertically` · Shows: on screen
+- [ ] **Same width as the first field** · `forms.arrange.same-width` · Shows: on screen
+- [ ] **Same height as the first field** · `forms.arrange.same-height` · Shows: on screen
+- [ ] **Same size as the first field** · `forms.arrange.same-size` · Shows: on screen · Help: *Change a form field*
 
 ## Start screen
 

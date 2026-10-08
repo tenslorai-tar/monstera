@@ -38,21 +38,28 @@ export const FLAT_FIELDS_DIALOG_ID = 'dialog.flat-fields';
  * A person offered *accept them all* against a clipped list would accept some
  * and be told it had finished.
  *
- * ## Every candidate becomes a TEXT field, and the dialog says so
+ * ## A line or a wide box becomes a text field, a small square becomes a tick box, and each row says which
  *
- * The detector proposes places, not kinds — it measured nothing about what
- * separates a tick box from a rule, and a build that guessed would be inventing
- * a classification the row has no reading for. A ruled line beside a label is
- * overwhelmingly somewhere to write words, and the five drawing tools exist for
- * the rest.
+ * This said every candidate became a text field until 2026-10-07, because the detector measured nothing about what
+ * separates a tick box from a rule. The owner's form-test.pdf is full of small squares with their words on the right,
+ * and a text field over each was the wrong field. A square 6 to 26 points each way and about as wide as high is a tick
+ * box (`flatFields.ts`' `tickSized`); the row names the kind, so a person can untick a guess.
+ *
+ * ## The places that already hold a field are COUNTED, not listed
+ *
+ * They are not proposals: a box with a field in it is one, and proposing it again made a second field beside the
+ * first. Saying how many were left out is the difference between a detector that found nothing and one that found the
+ * form is already fillable.
  */
 export const FLAT_FIELDS_DIALOG = declareDialog({
   id: FLAT_FIELDS_DIALOG_ID,
   title: FLAT_FIELDS_TITLE,
   props: z
     .object({
-      candidates: z.array(z.object({ name: z.string(), label: z.string() })),
+      candidates: z.array(z.object({ name: z.string(), label: z.string(), kind: z.enum(['text', 'checkbox']) })),
       truncated: z.boolean(),
+      /** Places that look like a field and already hold one, left out of the list so none is made twice. */
+      alreadyFields: z.number().int().nonnegative(),
     })
     .strict(),
   result: FLAT_FIELDS_RESULT,

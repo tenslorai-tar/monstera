@@ -1,4 +1,4 @@
-export { type ComposePageSize, ComposeRefused } from './composeLayout.js';
+export { type ComposePageSize, ComposeRefused, type ComposedSource, type BoxedPosition } from './composeOutcome.js';
 export { composeMarkdown } from './markdownCompose.js';
 export { composeCsv } from './csvCompose.js';
 export { type ImportImage, composeImages } from './imageCompose.js';

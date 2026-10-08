@@ -10,6 +10,8 @@ import {
   type IncidentSink,
   encodeFrame,
   hostRequestSchema,
+  liftCredentials,
+  restoreCredentials,
   wrapHandlers,
 } from '@monstera/contract/host';
 
@@ -435,7 +437,17 @@ export function createHostRuntime<TMap extends ChannelMap>(
       answer(id, body);
       return;
     }
-    const bytes = encoder.encode(JSON.stringify(body));
+    // WITHOUT ITS CREDENTIALS, which go in the notice's frame (ADR-0171's correction of 2026-10-05): a protect's prior
+    // holds the earlier protect's passwords, and the file this writes is on disk until main has read it.
+    let lifted: ReturnType<typeof liftCredentials>;
+    try {
+      lifted = liftCredentials(body);
+    } catch (thrown) {
+      stop({ code: 'unsendable-response', detail: `A file answer's credentials could not be lifted: ${String(thrown)}` });
+      return;
+    }
+    const { credentials } = lifted;
+    const bytes = encoder.encode(JSON.stringify(lifted.filed));
     if (bytes.byteLength > ENGINE_ANSWER_FILE_MAX_BYTES) {
       answer(id, { ok: false, error: { code: ANSWER_TOO_LARGE } });
       return;
@@ -457,7 +469,7 @@ export function createHostRuntime<TMap extends ChannelMap>(
         let framed: Uint8Array;
         try {
           framed = encodeFrame(
-            encoder.encode(JSON.stringify({ id, answerFile: { bytes: written } })),
+            encoder.encode(JSON.stringify({ id, answerFile: { bytes: written, credentials } })),
             options.maxFrameBytes,
           );
         } catch (thrown) {
@@ -518,14 +530,16 @@ export function createHostRuntime<TMap extends ChannelMap>(
     // THE PARAMS ARE READ FROM THE SNAPSHOT DIRECTORY main wrote them into (ADR-0125's addendum), then dispatched
     // exactly as framed params are — the channel's own schema, in the same `wrapHandler`. A file that disagrees with
     // its announced size, is not UTF-8 JSON, or names another session is main not being the peer this build expects.
-    const { session, name, bytes } = request.data.paramsFile;
+    const { session, name, bytes, credentials } = request.data.paramsFile;
     fileAnswers.read(session, name).then(
       (raw) => {
         if (isStopped()) return;
         let params: unknown;
         try {
           if (raw.byteLength !== bytes) throw new Error(`the file holds ${String(raw.byteLength)} bytes, not ${String(bytes)}`);
-          params = JSON.parse(decoder.decode(raw));
+          // THE PARAMS' CREDENTIALS CAME IN THE FRAME, and go back where main lifted them from before the channel's
+          // schema runs, so a handler sees its params whole (ADR-0171).
+          params = restoreCredentials(JSON.parse(decoder.decode(raw)), credentials);
         } catch (thrown) {
           stop({ code: 'malformed-request', detail: `A params file for "${channel}" was not one: ${String(thrown)}` });
           return;

@@ -20,7 +20,7 @@ Almost every change you make to a document can be undone, one step at a time, un
 - Shortcuts: **Ctrl+Z** to undo, **Ctrl+Y** to redo.
 - Each document keeps its own undo history. It is lost when you close the document.
 - Monstera keeps within a memory limit. If older steps have to be released, a window titled **Older undo steps were released** tells you how many can no longer be undone. Your change was still applied, and more recent steps can still be undone.
-- Undoing a password change on a document that was already protected can be refused, because Monstera does not keep passwords.
+- A password change can be undone and redone too: Monstera holds the passwords while the document is open, and forgets them when you close it.
 
 <!--
 Screenshots to capture:

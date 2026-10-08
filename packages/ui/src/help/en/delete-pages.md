@@ -18,8 +18,10 @@ To delete a list of pages:
 
 To delete the pages you selected (or the page you are on):
 
-1. In the Organize page grid, select the pages and press **Delete**. Monstera asks first, in **Delete pages** with those pages filled in: choose **Delete pages** to delete them, or **Cancel** to keep every page.
+1. In the Organize page grid, select the pages and press **Delete**.
 2. You can also choose **Delete page** in the **Pages** group (under the group's **More** in a narrower window), or right-click a page and choose **Delete page**.
+
+Whichever way you start, Monstera asks first, in **Delete pages** with those pages filled in: choose **Delete pages** to delete them, or **Cancel** to keep every page. Nothing is removed until you confirm, so a key pressed or an item chosen by mistake costs a **Cancel**, never a page.
 
 ![The Delete pages window with Pages to delete filled in](screenshot:delete-pages-1)
 

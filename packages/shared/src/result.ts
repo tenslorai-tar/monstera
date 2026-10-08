@@ -79,6 +79,20 @@ export interface StructuredError {
 export const EDIT_STEPS = ['open', 'page', 'object', 'set-text', 'matrix', 'generate', 'save', 'read-back'] as const;
 export type EditStep = (typeof EDIT_STEPS)[number];
 
+/** Why a change to a form field was refused (ADR-0193): each the person's to act on, and none a defect. */
+export const FIELD_EDIT_REASONS = [
+  'not-found',
+  'name-taken',
+  'name-parent',
+  'options-count',
+  'options-duplicate',
+  'options-radio-labels',
+  'duplicate-radio',
+  'duplicate-signature',
+  'encrypted',
+] as const;
+export type FieldEditReason = (typeof FIELD_EDIT_REASONS)[number];
+
 /**
  * The number `FPDF_GetLastError` answers when a document needs a password: `FPDF_ERR_PASSWORD`, read from PDFium
  * 155.0.8044.0's `fpdfview.h` (line 609, `.tools/pdfium/155.0.8044.0/include`) on 2026-10-05. At step `open` it means
@@ -97,6 +111,8 @@ export interface FailureDetails {
   readonly 'text-not-writable': { readonly characters: string };
   /** Which step of a PDFium rewrite refused, and what `FPDF_GetLastError` answered at that moment. */
   readonly 'edit-refused': { readonly step: EditStep; readonly engineError: number };
+  /** Which refusal a change to a form field met (ADR-0193). */
+  readonly 'field-edit-refused': { readonly reason: FieldEditReason };
 }
 
 /** The codes of `C` that carry no detail, as one member — or nothing, when every code of `C` carries one. */

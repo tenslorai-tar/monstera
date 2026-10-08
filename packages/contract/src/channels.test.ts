@@ -11,7 +11,7 @@ import {
   displayLocationSchema,
   preloadChannels,
 } from './channels.js';
-import { placeImageSchema } from './commands.js';
+import { MAX_BLOCK_FONTS, MAX_RUN_FONT_BYTES, placeImageSchema } from './commands.js';
 import type { Incident } from './incident.js';
 import { MAX_PAGE_SET_ENTRIES } from './pageSet.js';
 import {
@@ -128,7 +128,10 @@ const handlers: ContractHandlers = {
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
   'document.execute': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
+    // A BOX, NOT NONE (ADR-0174): an empty list is also what a boundary that dropped the field would hand back.
+    Promise.resolve(
+      ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0, boxed: [{ character: '中', page: 0 }], more: 2, unsealedCopies: [] }),
+    ),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), cleared: null, held: [] })),
   'document.deleteHeldCopies': () => Promise.resolve(ok({ held: [] })),
   // CANCELLED rather than copied, for the recent-files fixture's reason one
@@ -141,10 +144,20 @@ const handlers: ContractHandlers = {
   'document.exportFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.flatFieldCandidates': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 })),
+  'document.formFieldProperties': () => Promise.resolve(ok({ version: asDocVersion(1), fields: [] })),
   'document.textBlocks': () =>
     Promise.resolve(
-      ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 }),
+      ok({
+        version: asDocVersion(1),
+        blocks: [],
+        next: null,
+        truncated: false,
+        rotated: 0,
+        angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 },
+        unaddressable: 0,
+        rewrite: 'objects' as const,
+      }),
     ),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
@@ -152,7 +165,9 @@ const handlers: ContractHandlers = {
     Promise.resolve(
       ok({ version: asDocVersion(1), width, height, png: new Uint8Array([0x89, 0x50]) }),
     ),
-  'document.split': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.runFonts': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), fonts: [new Uint8Array([0, 1, 0, 0])], runs: [0, null] })),
+  'document.split':() => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportPageImages': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportText': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.exportWord': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -479,7 +494,9 @@ describe('the shipping contract, exercised through its own map', () => {
         docId: asDocId('doc-1'),
         command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
       }),
-    ).resolves.toStrictEqual(ok({ version: 1, byteLength: 4096, historyDropped: 0 }));
+    ).resolves.toStrictEqual(
+      ok({ version: 1, byteLength: 4096, historyDropped: 0, boxed: [{ character: '中', page: 0 }], more: 2, unsealedCopies: [] }),
+    );
   });
 
   it('the params schema REFUSES a command the union does not declare', async () => {
@@ -836,6 +853,30 @@ describe('pages past 4,096 cross as one page set (JOURNAL, No document-size refu
       const value = name === 'document.split each' ? { each: tooMany } : tooMany;
       expect(field.safeParse(value).success, name).toBe(false);
     }
+  });
+});
+
+describe('a block’s run fonts are bounded bytes, and every run names one the answer carries (ADR-0175)', () => {
+  const answer = channels['document.runFonts'].result;
+  const version = asDocVersion(3);
+  const of = (length: number) => ({ version, fonts: [new Uint8Array(length)], runs: [0, null, 0] });
+
+  it('takes a font at the bound, the most fonts, and none', () => {
+    const most = { version, fonts: Array.from({ length: MAX_BLOCK_FONTS }, () => new Uint8Array(4)), runs: [MAX_BLOCK_FONTS - 1] };
+    expect([
+      answer.safeParse(of(MAX_RUN_FONT_BYTES)).success,
+      answer.safeParse(most).success,
+      answer.safeParse({ version, fonts: [], runs: [null, null] }).success,
+    ]).toStrictEqual([true, true, true]);
+  });
+
+  it('CONTROL: one byte past the bound, an empty font, a font too many, or a run past the fonts is refused', () => {
+    expect(answer.safeParse(of(MAX_RUN_FONT_BYTES + 1)).success).toBe(false);
+    expect(answer.safeParse(of(0)).success).toBe(false);
+    const tooMany = { version, fonts: Array.from({ length: MAX_BLOCK_FONTS + 1 }, () => new Uint8Array(4)), runs: [0] };
+    expect(answer.safeParse(tooMany).success).toBe(false);
+    expect(answer.safeParse({ version, fonts: [new Uint8Array(4)], runs: [0, 1] }).success).toBe(false);
+    expect(answer.safeParse({ version, fonts: ['AAEAAA'], runs: [0] }).success).toBe(false);
   });
 });
 

@@ -7,6 +7,7 @@ import {
   serialiseAnnotationData,
 } from '../annotationInterchange.js';
 import { readPageBarcodes } from '../barcodeReader.js';
+import { bindEditFolders } from '../editFaces.js';
 import { localMupdfExecution } from '../mupdfSpecs.js';
 import { accessFor, mupdfWriter, signaturesKeptBySave } from '../mupdfWriter.js';
 import { readSignatures } from '../signatureRead.js';
@@ -14,6 +15,8 @@ import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
 import { detectFlatFields } from '../flatFields.js';
+import { readFormImportPlan } from '../formData.js';
+import { readFieldProperties } from '../formFieldRead.js';
 import { readFormData, serialiseFormData } from '../formData.js';
 import { readFormFields } from '../formFields.js';
 import { readAnnotationWords, readAnnotations } from '../pageAnnotations.js';
@@ -23,6 +26,7 @@ import { rasterisePageImage } from '../pageImages.js';
 import { snapshotRegion } from '../pageSnapshot.js';
 import { recognisePage } from '../ocrRecognise.js';
 import { readPageFills } from '../pageFills.js';
+import { readPageRewrite } from '../pageRewrite.js';
 import { readPageWordBoxes } from '../wordBoxes.js';
 import { readLinkAddress, readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
@@ -116,6 +120,13 @@ function libraryPathFrom(argv: readonly string[]): string {
 // failure inside a document's first answer rather than in this host's start.
 openMupdfShim(libraryPathFrom(process.argv));
 
+// THE BUNDLED FONTS' FOLDER THIRD and THE INSTALLED FONTS' FOURTH, each empty where there is none (ADR-0177 Decision
+// 1), `pdfiumHostEntry.ts`' arguments: a word a Type 3 page's own fonts cannot draw is set in a face the resolver
+// chooses from them. Bound by their folders, so neither the catalogue nor HarfBuzz loads until a word needs a face.
+const fontsPath = process.argv[4] === undefined || process.argv[4].length === 0 ? null : process.argv[4];
+const installedPath = process.argv[5] === undefined || process.argv[5].length === 0 ? null : process.argv[5];
+if (fontsPath !== null) bindEditFolders(fontsPath, installedPath);
+
 /**
  * MuPDF's channel set and its handlers, composed HERE rather than in the body
  * ([ADR-0048](../../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md)).
@@ -147,6 +158,7 @@ const engineHandlers = createEngineHandlers({
   pageLinks: readPageLinks,
   linkAddress: readLinkAddress,
   pageFills: readPageFills,
+  pageRewrite: readPageRewrite,
   wordBoxes: readPageWordBoxes,
   // RUNS HERE, and that is §3's matrix rather than a placement. Recognition
   // consumes a bitmap **we produced**, so the document-parse boundary invariant
@@ -187,6 +199,10 @@ const engineHandlers = createEngineHandlers({
   // A READ, and it runs here for the field list's reason: the walk reaches
   // MuPDF, which invariant 20 keeps out of main.
   flatFields: detectFlatFields,
+  // THE PROPERTIES PANE'S READ (ADR-0193), here for the field list's reason: it walks the document through MuPDF.
+  fieldProperties: readFieldProperties,
+  // WHAT AN IMPORT WOULD DO, planned here for the field list's reason: the file is hostile input and the plan walks the form.
+  formImportPlan: readFormImportPlan,
   exportFormData: async (session, format) =>
     serialiseFormData(await readFormData(session), format),
   // AND A FOURTH, the snapshot's reason for a whole page: §3 assigns export

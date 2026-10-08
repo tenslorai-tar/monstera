@@ -38,6 +38,9 @@ export type {
 // LAST remaining edge after the declaration split, and it was a plain value
 // export rather than a spelling problem (ADR-0026).
 export type { PriorPageRotation, PriorRotation } from './rotatePages.js';
+export type { CopyOpening, CopyStanding } from './openCopy.js';
+// HOW A PROTECT SEALS A COPY (ADR-0171 Decision 8): a rule over injected engine calls, binding nothing native.
+export { type SealEngine, sealCopy } from './sealCopy.js';
 // THE TYPE ONLY, for `rotatePages`' reason: `pageTransition.ts` imports
 // `mupdfWriter.ts`, so a value export here would bind the native library in
 // every importer of this barrel. The prior-state shape is erased.
@@ -107,6 +110,7 @@ export {
 export {
   ENGINE_BARCODE_TEXT_MAX,
   ENGINE_BARCODES_MAX,
+  ENGINE_OPEN_KEYS_MAX,
   ENGINE_PATH_MAX_CHARS,
   ENGINE_SESSION_ID_MAX_CHARS,
   type EngineChannels,
@@ -124,6 +128,8 @@ export {
   type HostDestinationsReader,
   type HostDuplicatesReader,
   type HostExtract,
+  type HostFieldPropertiesReader,
+  type HostFormImportPlanner,
   type HostFlatFieldsReader,
   type HostFormDataExport,
   type HostAnnotationDataExport,
@@ -134,6 +140,7 @@ export {
   type HostOcrReader,
   type HostPageImage,
   type HostPageFillsReader,
+  type HostPageRewriteReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostWordBoxesReader,
@@ -299,10 +306,17 @@ export {
   type PdfiumTransfer,
   regeneratedBy,
   remotePdfiumPageObjects,
+  remotePdfiumPageRuns,
   remotePdfiumRenderPage,
+  remotePdfiumRunFonts,
+  type RunFonts,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
 } from './host/remotePdfium.js';
+// A TYPE ONLY: the shape of `editTextOperators`' pre-read, which `main` resolves through the PDFium host (ADR-0176).
+export type { PageRuns } from './operatorEdit.js';
+// A TYPE ONLY, and spelt `export type` so nothing of `pageRewrite.ts`, which binds MuPDF, is emitted here.
+export type { PageRewrite } from './pageRewrite.js';
 // THE GROUPING, and it is on the BARREL rather than behind `pdfium.ts` because
 // it binds no engine: it takes runs and answers blocks, and `proof:kernelload`'s
 // rule is about what a specifier LOADS. Main is its one caller — the
@@ -316,9 +330,10 @@ export {
   type EditableLine,
   type GroupableRun,
   groupIntoBlocks,
-  paragraphText,
   groupIntoLines,
+  isEditedInPlace,
   settingOf,
+  softEnds,
 } from './textLines.js';
 // THE REFUSAL, from a module that imports nothing, so main can name it without
 // loading the engine that throws it (`signingRefusals.ts`' shape).
@@ -349,6 +364,10 @@ export {
   remoteMupdfGeometry,
   remoteMupdfDestinations,
   remoteMupdfDuplicateReport,
+  remoteMupdfFieldProperties,
+  remoteMupdfFormImportPlan,
+  type RemoteFormImportPlanner,
+  type RemoteImportPlan,
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfLayers,
@@ -357,6 +376,7 @@ export {
   remoteMupdfSignaturesKept,
   remoteMupdfOcr,
   remoteMupdfPageFills,
+  remoteMupdfPageRewrite,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   remoteMupdfWordBoxes,
@@ -589,6 +609,18 @@ export {
   captureCreateFormField,
   invertCreateFormField,
 } from './formFieldCreate.js';
+// THE THREE THAT CHANGE A FIELD THAT EXISTS (ADR-0193), on the barrel for the same check: `formFieldEdit.ts` reaches
+// `@cantoo/pdf-lib`, `formFieldCreate.ts`, the pure grammar in `fieldActions.ts` and `pageScope.ts`, and none of them
+// binds native code. Its reader, `formFieldRead.ts`, does and is behind `@monstera/kernel/engine`.
+export {
+  FieldEditRefusedError,
+  type FieldEditRefusal,
+  applyDuplicateFormField,
+  applyEditFormFields,
+  applySetTabOrder,
+  captureFieldEdit,
+  invertFieldEdit,
+} from './formFieldEdit.js';
 // ON THE BARREL for the same check: `ocrTextLayer.ts` reaches `@cantoo/pdf-lib` and `pdfLibSession.ts`, and its
 // recognition input is a TYPE import, erased — the engine that recognises is not loaded by writing the layer. The
 // byte-image cost measurement is its reader here (`scripts/perf/byteImageCost.mjs`).

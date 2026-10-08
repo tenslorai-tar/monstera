@@ -9,6 +9,7 @@ import { type DocId, asDocId, asDocVersion, ok } from '@monstera/shared';
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { DocumentKeys, NO_KEYS, viewKeysOf } from './documentKeys.js';
 import { useDocumentView } from './useDocumentView.js';
 
 /**
@@ -32,8 +33,9 @@ import { useDocumentView } from './useDocumentView.js';
 vi.mock('./documentView.js', () => ({
   // THE STUB IS DRIVEN BY THE PASSWORD IT IS GIVEN, which is what lets the
   // cases below distinguish *asked and was told yes* from *asked nobody*.
+  // A STALE KEY IS REFUSED like no key at all, the parser's answer to a password that no longer opens the document.
   openDocumentView: (options: { readonly docId: string; readonly password?: string }) =>
-    options.docId !== UNENCRYPTED && options.password === undefined
+    options.docId !== UNENCRYPTED && (options.password === undefined || options.password === STALE)
       ? Promise.reject(new StubPasswordError())
       : Promise.resolve({ document: { numPages: 1 }, close: () => Promise.resolve() }),
   needsPasswordToParse: (cause: unknown) => cause instanceof StubPasswordError,
@@ -55,6 +57,9 @@ class StubPasswordError extends Error {
 
 /** The one id the stub parser opens with no password — the control's fixture. */
 const UNENCRYPTED = 'doc-with-no-encrypt-dictionary';
+
+/** A key the stub parser refuses: one the document stood with before an undo of a protect. */
+const STALE = 'a-key-this-version-does-not-open';
 
 const DOC = {
   docId: asDocId('doc-under-test'),
@@ -108,7 +113,7 @@ describe('useDocumentView — an encrypted document', () => {
     // about a caller that is not: `App.tsx` binds this through `useCallback`.
     const prompt = (): Promise<string> => Promise.resolve('reader-secret');
     const { result } = renderHook(() =>
-      useDocumentView(client, DOC, ignoreVersion, prompt),
+      useDocumentView(client, DOC, ignoreVersion, prompt, NO_KEYS),
     );
 
     await waitFor(() => {
@@ -132,7 +137,7 @@ describe('useDocumentView — an encrypted document', () => {
       retries.push(retry);
       return Promise.resolve(retry ? 'reader-secret' : 'wrong');
     };
-    const { result } = renderHook(() => useDocumentView(client, DOC, ignoreVersion, prompt));
+    const { result } = renderHook(() => useDocumentView(client, DOC, ignoreVersion, prompt, NO_KEYS));
 
     await waitFor(() => {
       expect(result.current.ready).toBeDefined();
@@ -149,7 +154,7 @@ describe('useDocumentView — an encrypted document', () => {
 
     const prompt = (retry: boolean): Promise<string | undefined> =>
       Promise.resolve(retry ? undefined : 'wrong');
-    const { result } = renderHook(() => useDocumentView(client, DOC, ignoreVersion, prompt));
+    const { result } = renderHook(() => useDocumentView(client, DOC, ignoreVersion, prompt, NO_KEYS));
 
     await waitFor(() => {
       expect(result.current.failed).toBe(true);
@@ -175,7 +180,7 @@ describe('useDocumentView — an encrypted document', () => {
     const prompt = vi.fn(() => Promise.resolve('never-needed'));
 
     const { result } = renderHook(() =>
-      useDocumentView(client, { ...DOC, docId: asDocId(UNENCRYPTED) }, ignoreVersion, prompt),
+      useDocumentView(client, { ...DOC, docId: asDocId(UNENCRYPTED) }, ignoreVersion, prompt, NO_KEYS),
     );
 
     await waitFor(() => {
@@ -183,5 +188,77 @@ describe('useDocumentView — an encrypted document', () => {
     });
     expect(prompt).not.toHaveBeenCalled();
     expect(unlocks).toStrictEqual([]);
+  });
+});
+
+/**
+ * A new version of a document opened with its password reparses with what the person typed, without asking
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 7).
+ * Each case asserts the calls not made, the prompt and main's unlock, since a hook that asked again would also end
+ * with a view.
+ */
+describe('useDocumentView — the keys a person already typed', () => {
+  it('opens with a HELD key, asking neither the person nor main', async () => {
+    const { client, unlocks } = unlockingClient([]);
+    const documentKeys = new DocumentKeys();
+    documentKeys.hold(DOC.docId, 'reader-secret');
+    const keys = viewKeysOf(documentKeys, DOC.docId);
+    const prompt = vi.fn(() => Promise.resolve('never-needed'));
+
+    const { result } = renderHook(() => useDocumentView(client, DOC, ignoreVersion, prompt, keys));
+
+    await waitFor(() => {
+      expect(result.current.ready).toBeDefined();
+    });
+    expect(prompt).not.toHaveBeenCalled();
+    expect(unlocks).toStrictEqual([]);
+  });
+
+  it('tries PAST a key the parser refuses, to an older one that opens it', async () => {
+    // NEWEST FIRST, and the newest is stale: what an undo of a protect leaves.
+    const { client, unlocks } = unlockingClient([]);
+    const documentKeys = new DocumentKeys();
+    documentKeys.hold(DOC.docId, 'reader-secret');
+    documentKeys.hold(DOC.docId, STALE);
+    const keys = viewKeysOf(documentKeys, DOC.docId);
+    const prompt = vi.fn(() => Promise.resolve('never-needed'));
+
+    const { result } = renderHook(() => useDocumentView(client, DOC, ignoreVersion, prompt, keys));
+
+    await waitFor(() => {
+      expect(result.current.ready).toBeDefined();
+    });
+    expect(prompt).not.toHaveBeenCalled();
+    expect(unlocks).toStrictEqual([]);
+  });
+
+  it('KEEPS a password the person typed and main accepted, for the next version', async () => {
+    const { client } = unlockingClient([{ kind: 'unlocked', access: 2 }]);
+    const documentKeys = new DocumentKeys();
+    const keys = viewKeysOf(documentKeys, DOC.docId);
+    const prompt = (): Promise<string> => Promise.resolve('reader-secret');
+
+    const { result } = renderHook(() => useDocumentView(client, DOC, ignoreVersion, prompt, keys));
+
+    await waitFor(() => {
+      expect(result.current.ready).toBeDefined();
+    });
+    expect(documentKeys.keysOf(DOC.docId).map((key) => key.reveal())).toStrictEqual(['reader-secret']);
+  });
+
+  it('CONTROL: a held key that no longer opens it, and nothing older, ASKS', async () => {
+    const { client, unlocks } = unlockingClient([{ kind: 'unlocked', access: 2 }]);
+    const documentKeys = new DocumentKeys();
+    documentKeys.hold(DOC.docId, STALE);
+    const keys = viewKeysOf(documentKeys, DOC.docId);
+    const prompt = vi.fn(() => Promise.resolve('reader-secret'));
+
+    const { result } = renderHook(() => useDocumentView(client, DOC, ignoreVersion, prompt, keys));
+
+    await waitFor(() => {
+      expect(result.current.ready).toBeDefined();
+    });
+    expect(prompt).toHaveBeenCalledTimes(1);
+    expect(unlocks).toStrictEqual([{ docId: DOC.docId, password: 'reader-secret' }]);
   });
 });

@@ -3,11 +3,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inspect } from 'node:util';
 
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFString } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString } from '@cantoo/pdf-lib';
 import forge from 'node-forge';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { type Command, type CommandOfKind, NETWORK_OCR_ENGINES, type PageSet, outlineOpCodes } from '@monstera/contract';
+import {
+  type Command,
+  type CommandOfKind,
+  type FormFieldHandle,
+  NETWORK_OCR_ENGINES,
+  type PageSet,
+  outlineOpCodes,
+} from '@monstera/contract';
 import { type DocVersion, asDocVersion } from '@monstera/shared';
 
 import {
@@ -27,11 +34,14 @@ import {
 } from './commandLog.js';
 import type { CommandWriter, DocumentContext, HeldFile } from './documentService.js';
 import { serialiseIntoFile } from './checkpointFile.js';
-import type { ByteImage, MupdfSession } from './engineSeam.js';
+import { applySetDocumentProtection, protectionOptions } from './documentProtection.js';
+import { type ByteImage, type MupdfSession, NO_BOXES } from './engineSeam.js';
 import { localMupdfWriter, localSignpdfWriter } from './localEngine.js';
 import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
 import * as mupdf from './mupdfRaw.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
+import { buildFormTestPdf } from './formTestForm.js';
+import { readFormFields } from './formFields.js';
 import { applyAddAnnotation, readAnnotations } from './pageAnnotations.js';
 import { localPdfLibWriter } from './localEngine.js';
 import { shownOn } from './shownText.js';
@@ -345,6 +355,9 @@ const noByteImageExpected: CommandInputs = {
   },
   ocr: () => {
     throw new Error('this case runs a command declaring reads: none and must not recognise');
+  },
+  pageRuns: () => {
+    throw new Error('this case runs a command declaring reads: none and must not read a page’s runs');
   },
   // EMPTY RATHER THAN THROWING, and it is the one member here that cannot use
   // the trick above. `sources` is data the bus indexes, not a function it
@@ -1540,7 +1553,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
         ...localMupdfWriter,
         apply: ({ command }) => {
           applied.push(command);
-          return Promise.resolve();
+          return Promise.resolve(NO_BOXES);
         },
       },
     });
@@ -1560,6 +1573,19 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
       expect(entry.kind).toBe('invertible');
       expect(context.log.entries).toHaveLength(1);
       expect(context.bumps()).toBe(1);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('hands a LIVE-SESSION apply’s boxes to the caller, as it hands a byte-image one’s (ADR-0177 Decision 7)', async () => {
+    // THE ANSWER IS THE APPLY'S, not a constant: two characters on two pages, which no other path produces.
+    const drawn = { boxed: [{ character: '\u{378}', page: 0 }, { character: '\u{379}', page: 2 }], more: 3 };
+    const bus = new CommandBus({ mupdf: { ...localMupdfWriter, apply: () => Promise.resolve(drawn) } });
+    const session = await mupdfWriter.open(flat);
+    try {
+      const executed = await bus.execute({ mupdf: session }, contextStub(), rotateFirst, noByteImageExpected);
+      expect(executed.drawn).toStrictEqual(drawn);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -1636,7 +1662,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
         ...localMupdfWriter,
         apply: ({ command }) => {
           applied.push(command);
-          return Promise.resolve();
+          return Promise.resolve(NO_BOXES);
         },
       },
     });
@@ -1753,6 +1779,9 @@ describe('CommandBus and the reads axis', () => {
       ocr: () => {
         throw new Error('no command in this block declares reads: ocr');
       },
+      pageRuns: () => {
+        throw new Error('no command in this block declares reads: pageRuns');
+      },
       // EMPTY, for `noByteImageExpected`'s reason: every command in this block
       // declares `sources: 'none'`, and a map with an entry in it would be a
       // caller resolving a document nothing asked about.
@@ -1867,6 +1896,9 @@ describe('CommandBus and a parameterised pre-read', () => {
       ...host,
       outline: () => {
         throw new Error('no command in this block declares reads: outline');
+      },
+      pageRuns: () => {
+        throw new Error('no command in this block declares reads: pageRuns');
       },
       // ECHOES THE LANGUAGE IT WAS ASKED FOR, which is what a real reader does:
       // `RecognisedPage.language` is the model that read the page. A stub that
@@ -2467,94 +2499,294 @@ describe('CommandBus and a command whose intent is a password', () => {
     return `${JSON.stringify(value)}\n${inspect(value, { depth: Number.POSITIVE_INFINITY })}\n${String(value)}`;
   }
 
-  it('the entry keeps the kind alone, so neither password is in any serialisation of the log', async () => {
+  const again: CommandOfKind<'setDocumentProtection'> = {
+    kind: 'setDocumentProtection',
+    encryption: 'aes-256',
+    userPassword: 'the second protect’s password',
+  };
+
+  it('neither the command’s passwords nor a PRIOR carrying them is in any serialisation of the log', async () => {
+    // TWO PROTECTS, so the second entry's prior is the first one's terms, both passwords included: the shape the
+    // marker exists for (ADR-0171 Decision 8).
     const { bus } = recordingBus();
     const session = await mupdfWriter.open(flat);
-    const context = contextStub();
+    const context = contextStub(true);
     try {
-      await bus.execute({ mupdf: session }, context, protect, noByteImageExpected);
-      const entry = context.log.entries[0];
-      if (entry?.kind !== 'terminal') throw new Error('expected the protection’s terminal entry');
-      expect(entry.command).toStrictEqual({ kind: 'setDocumentProtection' });
+      await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      await bus.execute({ mupdf: session }, context, again, showingInputs(session));
+      const entries = context.log.entries;
+      expect(entries.map((entry) => entry.kind)).toStrictEqual(['invertible', 'invertible']);
+      for (const entry of entries) {
+        expect(entry.command).toStrictEqual({ kind: 'setDocumentProtection' });
+        if (entry.kind === 'invertible') expect(entry.inverse).toStrictEqual({ held: true });
+      }
 
-      const written = everySerialisation(context.log.entries);
+      const written = everySerialisation(entries);
       expect(written).not.toContain(USER);
       expect(written).not.toContain(OWNER);
-      // POSITIVE CONTROL: the same serialisation of the command itself carries both, so the scan above can see them.
-      const command = everySerialisation([protect]);
-      expect([command.includes(USER), command.includes(OWNER)]).toStrictEqual([true, true]);
-      // AND THE PROTECTION WAS APPLIED: the bytes open with the user password and not without it.
-      expect(await accessOf(session)).toStrictEqual({ none: 0, user: 2 });
+      // POSITIVE CONTROL: the same serialisation of what the prior is made of carries both, so the scan can see them.
+      const terms = everySerialisation([protectionOptions(protect)]);
+      expect([terms.includes(USER), terms.includes(OWNER)]).toStrictEqual([true, true]);
     } finally {
       await mupdfWriter.close(session);
     }
   });
 
-  it('redo re-runs the WHOLE command from the held table, and protects a session that was not', async () => {
+  it('takes NO checkpoint, and the window’s image is the document as protected', async () => {
+    const { bus } = recordingBus();
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub(true);
+    try {
+      await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      expect(context.log.checkpointPaths()).toStrictEqual(new Set());
+      const image = context.images().at(-1);
+      if (image === undefined) throw new Error('expected the protect to draw');
+      const document = mupdf.PDFDocument.openDocument(image, 'application/pdf');
+      try {
+        expect(document.authenticatePassword('')).toBe(0);
+      } finally {
+        document.destroy();
+      }
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: a document carrying its OWN encryption takes the checkpoint instead, and it is encrypted', async () => {
+    // The capture refuses for it (`documentProtection.ts`), so the same bus takes the terminal path: without this,
+    // the case above would pass for a bus that never checkpoints anything.
+    const maker = await mupdfWriter.open(flat);
+    await applySetDocumentProtection(maker, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: 'own' });
+    const encrypted = await mupdfWriter.serialise(maker);
+    await mupdfWriter.close(maker);
+
+    const { bus } = recordingBus();
+    const session = await mupdfWriter.open(encrypted, 'own');
+    const context = contextStub(true);
+    try {
+      await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      const entry = context.log.entries[0];
+      if (entry?.kind !== 'terminal') throw new Error('expected a terminal entry');
+      const checkpoint = new Uint8Array(await readFile(entry.checkpoint.path));
+      const document = mupdf.PDFDocument.openDocument(checkpoint, 'application/pdf');
+      try {
+        // THE FILE'S OWN PASSWORD opens it, and nothing else does: it is the document as it stood, never readable.
+        expect([document.authenticatePassword(''), document.authenticatePassword('own') > 0]).toStrictEqual([0, true]);
+      } finally {
+        document.destroy();
+      }
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('undo restores the prior from the held table: a second protect undone needs the FIRST password again', async () => {
+    const { bus } = recordingBus();
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub(true);
+    try {
+      await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      await bus.execute({ mupdf: session }, context, again, showingInputs(session));
+      await bus.undo({ mupdf: session }, context, restoreStub().restore, showingInputs(session));
+      expect(await accessOf(session)).toStrictEqual({ none: 0, user: 2 });
+
+      await bus.undo({ mupdf: session }, context, restoreStub().restore, showingInputs(session));
+      // AND THE FIRST UNDO LEAVES IT AS IT WAS: no password at all.
+      expect((await accessOf(session)).none).toBe(1);
+      expect(context.log.checkpointPaths()).toStrictEqual(new Set());
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('redo re-runs the WHOLE command from the held table, and protects the session again', async () => {
     const { bus, applied } = recordingBus();
     const session = await mupdfWriter.open(flat);
-    const context = contextStub();
-    // THE SESSION AFTER THE UNDO, as the restore rebuilds it from the checkpoint: the document before the protect.
-    const restored = await mupdfWriter.open(flat);
+    const context = contextStub(true);
     try {
-      await bus.execute({ mupdf: session }, context, protect, noByteImageExpected);
-      await bus.undo({ mupdf: session }, context, restoreStub().restore, noByteImageExpected);
-      // CONTROL: the restored session is unprotected before the redo, so the redo is what protects it.
-      expect((await accessOf(restored)).none).toBe(1);
+      await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      await bus.undo({ mupdf: session }, context, restoreStub().restore, showingInputs(session));
+      // CONTROL: the session is unprotected before the redo, so the redo is what protects it.
+      expect((await accessOf(session)).none).toBe(1);
 
-      await bus.redo({ mupdf: restored }, context, noByteImageExpected);
+      await bus.redo({ mupdf: session }, context, showingInputs(session));
 
       // THE DECISION: the redo's apply was handed the command whole, passwords included.
       expect(applied).toStrictEqual([protect, protect]);
-      expect(await accessOf(restored)).toStrictEqual({ none: 0, user: 2 });
+      expect(await accessOf(session)).toStrictEqual({ none: 0, user: 2 });
       expect(context.log.canRedo).toBe(false);
     } finally {
       await mupdfWriter.close(session);
-      await mupdfWriter.close(restored);
     }
   });
 
-  it('a REPLAY past the image (ADR-0115) re-applies the held command, so a rebuilt session is protected', async () => {
-    const { bus, applied } = recordingBus();
-    const session = await mupdfWriter.open(flat);
-    const context = contextStub();
-    const rebuilt = await mupdfWriter.open(flat);
-    try {
-      await bus.execute({ mupdf: session }, context, protect, noByteImageExpected);
-      // NOTHING DRAWN, so the image never took it and the entry is past the base.
-      expect(context.log.pastImage).toHaveLength(1);
-
-      expect(await bus.replayPastImage({ mupdf: rebuilt }, context, noByteImageExpected)).toBe(1);
-
-      expect(applied).toStrictEqual([protect, protect]);
-      expect(await accessOf(rebuilt)).toStrictEqual({ none: 0, user: 2 });
-    } finally {
-      await mupdfWriter.close(session);
-      await mupdfWriter.close(rebuilt);
-    }
-  });
-
-  it('CONTROL: the held table is the ONLY source, so a bus that holds nothing for the entry refuses and applies nothing', async () => {
-    // A SECOND BUS over the same log is a bus whose table never saw the entry: the state a redo that read the entry's
-    // own command would sail through, re-applying the kind alone, which is no command at all.
+  it('CONTROL: the held table is the ONLY source, so a bus that holds nothing refuses to undo or redo the entry', async () => {
+    // A SECOND BUS over the same log is a bus whose table never saw the entry: the state an undo that read the
+    // entry's marker, or a redo that read its kind, would sail through, restoring or re-applying nothing.
     const { bus } = recordingBus();
     const stranger = recordingBus();
     const session = await mupdfWriter.open(flat);
-    const context = contextStub();
-    const restored = await mupdfWriter.open(flat);
+    const context = contextStub(true);
     try {
-      await bus.execute({ mupdf: session }, context, protect, noByteImageExpected);
-      await bus.undo({ mupdf: session }, context, restoreStub().restore, noByteImageExpected);
+      await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      await expect(
+        stranger.bus.undo({ mupdf: session }, context, restoreStub().restore, showingInputs(session)),
+      ).rejects.toThrow(/none is held for this entry/u);
+      expect(context.log.canUndo).toBe(true);
+      expect((await accessOf(session)).none).toBe(0);
 
-      await expect(stranger.bus.redo({ mupdf: restored }, context, noByteImageExpected)).rejects.toThrow(
+      await bus.undo({ mupdf: session }, context, restoreStub().restore, showingInputs(session));
+      await expect(stranger.bus.redo({ mupdf: session }, context, showingInputs(session))).rejects.toThrow(
         /none is held for this entry/u,
       );
       expect(stranger.applied).toStrictEqual([]);
       expect(context.log.canRedo).toBe(true);
-      expect((await accessOf(restored)).none).toBe(1);
+      expect((await accessOf(session)).none).toBe(1);
     } finally {
       await mupdfWriter.close(session);
-      await mupdfWriter.close(restored);
     }
+  });
+
+  it('resealCopies offers every held file, and the log counts each rewritten one at its new length', async () => {
+    const { bus } = recordingBus();
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub(true);
+    try {
+      await bus.execute({ mupdf: session }, context, { kind: 'deletePages', pages: [1] }, showingInputs(session));
+      const [path] = [...context.log.checkpointPaths()];
+      if (path === undefined) throw new Error('expected a checkpoint');
+      const offered: string[] = [];
+      const seal = (each: string): Promise<number> => {
+        offered.push(each);
+        return Promise.resolve(7);
+      };
+      expect(await bus.resealCopies(context, seal)).toStrictEqual({ rewritten: 1, unsealed: [] });
+      expect(offered).toStrictEqual([path]);
+      expect(context.log.retainedBytes()).toBe(7);
+      // CONTROL: a file `seal` left keeps the length it had, so the case above is the rewrite and not the walk.
+      const before = context.log.retainedBytes();
+      expect(await bus.resealCopies(context, () => Promise.resolve(undefined))).toStrictEqual({ rewritten: 0, unsealed: [] });
+      expect(context.log.retainedBytes()).toBe(before);
+      // A FILE `seal` COULD NOT WRITE is answered by its path and counts as no rewrite (ADR-0178): the length it
+      // carried does not move, because an unsealed copy is not a resealed one. The distinct `'unsealed'` is why — a
+      // seal that returned `undefined` for a failure would leave this copy counted as left and named to nobody.
+      expect(await bus.resealCopies(context, () => Promise.resolve('unsealed'))).toStrictEqual({ rewritten: 0, unsealed: [path] });
+      expect(context.log.retainedBytes()).toBe(before);
+      // AND A PATH THE LOG DOES NOT HOLD is refused rather than counted.
+      expect(() => {
+        context.mutableLog.resealed('/nowhere.pdf', 3);
+      }).toThrow(/one this log holds/u);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('protectOf answers a protect entry’s held command whole, and nothing for any other entry', async () => {
+    const { bus } = recordingBus();
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub(true);
+    try {
+      const { entry } = await bus.execute({ mupdf: session }, context, protect, showingInputs(session));
+      expect(bus.protectOf(entry)).toStrictEqual(protect);
+      const rotated = await bus.execute({ mupdf: session }, context, rotateFirst, showingInputs(session));
+      expect(bus.protectOf(rotated.entry)).toBeUndefined();
+      // CONTROL: another bus holds nothing for the same entry.
+      expect(recordingBus().bus.protectOf(entry)).toBeUndefined();
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+describe('a form-field change is ONE undo step', () => {
+  /** The tooltip, required flag and name of every field, as a second library reads the held bytes. */
+  async function summary(image: ByteImage): Promise<readonly string[]> {
+    const document = await PDFDocument.load(image);
+    return document
+      .getForm()
+      .getFields()
+      .map((field) => {
+        const tip = field.acroField.dict.lookup(PDFName.of('TU'));
+        return `${field.getName()}|${tip instanceof PDFString || tip instanceof PDFHexString ? tip.decodeText() : ''}|${String(field.isRequired())}`;
+      })
+      .sort();
+  }
+
+  /**
+   * One real execution of a command on the held form, through the bus, as the application runs it. The session is
+   * opened on what the host model holds NOW, because the model stands for a host that rebuilds its session after each
+   * command (`adopt`) and a session opened once would be the document as it was first read.
+   */
+  async function run(
+    bus: CommandBus,
+    context: ReturnType<typeof contextStub>,
+    inputs: CommandInputs & { readonly current: () => Promise<ByteImage> },
+    build: (version: DocVersion) => Command,
+  ): Promise<void> {
+    const session = await mupdfWriter.open(await inputs.current());
+    try {
+      await bus.execute({ mupdf: session }, context, build(context.version), inputs);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  }
+
+  it('undoes exactly the last command, whether it changed one property, several fields or copied a field to pages', async () => {
+    const form = await buildFormTestPdf();
+    const host = hostModel(form);
+    const inputs = { ...noByteImageExpected, ...host };
+    const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
+    const context = contextStub(true);
+    const session = await mupdfWriter.open(form);
+    let handles: { readonly email: FormFieldHandle; readonly phone: FormFieldHandle };
+    try {
+      const { fields } = await readFormFields(session);
+      const email = fields.find((field) => field.name === 'email');
+      const phone = fields.find((field) => field.name === 'phone');
+      if (email === undefined || phone === undefined) throw new Error('the fixture has no email or phone');
+      handles = { email: { page: email.page, index: email.index, name: 'email' }, phone: { page: phone.page, index: phone.index, name: 'phone' } };
+    } finally {
+      await mupdfWriter.close(session);
+    }
+    const states: (readonly string[])[] = [await summary(await host.current())];
+
+    // 1. ONE PROPERTY of one field.
+    await run(bus, context, inputs, (version) => ({
+      kind: 'editFormFields',
+      edits: [{ field: handles.email, set: { tooltip: 'first' } }],
+      version,
+    }));
+    states.push(await summary(await host.current()));
+    // 2. SEVERAL FIELDS in one command, which an align or a shared change sends.
+    await run(bus, context, inputs, (version) => ({
+      kind: 'editFormFields',
+      edits: [
+        { field: handles.email, set: { required: true } },
+        { field: handles.phone, set: { required: true, tooltip: 'second' } },
+      ],
+      version,
+    }));
+    states.push(await summary(await host.current()));
+    // 3. A COPY onto two pages, which adds two fields.
+    await run(bus, context, inputs, (version) => ({
+      kind: 'duplicateFormField',
+      field: handles.email,
+      pages: [1, 2],
+      version,
+    }));
+    states.push(await summary(await host.current()));
+
+    // CONTROL: the four states differ from each other, so an undo that went too far or not far enough reads as different.
+    expect(new Set(states.map((state) => state.join('\n'))).size).toBe(4);
+    for (let step = states.length - 2; step >= 0; step -= 1) {
+      const open = await mupdfWriter.open(await host.current());
+      try {
+        await bus.undo({ mupdf: open }, context, host.restore, inputs);
+      } finally {
+        await mupdfWriter.close(open);
+      }
+      expect(await summary(await host.current()), `after undoing back to state ${String(step)}`).toStrictEqual(states[step]);
+    }
+    expect(context.mutableLog.canUndo, 'nothing is left to undo once the document is as it was opened').toBe(false);
   });
 });

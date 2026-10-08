@@ -152,6 +152,9 @@ function start(stream: HostByteStream) {
     pageFills: () => {
       throw new Error('no case here reads page fills');
     },
+    pageRewrite: () => {
+      throw new Error('no case here reads which writer a page needs');
+    },
     wordBoxes: () => {
       throw new Error('no case here reads word boxes');
     },
@@ -193,6 +196,12 @@ function start(stream: HostByteStream) {
     },
     word: () => {
       throw new Error('no case here exports a Word file');
+    },
+    formImportPlan: () => {
+      throw new Error('a host body case must not plan an import');
+    },
+    fieldProperties: () => {
+      throw new Error('a host body case must not read field properties');
     },
     flatFields: () => {
       throw new Error('no case here proposes fields');

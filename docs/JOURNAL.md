@@ -892,6 +892,86 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-08 — Stage audit of `7d4f345d..8e65fd00` — findings WWWWWWW-1 to WWWWWWW-4
+
+13 commits, 105 files, the end of the 2026-10-08 run: item 14's Text section and eight handles, the baselines, the three reds
+on the branch and their repairs. Label W: the next after V, which TWO entries in this file now carry (this branch's
+VVVVVVV-1 to -7 and the forms branch's VVVVVVV-1 to -36, written on separate branches the same day); the labels are told
+apart by the range in each heading, and the next free label after this one is X, since the merge audit that follows takes it.
+One local reader, me, over the diffs. Nothing here was run in the installed build.
+
+**WWWWWWW-1** (medium, closed): four reds on the branch were my own earlier commits, each found by GitHub rather than here.
+(a) A whole-tree lint reported eight errors in my earlier files (`interface` over `type`, void returns, an unchecked
+append, an `async` method with no `await`); only the changed files had been linted, and the rule was *lint the tree once
+before pushing*. (b) The journal entry lacked its eleven checklist answers. (c) Three unit tests followed seams I had
+changed without running them (the shim's channel list, the merge answer's shape, the generated checklist). (d) The
+accessibility gate failed on Ubuntu for a cause in the product, WWWWWWW-2.
+
+**WWWWWWW-2** (medium, closed): the ribbon fold charged a group the width of its buttons and never its caption. Mechanism:
+`chrome` was measured as the group's width less its buttons row, and that row stretches to the group, so a caption wider than
+its buttons was inside the buttons and never charged. It had held because every group's buttons were at least as wide as its
+caption; ADR-0194's icon-only columns (Measure, Links) broke that. Reproduced on Windows by widening the letter spacing in the
+1.4.12 case (Comment overflowed its row by 25 px), fixed in `foldRow`'s `widthOf` (the wider of buttons and caption), proven
+by a case with its control in `ribbonFolding.test.ts`, and the widened run passes after. Restored to the standard spacing.
+
+**WWWWWWW-3** (low, open): main's own run for `8e65fd00` hung in the Ubuntu job's *Install a display server* step (apt) for
+over four hours on GitHub's runner, every other job green, and I cannot cancel or rerun it from this seat. The cause is outside
+this repository; the next push to main gets a fresh run.
+
+**WWWWWWW-4** (info, executed): this range's text-box formatting is bounded by what MuPDF's free-text appearance draws (three
+faces, no interior colour); the owner has since ruled that Monstera should write the appearance itself (Step 8 of the
+2026-10-08 night run, its ADR to come). Recorded so the limit is not read as a decision.
+
+### 1. Root cause or workaround?
+
+Each fix names its mechanism: WWWWWWW-1's lint and test reds are mine and each repaired at its rule; WWWWWWW-2 is the
+caption never being charged, not a looser overflow tolerance.
+
+### 2. Verified against the easy shape only?
+
+WWWWWWW-2 was the hard shape (a wider font, reproduced by wider spacing); the control case asserts the narrow-caption group
+is unchanged.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Nothing was turned from an assertion into a derivation. The 1.4.12 case was temporarily widened to reproduce and restored
+byte for byte from a copy; `git status` was clean for it.
+
+### 3. Would CI have caught it?
+
+It did: the accessibility gate caught WWWWWWW-2 on Ubuntu, which this Windows machine could only reproduce by widening the
+font. Main's own Ubuntu run is the one it cannot see (WWWWWWW-3).
+
+### 4. Are the proofs non-vacuous?
+
+The new fold case fails if the caption term is removed (it believes 35 px where 70 are drawn) and its control holds.
+
+### 4a. Resolution test before measuring?
+
+The overflow was measured at 25 px against a 1 px tolerance, and the same run reads 0 after the fix.
+
+### 4b. A search with a positive control?
+
+No search instrument arrived.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+The fold's groups are derived from the projection, as before; the caption is measured per group, not listed.
+
+### 5. Executed, or asserted?
+
+Executed: typecheck, whole-tree lint, the changed files' tests, the 1.4.12 case at two spacings, the full visual run, and the
+board for two shas. Asserted: nothing relied on.
+
+### 6. Architecture before the feature, or underneath it?
+
+No seam changed in this range beyond the select tool's side handles, which register into its existing placement and draw
+seams.
+
+### 7. Do the documents still match the code?
+
+`docs/FEATURES.md` rows for the run's items are not yet updated and are owed (the night run's Step 5.7 closes them).
+
 ## 2026-10-08 — Stage audit of `2056c7fa..7d4f345d` — findings VVVVVVV-1 to VVVVVVV-7
 
 33 commits, 197 files (`npm run audit:scope`), owed because the next commit would take the range past 200 files. Label V:
@@ -1311,6 +1391,570 @@ before this merge combined the histories.
 advances with this entry, to `83751d8b`.
 
 ---
+## 2026-10-07 — Stage audit of `f278ec74..a7c1f387` — findings VVVVVVV-1 to VVVVVVV-36
+
+70 commits on work/cloud-5-text-edit, ADR-0176's Type 3 writer through ADR-0188 (the Type 3 writer's faces, paragraphs and
+reflow, formatting, right-to-left and Arabic, scan covers, a Type 3 page moved and split), with ADR-0178 (a protect's
+unsealed copies) and the Delete page confirmation. **Written by the cloud session building the forms rebuild on top of
+that branch** (work/cloud-6-forms), because the forms commits cannot pass the pre-commit batch gate without it: the base
+alone is 188 files and the gate is 200. The forms commits themselves (`1a207ed0` onward) are NOT in this range and are
+for the next audit. Label V: U is the highest on main (`2056c7fa`) and on every branch.
+
+**How it was done, and what that is worth.** Four read-only readers took the range by subject (the Type 3 writer and its
+proofs; protect, Delete page and the paragraph model; the formatting commands and the editor's controls; right-to-left,
+Arabic, scan covers and the Type 3 move and split). Each applied the checklist to its commits and reported what it READ
+and what it RAN. **I re-read at their files, before recording them, VVVVVVV-1, -6, -7, -27 and -33 only;** the others are
+the readers' reads, recorded as reported and marked so. Almost nothing was run: one reader ran `textOperatorEdit.test.ts`
+(VVVVVVV-3), two ran test files that passed, and no native proof (`proof:pdfiumcommand`, `proof:type3edit`, the live host
+harnesses) was run, because they need PDFium, the shim and fonts, and the Windows ones cannot run here. No finding is
+closed in this commit: this session was asked not to touch text editing, so every one is **open** and is the local
+agent's or the owner's to take, with the mutation runs that would close the test findings.
+
+**VVVVVVV-1** (medium, open, checked): ADR-0177 still says the MuPDF host's live case "is owed with the build" and carries
+"Not measured, and owed before this ships: SSSSSSS-1", and that whether the MuPDF host is handed the installed folder
+"follows that finding's answer". `12e2adef` withdrew that reading (the hosts were given no fonts folder) and `77f588ef`
+hands both folders. The ADR has no correction, where ADR-0176 got one in `f275c712`. Half of a compound claim is dead.
+
+**VVVVVVV-2** (medium, process, read): `7e927345` and `9cfa3eeb` wrote a hypothesis ("misreads what it sets") into case
+details and commit text, and cases 18 and 19 were added to chase it; `12e2adef` says plainly that neither was measured.
+The mechanism was the harness's environment lacking `MONSTERA_FONTS_DIRECTORY`, found on the third Windows run. B1 said
+investigate first.
+
+**VVVVVVV-3** (low-medium, open, run): three of `textOperatorEdit.test.ts`' eleven cases throw ("no readable font face in
+`.tools/fonts/...`, ENOENT") where the bundled fonts are not provisioned, instead of reporting that they could not look.
+Red on a cold machine, green on a provisioned one; whether CI provisions before vitest was not read.
+
+**VVVVVVV-4** (low, open, read): `perfBudget.proof.mjs`' R29 cases assert the classifier lands in `failures` or
+`unasserted`; nothing asserts the exit that reddens the gate, so deleting it leaves both green. Exit code 2 is shared by
+*this platform cannot* and a usage error.
+
+**VVVVVVV-5** (low, open, read): `textOperatorEdit.ts` runs `editOperators` twice when fonts are bound, and no case
+asserts that an earlier refusal wins over `needs-a-face`.
+
+**VVVVVVV-6** (high, open, checked): a REDONE protect discards the result of `#sealPlaintextCopies`
+(`documentCommands.ts`, in `redo`) and answers `unsealedCopies: []` under a comment that says redo seals nothing, two lines
+below the call that seals. Since `trySeal` turns every throw into `'unsealed'`, a redo whose copy cannot be sealed
+succeeds with no warning, the silent linger ADR-0178 rejects. Undo calls no seal, so its `[]` is right. No case covers redo.
+
+**VVVVVVV-7** (medium, open, checked): `unsealedCopies` is bounded by `heldCopiesSchema`, capped at `MAX_BACKUP_COPIES`
+(10), while the list holds checkpoint paths from `log.checkpointPaths()` as well as backups. More than ten names fails the
+answer's own schema and reports the applied protect as failed again. No case has more than ten.
+
+**VVVVVVV-8** (medium, open, read): ADR-0179 Decision 8 says a spacing, colour-space or render-mode loss is a refusal that
+names it, never a silent change. `d293fbb4` keeps the render mode and stroke, but a fill is still copied as RGB only (a CMYK
+or spot colour shifts) and `Tc`/`Tw` are dropped, silently; `setStrokeColour` and `setStrokeWidth` results are unchecked
+where `setRenderMode`'s is; the stroke branch (modes 1, 2, 5, 6) has no fixture. The FEATURES row says "stated limits",
+which contradicts the ADR's word.
+
+**VVVVVVV-9** (medium, open, read): FEATURES row 149 still says continuation lines take the last run's style and that the
+kernel diffs each line; ARCHITECTURE §3's row says the operator writer changes only from a line's first changed run to its
+end. ADR-0179 replaced both. Both are specification bodies, so the body is the thing to edit.
+
+**VVVVVVV-10** (low-medium, open, read): the paragraph model's headline proof (a letter typed into line 1 leaves the rest
+as the same objects) checks only that the last run stays where it was, which the line-by-line writer it replaced also does;
+the ADR's promised control, the old writer put back, has no case.
+
+**VVVVVVV-11** (low, open, read): caret-at-click is proven against a `caretPositionFromPoint` stub that returns a fixed node
+whatever the point; the gradient and stacking behaviours are unit-only. `renderedScreen.pw.ts` was not changed.
+
+**VVVVVVV-12** (low, open, read): `trySeal`'s `catch { return 'unsealed' }` reports a dead host and "another program holds
+the copy" the same and logs nothing.
+
+**VVVVVVV-13** (low, open, read): ADR-0179's proof bullet says `softEnds` calls `paragraphText`, which `4ef4f776` deleted;
+the translation join changed from `trimEnd() + ' '` to keeping every trailing space (`lineEdit.ts`), and no case pins it.
+
+**VVVVVVV-14** (low, open, read): the Q7 case in `textOperatorEdit.test.ts` changed its input from one over-wide word to 400
+words, so the sideways-overflow shape of "never refused" is no longer exercised, and the test does not say so.
+
+**VVVVVVV-15** (medium, open, read): the only un-bold path emits `{bold:false}` and `proof:pdfiumcommand` never sends
+`bold:false` or `underline:false`; its fixture has no bold word.
+
+**VVVVVVV-16** (medium, open, read): a net-zero gesture (bold on then off) leaves `data-fmt={"bold":false}` on a non-bold
+run, `isFormatted` is true for any mark, so the editor sends it and the kernel refuses "changed nothing". That is a
+person refused because of what they did to a document, against the owner's principle. No UI case.
+
+**VVVVVVV-17** (medium, open, read): the wire accepts and the UI emits italic, subscript, a `family` mark on a block,
+`firstIndent`, `spaceBefore`, `align:'right'` and a mark crossing runs, and none is exercised by a PDFium case; FEATURES
+says done.
+
+**VVVVVVV-18** (medium, open, read): the join proof sends `entry(upper, joinedWords), entry(lower, '')` with no marks on a
+fixture whose blocks share one style, where the UI sends the lower block's looks as marks (`styleMarks`, which has no
+family). The marks-on-join path is proven nowhere end to end, and `textBlockOps.ts`' "words and their looks both survive" is
+false across a family change.
+
+**VVVVVVV-19** (medium, open, read): `80fc922b`'s refused-click case ends on the editor still showing the words, which is
+also what deleting the `stuckRef` guard produces; the property is a call not made (`commits` stays one).
+
+**VVVVVVV-20** (medium, open, read): `7184de35` keeps Edit text on for "any other refusal... one page's", but
+`document.textBlocks` declares only `document-not-open`, `document-poisoned` and `engine-unavailable`, all document-wide, so
+a poisoned document leaves the mode on with every page saying "Other pages can".
+
+**VVVVVVV-21** (medium, open, read): the right-click menu departs from ARCHITECTURE §7 (context menus are derived from
+placements); the departure is only an ADR-0180 correction inside feature commit `7ec632f7`, and `docs/ARCHITECTURE.md` has
+no diff in it (B4 order).
+
+**VVVVVVV-22** (low-medium, open, read): FEATURES row 152's status cell says a Type 3 page does not move, add or split while
+its body says ADR-0188 makes it do all of them; and it marks Paste, which the ADR correction says is unmeasured, done.
+
+**VVVVVVV-23** (low, open, read): the `pdfiumCommand.proof.mjs` roster's prose ledger stops at 143 (the count is 222);
+`CONTROL: a width as wide as the block already was` accepts `changed nothing` or `wrote`, nearly every outcome.
+
+**VVVVVVV-24** (low, open, read): the preview's rotation (`placeTransform`, about the box centre) and the writer's
+(`placeObjects`, about the objects' bounds) are written twice with no rotated-then-scaled case naming both.
+
+**VVVVVVV-25** (low, open, read): a split moves only the second half down one pitch, so it can overlap the next block; the
+proof's fixture has nothing below.
+
+**VVVVVVV-26** (low, open, read): `blockMarkSetSchema` accepts an empty `set:{}` mark and the contract tests use it.
+
+**VVVVVVV-27** (medium, open, checked): `edit-text.md` line 27 says a Type 3 page's blocks can be joined and split; line 32
+still says a split on such a page is refused and changes nothing. `843c1aaf` rewrote one sentence. No UI refusal of a split
+on `rewrite === 'operators'` was found.
+
+**VVVVVVV-28** (medium, open, read): `copyMarks` (`pdfiumFfi.ts`) skips a mark whose name cannot be read, skips an array or
+dictionary parameter, and writes a NAME parameter back as a string, silently; ADR-0181 Decision 8 said an uncopyable
+parameter is named in a refusal, and `ae450152` reverses it. The proof covers a numeric MCID only; continuation lines repeat
+one MCID, which the specification expects to be unique. The owner's rule is preserve, never drop.
+
+**VVVVVVV-29** (low-medium, open, read): `lineDirection`'s comment says the majority is the same answer for the line as typed
+and as drawn; on a tie it falls back to the first strong letter, which differs, as ADR-0185 Decision 7 measured. A compound
+claim with the dead clause the one that matters.
+
+**VVVVVVV-30** (low, open, read): if the page-to-device mapping is degenerate the scan cover is a plain white rectangle,
+the patch ADR-0187 exists to prevent, and nothing reports it; the Recognise button calls `registry.get('document.ocr')` and
+runs it without its `when`.
+
+**VVVVVVV-31** (low, open, read): `joinRuns`' two new rules (opposite directions are two runs; a run's text is
+`logicalOfDrawn(run.drawn)`) have no unit test; only the native proof reaches them.
+
+**VVVVVVV-32** (low, open, read): proof controls that do not separate what they name: the left-to-right Hello case asserts
+the outcome a constant "Latin left" also gives; `type3Edit` case 9 passes on any refusal.
+
+**VVVVVVV-33** (low, open, checked): the ADR-0142 index row still says the host's bound on a page's runs is 43,400;
+`pdfiumChannels.ts` says 41,700, and ADR-0181's host-pipe change was recorded after the build, in `ae450152` (B4 order).
+
+**VVVVVVV-34** (low, open, read): `arabicForms.ts` ligates lam-alef only when the alef is the next code point, so lam, mark,
+alef is not ligated although the joining lookups skip marks.
+
+**VVVVVVV-35** (low, open, read): every "measured" reading of the Type 3 and scan work is PDFium 155.0.8044.0 on Linux and the
+product ships on Windows; no control says the two agree. The `type3edit` step requires its engines on Windows only.
+
+**VVVVVVV-36** (low, open, read): the case count is a literal written twice in `type3Edit.proof.mjs` (21, in the roster and
+in a `CASES.length` check) and moved by hand in `hostFileAnswersLive.mjs` (17 to 21 across five commits); each is an
+independent claim beside a list of names and so the safe direction, but two places keep it in step.
+
+### 1. Root cause or workaround?
+
+No workaround and no loosened check found. Mechanisms are stated and sound for `c6ed62e3` (the text device clips glyphs
+outside the page), `12e2adef` (the harness env lacked the fonts folder; fixed by taking the launcher's one answer),
+`1b40bb36` (a missing required `sources`), `7067efe4` (+6.4 MB from harfbuzzjs, measured), `6fcb9cea`, `80fc922b`, and
+`a7c1f387` (bidi moved out of `main`). The exceptions are VVVVVVV-2 (a hypothesis written before the measurement), -6 (a
+fix that is half for redo), -20 (a fix on a false premise) and -28.
+
+### 2. Verified against the easy shape only?
+
+Yes in several places: the protect cases never exceed ten names (VVVVVVV-7), the proof fixtures have no bold word, italic,
+family or different-family join (-15, -17, -18), the split fixture has nothing below it (-25), the OCR fixture covers
+render mode 3 only (-8), and every reading is Linux where the product is Windows (-35).
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+`7067efe4` moved the harfbuzz question into `proof:hostload`'s dynamic-import walk with a positive control and a reported
+mutation. The Q7 case's input changed from one word to 400 (VVVVVVV-14). The mark-order expectations flipped in `79d60cfc`,
+justified by ADR-0186. Nothing was stated as a weakening.
+
+### 3. Would CI have caught it?
+
+Read, not run: the vitest files run in the unit suite; `proof:type3edit` runs on both legs with engines required on Windows
+only (VVVVVVV-35); `hostFileAnswersLive` is Windows-only; `proof:pdfiumcommand` is registered (`ci.yml`). A red unit
+suite on a machine without fonts is VVVVVVV-3. The "Visual baselines" job will be red for the screens `2eae7fd4` and
+`6a868b89` changed, as the cloud rules expect.
+
+### 4. Are the proofs non-vacuous?
+
+Open cases that survive their own mutation by reading: VVVVVVV-4, -10, -19, -23, -31, -32. Cases reported good: the
+move, scale, rotate and width proofs carry named controls; the scan cases carry premises and an unmoved neighbour. None of
+the mutation claims in the commit messages was re-run.
+
+### 4a. Has every instrument passed a resolution test?
+
+The proof's tolerances read sound (move 0.05, rotate 1.5, scale 0.05); the gradient premise (20 against `closeTo` 10)
+sits at its own threshold. Nothing else new in the range.
+
+### 4b. Does every search carry a positive control?
+
+`proof:hostload` gained its control in `7067efe4`; `wordAt`, `paragraphsOf` and `neighbourOf` are lookups with none, and no
+defect was found in them.
+
+### 4c. Does a count derive from the set it governs?
+
+The roster counts (129, 143, 157, 162, 176, 198, 222; `type3Edit` 21) are independent literals, which is the safe
+direction; the ledger comment lags (VVVVVVV-23, -36).
+
+### 5. Executed, or asserted?
+
+Asserted: every finding marked read, the commit messages' mutation and Windows run claims (run ids named in them), and
+all PDFium readings. Run: VVVVVVV-3 and two passing test files.
+
+### 6. Did architecture change before the feature?
+
+Yes for ADR-0177 to ADR-0188 (ADR commits precede their builds). Not for the right-click menu (VVVVVVV-21), for ADR-0181's
+host-pipe change (-33), or for ADR-0178's claimed §5 row, which `63106ddb` does not change (the ADR overstates, harmlessly).
+
+### 7. Do the documents still match the code?
+
+No, in the places named: VVVVVVV-1, -9, -13, -22, -27, -29, -33.
+
+## 2026-10-06 — Stage audit of `389cc010..f278ec74` — findings SSSSSSS-1 to SSSSSSS-22
+
+53 commits, 192 files, all work/cloud-5-text-edit: ADR-0172's corrections and the composers (P1.5), RRRRRRR-1's
+credential lift, ADR-0173 to ADR-0175 built (pieces, the box, Replace in pieces, Q7, the sibling, the run font in the
+editor), installed fonts in both hosts, and ADR-0176's Type 3 writer up to `editTextOperators`. Owed because the next
+commit (the page's writer on `document.textBlocks`) would take the range to 204 files. Label S: R is the highest on main
+and on every branch. Three readers took the modified proofs and instruments, the kernel and desktop tests, and the UI
+tests with the documents; I checked each finding below at its file at `f278ec74` before recording it. Closed findings are
+closed in this commit, each with its mutation run red where it is a test.
+
+**SSSSSSS-1** (medium, open, decided with the Windows reading): an edit or Replace that needs an installed face is
+refused by the contained PDFium host on Windows (run 37407876114, case 17), while the same edit outside the host saves
+(run 37412094234, 176 faces, 36 carrying 中) and the compose host reaches the same folder. `edit-text.md` and
+`find-and-replace.md` tell the person installed fonts are used; on Windows that is not yet true for these two. The
+instrument's variants (f3bf4bb6) read on f278ec74's run decide whether it is containment's, and the articles are
+corrected with that fix or with ADR-0172 Decision 2's correction, never with a wider grant.
+
+**SSSSSSS-2** (medium, closed): eight imports of a built module across five registered proofs were in none of their
+stale-build edges, among them `textOperators.js`, which `proof:pdfiumcommand` compares PDFium's runs against, and the
+built `schemas.js` enum `proof:ocrmodels` executes while its edges watched `.d.ts` files. Both lists are kept by hand
+beside the imports they describe and nothing compared them. `buildFreshness.proof.mjs` now checks every registered
+proof's imports by path against its edges, with a control that names an import when its edge is removed (mutation run
+red); the five lists are completed and `installedFaceEdit.mjs` takes `PDFIUM_COMMAND` instead of its own copy. Stated
+limit: bare `@monstera/...` specifiers are not read, since which file one reaches is the package map's answer.
+
+**SSSSSSS-3** (low, closed): `type3Correspondence.mjs`' positive control passed on zero objects and zero operators,
+the agreement an empty read produces. It now requires the page's text to be seen.
+
+**SSSSSSS-4** (low, closed): the Q7 rendered case's "the last line can be seen" read a point outside the window as the
+editor, since `undefined !== null`. It now requires an element.
+
+**SSSSSSS-5** (medium, closed): `operatorEdit.test.ts`' "refuses a byte changed outside the edit" flipped a byte inside a
+show operator and asserted only `ok: false`, so deleting the outside-byte check left it green through the operator
+comparison. It flips the page's `cm` and asserts the refusal's words (mutation run red).
+
+**SSSSSSS-6** (low, closed): `textOperatorEdit.test.ts`' refusal "naming its characters" asserted only the class. It
+asserts `zp`.
+
+**SSSSSSS-7** (low, closed): `runFont.test.ts` nudged by +2 to decline and +0.5 to accept, so any tolerance from 0.5 to 2
+passed. +1.25 and +0.75 now.
+
+**SSSSSSS-8** (low, closed): two name-record comparisons could compare absences: name 14 was never shown to exist on the
+face (`fontSubset.test.ts`), and two empty id sets were equal (`boxFont.test.ts`). Each asserts presence first.
+
+**SSSSSSS-9** (low, closed): `siblingCases`' doc comment sat above `pageRunsCases`' since fa252bf6, the inserted function
+taking it. Moved back. Two counts in prose stay as written: acaff560's message says seven cases where the roster went
+87 to 95, and `kernelLoad.proof.mjs` names three of the four font modules it forbids; the figures in code are right.
+
+**SSSSSSS-10** (medium, closed): the index row for ADR-0173 said the read-back reads by code point, which f70604fb
+withdrew, and carried neither later note; ADR-0176's row lacked both notes, including `engine/apply-file`, a new pinned
+exception to ADR-0138. Both rows now say what the ADRs do.
+
+**SSSSSSS-11** (low, closed): ARCHITECTURE's in-place editing row stated ADR-0176's per-page field and the renderer's
+choice as built. It now says what is built and what is owed, dated.
+
+**SSSSSSS-12** (low, closed): `find-and-replace.md` said an empty replacement deletes the word wherever it appears; the
+line rule refuses one with text after it on its line in another piece. Corrected.
+
+**SSSSSSS-13** (low, closed): `RunStyle`'s header in `pdfiumFfi.ts` still said the renderer always sets an editor in a
+family of the same kind, the half of a compound claim ADR-0175 ended. Corrected.
+
+**SSSSSSS-14** (medium, open): against the real library, the run-font cases never reach the check `runFont.ts` calls the
+decision, the program's glyph against what PDFium draws: the positive case asserts every character maps, and the
+control is refused earlier for not being embedded. That path is proven only on pure fixtures. Owed: an embedded subset
+whose cmap disagrees with PDFium's drawing, as a generated fixture.
+
+**SSSSSSS-15** (medium, open, stated in 7f17b295): the branch of `applyEditTextOperators` that puts the old `/Contents`
+back when MuPDF's own read-back fails after the write is reached by no case; both refusal cases stop before the write.
+
+**SSSSSSS-16** (medium, open): no fixture in `operatorEdit.test.ts` has a sibling the weight or face clause excludes
+(every built font is weight 400 named `Face`, and the print's two fonts agree), so either clause can be replaced by
+`true` and the file stays green.
+
+**SSSSSSS-17** (low, open): "breaks a long Thai paragraph between its words" checks only that no line starts with a
+mark, which a breaker splitting inside a word passes.
+
+**SSSSSSS-18** (low, open, owed with the Type 3 writer's boxes): ADR-0176 Decision 5 promises the box on a page MuPDF
+writes, and ADR-0174 and `CommandBus.#boxesIn` carry boxes for byte-image writers only. The step that draws a box on
+such a page amends ADR-0174 first (B4).
+
+**SSSSSSS-19** (low, open): ARCHITECTURE's count of MuPDF document-model reads says twenty-one; `coreChannels.test.ts`
+lists 28. It was six behind before this range and `engine/apply-file` did not reopen it.
+
+**SSSSSSS-20** (low, open, found in passing): the composition root clears only the geometry and text readers when its
+host ends or closes; the link, fill, word-box and other holders stay bound to a settled client. Read, not run.
+
+**SSSSSSS-21** (low, open, item 3): 7bb1d3ad changed two research scripts that `buildFreshness.proof.mjs` scans, and only
+Guards found it. `affectedProofs.mjs` follows imports, so a proof that scans a file it never imports is invisible to it;
+its header states the neighbouring limit (a proof that shells out) and not this one.
+
+**SSSSSSS-22** (low, open): seven small test gaps, each read: `cappedBoxes`' `more` term has no case with `more > 0`
+(documentation today, since the in-process engine answers 0); `remotePdfium.test.ts` asserts the input file's removal on
+success only; `sealCopy.test.ts` does not assert the owner-only copy's session is closed; a Markdown import is stubbed
+with `malformed-csv`, a reason it cannot produce; `BoxedCharactersBody.test.tsx`' edit-only sentence has no positive
+partner; a comment in `documentCommands.test.ts` names the wrong control; `editOnCopy`'s boxed-characters branch is
+reached by no case. And `installedFaceEdit.mjs` prints its MuPDF round trip's Latin control rather than asserting it.
+
+**Items.** 1: every fix in the range states its mechanism; none regenerates. 2: the hard shape that bit is the one item
+2 names, the contained host on Windows against Linux plain Node (SSSSSSS-1). 3: SSSSSSS-21. 4 and 4b: SSSSSSS-2 to -8,
+-14 to -16. 5: SSSSSSS-15 and -20 are read, not run. 6: every ADR and correction in the range landed before the code it
+governs (f7cf22da measured before Decisions 6 to 8 were built; e93b67f1 before 7f17b295). 7: SSSSSSS-10 to -13, -19.
+
+**Added 2026-10-06 06:50, after Guards refused 7e927345 on both legs (run 37421078524).** The paragraph above answered
+the items without the headings `unansweredAuditItems` reads, and left 2a, 4a and 4c unanswered, which is RRRR-1's shape
+again: a checklist folded into prose. The answers below are the record's; the paragraph above stays as it was written.
+
+### 1. Root cause or workaround?
+
+Every fix in the range states its mechanism and none regenerates: SSSSSSS-2's edges are now compared with the imports
+rather than completed once, and SSSSSSS-5 and -6 assert what only the correct path produces. No override and no loosened
+check.
+
+### 2. Verified against the easy shape only?
+
+Yes, once, and it is the open finding: the installed-faces edit was verified on Linux plain Node and failed in the
+contained PDFium host on Windows (SSSSSSS-1). The Type 3 writer was verified on the real Chromium print, not only on
+generated pages.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Yes, in the strengthening direction: `buildFreshness.proof.mjs` now derives each proof's needed edges from its imports
+by path, which can run everywhere it ran before. Its stated limit is bare package specifiers (SSSSSSS-2). Nothing moved
+from asserted to derived under a provisioning condition.
+
+### 3. Would CI have caught it?
+
+SSSSSSS-21: only Guards found the two research scripts `buildFreshness.proof.mjs` scans, because `affectedProofs.mjs`
+follows imports and that proof scans files it never imports. SSSSSSS-1 was found by CI's Windows leg and could not have
+been found here. Run evidence: f278ec74's runs 37416673753 and 37416673829.
+
+### 4. Are the proofs non-vacuous?
+
+SSSSSSS-5 to -8 were cases that their own mutation left green; each was rebuilt and its mutation run red. SSSSSSS-14 to
+-17 stay open as cases that cannot fail on the branch they name.
+
+### 4a. Has every instrument passed a resolution test?
+
+`installedFaceEdit.mjs` separates a saved edit from a refused one and names the boxed characters, which it did on
+Windows (176 faces, only U+0378 boxed); it prints its MuPDF round trip's Latin control rather than asserting it
+(SSSSSSS-22). `type3Correspondence.mjs` could not separate an empty read from agreement until SSSSSSS-3.
+
+### 4b. Does every search carry a positive control?
+
+`type3Correspondence.mjs`' control passed on zero objects (SSSSSSS-3, closed). The new edge-coverage case carries a
+control that names an import when its edge is removed (SSSSSSS-2).
+
+### 4c. Does a count derive from the set it governs?
+
+The `buildFreshness` call-site counts are literals beside the edges, an independent claim, and they moved by hand in
+6bf1531e. Nothing in this range derives a count from the set it counts.
+
+### 5. Executed, or asserted?
+
+Asserted, not run: SSSSSSS-15 (the restore branch after MuPDF's read-back) and SSSSSSS-20 (the composition root's
+readers left bound). Everything else recorded above was run at `f278ec74`.
+
+### 6. Did architecture change before the feature?
+
+Yes. ADR-0176 and its correction landed before the Type 3 writer's command (e93b67f1 before 7f17b295), and ADR-0173's
+to ADR-0175's decisions before their code. SSSSSSS-18 records the one amendment still owed before its step: ADR-0174
+carries boxes for byte-image writers only.
+
+### 7. Do the documents still match the code?
+
+SSSSSSS-10 to -13 were corrected in this commit; SSSSSSS-19 (a count in ARCHITECTURE) and SSSSSSS-1 (two help articles
+on Windows) stay open.
+
+## 2026-10-05 — Stage audit of `974df9f5..389cc010` — findings RRRRRRR-1 to RRRRRRR-19
+
+54 commits, 197 files, all work/cloud-5-text-edit: Part B Phase 0 (ADR-0169's read-back, step codes, Replace's line
+rule, the editor keeping the words), QQQQQQQ-8 and -9, ADR-0170's lint units, CR-DOC-11 and ADR-0171 with its addenda
+(the held password, the renderer's keys, the invertible protect, the sealed copies), and P1's first five units (the Linux
+PDFium pin, ADR-0172, the bundled fonts, HarfBuzz, the resolver). Owed because P1.5's commit would take the range to 235
+files. Label R: Q is the highest on main and on every branch, read from each branch's JOURNAL. Four readers took a
+quarter each through `git show`; every finding below was checked at its file at `389cc010` by me before it was recorded,
+and one of theirs was not taken (named under item 7). Behaviour findings are *read* where no run was made.
+
+**RRRRRRR-1** (high, open, fixed next): a document's password reaches files on disk through the hosts' file routes,
+against ADR-0171's *never written to disk*. Two shapes, found by two readers separately. PDFium's commands take their
+params from a file (`commandRoute: 'file'`, `pdfiumChannels.ts`), and since `e9b7fbed` those params spread
+`byteImageWire.read`, which carries the key, so every PDFium edit, its capture, its undo and its redo of a document opened
+with its password writes the password as JSON into the session's snapshot directory for the length of the call
+(`client.ts` `invoke`, `hostFileAnswers.ts` `put`); and since `1fe86407` a protect's captured prior carries the earlier
+protect's terms, passwords included, which MuPDF's host answers through a file in its output directory and the undo
+sends back through a params file. Each file is removed with a plain `rm` when the call ends, and survives a crash
+between. The comment at `capturedPriorSchema` saying the terms cross *as the command's own did* is false: the command
+crosses in the frame. Nothing saw it because every password case runs in process, where no transport file exists, and
+the Decision 6 scan (`67b266b4`) reads the harness's own folder after close. ADR-0171's own addendum said the key is
+revealed only where a frame is written; the route made that untrue. Read, both shapes.
+
+**RRRRRRR-2** (medium, closed in this commit): three help articles still said Monstera does not keep a password and
+that undoing a second protect may be refused (`open-a-protected-pdf.md`, `password-and-permissions.md`,
+`undo-and-redo.md`), false since `433f665f`, `1fe86407` and `99ce4c2a`. Each says what is held and until when.
+
+**RRRRRRR-3** (medium, open, corrected next, B4): the resolver gives a character another face carries to that face when
+no face carries the whole word (`fontResolver.ts`, `389cc010`), against ADR-0172 Decision 1's *a word is never split
+between two faces except by Decision 8* and the module's own header; its commit deferred the ADR correction to the end
+of the phase, which is the architecture changing after the code. And the licence rule `0ab44edf` built takes the least
+restrictive of the fsType bits, so a face marked preview-and-print and editable is subset, where the ADR's Decision 3
+says preview-and-print is skipped. Both go into ADR-0172's correction before P1.5's composers, which build on them, land.
+
+**RRRRRRR-4** (medium, closed by the next commit): `fontFaces.ts` and ADR-0172 said `proof:kernelload` keeps HarfBuzz
+out of `main`, and the proof named none of the font modules, so exporting `fontFaces` from the barrel passed it
+(`0ab44edf`). P1.5's commit adds the font and shaping modules to it with a control each.
+
+**RRRRRRR-5** (medium, open, the owner's): the page context menu's *Delete page* deletes every ticked page in the grid
+without asking (`documentCommands.ts` `deletePageCommand`), where `202138a7` made the Delete key ask first for CR-COR-06.
+The ruling's class is any delete of the ticked set; whether the menu item is in it is the owner's to say.
+
+**RRRRRRR-6** (medium-low, open): an undo or redo whose read-back refuses at `text-not-writable` reaches the person as
+*Something went wrong*. `7664bc20` declared the code on `document.undo` and `redo`, and PDFium's host answers its
+invert's errors through `refusedBy`, which knows only `EditRefusedError`, so the code becomes `engine-refused`; the test
+stubs `DocumentCommands` to throw it, the gap between the pair's two halves. Nothing is lost, since the undo is refused
+either way. The channel comment *on the apply only, capture and invert cannot produce it* is half true since `361684e2`.
+
+**RRRRRRR-7** (medium-low, open): a protect retakes the Recent picture after it answers (`void this.#recentPicture
+.retake(...)`), where ADR-0171 Decision 8 says before, and the case stubs `retake` as a recorder, so the order is
+unasserted. Sealing also runs for a protect that removes encryption, rewriting every checkpoint and backup by a full save
+that protects nothing and drops a signed backup's incremental structure; and a sealing failure after the protect applied
+is reported as the command failing (`32b365d3`). Read.
+
+*Correction, 2026-10-05, the same night:* RRRRRRR-7's first claim is wrong and was recorded on a reader's word I should
+have run down. `retake` deletes the old picture SYNCHRONOUSLY, at its first line, before its first `await`, so the
+`void` call removes it before the protect returns; only the new picture is taken afterwards, and only where the
+document opens with no password. The ordering Decision 8 asks for holds. The sealing pass for a protect that removes
+encryption is real and is closed (`sealCopy` seals nothing for one); a sealing failure reported as the command failing
+is still open.
+
+**RRRRRRR-8** (medium-low, recorded): `recycle` releases a document's sessions before a reopen that can be refused
+(`433f665f`), so a reopen refused for its key leaves a password document sessionless. The one reachable shape, a protect
+with a new password then a checkpoint undo, was closed by `99ce4c2a`; the order stays, by design and documented.
+
+**RRRRRRR-9** (low, closed in this commit): two doc blocks above the wrong declaration, `pdfiumWriter`'s over `onImage`
+(`e9b7fbed`, whose *`WriterSession['pdfium']` is a `ByteImage`* the same commit made false) and `PROTECTION_TERMS_MAX`'s
+under `capturedPriorSchema`'s (`1fe86407`); and `TextLayer.tsx` saying *no prediction that held* where every prediction
+held (`b65a5e63`).
+
+**RRRRRRR-10** (low, closed in this commit): three ADR corrections without their index rows: ADR-0164's second
+(`9b210b06`), ADR-0171's of `ffb90b6a` and of `d8045694`. Recorded, not edited: `7006bd4b` inserted a paragraph into
+ADR-0169's already committed owner's answer section rather than appending a dated one, and ADR-0171's first addendum says
+an *optional* password where `e9b7fbed` built it required and nullable, which `261cecc4`'s correction did not take back.
+
+**RRRRRRR-11** (low, closed in this commit): `pdfiumCommand.proof.mjs`' removal case asserted `includes('WID')`, which the
+page's two whole `WIDGET` lines satisfy whichever object of the split pair went (`73c6d9d5`). It asserts `WID` as a word
+and no `GET` alone; green on Linux PDFium 155.0.8044.0, 87 cases.
+
+**RRRRRRR-12** (low, open, fixed with RRRRRRR-3): the resolver reads *Microsoft Sans Serif* and *Franklin Gothic Book* as
+serif families, by the substrings `serif` and `book`; it splits by code point, so a combining mark only another face
+carries leaves its base letter; and deleting its stand-in step leaves every case green, since no case names Calibri or
+Cambria (`389cc010`).
+
+**RRRRRRR-13** (low, open): `fonts.proof.mjs` and `pdfium.proof.mjs` record a could-not-look as a passing case outside
+`--require-*`, by their own spelling rather than `unverifiable.mjs` (B3a); CI passes the flag, so this is a hand run's
+answer. `fonts.mjs`' header says each file is pinned by size, and the size is never handed to `downloadVerified`; the
+digest decides.
+
+**RRRRRRR-14** (low, the owner's): an embedded subset's name table is rebuilt with records 1, 4 and 6 only
+(`fontSubset.ts`), so it carries no copyright notice and no licence record; with LEDGER R3 (Carlito's Reserved Font
+Name) this is a licence reading. The safe direction is to keep records 0, 13 and 14, and that is what the font work will
+do unless the owner says otherwise.
+
+**RRRRRRR-15** (low, open): two compound comments half true since `361684e2`: `result.ts` and `schemas.ts` still say a
+failure has two shapes and a declared code travels alone, with the third shape added beneath.
+
+**RRRRRRR-16** (low, open): a `text-not-writable` refusal with no characters to name shows its label over an empty value
+(`problemMessages.ts`, `91450ef5`), where `textEditRefusals.ts` says the person is told without a list; the editor's hint
+*Change the words* shows for refusals no change of words can pass (a Type 3 page, a stale target, a poisoned document);
+and the spelling review's Replace all keeps *Nothing was changed* after changing comments or fields when the page text
+matched no object (`3478a6da`).
+
+**RRRRRRR-17** (low, open, owed next): user-visible changes with no help article: a Type 3 page refusing every PDFium
+edit (`361684e2`), the editor keeping the words with the reason under them (`91450ef5`), an empty replacement deleting
+the word (`64f24233`) and *nothing to replace* (`3478a6da`), against the owner's standing rule; and two FEATURES rows,
+the redaction row's widened cost for shared property lists (`30891a0a`) and the backup row's copy aside (`054ce126`).
+
+**RRRRRRR-18** (low, recorded): cases that reach the easy shape only or cannot fail on their stated property. The
+read-back's no-false-refusal controls run on standard-14 Helvetica alone and the block control edits the last line
+(`361684e2`); the line rule writes an object with no measured box unchecked and considers text followers only, on a flat
+line of two (`73c6d9d5`); the destination rename is tested on a flat name tree, and `loadNameTree`'s plain object drops a
+name `__proto__` (`b7ff78ba`); `opensOnlyWithPassword` stays true after a document opened with a password has it removed,
+a picture lost in the safe direction, while ADR-0164's correction says *false again* (`9b210b06`); every password proof
+is AES-256 with an ASCII password, and the shim is never handed a wrong one; the credential walk reads an open record or
+an unrepresentable member as clean (`1ea8bea3`); a lint tests unit matching nothing reads as clean (`09f0a18f`);
+`refusedAt` reports `FPDF_GetLastError`'s leftover for refusals this application detects itself; the composition root's
+sealing path is crossed by no case (`32b365d3`); and `fontSubset`'s checksum case can fail on the whole-file adjustment
+only. The FEATURES password row said main keeps nothing for several commits after ADR-0171 measured otherwise, corrected
+inside the range.
+
+**RRRRRRR-19** (process, recorded): an ADR correction landed in its feature commit (`7664bc20`) and another was deferred
+past its code (RRRRRRR-3); the tests a contract change reaches were not run before P1.5's first commit attempt, found by
+`proof:testresolution` instead (the boxed character's unbounded string); and the escape guard denied a reflexive
+`node -e` once more, typed while checking a build.
+
+### 1. Root cause or workaround?
+
+Each fix states a mechanism. RRRRRRR-1 is a mechanism the containment decision had stated and a route quietly undid,
+not a workaround; RRRRRRR-8's order is a stated design, not a patch. No limit was raised and no check loosened: ADR-0170
+splits the lint by unit under the one heap budget rather than raising it.
+
+### 2. Verified against the easy shape only?
+
+Yes, in the places RRRRRRR-18 names: one font kind, one line shape, a flat name tree, one cipher and an ASCII password,
+and a document never unlocked. RRRRRRR-1 is the hard shape of the password work: a host across a real transport.
+
+### 2a. Has a change to how something is proven moved the coverage?
+
+Towards: the read-back makes every PDFium save checked, and the PDFium proofs now run on the Linux leg with the real
+library (`c10d9807`). Away, once: the font and Linux PDFium provisioning proofs pass a could-not-look by hand
+(RRRRRRR-13).
+
+### 3. Would CI have caught it?
+
+It did, from the runs read once per sha: the audit headings (`361684e2`), the host-entry import (`30891a0a`), the lint
+heap on ubuntu (`91450ef5`), the lint rule (`73c6d9d5`), the document scope (`6a5fd8a9`), the stale-build guard
+(`90992e0c`) and the status tip (`fbcda1b0`); `8fdc790f`'s run got no runners. RRRRRRR-1 is invisible to every check,
+because every password case runs in process; RRRRRRR-2, -9 and -10 are invisible to checks by kind.
+
+### 4. Are the proofs non-vacuous?
+
+Not all: RRRRRRR-11 was vacuous on which object went, and is closed; the Decision 6 scan cannot see a host's files
+(RRRRRRR-1); the stand-in step and the picture's order are unasserted (RRRRRRR-12, -7).
+
+### 4a. Has every instrument passed a resolution test?
+
+The range's measuring instruments are the lint units' peak memory and the read-back's comparison. The peaks were read
+against `eslint .`'s whole-tree figure (ADR-0170); the comparison's controls are the saved cases, on one font kind only
+(RRRRRRR-18).
+
+### 4b. Does every search carry a positive control?
+
+The credential walk does (three known fields) and reads an open shape as clean (RRRRRRR-18); the fonts tree check carries
+the pinned set; the lint tests unit has none for an empty match (RRRRRRR-18).
+
+### 4c. Does a count derive from the set it governs?
+
+No roster in the range derives its count from what it iterates; the new proofs declare literals.
+
+### 5. Executed, or asserted?
+
+Asserted and stated: the F-C8 link to a fractional pointer on Windows (`b65a5e63`), and the claim that `kernelLoad`
+covered HarfBuzz (RRRRRRR-4), which was asserted and not true.
+
+### 6. Did architecture change before the feature?
+
+Each ADR and addendum of ADR-0169 to ADR-0172 preceded its code, with two exceptions, RRRRRRR-19's.
+
+### 7. Do the documents still match the code?
+
+Not in the places RRRRRRR-2, -10, -15 and -17 name; -2 and -10 are closed here. Not taken from the readers, after
+checking: that `components.md` owes the fonts row, since it names no component.
 
 ## 2026-10-05 — Stage audit of `8f322ba7..974df9f5` — findings QQQQQQQ-1 to QQQQQQQ-22
 

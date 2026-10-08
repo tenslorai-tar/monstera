@@ -21,6 +21,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { BUNDLED_FONT_PINS, FONTS_COMMIT } from '../provision/fonts.mjs';
 import { GHOSTSCRIPT_BIN, GHOSTSCRIPT_VERSION } from '../provision/ghostscript.mjs';
 import { MUPDF_VERSION } from '../provision/mupdf.mjs';
 import { ONLYOFFICE_BUILD, onlyofficePins } from '../provision/onlyoffice.mjs';
@@ -49,7 +50,7 @@ import { shimPath } from '../lib/shimBinary.mjs';
 export function nativeManifest(root) {
   const shim = shimPath(root);
   // A CHECKOUT THAT HAS NOT BUILT THE SHIM has no digest to record, and the component is then not in this build —
-  // which the Components dialog says. The packaging step requires all six.
+  // which the Components dialog says. The packaging step requires every one.
   const shimDigest = existsSync(shim) ? createHash('sha256').update(readFileSync(shim)).digest('hex') : null;
   return {
     manifest: 1,
@@ -73,6 +74,12 @@ export function nativeManifest(root) {
         version: '4.0.0_fast',
         pinnedFrom: 'provisioning',
         files: Object.fromEntries(TESSDATA_MODELS.map((model) => [`${model.language}.traineddata.gz`, model.sha256])),
+      },
+      fonts: {
+        name: 'Bundled open fonts',
+        version: `google/fonts ${FONTS_COMMIT.slice(0, 12)}`,
+        pinnedFrom: 'provisioning',
+        files: BUNDLED_FONT_PINS,
       },
     },
   };

@@ -1,6 +1,8 @@
 import type { Handlers } from '@monstera/contract';
+import { cappedBoxes } from '@monstera/contract/host';
 
-import { type ComposePageSize, ComposeRefused } from '../composeLayout.js';
+import type { FaceSource } from '../fontCatalogue.js';
+import { type ComposePageSize, ComposeRefused, type ComposedSource } from '../composeOutcome.js';
 import type { ImportImage } from '../imageCompose.js';
 import { pictureSize } from '../pictureSize.js';
 import type { ScannedSignature } from '../signatureScan.js';
@@ -35,8 +37,8 @@ import type { HostArea, HostFilesystem, HostSessions } from './engineHandlers.js
  * readers.
  */
 
-/** How this process sets a source as PDF bytes. `composeMarkdown` and `composeCsv` in the host. */
-export type SourceComposer = (source: Uint8Array, page: ComposePageSize) => Promise<Uint8Array>;
+/** How this process sets a source as PDF bytes, and where it drew a box. `composeMarkdown` and `composeCsv` in the host. */
+export type SourceComposer = (source: Uint8Array, page: ComposePageSize, faces: FaceSource) => Promise<ComposedSource>;
 
 /**
  * How this process rewrites a document's images — the shim in the host, a fake in a proof.
@@ -97,6 +99,11 @@ export interface ComposeHandlerParts {
   readonly files: HostFilesystem;
   /** How this process attempts the two paths ADR-0023 §5's check names. */
   readonly probe: (paths: ContainmentProbePaths) => Promise<ContainmentReport>;
+  /**
+   * The faces this process sets text in, read the first time a text source is composed. It THROWS where the host was
+   * started without its fonts, which is a fault of the build and never an answer about a person's file.
+   */
+  readonly faces: () => FaceSource;
   /** How this process composes a Markdown source. */
   readonly composeMarkdown: SourceComposer;
   /** How this process composes a CSV source. */
@@ -113,6 +120,7 @@ export function createComposeHandlers({
   composeCsv,
   composeImages,
   composeMarkdown,
+  faces,
   files,
   keepInlineImages,
   optimize,
@@ -156,9 +164,9 @@ export function createComposeHandlers({
         return { ok: false, error: { code: 'asset-missing' } };
       }
 
-      let pdf: Uint8Array;
+      let composed: ComposedSource;
       try {
-        pdf = await composer(source, page);
+        composed = await composer(source, page, faces());
       } catch (error) {
         // ONLY A NAMED REFUSAL IS AN ANSWER. Anything else is a defect in this
         // build, and it propagates so the body reports `internal` rather than
@@ -172,8 +180,17 @@ export function createComposeHandlers({
         throw error;
       }
 
-      const bytes = await files.writeOutput(held.outputDirectory, into, pdf);
-      return { ok: true, value: { kind: 'composed', bytes } };
+      const bytes = await files.writeOutput(held.outputDirectory, into, composed.pdf);
+      // THE FIRST PLACES NAMED, THE REST COUNTED: a source can hold a box on every line, and the frame cannot.
+      return {
+        ok: true,
+        value: {
+          kind: 'composed',
+          bytes,
+          // THE ONE CAP (`cappedBoxes`), which the PDFium host's answer takes too: two would cut a list two ways.
+          ...cappedBoxes({ boxed: composed.boxed, more: 0 }),
+        },
+      };
     };
 
   return {
@@ -369,7 +386,8 @@ export function createComposeHandlers({
       }
 
       const bytes = await files.writeOutput(held.outputDirectory, into, pdf);
-      return { ok: true, value: { kind: 'composed', bytes } };
+      // AN IMAGE DRAWS NO TEXT, so it boxes nothing.
+      return { ok: true, value: { kind: 'composed', bytes, boxed: [], more: 0 } };
     },
   };
 }

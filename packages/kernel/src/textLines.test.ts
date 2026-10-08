@@ -1,3 +1,4 @@
+import { paragraphsOfLines } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -5,11 +6,17 @@ import {
   type GroupableRun,
   groupIntoBlocks,
   groupIntoLines,
-  paragraphText,
   settingOf,
+  softEnds,
 } from './textLines.js';
 
-describe('paragraphText (ADR-0097 4c)', () => {
+/** A block's words from its lines by the one rule the editor and the translation both use (ADR-0179 Decision 2). */
+function paragraphText(lines: readonly { text: string; box: { x0: number; x1: number } }[], right: number): string {
+  const soft = softEnds(lines, right);
+  return paragraphsOfLines(lines.map((line, at) => ({ text: line.text, soft: soft[at] === true })));
+}
+
+describe('softEnds (ADR-0097 4c, ADR-0179 Decision 2)', () => {
   /** A line of `text` from 0 to `x1`: ten characters take 50, so a character is 5 wide. */
   const line = (text: string, x1: number) => ({ text, box: { x0: 0, x1 } });
 
@@ -34,6 +41,45 @@ describe('paragraphText (ADR-0097 4c)', () => {
         200,
       ),
     ).toBe('Please send the forms to our office at\n14 Elm Street');
+  });
+
+  it('never calls the last line soft: it ends nothing', () => {
+    expect(softEnds([line('The quick brown fox', 180)], 200)).toStrictEqual([false]);
+  });
+});
+
+describe('a block carries its soft ends and its shape (ADR-0179)', () => {
+  const style = { font: 'f', size: 10, colour: { r: 0, g: 0, b: 0 } };
+  const long = (index: number, text: string, bottom: number, top: number, right: number): BlockableRun<string> => ({
+    index,
+    text,
+    bottom,
+    top,
+    left: 72,
+    right,
+    style: 'body',
+    setting: settingOf(style),
+  });
+
+  it('answers soft on the lines that wrapped and not on the last, and a left shape for a ragged paragraph', () => {
+    const blocks = groupIntoBlocks([
+      long(0, 'The quick brown fox jumps over', 700, 710, 280),
+      long(1, 'the lazy dog and then it runs', 688, 698, 270),
+      long(2, 'away', 676, 686, 100),
+    ]);
+    expect(blocks).toHaveLength(1);
+    const [block] = blocks;
+    expect(block?.lines.map((line) => line.soft)).toStrictEqual([true, true, false]);
+    expect(block?.shape).toStrictEqual({ align: 'left', firstIndent: 0 });
+  });
+
+  it('CONTROL: lines broken where the next word WOULD have fitted are not soft', () => {
+    const [block] = groupIntoBlocks([
+      long(0, 'Ada Lovelace', 700, 710, 140),
+      long(1, 'England', 688, 698, 120),
+      long(2, 'London SW1A 1AA', 676, 686, 200),
+    ]);
+    expect(block?.lines.map((line) => line.soft)).toStrictEqual([false, false, false]);
   });
 });
 

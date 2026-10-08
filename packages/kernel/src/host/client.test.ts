@@ -541,7 +541,7 @@ describe('a file-routed answer on the client (ADR-0125)', () => {
     const call = h.client.invoke('doc:big', { session: 's1' });
     expect(h.sent()).toStrictEqual([{ id: 'c1', channel: 'doc:big', params: { session: 's1' }, answerInto: 'n1' }]);
 
-    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength } });
+    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength, credentials: [] } });
     await expect(call).resolves.toStrictEqual(envelope);
     expect(h.taken).toStrictEqual([{ params: { session: 's1' }, name: 'n1', bytes: bytes.byteLength }]);
     expect(h.terminations).toStrictEqual([]);
@@ -553,12 +553,42 @@ describe('a file-routed answer on the client (ADR-0125)', () => {
     let finishTake: (bytes: Uint8Array) => void = () => undefined;
     const h = fileHarness(new Promise<Uint8Array>((done) => (finishTake = done)));
     const call = h.client.invoke('doc:big', { session: 's1' });
-    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength } });
+    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength, credentials: [] } });
     h.client.fail({ code: 'connection-lost', detail: 'the reader stopped' });
     finishTake(bytes);
 
     await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
     await expect(call).rejects.toMatchObject({ termination: { code: 'connection-lost' } });
+  });
+
+  /**
+   * AN ANSWER'S CREDENTIALS CAME IN THE FRAME (ADR-0171's correction): the host lifted them out of the file, and the
+   * call resolves to the envelope with each put back at its path.
+   */
+  it('puts an answer’s credentials back from the frame, at their paths', async () => {
+    const filed = { ok: true, value: { kind: 'setDocumentProtection', prior: { standing: 'protected' } } };
+    const h = fileHarness(new TextEncoder().encode(JSON.stringify(filed)));
+    const call = h.client.invoke('doc:big', { session: 's1' });
+    const credentials = [{ path: ['value', 'prior', 'passwordTerms'], value: 'encrypt=aes-256,user-password="a"' }];
+    h.frame({ id: 'c1', answerFile: { bytes: JSON.stringify(filed).length, credentials } });
+    await expect(call).resolves.toStrictEqual({
+      ok: true,
+      value: { kind: 'setDocumentProtection', prior: { standing: 'protected', passwordTerms: 'encrypt=aes-256,user-password="a"' } },
+    });
+    expect(h.terminations).toStrictEqual([]);
+  });
+
+  /**
+   * A HOST IS HOSTILE (invariant 25) and its frame names the path. One through `__proto__` would place a value on
+   * `Object.prototype`, which every object in main reads; it is refused as a malformed answer, and nothing is placed.
+   */
+  it('ends the connection on a credential path the file does not hold, and places nothing on a prototype', async () => {
+    const h = fileHarness(bytes);
+    const call = h.client.invoke('doc:big', { session: 's1' });
+    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength, credentials: [{ path: ['__proto__', 'password'], value: 'x' }] } });
+    await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
+    expect(h.terminations.map((reason) => reason.code)).toStrictEqual(['malformed-response']);
+    expect(Object.hasOwn(Object.prototype, 'password')).toBe(false);
   });
 
   it('names no file for a channel that answers in the frame', () => {
@@ -570,7 +600,7 @@ describe('a file-routed answer on the client (ADR-0125)', () => {
   it('ends the connection when the file holds other than the announced length', async () => {
     const h = fileHarness(bytes.subarray(1));
     const call = h.client.invoke('doc:big', { session: 's1' });
-    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength } });
+    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength, credentials: [] } });
     await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
     expect(h.terminations.map((reason) => reason.code)).toStrictEqual(['malformed-response']);
   });
@@ -585,7 +615,7 @@ describe('a file-routed answer on the client (ADR-0125)', () => {
   it('settles a call whose file was still being taken when the connection ended', async () => {
     const h = fileHarness(bytes);
     const call = h.client.invoke('doc:big', { session: 's1' });
-    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength } });
+    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength, credentials: [] } });
     h.client.fail({ code: 'connection-lost', detail: 'the pipe closed' });
 
     const outcome = await Promise.race([
@@ -608,7 +638,7 @@ describe('a file-routed answer on the client (ADR-0125)', () => {
   it('ends the connection when the file cannot be taken', async () => {
     const h = fileHarness(new Error('an answer arrived for a session this host is not holding'));
     const call = h.client.invoke('doc:big', { session: 's1' });
-    h.frame({ id: 'c1', answerFile: { bytes: 10 } });
+    h.frame({ id: 'c1', answerFile: { bytes: 10, credentials: [] } });
     await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
     expect(h.terminations.map((reason) => reason.code)).toStrictEqual(['malformed-response']);
   });
@@ -616,7 +646,7 @@ describe('a file-routed answer on the client (ADR-0125)', () => {
   it('refuses a file answer to a call that answers in the frame', async () => {
     const h = fileHarness(bytes);
     const call = h.client.invoke('doc:small', {});
-    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength } });
+    h.frame({ id: 'c1', answerFile: { bytes: bytes.byteLength, credentials: [] } });
     await expect(call).rejects.toBeInstanceOf(HostConnectionLost);
     expect(h.taken).toStrictEqual([]);
     expect(h.terminations.map((reason) => reason.code)).toStrictEqual(['malformed-response']);
@@ -651,12 +681,62 @@ describe('a file-requested call on the client (ADR-0125 addendum)', () => {
     const json = JSON.stringify(params);
     expect(h.files).toStrictEqual([`put n1 ${json}`, 'sent']);
     expect(h.sent()).toStrictEqual([
-      { id: 'c1', channel: 'doc:undo', paramsFile: { session: 's1', name: 'n1', bytes: new TextEncoder().encode(json).byteLength } },
+      {
+        id: 'c1',
+        channel: 'doc:undo',
+        paramsFile: { session: 's1', name: 'n1', bytes: new TextEncoder().encode(json).byteLength, credentials: [] },
+      },
     ]);
 
     h.frame({ id: 'c1', body: { ok: true, value: {} } });
     await expect(call).resolves.toStrictEqual({ ok: true, value: {} });
     expect(h.files).toStrictEqual([`put n1 ${json}`, 'sent', 'drop n1']);
+  });
+
+  /**
+   * A CREDENTIAL NEVER ENTERS THE FILE (ADR-0171's correction, RRRRRRR-1): it is lifted out of the params before they
+   * are written and named in the frame by its path. CONTROL: the same value under a key that is not a credential's is
+   * in the file, so the assertion reads what the file holds rather than a file that holds nothing.
+   */
+  it('writes the params without their credentials and carries each in the frame by its path', async () => {
+    const h = fileHarness();
+    const secret = 'correct horse, battery "staple"';
+    const params = { session: 's1', password: secret, note: `not a secret: ${secret}`, inverse: { prior: { passwordTerms: secret } } };
+    const call = h.client.invoke('doc:undo', params);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const written = h.files[0] ?? '';
+    expect(written.startsWith('put n1 ')).toBe(true);
+    const filed = JSON.parse(written.slice('put n1 '.length)) as Record<string, unknown>;
+    expect(filed).toStrictEqual({ session: 's1', note: `not a secret: ${secret}`, inverse: { prior: {} } });
+    // ONCE, in the note: a quote-free piece of the secret, since JSON escapes the quotes in the rest of it.
+    expect(written.split('correct horse')).toHaveLength(2);
+    expect(h.sent()).toStrictEqual([
+      {
+        id: 'c1',
+        channel: 'doc:undo',
+        paramsFile: {
+          session: 's1',
+          name: 'n1',
+          bytes: new TextEncoder().encode(written.slice('put n1 '.length)).byteLength,
+          credentials: [
+            { path: ['password'], value: secret },
+            { path: ['inverse', 'prior', 'passwordTerms'], value: secret },
+          ],
+        },
+      },
+    ]);
+    // THE CALLER'S PARAMS ARE ITS OWN: the lift worked on a copy.
+    expect(params.password).toBe(secret);
+    h.frame({ id: 'c1', body: { ok: true, value: {} } });
+    await expect(call).resolves.toStrictEqual({ ok: true, value: {} });
+  });
+
+  it('refuses before writing anything when a credential-named key holds what it cannot lift', async () => {
+    const h = fileHarness();
+    await expect(h.client.invoke('doc:undo', { session: 's1', passwords: ['a', 'b'] })).rejects.toThrow(/cannot be lifted/u);
+    expect(h.files).toStrictEqual([]);
+    expect(h.sent()).toStrictEqual([]);
   });
 
   it('drops the file when the call fails as well', async () => {

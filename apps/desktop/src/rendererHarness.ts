@@ -1,6 +1,8 @@
 import { BRIDGE_KEY } from '@monstera/contract';
 import { BrowserWindow, type WebContents, app, session } from 'electron';
 
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -114,6 +116,8 @@ interface Readback {
   readonly url: string | null;
   readonly connectBlocked: boolean;
   readonly evalBlocked: boolean;
+  /** A font loaded from bytes, and the same font by a `data:` URL, under the delivered policy (ADR-0175). */
+  readonly fonts: FontReading;
   /**
    * What `style-src` does with a script-inserted `<style>` element, twice.
    *
@@ -341,6 +345,20 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 }
 
+/** The font-src probe's reading: each face's status, and the violations each load raised. */
+interface FontReading {
+  readonly fromBytes: string;
+  readonly byBytes: number;
+  readonly byUrl: string;
+  readonly violated: readonly string[];
+}
+
+function isFontReading(value: unknown): value is FontReading {
+  if (typeof value !== 'object' || value === null) return false;
+  const { fromBytes, byBytes, byUrl, violated } = value as Record<string, unknown>;
+  return typeof fromBytes === 'string' && typeof byBytes === 'number' && typeof byUrl === 'string' && isStringArray(violated);
+}
+
 /**
  * Loads a window under the shipped web preferences with the probe preload, and
  * returns what that preload got from `require('node:fs')`.
@@ -559,6 +577,37 @@ export async function reportRendererPolicy(): Promise<void> {
   // `script-src-attr`/`script-src-elem` for other cases, so the family is
   // matched rather than one spelling.
   const evalBlocked = violated.some((directive) => directive.startsWith('script-src'));
+
+  // ---------------------------------------------------------------------------
+  // font-src: a font from BYTES loads, and the SAME bytes by a URL are refused (ADR-0175).
+  // ---------------------------------------------------------------------------
+  //
+  // The editor draws a run in a font that crosses as bytes and loads as a `FontFace` from them, which `font-src` does
+  // not govern; the policy is unchanged, and what this pins is that a font by URL is still refused. ONE FONT, both
+  // ways, so the URL's refusal is the policy's and not a font Chromium could not read: the bytes loading is the
+  // control, and a policy that admitted `data:` would let the second through on the same bytes. The violation event
+  // is the witness, read as above.
+  const font = readFileSync(
+    createRequire(import.meta.url).resolve('pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf'),
+  ).toString('base64');
+  const fonts = await evaluate(
+    webContents,
+    `(async () => {
+       const seen = [];
+       const record = (event) => { seen.push(event.effectiveDirective); };
+       document.addEventListener('securitypolicyviolation', record);
+       const bytes = Uint8Array.from(atob(${JSON.stringify(font)}), (c) => c.charCodeAt(0));
+       const loads = (face) => face.load().then(() => face.status, () => face.status);
+       const fromBytes = await loads(new FontFace('m-probe-bytes', bytes));
+       const byBytes = seen.length;
+       const byUrl = await loads(new FontFace('m-probe-url', 'url(data:font/ttf;base64,${font})'));
+       await new Promise((done) => { setTimeout(done, 200); });
+       document.removeEventListener('securitypolicyviolation', record);
+       return { fromBytes, byBytes, byUrl, violated: seen.slice(byBytes) };
+     })()`,
+    isFontReading,
+    'font-src',
+  );
 
   // ---------------------------------------------------------------------------
   // style-src against an inserted <style>: the granted hash admitted, one space more refused.
@@ -899,6 +948,7 @@ export async function reportRendererPolicy(): Promise<void> {
     preloadNodeReach,
     connectBlocked,
     evalBlocked,
+    fonts,
     styleElements,
     shell,
     nodeSurface: surface.visible,

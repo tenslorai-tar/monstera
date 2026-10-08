@@ -605,6 +605,28 @@ const CREATE_FIELD_SPEC = `  createFormField: {
   },`;
 
 /**
+ * The three that change a field that exists (ADR-0193): pdf-lib's, `createFormField`'s entry over again, and on the barrel
+ * for the same reason. One capture and one invert serve all three because each records no prior state.
+ */
+const EDIT_FIELD_SPECS = ['editFormFields', 'duplicateFormField', 'setTabOrder']
+  .map(
+    (kind) => `  ${kind}: {
+    kind: '${kind}',
+    writer: 'pdf-lib',
+    apply: ${{ editFormFields: 'applyEditFormFields', duplicateFormField: 'applyDuplicateFormField', setTabOrder: 'applySetTabOrder' }[kind]},
+    capture: captureFieldEdit,
+    invert: invertFieldEdit,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`,
+  )
+  .join('\n');
+
+/**
  * The newest kind, and the one the `missing a command kind` case now omits.
  *
  * **The second command to declare an asset**, which is invisible here for the
@@ -784,6 +806,24 @@ const EDIT_BLOCK_SPEC = `  editTextBlock: {
     replay: 'reapply-intent',
     sources: 'none',
     reads: 'none',
+  },`;
+
+/**
+ * The newest kind (ADR-0176), kept separate for {@link MOVE_SPEC}'s reason: `editTextBlock`'s intent written by MuPDF,
+ * terminal until its prior lands, and the one MuPDF spec declaring a pre-read, so its `apply` takes the read third.
+ */
+const EDIT_OPERATORS_SPEC = `  editTextOperators: {
+    kind: 'editTextOperators',
+    writer: 'mupdf',
+    apply: applyEditTextOperators,
+    capture: captureEditTextOperators,
+    invert: invertEditTextOperators,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'pageRuns',
   },`;
 
 /**
@@ -972,10 +1012,8 @@ const FLATTEN_SPEC = `  flattenFormFields: {
   },`;
 
 /**
- * Filler, and the ONE spec here whose `capture` refuses for a reason that is a
- * rule rather than a size: a protection change's prior state is a password
- * (ADR-0055). The fixture spells it like every other, because what these
- * exercise is `CommandSpecs`' shape.
+ * Filler. A protection change is invertible since ADR-0171 Decision 8, its prior held beside the log entry rather
+ * than in it; the fixture spells it like every other, because what these exercise is `CommandSpecs`' shape.
  */
 const PROTECT_SPEC = `  setDocumentProtection: {
     kind: 'setDocumentProtection',
@@ -983,10 +1021,10 @@ const PROTECT_SPEC = `  setDocumentProtection: {
     apply: applySetDocumentProtection,
     capture: captureSetDocumentProtection,
     invert: invertSetDocumentProtection,
-    invertible: false,
-    undo: 'checkpoint',
+    invertible: true,
+    undo: 'inverse',
     reproducible: true,
-    replay: 'reapply-intent',
+    replay: 'reapply-held-intent',
     sources: 'none',
     reads: 'none',
   },`;
@@ -1231,6 +1269,9 @@ const SPEC_IMPORTS = `import {
   applyImportFormData,
   captureImportFormData,
   invertImportFormData,
+  applyEditTextOperators,
+  captureEditTextOperators,
+  invertEditTextOperators,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: watermarkPages routes to a byte-image writer that runs in
@@ -1260,6 +1301,11 @@ import {
   applyCreateFormField,
   captureCreateFormField,
   invertCreateFormField,
+  applyEditFormFields,
+  applyDuplicateFormField,
+  applySetTabOrder,
+  captureFieldEdit,
+  invertFieldEdit,
 } from '@monstera/kernel';
 // A THIRD IMPORT LINE, and it is a claim about the module graph rather than a
 // convenience. \`@monstera/kernel/engine\` means "binds a native library", and
@@ -1344,7 +1390,7 @@ export const handlers: ContractHandlers = {
   'document.sign': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.signatures': () => Promise.resolve(ok({ signatures: [], unreadable: false })),
   'document.execute': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
+    Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.redo': () => Promise.resolve(ok({ kind: 'nothing-to-redo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1), cleared: null, held: [] })),
@@ -1356,9 +1402,11 @@ export const handlers: ContractHandlers = {
   'document.exportFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.flatFieldCandidates': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 })),
+  'document.formFieldProperties': () => Promise.resolve(ok({ version: asDocVersion(1), fields: [] })),
   'document.textBlocks': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 })),
+    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
+  'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
@@ -1557,9 +1605,11 @@ export const handlers: ContractHandlers = {
   'document.exportFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.flatFieldCandidates': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 })),
+  'document.formFieldProperties': () => Promise.resolve(ok({ version: asDocVersion(1), fields: [] })),
   'document.textBlocks': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 })),
+    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
+  'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
@@ -1839,9 +1889,11 @@ export const shim: ContractClient = {
   'document.exportFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.importFormData': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.flatFieldCandidates': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false })),
+    Promise.resolve(ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 })),
+  'document.formFieldProperties': () => Promise.resolve(ok({ version: asDocVersion(1), fields: [] })),
   'document.textBlocks': () =>
-    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, unaddressable: 0 })),
+    Promise.resolve(ok({ version: asDocVersion(1), blocks: [], next: null, truncated: false, rotated: 0, angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 }, unaddressable: 0, rewrite: 'objects' as const })),
+  'document.runFonts': () => Promise.resolve(ok({ version: asDocVersion(1), fonts: [], runs: [] })),
   'document.pageObjects': () =>
     Promise.resolve(ok({ version: asDocVersion(1), objects: [], next: null, truncated: false })),
   'document.renderPage': ({ width, height }) =>
@@ -2121,6 +2173,7 @@ ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
+${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
 ${PLACE_OBJECT_SPEC}
@@ -2138,6 +2191,7 @@ ${EDIT_BLOCK_SPEC}
 ${SET_ANNOTATION_AUTHOR_SPEC}
 ${PLACE_SIGNATURE_MARK_SPEC}
 ${PLACE_SIGNATURE_PICTURE_SPEC}
+${EDIT_OPERATORS_SPEC}
 };
 `,
   },
@@ -2246,6 +2300,7 @@ ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
+${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
 ${PLACE_OBJECT_SPEC}
@@ -2262,6 +2317,7 @@ ${REPLY_TO_ANNOTATION_SPEC}
 ${EDIT_BLOCK_SPEC}
 ${SET_ANNOTATION_AUTHOR_SPEC}
 ${PLACE_SIGNATURE_MARK_SPEC}
+${EDIT_OPERATORS_SPEC}
 };
 `,
   },
@@ -2386,6 +2442,7 @@ ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
+${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
 ${PLACE_OBJECT_SPEC}
@@ -2456,6 +2513,7 @@ ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
+${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
 ${PLACE_OBJECT_SPEC}
@@ -2535,6 +2593,7 @@ ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
+${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
 ${PLACE_OBJECT_SPEC}
@@ -2610,6 +2669,7 @@ ${MARK_MATCHES_SPEC}
 ${SANITIZE_SPEC}
 ${SIGN_SPEC}
 ${CREATE_FIELD_SPEC}
+${EDIT_FIELD_SPECS}
 ${IMPORT_DATA_SPEC}
 ${REPLACE_TEXT_SPEC}
 ${PLACE_OBJECT_SPEC}
@@ -3316,10 +3376,30 @@ export const execution: CommandExecution<'pdfium'> = {
   //
   // THE IMAGE ARRIVES AS THE REQUEST'S session FIELD SINCE ADR-0069: the
   // execution takes one named request, and this writer's session HOLDS the
-  // bytes, beside the key that opens them since ADR-0171's addendum.
-  apply: ({ session }) => Promise.resolve(new Uint8Array(session.bytes)),
+  // bytes, beside the key that opens them since ADR-0171's addendum. AND IT ANSWERS
+  // WHAT IT DREW AS BOXES BESIDE THE IMAGE since ADR-0174, none here.
+  apply: ({ session }) => Promise.resolve({ image: new Uint8Array(session.bytes), boxed: [], more: 0 }),
   capture: (_image, _command) => Promise.resolve({ captured: false, reason: 'none' }),
-  invert: (image, _kind, _inverse) => Promise.resolve(new Uint8Array(image.bytes)),
+  invert: (image, _kind, _inverse) => Promise.resolve({ image: new Uint8Array(image.bytes), boxed: [], more: 0 }),
+};
+`,
+  },
+  {
+    name: "a byte-image writer's EXECUTION may not answer the bare image (ADR-0174)",
+    expect: 'reject',
+    code: 'TS2322',
+    // THE HAZARD THE BUS HAD: its widened view casts a byte-image answer by the
+    // declaration, so an execution that answered bytes where the seam owes the
+    // image AND its boxes would be installed as if the bytes were the answer, with
+    // the person never told what was drawn as a box. Refused here, at the
+    // execution, where the compiler can see it.
+    because: /Type 'Uint8Array<ArrayBuffer>' is missing the following properties from type 'AppliedImage': image, boxed, more/u,
+    notBecause: null,
+    source: `
+import type { CommandExecution } from '@monstera/kernel';
+
+export const execution: Pick<CommandExecution<'pdfium'>, 'apply'> = {
+  apply: ({ session }) => Promise.resolve(new Uint8Array(session.bytes)),
 };
 `,
   },
@@ -3345,7 +3425,7 @@ export const execution: CommandExecution<'pdfium'> = {
     // `(image: ByteImage, command:` — the two diagnostics agree line for line
     // otherwise, and the harness refuses to certify either verdict while one
     // matcher accepts the other's reason.
-    because: /request: ApplyRequest<"pdfium", K>\)[\s\S]*Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
+    because: /request: ApplyRequest<"pdfium", K>\)[\s\S]*Type 'void' is not assignable to type 'Promise<AppliedImage>'/u,
     notBecause: null,
     source: `
 import type { CommandExecution } from '@monstera/kernel';
@@ -3463,9 +3543,11 @@ export const invert: Invert<'mupdf', 'rotatePages'> = (
     // entries and moves the cursor, which is exactly what the readable view is
     // separated from. So does `imageIsCurrent` (ADR-0115): it moves the base a
     // host-death replay starts from, and a lane entry that could set it without
-    // the bus's capability could tell the replay to skip entries the image lacks.
+    // the bus's capability could tell the replay to skip entries the image lacks. And `resealed` (ADR-0171 Decision 8):
+    // it changes the length the budget counts for a held file, so recording one is the bus's alone. `bytesOf`, which
+    // only reads that length, is on the readable view and so is not in this list.
     because:
-      /missing the following properties from type 'CommandLog': #private, imageIsCurrent, trimTo, record, and 2 more/u,
+      /missing the following properties from type 'CommandLog': #private, imageIsCurrent, resealed, trimTo, and 3 more/u,
     notBecause: null,
     source: `
 import type { CommandLog, DocumentContext } from '@monstera/kernel';
@@ -3694,6 +3776,37 @@ export const entry: LogEntry = {
 `,
   },
   {
+    name: 'an INVERTIBLE held entry may not carry its prior, which can be an earlier protect’s passwords',
+    expect: 'reject',
+    code: 'TS2353',
+    // ADR-0171 Decision 8: the prior is the protection before the protect, so a second protect's prior is the first
+    // one's terms. The entry keeps the marker `{ held: true }`, which has no field for them.
+    because: /Object literal may only specify known properties, and 'standing' does not exist in type/u,
+    notBecause: null,
+    source: `
+import type { LogEntry } from '@monstera/kernel';
+export const entry: LogEntry = {
+  kind: 'invertible',
+  command: { kind: 'setDocumentProtection' },
+  inverse: { held: true, standing: 'protected', terms: 'encrypt=aes-256,user-password="kept"' },
+  read: undefined,
+};
+`,
+  },
+  {
+    name: 'CONTROL: the same invertible held entry, keeping the marker, compiles',
+    expect: 'allow',
+    source: `
+import type { LogEntry } from '@monstera/kernel';
+export const entry: LogEntry = {
+  kind: 'invertible',
+  command: { kind: 'setDocumentProtection' },
+  inverse: { held: true },
+  read: undefined,
+};
+`,
+  },
+  {
     name: 'a spec may not declare one writer and CAPTURE through another',
     expect: 'reject',
     code: 'TS2322',
@@ -3798,8 +3911,10 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     //
     // 52 since `placeSignatureMark` and `placeSignaturePicture` (2026-10-02, ADR-0133): three spelt, 48 counted, one.
     // 53 since `replaceTextAt` (2026-10-04, ADR-0156): three spelt, 49 counted, one.
+    // 54 since `editTextOperators` (2026-10-06, ADR-0176): three spelt, 50 counted, one.
+    // 57 since `editFormFields`, `duplicateFormField` and `setTabOrder` (2026-10-07, ADR-0193): three spelt, 53 counted, one.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 49 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){2} \| \.\.\. 53 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

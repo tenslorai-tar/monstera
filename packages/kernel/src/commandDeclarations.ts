@@ -1565,27 +1565,19 @@ const declarations = {
   },
   setDocumentProtection: {
     kind: 'setDocumentProtection',
-    // NOTHING DRAWN: its `apply` records how the document is WRITTEN (below) and changes no
-    // page, so there are no new bytes for the window to draw.
-    display: 'nothing-drawn',
+    // DRAWN, though no page changes (ADR-0171 Decision 8): the window's bytes are main's canonical image, and that image
+    // must be the document as protected, so no copy main keeps of it is the readable form. The renderer opens it with
+    // the password it holds for the document (Decision 7).
+    display: 'image',
     // `docs/ARCHITECTURE.md` §3's matrix names MuPDF for *encryption,
     // permissions* and has since the founding record, so no B4 on the routing.
     writer: 'mupdf',
-    // TERMINAL, and the reason is a rule rather than a size: the prior state of
-    // this command IS a password, and a capture would put one in main's command
-    // log — the one place ADR-0055 says it must never be. A checkpoint holds
-    // bytes, which for a previously unprotected document are the plain ones
-    // main already had.
-    //
-    // **The stated limit that follows**: a checkpoint taken on a document that
-    // was ALREADY protected is encrypted, so undoing a protection change needs
-    // the password that opens it. For a document opened with its password, main
-    // holds that one until close (ADR-0171 Decision 1). A password a protect set
-    // in this session is held by nothing yet, which is ADR-0171 Decision 8, put
-    // to the owner. Recorded here and in the FEATURES row, because a limit
-    // nobody wrote down is one the next reader treats as a bug.
-    invertible: false,
-    undo: 'checkpoint',
+    // INVERTIBLE (ADR-0171 Decision 8): the prior is the protection the session stood with, bounded and small, so the
+    // undo takes no checkpoint, and a checkpoint is a whole copy of the document as it was, readable when it was. That
+    // prior can carry an earlier protect's passwords, so the bus holds it beside the entry with the command, and the
+    // entry keeps a marker (`RecordedInverse`).
+    invertible: true,
+    undo: 'inverse',
     // REPRODUCIBLE, and the axis is about the APPLY rather than about the
     // bytes a later save happens to produce. This apply writes nothing to the
     // document: it records an option string on the session, and re-running the
@@ -1770,6 +1762,57 @@ const declarations = {
     // version. The one collision it can have is with an existing field of the
     // same name, and that is a refusal at apply: the document is the only thing
     // that knows, exactly as it is for every type rule on the fill.
+    targets: 'none',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
+  // THE THREE THAT CHANGE A FIELD THAT EXISTS (ADR-0193), `createFormField`'s writer and for its reason: the field's own
+  // dictionary is the concern, and MuPDF has setters for a value and for few of the properties named here. The fill stays
+  // MuPDF's, so a property that holds a VALUE (a default) is the only place the two meet, and it is `/DV`, not `/V`.
+  editFormFields: {
+    kind: 'editFormFields',
+    display: 'image',
+    writer: 'pdf-lib',
+    // NOT INVERTIBLE, `createFormField`'s checkpoint and for a different reason: a rename moves a field's identity and a
+    // list of edits is a set of dictionaries, so a prior state would be the whole of each. The checkpoint the bus already
+    // holds costs nothing (ADR-0039) and restores the document exactly.
+    invertible: false,
+    undo: 'checkpoint',
+    // `openForWriting` pins the metadata, and nothing here mints an identifier or reads a clock.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // THE WALK'S OWN: its handles are positions in an answer `document.formFields` gave at one version.
+    targets: 'field',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
+  duplicateFormField: {
+    kind: 'duplicateFormField',
+    display: 'image',
+    writer: 'pdf-lib',
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    targets: 'field',
+    reads: 'none',
+    asset: 'none',
+    purpose: 'ordinary',
+  },
+  setTabOrder: {
+    kind: 'setTabOrder',
+    display: 'image',
+    writer: 'pdf-lib',
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // PAGES, which a page walk names and a field walk does not: `/Tabs` is a page's.
     targets: 'none',
     reads: 'none',
     asset: 'none',
@@ -2075,6 +2118,36 @@ const declarations = {
     // IT REMOVES the lines a person deleted, and `'removal'` is still wrong for
     // `deletePageObjects`' reason: that axis selects MuPDF's collecting save,
     // and `FPDF_SaveAsCopy` has none.
+    purpose: 'ordinary',
+  },
+  // A PAGE WHOSE TEXT INCLUDES A TYPE 3 FONT, written by MuPDF into its own content
+  // stream (ADR-0176). `editTextBlock`'s intent with another writer, because PDFium
+  // regenerates such a page without its Type 3 text.
+  editTextOperators: {
+    kind: 'editTextOperators',
+    display: 'image',
+    writer: 'mupdf',
+    // NOT INVERTIBLE, and a checkpoint is the undo BY DECISION (owner, 2026-10-06):
+    // the whole-document copy the checkpoint restores loses nothing an inverse
+    // would have put back, so Decision 7's content-and-fonts prior is kept as the
+    // rejected alternative rather than built. ADR-0176 carries the dated note.
+    invertible: false,
+    undo: 'checkpoint',
+    // THE SAME BLOCKS AGAINST THE SAME CONTENT LAY OUT THE SAME WAY: widths come
+    // from the page's own fonts and nothing mints an identifier or reads a clock.
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    // PDFIUM'S OBJECT INDICES, as `editTextBlock` names them: the version is
+    // checked against the read that produced them.
+    targets: 'text-object',
+    // THE FIRST MuPDF COMMAND TO DECLARE A PRE-READ (the correction to ADR-0176):
+    // which objects each run is, which only the engine that walked them can say.
+    reads: 'pageRuns',
+    read: (access, command) => access.pageRuns({ page: command.page }),
+    asset: 'none',
+    // ORDINARY, so an incremental save: a removal's collecting save would rewrite
+    // every object, where this changes one page's content and adds nothing else.
     purpose: 'ordinary',
   },
 } satisfies CommandDeclarations;

@@ -282,7 +282,7 @@ describe('the Organize grid, driven through App (ADR-0104)', () => {
       if (id === 'document.execute') {
         executed.push((params as { command: unknown }).command);
         version += 1;
-        return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0 }));
+        return Promise.resolve(ok({ version: asDocVersion(version), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
       }
       if (id === 'document.viewModel') {
         return Promise.resolve(ok({ version: asDocVersion(version), pageCount: PAGES[FIRST] ?? 1, rotations: [] }));

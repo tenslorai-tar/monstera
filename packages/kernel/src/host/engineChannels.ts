@@ -6,6 +6,7 @@ import {
   DOCUMENT_PASSWORD_MAX_CHARS,
   MAX_MERGE_DOCUMENTS,
   addAnnotationSchema,
+  textRewriteSchema,
   pageSetSchema,
   placeImageSchema,
   placeSignatureMarkSchema,
@@ -26,10 +27,12 @@ import {
   annotationKindNameSchema,
   annotationRectSchema,
   formDataFormatSchema,
+  formDataImportFormatSchema,
   annotationDataFormatSchema,
   formFieldKindSchema,
   importFormDataSchema,
   importAnnotationsSchema,
+  editTextOperatorsSchema,
   type AnswerRoute,
   channel,
   fileAnswered,
@@ -46,6 +49,7 @@ import {
   movePageSchema,
   ocrLanguagesSchema,
   PAGE_IMAGE_FORMATS,
+  PROTECTION_TERMS_MAX,
   placeAnnotationSchema,
   styleAnnotationSchema,
   editAnnotationTextSchema,
@@ -71,11 +75,21 @@ import {
   setPageBackgroundSchema,
   insertImagePageSchema,
   createFormFieldSchema,
+  duplicateFormFieldSchema,
+  editFormFieldsSchema,
+  formFieldHandleSchema,
+  formFieldReadSchema,
+  importSkippedSchema,
+  MAX_IMPORT_SKIPS,
+  MAX_IMPORT_SKIP_NAME,
+  MAX_READ_FIELDS,
+  setTabOrderSchema,
   ocrPageSchema,
   generateTocSchema,
   drawableSignatureSchema,
   signDocumentSchema,
   signaturePlacementSchema,
+  drawnBoxesShape,
 } from '@monstera/contract/host';
 import { z } from 'zod';
 
@@ -83,9 +97,11 @@ import { HUMAN_CHECKS } from '../accessibilityRules.js';
 import type { CommandPrior } from '../commandLog.js';
 import { type DeclaredCommands, declaredCommands } from '../commandDeclarations.js';
 import type { KindsRoutedTo } from '../commandRouting.js';
+import { COPY_STANDINGS } from '../openCopy.js';
 import type { PlaceholderRequest } from '../signatureHole.js';
 import { PAGE_TEXT_READS } from '../textStructure.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
+import { pageRunsSchema } from './pageRunsWire.js';
 
 /**
  * The engine host's channels (ADR-0023 Decision 11).
@@ -418,6 +434,9 @@ export const ENGINE_FORM_FIELDS_MAX = 66_500;
 /** The fewest bytes one form field serialises to on this wire. Measured by `engineChannels.test.ts`. */
 export const SMALLEST_FORM_FIELD_BYTES = 125;
 export const ENGINE_FORM_FIELD_TEXT_MAX = 512;
+/** How many skipped fields an import's report names, and how much of each name: shown, so cut to what a row can hold. */
+export const ENGINE_IMPORT_SKIPS_MAX = MAX_IMPORT_SKIPS;
+export const ENGINE_IMPORT_SKIP_NAME_MAX = MAX_IMPORT_SKIP_NAME;
 export const ENGINE_FORM_FIELD_OPTIONS_MAX = 512;
 /** How many values one field may carry. The contract's bound, on this wire. */
 export const ENGINE_FORM_FIELD_VALUES_MAX = 256;
@@ -764,6 +783,23 @@ const priorPageTransitionSchema = z
  * reason: an omission should fail at the line that omitted it.
  */
 const capturedPriorSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('setDocumentProtection'),
+      /**
+       * The protection the session stood with (ADR-0171 Decision 8). Its terms carry the passwords, so they are NAMED
+       * as a credential: a capture answers through a file and an invert takes its params from one, and the transport
+       * lifts every credential-named value into the frame (ADR-0171's correction of 2026-10-05). Main holds them beside
+       * the log entry in memory and never in it. `PROTECTION_TERMS_MAX` is the contract's, so the frame bounds the same.
+       */
+      prior: z.discriminatedUnion('standing', [
+        z
+          .object({ standing: z.literal('protected'), passwordTerms: z.string().min(1).max(PROTECTION_TERMS_MAX) })
+          .strict(),
+        z.object({ standing: z.literal('unprotected') }).strict(),
+      ]),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('rotatePages'),
@@ -1121,8 +1157,33 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   importAnnotationsSchema.omit({ bytes: true }),
 ]);
 
-/** What travels in place of a command, once its asset has been taken out. */
-export type MupdfWireCommand = z.infer<typeof mupdfCommandSchema>;
+/**
+ * The MuPDF kinds whose intent can outgrow a frame, carried by `engine/apply-file` with their pre-read (ADR-0176's note
+ * on Decision 2). DECLARED PER KIND, ADR-0138's rule: a kind is here because its schema was measured past the frame,
+ * never because one message happened to be large, and a framed kind that grows still turns the request rule red.
+ *
+ * `editTextOperators` carries `editTextBlock`'s block wire, which ADR-0138 Decision 4 measured past the frame.
+ */
+// A UNION OF ONE, so it is read as every command channel's union is: by its options (`hostRoutes.test.ts`).
+const mupdfFileCommandSchema = z.discriminatedUnion('kind', [editTextOperatorsSchema]);
+
+/** The MuPDF kinds `engine/apply-file` carries. */
+export const MUPDF_FILE_KINDS: ReadonlySet<string> = new Set<MupdfFileKind>(['editTextOperators']);
+type MupdfFileKind = z.infer<typeof mupdfFileCommandSchema>['kind'];
+
+// A FILE-ROUTED KIND IS UNDONE BY ITS CHECKPOINT, because `engine/capture` is framed and cannot carry it: main answers
+// its capture without a round trip (`remoteEngine.ts`). A file-routed kind declared invertible is a compile error here,
+// and the repair is a file-requested capture, never a quiet one.
+const _fileRoutedKindsAreCheckpointed: (typeof declaredCommands)[MupdfFileKind]['invertible'] extends false ? true : never = true;
+void _fileRoutedKindsAreCheckpointed;
+
+/** What travels in place of a command, once its asset has been taken out: by frame, or for a file-routed kind by file. */
+export type MupdfWireCommand = z.infer<typeof mupdfCommandSchema> | z.infer<typeof mupdfFileCommandSchema>;
+
+/** Whether a wire command is one `engine/apply-file` carries: the set above, read once. */
+export function isFileRouted(command: MupdfWireCommand): command is z.infer<typeof mupdfFileCommandSchema> {
+  return MUPDF_FILE_KINDS.has(command.kind);
+}
 
 /**
  * Splits a command into what crosses the wire and what does not.
@@ -1242,7 +1303,11 @@ export function joinAsset(
  */
 type Covers<Whole, Listed extends Whole> = Listed;
 type Excludes<Listed, Whole extends Listed> = Whole;
-type ChannelKind = z.infer<typeof mupdfCommandSchema>['kind'];
+// BOTH OF THE MuPDF HOST'S COMMAND CHANNELS, framed and file-requested: together they carry every kind routed here.
+type ChannelKind = z.infer<typeof mupdfCommandSchema>['kind'] | MupdfFileKind;
+// AND NO KIND ON BOTH: a file-routed kind on the framed union would be a kind with two routes.
+const _noKindHasTwoRoutes: Extract<z.infer<typeof mupdfCommandSchema>['kind'], MupdfFileKind> extends never ? true : never = true;
+void _noKindHasTwoRoutes;
 export type MupdfChannelCoversEveryRoutedKind = Covers<ChannelKind, KindsRoutedTo<'mupdf'>>;
 export type MupdfChannelExcludesEveryOtherKind = Excludes<ChannelKind, KindsRoutedTo<'mupdf'>>;
 
@@ -1261,6 +1326,9 @@ const pdfLibCommandSchema = z.discriminatedUnion('kind', [
   setPageBackgroundSchema,
   insertImagePageSchema.omit({ bytes: true }),
   createFormFieldSchema,
+  editFormFieldsSchema,
+  duplicateFormFieldSchema,
+  setTabOrderSchema,
   ocrPageSchema,
   generateTocSchema,
 ]);
@@ -1364,6 +1432,22 @@ export function joinPlaceholderAsset(
  */
 export const PICTURE_REFUSALS = ['picture-too-many-pixels'] as const;
 
+/**
+ * A change to a form field's refusals (ADR-0193), one wire code per reason: `field-edit-` and the reason. They are
+ * the answers of `engine/applyPdfLib` alone, since the three commands are pdf-lib's.
+ */
+export const FIELD_EDIT_REFUSALS = [
+  'field-edit-not-found',
+  'field-edit-name-taken',
+  'field-edit-name-parent',
+  'field-edit-options-count',
+  'field-edit-options-duplicate',
+  'field-edit-options-radio-labels',
+  'field-edit-duplicate-radio',
+  'field-edit-duplicate-signature',
+  'field-edit-encrypted',
+] as const;
+
 /** {@link PICTURE_REFUSALS}, and the one only a signature's appearance meets. */
 export const PLACEHOLDER_REFUSALS = [
   'signature-picture-unreadable',
@@ -1415,6 +1499,18 @@ const pathSchema = z.string().min(1).max(ENGINE_PATH_MAX_CHARS);
 export const documentPasswordSchema = z.string().max(DOCUMENT_PASSWORD_MAX_CHARS);
 
 /**
+ * How many keys one `engine/open` may carry: the password a document was opened with and one per protect that set a
+ * user password in its session, distinct.
+ *
+ * **Sized to the frame.** Every request must fit one 262,144-byte frame, and a key at its 512-character bound costs
+ * about 3,100 bytes of JSON at worst, every character escaped: 256 keys measured 800,796 bytes against that frame
+ * (`hostRoutes.test.ts`, 2026-10-05), and 64 leave room for the rest of the request. Main offers the key the document
+ * opens with and the newest others up to this; a person would have to protect one document with more than 63 different
+ * passwords in one sitting for an old copy's key to go unoffered.
+ */
+export const ENGINE_OPEN_KEYS_MAX = 64;
+
+/**
  * One attempt's outcome, exactly as `containment.ts` defines it.
  *
  * The code's bound and charset are imported rather than restated: the host
@@ -1457,7 +1553,14 @@ export interface WireShape<
   TWrote extends z.ZodType,
   TTransferFailure extends readonly string[],
   TApplyFailure extends readonly string[] = readonly [],
+  TInvertFailure extends readonly string[] = readonly [],
 > {
+  /**
+   * What `engine/invert` can refuse with beyond the transfer failures, {@link applyFailures}' rule from the other side:
+   * an undo that regenerates a page writes the prior's text back and reads it back as an edit does, so it can meet a
+   * font that does not carry what it wrote. Declared where an engine's invert can produce it and nowhere else.
+   */
+  readonly invertFailures?: TInvertFailure;
   /**
    * What `engine/apply` ALONE can refuse with, beyond the transfer failures.
    *
@@ -1598,7 +1701,16 @@ export interface CoreChannelSchemas<
  * inventing a third arrangement.
  */
 export const liveSessionWire = {
-  open: { snapshotName: outputNameSchema, password: documentPasswordSchema.optional() },
+  open: {
+    snapshotName: outputNameSchema,
+    // EVERY KEY A COPY OF THE DOCUMENT MAY NEED, the one it opens with now first (ADR-0171 Decision 8): a checkpoint
+    // a protect encrypted needs that protect's password once the protect is undone. Tried in order, each a fresh open
+    // (ADR-0055), then no password. Empty for a document no password opened or set. Required, ADR-0069's rule.
+    keys: z.array(documentPasswordSchema).max(ENGINE_OPEN_KEYS_MAX).readonly(),
+    // HOW THE DOCUMENT STANDS, which the copy may not say: a checkpoint encrypted by a protect since undone is the
+    // document unprotected, so `unprotected` decrypts it in memory. `as-copied` keeps the copy's own encryption.
+    standing: z.enum(COPY_STANDINGS),
+  },
   openFailures: ['open-failed', 'needs-password', 'wrong-password'],
   opened: { access: z.literal(DOCUMENT_ACCESS_VALUES) },
   read: {},
@@ -1638,7 +1750,8 @@ export const byteImageWire = {
   // that leaves it out is a compile error rather than a document opened without its key (ADR-0069's rule).
   read: { from: outputNameSchema, password: documentPasswordSchema.nullable() },
   write: { into: outputNameSchema },
-  wrote: z.object({ bytes: z.number().int().nonnegative() }).strict(),
+  // AND WHAT IT DREW AS BOXES (ADR-0174): only the apply knows, so its answer carries them, capped and counted.
+  wrote: z.object({ bytes: z.number().int().nonnegative(), ...drawnBoxesShape }).strict(),
   transferFailures: ['asset-missing', 'engine-refused'],
 } as const satisfies WireShape<
   z.ZodRawShape,
@@ -1837,12 +1950,13 @@ export function coreEngineChannels<
   TWrote extends z.ZodType,
   const TTransferFailure extends readonly string[],
   const TApplyFailure extends readonly string[] = readonly [],
+  const TInvertFailure extends readonly string[] = readonly [],
 >(
   schemas: CoreChannelSchemas<
     TCommand,
     TCapture,
     TInverse,
-    WireShape<TOpen, TOpenFailure, TOpened, TRead, TWrite, TWrote, TTransferFailure, TApplyFailure>
+    WireShape<TOpen, TOpenFailure, TOpened, TRead, TWrite, TWrote, TTransferFailure, TApplyFailure, TInvertFailure>
   >,
 ) {
   const wire = schemas.wire;
@@ -1965,7 +2079,7 @@ export function coreEngineChannels<
         })
         .strict(),
       wire.wrote,
-      ['no-such-session', ...wire.transferFailures],
+      ['no-such-session', ...wire.transferFailures, ...(wire.invertFailures ?? ([] as const))],
     ),
   };
 }
@@ -2056,8 +2170,9 @@ export const engineChannels = {
     // THE SHAPE, NOT A SET OF FIELDS. MuPDF is `writerShapes`' one live-session
     // entry, so its wire is the constant every live-session engine takes: an
     // open that opens a document, no image named on the way in, nothing written
-    // on the way out, and an apply that answers nothing — which is
-    // `CommandExecution<'mupdf'>.apply`'s `Promise<void>` on the wire.
+    // on the way out, and an `engine/apply` that answers nothing, because no
+    // kind it carries sets text. The one MuPDF apply that answers boxes is
+    // carried by `engine/apply-file` below, whose answer holds them (ADR-0177).
     wire: liveSessionWire,
     // IN THE FRAME: every MuPDF kind fits one at its worst, the largest `addAnnotation` at 247,050 bytes (ADR-0138).
     commandRoute: 'frame',
@@ -2065,6 +2180,33 @@ export const engineChannels = {
   // THE LIVE-SESSION CHANNEL. MuPDF holds a parse between commands, so it owes
   // the channel that hands the parse's bytes back (ADR-0048's correction).
   ...liveSessionChannels(),
+
+  /**
+   * One MuPDF command whose intent can outgrow a frame, with the pre-read it declares (ADR-0176's note on Decision 2):
+   * `engine/apply`'s request for the kinds {@link MUPDF_FILE_KINDS} names, file-requested by ADR-0125 Decision 7's
+   * route. The pre-read is PDFium's `engine/page-runs` answer, which crossed under the same 8 MiB ceiling and is checked
+   * here by the same schema it was checked by there.
+   *
+   * Its refusals are the person's to be told, and an edit's own two: words no font on the page carries, and a page this
+   * writer cannot rewrite, with the step the owner's sentence names. Nothing else a throw can say crosses: it is
+   * `internal` with an incident id, as on `engine/apply`.
+   */
+  'engine/apply-file': fileRequested(
+    'Applies one MuPDF command whose intent can outgrow a frame, with its pre-read, to a session this host holds.',
+    z
+      .object({
+        session: sessionSchema,
+        command: mupdfFileCommandSchema,
+        // `engine/apply`'s field, for its reason: required and empty for a command naming no other document.
+        sources: z.array(sessionSchema).max(MAX_MERGE_DOCUMENTS),
+        // REQUIRED: every file-routed kind declares this pre-read. One that did not would change this line visibly.
+        reads: pageRunsSchema,
+      })
+      .strict(),
+    // WHAT IT DREW AS BOXES (ADR-0177 Decision 7), capped and counted as the PDFium host's answer carries them.
+    z.object({ ...drawnBoxesShape }).strict(),
+    ['no-such-session', 'text-not-writable', 'edit-refused'],
+  ),
 
   /**
    * A pdf-lib command, run BESIDE the session it rewrites
@@ -2095,7 +2237,7 @@ export const engineChannels = {
       })
       .strict(),
     z.object({ bytes: z.number().int().nonnegative() }).strict(),
-    ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed', ...PICTURE_REFUSALS],
+    ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed', ...PICTURE_REFUSALS, ...FIELD_EDIT_REFUSALS],
   ),
 
   /**
@@ -2595,6 +2737,24 @@ export const engineChannels = {
   ),
 
   /**
+   * Which writer rewrites one page's text ([ADR-0176](../../../../docs/DECISIONS/0176-a-page-holding-type-3-text-is-edited-in-its-own-content-stream-by-mupdf.md)
+   * Decision 1): `operators` where the page's content shows text in a Type 3 font, `objects` everywhere else. One word,
+   * so framed: nothing about the answer scales with the page.
+   */
+  'engine/page-rewrite': channel(
+    'Reads which writer rewrites one page’s text, from a session this host holds.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based index, as `commands.ts` declares them. */
+        page: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z.object({ rewrite: textRewriteSchema }).strict(),
+    ['no-such-session'],
+  ),
+
+  /**
    * One page's word boxes ([ADR-0137](../../../../docs/DECISIONS/0137-a-words-box-is-the-engines-read-on-request.md)):
    * each line's text and box, and each token's box as the union of its characters' quads. A shape the host builds, so
    * the schema bounds it — the token total by {@link ENGINE_WORD_BOXES_MAX}, which the reader itself stops at, and each
@@ -2884,15 +3044,56 @@ export const engineChannels = {
                 rect: annotationRectSchema,
                 label: z.string().max(ENGINE_FLAT_LABEL_MAX),
                 name: z.string().max(ENGINE_FLAT_LABEL_MAX),
+                kind: z.enum(['text', 'checkbox']),
               })
               .strict(),
           )
           .max(ENGINE_FLAT_CANDIDATES_MAX),
         /** Whether the bound stopped the walk. See `engine/duplicate-pages`. */
         truncated: z.boolean(),
+        /** How many places that look like a field already hold one, left out so none is made twice. */
+        alreadyFields: z.number().int().nonnegative(),
       })
       .strict(),
     ['no-such-session'],
+  ),
+
+  /**
+   * What each named field's properties are (ADR-0193): the Properties pane's read.
+   *
+   * A SEPARATE CHANNEL and not members of `engine/form-fields`, whose answer is bounded by the smallest field: a tooltip
+   * and a list of choices per field would put its worst case past the answer ceiling. This one is bounded by the handles
+   * it is asked for (`MAX_READ_FIELDS`), so an answer cannot outgrow the request. `null` is a handle that no longer
+   * names its field.
+   */
+  'engine/field-properties': fileAnswered(
+    'Reads the properties of the named form fields.',
+    z.object({ session: sessionSchema, fields: z.array(formFieldHandleSchema).min(1).max(MAX_READ_FIELDS).readonly() }).strict(),
+    z.object({ fields: z.array(formFieldReadSchema.nullable()).max(MAX_READ_FIELDS).readonly() }).strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * What importing a data file would do to this form, without doing it: how many fields it fills, which it leaves and why.
+   *
+   * A READ that parses a file, so it runs here for invariant 20's reason: the file is hostile input. The file crosses
+   * as an ASSET in the session's snapshot directory, `engine/applyPdfLib`'s door, and is read from there. Bounded where
+   * the wire is: {@link ENGINE_IMPORT_SKIPS_MAX} names, each cut to {@link ENGINE_IMPORT_SKIP_NAME_MAX}, and the rest
+   * counted.
+   */
+  'engine/form-import-plan': channel(
+    'Plans what a form data file would fill in this session’s form, and reports it.',
+    z.object({ session: sessionSchema, format: formDataImportFormatSchema, asset: outputNameSchema }).strict(),
+    z
+      .object({
+        filled: z.number().int().nonnegative(),
+        named: z.number().int().nonnegative(),
+        matched: z.number().int().nonnegative(),
+        skipped: z.array(importSkippedSchema).max(ENGINE_IMPORT_SKIPS_MAX).readonly(),
+        more: z.number().int().nonnegative(),
+      })
+      .strict(),
+    ['no-such-session', 'asset-missing', 'plan-failed'],
   ),
 
   /**

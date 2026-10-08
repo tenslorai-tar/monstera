@@ -11,6 +11,8 @@ import {
   type DeclaredOf,
   type FileAccess,
   type FormFieldKind,
+  type FormFieldRead,
+  type ImportSkipped,
   type SaveWriteCause,
   type Incident,
   type OcrLanguage,
@@ -29,12 +31,14 @@ import {
   TEXT_BLOCKS_PART,
   type LibraryEntry,
   NATIVE_COMPONENT_IDS,
+  type NativeComponentId,
   SECRET_SETTING_IDS,
   channels,
   createClient,
   isFollowable,
   shownSchemeOf,
   wrapHandlers,
+  type BoxedInEditEntry,
 } from '@monstera/contract';
 import {
   type DeclaredFailure,
@@ -262,6 +266,14 @@ export interface BrowserShimOptions {
    */
   readonly ocrLanguages?: readonly OcrLanguage[];
   /**
+   * The native components whose files do not match the manifest once *Verify files* hashes them, by id.
+   *
+   * The Components dialog's tallest state is a changed component with every row beside it, and a browser holds no
+   * file that could differ, so a case about that state names the component, as `ocrLanguages` names a machine's models.
+   * Answered `changed` only to a verify, as the shell does: the cheap first look reads what is present.
+   */
+  readonly changedComponents?: readonly NativeComponentId[];
+  /**
    * Documents whose lane is saturated, by id.
    *
    * A declared outcome the renderer must handle by backing off. It is a set a
@@ -277,6 +289,17 @@ export interface BrowserShimOptions {
    * number this side computed would be arithmetic nothing ships.
    */
   readonly trims?: ReadonlyMap<string, number>;
+  /**
+   * The characters each document's next command reports drawn as boxes, by id (ADR-0174) — a value a test supplies,
+   * `trims`' reason: the shim has no fonts to draw with.
+   */
+  readonly boxes?: ReadonlyMap<string, readonly BoxedInEditEntry[]>;
+  /**
+   * The older copies each document's next command reports it could not encrypt, by id
+   * ([ADR-0178](../../../docs/DECISIONS/0178-a-protect-that-applied-is-not-failed-by-a-copy-it-could-not-seal.md)) —
+   * a value a test supplies, `trims`' reason: the shim seals no copies, having no filesystem.
+   */
+  readonly unsealed?: ReadonlyMap<string, readonly string[]>;
   /**
    * Documents whose save answers something other than `saved`, by id.
    *
@@ -383,7 +406,18 @@ export interface BrowserShimOptions {
    * accepting for channels that really do run one path in production. These two
    * do not: the import reads a data file and the placement reads a picture.
    */
-  readonly importedFormData?: 'unreadable' | 'too-large' | { readonly byteLength: number };
+  readonly importedFormData?:
+    | 'unreadable'
+    | 'too-large'
+    | { readonly matchedNothing: number }
+    | {
+        readonly byteLength: number;
+        /** How many fields it filled. Absent is one. */
+        readonly filled?: number;
+        /** The fields it left alone, each with a reason. Absent is none. */
+        readonly skipped?: readonly { readonly name: string; readonly reason: ImportSkipped['reason'] }[];
+        readonly more?: number;
+      };
   /** What `document.importAnnotations` answers — its own switch, for `importedFormData`'s reason. */
   readonly importedAnnotations?: 'unreadable' | { readonly byteLength: number };
   /**
@@ -607,7 +641,15 @@ export interface BrowserShimOptions {
     readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
     readonly label: string;
     readonly name: string;
+    readonly kind?: 'text' | 'checkbox';
   }[];
+  /** How many places `document.flatFieldCandidates` says already hold a field. Absent is none. */
+  readonly flatFieldsAlready?: number;
+  /**
+   * What `document.formFieldProperties` answers beyond a list's own members, by field name: a tooltip, a format, a
+   * calculation. Absent is the defaults of a field that has none of them.
+   */
+  readonly fieldProperties?: Readonly<Record<string, Partial<FormFieldRead>>>;
   /**
    * The editable blocks `document.textBlocks` answers, on every page.
    *
@@ -618,6 +660,20 @@ export interface BrowserShimOptions {
    * without the engine actually takes untested, which is most of them.
    */
   readonly textBlocks?: ChannelResult<'document.textBlocks'>['blocks'] | null;
+  /**
+   * Which writer the shim's pages name (ADR-0176 Decision 1): `objects` unless a case says the page shows Type 3 text,
+   * which is what a page a case wrote down is unless it says otherwise.
+   */
+  readonly textRewrite?: ChannelResult<'document.textBlocks'>['rewrite'];
+  /**
+   * What `document.runFonts` answers (ADR-0175): the fonts, and each run's place among them by the run's first object.
+   * Every font is answered whatever was asked, as a host answers each font met once. Absent is none for every run, which
+   * is what an installation with no PDFium answers, and the editor draws each run in its kind of face.
+   */
+  readonly runFonts?: {
+    readonly fonts: readonly Uint8Array<ArrayBuffer>[];
+    readonly runs: ReadonlyMap<number, number>;
+  };
   /**
    * What `ai.translatePage` answers. Absent is a refusal with no key — no provider exists in a
    * browser — so a case that wants the write that follows a translation hands one in.
@@ -1047,15 +1103,18 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'app.components': ({ verify }) =>
       Promise.resolve(
         ok({
-          components: NATIVE_COMPONENT_IDS.map((id) => ({
-            id,
-            name: id,
-            version: 'shim',
-            state: verify ? ('verified' as const) : ('present' as const),
-            missing: 0,
-            altered: 0,
-            extra: 0,
-          })),
+          components: NATIVE_COMPONENT_IDS.map((id) => {
+            const changed = verify && (options.changedComponents ?? []).includes(id);
+            return {
+              id,
+              name: id,
+              version: 'shim',
+              state: changed ? ('changed' as const) : verify ? ('verified' as const) : ('present' as const),
+              missing: changed ? 1 : 0,
+              altered: changed ? 2 : 0,
+              extra: 0,
+            };
+          }),
         }),
       ),
 
@@ -1316,6 +1375,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           version: asDocVersion(next),
           byteLength: byteLengthOf(docId),
           historyDropped: options.trims?.get(docId) ?? 0,
+          // NONE BY DEFAULT and a set a test controls, `trims`' reasons: the shim draws nothing (ADR-0174).
+          boxed: [...(options.boxes?.get(docId) ?? [])],
+          more: 0,
+          // NONE BY DEFAULT and a set a test controls (ADR-0178): the shim seals no copies, so a protect names none.
+          unsealedCopies: [...(options.unsealed?.get(docId) ?? [])],
         }),
       );
     },
@@ -1631,6 +1695,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (chosen === 'too-large') {
         return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_FORM_DATA_BYTES }));
       }
+      if ('matchedNothing' in chosen) {
+        return Promise.resolve(ok({ kind: 'matched-nothing' as const, named: chosen.matchedNothing }));
+      }
       const version = asDocVersion(current + 1);
       versions.set(docId, version);
       return Promise.resolve(
@@ -1639,6 +1706,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           version,
           byteLength: chosen.byteLength,
           historyDropped: 0,
+          filled: chosen.filled ?? 1,
+          skipped: chosen.skipped ?? [],
+          more: chosen.more ?? 0,
         }),
       );
     },
@@ -2264,8 +2334,53 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          candidates: options.flatFieldCandidates ?? [],
+          candidates: (options.flatFieldCandidates ?? []).map((candidate) => ({ ...candidate, kind: candidate.kind ?? 'text' })),
           truncated: false,
+          alreadyFields: options.flatFieldsAlready ?? 0,
+        }),
+      );
+    },
+
+    /**
+     * The named fields' properties, built from the field list the case seeded (the channel's own shape, defaults for
+     * what a list does not say) and overridden by name from `fieldProperties`, so a case can start a field with a
+     * tooltip, a format or a calculation without a document behind it.
+     */
+    'document.formFieldProperties': ({ docId, fields: handles }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      const listed = fieldLists[0] ?? [];
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(current),
+          fields: handles.map((handle) => {
+            const found = listed.find((field) => field.page === handle.page && field.index === handle.index);
+            if (found?.name !== handle.name) return null;
+            return {
+              page: found.page,
+              index: found.index,
+              kind: found.kind,
+              name: found.name,
+              tooltip: null,
+              required: false,
+              readOnly: found.readOnly,
+              defaultValue: null,
+              font: 'helvetica' as const,
+              fontSize: 0,
+              borderColour: [0.2, 0.2, 0.2] as [number, number, number],
+              fillColour: null,
+              borderWidth: 1,
+              options: found.options,
+              multiline: found.multiline,
+              rect: found.rect,
+              format: null,
+              customFormat: false,
+              calculation: null,
+              customCalculation: false,
+              calculationPosition: null,
+              ...(options.fieldProperties?.[found.name] ?? {}),
+            };
+          }),
         }),
       );
     },
@@ -2288,10 +2403,30 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
         // addressable by construction. A shim that could report otherwise would
         // be inventing a Form XObject nobody built.
         // CUT INTO REAL PARTS, so a case can seed a page past one part and watch the surface read it whole.
-        ok({ version: asDocVersion(current), ...shimPart(blocks, from, TEXT_BLOCKS_PART, 'blocks'), truncated: false, rotated: 0, unaddressable: 0 }),
+        ok({
+          version: asDocVersion(current),
+          ...shimPart(blocks, from, TEXT_BLOCKS_PART, 'blocks'),
+          truncated: false,
+          rotated: 0,
+          angled: { turned: 0, vertical: 0, slanted: 0, mirrored: 0 },
+          unaddressable: 0,
+          rewrite: options.textRewrite ?? 'objects',
+        }),
       );
     },
 
+    'document.runFonts': ({ docId, indices }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      const given = options.runFonts;
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(current),
+          fonts: given?.fonts ?? [],
+          runs: indices.map((index) => given?.runs.get(index) ?? null),
+        }),
+      );
+    },
     'document.renderPage': ({ docId }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));

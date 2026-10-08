@@ -69,3 +69,14 @@ SVG and an FB2 file at recognition, before any parse, on the rebuilt binary. The
   no feature here opens an HTML file.
 - **Writing the appearance ourselves with pdf-lib and an embedded font**: pdf-lib shapes nothing and orders nothing.
 - **Leaving it until a later MuPDF**: the switch is this build's, not upstream's.
+
+## Superseded in part, 2026-10-05 — page text has its own ordering and shaping
+
+[ADR-0172](0172-one-font-resolver-open-fonts-bundled-by-fingerprint-subsets-made-in-the-host.md) Decision 10, on the
+owner's approval of the text-editing plan's decision 7, supersedes the rejected alternative *"bidi and shaping in
+TypeScript, or a second shaping library"* **for page text only**: composed documents now, and the in-place editor in
+Phase 4, order right to left text with `bidi-js` (held to Unicode's conformance file, 91,707 of 91,707 cases) and
+shape it with HarfBuzz's WebAssembly build inside the host. Annotations keep this ADR's route: MuPDF's engine lays them
+out and this build chooses the alignment alone. So the product carries two UAX #9 implementations and two HarfBuzz
+builds, one per kind of text, which ADR-0172 states as a cost rather than leaving the B3a reason above to read as
+still true everywhere.

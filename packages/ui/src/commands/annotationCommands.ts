@@ -69,10 +69,15 @@ import {
   SELECTION_PROPERTIES_TITLE,
   ELLIPSE_TOOL_TITLE,
   ERASER_TOOL_TITLE,
+  FORM_FIELD_CHECKBOX_TIP,
   FORM_FIELD_CHECKBOX_TOOL_TITLE,
+  FORM_FIELD_DROPDOWN_TIP,
   FORM_FIELD_DROPDOWN_TOOL_TITLE,
+  FORM_FIELD_LISTBOX_TIP,
   FORM_FIELD_LISTBOX_TOOL_TITLE,
+  FORM_FIELD_RADIO_TIP,
   FORM_FIELD_RADIO_TOOL_TITLE,
+  FORM_FIELD_TEXT_TIP,
   FORM_FIELD_TEXT_TOOL_TITLE,
   GROUP_FIELDS,
   GROUP_LINKS,
@@ -190,6 +195,11 @@ export interface ToolCommandDeps {
   /** Makes one active, or `undefined` to leave drawing altogether. */
   readonly onSelect: (id: string | undefined) => void;
   /**
+   * Makes one active AND keeps it on past the one thing it draws, until Escape: what a double click on a field tool's
+   * button does. Absent, a double click on a button is two presses.
+   */
+  readonly onHold?: (id: string) => void;
+  /**
    * Whether the cloud engine has both an endpoint and a key.
    *
    * **Optional, and absent means yes**, which is the right default for the only
@@ -271,10 +281,23 @@ function toolCommand(
    * than failing after the drag.
    */
   also?: () => boolean,
+  /**
+   * What the Forms tools add: the sentence its tooltip says, and whether a double click keeps it on. A parameter and
+   * not an eighth positional because the annotation tools beside it take neither.
+   */
+  forms?: { readonly tip: MessageKey; readonly holdable: boolean },
 ): UiCommand {
   const named = typeof title === 'string' ? { full: title, ribbon: undefined } : title;
   return {
     id,
+    ...(forms === undefined ? {} : { tip: forms.tip }),
+    ...(forms?.holdable === true && deps.onHold !== undefined
+      ? {
+          hold: (): void => {
+            deps.onHold?.(id);
+          },
+        }
+      : {}),
     // ARMING A TOOL IS SHOWN: its button pressed, and the pointer the tool's.
     feedback: VISIBLE,
     title: named.full,
@@ -1342,10 +1365,11 @@ export function formFieldToolCommands(deps: ToolCommandDeps): readonly UiCommand
   // FORMS › FIELDS, named once here rather than five times below.
   const fields = { section: 'forms', group: GROUP_FIELDS } as const;
   return [
-    toolCommand(FORM_FIELD_TEXT_TOOL_ID, { full: FORM_FIELD_TEXT_TOOL_TITLE, ribbon: RIBBON_FIELD_TEXT }, 'TextCursor', 70, deps, fields),
-    toolCommand(FORM_FIELD_CHECKBOX_TOOL_ID, { full: FORM_FIELD_CHECKBOX_TOOL_TITLE, ribbon: RIBBON_FIELD_CHECKBOX }, 'SquareCheck', 71, deps, fields),
-    toolCommand(FORM_FIELD_RADIO_TOOL_ID, { full: FORM_FIELD_RADIO_TOOL_TITLE, ribbon: RIBBON_FIELD_RADIO }, 'CircleDot', 72, deps, fields),
-    toolCommand(FORM_FIELD_DROPDOWN_TOOL_ID, { full: FORM_FIELD_DROPDOWN_TOOL_TITLE, ribbon: RIBBON_FIELD_DROPDOWN }, 'ChevronDown', 73, deps, fields),
-    toolCommand(FORM_FIELD_LISTBOX_TOOL_ID, { full: FORM_FIELD_LISTBOX_TOOL_TITLE, ribbon: RIBBON_FIELD_LISTBOX }, 'List', 74, deps, fields),
+    toolCommand(FORM_FIELD_TEXT_TOOL_ID, { full: FORM_FIELD_TEXT_TOOL_TITLE, ribbon: RIBBON_FIELD_TEXT }, 'TextCursor', 70, deps, fields, undefined, { tip: FORM_FIELD_TEXT_TIP, holdable: true }),
+    toolCommand(FORM_FIELD_CHECKBOX_TOOL_ID, { full: FORM_FIELD_CHECKBOX_TOOL_TITLE, ribbon: RIBBON_FIELD_CHECKBOX }, 'SquareCheck', 71, deps, fields, undefined, { tip: FORM_FIELD_CHECKBOX_TIP, holdable: true }),
+    // A RADIO GROUP IS SEVERAL DRAWS, so its tool stays on until Escape and has no double click to add.
+    toolCommand(FORM_FIELD_RADIO_TOOL_ID, { full: FORM_FIELD_RADIO_TOOL_TITLE, ribbon: RIBBON_FIELD_RADIO }, 'CircleDot', 72, deps, fields, undefined, { tip: FORM_FIELD_RADIO_TIP, holdable: false }),
+    toolCommand(FORM_FIELD_DROPDOWN_TOOL_ID, { full: FORM_FIELD_DROPDOWN_TOOL_TITLE, ribbon: RIBBON_FIELD_DROPDOWN }, 'ChevronDown', 73, deps, fields, undefined, { tip: FORM_FIELD_DROPDOWN_TIP, holdable: true }),
+    toolCommand(FORM_FIELD_LISTBOX_TOOL_ID, { full: FORM_FIELD_LISTBOX_TOOL_TITLE, ribbon: RIBBON_FIELD_LISTBOX }, 'List', 74, deps, fields, undefined, { tip: FORM_FIELD_LISTBOX_TIP, holdable: true }),
   ];
 }

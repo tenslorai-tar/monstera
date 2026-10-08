@@ -23,6 +23,7 @@ import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
 import type { AnnotationStyle } from './annotationStyle.js';
 import { type AnnotationSnapshot, markAt } from './eraserTool.js';
+import type { KnownField } from './fieldNameCheck.js';
 import type { WordsOf } from './markWords.js';
 
 /**
@@ -105,6 +106,11 @@ export interface TextToolDeps {
    * Beside `ask` and held the same way, so a tool still builds its own command from the answer.
    */
   readonly write: Write;
+  /**
+   * The fields the document has, read when a field tool is about to ask for a name (`undefined` when they cannot be
+   * read, which is no check and never a refusal). Optional: the annotation tools beside the field tools take no names.
+   */
+  readonly fields?: () => Promise<readonly KnownField[] | undefined>;
   /**
    * The style a new annotation is drawn in.
    *

@@ -1,7 +1,7 @@
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
-import type { ByteImage, ImageSession } from './engineSeam.js';
+import { type AppliedImage, type ImageSession, imageAlone } from './engineSeam.js';
 import {
   type ObjectMatrix,
   objectMatrix,
@@ -91,13 +91,13 @@ export async function capturePlacePageObject(
 export async function applyPlacePageObject(
   image: ImageSession,
   command: CommandOfKind<'placePageObject'>,
-): Promise<ByteImage> {
+): Promise<AppliedImage> {
   return onImage(image, async (session) => {
     await placeObject(session, command.page, command.index, {
       moveBy: command.moveBy,
       scaleBy: command.scaleBy,
     });
-    return pdfiumWriter.serialise(session);
+    return imageAlone(await pdfiumWriter.serialise(session));
   });
 }
 
@@ -113,10 +113,10 @@ export async function applyPlacePageObject(
 export async function invertPlacePageObject(
   image: ImageSession,
   inverse: PriorPlacement,
-): Promise<ByteImage> {
+): Promise<AppliedImage> {
   return onImage(image, async (session) => {
     await setObjectMatrix(session, inverse.page, inverse.index, inverse.matrix);
-    return pdfiumWriter.serialise(session);
+    return imageAlone(await pdfiumWriter.serialise(session));
   });
 }
 
@@ -168,7 +168,7 @@ export async function captureRecolorPageObjects(
 export async function applyRecolorPageObjects(
   image: ImageSession,
   command: CommandOfKind<'recolorPageObjects'>,
-): Promise<ByteImage> {
+): Promise<AppliedImage> {
   return onImage(image, async (session) => {
     // ONE CALL FOR THE WHOLE LIST, which is where the cost is: generation is
     // per call and 13.7× over forty objects when paid per object (ADR-0047
@@ -178,7 +178,7 @@ export async function applyRecolorPageObjects(
       command.page,
       command.indices.map((index) => ({ index, ...command.colour })),
     );
-    return pdfiumWriter.serialise(session);
+    return imageAlone(await pdfiumWriter.serialise(session));
   });
 }
 
@@ -186,10 +186,10 @@ export async function applyRecolorPageObjects(
 export async function invertRecolorPageObjects(
   image: ImageSession,
   inverse: PriorFills,
-): Promise<ByteImage> {
+): Promise<AppliedImage> {
   return onImage(image, async (session) => {
     await setObjectFills(session, inverse.page, inverse.objects);
-    return pdfiumWriter.serialise(session);
+    return imageAlone(await pdfiumWriter.serialise(session));
   });
 }
 
@@ -205,10 +205,10 @@ export async function invertRecolorPageObjects(
 export async function applyDeletePageObjects(
   image: ImageSession,
   command: CommandOfKind<'deletePageObjects'>,
-): Promise<ByteImage> {
+): Promise<AppliedImage> {
   return onImage(image, async (session) => {
     await removeObjects(session, command.page, command.indices);
-    return pdfiumWriter.serialise(session);
+    return imageAlone(await pdfiumWriter.serialise(session));
   });
 }
 
@@ -242,7 +242,7 @@ export function captureDeletePageObjects(): Promise<CaptureResult<never>> {
  * nothing can construct an argument, and throwing rather than resolving keeps a
  * widened type from landing as an undo that did nothing.
  */
-export function invertDeletePageObjects(): Promise<ByteImage> {
+export function invertDeletePageObjects(): Promise<AppliedImage> {
   throw new Error(
     'a removed page object has no inverse; undo restores the checkpoint the bus took (ADR-0037)',
   );

@@ -63,7 +63,9 @@ const failures = [];
  */
 // 34 SINCE THE SCAN SHAPE (2026-09-27): the per-shape pass above is one case a shape, and there are three. 35 since
 // 2026-10-02: a declared budget with no measured role still gets a line (the shrink case beside the construction's).
-const DECLARED_CASES = 35;
+// 37 SINCE R29 (2026-10-06): the two control cases that a role which fails to measure where it should run reddens the
+// gate (and the sanctioned exit 2 does not), one case each side of the classifier.
+const DECLARED_CASES = 37;
 
 const roster = createRoster(failures, { cases: DECLARED_CASES });
 
@@ -392,6 +394,41 @@ const thrown = guarded(() => {
     baseline.unasserted.some((entry) => entry.role === 'renderer' && /provisional/iu.test(entry.reason)),
     `unasserted: ${JSON.stringify(baseline.unasserted)}. A gate that skips a declared budget while ` +
       `printing success is the failure this whole path exists to avoid.`,
+  );
+
+  // -------------------------------------------------------------------------
+  // R29: a role that FAILS to measure where it should run reddens the gate; one
+  // that exits the sanctioned not-applicable code is "not asserted". The two
+  // are the same control script with different exit codes, so the classifier is
+  // exercised from both sides and the directions cannot drift apart. Both roles
+  // answer to a real declared budget (`mupdf-host`) so budget resolution is not
+  // what decides the case — the exit code is.
+  // -------------------------------------------------------------------------
+  const controlScript = join(ROOT, 'scripts', 'perf', 'roleControlExit.mjs');
+  const brokenRole = runBudgetGate({
+    documentPath: baseline.fixture.path,
+    roles: [{ role: 'control-broken', budget: 'mupdf-host', script: controlScript, args: ['--exit', '1'] }],
+  });
+  check(
+    'a role that fails to measure where it should run lands in failures, not unasserted (R29)',
+    brokenRole.failures.some((entry) => entry.role === 'control-broken') &&
+      !brokenRole.unasserted.some((entry) => entry.role === 'control-broken') &&
+      brokenRole.results.every((result) => result.role !== 'control-broken'),
+    `failures: ${JSON.stringify(brokenRole.failures)}\n      unasserted: ${JSON.stringify(brokenRole.unasserted)}. ` +
+      `A role that exited non-zero and non-2 must redden the gate; reading it as "not applicable" is the exact ` +
+      `defect R29 closes.`,
+  );
+  const notApplicableRole = runBudgetGate({
+    documentPath: baseline.fixture.path,
+    roles: [{ role: 'control-na', budget: 'mupdf-host', script: controlScript, args: ['--exit', '2'] }],
+  });
+  check(
+    'CONTROL: the SAME script exiting the sanctioned code is unasserted, not a failure (R29)',
+    notApplicableRole.unasserted.some((entry) => entry.role === 'control-na') &&
+      notApplicableRole.failures.every((entry) => entry.role !== 'control-na'),
+    `failures: ${JSON.stringify(notApplicableRole.failures)}\n      unasserted: ${JSON.stringify(notApplicableRole.unasserted)}. ` +
+      `Exit 2 is the one signal that means "this runner cannot measure this role"; without this control the failures ` +
+      `case would pass for a classifier that reddened on every exit, including the legitimate refusal.`,
   );
 
   // -------------------------------------------------------------------------

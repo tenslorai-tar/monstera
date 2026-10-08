@@ -2,6 +2,7 @@ import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import { useEffect, useRef, useState } from 'react';
 
+import type { ViewKeys } from './documentKeys.js';
 import { type DocumentView, needsPasswordToParse, openDocumentView } from './documentView.js';
 
 /**
@@ -90,6 +91,14 @@ export function useDocumentView(
    * — which is the sentence a person sees instead of being asked.
    */
   requestPassword: (retry: boolean) => Promise<string | undefined>,
+  /**
+   * The passwords this person typed for THIS document, and where a newly accepted one is kept
+   * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 7).
+   *
+   * Required, for `requestPassword`'s reason: a caller holding no keys says so with {@link NO_KEYS}, so a view that asks
+   * at every version is a choice someone wrote rather than a parameter someone forgot.
+   */
+  keys: ViewKeys,
 ): {
   /** The live view, or `undefined` while it opens or after it fails. */
   readonly ready: DocumentView | undefined;
@@ -183,7 +192,7 @@ export function useDocumentView(
         // refused for a reason of its own. Handing the password to the parser
         // is still the right next step, and if the parser refuses again the
         // loop asks again.
-        return openDocumentView({
+        const opened = await openDocumentView({
           client,
           docId,
           version,
@@ -191,7 +200,27 @@ export function useDocumentView(
           onVersionMoved,
           password,
         });
+        // KEPT ONLY ONCE THE PARSE TOOK IT, so a key held is one that opened this document.
+        keys.hold(password);
+        return opened;
       }
+    };
+
+    /**
+     * Opens the view with a key this person already typed for the document, newest first, or `undefined` when none
+     * opens it. Main is not asked: it holds its own key, and these are only for this renderer's parse. A key PDF.js
+     * refuses is tried past, since an undo of a protect makes the newest key the wrong one.
+     */
+    const openWithHeldKey = async (): Promise<DocumentView | undefined> => {
+      for (const key of keys.held()) {
+        if (stopped()) return undefined;
+        try {
+          return await openDocumentView({ client, docId, version, byteLength, onVersionMoved, password: key.reveal() });
+        } catch (cause) {
+          if (!needsPasswordToParse(cause)) throw cause;
+        }
+      }
+      return undefined;
     };
 
     const show = async (): Promise<void> => {
@@ -203,7 +232,7 @@ export function useDocumentView(
           // else falls through to the outer catch and becomes `failed`.
           if (!needsPasswordToParse(cause)) throw cause;
           if (stopped()) return;
-          view = await openWithPassword();
+          view = (await openWithHeldKey()) ?? (await openWithPassword());
           if (view === undefined) {
             if (!stopped()) setFailed(true);
             return;
@@ -236,7 +265,7 @@ export function useDocumentView(
     return (): void => {
       cancelled = true;
     };
-  }, [byteLength, client, docId, onVersionMoved, requestPassword, version]);
+  }, [byteLength, client, docId, keys, onVersionMoved, requestPassword, version]);
 
   return { ready: shown?.docId === docId ? shown.view : undefined, failed };
 }

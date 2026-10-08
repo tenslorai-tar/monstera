@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MAX_IMPORT_IMAGE_PIXELS, MAX_PAGE_COORDINATE } from '@monstera/contract';
 
-import { ComposeRefused } from './composeLayout.js';
+import { ComposeRefused } from './composeOutcome.js';
 import { type ImportImage, composeImages } from './imageCompose.js';
 
 /**

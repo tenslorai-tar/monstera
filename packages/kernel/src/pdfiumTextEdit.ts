@@ -1,13 +1,14 @@
 import { type CommandOfKind, blocksOfEdit, replacementsOf } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
-import type { ByteImage, ImageSession } from './engineSeam.js';
+import { type AppliedImage, type ImageSession, imageAlone } from './engineSeam.js';
 import {
   editTextBlocks,
   onImage,
   pdfiumWriter,
   removesItsObject,
   replaceTextObjects,
+  replacementsKeepTheirObjects,
   textObjectText,
 } from './pdfiumFfi.js';
 
@@ -83,6 +84,18 @@ export const EMPTIED = {
 } as const satisfies CaptureResult<never>;
 
 /**
+ * Why a replacement written in pieces has no prior (ADR-0173 Decision 9): its pieces are new objects inserted after
+ * the run, so every index after them moves, and strings recorded by index would be put back into other objects. The
+ * bus takes a checkpoint, so the undo still puts the page back.
+ */
+export const PIECED = {
+  captured: false,
+  reason:
+    'a word its object’s font cannot carry is written as new objects beside it, which renumbers the page, so ' +
+    'strings recorded by index are not enough to put the page back',
+} as const satisfies CaptureResult<never>;
+
+/**
  * The string the named object currently holds.
  *
  * ## It captures BEFORE the bus applies, and a failed read is an outcome
@@ -135,6 +148,10 @@ export async function captureReplaceTextObject(
         };
       }
     }
+    // A REPLACEMENT WRITTEN IN PIECES renumbers the page, so the strings just read would be put back into the wrong
+    // objects: a checkpoint. Asked of the writer that will make the pieces (ADR-0173 Decision 9), once every index is
+    // known to name a text object.
+    if (!(await replacementsKeepTheirObjects(session, command.page, replacements))) return PIECED;
     return { captured: true, prior: { page: command.page, objects } };
   });
 }
@@ -154,12 +171,13 @@ export async function captureReplaceTextObject(
 export async function applyReplaceTextObject(
   image: ImageSession,
   command: CommandOfKind<'replaceTextObject'>,
-): Promise<ByteImage> {
+): Promise<AppliedImage> {
   return onImage(image, async (session) => {
     // READ BACK THROUGH THE CONTRACT'S DECODER, the one inverse of the wire form (ADR-0142). THE LINE IS HELD: strings
     // set object by object carry no knowledge of the line, a Replace's position (`replaceLineRule.ts`).
-    await replaceTextObjects(session, command.page, replacementsOf(command), 'held');
-    return pdfiumWriter.serialise(session);
+    const boxed = await replaceTextObjects(session, command.page, replacementsOf(command), 'held');
+    // AND WHAT IT DREW AS BOXES (ADR-0174), since a Replace writes in pieces as the editor does (ADR-0173 Decision 9).
+    return { image: await pdfiumWriter.serialise(session), boxed, more: 0 };
   });
 }
 
@@ -179,11 +197,11 @@ export async function applyReplaceTextObject(
 export async function invertReplaceTextObject(
   image: ImageSession,
   inverse: PriorTextObjects,
-): Promise<ByteImage> {
+): Promise<AppliedImage> {
   return onImage(image, async (session) => {
     // AS WRITTEN: the recorded strings are the line as it was, widths and all, and an undo is never refused for them.
     await replaceTextObjects(session, inverse.page, inverse.objects, 'as-written');
-    return pdfiumWriter.serialise(session);
+    return imageAlone(await pdfiumWriter.serialise(session));
   });
 }
 
@@ -223,12 +241,13 @@ export async function invertReplaceTextObject(
 export async function applyEditTextBlock(
   image: ImageSession,
   command: CommandOfKind<'editTextBlock'>,
-): Promise<ByteImage> {
+): Promise<AppliedImage> {
   return onImage(image, async (session) => {
     // ONE FIT FOR THE COMMAND, laid out per block as before (ADR-0142).
     const blocks = blocksOfEdit(command).map((block) => ({ ...block, fit: command.fit }));
-    await editTextBlocks(session, command.page, blocks);
-    return pdfiumWriter.serialise(session);
+    const boxed = await editTextBlocks(session, command.page, blocks, command.inserts ?? []);
+    // THE IMAGE AND WHAT IT DREW AS BOXES (ADR-0174), every one, since this is the process that drew them.
+    return { image: await pdfiumWriter.serialise(session), boxed, more: 0 };
   });
 }
 
@@ -252,7 +271,7 @@ export function captureEditTextBlock(): Promise<CaptureResult<never>> {
  * Unreachable, and required by `CommandSpec`'s shape: `CommandPrior.editTextBlock`
  * is `never`, so nothing can construct an argument for it.
  */
-export function invertEditTextBlock(): Promise<ByteImage> {
+export function invertEditTextBlock(): Promise<AppliedImage> {
   return Promise.reject(
     new Error('editTextBlock has no inverse: its undo is a checkpoint, and no prior can be built for it.'),
   );

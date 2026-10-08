@@ -5,11 +5,22 @@ import {
   FrameDecoder,
   encodeFrame,
   hostResponseSchema,
+  liftCredentials,
+  restoreCredentials,
+  type LiftedCredential,
 } from '@monstera/contract';
 
 import type { DocId } from '@monstera/shared';
 
 import type { HostRuntimeTransport, HostTermination } from './runtime.js';
+
+/** A call's params written to a file main made, named in the frame in their place, with the credentials lifted out of it. */
+interface ParamsFile {
+  readonly session: string;
+  readonly name: string;
+  readonly bytes: number;
+  readonly credentials: readonly LiftedCredential[];
+}
 
 /**
  * Main's half of the engine host protocol: a framed byte stream turned into the
@@ -306,7 +317,7 @@ export function createHostClient({
   const send = async (
     channel: string,
     params: unknown,
-    paramsFile: { readonly session: string; readonly name: string; readonly bytes: number } | undefined,
+    paramsFile: ParamsFile | undefined,
     made: DocId | undefined,
   ): Promise<unknown> => {
       const stopped = state.stopped;
@@ -392,7 +403,7 @@ export function createHostClient({
   const inTurn = (
     channel: string,
     params: unknown,
-    paramsFile: { readonly session: string; readonly name: string; readonly bytes: number } | undefined,
+    paramsFile: ParamsFile | undefined,
     made: DocId | undefined,
   ): Promise<unknown> => {
     const stopped = state.stopped;
@@ -433,7 +444,11 @@ export function createHostClient({
       // THE PARAMS GO IN A FILE, written before the call and removed when it ends however it ends (ADR-0125's
       // addendum). Above the ceiling this is refused here, before anything is written: the host would refuse it too,
       // and ending the connection over params this side chose to send would be our defect named as a violation.
-      const bytes = new TextEncoder().encode(JSON.stringify(params));
+      //
+      // WITHOUT THEIR CREDENTIALS, which travel in the frame (ADR-0171's correction of 2026-10-05): a file reaches the
+      // disk the moment it is written, and its removal at the end of the call does not take that back.
+      const { filed, credentials } = liftCredentials(params);
+      const bytes = new TextEncoder().encode(JSON.stringify(filed));
       if (bytes.byteLength > ENGINE_ANSWER_FILE_MAX_BYTES) {
         throw new RequestTooLarge(
           channel,
@@ -445,7 +460,7 @@ export function createHostClient({
       const name = fileAnswers.mint();
       await fileAnswers.put(params, name, bytes);
       try {
-        return await inTurn(channel, params, { session, name, bytes: bytes.byteLength }, made);
+        return await inTurn(channel, params, { session, name, bytes: bytes.byteLength, credentials }, made);
       } finally {
         await fileAnswers.drop(params, name);
       }
@@ -514,7 +529,7 @@ export function createHostClient({
           call.reject(new HostConnectionLost({ code: 'malformed-response', detail: 'answered outside its route' }));
           return;
         }
-        const { bytes } = answered.answerFile;
+        const { bytes, credentials } = answered.answerFile;
         fileAnswers.take(call.params, into, bytes).then(
           (raw) => {
             // A CALL WHOSE FILE WAS STILL BEING TAKEN WHEN THIS CLIENT STOPPED IS SETTLED HERE, because nothing else
@@ -529,7 +544,8 @@ export function createHostClient({
             let body: unknown;
             try {
               if (raw.byteLength !== bytes) throw new Error(`the file holds ${String(raw.byteLength)} bytes`);
-              body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw));
+              // THE ANSWER'S CREDENTIALS CAME IN THE FRAME, and go back where the host lifted them from (ADR-0171).
+              body = restoreCredentials(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw)), credentials);
             } catch (cause) {
               const reason: HostTermination = {
                 code: 'malformed-response',

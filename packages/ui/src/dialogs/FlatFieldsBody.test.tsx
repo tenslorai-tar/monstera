@@ -32,6 +32,7 @@ describe('the Find fields review', () => {
         }}
       >
         <FlatFieldsBody
+          alreadyFields={0}
           candidates={[]}
           resolve={(value) => answers.push(value)}
           truncated={false}
@@ -53,9 +54,10 @@ describe('the Find fields review', () => {
       <InDialog>
         <FlatFieldsBody
           candidates={[
-            { name: 'name', label: 'Name' },
-            { name: 'date', label: 'Date' },
+            { name: 'name', label: 'Name', kind: 'text' },
+            { name: 'date', label: 'Date', kind: 'text' },
           ]}
+          alreadyFields={0}
           resolve={(value) => answers.push(value)}
           truncated={false}
           update={() => undefined}

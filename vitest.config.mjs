@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 import { workspaceAliases } from './scripts/lib/workspaceAliases.mjs';
+import { fontsDirectory } from './scripts/provision/fonts.mjs';
 import { shimLibraryPath } from './scripts/provision/mupdf.mjs';
+import { bidiCharacterTestPath } from './scripts/provision/unicodeTests.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 
@@ -48,7 +50,13 @@ export default defineConfig({
 
     // THE NATIVE ENGINE'S PATH, from its one resolver (ADR-0124): the kernel is told where the library is and never
     // decides, and this config is the caller that can import the provisioning script.
-    env: { MONSTERA_MUPDF_SHIM: shimLibraryPath(ROOT) },
+    // The bundled fonts' folder the same way, under the variable the development launcher sets (ADR-0172), and
+    // Unicode's bidirectional conformance file, which `bidiOrder.test.ts` runs whole and fails without.
+    env: {
+      MONSTERA_MUPDF_SHIM: shimLibraryPath(ROOT),
+      MONSTERA_FONTS_DIRECTORY: fontsDirectory(ROOT),
+      MONSTERA_BIDI_CHARACTER_TEST: bidiCharacterTestPath(ROOT),
+    },
 
     // Vitest replaces every stylesheet with an EMPTY STRING unless it is included here, and
     // that covers a `?raw` import too — so a test reading `app.css` read nothing, and its

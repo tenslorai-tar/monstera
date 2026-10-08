@@ -55,6 +55,14 @@ const REPORT_PATH = process.argv[2] ?? '';
 const SOURCE = '# Compose host\n\nThe real host wrote this page.\n';
 const SOURCE_WORDS = 8;
 
+/**
+ * A line holding the CJK ideograph for "middle" at column 6, which no BUNDLED face carries and Windows' installed CJK
+ * faces do (ADR-0172 Decision 2), and at column 8 U+0378, a code point Unicode leaves unassigned, which NO font carries:
+ * the control that the box still draws, in the same line, so the ideograph's absence from the boxes is the installed
+ * face's doing and not a box that stopped drawing. Each by its number.
+ */
+const BOXED_SOURCE = `Text ${String.fromCodePoint(0x4e2d)} ${String.fromCodePoint(0x378)} here.\n`;
+
 /** The CSV source, and its six fields, each one word on the composed table. */
 const CSV_SOURCE = 'name,qty\nApples,3\nPears,12\n';
 const CSV_WORDS = 6;
@@ -231,6 +239,12 @@ async function main() {
       );
     }
 
+    // A CHARACTER NO BUNDLED FACE CARRIES (ADR-0172), through the same host. The host reads its fonts folder through
+    // the container's grant to set any text at all, so this is also the run that shows the grant is enough.
+    next.bytes = new TextEncoder().encode(BOXED_SOURCE);
+    next.destination = join(scratch, 'composed-boxed.pdf');
+    const boxedComposed = await observed(() => handlers['document.newFromMarkdown']({}));
+
     // PICTURES THROUGH THE SAME HOST, on their own channel, counted by the MuPDF host.
     next.destination = join(scratch, 'composed-images.pdf');
     const imagesComposed = await observed(() => handlers['document.newFromImages']({}));
@@ -257,6 +271,7 @@ async function main() {
       csvComposed,
       csvWords,
       expectedCsvWords: CSV_WORDS,
+      boxedComposed,
       imagesComposed,
       imagePages,
       expectedImagePages: IMAGES.length,

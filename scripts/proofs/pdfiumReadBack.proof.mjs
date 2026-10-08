@@ -58,11 +58,11 @@ if (!existsSync(library)) {
 }
 
 // THE BUILT MODULES are what this reads, so a stale build would prove the previous read-back.
-refuseStaleBuild(root, PDFIUM_READ_BACK, 11);
+refuseStaleBuild(root, PDFIUM_READ_BACK, 28);
 
 const { blockEditOf, replacementFieldsOf } = await import('../../packages/contract/dist/commands.js');
 const { objectRuns, openPdfium, pdfiumWriter, textRuns } = await import('../../packages/kernel/dist/pdfiumFfi.js');
-const { groupIntoBlocks, settingOf } = await import('../../packages/kernel/dist/textLines.js');
+const { groupIntoBlocks, isEditedInPlace, settingOf } = await import('../../packages/kernel/dist/textLines.js');
 // OVER BYTES THAT OPEN WITH NO PASSWORD, as every fixture here does (`withNoPassword`).
 const localPdfiumExecution = withNoPassword((await import('../../packages/kernel/dist/pdfiumSpecs.js')).localPdfiumExecution);
 const { EditRefusedError } = await import('../../packages/kernel/dist/textEditRefusals.js');
@@ -105,7 +105,7 @@ async function objectRunsOf(bytes) {
 
 /** @param {readonly Run[]} runs @returns {readonly any[]} `groupIntoBlocks`' answer, imported by a computed path */
 const blocksOf = (runs) =>
-  groupIntoBlocks(runs.filter((run) => run.style.upright).map((run) => ({ ...run, setting: settingOf(run.style) })));
+  groupIntoBlocks(runs.filter((run) => isEditedInPlace(run.style)).map((run) => ({ ...run, setting: settingOf(run.style) })));
 
 /** @param {any} block */
 const textOfBlock = (block) =>
@@ -174,7 +174,7 @@ function commandsFor(runs, objects, target) {
       {
         kind: 'editTextBlock',
         page: 0,
-        ...blockEditOf([{ lines: block.lines.map((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)), text: `${target} edited` }]),
+        ...blockEditOf([{ lines: block.lines.map((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)), soft: block.lines.map(() => false), text: `${target} edited` }]),
         fit: 'reflow',
         version: 1,
       },
@@ -310,7 +310,7 @@ async function main() {
           applied(type3, {
             kind: 'editTextBlock',
             page: 0,
-            ...blockEditOf([{ lines: lineA.lines.map((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)), text: `${LINES.a} edited` }]),
+            ...blockEditOf([{ lines: lineA.lines.map((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)), soft: lineA.lines.map(() => false), text: `${LINES.a} edited` }]),
             fit: 'reflow',
             version: 1,
           }),

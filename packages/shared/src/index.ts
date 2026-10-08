@@ -13,6 +13,8 @@ export {
 export {
   type DeclaredFailure,
   EDIT_STEPS,
+  FIELD_EDIT_REASONS,
+  type FieldEditReason,
   type EditStep,
   type Failure,
   type FailureDetails,
@@ -86,7 +88,14 @@ export {
 // WHICH RUNS AN EDITED LINE REWRITES, once. The kernel's `editTextBlock` owns
 // the write and the renderer only shows the words; neither may carry a second
 // opinion about which object a typed character belongs to (ADR-0096).
-export { type LineRun, type RunReplacement, lineText, replacementsForLine } from './lineEdit.js';
+export {
+  type LineRun,
+  type RunReplacement,
+  joinAfterLine,
+  lineText,
+  paragraphsOfLines,
+  replacementsForLine,
+} from './lineEdit.js';
 // The five coordinate spaces and the ONE thing permitted to convert between
 // them (invariant L3). The point constructors are exported and `Brand`'s
 // `brandValue` is not, deliberately: a caller may build a point in a space, and
@@ -122,6 +131,8 @@ export {
 // `['shared', 'contract']`, so it could not import the engine subpath these
 // lived on. The kernel re-exports them, so the permutation a tree rewrite is
 // built from and the one a consumer asks about are the same function (B3a).
+// THE ONE RULE for whether a field can be called a name, taken by the create (kernel) and by the surface that asks first.
+export { fieldNameClash } from './fieldNames.js';
 export {
   type PriorPageOrder,
   keptPermutation,

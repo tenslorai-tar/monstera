@@ -226,7 +226,7 @@ if (bindNativeEngine(ROOT) === null) {
   });
 } else {
   // THE BUILT COMPOSER IS THE SUBJECT, so a stale one would export yesterday's package under today's name.
-  refuseStaleBuild(ROOT, WORD_PICTURES, 4);
+  refuseStaleBuild(ROOT, WORD_PICTURES, 5);
   /** @type {any} */
   const sharp = createRequire(join(ROOT, 'package.json'))('sharp');
   await run(sharp);

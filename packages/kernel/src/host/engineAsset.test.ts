@@ -158,6 +158,9 @@ async function joined(): Promise<{
       pageFills: () => {
         throw new Error('unused');
       },
+      pageRewrite: () => {
+        throw new Error('no case here reads which writer a page needs');
+      },
       wordBoxes: () => {
         throw new Error('unused');
       },
@@ -197,6 +200,12 @@ async function joined(): Promise<{
       },
       word: () => {
         throw new Error('unused');
+      },
+      formImportPlan: () => {
+        throw new Error('an asset case must not plan an import');
+      },
+      fieldProperties: () => {
+        throw new Error('an asset case must not read field properties');
       },
       flatFields: () => {
         throw new Error('unused');

@@ -22,7 +22,7 @@ export { NATIVE_COMPONENT_IDS, type NativeComponentId };
 
 /**
  * For each component: the variable `scripts/launch.mjs` sets in development, and the path under its packaged folder
- * the application runs — `null` where the component IS the folder (the OCR models).
+ * the application runs — `null` where the component IS the folder (the OCR models, the bundled fonts).
  */
 export const NATIVE_COMPONENTS: Readonly<
   Record<NativeComponentId, { readonly variable: string; readonly runs: string | null }>
@@ -33,6 +33,7 @@ export const NATIVE_COMPONENTS: Readonly<
   onlyoffice: { variable: 'MONSTERA_ONLYOFFICE_EXECUTABLE', runs: 'x2t.exe' },
   'mupdf-shim': { variable: 'MONSTERA_MUPDF_SHIM', runs: 'monstera_mupdf.dll' },
   'ocr-models': { variable: 'MONSTERA_TESSDATA_DIRECTORY', runs: null },
+  fonts: { variable: 'MONSTERA_FONTS_DIRECTORY', runs: null },
 };
 
 /** Where components are found: the package's `resources/native` folder, or the launcher's variables. */

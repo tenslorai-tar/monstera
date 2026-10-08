@@ -5,11 +5,14 @@ import { X } from 'lucide-react';
 import type { ReactElement } from 'react';
 import { useState } from 'react';
 
+import { type KnownField, fieldNameProblemAmong, optionProblem } from '../annotations/fieldNameCheck.js';
 import {
   FORM_FIELD_ADD_OPTION,
+  FORM_FIELD_GROUP_KNOWN,
   FORM_FIELD_OPTIONS_EMPTY,
   FORM_FIELD_OPTIONS_LABEL,
   FORM_FIELD_OPTION_LABEL,
+  FORM_FIELD_OPTION_SUGGESTION,
   FORM_FIELD_REMOVE_OPTION,
 } from '../messages/en.js';
 import { attemptProblem, useAttempt } from '../primitives/attempt.js';
@@ -17,7 +20,6 @@ import { Button } from '../primitives/Button.js';
 import { DialogFooter, DialogRow } from '../primitives/Dialog.js';
 import { IconButton } from '../primitives/IconButton.js';
 import { Input } from '../primitives/Input.js';
-import { fieldNameProblem } from '../annotations/typedRules.js';
 import type { FormFieldAnswer } from './formFieldResult.js';
 
 /**
@@ -77,6 +79,14 @@ export interface FormFieldFormProps {
    * line the tool asks for (ADR-0154), so there is no dialog for it.
    */
   readonly collects: 'option' | 'options';
+  /** The fields the document has, so a name it cannot take is said as it is typed. */
+  readonly known?: readonly KnownField[];
+  /** A radio group already begun: its name is not asked again. */
+  readonly group?: string | undefined;
+  /** The choice values this tool has already drawn into that group. */
+  readonly used?: readonly string[] | undefined;
+  /** The number the next choice's suggested value takes. */
+  readonly nextNumber?: number | undefined;
   /** The dialog's own `resolve`. */
   readonly resolve: (answer: FormFieldAnswer) => void;
 }
@@ -86,16 +96,26 @@ export function FormFieldForm({
   note,
   apply,
   collects,
+  known = [],
+  group,
+  used = [],
+  nextNumber,
   resolve,
 }: FormFieldFormProps): ReactElement {
   const { _ } = useLingui();
-  const [name, setName] = useState('');
-  const [option, setOption] = useState('');
+  const [typedName, setName] = useState('');
+  // A GROUP ALREADY BEGUN IS NOT ASKED FOR AGAIN: every option the radio tool draws until Escape joins it.
+  const name = group ?? typedName;
+  const [option, setOption] = useState(
+    group !== undefined && nextNumber !== undefined ? _(FORM_FIELD_OPTION_SUGGESTION, { number: nextNumber }) : '',
+  );
   const [options, setOptions] = useState<readonly string[]>(['']);
 
   const trimmedName = name.trim();
-  // THE NAME'S RULE, the one the on-page name field takes too (`typedRules.ts`).
-  const nameProblem = fieldNameProblem(name);
+  // THE NAME'S RULE, the one the on-page name field takes too (`typedRules.ts`), asked among the fields the document has
+  // (`fieldNameCheck.ts`): the writer refuses a name the form already has, and that refusal does not reach a person.
+  const nameProblem = fieldNameProblemAmong(name, known, collects === 'option');
+  const choiceProblem = collects === 'option' ? optionProblem(option, trimmedName, known, used) : undefined;
 
   const filled = options.map((value) => value.trim()).filter((value) => value.length > 0);
   const needsOption = collects === 'option' && option.trim().length === 0;
@@ -103,7 +123,7 @@ export function FormFieldForm({
 
   // A NAME THAT IS WRONG is said as typed and disables the action; A NAME OR OPTION NOT YET TYPED only once the action
   // is pressed (`attempt.ts`).
-  const invalid: MessageKey | undefined = trimmedName.length === 0 ? undefined : nameProblem;
+  const invalid: MessageKey | undefined = trimmedName.length === 0 ? undefined : (nameProblem ?? choiceProblem);
   const missing: MessageKey | undefined =
     trimmedName.length === 0 ? nameProblem : needsOption || needsOptions ? FORM_FIELD_OPTIONS_EMPTY : undefined;
   const attempt = useAttempt();
@@ -112,13 +132,23 @@ export function FormFieldForm({
 
   return (
     <div className="m-form-field">
-      <DialogRow label={label} note={note}>
-        <Input label={label} labelShownBeside onValueChange={setName} opensFocused value={name} />
-      </DialogRow>
+      {group === undefined ? (
+        <DialogRow label={label} note={note}>
+          <Input label={label} labelShownBeside onValueChange={setName} opensFocused value={name} />
+        </DialogRow>
+      ) : (
+        <p className="m-form-field__group">{_(FORM_FIELD_GROUP_KNOWN, { group })}</p>
+      )}
 
       {collects === 'option' ? (
         <DialogRow label={FORM_FIELD_OPTION_LABEL}>
-          <Input label={FORM_FIELD_OPTION_LABEL} labelShownBeside onValueChange={setOption} value={option} />
+          <Input
+            label={FORM_FIELD_OPTION_LABEL}
+            labelShownBeside
+            onValueChange={setOption}
+            opensFocused={group !== undefined}
+            value={option}
+          />
         </DialogRow>
       ) : null}
 

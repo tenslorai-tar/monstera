@@ -2,7 +2,12 @@ import { PDF_PERMISSIONS, type CommandOfKind, type PdfPermission } from '@monste
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, MupdfSession } from './engineSeam.js';
-import { protectSession, withDocument, withDocumentRemoving } from './mupdfWriter.js';
+import {
+  protectSession,
+  restoreSessionProtection,
+  sessionProtection,
+  withDocumentRemoving,
+} from './mupdfWriter.js';
 
 /**
  * A document's protection — set, changed or removed.
@@ -133,39 +138,56 @@ export const applySetDocumentProtection: Apply<'mupdf', 'setDocumentProtection'>
 };
 
 /**
- * Reports that a protection change's prior state is not recorded.
+ * The protection a session stood with before a protect, which its undo restores
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8).
  *
- * **Not *cannot be* — must not be.** The prior state of this command is a
- * password, and a capture is serialised into main's command log, which is
- * exactly where ADR-0055 says a password never goes. So the refusal is a rule
- * rather than a limit of the engine, and it is stated as one.
+ * - `protected`: an earlier protect's terms, passwords included, so this is held beside the log entry and never in it,
+ *   and named `passwordTerms` so the host transport lifts it out of every file it writes (ADR-0171's correction of
+ *   2026-10-05): the credential rule reads a name, and `terms` told it nothing.
+ * - `unprotected`: no terms, and the document is not encrypted. Restored as the document unprotected: decrypted in
+ *   memory where the session is encrypted by then (the protect's own drawn serialise does that, and so does a renewal
+ *   or a rebuild from a protected copy); otherwise nothing is recorded, so an incremental save stays possible.
  *
- * The checkpoint the bus mints is the whole of the undo, and it carries the
- * stated limit the declaration records: a checkpoint taken on a document that
- * was already protected is encrypted, and nothing here keeps the password that
- * would reopen it.
+ * **There is no third value for a document carrying its own encryption, and the absence is the design.** Its prior is
+ * that encryption, owner password included, which main never saw, and the protect's first serialise replaces it in
+ * the session ({@link sessionProtection}'s measurement). So that capture refuses and the bus takes a checkpoint, which
+ * is the document's bytes as they stood: encrypted exactly as the file is, never a readable copy, and opened at the
+ * undo with the key the document was opened with.
  */
-export const captureSetDocumentProtection = (
-  session: MupdfSession,
-): Promise<CaptureResult<never>> =>
-  withDocument(session, () => ({
-    captured: false,
-    reason:
-      'a protection change cannot be recorded as prior state: the prior state is a password, ' +
-      'and a capture is serialised into the command log — the one place ADR-0055 says a ' +
-      'password never goes',
-  }));
+export type PriorProtection =
+  | { readonly standing: 'protected'; readonly passwordTerms: string }
+  | { readonly standing: 'unprotected' };
 
 /**
- * Refuses to invert, for {@link captureSetDocumentProtection}'s reason.
- *
- * `CommandPrior['setDocumentProtection']` is `never`, so this is unreachable by
- * construction and exists because the spec table requires the member. The throw
- * is what says so at the one place somebody could make it reachable.
+ * Captures the protection the session stands with, before the apply replaces it, or refuses for a document carrying
+ * its own encryption ({@link PriorProtection}).
  */
-export const invertSetDocumentProtection = (): never => {
-  throw new Error(
-    'setDocumentProtection is declared non-invertible: its prior state is a password, which ' +
-      'must never reach the command log. Undo restores the checkpoint.',
-  );
+export const captureSetDocumentProtection = async (
+  session: MupdfSession,
+): Promise<CaptureResult<PriorProtection>> => {
+  const { terms, encrypted } = await sessionProtection(session);
+  if (terms !== undefined) return { captured: true, prior: { standing: 'protected', passwordTerms: terms } };
+  if (!encrypted) return { captured: true, prior: { standing: 'unprotected' } };
+  return {
+    captured: false,
+    reason:
+      'the document carries its own encryption, which only its bytes hold, so its undo restores a checkpoint of ' +
+      'them, encrypted as the file is',
+  };
+};
+
+/**
+ * Puts the protection back as {@link PriorProtection} says. Draws nothing of its own: the bus refreshes the canonical
+ * image after it, as after the apply, so main's image is the document as it then stands.
+ */
+export const invertSetDocumentProtection = async (
+  session: MupdfSession,
+  prior: PriorProtection,
+): Promise<void> => {
+  if (prior.standing === 'protected') {
+    await restoreSessionProtection(session, prior.passwordTerms);
+    return;
+  }
+  const { encrypted } = await sessionProtection(session);
+  await restoreSessionProtection(session, encrypted ? 'encrypt=none' : undefined);
 };

@@ -97,9 +97,23 @@ const CSV_FORBIDDEN = 'csvRead.js';
 const BARCODE_READER_FORBIDDEN = 'barcodeReader.js';
 const BARCODE_WRITER_FORBIDDEN = 'barcodeWriter.js';
 
+/**
+ * The modules that load HarfBuzz's WebAssembly or bidi-js at import, from 2026-10-05 (ADR-0172): the shaper, the face
+ * reader and the bidirectional order. Named one by one, so a fourth that loads either arrives owing its own line, and
+ * each with the entry its control walks from: the composers reach the shaper and the order, and the face reader is
+ * reached through the catalogue alone. The composers take the catalogue's TYPE, which the emit erases, and the walk
+ * follows the kernel's top-level `./` imports and so cannot start from `host/` — so the catalogue is its entry.
+ */
+const FONT_FORBIDDEN = [
+  { target: 'textShaping.js', from: 'compose.js' },
+  { target: 'bidiOrder.js', from: 'compose.js' },
+  { target: 'fontFaces.js', from: 'fontCatalogue.js' },
+  { target: 'fontSubset.js', from: 'compose.js' },
+];
+
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 27 });
+const roster = createRoster(failures, { cases: 47 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -407,6 +421,38 @@ try {
     existsSync(join(DIST, CSV_FORBIDDEN)),
     `${CSV_FORBIDDEN} is missing from ${DIST}, so "not reachable" is true and means nothing.`,
   );
+
+  // THE FONT ENGINE AND THE BIDI ALGORITHM, 2026-10-05 (ADR-0172): the CSV reader's five questions for each module
+  // that loads one at import. HarfBuzz reads font files a document or a machine supplies, which is hostile input in a
+  // host's own memory, and bidi-js has no business in the process that holds every open document.
+  for (const { target, from } of FONT_FORBIDDEN) {
+    const fromEntry = reaches(from, target);
+    check(
+      `CONTROL: ${target} IS reachable from ${from}, so the walk can see it`,
+      fromEntry.reached,
+      `the walk could not reach ${target} from ${from}, which sets text through it. The cases below ` +
+        `would then be satisfied by blindness.`,
+    );
+    /** @type {readonly { readonly entry: string, readonly why: string }[]} */
+    const entries = [
+      { entry: 'index.js', why: 'Text is shaped in a host and never in `main` (ADR-0172 Decision 5).' },
+      { entry: 'commandBus.js', why: 'The bus routes commands and sets no text.' },
+      { entry: 'documentService.js', why: 'The service holds bytes and never shapes them.' },
+    ];
+    for (const { entry, why } of entries) {
+      const found = reaches(entry, target);
+      check(
+        `importing ${entry} does not load ${target}`,
+        !found.reached,
+        `reachable via ${found.path.join(' -> ')}.\n      ${why}`,
+      );
+    }
+    check(
+      `${target} is PRESENT, so its four answers above are about reachability`,
+      existsSync(join(DIST, target)),
+      `${target} is missing from ${DIST}, so "not reachable" is true and means nothing.`,
+    );
+  }
 
   // THE BARCODE DECODER AND WRITER, added 2026-09-17 (ADR-0076). Two modules and two
   // remedies, for `PDFIUM_FORBIDDEN`'s reason: the READER decodes a document's pixels with

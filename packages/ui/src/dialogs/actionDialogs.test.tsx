@@ -56,7 +56,7 @@ const BODIES: readonly { readonly name: string; readonly body: ReactNode; readon
   },
   {
     name: 'Fields from lines',
-    body: <FlatFieldsBody candidates={[{ name: 'name', label: 'Name' }]} truncated={false} resolve={ignore} update={ignore} />,
+    body: <FlatFieldsBody alreadyFields={0} candidates={[{ name: 'name', label: 'Name', kind: 'text' }]} truncated={false} resolve={ignore} update={ignore} />,
     // A LIST TO CONFIRM, not questions: no row, and the footer all the same.
     firstRow: null,
   },
@@ -64,8 +64,8 @@ const BODIES: readonly { readonly name: string; readonly body: ReactNode; readon
 
 /** Group 3: the shared text forms and the dialogs whose answers are buttons. Same shape, same assertion. */
 const GROUP_3: readonly { readonly name: string; readonly body: ReactNode; readonly firstRow: string | null }[] = [
-  { name: 'Radio button', body: <FormFieldRadioBody resolve={ignore} update={ignore} />, firstRow: '' },
-  { name: 'List box', body: <FormFieldListboxBody resolve={ignore} update={ignore} />, firstRow: '' },
+  { name: 'Radio button', body: <FormFieldRadioBody known={[]} resolve={ignore} update={ignore} />, firstRow: '' },
+  { name: 'List box', body: <FormFieldListboxBody known={[]} resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'Open from a URL', body: <OpenFromUrlBody resolve={ignore} update={ignore} />, firstRow: '' },
   { name: 'Send to DocuSign', body: <DocusignSendBody resolve={ignore} update={ignore} />, firstRow: 'Email subject' },
   { name: 'Close with changes', body: <CloseUnsavedBody name="a.pdf" resolve={ignore} update={ignore} />, firstRow: null },

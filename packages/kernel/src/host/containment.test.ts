@@ -533,6 +533,9 @@ describe('the engine host answers a containment probe', () => {
     pageFills: () => {
       throw new Error('a containment probe must not read page fills');
     },
+    pageRewrite: () => {
+      throw new Error('no case here reads which writer a page needs');
+    },
     wordBoxes: () => {
       throw new Error('a containment probe must not read word boxes');
     },
@@ -577,6 +580,12 @@ describe('the engine host answers a containment probe', () => {
     },
     word: () => {
       throw new Error('a containment probe must not export a Word file');
+    },
+    formImportPlan: () => {
+      throw new Error('a containment probe must not plan an import');
+    },
+    fieldProperties: () => {
+      throw new Error('a containment probe must not read field properties');
     },
     flatFields: () => {
       throw new Error('a containment probe must not walk a page');

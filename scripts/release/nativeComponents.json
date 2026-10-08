@@ -237,6 +237,21 @@
           ]
         }
       ]
+    },
+    {
+      "package": "harfbuzzjs",
+      "components": [
+        {
+          "name": "HarfBuzz",
+          "version": "14.5.0 (read from the module's own versionString(), 2026-10-05; tag commit 863d3f7787c6df18d20e4535c5906bf3eb803bd5)",
+          "spdx": "MIT-Modern-Variant (\"Old MIT\"); its Microsoft USE data MIT",
+          "source": "https://github.com/harfbuzz/harfbuzz/tree/14.5.0",
+          "texts": [
+            { "committed": "scripts/release/licences/npm/harfbuzzjs/harfbuzz/COPYING.txt", "sha256": "ba8f810f2455c2f08e2d56bb49b72f37fcf68f1f4fade38977cfd7372050ad64" },
+            { "committed": "scripts/release/licences/npm/harfbuzzjs/harfbuzz/ms-use-COPYING.txt", "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383" }
+          ]
+        }
+      ]
     }
   ],
   "programs": [
@@ -377,6 +392,26 @@
       "licenceRoot": "scripts/release/licences/tessdata",
       "components": [
         { "name": "tessdata_fast", "version": "4.0.0", "spdx": "Apache-2.0", "texts": ["COPYING.txt"] }
+      ]
+    },
+    {
+      "name": "Bundled open fonts",
+      "version": "google/fonts 7085eb89a950",
+      "role": "The faces the font resolver falls back to when a document's own font and the installed fonts cannot carry a word (ADR-0172): read and subset by HarfBuzz inside a contained engine host, and embedded in a document only as a subset. Data files, not code, and not linked.",
+      "licence": "OFL-1.1",
+      "origin": "https://github.com/google/fonts",
+      "source": "https://github.com/google/fonts/tree/7085eb89a950e85db5b166b7a58d414544b4140c/ofl (arimo, tinos, cousine, carlito, caladea, notosansarabic, notonaskharabic, notosanssymbols2); the font files are the source form this project receives",
+      "build": "raw.githubusercontent.com at that commit, the twenty-one files scripts/provision/fonts.mjs pins by SHA-256",
+      "licenceRoot": "scripts/release/licences/fonts",
+      "components": [
+        { "name": "Arimo", "version": "1.341", "spdx": "OFL-1.1", "texts": ["arimo.txt"] },
+        { "name": "Tinos", "version": "1.340", "spdx": "OFL-1.1", "texts": ["tinos.txt"] },
+        { "name": "Cousine", "version": "1.241", "spdx": "OFL-1.1", "texts": ["cousine.txt"] },
+        { "name": "Carlito", "version": "1.104", "spdx": "OFL-1.1", "texts": ["carlito.txt"] },
+        { "name": "Caladea", "version": "1.001", "spdx": "OFL-1.1", "texts": ["caladea.txt"] },
+        { "name": "Noto Sans Arabic", "version": "2.012", "spdx": "OFL-1.1", "texts": ["notosansarabic.txt"] },
+        { "name": "Noto Naskh Arabic", "version": "2.021", "spdx": "OFL-1.1", "texts": ["notonaskharabic.txt"] },
+        { "name": "Noto Sans Symbols 2", "version": "2.008", "spdx": "OFL-1.1", "texts": ["notosanssymbols2.txt"] }
       ]
     }
   ],

@@ -73,7 +73,27 @@ describe('componentStatuses', () => {
     const statuses = await componentStatuses({ verify: false, source });
     expect(pdfium(statuses)).toMatchObject({ state: 'changed', missing: 1 });
     expect(statuses.find((status) => status.id === 'ghostscript')).toMatchObject({ state: 'absent' });
-    expect(statuses).toHaveLength(6);
+    expect(statuses).toHaveLength(7);
+  });
+
+  // A FONT NOBODY PINNED is one the resolver would embed (ADR-0172), so it is the bundled fonts' version of the
+  // planted DLL above. CONTROL: the pinned file alone verifies.
+  it('reports CHANGED for a font nobody pinned beside the bundled fonts, and VERIFIED for the pinned one alone', async () => {
+    const source = packaged();
+    mkdirSync(join(root, 'fonts'), { recursive: true });
+    writeFileSync(join(root, 'fonts', 'Arimo[wght].ttf'), 'arimo bytes');
+    writeFileSync(
+      join(root, 'manifest.json'),
+      JSON.stringify({
+        manifest: 1,
+        components: { fonts: { name: 'Bundled open fonts', version: 'google/fonts', files: { 'Arimo[wght].ttf': sha('arimo bytes') } } },
+      }),
+    );
+    const fonts = (statuses: readonly ComponentStatus[]): ComponentStatus | undefined =>
+      statuses.find((status) => status.id === 'fonts');
+    expect(fonts(await componentStatuses({ verify: true, source }))).toMatchObject({ state: 'verified', extra: 0 });
+    writeFileSync(join(root, 'fonts', 'Planted.ttf'), 'not pinned');
+    expect(fonts(await componentStatuses({ verify: true, source }))).toMatchObject({ state: 'changed', extra: 1 });
   });
 
   it('refuses a manifest that does not parse, rather than showing a damaged package as merely absent', async () => {
@@ -87,6 +107,10 @@ describe('componentStatuses', () => {
       join('C:\\app\\resources\\native', 'pdfium', 'pdfium.dll'),
     );
     expect(nativeComponentPath('ocr-models', { kind: 'packaged', folder: 'C:\\n' })).toBe(join('C:\\n', 'ocr-models'));
+    expect(nativeComponentPath('fonts', { kind: 'packaged', folder: 'C:\\n' })).toBe(join('C:\\n', 'fonts'));
+    expect(
+      nativeComponentPath('fonts', { kind: 'development', environment: { MONSTERA_FONTS_DIRECTORY: 'C:\\t\\fonts' } }),
+    ).toBe('C:\\t\\fonts');
     expect(
       nativeComponentPath('pdfium', { kind: 'development', environment: { MONSTERA_PDFIUM_LIBRARY: 'C:\\t\\pdfium.dll' } }),
     ).toBe('C:\\t\\pdfium.dll');

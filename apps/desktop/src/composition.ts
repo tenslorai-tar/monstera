@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 
 import {
   type CloudProviderId,
+  type CommandOfKind,
   ANTHROPIC_KEY_SETTING_ID,
   AZURE_ENDPOINT_STORED,
   AZURE_KEY_SETTING_ID,
@@ -37,6 +38,8 @@ import {
 import {
   CapabilityRegistry,
   CommandBus,
+  ENGINE_OPEN_KEYS_MAX,
+  sealCopy,
   type ByteImage,
   type ImageSession,
   type ContainmentVerdict,
@@ -72,6 +75,8 @@ import {
   type HostLinkAddressReader,
   type BarcodeReport,
   type AccessibilityReportOnWire,
+  type HostFieldPropertiesReader,
+  type RemoteFormImportPlanner,
   type HostFlatFieldsReader,
   type HostFormDataExport,
   type HostAnnotationDataExport,
@@ -79,6 +84,7 @@ import {
   type HostFormFieldsReader,
   type HostLayersReader,
   type HostPageFillsReader,
+  type HostPageRewriteReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostWordBoxesReader,
@@ -104,6 +110,7 @@ import {
   createRemoteSessions,
   engineChannels,
   groupIntoBlocks,
+  isEditedInPlace,
   settingOf,
   hostedPdfLibExecution,
   nodeFileSurface,
@@ -120,6 +127,8 @@ import {
   composeChannels,
   remotePdfiumPageObjects,
   remotePdfiumRenderPage,
+  remotePdfiumRunFonts,
+  remotePdfiumPageRuns,
   remotePdfiumTextRuns,
   remotePdfiumWriter,
   remoteMupdfGeometry,
@@ -131,6 +140,8 @@ import {
   remoteMupdfBarcodes,
   remoteMupdfAccessibility,
   remoteMupdfDuplicateReport,
+  remoteMupdfFieldProperties,
+  remoteMupdfFormImportPlan,
   remoteMupdfFlatFields,
   remoteMupdfFormFields,
   remoteMupdfLayers,
@@ -139,6 +150,7 @@ import {
   type ReadSignature,
   remoteMupdfOcr,
   remoteMupdfPageFills,
+  remoteMupdfPageRewrite,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   remoteMupdfWordBoxes,
@@ -150,7 +162,7 @@ import {
   writeStreamedDocument,
   fetchGuardedPdf,
 } from '@monstera/kernel';
-import type { DocId } from '@monstera/shared';
+import { type DocId, HeldPassword } from '@monstera/shared';
 
 import {
   ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
@@ -193,6 +205,7 @@ import {
   MissingSessionError,
   NetworkKeyMissing,
   type OptimizeSource,
+  type ProtectedCopies,
 } from './documentCommands.js';
 import { pictureForAsk } from './askPicture.js';
 import { timestampTransport } from './timestampTransport.js';
@@ -223,6 +236,7 @@ import {
   canonicalImageWrite,
   openEngineSessionFrom,
 } from './engineSessions.js';
+import type { EngineOpening } from './documentPasswords.js';
 import type { ContainerSid, UserSid } from './hostDacl.js';
 import {
   type DirectoryCreationSurface,
@@ -1330,6 +1344,18 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.flatFields(session, page);
     },
+    // WHAT AN IMPORT WOULD DO (ADR-0193's neighbour), composed the same way: the file goes to the host as an asset.
+    formImportPlan: (docId, sessions, bytes, format) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.formImportPlan(session, bytes, format);
+    },
+    // THE PROPERTIES PANE'S READ, composed the same way (ADR-0193), for the handles it names.
+    fieldProperties: (docId, sessions, handles) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.fieldProperties(session, handles);
+    },
     // THE ACCESSIBILITY CHECK, composed the same way, whole-document (ADR-0078).
     accessibility: (docId, sessions) => {
       const session = sessions.mupdf;
@@ -1342,6 +1368,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
       return engineHost.barcodes(session, page);
     },
+    // A PROTECT'S COPIES, sealed through the engine host (ADR-0171 Decision 8).
+    copies: engineHost.copies,
     // THE BARCODE WRITER, loaded on first use (ADR-0076). See `lazyBarcodeWriter`.
     writeBarcode: lazyBarcodeWriter,
     // THE OTHER ENGINE'S READ, and the only composition point here that reaches
@@ -1357,6 +1385,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // the first thing to make it matter.
     textBlocks: async (docId, sessions, page) => {
       if (pdfiumHost === null) throw new EngineUnavailableError('reading a page’s text');
+      const mupdf = sessions.mupdf;
+      if (mupdf === undefined) throw new MissingSessionError(docId, 'mupdf');
       const found = await pdfiumHost.textRuns(await currentImage(docId, sessions), page);
       // THE GROUPING IS MAIN'S, and this is the only place it happens.
       //
@@ -1376,10 +1406,20 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
       // cannot be placed along an axis the page is not set on, and a block
       // mixing upright and rotated runs would be outlined as a box around
       // neither.
-      const upright = found.runs.filter((run) => run.style.upright);
-      const rotated = found.runs
-        .filter((run) => !run.style.upright)
-        .reduce((total, run) => total + run.text.length, 0);
+      const upright = found.runs.filter((run) => isEditedInPlace(run.style));
+      // COUNTED BY KIND (ADR-0181 Decision 7), from the one classification the read makes, so the editor names which text
+      // is not its to edit and `rotated` stays the total it always was.
+      const counts = new Map<string, number>();
+      for (const run of found.runs) {
+        if (!isEditedInPlace(run.style)) counts.set(run.style.orientation, (counts.get(run.style.orientation) ?? 0) + run.text.length);
+      }
+      const angled = {
+        turned: counts.get('turned') ?? 0,
+        vertical: counts.get('vertical') ?? 0,
+        slanted: counts.get('slanted') ?? 0,
+        mirrored: counts.get('mirrored') ?? 0,
+      };
+      const rotated = angled.turned + angled.vertical + angled.slanted + angled.mirrored;
       return {
         blocks: groupIntoBlocks(
           upright.map((run) => ({
@@ -1398,10 +1438,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         ),
         truncated: found.truncated,
         rotated,
+        angled,
         // FORWARDED, NOT GROUPED. These characters formed no run at all — they
         // are what the engine could not place, so there is nothing here to
         // group and the count crosses as the count it is.
         unaddressable: found.unaddressable,
+        // THE PAGE'S WRITER, MuPDF's reading (ADR-0176 Decision 1): the PDFium API has no query for a font's type,
+        // and the session MuPDF holds is the document these runs were read from.
+        rewrite: await engineHost.pageRewrite(mupdf, page),
       };
     },
     // THE OTHER ENGINE'S SECOND READ, and it groups nothing — an object is what
@@ -1446,6 +1490,22 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         height: raster.height,
         png: encodePng(raster.bgra, raster.width, raster.height),
       };
+    },
+    // A BLOCK'S RUN FONTS, rebuilt in the PDFium host from the runs' own programs and checked there (ADR-0175): this
+    // layer only carries them. A process with no PDFium host has none, and the editor draws every run in its kind of face.
+    runFonts: async (docId, sessions, page, indices) => {
+      if (pdfiumHost === null) return { fonts: [], runs: indices.map(() => null) };
+      const { fonts, runs } = await pdfiumHost.runFonts(await currentImage(docId, sessions), page, indices);
+      // EACH COPIED INTO A BUFFER OF ITS OWN: they are views cut from one file read, and structured clone sends a view's
+      // whole buffer to the renderer, so a font sent as a view would carry its neighbours with it (`DocumentRunFontsReader`).
+      return { fonts: fonts.map((font) => new Uint8Array(font)), runs };
+    },
+    // A PAGE'S RUNS WITH THEIR MEMBERS, `editTextOperators`' pre-read (ADR-0176): `textBlocks`' two forced steps, the
+    // current image and the PDFium host. A process with no PDFium host cannot name which objects a run is, so the edit
+    // is refused for the engine that is missing rather than written against a guess.
+    pageRuns: async (docId, sessions, page) => {
+      if (pdfiumHost === null) throw new EngineUnavailableError('reading which objects a page’s text is made of');
+      return pdfiumHost.pageRuns(await currentImage(docId, sessions), page);
     },
     // THE DUPLICATE REPORT, composed here for the reads above's reason: the
     // reader and the session are both in scope on this line and nowhere else.
@@ -1939,6 +1999,8 @@ function engineSessionOpener(
   readonly pageLinks: HostPageLinksReader;
   /** One page's filled shapes, from whichever host is live — a table cell's background. */
   readonly pageFills: HostPageFillsReader;
+  /** Which writer rewrites one page's text, from whichever host is live (ADR-0176 Decision 1). */
+  readonly pageRewrite: HostPageRewriteReader;
   /** One page's word boxes, from whichever host is live (ADR-0137). */
   readonly wordBoxes: HostWordBoxesReader;
   /** The document's outline, from whichever host is live. */
@@ -1962,6 +2024,10 @@ function engineSessionOpener(
   readonly formFields: HostFormFieldsReader;
   /** One page's field candidates, from whichever host is live. */
   readonly flatFields: HostFlatFieldsReader;
+  /** The named fields' properties, from whichever host is live (ADR-0193). */
+  readonly fieldProperties: HostFieldPropertiesReader;
+  /** What importing a data file would do to the form, from whichever host is live. */
+  readonly formImportPlan: RemoteFormImportPlanner;
   /** One page's barcodes, from whichever host is live. */
   readonly barcodes: BarcodeReport;
   /** The accessibility check, from whichever host is live. */
@@ -1994,6 +2060,8 @@ function engineSessionOpener(
   readonly pageImage: HostPageImage;
   /** Ends the shared host on the way out of the application. */
   readonly closeHost: () => Promise<void>;
+  /** How a protect replaces the document's plaintext copies, through this host (ADR-0171 Decision 8). */
+  readonly copies: ProtectedCopies;
   /**
    * Builds one document's sessions — the same call `openedDocument` and the
    * death path make, returned so recycling uses it rather than a second one.
@@ -2203,6 +2271,20 @@ function engineSessionOpener(
     return pageFills(session, page);
   };
 
+  /** Which writer rewrites a page's text (ADR-0176 Decision 1), the same registration's. See {@link pageText}. */
+  let pageRewrite: HostPageRewriteReader | null = null;
+
+  const readPageRewriteThroughHost: HostPageRewriteReader = (session, page) => {
+    if (pageRewrite === null) {
+      throw new Error(
+        'A page-rewrite read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return pageRewrite(session, page);
+  };
+
   /** The word-box read's half of the same registration. See {@link pageText}. */
   let wordBoxes: HostWordBoxesReader | null = null;
 
@@ -2373,6 +2455,34 @@ function engineSessionOpener(
       );
     }
     return flatFields(session, page);
+  };
+
+  /** The properties read's half of the same registration. See {@link pageText}. */
+  let fieldProperties: HostFieldPropertiesReader | null = null;
+
+  const readFieldPropertiesThroughHost: HostFieldPropertiesReader = (session, handles) => {
+    if (fieldProperties === null) {
+      throw new Error(
+        'A field properties read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return fieldProperties(session, handles);
+  };
+
+  /** The import plan's half of the same registration. See {@link pageText}. */
+  let formImportPlan: RemoteFormImportPlanner | null = null;
+
+  const planFormImportThroughHost: RemoteFormImportPlanner = (session, bytes, format) => {
+    if (formImportPlan === null) {
+      throw new Error(
+        'An import plan reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return formImportPlan(session, bytes, format);
   };
 
   /** The accessibility check's half of the same registration. See {@link pageText}. */
@@ -2608,6 +2718,7 @@ function engineSessionOpener(
     pageText = remoteMupdfPageText(client, remote);
     pageLinks = remoteMupdfPageLinks(client, remote);
     pageFills = remoteMupdfPageFills(client, remote);
+    pageRewrite = remoteMupdfPageRewrite(client, remote);
     wordBoxes = remoteMupdfWordBoxes(client, remote);
     destinations = remoteMupdfDestinations(client, remote);
     ocr = remoteMupdfOcr(client, remote);
@@ -2620,6 +2731,8 @@ function engineSessionOpener(
     linkAddress = remoteMupdfLinkAddress(client, remote);
     formFields = remoteMupdfFormFields(client, remote);
     flatFields = remoteMupdfFlatFields(client, remote);
+    fieldProperties = remoteMupdfFieldProperties(client, remote);
+    formImportPlan = remoteMupdfFormImportPlan(client, remote, sessionAssets());
     barcodes = remoteMupdfBarcodes(client, remote);
     accessibility = remoteMupdfAccessibility(client, remote);
     duplicates = remoteMupdfDuplicateReport(client, remote);
@@ -2641,11 +2754,20 @@ function engineSessionOpener(
    * members below drop the access, because recycling and restoring do not carry
    * one: they reopen bytes the held password already opened (ADR-0171).
    */
-  const buildWithAccess = async (
-    docId: DocId,
+  /**
+   * One engine session in a granted pair of its own, from `write`, with the access it was opened with, where its
+   * snapshot is, and how to end it. {@link buildWithAccess} makes it a document's session; a protect's sealing of a copy
+   * uses it alone and ends it (ADR-0171 Decision 8), so the two cannot open a copy two ways.
+   */
+  const openInArea = async (
     write: SnapshotWrite,
-    password?: string,
-  ): Promise<{ readonly sessions: DocumentSessions; readonly access: DocumentAccess }> => {
+    opening: EngineOpening,
+  ): Promise<{
+    readonly session: MupdfSession;
+    readonly access: DocumentAccess;
+    readonly snapshotPath: string;
+    readonly end: () => Promise<void>;
+  }> => {
     const live = await ensure();
     if (platform === null) throw new Error('unreachable: a host exists without a platform');
 
@@ -2694,12 +2816,15 @@ function engineSessionOpener(
     // THE PATH, NEVER THE BYTES. `openEngineSession` has the service write the
     // canonical image straight into the granted directory, so main never holds
     // a second copy and this function never holds the document at all.
-    const open: EngineOpenFromPath = async (_snapshotPath, password) => {
+    const open: EngineOpenFromPath = async (_snapshotPath, { keys, standing }) => {
       const answer = await client['engine/open']({
         snapshotDirectory: paths.snapshot,
         snapshotName,
         outputDirectory: paths.output,
-        password,
+        // REVEALED HERE, where the frame is written, and nowhere before (ADR-0171 Decision 1). The frame's bound, newest
+        // first: past it the oldest keys go unoffered, a stated limit of more than 63 passwords in one sitting.
+        keys: keys.slice(0, ENGINE_OPEN_KEYS_MAX).map((key) => key.reveal()),
+        standing,
       });
       // A PASSWORD REFUSAL IS NOT AN UNREADABLE DOCUMENT, and the two classes
       // are what carry that across the throw. `EngineOpenFailed` poisons the
@@ -2739,7 +2864,7 @@ function engineSessionOpener(
       }
     };
 
-    const { session } = await openEngineSessionFrom(write, areas, open, password);
+    const { session } = await openEngineSessionFrom(write, areas, open, opening);
     if (opened === undefined) {
       // UNREACHABLE, and asserted rather than defaulted. A default here would
       // report an access the host never stated — which for a bitfield the
@@ -2747,15 +2872,14 @@ function engineSessionOpener(
       throw new Error('the engine host issued a session without stating its access');
     }
 
-    // THE PAIR'S LIFETIME ENDS WITH THE DOCUMENT, and until this it did not.
     // `live()` rather than the captured `writer`: a host rebuilt between the
     // open and the close leaves the old writer talking to a process that is
     // gone, and the registry's token is what carries the area across.
     //
     // `close` does both halves — `engine/close` on the host, then the granted
-    // directories — so this registers the whole teardown rather than the disk
+    // directories — so this is the whole teardown rather than the disk
     // half, which is what a bare `areas.remove` here would have been.
-    await sessions.holdRelease(docId, async () => {
+    const end = async (): Promise<void> => {
       try {
         await liveWriter().close(session);
       } catch {
@@ -2770,17 +2894,39 @@ function engineSessionOpener(
         // `openEngineSession` uses on every failure path out of itself.
         await areas.remove();
       }
-    });
-
-    return { sessions: { mupdf: session }, access: opened };
+    };
+    return { session, access: opened, snapshotPath: join(paths.snapshot, snapshotName), end };
   };
 
-  // EVERY REOPEN OPENS WITH THE PASSWORD the document was unlocked with, read at the open from the one holder
-  // (ADR-0171 Decision 4): a checkpoint of a document opened locked is its own encrypted form, like the canonical image.
+  /**
+   * Where each open document's live session's snapshot is: the copy the host was handed at its open, which a protect
+   * rewrites from the encrypted canonical image (ADR-0171 Decision 8). Set by {@link buildWithAccess}, dropped by the
+   * release that ends that session.
+   */
+  const snapshotsOf = new Map<DocId, string>();
+
+  const buildWithAccess = async (
+    docId: DocId,
+    write: SnapshotWrite,
+    opening: EngineOpening,
+  ): Promise<{ readonly sessions: DocumentSessions; readonly access: DocumentAccess }> => {
+    const { session, access, snapshotPath, end } = await openInArea(write, opening);
+    snapshotsOf.set(docId, snapshotPath);
+    // THE PAIR'S LIFETIME ENDS WITH THE DOCUMENT, and until this it did not.
+    await sessions.holdRelease(docId, async () => {
+      if (snapshotsOf.get(docId) === snapshotPath) snapshotsOf.delete(docId);
+      await end();
+    });
+    return { sessions: { mupdf: session }, access };
+  };
+
+  // EVERY REOPEN IS GIVEN EVERY KEY AND THE STANDING, read at the open from the one holder (ADR-0171 Decisions 4 and
+  // 8): a checkpoint of a document opened locked is its own encrypted form, and one a protect encrypted needs that
+  // protect's key, and is the document unprotected once that protect is undone.
   const buildSessions = async (
     docId: DocId,
     write: SnapshotWrite,
-  ): Promise<DocumentSessions> => (await buildWithAccess(docId, write, sessions.opensWith(docId)?.reveal())).sessions;
+  ): Promise<DocumentSessions> => (await buildWithAccess(docId, write, sessions.opening(docId))).sessions;
 
   /**
    * One document's sessions from the canonical image — open, reopen, recycle.
@@ -2792,12 +2938,17 @@ function engineSessionOpener(
    */
   const createWithAccess = (
     docId: DocId,
-    password?: string,
+    opening: EngineOpening,
   ): Promise<{ readonly sessions: DocumentSessions; readonly access: DocumentAccess }> =>
-    buildWithAccess(docId, canonicalImageWrite(documents, docId), password);
+    buildWithAccess(docId, canonicalImageWrite(documents, docId), opening);
 
-  const create = async (docId: DocId): Promise<DocumentSessions> =>
-    (await createWithAccess(docId, sessions.opensWith(docId)?.reveal())).sessions;
+  // THE FIRST OPEN SAYS HOW THE DOCUMENT STANDS, from the access the engine answered: 1 is a file with no encryption
+  // at all, so it stands unprotected. The holder keeps the first answer only, so a recycle of a copy cannot rewrite it.
+  const create = async (docId: DocId): Promise<DocumentSessions> => {
+    const built = await createWithAccess(docId, sessions.opening(docId));
+    sessions.opened(docId, built.access);
+    return built.sessions;
+  };
 
   // THE PROMISE IS RETURNED, not voided. `onDocumentOpened` queues its lane entry
   // before its first await, so the ordering it guarantees holds either way; what
@@ -2835,6 +2986,47 @@ function engineSessionOpener(
    * held there until the document closes, so every later open of its sessions
    * can be made (ADR-0171).
    */
+  /**
+   * Seals one copy of a document under a protect's terms, by the kernel's one rule (`sealCopy`), in a host session of
+   * its own: a copy of the file goes into a fresh granted pair, opens with no key, and only a copy with no encryption
+   * at all takes the protect and is serialised back over the file (ADR-0171 Decision 8). Main never reads the bytes;
+   * the host's output is moved into place. The session is ended whatever happens.
+   */
+  const sealCopyAt = (_docId: DocId, path: string, command: CommandOfKind<'setDocumentProtection'>): Promise<number | undefined> => {
+    let end: (() => Promise<void>) | undefined;
+    return sealCopy<MupdfSession>(command, {
+      open: async () => {
+        try {
+          const opened = await openInArea(
+            async (destination) => {
+              await copyFile(path, destination);
+              return (await stat(destination)).size;
+            },
+            { keys: [], standing: 'as-copied' },
+          );
+          end = opened.end;
+          return { session: opened.session, access: opened.access };
+        } catch (thrown) {
+          if (thrown instanceof EngineDocumentLocked) return 'locked';
+          throw thrown;
+        }
+      },
+      protect: async (session, protect) => {
+        await liveWriter().apply({ session, command: protect, sources: [], reads: undefined });
+      },
+      // BESIDE THE FILE, then renamed over it, so the copy is whole at every moment: never half old and half new.
+      writeOver: async (session) => {
+        const sealing = `${path}.${randomBytes(8).toString('hex')}.sealing`;
+        const written = await liveWriter().serialiseInto(session, sealing);
+        await rename(sealing, path);
+        return written;
+      },
+      close: async () => {
+        if (end !== undefined) await end();
+      },
+    });
+  };
+
   const unlockDocument = async (docId: DocId, password: string): Promise<UnlockOutcome> => {
     // THE LANE'S VERSION STAMP IS DISCARDED, deliberately. Unlocking changes no
     // bytes and bumps no version — it gives the engine a session it could not
@@ -2846,8 +3038,11 @@ function engineSessionOpener(
       // Without it a second unlock would spend a parse to answer a question the
       // supervisor already holds.
       if (sessions.locked(docId) === undefined) return { kind: 'not-locked' } as const;
+      // THE ONE KEY THIS ATTEMPT IS MADE WITH, wiped whatever happens: a wrong one leaves with the frame, and a right one
+      // is held by the supervisor in its own key below.
+      const attempt = new HeldPassword(password);
       try {
-        const built = await createWithAccess(docId, password);
+        const built = await createWithAccess(docId, { keys: [attempt], standing: 'as-copied' });
         sessions.unlock(docId, built.sessions, password);
         return { kind: 'unlocked', access: built.access } as const;
       } catch (error) {
@@ -2859,6 +3054,8 @@ function engineSessionOpener(
           return { kind: 'wrong-password' } as const;
         }
         throw error;
+      } finally {
+        attempt.wipe();
       }
     });
     return settled.value;
@@ -2901,6 +3098,7 @@ function engineSessionOpener(
     pageText: readPageTextThroughHost,
     pageLinks: readPageLinksThroughHost,
     pageFills: readPageFillsThroughHost,
+    pageRewrite: readPageRewriteThroughHost,
     wordBoxes: readWordBoxesThroughHost,
     destinations: readDestinationsThroughHost,
     ocr: recogniseThroughHost,
@@ -2913,6 +3111,8 @@ function engineSessionOpener(
     linkAddress: readLinkAddressThroughHost,
     formFields: readFormFieldsThroughHost,
     flatFields: readFlatFieldsThroughHost,
+    fieldProperties: readFieldPropertiesThroughHost,
+    formImportPlan: planFormImportThroughHost,
     barcodes: readBarcodesThroughHost,
     accessibility: checkAccessibilityThroughHost,
     duplicates: readDuplicatesThroughHost,
@@ -2926,6 +3126,15 @@ function engineSessionOpener(
     exportAnnotationData: exportAnnotationDataThroughHost,
     pageImage: pageImageThroughHost,
     closeHost,
+    copies: {
+      seal: sealCopyAt,
+      // THE LIVE SESSION'S SNAPSHOT, rewritten from the canonical image, which the protect has just made encrypted. The
+      // host read it whole at the open and never reads it again, so this only replaces the copy on disk.
+      refreshSnapshot: async (docId) => {
+        const snapshotPath = snapshotsOf.get(docId);
+        if (snapshotPath !== undefined) await canonicalImageWrite(documents, docId)(snapshotPath);
+      },
+    },
     rebuildSessions: create,
     restoreSessions: buildSessions,
     unlockDocument,
@@ -2947,6 +3156,10 @@ type PdfiumPageObjects = ReturnType<typeof remotePdfiumPageObjects>;
 
 /** One page rasterised, over the same wire. */
 type PdfiumRenderPage = ReturnType<typeof remotePdfiumRenderPage>;
+
+/** A block's run fonts rebuilt, over the same wire (ADR-0175). */
+type PdfiumRunFonts = ReturnType<typeof remotePdfiumRunFonts>;
+type PdfiumPageRuns = ReturnType<typeof remotePdfiumPageRuns>;
 
 /**
  * The PDFium host's lifetime, its one granted area, and the writer the bus
@@ -3001,6 +3214,8 @@ function pdfiumHostBinding(
   readonly textRuns: PdfiumTextRuns;
   readonly pageObjects: PdfiumPageObjects;
   readonly renderPage: PdfiumRenderPage;
+  readonly runFonts: PdfiumRunFonts;
+  readonly pageRuns: PdfiumPageRuns;
   readonly close: () => Promise<void>;
 } {
   /** What one built host holds. Cleared together, or not at all. */
@@ -3010,6 +3225,8 @@ function pdfiumHostBinding(
     readonly textRuns: PdfiumTextRuns;
   readonly pageObjects: PdfiumPageObjects;
   readonly renderPage: PdfiumRenderPage;
+  readonly runFonts: PdfiumRunFonts;
+  readonly pageRuns: PdfiumPageRuns;
     /** The granted pair, so `close` can remove exactly what `connect` created. */
     readonly paths: { readonly snapshot: DirectoryPath; readonly output: DirectoryPath };
     readonly session: string;
@@ -3144,6 +3361,8 @@ function pdfiumHostBinding(
       textRuns: remotePdfiumTextRuns(client, held, transfer),
       pageObjects: remotePdfiumPageObjects(client, held, transfer),
       renderPage: remotePdfiumRenderPage(client, held, transfer),
+      runFonts: remotePdfiumRunFonts(client, held, transfer),
+      pageRuns: remotePdfiumPageRuns(client, held, transfer),
       paths,
       session: opened.value.session,
     };
@@ -3184,6 +3403,8 @@ function pdfiumHostBinding(
     pageObjects: async (image, page) => (await ensure()).pageObjects(image, page),
     renderPage: async (image, page, width, height) =>
       (await ensure()).renderPage(image, page, width, height),
+    runFonts: async (image, page, indices) => (await ensure()).runFonts(image, page, indices),
+    pageRuns: async (image, page) => (await ensure()).pageRuns(image, page),
     close: async () => {
       const live = host;
       host = null;
@@ -3407,7 +3628,12 @@ function composeHostBinding(
           item: answer.value.item,
         };
       }
-      return { kind: 'composed', pdf: await takeComposed(area, into, answer.value.bytes) };
+      return {
+        kind: 'composed',
+        pdf: await takeComposed(area, into, answer.value.bytes),
+        boxed: answer.value.boxed,
+        more: answer.value.more,
+      };
     },
 
     // `compose`'s decisions over a list. Each picked file is read and written into the
@@ -3449,7 +3675,13 @@ function composeHostBinding(
             item: answer.value.item,
           };
         }
-        return { kind: 'composed', pdf: await takeComposed(area, into, answer.value.bytes) };
+        // THE HOST'S LIST AS IT SENT IT: an image draws no text, and the channel's answer says so with an empty one.
+        return {
+          kind: 'composed',
+          pdf: await takeComposed(area, into, answer.value.bytes),
+          boxed: answer.value.boxed,
+          more: answer.value.more,
+        };
       } finally {
         await Promise.all(
           written.map((name) => rm(join(area.snapshotDirectory, name), { force: true })),

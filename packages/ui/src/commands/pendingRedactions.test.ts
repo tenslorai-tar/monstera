@@ -123,7 +123,7 @@ function documentWith(
     }
     if (id === 'document.execute') {
       if (options.refuseApply === true) return Promise.resolve(err({ code: 'document-busy' }));
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 4096, historyDropped: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     }
     return Promise.resolve(ok(others(id)));
   });
@@ -207,7 +207,7 @@ describe('settlePendingRedactions', () => {
   it('Apply burns in every page’s marks through the one dispatcher, and the view moves', async () => {
     const { settled, sent, moved } = await settle(3, 'apply');
     expect(sent.filter((call) => call.id === 'document.execute').map((call) => call.params)).toStrictEqual([BURN_IN]);
-    expect(moved).toStrictEqual([{ version: 2, byteLength: 4096, historyDropped: 0 }]);
+    expect(moved).toStrictEqual([{ version: 2, byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }]);
     expect(settled).toBe('applied');
   });
 

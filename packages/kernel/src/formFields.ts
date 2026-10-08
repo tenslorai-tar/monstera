@@ -69,7 +69,7 @@ const MAX_FIELD_OPTIONS = 512;
 const MAX_FIELD_VALUES = 256;
 
 /** How far up a `/Parent` chain an inherited key is looked for. */
-const MAX_FIELD_ANCESTRY = 32;
+export const MAX_FIELD_ANCESTRY = 32;
 
 /**
  * What this field's `/V` holds, as a list — the ONE answer to *what value does
@@ -116,6 +116,30 @@ const MAX_FIELD_ANCESTRY = 32;
  * until 2026-10-04, so an export wrote a long field cut and an undo of a fill restored the cut value.
  */
 export function fieldValues(widget: PDFWidget): readonly string[] {
+  const stored = storedValues(widget);
+  return widget.isChoice() ? stored.map((value) => choiceTextOf(widget, value)) : stored;
+}
+
+/**
+ * The text a person reads for a value a choice field STORES, or the value itself where the field lists no such choice.
+ *
+ * `/Opt` may list each choice as [value, text] (ISO 32000-1, 12.7.4.4) and `/V` holds the VALUE. Everything in this
+ * module offers, compares and records a choice by its text, so the one place a stored value is turned into one is here,
+ * and {@link choiceStoredOf} is its inverse: a form written by another program reads as its choices, and a choice
+ * written here is stored as that program stores it.
+ */
+export function choiceTextOf(widget: PDFWidget, stored: string): string {
+  const at = widget.getOptions(true).indexOf(stored);
+  return at < 0 ? stored : (widget.getOptions(false)[at] ?? stored);
+}
+
+/** {@link choiceTextOf}'s inverse: the value a form stores for the choice a person reads as `shown`. */
+export function choiceStoredOf(widget: PDFWidget, shown: string): string {
+  const at = widget.getOptions(false).indexOf(shown);
+  return at < 0 ? shown : (widget.getOptions(true)[at] ?? shown);
+}
+
+function storedValues(widget: PDFWidget): readonly string[] {
   let object: PDFObject = widget.getObject();
   let value = object.get('V');
   // `/V` IS INHERITABLE and pdf-lib puts it on the parent, which is where the
@@ -226,7 +250,7 @@ export interface ListedField {
  * the order is what separates them. Measured names, 2026-09-07: `text`,
  * `checkbox`, `radiobutton`, `combobox`, `listbox`, `signature`.
  */
-function kindOf(widget: PDFWidget): FormFieldKind {
+export function kindOf(widget: PDFWidget): FormFieldKind {
   if (widget.isPushButton()) return 'button';
   if (widget.isCheckbox()) return 'checkbox';
   if (widget.isRadioButton()) return 'radio';
@@ -278,7 +302,7 @@ function kindOf(widget: PDFWidget): FormFieldKind {
  * That is the only reading that works for both, and it is robust to the stale
  * `/AS` above rather than being confused by it.
  */
-function onState(widget: PDFWidget): boolean {
+export function onState(widget: PDFWidget): boolean {
   const key = onStateKey(widget);
   // THE FIELD'S VALUE, not the widget's — measured, and it is what makes this
   // comparison meaningful: both widgets of a group answer the same string, and
@@ -297,7 +321,12 @@ function onState(widget: PDFWidget): boolean {
  * it is currently on.
  */
 export function onStateKey(widget: PDFWidget): string | undefined {
-  const normal = widget.getObject().get('AP').get('N');
+  return onStateKeyOf(widget.getObject());
+}
+
+/** {@link onStateKey} over a widget's object, which is what reading a group's OTHER widgets has in hand. */
+export function onStateKeyOf(object: PDFObject): string | undefined {
+  const normal = object.get('AP', 'N');
   // A STREAM ANSWERS `isDictionary()` TOO, measured 2026-09-07: `/AP` `/N` is a
   // state dictionary on a checkbox or radio and a STREAM on every other kind,
   // and a walk over a stream's keys yields `BBox`, `Matrix`, `Resources` — any
@@ -515,7 +544,7 @@ export function fillWidget(widget: PDFWidget, value: FieldFill): void {
 function fill(widget: PDFWidget, value: FieldFill): void {
   refuseUnfillable(widget, value);
   if (value.set === 'text') widget.setTextValue(value.text);
-  else if (value.set === 'choice') widget.setChoiceValue(value.option);
+  else if (value.set === 'choice') widget.setChoiceValue(choiceStoredOf(widget, value.option));
   else setButton(widget, value.on);
 }
 

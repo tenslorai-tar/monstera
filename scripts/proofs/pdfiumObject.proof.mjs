@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PDFDocument, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
-import { PDFIUM_COMMAND, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { PDFIUM_OBJECT, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { withNoPassword } from '../lib/pdfiumNoPassword.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
@@ -55,7 +55,7 @@ if (!existsSync(library)) {
   });
 }
 
-refuseStaleBuild(root, PDFIUM_COMMAND, 7);
+refuseStaleBuild(root, PDFIUM_OBJECT, 25);
 
 const { openPdfium, pdfiumWriter, pageObjects, pageText } = await import(
   '../../packages/kernel/dist/pdfiumFfi.js'

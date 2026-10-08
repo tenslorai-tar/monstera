@@ -24,6 +24,9 @@ import { EXPORT_LAYOUT_TEXT_DIALOG, EXPORT_POWERPOINT_DIALOG, EXPORT_TEXT_DIALOG
 import { EXPORT_WORD_DIALOG } from '../dialogs/exportWord.js';
 import { EXTERNAL_EDIT_PROBLEM_DIALOG } from '../dialogs/externalEditProblem.js';
 import { EXTRACT_PAGES_DIALOG } from '../dialogs/extractPages.js';
+import { FIELD_COPY_DIALOG } from '../dialogs/fieldCopy.js';
+import { IMPORT_FORM_DATA_RESULT_DIALOG } from '../dialogs/importFormDataResult.js';
+import { TAB_ORDER_DIALOG } from '../dialogs/tabOrder.js';
 import { FLAT_FIELDS_DIALOG } from '../dialogs/flatFields.js';
 import { FLATTEN_FORM_DIALOG } from '../dialogs/flattenForm.js';
 import { FOLLOW_LINK_DIALOG } from '../dialogs/followLink.js';
@@ -81,6 +84,8 @@ import { WATERMARK_PAGES_DIALOG } from '../dialogs/watermarkPages.js';
 import { PAGE_BACKGROUND_DIALOG } from '../dialogs/pageBackground.js';
 import { WORD_COUNT_DIALOG } from '../dialogs/wordCount.js';
 import { WORKBOOK_INCOMPLETE_DIALOG } from '../dialogs/workbookIncomplete.js';
+import { BOXED_CHARACTERS_DIALOG } from '../dialogs/boxedCharacters.js';
+import { UNSEALED_COPIES_DIALOG } from '../dialogs/unsealedCopies.js';
 import type { RegisteredDialog } from './dialogs.js';
 
 /**
@@ -147,6 +152,8 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   INSERT_IMAGE_PROBLEM_DIALOG,
   MARKDOWN_IMPORT_PROBLEM_DIALOG,
   WORKBOOK_INCOMPLETE_DIALOG,
+  BOXED_CHARACTERS_DIALOG,
+  UNSEALED_COPIES_DIALOG,
   OPEN_FROM_URL_DIALOG,
   URL_OPEN_PROBLEM_DIALOG,
   OPEN_PROBLEM_DIALOG,
@@ -160,6 +167,9 @@ export const APPLICATION_DIALOGS: readonly RegisteredDialog[] = [
   REIMPORT_EXTERNAL_EDIT_DIALOG,
   EXTERNAL_EDIT_PROBLEM_DIALOG,
   EXTRACT_PAGES_DIALOG,
+  FIELD_COPY_DIALOG,
+  IMPORT_FORM_DATA_RESULT_DIALOG,
+  TAB_ORDER_DIALOG,
   SPLIT_DOCUMENT_DIALOG,
   EXPORT_PAGE_IMAGES_DIALOG,
   EXPORT_WORD_DIALOG,

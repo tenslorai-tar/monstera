@@ -66,6 +66,7 @@ import {
   SignatureCredentialRefusedError,
   SignatureTooLargeError,
   TimestampRefusedError,
+  sealCopy,
   TimestampUnreachableError,
   UrlFetchRefused,
   serialiseIntoFile,
@@ -95,6 +96,8 @@ import {
   readPageTextJson,
   readPageWordBoxes,
   detectFlatFields,
+  readFieldProperties,
+  readFormImportPlan,
   readInterchangeAnnotations,
   serialiseAnnotationData,
   checkAccessibility,
@@ -107,6 +110,9 @@ import {
   withDocument,
   composeWordDocument,
   DocumentLocked,
+  accessFor,
+  localMupdfExecution,
+  openCopy,
 } from '@monstera/kernel/engine';
 import { type DocId, type DocVersion, asDocId, asDocVersion, asFileHandle } from '@monstera/shared';
 
@@ -137,6 +143,7 @@ import {
   type DocumentGeometry,
   type DocumentDestinationsReader,
   type DocumentOcrReader,
+  type DocumentPageRunsReader,
   type DocumentExtractReader,
   type DocumentPageImageReader,
   type DocumentWordExport,
@@ -164,6 +171,7 @@ import {
   type DocumentTextBlocksReader,
   type DocumentPageObjectsReader,
   type DocumentPageRasteriser,
+  type DocumentRunFontsReader,
   EngineUnavailableError,
   suggestedComposedName,
   suggestedUrlName,
@@ -185,9 +193,12 @@ import {
   type SaveSource,
   type SnapshotSource,
   SignaturesWouldBreakError,
+  type EngineSessionSource,
+  type ProtectedCopies,
+  type Applied,
 } from './documentCommands.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
-import { EngineSessions } from './engineSessions.js';
+import { EngineSessions, canonicalImageWrite } from './engineSessions.js';
 import { EDIT_QUIET_MS, type EditWatchSurface } from './externalEditWatch.js';
 import { LayoutTextFailedError, type LayoutTextSource } from './layoutText.js';
 import { OfficeConversionFailedError } from './officeConversion.js';
@@ -313,6 +324,7 @@ const noSaving: SaveSource = {
   provenance: {
     made: () => Promise.reject(new Error('this case does not save')),
     deleteIfMade: () => Promise.reject(new Error('this case does not save')),
+    rewriteIfMade: () => Promise.reject(new Error('this case protects nothing')),
     owed: () => [],
     retryOwed: () => Promise.reject(new Error('this case does not save')),
   },
@@ -397,6 +409,9 @@ const noDestinations: DocumentDestinationsReader = () =>
 
 const noOcr: DocumentOcrReader = () =>
   Promise.reject(new Error('this case does not recognise a page'));
+
+const noPageRuns: DocumentPageRunsReader = () =>
+  Promise.reject(new Error('this case does not read which objects a page’s runs are'));
 
 const noLayers: DocumentLayersReader = () =>
   Promise.reject(new Error('this case does not read the layers'));
@@ -657,6 +672,10 @@ const noPageObjects: DocumentPageObjectsReader = () =>
 const noRenderPage: DocumentPageRasteriser = () =>
   Promise.reject(new EngineUnavailableError('rendering a page with the second engine'));
 
+/** The composition's answer with no PDFium host: no run has a font (ADR-0175), which is an answer and not a refusal. */
+const noRunFonts: DocumentRunFontsReader = (_docId, _sessions, _page, indices) =>
+  Promise.resolve({ fonts: [], runs: indices.map(() => null) });
+
 /** The candidate proposal's composition, per page. */
 const noBarcodes: DocumentBarcodesReader = () =>
   Promise.reject(new Error('this case does not read barcodes'));
@@ -848,12 +867,16 @@ const INERT = {
   linkAddress: noLinkAddress,
   formFields: noFormFields,
   flatFields: noFlatFields,
+  fieldProperties: () => Promise.reject(new Error('this case does not read field properties')),
+  formImportPlan: () => Promise.reject(new Error('this case does not plan an import')),
   barcodes: noBarcodes,
   writeBarcode: noBarcodeWriter,
   accessibility: () => Promise.reject(new Error('this case does not check accessibility')),
   textBlocks: noTextBlocks,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
+  runFonts: noRunFonts,
+  pageRuns: noPageRuns,
   duplicates: noDuplicates,
   copy: noCopying,
   image: noImages,
@@ -893,6 +916,11 @@ const INERT = {
   optimizer: null,
   pickOffice: () => Promise.reject(new Error('INERT: this case does not export to Office')),
   directory: noDirectory,
+  // REFUSES BY NAME: a case that protects a document supplies its own, as `LOCAL_READS` does.
+  copies: {
+    seal: () => Promise.reject(new Error('INERT: this case seals no copy')),
+    refreshSnapshot: () => Promise.reject(new Error('INERT: this case seals no snapshot')),
+  },
   // REFUSES BY NAME, like every inert surface: a case that reached a page sent to another
   // application without meaning to fails at the call rather than opening or watching anything.
   externalEdit: {
@@ -927,6 +955,17 @@ const LOCAL_READS = {
   linkAddress: localLinkAddress,
   formFields: localFormFields,
   flatFields: localFlatFields,
+  fieldProperties: (id, sessions, handles) => {
+    const held = sessions.mupdf;
+    if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+    return readFieldProperties(held, handles);
+  },
+  // THE HOST'S ANSWER AS MAIN READS IT: a file that is not form data is `unreadable`, never a throw.
+  formImportPlan: async (id, sessions, bytes, format) => {
+    const held = sessions.mupdf;
+    if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+    return readFormImportPlan(held, bytes, format).catch((): 'unreadable' => 'unreadable');
+  },
   barcodes: localBarcodes,
   accessibility: async (id, sessions) => {
     const held = sessions.mupdf;
@@ -940,7 +979,35 @@ const LOCAL_READS = {
   textBlocks: noTextBlocks,
   pageObjects: noPageObjects,
   renderPage: noRenderPage,
+  runFonts: noRunFonts,
+  pageRuns: noPageRuns,
   duplicates: localDuplicates,
+  copies: {
+    // THE KERNEL'S ONE RULE, `sealCopy`, over MuPDF in this process: the host's sealing without a host.
+    seal: (_id, path, command) =>
+      sealCopy<MupdfSession>(command, {
+        open: async () => {
+          try {
+            const session = await mupdfWriter.open(new Uint8Array(readFileSync(path)));
+            return { session, access: accessFor(session) };
+          } catch (thrown) {
+            if (thrown instanceof DocumentLocked) return 'locked';
+            throw thrown;
+          }
+        },
+        protect: async (session, protect) => {
+          await localMupdfWriter.apply({ session, command: protect, sources: [], reads: undefined });
+        },
+        writeOver: async (session) => {
+          const bytes = await mupdfWriter.serialise(session);
+          writeFileSync(path, bytes);
+          return bytes.byteLength;
+        },
+        close: (session) => mupdfWriter.close(session),
+      }),
+    // NO HOST, so no host snapshot: a case that writes snapshots supplies its own.
+    refreshSnapshot: () => Promise.resolve(),
+  },
 } as const satisfies Omit<DocumentCommandsParts, keyof Varying>;
 
 describe('the composition point owns DocumentService.run -> CommandBus.execute', () => {
@@ -1419,6 +1486,8 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           poisoned: () => undefined,
           opensOnlyWithPassword: () => false,
           opensWith: () => undefined,
+          protected: () => undefined,
+          protectionStepped: () => undefined,
           sessions: () => {
             const cause = new Error(`EPERM: operation not permitted, stat '${SECRET}'`);
             cause.stack = `Error: EPERM: operation not permitted, stat '${SECRET}'\n    at readFileIdentity (${SECRET}:1:1)`;
@@ -1902,7 +1971,8 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
         expect(await t.commands.save(t.saved, { breakSignatures: false })).toMatchObject({ kind: 'saved' });
 
         expect(t.restored).toStrictEqual([]);
-        expect(t.retaken).toStrictEqual([t.path]);
+        // TWICE: at the protect, whose page picture cannot be encrypted (ADR-0171 Decision 8), and at the removal's save.
+        expect(t.retaken).toStrictEqual([t.path, t.path]);
         // THE OLD SESSION ANSWERS: a command after the save lands on it.
         await expect(t.commands.execute(t.saved, rotateOnce)).resolves.toBeDefined();
       });
@@ -3016,6 +3086,53 @@ describe('the form data export carries the format all the way to the file', () =
     // shape a wrong session or an empty read produces.
     expect(fdf).toContain('Ada \\) Lovelace');
     expect(json).toContain('Ada ) Lovelace');
+  });
+
+  /** An import that picks a file holding `bytes`, through the production composition. */
+  function importing(bytes: Uint8Array): DocumentCommands {
+    const held = new EngineSessions();
+    held.hold(formDoc, { mupdf: formSession });
+    return new DocumentCommands({
+      ...LOCAL_READS,
+      // AN IMPORT IS DRAWN FROM THE BYTES, so applying one stages the session (ADR-0121's addendum).
+      save: { ...noSaving, flush: sessionFlush, stage: stagingFrom(sessionFlush) },
+      documents: formService,
+      bus: bus(),
+      engine: held,
+      formData: {
+        ...localFormData,
+        open: () => Promise.resolve('picked'),
+        read: () => Promise.resolve({ kind: 'read', bytes }),
+      },
+    });
+  }
+
+  it('an import is told what it did: how many it filled, and each field it left alone, with its reason', async () => {
+    const file = serialiseFormData(
+      [
+        { name: 'applicant.name', values: ['Grace Hopper'], asName: false },
+        { name: 'no_such_field', values: ['x'], asName: false },
+      ],
+      'json',
+    );
+    const outcome = await importing(file).importFormData(formDoc, 'json');
+    expect(outcome).toMatchObject({
+      kind: 'imported',
+      filled: 1,
+      skipped: [{ name: 'no_such_field', reason: 'not-in-document' }],
+      more: 0,
+    });
+  });
+
+  it('CONTROL: a file naming none of the form’s fields is the wrong file, and the form is not changed', async () => {
+    const file = serialiseFormData([{ name: 'something_else', values: ['x'], asName: false }], 'json');
+    expect(await importing(file).importFormData(formDoc, 'json')).toStrictEqual({ kind: 'matched-nothing', named: 1 });
+  });
+
+  it('CONTROL: a file that is not form data is unreadable, which is the file’s fault and not a field’s', async () => {
+    expect(await importing(new TextEncoder().encode('this is not form data')).importFormData(formDoc, 'json')).toStrictEqual({
+      kind: 'unreadable',
+    });
   });
 
   it('CONTROL: the picker runs FIRST, so a dismissal writes nothing', async () => {
@@ -5508,13 +5625,13 @@ describe('composeMarkdownFile: what an import answers before anything is written
       // destination fails here rather than answering.
       compose: (_format, _source, page) => {
         pages.push(page);
-        return Promise.resolve({ kind: 'refused', reason: 'unencodable-text', line: 7, item: null });
+        return Promise.resolve({ kind: 'refused', reason: 'malformed-csv', line: 7, item: null });
       },
     });
 
     expect(await commands.composeImportFile('markdown')).toStrictEqual({
       kind: 'composition-refused',
-      reason: 'unencodable-text',
+      reason: 'malformed-csv',
       line: 7,
       file: null,
     });
@@ -6754,6 +6871,288 @@ describe('a document opened with its password: no unprotected copy, and no passw
         'planted-utf16.bin',
         'planted-utf8.txt',
       ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * The holder follows a protect run in this session
+ * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8):
+ * after a protect, a later terminal command's checkpoint is encrypted under the protect's password, and its undo
+ * reopens it with that key. The engine is MuPDF in this process, and every reopen goes through `openCopy`, the host's
+ * one rule for opening a copy as the document stands.
+ */
+describe('a protect in this session: the holder follows it', () => {
+  const KEY = 'sample-protect-0171-d8';
+
+  /**
+   * A generated three-page document, opened plain, with `engine` as the supervisor the commands see. `sealing: 'skip'`
+   * is the control's: a protect whose replacement step does nothing.
+   */
+  async function opened(
+    engineOf: (held: EngineSessions) => EngineSessionSource,
+    sealing: 'seal' | 'skip' | 'throws' = 'seal',
+  ): Promise<{
+    readonly commands: DocumentCommands;
+    readonly docId: DocId;
+    readonly root: string;
+    readonly path: string;
+    readonly restores: () => number;
+    readonly held: EngineSessions;
+    readonly retakes: readonly string[];
+  }> {
+    const root = mkdtempSync(join(tmpdir(), 'monstera-protect-follows-'));
+    const plain = await PDFDocument.create();
+    const font = await plain.embedFont(StandardFonts.Helvetica);
+    for (let index = 0; index < 3; index += 1) {
+      plain.addPage([612, 792]).drawText(`generated page ${String(index + 1)}`, { font, size: 24, x: 72, y: 700 });
+    }
+    const path = join(root, 'plain.pdf');
+    writeFileSync(path, await plain.save());
+
+    const held = new EngineSessions();
+    const registry = new CapabilityRegistry();
+    const own = new DocumentService(registry, {
+      documentBytesCeiling: AMPLE_CEILING,
+      checkpointDirectory: join(root, 'checkpoints'),
+      teardown: held.releaseOnClose,
+    });
+    const outcome = await own.open(registry.mint(path));
+    if (outcome.kind !== 'opened') throw new Error(`fixture did not open: ${outcome.kind}`);
+    const docId = outcome.docId;
+    held.hold(docId, { mupdf: await mupdfWriter.open(new Uint8Array(readFileSync(path))) });
+    held.opened(docId, 1);
+
+    let restores = 0;
+    // THE LIVE SESSION'S SNAPSHOT, as the host's area holds one: each restore's replaces the last, as a release removes
+    // the old area, and a protect rewrites it from the canonical image.
+    let snapshot: string | undefined;
+    const retakes: string[] = [];
+    const flushHeld: DocumentFlush = (_id, sessions) => {
+      const mupdf = sessions.mupdf;
+      if (mupdf === undefined) throw new Error('the fixture holds a session');
+      return mupdfWriter.serialise(mupdf);
+    };
+    // THE SNAPSHOT REFRESH is not a copy seal: it rewrites the host's snapshot from the canonical image main holds,
+    // so it works whether or not the copy seals fail (ADR-0178). `'throws'` fails every COPY seal, as a program
+    // holding a copy would, and leaves this alone.
+    const refreshFromImage = async (id: DocId): Promise<void> => {
+      if (snapshot !== undefined) await canonicalImageWrite(own, id)(snapshot);
+    };
+    const copies: ProtectedCopies =
+      sealing === 'skip'
+        ? { seal: () => Promise.resolve(undefined), refreshSnapshot: () => Promise.resolve() }
+        : sealing === 'throws'
+          ? { seal: () => Promise.reject(new Error('INERT: another program holds this copy')), refreshSnapshot: refreshFromImage }
+          : { seal: LOCAL_READS.copies.seal, refreshSnapshot: refreshFromImage };
+    const commands = new DocumentCommands({
+      ...LOCAL_READS,
+      copies,
+      recentPicture: {
+        retake: (_id, at) => {
+          retakes.push(at);
+          return Promise.resolve();
+        },
+      },
+      signaturesKept: signaturesKeptBySave,
+      documents: own,
+      bus: new CommandBus({ mupdf: localMupdfWriter }),
+      engine: engineOf(held),
+      // THE SUPERVISOR'S RECYCLE, opening the checkpoint as the host's `engine/open` does: every key, and the standing.
+      restore: (id, write) =>
+        held.recycle(id, async () => {
+          restores += 1;
+          if (snapshot !== undefined) rmSync(snapshot, { force: true });
+          snapshot = join(root, `restore-${String(restores)}.pdf`);
+          await write(snapshot);
+          const { keys, standing } = held.opening(id);
+          const session = await openCopy(
+            new Uint8Array(readFileSync(snapshot)),
+            { keys: keys.map((key) => key.reveal()), standing },
+            {
+              open: (image, password) => mupdfWriter.open(image, password),
+              unprotect: (each) =>
+                localMupdfExecution.invert(each, 'setDocumentProtection', { standing: 'unprotected' }).then(() => undefined),
+              close: (each) => mupdfWriter.close(each),
+            },
+          );
+          return { mupdf: session };
+        }),
+      save: {
+        provenance: ledger(),
+        deps: {
+          checkWriteTarget: (id) => own.checkWriteTarget(id),
+          surface: nodeFileSurface,
+          names: (target) => siblingNames(target, 1),
+          wait: () => Promise.resolve(),
+        },
+        flush: flushHeld,
+        stage: stagingFrom(flushHeld),
+      },
+    });
+    return { commands, docId, root, path, restores: () => restores, held, retakes };
+  }
+
+  it('the undo of a terminal command after a protect reopens its checkpoint with the protect’s key', async () => {
+    const { commands, docId, root, restores } = await opened((held) => held);
+    try {
+      await commands.execute(docId, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: KEY });
+      // TERMINAL, so the bus checkpoints the session as it stands: encrypted under the protect's password.
+      await commands.execute(docId, { kind: 'deletePages', pages: [2] });
+      expect(await commands.undo(docId)).toBeDefined();
+      expect(restores()).toBe(1);
+      // THE CHECKPOINT WAS ENCRYPTED, so the reopen needed the key: an empty attempt refuses the restored snapshot.
+      await expect(mupdfWriter.open(new Uint8Array(readFileSync(join(root, 'restore-1.pdf'))))).rejects.toBeInstanceOf(
+        DocumentLocked,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('CONTROL: a supervisor that ignores the protect fails that undo with a password refusal', async () => {
+    const { commands, docId, root } = await opened((held) => ({
+      sessions: held.sessions,
+      poisoned: held.poisoned,
+      opensOnlyWithPassword: held.opensOnlyWithPassword,
+      opensWith: held.opensWith,
+      protected: () => undefined,
+      protectionStepped: () => undefined,
+    }));
+    try {
+      await commands.execute(docId, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: KEY });
+      await commands.execute(docId, { kind: 'deletePages', pages: [2] });
+      await expect(commands.undo(docId)).rejects.toBeInstanceOf(DocumentLocked);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('undoing the protect makes the document open with no key again, and redoing it brings the key back', async () => {
+    const { commands, docId, root, held } = await opened((supervisor) => supervisor);
+    try {
+      await commands.execute(docId, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: KEY });
+      expect(held.opensWith(docId)?.reveal()).toBe(KEY);
+      expect(held.opensOnlyWithPassword(docId)).toBe(true);
+      expect(await commands.undo(docId)).toBeDefined();
+      expect(held.opensWith(docId)).toBeUndefined();
+      expect(held.opening(docId).standing).toBe('unprotected');
+      // THE KEY IS STILL OFFERED after the undo, for the copies the protect encrypted.
+      expect(held.opening(docId).keys.map((key) => key.reveal())).toStrictEqual([KEY]);
+      expect(await commands.redo(docId)).toBeDefined();
+      expect(held.opensWith(docId)?.reveal()).toBe(KEY);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /** Every PDF under `root` but the person's own file, and which of them open with no password, by name. */
+  async function plaintextCopies(root: string, own: string): Promise<{ readonly pdfs: readonly string[]; readonly open: readonly string[] }> {
+    const files = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory() ? files(join(dir, entry.name)) : [join(dir, entry.name)],
+      );
+    const pdfs: string[] = [];
+    const open: string[] = [];
+    for (const file of files(root)) {
+      if (file === own) continue;
+      const bytes = new Uint8Array(readFileSync(file));
+      if (!Buffer.from(bytes.subarray(0, 5)).equals(Buffer.from('%PDF-'))) continue;
+      pdfs.push(basename(file));
+      try {
+        await mupdfWriter.close(await mupdfWriter.open(bytes));
+        open.push(basename(file));
+      } catch (thrown) {
+        if (!(thrown instanceof DocumentLocked)) throw thrown;
+      }
+    }
+    return { pdfs: pdfs.sort(), open: open.sort() };
+  }
+
+  /** A backup by a save, a checkpoint by a terminal command, a snapshot by its undo's restore, and then a protect. */
+  async function copiesThenProtect(commands: DocumentCommands, docId: DocId): Promise<void> {
+    await commands.execute(docId, rotateOnce);
+    expect(await commands.save(docId, { breakSignatures: false })).toMatchObject({ kind: 'saved' });
+    await commands.execute(docId, { kind: 'deletePages', pages: [2] });
+    expect(await commands.undo(docId)).toBeDefined();
+    expect(await commands.redo(docId)).toBeDefined();
+    await commands.execute(docId, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: KEY });
+  }
+
+  it('after the protect NO copy on disk opens without the password: snapshot, checkpoint and backup; the picture is retaken', async () => {
+    const { commands, docId, root, path, retakes } = await opened((held) => held);
+    try {
+      await copiesThenProtect(commands, docId);
+      const after = await plaintextCopies(root, path);
+      // THE COPIES THE CASE IS ABOUT EXIST, so a clean answer is not an empty root's.
+      expect(after.pdfs).toContain('plain.pdf.bak');
+      expect(after.pdfs).toContain('restore-1.pdf');
+      expect(after.pdfs.length).toBeGreaterThanOrEqual(3);
+      expect(after.open).toStrictEqual([]);
+      // AND EACH OPENS WITH THE PROTECT'S PASSWORD, so they were sealed rather than broken.
+      for (const name of ['plain.pdf.bak', 'restore-1.pdf']) {
+        await mupdfWriter.close(await mupdfWriter.open(new Uint8Array(readFileSync(join(root, name))), KEY));
+      }
+      // THE RECENT PICTURE: retaken for the protected file, and the document now keeps none.
+      await Promise.resolve();
+      expect(retakes).toStrictEqual([path]);
+      expect(await commands.firstPagePicture(docId)).toBe('none');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('CONTROL: the same flow with the replacement step skipped reports every plaintext copy by name', async () => {
+    const { commands, docId, root, path } = await opened((held) => held, 'skip');
+    try {
+      await copiesThenProtect(commands, docId);
+      const after = await plaintextCopies(root, path);
+      expect(after.open).toContain('plain.pdf.bak');
+      expect(after.open).toContain('restore-1.pdf');
+      // AND A CHECKPOINT: every PDF the history holds is under `checkpoints`, and at least one is plaintext.
+      expect(after.open.filter((name) => !['plain.pdf.bak', 'restore-1.pdf'].includes(name)).length).toBeGreaterThan(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /** A backup, a checkpoint and a snapshot, then the protect — whose result is returned rather than awaited away. */
+  async function protectAfterCopies(commands: DocumentCommands, docId: DocId): Promise<Applied> {
+    await commands.execute(docId, rotateOnce);
+    expect(await commands.save(docId, { breakSignatures: false })).toMatchObject({ kind: 'saved' });
+    await commands.execute(docId, { kind: 'deletePages', pages: [2] });
+    expect(await commands.undo(docId)).toBeDefined();
+    expect(await commands.redo(docId)).toBeDefined();
+    return commands.execute(docId, { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: KEY });
+  }
+
+  it('a protect whose copy seal FAILS still applies, and names the copies it could not encrypt (R14, ADR-0178)', async () => {
+    // The glue between the kernel half (`resealCopies` collects the `'unsealed'` paths) and the UI half (the window
+    // names them): the host maps a thrown seal to that outcome WITHOUT failing the protect. Before ADR-0178 this
+    // threw out of the lane and the applied protect was reported as a failure.
+    const { commands, docId, root } = await opened((held) => held, 'throws');
+    try {
+      const applied = await protectAfterCopies(commands, docId);
+      // APPLIED, not thrown: a version came back, so the protect is recorded and the document saves encrypted.
+      expect(applied.version).toBeGreaterThan(0);
+      // AND THE COPIES IT COULD NOT ENCRYPT ARE NAMED — the backup among them — so the person is told, not misled.
+      expect(applied.unsealedCopies).toContain('plain.pdf.bak');
+      expect(applied.unsealedCopies.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('CONTROL: a protect that seals every copy names none, so the case above is the failure and not the walk', async () => {
+    const { commands, docId, root } = await opened((held) => held, 'seal');
+    try {
+      const applied = await protectAfterCopies(commands, docId);
+      expect(applied.version).toBeGreaterThan(0);
+      // EMPTY: every copy sealed, so nothing is named. A host that named every non-rewritten copy — a left one too —
+      // would fail here, which is why `resealCopies` keeps `'unsealed'` distinct from `undefined`.
+      expect(applied.unsealedCopies).toStrictEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

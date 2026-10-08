@@ -146,6 +146,9 @@ async function joined(ocr: HostOcrReader): Promise<{
       pageFills: () => {
         throw new Error('a recognition must not read the page fills');
       },
+      pageRewrite: () => {
+        throw new Error('no case here reads which writer a page needs');
+      },
       wordBoxes: () => {
         throw new Error('a recognition must not read the word boxes');
       },
@@ -185,6 +188,12 @@ async function joined(ocr: HostOcrReader): Promise<{
       },
       word: () => {
         throw new Error('a recognition must not export a Word file');
+      },
+      formImportPlan: () => {
+        throw new Error('an OCR case must not plan an import');
+      },
+      fieldProperties: () => {
+        throw new Error('an OCR case must not read field properties');
       },
       flatFields: () => {
         throw new Error('a recognition must not propose fields');

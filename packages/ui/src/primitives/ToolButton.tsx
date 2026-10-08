@@ -48,6 +48,8 @@ export interface ToolButtonProps {
   readonly description?: MessageKey | undefined;
   readonly icon: IconName;
   readonly onClick: () => void;
+  /** What a double click does, where it is not two presses (`UiCommand.hold`). */
+  readonly onDoubleClick?: (() => void) | undefined;
   /**
    * The command this button runs, written to `data-command`.
    *
@@ -70,6 +72,11 @@ export interface ToolButtonProps {
    * so the tooltip is what says what it is to a pointer.
    */
   readonly size?: 'large' | 'small' | 'icon' | undefined;
+  /**
+   * That a press leaves the focus where it was (`UiCommand.keepsFocus`): the mouse-down's default, which moves it to the
+   * button, is the one thing refused. The click still happens.
+   */
+  readonly keepsFocus?: boolean | undefined;
 }
 
 /**
@@ -83,7 +90,17 @@ export function ribbonCaption(text: string): string {
   return text.endsWith('…') ? text.slice(0, -1).trimEnd() : text;
 }
 
-export function ToolButton({ label, description, icon, onClick, command, pressed, size = 'large' }: ToolButtonProps): ReactElement {
+export function ToolButton({
+  label,
+  description,
+  icon,
+  onClick,
+  onDoubleClick,
+  command,
+  pressed,
+  keepsFocus,
+  size = 'large',
+}: ToolButtonProps): ReactElement {
   const { _ } = useLingui();
   const describedBy = useId();
   const caption = ribbonCaption(_(label));
@@ -96,6 +113,10 @@ export function ToolButton({ label, description, icon, onClick, command, pressed
       data-command={command}
       nativeButton
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      // A PRESS THAT KEEPS THE FOCUS: the words a formatting command is for are selected in an editor that closes when it
+      // loses the focus.
+      onMouseDown={keepsFocus === true ? (event) => { event.preventDefault(); } : undefined}
       type="button"
     >
       <Icon name={icon} size={size === 'large' ? 'ribbon' : 'control'} />

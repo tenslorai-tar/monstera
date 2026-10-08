@@ -17,10 +17,12 @@ import type {
   Checkpoint,
   CheckpointFile,
   CommandPrior,
+  HeldInverse,
   LogEntry,
   LogEntryFor,
   LogTrim,
   RecordedCommand,
+  RecordedInverse,
 } from './commandLog.js';
 // DECLARATIONS, not specs. The bus reads `writer` and `replay` and calls
 // nothing — `apply`, `capture` and `invert` go through the registered writer
@@ -32,6 +34,7 @@ import {
   type CommandDeclaration,
   type DeclaredCommands,
   type WriterOf,
+  type WriterOfRecord,
   declaredCommands,
 } from './commandDeclarations.js';
 // `import type`, NOT `import { type … }` — the second keeps the statement and
@@ -49,8 +52,11 @@ import type { CommandWriter, DocumentContext } from './documentService.js';
 // document, and `engineSeam.ts`'s every other import is `import type`, so the
 // edge costs an importer the object literal and nothing else (ADR-0039).
 import {
+  type AppliedImage,
   type ByteImage,
   type CommandTargets,
+  type DrawnBoxes,
+  NO_BOXES,
   type PreReadAccess,
   type PreReadValue,
   type SessionsByWriter,
@@ -149,7 +155,7 @@ function reapplicable(entry: LogEntry, held: HeldIntents): CommandOfKind<Command
   }
   // HELD BESIDE THE ENTRY (ADR-0171 Decision 3), keyed by it, so it lives exactly as long as the entry does. Missing is
   // unreachable while the entry lives, and re-running the kind alone would protect with no password, so it refuses.
-  const command = held.get(entry);
+  const command = held.get(entry)?.command;
   if (command === undefined) {
     throw new Error(
       `${entry.command.kind} keeps its command beside its log entry rather than in it, and none is held for this ` +
@@ -175,8 +181,37 @@ function sourcesOfEntry(entry: LogEntry, held: HeldIntents): readonly DocId[] {
  *
  * Keyed by `object` because the key is used for its identity alone: `execute` holds the entry as `LogEntryFor<K>` and
  * `redo` reads it back as `LogEntry`, two spellings of one object the checker cannot unify for a generic `K`.
+ *
+ * **The prior beside the command** for an invertible entry (Decision 8): a protect's prior is the protection before
+ * it, which carries an earlier protect's passwords, so the entry keeps `HeldInverse` and its undo reads this one.
  */
-type HeldIntents = WeakMap<object, CommandOfKind<CommandKind>>;
+type HeldIntents = WeakMap<object, HeldIntent>;
+
+interface HeldIntent {
+  readonly command: CommandOfKind<CommandKind>;
+  /** The captured prior of an invertible entry, `undefined` for a terminal one, whose undo is its checkpoint. */
+  readonly inverse: CommandPrior[CommandKind] | undefined;
+}
+
+/**
+ * The prior an invertible entry's undo applies: the entry's own, or the one held beside it where its declaration holds
+ * the intent ({@link RecordedInverse}). Missing is refused for {@link reapplicable}'s reason: an inverse built from the
+ * marker alone would restore nothing and report an undo.
+ */
+function inverseOf(entry: Extract<LogEntry, { readonly kind: 'invertible' }>, held: HeldIntents): CommandPrior[CommandKind] {
+  if (declaredCommands[entry.command.kind].replay !== 'reapply-held-intent') {
+    // NARROWED BY THE DECLARATION, `reapplicable`'s cast and its reason: `RecordedInverse` reads the same value.
+    return entry.inverse as CommandPrior[CommandKind];
+  }
+  const inverse = held.get(entry)?.inverse;
+  if (inverse === undefined) {
+    throw new Error(
+      `${entry.command.kind} keeps its prior state beside its log entry rather than in it, and none is held for this ` +
+        'entry. Nothing was undone.',
+    );
+  }
+  return inverse;
+}
 
 /**
  * What an entry keeps of the command it was made for: the kind alone where its declaration holds the intent, else the
@@ -188,6 +223,14 @@ type HeldIntents = WeakMap<object, CommandOfKind<CommandKind>>;
 function recordedOf<K extends CommandKind>(command: CommandOfKind<K>): RecordedCommand<K> {
   const kept = declaredCommands[command.kind].replay === 'reapply-held-intent' ? { kind: command.kind } : command;
   return kept as RecordedCommand<K>;
+}
+
+/** What an invertible entry keeps of its prior: the marker where its declaration holds the intent, else the prior. */
+function recordedInverseOf<K extends CommandKind>(kind: K, prior: CommandPrior[K]): RecordedInverse<K> {
+  const kept: HeldInverse | CommandPrior[K] =
+    declaredCommands[kind].replay === 'reapply-held-intent' ? { held: true } : prior;
+  // `recordedOf`'s cast, for its reason: the conditional is decided by the same `replay` value read here.
+  return kept as RecordedInverse<K>;
 }
 
 /**
@@ -233,7 +276,7 @@ interface WriterFor<K extends CommandKind> {
   // What the request removed is the bus's ability to leave a field out
   // (ADR-0069): every key is required, so `source` and `reads` are decisions
   // taken here rather than arguments that may go unwritten.
-  apply(request: ApplyRequest<WriterOf<K>, K>): Promise<ByteImage | StagedImage | undefined>;
+  apply(request: ApplyRequest<WriterOf<K>, K>): Promise<AppliedImage | StagedImage | undefined>;
   capture(
     session: ExecutionSession<WriterOf<K>>,
     command: CommandOfKind<K>,
@@ -242,7 +285,7 @@ interface WriterFor<K extends CommandKind> {
     session: ExecutionSession<WriterOf<K>>,
     kind: K,
     inverse: CommandPrior[K],
-  ): Promise<ByteImage | StagedImage | undefined>;
+  ): Promise<AppliedImage | StagedImage | undefined>;
 }
 
 /**
@@ -587,6 +630,11 @@ export interface Executed<K extends CommandKind = CommandKind> {
    * answer and it still has to be read.
    */
   readonly trimmed: LogTrim;
+  /**
+   * The characters the operation drew as the missing-character box (ADR-0174). Required for `trimmed`'s reason: the
+   * person is owed them, and {@link NO_BOXES} is the ordinary answer that still has to be read.
+   */
+  readonly drawn: DrawnBoxes;
 }
 
 /**
@@ -602,6 +650,12 @@ export interface Executed<K extends CommandKind = CommandKind> {
  * literal that looked harmless.
  */
 const NO_TRIM: LogTrim = { droppedEntries: 0, droppedBytes: 0 };
+
+/**
+ * What undo and redo report for {@link Executed.drawn}: none, ADR-0174 Decision 3. The person was told which characters
+ * are boxes when the edit was made; an undo takes them away, and a redo puts back what they were told about.
+ */
+const TOLD_AT_THE_EDIT = NO_BOXES;
 
 /** What one undo or redo did. */
 export type Undone = Executed;
@@ -721,7 +775,7 @@ export class CommandBus {
   async #install<K extends CommandKind>(
     kind: K,
     writer: WriterOf<K>,
-    applied: ByteImage | StagedImage | undefined,
+    applied: AppliedImage | StagedImage | DrawnBoxes | undefined,
     context: DocumentContext,
     bytes: ByteImageAccess,
   ): Promise<((destination: string) => Promise<number>) | null> {
@@ -737,7 +791,9 @@ export class CommandBus {
     // BY THE DECLARATION, never by the value — the rule this method's header gives. The casts are `#writerFor`'s
     // correlation: `writerShapes` says which of the two an apply of this writer answers.
     if (shape === 'byte-image') {
-      const image = applied as ByteImage;
+      // THE IMAGE OUT OF THE ANSWER, never the answer itself: a byte-image apply answers the image and what it drew as
+      // boxes (ADR-0174), and installing the answer as bytes is the silent failure this method exists to refuse.
+      const { image } = applied as AppliedImage;
       await bytes.adopt((destination) => context.writeImage(COMMAND_WRITER, image, destination));
       context.replaceCanonicalImage(COMMAND_WRITER, image);
       return (destination) => context.writeImage(COMMAND_WRITER, image, destination);
@@ -754,6 +810,20 @@ export class CommandBus {
       context.writeHeld(COMMAND_WRITER, held, destination),
     );
     return (destination) => context.writeHeld(COMMAND_WRITER, held, destination);
+  }
+
+  /**
+   * The characters an operation drew as boxes (ADR-0174), read BY THE DECLARATION as {@link CommandBus.#install} reads
+   * the image: a byte-image writer answers them beside its image, a live-session one answers them alone (ADR-0177
+   * Decision 7), and a hosted one sets no text that can be boxed.
+   */
+  #boxesIn(writer: WriterOfRecord, applied: AppliedImage | StagedImage | DrawnBoxes | undefined): DrawnBoxes {
+    const shape = writerShapes[writer];
+    if (shape === 'hosted-image') return NO_BOXES;
+    // AN ANSWER IS OWED, `#install`'s rule: an apply that forgot its return would otherwise read as one that drew none.
+    if (applied === undefined) throw new Error(`An apply routed to ${writer} answered nothing where it owes its boxes.`);
+    const { boxed, more } = applied as DrawnBoxes;
+    return { boxed, more };
   }
 
   /**
@@ -1077,7 +1147,7 @@ export class CommandBus {
     // command itself goes into `#held` below, beside the entry and never in it.
     const kept = recordedOf(command);
     const entry: LogEntryFor<K> = captured.captured
-      ? { kind: 'invertible', command: kept, inverse: captured.prior, read: stored }
+      ? { kind: 'invertible', command: kept, inverse: recordedInverseOf(command.kind, captured.prior), read: stored }
       : {
           kind: 'terminal',
           command: kept,
@@ -1124,7 +1194,9 @@ export class CommandBus {
     // *a refusing APPLY after a successful capture*.
     //
     // HELD AT THE SAME MOMENT, keyed by the entry as recorded, so the two cannot exist apart.
-    if (spec.replay === 'reapply-held-intent') this.#held.set(recorded, command);
+    if (spec.replay === 'reapply-held-intent') {
+      this.#held.set(recorded, { command, inverse: captured.captured ? captured.prior : undefined });
+    }
     context.commandLog(COMMAND_WRITER).record(recorded);
 
     // THE WINDOW'S BYTES, after the entry and not before it: by here the session has changed,
@@ -1144,7 +1216,12 @@ export class CommandBus {
     // The bus decides WHEN and never how much — the target is the service's,
     // computed from §9.17's ceiling.
     const trimmed = context.enforceRetention(COMMAND_WRITER);
-    return { entry: recorded, trimmed, version: context.bumpVersion(COMMAND_WRITER) };
+    return {
+      entry: recorded,
+      trimmed,
+      drawn: this.#boxesIn(spec.writer, applied),
+      version: context.bumpVersion(COMMAND_WRITER),
+    };
   }
 
   /**
@@ -1242,7 +1319,7 @@ export class CommandBus {
       // NEVER `installed` here, for either shape: a restore rebuilds the session and replaces no
       // image, so undoing a watermark left main's image watermarked until this line existed.
       await this.#show(entry.command.kind, context, bytes, false);
-      return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
+      return { entry, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
     }
 
     const spec = declaredCommands[entry.command.kind];
@@ -1257,7 +1334,7 @@ export class CommandBus {
     // Through the writer, for `execute`'s reason. The kind travels as its own
     // argument because a recorded inverse does not carry one — see
     // `CommandExecution.invert`.
-    const inverted = await writer.invert(session, entry.command.kind, entry.inverse);
+    const inverted = await writer.invert(session, entry.command.kind, inverseOf(entry, this.#held));
     // A BYTE-IMAGE WRITER'S INVERSE PRODUCES A DOCUMENT TOO, and this line has
     // no caller today: every command routed to a byte-image writer is
     // non-invertible, so a `pdf-lib` entry is always `terminal` and returns
@@ -1270,7 +1347,7 @@ export class CommandBus {
 
     log.undo();
     await this.#show(entry.command.kind, context, bytes, writerShapes[spec.writer] !== 'live-session');
-    return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
+    return { entry, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
   }
 
   /**
@@ -1315,6 +1392,54 @@ export class CommandBus {
    * after this lane entry, by the rule that deletes every file the log stops holding. Invariant 18's *never silent* is
    * met by the request itself — the person was shown what would go — and the count comes back for them to be told.
    */
+  /**
+   * Offers every file this document's history holds, checkpoints and results, to `seal`, and records the length of
+   * each one it rewrote in place
+   * ([ADR-0171](../../../docs/DECISIONS/0171-the-password-is-held-in-main-while-the-document-is-open.md) Decision 8):
+   * at a protect and its redo, a plaintext copy is replaced by one encrypted under the protect's terms.
+   *
+   * `seal` answers one of THREE outcomes, which
+   * [ADR-0178](../../../docs/DECISIONS/0178-a-protect-that-applied-is-not-failed-by-a-copy-it-could-not-seal.md)
+   * keeps distinct: a new length for a file it **rewrote**, `undefined` for one it **left** (already encrypted, so
+   * re-encrypting would replace a key main never saw), and `'unsealed'` for one it **could not write** — one another
+   * program holds, or that cannot be written now. A left file and an unsealed one are not the same answer: reading a
+   * failure as a skip would lose it silently, and a skip as a failure would name a correctly encrypted copy. The
+   * entries keep their identity; only the log's recorded length moves, through its one writer.
+   *
+   * @returns how many files were rewritten, and the paths `seal` could not write — never a throw for one copy, since
+   * the protect has already applied and a copy it could not seal is the person's to be told of, not a reason to fail
+   * the command (ADR-0178).
+   */
+  async resealCopies(
+    context: DocumentContext,
+    seal: (path: string) => Promise<number | undefined | 'unsealed'>,
+  ): Promise<{ readonly rewritten: number; readonly unsealed: readonly string[] }> {
+    const log = context.commandLog(COMMAND_WRITER);
+    let rewritten = 0;
+    const unsealed: string[] = [];
+    for (const path of log.checkpointPaths()) {
+      const byteLength = await seal(path);
+      if (byteLength === undefined) continue;
+      if (byteLength === 'unsealed') {
+        unsealed.push(path);
+        continue;
+      }
+      log.resealed(path, byteLength);
+      rewritten += 1;
+    }
+    return { rewritten, unsealed };
+  }
+
+  /**
+   * The protect a log entry was made for, whole, from the held table: what a redo of it re-applies, and what its copies
+   * are sealed under. `undefined` for an entry that is not a protect's.
+   */
+  // ANY ENTRY'S SHAPE, for `HeldIntents`' reason: `execute` answers `LogEntryFor<K>` and the log answers `LogEntry`.
+  protectOf(entry: { readonly command: { readonly kind: CommandKind } }): CommandOfKind<'setDocumentProtection'> | undefined {
+    const command = entry.command.kind === 'setDocumentProtection' ? this.#held.get(entry)?.command : undefined;
+    return command?.kind === 'setDocumentProtection' ? command : undefined;
+  }
+
   forgetUndoCopies(context: DocumentContext): LogTrim {
     return context.commandLog(COMMAND_WRITER).trimTo(0);
   }
@@ -1353,7 +1478,7 @@ export class CommandBus {
       this.#recordIfRemoval(spec, context);
       log.redo();
       await this.#show(entry.command.kind, context, inputs, true);
-      return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
+      return { entry, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
     }
     const command = reapplicable(entry, this.#held);
 
@@ -1408,6 +1533,6 @@ export class CommandBus {
 
     log.redo();
     await this.#show(entry.command.kind, context, inputs, writerShapes[spec.writer] !== 'live-session');
-    return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
+    return { entry, trimmed: NO_TRIM, drawn: TOLD_AT_THE_EDIT, version: context.bumpVersion(COMMAND_WRITER) };
   }
 }

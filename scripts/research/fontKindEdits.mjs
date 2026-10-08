@@ -99,7 +99,7 @@ const built = (relative) => import(pathToFileURL(join(ROOT, relative)).href);
 const pdfium = await built('packages/kernel/dist/pdfiumFfi.js');
 const { applyEditTextBlock } = await built('packages/kernel/dist/pdfiumTextEdit.js');
 const { EditRefusedError, TextNotWritableError } = await built('packages/kernel/dist/textEditRefusals.js');
-const { groupIntoBlocks, settingOf } = await built('packages/kernel/dist/textLines.js');
+const { groupIntoBlocks, isEditedInPlace, settingOf } = await built('packages/kernel/dist/textLines.js');
 const { blockEditOf } = await built('packages/contract/dist/commands.js');
 pdfium.openPdfium(pdfiumLibrary(ROOT));
 
@@ -132,7 +132,7 @@ async function textObjects(bytes) {
  * @returns {any[]} `groupIntoBlocks`' answer, imported from the build by a computed path, which types as nothing
  */
 function blocksOf(runs) {
-  return groupIntoBlocks(runs.filter((run) => run.style.upright).map((run) => ({ ...run, setting: settingOf(run.style) })));
+  return groupIntoBlocks(runs.filter((run) => isEditedInPlace(run.style)).map((run) => ({ ...run, setting: settingOf(run.style) })));
 }
 
 /** @param {any} block */
@@ -179,7 +179,7 @@ async function edit(bytes, change, line, keep) {
   const command = {
     kind: 'editTextBlock',
     page: 0,
-    ...blockEditOf([{ lines: block.lines.map((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)), text: change(textOfBlock(block).trimEnd()) }]),
+    ...blockEditOf([{ lines: block.lines.map((/** @type {any} */ l) => l.runs.map((/** @type {Run} */ r) => r.index)), soft: block.lines.map(() => false), text: change(textOfBlock(block).trimEnd()) }]),
     fit: 'reflow',
     version: 1,
   };

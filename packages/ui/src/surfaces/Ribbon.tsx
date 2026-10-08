@@ -303,6 +303,7 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
       size={stacked}
       // THE STATE IT SETS, where it sets one: the tool that is on, a panel that is shown (WCAG 4.1.2).
       pressed={entry.command.checked?.(context)}
+      keepsFocus={entry.command.keepsFocus}
       // THE REGISTRY GUARANTEES IT: a command placed on the ribbon with no
       // icon is refused at construction, so `File` is never drawn for a
       // command in the shipped graph.
@@ -313,7 +314,14 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
       // never to repeat what is already under the pointer. Both texts
       // are the command's; this surface composes no string.
       label={entry.command.ribbonTitle ?? entry.command.title}
-      description={entry.command.ribbonTitle === undefined ? undefined : entry.command.title}
+      description={entry.command.tip ?? (entry.command.ribbonTitle === undefined ? undefined : entry.command.title)}
+      onDoubleClick={
+        entry.command.hold === undefined
+          ? undefined
+          : () => {
+              entry.command.hold?.(context);
+            }
+      }
       onClick={() => {
         // Not awaited, for `QuickToolbar`'s reason: a handler
         // returning a promise would make React's event handling

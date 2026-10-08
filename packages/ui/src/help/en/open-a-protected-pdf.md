@@ -19,7 +19,7 @@ Some PDFs are locked with a password. Monstera recognises them when you open the
 ## Good to know
 
 - If the password is wrong, Monstera says so and lets you try again.
-- The password is used only to open the document. Monstera does not keep it.
+- Monstera holds the password only while the document is open, so your changes are saved still protected. It forgets the password when you close the document, and never puts it in your Recent list.
 - To add or remove a password on a document, see "Set a password and permissions".
 
 <!--

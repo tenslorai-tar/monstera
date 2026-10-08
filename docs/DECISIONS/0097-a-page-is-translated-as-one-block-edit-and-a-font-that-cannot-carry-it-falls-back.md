@@ -181,3 +181,12 @@ moving every later block re-lays out a document that has no layout to re-lay (AD
 true); a fixed shrink step, which is a constant nothing measures; shrinking every block of a page by one
 factor, which makes a short heading pay for a long paragraph; and a percentage-of-width test for soft wraps,
 which is a constant where the typesetter's own relation exists.
+
+## Superseded in part, 2026-10-05 — a font that cannot carry the words takes the resolver's face
+
+[ADR-0172](0172-one-font-resolver-open-fonts-bundled-by-fingerprint-subsets-made-in-the-host.md), Part B Phase 1,
+supersedes the fallback to a twin in the nearest standard font, its consequence *"languages are those WinAnsi can
+write"*, and the rejected alternative *"embedding a system font"*. A word the run's font cannot carry now goes whole to
+the first face of one resolver that carries it (a sibling in the document, an installed font the licence allows, a
+bundled open face), embedded as a uniquely named subset, and a character no face carries is a visible box mapped to
+the character. The page as one block edit, the fit, the soft-wrap join and the read-back stand.

@@ -44,7 +44,9 @@ const violationsOf = (channels: ChannelMap) =>
  * text each, so their worst is a sum under the ceiling (`commands.test.ts` measures both).
  */
 const PAST_THE_ROUTE: Readonly<Record<keyof typeof HOSTS, readonly string[]>> = {
-  'MuPDF host': ['engine/invert', 'engine/applyPdfLib'],
+  // `engine/apply-file` BY ITS PRE-READ ALONE, `engine/applyPdfLib`'s argument: PDFium's `engine/page-runs` answer, which
+  // crossed under the same ceiling (ADR-0176's note on Decision 2). Its command half is held to the ceiling below.
+  'MuPDF host': ['engine/invert', 'engine/applyPdfLib', 'engine/apply-file'],
   'PDFium host': ['engine/invert'],
   'compose host': [],
 };
@@ -67,6 +69,23 @@ describe('the engine hosts’ declared routes', () => {
   it('engine/applyPdfLib, its pre-read left out, fits the file ceiling at its worst', () => {
     const rest = engineChannels['engine/applyPdfLib'].params.omit({ reads: true });
     expect(maxEncodedBytes(rest, WORST_BYTES_PER_CHAR, 'input')).toBeLessThan(ENGINE_ANSWER_FILE_MAX_BYTES);
+  });
+
+  /**
+   * `engine/apply-file`'s two measurements (ADR-0176's note on Decision 2): its request without the pre-read fits the
+   * file ceiling, the exemption being the pre-read's alone; and its command ALONE is past the frame, which is why the
+   * kind cannot ride MuPDF's framed `engine/apply` even with no pre-read. The second is the CONTROL that the route is
+   * needed: were the command to fit a frame, a file route for it would be one nobody measured a reason for.
+   */
+  it('engine/apply-file fits the file ceiling without its pre-read, and its command alone is past the frame', () => {
+    const channel = engineChannels['engine/apply-file'];
+    expect(maxEncodedBytes(channel.params.omit({ reads: true }), WORST_BYTES_PER_CHAR, 'input')).toBeLessThan(
+      ENGINE_ANSWER_FILE_MAX_BYTES,
+    );
+    expect(maxEncodedBytes(channel.params.shape.command, WORST_BYTES_PER_CHAR, 'input')).toBeGreaterThan(
+      ENGINE_HOST_FRAME_MAX_BYTES,
+    );
+    expect(channel.request).toBe('file');
   });
 
   /**
@@ -103,6 +122,8 @@ describe('the engine hosts’ declared routes', () => {
  */
 const WRITERS = {
   mupdf: engineChannels['engine/apply'],
+  // MuPDF's SECOND command channel, for the kinds whose intent can outgrow a frame (ADR-0176's note on Decision 2).
+  'mupdf, by file': engineChannels['engine/apply-file'],
   'pdf-lib': engineChannels['engine/applyPdfLib'],
   pdfium: pdfiumChannels['engine/apply'],
 };

@@ -35,6 +35,9 @@ export const IMPORT_FORM_DATA_PROBLEM_DIALOG = declareDialog({
   props: z.discriminatedUnion('reason', [
     z.object({ reason: z.literal('unreadable') }),
     z.object({ reason: z.literal('too-large'), limitBytes: z.number().int().positive() }),
+    // THE WRONG FILE, said as itself: it is form data and none of its fields is in this form. It was one of three causes
+    // this dialog listed for `unreadable` while an apply's reason did not cross the host boundary; the plan names it now.
+    z.object({ reason: z.literal('matched-nothing'), named: z.number().int().nonnegative() }),
   ]),
   component: lazy(() => import('./ImportFormDataProblemBody.js')),
 });

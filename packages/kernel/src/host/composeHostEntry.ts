@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract/host';
 
 import { composeCsv } from '../csvCompose.js';
+import { type FaceSource, faceSourceOf, fontFoldersOf } from '../fontCatalogue.js';
 import { composeImages } from '../imageCompose.js';
 import { composeMarkdown } from '../markdownCompose.js';
 import { MupdfOpenRefused, keepInlineImages, openMupdfShim, rewriteImages } from '../mupdfRaw.js';
@@ -77,6 +78,28 @@ const shimPath = process.argv[3] === undefined || process.argv[3].length === 0 ?
 if (shimPath !== null) openMupdfShim(shimPath);
 
 /**
+ * The bundled fonts' folder (ADR-0172), the factory's THIRD argument, empty where it had none — `shimPath`'s rule.
+ */
+const fontsPath = process.argv[4] === undefined || process.argv[4].length === 0 ? null : process.argv[4];
+
+/** The machine's installed fonts' folder (ADR-0172 Decision 2), the FOURTH argument, empty where it had none. */
+const installedPath = process.argv[5] === undefined || process.argv[5].length === 0 ? null : process.argv[5];
+
+/**
+ * The catalogue the composers set text from, READ ON FIRST USE and kept: an Optimize or an image import never needs
+ * it, and twenty-one faces read once are cheaper than a read per import. A folder that holds no face is a host started
+ * without its fonts — a fault, reported as one, never an answer about the person's file.
+ */
+let catalogue: FaceSource | null = null;
+function faces(): FaceSource {
+  if (catalogue === null) {
+    if (fontsPath === null) throw new Error('the compose host was started without its fonts folder');
+    catalogue = faceSourceOf(fontFoldersOf(fontsPath, installedPath));
+  }
+  return catalogue;
+}
+
+/**
  * The native rewriter over one area, or `null` where no library was bound.
  *
  * The paths are the area's directories and two names the channel's schema validated, so this
@@ -136,6 +159,7 @@ const handlers = createComposeHandlers({
   areas,
   files: hostFilesystem,
   probe: probeContainment,
+  faces,
   composeMarkdown,
   composeCsv,
   composeImages,

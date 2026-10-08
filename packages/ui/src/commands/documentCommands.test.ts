@@ -3,6 +3,7 @@ import {
   type ContractClient,
   type DispatchableCommand,
   type LibraryEntry,
+  MAX_FONT_RUNS,
   channels,
   createClient,
 } from '@monstera/contract';
@@ -12,8 +13,13 @@ import { describe, expect, it } from 'vitest';
 import { PAGE_BACKGROUND_DIALOG_ID } from '../dialogs/pageBackground.js';
 import type { ObjectFilter } from '../objectEditing.js';
 import {
+  DETECT_FIELDS_TIP,
+  EN,
+  FLATTEN_FORM_TIP,
+  TAB_ORDER_TIP,
   TOAST_ACTIVE_CONTENT_REMOVED,
   TOAST_FORM_FLATTENED,
+  TOAST_TAB_ORDER_SET,
   TOAST_FORM_DATA_IMPORTED,
   TOAST_PROTECTION_SET,
   TOAST_COPY_SAVED,
@@ -49,6 +55,7 @@ import { DOCUMENT_PANEL_SETTING } from '../settings/layout.js';
 import { PanelPresence } from '../panelPresence.js';
 import { SettingsStore } from '../settingsStore.js';
 import { outlinedMarkOf } from '../signatureFaces.js';
+import { DocumentKeys } from '../documentKeys.js';
 import type { ShowToast } from '../toasts.js';
 import {
   type Applied,
@@ -64,11 +71,17 @@ import {
   exportFormDataXfdfCommand,
   detectFlatFieldsCommand,
   EDIT_TEXT_TOOL_ID,
+  EDIT_TEXT_ADD_TOOL_ID,
+  addTextCommand,
+  commitBlocks,
+  commitPageInsert,
   HAND_TOOL_ID,
   handToolCommand,
   selectTextCommand,
   type TextBlock,
   commitTextBlock,
+  NO_RUN_FONTS,
+  readRunFonts,
   editTextCommand,
   promoteTextOnPage,
   EDIT_OBJECTS_TOOL_ID,
@@ -109,6 +122,7 @@ import {
   redactMatchesCommand,
   sanitizeDocumentCommand,
   flattenFormCommand,
+  tabOrderCommand,
   signDocument,
   signDocumentCommand,
   signaturesCommand,
@@ -211,7 +225,7 @@ function sourcesClient(): { readonly client: ContractClient; readonly executed: 
       return Promise.resolve(ok({ version: asDocVersion(1), pageCount, rotations: [0] }));
     }
     executed.push(params);
-    return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+    return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
   });
   return { client, executed };
 }
@@ -340,6 +354,9 @@ describe('rotate page', () => {
       version: asDocVersion(2),
       byteLength: 2048,
       historyDropped: 0,
+      boxed: [],
+      more: 0,
+      unsealedCopies: [],
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -348,7 +365,69 @@ describe('rotate page', () => {
     // visible in any state: the version alone rebinds the renderer's transport
     // to the previous image's length, which is a RangeError past the end of the
     // new document or a parse of a truncated one.
-    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 0 }]);
+    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }]);
+  });
+
+  /**
+   * ADR-0174's renderer half: the characters a command drew as boxes are told, by page, through the one dialog. The
+   * kernel half is `proof:pdfiumcommand`'s boxed cases. CONTROL: the declared-failure case below answers no box and
+   * opens nothing, so the dialog here is the list's doing.
+   */
+  it('tells the person which characters the command drew as boxes, and on which page', async () => {
+    const { shown, onApplied, ask } = recorder();
+    const client = clientAnswering('document.execute', {
+      version: asDocVersion(2),
+      byteLength: 2048,
+      historyDropped: 0,
+      boxed: [{ character: '中', page: 3 }],
+      more: 2,
+      unsealedCopies: [],
+    });
+
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([
+      { id: 'dialog.boxed-characters', props: { from: 'edit', boxed: [{ character: '中', page: 3 }], more: 2 } },
+    ]);
+  });
+
+  /**
+   * ADR-0178's renderer half: a protect that could not encrypt some older copies names them through the one window.
+   * The kernel/host half is `apps/desktop`'s *copy seal FAILS still applies* case. CONTROL: the empty-list case below
+   * opens nothing, so the window here is the list's doing — a renderer that opened it regardless would fail it.
+   */
+  it('names the older copies a protect could not encrypt, through the one window', async () => {
+    const { shown, onApplied, ask } = recorder();
+    const client = clientAnswering('document.execute', {
+      version: asDocVersion(2),
+      byteLength: 2048,
+      historyDropped: 0,
+      boxed: [],
+      more: 0,
+      unsealedCopies: ['report.pdf.bak', 'report.pdf.previous'],
+    });
+
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([
+      { id: 'dialog.unsealed-copies', props: { copies: ['report.pdf.bak', 'report.pdf.previous'] } },
+    ]);
+  });
+
+  it('CONTROL: a command that sealed every copy opens no unsealed-copies window', async () => {
+    const { shown, onApplied, ask } = recorder();
+    const client = clientAnswering('document.execute', {
+      version: asDocVersion(2),
+      byteLength: 2048,
+      historyDropped: 0,
+      boxed: [],
+      more: 0,
+      unsealedCopies: [],
+    });
+
+    await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([]);
   });
 
   /**
@@ -362,6 +441,9 @@ describe('rotate page', () => {
       version: asDocVersion(2),
       byteLength: 2048,
       historyDropped: 3,
+      boxed: [],
+      more: 0,
+      unsealedCopies: [],
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -372,7 +454,7 @@ describe('rotate page', () => {
     // AND THE VIEW STILL MOVED. The command succeeded; a version reported to
     // nobody would leave the renderer showing the page as it was while a dialog
     // explains what the rotation cost.
-    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 3 }]);
+    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 3, boxed: [], more: 0, unsealedCopies: [] }]);
   });
 
   it('a declared failure changes nothing, so the view is not rebuilt', async () => {
@@ -417,6 +499,9 @@ describe('rotate page', () => {
       version: asDocVersion(2),
       byteLength: 2048,
       historyDropped: 0,
+      boxed: [],
+      more: 0,
+      unsealedCopies: [],
     });
 
     await rotatePageCommand({ client, onApplied, ask, stamp, signatures }).run(CONTEXT);
@@ -473,7 +558,7 @@ describe('move page up / down — Organize › Arrange', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     return { client, sent };
   }
@@ -917,7 +1002,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       const answer = answers[id];
       if (answer !== undefined) return Promise.resolve(ok(answer));
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }),
+        ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }),
       );
     });
     return { client, sent };
@@ -1239,7 +1324,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
       return Promise.resolve(
-        ok({ kind: 'imported', version: asDocVersion(2), byteLength: 99, historyDropped: 0 }),
+        ok({ kind: 'imported', version: asDocVersion(2), byteLength: 99, historyDropped: 0, filled: 1, skipped: [], more: 0 }),
       );
     });
     const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures, toast: () => undefined };
@@ -1260,7 +1345,15 @@ describe('delete pages — the mutation-dialog gate', () => {
     // any answer — or before the answer — fails here as surely as a missing one.
     const saidFor: Record<string, unknown[]> = {};
     const answers = {
-      imported: ok({ kind: 'imported' as const, version: asDocVersion(2), byteLength: 99, historyDropped: 0 }),
+      imported: ok({
+        kind: 'imported' as const,
+        version: asDocVersion(2),
+        byteLength: 99,
+        historyDropped: 0,
+        filled: 1,
+        skipped: [],
+        more: 0,
+      }),
       cancelled: ok({ kind: 'cancelled' as const }),
       unreadable: ok({ kind: 'unreadable' as const }),
     };
@@ -1278,6 +1371,72 @@ describe('delete pages — the mutation-dialog gate', () => {
     });
   });
 
+  it('SAYS which fields an import left alone and why, and opens that only when it left some (control: a clean import opens nothing)', async () => {
+    const asked: { id: string; props: unknown }[] = [];
+    const run = async (value: Record<string, unknown>): Promise<void> => {
+      const client = createClient(channels, () =>
+        Promise.resolve(
+          ok({ kind: 'imported' as const, version: asDocVersion(3), byteLength: 10, historyDropped: 0, ...value } as never),
+        ),
+      );
+      await importFormDataJsonCommand({
+        client,
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          asked.push({ id, props });
+          return Promise.resolve(undefined);
+        },
+        toast: () => undefined,
+      }).run(CONTEXT);
+    };
+
+    await run({ filled: 4, skipped: [], more: 0 });
+    expect(asked, 'the application’s own export leaves nothing, so nothing opens').toStrictEqual([]);
+
+    await run({
+      filled: 4,
+      skipped: [
+        { name: 'order_ref', reason: 'read-only' },
+        { name: 'no_such_field', reason: 'not-in-document' },
+      ],
+      more: 3,
+    });
+    expect(asked).toStrictEqual([
+      {
+        id: 'dialog.import-form-data-result',
+        props: {
+          filled: 4,
+          skipped: [
+            { name: 'order_ref', reason: 'read-only' },
+            { name: 'no_such_field', reason: 'not-in-document' },
+          ],
+          more: 3,
+        },
+      },
+    ]);
+  });
+
+  it('says a file naming none of the form’s fields is the wrong file, in its own sentence and without a toast', async () => {
+    const asked: { id: string; props: unknown }[] = [];
+    const { toast, said } = saving();
+    const client = createClient(channels, () => Promise.resolve(ok({ kind: 'matched-nothing' as const, named: 7 })));
+    await importFormDataJsonCommand({
+      client,
+      stamp,
+      signatures,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        asked.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+      toast,
+    }).run(CONTEXT);
+    expect(asked).toStrictEqual([{ id: 'dialog.import-form-data-problem', props: { reason: 'matched-nothing', named: 7 } }]);
+    expect(said).toStrictEqual([]);
+  });
+
   it('REPORTS the document moved after an import, which is what makes it a mutation', async () => {
     // The import answers a version and a byte length exactly as a mutation
     // does, because it is one — main mints the command. A renderer that treated
@@ -1287,7 +1446,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const applied: unknown[] = [];
     const client = createClient(channels, () =>
       Promise.resolve(
-        ok({ kind: 'imported', version: asDocVersion(7), byteLength: 4096, historyDropped: 0 }),
+        ok({ kind: 'imported', version: asDocVersion(7), byteLength: 4096, historyDropped: 0, filled: 1, skipped: [], more: 0 }),
       ),
     );
 
@@ -1362,6 +1521,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     // out of the dialog would have two sources for one geometry, and the one
     // that came through a form control is the one that can be wrong.
     const sent: { id: string; params: unknown }[] = [];
+    const asked: unknown[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
       if (id === 'document.flatFieldCandidates') {
@@ -1369,15 +1529,17 @@ describe('delete pages — the mutation-dialog gate', () => {
           ok({
             version: asDocVersion(1),
             candidates: [
-              { rect: { x0: 10, y0: 20, x1: 110, y1: 40 }, label: 'Name:', name: 'Name' },
-              { rect: { x0: 10, y0: 60, x1: 110, y1: 80 }, label: 'Date:', name: 'Date' },
+              { rect: { x0: 10, y0: 20, x1: 110, y1: 40 }, label: 'Name:', name: 'Name', kind: 'text' },
+              { rect: { x0: 10, y0: 60, x1: 110, y1: 80 }, label: 'Date:', name: 'Date', kind: 'text' },
+              { rect: { x0: 10, y0: 100, x1: 24, y1: 114 }, label: 'Send me the newsletter', name: 'Newsletter', kind: 'checkbox' },
             ],
             truncated: false,
+            alreadyFields: 3,
           }),
         );
       }
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0 }),
+        ok({ version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }),
       );
     });
 
@@ -1389,8 +1551,24 @@ describe('delete pages — the mutation-dialog gate', () => {
       // ONE OF THE TWO REJECTED, which is what makes this a review rather than
       // a confirmation: a command that sent everything it was offered would
       // pass a case where the reader accepted both.
-      ask: () => Promise.resolve({ accepted: ['Date'] }),
+      ask: (_id, props) => {
+        asked.push(props);
+        return Promise.resolve({ accepted: ['Date', 'Newsletter'] });
+      },
     }).run(CONTEXT);
+
+    // THE WINDOW IS TOLD each place's kind and how many were left out because they already hold a field.
+    expect(asked).toStrictEqual([
+      {
+        candidates: [
+          { name: 'Name', label: 'Name:', kind: 'text' },
+          { name: 'Date', label: 'Date:', kind: 'text' },
+          { name: 'Newsletter', label: 'Send me the newsletter', kind: 'checkbox' },
+        ],
+        truncated: false,
+        alreadyFields: 3,
+      },
+    ]);
 
     expect(sent).toStrictEqual([
       { id: 'document.flatFieldCandidates', params: { docId: DOC, page: 3 } },
@@ -1407,6 +1585,12 @@ describe('delete pages — the mutation-dialog gate', () => {
                 rect: { x0: 10, y0: 60, x1: 110, y1: 80 },
                 name: 'Date',
                 field: { type: 'text' },
+              },
+              // A SMALL SQUARE IS A TICK BOX, which the old command sent as text for every candidate.
+              {
+                rect: { x0: 10, y0: 100, x1: 24, y1: 114 },
+                name: 'Newsletter',
+                field: { type: 'checkbox' },
               },
             ],
           },
@@ -1434,6 +1618,96 @@ describe('delete pages — the mutation-dialog gate', () => {
     active = 'annotate.rectangle';
     void command.run(CONTEXT);
     expect(active).toBe(EDIT_TEXT_TOOL_ID);
+  });
+
+  it('EDIT TEXT HAS A KEY, declared on the command and nowhere else, so the palette, the tooltip and the map all read it', () => {
+    const command = editTextCommand({ activeTool: () => undefined, onSelect: () => undefined });
+    expect(command.shortcut).toBe('Ctrl+Shift+T');
+    // CONTROL: the mode's other command has none, so a key that opened Add text would be a second wiring place.
+    expect(addTextCommand({ activeTool: () => undefined, onSelect: () => undefined }).shortcut).toBeUndefined();
+  });
+
+  it('ADD TEXT is Edit text’s add flavour in the same slot, and Edit text reads as on in both (ADR-0180)', () => {
+    let active: string | undefined;
+    const deps = {
+      activeTool: () => active,
+      onSelect: (id: string | undefined) => {
+        active = id;
+      },
+    };
+    const add = addTextCommand(deps);
+    const edit = editTextCommand(deps);
+    void add.run(CONTEXT);
+    expect(active).toBe(EDIT_TEXT_ADD_TOOL_ID);
+    expect(add.checked?.(CONTEXT)).toBe(true);
+    // EDIT TEXT IS ON IN BOTH FLAVOURS, so its button does not read as off while a box is being added.
+    expect(edit.checked?.(CONTEXT)).toBe(true);
+    // PRESSED AGAIN it goes back to plain Edit text rather than leaving the mode: one question, one answer.
+    void add.run(CONTEXT);
+    expect(active).toBe(EDIT_TEXT_TOOL_ID);
+    // CONTROL: from another tool it switches to the add flavour.
+    active = 'annotate.rectangle';
+    void add.run(CONTEXT);
+    expect(active).toBe(EDIT_TEXT_ADD_TOOL_ID);
+    // AND EDIT TEXT PRESSED WHILE ADDING leaves the mode, as it does from plain Edit text.
+    void edit.run(CONTEXT);
+    expect(active).toBeUndefined();
+  });
+
+  it('A JOIN OR A SPLIT is ONE command of several blocks, the second half carrying its movement (ADR-0180 Decision 7)', async () => {
+    // THE UI HALF OF THE WIRED PAIR for join and split. Its kernel half is `proof:pdfiumcommand`'s join and split cases:
+    // two blocks read back as one, one as two, and the same split without its movement read back as one again.
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+    });
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
+    const outcome = await commitBlocks(
+      deps,
+      DOC,
+      3,
+      [
+        { lines: [[1], [2]], soft: [false, false], text: 'First.\nSecond.' },
+        { lines: [[4]], soft: [false], text: 'Below.', place: { move: { x: 0, y: -14 } } },
+      ],
+      { version: asDocVersion(7), rewrite: 'objects' },
+    );
+    expect(outcome).toBe('written');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.params).toMatchObject({
+      command: {
+        kind: 'editTextBlock',
+        page: 3,
+        runs: [1, 2, 4],
+        blockStarts: [0, 2],
+        text: 'First.\nSecond.Below.',
+        textStarts: [0, 14],
+        places: [{ block: 1, move: { x: 0, y: -14 } }],
+        version: 7,
+      },
+    });
+  });
+
+  it('A NEW BOX is sent as `inserts` on the block wire, with no block, and nothing for words that are only white space', async () => {
+    // THE UI HALF OF THE WIRED PAIR for an added box. Its kernel half is `proof:pdfiumcommand`'s added-box cases.
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+    });
+    const deps = { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures };
+    const insert = { left: 72, baseline: 600, measure: 200, size: 12, text: 'A note' };
+    expect(await commitPageInsert(deps, DOC, 3, insert, { version: asDocVersion(7), rewrite: 'objects' })).toBe('written');
+    expect(sent[0]?.params).toMatchObject({
+      command: { kind: 'editTextBlock', page: 3, runs: [], blockStarts: [], inserts: [insert], version: 7 },
+    });
+    // A BOX NOBODY TYPED IN adds nothing, and the kernel would refuse it.
+    expect(await commitPageInsert(deps, DOC, 3, { ...insert, text: '   ' }, { version: asDocVersion(7), rewrite: 'objects' })).toBe('unchanged');
+    expect(sent).toHaveLength(1);
+    // CONTROL: a page the read named `operators` is sent by that writer, as an edit is.
+    await commitPageInsert(deps, DOC, 3, insert, { version: asDocVersion(7), rewrite: 'operators' });
+    expect(sent[1]?.params).toMatchObject({ command: { kind: 'editTextOperators' } });
   });
 
   it('the HAND turns its mode on and off, and from another tool switches to the hand (§10.3)', () => {
@@ -1499,10 +1773,13 @@ describe('delete pages — the mutation-dialog gate', () => {
           { index: 9, text: 'brown fox', style: PLAIN },
         ],
         box: { x0: 72, y0: 700, x1: 300, y1: 711 },
+        // THE FIRST LINE ENDS SOFT: the block is one paragraph, "The quick brown fox jumps over" (ADR-0179).
+        soft: true,
       },
-      { runs: [{ index: 2, text: 'jumps over', style: PLAIN }], box: { x0: 72, y0: 686, x1: 190, y1: 697 } },
+      { runs: [{ index: 2, text: 'jumps over', style: PLAIN }], box: { x0: 72, y0: 686, x1: 190, y1: 697 }, soft: false },
     ],
     style: PLAIN,
+    shape: { align: 'left', firstIndent: 0 },
   };
 
   it('A BLOCK EDIT SENDS the block’s own indices, the words typed, and the version the BLOCKS were read at', async () => {
@@ -1514,7 +1791,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     const applied: Applied[] = [];
     const outcome = await commitTextBlock(
@@ -1522,8 +1799,8 @@ describe('delete pages — the mutation-dialog gate', () => {
       DOC,
       3,
       BLOCK,
-      'The quick brown dog\njumps over',
-      asDocVersion(7),
+      'The quick brown dog jumps over',
+      { version: asDocVersion(7), rewrite: 'objects' },
     );
     expect(outcome).toBe('written');
     expect(sent).toStrictEqual([
@@ -1535,12 +1812,14 @@ describe('delete pages — the mutation-dialog gate', () => {
             kind: 'editTextBlock',
             page: 3,
             // THE WIRE FORM WRITTEN OUT, not built by the encoder under test (ADR-0142): two lines, of runs 4 and 9
-            // and of run 2, one block, its words.
+            // and of run 2, one block, its words as ONE paragraph with the first line's soft end where the read found
+            // it (ADR-0179).
             runs: [4, 9, 2],
             lineStarts: [0, 2],
             blockStarts: [0],
-            text: 'The quick brown dog\njumps over',
+            text: 'The quick brown dog jumps over',
             textStarts: [0],
+            softLines: [0],
             fit: 'reflow',
             version: 7,
           },
@@ -1550,25 +1829,99 @@ describe('delete pages — the mutation-dialog gate', () => {
     expect(applied).toHaveLength(1);
   });
 
-  it('CONTROL: a block whose words did not change SENDS NOTHING', async () => {
-    // The words are compared by `lineText`, the rule the kernel diffs with. A
-    // commit that sent anyway would regenerate the page for no change — which
-    // the kernel refuses, so the person would meet a problem for clicking away.
-    const sent: string[] = [];
-    const client = createClient(channels, (id) => {
-      sent.push(id);
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
+  it('ON A PAGE THE READ NAMED `operators` the same edit is sent as editTextOperators, with the same wire (ADR-0176)', async () => {
+    // THE UI HALF OF THE WIRED PAIR for `editTextOperators`. Its kernel half is `textOperatorEdit.test.ts`, which
+    // rewrites the Chromium print's Type 3 heading through MuPDF and saves it. Only the kind differs from the case
+    // above, which is its control: a commit that ignored the read's writer would send `editTextBlock` here.
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     const outcome = await commitTextBlock(
       { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
       DOC,
       3,
       BLOCK,
-      'The quick brown fox\njumps over',
-      asDocVersion(7),
+      'The quick brown dog jumps over',
+      { version: asDocVersion(7), rewrite: 'operators' },
+    );
+    expect(outcome).toBe('written');
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'editTextOperators',
+            page: 3,
+            runs: [4, 9, 2],
+            lineStarts: [0, 2],
+            blockStarts: [0],
+            text: 'The quick brown dog jumps over',
+            textStarts: [0],
+            softLines: [0],
+            fit: 'reflow',
+            version: 7,
+          },
+        },
+      },
+    ]);
+  });
+
+  it('CONTROL: a block whose words did not change SENDS NOTHING', async () => {
+    // The words are compared by the one join the kernel diffs with (`paragraphsOfLines`: a soft wrap is a space). A
+    // commit that sent anyway would regenerate the page for no change — which
+    // the kernel refuses, so the person would meet a problem for clicking away.
+    const sent: string[] = [];
+    const client = createClient(channels, (id) => {
+      sent.push(id);
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+    });
+    const outcome = await commitTextBlock(
+      { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown fox jumps over',
+      { version: asDocVersion(7), rewrite: 'objects' },
     );
     expect(outcome).toBe('unchanged');
     expect(sent).toStrictEqual([]);
+    // AND THE LINES AS THEY WERE JOINED BEFORE ARE NOT THE WORDS: the first line ends soft, so a line break there is a
+    // new paragraph, which is a change and is sent.
+    const split = await commitTextBlock(
+      { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown fox\njumps over',
+      { version: asDocVersion(7), rewrite: 'objects' },
+    );
+    expect(split).toBe('written');
+  });
+
+  it('A BLOCK ONLY PUT SOMEWHERE is written, with its place on the wire (ADR-0180, corrected 2026-10-06)', async () => {
+    // THE UI HALF OF THE WIRED PAIR for a placement. Its kernel half is `proof:pdfiumcommand`'s placement cases. The words
+    // are exactly the page's, which the case above sends nothing for: a block that was moved is not unchanged.
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
+    });
+    const outcome = await commitTextBlock(
+      { client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures },
+      DOC,
+      3,
+      BLOCK,
+      'The quick brown fox jumps over',
+      { version: asDocVersion(7), rewrite: 'objects' },
+      { place: { move: { x: 12, y: -4 }, width: 180 } },
+    );
+    expect(outcome).toBe('written');
+    expect(sent[0]?.params).toMatchObject({
+      command: { kind: 'editTextBlock', places: [{ block: 0, move: { x: 12, y: -4 }, width: 180 }], text: 'The quick brown fox jumps over' },
+    });
   });
 
   it('A FONT THAT CANNOT CARRY THE WORDS is the editor’s to say — no dialog opens for it', async () => {
@@ -1591,7 +1944,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown 中',
-      asDocVersion(7),
+      { version: asDocVersion(7), rewrite: 'objects' },
     );
     // WHOLE, characters and all, for the editor to name them.
     expect(outcome).toStrictEqual({ refused: { code: 'text-not-writable', detail: { characters: '中' } } });
@@ -1605,7 +1958,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const sent: unknown[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(8), byteLength: 10, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     await promoteTextOnPage({ client, onApplied: () => undefined, ask: () => Promise.resolve(undefined), stamp, signatures }, DOC, 3);
     expect(sent).toStrictEqual([
@@ -1635,7 +1988,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown dog',
-      asDocVersion(7),
+      { version: asDocVersion(7), rewrite: 'objects' },
     );
     expect(outcome).toStrictEqual({ refused: { code: 'edit-refused', detail: { step: 'generate', engineError: 6 } } });
     expect(asked).toStrictEqual([]);
@@ -1684,7 +2037,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown dog',
-      asDocVersion(7),
+      { version: asDocVersion(7), rewrite: 'objects' },
     );
     expect(outcome).toStrictEqual({ refused: { code: 'stale-target' } });
     expect(asked).toStrictEqual([]);
@@ -1709,7 +2062,7 @@ describe('delete pages — the mutation-dialog gate', () => {
       3,
       BLOCK,
       'The quick brown dog',
-      asDocVersion(7),
+      { version: asDocVersion(7), rewrite: 'objects' },
     );
     // NOT `refused`, which closes the editor over what was typed; and nothing is reported, since the person chose it.
     expect(outcome).toBe('held');
@@ -1845,7 +2198,7 @@ describe('delete pages — the mutation-dialog gate', () => {
     const client = createClient(channels, (id) => {
       sent.push(id);
       return Promise.resolve(
-        ok({ version: asDocVersion(1), candidates: [], truncated: false }),
+        ok({ version: asDocVersion(1), candidates: [], truncated: false, alreadyFields: 0 }),
       );
     });
 
@@ -4024,7 +4377,7 @@ describe('delete pages — the mutation-dialog gate', () => {
         ok(
           id === 'document.duplicatePages'
             ? { version: asDocVersion(1), groups: [{ pages: [0, 4] }], truncated: false }
-            : { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+            : { version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
         ),
       );
     });
@@ -4141,7 +4494,7 @@ describe('generate table of contents', () => {
         return Promise.resolve(ok({ version: asDocVersion(1), destinations, next: null, truncated: false }));
       }
       return Promise.resolve(
-        ok({ version: asDocVersion(2), byteLength: 8192, historyDropped: 0 }),
+        ok({ version: asDocVersion(2), byteLength: 8192, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }),
       );
     });
     return { client, sent };
@@ -4197,7 +4550,9 @@ describe('generate table of contents', () => {
     ]);
     expect(sent.map((call) => call.id)).toStrictEqual(['document.destinations', 'document.destinations', 'document.execute']);
     expect(sent[2]?.params).toStrictEqual({ docId: DOC, command: { kind: 'generateToc', at: 0, entries: left } });
-    expect(record.applied).toStrictEqual([{ version: 2, byteLength: 8192, historyDropped: 0 }]);
+    expect(record.applied).toStrictEqual([
+      { version: 2, byteLength: 8192, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] },
+    ]);
   });
 
   it('CANCEL writes nothing — the call NOT made is the write', async () => {
@@ -4320,7 +4675,7 @@ describe('protectDocumentCommand', () => {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     return { client, sent };
   }
@@ -4328,6 +4683,7 @@ describe('protectDocumentCommand', () => {
   it('dispatches EXACTLY what the dialog answered, permissions included — and SAYS it was set (ADR-0141)', async () => {
     const { client, sent } = recordingClient();
     const { toast, said } = saving();
+    const documentKeys = new DocumentKeys();
 
     await protectDocumentCommand({
       client,
@@ -4335,6 +4691,7 @@ describe('protectDocumentCommand', () => {
       signatures,
       onApplied: () => undefined,
       toast,
+      documentKeys,
       ask: () =>
         Promise.resolve({
           encryption: 'aes-256',
@@ -4343,6 +4700,8 @@ describe('protectDocumentCommand', () => {
           permissions: ['print', 'copy'],
         }),
     }).run(CONTEXT);
+    // THE USER PASSWORD IS KEPT for this document's view, and the owner password is not: it opens nothing a view needs.
+    expect(documentKeys.keysOf(DOC).map((key) => key.reveal())).toStrictEqual(['open-me']);
 
     expect(sent).toStrictEqual([
       {
@@ -4379,6 +4738,7 @@ describe('protectDocumentCommand', () => {
       signatures,
       onApplied: () => undefined,
       toast: () => undefined,
+      documentKeys: new DocumentKeys(),
       ask: () => Promise.resolve({ encryption: 'none', permissions: [] }),
     }).run(CONTEXT);
 
@@ -4396,6 +4756,7 @@ describe('protectDocumentCommand', () => {
   it('CONTROL: a DISMISSED dialog dispatches nothing, and says nothing', async () => {
     const { client, sent } = recordingClient();
     const { toast, said } = saving();
+    const documentKeys = new DocumentKeys();
 
     await protectDocumentCommand({
       client,
@@ -4403,11 +4764,13 @@ describe('protectDocumentCommand', () => {
       signatures,
       onApplied: () => undefined,
       toast,
+      documentKeys,
       ask: () => Promise.resolve(undefined),
     }).run(CONTEXT);
 
     expect(sent).toStrictEqual([]);
     expect(said).toStrictEqual([]);
+    expect(documentKeys.keysOf(DOC)).toStrictEqual([]);
   });
 
   /**
@@ -4444,7 +4807,7 @@ describe('protectDocumentCommand', () => {
             }),
           );
         }
-        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+        return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
       });
       return { client, sent };
     }
@@ -5022,7 +5385,7 @@ describe('protectDocumentCommand', () => {
           );
           return library.filter((call) => call.id === 'library.keepSignature').map((call) => call.params);
         };
-        expect(await keeping({ kind: 'signed', version: asDocVersion(2), byteLength: 10, historyDropped: 0 })).toStrictEqual([
+        expect(await keeping({ kind: 'signed', version: asDocVersion(2), byteLength: 10, historyDropped: 0, boxed: [], more: 0 })).toStrictEqual([
           { mark: TYPED },
         ]);
         expect(await keeping({ kind: 'wrong-passphrase' })).toStrictEqual([]);
@@ -5388,6 +5751,59 @@ describe('protectDocumentCommand', () => {
     });
   });
 
+  describe('what Detect, Flatten and Tab order say they do', () => {
+    it('each carries a one sentence tip that names it, so the ribbon can show what the control does before it is pressed', () => {
+      const { client } = recordingClient();
+      const deps = { client, toast: () => undefined, stamp, signatures, onApplied: () => undefined, ask: () => Promise.resolve(undefined) };
+      const tips = [detectFlatFieldsCommand(deps), flattenFormCommand(deps), tabOrderCommand(deps)].map((command) => command.tip);
+      expect(tips).toStrictEqual([DETECT_FIELDS_TIP, FLATTEN_FORM_TIP, TAB_ORDER_TIP]);
+      expect(EN[DETECT_FIELDS_TIP]).toMatch(/^Detect: /u);
+      expect(EN[FLATTEN_FORM_TIP]).toMatch(/^Flatten: /u);
+      expect(EN[TAB_ORDER_TIP]).toMatch(/^Tab order: /u);
+    });
+  });
+
+  describe('tabOrderCommand (ADR-0193)', () => {
+    it('ASKS which order, then sets it on every page with ONE setTabOrder, then says it did', async () => {
+      const { client, sent } = recordingClient();
+      const said: unknown[] = [];
+      const asked: string[] = [];
+      await tabOrderCommand({
+        client,
+        toast: (_kind, message) => said.push(message),
+        stamp,
+        signatures,
+        onApplied: () => undefined,
+        ask: (id) => {
+          asked.push(`${id} after ${String(sent.length)} sent`);
+          return Promise.resolve({ order: 'column' });
+        },
+      }).run(CONTEXT);
+
+      expect(asked).toStrictEqual(['dialog.tab-order after 0 sent']);
+      expect(sent).toStrictEqual([
+        { id: 'document.execute', params: { docId: DOC, command: { kind: 'setTabOrder', pages: 'all', order: 'column' } } },
+      ]);
+      expect(said).toStrictEqual([TOAST_TAB_ORDER_SET]);
+    });
+
+    it('CONTROL: a dismissed question, and an answer that is not one of the three orders, send nothing', async () => {
+      for (const answer of [undefined, { order: 'diagonal' }, {}]) {
+        const { client, sent } = recordingClient();
+        const said: unknown[] = [];
+        await tabOrderCommand({
+          client,
+          toast: (_kind, message) => said.push(message),
+          stamp,
+          signatures,
+          onApplied: () => undefined,
+          ask: () => Promise.resolve(answer),
+        }).run(CONTEXT);
+        expect([sent, said]).toStrictEqual([[], []]);
+      }
+    });
+  });
+
   describe('redactMatchesCommand', () => {
     it('dispatches the MARKING command, never the burn-in', async () => {
       // THE WHOLE DESIGN OF THE ROW, asserted as the command that was sent: a
@@ -5435,7 +5851,7 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
     const sent: unknown[] = [];
     const client = createClient(channels, (_id, params) => {
       sent.push((params as { command: unknown }).command);
-      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }));
+      return Promise.resolve(ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] }));
     });
     return { client, sent };
   }
@@ -5508,49 +5924,76 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
     ]);
   });
 
-  it('ROTATE and DELETE act on the pages ticked in the Organize grid, and on the page on show without any', async () => {
-    // ADR-0104's `targetPages`, as the two commands read it. The ticked pages exclude the page on show (2), so
-    // a command still reading `page` sends [2] here and reads differently.
-    for (const [factory, kind] of [
-      [rotatePageCommand, 'rotatePages'],
-      [deletePageCommand, 'deletePages'],
-    ] as const) {
-      const ticked = sending();
-      await factory({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
-        ...CONTEXT,
-        page: 2,
-        selectedPages: [0, 3],
-      });
-      expect(ticked.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[0, 3]]);
+  it('ROTATE acts on the pages ticked in the Organize grid, and on the page on show without any', async () => {
+    // ADR-0104's `targetPages`, as a direct-dispatch command reads it. The ticked pages exclude the page on show (2),
+    // so a command still reading `page` sends [2] here and reads differently. `deletePageCommand` reads the same
+    // `targetPages` but now asks first (CR-COR-06), so its coverage is the dialog-opening loop below, not this one.
+    const factory = rotatePageCommand;
+    const kind = 'rotatePages';
 
-      const none = sending();
-      await factory({ client: none.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
-        ...CONTEXT,
-        page: 2,
-        selectedPages: [],
-      });
-      expect(none.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[2]]);
-    }
+    const ticked = sending();
+    await factory({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
+      ...CONTEXT,
+      page: 2,
+      selectedPages: [0, 3],
+    });
+    expect(ticked.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[0, 3]]);
+
+    const none = sending();
+    await factory({ client: none.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
+      ...CONTEXT,
+      page: 2,
+      selectedPages: [],
+    });
+    expect(none.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[2]]);
+  });
+
+  it('DELETE PAGE asks first and deletes nothing on a dismissal (CR-COR-06, owner 2026-10-06)', async () => {
+    // R12. The context-menu *Delete page* and the ribbon's secondary *Delete page* button dispatched `deletePages`
+    // on the first click, while the Delete key and the ribbon's *Delete…* asked. This proves the menu command now
+    // shares `askToDeletePages`: it OPENS the dialog with the target pages, and — the control — a dismissal sends
+    // nothing. Asserted as the call that was not made, because the document is untouched either way.
+    const openedThenDismissed = sending();
+    const dismissedOpens: unknown[] = [];
+    await deletePageCommand({
+      client: openedThenDismissed.client,
+      ask: (id, props) => {
+        dismissedOpens.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+      onApplied: () => undefined,
+      stamp,
+      signatures,
+    }).run({ ...CONTEXT, page: 2, selectedPages: [0, 3] });
+    expect(dismissedOpens).toStrictEqual([{ id: 'dialog.delete-pages', props: { pageCount: CONTEXT.pageCount, pages: [0, 3] } }]);
+    expect(openedThenDismissed.sent).toStrictEqual([]);
+
+    // AND ON AN ANSWER it dispatches exactly the answered pages, through the one path.
+    const confirmed = sending();
+    await deletePageCommand({
+      client: confirmed.client,
+      ask: () => Promise.resolve({ pages: [0, 3] }),
+      onApplied: () => undefined,
+      stamp,
+      signatures,
+    }).run({ ...CONTEXT, page: 2, selectedPages: [0, 3] });
+    expect(confirmed.sent).toStrictEqual([{ kind: 'deletePages', pages: [0, 3] }]);
   });
 
   /**
    * DECISION D, at the one place every command leaves the renderer: a ticked stretch crosses as a RUN. The fixture has
    * a stretch and a lone page, so a dispatcher that sent the list as it came — the build before D — sends five numbers
-   * where this asserts two entries.
+   * where this asserts two entries. Read through `rotatePages`, the direct-dispatch command: `deletePages` crosses the
+   * same `targetPages` run, now by way of the dialog field, which the dialog-opening loop below asserts.
    */
   it('a ticked stretch of pages crosses as one run, and a lone page as its number', async () => {
-    for (const [factory, kind] of [
-      [rotatePageCommand, 'rotatePages'],
-      [deletePageCommand, 'deletePages'],
-    ] as const) {
-      const ticked = sending();
-      await factory({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
-        ...CONTEXT,
-        page: 2,
-        selectedPages: [4, 5, 6, 7, 9],
-      });
-      expect(ticked.sent.map((command) => (command as { pages?: unknown }).pages), kind).toStrictEqual([[[4, 7], 9]]);
-    }
+    const ticked = sending();
+    await rotatePageCommand({ client: ticked.client, ask: () => Promise.resolve(undefined), onApplied: () => undefined, stamp, signatures }).run({
+      ...CONTEXT,
+      page: 2,
+      selectedPages: [4, 5, 6, 7, 9],
+    });
+    expect(ticked.sent.map((command) => (command as { pages?: unknown }).pages)).toStrictEqual([[[4, 7], 9]]);
   });
 
   it('THE REST OF ORGANIZE reads `targetPages` too: duplicate and insert act, and the dialogs open on the ticked pages', async () => {
@@ -5598,8 +6041,10 @@ describe('applyDocumentCommand stamps a creation command at the moment it is sen
         expect(quiet.sent).toStrictEqual([]);
       }
 
-      // THE RANGE DIALOGS start with the same pages, and keep the bound beside them.
-      for (const factory of [deletePagesCommand, extractPagesCommand]) {
+      // THE RANGE DIALOGS start with the same pages, and keep the bound beside them. `deletePageCommand` joins them
+      // since CR-COR-06 (2026-10-06): the *Delete page* menu item and secondary button open the same dialog filled
+      // with the target pages rather than deleting on the first click.
+      for (const factory of [deletePagesCommand, deletePageCommand, extractPagesCommand]) {
         const opened: unknown[] = [];
         const quiet = sending();
         await factory({
@@ -5831,7 +6276,7 @@ describe('every file write confirms, and its Show in folder reveals the file the
 describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
   const SANITIZE: DispatchableCommand = { kind: 'sanitizeDocument', parts: ['javascript'] };
   const COPY = asDocId('doc-copy');
-  const APPLIED = { version: asDocVersion(5), byteLength: 4096, historyDropped: 0 };
+  const APPLIED = { version: asDocVersion(5), byteLength: 4096, historyDropped: 0, boxed: [], more: 0, unsealedCopies: [] };
 
   /** Main as ADR-0149 has it: `breaks-signatures` until the edit is sent agreed, and `editCopy` answering `copy`. */
   function signedMain(copy: unknown = { kind: 'cancelled' }): {
@@ -5890,7 +6335,16 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
   });
 
   it('WORK ON A COPY sends the command to a copy, opens it as a tab, and never sends it to the original again', async () => {
-    const copy = { kind: 'edited', docId: COPY, version: 2, byteLength: 2048, name: 'signed copy.pdf', historyDropped: 0 };
+    const copy = {
+      kind: 'edited',
+      docId: COPY,
+      version: 2,
+      byteLength: 2048,
+      name: 'signed copy.pdf',
+      historyDropped: 0,
+      boxed: [],
+      more: 0,
+    };
     const { client, sent } = signedMain(copy);
     const { ask, asked } = answering('copy');
     const applied: Applied[] = [];
@@ -6004,5 +6458,67 @@ describe('an edit main answers breaks-signatures for (ADR-0149)', () => {
     expect(await applyDocumentCommand({ client, ask, stamp, signatures, onApplied: () => undefined }, DOC, SANITIZE)).toBe(true);
     expect(sent).toHaveLength(1);
     expect(asked).toStrictEqual([]);
+  });
+});
+
+/**
+ * The editor's one read of a block's run fonts (ADR-0175 and its correction), through the real schemas: each run named
+ * once, in reads of `MAX_FONT_RUNS`, and only an answer at the block's own version counts.
+ */
+describe('readRunFonts', () => {
+  const STYLE = { size: 10, colour: { r: 0, g: 0, b: 0 }, serif: false, mono: false, italic: false, bold: false };
+  const box = { x0: 0, y0: 0, x1: 10, y1: 10 };
+  /**
+   * A block of `count` runs, each its own object, with the FIRST RUN ALSO ON A LINE OF ITS OWN: a read that named runs
+   * by where they sit rather than once each would ask for it twice.
+   */
+  function blockOf(count: number): TextBlock {
+    const runs = Array.from({ length: count }, (_, index) => ({ index, text: 'w', style: STYLE }));
+    return {
+      box,
+      lines: [
+        { runs: runs.slice(0, 1), box, soft: false },
+        { runs, box, soft: false },
+      ],
+      style: STYLE,
+      shape: { align: 'left', firstIndent: 0 },
+    };
+  }
+
+  it('names each run ONCE and maps every place to its run, by its first object', async () => {
+    const asked: unknown[] = [];
+    const client = createClient(channels, (_id, params) => {
+      asked.push(params);
+      return Promise.resolve(ok({ version: asDocVersion(4), fonts: [new Uint8Array([1, 2])], runs: [0, null, 0] }));
+    });
+    const read = await readRunFonts(client, DOC, 3, blockOf(3), asDocVersion(4));
+    expect(asked).toStrictEqual([{ docId: DOC, page: 3, indices: [0, 1, 2] }]);
+    expect(read.fonts.map((font) => Array.from(font))).toStrictEqual([[1, 2]]);
+    expect([...read.runs]).toStrictEqual([[0, 0], [2, 0]]);
+  });
+
+  it('a block past one read asks in reads of MAX_FONT_RUNS, and the second read’s places follow the first’s fonts', async () => {
+    const asked: number[][] = [];
+    const client = createClient(channels, (_id, params) => {
+      const { indices } = params as { indices: number[] };
+      asked.push(indices);
+      // EACH READ answers one font of its own, every run in it: the second's place 0 is the block's font 1.
+      return Promise.resolve(
+        ok({ version: asDocVersion(4), fonts: [new Uint8Array([asked.length])], runs: indices.map(() => 0) }),
+      );
+    });
+    const read = await readRunFonts(client, DOC, 0, blockOf(MAX_FONT_RUNS + 2), asDocVersion(4));
+    expect(asked.map((indices) => indices.length)).toStrictEqual([MAX_FONT_RUNS, 2]);
+    expect(read.fonts.map((font) => Array.from(font))).toStrictEqual([[1], [2]]);
+    expect([read.runs.get(MAX_FONT_RUNS - 1), read.runs.get(MAX_FONT_RUNS), read.runs.get(MAX_FONT_RUNS + 1)]).toStrictEqual([0, 1, 1]);
+  });
+
+  it('an answer at ANOTHER version, or a refusal, is no fonts', async () => {
+    const moved = clientAnswering('document.runFonts', { version: asDocVersion(5), fonts: [new Uint8Array([1])], runs: [0] });
+    expect(await readRunFonts(moved, DOC, 0, blockOf(1), asDocVersion(4))).toBe(NO_RUN_FONTS);
+    expect(await readRunFonts(clientFailing('document-poisoned'), DOC, 0, blockOf(1), asDocVersion(4))).toBe(NO_RUN_FONTS);
+    // CONTROL: the same answer at the block's own version is read.
+    const same = clientAnswering('document.runFonts', { version: asDocVersion(4), fonts: [new Uint8Array([1])], runs: [0] });
+    expect((await readRunFonts(same, DOC, 0, blockOf(1), asDocVersion(4))).runs.get(0)).toBe(0);
   });
 });

@@ -184,6 +184,9 @@ const COMMANDS: { readonly [K in InvertibleKind]: CommandOfKind<K> } = {
     author: 'who it names now',
     version: asDocVersion(1),
   },
+  // THE FIXTURE IS UNPROTECTED, so the prior this captures is `unprotected` rather than the empty-handed answer a
+  // capture that read nothing would also give; the terms-carrying shape has its own case in `documentProtection.test`.
+  setDocumentProtection: { kind: 'setDocumentProtection', encryption: 'aes-256', userPassword: 'set-here' },
 };
 
 /** The kinds the declaration table says are MuPDF-routed and invertible. */

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
 // THE NAMED EXPORT. `@axe-core/playwright` publishes
 // `export { AxeBuilder, AxeBuilder as default }`, and under this repository's
 // `verbatimModuleSyntax` the default import resolves to the namespace rather
@@ -358,6 +361,8 @@ for (const look of LOOKS) {
 
 /** A text block's body run and a run set apart inside its line — larger, bold, blue — as `document.textBlocks` answers. */
 const BODY_RUN = { size: 12, colour: { r: 30, g: 30, b: 30 }, serif: false, mono: false, italic: false, bold: false };
+/** A block no case here is about the shape of: left-aligned with no first-line indent (ADR-0179). */
+const LEFT_SHAPE = { align: 'left', firstIndent: 0 } as const;
 const SET_APART_RUN = { size: 16, colour: { r: 66, g: 83, b: 149 }, serif: false, mono: false, italic: false, bold: true };
 
 /** A one-page document built here, so the case needs no fixture from the corpus (B10). */
@@ -1051,7 +1056,11 @@ test('a drag PAST A SHORT LINE and on into the side panel holds its selection ra
   }
   await page.mouse.up();
   // THE PANEL WAS REACHED, or this is a drag across the page alone.
-  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest('.m-context-panel') !== null, [
+  // AN ELEMENT FIRST: a point outside the window finds none, and `undefined !== null` would read as the panel (SSSSSSS-4).
+  expect(await page.evaluate(([x, y]) => {
+    const found = document.elementFromPoint(x ?? 0, y ?? 0);
+    return found !== null && found.closest('.m-context-panel') !== null;
+  }, [
     panel.x + panel.width / 2,
     panel.y + panel.height / 2,
   ])).toBe(true);
@@ -4363,7 +4372,12 @@ for (const look of LOOKS) {
       // A STORED KEY IS WHAT OFFERS A PROVIDER; the value is a fixture no provider sees.
       secrets: { 'ai.openai-key': 'a-fixture-key' },
       aiModels: { source: 'fetched', models: [{ id: 'fixture-model', label: 'Fixture', capabilities: { vision: null, streaming: null } }] },
-      translation: { kind: 'translated', version: asDocVersion(1), edit: blockEditOf([{ lines: [[3]], text: 'Bonjour' }]) },
+      translation: {
+        kind: 'translated',
+        version: asDocVersion(1),
+        edit: blockEditOf([{ lines: [[3]], soft: [false], text: 'Bonjour' }]),
+        rewrite: 'objects',
+      },
     });
     await page.goto('/');
     await page.getByRole('button', { name: 'Open PDF…' }).click();
@@ -4760,9 +4774,14 @@ for (const look of LOOKS) {
         {
           box: { x0: 100, y0: 600, x1: 400, y1: 700 },
           lines: [
-            { runs: [{ index: 3, text: 'A paragraph of words', style: BODY_RUN }], box: { x0: 100, y0: 686, x1: 400, y1: 700 } },
+            {
+              runs: [{ index: 3, text: 'A paragraph of words', style: BODY_RUN }],
+              box: { x0: 100, y0: 686, x1: 400, y1: 700 },
+              soft: false,
+            },
           ],
           style: BODY_RUN,
+          shape: LEFT_SHAPE,
         },
       ],
     });
@@ -4841,10 +4860,16 @@ for (const look of LOOKS) {
                 { index: 5, text: 'set on the page', style: SET_APART_RUN },
               ],
               box: { x0: 100, y0: 686, x1: 400, y1: 700 },
+              soft: false,
             },
-            { runs: [{ index: 8, text: 'and a second line.', style: BODY_RUN }], box: { x0: 100, y0: 600, x1: 260, y1: 614 } },
+            {
+              runs: [{ index: 8, text: 'and a second line.', style: BODY_RUN }],
+              box: { x0: 100, y0: 600, x1: 260, y1: 614 },
+              soft: false,
+            },
           ],
           style: BODY_RUN,
+          shape: LEFT_SHAPE,
         },
       ],
     });
@@ -4906,7 +4931,39 @@ for (const look of LOOKS) {
     expect(runs.map((run) => run.weight)).toStrictEqual(['400', '700', '400']);
     const sizes = [BODY_RUN.size, SET_APART_RUN.size, BODY_RUN.size];
     expect(runs.map((run, at) => Math.abs(run.size - (sizes[at] ?? 0) * scale) < 0.05)).toStrictEqual([true, true, true]);
-    // TYPED AT THE END, the words go into the last run and take its style, and are read back as typed.
+    // EVERY HANDLE'S TARGET LIES OUTSIDE THE BLOCK'S FRAME and is 24 px a side, so a press on a letter can never land on a
+    // handle. Eight handles are required first: no handle at all would leave the overlap list empty for the wrong reason.
+    // CONTROL: the target the handles had before, 24 px centred on the frame's corner, overlaps the frame by a quarter of
+    // itself, which is what this measure reports for it.
+    const placerBox = await page.locator('.m-text-editor-placer').boundingBox();
+    expect(placerBox).not.toBeNull();
+    const frame = placerBox ?? { x: 0, y: 0, width: 0, height: 0 };
+    const overlap = (a: { x: number; y: number; width: number; height: number }, b: typeof frame) =>
+      Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) *
+      Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+    const targets = await page.locator('[data-handle]').evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const rect = button.getBoundingClientRect();
+        return { handle: button.getAttribute('data-handle') ?? '', x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      }),
+    );
+    expect(targets.map((target) => target.handle).sort()).toStrictEqual(['e', 'n', 'ne', 'nw', 'r', 'se', 'sw', 'w']);
+    expect(targets.filter((target) => overlap(target, frame) > 0.5).map((target) => target.handle)).toStrictEqual([]);
+    expect(targets.filter((target) => target.width < 23.5 || target.height < 23.5).map((target) => target.handle)).toStrictEqual([]);
+    expect(overlap({ x: frame.x - 12, y: frame.y - 12, width: 24, height: 24 }, frame)).toBeCloseTo(144, 0);
+    // THE FIRST LETTERS OF EACH LINE are the editor's, read at the point four pixels in from the line's start.
+    const startsOfLines = await editor.locator('.m-text-editor__line').evaluateAll((lines) =>
+      lines.map((line) => {
+        const rect = line.getBoundingClientRect();
+        const found = document.elementFromPoint(rect.x + 4, rect.y + rect.height / 2);
+        return found !== null && found.closest('[data-text-editor]') !== null;
+      }),
+    );
+    expect(startsOfLines).toStrictEqual([true, true]);
+    // TYPED AT THE END, the words go into the last run and take its style, and are read back as typed. THE CARET IS
+    // MOVED THERE: the editor opens with it where the page was pressed (ADR-0179), which is the middle of the block
+    // for `outline.click()`, and typing there put the words inside the first line.
+    await page.keyboard.press('Control+End');
     await page.keyboard.type(' More');
     expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
       'A paragraph of words set on the page\nand a second line. More',
@@ -4930,6 +4987,199 @@ for (const look of LOOKS) {
       blocking,
       blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
     ).toEqual([]);
+  });
+}
+
+// A BLOCK WHOSE WORDS RUN PAST THE PAGE (the owner's Q7), in every theme: outlined apart and said on the page, and
+// open, every line in the editor, the one below the page's foot included and SEEN, with the sentence beside them.
+for (const look of LOOKS) {
+  test(`${look.name}: a block PAST THE PAGE is outlined apart, said, and opens with every line visible`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000e2');
+    // EIGHT LINES FROM 60 POINTS ABOVE THE FOOT, six of them below it, as a write that grew past the page reads: far
+    // enough that the last is out of the window until it is scrolled to.
+    const lines = [
+      'A paragraph near the foot',
+      'and its second line',
+      'a third line past the page',
+      'a fourth line',
+      'a fifth line',
+      'a sixth line',
+      'a seventh line',
+      'THE LAST LINE TYPED',
+    ];
+    const box = { x0: 100, y0: -115, x1: 340, y1: 60 };
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'past.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      textBlocks: [
+        {
+          box: { x0: 100, y0: 600, x1: 400, y1: 700 },
+          lines: [
+            {
+              runs: [{ index: 1, text: 'A block that fits', style: BODY_RUN }],
+              box: { x0: 100, y0: 600, x1: 400, y1: 700 },
+              soft: false,
+            },
+          ],
+          style: BODY_RUN,
+          shape: LEFT_SHAPE,
+        },
+        {
+          box,
+          lines: lines.map((text, at) => ({
+            runs: [{ index: 10 + at, text, style: BODY_RUN }],
+            box: { x0: 100, y0: 46 - at * 23, x1: 340, y1: 60 - at * 23 },
+            soft: false,
+          })),
+          style: BODY_RUN,
+          shape: LEFT_SHAPE,
+        },
+      ],
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Edit text on the page');
+    await page.keyboard.press('Enter');
+
+    const past = page.locator('[data-text-edit-layer="0"] [data-text-block="1"]');
+    const fits = page.locator('[data-text-edit-layer="0"] [data-text-block="0"]');
+    await expect(past).toHaveCount(1);
+    // TOLD APART BY ITS LINE, which clears 3:1 against the paper as the dashed one does; CONTROL: the block that fits.
+    const lineOf = (outline: typeof past) =>
+      outline.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return `${style.borderTopStyle} ${style.borderTopWidth}`;
+      });
+    expect(await lineOf(past)).toBe('solid 2px');
+    expect(await lineOf(fits)).toBe('dashed 1px');
+    expect(await againstPaper(past, 'border-top-color')).toBeGreaterThanOrEqual(3);
+    // SAID WHERE IT IS SEEN: the block is scrolled to, and its sentence is in the window with it. A note at the page's
+    // top passed a text assertion here while it was scrolled out of sight.
+    await past.scrollIntoViewIfNeeded();
+    const said = page.locator('[data-text-block-past="1"]');
+    await expect(said).toHaveText('This text no longer fits on the page');
+    await expect(said).toBeInViewport();
+
+    await past.click();
+    const editor = page.locator('[data-text-editor]');
+    await expect(editor).toBeFocused();
+    expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(lines.join('\n'));
+    const status = page.locator('.m-text-editor-frame [role="status"]');
+    await expect(status).toHaveText('This text no longer fits on the page');
+    // IN THE WINDOW, above the words: below them it was past the foot they ran off, and out of sight.
+    await expect(status).toBeInViewport();
+    // THE LAST LINE CAN BE SEEN, not only present: scrolled to, it is in the window, and the point at its middle is the
+    // editor's, so nothing between the editor and the window clips it below the page's foot.
+    const lastLine = editor.locator('.m-text-editor__line').last();
+    await lastLine.scrollIntoViewIfNeeded();
+    await expect(lastLine).toBeInViewport();
+    const last = await lastLine.boundingBox();
+    expect(last).not.toBeNull();
+    const hit = await page.evaluate(
+      // A POINT OUTSIDE THE WINDOW finds no element, and `undefined !== null` would read that as the editor (SSSSSSS-4).
+      ({ x, y }) => {
+        const found = document.elementFromPoint(x, y);
+        return {
+          editors: found !== null && found.closest('[data-text-editor]') !== null,
+          found: found === null ? 'nothing' : `${found.tagName} ${String(found.getAttribute('class'))}`,
+        };
+      },
+      // FOUR PIXELS IN FROM THE LINE'S START, where the south-west handle's target used to reach (a 24 px target centred
+      // on the frame's corner, measured 2026-10-06 on Chromium 151: this point answered that handle). The handles lie
+      // outside the frame now, so it answers the editor; the element is named in the message when it does not.
+      { x: (last?.x ?? 0) + 4, y: (last?.y ?? 0) + (last?.height ?? 0) / 2 },
+    );
+    expect(hit.editors, `the point at the last line's middle belongs to ${hit.found}`).toBe(true);
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+  });
+}
+
+// A RUN DRAWN IN ITS OWN FONT (ADR-0175), in a real browser and every look: the font crosses as bytes, loads as a face
+// under the renderer's own policy, and the run is DRAWN in it, while the run beside it with none keeps its kind of face.
+// LIBERATION SANS from pdfjs-dist, which every install has, given to a MONO run: a proportional face and a monospace one
+// set the same words to different widths, so the width says which face drew them — a family name alone would pass for a
+// face that never loaded.
+const RUN_FONT = new Uint8Array(
+  readFileSync(createRequire(import.meta.url).resolve('pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf')),
+);
+const MONO_RUN = { ...BODY_RUN, mono: true };
+
+for (const look of LOOKS) {
+  test(`${look.name}: a run is DRAWN in the font the host rebuilt, its neighbour in its kind, and the face leaves with the editor`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const bytes = await onePagePdf();
+    const docId = asDocId('00000000-0000-4000-8000-0000000000e3');
+    // NARROW LETTERS ONLY, so the two faces differ by more than either platform's monospace can close: `iiiiiiii WWWW`
+    // measured 69.97 px against Consolas' 85.78 on windows-latest (run 37416673829, 2026-10-06), 0.82 of it, where a
+    // fifth narrower was asked. An `i` is 0.222 em in Liberation Sans against 0.55 in Consolas and 0.602 in DejaVu Sans Mono.
+    const words = 'iiiiiiiiiiii';
+    await bridgeUnder(page, look, {
+      opens: [{ kind: 'opened', docId, version: asDocVersion(1), byteLength: bytes.byteLength, name: 'fonts.pdf' }],
+      documentBytes: new Map([[docId, bytes]]),
+      textBlocks: [
+        {
+          box: { x0: 100, y0: 600, x1: 400, y1: 700 },
+          lines: [
+            { runs: [{ index: 1, text: words, style: MONO_RUN }], box: { x0: 100, y0: 680, x1: 400, y1: 700 }, soft: false },
+            { runs: [{ index: 2, text: words, style: MONO_RUN }], box: { x0: 100, y0: 650, x1: 400, y1: 670 }, soft: false },
+          ],
+          style: MONO_RUN,
+          shape: LEFT_SHAPE,
+        },
+      ],
+      runFonts: { fonts: [RUN_FONT], runs: new Map([[1, 0]]) },
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('canvas[data-page-canvas="0"]')).toBeVisible();
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Edit text on the page');
+    await page.keyboard.press('Enter');
+    await page.locator('[data-text-edit-layer="0"] [data-text-block="0"]').click();
+
+    const own = page.locator('[data-text-editor] .m-text-editor__run[data-run="1"]');
+    const kind = page.locator('[data-text-editor] .m-text-editor__run[data-run="2"]');
+    await expect(own).toHaveAttribute('data-run-font', /^m-run-[a-zA-Z0-9]+-0$/u);
+    const family = (await own.getAttribute('data-run-font')) ?? '';
+    const faceOf = (run: typeof own) =>
+      run.evaluate((element) => ({ family: getComputedStyle(element).fontFamily, width: element.getBoundingClientRect().width }));
+    const drawn = await faceOf(own);
+    const kept = await faceOf(kind);
+    // ITS OWN FONT FIRST and the kind behind it; the neighbour with none is the kind alone.
+    expect(drawn.family.startsWith(family)).toBe(true);
+    expect(drawn.family).toContain('monospace');
+    expect(kept.family.startsWith('Consolas')).toBe(true);
+    // DRAWN IN IT: the same words, set proportionally, are under three fifths of the kind's monospace (about 0.4 on
+    // both platforms; a face that never loaded falls back to the monospace and measures 1).
+    expect(drawn.width).toBeLessThan(kept.width * 0.6);
+    const loaded = (name: string) =>
+      page.evaluate((wanted) => [...document.fonts].some((face) => face.family === wanted && face.status === 'loaded'), name);
+    expect(await loaded(family)).toBe(true);
+
+    await page.screenshot({ path: test.info().outputPath(`run-font-${look.name}.png`) });
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+
+    // THE FACE LEAVES WITH THE EDITOR: Escape with nothing changed closes it, and the document holds the face no more.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-text-editor]')).toHaveCount(0);
+    expect(await loaded(family)).toBe(false);
   });
 }
 
@@ -5008,6 +5258,53 @@ for (const look of LOOKS) {
     await page.keyboard.press('Delete');
     await expect.poll(() => sent.length).toBe(2);
     expect((sent[1] as { command: unknown }).command).toMatchObject({ kind: 'deletePageObjects', indices: [2] });
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));
+    expect(
+      blocking,
+      blocking.map((violation) => `${String(violation.impact)}: ${violation.id} — ${violation.help}`).join('\n'),
+    ).toEqual([]);
+  });
+}
+
+// THE COMPONENTS DIALOG'S TALLEST STATE, in a 760 by 560 window: a component whose files changed, with the note that
+// every file was checked and the repair line, beside the other six rows. The dialog pattern bounds a dialog at four
+// fifths of the window (the owner, 2026-09-25), which is 448 px here, and this body asked for 481: the repair line
+// was cut by 33 px and had to be scrolled to (the owner's item R4). Nothing in the body may scroll now.
+for (const look of LOOKS) {
+  test(`${look.name}: the COMPONENTS dialog's changed state fits a 760 by 560 window with nothing to scroll to`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 760, height: 560 });
+    await bridgeUnder(page, look, { changedComponents: ['ghostscript'] });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', look.name);
+    await startScreenListening(page);
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Components');
+    await page.keyboard.press('Enter');
+
+    const dialog = page.getByRole('dialog', { name: 'Components' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Verify files' }).click();
+    // THE REOPENED DIALOG, with the changed row and both notes: the state under test, not the cheap first look.
+    await expect(dialog.getByText('1 missing, 2 altered, 0 unexpected')).toBeVisible();
+    const repair = dialog.getByText(/repair or reinstall Monstera/u);
+    await expect(repair).toBeVisible();
+    await expect(dialog.getByText('Every file was checked against the list this build of Monstera was made with.')).toBeVisible();
+
+    // NOTHING INSIDE IT SCROLLS: every element of the dialog that can scroll has no surplus. The premise that the dialog
+    // has a scroller at all is not asserted; the surplus is read off every element whose overflow could produce one.
+    const surpluses = await dialog.evaluate((element) =>
+      [...element.querySelectorAll('*'), element]
+        .filter((candidate) => ['auto', 'scroll'].includes(getComputedStyle(candidate).overflowY))
+        .map((candidate) => candidate.scrollHeight - candidate.clientHeight),
+    );
+    expect(Math.max(0, ...surpluses), `scroll surplus of each scrolling element: ${JSON.stringify(surpluses)}`).toBeLessThanOrEqual(1);
+    // THE LAST LINE IS WHOLLY IN THE WINDOW, which a clipped scroller would fail: the viewport check counts clipping.
+    await expect(repair).toBeInViewport({ ratio: 1 });
+    await expect(dialog.getByRole('button', { name: 'Verify files' })).toBeInViewport({ ratio: 1 });
 
     const results = await new AxeBuilder({ page }).analyze();
     const blocking = results.violations.filter((violation) => BLOCKING.has(String(violation.impact)));

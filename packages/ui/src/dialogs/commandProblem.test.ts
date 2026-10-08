@@ -41,6 +41,7 @@ const ASKED: ReadonlySet<string> = new Set(['breaks-signatures']);
 const SAMPLE_DETAIL: { readonly [C in keyof FailureDetails]: FailureDetails[C] } = {
   'text-not-writable': { characters: '中' },
   'edit-refused': { step: 'read-back', engineError: 0 },
+  'field-edit-refused': { reason: 'encrypted' },
 };
 
 /** A declared failure as it would arrive: the code, and its detail where it declares one. */

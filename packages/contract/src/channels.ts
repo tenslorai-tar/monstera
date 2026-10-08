@@ -56,11 +56,19 @@ import {
   formDataImportFormatSchema,
   annotationDataFormatSchema,
   formFieldKindSchema,
+  formFieldHandleSchema,
+  formFieldReadSchema,
+  MAX_READ_FIELDS,
+  MAX_IMPORT_SKIPS,
+  importSkippedSchema,
   renderableCommandSchema,
 } from './commands.js';
 import {
   MAX_LIBRARY_ENTRIES,
   MAX_LIBRARY_PICTURE_BYTES,
+  MAX_BLOCK_FONTS,
+  MAX_FONT_RUNS,
+  MAX_RUN_FONT_BYTES,
   keepableSignatureSchema,
   libraryEntrySchema,
   libraryIdSchema,
@@ -70,6 +78,7 @@ import {
   SIGN_REFUSALS,
   signaturePlacementSchema,
   TIMESTAMP_AUTHORITY_IDS,
+  textRewriteSchema,
 } from './commands.js';
 import {
   DOCUMENT_ACCESS_VALUES,
@@ -85,6 +94,8 @@ import {
   docVersionSchema,
   fileHandleSchema,
   COMPOSE_REFUSALS,
+  MAX_BOXED_CHARACTERS,
+  boxedCharacterSchema,
   OPTIMIZE_SETTING_NAMES,
   URL_FETCH_REFUSALS,
   FILE_ACCESS,
@@ -96,6 +107,7 @@ import {
   MAX_IMAGE_QUALITY,
   FAILURE_DETAIL_SCHEMAS,
   accessibilitySpotsSchema,
+  drawnBoxesShape,
 } from './schemas.js';
 
 /**
@@ -825,9 +837,11 @@ export const pdfBoxSchema = z
 /**
  * How a block's text is set, as far as an editor drawn over it can use.
  *
- * The page's own font cannot travel — a renderer that loaded it would be a
- * second parser of the document's bytes — so what crosses is its KIND and the
- * size it is drawn at. `colour` is the fill its glyphs are painted in.
+ * The page's own font program never travels — a renderer that loaded it would
+ * be a second parser of the document's bytes — so what crosses here is its KIND
+ * and the size it is drawn at. `colour` is the fill its glyphs are painted in.
+ * A run whose embedded program the host can check and rebuild has that rebuilt
+ * font on its own read, `document.runFonts` (ADR-0175), never in this answer.
  */
 export const textBlockStyleSchema = z
   .object({
@@ -1370,6 +1384,25 @@ const composedImportOutcomeSchema = z.discriminatedUnion('kind', [
 export const MAX_OFFICE_MISSING_BLOCKS = 64;
 
 /**
+ * What an import of TEXT answers — Markdown and CSV: {@link composedImportOutcomeSchema}'s members and the one only a
+ * composition of text can have. An image import cannot box a character, so its answer cannot say it did.
+ */
+const textImportOutcomeSchema = z.discriminatedUnion('kind', [
+  ...composedImportOutcomeSchema.options,
+  /**
+   * Opened, and some characters are drawn as the missing-character box because no face carries them — NAMED, never
+   * left for the person to find (the owner's answer to Q4). Every other character is drawn, and a box copies as the
+   * character it stands for.
+   */
+  openedSchema.extend({
+    kind: z.literal('opened-with-boxes'),
+    boxed: z.array(boxedCharacterSchema).min(1).max(MAX_BOXED_CHARACTERS),
+    /** Places past the named ones, COUNTED, `opened-incomplete`'s rule. */
+    more: z.number().int().min(0),
+  }),
+]);
+
+/**
  * What an Office import answers
  * ([ADR-0120](../../../docs/DECISIONS/0120-office-import-is-onlyoffices-x2t-contained.md)).
  *
@@ -1472,7 +1505,15 @@ const imageImportOutcomeSchema = z.discriminatedUnion('kind', [
  * The native components a build runs, by the id the manifest, the shell's resolver and the Components dialog share
  * ([ADR-0122](../../../docs/DECISIONS/0122-native-components-one-resolver-a-pinned-manifest-status-and-verify.md)).
  */
-export const NATIVE_COMPONENT_IDS = ['pdfium', 'poppler', 'ghostscript', 'onlyoffice', 'mupdf-shim', 'ocr-models'] as const;
+export const NATIVE_COMPONENT_IDS = [
+  'pdfium',
+  'poppler',
+  'ghostscript',
+  'onlyoffice',
+  'mupdf-shim',
+  'ocr-models',
+  'fonts',
+] as const;
 export type NativeComponentId = (typeof NATIVE_COMPONENT_IDS)[number];
 
 export const channels = {
@@ -2189,6 +2230,24 @@ export const channels = {
        * figure in megabytes answers a question they did not ask.
        */
       historyDropped: z.number().int().nonnegative(),
+      /**
+       * The characters the command drew as the missing-character box, each with its page, and how many more past
+       * the named ones ([ADR-0174](../../../docs/DECISIONS/0174-a-pdfium-apply-answers-the-characters-it-drew-as-boxes.md)).
+       * REQUIRED and empty when there is none, `historyDropped`'s reason: the person is owed them.
+       */
+      ...drawnBoxesShape,
+      /**
+       * The older copies a protect could not encrypt, by name
+       * ([ADR-0178](../../../docs/DECISIONS/0178-a-protect-that-applied-is-not-failed-by-a-copy-it-could-not-seal.md)):
+       * a protect that applied is not failed by a copy another program holds or that cannot be written now, and the
+       * person is told which copies may still hold the document as it was so they can close the holder and protect
+       * again.
+       *
+       * **REQUIRED and empty for every command but a protect that left a copy unsealed**, `historyDropped`'s reason:
+       * a plaintext copy of a protected document is the person's to be told of (invariant 18's *never silent*), and
+       * an optional field is one a renderer satisfies by not reading it. Every other command answers `[]`.
+       */
+      unsealedCopies: heldCopiesSchema.readonly(),
     }),
     // `stale-target` IS ON THIS CHANNEL ALONE, because a command is the only
     // thing that names existing state (ADR-0041 Decision 2). A read answers with
@@ -2231,6 +2290,9 @@ export const channels = {
       'nothing-to-replace',
       'replace-moves-line',
       'edit-refused',
+      // `field-edit-refused` IS A CHANGE TO A FORM FIELD'S (ADR-0193): a name another field holds, an encrypted
+      // document, a copy of a radio option. Nothing was written; the reason is the sentence.
+      'field-edit-refused',
       'breaks-signatures',
       ...SERVICE_PROBLEMS,
     ],
@@ -3118,7 +3180,8 @@ export const channels = {
     'Writes a copy of an open document where the user picks, opens it, and applies one command to the copy.',
     z.object({ docId: docIdSchema, command: renderableCommandSchema }),
     z.discriminatedUnion('kind', [
-      openedSchema.extend({ kind: z.literal('edited'), historyDropped: z.number().int().nonnegative() }),
+      // AND THE BOXES THE EDIT DREW ON THE COPY, `document.execute`'s list on the copy route (ADR-0174).
+      openedSchema.extend({ kind: z.literal('edited'), historyDropped: z.number().int().nonnegative(), ...drawnBoxesShape }),
       openedSchema.extend({
         kind: z.literal('edit-refused'),
         // A FAILURE'S OWN SHAPE, so a refusal that carries a detail carries it here as on `document.execute`
@@ -3131,6 +3194,7 @@ export const channels = {
             .strict(),
           z.object({ code: z.literal('text-not-writable'), detail: FAILURE_DETAIL_SCHEMAS['text-not-writable'] }).strict(),
           z.object({ code: z.literal('edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['edit-refused'] }).strict(),
+          z.object({ code: z.literal('field-edit-refused'), detail: FAILURE_DETAIL_SCHEMAS['field-edit-refused'] }).strict(),
         ]),
       }),
       z.object({ kind: z.literal('cancelled') }),
@@ -3222,12 +3286,12 @@ export const channels = {
    *
    * ## Every open outcome, and the import's own beside them
    *
-   * {@link composedImportOutcomeSchema}, shared with `document.newFromCsv`.
+   * {@link textImportOutcomeSchema}, shared with `document.newFromCsv`.
    */
   'document.newFromMarkdown': channel(
     'Composes a Markdown file the user picks as a new PDF, saves it where they choose, and opens it.',
     z.object({}),
-    composedImportOutcomeSchema,
+    textImportOutcomeSchema,
     ['engine-unavailable'],
   ),
 
@@ -3242,7 +3306,7 @@ export const channels = {
   'document.newFromCsv': channel(
     'Sets a CSV file the user picks as a table in a new PDF, saves it where they choose, and opens it.',
     z.object({}),
-    composedImportOutcomeSchema,
+    textImportOutcomeSchema,
     ['engine-unavailable'],
   ),
 
@@ -3325,6 +3389,9 @@ export const channels = {
           byteLength: z.number().int().nonnegative(),
           name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
         }),
+        /** Every character drawn as the box, `opened-with-boxes`' list, EMPTY where none is. */
+        boxed: z.array(boxedCharacterSchema).max(MAX_BOXED_CHARACTERS),
+        more: z.number().int().min(0),
       }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
@@ -4042,10 +4109,21 @@ export const channels = {
         version: docVersionSchema,
         byteLength: z.number().int().nonnegative(),
         historyDropped: z.number().int().nonnegative(),
+        /**
+         * WHAT IT DID, which a person is owed whatever it did (ADR-0193's neighbour): how many fields it filled, and the
+         * fields it left alone with a reason each, up to {@link MAX_IMPORT_SKIPS}, and how many more past those. REQUIRED
+         * and empty when nothing was left, `historyDropped`'s reason: a surface that read a missing list as *none left*
+         * would be saying so about a file it never looked at.
+         */
+        filled: z.number().int().nonnegative(),
+        skipped: z.array(importSkippedSchema).max(MAX_IMPORT_SKIPS).readonly(),
+        more: z.number().int().nonnegative(),
       }),
       z.object({ kind: z.literal('cancelled') }),
-      /** Not form data, or naming nothing here, or holding a refused value. */
+      /** Not form data, or holding a value the form refused after it was read. */
       z.object({ kind: z.literal('unreadable') }),
+      /** Form data, and none of the fields it names is in this form: the wrong file, and nothing was changed. */
+      z.object({ kind: z.literal('matched-nothing'), named: z.number().int().nonnegative() }),
       /** Past {@link MAX_FORM_DATA_BYTES} — refused before it is read. */
       z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
     ]),
@@ -4999,14 +5077,37 @@ export const channels = {
             rect: annotationRectSchema,
             /** The text beside it, as a person reads it. */
             label: z.string().max(MAX_FLAT_FIELD_LABEL),
-            /** A name derived from the label, unique within this answer. */
+            /** A name derived from the label, unique within this answer and among the fields the document has. */
             name: z.string().max(MAX_FLAT_FIELD_LABEL),
+            /** A small square with its word beside it is a tick box; anything else is a text field. */
+            kind: z.enum(['text', 'checkbox']),
           }),
         )
         .max(MAX_FLAT_FIELD_CANDIDATES)
         .readonly(),
       /** Whether the bound stopped the walk. `document.annotations`' flag. */
       truncated: z.boolean(),
+      /** How many places that look like a field already hold one: left out, and said, so none is made twice. */
+      alreadyFields: z.number().int().nonnegative(),
+    }),
+    ['document-not-open', 'document-poisoned'],
+  ),
+
+  /**
+   * What the named form fields' properties are (ADR-0193): the Properties pane's read.
+   *
+   * A channel of its own and not members of `document.formFields`, whose answer is a LIST of every field bounded by the
+   * smallest one: a tooltip and a list of choices on each would put its worst case past the answer ceiling. This is
+   * bounded by the handles asked for, and `null` is a handle that no longer names its field.
+   *
+   * No `document-busy`, for `document.flatFieldCandidates`' reason: it mutates nothing.
+   */
+  'document.formFieldProperties': channel(
+    'Reads the properties of the named form fields.',
+    z.object({ docId: docIdSchema, fields: z.array(formFieldHandleSchema).min(1).max(MAX_READ_FIELDS).readonly() }),
+    z.object({
+      version: docVersionSchema,
+      fields: z.array(formFieldReadSchema.nullable()).max(MAX_READ_FIELDS).readonly(),
     }),
     ['document-not-open', 'document-poisoned'],
   ),
@@ -5104,6 +5205,14 @@ export const channels = {
                         .max(MAX_EDIT_RUNS)
                         .readonly(),
                       box: pdfBoxSchema,
+                      /**
+                       * Whether this line ENDS in a soft wrap: the typesetter broke it because the next line's first
+                       * word would not have fitted, so the editor shows it joined to the next
+                       * ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)
+                       * Decision 2). REQUIRED: an editor that never read it would send lines as paragraphs. The last
+                       * line of a block is never soft.
+                       */
+                      soft: z.boolean(),
                     })
                     .strict(),
                 )
@@ -5112,6 +5221,17 @@ export const channels = {
                 .readonly(),
               /** The block's base: its first line's longest run's style, for a paste and a line typed below. */
               style: textBlockStyleSchema,
+              /**
+               * How the block is set (ADR-0179 Decision 5), for the editor to draw: the edge its lines keep and how far
+               * its first line stands from the rest, in points, negative for a hanging indent. Read by one function over
+               * the same lines the writer reads again at the write, which decides what is written.
+               */
+              shape: z
+                .object({
+                  align: z.enum(['left', 'center', 'right']),
+                  firstIndent: z.number(),
+                })
+                .strict(),
             })
             .strict(),
         )
@@ -5124,6 +5244,20 @@ export const channels = {
        * in place — an editor cannot be placed along an axis the page is not set on.
        */
       rotated: z.number().int().nonnegative(),
+      /**
+       * `rotated` by kind ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
+       * Decision 7), read from the matrix each run is set by: `turned` a rotation, `vertical` a quarter turn (how lines
+       * that run up or down a page are set), `slanted` a shear and `mirrored` a flip. The editor names each kind present,
+       * so a person is told which text is not theirs to edit and why. They sum to `rotated`.
+       */
+      angled: z
+        .object({
+          turned: z.number().int().nonnegative(),
+          vertical: z.number().int().nonnegative(),
+          slanted: z.number().int().nonnegative(),
+          mirrored: z.number().int().nonnegative(),
+        })
+        .strict(),
       /**
        * Characters on this page that no editing command can name.
        *
@@ -5139,6 +5273,13 @@ export const channels = {
        * reader a sentence when it is non-zero; it cannot offer them a row.
        */
       unaddressable: z.number().int().nonnegative(),
+      /**
+       * Which command rewrites this page's text
+       * ([ADR-0176](../../../docs/DECISIONS/0176-a-page-holding-type-3-text-is-edited-in-its-own-content-stream-by-mupdf.md)
+       * Decision 1): `objects` for `editTextBlock`, `operators` for `editTextOperators`, where the page shows text in a
+       * Type 3 font. The same block wire either way, so the editor does not change; the page decides the command.
+       */
+      rewrite: textRewriteSchema,
     }),
     ['document-not-open', 'document-poisoned', 'engine-unavailable'],
   ),
@@ -5282,6 +5423,49 @@ export const channels = {
     // an OUTCOME a caller can act on: ask for fewer pixels. An incident id for a
     // person who zoomed in would be a defect's answer to a working build.
     ['document-not-open', 'document-poisoned', 'engine-unavailable', 'raster-too-large'],
+  ),
+
+  /**
+   * The fonts the editor draws a block's runs in, rebuilt by the PDFium host from the runs' own programs
+   * ([ADR-0175](../../../docs/DECISIONS/0175-the-typing-box-draws-a-run-in-its-own-font-rebuilt-in-the-host.md)): the
+   * third sanctioned byte crossing, beside `document.readRange` and this one's neighbour `document.renderPage`.
+   *
+   * Never the document's program. ONE READ PER BLOCK, each font once however many runs share it: every read writes the
+   * document's image for the host and opens it there, so a read per run cost a block's run count in whole-image writes.
+   * A run with no font — not embedded, not an sfnt, or glyphs that do not read as the page's — is `null` and the editor
+   * draws it in its kind of face. Read when the editor opens over a block, never in `document.textBlocks`, whose parts
+   * outline every page.
+   */
+  'document.runFonts': channel(
+    'The fonts a block’s runs are drawn in, rebuilt by the editing engine from the runs’ own programs, each once.',
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+      /** The runs' first objects, as `document.textBlocks` named them. */
+      indices: z.array(z.number().int().min(0).max(MAX_OBJECT_INDEX)).min(1).max(MAX_FONT_RUNS).readonly(),
+    }),
+    z
+      .object({
+        version: docVersionSchema,
+        /** The rebuilt fonts, each bounded in the predicate where the payload sweep can name it. */
+        fonts: z
+          .array(
+            z.instanceof(Uint8Array).refine((bytes) => bytes.length > 0 && bytes.length <= MAX_RUN_FONT_BYTES, {
+              message: `a run font empty or larger than ${String(MAX_RUN_FONT_BYTES)} bytes`,
+            }),
+          )
+          .max(MAX_BLOCK_FONTS)
+          .readonly(),
+        /** For each run asked about, in the order asked, its font's place in `fonts`, or `null` for none. */
+        runs: z
+          .array(z.number().int().min(0).max(MAX_BLOCK_FONTS - 1).nullable())
+          .max(MAX_FONT_RUNS)
+          .readonly(),
+      })
+      .refine((answer) => answer.runs.every((at) => at === null || at < answer.fonts.length), {
+        message: 'a run names a font the answer does not carry',
+      }),
+    ['document-not-open', 'document-poisoned'],
   ),
 
   'document.duplicatePages': channel(
@@ -5878,6 +6062,13 @@ export const channels = {
         edit: blockEditSchema.refine((edit) => blockEditAgrees(edit), {
           message: 'the starts must describe the lists, and an object may be named once',
         }),
+        /**
+         * Which command writes the page ([ADR-0181](../../../docs/DECISIONS/0181-right-to-left-text-is-written-in-drawing-order-and-read-back-as-typed.md)
+         * Decision 10), as the read answers it for an edit by hand: `objects` for `editTextBlock`, `operators` for
+         * `editTextOperators`. A page whose text is in a Type 3 font is translated by the second, which the block wire
+         * serves unchanged, so a translation is not refused for the kind of font a page was printed with.
+         */
+        rewrite: textRewriteSchema,
       }),
       z.object({ kind: z.literal('nothing-to-translate') }),
       z.object({ kind: z.literal('refused'), problem: z.enum(AI_ANSWER_REFUSALS) }),

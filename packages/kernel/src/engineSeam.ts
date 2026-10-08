@@ -6,6 +6,7 @@ import type { CaptureResult, CommandPrior } from './commandLog.js';
 // its first call, and a value import here would put 2.8 MB of Tesseract behind
 // every module that reads this seam's types. The import is erased.
 import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
+import type { PageRuns } from './operatorEdit.js';
 
 /**
  * The seam between the kernel and the engines that write documents (ADR-0009
@@ -90,6 +91,38 @@ import type { RecognisedPage, RecognitionRequest } from './ocrRecognise.js';
  * one of these, which is what lets both shapes share a lifecycle.
  */
 export type ByteImage = Uint8Array;
+
+/** A character an apply drew as the missing-character box, and the 0-based page it is on (ADR-0174). */
+export interface BoxedInEdit {
+  readonly character: string;
+  readonly page: number;
+}
+
+/**
+ * The characters an operation drew as boxes (ADR-0174). `boxed` is REQUIRED and empty when there is none,
+ * `historyDropped`'s rule: a field a person is owed is one a forwarding site cannot drop in silence. `more` counts the
+ * boxes past a list a boundary capped (`MAX_BOXED_CHARACTERS`); an apply in this process lists every one and answers 0.
+ */
+export interface DrawnBoxes {
+  readonly boxed: readonly BoxedInEdit[];
+  readonly more: number;
+}
+
+/** No box drawn: what every operation answers that sets no new text. */
+export const NO_BOXES: DrawnBoxes = { boxed: [], more: 0 };
+
+/** What a BYTE-IMAGE writer's apply and invert answer (ADR-0174): the new image, and the characters it drew as boxes. */
+export interface AppliedImage extends DrawnBoxes {
+  readonly image: ByteImage;
+}
+
+/** `image` with nothing drawn as a box. */
+export function imageAlone(image: ByteImage): AppliedImage {
+  return { image, ...NO_BOXES };
+}
+
+/** What a spec's apply answers by shape: a byte-image writer's {@link AppliedImage}, a hosted one's bytes (ADR-0174). */
+type SpecImage<W extends keyof WriterSession> = WriterShapeOf[W] extends 'byte-image' ? AppliedImage : ByteImage;
 
 /**
  * How a writer of record applies a command.
@@ -714,6 +747,15 @@ export interface PreReadKinds {
    * time.
    */
   readonly ocr: { readonly needs: RecognitionRequest; readonly value: RecognisedPage };
+  /**
+   * One page's joined runs WITH their members, and its text objects' page indices, as the PDFium host walks them
+   * ([ADR-0176](../../../docs/DECISIONS/0176-a-page-holding-type-3-text-is-edited-in-its-own-content-stream-by-mupdf.md)'s
+   * correction): what the MuPDF operator writer finds a run's glyphs by, read through the engine that numbered them.
+   *
+   * **The first pre-read handed to a MuPDF writer**, and the reason it is one: the join reads PDFium's glyph boxes, and a
+   * host holding MuPDF has no PDFium to read them with. Per page, as `ocr` is, because a run is a property of a page.
+   */
+  readonly pageRuns: { readonly needs: { readonly page: number }; readonly value: PageRuns };
 }
 
 /**
@@ -769,9 +811,9 @@ export type ReadPreRead<K extends CommandKind, R extends keyof PreRead> = (
  * A union over {@link PreRead}'s members rather than a widening to `unknown`:
  * the bus resolves one of these without knowing which, and an `unknown` here
  * would let it hand an `apply` something no axis member names. **The second
- * member arrived 2026-09-11** and this line is where it widened: two members, so
- * this is `readonly OutlineEntry[] | RecognisedPage`, and the bus still resolves
- * one without knowing which.
+ * member arrived 2026-09-11** and this line is where it widened, and the third on
+ * 2026-10-06 (ADR-0176): this is `readonly OutlineEntry[] | RecognisedPage |
+ * PageRuns`, and the bus still resolves one without knowing which.
  */
 export type PreReadValue = PreRead[keyof PreRead];
 
@@ -824,6 +866,17 @@ export type PreReadValue = PreRead[keyof PreRead];
  * nothing. `R extends keyof PreRead` is the same test written over the axis, and
  * the apply is handed `PreRead[R]`. Found the same way the composition above was,
  * by building the next caller (ADR-0051).
+ *
+ * ## A live-session apply handed a pre-read ANSWERS ITS BOXES
+ *
+ * ([ADR-0177](../../../docs/DECISIONS/0177-a-word-a-type-3-page-cannot-draw-is-set-in-the-resolvers-face-or-the-box-by-the-mupdf-host.md)
+ * Decision 7). The one such apply is `editTextOperators`, which sets words and may draw a character as the box; the
+ * person is owed those characters, so its answer is {@link DrawnBoxes} and a forwarding site cannot drop it. Keyed on
+ * the axis rather than on the kind because `localMupdfExecution` dispatches on that axis, so the branch it calls and
+ * the answer it returns are decided by the same declaration. Only the branch with no sources: no command declares
+ * sources AND a pre-read on this writer, and the dispatcher's reading branch passes no sources, so that combination
+ * is one it does not dispatch today. Every other live-session apply sets no text and answers nothing, and the
+ * execution answers {@link NO_BOXES} for it.
  */
 export type Apply<
   W extends keyof WriterSession,
@@ -838,8 +891,8 @@ export type Apply<
           image: WriterSession[W],
           command: CommandOfKind<K>,
           read: PreRead[R],
-        ) => Promise<ByteImage>
-      : (image: WriterSession[W], command: CommandOfKind<K>) => Promise<ByteImage>
+        ) => Promise<SpecImage<W>>
+      : (image: WriterSession[W], command: CommandOfKind<K>) => Promise<SpecImage<W>>
     : never
   : S extends 'one' | 'several'
     ? R extends keyof PreRead
@@ -859,7 +912,7 @@ export type Apply<
           session: WriterSession[W],
           command: CommandOfKind<K>,
           read: PreRead[R],
-        ) => Promise<void>
+        ) => Promise<DrawnBoxes>
       : (session: WriterSession[W], command: CommandOfKind<K>) => Promise<void>;
 
 /**
@@ -879,5 +932,5 @@ export type Apply<
  */
 export type Invert<W extends keyof WriterSession, K extends CommandKind> =
   WriterShapeOf[W] extends 'byte-image' | 'hosted-image'
-    ? (image: WriterSession[W], inverse: CommandPrior[K]) => Promise<ByteImage>
+    ? (image: WriterSession[W], inverse: CommandPrior[K]) => Promise<SpecImage<W>>
     : (session: WriterSession[W], inverse: CommandPrior[K]) => Promise<void>;

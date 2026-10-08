@@ -1,8 +1,19 @@
-import type { AnnotationDataFormat, CommandOfKind, FormDataFormat, Handlers, PageSet } from '@monstera/contract';
+import type {
+  AnnotationDataFormat,
+  CommandOfKind,
+  FormDataFormat,
+  FormDataImportFormat,
+  FormFieldHandle,
+  FormFieldRead,
+  Handlers,
+  PageSet,
+} from '@monstera/contract';
+import { cappedBoxes } from '@monstera/contract/host';
 
 import type { KindsRoutedTo } from '../commandRouting.js';
 import type { CommandExecution } from '../commandSpecs.js';
-import type { ByteImage, DocumentAccess, EngineWriter, MupdfSession, PreReadValue } from '../engineSeam.js';
+import type { ByteImage, DocumentAccess, DrawnBoxes, EngineWriter, MupdfSession, PreReadValue } from '../engineSeam.js';
+import { EditRefusedError, TextNotWritableError } from '../textEditRefusals.js';
 // A VALUE IMPORT for the same reason the two below it are: `DocumentLocked` is
 // how this handler tells an encrypted document from an unreadable one, and the
 // alternative was keying on the wording of an error message. `engineSeam.ts`
@@ -14,6 +25,7 @@ import type { ListedLayers } from '../layers.js';
 import type { ReadSignature } from '../signatureRead.js';
 import type { PlaceholderRequest, PreparedSignature } from '../signatureHole.js';
 import type { FlatFieldCandidate } from '../flatFields.js';
+import type { ImportReport } from '../formData.js';
 import type { ListedField } from '../formFields.js';
 import type { NextSave } from '../mupdfWriter.js';
 import type { ListedAnnotation } from '../pageAnnotations.js';
@@ -30,6 +42,7 @@ import {
   type RecognisedPage,
 } from '../ocrRecognise.js';
 import type { PageFill } from '../cellFills.js';
+import type { PageRewrite } from '../pageRewrite.js';
 import type { LinkAddress, ListedPageLinks } from '../pageLinks.js';
 import type { PageWordBoxes } from '../wordBoxes.js';
 import type { PageTextRead } from '../textStructure.js';
@@ -51,7 +64,8 @@ import {
   joinPlaceholderAsset,
   taggedPrior,
 } from './engineChannels.js';
-import { pictureRefusalCodeOf, placeholderRefusalCodeOf } from './hostRefusals.js';
+import { pdfLibRefusalCodeOf, placeholderRefusalCodeOf } from './hostRefusals.js';
+import { type CopyEngine, openCopy } from '../openCopy.js';
 
 /**
  * Reads one page's structured text as MuPDF's own JSON.
@@ -100,6 +114,9 @@ export type HostLinkAddressReader = (session: MupdfSession, page: number, index:
 
 /** Reads one page's filled shapes — what a table cell's background is joined from. */
 export type HostPageFillsReader = (session: MupdfSession, page: number) => Promise<readonly PageFill[]>;
+
+/** Which writer rewrites one page's text (ADR-0176 Decision 1): `readPageRewrite` in the host. */
+export type HostPageRewriteReader = (session: MupdfSession, page: number) => Promise<PageRewrite>;
 
 /** One page's word boxes (ADR-0137): `readPageWordBoxes` in the host, `remoteMupdfWordBoxes` across the pipe. */
 export type HostWordBoxesReader = (session: MupdfSession, page: number) => Promise<PageWordBoxes>;
@@ -300,7 +317,24 @@ export type HostBarcodesReader = (
 export type HostFlatFieldsReader = (
   session: MupdfSession,
   page: number,
-) => Promise<{ readonly candidates: readonly FlatFieldCandidate[]; readonly truncated: boolean }>;
+) => Promise<{
+  readonly candidates: readonly FlatFieldCandidate[];
+  readonly truncated: boolean;
+  readonly alreadyFields: number;
+}>;
+
+/** What importing a data file would do to this form (ADR-0193's neighbour): the plan, read for a report. */
+export type HostFormImportPlanner = (
+  session: MupdfSession,
+  bytes: Uint8Array,
+  format: FormDataImportFormat,
+) => Promise<ImportReport>;
+
+/** The named fields' properties (ADR-0193), `null` for a handle that no longer names its field. */
+export type HostFieldPropertiesReader = (
+  session: MupdfSession,
+  handles: readonly FormFieldHandle[],
+) => Promise<readonly (FormFieldRead | null)[]>;
 
 /**
  * The engine host's side of Decision 10: it looks the spec up and calls it
@@ -473,6 +507,8 @@ export interface EngineHandlerParts {
   readonly linkAddress: HostLinkAddressReader;
   /** A page's filled shapes. `engine/page-fills`. */
   readonly pageFills: HostPageFillsReader;
+  /** Which writer rewrites a page's text (ADR-0176 Decision 1). `engine/page-rewrite`. */
+  readonly pageRewrite: HostPageRewriteReader;
   /** A page's word boxes (ADR-0137). `engine/word-boxes`. */
   readonly wordBoxes: HostWordBoxesReader;
   /** How this process turns a raster into characters. `engine/ocr-page`. */
@@ -514,6 +550,10 @@ export interface EngineHandlerParts {
   readonly word: HostWordExport;
   /** How this process proposes fields on a flat page. `detectFlatFields`. */
   readonly flatFields: HostFlatFieldsReader;
+  /** How this process reads the properties of named fields. `engine/field-properties`. */
+  readonly fieldProperties: HostFieldPropertiesReader;
+  /** How this process plans an import of form data. `engine/form-import-plan`. */
+  readonly formImportPlan: HostFormImportPlanner;
   /** How this process reads a page's barcodes. `engine/page-barcodes`. */
   readonly barcodes: HostBarcodesReader;
 }
@@ -532,6 +572,7 @@ export function createEngineHandlers({
   pageLinks,
   linkAddress,
   pageFills,
+  pageRewrite,
   wordBoxes,
   ocr,
   destinations,
@@ -551,6 +592,8 @@ export function createEngineHandlers({
   pageImage,
   word,
   flatFields,
+  fieldProperties,
+  formImportPlan,
   barcodes,
 }: EngineHandlerParts): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
@@ -563,6 +606,13 @@ export function createEngineHandlers({
   // "either a session or a failure" needs a discriminator over a BRANDED token,
   // which is a type-level trick standing where three plain lines say it.
   const gone = { ok: false, error: { code: 'no-such-session' } } as const;
+
+  /** `openCopy`'s engine calls: this writer, and the protect's own inverse for a document that stands unprotected. */
+  const copyEngine: CopyEngine<MupdfSession> = {
+    open: (image, password) => writer.open(image, password),
+    unprotect: (session) => execution.invert(session, 'setDocumentProtection', { standing: 'unprotected' }).then(() => undefined),
+    close: (session) => writer.close(session),
+  };
 
   /**
    * A DOCUMENT's failure, returned rather than thrown, for the reason above and
@@ -648,7 +698,7 @@ export function createEngineHandlers({
       value: await probe({ positive, negative, loopbackPort }),
     }),
 
-    'engine/open': async ({ snapshotDirectory, snapshotName, outputDirectory, password }) => {
+    'engine/open': async ({ snapshotDirectory, snapshotName, outputDirectory, keys, standing }) => {
       // THE PATH IS USED, NOT VALIDATED, and that is the design rather than an
       // omission. Main composed these directories and wrote their DACLs; this
       // process reaches them because it was GRANTED them, and would reach
@@ -663,7 +713,8 @@ export function createEngineHandlers({
 
       let session: MupdfSession;
       try {
-        session = await writer.open(image, password);
+        // EVERY KEY, THEN HOW THE DOCUMENT STANDS (ADR-0171 Decision 8), by the one rule `openCopy` spells.
+        session = await openCopy(image, { keys, standing }, copyEngine);
       } catch (error) {
         // THE PASSWORD IS A SEPARATE OUTCOME FROM A BROKEN DOCUMENT, and the
         // difference decides what main does next: an encrypted document is one
@@ -760,7 +811,7 @@ export function createEngineHandlers({
       } catch (error) {
         // A PICTURE PAST THE PIXEL BOUND keeps its name across the pipe, so Insert image says so rather than calling
         // a valid picture unreadable; anything else is the document's failure.
-        return failed(pictureRefusalCodeOf(error) ?? 'apply-failed', error);
+        return failed(pdfLibRefusalCodeOf(error) ?? 'apply-failed', error);
       }
     },
 
@@ -921,6 +972,13 @@ export function createEngineHandlers({
       return { ok: true, value: { fills: [...(await pageFills(held.session, page))] } };
     },
 
+    'engine/page-rewrite': async ({ session, page }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the link read's reason.
+      return { ok: true, value: { rewrite: await pageRewrite(held.session, page) } };
+    },
+
     'engine/word-boxes': async ({ session, page }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
@@ -1037,7 +1095,36 @@ export function createEngineHandlers({
       // than a state to report, and the reader answers an empty list for a page
       // that displays no region.
       const found = await flatFields(held.session, page);
-      return { ok: true, value: { candidates: [...found.candidates], truncated: found.truncated } };
+      return {
+        ok: true,
+        value: { candidates: [...found.candidates], truncated: found.truncated, alreadyFields: found.alreadyFields },
+      };
+    },
+
+    'engine/field-properties': async ({ session, fields }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      return { ok: true, value: { fields: [...(await fieldProperties(held.session, fields))] } };
+    },
+
+    'engine/form-import-plan': async ({ session, format, asset }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // THE FILE IS AN ASSET in this session's own snapshot directory, `engine/applyPdfLib`'s door, never a path.
+      let bytes: Uint8Array;
+      try {
+        bytes = await files.readSnapshot(held.snapshotDirectory, asset);
+      } catch (error) {
+        return failed('asset-missing', error);
+      }
+      try {
+        const report = await formImportPlan(held.session, bytes, format);
+        return { ok: true, value: { ...report, skipped: [...report.skipped] } };
+      } catch (error) {
+        // A FILE THAT IS NOT FORM DATA is the file's fault and the document's is untouched: its own code, so the
+        // supervisor does not count it as the host failing.
+        return failed('plan-failed', error);
+      }
     },
 
     'engine/exportFormData': async ({ session, format, into }) => {
@@ -1212,8 +1299,42 @@ export function createEngineHandlers({
       // pre-read field, because no MuPDF command declares `reads`. Before this
       // the same fact was expressed by a call that simply stopped at three
       // arguments — indistinguishable from the drop that cost four rows.
-      await execution.apply({ session: held.session, command: whole, sources: from, reads: undefined });
+      const drawn = await execution.apply({ session: held.session, command: whole, sources: from, reads: undefined });
+      // NO KIND THIS CHANNEL CARRIES SETS TEXT (`Apply`: only an apply handed a pre-read answers boxes, and every such
+      // kind is `engine/apply-file`'s), so its answer has no field for them. One that drew a box is refused by name
+      // rather than answered without the characters the person is owed.
+      if (drawn.boxed.length > 0 || drawn.more > 0) {
+        throw new Error(`"${whole.kind}" drew characters as boxes on engine/apply, whose answer cannot carry them.`);
+      }
       return { ok: true, value: {} };
+    },
+
+    // `engine/apply`'s body for the kinds that can outgrow a frame, with the pre-read they declare (ADR-0176): no asset
+    // (none of them carries one), the sources looked up and refused the same way, and the pre-read handed on. The two
+    // refusals a person is told about cross as their codes; anything else is `internal`, as there.
+    'engine/apply-file': async ({ session, command, sources, reads }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      const from: MupdfSession[] = [];
+      for (const source of sources) {
+        const heldSource = sessions.lookup(source);
+        if (heldSource === undefined) return gone;
+        from.push(heldSource.session);
+      }
+      let drawn: DrawnBoxes;
+      try {
+        drawn = await execution.apply({ session: held.session, command, sources: from, reads });
+      } catch (error) {
+        if (error instanceof TextNotWritableError) {
+          return { ok: false, error: { code: 'text-not-writable', detail: { characters: error.characters } } } as const;
+        }
+        if (error instanceof EditRefusedError) {
+          return { ok: false, error: { code: 'edit-refused', detail: { step: error.step, engineError: error.engineError } } } as const;
+        }
+        throw error;
+      }
+      // THE ONE CAP (`cappedBoxes`), which the PDFium host's answer takes too: two would cut a list two ways.
+      return { ok: true, value: cappedBoxes(drawn) };
     },
 
     'engine/capture': async ({ session, command, asset }) => {

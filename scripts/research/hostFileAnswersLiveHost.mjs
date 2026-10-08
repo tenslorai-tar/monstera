@@ -57,6 +57,15 @@ const GLYPHS = 1600;
 const EDITED = 'Edited through the real host';
 
 /**
+ * The CJK ideograph for "middle", which no bundled face carries and Windows' installed CJK faces do, then U+0378, which
+ * Unicode leaves unassigned and no font carries: the control that the box still draws in the same edit. By number.
+ */
+/** The Chromium print committed as Part B's starting material, its heading in a Type 3 font (ADR-0176). */
+const TYPE3_PRINT = join(ROOT, 'packages', 'testing', 'fixtures', 'text-edit', 'chromium-type3.pdf');
+
+const INSTALLED_ONLY =`${String.fromCodePoint(0x4e2d)} ${String.fromCodePoint(0x378)}`;
+
+/**
  * How many text fields the generated form has: enough that its field list exceeds a frame (3,000 fields measured
  * 531,355 B) AND one part of `document.formFields` (`FORM_FIELDS_PART`, 4,096), so the renderer's list crosses in two
  * parts cut by main's real handler (ADR-0130 Decision 2).
@@ -332,7 +341,8 @@ async function main() {
     try {
       const runs = await pdfium.textRuns(measured, 0);
       runCount = runs.runs.length;
-      uprightRunCount = runs.runs.filter((/** @type {any} */ run) => run.style.upright).length;
+      const { isEditedInPlace } = await built('packages/kernel/dist/textLines.js');
+      uprightRunCount = runs.runs.filter((/** @type {any} */ run) => isEditedInPlace(run.style)).length;
       runsAnswerBytes = Buffer.byteLength(JSON.stringify({ ok: true, value: runs }));
     } finally {
       await pdfium.pdfiumWriter.close(measured);
@@ -390,6 +400,10 @@ async function main() {
     let saved = null;
     /** @type {any} */
     let reopenedBlocks = null;
+    /** @type {any} */
+    let installedBoxes = null;
+    /** @type {any} */
+    let bundledBoxes = null;
     if (opened?.ok === true && opened.value.kind === 'opened') {
       const docId = opened.value.docId;
       blocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0, from: 0 }));
@@ -404,6 +418,7 @@ async function main() {
               ...blockEditOf([
                 {
                   lines: first.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                  soft: first.lines.map(() => false),
                   text: EDITED,
                 },
               ]),
@@ -419,6 +434,58 @@ async function main() {
         const again = await observed(() => handlers['document.open']({}));
         if (again?.ok === true && again.value.kind === 'opened') {
           reopenedBlocks = await observed(() => handlers['document.textBlocks']({ docId: again.value.docId, page: 0, from: 0 }));
+          // THE INSTALLED FONTS, through the PDFium host's own container (ADR-0172 Decision 2): a second edit on the
+          // reopened page, so the frame cases above keep their meaning, adding the ideograph no bundled face carries and
+          // the unassigned code point no font carries. The answer's boxes say which one an installed face drew.
+          const block = reopenedBlocks?.ok === true ? reopenedBlocks.value.blocks[0] : undefined;
+          if (block !== undefined) {
+            const answered = await observed(() =>
+              handlers['document.execute']({
+                docId: again.value.docId,
+                command: {
+                  kind: 'editTextBlock',
+                  page: 0,
+                  ...blockEditOf([
+                    {
+                      lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                      soft: block.lines.map(() => false),
+                      text: `${EDITED} ${INSTALLED_ONLY}`,
+                    },
+                  ]),
+                  fit: 'reflow',
+                  version: reopenedBlocks.value.version,
+                },
+              }),
+            );
+            installedBoxes = answered?.ok === true ? { boxed: answered.value.boxed, more: answered.value.more } : answered;
+          }
+          // THE BOX ALONE, in the same contained host (SSSSSSS-1): a third edit adding only the code point no font
+          // carries, whose box comes from the first catalogue face with a box glyph, a BUNDLED one. Read at the page's
+          // version now, since the edit above may have made one. Saved here and refused above separates a host that
+          // misreads what it set in an installed face from one that misreads any face it loads.
+          const current = await observed(() => handlers['document.textBlocks']({ docId: again.value.docId, page: 0, from: 0 }));
+          const target = current?.ok === true ? current.value.blocks[0] : undefined;
+          if (target !== undefined) {
+            const boxedOnly = await observed(() =>
+              handlers['document.execute']({
+                docId: again.value.docId,
+                command: {
+                  kind: 'editTextBlock',
+                  page: 0,
+                  ...blockEditOf([
+                    {
+                      lines: target.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                      soft: target.lines.map(() => false),
+                      text: `${EDITED} ${String.fromCodePoint(0x378)}`,
+                    },
+                  ]),
+                  fit: 'reflow',
+                  version: current.value.version,
+                },
+              }),
+            );
+            bundledBoxes = boxedOnly?.ok === true ? { boxed: boxedOnly.value.boxed, more: boxedOnly.value.more } : boxedOnly;
+          }
         }
       }
     }
@@ -504,6 +571,7 @@ async function main() {
               ...blockEditOf([
                 {
                   lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                  soft: block.lines.map(() => false),
                   text: 'Edited',
                 },
               ]),
@@ -555,7 +623,96 @@ async function main() {
       }
     }
 
+    // THE BOX AS THE FIRST EDIT OF A FRESH OPEN (SSSSSSS-1): cases 17 and 18 both edit the document reopened after a
+    // save, and the one PDFium-host edit that saves is the first edit of a fresh open in the page's own font, so two
+    // things vary at once. This edit holds the fresh open and changes only the added font: the untouched page, opened
+    // anew, its first edit adding the code point no font carries. Saved here is a host that misreads a reopened
+    // document; refused here is a host that misreads a font it adds, wherever the document came from.
+    const freshPath = join(scratch, 'fresh-box.pdf');
+    writeFileSync(freshPath, bytes);
+    picked.path = freshPath;
+    const freshOpened = await observed(() => handlers['document.open']({}));
+    /** @type {any} */
+    let freshBoxes = null;
+    if (freshOpened?.ok === true && freshOpened.value.kind === 'opened') {
+      const docId = freshOpened.value.docId;
+      const freshBlocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0, from: 0 }));
+      const block = freshBlocks?.ok === true ? freshBlocks.value.blocks[0] : undefined;
+      if (block !== undefined) {
+        const answered = await observed(() =>
+          handlers['document.execute']({
+            docId,
+            command: {
+              kind: 'editTextBlock',
+              page: 0,
+              ...blockEditOf([
+                {
+                  lines: block.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                  soft: block.lines.map(() => false),
+                  text: `${EDITED} ${String.fromCodePoint(0x378)}`,
+                },
+              ]),
+              fit: 'reflow',
+              version: freshBlocks.value.version,
+            },
+          }),
+        );
+        freshBoxes = answered?.ok === true ? { boxed: answered.value.boxed, more: answered.value.more } : answered;
+      } else {
+        freshBoxes = freshBlocks;
+      }
+      await observed(() => handlers['document.close']({ docId }));
+    } else {
+      freshBoxes = freshOpened;
+    }
+
+    // THE MuPDF HOST'S FONTS, in its own container (ADR-0177): the Chromium print's heading is set in a Type 3 font,
+    // so the page is rewritten in its own content stream by the MuPDF host. The new words need letters the print's
+    // subset lacks (z, p), which go to a bundled face, and a code point no font carries, which is drawn as the box.
+    // The answer's boxes are the MuPDF host's (ADR-0177 Decision 7), so one box here is a host that read its fonts.
+    picked.path = join(scratch, 'chromium-type3.pdf');
+    writeFileSync(picked.path, readFileSync(TYPE3_PRINT));
+    const type3Opened = await observed(() => handlers['document.open']({}));
+    /** @type {any} */
+    let type3Boxes = null;
+    if (type3Opened?.ok === true && type3Opened.value.kind === 'opened') {
+      const docId = type3Opened.value.docId;
+      const type3Blocks = await observed(() => handlers['document.textBlocks']({ docId, page: 0, from: 0 }));
+      const heading = type3Blocks?.ok === true ? type3Blocks.value.blocks[0] : undefined;
+      if (heading !== undefined && type3Blocks.value.rewrite === 'operators') {
+        const answered = await observed(() =>
+          handlers['document.execute']({
+            docId,
+            command: {
+              kind: 'editTextOperators',
+              page: 0,
+              ...blockEditOf([
+                {
+                  lines: heading.lines.map((/** @type {any} */ line) => line.runs.map((/** @type {any} */ run) => run.index)),
+                  soft: heading.lines.map(() => false),
+                  text: `Monstera fixture zap ${String.fromCodePoint(0x378)}.`,
+                },
+              ]),
+              fit: 'reflow',
+              version: type3Blocks.value.version,
+            },
+          }),
+        );
+        type3Boxes = answered?.ok === true ? { boxed: answered.value.boxed, more: answered.value.more } : answered;
+      } else {
+        type3Boxes = type3Blocks?.ok === true ? { rewrite: type3Blocks.value.rewrite } : type3Blocks;
+      }
+      await observed(() => handlers['document.close']({ docId }));
+    } else {
+      type3Boxes = type3Opened;
+    }
+
     const report = {
+      // WHAT THE SHELL WAS HANDED, read here rather than inferred from the edits: the bundled fonts' folder reaches the
+      // hosts only through this variable in development (`nativeComponents.ts`).
+      fontsVariable: process.env['MONSTERA_FONTS_DIRECTORY'] ?? null,
+      type3Boxes,
+      freshBoxes,
       wordExported: wordExported?.ok === true ? wordExported.value.kind : wordExported,
       wordPictures,
       wordInOrder,
@@ -593,6 +750,8 @@ async function main() {
       saved: saved?.ok === true ? saved.value.kind : saved,
       reopenedHasEdit: blockTexts(reopenedBlocks).some((text) => text.replace(/\s+/gu, ' ').includes(EDITED)),
       reopenedBlocks: reopenedBlocks?.ok === true ? 'ok' : reopenedBlocks,
+      installedBoxes,
+      bundledBoxes,
       failures,
     };
     // THE REPORT FIRST, for `hostRecoveryHost.mjs`' reason: everything after it is cleanup, and cleanup can fail.

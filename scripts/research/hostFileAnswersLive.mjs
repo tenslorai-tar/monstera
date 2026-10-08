@@ -49,11 +49,13 @@ import { join } from 'node:path';
 import { HOST_FILE_ANSWERS_LIVE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
-import { shimBuildState, shimEnvironment } from '../lib/shimBinary.mjs';
+import { developmentEnvironment } from '../lib/launchEnvironment.mjs';
+import { shimBuildState } from '../lib/shimBinary.mjs';
 import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { inspect } from '../provision/containerGrants.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
-import { pdfiumEnvironment, pdfiumLibrary } from '../provision/pdfium.mjs';
+import { fontsDirectory } from '../provision/fonts.mjs';
+import { pdfiumLibrary } from '../provision/pdfium.mjs';
 
 const ROOT = repoRoot();
 const CHILD = join(ROOT, 'scripts', 'research', 'hostFileAnswersLiveHost.mjs');
@@ -81,12 +83,17 @@ const CASES = [
   'CONTROL: the generated page draws its inline picture before any edit',
   'the inline-picture page, edited through the compose and PDFium hosts and saved, still draws its picture',
   'the Word export, composed in the real MuPDF host and moved by main, carries both pictures, the first between its paragraphs',
+  'the real PDFium host set the ideograph in an installed face, and boxed only the code point no font carries',
+  'the real PDFium host boxed the code point no font carries in a bundled face, in the same container',
+  'the real PDFium host boxed it as the FIRST edit of a fresh open, in the same container',
+  'the real MuPDF host set a Type 3 page’s new letters in a bundled face and boxed only the code point no font carries',
+  'CONTROL: the shell was handed the provisioned bundled fonts’ folder, as the development launcher hands it',
 ];
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 16 });
-if (CASES.length !== 16) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 16`);
+const roster = createRoster(failures, { cases: 21 });
+if (CASES.length !== 21) throw new Error(`CASES names ${String(CASES.length)} cases against a declared 21`);
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -146,12 +153,10 @@ if (!runnable) {
       cwd: ROOT,
       stdio: 'inherit',
       timeout: 180_000,
-      env: {
-        ...process.env,
-        ...shimEnvironment({ root: ROOT }),
-        ...pdfiumEnvironment(ROOT),
-        ELECTRON_RUN_AS_NODE: '1',
-      },
+      // THE DEVELOPMENT LAUNCHER'S ONE ANSWER (`developmentEnvironment`), never a subset picked here: this read only the
+      // shim's and PDFium's variables until 2026-10-06, so the shell had no bundled fonts' folder, both contained hosts
+      // bound no faces, and cases 17 to 20 were refused naming every character a face would have drawn (SSSSSSS-1).
+      env: { ...process.env, ...(await developmentEnvironment(ROOT)), ELECTRON_RUN_AS_NODE: '1' },
     });
     if (result.error !== undefined) {
       throw new Error(`could not run ${CHILD} under ${ELECTRON_BINARY}`, { cause: result.error });
@@ -259,6 +264,47 @@ if (!runnable) {
     `document.exportWord answered ${JSON.stringify(seen.wordExported)}; the package holds ${String(seen.wordPictures)} ` +
       `picture(s) and the first is ${seen.wordInOrder === true ? '' : 'NOT '}between its paragraphs. An error with the ` +
       'failures case red is the host ending on the export.',
+  );
+  check(
+    CASES[16] ?? '',
+    JSON.stringify(seen.installedBoxes) ===
+      JSON.stringify({ boxed: [{ character: String.fromCodePoint(0x378), page: 0 }], more: 0 }),
+    `the second edit answered ${JSON.stringify(seen.installedBoxes)}. The ideograph AMONG the boxes is a PDFium host that ` +
+      'could not read the installed fonts or a machine with no editable face for it, which ADR-0172 Decision 2 answers ' +
+      'with a correction, never a wider grant; no box at all is the unassigned code point drawn as nothing.',
+  );
+  check(
+    CASES[17] ?? '',
+    JSON.stringify(seen.bundledBoxes) ===
+      JSON.stringify({ boxed: [{ character: String.fromCodePoint(0x378), page: 0 }], more: 0 }),
+    `the third edit, the box alone, answered ${JSON.stringify(seen.bundledBoxes)}. Saved here while the case above is ` +
+      'refused is a host that misreads what it sets in an installed face. Refused here too says it is not installed ' +
+      'faces only, and the next case says whether it is the reopened document (SSSSSSS-1).',
+  );
+  check(
+    CASES[18] ?? '',
+    JSON.stringify(seen.freshBoxes) ===
+      JSON.stringify({ boxed: [{ character: String.fromCodePoint(0x378), page: 0 }], more: 0 }),
+    `the fresh open's first edit, the box alone, answered ${JSON.stringify(seen.freshBoxes)}. Refused here, as the two ` +
+      'cases above on the reopened document are, is a host that misreads a font it adds; saved here is one that misreads ' +
+      'the document reopened after a save (SSSSSSS-1).',
+  );
+  check(
+    CASES[19] ?? '',
+    JSON.stringify(seen.type3Boxes) ===
+      JSON.stringify({ boxed: [{ character: String.fromCodePoint(0x378), page: 0 }], more: 0 }),
+    `the Type 3 edit answered ${JSON.stringify(seen.type3Boxes)}. A text-not-writable naming z and p is a MuPDF host ` +
+      'given no fonts or unable to read them in its container; a rewrite other than "operators" is the page sent to ' +
+      'the PDFium writer, so this case measured nothing about the MuPDF host (ADR-0177).',
+  );
+  // THE HARNESS'S INPUT, asserted directly: a harness fix changes what the child is handed, and every case above reads
+  // only what the hosts answered, so a reverted environment would read as the hosts refusing (CLAUDE.md, item 2).
+  check(
+    CASES[20] ?? '',
+    seen.fontsVariable === fontsDirectory(ROOT),
+    `the shell's MONSTERA_FONTS_DIRECTORY was ${JSON.stringify(seen.fontsVariable)}, against the provisioned ` +
+      `${fontsDirectory(ROOT)}. Null is a launch environment without the fonts, which makes every face case above a ` +
+      'host with no catalogue rather than a reading of containment; run scripts/provision/fonts.mjs if it is absent.',
   );
 
   process.stdout.write(

@@ -71,6 +71,23 @@ export function lineText(runs: readonly LineRun[]): string {
   return runs.map((run) => run.text).join('');
 }
 
+/**
+ * What stands between a line's text and the next line's in a paragraph's words
+ * ([ADR-0179](../../../docs/DECISIONS/0179-a-paragraph-is-the-editors-unit-and-a-reflow-keeps-each-word-in-its-own-style.md)):
+ * one space where the line ended in a soft wrap, nothing where it already ends in white space, and a line break where
+ * it ended on purpose. The ONE spelling of that join, taken by the editor building the words it shows and by the kernel
+ * building the words it diffs them against, so the two never read one block two ways (B3a).
+ */
+export function joinAfterLine(text: string, soft: boolean): string {
+  if (!soft) return '\n';
+  return /\s$/u.test(text) ? '' : ' ';
+}
+
+/** A block's words from its lines, each with whether its end is a soft wrap: the join of {@link joinAfterLine}. */
+export function paragraphsOfLines(lines: readonly { readonly text: string; readonly soft: boolean }[]): string {
+  return lines.map((line, at) => (at === lines.length - 1 ? line.text : line.text + joinAfterLine(line.text, line.soft))).join('');
+}
+
 /** How many leading characters `before` and `after` share. */
 function sharedPrefix(before: string, after: string): number {
   const limit = Math.min(before.length, after.length);

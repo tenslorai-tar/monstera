@@ -1,4 +1,5 @@
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
+import { readPageText } from './pageText.js';
 
 /**
  * What a page **shows**, read back with MuPDF — the one implementation.
@@ -96,4 +97,37 @@ export function shownStringsOf(content: string): readonly string[] {
 /** The strings one page of a document shows. */
 export async function shownOn(bytes: Uint8Array, page: number): Promise<readonly string[]> {
   return shownStringsOf(await contentOf(bytes, page));
+}
+
+/** One line a reader finds on a page: its text, and where its baseline starts, in display space. */
+export interface ReadLine {
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * Every line of every page as a READER finds it: MuPDF's structured text, through each font's `ToUnicode`.
+ *
+ * ## Beside `shownOn`, not instead of it
+ *
+ * `shownOn` decodes the bytes a content stream shows, which are the characters themselves only for a simple font.
+ * A composed document's text is a CID font's (ADR-0172): its strings are glyph codes, and what a person copies is
+ * what `ToUnicode` maps them to. So the composers' cases read through this, the question a reader asks, while the
+ * modules that write simple fonts keep the byte-level reading.
+ */
+export async function readLines(bytes: Uint8Array): Promise<readonly (readonly ReadLine[])[]> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    const count = await withDocument(session, (document) => document.countPages());
+    const read = await readPageText(
+      session,
+      Array.from({ length: count }, (_, page) => page),
+    );
+    return read.pages.map((page) =>
+      page.blocks.flatMap((block) => block.lines.map((line) => ({ text: line.text, x: line.origin.x, y: line.origin.y }))),
+    );
+  } finally {
+    await mupdfWriter.close(session);
+  }
 }

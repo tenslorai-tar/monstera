@@ -558,6 +558,9 @@ async function measureHost() {
       snapshotDirectory: paths.snapshot,
       snapshotName: SNAPSHOT_NAME,
       outputDirectory: paths.output,
+      // A PLAIN DOCUMENT, opened as main opens one no password opened (ADR-0171 Decision 8).
+      keys: [],
+      standing: 'as-copied',
     });
     const openMs = performance.now() - openStarted;
     if (!opened.ok) throw new Error(`engine/open answered ${opened.error.code}`);
@@ -587,6 +590,10 @@ async function measureHost() {
     const applied = await client['engine/apply']({
       session,
       command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
+      // REQUIRED AND EMPTY for a command naming no other document (ADR-0152). Missing, the host refused the request
+      // as invalid params, and from 76e16d7b `budgetGate.mjs` recorded the real host as "could not be measured" on
+      // Windows, the one runner that can measure it (read on run 37432952661, 2026-10-06).
+      sources: [],
     });
     if (!applied.ok) throw new Error(`engine/apply answered ${applied.error.code}`);
 

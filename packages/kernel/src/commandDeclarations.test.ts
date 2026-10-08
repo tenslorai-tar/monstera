@@ -242,7 +242,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('replacePage');
   });
 
-  it('CONTROL: exactly fifteen kinds declare a target, and the rest answer none', () => {
+  it('CONTROL: exactly eighteen kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -266,12 +266,17 @@ describe('the declaration table', () => {
       'replyToAnnotation',
       'fillFormField',
       'deleteFormFields',
+      // THE TWO THAT CHANGE OR COPY A FIELD THAT EXISTS (ADR-0193): their handles are positions in the widget walk.
+      'editFormFields',
+      'duplicateFormField',
       'replaceTextObject',
       'placePageObject',
       'recolorPageObjects',
       'deletePageObjects',
       // A BLOCK EDIT names the runs a read answered, at that read's version (ADR-0096).
       'editTextBlock',
+      // AND THE SAME BLOCKS on a Type 3 page, the same read's names and version (ADR-0176).
+      'editTextOperators',
     ]);
     // `'page'` IS THE FOURTH MEMBER (ADR-0062's correction, 2026-09-14): a page
     // index is a position in the page tree, which is none of the three walks below.
@@ -393,8 +398,8 @@ describe('the writer-shape table', () => {
     // A merge and a delete were right on disk and invisible until reopen before this existed.
     const exceptions: Readonly<Record<string, 'view-model' | 'nothing-drawn'>> = {
       rotatePages: 'view-model',
+      // A PROTECT DRAWS since ADR-0171 Decision 8: main's image is the document as protected, so it holds no readable copy.
       setPageTransition: 'nothing-drawn',
-      setDocumentProtection: 'nothing-drawn',
     };
     const declared = Object.fromEntries(
       Object.entries(declaredCommands).map(([kind, declaration]) => [kind, declaration.display]),

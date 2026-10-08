@@ -5,9 +5,13 @@ import {
   onImage,
   openPdfium,
   pageObjects,
+  pageRuns,
   renderPageBitmap,
+  runFonts,
   textRuns,
 } from '../pdfium.js';
+import { bindEditFaces } from '../editFaces.js';
+import { faceSourceOf, fontFoldersOf } from '../fontCatalogue.js';
 import { cryptoBytes } from '../token.js';
 import { probeContainment } from './containment.js';
 import type { HostArea } from './engineHandlers.js';
@@ -90,6 +94,14 @@ const { pipeName, libraryPath } = argumentsFrom(process.argv);
 // document pay for it and would put the failure inside a channel's answer.
 openPdfium(libraryPath);
 
+// THE BUNDLED FONTS' FOLDER, the factory's THIRD argument, empty where it had none (ADR-0173 Decision 4): a word an
+// edit's own font cannot carry is set in a face the resolver chooses from it. Read on first use, as the compose host's.
+const fontsPath = process.argv[4] === undefined || process.argv[4].length === 0 ? null : process.argv[4];
+// AND THE MACHINE'S INSTALLED FONTS, the FOURTH argument (ADR-0172 Decision 2): read beside the bundled set, so a
+// character no bundled face carries goes to an installed face whose licence allows editing before it is drawn as a box.
+const installedPath = process.argv[5] === undefined || process.argv[5].length === 0 ? null : process.argv[5];
+if (fontsPath !== null) bindEditFaces(() => faceSourceOf(fontFoldersOf(fontsPath, installedPath)));
+
 /**
  * PDFium's channel set and its handlers
  * ([ADR-0048](../../../../docs/DECISIONS/0048-what-a-second-engine-host-owes-and-what-it-holds.md)).
@@ -146,6 +158,9 @@ const handlers = createPdfiumHandlers({
         truncated: objects.length > ENGINE_TEXT_OBJECTS_MAX,
       };
     }),
+  // REBUILT HERE, in the contained process, from the runs' own programs (ADR-0175): the document's program never leaves.
+  runFonts: (image, page, indices) => onImage(image, (session) => runFonts(session, page, indices)),
+  pageRuns: (image, page) => onImage(image, (session) => pageRuns(session, page)),
 });
 
 startEngineHost(
