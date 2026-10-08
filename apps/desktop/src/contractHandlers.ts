@@ -2948,7 +2948,7 @@ function translatePageHandler(deps: {
   readonly commands: DocumentCommands;
   readonly assistant: Assistant;
 }): ContractHandlers['ai.translatePage'] {
-  return async ({ docId, page, provider, model, language }) => {
+  return async ({ docId, page, provider, model, language, only }) => {
     let read: Awaited<ReturnType<DocumentCommands['textBlocks']>>;
     try {
       read = await deps.commands.textBlocks(docId, page);
@@ -2960,9 +2960,15 @@ function translatePageHandler(deps: {
     }
     // A PARAGRAPH, not its lines (ADR-0097 4c): soft wraps joined, hard breaks kept, so the kernel
     // re-wraps the translation as one paragraph instead of keeping each old line's break.
-    const texts = read.blocks.map((block) =>
+    const allTexts = read.blocks.map((block) =>
       paragraphsOfLines(block.lines.map((line) => ({ text: lineText(line.runs), soft: line.soft }))),
     );
+    // A SELECTION TRANSLATES THE BLOCKS THAT HOLD IT and no others: the words are matched with the whitespace collapsed
+    // (a selection crosses the soft wraps the paragraph joined), and a block that does not hold them is not sent to the
+    // provider and not written. The write is the page's own per-page command, so no writer is touched.
+    const squash = (text: string): string => text.replace(/\s+/gu, ' ').trim();
+    const selected = only === undefined ? undefined : squash(only);
+    const texts = allTexts.map((text) => (selected === undefined || squash(text).includes(selected) ? text : ''));
     if (texts.every((text) => text.trim() === '')) return ok({ kind: 'nothing-to-translate' } as const);
 
     // ASKED AT MOST TWICE, and only again when the answer could not be READ. Measured 2026-09-24 over
@@ -2983,7 +2989,9 @@ function translatePageHandler(deps: {
     if (translated === undefined) return ok({ kind: 'refused', problem: 'unreadable' } as const);
     const blocks = read.blocks.flatMap((block, at) => {
       const text = translated[at];
-      return text === undefined || text === texts[at]
+      // A BLOCK THAT WAS NOT ASKED ABOUT (blank, or not holding the selection) is never written, whatever the provider
+      // answered for its empty slot.
+      return text === undefined || text === texts[at] || (texts[at] ?? '').trim() === ''
         ? []
         : [{ lines: block.lines.map((line) => line.runs.map((run) => run.index)), soft: block.lines.map((line) => line.soft), text }];
     });

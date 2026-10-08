@@ -6129,6 +6129,11 @@ export const channels = {
         provider: z.enum(AI_PROVIDER_IDS),
         model: z.string().min(1).max(MAX_MODEL_ID),
         language: z.enum(TRANSLATION_LANGUAGE_IDS),
+        /**
+         * The words a person SELECTED, to translate only the blocks that hold them (Translate › Selected text): the page's
+         * other blocks are neither sent nor written. Absent, every block of the page, as it always was.
+         */
+        only: z.string().min(1).max(MAX_TRANSLATE_TEXT).optional(),
       })
       .strict(),
     z.discriminatedUnion('kind', [

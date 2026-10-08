@@ -118,7 +118,15 @@ export function translatePageCommand(deps: TranslatePageDeps): UiCommand {
         }
 
         if (answer.what.scope === 'selection') {
-          await translateSelection(deps, task.signal, selected, { provider: answer.provider, model, language: answer.language });
+          const chosen = { provider: answer.provider, model, language: answer.language };
+          // IN PLACE FIRST: the blocks that hold the selected words are translated and written by the page's own per-page
+          // command, one undo step. Only where NO block holds them — a selection that crosses blocks, or text in a form
+          // field — is it translated and COPIED, as before, so a person is never left with nothing.
+          if (selected !== '') {
+            const outcome = await translateOne(deps, docId, page, chosen, task.signal, true, selected);
+            if (outcome !== 'nothing') return;
+          }
+          await translateSelection(deps, task.signal, selected, chosen);
           return;
         }
 
@@ -169,8 +177,10 @@ async function translateOne(
   chosen: Chosen,
   signal: AbortSignal,
   single = false,
+  /** The words selected, to translate only the blocks that hold them; absent, the whole page. */
+  only?: string,
 ): Promise<Outcome> {
-  const translated = await deps.client['ai.translatePage']({ docId, page, ...chosen });
+  const translated = await deps.client['ai.translatePage']({ docId, page, ...chosen, ...(only === undefined ? {} : { only }) });
   if (signal.aborted) return 'stopped';
   if (!translated.ok) {
     reportProblem(deps, translated.error);
@@ -182,7 +192,8 @@ async function translateOne(
     return 'stopped';
   }
   if (result.kind === 'nothing-to-translate') {
-    if (single) confirmDone(deps, TOAST_NOTHING_TO_TRANSLATE);
+    // NOT SAID FOR A SELECTION: no block held the words, and the caller then translates and copies them instead.
+    if (single && only === undefined) confirmDone(deps, TOAST_NOTHING_TO_TRANSLATE);
     return 'nothing';
   }
   const kept = { unwritable: false };

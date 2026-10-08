@@ -233,16 +233,36 @@ describe('translatePageCommand', () => {
   describe('selected text', () => {
     const SELECTION = { language: 'fr', provider: 'openai', what: { scope: 'selection' } };
 
-    it('translates the words selected BEFORE the dialog opened, and copies the answer — it writes nothing to the page', async () => {
+    it('writes the translation IN PLACE: the blocks holding the words selected BEFORE the dialog opened, by the page’s own command — one undo step', async () => {
+      const { sent, said, applied } = await run({ dialog: SELECTION, selected: '  Payment is due  ' });
+      // THE PER-PAGE COMMAND, with the selection naming which blocks, trimmed; no writer is changed.
+      expect(sent.map((call) => call.id)).toStrictEqual(['ai.models', 'ai.translatePage', 'document.execute']);
+      expect(sent[1]?.params).toStrictEqual({
+        docId: DOC,
+        page: 2,
+        provider: 'openai',
+        model: 'first-model',
+        language: 'fr',
+        only: 'Payment is due',
+      });
+      expect(applied).toHaveLength(1);
+      expect(said).toStrictEqual([{ kind: 'done', message: TOAST_PAGE_TRANSLATED }]);
+    });
+
+    it('CONTROL: where NO block holds the words it translates and COPIES them instead, and writes nothing to the page', async () => {
       const { sent, said, asked } = await run({
         dialog: SELECTION,
         selected: '  Payment is due  ',
-        answers: { 'ai.translateText': { kind: 'translated', text: 'Le paiement est dû' }, 'window.copyText': { copied: true } },
+        answers: {
+          'ai.translatePage': { kind: 'nothing-to-translate' },
+          'ai.translateText': { kind: 'translated', text: 'Le paiement est dû' },
+          'window.copyText': { copied: true },
+        },
       });
       expect((asked[0]?.props as { hasSelection: boolean }).hasSelection).toBe(true);
-      expect(sent.map((call) => call.id)).toStrictEqual(['ai.models', 'ai.translateText', 'window.copyText']);
-      expect(sent[1]?.params).toStrictEqual({ text: 'Payment is due', provider: 'openai', model: 'first-model', language: 'fr' });
-      expect(sent[2]?.params).toStrictEqual({ text: 'Le paiement est dû' });
+      expect(sent.map((call) => call.id)).toStrictEqual(['ai.models', 'ai.translatePage', 'ai.translateText', 'window.copyText']);
+      expect(sent[2]?.params).toStrictEqual({ text: 'Payment is due', provider: 'openai', model: 'first-model', language: 'fr' });
+      expect(sent[3]?.params).toStrictEqual({ text: 'Le paiement est dû' });
       expect(said).toStrictEqual([{ kind: 'done', message: TOAST_TEXT_TRANSLATED }]);
     });
 

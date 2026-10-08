@@ -2139,6 +2139,34 @@ settings: createEphemeralSettings(),
     });
   });
 
+  it('a SELECTION translates only the blocks that hold it: the others are not sent and not written — CONTROL: without one every block is', async () => {
+    // THE SELECTION CROSSES A SOFT WRAP (`due` / `within`), as a person's drag does: matched with whitespace collapsed.
+    const only = 'is due within 30 days.';
+    const selected = translating(BLOCKS, JSON.stringify(['', 'Le paiement est dû\nsous 30 jours.']));
+    expect(await selected.handlers['ai.translatePage']({ ...ASK, only })).toStrictEqual({
+      ok: true,
+      value: {
+        kind: 'translated',
+        version: 7,
+        edit: blockEditOf([{ lines: [[5, 6], [8]], soft: [false, false], text: 'Le paiement est dû\nsous 30 jours.' }]),
+        rewrite: 'objects',
+      },
+    });
+    // THE HEADING WAS NOT SENT AS TEXT: its slot is blank, so the provider cannot rewrite what was not asked about.
+    expect(JSON.parse(selected.asked[0]?.user ?? '[]')).toStrictEqual(['', 'Payment is due\nwithin 30 days.']);
+    // A SELECTION NO BLOCK HOLDS is nothing to translate, and nothing is sent to the provider.
+    const none = translating(BLOCKS, JSON.stringify(['x', 'y']));
+    expect(await none.handlers['ai.translatePage']({ ...ASK, only: 'text that is not on the page' })).toStrictEqual({
+      ok: true,
+      value: { kind: 'nothing-to-translate' },
+    });
+    expect(none.asked).toStrictEqual([]);
+    // CONTROL: no selection, every block of the page goes.
+    const whole = translating(BLOCKS, JSON.stringify(['Facture', 'Paiement']));
+    await whole.handlers['ai.translatePage'](ASK);
+    expect(JSON.parse(whole.asked[0]?.user ?? '[]')).toStrictEqual(['Invoice', 'Payment is due\nwithin 30 days.']);
+  });
+
   it('translates SELECTED TEXT through the page translation’s own instruction, and answers it as text', async () => {
     const { handlers, asked } = translating(BLOCKS, JSON.stringify(['Le paiement est dû']));
     expect(

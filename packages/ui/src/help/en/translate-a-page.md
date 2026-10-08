@@ -23,7 +23,7 @@ Translate sends the text you choose to the AI provider you have set up. A page's
 
 - You need a key for an AI provider first. If none is set up, the window says so. See "Get and add keys for AI and online reading services". The provider bills you directly.
 - **Whole document** and **Pages** translate one page after another. The status bar shows the progress and a **Cancel**. Pages already translated stay translated.
-- **Selected text** is copied rather than written into the page, so you can paste it where you want it. **Selected text** is available when words are selected.
+- **Selected text** is available when words are selected. The paragraph that holds your selected words is translated and written into the page, and **Undo** (**Ctrl+Z**) puts it back. If no paragraph on the page holds the selected words, such as a selection that runs across paragraphs, the translation is copied instead so you can paste it where you want it.
 - Only languages written in the Latin alphabet are offered.
 - Where the page's font lacks a letter, that text is set in a standard font. Text may be made smaller to fit its space.
 - Pages printed from a web browser, whose text is drawn from shapes stored in the page, are translated too. Each block is made smaller where the translation is longer, no smaller than about six tenths of its size, and a block that still does not fit at that size runs on past its space.
