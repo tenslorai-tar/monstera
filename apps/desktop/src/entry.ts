@@ -443,6 +443,10 @@ startShell(() => {
     // WHICH BACKUPS BESIDE A PERSON'S DOCUMENTS MONSTERA MADE (ADR-0139), so a removal's save deletes those and no
     // other file. Under `userData` with the other records.
     backupLedgerFile: createJsonFile(app.getPath('userData'), BACKUP_LEDGER_FILE),
+    // THE VERSIONS A SAVE REPLACES (ADR-0198): Monstera's own folder under `userData`, never beside a person's file.
+    backupDirectory: join(app.getPath('userData'), 'backups'),
+    // WHICH FOLDERS WERE OFFERED the move of their old `.bak` files, once each (ADR-0198).
+    legacyBackupsOfferedFile: createJsonFile(app.getPath('userData'), 'legacy-backups-offered.json'),
     // WHICH SECURITY RELEASE THE PERSON ACKNOWLEDGED (ADR-0110), in its own document beside the rating record. The
     // manifest's GET is the composition's own default; its address is the contract's, dormant in this build.
     updateRecordFile: createJsonFile(app.getPath('userData'), UPDATE_RECORD_FILE),

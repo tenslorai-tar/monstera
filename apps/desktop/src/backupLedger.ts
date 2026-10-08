@@ -51,6 +51,11 @@ export interface BackupProvenance {
    * it rewrote; a file left as it was keeps its record. `not-made` and `absent` touch nothing.
    */
   rewriteIfMade(path: string, rewrite: (path: string) => Promise<boolean>): Promise<'rewritten' | 'left' | 'not-made' | 'absent'>;
+  /**
+   * Whether Monstera made the file at `path` and it is unchanged since — the proof, asked without touching it. The offer to
+   * move the old backups beside a file (ADR-0198 Decision 5) counts and moves only the files this answers `true` for.
+   */
+  wasMade(path: string): Promise<boolean>;
   /** Every path owed a deletion, oldest first. */
   owed(): readonly string[];
   /**
@@ -153,6 +158,10 @@ export function createBackupProvenance(
       if (next !== null && !made.includes(next)) made.push(next);
       persist();
       return 'rewritten';
+    },
+    wasMade: async (path) => {
+      const key = keyOf(await deps.identity(path));
+      return key !== null && made.includes(key);
     },
     owed: () => owed.map((entry) => entry.path),
     retryOwed: async (paths) => {

@@ -325,6 +325,7 @@ const noSaving: SaveSource = {
     made: () => Promise.reject(new Error('this case does not save')),
     deleteIfMade: () => Promise.reject(new Error('this case does not save')),
     rewriteIfMade: () => Promise.reject(new Error('this case protects nothing')),
+    wasMade: () => Promise.reject(new Error('this case moves no old backup')),
     owed: () => [],
     retryOwed: () => Promise.reject(new Error('this case does not save')),
   },

@@ -146,6 +146,10 @@ import {
   writeDocumentCopy,
   writeDocumentSplit,
   writeStreamedDocument,
+  clearBackups as clearStoredBackups,
+  listStoredBackups,
+  storedBackupPath,
+  writeBackupNote,
   UrlFetchRefused,
   checkedUrl,
   PngPixelsRefused,
@@ -176,9 +180,11 @@ import {
 // directory came from a picker in this process and never crosses to the
 // renderer, exactly as a destination does. What L2 forbids is a path in a
 // renderer-facing type.
+import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import type { BackupProvenance } from './backupLedger.js';
+import { moveLegacyBackups, offerKeyOf, scanLegacyBackups } from './legacyBackups.js';
 import { DocusignOutcomeRefused, type DocusignSession } from './docusignSession.js';
 import {
   EXTERNAL_EDIT_WAIT_MS,
@@ -731,6 +737,39 @@ export interface CopySource {
   readonly pick: PickDestination;
   /** Whether another open document reaches the chosen path. */
   readonly checkTarget: (destination: string) => Promise<CopyTargetVerdict>;
+}
+
+/** Where the saved-over versions are kept, and how a file's identity is read for the folder's hint (ADR-0198). */
+export interface BackupStore {
+  /** The data folder's `backups` directory. */
+  readonly root: string;
+  /** The file's identity now, for the hint a moved file is found by; `undefined` reads nothing. */
+  readonly identity?: ((path: string) => Promise<{ readonly dev: number | null; readonly ino: number | null } | null>) | undefined;
+  /** Which folders were already offered the move of their old `.bak` files, remembered across launches (ADR-0198). */
+  readonly offered?: { readonly read: () => Readonly<Record<string, unknown>>; readonly write: (value: Record<string, unknown>) => void } | undefined;
+}
+
+/** The folders already offered, as a list of digests in the offered document. */
+function offeredFolders(offered: NonNullable<BackupStore['offered']>): readonly string[] {
+  const stored = offered.read()['folders'];
+  return Array.isArray(stored) ? stored.filter((entry): entry is string => typeof entry === 'string') : [];
+}
+
+function alreadyOffered(offered: NonNullable<BackupStore['offered']>, path: string): boolean {
+  return offeredFolders(offered).includes(offerKeyOf(path));
+}
+
+function rememberOffered(offered: NonNullable<BackupStore['offered']>, path: string): void {
+  const key = offerKeyOf(path);
+  const folders = offeredFolders(offered);
+  if (!folders.includes(key)) offered.write({ folders: [...folders, key] });
+}
+
+/** One kept version, as the application names it: an opaque id, when it was saved over, and how big it is. */
+export interface KeptVersion {
+  readonly id: string;
+  readonly savedAt: string;
+  readonly bytes: number;
 }
 
 /**
@@ -2350,6 +2389,11 @@ export interface DocumentCommandsParts {
   readonly duplicates: DocumentDuplicatesReader;
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
+  /**
+   * Where the versions a save replaces are kept (ADR-0198): Monstera's own data folder. Absent where a harness has none,
+   * and then no version is listed and none can be restored — a state, never a fallback to writing beside the file.
+   */
+  readonly backups?: BackupStore | undefined;
   readonly image: ImageSource;
   /**
    * The person's library, read when a kept picture is placed or a kept signature signs, and written when a placed
@@ -2571,6 +2615,7 @@ export class DocumentCommands {
   readonly #runFonts: DocumentRunFontsReader;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
+  readonly #backups: BackupStore | undefined;
   readonly #image: ImageSource;
   readonly #library: LibraryReader & LibraryKeeper;
   readonly #heldPicture: HeldPicture;
@@ -2652,6 +2697,7 @@ export class DocumentCommands {
     this.#runFonts = parts.runFonts;
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
+    this.#backups = parts.backups;
     this.#image = parts.image;
     this.#library = parts.library;
     this.#heldPicture = parts.heldPicture;
@@ -4040,6 +4086,88 @@ export class DocumentCommands {
    */
   async copyToWorkOn(docId: DocId): Promise<{ readonly outcome: CopyOutcome; readonly destination: string } | undefined> {
     return this.#writeCopy(docId, () => undefined);
+  }
+
+  /**
+   * The earlier versions kept for this document's file, newest first (ADR-0198) — each as an opaque id, never a path.
+   * Empty where the document has no file, no folder is kept, or the file was never saved over.
+   */
+  async listBackups(docId: DocId): Promise<readonly KeptVersion[]> {
+    if (this.#documents.nameOf(docId) === undefined) throw new DocumentNotOpenError(docId, 'list its earlier versions');
+    const store = this.#backups;
+    if (store === undefined) return [];
+    const { value: path } = await this.#documents.run(docId, (context) => Promise.resolve(context.path));
+    const kept = await listStoredBackups(store.root, path);
+    return kept.map((backup) => ({ id: backup.id, savedAt: backup.savedAt.toISOString(), bytes: backup.bytes }));
+  }
+
+  /**
+   * An earlier version, written as a COPY where the person chooses and opened by the handler: `saveCopy`'s picker and its
+   * atomic write, with the version's bytes in place of the document's. The version is never opened itself, so saving cannot
+   * overwrite it. `gone` where this folder no longer holds the id (a clear, a newer save rotated it away).
+   */
+  async restoreBackup(
+    docId: DocId,
+    id: string,
+  ): Promise<{ readonly outcome: CopyOutcome; readonly destination: string } | 'gone' | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'restore an earlier version');
+    const store = this.#backups;
+    if (store === undefined) return 'gone';
+    const { value: path } = await this.#documents.run(docId, (context) => Promise.resolve(context.path));
+    const source = await storedBackupPath(store.root, path, id);
+    if (source === undefined) return 'gone';
+
+    const destination = await this.#copy.pick(suffixed(suggest, 'previous version'));
+    if (destination === null) return undefined;
+    const bytes = new Uint8Array(await readFile(source));
+    const { value } = await this.#documents.run(docId, (context) =>
+      writeDocumentCopy(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        () => Promise.resolve(stagedBytes(bytes)),
+        destination,
+        backupsFor(context),
+      ),
+    );
+    return { outcome: value, destination };
+  }
+
+  /**
+   * The old `.bak` files beside this document that Monstera can prove it made (ADR-0198 Decision 5), asked ONCE PER FOLDER:
+   * `undefined` where this folder was already offered, where no data folder is kept, or where there is nothing proven to move.
+   * The files it cannot prove are counted apart and never touched.
+   */
+  async legacyBackups(docId: DocId): Promise<{ readonly proven: number; readonly unproven: number } | undefined> {
+    if (this.#documents.nameOf(docId) === undefined) throw new DocumentNotOpenError(docId, 'look for old backups');
+    const store = this.#backups;
+    if (store?.offered === undefined) return undefined;
+    const { value: path } = await this.#documents.run(docId, (context) => Promise.resolve(context.path));
+    if (alreadyOffered(store.offered, path)) return undefined;
+    const scan = await scanLegacyBackups(path, this.#save.provenance);
+    if (scan.proven.length === 0) return undefined;
+    return { proven: scan.proven.length, unproven: scan.unproven.length };
+  }
+
+  /**
+   * Answers the offer: the folder is remembered as offered whatever the answer, and the proven backups are moved only on a
+   * yes. The scan is taken again, so a file that changed between the question and the answer is no longer proven.
+   */
+  async moveLegacyBackups(docId: DocId, move: boolean): Promise<{ readonly moved: number; readonly kept: number }> {
+    if (this.#documents.nameOf(docId) === undefined) throw new DocumentNotOpenError(docId, 'move old backups');
+    const store = this.#backups;
+    if (store === undefined) return { moved: 0, kept: 0 };
+    const { value: path } = await this.#documents.run(docId, (context) => Promise.resolve(context.path));
+    if (store.offered !== undefined) rememberOffered(store.offered, path);
+    if (!move) return { moved: 0, kept: 0 };
+    const scan = await scanLegacyBackups(path, this.#save.provenance);
+    return await moveLegacyBackups(store.root, path, scan, this.#save.provenance);
+  }
+
+  /** Deletes every kept version in Monstera's own folder (Settings › Privacy › Clear backups); how many went. */
+  async clearBackups(): Promise<number> {
+    const store = this.#backups;
+    return store === undefined ? 0 : await clearStoredBackups(store.root);
   }
 
   /** Whether the document's own file could be written over now — the service's answer, asked at each call. */
@@ -6333,6 +6461,13 @@ export class DocumentCommands {
       // THE COPY THIS SAVE MADE, wherever `atomicWrite` left it: the newest backup, or the copy-aside where moving it into
       // the backups was refused, which is still a copy of the person's document a removal's save must find (QQQQQQQ-8).
       if (saved.previousKeptAt !== null) await this.#save.provenance.made(saved.previousKeptAt);
+      // THE FOLDER'S HINT (ADR-0198): the identity of the file just written, so a file moved outside Monstera can still be
+      // matched to its versions. Best effort — a note that cannot be written loses a hint, never a backup.
+      if (this.#backups !== undefined && saved.previousKeptAt !== null) {
+        const store = this.#backups;
+        const identity = await store.identity?.(context.path).catch(() => null);
+        await writeBackupNote(store.root, context.path, { dev: identity?.dev ?? null, ino: identity?.ino ?? null }).catch(() => undefined);
+      }
       // A REMOVAL'S SAVE has just tried each copy, so what it could not delete is its answer; any other save tries the
       // copies this document still owes again, which is what keeps a held copy from being kept for ever.
       let outcome: SaveRequestOutcome;

@@ -496,6 +496,13 @@ export function createContractHandlers(deps: {
     'document.saveCopy': saveCopyHandler(deps.commands, mintWritten),
     'document.editCopy': editCopyHandler(deps),
     'document.workOnCopy': workOnCopyHandler(deps),
+    // THE VERSIONS A SAVE REPLACED (ADR-0198): listed by opaque id, restored as a copy, and the old `.bak` files beside a
+    // file offered a move once per folder; Clear is Settings › Privacy's.
+    'document.listBackups': listBackupsHandler(deps.commands),
+    'document.restoreBackup': restoreBackupHandler(deps),
+    'document.legacyBackups': legacyBackupsHandler(deps.commands),
+    'document.moveLegacyBackups': moveLegacyBackupsHandler(deps.commands),
+    'app.clearBackups': async () => ok({ kind: 'cleared', removed: await deps.commands.clearBackups() } as const),
     // WHICH FILE IS NEWER, from the times main holds for each open document; no time crosses (cloud-4 8a).
     'document.newerOf': ({ first, second }) => {
       try {
@@ -2314,6 +2321,74 @@ function workOnCopyHandler(
     // is refused before anything is written, so the file just written cannot already be open.
     if (outcome.kind === 'already-open') {
       throw new Error('a copy written to work on opened as "already-open", which its write refuses');
+    }
+    return ok(outcome);
+  };
+}
+
+/** `workOnCopyHandler`'s mapping of a lane's refusals, once, for the four channels of the versions a save replaced. */
+function backupFailure(thrown: unknown): ReturnType<typeof err<{ readonly code: 'document-not-open' | 'document-busy' | 'document-poisoned' }>> {
+  if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+  if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+  if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+  throw thrown;
+}
+
+function listBackupsHandler(commands: DocumentCommands): ContractHandlers['document.listBackups'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.listBackups']>>> => {
+    try {
+      return ok({ kind: 'listed', versions: [...(await commands.listBackups(docId))] } as const);
+    } catch (thrown) {
+      return backupFailure(thrown);
+    }
+  };
+}
+
+function legacyBackupsHandler(commands: DocumentCommands): ContractHandlers['document.legacyBackups'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.legacyBackups']>>> => {
+    try {
+      const found = await commands.legacyBackups(docId);
+      return ok(found === undefined ? ({ kind: 'none' } as const) : ({ kind: 'found', ...found } as const));
+    } catch (thrown) {
+      return backupFailure(thrown);
+    }
+  };
+}
+
+function moveLegacyBackupsHandler(commands: DocumentCommands): ContractHandlers['document.moveLegacyBackups'] {
+  return async ({ docId, move }): Promise<Awaited<ReturnType<ContractHandlers['document.moveLegacyBackups']>>> => {
+    try {
+      return ok({ kind: 'answered', ...(await commands.moveLegacyBackups(docId, move)) } as const);
+    } catch (thrown) {
+      return backupFailure(thrown);
+    }
+  };
+}
+
+/**
+ * An earlier version written as a copy and opened: {@link workOnCopyHandler}'s route with the version's bytes, and `gone`
+ * where the folder no longer holds the id.
+ */
+function restoreBackupHandler(
+  deps: OpenPathParts & { readonly commands: DocumentCommands },
+): ContractHandlers['document.restoreBackup'] {
+  return async ({ docId, id }): Promise<Awaited<ReturnType<ContractHandlers['document.restoreBackup']>>> => {
+    let copied;
+    try {
+      copied = await deps.commands.restoreBackup(docId, id);
+    } catch (thrown) {
+      return backupFailure(thrown);
+    }
+    if (copied === undefined) return ok({ kind: 'cancelled' } as const);
+    if (copied === 'gone') return ok({ kind: 'gone' } as const);
+    if (copied.outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+    if (copied.outcome.kind === 'refused') {
+      return ok({ kind: 'destination-contested', openElsewhere: copied.outcome.others.length } as const);
+    }
+    const { outcome } = await openPath(deps, copied.destination);
+    // UNREACHABLE FOR THE COPY ROUTE'S OWN REASON: a destination another open document reaches is refused before anything is written.
+    if (outcome.kind === 'already-open') {
+      throw new Error('an earlier version written as a copy opened as "already-open", which its write refuses');
     }
     return ok(outcome);
   };

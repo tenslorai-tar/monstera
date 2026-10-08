@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { constants as fileConstants, createReadStream } from 'node:fs';
 import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { type Server, connect, createServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import {
@@ -672,6 +673,14 @@ export interface ShellComposition {
    */
   readonly backupLedgerFile?: SettingsSurface;
   /**
+   * Where the versions a save replaces are kept (ADR-0198): `backups` under `userData`, resolved in `entry.ts`. Absent, a
+   * folder under the operating system's temporary directory — every unit test's position, and NEVER beside a person's file,
+   * which is the one place the product no longer writes a backup.
+   */
+  readonly backupDirectory?: string;
+  /** Which folders were offered the move of their old `.bak` files (ADR-0198), under `userData`; absent, in memory. */
+  readonly legacyBackupsOfferedFile?: SettingsSurface;
+  /**
    * Opens one of the Store application's pages — `shell.openExternal` of a constant from `STORE_URIS`, which only
    * `entry.ts` may reach. The rating prompt's *review* uses it in the Store build (absent, the web listing), and
    * `app.openStore` names *updates* for *Help › Check for updates* (ADR-0107) and *listing* for the update
@@ -850,6 +859,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     libraryFiles,
     engagementFile,
     backupLedgerFile = createEphemeralSettings(),
+    backupDirectory = join(tmpdir(), 'monstera-backups-unconfigured'),
+    legacyBackupsOfferedFile = createEphemeralSettings(),
     openStore,
     openLink,
     updateRecordFile,
@@ -1114,7 +1125,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
         surface: nodeFileSurface,
         // THE BACKUPS A PERSON KEEPS (`saving.backup-copies`), read from the settings file at each save, so a change
         // in Settings applies to the next save with nothing restarted.
-        names: saveNamesFor(settings),
+        names: saveNamesFor(settings, backupDirectory),
         wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       },
       flush: currentBytes,
@@ -1521,6 +1532,18 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     copy: {
       pick: pickDestination,
       checkTarget: (destination) => documents.checkCopyTarget(destination),
+    },
+    // THE VERSIONS A SAVE REPLACED (ADR-0198), listed and restored as copies from here; the file's identity is read by the
+    // kernel's one reader, for the folder's hint.
+    backups: {
+      root: backupDirectory,
+      identity: readFileIdentity,
+      offered: {
+        read: () => legacyBackupsOfferedFile.read(),
+        write: (value) => {
+          legacyBackupsOfferedFile.write(value);
+        },
+      },
     },
     // INSERTING AN IMAGE, and both members are parameters for the copy's
     // reason: the picker needs Electron and the read needs Node's filesystem,

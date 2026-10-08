@@ -3728,6 +3728,86 @@ export const channels = {
    * scheme. So the renderer can choose only among the addresses the document already holds, and a barcode never opens
    * anything on its own — reading one shows its text (invariant 24).
    */
+  /**
+   * The earlier versions Monstera kept of this document's file, newest first (ADR-0198). Each is an OPAQUE id, the time the
+   * version was saved over and its size; a path never crosses (invariant 3), so what a renderer asks for next is the id.
+   */
+  'document.listBackups': channel(
+    'Lists the earlier versions kept of an open document.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.object({
+      kind: z.literal('listed'),
+      versions: z
+        .array(
+          z
+            .object({
+              id: z.string().min(1).max(32),
+              savedAt: z.string().max(40),
+              bytes: z.number().int().nonnegative(),
+            })
+            .strict(),
+        )
+        // THE COUNT A PERSON KEEPS, and the copy-aside where a rotation was refused.
+        .max(MAX_BACKUP_COPIES + 1),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * One earlier version, written as a COPY where the person picks and opened as its own document — `document.workOnCopy`'s
+   * route with the version's bytes (ADR-0198). The version itself is never opened, so saving cannot overwrite it.
+   */
+  'document.restoreBackup': channel(
+    'Writes an earlier version of an open document where the user picks, and opens that copy.',
+    z.object({ docId: docIdSchema, id: z.string().min(1).max(32) }).strict(),
+    z.discriminatedUnion('kind', [
+      openedSchema,
+      z.object({ kind: z.literal('cancelled') }),
+      // THE VERSION IS NOT THERE: a Clear, or a newer save that rotated it away, since the list was read.
+      z.object({ kind: z.literal('gone') }),
+      importContestedSchema,
+      importWriteFailedSchema,
+      openAbsentSchema,
+      openAtCapacitySchema,
+      openReadRefusedSchema,
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * The `.bak` files beside this document that Monstera can PROVE it made, asked once per folder (ADR-0198 Decision 5). The
+   * rest are counted apart and left where they are: a file Monstera did not make is the person's (ADR-0139).
+   */
+  'document.legacyBackups': channel(
+    'Counts the old .bak files beside an open document that Monstera made, and those it cannot prove it made.',
+    z.object({ docId: docIdSchema }).strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('none') }),
+      // `unproven` COUNTS WHAT IS LEFT ALONE, so the offer can say how many files stay where they are.
+      z.object({ kind: z.literal('found'), proven: z.number().int().positive().max(MAX_BACKUP_COPIES), unproven: z.number().int().nonnegative().max(MAX_BACKUP_COPIES) }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  'document.moveLegacyBackups': channel(
+    'Moves the old .bak files beside an open document that Monstera made into its own backups folder.',
+    z.object({ docId: docIdSchema, move: z.boolean() }).strict(),
+    z.object({
+      kind: z.literal('answered'),
+      moved: z.number().int().nonnegative().max(MAX_BACKUP_COPIES),
+      // A COPY THAT DID NOT READ BACK THE SAME SIZE, or a delete that was held, stays where it was and is counted here.
+      kept: z.number().int().nonnegative().max(MAX_BACKUP_COPIES),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /** Settings › Privacy › Clear backups: deletes the folder tree Monstera made, and says how many versions went. */
+  'app.clearBackups': channel(
+    'Deletes every earlier version Monstera kept in its own data folder.',
+    z.object({}).strict(),
+    z.object({ kind: z.literal('cleared'), removed: z.number().int().nonnegative() }),
+  ),
+
   'document.openBarcodeLink': channel(
     'Opens the web address one barcode on a page says, read by main from the document.',
     z

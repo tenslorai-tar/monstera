@@ -1,6 +1,7 @@
 import { constants } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { copyFile, open, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, open, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
 import { MAX_BACKUP_COPIES } from '@monstera/contract';
 
@@ -68,6 +69,9 @@ export const nodeFileSurface: AtomicWriteSurface = {
   sync: syncFile,
   rename: (from, to) => rename(from, to),
   copy: async (from, to) => {
+    // THE DESTINATION'S FOLDER, made where it is not there: a backup's folder is Monstera's own and is made at the first
+    // save that keeps one (ADR-0198). Where the destination sits beside the target, the folder exists and this does nothing.
+    await mkdir(dirname(to), { recursive: true });
     const staged = unpredictableSibling(to);
     await copyFile(from, staged, constants.COPYFILE_EXCL);
     try {

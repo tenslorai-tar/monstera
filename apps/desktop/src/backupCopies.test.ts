@@ -1,5 +1,6 @@
 import { BACKUP_COPIES, BACKUP_COPIES_SETTING_ID, MAX_BACKUP_COPIES } from '@monstera/contract';
 import { siblingNames } from '@monstera/kernel';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_BACKUP_COPIES, backupCopiesIn, saveNamesFor } from './backupCopies.js';
@@ -38,9 +39,20 @@ describe('backup copies to keep, as a save reads the setting', () => {
 
   it('the save’s names READ THE SETTING AT EACH SAVE — a change applies to the next save with nothing rebuilt', () => {
     let stored: Record<string, unknown> = { [BACKUP_COPIES_SETTING_ID]: 'three' };
-    const names = saveNamesFor({ read: () => stored });
+    const names = saveNamesFor({ read: () => stored }, 'C:/data/backups');
     expect(names('a.pdf').backups).toHaveLength(3);
     stored = { [BACKUP_COPIES_SETTING_ID]: 'ten' };
     expect(names('a.pdf').backups).toHaveLength(10);
+  });
+
+  it('the save’s names put the backups and the copy-aside in the DATA folder and only the temp beside the file (ADR-0198)', () => {
+    const names = saveNamesFor({ read: () => ({ [BACKUP_COPIES_SETTING_ID]: 'three' }) }, 'C:/data/backups')('C:/docs/report.pdf');
+    // `join` NORMALISES THE SEPARATORS on Windows, so the root is compared as the names are made, not as typed.
+    const root = join('C:/data/backups');
+    for (const kept of [...names.backups, ...names.retired, names.previous]) expect(kept.startsWith(root)).toBe(true);
+    // THE TEMP IS THE ONE SIBLING: an atomic rename needs the target's volume, and the save removes it however it ends.
+    expect(names.temp.startsWith('C:/docs/report.pdf.')).toBe(true);
+    // CONTROL: nothing a person's folder would show as a `.bak`.
+    expect([...names.backups, ...names.retired, names.previous].some((path) => path.includes('C:/docs'))).toBe(false);
   });
 });

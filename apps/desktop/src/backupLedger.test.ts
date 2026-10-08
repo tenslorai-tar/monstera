@@ -166,6 +166,27 @@ describe('which backups Monstera made (ADR-0139)', () => {
   });
 });
 
+describe('the proof asked without touching the file (ADR-0198 Decision 5)', () => {
+  it('is true for a backup Monstera made and unchanged since — CONTROL: false for another file with the name, a changed one and a missing one, and nothing is deleted', async () => {
+    const files = new Map([
+      ['mine.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 5 }],
+      ['theirs.pdf.bak', { dev: 1, ino: 11, size: 100, modifiedMs: 5 }],
+    ]);
+    const disk = volume(files);
+    const provenance = createBackupProvenance(createEphemeralSettings(), disk);
+    await provenance.made('mine.pdf.bak');
+    expect(await provenance.wasMade('mine.pdf.bak')).toBe(true);
+    // A FILE WITH A BACKUP'S NAME THAT MONSTERA DID NOT MAKE is the person's.
+    expect(await provenance.wasMade('theirs.pdf.bak')).toBe(false);
+    expect(await provenance.wasMade('gone.pdf.bak')).toBe(false);
+    // EDITED SINCE: another size and time, so it is no longer the file Monstera left.
+    files.set('mine.pdf.bak', { dev: 1, ino: 10, size: 101, modifiedMs: 6 });
+    expect(await provenance.wasMade('mine.pdf.bak')).toBe(false);
+    // THE QUESTION DELETED NOTHING: both files are still on the volume.
+    expect([...files.keys()].sort()).toStrictEqual(['mine.pdf.bak', 'theirs.pdf.bak']);
+  });
+});
+
 describe('a backup a protect rewrites in place (ADR-0171 Decision 8)', () => {
   it('is rewritten only when Monstera made it, and the NEW file is then Monstera’s, so a removal’s save still finds it', async () => {
     const files = new Map([['a.pdf.bak', { dev: 1, ino: 10, size: 100, modifiedMs: 5 }]]);

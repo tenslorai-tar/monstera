@@ -430,6 +430,19 @@ export {
 } from './atomicWrite.js';
 export { nodeFileSurface, siblingNames } from './fileSurface.js';
 export {
+  type BackupNote,
+  type StoredBackup,
+  backupFolderKey,
+  backupFolderOf,
+  clearBackups,
+  copyStoredBackup,
+  dataFolderNames,
+  findByIdentityHint,
+  listStoredBackups,
+  storedBackupPath,
+  writeBackupNote,
+} from './backupFolder.js';
+export {
   type DocumentFlush as StagedFlush,
   type StagedImage,
   placeStaged,

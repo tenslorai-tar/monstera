@@ -1,5 +1,5 @@
 import { BACKUP_COPIES, BACKUP_COPIES_STORED, storedSetting } from '@monstera/contract';
-import { type SaveFileNames, siblingNames } from '@monstera/kernel';
+import { type SaveFileNames, dataFolderNames, siblingNames } from '@monstera/kernel';
 
 /** The setting's own default, counted: §4's one `.bak`, which every save wrote before the count was a choice. */
 export const DEFAULT_BACKUP_COPIES: number = BACKUP_COPIES[BACKUP_COPIES_STORED.fallback];
@@ -19,6 +19,12 @@ export function backupCopiesIn(settings: Readonly<Record<string, unknown>>): num
  * document, so a change in Settings applies to the next save with nothing restarted. The composition root takes this
  * whole, so the join between the setting and the save is a named thing with its own case rather than a lambda there.
  */
-export function saveNamesFor(settings: { readonly read: () => Readonly<Record<string, unknown>> }): SaveFileNames {
-  return (target) => siblingNames(target, backupCopiesIn(settings.read()));
+export function saveNamesFor(
+  settings: { readonly read: () => Readonly<Record<string, unknown>> },
+  /** Monstera's own backups folder (ADR-0198): the versions a save replaces are kept there and never beside the file. */
+  backupRoot: string,
+): SaveFileNames {
+  // THE TEMP IS STILL A SIBLING of the target — an atomic rename needs its volume — and is the one name `siblingNames` is
+  // asked for; the backups and the copy-aside are `dataFolderNames`', in the data folder.
+  return (target) => dataFolderNames(backupRoot, backupCopiesIn(settings.read()), (path) => siblingNames(path, 0).temp)(target);
 }
