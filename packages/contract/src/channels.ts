@@ -107,6 +107,7 @@ import {
   MAX_IMAGE_QUALITY,
   FAILURE_DETAIL_SCHEMAS,
   accessibilitySpotsSchema,
+  displayBoxSchema,
   drawnBoxesShape,
 } from './schemas.js';
 
@@ -3711,6 +3712,8 @@ export const channels = {
             /** zxing-cpp's name for the symbology, shown as data. */
             format: z.string().min(1).max(32),
             text: z.string().max(MAX_BARCODE_TEXT),
+            /** Where the symbol is on the page, in its display space at scale 1: what a row's press shows. */
+            box: displayBoxSchema,
           }),
         )
         .max(MAX_PAGE_BARCODES)
@@ -3826,6 +3829,34 @@ export const channels = {
       z.object({ kind: z.literal('not-opened') }),
     ]),
     ['document-not-open', 'document-poisoned'],
+  ),
+
+  /**
+   * A contact card (vCard) read from one barcode, written to a `.vcf` the person picks. `document.openBarcodeLink`'s rule
+   * for a symbol: the renderer names the barcode by its version and place, and `main` reads the text from the document, so
+   * what is written is what the symbol says and the renderer never supplies file contents. A card is written as it was
+   * read, never re-made from parsed fields.
+   */
+  'document.saveBarcodeContact': channel(
+    'Writes the contact card one barcode on a page carries to a .vcf file the user picks.',
+    z
+      .object({
+        docId: docIdSchema,
+        version: docVersionSchema,
+        page: z.number().int().nonnegative(),
+        index: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative(), ...WRITTEN }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('stale') }),
+      z.object({ kind: z.literal('no-such-barcode') }),
+      z.object({ kind: z.literal('not-a-contact') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
   'document.placeImage': channel(

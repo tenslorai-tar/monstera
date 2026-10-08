@@ -482,6 +482,8 @@ export interface ShellComposition {
   readonly pickFormData: FormDataSource['pick'];
   /** Where a text export goes. The same dialog narrowed to plain text. */
   readonly pickText: (sourceName: string) => Promise<string | null>;
+  /** Where a contact card read from a barcode goes. The same dialog narrowed to `.vcf`. */
+  readonly pickContact: (sourceName: string) => Promise<string | null>;
   /**
    * Where the settings export goes. Absent — every unit test — the export is cancelled, which is the
    * honest answer for a graph with no picker rather than a write to a path nobody chose.
@@ -821,6 +823,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickSnapshot,
     pickFormData,
     pickText,
+    pickContact,
     pickSettingsFile,
     openSettingsFile,
     pickOffice,
@@ -1674,6 +1677,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     },
     // THE TEXT EXPORT'S DIALOG, a parameter for the folder picker's reason below.
     pickText,
+    pickContact,
     // THE OFFICE EXPORTS' DIALOG, a parameter for the same reason (ADR-0072).
     pickOffice,
     // LAYOUT-PRESERVING TEXT, the contained pdftotext — `null` where it cannot run,

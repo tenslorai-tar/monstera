@@ -2232,6 +2232,11 @@ optgroup {
   vertical-align: top;
 }
 
+/* THE ROW SHOWN ON THE PAGE: an edge in the accent, so the list says which barcode the mark on the page is. */
+.m-page-barcodes__table tr[data-marked='true'] > td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .m-page-barcodes__content {
   overflow-wrap: anywhere;
   user-select: text;

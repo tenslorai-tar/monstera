@@ -547,6 +547,7 @@ export function createContractHandlers(deps: {
     'document.placeBarcode': placeBarcodeHandler(deps.commands),
     'document.pageBarcodes': pageBarcodesHandler(deps.commands),
     'document.openBarcodeLink': openBarcodeLinkHandler(deps.commands, deps.openLink),
+    'document.saveBarcodeContact': saveBarcodeContactHandler(deps.commands, mintWritten),
     'document.accessibilityCheck': accessibilityCheckHandler(deps.commands),
     'document.sign': signHandler(deps.commands),
     'docusign.send': docusignSendHandler(deps.commands),
@@ -1584,6 +1585,44 @@ function openBarcodeLinkHandler(
       return ok({ kind: (await openLink(address)) ? 'opened' : 'not-opened' } as const);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * A barcode's contact card saved: {@link exportTextHandler}'s outcomes, plus the three ways there was nothing to save. The
+ * text is read by main from the page and never arrives from the renderer.
+ */
+function saveBarcodeContactHandler(
+  commands: DocumentCommands,
+  mint: MintWritten,
+): ContractHandlers['document.saveBarcodeContact'] {
+  return async ({
+    docId,
+    version,
+    page,
+    index,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.saveBarcodeContact']>>> => {
+    try {
+      const outcome = await commands.saveBarcodeContact(docId, version, page, index);
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      switch (outcome.kind) {
+        case 'copied':
+          return ok({ kind: 'copied', bytes: outcome.bytes, written: mint(outcome.destination) } as const);
+        case 'write-failed':
+          return ok({ kind: 'write-failed' } as const);
+        case 'refused':
+          return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+        case 'stale':
+        case 'no-such-barcode':
+        case 'not-a-contact':
+          return ok({ kind: outcome.kind } as const);
+      }
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       throw thrown;
     }

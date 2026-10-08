@@ -665,6 +665,7 @@ export {
   UNWRITABLE_CHARACTERS_MAX,
   UNWRITABLE_CHARACTERS_MAX_UNITS,
   accessibilitySpotsSchema,
+  displayBoxSchema,
   docIdSchema,
   docVersionSchema,
   envelopeSchema,

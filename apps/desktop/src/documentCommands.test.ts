@@ -19,6 +19,7 @@ import {
 } from '@cantoo/pdf-lib';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import type { FoundBarcode } from '@monstera/kernel';
 import {
   type AiModel,
   type Command,
@@ -904,6 +905,7 @@ const INERT = {
   word: localWord,
   // REFUSES BY NAME, like every inert picker: a case that exports text supplies its own.
   pickText: () => Promise.reject(new Error('INERT: this case does not export text')),
+  pickContact: () => Promise.reject(new Error('INERT: this case does not save a contact')),
   layoutText: null,
   // NO PRINT DIALOG, the state a platform without one is in; a print case supplies its own.
   print: null,
@@ -3768,6 +3770,9 @@ describe('exportText — the document’s words, streamed one page at a time', (
       readonly optimizer?: OptimizeSource | null;
       /** The password the document was unlocked with; absent, it opened with none. */
       readonly unlockedWith?: string;
+      /** The barcodes a page reads, in place of none; and where the contact picker answers (null cancels). */
+      readonly barcodes?: readonly FoundBarcode[];
+      readonly contactTo?: string | null;
       /** Where the copy picker answers; absent, it refuses, for an export that uses its own. */
       readonly copyTo?: string | null;
       /** A page's structure nodes in place of the real read; absent, the real read. */
@@ -3785,6 +3790,15 @@ describe('exportText — the document’s words, streamed one page at a time', (
       share: options.share ?? null,
       pdfa: options.pdfa ?? null,
       optimizer: options.optimizer ?? null,
+      ...(options.barcodes === undefined
+        ? {}
+        : {
+            barcodes: () => Promise.resolve({ barcodes: options.barcodes ?? [], truncated: false }),
+            pickContact: (name: string) => {
+              options.picked?.push(name);
+              return Promise.resolve(options.contactTo ?? null);
+            },
+          }),
       ...(options.structure === undefined
         ? {}
         : {
@@ -3848,6 +3862,48 @@ describe('exportText — the document’s words, streamed one page at a time', (
     expect(outcome).toEqual({ kind: 'copied', bytes: Buffer.byteLength(written, 'utf8'), destination });
     expect(written).toBe('first page words\fsecond page words');
     expect(reads).toEqual([0, 1]);
+  });
+
+  describe('saveBarcodeContact — a contact card a barcode carries, written as a .vcf', () => {
+    const CARD = 'BEGIN:VCARD\nVERSION:3.0\nFN:Ada Lovelace\nNOTE:kept\nEND:VCARD';
+    const BOX = { x0: 1, y0: 2, x1: 3, y1: 4 };
+    const found = [
+      { format: 'QRCode', text: 'https://example.com', box: BOX },
+      { format: 'QRCode', text: CARD, box: BOX },
+      { format: 'QRCode', text: 'BEGIN:VCARD\nFN:cut short', box: BOX },
+    ];
+
+    it('writes the card read from the document, with CRLF line ends, and suggests a name of its own', async () => {
+      const destination = join(mkdtempSync(join(directory, 'vcf-')), 'ada.vcf');
+      const picked: string[] = [];
+      const { commands } = exportingTo(null, { barcodes: found, contactTo: destination, picked });
+      const { version } = await commands.pageBarcodes(textDoc, 0);
+
+      const outcome = await commands.saveBarcodeContact(textDoc, version, 0, 1);
+
+      expect(outcome).toEqual({ kind: 'copied', bytes: Buffer.byteLength(readFileSync(destination, 'utf8'), 'utf8'), destination });
+      expect(readFileSync(destination, 'utf8')).toBe(`${CARD.split('\n').join('\r\n')}\r\n`);
+      expect(picked).toStrictEqual(['words.pdf']);
+    });
+
+    it('says what is wrong BEFORE any dialog: a link is not a contact, a cut card is not whole, a missing one is not there, an old version is stale', async () => {
+      const picked: string[] = [];
+      const { commands } = exportingTo(null, { barcodes: found, contactTo: 'never-written.vcf', picked });
+      const { version } = await commands.pageBarcodes(textDoc, 0);
+
+      expect(await commands.saveBarcodeContact(textDoc, version, 0, 0)).toStrictEqual({ kind: 'not-a-contact' });
+      expect(await commands.saveBarcodeContact(textDoc, version, 0, 2)).toStrictEqual({ kind: 'not-a-contact' });
+      expect(await commands.saveBarcodeContact(textDoc, version, 0, 9)).toStrictEqual({ kind: 'no-such-barcode' });
+      expect(await commands.saveBarcodeContact(textDoc, asDocVersion(Number(version) + 1), 0, 1)).toStrictEqual({ kind: 'stale' });
+      // THE DECISION IS THE DIALOG NOT OPENING: a refusal that opened it would still write nothing, and ask for a name first.
+      expect(picked).toStrictEqual([]);
+    });
+
+    it('a cancelled dialog writes nothing and answers undefined', async () => {
+      const { commands } = exportingTo(null, { barcodes: found, contactTo: null });
+      const { version } = await commands.pageBarcodes(textDoc, 0);
+      expect(await commands.saveBarcodeContact(textDoc, version, 0, 1)).toBeUndefined();
+    });
   });
 
   it('STREAMS: each page reaches the file before the next page is read (ADR-0035)', async () => {

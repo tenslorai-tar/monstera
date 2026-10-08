@@ -624,6 +624,10 @@ export const PAGE_BARCODES_FIELD_PHONE = messageKey('dialog.page-barcodes.field-
 export const PAGE_BARCODES_FIELD_EMAIL = messageKey('dialog.page-barcodes.field-email');
 export const PAGE_BARCODES_FIELD_ADDRESS = messageKey('dialog.page-barcodes.field-address');
 export const PAGE_BARCODES_FIELD_WEB = messageKey('dialog.page-barcodes.field-web');
+export const PAGE_BARCODES_SHOW = messageKey('dialog.page-barcodes.show');
+export const PAGE_BARCODES_SAVE_CONTACT = messageKey('dialog.page-barcodes.save-contact');
+export const TOAST_CONTACT_SAVED = messageKey('toast.contact-saved');
+export const TOAST_CONTACT_NOT_SAVED = messageKey('toast.contact-not-saved');
 export const TOAST_BARCODE_LINK_STALE = messageKey('toast.barcode-link-stale');
 export const TOAST_BARCODE_LINK_NOT_OPENED = messageKey('toast.barcode-link-not-opened');
 export const TOAST_BARCODES_READING = messageKey('task.barcodes-reading');
@@ -5534,6 +5538,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PAGE_BARCODES_FIELD_EMAIL]: 'Email',
   [PAGE_BARCODES_FIELD_ADDRESS]: 'Address',
   [PAGE_BARCODES_FIELD_WEB]: 'Web page',
+  [PAGE_BARCODES_SHOW]: 'Show barcode {number} on the page',
+  [PAGE_BARCODES_SAVE_CONTACT]: 'Save the contact in barcode {number}…',
+  [TOAST_CONTACT_SAVED]: 'Contact saved',
+  [TOAST_CONTACT_NOT_SAVED]: 'The contact could not be saved. The document may have changed since the barcodes were read, so read them again.',
   [TOAST_BARCODE_LINK_STALE]: 'The document changed since the barcodes were read. Read them again, then open the link.',
   [TOAST_BARCODE_LINK_NOT_OPENED]: 'The link could not be opened.',
   [TOAST_BARCODES_READING]: 'Reading barcodes',

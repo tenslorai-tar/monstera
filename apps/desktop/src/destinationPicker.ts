@@ -12,6 +12,7 @@ import {
   type OfficeFormat,
   type PickDestination,
   type PickOffice,
+  suggestedContactName,
   suggestedFormDataName,
   suggestedOfficeName,
   suggestedTextName,
@@ -164,6 +165,22 @@ export function createTextPicker(): (sourceName: string) => Promise<string | nul
       defaultPath: suggestedTextName(sourceName),
       properties: ['dontAddToRecent', 'createDirectory', 'showOverwriteConfirmation'],
       filters: [{ name: 'Plain text', extensions: ['txt'] }],
+    });
+    if (result.canceled) return null;
+    return result.filePath.length === 0 ? null : result.filePath;
+  };
+}
+
+/**
+ * The save picker for a contact card read from a barcode: {@link createTextPicker}'s dialog narrowed to a vCard, under
+ * the document's name with the card's own suffix and extension from one place (`suggestedContactName`).
+ */
+export function createContactPicker(): (sourceName: string) => Promise<string | null> {
+  return async (sourceName: string): Promise<string | null> => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: suggestedContactName(sourceName),
+      properties: ['dontAddToRecent', 'createDirectory', 'showOverwriteConfirmation'],
+      filters: [{ name: 'Contact card', extensions: ['vcf'] }],
     });
     if (result.canceled) return null;
     return result.filePath.length === 0 ? null : result.filePath;

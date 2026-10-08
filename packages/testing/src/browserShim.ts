@@ -395,7 +395,12 @@ export interface BrowserShimOptions {
   }[];
 
   /** What `document.pageBarcodes` reads on any page. Absent is none. */
-  readonly pageBarcodes?: readonly { readonly format: string; readonly text: string }[];
+  readonly pageBarcodes?: readonly {
+    readonly format: string;
+    readonly text: string;
+    /** Where it is on the page; absent is a box an inch in from the corner. */
+    readonly box?: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+  }[];
 
   /**
    * What `document.importFormData` answers — its own switch, not the image's.
@@ -1676,7 +1681,14 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
       return Promise.resolve(
-        ok({ version: asDocVersion(current), barcodes: options.pageBarcodes ?? [], truncated: false }),
+        ok({
+          version: asDocVersion(current),
+          barcodes: (options.pageBarcodes ?? []).map((barcode) => ({
+            ...barcode,
+            box: barcode.box ?? { x0: 72, y0: 72, x1: 144, y1: 144 },
+          })),
+          truncated: false,
+        }),
       );
     },
     // ITS OWN SWITCH, for the reason `importedFormData` carries: this reads a
@@ -2585,6 +2597,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     'ai.translateText': () => Promise.resolve(ok({ kind: 'refused' as const, problem: 'no-key' as const })),
     // NO BROWSER TO OPEN: what `main` answers when the system opened nothing.
     'document.openBarcodeLink': () => Promise.resolve(ok({ kind: 'not-opened' as const })),
+    'document.saveBarcodeContact': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
     // NO DATA FOLDER IN A BROWSER: no version was kept, so none is listed and nothing is old to move.
     'document.listBackups': () => Promise.resolve(ok({ kind: 'listed' as const, versions: [] })),
     'document.restoreBackup': () => Promise.resolve(ok({ kind: 'gone' as const })),

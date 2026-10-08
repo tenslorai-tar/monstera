@@ -704,6 +704,45 @@ describe('document.openBarcodeLink', () => {
   });
 });
 
+describe('document.saveBarcodeContact', () => {
+  const request = { docId: A_DOC, version: asDocVersion(4), page: 2, index: 1 };
+
+  /** Commands whose save answers `outcome`, recording the place it was asked for: the renderer sends no text. */
+  function savingCommands(outcome: unknown): { commands: DocumentCommands; asked: unknown[][] } {
+    const asked: unknown[][] = [];
+    const commands = {
+      saveBarcodeContact: (...args: unknown[]) => {
+        asked.push(args);
+        return Promise.resolve(outcome);
+      },
+    } as unknown as DocumentCommands;
+    return { commands, asked };
+  }
+
+  it('NAMES THE BARCODE BY ITS PLACE and answers a written card with a handle, never a path', async () => {
+    const { commands, asked } = savingCommands({ kind: 'copied', bytes: 90, destination: 'C:\\Users\\x\\ada.vcf' });
+    const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+    const answer = await handlers['document.saveBarcodeContact'](request);
+    expect(asked).toStrictEqual([[A_DOC, asDocVersion(4), 2, 1]]);
+    expect(answer.ok && answer.value.kind).toBe('copied');
+    expect(JSON.stringify(answer)).not.toContain('ada.vcf');
+  });
+
+  it('answers each way there was nothing to write by its own kind, and a cancelled dialog as cancelled', async () => {
+    for (const kind of ['stale', 'no-such-barcode', 'not-a-contact', 'write-failed'] as const) {
+      const { commands } = savingCommands({ kind });
+      const { handlers } = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands });
+      expect(await handlers['document.saveBarcodeContact'](request)).toStrictEqual({ ok: true, value: { kind } });
+    }
+    const refused = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, {
+      commands: savingCommands({ kind: 'refused', others: [A_DOC] }).commands,
+    });
+    expect(await refused.handlers['document.saveBarcodeContact'](request)).toStrictEqual({ ok: true, value: { kind: 'refused', openElsewhere: 1 } });
+    const cancelled = harness({ kind: 'absent' }, () => Promise.resolve(null), undefined, { commands: savingCommands(undefined).commands });
+    expect(await cancelled.handlers['document.saveBarcodeContact'](request)).toStrictEqual({ ok: true, value: { kind: 'cancelled' } });
+  });
+});
+
 /**
  * Decision C at the channel: rows of a workbook the PDF does not hold ride with the open, so the person is told — and a
  * document that arrived whole answers exactly what `document.open` does.

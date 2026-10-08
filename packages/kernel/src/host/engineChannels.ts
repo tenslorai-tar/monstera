@@ -2,6 +2,7 @@ import {
   type CommandKind,
   type CommandOfKind,
   accessibilitySpotsSchema,
+  displayBoxSchema,
   DOCUMENT_ACCESS_VALUES,
   DOCUMENT_PASSWORD_MAX_CHARS,
   MAX_MERGE_DOCUMENTS,
@@ -3118,6 +3119,9 @@ export const engineChannels = {
                 // loads; the renderer shows the name as data, never as a message key.
                 format: z.string().min(1).max(32),
                 text: z.string().max(ENGINE_BARCODE_TEXT_MAX),
+                // WHERE IT IS, in the page's display space at scale 1 (points): the decoder reports pixels of the raster
+                // it was given, and the host divides by the scale the raster was made at.
+                box: displayBoxSchema,
               })
               .strict(),
           )

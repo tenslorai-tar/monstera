@@ -296,6 +296,7 @@ describe('browser shim', () => {
       'document.restoreBackup',
       'document.runFonts',
       'document.save',
+      'document.saveBarcodeContact',
       'document.saveCopy',
       'document.searchPage',
       'document.sign',

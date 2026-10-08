@@ -443,6 +443,7 @@ const handlers: ContractHandlers = {
   'ai.translatePage': () => Promise.resolve(ok({ kind: 'nothing-to-translate' as const })),
   'ai.translateText': () => Promise.resolve(ok({ kind: 'translated' as const, text: '' })),
   'document.openBarcodeLink': () => Promise.resolve(ok({ kind: 'stale' as const })),
+  'document.saveBarcodeContact': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.listBackups': () => Promise.resolve(ok({ kind: 'listed' as const, versions: [] })),
   'document.restoreBackup': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.legacyBackups': () => Promise.resolve(ok({ kind: 'none' as const })),

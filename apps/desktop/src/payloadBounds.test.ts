@@ -483,6 +483,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // nothing a document contributes reaches the renderer through it.
   'document.openLink': 'needs an engine session',
   'document.openBarcodeLink': 'needs an engine session; answers one of five outcomes and carries no text',
+  'document.saveBarcodeContact': 'needs an engine session and a save dialog; answers one of seven outcomes and carries no text',
   'document.listBackups': 'needs an open document and a data folder; answers at most eleven versions by opaque id',
   'document.restoreBackup': 'needs an open document, a kept version and a save dialog',
   'document.legacyBackups': 'needs an open document and the files beside it; answers two small counts',

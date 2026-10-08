@@ -20,6 +20,10 @@ export const PAGE_BARCODES_REPORT = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('copy-all') }).strict(),
   z.object({ kind: z.literal('open'), page: z.number().int().positive(), index: z.number().int().nonnegative() }).strict(),
   z.object({ kind: z.literal('read-all') }).strict(),
+  // A ROW'S PRESS NAMES THE BARCODE BY ITS PLACE, never its text or box: the command holds both, and for the contact file
+  // `main` reads the card from the document (`document.saveBarcodeContact`).
+  z.object({ kind: z.literal('show'), page: z.number().int().positive(), index: z.number().int().nonnegative() }).strict(),
+  z.object({ kind: z.literal('save-contact'), page: z.number().int().positive(), index: z.number().int().nonnegative() }).strict(),
 ]);
 
 /**
@@ -49,8 +53,7 @@ export const PAGE_BARCODES_DIALOG = declareDialog({
             /** The page a person reads, from 1. */
             page: z.number().int().positive(),
             /** Its place among that page's barcodes, which is how `main` finds it again. */
-            index: z.number().int().nonnegative(),
-          }),
+            index: z.number().int().nonnegative(),          }),
         )
         .max(MAX_LISTED_BARCODES)
         .readonly(),

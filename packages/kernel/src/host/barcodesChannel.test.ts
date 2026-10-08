@@ -48,6 +48,9 @@ beforeAll(async () => {
   }
 });
 
+/** A place for a symbol the bound cases inject: what they own is the handler's decisions, not where a symbol is. */
+const SOMEWHERE = { x0: 10, y0: 20, x1: 110, y1: 120 };
+
 const AREA = {
   snapshotDirectory: 'no directory: a barcode read carries no asset',
   outputDirectory: 'no directory: a barcode read writes nothing',
@@ -136,10 +139,21 @@ describe('engine/page-barcodes over the wire', () => {
   it('reads a placed symbol through the host’s own reader, and a blank page reads none', async () => {
     const placed = await joined(withQr, readPageBarcodes);
     try {
-      expect(await placed.read(placed.session, 0)).toStrictEqual({
-        barcodes: [{ format: 'QRCode', text: 'crossed the wire' }],
-        truncated: false,
-      });
+      const answer = await placed.read(placed.session, 0);
+      expect(answer.truncated).toBe(false);
+      expect(answer.barcodes.map(({ format, text }) => ({ format, text }))).toStrictEqual([{ format: 'QRCode', text: 'crossed the wire' }]);
+      // WHERE IT IS, in display space (points, top left, y down): the symbol was placed over x 100–300 and PDF y 400–600 of a
+      // 792-point page, which is display y 192–392. The finder patterns sit inside the picture's quiet zone, so the box is
+      // INSIDE that area and fills most of it; a box in raster pixels (scale 200/72 too big) or with y flipped would be
+      // nowhere near it.
+      const box = answer.barcodes[0]?.box;
+      if (box === undefined) throw new Error('the read symbol carried no box');
+      expect(box.x0).toBeGreaterThanOrEqual(98);
+      expect(box.x1).toBeLessThanOrEqual(302);
+      expect(box.y0).toBeGreaterThanOrEqual(190);
+      expect(box.y1).toBeLessThanOrEqual(394);
+      expect(box.x1 - box.x0).toBeGreaterThan(120);
+      expect(box.y1 - box.y0).toBeGreaterThan(120);
     } finally {
       await placed.close();
     }
@@ -168,6 +182,7 @@ describe('engine/page-barcodes over the wire', () => {
     const many = Array.from({ length: ENGINE_BARCODES_MAX + 3 }, (_unused, index) => ({
       format: 'Code128',
       text: `label ${String(index)}`,
+      box: SOMEWHERE,
     }));
     const { session, read, close } = await joined(blank, () => Promise.resolve(many));
     try {
@@ -181,13 +196,13 @@ describe('engine/page-barcodes over the wire', () => {
 
   it('drops a text past the bound WHOLE rather than cutting it, and says so', async () => {
     const found = [
-      { format: 'QRCode', text: '9'.repeat(ENGINE_BARCODE_TEXT_MAX + 1) },
-      { format: 'EAN13', text: '4006381333931' },
+      { format: 'QRCode', text: '9'.repeat(ENGINE_BARCODE_TEXT_MAX + 1), box: SOMEWHERE },
+      { format: 'EAN13', text: '4006381333931', box: SOMEWHERE },
     ];
     const { session, read, close } = await joined(blank, () => Promise.resolve(found));
     try {
       expect(await read(session, 0)).toStrictEqual({
-        barcodes: [{ format: 'EAN13', text: '4006381333931' }],
+        barcodes: [{ format: 'EAN13', text: '4006381333931', box: SOMEWHERE }],
         truncated: true,
       });
     } finally {
@@ -196,7 +211,7 @@ describe('engine/page-barcodes over the wire', () => {
   });
 
   it('CONTROL: a list inside both bounds is not reported as stopped', async () => {
-    const found = [{ format: 'QRCode', text: '9'.repeat(ENGINE_BARCODE_TEXT_MAX) }];
+    const found = [{ format: 'QRCode', text: '9'.repeat(ENGINE_BARCODE_TEXT_MAX), box: SOMEWHERE }];
     const { session, read, close } = await joined(blank, () => Promise.resolve(found));
     try {
       expect(await read(session, 0)).toStrictEqual({ barcodes: found, truncated: false });

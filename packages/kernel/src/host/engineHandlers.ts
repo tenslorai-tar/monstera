@@ -1214,14 +1214,14 @@ export function createEngineHandlers({
       }
       // A BARCODE IS KEPT WHOLE OR NOT AT ALL: a text past the bound is no symbology's, so it is
       // counted as the bound stopping the list rather than cut to a plausible prefix.
-      const kept: { format: string; text: string }[] = [];
+      const kept: FoundBarcode[] = [];
       let truncated = false;
       for (const barcode of found) {
         if (kept.length === ENGINE_BARCODES_MAX || barcode.text.length > ENGINE_BARCODE_TEXT_MAX) {
           truncated = true;
           continue;
         }
-        kept.push({ format: barcode.format, text: barcode.text });
+        kept.push({ format: barcode.format, text: barcode.text, box: barcode.box });
       }
       return { ok: true, value: { barcodes: kept, truncated } };
     },

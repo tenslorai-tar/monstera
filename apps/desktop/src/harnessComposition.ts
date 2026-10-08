@@ -98,6 +98,9 @@ export function harnessSurfaces(
     pickText: () => {
       throw new Error(`${harness} exports no text, so nothing may pick a file for it`);
     },
+    pickContact: () => {
+      throw new Error(`${harness} saves no contact card, so nothing may pick a file for it`);
+    },
     pickOffice: () => {
       throw new Error(`${harness} exports no Office file, so nothing may pick a file for it`);
     },

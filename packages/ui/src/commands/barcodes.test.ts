@@ -44,8 +44,12 @@ function depsOf(client: ContractClient, ask: (id: string, props: unknown) => Pro
     ask,
     toast: () => undefined,
     track: () => ({ signal: new AbortController().signal, step: () => undefined, end: () => undefined }),
+    mark: () => undefined,
   };
 }
+
+/** Where a symbol is on its page, in the display space the dialog's mark draws. */
+const WHERE = { x0: 100, y0: 200, x1: 180, y1: 280 };
 
 describe('Read barcodes', () => {
   function clientAnswering(outcome: 'read' | 'refused'): { client: ContractClient; asked: unknown[] } {
@@ -55,7 +59,7 @@ describe('Read barcodes', () => {
       asked.push(params);
       return Promise.resolve(
         outcome === 'read'
-          ? ok({ version: asDocVersion(1), barcodes: [{ format: 'QRCode', text: 'https://example.org' }], truncated: true })
+          ? ok({ version: asDocVersion(1), barcodes: [{ format: 'QRCode', text: 'https://example.org', box: WHERE }], truncated: true })
           : err({ code: 'document-poisoned' }),
       );
     });
@@ -99,39 +103,69 @@ describe('Read barcodes', () => {
 
   describe('what the dialog reports (the owner’s list of 2026-10-07)', () => {
     /** A client over three pages, recording every call: page 2 (index 1) says a link, the others plain words. */
-    function threePages(): { client: ContractClient; calls: { id: string; params: unknown }[] } {
+    function threePages(saving: { kind: 'cancelled' } | { kind: 'not-a-contact' } = { kind: 'cancelled' }): {
+      client: ContractClient;
+      calls: { id: string; params: unknown }[];
+    } {
       const calls: { id: string; params: unknown }[] = [];
       const client = createClient(channels, (id, params) => {
         calls.push({ id, params });
         if (id === 'window.copyText') return Promise.resolve(ok({ copied: true }));
         if (id === 'document.openBarcodeLink') return Promise.resolve(ok({ kind: 'opened' as const }));
+        if (id === 'document.saveBarcodeContact') return Promise.resolve(ok(saving));
         if (id !== 'document.pageBarcodes') throw new Error(`unexpected channel ${id}`);
         const page = (params as { page: number }).page;
         const barcodes =
           page === 1
-            ? [{ format: 'QRCode', text: 'plain words' }, { format: 'QRCode', text: 'https://example.org/menu' }]
-            : [{ format: 'Code128', text: `ticket ${String(page + 1)}` }];
+            ? [
+                { format: 'QRCode', text: 'plain words', box: WHERE },
+                { format: 'QRCode', text: 'https://example.org/menu', box: { x0: 10, y0: 20, x1: 30, y1: 40 } },
+              ]
+            : [{ format: 'Code128', text: `ticket ${String(page + 1)}`, box: WHERE }];
         return Promise.resolve(ok({ version: asDocVersion(3), barcodes, truncated: false }));
       });
       return { client, calls };
     }
     /** Opens the dialog on page 2 and hands back what the opener was given to report to. */
-    async function opened(): Promise<{ report: (what: unknown) => void; replies: unknown[]; calls: { id: string; params: unknown }[]; said: string[] }> {
-      const { client, calls } = threePages();
+    async function opened(saving?: { kind: 'cancelled' } | { kind: 'not-a-contact' }): Promise<{
+      report: (what: unknown) => void;
+      replies: unknown[];
+      calls: { id: string; params: unknown }[];
+      said: string[];
+      marks: unknown[];
+      close: () => void;
+    }> {
+      const { client, calls } = threePages(saving);
       const replies: unknown[] = [];
       let reporting: ((what: unknown, reply: (props: unknown) => void) => void) | undefined;
+      let closeDialog: () => void = () => undefined;
       const said: string[] = [];
+      const marks: unknown[] = [];
       await readBarcodesCommand({
         client,
         ask: (_id, _props, onUpdate) => {
           reporting = onUpdate;
-          return new Promise(() => undefined);
+          return new Promise((resolve) => {
+            closeDialog = () => {
+              resolve(undefined);
+            };
+          });
         },
         toast: (_kind, message) => said.push(message),
         track: () => ({ signal: new AbortController().signal, step: () => undefined, end: () => undefined }),
+        mark: (spot) => marks.push(spot),
       }).run(contextOn(1));
       calls.length = 0;
-      return { report: (what) => reporting?.(what, (props) => replies.push(props)), replies, calls, said };
+      return {
+        report: (what) => reporting?.(what, (props) => replies.push(props)),
+        replies,
+        calls,
+        said,
+        marks,
+        close: () => {
+          closeDialog();
+        },
+      };
     }
     const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -158,6 +192,39 @@ describe('Read barcodes', () => {
       report({ kind: 'open', page: 3, index: 0 });
       await settle();
       expect(calls).toStrictEqual([]);
+    });
+
+    it('SHOW marks that barcode’s place on ITS page — zero-based, the box the read gave — and closing the list takes the mark away', async () => {
+      const { report, marks, close } = await opened();
+      report({ kind: 'show', page: 2, index: 1 });
+      expect(marks).toStrictEqual([{ page: 1, box: { x0: 10, y0: 20, x1: 30, y1: 40 } }]);
+      // A ROW THAT IS NOT IN THE LIST marks nothing, rather than the first one.
+      report({ kind: 'show', page: 2, index: 9 });
+      expect(marks).toHaveLength(1);
+      close();
+      await settle();
+      expect(marks.at(-1)).toBeUndefined();
+      expect(marks).toHaveLength(2);
+    });
+
+    it('SAVE CONTACT names the barcode by its place at the version it was read, and a card that is not whole is said', async () => {
+      const first = await opened();
+      first.report({ kind: 'save-contact', page: 2, index: 0 });
+      await settle();
+      expect(first.calls).toStrictEqual([
+        { id: 'document.saveBarcodeContact', params: { docId: DOC, version: asDocVersion(3), page: 1, index: 0 } },
+      ]);
+      expect(first.said).toStrictEqual([]);
+      // A PAGE NEVER READ has no version, so nothing is sent.
+      first.calls.length = 0;
+      first.report({ kind: 'save-contact', page: 4, index: 0 });
+      await settle();
+      expect(first.calls).toStrictEqual([]);
+
+      const refused = await opened({ kind: 'not-a-contact' });
+      refused.report({ kind: 'save-contact', page: 2, index: 0 });
+      await settle();
+      expect(refused.said).toHaveLength(1);
     });
 
     it('READ ALL PAGES reads each page in turn and answers the dialog with every barcode, by its page', async () => {

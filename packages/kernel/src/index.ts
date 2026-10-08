@@ -175,6 +175,7 @@ export type { FlatFieldCandidate } from './flatFields.js';
 // A TYPE ONLY, for the reason above: `barcodeReader.ts` loads zxing-cpp's reader, which runs in
 // the engine host and never in main (ADR-0076).
 export type { FoundBarcode } from './barcodeReader.js';
+export { contactCardFileText } from './contactCard.js';
 // VALUES AND TYPES WITH NO ENGINE: the check itself is on `@monstera/kernel/engine` (ADR-0078).
 export {
   type AccessibilityRuleResult,

@@ -3,7 +3,7 @@ import type { AnnotationRect } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import { barcodeRect } from './barcodePlacement.js';
-import { readPageBarcodes } from './barcodeReader.js';
+import { type FoundBarcode, boxOfPosition, readPageBarcodes } from './barcodeReader.js';
 import { BARCODE_WRITE_FORMATS, type BarcodeWriteFormat, BarcodeTextRefusedError, writeBarcodePng } from './barcodeWriter.js';
 import { ENGINE_BARCODE_TEXT_MAX } from './host/engineChannels.js';
 import { mupdfWriter } from './mupdfWriter.js';
@@ -26,6 +26,10 @@ async function blankPage(width = 612, height = 792): Promise<Uint8Array> {
  * is the fixture the fit exists for, not one the unfitted placement also survives.
  */
 const WIDE_BOX: AnnotationRect = { x0: 60, y0: 500, x1: 560, y1: 640 };
+
+/** What was read, without where: the cases about the text and the symbology are not about the place. */
+const textsOf = (found: readonly FoundBarcode[]): { format: string; text: string }[] =>
+  found.map(({ format, text }) => ({ format, text }));
 
 async function placedAndRead(format: BarcodeWriteFormat, text: string, bytes?: Uint8Array) {
   const session = await mupdfWriter.open(bytes ?? (await blankPage()));
@@ -70,14 +74,36 @@ describe('barcodes — written, placed by the place-image command, and read back
   });
 
   it.each(WRITTEN)('reads %s back with exactly the text that was written', async (format, text) => {
-    expect(await placedAndRead(format, text)).toStrictEqual([{ format, text }]);
+    expect(textsOf(await placedAndRead(format, text))).toStrictEqual([{ format, text }]);
+  });
+
+  it('reports WHERE each symbol is, in the page’s display space, where a raster pixel or a flipped y would be elsewhere', async () => {
+    // A QR code fitted into WIDE_BOX is the 140-point square x 240–380, PDF y 500–640: display y 152–292 on this 792-point page.
+    const [found] = await placedAndRead('QRCode', 'where am I');
+    if (found === undefined) throw new Error('the symbol was not read');
+    expect(found.box.x0).toBeGreaterThanOrEqual(236);
+    expect(found.box.x1).toBeLessThanOrEqual(384);
+    expect(found.box.y0).toBeGreaterThanOrEqual(148);
+    expect(found.box.y1).toBeLessThanOrEqual(296);
+    expect(found.box.x1 - found.box.x0).toBeGreaterThan(90);
+    expect(found.box.y1 - found.box.y0).toBeGreaterThan(90);
+  });
+
+  it('boxOfPosition takes the extremes of a turned quadrilateral and divides by the scale', () => {
+    const turned = {
+      topLeft: { x: 40, y: 10 },
+      topRight: { x: 90, y: 40 },
+      bottomRight: { x: 60, y: 90 },
+      bottomLeft: { x: 10, y: 60 },
+    };
+    expect(boxOfPosition(turned, 2)).toStrictEqual({ x0: 5, y0: 5, x1: 45, y1: 45 });
   });
 
   it('reads a poster-sized page by fitting the raster under the read’s pixel budget, where 200 dpi would be refused', async () => {
     // A0 is 2384 × 3370 points: at 200 dpi that is 6,622 × 9,362 pixels, twice the engine's bound
     // and four times the read's.
     const found = await placedAndRead('QRCode', 'poster', await blankPage(2384, 3370));
-    expect(found).toStrictEqual([{ format: 'QRCode', text: 'poster' }]);
+    expect(textsOf(found)).toStrictEqual([{ format: 'QRCode', text: 'poster' }]);
   });
 
   it('CONTROL: a page with no barcode reads none', async () => {
@@ -103,8 +129,8 @@ describe('barcodes — written, placed by the place-image command, and read back
   it('EAN-13 as the dialog tells a person: up to 13 digits, a shorter number padded with zeros', async () => {
     // Measured 2026-09-17, zint 2.16.0 inside zxing-wasm 3.1.4: twelve digits or fewer are padded
     // on the left and given a check digit; thirteen must carry the right one; fourteen are refused.
-    expect(await placedAndRead('EAN13', '400638133393')).toStrictEqual([{ format: 'EAN13', text: '4006381333931' }]);
-    expect(await placedAndRead('EAN13', '40063813339')).toStrictEqual([{ format: 'EAN13', text: '0400638133390' }]);
+    expect(textsOf(await placedAndRead('EAN13', '400638133393'))).toStrictEqual([{ format: 'EAN13', text: '4006381333931' }]);
+    expect(textsOf(await placedAndRead('EAN13', '40063813339'))).toStrictEqual([{ format: 'EAN13', text: '0400638133390' }]);
     await expect(writeBarcodePng('4006381333932', 'EAN13')).rejects.toBeInstanceOf(BarcodeTextRefusedError);
     await expect(writeBarcodePng('40063813339312', 'EAN13')).rejects.toBeInstanceOf(BarcodeTextRefusedError);
   });

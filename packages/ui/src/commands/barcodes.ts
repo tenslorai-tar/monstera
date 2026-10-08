@@ -11,21 +11,30 @@ import {
   TOAST_BARCODES_READING,
   TOAST_BARCODE_LINK_NOT_OPENED,
   TOAST_BARCODE_LINK_STALE,
+  TOAST_CONTACT_NOT_SAVED,
+  TOAST_CONTACT_SAVED,
 } from '../messages/en.js';
 import { pdfjsPageOf } from '../pageNumbering.js';
 import { type CommandContext, RESULT_DIALOG, type UiCommand } from '../registries/commands.js';
 import type { DialogReports } from '../registries/dialogs.js';
 import type { TrackTask } from '../runningTask.js';
 import type { ShowToast } from '../toasts.js';
-import { confirmCopied } from './confirmWritten.js';
+import type { Spot } from '../accessibility/view.js';
+import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
+import { confirmCopied, confirmWritten } from './confirmWritten.js';
 import { type DocumentCommandDeps, hasDocument, reportProblem } from './documentCommands.js';
 
-/** What the barcode read needs: the client, the dialog, a toast and a task for the all-pages run. */
+/**
+ * What the barcode read needs: the client, the dialog, a toast and a task for the all-pages run — and `mark`, which shows
+ * a place on the page (`undefined` takes the mark away). The shell paints the mark where the accessibility tools' places
+ * are painted and takes it away with the list, so the command only says where and when.
+ */
 export interface ReadBarcodesDeps {
   readonly client: ContractClient;
   readonly ask: (id: string, props: unknown, onUpdate?: DialogReports) => Promise<unknown>;
   readonly toast: ShowToast;
   readonly track: TrackTask;
+  readonly mark: (spot: Spot | undefined) => void;
 }
 
 /** One barcode as the dialog lists it: where it was read, by the page a person reads and its place on that page. */
@@ -34,6 +43,8 @@ interface ListedBarcode {
   readonly text: string;
   readonly page: number;
   readonly index: number;
+  /** Where the symbol is on its page, in display space at scale 1: what the mark draws. */
+  readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
 }
 
 /**
@@ -79,10 +90,14 @@ export function readBarcodesCommand(deps: ReadBarcodesDeps): UiCommand {
         if (copied.ok && copied.value.copied) confirmCopied({ toast: deps.toast });
       };
 
+      // THE MARK GOES WITH THE LIST: closed by any route, the list is gone and the page carries no mark for it.
+      const closed = (): void => {
+        deps.mark(undefined);
+      };
       // Voided for `showWordCount`'s reason: the dialog's answers are reports, never a result this waits for.
       void deps.ask(
         PAGE_BARCODES_DIALOG_ID,
-        { kind: 'read', page: shown, all: false, pageCount, barcodes: listed, truncated: answer.value.truncated },
+        { kind: 'read', page: shown, all: false, pageCount, barcodes: rowsOf(listed), truncated: answer.value.truncated },
         (report, reply) => {
           const parsed = PAGE_BARCODES_REPORT.safeParse(report);
           if (!parsed.success) return;
@@ -91,6 +106,13 @@ export function readBarcodesCommand(deps: ReadBarcodesDeps): UiCommand {
             void copy(what.text);
           } else if (what.kind === 'copy-all') {
             void copy(listed.map((barcode) => textToCopy(barcode.text)).join('\n\n'));
+          } else if (what.kind === 'show') {
+            const at = listed.find((barcode) => barcode.page === what.page && barcode.index === what.index);
+            if (at !== undefined) deps.mark({ page: at.page - 1, box: at.box });
+          } else if (what.kind === 'save-contact') {
+            const version = versions.get(what.page);
+            if (version === undefined) return;
+            void saveContact(deps, { docId, version, page: what.page - 1, index: what.index });
           } else if (what.kind === 'open') {
             const version = versions.get(what.page);
             if (version === undefined) return;
@@ -107,13 +129,51 @@ export function readBarcodesCommand(deps: ReadBarcodesDeps): UiCommand {
               if (all === undefined) return;
               listed = all.barcodes;
               for (const [at, version] of all.versions) versions.set(at, version);
-              reply({ kind: 'read', page: shown, all: true, pageCount, barcodes: all.barcodes, truncated: all.truncated });
+              reply({ kind: 'read', page: shown, all: true, pageCount, barcodes: rowsOf(all.barcodes), truncated: all.truncated });
             });
           }
         },
-      );
+      ).then(closed, closed);
     },
   };
+}
+
+/** The rows the dialog lists: what a row shows and names itself by. WHERE a symbol is stays with the command, which draws the mark. */
+function rowsOf(list: readonly ListedBarcode[]): readonly Omit<ListedBarcode, 'box'>[] {
+  return list.map(({ format, text, page, index }) => ({ format, text, page, index }));
+}
+
+/**
+ * *Save contact*: main reads the card from the document at the version the list was read at and writes it where the
+ * person picks. Every way there was nothing to save is said, because a button that did nothing is the wired-tools defect.
+ */
+async function saveContact(
+  deps: ReadBarcodesDeps,
+  place: { readonly docId: DocId; readonly version: DocVersion; readonly page: number; readonly index: number },
+): Promise<void> {
+  const saved = await deps.client['document.saveBarcodeContact'](place);
+  if (!saved.ok) {
+    reportProblem(deps, saved.error);
+    return;
+  }
+  switch (saved.value.kind) {
+    case 'copied':
+      confirmWritten(deps, TOAST_CONTACT_SAVED, saved.value.written);
+      return;
+    case 'cancelled':
+      return;
+    case 'write-failed':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'write-failed' });
+      return;
+    case 'refused':
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, { outcome: 'contested' });
+      return;
+    case 'stale':
+    case 'no-such-barcode':
+    case 'not-a-contact':
+      deps.toast('problem', TOAST_CONTACT_NOT_SAVED);
+      return;
+  }
 }
 
 /**

@@ -26,6 +26,8 @@ import { rasterScale } from './rasterScale.js';
 export interface FoundBarcode {
   readonly format: string;
   readonly text: string;
+  /** Where it is on the page, in the display space at scale 1 (see {@link boxOfPosition}). */
+  readonly box: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
 }
 
 /**
@@ -79,5 +81,29 @@ export async function readPageBarcodes(session: MupdfSession, page: number): Pro
   // stands between the engine's raster and the decoder.
   const { rgba, width, height } = await rasterisePageRgba(session, page, scale);
   const results = await readBarcodes({ data: rgba, width, height, colorSpace: 'srgb' }, { formats: [] });
-  return results.filter((result) => result.isValid).map((result) => ({ format: result.format, text: result.text }));
+  return results
+    .filter((result) => result.isValid)
+    .map((result) => ({ format: result.format, text: result.text, box: boxOfPosition(result.position, scale) }));
+}
+
+/**
+ * The upright box around a symbol's four corners, from the raster's pixels to the page's display space at scale 1.
+ *
+ * The raster is the page's display box drawn at `scale` pixels per point, so a pixel divided by it is a point from the
+ * page's top left, y down — the space the text layer and the links are reported in. A symbol turned on the page has a
+ * turned quadrilateral; its bounding box is what a highlight draws.
+ */
+export function boxOfPosition(
+  position: Readonly<Record<'topLeft' | 'topRight' | 'bottomRight' | 'bottomLeft', { readonly x: number; readonly y: number }>>,
+  scale: number,
+): { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } {
+  const corners = [position.topLeft, position.topRight, position.bottomRight, position.bottomLeft];
+  const xs = corners.map((corner) => corner.x);
+  const ys = corners.map((corner) => corner.y);
+  return {
+    x0: Math.min(...xs) / scale,
+    y0: Math.min(...ys) / scale,
+    x1: Math.max(...xs) / scale,
+    y1: Math.max(...ys) / scale,
+  };
 }

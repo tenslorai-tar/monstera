@@ -2378,15 +2378,30 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
           },
     [accessibilityDeps, accessibilityView?.open, store],
   );
-  const spotlights = useMemo<ReadonlyMap<number, readonly Spot[]> | undefined>(
-    () => (marked === undefined ? undefined : new Map([[marked.spot.page, [marked.spot]]])),
-    [marked],
-  );
+  // THE BARCODE LIST'S MARK (item 5.2): the place of the barcode a row was pressed for, drawn through the same spotlight as
+  // the accessibility tools' places and taken away when the list closes (`readBarcodesCommand`). `arrival` changes on every
+  // press, so pressing the same row again after scrolling away takes the reader back to it.
+  const [barcodeMark, setBarcodeMark] = useState<{ readonly spot: Spot; readonly arrival: number } | undefined>(undefined);
+  const markBarcode = useCallback((spot: Spot | undefined) => {
+    setBarcodeMark((held) => (spot === undefined ? undefined : { spot, arrival: (held?.arrival ?? 0) + 1 }));
+  }, []);
+  const spotlights = useMemo<ReadonlyMap<number, readonly Spot[]> | undefined>(() => {
+    const spots = [marked?.spot, barcodeMark?.spot].filter((spot): spot is Spot => spot !== undefined);
+    if (spots.length === 0) return undefined;
+    const byPage = new Map<number, Spot[]>();
+    for (const spot of spots) byPage.set(spot.page, [...(byPage.get(spot.page) ?? []), spot]);
+    return byPage;
+  }, [barcodeMark, marked]);
   const markedArrival = marked?.arrival;
   const markedPage = marked?.spot.page;
   useEffect(() => {
     if (markedArrival !== undefined && markedPage !== undefined) navigator.jumpTo(markedPage);
   }, [markedArrival, markedPage, navigator]);
+  const barcodeArrival = barcodeMark?.arrival;
+  const barcodePage = barcodeMark?.spot.page;
+  useEffect(() => {
+    if (barcodeArrival !== undefined && barcodePage !== undefined) navigator.jumpTo(barcodePage);
+  }, [barcodeArrival, barcodePage, navigator]);
 
   /**
    * The review's word, painted on the page through the find highlight (ADR-0156's 2026-10-04 correction): the word as
@@ -3194,7 +3209,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
         // THE TWO REPORTS ARE ONE TOOL'S (ADR-0183, ADR-0189): each command opens it in the document panel at its own section.
         inspectPageStructureCommand({ show: showReadingOrder }),
         accessibilityCheckCommand({ show: showAccessibilityCheck }),
-        readBarcodesCommand({ client, ask, toast, track }),
+        readBarcodesCommand({ client, ask, toast, track, mark: markBarcode }),
         // THE REVIEW IS THE PANEL'S (ADR-0156): the command opens the Spelling tab and starts it.
         checkSpellingCommand({ start: startSpelling }),
         revealLogCommand({ client }),
@@ -3511,6 +3526,7 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
       // THE KEYS A PERSON CHOSE, so a change in the shortcuts dialog rebuilds the registry and the new key works at once.
       chosenShortcuts,
       chooseTool,
+      markBarcode,
       holdTool,
       windowEdit,
       startSignature,

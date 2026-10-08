@@ -117,6 +117,7 @@ import {
   type PageKind,
   type TextLayerLine,
   type TextMatch,
+  contactCardFileText,
   countPageWords,
   findInPages,
   plainTextOf,
@@ -622,6 +623,18 @@ export function suggestedFormDataName(name: string, format: FormDataFormat): str
 export function suggestedTextName(name: string): string {
   const dot = name.lastIndexOf('.');
   return `${dot <= 0 ? name : name.slice(0, dot)}.txt`;
+}
+
+/**
+ * The name a barcode's contact card is offered under: `report.pdf` becomes `report contact.vcf`.
+ *
+ * **Suffixed, unlike a text export**, for the snapshot's and the form-data file's reason: a contact card is something the
+ * document carries, not the document's words, and a bare `report.vcf` would look like a conversion of the whole file. The
+ * extension is replaced for {@link pageImageName}'s reason.
+ */
+export function suggestedContactName(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return `${dot <= 0 ? name : name.slice(0, dot)} contact.vcf`;
 }
 
 /** The Office formats an export writes (ADR-0072). The format IS the extension. */
@@ -2440,6 +2453,8 @@ export interface DocumentCommandsParts {
    * document's name so the suggested one and the filter share an extension.
    */
   readonly pickText: (sourceName: string) => Promise<string | null>;
+  /** Where a contact card read from a barcode goes: the save dialog narrowed to `.vcf`, given the document's name. */
+  readonly pickContact: (sourceName: string) => Promise<string | null>;
   /**
    * Layout-preserving text: the document's current bytes in, text chunks out,
    * from the contained `pdftotext` (ADR-0071) — or `null` where none can run, and
@@ -2477,6 +2492,19 @@ export interface DocumentCommandsParts {
   readonly directory: PickDirectory;
   /** A page edited in another application. See {@link ExternalEditSource}. */
   readonly externalEdit: ExternalEditSource;
+}
+
+/** What saving a barcode's contact card produced: a copy's outcomes, and the three ways there was nothing to save. */
+export type SaveContactOutcome =
+  | CopyOutcome
+  | { readonly kind: 'stale' }
+  | { readonly kind: 'no-such-barcode' }
+  | { readonly kind: 'not-a-contact' };
+
+/** One chunk as the async source a streamed write takes. */
+async function* oneChunk(bytes: Uint8Array): AsyncIterable<Uint8Array> {
+  await Promise.resolve();
+  yield bytes;
 }
 
 /**
@@ -2634,6 +2662,7 @@ export class DocumentCommands {
   readonly #pageImage: DocumentPageImageReader;
   readonly #word: DocumentWordExport;
   readonly #pickText: (sourceName: string) => Promise<string | null>;
+  readonly #pickContact: (sourceName: string) => Promise<string | null>;
   readonly #layoutText: LayoutTextSource | null;
   readonly #pdfa: PdfaSource | null;
   readonly #officeImport: OfficeImport | null;
@@ -2716,6 +2745,7 @@ export class DocumentCommands {
     this.#pageImage = parts.pageImage;
     this.#word = parts.word;
     this.#pickText = parts.pickText;
+    this.#pickContact = parts.pickContact;
     this.#layoutText = parts.layoutText;
     this.#pdfa = parts.pdfa;
     this.#officeImport = parts.officeImport;
@@ -3354,6 +3384,46 @@ export class DocumentCommands {
     });
 
     return { version, barcodes: value.barcodes, truncated: value.truncated };
+  }
+
+  /**
+   * A contact card read from one barcode, written to a `.vcf` the person picks.
+   *
+   * ## The renderer names the barcode, and main reads the text from the document
+   *
+   * `document.openBarcodeLink`'s rule: the version and the place identify the symbol, the text never crosses from the
+   * renderer, so what is written is what the document says. A version that has moved is `stale` and nothing is asked or
+   * written; a symbol that is not a complete vCard is `not-a-contact`, said before the dialog so a person is not asked to
+   * name a file for something that cannot be saved.
+   *
+   * It touches no document state: no command, no version, no log entry.
+   *
+   * @throws `DocumentNotOpenError` before any dialog, for `saveCopy`'s reason.
+   */
+  async saveBarcodeContact(
+    docId: DocId,
+    version: DocVersion,
+    page: number,
+    index: number,
+  ): Promise<SaveContactOutcome | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'save a contact');
+
+    const read = await this.pageBarcodes(docId, page);
+    if (read.version !== version) return { kind: 'stale' };
+    const text = read.barcodes[index]?.text;
+    if (text === undefined) return { kind: 'no-such-barcode' };
+    const file = contactCardFileText(text);
+    if (file === undefined) return { kind: 'not-a-contact' };
+
+    const destination = await this.#pickContact(suggest);
+    if (destination === null) return undefined;
+    return writeStreamedDocument(
+      this.#save.deps,
+      this.#copy.checkTarget,
+      () => Promise.resolve(oneChunk(new TextEncoder().encode(file))),
+      destination,
+    );
   }
 
   /**

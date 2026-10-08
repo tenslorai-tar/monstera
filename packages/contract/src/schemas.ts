@@ -758,6 +758,13 @@ export const DOCUMENT_ACCESS_VALUES = [1, 2, 4, 6] as const;
 /** One of {@link DOCUMENT_ACCESS_VALUES}. */
 export type DocumentAccess = (typeof DOCUMENT_ACCESS_VALUES)[number];
 
+/**
+ * A box on a page in its display space at scale 1 (points, origin at the top left, y down): the space the text layer, the
+ * links and an accessibility spot are reported in. One declaration for the engine host's wire and the renderer's channel,
+ * so the two cannot differ about a box.
+ */
+export const displayBoxSchema = z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() }).strict();
+
 /** How many failures of one accessibility rule show their place on the page (ADR-0183). A bound, not a measurement. */
 export const MAX_ACCESSIBILITY_SPOTS = 32;
 

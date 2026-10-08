@@ -1,5 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
+import { useState } from 'react';
 
 import {
   PAGE_BARCODES_COPY,
@@ -25,6 +26,8 @@ import {
   PAGE_BARCODES_PAGE,
   PAGE_BARCODES_READ_ALL,
   PAGE_BARCODES_REFUSED,
+  PAGE_BARCODES_SAVE_CONTACT,
+  PAGE_BARCODES_SHOW,
   PAGE_BARCODES_TRUNCATED,
   PAGE_BARCODES_TYPE,
 } from '../messages/en.js';
@@ -73,6 +76,8 @@ const KIND_LABELS = {
  */
 export default function PageBarcodesBody(props: PageBarcodesProps & DialogAnswering<PageBarcodesReport>): ReactElement {
   const { _, i18n } = useLingui();
+  // THE ROW LAST SHOWN ON THE PAGE, for its mark in the list; the mark on the page itself is the command's.
+  const [marked, setMarked] = useState<number | undefined>(undefined);
   const shown = new Intl.NumberFormat(i18n.locale).format(props.page);
 
   if (props.kind === 'refused') {
@@ -127,7 +132,7 @@ export default function PageBarcodesBody(props: PageBarcodesProps & DialogAnswer
                 const number = at + 1;
                 return (
                   // THE POSITION IS THE KEY: two identical labels on one page are two barcodes.
-                  <tr key={at}>
+                  <tr key={at} data-marked={marked === at ? 'true' : undefined}>
                     {all ? <td>{new Intl.NumberFormat(i18n.locale).format(barcode.page)}</td> : null}
                     <td>{friendlyFormat(barcode.format)}</td>
                     <td className="m-page-barcodes__content">
@@ -139,6 +144,27 @@ export default function PageBarcodesBody(props: PageBarcodesProps & DialogAnswer
                       )}
                     </td>
                     <td className="m-page-barcodes__actions">
+                      <Button
+                        label={PAGE_BARCODES_SHOW}
+                        values={{ number }}
+                        icon="Focus"
+                        iconOnly
+                        onClick={() => {
+                          setMarked(at);
+                          update({ kind: 'show', page: barcode.page, index: barcode.index });
+                        }}
+                      />
+                      {content.kind === 'contact' ? (
+                        <Button
+                          label={PAGE_BARCODES_SAVE_CONTACT}
+                          values={{ number }}
+                          icon="Save"
+                          iconOnly
+                          onClick={() => {
+                            update({ kind: 'save-contact', page: barcode.page, index: barcode.index });
+                          }}
+                        />
+                      ) : null}
                       {content.kind === 'link' ? (
                         <Button
                           label={PAGE_BARCODES_OPEN}

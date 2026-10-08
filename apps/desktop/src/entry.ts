@@ -24,6 +24,7 @@ import {
   createSnapshotPicker,
   createSettingsOpener,
   createSettingsPicker,
+  createContactPicker,
   createTextPicker,
 } from './destinationPicker.js';
 import { createDocumentPicker } from './documentPicker.js';
@@ -279,6 +280,8 @@ startShell(() => {
     pickFormData: createFormDataPicker(),
     // The fifth save dialog, beside its siblings for the reason above.
     pickText: createTextPicker(),
+    // The contact card a barcode carries, saved as `.vcf`: beside the text dialog it is narrowed from.
+    pickContact: createContactPicker(),
     pickSettingsFile: createSettingsPicker(),
     // AND ITS OPEN DIALOG, for *Import settings…*, beside it.
     openSettingsFile: createSettingsOpener(),
