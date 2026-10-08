@@ -250,7 +250,7 @@ is not available.
 - [ ] **Save a copy…** · `document.save-copy` · Shows: a toast · Help: *Save a copy under another name*
 - [ ] **Show or hide the properties panel** · `view.toggle-context-panel` · Shows: on screen · Help: *Use the properties panel*
 - [ ] **Studio layout** · `view.layout-studio` · Shows: on screen · Help: *Choose a layout: Ribbon, Studio or Focus*
-- [ ] **Restore a previous version…** · `document.restore-version` · Shows: a toast
+- [ ] **Restore a previous version…** · `document.restore-version` · Shows: a toast · Help: *Save your changes*
 - [ ] **Actual size** · `view.actual-size` · Shows: on screen
 - [ ] **Autoscroll** · `view.autoscroll` · Shows: on screen · Help: *Move between pages*
 - [ ] **Cloud storage…** · `cloud.storage` · Shows: on screen · Help: *Open and save PDFs in OneDrive or Google Drive*

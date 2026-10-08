@@ -152,6 +152,8 @@ function client(): { readonly client: ContractClient; readonly sent: Sent[] } {
     if (id === 'window.closeListening') return Promise.resolve(ok({ acknowledged: true }));
     // EVERY OPEN ASKS whether the file can be saved over (cloud-4 7b).
     if (id === 'document.fileAccess') return Promise.resolve(ok({ access: 'writable' as const }));
+    // AND NO OLD `.bak` FILES TO OFFER A MOVE OF (ADR-0198).
+    if (id === 'document.legacyBackups') return Promise.resolve(ok({ kind: 'none' as const }));
     // E3's prompt asks once per mount; not due, so no banner sits over the tabs these cases drive.
     if (id === 'app.reviewPrompt') return Promise.resolve(ok({ due: false }));
     throw new Error(`this fixture has no answer for ${id}`);
