@@ -997,6 +997,75 @@ describe('a host death is reported, and every document is put back through its o
     expect(surface.reported).toHaveLength(3);
     expect(surface.reported[1]?.detail).toContain('reopen failed');
   });
+
+  describe('a command that ends the engine on its deadline three times is barred, and the document is not (ADR-0221)', () => {
+    const slow = (during: DocId): HostEnding => ({
+      termination: { code: 'deadline', detail: 'the call ran past its deadline' },
+      during,
+      last: during,
+    });
+
+    /** One command running when the host ends: what `DocumentCommands.execute` does around the bus. */
+    async function loop(engine: EngineSessions, service: DocumentService, docId: DocId, kind: string): Promise<void> {
+      engine.commandBegan(docId, kind);
+      await onEngineHostEnded(engine, slow(docId), surfaces(service));
+      engine.commandEnded(docId, kind, false);
+    }
+
+    it('bars that command at the third ending and leaves the document, its session and every other command alone', async () => {
+      const engine = new EngineSessions();
+      const { service, first } = await twoOpenDocuments(engine);
+
+      await loop(engine, service, first, 'watermarkPages');
+      await loop(engine, service, first, 'watermarkPages');
+      expect(engine.commandBarred(first, 'watermarkPages')).toBe(false);
+      await loop(engine, service, first, 'watermarkPages');
+
+      expect(engine.commandBarred(first, 'watermarkPages')).toBe(true);
+      // THE DOCUMENT IS NOT POISONED, where two deadline endings used to poison it, and it was rebuilt each time.
+      expect(engine.poisoned(first)).toBeUndefined();
+      expect(engine.sessions(first)).toBeDefined();
+      // Only that command, only on that document.
+      expect(engine.commandBarred(first, 'rotatePages')).toBe(false);
+      await service.close(first);
+    });
+
+    it('CONTROL: a deadline with no command running, and a crash during one, still count against the document and poison it at two', async () => {
+      const engine = new EngineSessions();
+      const { service, first, second } = await twoOpenDocuments(engine);
+
+      // A deadline during a read: no command is running.
+      await onEngineHostEnded(engine, slow(first), surfaces(service));
+      await onEngineHostEnded(engine, slow(first), surfaces(service));
+      expect(engine.poisoned(first)).toBe(2);
+
+      // A crash during a command is the document's failure, as Decision 9a says.
+      engine.commandBegan(second, 'watermarkPages');
+      await onEngineHostEnded(engine, ended(second), surfaces(service));
+      await onEngineHostEnded(engine, ended(second), surfaces(service));
+      expect(engine.poisoned(second)).toBe(2);
+      expect(engine.commandBarred(second, 'watermarkPages')).toBe(false);
+    });
+
+    it('a success clears that command’s strikes, and closing the document clears the ledger', async () => {
+      const engine = new EngineSessions();
+      const { service, first } = await twoOpenDocuments(engine);
+
+      await loop(engine, service, first, 'watermarkPages');
+      await loop(engine, service, first, 'watermarkPages');
+      engine.commandBegan(first, 'watermarkPages');
+      engine.commandEnded(first, 'watermarkPages', true);
+      await loop(engine, service, first, 'watermarkPages');
+      await loop(engine, service, first, 'watermarkPages');
+      // Two, a success, two: never three in a row.
+      expect(engine.commandBarred(first, 'watermarkPages')).toBe(false);
+
+      await loop(engine, service, first, 'watermarkPages');
+      expect(engine.commandBarred(first, 'watermarkPages')).toBe(true);
+      await service.close(first);
+      expect(engine.commandBarred(first, 'watermarkPages')).toBe(false);
+    });
+  });
 });
 
 describe('the SERVICE releases the entry, because nothing else is told a document closed', () => {

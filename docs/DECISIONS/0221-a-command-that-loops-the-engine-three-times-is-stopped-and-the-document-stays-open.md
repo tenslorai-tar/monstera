@@ -45,7 +45,7 @@ cleanly.
 ## Consequences
 
 - `engine-sessions` gains `commandBegan`, `commandEnded` and `commandBarred`; `documentCommands.ts` calls them around the
-  bus in `execute` and `redo`.
+  bus in `execute`. Undo and redo re-apply a logged entry rather than send a new command, and are not counted.
 - A new failure code in the contract for `document.execute` and `document.redo`.
 - `proof:` is a unit case beside `engineSessions.test.ts` (three deadlines bar one command and nothing else; a crash still
   poisons at two; a success clears the strikes; closing clears the ledger).

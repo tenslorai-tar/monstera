@@ -97,6 +97,8 @@ export interface FailureDetails {
   readonly 'text-not-writable': { readonly characters: string };
   /** Which step of a PDFium rewrite refused, and what `FPDF_GetLastError` answered at that moment. */
   readonly 'edit-refused': { readonly step: EditStep; readonly engineError: number };
+  /** The kind of the command the engine stopped three times on, and which main will not send again (ADR-0221). */
+  readonly 'command-looped': { readonly command: string };
 }
 
 /** The codes of `C` that carry no detail, as one member — or nothing, when every code of `C` carries one. */

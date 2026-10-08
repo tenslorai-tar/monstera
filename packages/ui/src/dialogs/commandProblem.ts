@@ -57,6 +57,9 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     z.object({ code: z.literal('document-not-open') }).strict(),
     z.object({ code: z.literal('document-busy') }).strict(),
     z.object({ code: z.literal('document-poisoned') }).strict(),
+    // AN ACTION THE ENGINE WAS STOPPED ON THREE TIMES (ADR-0221): the document is open and its changes are kept; the
+    // sentence says so, and the action is the reference.
+    z.object({ code: z.literal('command-looped'), detail: FAILURE_DETAIL_SCHEMAS['command-looped'] }).strict(),
     z.object({ code: z.literal('stale-target') }).strict(),
     z.object({ code: z.literal('engine-unavailable') }).strict(),
     z.object({ code: z.literal('raster-too-large') }).strict(),

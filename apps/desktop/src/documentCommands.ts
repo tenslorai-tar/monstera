@@ -335,6 +335,27 @@ export interface EngineSessionSource {
    * ADR-0171). Read by everything that opens the document's bytes in a host of its own: a PDFium command and Optimize.
    */
   readonly opensWith: (docId: DocId) => HeldPassword | undefined;
+  /**
+   * The looping-command ledger (ADR-0221): which command kind the host is running for a document, and whether one has
+   * looped the engine often enough to be refused. The bound stays with the supervisor, for `poisoned`'s reason.
+   */
+  readonly commandBegan: (docId: DocId, kind: string) => void;
+  readonly commandEnded: (docId: DocId, kind: string, succeeded: boolean) => void;
+  readonly commandBarred: (docId: DocId, kind: string) => boolean;
+}
+
+/**
+ * A command the document will not run again: it ended the engine on three attempts (ADR-0221). The document is open,
+ * its edits are safe, and every other command still works.
+ */
+export class CommandLoopedError extends Error {
+  override readonly name = 'CommandLoopedError';
+  constructor(
+    readonly docId: DocId,
+    readonly command: string,
+  ) {
+    super(`Command ${command} on document ${docId.slice(0, 8)}… ended the engine three times and is not run again.`);
+  }
 }
 
 /**
@@ -3371,15 +3392,29 @@ export class DocumentCommands {
         }
       }
 
-      const { trimmed } = await this.#bus.execute<K>(
-        sessions,
-        context,
-        command,
-        // THE IDS COME FROM THE CONTRACT, not from a field read here.
-        // `sourceIdsOf` is the one answer to *which documents does this payload
-        // name*, and the payload is the contract's (ADR-0040 Decision 4).
-        this.#byteImage(docId, sourceIdsOf(command)),
-      );
+      // A COMMAND THAT HAS ENDED THE ENGINE THREE TIMES IS NOT SENT AGAIN (ADR-0221), and the refusal is decided here,
+      // before the host, so the fourth attempt costs nothing. Read inside the lane for the poison check's reason.
+      if (this.#engine.commandBarred(docId, command.kind)) throw new CommandLoopedError(docId, command.kind);
+
+      this.#engine.commandBegan(docId, command.kind);
+      let trimmed: Awaited<ReturnType<CommandBus['execute']>>['trimmed'];
+      try {
+        ({ trimmed } = await this.#bus.execute<K>(
+          sessions,
+          context,
+          command,
+          // THE IDS COME FROM THE CONTRACT, not from a field read here.
+          // `sourceIdsOf` is the one answer to *which documents does this payload
+          // name*, and the payload is the contract's (ADR-0040 Decision 4).
+          this.#byteImage(docId, sourceIdsOf(command)),
+        ));
+      } catch (error) {
+        this.#engine.commandEnded(docId, command.kind, false);
+        // The ending that made this call fail may be the third: say so now rather than on the next attempt.
+        if (this.#engine.commandBarred(docId, command.kind)) throw new CommandLoopedError(docId, command.kind);
+        throw error;
+      }
+      this.#engine.commandEnded(docId, command.kind, true);
       // READ AFTER THE BUS, INSIDE THE LANE, for the reason `Versioned` reads
       // the version there: the command rewrote the canonical image, and the
       // length the renderer needs is the new one. Reading it outside the lane

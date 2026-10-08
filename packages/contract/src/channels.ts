@@ -2232,6 +2232,9 @@ export const channels = {
       'replace-moves-line',
       'edit-refused',
       'breaks-signatures',
+      // `command-looped` IS A COMMAND THE ENGINE WAS STOPPED ON THREE TIMES (ADR-0221): main will not send it again for
+      // this document. The document is open and its changes are kept; the person is told which action could not be done.
+      'command-looped',
       ...SERVICE_PROBLEMS,
     ],
   ),

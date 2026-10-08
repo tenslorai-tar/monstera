@@ -2706,6 +2706,8 @@ export const PROBLEM_TITLE = messageKey('dialog.command-problem.title');
 export const PROBLEM_NOT_OPEN = messageKey('dialog.command-problem.not-open');
 export const PROBLEM_BUSY = messageKey('dialog.command-problem.busy');
 export const PROBLEM_POISONED = messageKey('dialog.command-problem.poisoned');
+export const PROBLEM_COMMAND_LOOPED = messageKey('dialog.command-problem.command-looped');
+export const PROBLEM_COMMAND_LABEL = messageKey('dialog.command-problem.command-label');
 export const PROBLEM_STALE_TARGET = messageKey('dialog.command-problem.stale-target');
 export const PROBLEM_ENGINE_UNAVAILABLE = messageKey('dialog.command-problem.engine-unavailable');
 export const PROBLEM_RASTER_TOO_LARGE = messageKey('dialog.command-problem.raster-too-large');
@@ -5846,6 +5848,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // to close the window — which is the one action that loses them.
   [PROBLEM_POISONED]:
     'Monstera can no longer work on this document. Your changes are still open and unsaved — save them somewhere else, or close and reopen the file to start again.',
+  // THE DOCUMENT IS FINE, ONE ACTION IS NOT (ADR-0221): said in that order, because the first thing a person fears is the
+  // loss of their changes. The action itself is named beside it by `PROBLEM_COMMAND_LABEL`.
+  [PROBLEM_COMMAND_LOOPED]:
+    'Monstera could not do this action on this document. It stopped working each time it tried, so it will not try again. The document is still open and your changes are safe. Everything else still works.',
+  [PROBLEM_COMMAND_LABEL]: 'Action',
   // SAYS NOTHING CHANGED FIRST, then what to do. The person clicked delete on a
   // row and the row is still there, so the sentence they need is that the
   // document is untouched — not an explanation of versions, which is ours.
