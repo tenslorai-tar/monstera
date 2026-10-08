@@ -34,12 +34,20 @@ function runText(text: string): string {
   return xmlText(text.replace(/[\r\n]+/gu, ' '));
 }
 
+/**
+ * The furthest a coordinate is written from the slide's origin, in EMU: two of PowerPoint's largest slides (56 inches a
+ * side, ADR-0072). A page's own numbers are the document's and a hostile one can state 1e30, which `Math.round` prints as
+ * `1.27e+34`: not an integer, so a file PowerPoint repairs or refuses. Nothing further than a slide beyond the slide is
+ * ever seen, so the clamp changes nothing a person could look at.
+ */
+const EMU_LIMIT = 2 * 4032 * EMU_PER_POINT;
+
 function emu(points: number): string {
-  return String(Math.round(points * EMU_PER_POINT));
+  return String(Math.max(-EMU_LIMIT, Math.min(EMU_LIMIT, Math.round(points * EMU_PER_POINT))));
 }
 
 function nonNegative(points: number): string {
-  return String(Math.max(0, Math.round(points * EMU_PER_POINT)));
+  return String(Math.max(0, Math.min(EMU_LIMIT, Math.round(points * EMU_PER_POINT))));
 }
 
 function turn(degrees: number): string {

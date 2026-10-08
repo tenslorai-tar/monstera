@@ -436,6 +436,33 @@ describe('the page is fitted to the deck, by one factor for every object', () =>
   });
 });
 
+describe('a document’s own numbers cannot make the file one PowerPoint refuses', () => {
+  const deck = slideSize({ width: 612, height: 792 });
+
+  it('writes integers inside PowerPoint’s bounds for a coordinate of 1e30, and CONTROL: an ordinary one is written exactly', async () => {
+    const huge: ContentPath = {
+      index: 1,
+      bounds: { left: 0, bottom: 0, right: 1e30, top: 1e30 },
+      segments: [
+        { kind: 'move', x: 0, y: 0 },
+        { kind: 'line', x: 1e30, y: 1e30 },
+      ],
+      fill: null,
+      stroke: { r: 0, g: 0, b: 0, a: 255, width: 1e30, cap: 'butt', join: 'miter' },
+    };
+    const build = buildSlide(page({ paths: [huge, RULE] }), deck);
+    const files = await written([{ size: { width: 612, height: 792 }, slide: embedded(build) }]);
+    const xml = strFromU8(files['ppt/slides/slide1.xml'] ?? new Uint8Array());
+    // No attribute is in exponent form, and none passes the clamp.
+    expect(xml).not.toMatch(/="[-\d.]*e[+-]?\d+"/u);
+    const numbers = [...xml.matchAll(/ (?:x|y|cx|cy|w)="(-?\d+)"/gu)].map((match) => Math.abs(Number(match[1])));
+    expect(Math.max(...numbers)).toBe(2 * 4032 * 12_700);
+    // The ordinary rule is untouched: 2 pt wide, 468 pt long.
+    expect(xml).toContain(`<a:ln w="${String(2 * 12_700)}"`);
+    expect(xml).toContain(`cx="${String(468 * 12_700)}"`);
+  });
+});
+
 describe('names', () => {
   it('turns a PDF base font name into the family PowerPoint knows', () => {
     expect(typefaceOf('ABCDEF+Calibri-Bold')).toBe('Calibri');
