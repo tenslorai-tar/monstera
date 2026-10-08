@@ -9,7 +9,10 @@ import {
   SPELLING_ALSO,
   SPELLING_CHANGE_TO,
   SPELLING_CLEAN,
+  SPELLING_CLEAN_TITLE,
   SPELLING_DONE,
+  SPELLING_EMPTY_TITLE,
+  SPELLING_FINISHED,
   SPELLING_IGNORE,
   SPELLING_IGNORE_ALL,
   SPELLING_INTRO,
@@ -17,6 +20,7 @@ import {
   SPELLING_NO_SUGGESTIONS,
   SPELLING_OPTION_COMMENTS,
   SPELLING_OPTION_FIELDS,
+  SPELLING_PROGRESS,
   SPELLING_READING,
   SPELLING_REFUSED,
   SPELLING_REPLACE,
@@ -24,6 +28,7 @@ import {
   SPELLING_START,
   SPELLING_STOP,
   SPELLING_SUGGESTIONS,
+  SPELLING_SUGGESTIONS_HEADING,
   SPELLING_UNAVAILABLE,
   SPELLING_WHERE_COMMENT,
   SPELLING_WHERE_FIELD,
@@ -32,6 +37,7 @@ import {
 } from './messages/en.js';
 import { Button } from './primitives/Button.js';
 import { Input } from './primitives/Input.js';
+import { Problem } from './primitives/Problem.js';
 import { SPELLING_COMMENTS_SETTING, SPELLING_FIELDS_SETTING } from './settings/editing.js';
 import type { SettingsStore } from './settingsStore.js';
 import { activeLanguage, languageTitle } from './spelling/languages.js';
@@ -152,19 +158,33 @@ export function SpellingPanel({ deps, store, settings }: SpellingPanelProps): Re
     </p>
   );
 
+  /** The panel's head: where the review is, and the language it checks against (the owner, 2026-10-08). */
+  const head = (progress: string, where: string): ReactElement => (
+    <header className="m-spelling__head">
+      <div className="m-spelling__head-line">
+        <p className="m-spelling__progress">{progress}</p>
+        <p className="m-spelling__tongue">{i18n._(languageTitle(activeLanguage()))}</p>
+      </div>
+      <p className="m-spelling__where">{where}</p>
+    </header>
+  );
+
   let body: ReactElement;
+  let header: ReactElement | null = null;
   if (review === undefined) {
+    // THE EMPTY STATE: what the review will do, and the one button that starts it.
     body = (
-      <>
+      <div className="m-spelling__state">
+        <p className="m-spelling__state-title">{i18n._(SPELLING_EMPTY_TITLE)}</p>
         <p>{i18n._(SPELLING_INTRO)}</p>
-        <div className="m-spelling__actions">{again}</div>
-      </>
+        <div className="m-spelling__actions m-spelling__actions--single">{again}</div>
+      </div>
     );
   } else if (review.phase === 'reading') {
     body = (
-      <>
+      <div className="m-spelling__state">
         <p role="status">{i18n._(SPELLING_READING, { checked: String(review.checked), count: String(review.pageCount) })}</p>
-        <div className="m-spelling__actions">
+        <div className="m-spelling__actions m-spelling__actions--single">
           <Button
             label={SPELLING_STOP}
             onClick={() => {
@@ -172,25 +192,24 @@ export function SpellingPanel({ deps, store, settings }: SpellingPanelProps): Re
             }}
           />
         </div>
-      </>
+      </div>
     );
   } else if (review.phase === 'unavailable' || review.phase === 'refused') {
     body = (
-      <>
-        <p role="status">{i18n._(review.phase === 'unavailable' ? SPELLING_UNAVAILABLE : SPELLING_REFUSED)}</p>
-        <div className="m-spelling__actions">{again}</div>
-      </>
+      <div className="m-spelling__state">
+        <Problem message={i18n._(review.phase === 'unavailable' ? SPELLING_UNAVAILABLE : SPELLING_REFUSED)} />
+        <div className="m-spelling__actions m-spelling__actions--single">{again}</div>
+      </div>
     );
   } else if (review.current === undefined) {
+    // THE FINISHED STATE, said plainly: a clean document and a reviewed one are different sentences, and both are said.
+    const clean = review.occurrences.length === 0 && review.replaced === 0;
     body = (
-      <>
-        <p role="status">
-          {review.occurrences.length === 0 && review.replaced === 0
-            ? i18n._(SPELLING_CLEAN)
-            : i18n._(SPELLING_DONE, { replaced: review.replaced })}
-        </p>
-        <div className="m-spelling__actions">{again}</div>
-      </>
+      <div className="m-spelling__state" role="status">
+        <p className="m-spelling__state-title">{i18n._(clean ? SPELLING_CLEAN_TITLE : SPELLING_FINISHED)}</p>
+        <p>{clean ? i18n._(SPELLING_CLEAN) : i18n._(SPELLING_DONE, { replaced: review.replaced })}</p>
+        <div className="m-spelling__actions m-spelling__actions--single">{again}</div>
+      </div>
     );
   } else {
     const current = review.current;
@@ -209,19 +228,28 @@ export function SpellingPanel({ deps, store, settings }: SpellingPanelProps): Re
           : i18n._(SPELLING_WHERE_FIELD, { page, name: current.name ?? '' });
     // NOTHING TO WRITE while an edit is on its way, or for a word that would become itself.
     const unchanged = text === current.word;
+    const position = review.occurrences.indexOf(current);
+    header = head(
+      position < 0
+        ? i18n._(SPELLING_WORD)
+        : i18n._(SPELLING_PROGRESS, { position: String(position + 1), total: String(review.occurrences.length) }),
+      where,
+    );
     body = (
       <>
         <div className="m-spelling__current" aria-live="polite">
           <p className="m-spelling__label">{i18n._(SPELLING_WORD)}</p>
           <p className="m-spelling__word">{current.word}</p>
-          <p className="m-spelling__where">{where}</p>
           <p className="m-spelling__context" dir="auto">
             {before}
             <mark>{current.word}</mark>
             {after}
           </p>
         </div>
-        <Input label={SPELLING_CHANGE_TO} value={text} onValueChange={choose} />
+        <div className="m-spelling__change">
+          <Input label={SPELLING_CHANGE_TO} value={text} onValueChange={choose} />
+        </div>
+        {review.suggestions.length === 0 ? null : <p className="m-spelling__label">{i18n._(SPELLING_SUGGESTIONS_HEADING)}</p>}
         <div className="m-spelling__suggestions" role="group" aria-label={i18n._(SPELLING_SUGGESTIONS)}>
           {review.suggestions.length === 0 ? (
             <p>{i18n._(SPELLING_NO_SUGGESTIONS)}</p>
@@ -279,17 +307,15 @@ export function SpellingPanel({ deps, store, settings }: SpellingPanelProps): Re
             }}
           />
         </div>
-        {review.notice === undefined ? null : (
-          <p className="m-spelling__notice" role="status">
-            {i18n._(review.notice)}
-          </p>
-        )}
+        {/* WHAT THE LAST ACTION COULD NOT DO is a warning, and looks like one. */}
+        <Problem message={review.notice === undefined ? undefined : i18n._(review.notice)} />
       </>
     );
   }
 
   return (
     <section aria-label={i18n._(CONTEXT_PANEL_TAB_SPELLING)} className="m-spelling">
+      {header}
       {body}
       {options}
       {language}

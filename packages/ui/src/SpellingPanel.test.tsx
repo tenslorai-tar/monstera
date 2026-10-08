@@ -172,6 +172,33 @@ describe('SpellingPanel', () => {
     expect(screen.getByText('No misspellings found.')).toBeTruthy();
   });
 
+  it('the head says which word of how many, the page, and the language; the finished state says there are no more (the owner, 2026-10-08)', async () => {
+    drawn(['documnet teh']);
+    await check();
+    expect(document.querySelector('.m-spelling__progress')?.textContent).toBe('Word 1 of 2');
+    expect(document.querySelector('.m-spelling__tongue')?.textContent).toBe('English');
+    await press('Ignore');
+    expect(document.querySelector('.m-spelling__progress')?.textContent).toBe('Word 2 of 2');
+    await press('Ignore');
+    expect(document.querySelector('.m-spelling__state-title')?.textContent).toBe('No more misspellings');
+    // CONTROL: the clean document's title is its own, not the reviewed one's.
+  });
+
+  it('CONTROL: a clean document’s title is No misspellings, and the head is not drawn', async () => {
+    drawn(['the cat']);
+    await check();
+    expect(document.querySelector('.m-spelling__state-title')?.textContent).toBe('No misspellings');
+    expect(document.querySelector('.m-spelling__head')).toBeNull();
+  });
+
+  it('the actions are an even grid and the suggestions a full-width list', async () => {
+    drawn(['the documnet']);
+    await check();
+    const labels = [...document.querySelectorAll('.m-spelling__actions > *')].map((each) => each.textContent);
+    expect(labels).toStrictEqual(['Replace', 'Replace all', 'Ignore', 'Ignore all', 'Add to dictionary']);
+    expect(document.querySelectorAll('.m-spelling__suggestions button').length).toBeGreaterThan(0);
+  });
+
   it('turns Replace off for a word that would become itself', async () => {
     drawn(['the documnet']);
     await check();

@@ -981,6 +981,11 @@ export const SPELLING_REFUSED = messageKey('surface.spelling.refused');
 export const SPELLING_CLEAN = messageKey('surface.spelling.clean');
 export const SPELLING_DONE = messageKey('surface.spelling.done');
 export const SPELLING_AGAIN = messageKey('surface.spelling.again');
+export const SPELLING_PROGRESS = messageKey('surface.spelling.progress');
+export const SPELLING_FINISHED = messageKey('surface.spelling.finished');
+export const SPELLING_CLEAN_TITLE = messageKey('surface.spelling.clean-title');
+export const SPELLING_EMPTY_TITLE = messageKey('surface.spelling.empty-title');
+export const SPELLING_SUGGESTIONS_HEADING = messageKey('surface.spelling.suggestions-heading');
 export const SPELLING_WORD = messageKey('surface.spelling.word');
 export const SPELLING_WHERE_TEXT = messageKey('surface.spelling.where-text');
 export const SPELLING_WHERE_COMMENT = messageKey('surface.spelling.where-comment');
@@ -3509,6 +3514,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SPELLING_DONE]:
     '{replaced, plural, =0 {Spelling checked. No words were changed.} one {Spelling checked. One word was changed.} other {Spelling checked. # words were changed.}}',
   [SPELLING_AGAIN]: 'Check again',
+  [SPELLING_PROGRESS]: 'Word {position} of {total}',
+  [SPELLING_FINISHED]: 'No more misspellings',
+  [SPELLING_CLEAN_TITLE]: 'No misspellings',
+  [SPELLING_EMPTY_TITLE]: 'Check spelling',
+  [SPELLING_SUGGESTIONS_HEADING]: 'Suggestions',
   [SPELLING_WORD]: 'Not in the dictionary',
   [SPELLING_WHERE_TEXT]: 'Page {page}',
   [SPELLING_WHERE_COMMENT]: 'A comment on page {page}',

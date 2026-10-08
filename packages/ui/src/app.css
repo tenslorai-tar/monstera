@@ -2013,31 +2013,59 @@ optgroup {
 .m-spelling {
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
-  padding: var(--space-8);
+  gap: var(--space-12);
+  padding: var(--space-12);
   min-inline-size: 0;
+  /* NO TEXT SMALLER THAN THE APP'S STANDARD SIZE (the owner, 2026-10-08): every line in the panel is 13px or larger. */
+  font-size: var(--font-chrome-13);
 }
 
 .m-spelling p {
   margin: 0;
 }
 
-.m-spelling__current {
+/* THE HEAD: where the review is on the left, the language on the right, the page under them. */
+.m-spelling__head {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  padding-block-end: var(--space-8);
+  border-block-end: 1px solid var(--border-soft); /* decorative: separates the head from the word */
+}
+
+.m-spelling__head-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.m-spelling__progress {
+  font-size: var(--font-content-14);
+  font-weight: 600;
+}
+
+.m-spelling__tongue {
+  color: var(--muted);
+  font-size: var(--font-chrome-13);
+}
+
+.m-spelling__current {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
 .m-spelling__label,
 .m-spelling__where,
 .m-spelling__language {
   color: var(--muted);
-  font-size: var(--font-chrome-11);
+  font-size: var(--font-chrome-13);
 }
 
 /* THE WORD carries the weight; it is the document's own text and may be long, so it wraps rather than overflowing. */
 .m-spelling__word {
-  font-size: var(--font-chrome-13);
+  font-size: var(--font-content-20);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -2047,8 +2075,33 @@ optgroup {
  * is a contrast pair, and the underline is not.
  */
 .m-spelling__context {
-  font-size: var(--font-chrome-12);
+  font-size: var(--font-content-14);
+  line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+/* CHANGE TO across the panel's whole width, the field and its label one block. */
+.m-spelling__change {
+  display: block;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.m-spelling__change :where(.m-field, input) {
+  inline-size: 100%;
+  box-sizing: border-box;
+}
+
+/* THE EMPTY, READING AND FINISHED STATES: a title, a sentence, one button. */
+.m-spelling__state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.m-spelling__state-title {
+  font-size: var(--font-content-16);
+  font-weight: 600;
 }
 
 .m-spelling__context mark {
@@ -2059,20 +2112,24 @@ optgroup {
   text-underline-offset: 3px;
 }
 
+/* THE SUGGESTIONS are a list the panel's whole width, one to a line, so each is easy to hit and to read. */
 .m-spelling__suggestions {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: var(--space-4);
 }
 
 .m-spelling__suggestion {
-  padding: var(--space-2) var(--space-6);
+  inline-size: 100%;
+  box-sizing: border-box;
+  padding: var(--space-8) var(--space-10);
   border: 1px solid var(--border-control);
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-6);
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-size: var(--font-chrome-12);
+  font-size: var(--font-content-14);
+  text-align: start;
   cursor: pointer;
 }
 
@@ -2087,38 +2144,48 @@ optgroup {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
+/* THE ACTIONS AS AN EVEN GRID: Replace and Replace all, Ignore and Ignore all, each pair the same width, and Add to dictionary
+   across both. Every button fills its cell. */
 .m-spelling__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-6);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-8);
 }
 
-.m-spelling__notice {
-  font-size: var(--font-chrome-12);
+.m-spelling__actions > * {
+  inline-size: 100%;
+  box-sizing: border-box;
+  justify-content: center;
 }
 
+.m-spelling__actions > :last-child:nth-child(odd),
+.m-spelling__actions--single > * {
+  grid-column: 1 / -1;
+}
+
+/* THE FOOT: the options the review also covers, then the language, at the panel's own text size. */
 .m-spelling__options {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-4) var(--space-12);
+  gap: var(--space-6) var(--space-16);
   margin: 0;
-  padding: var(--space-8) 0 0;
+  padding: var(--space-12) 0 0;
   border: 0;
   border-block-start: 1px solid var(--border-soft); /* decorative: separates the review from its options */
 }
 
 .m-spelling__options legend {
   padding: 0;
-  margin-block-end: var(--space-4);
+  margin-block-end: var(--space-6);
   color: var(--muted);
-  font-size: var(--font-chrome-11);
+  font-size: var(--font-chrome-13);
 }
 
 .m-spelling__option {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-4);
-  font-size: var(--font-chrome-12);
+  gap: var(--space-6);
+  font-size: var(--font-chrome-13);
 }
 
 /*
