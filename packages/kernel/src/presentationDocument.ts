@@ -1,3 +1,4 @@
+import { type ResolvedSlide, editableSlideParts } from './editableSlide.js';
 import { type OoxmlPart, XML_DECLARATION } from './ooxmlPackage.js';
 import type { PageSize } from './pageGeometry.js';
 import { rasterScale } from './rasterScale.js';
@@ -13,10 +14,14 @@ import { rasterScale } from './rasterScale.js';
  * person sees in PowerPoint is what the page looked like, drawings, images and
  * annotations included.
  *
- * **The text is part of the picture and is not editable**, and the row says so.
- * Laying editable text over the picture draws every word twice, and laying it
- * out instead of the picture loses everything that is not text; a presentation
- * made from a PDF is most often shown, and this keeps it looking right.
+ * **In this form the text is part of the picture and is not editable**, and the
+ * row says so. Laying editable text over the picture draws every word twice, and
+ * laying it out instead of the picture loses everything that is not text; a
+ * presentation made from a PDF is most often shown, and this keeps it looking
+ * right. It is *Exact look*, and a page may instead arrive as an `EditablePage`
+ * ([ADR-0210](../../../docs/DECISIONS/0210-the-editable-powerpoint-export-is-built-from-two-host-reads-and-a-slide-model.md)):
+ * real text boxes, pictures and shapes written by `editableSlide.ts`. A deck may
+ * hold both, page by page; this file decides nothing about which a page is.
  *
  * ## Sizes
  *
@@ -27,11 +32,22 @@ import { rasterScale } from './rasterScale.js';
  * a point.
  */
 
-/** One slide's content: the page as a PNG, and the page's displayed size. */
-export interface PresentationPage {
+/** One slide's content, *Exact look*: the page as a PNG, and the page's displayed size. */
+export interface ExactPage {
   readonly png: Uint8Array;
   readonly size: PageSize;
 }
+
+/**
+ * One slide's content, *Editable* ([ADR-0210](../../../docs/DECISIONS/0210-the-editable-powerpoint-export-is-built-from-two-host-reads-and-a-slide-model.md)):
+ * objects in slide points, already fitted to the deck by `slideModel.ts`. A deck may hold both kinds, page by page.
+ */
+export interface EditablePage {
+  readonly size: PageSize;
+  readonly slide: ResolvedSlide;
+}
+
+export type PresentationPage = ExactPage | EditablePage;
 
 const EMU_PER_POINT = 12_700;
 /** PowerPoint's slide size bounds: 1 inch and 56 inches, in points. */
@@ -95,7 +111,7 @@ function emu(points: number): string {
   return String(Math.round(points * EMU_PER_POINT));
 }
 
-function contentTypes(slides: number): string {
+function contentTypes(slides: number, jpeg: boolean): string {
   let overrides = '';
   for (let index = 1; index <= slides; index += 1) {
     overrides += `<Override PartName="/ppt/slides/slide${String(index)}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`;
@@ -105,6 +121,8 @@ function contentTypes(slides: number): string {
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
     '<Default Extension="xml" ContentType="application/xml"/>' +
     '<Default Extension="png" ContentType="image/png"/>' +
+    // Declared only for a deck that can hold one, so *Exact look* is byte for byte what it was.
+    (jpeg ? '<Default Extension="jpeg" ContentType="image/jpeg"/>' : '') +
     '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>' +
     '<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>' +
     '<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>' +
@@ -201,6 +219,7 @@ export async function* presentationParts(
   pages: AsyncIterable<PresentationPage>,
   firstPage: PageSize,
   pageCount: number,
+  options: { readonly editable: boolean } = { editable: false },
 ): AsyncIterable<OoxmlPart> {
   const deck = slideSize(firstPage);
   const slideRels: [string, string, string][] = [['rId1', 'slideMaster', 'slideMasters/slideMaster1.xml']];
@@ -208,7 +227,7 @@ export async function* presentationParts(
     slideRels.push([`rId${String(index + 1)}`, 'slide', `slides/slide${String(index)}.xml`]);
   }
 
-  yield { name: '[Content_Types].xml', chunks: [contentTypes(pageCount)] };
+  yield { name: '[Content_Types].xml', chunks: [contentTypes(pageCount, options.editable)] };
   yield { name: '_rels/.rels', chunks: [relationships([['rId1', 'officeDocument', 'ppt/presentation.xml']])] };
   yield { name: 'ppt/presentation.xml', chunks: [presentation(pageCount, deck)] };
   yield { name: 'ppt/_rels/presentation.xml.rels', chunks: [relationships(slideRels)] };
@@ -229,6 +248,16 @@ export async function* presentationParts(
     index += 1;
     if (index > pageCount) {
       throw new Error(`the deck declared ${String(pageCount)} slide(s) and a page past them arrived`);
+    }
+    if ('slide' in page) {
+      const parts = editableSlideParts(page.slide, index, `xmlns:a="${A}" xmlns:r="${R}" xmlns:p="${P}"`);
+      yield { name: `ppt/slides/slide${String(index)}.xml`, chunks: [`${XML_DECLARATION}${parts.xml}`] };
+      yield {
+        name: `ppt/slides/_rels/slide${String(index)}.xml.rels`,
+        chunks: [relationships([['rId1', 'slideLayout', '../slideLayouts/slideLayout1.xml'], ...parts.relationships])],
+      };
+      for (const file of parts.media) yield { name: file.path, chunks: [file.bytes] };
+      continue;
     }
     yield { name: `ppt/slides/slide${String(index)}.xml`, chunks: [slide(index, page.size, deck)] };
     yield {
