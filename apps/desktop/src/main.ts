@@ -3,6 +3,7 @@ import { Menu, app, ipcMain, session } from 'electron';
 
 import type { TitleBarOverlay } from './contractHandlers.js';
 import { documentPathsIn } from './launchDocuments.js';
+import { bringToFront } from './secondLaunch.js';
 import { registerContractHandlers } from './registerHandlers.js';
 import { type ShellFailureSink, reportProcessFailures } from './shellFailure.js';
 import { quitAfterShutdown } from './shellShutdown.js';
@@ -204,8 +205,7 @@ export function startShell(build: () => ShellDependencies, memory: WindowMemory 
         const contents = window.webContents;
         if (!contents.isDestroyed()) contents.send('document.opens-waiting', checkEvent('document.opens-waiting', {}));
       }
-      if (window.isMinimized()) window.restore();
-      window.focus();
+      bringToFront(window);
     });
   });
 
