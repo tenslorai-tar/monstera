@@ -46,7 +46,7 @@ if (!existsSync(library)) {
   });
 }
 
-refuseStaleBuild(root, PDFIUM_PAGE_CONTENT, 1);
+refuseStaleBuild(root, PDFIUM_PAGE_CONTENT, 2);
 
 const { openPdfium, onImage, pageContent, renderPageBitmap, renderPageBitmapWithoutText, textRuns } = await import(
   '../../packages/kernel/dist/pdfiumFfi.js'
