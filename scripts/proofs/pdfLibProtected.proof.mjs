@@ -52,7 +52,7 @@ const SAME = 'one-for-both-0220';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 16 });
+const roster = createRoster(failures, { cases: 17 });
 
 /** @param {string} name @param {boolean} held @param {string} detail */
 function check(name, held, detail) {
@@ -372,6 +372,32 @@ async function main(/** @type {any} */ kernel) {
     );
   }
 
+  // THE PERSON IS TOLD WHEN A PASSWORD WAS MADE UP, and only then (ADR-0220): the engine's own record of whether the owner
+  // (permissions) password was the one typed.
+  {
+    /** @param {Uint8Array} bytes @param {string} [password] */
+    const flagFor = async (bytes, password) => {
+      const session = await open(bytes, password);
+      try {
+        const writing = await kernel.protectedWritingOf(session);
+        return writing === undefined ? 'unprotected' : writing.permissionPasswordReplaced;
+      } finally {
+        await kernel.mupdfWriter.close(session);
+      }
+    };
+    const withUserPassword = await flagFor(aes256, USER);
+    const withOwnerAsBoth = await flagFor(
+      await protectedFile(kernel, plain, { encryption: 'aes-256', userPassword: SAME, ownerPassword: SAME, permissions: ['copy'] }),
+      SAME,
+    );
+    const noPassword = await flagFor(plain);
+    check(
+      'opened with only the user password, the owner password is reported replaced; opened as both, or unprotected, it is not',
+      withUserPassword === true && withOwnerAsBoth === false && noPassword === 'unprotected',
+      JSON.stringify({ withUserPassword, withOwnerAsBoth, noPassword }),
+    );
+  }
+
   // AN UNPROTECTED DOCUMENT GAINS NO PROTECTION.
   {
     const session = await open(plain);
@@ -414,12 +440,14 @@ if (bindNativeEngine(ROOT) === null) {
     flag: '--require-engine',
   });
 } else {
-  refuseStaleBuild(ROOT, PDF_LIB_PROTECTED, 6);
-  const [{ mupdfWriter }, { localMupdfExecution }, { localPdfLibWriter }, { applyPdfLibImage }] = await Promise.all([
-    import('../../packages/kernel/dist/mupdfWriter.js'),
-    import('../../packages/kernel/dist/commandSpecs.js'),
-    import('../../packages/kernel/dist/localEngine.js'),
-    import('../../packages/kernel/dist/pdfLibWriter.js'),
-  ]);
-  await main({ mupdfWriter, localMupdfExecution, localPdfLibWriter, applyPdfLibImage });
+  refuseStaleBuild(ROOT, PDF_LIB_PROTECTED, 7);
+  const [{ mupdfWriter }, { localMupdfExecution }, { localPdfLibWriter }, { applyPdfLibImage }, { protectedWritingOf }] =
+    await Promise.all([
+      import('../../packages/kernel/dist/mupdfWriter.js'),
+      import('../../packages/kernel/dist/commandSpecs.js'),
+      import('../../packages/kernel/dist/localEngine.js'),
+      import('../../packages/kernel/dist/pdfLibWriter.js'),
+      import('../../packages/kernel/dist/documentProtection.js'),
+    ]);
+  await main({ mupdfWriter, localMupdfExecution, localPdfLibWriter, applyPdfLibImage, protectedWritingOf });
 }

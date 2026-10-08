@@ -120,6 +120,14 @@ export const EVENTS = {
    * `document.openWaiting`, so no path and nothing a launch supplied crosses in the event itself.
    */
   'document.opens-waiting': z.object({}).strict(),
+
+  /**
+   * Something happened to a document that the person is to be told once, which no command's answer carries because the
+   * command that caused it succeeded (ADR-0220). Today one: a pdf-lib command on a protected document whose owner
+   * (permissions) password was not known, which was written with one made up and kept nowhere. The document is the one
+   * being worked on, so the payload names none; it carries the kind and nothing a document held.
+   */
+  'document.notice': z.object({ notice: z.enum(['permission-password-replaced']) }).strict(),
 } as const;
 
 export type EventMap = typeof EVENTS;

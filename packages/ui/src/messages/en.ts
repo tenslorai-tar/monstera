@@ -220,6 +220,9 @@ export const RATE_US_CLICK = messageKey('dialog.rate-us.click');
 export const RATE_US_OPEN = messageKey('dialog.rate-us.open');
 export const RATE_US_LATER = messageKey('dialog.rate-us.later');
 export const REVEAL_LOG_TITLE = messageKey('command.reveal-log.title');
+export const PERMISSION_PASSWORD_REPLACED_TITLE = messageKey('dialog.permission-password-replaced.title');
+export const PERMISSION_PASSWORD_REPLACED_DONE = messageKey('dialog.permission-password-replaced.done');
+export const PERMISSION_PASSWORD_REPLACED_WHAT = messageKey('dialog.permission-password-replaced.what');
 export const HISTORY_TRIMMED_TITLE = messageKey('dialog.history-trimmed.title');
 export const HISTORY_TRIMMED_APPLIED = messageKey('dialog.history-trimmed.applied');
 export const HISTORY_TRIMMED_LOST = messageKey('dialog.history-trimmed.lost');
@@ -2520,6 +2523,7 @@ export const SIGN_PROBLEM_UNREADABLE = messageKey('dialog.sign-problem.unreadabl
 export const SIGN_PROBLEM_IMAGE_UNREADABLE = messageKey('dialog.sign-problem.image-unreadable');
 export const SIGN_PROBLEM_IMAGE_TOO_LARGE = messageKey('dialog.sign-problem.image-too-large');
 export const SIGN_PROBLEM_SAVED_MISSING = messageKey('dialog.sign-problem.saved-missing');
+export const SIGN_PROBLEM_DOCUMENT_PROTECTED = messageKey('dialog.sign-problem.document-protected');
 export const SIGN_PROBLEM_SCAN_BLANK = messageKey('dialog.sign-problem.scan-blank');
 export const SIGN_PROBLEM_SCAN_LOCKED = messageKey('dialog.sign-problem.scan-locked');
 export const SIGN_PROBLEM_SIGNATURE_TOO_LARGE = messageKey('dialog.sign-problem.signature-too-large');
@@ -2712,6 +2716,7 @@ export const PROBLEM_BUSY = messageKey('dialog.command-problem.busy');
 export const PROBLEM_POISONED = messageKey('dialog.command-problem.poisoned');
 export const PROBLEM_COMMAND_LOOPED = messageKey('dialog.command-problem.command-looped');
 export const PROBLEM_COMMAND_LABEL = messageKey('dialog.command-problem.command-label');
+export const PROBLEM_PROTECTION_NOT_REPRODUCIBLE = messageKey('dialog.command-problem.protection-not-reproducible');
 export const PROBLEM_STALE_TARGET = messageKey('dialog.command-problem.stale-target');
 export const PROBLEM_ENGINE_UNAVAILABLE = messageKey('dialog.command-problem.engine-unavailable');
 export const PROBLEM_RASTER_TOO_LARGE = messageKey('dialog.command-problem.raster-too-large');
@@ -5443,6 +5448,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SIGN_PROBLEM_IMAGE_TOO_LARGE]: 'That picture is too large to place. Nothing has been changed.',
   [SIGN_PROBLEM_SAVED_MISSING]:
     'That kept signature is no longer in your library. Choose another look and sign again. Nothing has been changed.',
+  [SIGN_PROBLEM_DOCUMENT_PROTECTED]:
+    'This document is protected with a password, and Monstera cannot sign a protected document yet. Nothing has been changed. To sign it, save a copy without the password (Protect, then remove the password), sign that copy, and keep the original.',
   [INSERT_IMAGE_ABSENT]: 'That stamp is no longer in your library, so nothing was added.',
   [SIGN_PROBLEM_SIGNATURE_TOO_LARGE]:
     'The signature is too large to fit in the document. A certificate with a long chain can cause this. Nothing has been changed.',
@@ -5707,6 +5714,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // "Undo history" and not "history": the document's own history is what a
   // reader will assume, and this dialog is about neither the file nor its
   // contents.
+  // SAID ONCE per document, after a change to a protected document that Monstera did not know the permissions password of
+  // (ADR-0220). The change was made, and that is the first sentence.
+  [PERMISSION_PASSWORD_REPLACED_TITLE]: 'The permissions password was replaced',
+  [PERMISSION_PASSWORD_REPLACED_DONE]: 'Your change was made and your document is intact.',
+  [PERMISSION_PASSWORD_REPLACED_WHAT]:
+    'This document has a permissions password, the one that controls printing, copying and editing, and Monstera only knew the password you opened it with. The changed file uses a new permissions password that Monstera does not keep. It still opens with the same password and carries the same restrictions as before. If you ever need the original permissions password, it belongs to the original file.',
   [HISTORY_TRIMMED_TITLE]: 'Older undo steps were released',
   // THE SUCCESS FIRST. This dialog follows an operation that worked, so a body
   // opening with the loss would read as a failure report.
@@ -5866,6 +5879,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PROBLEM_COMMAND_LOOPED]:
     'Monstera could not do this action on this document. It stopped working each time it tried, so it will not try again. The document is still open and your changes are safe. Everything else still works.',
   [PROBLEM_COMMAND_LABEL]: 'Action',
+  // WHAT HAPPENED, THEN WHAT TO DO (ADR-0220): the document was opened with the password that controls printing and
+  // editing, and the one that opens it for readers is not known, so the changed file could not be protected as it was.
+  [PROBLEM_PROTECTION_NOT_REPRODUCIBLE]:
+    'This change was not made, so nothing has changed. You opened this document with its permissions password, and Monstera does not know the password that opens it for readers, so it cannot protect the changed file the same way. Close the document, open it again with the password readers use, and try again.',
   // SAYS NOTHING CHANGED FIRST, then what to do. The person clicked delete on a
   // row and the row is still there, so the sentence they need is that the
   // document is untouched — not an explanation of versions, which is ours.

@@ -4,6 +4,8 @@ import { wrapHandlers } from '@monstera/contract';
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import type { ProtectedWriting } from '../documentProtection.js';
+import { ProtectionNotReproducible } from '../protectionRefusal.js';
+import { placeholderRequestOf } from '../signatureHole.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
@@ -34,10 +36,18 @@ interface Trace {
   readonly serialised: number;
   readonly appliedTo: ByteImage[];
   readonly written: ByteImage[];
+  readonly preparedOver: ByteImage[];
 }
 
-async function apply(protectedWriting: ((session: MupdfSession) => Promise<ProtectedWriting | undefined>) | undefined) {
-  const trace: { serialised: number; appliedTo: ByteImage[]; written: ByteImage[] } = { serialised: 0, appliedTo: [], written: [] };
+type Protection = ((session: MupdfSession) => Promise<ProtectedWriting | undefined>) | undefined;
+
+function build(protectedWriting: Protection) {
+  const trace: { serialised: number; appliedTo: ByteImage[]; written: ByteImage[]; preparedOver: ByteImage[] } = {
+    serialised: 0,
+    appliedTo: [],
+    written: [],
+    preparedOver: [],
+  };
   const session = { engine: 'mupdf' } as MupdfSession;
   const held = new Map<string, HostSession>([['h1', { session, ...AREA }]]);
   const wrapped = wrapHandlers(
@@ -82,7 +92,10 @@ async function apply(protectedWriting: ((session: MupdfSession) => Promise<Prote
         return Promise.resolve(RESULT);
       },
       ...(protectedWriting === undefined ? {} : { protectedWriting }),
-      prepareSignature: refuse('prepare a signature'),
+      prepareSignature: (image) => {
+        trace.preparedOver.push(image);
+        return Promise.resolve({ bytes: RESULT, byteRange: [0, 1, 2, 3] as const });
+      },
       snapshot: refuse('write a PNG out'),
       exportFormData: refuse('encode an export'),
       pageImage: refuse('export a page image'),
@@ -97,14 +110,34 @@ async function apply(protectedWriting: ((session: MupdfSession) => Promise<Prote
     }),
     () => undefined,
   );
+  return { wrapped, trace: trace satisfies Trace };
+}
+
+async function apply(protectedWriting: Protection) {
+  const { wrapped, trace } = build(protectedWriting);
   const answer = await wrapped['engine/applyPdfLib']({ session: 'h1', command: COMMAND, into: 'ab12' });
-  return { answer, trace: trace satisfies Trace };
+  return { answer, trace };
+}
+
+/** A signature's placeholder over the same session: the request is the smallest an invisible signature can be. */
+async function sign(protectedWriting: Protection) {
+  const { wrapped, trace } = build(protectedWriting);
+  const answer = await wrapped['engine/prepareSignature']({
+    session: 'h1',
+    request: placeholderRequestOf({ kind: 'signDocument', bytes: new Uint8Array(), passphrase: 'unused' }),
+    into: 'ab12',
+  });
+  return { answer, trace };
 }
 
 describe('engine/applyPdfLib on a protected session', () => {
   it('hands pdf-lib the readable bytes and writes only what protecting its result made', async () => {
     const { answer, trace } = await apply(() =>
-      Promise.resolve({ plain: () => Promise.resolve(READABLE), protect: () => Promise.resolve(SEALED) }),
+      Promise.resolve({
+        plain: () => Promise.resolve(READABLE),
+        protect: () => Promise.resolve(SEALED),
+        permissionPasswordReplaced: false,
+      }),
     );
     expect(answer.ok).toBe(true);
     expect(trace.appliedTo).toStrictEqual([READABLE]);
@@ -124,13 +157,74 @@ describe('engine/applyPdfLib on a protected session', () => {
     }
   });
 
-  it('refuses before any work where the protection cannot be written again, and writes nothing', async () => {
-    const { answer, trace } = await apply(() => Promise.reject(new Error('the user password is not known')));
+  it('refuses a protection that cannot be written again UNDER ITS OWN CODE, before any work, and writes nothing', async () => {
+    const { answer, trace } = await apply(() =>
+      Promise.reject(new ProtectionNotReproducible('the user password is not known')),
+    );
     expect(answer.ok).toBe(false);
     if (answer.ok) return;
-    expect(answer.error.code).toBe('apply-failed');
+    // THE CODE THE PERSON IS TOLD THE SENTENCE FROM, and not the generic failure it was.
+    expect(answer.error.code).toBe('protection-not-reproducible');
     expect(trace.appliedTo).toStrictEqual([]);
     expect(trace.written).toStrictEqual([]);
     expect(trace.serialised).toBe(0);
+  });
+
+  it('CONTROL: any other failure of the protection is still the generic failure', async () => {
+    const { answer, trace } = await apply(() => Promise.reject(new Error('the engine fell over')));
+    expect(answer.ok).toBe(false);
+    if (answer.ok) return;
+    expect(answer.error.code).toBe('apply-failed');
+    expect(trace.written).toStrictEqual([]);
+  });
+
+  it('says so, in the answer, when the owner password was made up, and only then (ADR-0220)', async () => {
+    const made = (replaced: boolean) => () =>
+      Promise.resolve({
+        plain: () => Promise.resolve(READABLE),
+        protect: () => Promise.resolve(SEALED),
+        permissionPasswordReplaced: replaced,
+      });
+    const told = await apply(made(true));
+    expect(told.answer.ok && told.answer.value.permissionPasswordReplaced).toBe(true);
+    // THE CONTROL, the same document with its owner password known: no flag at all, not a `false`.
+    const known = await apply(made(false));
+    expect(known.answer.ok && 'permissionPasswordReplaced' in known.answer.value).toBe(false);
+  });
+});
+
+describe('engine/prepareSignature on a protected session (ADR-0220)', () => {
+  const protectedSession = () =>
+    Promise.resolve({
+      plain: () => Promise.resolve(READABLE),
+      protect: () => Promise.resolve(SEALED),
+      permissionPasswordReplaced: false,
+    });
+
+  it('is refused by name before any work: a protected document cannot be signed by this build', async () => {
+    const { answer, trace } = await sign(protectedSession);
+    expect(answer.ok).toBe(false);
+    if (answer.ok) return;
+    expect(answer.error.code).toBe('signature-document-protected');
+    // NOTHING WAS TAKEN OR WRITTEN: not the protected serialise, not a placeholder, not a file.
+    expect(trace.serialised).toBe(0);
+    expect(trace.preparedOver).toStrictEqual([]);
+    expect(trace.written).toStrictEqual([]);
+  });
+
+  it('is refused by the same name where the protection could not even be written again', async () => {
+    const { answer } = await sign(() => Promise.reject(new ProtectionNotReproducible('the user password is not known')));
+    expect(answer.ok).toBe(false);
+    if (answer.ok) return;
+    expect(answer.error.code).toBe('signature-document-protected');
+  });
+
+  it('CONTROL: a session whose bytes carry no protection is serialised and prepared as it always was', async () => {
+    for (const none of [undefined, () => Promise.resolve(undefined)]) {
+      const { answer, trace } = await sign(none);
+      expect(answer.ok).toBe(true);
+      expect(trace.serialised).toBe(1);
+      expect(trace.preparedOver).toStrictEqual([PROTECTED]);
+    }
   });
 });

@@ -293,6 +293,7 @@ export const RTL_TEXT = [
  */
 export const PDF_LIB_PROTECTED = [
   ['packages/kernel/src/documentProtection.ts', 'packages/kernel/dist/documentProtection.js', 'tsc'],
+  ['packages/kernel/src/protectionRefusal.ts', 'packages/kernel/dist/protectionRefusal.js', 'tsc'],
   ['packages/kernel/src/mupdfWriter.ts', 'packages/kernel/dist/mupdfWriter.js', 'tsc'],
   ['packages/kernel/src/localEngine.ts', 'packages/kernel/dist/localEngine.js', 'tsc'],
   ['packages/kernel/src/pdfLibWriter.ts', 'packages/kernel/dist/pdfLibWriter.js', 'tsc'],

@@ -3,6 +3,7 @@ import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
 import {
+  SIGN_PROBLEM_DOCUMENT_PROTECTED,
   SIGN_PROBLEM_IMAGE_TOO_LARGE,
   SIGN_PROBLEM_IMAGE_UNREADABLE,
   SIGN_PROBLEM_SAVED_MISSING,
@@ -36,6 +37,7 @@ const SENTENCES: Readonly<Record<(typeof SIGN_PROBLEMS)[number], MessageKey>> = 
   'scan-blank': SIGN_PROBLEM_SCAN_BLANK,
   'scan-locked': SIGN_PROBLEM_SCAN_LOCKED,
   'saved-signature-missing': SIGN_PROBLEM_SAVED_MISSING,
+  'document-protected': SIGN_PROBLEM_DOCUMENT_PROTECTED,
 };
 
 /**

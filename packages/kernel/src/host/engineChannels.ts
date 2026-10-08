@@ -1364,9 +1364,20 @@ export function joinPlaceholderAsset(
  */
 export const PICTURE_REFUSALS = ['picture-too-many-pixels'] as const;
 
-/** {@link PICTURE_REFUSALS}, and the one only a signature's appearance meets. */
+/**
+ * A protected document whose protection a pdf-lib command cannot write again, because the password people open it with is
+ * not known here (ADR-0220). Any command that runs on a protected document's readable copy can meet it, so it travels
+ * with the picture's refusal on both channels that do.
+ */
+export const PROTECTION_REFUSALS = ['protection-not-reproducible'] as const;
+
+/**
+ * {@link PICTURE_REFUSALS}, and the two only a signature meets: its appearance's picture would not decode, and the
+ * document is protected, which this build cannot sign (`SignatureProtectedDocumentError`).
+ */
 export const PLACEHOLDER_REFUSALS = [
   'signature-picture-unreadable',
+  'signature-document-protected',
   ...PICTURE_REFUSALS,
 ] as const;
 
@@ -2094,8 +2105,15 @@ export const engineChannels = {
         into: outputNameSchema,
       })
       .strict(),
-    z.object({ bytes: z.number().int().nonnegative() }).strict(),
-    ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed', ...PICTURE_REFUSALS],
+    z
+      .object({
+        bytes: z.number().int().nonnegative(),
+        // ONLY WHEN IT HAPPENED (ADR-0220): the document's owner (permissions) password was not known, so the result was
+        // written with one made up and kept nowhere, and the person is to be told once.
+        permissionPasswordReplaced: z.literal(true).optional(),
+      })
+      .strict(),
+    ['no-such-session', 'asset-missing', 'apply-failed', 'serialise-failed', ...PICTURE_REFUSALS, ...PROTECTION_REFUSALS],
   ),
 
   /**

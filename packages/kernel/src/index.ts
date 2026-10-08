@@ -269,7 +269,7 @@ export {
   listModels,
   unaskedList,
 } from './aiModels.js';
-export type { SessionAssets } from './host/remoteEngine.js';
+export type { HostNotices, SessionAssets } from './host/remoteEngine.js';
 export type { SessionsByWriter } from './engineSeam.js';
 export { remoteMupdfWriter } from './host/remoteWriter.js';
 // A TYPE, erased: what the next save of a session does, as the writer answers it (item 6 of the 29 September list).
@@ -369,10 +369,14 @@ export {
   isSameDocument,
   readFileIdentity,
 } from './documentIdentity.js';
+// A protected document whose protection a pdf-lib command cannot write again (ADR-0220), from a module that imports
+// nothing for the same reason.
+export { ProtectionNotReproducible } from './protectionRefusal.js';
 export {
   type SignatureAppearanceRefusal,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
+  SignatureProtectedDocumentError,
   SignatureTooLargeError,
   type TimestampRefusal,
   TimestampRefusedError,

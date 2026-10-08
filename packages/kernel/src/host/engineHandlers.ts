@@ -52,7 +52,8 @@ import {
   joinPlaceholderAsset,
   taggedPrior,
 } from './engineChannels.js';
-import { pictureRefusalCodeOf, placeholderRefusalCodeOf } from './hostRefusals.js';
+import { SignatureProtectedDocumentError } from '../signingRefusals.js';
+import { pictureRefusalCodeOf, placeholderRefusalCodeOf, protectionRefusalCodeOf } from './hostRefusals.js';
 
 /**
  * Reads one page's structured text as MuPDF's own JSON.
@@ -761,7 +762,9 @@ export function createEngineHandlers({
       try {
         protection = await protectedWriting?.(held.session);
       } catch (error) {
-        return failed('apply-failed', error);
+        // A DOCUMENT WHOSE USER PASSWORD IS NOT KNOWN keeps its name across the pipe: it is the person's to act on, not
+        // the document's failure, and the sentence tells them what to do (ADR-0220).
+        return failed(protectionRefusalCodeOf(error) ?? 'apply-failed', error);
       }
       // THE IMAGE IS THIS SESSION'S OWN SERIALISE, taken here — the bytes `main` used to be sent and parse
       // (ADR-0121 Decision 3). A failure is the session's, reported as a serialise's is.
@@ -778,7 +781,10 @@ export function createEngineHandlers({
           into,
           protection === undefined ? result : await protection.protect(result),
         );
-        return { ok: true, value: { bytes: written } };
+        return {
+          ok: true,
+          value: { bytes: written, ...(protection?.permissionPasswordReplaced === true ? { permissionPasswordReplaced: true as const } : {}) },
+        };
       } catch (error) {
         // A PICTURE PAST THE PIXEL BOUND keeps its name across the pipe, so Insert image says so rather than calling
         // a valid picture unreadable; anything else is the document's failure.
@@ -804,6 +810,15 @@ export function createEngineHandlers({
           'asset-missing',
           new Error('the signature request and the picture sent with it disagree about whether it carries one'),
         );
+      }
+      // A PROTECTED DOCUMENT IS REFUSED BY NAME, BEFORE ANY WORK (ADR-0220). A signature covers the finished file, so a
+      // protected document would need its placeholder written after its protection, which pdf-lib cannot do and MuPDF's
+      // rewrite undoes (measured 2026-10-08). Without this the serialise below is the protected one and pdf-lib refuses it
+      // as an internal failure the person is told nothing about.
+      try {
+        if ((await protectedWriting?.(held.session)) !== undefined) throw new SignatureProtectedDocumentError();
+      } catch (error) {
+        return failed(placeholderRefusalCodeOf(error) ?? 'apply-failed', error);
       }
       let image: ByteImage;
       try {

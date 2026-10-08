@@ -64,6 +64,7 @@ import {
   type RegisteredWriter,
   SignatureAppearanceRefusedError,
   SignatureCredentialRefusedError,
+  SignatureProtectedDocumentError,
   SignatureTooLargeError,
   TimestampRefusedError,
   TimestampUnreachableError,
@@ -5070,6 +5071,8 @@ describe('sign — a visible signature', () => {
     expect(await signing(new SignatureTooLargeError(40_000, 32_768))).toStrictEqual({
       kind: 'signature-too-large',
     });
+    // A PROTECTED DOCUMENT is its own sentence (ADR-0220), and not the incident id it was.
+    expect(await signing(new SignatureProtectedDocumentError())).toStrictEqual({ kind: 'document-protected' });
     // THE AUTHORITY'S THREE FAILURES, three answers — and the refused/unverifiable
     // pair is split by the error's REASON, so a mapping that read only the class
     // would answer one of them for both and fail here.

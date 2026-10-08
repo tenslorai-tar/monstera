@@ -5,7 +5,7 @@ import type { EngineChannels } from './engineChannels.js';
 import type { PdfLibHost } from '../pdfLibWriter.js';
 import type { SignatureHost } from '../documentSign.js';
 import { remoteMupdfExecution, remotePdfLibHost, remoteSignatureHost } from './remoteEngine.js';
-import type { RemoteSessions, SessionAssets } from './remoteEngine.js';
+import type { HostNotices, RemoteSessions, SessionAssets } from './remoteEngine.js';
 import {
   type RemoteMupdfLifecycle,
   type SessionAreaSurface,
@@ -76,6 +76,7 @@ export function remoteMupdfWriter(
   sessions: RemoteSessions,
   areas: SessionAreaSurface,
   assets: SessionAssets,
+  notices: HostNotices,
 ): RemoteMupdfWriter {
   // `close` USED TO BE DROPPED HERE, and that was the whole of the leak. This
   // line destructured `serialise` alone, so the one function that ends a
@@ -136,7 +137,7 @@ export function remoteMupdfWriter(
     pageImage,
     // pdf-lib JOINS for `extract`'s reason: a job needing the same client, sessions, granted areas and assets, and
     // the one place all four are in hand (ADR-0121 Decision 3).
-    pdfLib: remotePdfLibHost(client, sessions, areas, assets),
+    pdfLib: remotePdfLibHost(client, sessions, areas, assets, notices),
     // AND THE SIGNATURE'S PLACEHOLDER, for pdf-lib's reason (ADR-0148).
     prepareSignature: remoteSignatureHost(client, sessions, areas, assets),
     ...remoteMupdfExecution(client, sessions, assets),

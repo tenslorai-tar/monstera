@@ -213,6 +213,7 @@ import { compareDocumentsCommand } from './commands/compareDocuments.js';
 import { translatePageCommand } from './commands/translatePage.js';
 import { COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { OPEN_PROBLEM_DIALOG_ID } from './dialogs/openProblem.js';
+import { PERMISSION_PASSWORD_REPLACED_DIALOG_ID } from './dialogs/permissionPasswordReplaced.js';
 import { sayWhenUnwritable } from './commands/readOnlyFile.js';
 import {
   exportAnnotationsFdfCommand,
@@ -2631,6 +2632,15 @@ export function App({ client, settings, subscribe = NO_EVENTS, dropOpener, onReg
     if (placedProblem === undefined || placedProblem.onStart) return;
     void ask(OPEN_PROBLEM_DIALOG_ID, { problems: [...placedProblem.problem] });
   }, [ask, placedProblem]);
+  // A NOTICE MAIN PUSHES ABOUT A DOCUMENT (ADR-0220): a change that succeeded and replaced a password the person never gave
+  // Monstera. Said once per document by main, so each arrival is shown.
+  useEffect(
+    () =>
+      subscribe('document.notice', () => {
+        void ask(PERMISSION_PASSWORD_REPLACED_DIALOG_ID, {});
+      }),
+    [ask, subscribe],
+  );
   const openCommand = useMemo(() => openDocumentCommand(openDeps), [openDeps]);
   // THE ONE RECENT-OPEN ROUTE (ADR-0143), for the start screen's cards and File › Recent alike.
   const openRecent = useCallback((handle: FileHandle) => openRecentDocument(openDeps, handle), [openDeps]);

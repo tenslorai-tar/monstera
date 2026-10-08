@@ -20,6 +20,7 @@ import {
   PROBLEM_SERVICE_UNAUTHORISED,
   PROBLEM_SERVICE_UNAVAILABLE,
   PROBLEM_BUSY,
+  PROBLEM_PROTECTION_NOT_REPRODUCIBLE,
   PROBLEM_COMMAND_LABEL,
   PROBLEM_COMMAND_LOOPED,
   PROBLEM_COMMENT_TOO_LONG,
@@ -46,6 +47,7 @@ export type CommandProblem =
   | { readonly code: 'document-busy' }
   | { readonly code: 'document-poisoned' }
   | { readonly code: 'command-looped'; readonly detail: FailureDetails['command-looped'] }
+  | { readonly code: 'protection-not-reproducible' }
   | { readonly code: 'stale-target' }
   | { readonly code: 'engine-unavailable' }
   | { readonly code: 'raster-too-large' }
@@ -138,6 +140,7 @@ const CODE_MESSAGE: Readonly<Record<Exclude<CommandProblem['code'], 'edit-refuse
   'document-busy': PROBLEM_BUSY,
   'document-poisoned': PROBLEM_POISONED,
   'command-looped': PROBLEM_COMMAND_LOOPED,
+  'protection-not-reproducible': PROBLEM_PROTECTION_NOT_REPRODUCIBLE,
   'stale-target': PROBLEM_STALE_TARGET,
   'engine-unavailable': PROBLEM_ENGINE_UNAVAILABLE,
   'raster-too-large': PROBLEM_RASTER_TOO_LARGE,

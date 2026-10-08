@@ -2274,6 +2274,9 @@ export const channels = {
       // `command-looped` IS A COMMAND THE ENGINE WAS STOPPED ON THREE TIMES (ADR-0221): main will not send it again for
       // this document. The document is open and its changes are kept; the person is told which action could not be done.
       'command-looped',
+      // `protection-not-reproducible` IS A PROTECTED DOCUMENT WHOSE USER PASSWORD IS NOT KNOWN (ADR-0220): it was opened
+      // with its owner password alone, so a change cannot be written protected as it was. Nothing was changed.
+      'protection-not-reproducible',
       ...SERVICE_PROBLEMS,
     ],
   ),

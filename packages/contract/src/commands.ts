@@ -3401,6 +3401,8 @@ export const SIGN_REFUSALS = [
   'timestamp-unverifiable',
   /** A kept signature was named that the library no longer holds — removed since the dialog opened. */
   'saved-signature-missing',
+  /** The document is protected with a password, and this build cannot place a signature in one (ADR-0220). */
+  'document-protected',
 ] as const;
 
 /** One of {@link SIGN_REFUSALS}. */

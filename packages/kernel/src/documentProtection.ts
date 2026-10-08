@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { PDF_PERMISSIONS, type CommandOfKind, type PdfEncryption, type PdfPermission } from '@monstera/contract/host';
 
 import type { CaptureResult } from './commandLog.js';
+import { ProtectionNotReproducible } from './protectionRefusal.js';
 import type { Apply, ByteImage, MupdfSession } from './engineSeam.js';
 import {
   accessFor,
@@ -147,21 +148,6 @@ function protectionTerms(protection: {
   return terms.join(',');
 }
 
-/**
- * A document whose protection cannot be written again as it stands.
- *
- * MuPDF keeps a protected document's own keys when IT saves, and cannot hand them to another document: a pdf-lib command
- * produces a new file, which has to be encrypted afresh from passwords. The user password is known where the document was
- * opened with it, and the owner password is known only where it was the one typed; a file stores each only as a hash.
- * Where the one that is missing cannot be replaced without taking something from a person, this says so.
- */
-export class ProtectionNotReproducible extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ProtectionNotReproducible';
-  }
-}
-
 /** A document's protection as its `/Encrypt` dictionary states it: the scheme and the `/P` it was written with. */
 interface EncryptionFacts {
   readonly encryption: Exclude<PdfEncryption, 'none'>;
@@ -204,6 +190,12 @@ export interface ProtectedWriting {
   readonly plain: () => Promise<ByteImage>;
   /** `image`, a readable result, written with the document's own protection. In memory; the caller writes what it returns. */
   readonly protect: (image: ByteImage) => Promise<ByteImage>;
+  /**
+   * Whether the document's owner (permissions) password was not known and was replaced by one made up and kept nowhere.
+   * The person is told once (ADR-0220): the rights the file grants a reader are unchanged, and a password they never
+   * had is the one thing that is gone.
+   */
+  readonly permissionPasswordReplaced: boolean;
 }
 
 /**
@@ -224,6 +216,7 @@ export async function protectedWritingOf(session: MupdfSession): Promise<Protect
   const how = await termsToProtectWith(session);
   if (how === undefined) return undefined;
   return {
+    permissionPasswordReplaced: how.ownerReplaced,
     // THE SESSION IS NEVER WRITTEN WITH ITS PROTECTION OFF: it is written as it is (protected), and that copy is opened and
     // written readable, so the key the session holds is the one a later save still uses.
     plain: async () => unprotectedImage(await mupdfWriter.serialise(session), how.userPassword),
@@ -241,10 +234,14 @@ export async function protectedWritingOf(session: MupdfSession): Promise<Protect
 
 async function termsToProtectWith(
   session: MupdfSession,
-): Promise<{ readonly terms: string; readonly userPassword: string | undefined } | undefined> {
+): Promise<
+  { readonly terms: string; readonly userPassword: string | undefined; readonly ownerReplaced: boolean } | undefined
+> {
   const asked = protectionTermsOf(session);
   if (asked !== undefined) {
-    return asked.options === 'encrypt=none' ? undefined : { terms: asked.options, userPassword: asked.userPassword };
+    return asked.options === 'encrypt=none'
+      ? undefined
+      : { terms: asked.options, userPassword: asked.userPassword, ownerReplaced: false };
   }
   const access = accessFor(session);
   if (access === 1) return undefined;
@@ -264,6 +261,9 @@ async function termsToProtectWith(
       permissions: facts.permissions,
     }),
     userPassword: held,
+    // MADE UP exactly when the owner password was not the one typed (the branch above): that is the replacement the person
+    // is told about.
+    ownerReplaced: access !== 6,
   };
 }
 

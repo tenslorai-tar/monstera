@@ -54,6 +54,23 @@ export class SignatureCredentialRefusedError extends Error {
 }
 
 /**
+ * The document is protected with a password, and a signature cannot be added to a protected document by this build.
+ *
+ * **Named, because the order a signature needs is the one this build cannot write.** A signature covers the bytes of the
+ * finished file, so a protected document has to be encrypted BEFORE the signature is placed and nothing may be written
+ * after it. The placeholder is appended by pdf-lib, which cannot encrypt a revision with the file's own key (ADR-0220),
+ * and the other order, a readable copy given a placeholder and then encrypted by MuPDF's whole rewrite, loses the
+ * placeholder: measured 2026-10-08, the rewritten file carried `/Encrypt` and no `/ByteRange` placeholder `@signpdf` could
+ * find. So this is a limit with a stated reason, and a sentence the person can act on, where it was an incident id.
+ */
+export class SignatureProtectedDocumentError extends Error {
+  constructor(options?: ErrorOptions) {
+    super('a protected document cannot be signed by this build: its placeholder cannot be written after its protection', options);
+    this.name = 'SignatureProtectedDocumentError';
+  }
+}
+
+/**
  * The signature — with its timestamp token, when one was asked for — does not fit
  * the space the placeholder reserved.
  *

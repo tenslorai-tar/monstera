@@ -50,12 +50,19 @@ In the host, for a session whose bytes are protected:
 - *Opened with the user password, owner password unknown* (a file stores each password only as a hash, and a document that
   opens for everybody with an owner password set is this case): **the owner password is made up and kept nowhere.** The
   rights the file grants a reader are unchanged and the file opens as it did; what is lost is a password this person never
-  had. **This is the owner's decision to keep or to refuse** (the alternative is a refusal for every restricted document
-  opened without its owner password), and it is one line in `termsToProtectWith`.
+  had. **The owner decided on 2026-10-08 to keep this**, on one condition: **the person is told, once per document, in
+  plain words** (Decision 4).
 - *Opened with the owner password where the user password differs*: the password people open the file with is unknown and
-  cannot be made up. **Refused by name** (`ProtectionNotReproducible`), before any work, with nothing written. The renderer
-  receives the host's `apply-failed`, which is the generic failure; a plain sentence for this case needs a contract failure
-  code and a dialog string and is left to the owner (see the report).
+  cannot be made up. **Refused by name** (`ProtectionNotReproducible`), before any work, with nothing written. It crosses
+  the pipe under its own code and reaches the person as the contract failure `protection-not-reproducible` with its own
+  sentence, which says what happened and what to do (close it, open it again with the password readers use). The owner
+  decided on 2026-10-08 that this is not the generic failure.
+
+4. **The replaced owner password is told once.** The host's answer carries `permissionPasswordReplaced` only when the
+   owner password was made up, `main` turns it into one `document.notice` event per document (by `DocId`, so a document
+   closed and opened again is told again, being a new file), and the renderer opens a dialog whose first sentence says the
+   change was made. The dialog is not a toast, `dialog.history-trimmed`'s reason: it is a fact about the person's own file
+   that they cannot see anywhere else.
 
 The host takes this through one optional part, `protectedWriting` on its handlers' parts. Absent, every session is
 unprotected, which is every handler test; the production entry supplies it, loaded with the first pdf-lib command.
@@ -72,9 +79,16 @@ unprotected, which is every handler test; the production entry supplies it, load
 
 ## Consequences
 
-- Signing's placeholder (`engine/prepareSignature`) also parses the session's serialise with pdf-lib, and meets a protected
-  document in the same way. A signature over a protected file has its own order of operations (encrypt, then sign), so it is
-  not part of this decision and is listed as the next item.
+- **Signing's placeholder (`engine/prepareSignature`) is REFUSED on a protected document, by name, and cannot be covered the
+  same way with the libraries this build has.** It meets the same wall (pdf-lib on the protected serialise), and the order a
+  signature needs, encrypt and then place the signature with nothing written after, is the one that cannot be written:
+  pdf-lib cannot encrypt a revision with the file's own key (the table above), and the other order, a readable copy given
+  its placeholder and then protected by MuPDF's whole rewrite, loses the placeholder. **Measured 2026-10-08**: the
+  rewritten file carried `/Encrypt` and no `/ByteRange` placeholder `@signpdf` could find, so the range step has nothing to
+  fill. Placing a signature in a protected document needs MuPDF to append the signature revision itself, with the file's
+  key, which is a larger decision than this one and is listed for the owner. Until then the host refuses before any work
+  (`signature-document-protected`), `main` answers the sign outcome `document-protected`, and the sentence says what to do
+  (save a copy without the password, sign the copy). It does not touch the save pipeline.
 - The two copies of the document in memory during a command (the protected serialise and the readable copy) are transient and
   bounded by the document, as the serialise already was.
-- `proof:pdflibprotected` (16 cases, with controls) reads each result with the WASM build of MuPDF, which did not write it.
+- `proof:pdflibprotected` (17 cases, with controls) reads each result with the WASM build of MuPDF, which did not write it.
