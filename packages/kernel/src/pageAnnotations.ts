@@ -43,6 +43,8 @@ import { ENGINE_ANNOTATIONS_MAX } from './host/engineChannels.js';
 import { decodedImage, withDocument } from './mupdfWriter.js';
 import { displayedBox } from './pageBoxes.js';
 import { snapRotation } from './rotatePages.js';
+import { isStyled, isStylable, readStyledBox, restyled, writeStyleFacts } from './textBoxAppearance.js';
+import { DEFAULT_LOOK, writable } from './textBoxStyle.js';
 import { pageInDocument, pagesOf } from './pageScope.js';
 import { glyphLinesOf, heldToTheirLines } from './redactionQuads.js';
 import { type SignatureBox, type SignatureDrawing, drawSignature, signatureBox } from './signatureDrawing.js';
@@ -747,6 +749,11 @@ function wordsStyleOf(annotation: PDFAnnotation): { readonly typed?: AnnotationW
   if (face === undefined || !(size >= MIN_ANNOTATION_FONT && size <= MAX_ANNOTATION_FONT)) return {};
   const colour = rgbOf(color);
   if (colour === undefined) return {};
+  // WHAT MONSTERA'S OWN APPEARANCE SAYS (ADR-0211), read only from a box it styled; and whether it CAN style this one: a callout's
+  // leader is the engine's, and a character the base 14 cannot write cannot be drawn in a face of ours.
+  const styled = isStyled(annotation) ? readStyledBox(annotation) : undefined;
+  const contents = annotation.getContents();
+  const unavailable = !isStylable(annotation) || !(styled === undefined ? writable(contents) : styled.runs.every((run) => writable(run.text)));
   return {
     typed: {
       fontSize: size,
@@ -754,8 +761,16 @@ function wordsStyleOf(annotation: PDFAnnotation): { readonly typed?: AnnotationW
       font: face,
       direction: annotation.getQuadding() === 2 ? 'right-to-left' : 'left-to-right',
       // THE SIDE THE LINES SIT AGAINST, which the Properties tab shows (item 14b); `/Q` says it, and 2 is also how
-      // right-to-left is written (`writeDirection`), so the two are one stored value read as two words.
-      align: ALIGN_OF_Q[annotation.getQuadding()] ?? 'left',
+      // right-to-left is written (`writeDirection`), so the two are one stored value read as two words. Justify is `/DS`'s.
+      align: styled?.look.align ?? ALIGN_OF_Q[annotation.getQuadding()] ?? 'left',
+      ...(styled?.look.bold === true ? { bold: true as const } : {}),
+      ...(styled?.look.italic === true ? { italic: true as const } : {}),
+      ...(styled?.look.underline === true ? { underline: true as const } : {}),
+      ...(styled?.look.strike === true ? { strike: true as const } : {}),
+      ...(styled !== undefined && styled.look.lineHeight !== DEFAULT_LOOK.lineHeight ? { lineHeight: styled.look.lineHeight } : {}),
+      ...(styled?.look.fill == null ? {} : { fill: [...styled.look.fill] as [number, number, number] }),
+      ...(styled !== undefined && styled.look.padding > 0 ? { padding: styled.look.padding } : {}),
+      ...(unavailable ? { stylesUnavailable: true as const } : {}),
     },
   };
 }
@@ -774,7 +789,9 @@ function wordsStyleOf(annotation: PDFAnnotation): { readonly typed?: AnnotationW
  * annotations have no IC property"*). Writing them means writing the appearance stream by hand, which is a decision of its
  * own (ADR-0198's rejected-for-now list).
  */
-function writeWordsStyle(annotation: PDFAnnotation, text: AnnotationTextStyle): void {
+function writeWordsStyle(annotation: PDFAnnotation, text: AnnotationTextStyle, document: PDFDocument): void {
+  // READ BEFORE `/DA` IS SET: MuPDF's `setDefaultAppearance` deletes `/DS` (measured 2026-10-08, 1.28.0).
+  const before = isStyled(annotation) ? readStyledBox(annotation) : undefined;
   if (text.font !== undefined || text.fontSize !== undefined || text.colour !== undefined) {
     const now = annotation.getDefaultAppearance();
     annotation.setDefaultAppearance(
@@ -783,7 +800,47 @@ function writeWordsStyle(annotation: PDFAnnotation, text: AnnotationTextStyle): 
       text.colour === undefined ? [...now.color] : [...text.colour],
     );
   }
-  if (text.align !== undefined) annotation.setQuadding(ALIGN_OF_Q.indexOf(text.align));
+  // `/Q` HAS NO JUSTIFY: the other three are its own; justify is `/DS`'s and keeps `/Q` left (ADR-0211).
+  if (text.align !== undefined && text.align !== 'justify') annotation.setQuadding(ALIGN_OF_Q.indexOf(text.align));
+  const styles =
+    text.bold !== undefined ||
+    text.italic !== undefined ||
+    text.underline !== undefined ||
+    text.strike !== undefined ||
+    text.lineHeight !== undefined ||
+    text.fill !== undefined ||
+    text.padding !== undefined ||
+    text.words !== undefined ||
+    text.align === 'justify';
+  // ONCE A BOX CARRIES MONSTERA'S STYLE every change to its look goes through the one writer, or `/DS` would keep the OLD size
+  // and colour and read them back over the new `/DA` (ADR-0211 Decision 1: the appearance is a function of the four facts).
+  if (!styles && !isStyled(annotation)) return;
+  // REFUSED, NEVER HALF-WRITTEN: a style the box cannot show would be stored and drawn by nothing — a control that did nothing.
+  const words = text.words?.map((run) => run.text).join('') ?? annotation.getContents();
+  if (!isStylable(annotation) || !writable(words)) {
+    throw new RangeError('this text mark cannot take styles: a callout, or words in a script the base 14 faces cannot write');
+  }
+  writeStyleFacts(annotation, document, {
+    family: text.font,
+    size: text.fontSize,
+    colour: text.colour,
+    bold: text.bold,
+    italic: text.italic,
+    underline: text.underline,
+    strike: text.strike,
+    align: text.align,
+    lineHeight: text.lineHeight,
+    fill: text.fill === undefined ? undefined : text.fill === null ? null : [...text.fill],
+    padding: text.padding,
+    words: text.words?.map((run) => ({
+      text: run.text,
+      ...(run.bold === undefined ? {} : { bold: run.bold }),
+      ...(run.italic === undefined ? {} : { italic: run.italic }),
+      ...(run.underline === undefined ? {} : { underline: run.underline }),
+      ...(run.strike === undefined ? {} : { strike: run.strike }),
+      ...(run.colour === undefined ? {} : { colour: [...run.colour] as [number, number, number] }),
+    })),
+  }, before);
 }
 
 /** A `/DA` colour as RGB: none is black, the format's default; gray and CMYK by §10.4.2; anything else is not one. */
@@ -1331,6 +1388,9 @@ export function redraw(annotation: PDFAnnotation, document: PDFDocument): void {
 
 /** What both redraws add to the appearance MuPDF just drew: the blend, and a measurement's reading. */
 function redrawn(annotation: PDFAnnotation, document: PDFDocument): void {
+  // A BOX MONSTERA STYLED has its appearance written over what MuPDF just drew (ADR-0211), BEFORE the blend: the blend patches
+  // the stream that is there.
+  restyled(annotation, document);
   reblend(annotation, document);
   relabel(annotation, document);
 }
@@ -2754,7 +2814,7 @@ export const applyStyleAnnotation: Apply<'mupdf', 'styleAnnotation'> = (
         annotation.setBorderWidth(command.borderWidth);
       }
       // A TEXT BOX'S WORDS, only where the mark is one: skipped elsewhere, as the width is where a subtype has none.
-      if (command.text !== undefined && annotation.getType() === 'FreeText') writeWordsStyle(annotation, command.text);
+      if (command.text !== undefined && annotation.getType() === 'FreeText') writeWordsStyle(annotation, command.text, document);
       // THE APPEARANCE IS REGENERATED, which is what makes the change visible.
       // Without it the dictionary says one colour and the `/AP` draws another —
       // and MuPDF's own renderer would still show the new one, so a proof that

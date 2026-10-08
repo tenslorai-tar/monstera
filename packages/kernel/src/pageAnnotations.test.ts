@@ -13,6 +13,8 @@ import {
   decodePDFRawStream,
   degrees,
 } from '@cantoo/pdf-lib';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { crc32, deflateSync } from 'node:zlib';
 import {
   KEEPS_THE_ANNOTATION_WALK,
@@ -562,6 +564,8 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
         direction: annotation.direction,
         // `/Q` 2 is how right-to-left is written, so it reads back as the right-hand side too (item 14b).
         align: annotation.direction === 'right-to-left' ? 'right' : 'left',
+        // A CALLOUT'S LEADER IS THE ENGINE'S, so its box takes none of ADR-0211's styles, and the walk says so.
+        ...(annotation.type === 'callout' ? { stylesUnavailable: true } : {}),
       });
       // TO FLOAT32's PRECISION, which is what MuPDF parses a `/DA` colour into: 0.8 reads back as 0.800000011920929.
       annotation.colour.forEach((channel, at) => {
@@ -4238,5 +4242,157 @@ describe('applyStyleAnnotation on a text box’s WORDS (the owner’s review of 
       }),
     );
     expect(keep.da).toContain('/Helv 12 Tf');
+  });
+});
+
+describe('a text box with styled words (ADR-0211): Monstera writes the appearance', () => {
+  const BOX: Extract<AnnotationDraft, { type: 'text-box' }> = {
+    type: 'text-box',
+    rect: { x0: 10, y0: 20, x1: 140, y1: 90 },
+    text: 'alpha beta gamma',
+    colour: [0.1, 0.1, 0.1],
+    opacity: 1,
+    fontSize: 12,
+    font: 'sans',
+    direction: 'left-to-right',
+  };
+
+  async function restyled(bytes: Uint8Array, text: CommandOfKind<'styleAnnotation'>['text']): Promise<Uint8Array> {
+    return onSession(bytes, async (session) => {
+      await applyStyleAnnotation(session, { kind: 'styleAnnotation', page: 0, indices: [0], text, version: asDocVersion(1) });
+      return mupdfWriter.serialise(session);
+    });
+  }
+
+  /** The first annotation's saved dictionary and its normal appearance's content and fonts, read by pdf-lib. */
+  async function stored(bytes: Uint8Array): Promise<{ content: string; fonts: string[]; ds: string; rc: string; contents: string; ic: boolean }> {
+    const loaded = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = loaded.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    const [first] = annots instanceof PDFArray ? annots.asArray() : [];
+    const dict = first instanceof PDFRef ? loaded.context.lookup(first, PDFDict) : undefined;
+    if (dict === undefined) throw new Error('the annotation is not a reachable dictionary');
+    const text = (key: string): string => {
+      const value = dict.lookup(PDFName.of(key));
+      return value instanceof PDFString ? value.asString() : '';
+    };
+    const normal = dict.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N'));
+    if (!(normal instanceof PDFStream)) throw new Error('no appearance stream');
+    const fonts = normal.dict.lookup(PDFName.of('Resources'), PDFDict).lookup(PDFName.of('Font'), PDFDict);
+    return {
+      content: Buffer.from(decodePDFRawStream(normal as PDFRawStream).decode()).toString('latin1'),
+      fonts: fonts.keys().map((key) => fonts.lookup(key, PDFDict).lookup(PDFName.of('BaseFont'))?.toString() ?? ''),
+      ds: text('DS'),
+      rc: text('RC'),
+      contents: text('Contents'),
+      ic: dict.has(PDFName.of('IC')),
+    };
+  }
+
+  const drawn = async (): Promise<Uint8Array> => drawnOn(await fixture(), command({ annotation: BOX }));
+
+  it('BOLD and ITALIC write the bold-oblique face into the appearance and the style into /DS and /RC', async () => {
+    const after = await stored(await restyled(await drawn(), { bold: true, italic: true }));
+    expect(after.fonts).toContain('/Helvetica-BoldOblique');
+    expect(after.ds).toContain('bold');
+    expect(after.rc).toContain('alpha beta gamma');
+    // THE PLAIN WORDS are untouched: search and every reader that ignores /RC still have them.
+    expect(after.contents).toBe('alpha beta gamma');
+    // CONTROL: a box nobody styled keeps the engine's appearance, which names no bold face.
+    expect((await stored(await drawn())).fonts).not.toContain('/Helvetica-BoldOblique');
+  });
+
+  it('a FILL paints under the words and sets /IC; taking it away deletes /IC', async () => {
+    const filled = await stored(await restyled(await drawn(), { fill: [1, 1, 0] }));
+    expect(filled.ic).toBe(true);
+    expect(filled.content.indexOf('1 1 0 rg')).toBeGreaterThanOrEqual(0);
+    expect(filled.content.indexOf('1 1 0 rg')).toBeLessThan(filled.content.indexOf('BT'));
+    const cleared = await stored(await restyled(await restyled(await drawn(), { fill: [1, 1, 0] }), { fill: null }));
+    expect(cleared.ic).toBe(false);
+    expect(cleared.content).not.toContain('1 1 0 rg');
+  });
+
+  it('UNDERLINE and STRIKE draw a rectangle each, and a later restyle that names neither keeps them', async () => {
+    const lined = await restyled(await drawn(), { underline: true, strike: true });
+    expect((await stored(lined)).content.split(' re f').length - 1).toBeGreaterThanOrEqual(2);
+    const resized = await stored(await restyled(lined, { fontSize: 14 }));
+    expect(resized.content.split(' re f').length - 1).toBeGreaterThanOrEqual(2);
+    expect(resized.ds).toContain('14');
+  });
+
+  it('JUSTIFY is /DS’s, and /Q stays left; the walk reads every style back', async () => {
+    const bytes = await restyled(await drawn(), { align: 'justify', bold: true, lineHeight: 1.6, padding: 4, fill: [0.9, 0.9, 1] });
+    const typed = (await onSession(bytes, (session) => readAnnotations(session))).annotations[0]?.typed;
+    expect(typed).toMatchObject({ align: 'justify', bold: true, lineHeight: 1.6, padding: 4 });
+    expect(typed?.fill?.[2]).toBeCloseTo(1, 5);
+    // CONTROL: a plain box reports none of them.
+    const plain = (await onSession(await drawn(), (session) => readAnnotations(session))).annotations[0]?.typed;
+    expect(plain?.bold).toBeUndefined();
+    expect(plain?.fill).toBeUndefined();
+    expect(plain?.stylesUnavailable).toBeUndefined();
+  });
+
+  it('PER-WORD runs: only the named word is bold, in the appearance and in /RC', async () => {
+    const after = await stored(
+      await restyled(await drawn(), { words: [{ text: 'alpha ' }, { text: 'beta', bold: true }, { text: ' gamma' }] }),
+    );
+    expect(after.fonts).toContain('/Helvetica-Bold');
+    expect(after.fonts).toContain('/Helvetica');
+    expect(after.contents).toBe('alpha beta gamma');
+    expect(after.rc).toContain('beta');
+  });
+
+  /**
+   * A SECOND READER: PDF.js shares no code with the engine that wrote the box, and reports the fonts and fill colours it
+   * PAINTS from the appearance. pdf-lib above reads the dictionary; this asks what a viewer draws — the claim.
+   */
+  async function painted(bytes: Uint8Array): Promise<{ fonts: string[]; fills: string[]; shown: string }> {
+    const entry = createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.mjs');
+    const pdfjs = (await import(/* @vite-ignore */ pathToFileURL(entry).href)) as typeof import('pdfjs-dist');
+    const task = pdfjs.getDocument({ data: bytes.slice(), useSystemFonts: false, verbosity: 0 });
+    const document = await task.promise;
+    const page = await document.getPage(1);
+    const list = await page.getOperatorList({ intent: 'print' });
+    const fonts: string[] = [];
+    const fills: string[] = [];
+    let shown = '';
+    for (let at = 0; at < list.fnArray.length; at += 1) {
+      const args = list.argsArray[at] as unknown;
+      const fn = list.fnArray[at];
+      if (fn === pdfjs.OPS.setFont && Array.isArray(args)) {
+        const loaded = String(args[0]);
+        const font = await new Promise<{ name?: string } | undefined>((resolve) => {
+          page.commonObjs.get(loaded, resolve);
+        });
+        fonts.push(font?.name ?? '');
+      }
+      if (fn === pdfjs.OPS.setFillRGBColor && Array.isArray(args)) fills.push(args.map(String).join(','));
+      if (fn === pdfjs.OPS.showText && Array.isArray(args)) {
+        for (const glyph of args[0] as { unicode?: string }[]) shown += glyph.unicode ?? '';
+      }
+    }
+    await task.destroy();
+    return { fonts, fills, shown };
+  }
+
+  it('a SECOND READER (PDF.js) paints the bold word in a bold face and the fill colour, over the words', async () => {
+    const bytes = await restyled(await drawn(), {
+      fill: [1, 1, 0],
+      words: [{ text: 'alpha ' }, { text: 'beta', bold: true }, { text: ' gamma' }],
+    });
+    const seen = await painted(bytes);
+    expect(seen.fonts.some((name) => name.includes('Bold'))).toBe(true);
+    expect(seen.fills).toContain('#ffff00');
+    expect(seen.shown.replace(/\s+/gu, '')).toContain('alphabetagamma');
+    // CONTROL: the same box with no style paints no bold face and no yellow, so the reader sees the difference.
+    const plain = await painted(await drawn());
+    expect(plain.fonts.some((name) => name.includes('Bold'))).toBe(false);
+    expect(plain.fills).not.toContain('#ffff00');
+  });
+
+  it('REFUSES a style on a box holding letters the base 14 cannot write, and leaves the box as it was', async () => {
+    const hebrew = await drawnOn(await fixture(), command({ annotation: { ...BOX, text: 'שלום' } }));
+    await expect(restyled(hebrew, { bold: true })).rejects.toThrow(/cannot take styles/u);
+    const typed = (await onSession(hebrew, (session) => readAnnotations(session))).annotations[0]?.typed;
+    expect(typed?.stylesUnavailable).toBe(true);
   });
 });

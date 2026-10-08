@@ -10,8 +10,12 @@ import {
   MAX_ANNOTATION_AUTHOR,
   MAX_ANNOTATION_BORDER,
   MAX_ANNOTATION_FONT,
+  DEFAULT_TEXT_LINE_HEIGHT,
   MAX_ANNOTATION_TEXT,
+  MAX_TEXT_LINE_HEIGHT,
+  MAX_TEXT_PADDING,
   MIN_ANNOTATION_FONT,
+  MIN_TEXT_LINE_HEIGHT,
   MIN_ANNOTATION_OPACITY,
   measureUnitSchema,
 } from '@monstera/contract';
@@ -42,7 +46,17 @@ import {
   PROPERTIES_ALIGN,
   PROPERTIES_ALIGN_CENTER,
   PROPERTIES_ALIGN_LEFT,
+  PROPERTIES_ALIGN_JUSTIFY,
   PROPERTIES_ALIGN_RIGHT,
+  PROPERTIES_BOX_FILL,
+  PROPERTIES_BOX_FILL_COLOUR,
+  PROPERTIES_BOX_PADDING,
+  PROPERTIES_LINE_SPACING,
+  PROPERTIES_STYLE_BOLD,
+  PROPERTIES_STYLE_ITALIC,
+  PROPERTIES_STYLE_STRIKE,
+  PROPERTIES_STYLE_UNDERLINE,
+  PROPERTIES_STYLES_UNAVAILABLE,
   PROPERTIES_FONT,
   PROPERTIES_FONT_MONO,
   PROPERTIES_FONT_SANS,
@@ -617,14 +631,30 @@ const FONT_LABELS: Readonly<Record<AnnotationFont, MessageKey>> = {
 
 const ALIGN_OPTIONS: readonly SegmentedOption<AnnotationAlign>[] = ANNOTATION_ALIGNMENTS.map((value) => ({
   value,
-  label: { left: PROPERTIES_ALIGN_LEFT, center: PROPERTIES_ALIGN_CENTER, right: PROPERTIES_ALIGN_RIGHT }[value],
+  label: {
+    left: PROPERTIES_ALIGN_LEFT,
+    center: PROPERTIES_ALIGN_CENTER,
+    right: PROPERTIES_ALIGN_RIGHT,
+    justify: PROPERTIES_ALIGN_JUSTIFY,
+  }[value],
 }));
+
+/** A new box fill's first colour: a pale yellow, which a person then changes. */
+const STARTING_BOX_FILL: AnnotationColour = [1, 1, 0.8];
+
+/** The four on/off styles, each a field of the text style and each its own checkbox. */
+const STYLE_TOGGLES = [
+  { field: 'bold', label: PROPERTIES_STYLE_BOLD },
+  { field: 'italic', label: PROPERTIES_STYLE_ITALIC },
+  { field: 'underline', label: PROPERTIES_STYLE_UNDERLINE },
+  { field: 'strike', label: PROPERTIES_STYLE_STRIKE },
+] as const;
 
 /**
  * The Text section of a selected text box, typewriter or callout (the owner's review of 2026-10-07, item 14b): its face,
- * size, colour and the side its lines sit against. **Each control sends one property**, as the rows above do, and applies to
- * the whole box. Bold, italic, a fill, line spacing and a run of words inside the box are not offered: MuPDF cannot draw them
- * in a free text (`writeWordsStyle`), and a control that set something no viewer shows would be the display-only defect.
+ * size, colour, the side its lines sit against, and (ADR-0211) bold, italic, underline, strikethrough, line spacing, padding
+ * and a fill. **Each control sends one property**, as the rows above do, and applies to the whole box; Monstera writes the
+ * appearance itself, so what is shown is what a reader draws. A box that cannot take them says so instead of showing controls.
  */
 function TextSection({
   typed,
@@ -642,6 +672,20 @@ function TextSection({
     if (Number.isFinite(next) && next >= MIN_ANNOTATION_FONT && next <= MAX_ANNOTATION_FONT && next !== typed.fontSize) {
       onChange({ fontSize: next });
     }
+  };
+  const spacingId = useId();
+  const paddingId = useId();
+  const [spacing, setSpacing] = useState(String(typed.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT));
+  const [padding, setPadding] = useState(String(typed.padding ?? 0));
+  const sendSpacing = (): void => {
+    const next = Number(spacing);
+    if (Number.isFinite(next) && next >= MIN_TEXT_LINE_HEIGHT && next <= MAX_TEXT_LINE_HEIGHT && next !== (typed.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT)) {
+      onChange({ lineHeight: next });
+    }
+  };
+  const sendPadding = (): void => {
+    const next = Number(padding);
+    if (Number.isFinite(next) && next >= 0 && next <= MAX_TEXT_PADDING && next !== (typed.padding ?? 0)) onChange({ padding: next });
   };
   return (
     <div className="m-properties__text" data-properties-text="" role="group" aria-label={i18n._(PROPERTIES_TEXT_HEADING)}>
@@ -710,6 +754,90 @@ function TextSection({
           value={typed.align ?? 'left'}
         />
       </div>
+      {typed.stylesUnavailable === true ? (
+        <p className="m-properties__hint">{i18n._(PROPERTIES_STYLES_UNAVAILABLE)}</p>
+      ) : (
+        <>
+          <div className="m-properties__row m-properties__row--inline" role="group">
+            {STYLE_TOGGLES.map(({ field, label }) => (
+              <label className="m-properties__check" key={field}>
+                <input
+                  checked={typed[field] === true}
+                  onChange={(event) => {
+                    onChange({ [field]: event.target.checked });
+                  }}
+                  type="checkbox"
+                />
+                <span>{i18n._(label)}</span>
+              </label>
+            ))}
+          </div>
+          <div className="m-properties__row m-properties__row--inline">
+            <label className="m-properties__label" htmlFor={spacingId}>
+              {i18n._(PROPERTIES_LINE_SPACING)}
+            </label>
+            <input
+              className="m-properties__number"
+              id={spacingId}
+              max={MAX_TEXT_LINE_HEIGHT}
+              min={MIN_TEXT_LINE_HEIGHT}
+              onBlur={sendSpacing}
+              onChange={(event) => {
+                setSpacing(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') sendSpacing();
+              }}
+              step={0.1}
+              type="number"
+              value={spacing}
+            />
+          </div>
+          <div className="m-properties__row m-properties__row--inline">
+            <label className="m-properties__label" htmlFor={paddingId}>
+              {i18n._(PROPERTIES_BOX_PADDING)}
+            </label>
+            <input
+              className="m-properties__number"
+              id={paddingId}
+              max={MAX_TEXT_PADDING}
+              min={0}
+              onBlur={sendPadding}
+              onChange={(event) => {
+                setPadding(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') sendPadding();
+              }}
+              step={1}
+              type="number"
+              value={padding}
+            />
+          </div>
+          <label className="m-properties__check">
+            <input
+              checked={typed.fill !== undefined}
+              onChange={(event) => {
+                onChange({ fill: event.target.checked ? STARTING_BOX_FILL : null });
+              }}
+              type="checkbox"
+            />
+            <span>{i18n._(PROPERTIES_BOX_FILL)}</span>
+          </label>
+          {typed.fill === undefined ? null : (
+            <ColourRow
+              auto={false}
+              current={hexFromColour(typed.fill)}
+              label={PROPERTIES_BOX_FILL_COLOUR}
+              offerAuto={false}
+              onPick={(picked) => {
+                const fill = picked === undefined ? undefined : colourFromHex(picked);
+                if (fill !== undefined) onChange({ fill });
+              }}
+            />
+          )}
+        </>
+      )}
     </div>
   );
 }

@@ -356,6 +356,34 @@ describe('PropertiesPanel with marks selected', () => {
     expect(store.get(ANNOTATION_FONT_SIZE_SETTING.id)).toBe(18);
   });
 
+  it('the style controls (ADR-0211) each send ONE property: bold, justify, line spacing, padding and a fill', () => {
+    const { restyled } = mounted({ ...ONE, items: [TEXT_BOX] });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Bold' }));
+    expect(restyled.at(-1)).toStrictEqual({ text: { bold: true } });
+    fireEvent.click(screen.getByRole('button', { name: 'Justify' }));
+    expect(restyled.at(-1)).toStrictEqual({ text: { align: 'justify' } });
+    const spacing = screen.getByRole('spinbutton', { name: 'Line spacing' });
+    fireEvent.change(spacing, { target: { value: '1.5' } });
+    fireEvent.blur(spacing);
+    expect(restyled.at(-1)).toStrictEqual({ text: { lineHeight: 1.5 } });
+    const padding = screen.getByRole('spinbutton', { name: 'Padding' });
+    fireEvent.change(padding, { target: { value: '6' } });
+    fireEvent.blur(padding);
+    expect(restyled.at(-1)).toStrictEqual({ text: { padding: 6 } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Fill the box' }));
+    expect(restyled.at(-1)).toStrictEqual({ text: { fill: [1, 1, 0.8] } });
+  });
+
+  it('a box that cannot take the styles says so and draws no style control', () => {
+    const { restyled } = mounted({
+      ...ONE,
+      items: [{ ...TEXT_BOX, typed: { ...TEXT_BOX.typed, stylesUnavailable: true as const } }],
+    });
+    expect(screen.queryByRole('checkbox', { name: 'Bold' })).toBeNull();
+    expect(screen.getByText(/cannot take bold, italic, fill/u)).toBeTruthy();
+    expect(restyled).toStrictEqual([]);
+  });
+
   it('CONTROL: a size that is out of range, or unchanged, sends nothing', () => {
     const { restyled } = mounted({ ...ONE, items: [TEXT_BOX] });
     const size = screen.getAllByRole('spinbutton').find((each) => (each as HTMLInputElement).value === '12');

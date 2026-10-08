@@ -1358,6 +1358,15 @@ export const annotationColourSchema = z.tuple([
 /** An annotation's colour. See {@link annotationColourSchema}. */
 export type AnnotationColour = z.infer<typeof annotationColourSchema>;
 
+/** The line pitch a text box may be set to, as a multiple of its size, and the margin it may keep, in points (ADR-0211). */
+export const MIN_TEXT_LINE_HEIGHT = 0.8;
+/** The pitch a box has until it is changed, as a multiple of its size; a style that names it is not written. */
+export const DEFAULT_TEXT_LINE_HEIGHT = 1.2;
+export const MAX_TEXT_LINE_HEIGHT = 3;
+export const MAX_TEXT_PADDING = 72;
+/** How many runs of styled words one restyle may name. */
+export const MAX_TEXT_RUNS = 64;
+
 /**
  * How a text mark's words are drawn, as the file says: the type size, colour, face and the side the lines sit against
  * — a `/FreeText`'s `/DA` and `/Q`. The four fields every text draft carries, under the same bounds, so a value read is
@@ -1369,9 +1378,20 @@ export const annotationWordsStyleSchema = z
     colour: annotationColourSchema,
     font: annotationFontSchema,
     direction: textDirectionSchema,
-    // THE SIDE THE LINES SIT AGAINST, from `/Q`, which the Properties tab shows and sets (item 14b). Optional, so a walk
-    // written before it reads as it did.
-    align: z.enum(['left', 'center', 'right']).optional(),
+    // THE SIDE THE LINES SIT AGAINST, from `/Q`, which the Properties tab shows and sets (item 14b); `justify` is `/DS`'s
+    // (ADR-0211). Optional, so a walk written before it reads as it did.
+    align: z.enum(['left', 'center', 'right', 'justify']).optional(),
+    // WHAT MONSTERA'S OWN APPEARANCE SAYS (ADR-0211), each present only where it is on or set, exactly optional so a mark
+    // with none of it reads as it always did.
+    bold: z.literal(true).exactOptional(),
+    italic: z.literal(true).exactOptional(),
+    underline: z.literal(true).exactOptional(),
+    strike: z.literal(true).exactOptional(),
+    lineHeight: z.number().min(MIN_TEXT_LINE_HEIGHT).max(MAX_TEXT_LINE_HEIGHT).exactOptional(),
+    fill: z.tuple([z.number().min(0).max(1), z.number().min(0).max(1), z.number().min(0).max(1)]).exactOptional(),
+    padding: z.number().min(0).max(MAX_TEXT_PADDING).exactOptional(),
+    /** Present and true where Monstera cannot draw this box's styles (a script outside the base 14, or a callout): the panel says so. */
+    stylesUnavailable: z.literal(true).exactOptional(),
   })
   .strict();
 
@@ -1379,19 +1399,36 @@ export const annotationWordsStyleSchema = z
 export type AnnotationWordsStyle = z.infer<typeof annotationWordsStyleSchema>;
 
 /**
- * The side a text box's lines sit against: left, centre or right — a `/FreeText`'s `/Q` 0, 1 and 2. Justified is not here: the
- * format's `/Q` has no fourth value, so a justified box could only be drawn by a viewer that ignored the file.
+ * The side a text box's lines sit against: left, centre or right — a `/FreeText`'s `/Q` 0, 1 and 2 — or justified, which the
+ * format's `/Q` has no value for: it is `/DS`'s `text-align` and Monstera's own appearance draws it (ADR-0211), `/Q` keeping
+ * left for a reader that draws neither.
  */
-export const ANNOTATION_ALIGNMENTS = ['left', 'center', 'right'] as const;
+export const ANNOTATION_ALIGNMENTS = ['left', 'center', 'right', 'justify'] as const;
 export const annotationAlignSchema = z.enum(ANNOTATION_ALIGNMENTS);
 export type AnnotationAlign = z.infer<typeof annotationAlignSchema>;
 
+/** A run of a text box's words and what it says of itself over the box's own style (ADR-0211 Decision 7). */
+export const annotationTextRunSchema = z
+  .object({
+    text: z.string().min(1).max(MAX_ANNOTATION_TEXT),
+    bold: z.boolean().optional(),
+    italic: z.boolean().optional(),
+    underline: z.boolean().optional(),
+    strike: z.boolean().optional(),
+    colour: annotationColourSchema.optional(),
+  })
+  .strict();
+
+/** See {@link annotationTextRunSchema}. */
+export type AnnotationTextRun = z.infer<typeof annotationTextRunSchema>;
+
 /**
- * What a restyle may say about a text box's WORDS (the owner's review of 2026-10-07, item 14b): the face, size and colour
- * (`/DA`) and the side the lines sit against (`/Q`). Every field is optional for the reason `styleAnnotation`'s are: the
- * Properties tab changes one at a time. It applies to the WHOLE box; a run of words inside one is a rich-text edit, which this
- * does not write. **Bold, italic and a box fill are not here because MuPDF cannot draw them in a free text** — see
- * `writeWordsStyle` in the kernel for what was measured.
+ * What a restyle may say about a text box's WORDS (the owner's review of 2026-10-07, item 14b, and ADR-0211): the face, size
+ * and colour (`/DA`), the side the lines sit against (`/Q`, `/DS`), and what Monstera's own appearance draws that MuPDF cannot —
+ * bold, italic, underline, strikethrough, the line pitch, a fill, the margins, and runs of words styled one by one. Every field
+ * is optional for the reason `styleAnnotation`'s are: the Properties tab changes one at a time. Each of the styles above
+ * writes `/DS`, `/RC`, `/IC` and `/RD` and the appearance with them (`textBoxAppearance.ts`); a box that cannot be drawn so
+ * keeps the engine's appearance and the plain words.
  */
 export const annotationTextStyleSchema = z
   .object({
@@ -1399,6 +1436,16 @@ export const annotationTextStyleSchema = z
     fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT).optional(),
     colour: annotationColourSchema.optional(),
     align: annotationAlignSchema.optional(),
+    bold: z.boolean().optional(),
+    italic: z.boolean().optional(),
+    underline: z.boolean().optional(),
+    strike: z.boolean().optional(),
+    lineHeight: z.number().min(MIN_TEXT_LINE_HEIGHT).max(MAX_TEXT_LINE_HEIGHT).optional(),
+    /** The fill behind the words, or `null` to take it away. */
+    fill: annotationColourSchema.nullable().optional(),
+    padding: z.number().min(0).max(MAX_TEXT_PADDING).optional(),
+    /** The box's words as runs, replacing its words: joined, they are its `/Contents`. */
+    words: z.array(annotationTextRunSchema).min(1).max(MAX_TEXT_RUNS).optional(),
   })
   .strict();
 

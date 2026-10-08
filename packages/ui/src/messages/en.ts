@@ -1817,6 +1817,16 @@ export const PROPERTIES_ALIGN = messageKey('surface.properties.text.align');
 export const PROPERTIES_ALIGN_LEFT = messageKey('surface.properties.text.align-left');
 export const PROPERTIES_ALIGN_CENTER = messageKey('surface.properties.text.align-center');
 export const PROPERTIES_ALIGN_RIGHT = messageKey('surface.properties.text.align-right');
+export const PROPERTIES_ALIGN_JUSTIFY = messageKey('surface.properties.text.align-justify');
+export const PROPERTIES_STYLE_BOLD = messageKey('surface.properties.text.bold');
+export const PROPERTIES_STYLE_ITALIC = messageKey('surface.properties.text.italic');
+export const PROPERTIES_STYLE_UNDERLINE = messageKey('surface.properties.text.underline');
+export const PROPERTIES_STYLE_STRIKE = messageKey('surface.properties.text.strike');
+export const PROPERTIES_LINE_SPACING = messageKey('surface.properties.text.line-spacing');
+export const PROPERTIES_BOX_FILL = messageKey('surface.properties.text.box-fill');
+export const PROPERTIES_BOX_FILL_COLOUR = messageKey('surface.properties.text.box-fill-colour');
+export const PROPERTIES_BOX_PADDING = messageKey('surface.properties.text.box-padding');
+export const PROPERTIES_STYLES_UNAVAILABLE = messageKey('surface.properties.text.styles-unavailable');
 export const PROPERTIES_COMMENT = messageKey('surface.properties.comment');
 export const PROPERTIES_NEW_HEADING = messageKey('surface.properties.new-heading');
 export const PROPERTIES_NEW_HINT = messageKey('surface.properties.new-hint');
@@ -4415,6 +4425,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PROPERTIES_ALIGN_LEFT]: 'Left',
   [PROPERTIES_ALIGN_CENTER]: 'Centre',
   [PROPERTIES_ALIGN_RIGHT]: 'Right',
+  [PROPERTIES_ALIGN_JUSTIFY]: 'Justify',
+  [PROPERTIES_STYLE_BOLD]: 'Bold',
+  [PROPERTIES_STYLE_ITALIC]: 'Italic',
+  [PROPERTIES_STYLE_UNDERLINE]: 'Underline',
+  [PROPERTIES_STYLE_STRIKE]: 'Strikethrough',
+  [PROPERTIES_LINE_SPACING]: 'Line spacing',
+  [PROPERTIES_BOX_FILL]: 'Fill the box',
+  [PROPERTIES_BOX_FILL_COLOUR]: 'Fill colour',
+  [PROPERTIES_BOX_PADDING]: 'Padding',
+  [PROPERTIES_STYLES_UNAVAILABLE]:
+    'This box cannot take bold, italic, fill and the other styles: it is a callout, or it holds letters the built-in fonts cannot write.',
   [PROPERTIES_COMMENT]: 'Comment',
   [PROPERTIES_NEW_HEADING]: 'New annotations',
   [PROPERTIES_NEW_HINT]: 'These set how the next annotation is drawn. Select one on the page to change it.',

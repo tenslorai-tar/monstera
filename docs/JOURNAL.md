@@ -892,6 +892,60 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-10-09 — Stage audit of `d3ab2704..726be5ae` — findings ZZZZZZZ-1 to ZZZZZZZ-3
+
+The merge of the PowerPoint branch (ADR-0210) and the review branch (ADRs 0220, 0221) into the work branch, the post-merge
+repairs, the shared `Problem` component, the spelling panel and signing names, and the text box styles (ADR-0211). The
+range is read through `npm run audit:scope` and `git log -p` for the 30 changed tests and proofs; the text box commit that
+follows this entry is outside the range and is audited by the next one.
+
+**ZZZZZZZ-1** (medium, closed): two readers of one authority. Main's `logicalOf` (ADR-0181/0185) and the PowerPoint branch's
+`readingOrder` both decide the order of right-to-left runs. The merge kept both, and `rtlDeck.proof.mjs` was red until the
+second reordered raw text with its places rather than already-typed text. The class (B3a) is not consolidated: it is named
+here and owed.
+
+**ZZZZZZZ-2** (medium, closed): a field I added to the walked run (`raw`) travelled to the engine host's answer, where the
+strict wire schema refuses an extra key, so every host answer failed (`hostFileAnswersLive`). It now sits beside the runs in a
+`raws` map. The failure was found by a proof, not by the unit tests, which is the reason the unit tests did not guard it.
+
+**ZZZZZZZ-3** (low, open): the session protection record became `{options,userPassword}` on one branch and a string on the
+other; undoing a protection restores the options but not the user password until reopen. Recorded, not changed.
+
+### 1. Root cause or workaround?
+ZZZZZZZ-1 and -2 each name their mechanism. No limit, timeout or check was loosened.
+
+### 2. Verified against the easy shape only?
+The rtlDeck repair was run on the deck whose runs were already typed, the hard shape; the wire repair against the live host answer.
+
+### 2a. Has a change to how something is proven moved the coverage?
+`rtlDeck.proof.mjs` count 11 and its control restated; `pdfiumPageContent.proof.mjs` 34 cases; `hostLoad.proof.mjs` 23.
+
+### 3. Would CI have caught it?
+Yes: each red was a CI step; CI log text is not readable from here (403), so diagnoses were reproduced locally.
+
+### 4. Are the proofs non-vacuous?
+Each repaired proof was run red on the old behaviour first.
+
+### 4a. Resolution test before measuring?
+No new measuring instrument arrived.
+
+### 4b. A search with a positive control?
+`dialogProblems.mjs` (the scan for hand-made warnings) carries a control in its proof.
+
+### 4c. Does a check derive its extent from the set it governs?
+`buildFreshness.mjs` gained an edge by name, not by derivation; the guard said so.
+
+### 5. Executed, or asserted?
+Executed: typecheck, the changed tests, lint of the changed files, the proofs named above.
+
+### 6. Architecture before the feature?
+ADR-0211 was accepted in its own commit before the text box styles.
+
+### 7. Do the documents still match the code?
+ADR-0202 got a dated correction for the re-read; FEATURES rows were edited to be currently true.
+
+---
+
 ## 2026-10-08 — Stage audit of `f69e3c1d..d3ab2704` — findings YYYYYYY-1 to YYYYYYY-4
 
 39 commits, 202 files on `work/2026-10-08-merge`: the Step 7 exports (scan to Word and Excel, ADR-0202), the link outline
