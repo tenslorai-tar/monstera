@@ -1,4 +1,5 @@
-import { type CommandOfKind, LINK_OUTLINES, LINK_OUTLINE_DEFAULT_COLOUR, type LinkOutline } from '@monstera/contract';
+import type { CommandOfKind, LinkOutline } from '@monstera/contract';
+import { LINK_OUTLINES, LINK_OUTLINE_DEFAULT_COLOUR } from '@monstera/contract/host';
 import type { PageTransform } from '@monstera/shared';
 import type * as mupdf from './mupdfRaw.js';
 
