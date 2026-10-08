@@ -227,7 +227,7 @@ function withinSpan(hex, span) {
  *
  * @param {{ transparent: number, white: number, painted: number } | null} tally
  * @param {ReturnType<typeof readback>['environment']} environment
- * @param {Pick<ReturnType<typeof readback>, 'ink' | 'bitmapInk' | 'workerBitmapInk' | 'workerBitmapAsPdfjsInk' | 'pixels'>} controls
+ * @param {Pick<ReturnType<typeof readback>, 'ink' | 'bitmapInk' | 'workerBitmapInk' | 'workerBitmapAsPdfjsInk' | 'coldWorkerBitmapInk' | 'pixels'>} controls
  */
 function describeRun(tally, environment, controls) {
   const counted =
@@ -238,7 +238,8 @@ function describeRun(tally, environment, controls) {
     `tally: ${counted}.\n      ` +
     `controls of ${String(controls.pixels)}: copied ink ${String(controls.ink)}, bitmap ink ` +
     `${String(controls.bitmapInk)}, worker bitmap ink ${String(controls.workerBitmapInk)}, drawn as PDF.js draws ` +
-    `${String(controls.workerBitmapAsPdfjsInk)}.\n      ` +
+    `${String(controls.workerBitmapAsPdfjsInk)}, COLD worker bitmap (made before any page) ` +
+    `${String(controls.coldWorkerBitmapInk)}.\n      ` +
     `renderer: visibility ${environment.visibility}; 2d_canvas ${environment.gpu.canvas2d}, gpu_compositing ` +
     `${environment.gpu.gpuCompositing}, rasterization ${environment.gpu.rasterization}; processes gone ` +
     `${JSON.stringify(environment.processesGone)}; render process gone ${JSON.stringify(environment.renderProcessGone)}.` +
@@ -615,6 +616,7 @@ try {
             // DIAGNOSTIC (to be reverted with the renderPage trace): the draw's own sequence on a run that PASSES, so a
             // passing and a failing run can be set side by side.
             `  TRACE ${JSON.stringify(seen.environment.console)}\n` +
+            `  COLD worker bitmap ink ${String(seen.coldWorkerBitmapInk)} of ${String(seen.pixels)}\n` +
             `  zoomed to ${String(ZOOM_TARGET)}x in ${String(zoomed.clicks)} click(s): drew ` +
             `${String(zoomed.painted)} of ${String(zoomedPixels)} pixels ` +
             `(${((zoomed.painted / zoomedPixels) * 100).toFixed(2)}%) at ` +
