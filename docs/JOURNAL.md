@@ -936,9 +936,16 @@ The memory gate did, as a red on the native-shim job; the owner's report is what
 ### 4. Are the proofs non-vacuous?
 The new hostLoad case was run red on the old build before it was run green.
 
-### 4a, 4b, 4c.
-No new instrument besides the probe scripts kept in the scratchpad; the graph walk is a search and its control is that it
-found `@cantoo/pdf-lib` in the new graph and not in the old. No roster arrived.
+### 4a. Resolution test before measuring?
+The import-graph walk and the memory probe are scratch instruments; the walk was resolution-tested by the pair it separated
+(`@cantoo/pdf-lib` present in the new graph, absent in the old) and the probe by three identical readings of one module.
+
+### 4b. A search with a positive control?
+The graph walk is a search; its control is that it found `@cantoo/pdf-lib` in the new graph and not in the old, and that
+`hostLoad.proof.mjs` (which now names the library) went red on the build that still had the route.
+
+### 4c. Does a check derive its extent from the set it governs?
+No roster arrived; `hostLoad.proof.mjs`'s declared count went 21 to 23 for two named cases.
 
 ### 5. Executed, or asserted?
 Executed: the budget gate, the proof both ways, typecheck, the changed tests, lint of the changed files.
