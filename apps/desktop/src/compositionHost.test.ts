@@ -584,13 +584,13 @@ describe('the composition root, with an engine host platform', () => {
      * own lane, and it is the one reopen the review found refused: it opened with no password, was answered
      * `needs-password`, and left the document with no session, no unlock and no save.
      */
-    async function endingHost(): Promise<{
+    function endingHost(): {
       readonly handlers: ReturnType<typeof createShellDependencies>['handlers'];
       readonly spy: ReturnType<typeof platformAnswering>;
       readonly opens: unknown[];
       readonly applies: unknown[];
       readonly crash: { armed: boolean };
-    }> {
+    } {
       const opens: unknown[] = [];
       const applies: unknown[] = [];
       const crash = { armed: false };
@@ -619,7 +619,7 @@ describe('the composition root, with an engine host platform', () => {
     }
 
     it('a host that ends under it rebuilds the session with the held password, and the edits made so far are replayed (CR-DOC-08)', async () => {
-      const { handlers, spy, opens, applies, crash } = await endingHost();
+      const { handlers, spy, opens, applies, crash } = endingHost();
       const opened = await handlers['document.open']({});
       if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
       const docId = opened.value.docId;
