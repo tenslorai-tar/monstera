@@ -2550,7 +2550,6 @@ export const RIBBON_RAIL_LABEL = messageKey('surface.ribbon.rail');
 export const RAIL_MORE = messageKey('surface.ribbon.rail-more');
 export const RIBBON_TOOLS_LABEL = messageKey('surface.ribbon.tools');
 export const RIBBON_MORE = messageKey('surface.ribbon.more');
-export const RIBBON_GALLERY = messageKey('surface.ribbon.gallery');
 export const RIBBON_MORE_GROUPS = messageKey('surface.ribbon.more-groups');
 export const SECTION_HOME = messageKey('surface.ribbon.section.home');
 export const SECTION_COMMENT = messageKey('surface.ribbon.section.comment');
@@ -2946,6 +2945,9 @@ export const RIBBON_REDACT_MARK = messageKey('ribbon.redact-mark');
 export const RIBBON_REDACT_TEXT = messageKey('ribbon.redact-text');
 export const RIBBON_LINK_ADDRESS = messageKey('ribbon.link-address');
 export const RIBBON_LINK_PAGE = messageKey('ribbon.link-page');
+export const RIBBON_MEASURE_DISTANCE = messageKey('ribbon.measure-distance');
+export const RIBBON_MEASURE_AREA = messageKey('ribbon.measure-area');
+export const RIBBON_MEASURE_PERIMETER = messageKey('ribbon.measure-perimeter');
 export const RIBBON_PLACE_IMAGE = messageKey('ribbon.place-image');
 export const RIBBON_OCR_REGION = messageKey('ribbon.ocr-region');
 export const RIBBON_CLOUD_REGION = messageKey('ribbon.cloud-region');
@@ -5947,7 +5949,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // A WORD, not a bare ellipsis glyph: the button that holds the tools which did not fit is a named
   // control, and `⋯` alone would be an icon-only one needing a tooltip to say the same thing.
   [RIBBON_MORE]: 'More',
-  [RIBBON_GALLERY]: 'All {group}',
   // THE ROW'S OWN MORE, by its name for a screen reader: it begins with the word on its face (WCAG 2.5.3) and names
   // the groups it holds, which is what tells it from the last group's More beside it.
   [RIBBON_MORE_GROUPS]: 'More: {groups}',
@@ -6343,6 +6344,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RIBBON_REDACT_TEXT]: 'Redact text',
   [RIBBON_LINK_ADDRESS]: 'Web link',
   [RIBBON_LINK_PAGE]: 'Page link',
+  [RIBBON_MEASURE_DISTANCE]: 'Distance',
+  [RIBBON_MEASURE_AREA]: 'Area',
+  [RIBBON_MEASURE_PERIMETER]: 'Perimeter',
   [RIBBON_PLACE_IMAGE]: 'Image',
   [RIBBON_OCR_REGION]: 'Recognise',
   [RIBBON_CLOUD_REGION]: 'Azure OCR',

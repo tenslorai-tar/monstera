@@ -89,15 +89,18 @@ export function ContextPanel({ settings, presence, children, assistant, spelling
         <Tabs.List aria-label={i18n._(CONTEXT_PANEL_TAB_STRIP)} className="m-context-panel__tabs">
           {TABS.map((entry) => (
             <Tabs.Tab
+              // EVERY TAB SHOWS ITS GLYPH and only the selected one also shows its name (the owner's agreement). The name
+              // is the accessible name on every tab, so an icon-only tab is still announced, and the tooltip says it.
+              aria-label={i18n._(entry.title)}
               className="m-context-panel__tab"
               data-context-tab={entry.id}
               key={entry.id}
+              title={i18n._(entry.title)}
               value={entry.id}
             >
-              {/* THE GLYPH IS DECORATION beside the name, which stays the tab's accessible name. */}
               <Icon name={entry.icon} size="dense" />
               {/* ITS OWN BOX, so a language longer than the header shortens the label and never pushes out the chevron. */}
-              <span className="m-context-panel__tab-label">{i18n._(entry.title)}</span>
+              {entry.id === tab ? <span className="m-context-panel__tab-label">{i18n._(entry.title)}</span> : null}
             </Tabs.Tab>
           ))}
         </Tabs.List>

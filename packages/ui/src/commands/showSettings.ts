@@ -88,8 +88,11 @@ export function showSettingsCommand(deps: {
       // FIRST in the footer, v5-01's order: Settings · About · Help centre.
       { surface: 'start-screen', slot: 'footer', order: 1 },
       // 900s: Application is the LAST group on Tools. The section is for working on documents, and
-      // a ribbon that opened on Settings and About put the application ahead of the work.
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 905, size: 'small' },
+      // a ribbon that opened on Settings and About put the application ahead of the work. UNDER Help centre and Keyboard
+      // shortcuts (the owner's reading of 2026-10-08): it was the group's one primary, which put it in a column of its own
+      // while the five secondaries made two more. The three a person comes for are the group's primaries now, and the three
+      // diagnostics (log, components, about) its secondaries, which fold first: six small tools, two columns of three.
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 935, size: 'small' },
       // THE RAIL'S FOOT, where the owner's v5 design draws the gear on every document screen (ADR-0098).
       { surface: 'rail', order: 10 },
       { surface: 'menu-bar', menu: 'window', group: 2, order: 10 },

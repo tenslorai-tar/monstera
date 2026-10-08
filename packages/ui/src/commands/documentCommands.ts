@@ -1203,7 +1203,7 @@ const SHOWN_PANELS: Readonly<
     order: 30,
     // LAST IN MARKUP: the group folds from its end, and the list is also a tab on the left panel, where the marks are
     // not.
-    ribbon: [{ surface: 'ribbon', section: 'comment', group: GROUP_MARKUP, order: 59 }],
+    ribbon: [{ surface: 'ribbon', section: 'comment', group: GROUP_MARKUP, order: 59, size: 'small' }],
   },
   forms: {
     id: 'view.show-fields',
@@ -4892,7 +4892,12 @@ export function applyRedactionsCommand(
     feedback: VISIBLE,
     icon: 'ShieldAlert',
     title: APPLY_REDACTIONS_COMMAND_TITLE,
-    placements: [{ surface: 'ribbon', section: 'protect', group: GROUP_REDACT, order: 10 }],
+    placements: [
+      { surface: 'ribbon', section: 'protect', group: GROUP_REDACT, order: 10 },
+      // AND COMMENT › REDACT, beside the two marks, so a person who marks there need not go to Protect to burn them in
+      // (the owner's review of 0.1.12.0). The same command, a second placement: one `run`, one dialog, one confirm.
+      { surface: 'ribbon', section: 'comment', group: GROUP_REDACT, order: 64, size: 'small' },
+    ],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;

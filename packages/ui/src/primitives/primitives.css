@@ -1037,6 +1037,14 @@
   padding-inline: var(--space-4);
 }
 
+/* THE PAGE IS THE LAST COLUMN, and its end edge is the body's: a negative margin there put the page's box 4 px past the
+   body's content width, so the body grew a horizontal scroll bar under the footer (the owner's review of 0.1.12.0,
+   measured 2026-10-09: frame 880 wide, page box ending at 884, on every Settings page at 1280 and at 1024 wide). The inset
+   is kept as padding, which is what stops a focus ring at the edge being clipped, and the rows end 4 px inside the edge. */
+.m-settings__page {
+  margin-inline-end: 0;
+}
+
 /* ONE WIDTH FOR EVERY BODY IN THE PATTERN. The popup shrinks to its content, so without a definite width each dialog
    was as wide as its longest note and the same rows sat at a different measure in each. A body that ends in the
    footer is in the pattern by construction, so the rule keys on that rather than on a class each dialog must

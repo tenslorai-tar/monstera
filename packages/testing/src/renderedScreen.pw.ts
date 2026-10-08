@@ -630,10 +630,45 @@ test('at its MINIMUM width the right contextual panel still holds every Properti
   expect(measured?.headerFits).toBe(true);
   expect(measured?.chevronPast).not.toBeNull();
   expect(measured?.chevronPast ?? Infinity).toBeLessThanOrEqual(0.5);
-  // THE LABELS WERE FOUND, all three, or the empty list below is the reassuring answer from a lookup that saw nothing.
-  expect(measured?.labels).toBe(3);
+  // THE LABEL WAS FOUND — one, the selected tab's — or the empty list below is the reassuring answer from a lookup that saw nothing.
+  expect(measured?.labels).toBe(1);
   expect(measured?.cut).toStrictEqual([]);
 });
+
+/** How many of the right panel's tabs draw a glyph that has a size, and which tabs draw their name. */
+async function contextTabGlyphs(page: Page): Promise<{ readonly glyphs: number; readonly named: readonly string[] }> {
+  return await page.evaluate(() => {
+    const tabs = [...document.querySelectorAll<HTMLElement>('.m-context-panel__tab')];
+    return {
+      glyphs: tabs.filter((tab) => {
+        const glyph = tab.querySelector('svg');
+        const box = glyph?.getBoundingClientRect();
+        return glyph !== null && box !== undefined && box.width > 0 && getComputedStyle(glyph).display !== 'none';
+      }).length,
+      named: tabs.filter((tab) => tab.querySelector('.m-context-panel__tab-label') !== null).map((tab) => tab.dataset['contextTab'] ?? ''),
+    };
+  });
+}
+
+for (const width of [264, 326]) {
+  test(`EVERY right-panel tab draws its glyph at ${String(width)} px, and only the selected tab its name`, async ({ page }) => {
+    // THE REGRESSION (found 2026-10-08, 0.1.12.0): a container query hid every tab's glyph below a strip width the default
+    // panel (326) is always under, so Properties, Assistant and Spelling were three bare words. The glyph is read by its
+    // drawn size, not by being in the markup, which it was all along. 264 is the panel's minimum.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await bridgeWithDocument(page, { 'appearance.context-panel-width': width, 'appearance.context-panel-tab': 'spelling' }, 1);
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open PDF…' }).click();
+    await expect(page.locator('.m-context-panel__tab').first()).toBeVisible();
+    const seen = await contextTabGlyphs(page);
+    expect(seen.glyphs).toBe(3);
+    expect(seen.named).toStrictEqual(['spelling']);
+    // CONTROL: the same measure on a page whose glyphs are hidden the way the old rule hid them reports none, so the
+    // count above is a reading of the drawn glyph and not of the markup.
+    await page.addStyleTag({ content: '.m-context-panel__tab > svg { display: none; }' });
+    expect((await contextTabGlyphs(page)).glyphs).toBe(0);
+  });
+}
 
 test('the ASSISTANT fits its panel: the message box is inside it and nothing scrolls', async ({ page }) => {
   // The panel was the body's full height PLUS its padding, so at 900 px the body scrolled by the

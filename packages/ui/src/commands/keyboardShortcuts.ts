@@ -40,8 +40,8 @@ export function keyboardShortcutsCommand(deps: {
     title: KEYBOARD_SHORTCUTS_COMMAND_TITLE,
     shortcut: 'Ctrl+/',
     placements: [
-      // SECONDARY since Help › Keyboard shortcuts exists (ADR-0107).
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 930, prominence: 'secondary', size: 'small' },
+      // PRIMARY in Tools › Application, between Help centre and Settings (the owner's reading of 2026-10-08).
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 930, size: 'small' },
       { surface: 'menu-bar', menu: 'help', group: 0, order: 10 },
     ],
     run: (): void => {

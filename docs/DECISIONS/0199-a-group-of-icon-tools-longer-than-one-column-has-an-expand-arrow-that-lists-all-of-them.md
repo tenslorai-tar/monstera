@@ -52,3 +52,13 @@ which is what a person looking for a shape by name wants.
 
 - The rendered baselines of the Comment screens change (an arrow after the Shapes columns) and are regenerated on Windows.
 - `ribbonFolding` is unchanged (it takes widths); the measurement in `useRibbonFold` reads one more box.
+
+## Correction, 2026-10-09
+
+The owner overruled the arrow on seeing it in 0.1.12.0: the Shapes group's arrow listed the same seven shapes that were already
+drawn beside it, so it added a control and no tool. It was there because the decision above gave every group whose icons ran
+past one column an arrow that lists the group whole, drawn tools included, so that an icon could be found by its name; in the
+one group that had it, the tooltips already name each icon and nothing in the list was missing from the row. The arrow, its
+component branch, its width in the fold's measure and its message are removed. A shape the width folds away is still in the
+group's own *More*, which is the list of what is not shown. The statements above are kept as written; this is the record that
+they no longer hold.

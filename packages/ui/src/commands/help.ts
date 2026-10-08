@@ -51,8 +51,9 @@ export function helpCommand(deps: {
       // THIRD in the footer, v5-01's order: Settings · About · Help centre.
       { surface: 'start-screen', slot: 'footer', order: 3 },
       { surface: 'menu-bar', menu: 'help', group: 0, order: 5 },
-      // SECONDARY in Tools › Application, beside the keyboard shortcuts: F1 and the menu bar are the ways in.
-      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 925, prominence: 'secondary', size: 'small' },
+      // IN Tools › Application with the keyboard shortcuts and Settings, the group's three primaries (the owner's reading of
+      // 2026-10-08): F1 and the menu bar are other ways in.
+      { surface: 'ribbon', section: 'tools', group: GROUP_APPLICATION, order: 925, size: 'small' },
     ],
     run: async (context): Promise<void> => {
       const onStart = context.docId === undefined;

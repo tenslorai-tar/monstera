@@ -96,6 +96,9 @@ import {
   RIBBON_REDACT_MARK,
   RIBBON_REDACT_TEXT,
   RIBBON_LINK_ADDRESS,
+  RIBBON_MEASURE_AREA,
+  RIBBON_MEASURE_DISTANCE,
+  RIBBON_MEASURE_PERIMETER,
   RIBBON_LINK_PAGE,
   RIBBON_PLACE_IMAGE,
   RIBBON_OCR_REGION,
@@ -346,8 +349,9 @@ function toolCommand(
  */
 const SHAPES = { section: 'comment', group: GROUP_SHAPES, size: 'icon' } as const;
 const STAMPS = { section: 'comment', group: GROUP_STAMPS, size: 'small' } as const;
-const MEASURE = { section: 'comment', group: GROUP_MEASURE, size: 'icon' } as const;
-const LINKS = { section: 'comment', group: GROUP_LINKS, size: 'icon' } as const;
+// MEASURES AND LINKS ARE NAMED, like every other group's tools (the owner's review of 0.1.12.0): a glyph beside its word.
+const MEASURE = { section: 'comment', group: GROUP_MEASURE, size: 'small' } as const;
+const LINKS = { section: 'comment', group: GROUP_LINKS, size: 'small' } as const;
 const REDACT_MARKS = { section: 'comment', group: GROUP_REDACT, size: 'small' } as const;
 const MARKUP_SMALL = { section: 'comment', group: GROUP_MARKUP, size: 'small' } as const;
 /**
@@ -382,7 +386,9 @@ export function arrowToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 export function inkToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(INK_TOOL_ID, INK_TOOL_TITLE, 'Pencil', 44, deps);
+  // THE THIRD OF THE TEXT BOX AND TYPEWRITER'S COLUMN (the owner's reading of 2026-10-08): it sat large between Select and
+  // them, which left it a column of its own. The run of small markup tools below is balanced into threes by `ribbonUnits`.
+  return toolCommand(INK_TOOL_ID, INK_TOOL_TITLE, 'Pencil', 46.7, deps, MARKUP_SMALL);
 }
 
 /**
@@ -1096,7 +1102,8 @@ export function nudgeSelectionCommands(deps: SelectionCommandDeps): readonly UiC
  * is one line the same shape as the rectangle's.
  */
 export function eraserToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(ERASER_TOOL_ID, ERASER_TOOL_TITLE, 'Eraser', 52, deps);
+  // THE THIRD OF COMMENT AND INSERTION MARK'S COLUMN, in the run of small markup tools (see `inkToolCommand`).
+  return toolCommand(ERASER_TOOL_ID, ERASER_TOOL_TITLE, 'Eraser', 48.5, deps, MARKUP_SMALL);
 }
 
 export function cloudToolCommand(deps: ToolCommandDeps): UiCommand {
@@ -1117,15 +1124,29 @@ export function cloudToolCommand(deps: ToolCommandDeps): UiCommand {
  * registrations from the same factory, each one line.
  */
 export function measureDistanceToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(MEASURE_DISTANCE_TOOL_ID, MEASURE_DISTANCE_TOOL_TITLE, 'RulerDimensionLine', 56, deps, MEASURE);
+  return toolCommand(
+    MEASURE_DISTANCE_TOOL_ID,
+    { full: MEASURE_DISTANCE_TOOL_TITLE, ribbon: RIBBON_MEASURE_DISTANCE },
+    'RulerDimensionLine',
+    56,
+    deps,
+    MEASURE,
+  );
 }
 
 export function measureAreaToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(MEASURE_AREA_TOOL_ID, MEASURE_AREA_TOOL_TITLE, 'SquareDashed', 57, deps, MEASURE);
+  return toolCommand(MEASURE_AREA_TOOL_ID, { full: MEASURE_AREA_TOOL_TITLE, ribbon: RIBBON_MEASURE_AREA }, 'SquareDashed', 57, deps, MEASURE);
 }
 
 export function measurePerimeterToolCommand(deps: ToolCommandDeps): UiCommand {
-  return toolCommand(MEASURE_PERIMETER_TOOL_ID, MEASURE_PERIMETER_TOOL_TITLE, 'Hexagon', 58, deps, MEASURE);
+  return toolCommand(
+    MEASURE_PERIMETER_TOOL_ID,
+    { full: MEASURE_PERIMETER_TOOL_TITLE, ribbon: RIBBON_MEASURE_PERIMETER },
+    'Hexagon',
+    58,
+    deps,
+    MEASURE,
+  );
 }
 
 /**
@@ -1159,6 +1180,8 @@ export function snapshotToolCommand(deps: ToolCommandDeps): UiCommand {
       // The pill has its own order: after crop, as v5-02's strip draws it.
       58,
       deps,
+      // IN THE CALLOUT'S COLUMN with the Comments list (the owner's reading of 2026-10-08), as a small tool.
+      MARKUP_SMALL,
     ),
     72,
   );

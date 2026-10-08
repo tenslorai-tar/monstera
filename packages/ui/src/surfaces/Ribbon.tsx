@@ -5,7 +5,6 @@ import { type ReactElement, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import {
   RAIL_MORE,
   RIBBON_RAIL_LABEL,
-  RIBBON_GALLERY,
   RIBBON_MORE_GROUPS,
   RIBBON_TOOLS_LABEL,
   SECTION_COMMENT,
@@ -29,7 +28,7 @@ import { useSetting } from '../useSetting.js';
 import { type RibbonEntry, type RibbonSection, railModel, ribbonModel } from './projections.js';
 import { railCapacity, railFolded } from './railFold.js';
 import { RibbonMore, RibbonMoreGauge } from './RibbonMore.js';
-import { galleryOf, restEntries, splitFold, type StackSize } from './ribbonFolding.js';
+import { restEntries, splitFold, type StackSize } from './ribbonFolding.js';
 import { useRibbonFold } from './useRibbonFold.js';
 
 /**
@@ -511,18 +510,6 @@ export function Ribbon({ registry, context, settings, showing }: RibbonProps): R
                   context={context}
                   entries={splitFold(group.entries, fold.folds?.[index]).folded}
                   widthFolded={splitFold(group.entries, fold.folds?.[index]).folded.length}
-                  onChosen={() => {
-                    if (mode === 'studio') shut();
-                  }}
-                />
-              )}
-              {/* THE EXPAND ARROW (ADR-0199): a group whose icons run to more than one column lists ALL of itself here,
-                  the drawn tools included, where its More lists only what the width hid. The fold charges its width. */}
-              {galleryOf(group.entries) === undefined ? null : (
-                <RibbonMore
-                  context={context}
-                  entries={galleryOf(group.entries) ?? []}
-                  gallery={{ label: i18n._(RIBBON_GALLERY, { group: i18n._(group.group) }) }}
                   onChosen={() => {
                     if (mode === 'studio') shut();
                   }}

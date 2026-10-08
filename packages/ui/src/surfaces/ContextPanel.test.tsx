@@ -110,15 +110,17 @@ describe('ContextPanel', () => {
     const settings = drawn();
     // THREE, and not four: the accessibility tools are in the document panel while in use (ADR-0189), so the
     // Assistant keeps its word. CONTROL: a fourth tab appearing again is a different list here.
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toStrictEqual([
-      'Properties',
-      'Assistant',
-      'Spelling',
-    ]);
+    const tabs = (): HTMLElement[] => screen.getAllByRole('tab');
+    expect(tabs().map((tab) => tab.getAttribute('aria-label'))).toStrictEqual(['Properties', 'Assistant', 'Spelling']);
+    // EVERY TAB DRAWS ITS GLYPH and only the selected one its word (the owner's agreement, restored 2026-10-09).
+    // CONTROL: a tab with no glyph, or an unselected tab that kept its word, is a different list.
+    expect(tabs().map((tab) => tab.querySelector('svg') !== null)).toStrictEqual([true, true, true]);
+    expect(tabs().map((tab) => tab.textContent)).toStrictEqual(['Properties', '', '']);
     await act(async () => {
       screen.getByRole('tab', { name: 'Spelling' }).click();
       await Promise.resolve();
     });
+    expect(tabs().map((tab) => tab.textContent)).toStrictEqual(['', '', 'Spelling']);
     expect(settings.get(CONTEXT_PANEL_TAB_SETTING.id)).toBe('spelling');
     expect(screen.getByText('spelling content')).toBeDefined();
     // CONTROL: neither of the other two is drawn beside it, so the content above is the tab's and not a list of all.

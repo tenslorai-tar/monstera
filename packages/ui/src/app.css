@@ -815,8 +815,9 @@ optgroup {
 /* THE CHANGES AT THE ROW'S END, where a dialog row keeps its control, on one line: the column takes the least width
    that holds them, and the command's name and keys wrap first. Scoped under the table, because `.m-shortcuts td`
    above outranks a bare class: the buttons sat at the cell's start while the header, matched more strongly, sat at
-   its end (the gallery's reading, 2026-10-03). */
-.m-shortcuts thead th:last-child,
+   its end (the gallery's reading, 2026-10-03). KEYED ON THE ACTIONS COLUMN BY NAME, not on `:last-child`: the read-only list
+   has no such column, so its last header, "Shortcut", was pushed to the far end of the row instead of standing over the
+   keys it names (the owner's review of 0.1.12.0). */
 .m-shortcuts .m-shortcuts__actions {
   text-align: end;
 }
@@ -1301,10 +1302,11 @@ optgroup {
   font-size: var(--font-chrome-12);
 }
 
+/* THE DOCUMENTS IN A ROW, wrapping, each its name and (where there are several) its own Reopen. */
 .m-recover-list {
-  display: grid;
-  gap: var(--space-4);
-  justify-items: stretch;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-24);
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1313,9 +1315,14 @@ optgroup {
 /* THE RECOVERY OFFER AS A CARD: an icon in a tile, a heading, the documents that were open each with its Reopen, and the
    two actions. The start screen's other cards are the feature cards above and the recent ones below; this sits between
    them with its own boundary so it is read as an offer and not as a caption of either. */
+/* AS WIDE AS THE CARDS ABOVE IT: the drop zone and the feature grid share `--start-drop-width`, and `.m-recent` centres its
+   children at their own width, which left this card narrow and stacked (the owner's review of 0.1.12.0). Heading and words
+   at the start, the actions at the end. */
 .m-recover-card {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  inline-size: min(100%, var(--start-drop-width));
+  box-sizing: border-box;
   gap: var(--space-12);
   padding: var(--space-12) var(--space-16);
   border: 1px solid var(--border-control);
@@ -1371,7 +1378,9 @@ optgroup {
 
 .m-recover-card__actions {
   display: flex;
+  flex: none;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-8);
 }
 
@@ -4371,17 +4380,6 @@ optgroup {
   flex: none;
 }
 
-/* A GROUP'S EXPAND ARROW (ADR-0199): the chevron alone, a narrow strip as tall as the three icon rows it ends. It is in the
-   buttons row and is no unit of the fold; the fold charges its width to the group (`useRibbonFold`'s `galleryCost`). */
-.m-ribbon__gallery {
-  flex: none;
-  align-self: flex-start;
-  min-inline-size: 0;
-  inline-size: var(--control-ribbon-row);
-  block-size: calc(var(--control-ribbon-row) * 3 + var(--space-2) * 2);
-  padding: 0;
-}
-
 /* THE FOLD'S RULER (`RibbonMoreGauge`): laid out at its natural width and never seen. Out of flow, so
    it takes no gap and is no group's sibling in the row's arithmetic. */
 .m-ribbon__more-gauge {
@@ -7123,9 +7121,11 @@ optgroup {
   font-weight: 600;
 }
 
+/* THE FULL WIDTH OF THE COLUMN: a 60ch cap broke "How pages are laid out and what you see as you move through a document."
+   after "through" in a column twice as wide (the owner's review of 0.1.12.0, Viewing and Integrations). The orphan fix had
+   left the cap, which is what made the break. */
 .m-settings__page-note {
   margin: 0;
-  max-inline-size: 60ch;
   color: var(--muted);
   font-size: var(--font-chrome-12);
 }
@@ -7941,30 +7941,12 @@ body {
 }
 
 /*
- * THREE TABS AND THEIR WORDS WHOLE (ADR-0156 added Spelling). Measured 2026-10-04 in Chromium 151 on the production
- * build, English, in fractional pixels (a Range over each label): the words are 70.73, 62.95 and 54.84 px, 188.5 in
- * all. Each tab adds its two 1 px borders, its padding and, with a glyph, 14 + 6 more; the strip's two 2 px gaps and the
- * header's gap and chevron add 32. So with glyphs the header's content must be 346.5 px, with the words alone at
- * 10 px padding 286.5, and at 2 px padding 238.5 — against 326 at the default panel and 250 at its 264 px minimum. The
- * glyphs are decoration beside the name (`ContextPanel.tsx`), so they give way first and the padding next; each switch
- * is set 16 px above its need, for a face drawn in another font. A longer language still shortens a label by the rule
- * above, the last thing to give.
+ * EVERY TAB SHOWS ITS GLYPH, and only the selected one its name (the owner's agreement, restored 2026-10-09). From
+ * 2026-10-04 a container query took the glyphs away from ALL tabs below a strip width of 363 px, which the default panel
+ * (326 px) is always below: the icons had been gone since Spelling was added, and the reason written here was that the three
+ * names with glyphs did not fit. One name and three glyphs do: with the selected word at its widest (70.73 px, measured
+ * 2026-10-04, Chromium 151) the strip needs about 187 px against the 250 of the panel's minimum.
  */
-.m-context-panel__header {
-  container: context-tabs / inline-size;
-}
-
-@container context-tabs (inline-size < 363px) {
-  .m-context-panel__tab > svg {
-    display: none;
-  }
-}
-
-@container context-tabs (inline-size < 303px) {
-  .m-context-panel__tab {
-    padding-inline: var(--space-2);
-  }
-}
 
 /* THE SELECTED TAB is Base UI's `data-active` (1.7's `TabsTabDataAttributes`) — `data-selected`, which this file
    keyed on until 2026-09-26, is never set, so the rule never matched and the tab showed no state (a11y review). An

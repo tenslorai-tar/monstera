@@ -62,7 +62,11 @@ export function ShortcutList({
         <tr>
           <th scope="col">{_(SHORTCUTS_COMMAND_HEADER)}</th>
           <th scope="col">{_(SHORTCUTS_CHORD_HEADER)}</th>
-          {editor === undefined ? null : <th scope="col">{_(SHORTCUTS_ACTIONS_HEADER)}</th>}
+          {editor === undefined ? null : (
+            <th className="m-shortcuts__actions" scope="col">
+              {_(SHORTCUTS_ACTIONS_HEADER)}
+            </th>
+          )}
         </tr>
       </thead>
       <tbody>

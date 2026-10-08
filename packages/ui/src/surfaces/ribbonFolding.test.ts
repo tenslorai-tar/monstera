@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type MessageKey, messageKey } from '@monstera/shared';
 
-import { foldGroups, foldRow, galleryOf, ribbonUnits, splitFold, type GroupWidths, type RibbonUnit } from './ribbonFolding.js';
+import { foldGroups, foldRow, ribbonUnits, splitFold, type GroupWidths, type RibbonUnit } from './ribbonFolding.js';
 import { innerWidthOf } from './useRibbonFold.js';
 
 /**
@@ -357,18 +357,39 @@ describe('ribbonUnits — a run of small tools is columns of at most three (ADR-
     expect(shape(entries)).toStrictEqual(['small[a,b]', 'big', 'small[c]', 'icon[d,e]']);
   });
 
-  it('a NAMED MENU ends a run, and the SECONDARIES are gathered among themselves, after every primary', () => {
+  it('a NAMED MENU ends a run, and the SECONDARIES come after every primary', () => {
     const MENU = messageKey('test.menu.convert');
     const entries = [tool('a', 'small'), tool('x', 'small', false, MENU), tool('b', 'small'), tool('later', 'small', true), tool('c', 'small')];
-    // `a` and `b` are not one run — the menu between them ended it — and `c` joins `b`'s column, so `b` is a column of two.
-    expect(ribbonUnits(entries).map((unit) => unit.key)).toStrictEqual(['a', 'x', 'b', 'later']);
-    expect(ribbonUnits(entries).map((unit) => unit.entries.length)).toStrictEqual([1, 1, 2, 1]);
-    expect(ribbonUnits(entries).map((unit) => unit.stack)).toStrictEqual(['small', undefined, 'small', 'small']);
-    // A secondary is not gathered with the primaries around it, and two secondaries of one size are one column.
+    // `a` and `b` are not one run — the menu between them ended it — and `c` joins `b`'s column. The secondary `later` is
+    // placed after every primary, so it follows the primaries' last run and shares its column.
+    expect(ribbonUnits(entries).map((unit) => unit.key)).toStrictEqual(['a', 'x', 'b']);
+    expect(ribbonUnits(entries).map((unit) => unit.entries.map((entry) => entry.command.id))).toStrictEqual([['a'], ['x'], ['b', 'c', 'later']]);
+    expect(ribbonUnits(entries).map((unit) => unit.stack)).toStrictEqual(['small', undefined, 'small']);
+    // Two secondaries of one size are one run, and a column of them is after every column of primaries.
     expect(shape([tool('a', 'small'), tool('s1', 'small', true), tool('b', 'small'), tool('s2', 'small', true)])).toStrictEqual([
       'small[a,b]',
       'small[s1,s2]',
     ]);
+  });
+
+  it('A SECONDARY SMALL TOOL SHARES THE COLUMNS OF THE SMALL PRIMARIES IT FOLLOWS: three and one are 2 + 2, never 3 + 1 (Organize › Adjust)', () => {
+    const adjust = [tool('crop', 'small'), tool('resize', 'small'), tool('straighten', 'small'), tool('transitions', 'small', true)];
+    expect(shape(adjust)).toStrictEqual(['small[crop,resize]', 'small[straighten,transitions]']);
+    // CONTROL: the same four with the fourth apart from the run by a large primary stay as they were — the run is the
+    // primaries' last one only where the secondaries continue it, so a secondary never reaches back past a large tool.
+    const apart = [tool('crop', 'small'), tool('resize', 'small'), tool('straighten', 'small'), tool('big'), tool('transitions', 'small', true)];
+    expect(shape(apart)).toStrictEqual(['small[crop,resize,straighten]', 'big', 'small[transitions]']);
+    // AND A DIFFERENT SMALL SIZE does not join it.
+    expect(shape([tool('a', 'small'), tool('b', 'small'), tool('c', 'small'), tool('i', 'icon', true)])).toStrictEqual([
+      'small[a,b,c]',
+      'icon[i]',
+    ]);
+  });
+
+  it('a folded column that holds a secondary folds BEFORE the columns that hold none, so the primaries leave the row last', () => {
+    const entries = [tool('crop', 'small'), tool('resize', 'small'), tool('straighten', 'small'), tool('transitions', 'small', true)];
+    const units = ribbonUnits(entries);
+    expect(units.map((unit) => unit.entries.some((entry) => entry.secondary))).toStrictEqual([false, true]);
   });
 
   it('a folded column puts EVERY member in the More, one command per line, and nothing is in both', () => {
@@ -380,35 +401,6 @@ describe('ribbonUnits — a run of small tools is columns of at most three (ADR-
       expect(all, `shown ${String(shown)}`).toStrictEqual(entries.map((entry) => entry.command.id));
     }
     expect(splitFold(entries, { shown: 1, more: true }).folded.map((entry) => entry.command.id)).toStrictEqual(['big', 'u', 'v']);
-  });
-});
-
-describe('galleryOf — a group of icons longer than one column has an expand arrow (ADR-0199)', () => {
-  interface Sized {
-    readonly command: { readonly id: string };
-    readonly secondary: boolean;
-    readonly menu: MessageKey | undefined;
-    readonly size: 'large' | 'small' | 'icon';
-  }
-  const tool = (id: string, size: Sized['size'], secondary = false): Sized => ({ command: { id }, secondary, menu: undefined, size });
-  const run = (count: number, size: Sized['size']): Sized[] => Array.from({ length: count }, (_, index) => tool(`t${String(index)}`, size));
-
-  it('lists EVERY entry of a group whose icons run to two columns or more, in the row’s order', () => {
-    const entries = [tool('big', 'large'), ...run(7, 'icon')];
-    expect(galleryOf(entries)?.map((entry) => entry.command.id)).toStrictEqual(['big', 't0', 't1', 't2', 't3', 't4', 't5', 't6']);
-  });
-
-  it('CONTROL: one column of icons, any number of small tools, and a plain group have none', () => {
-    expect(galleryOf(run(3, 'icon'))).toBeUndefined();
-    expect(galleryOf(run(9, 'small'))).toBeUndefined();
-    expect(galleryOf(run(5, 'large'))).toBeUndefined();
-  });
-
-  it('is what the width folded PLUS what it drew: the arrow and the More are not the same list', () => {
-    const entries = run(8, 'icon');
-    const folded = splitFold(entries, { shown: 1, more: true }).folded;
-    expect(folded.length).toBeLessThan(entries.length);
-    expect(galleryOf(entries)).toHaveLength(entries.length);
   });
 });
 

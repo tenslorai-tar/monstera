@@ -260,6 +260,22 @@ function RecoveryCard({
   const headingId = useId();
   const offered = session.filter((entry) => entry.availability !== 'unavailable');
   const ready = offered.filter((entry) => entry.availability === 'available');
+  // ONE DOCUMENT'S REOPEN STANDS AT THE CARD'S END with Dismiss: nothing there needs telling apart. With several, each
+  // name carries its own Reopen beside it, and the end holds Reopen all and Dismiss.
+  const single = offered.length === 1;
+  const reopen = (entry: RecentRow): ReactElement => (
+    <Button
+      label={entry.availability === 'checking' ? RECOVER_CHECKING : RECOVER_LABEL}
+      // THE WORD SHOWN IS *Reopen*, the name stays the file's (WCAG 2.5.3: it begins with the shown word),
+      // so each button of a row is told apart by a screen reader.
+      shown={entry.availability === 'checking' ? undefined : RECOVER_SHOWN}
+      values={{ name: entry.name }}
+      disabled={entry.availability === 'checking'}
+      onClick={() => {
+        onOpen(entry.handle);
+      }}
+    />
+  );
   return (
     <section aria-labelledby={headingId} className="m-recover-card" data-recover-card="">
       <span aria-hidden="true" className="m-recover-card__icon">
@@ -279,34 +295,25 @@ function RecoveryCard({
                 <li className="m-recover-list__item" key={entry.handle}>
                   <Icon name="FileText" size="dense" />
                   <span className="m-recover-list__name">{entry.name}</span>
-                  <Button
-                    label={entry.availability === 'checking' ? RECOVER_CHECKING : RECOVER_LABEL}
-                    // THE WORD SHOWN IS *Reopen*, the name stays the file's (WCAG 2.5.3: it begins with the shown word),
-                    // so each button of a column is told apart by a screen reader.
-                    shown={entry.availability === 'checking' ? undefined : RECOVER_SHOWN}
-                    values={{ name: entry.name }}
-                    disabled={entry.availability === 'checking'}
-                    onClick={() => {
-                      onOpen(entry.handle);
-                    }}
-                  />
+                  {single ? null : reopen(entry)}
                 </li>
               ))}
             </ul>
           </>
         )}
-        <div className="m-recover-card__actions">
-          {ready.length > 1 ? (
-            <Button
-              label={RECOVER_ALL}
-              variant="primary"
-              onClick={() => {
-                onOpenAll(ready.map((entry) => entry.handle));
-              }}
-            />
-          ) : null}
-          <Button label={RECOVER_DISMISS} onClick={onDismiss} />
-        </div>
+      </div>
+      <div className="m-recover-card__actions">
+        {offered[0] !== undefined && single ? reopen(offered[0]) : null}
+        {ready.length > 1 ? (
+          <Button
+            label={RECOVER_ALL}
+            variant="primary"
+            onClick={() => {
+              onOpenAll(ready.map((entry) => entry.handle));
+            }}
+          />
+        ) : null}
+        <Button label={RECOVER_DISMISS} onClick={onDismiss} />
       </div>
     </section>
   );

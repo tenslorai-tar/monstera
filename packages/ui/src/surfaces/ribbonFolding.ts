@@ -269,8 +269,8 @@ export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonl
   /** A RUN of one small size, still whole: it becomes columns once the list is all read. */
   interface Run { run: StackSize; entries: T[] }
 
-  /** One list's units: the primaries, or the secondaries, each gathered on its own so a run never crosses between them. */
-  const gather = (list: readonly T[]): Open[] => {
+  /** One list's items: the primaries, or the secondaries, each gathered on its own; the runs are still whole. */
+  const gather = (list: readonly T[]): (Open | Run)[] => {
     const items: (Open | Run)[] = [];
     const byMenu = new Map<MessageKey, Open>();
     let run: Run | undefined;
@@ -299,7 +299,12 @@ export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonl
       byMenu.set(entry.menu, unit);
       items.push(unit);
     }
-    return items.flatMap((item): readonly Open[] => {
+    return items;
+  };
+
+  /** Runs become columns once the whole list is read: balanced, so no column is left with one tool a neighbour could share. */
+  const columns = (items: readonly (Open | Run)[]): Open[] =>
+    items.flatMap((item): readonly Open[] => {
       if (!('run' in item)) return [item];
       let from = 0;
       return columnsOf(item.entries.length).map((count) => {
@@ -308,25 +313,23 @@ export function ribbonUnits<T extends UnitEntry>(entries: readonly T[]): readonl
         return { key: column[0]?.command.id ?? '', menu: undefined, stack: item.run, entries: column };
       });
     });
-  };
 
   // THE SECONDARIES ARE GATHERED AMONG THEMSELVES, after every primary: they fold first, a column of them at a time,
   // and a column of secondaries is the same unit to the fold as a column of primaries.
-  return [...gather(entries.filter((entry) => !entry.secondary)), ...gather(entries.filter((entry) => entry.secondary))];
-}
-
-/**
- * The entries an EXPAND ARROW lists (ADR-0199), or `undefined` for a group that draws none.
- *
- * A group has an arrow when its run of `icon` tools is longer than one column — the units, which this module's
- * {@link ribbonUnits} decides, number more than one column of icons — and it lists **every** entry of the group in the row's
- * own order, the drawn ones included. That is what separates it from the group's *More*, which holds only what the width
- * folded. It is derived from the same units the row draws, so the surface keeps no list of which groups have an arrow.
- */
-export function galleryOf<T extends UnitEntry>(entries: readonly T[]): readonly T[] | undefined {
-  const units = ribbonUnits(entries);
-  if (units.filter((unit) => unit.stack === 'icon').length < 2) return undefined;
-  return units.flatMap((unit) => unit.entries);
+  const primaries = gather(entries.filter((entry) => !entry.secondary));
+  const secondaries = gather(entries.filter((entry) => entry.secondary));
+  // BUT ONE RUN OF ONE SIZE IS ONE RUN, whichever list its tools came from. The two were gathered apart and a run never
+  // crossed between them, so a group of three primary small tools and one secondary small tool drew 3 + 1: the fourth in a
+  // column of its own (Organize › Adjust, the owner's review of 0.1.12.0). Where the primaries END in a run and the
+  // secondaries BEGIN with the same one, they are balanced together; the column that holds a secondary is after every
+  // column that holds none, so it still folds first and the primaries' columns still leave the row last.
+  const last = primaries.at(-1);
+  const first = secondaries[0];
+  if (last !== undefined && first !== undefined && 'run' in last && 'run' in first && last.run === first.run) {
+    last.entries.push(...first.entries);
+    secondaries.shift();
+  }
+  return [...columns(primaries), ...columns(secondaries)];
 }
 
 /**
